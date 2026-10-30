@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from nvflare.private.fed.resource_stats import collector
 from nvflare.private.fed.resource_stats.probes import cgroup_linux as probe
 
 _GIB = 2**30
@@ -482,6 +483,95 @@ def test_non_linux_capacity_remains_unavailable(monkeypatch):
 
     assert probe.probe_cpu() is None
     assert probe.probe_memory() is None
+
+
+@pytest.mark.parametrize(
+    "membership,mounts,files",
+    [
+        (
+            "0::/job",
+            [("cgroup2", "/", "/cg", "rw")],
+            {"/cg/job/cpu.max": "200000 100000", "/cg/job/memory.max": str(_GIB)},
+        ),
+        (
+            "3:cpu,memory:/job",
+            [("cgroup", "/", "/cg", "rw,cpu,memory")],
+            {
+                "/cg/job/cpu.cfs_quota_us": "200000",
+                "/cg/job/cpu.cfs_period_us": "100000",
+                "/cg/cpu.cfs_quota_us": "-1",
+                "/cg/cpu.cfs_period_us": "100000",
+                "/cg/job/memory.limit_in_bytes": str(_GIB),
+                "/cg/memory.limit_in_bytes": str(8 * _GIB),
+            },
+        ),
+        (
+            "0::/job\n3:memory:/job",
+            [("cgroup2", "/", "/cg", "rw"), ("cgroup", "/", "/memory", "rw,memory")],
+            {
+                "/cg/job/cpu.max": "200000 100000",
+                "/memory/job/memory.limit_in_bytes": str(_GIB),
+                "/memory/memory.limit_in_bytes": str(8 * _GIB),
+            },
+        ),
+    ],
+)
+def test_combined_and_standalone_capacity_match_and_share_discovery(monkeypatch, membership, mounts, files):
+    _hierarchy(monkeypatch, membership, mounts, files)
+    expected = {"cpu": probe.probe_cpu(), "memory": probe.probe_memory()}
+    reads = []
+    read = probe._read_text
+
+    def counted_read(path):
+        reads.append(path)
+        return read(path)
+
+    monkeypatch.setattr(probe, "_read_text", counted_read)
+    monkeypatch.setattr(collector.gpu_probe_process, "probe_gpu_isolated", lambda: None)
+
+    assert collector.probe_capacity() == expected
+    assert reads.count(Path("/proc/self/cgroup")) == 1
+    assert reads.count(Path("/proc/self/mountinfo")) == 1
+    assert reads.count(Path("/proc/cpuinfo")) == 1
+
+
+def test_later_capacity_probe_rediscovers_membership(monkeypatch):
+    text = _hierarchy(
+        monkeypatch,
+        "0::/first",
+        [("cgroup2", "/", "/cg", "rw")],
+        {
+            "/cg/first/cpu.max": "100000 100000",
+            "/cg/second/cpu.max": "200000 100000",
+            "/cg/first/memory.max": str(_GIB),
+            "/cg/second/memory.max": str(2 * _GIB),
+        },
+    )
+    monkeypatch.setattr(collector.gpu_probe_process, "probe_gpu_isolated", lambda: None)
+
+    assert collector.probe_capacity() == {"cpu": {"groups": [{"units": "1"}]}, "memory": {"bytes": str(_GIB)}}
+    text[Path("/proc/self/cgroup")] = "0::/second"
+    assert collector.probe_capacity() == {
+        "cpu": {"groups": [{"units": "2"}]},
+        "memory": {"bytes": str(2 * _GIB)},
+    }
+
+
+def test_memory_fallback_keeps_cpu_in_shared_snapshot(monkeypatch):
+    _hierarchy(
+        monkeypatch,
+        "0::/job",
+        [("cgroup2", "/", "/cg", "rw")],
+        {"/cg/job/cpu.max": "200000 100000", "/cg/job/memory.max": "bad"},
+    )
+    monkeypatch.setattr(collector.gpu_probe_process, "probe_gpu_isolated", lambda: None)
+
+    assert collector.probe_capacity() == {
+        "cpu": {"groups": [{"units": "2"}]},
+        "memory": {"bytes": str(8 * _GIB)},
+        "status": "partial",
+        "issues": ["observation_incomplete"],
+    }
 
 
 def test_bad_leaf_and_parent_limits_do_not_hide_other_readable_ancestors(monkeypatch):
