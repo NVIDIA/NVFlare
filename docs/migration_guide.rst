@@ -141,7 +141,7 @@ Client Job input hooks receive local tensor references that support metadata
 and ``nbytes``, not tensor attributes such as ``.shape`` or ``.numel()``.
 Workers receive tensors.
 
-Task lifetime on local Process and Docker backends is deprecated. Use the
+Local Process and Docker task execution is not supported in 2.10. Use the
 Kubernetes or Slurm task launchers for ``execution_lifetime="task"``, and keep
 Process and Docker sites at job lifetime through per-site client apps.
 
