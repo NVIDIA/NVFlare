@@ -24,9 +24,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
-from nvflare.apis.fl_constant import ReturnCode as FLReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import make_reply as make_task_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
@@ -59,7 +57,6 @@ from nvflare.private.fed.utils.fed_utils import (
     set_stats_pool_config_for_job,
 )
 from nvflare.private.privacy_manager import PrivacyService
-from nvflare.security.logging import secure_format_exception
 
 
 class EventRelayer(FLComponent):
@@ -102,8 +99,6 @@ class EventRelayer(FLComponent):
                 FLContextKey.EVENT_ORIGIN_SITE, CommunicateData.MULTI_PROCESS_EXECUTOR, private=True, sticky=False
             )
             self.fire_event(event_type=event_type, fl_ctx=fl_ctx)
-            if fl_ctx.get_prop(FLContextKey.EXCEPTIONS):
-                raise RuntimeError(f"rank {self.local_rank} failed to handle {event_type}")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """To handle the event.
@@ -208,7 +203,7 @@ class SubWorkerExecutor(Runner):
 
         self.executor = self.components.get(executor_id, None)
         if not isinstance(self.executor, Executor):
-            return make_reply(
+            make_reply(
                 ReturnCode.INVALID_REQUEST,
                 "invalid executor {}: expect Executor but got {}".format(executor_id, type(self.executor)),
                 None,
@@ -219,8 +214,6 @@ class SubWorkerExecutor(Runner):
         self.run_manager.cell = self.cell
         self.run_manager.conf = component_builder
         with self.run_manager.new_context() as fl_ctx:
-            # Dynamic component construction needs a local engine and the same
-            # authorization policy as the initial component graph.
             component_builder.fl_ctx = fl_ctx
 
         parent_fqcn = FQCN.join([self.args.client_name, self.args.job_id])
@@ -275,38 +268,23 @@ class SubWorkerExecutor(Runner):
             shareable = data[CommunicationMetaData.SHAREABLE]
             fl_ctx.props.update(data[CommunicationMetaData.FL_CTX].props)
 
-            try:
-                shareable = self.executor.execute(
-                    task_name=task_name, shareable=shareable, fl_ctx=fl_ctx, abort_signal=abort_signal
-                )
-            except Exception as ex:
-                self.logger.error(f"rank {self.local_rank} execution failed: {secure_format_exception(ex)}")
-                shareable = make_task_reply(FLReturnCode.EXECUTION_EXCEPTION)
+            shareable = self.executor.execute(
+                task_name=task_name, shareable=shareable, fl_ctx=fl_ctx, abort_signal=abort_signal
+            )
 
-            # A failure on any rank must reach the parent, even if rank zero
-            # has already completed its local computation.
-            return_data = {
-                CommunicationMetaData.SHAREABLE: shareable,
-                CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
-                CommunicationMetaData.RANK_NUMBER: self.local_rank,
-                CommunicationMetaData.EXECUTION_ID: data[CommunicationMetaData.EXECUTION_ID],
-            }
-            request = new_cell_message({}, return_data)
-            fqcn = FQCN.join([self.args.client_name, self.args.job_id])
-            try:
-                reply = self.cell.send_request(
+            if self.local_rank == 0:
+                return_data = {
+                    CommunicationMetaData.SHAREABLE: shareable,
+                    CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
+                }
+                request = new_cell_message({}, return_data)
+                fqcn = FQCN.join([self.args.client_name, self.args.job_id])
+                self.cell.send_request(
                     target=fqcn,
                     channel=CellChannel.MULTI_PROCESS_EXECUTOR,
                     topic=CellChannelTopic.EXECUTE_RESULT,
                     request=request,
-                    timeout=5.0,
                 )
-                if reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK:
-                    return
-            except Exception as ex:
-                self.logger.error(f"rank result delivery failed: {secure_format_exception(ex)}")
-            # Do not leave the launcher healthy when result delivery fails.
-            os._exit(1)
 
     def _handle_event(self, data):
         """To handle the event.
@@ -316,7 +294,6 @@ class SubWorkerExecutor(Runner):
         """
         event_relayer = self.run_manager.get_component(CommunicationMetaData.RELAYER)
         event_relayer.relay_event(self.run_manager, data)
-        return make_reply(ReturnCode.OK)
 
     def _close(self, data):
         self.done = True
@@ -367,15 +344,12 @@ def main(args):
     job_id = args.job_id
     logger = get_script_logger()
 
-    try:
-        sub_executor.run()
-    finally:
-        stop_event.set()
-        thread.join(timeout=2.0)
-        AuditService.close()
-        err = create_stats_pool_files_for_job(workspace, job_id, prefix=prefix)
-        if err:
-            logger.warning(err)
+    sub_executor.run()
+
+    AuditService.close()
+    err = create_stats_pool_files_for_job(workspace, job_id, prefix=prefix)
+    if err:
+        logger.warning(err)
 
 
 def parse_arguments():
@@ -401,4 +375,4 @@ if __name__ == "__main__":
     # main()
     args = parse_arguments()
     run_dir = os.path.join(args.workspace, args.job_id)
-    raise SystemExit(mpm.run(main_func=main, run_dir=run_dir, args=args))
+    mpm.run(main_func=main, run_dir=run_dir, args=args)
