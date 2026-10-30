@@ -9,8 +9,8 @@ This guide covers API and configuration changes when upgrading between FLARE rel
 Upgrading from 2.9.0 to 2.9.1
 =============================
 
-Deployments that do not use confidential computing
-are affected only by the Dashboard change below.
+Deployments that do not use confidential computing should review the checkpoint
+path restrictions and Dashboard change below.
 
 Confidential Computing Provisioning (Technical Preview)
 -------------------------------------------------------
@@ -53,6 +53,29 @@ in Docker, Kubernetes, and Slurm launcher specifications, is now classified as
 BYOC at submission time and rejected in confidential computing, for every confidential computing role.
 Package the code in the approved workload image and add only exact, reviewed
 classes to ``class_allow_list``.
+
+PyTorch Checkpoint Paths Must Stay Within the Application
+---------------------------------------------------------
+
+``PTFileModelPersistor`` now confines checkpoint output paths in every deployment,
+including deployments that do not use confidential computing. The checkpoint
+directory (``APP_CKPT_DIR`` in ``environments.json`` or ``AppConstants.LOG_DIR``
+in the FL context) must be relative to the application directory and resolve
+within it. ``global_model_file_name`` and ``best_global_model_file_name`` must
+be relative to the checkpoint directory and must not traverse above it.
+Symlinks that resolve outside the application directory are also rejected.
+Invalid settings stop job initialization with ``Invalid checkpoint path
+configuration``.
+
+Action: replace absolute paths and paths that escape these directories with
+relative paths inside the application. For example, change
+``global_model_file_name: /shared/model.pt`` to
+``global_model_file_name: model.pt`` and set ``APP_CKPT_DIR`` to
+``checkpoints`` to save under ``<application directory>/checkpoints/model.pt``.
+An external symlink is not a workaround; copy or export checkpoints separately
+if they are needed outside the application directory. Default checkpoint paths
+require no change. These restrictions concern checkpoint output paths, not the
+explicit ``source_ckpt_file_full_name`` input used to load an initial model.
 
 Dashboard Client ``props`` Are Rejected
 ---------------------------------------
