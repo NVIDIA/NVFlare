@@ -84,3 +84,16 @@ class TestNameCheck:
     def test_study(self, name, err_value):
         err, reason = name_check(name, "study")
         assert err == err_value
+
+    @pytest.mark.parametrize("entity_type", ("admin", "email"))
+    @pytest.mark.parametrize(
+        "address, invalid",
+        [
+            ("user@example.com", False),
+            ("user@example.CO", False),
+            ("user@example.c|m", True),
+            ("user@example.|om", True),
+        ],
+    )
+    def test_email_tld_rejects_pipe_character(self, entity_type, address, invalid):
+        assert name_check(address, entity_type)[0] is invalid
