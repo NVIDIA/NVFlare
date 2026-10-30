@@ -14,8 +14,7 @@ Highlights:
   aggregation, and disk-backed tensors for task-worker payloads
 - **Resource efficiency** — opt-in task-scoped execution that lowers GPU
   waste, especially on HPC Slurm and Kubernetes clusters: GPUs are held only
-  while a task trains and are released between tasks (available on
-  Kubernetes)
+  while a task trains and are released between tasks
 - **Reliability** — automatic recovery of failed client jobs, such as after
   scheduler wall-time limits
 - **Networking and deployment** — outbound HTTP proxy support, GPU
@@ -182,7 +181,36 @@ output and physically exited, before the result is uploaded and before the next
 round begins. The GPU node is therefore free between tasks. Job lifetime
 remains the default.
 
-**Kubernetes.** In this release, task execution is available on Kubernetes (CPU and
+**Slurm HPC.**
+
+- **One allocation per task.** Each attempt gets its own Slurm allocation,
+  sized for that task with a native ``launcher_spec`` or a portable
+  ``resource_spec``, for both CPU and GPU compute. The wall-time limit now
+  bounds one task, not the whole job.
+- **A small coordinator budget.** The Client Job runs on a separate, small
+  allocation selected by ``cj_resource_spec``, so GPUs are not held while the
+  site waits.
+- **Submission and cleanup are owned by the Client Parent**, which can run as
+  a persistent service outside Slurm or inside an allocation. It submits,
+  observes, and cancels task allocations and cleans up after them. A task's
+  resources count as released only when allocation accounting confirms it, not
+  merely because the Client Job allocation ended.
+- Definitive scheduler rejections (partition, account, QoS, GRES, or resource
+  policy) fail the task with the scheduler's message. Ambiguous submissions
+  (timeouts, unknown output) keep cleanup ownership instead of guessing.
+  ``task_shutdown_timeout`` (default 30 seconds) bounds shutdown, and an
+  operator reconciliation command records an explicit decision when a
+  submission cannot be resolved automatically.
+- The existing ``ClientSlurmJobLauncher`` and ``ServerSlurmJobLauncher``
+  behavior is preserved.
+- Requirements and limits: shared absolute paths for code and interpreter,
+  enforced Slurm cgroups, and identity-checked allocation accounting. The
+  task-capable profile shares a workspace and UID and does not isolate
+  credentials or filesystems between jobs, so job code must be trusted.
+  Multi-node and DDP task execution, requeue adoption, and clusters without
+  GRES are not supported.
+
+**Kubernetes.** Task execution is available on Kubernetes (CPU and
 GPU) through the existing ``ClientK8sJobLauncher``; trusted site policy
 selects image, namespace, account, and resource defaults. A CPU Client Job can
 stay connected while a task Pod owns the training GPUs, and the GPUs return to
