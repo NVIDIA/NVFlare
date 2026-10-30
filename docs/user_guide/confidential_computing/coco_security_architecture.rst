@@ -25,7 +25,7 @@ storage design; its guarantees must not be imported into this CoCo deployment.
    `PR #5344 <https://github.com/NVIDIA/NVFlare/pull/5344>`_, extending the
    SNP-plus-GPU framework to all four explicit SNP/TDX CPU-only/GPU targets.
    This architecture change documents that implementation; it adds no runtime
-   support itself. **TDX remains experimental pending full security qualification.**
+   support itself.
    The September 29, 2026 real-quote test was rejected because both launch and
    current TCB were ``OutOfDate``; that failure remains part of the record.
    On October 4, 2026, a separate mixed functional deployment passed with an
@@ -99,12 +99,12 @@ Target profiles and implementation scope
      - ``kata-qemu-tdx``
      - ``cpu_tee: intel_tdx``; ``gpu_tee: none``
      - CPU only
-     - Implemented in ``2.9``; experimental
+     - Implemented in ``2.9``
    * - TDX with NVIDIA GPU
      - ``kata-qemu-nvidia-gpu-tdx``
      - ``cpu_tee: intel_tdx``; ``gpu_tee: nvidia_cc``
      - CPU and GPU
-     - Implemented in ``2.9``; experimental
+     - Implemented in ``2.9``
 
 CPU-only is an intentional deployment mode,
 not a fallback after GPU attestation fails. CPU-only profiles need no NVIDIA GPU
@@ -852,8 +852,9 @@ TDX verification
 ----------------
 
 The collection/export and RVPS/AS policy implementation is included in
-``2.9``. Its TDX end-to-end hardware acceptance remains outstanding as described
-in the implementation-scope note above.
+``2.9``. Evaluate acceptance for the selected target, runtime revision, and
+deployment using the recorded :ref:`acceptance evidence and limits
+<coco_security_acceptance>`.
 
 A TDX guest obtains a TD report; a Quote Generation Service on the same physical
 platform uses Intel's quoting infrastructure to produce a remotely verifiable
