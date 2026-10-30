@@ -1,8 +1,7 @@
 # Resource statistics: reports, delivery and queries
 
-Public resource-statistics records use schema version **4.0**, identified by
-their `schema_version` field. This page defines the records, delivery, and query
-behavior introduced in the [overview](resource_statistics_design.md). The
+This page defines the resource-statistics records, delivery, and query behavior
+introduced in the [overview](resource_statistics_design.md). The
 [measurement design](resource_statistics_measurement.md) explains how values are
 obtained, and the [implementation design](resource_statistics_implementation.md)
 maps components to their lifecycle hooks.
@@ -10,8 +9,8 @@ maps components to their lifecycle hooks.
 ## Records and ownership
 
 The design defines three public record kinds. Each `kind` string in the table
-is prefixed by `nvflare.resource_stats.`, and every record has
-`schema_version: "4.0"`.
+is prefixed by `nvflare.resource_stats.`, and every record has a `schema_version`
+field.
 
 | Kind | Required top-level fields, in addition to version and kind | Owner |
 | --- | --- | --- |
@@ -35,11 +34,11 @@ alphanumeric character.
 Timestamps require the `Z` UTC suffix and allow at most nine fractional-second
 digits.
 
-An example complete participant record is:
+The following participant record uses a placeholder for the schema version:
 
 ```json
 {
-  "schema_version": "4.0",
+  "schema_version": "<schema version>",
   "kind": "nvflare.resource_stats.participant_summary",
   "job_id": "job-42",
   "participant_name": "site-1",
@@ -207,8 +206,7 @@ the original `reported_at`. Rebuilding a record with a new timestamp is not an
 equivalent retry. There is no separate statistics sender, retry journal, or
 acknowledgement protocol. Older peers may omit the report or its reply status;
 this indicates absent statistics rather than an outcome failure. An older archive
-without the bundle is unavailable, not a zero measurement, and an unsupported
-schema version must not be interpreted as version 4.0.
+without the bundle is unavailable, not a zero measurement.
 
 ## Server ledger and archive publication
 
@@ -328,9 +326,8 @@ described above.
 
 ## Compatibility and failure boundary
 
-Schema version 4.0 requires `resource_time` for every participant, including
-resident jobs. It does not provide a fallback that reinterprets startup capacity as a task
-rollup, and unsupported formats are not silently upgraded. Unsupported or absent
+The report does not provide a fallback that reinterprets startup capacity as a
+task rollup, and unsupported formats are not silently upgraded. Unsupported or absent
 archives are reported as unavailable; deployment may still complete normally when
 a peer does not send statistics.
 
