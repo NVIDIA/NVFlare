@@ -13,9 +13,10 @@ Highlights:
 - **Memory and large models** — opt-in disk-backed FedAvg and FedProx
   aggregation, and disk-backed tensors for task-worker payloads
 - **Execution and reliability** — opt-in task-scoped execution that lowers GPU
-  waste: GPUs are held only while a task trains and are released between
-  tasks (Kubernetes), and automatic recovery of failed client jobs after
-  scheduler wall-time limits
+  waste, especially on HPC Slurm and Kubernetes clusters: GPUs are held only
+  while a task trains and are released between tasks (available on
+  Kubernetes), and automatic recovery of failed client jobs after scheduler
+  wall-time limits
 - **Networking and deployment** — outbound HTTP proxy support, GPU
   reservation for Docker jobs, and a staged 2.10 upgrade path
 - **Developer experience** — a rewritten Quick Start, an example catalog
@@ -166,8 +167,9 @@ Task-Scoped Execution
 allocated while the site waits for the server to aggregate, for slower sites,
 and for its own result upload, and that idle time counts against the site's
 quota and keeps the GPU node unavailable to other work. By default the Client
-Job holds its resources for the whole job, so on a shared or scheduled cluster
-(HPC or Kubernetes) the GPU node cannot be released between tasks.
+Job holds its resources for the whole job, so on shared, scheduled clusters,
+especially HPC Slurm and Kubernetes clusters, the GPU node cannot be released
+between tasks.
 
 FLARE 2.10 adds an opt-in ``execution_lifetime="task"`` setting that
 separates the lifetime of computation from the lifetime of federation
@@ -179,7 +181,7 @@ output and physically exited, before the result is uploaded and before the next
 round begins. The GPU node is therefore free between tasks. Job lifetime
 remains the default.
 
-**Kubernetes.** Task execution is available on Kubernetes (CPU and
+**Kubernetes.** In this release, task execution is available on Kubernetes (CPU and
 GPU) through the existing ``ClientK8sJobLauncher``; trusted site policy
 selects image, namespace, account, and resource defaults. A CPU Client Job can
 stay connected while a task Pod owns the training GPUs, and the GPUs return to
