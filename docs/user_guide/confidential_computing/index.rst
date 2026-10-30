@@ -57,9 +57,10 @@ the prerequisites, and prepare your workload before configuring provisioning.
 Architecture and security
 =========================
 
-Read :ref:`cc_architecture_overview` for responsibilities, trust boundaries,
-attestation, and protection limits. The detailed Confidential Containers (CoCo)
-analysis covers its deployment-specific security model and remaining gaps.
+Read the :ref:`architecture reading guide <cc_architecture_overview>` to choose
+between the shared responsibilities and protocol model, the standalone CVM
+root-and-vault architecture, and the detailed Confidential Containers (CoCo)
+security analysis.
 
 .. toctree::
    :maxdepth: 1

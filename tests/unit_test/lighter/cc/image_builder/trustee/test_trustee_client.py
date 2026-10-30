@@ -18,6 +18,7 @@ import base64
 import io
 import json
 import re
+import ssl
 import tempfile
 import time
 import unittest
@@ -257,6 +258,42 @@ class TrusteeClientTests(unittest.TestCase):
         self.assertNotIn("secret backend response", str(error.exception))
         self.assertNotIn(self.token_value, str(error.exception))
         opener.open.assert_called_once()
+
+    def test_administrative_failures_identify_safe_endpoint_status_and_tls_cause(self):
+        endpoint = "reference-value/missing-profile"
+        cases = (
+            (
+                urllib.error.HTTPError(
+                    "https://trustee.test", 404, "Not Found", {}, io.BytesIO(b"secret-backend-response")
+                ),
+                r"rejected at /kbs/v0/reference-value/missing-profile \(HTTP 404\)",
+            ),
+            (
+                urllib.error.URLError(ssl.SSLCertVerificationError(1, "secret certificate detail")),
+                r"TLS verification failed at /kbs/v0/reference-value/missing-profile",
+            ),
+            (
+                ssl.SSLError("secret TLS detail"),
+                r"TLS verification failed at /kbs/v0/reference-value/missing-profile",
+            ),
+            (
+                urllib.error.URLError("secret connection detail"),
+                r"connection failed at /kbs/v0/reference-value/missing-profile",
+            ),
+        )
+        for failure, diagnostic in cases:
+            opener = Mock()
+            opener.open.side_effect = failure
+            with (
+                self.subTest(diagnostic=diagnostic),
+                patch("cvm.trustee.client.ssl.create_default_context"),
+                patch("cvm.trustee.client.urllib.request.build_opener", return_value=opener),
+                self.assertRaisesRegex(BuildError, diagnostic) as error,
+            ):
+                api(self.config, "GET", endpoint)
+            self.assertNotIn("secret", str(error.exception))
+            self.assertNotIn(self.token_value, str(error.exception))
+            opener.open.assert_called_once()
 
     def test_redirect_does_not_forward_credentials(self):
         with self.assertRaises(BuildError):

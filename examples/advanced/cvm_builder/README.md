@@ -42,7 +42,7 @@ directory unless `build_tools.bare_metal_cvm.output_root` selects an external
 private build location. Common delivery records are written to
 `cc_manifests/<participant>.json`.
 
-The bundled client job uses `ClientAPIExecutor` to launch
+The bundled client job uses `CVMClientAPIExecutor` to launch
 `/local/custom/client.py` from the measured application image. Because the job
 does not ship custom code, `cc_site-1.yml` explicitly grants that exact class in
 the participant's `class_allow_list`. This is a reviewed per-site opt-in; do not

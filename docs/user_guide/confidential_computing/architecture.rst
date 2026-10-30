@@ -17,6 +17,29 @@ The configuration does not create those trust relationships automatically.
 Hardware acceptance remains profile- and revision-specific; see
 :ref:`cc_getting_started` for the validation records.
 
+Architecture reading guide
+--------------------------
+
+.. list-table:: Choose the architecture page for the question
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Page
+     - Use it for
+     - Deployment scope
+   * - This cross-mode architecture
+     - Shared actors, trust boundaries, attestation, key release, participant
+       proofs, data paths, and protection limits.
+     - Standalone CVM, CoCo, and the distinct Azure integration.
+   * - :ref:`CVM Builder security architecture <cc_architecture>`
+     - Generic-root and application-vault construction, storage, launch, and
+       Trustee binding.
+     - Standalone ``bare_metal_cvm`` deployments.
+   * - :ref:`CoCo security architecture <coco_security_architecture>`
+     - Kata/CoCo Pod launch inputs, encrypted images, agent policy, Kubernetes
+       handoffs, and remaining qualification gaps.
+     - Kubernetes ``coco`` deployments.
+
 .. contents:: On this page
    :local:
    :depth: 2

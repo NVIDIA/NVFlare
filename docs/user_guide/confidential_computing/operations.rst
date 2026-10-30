@@ -111,18 +111,10 @@ Shared terminology and configuration names
      - ``kbs_endpoint``
      - ``kbs_url``
      - ``KBS_URL``
-   * - Trustee host name
-     - ``trustee.example.org``
-     - ``trustee.example.org``
-     - host in ``KBS_URL``
-   * - Participant CPU TEE
+   * - CPU TEE and platform selection
      - ``intel_tdx`` / ``amd_sev_snp``
-     - platform map key
-     - selected Kata runtime
-   * - CPU TEE configuration
-     - ``intel_tdx`` / ``amd_sev_snp``
-     - ``intel_tdx`` / ``amd_sev_snp``
-     - ``intel_tdx`` / ``amd_sev_snp``
+     - matching platform map key
+     - configuration value plus selected Kata runtime
    * - NVIDIA confidential GPU
      - ``gpu_tee: nvidia_cc``
      - ``gpu: nvidia_cc``
@@ -134,6 +126,32 @@ guest, not only on the host. The different 2.9 keys are retained for
 compatibility. Trustee still signs the upstream ``tdx`` or ``snp`` evidence
 object key on the wire; NVFlare translates that internal protocol detail and
 does not accept it as a configuration value.
+
+Short glossary
+--------------
+
+TEE
+   Trusted Execution Environment. Hardware and firmware isolation that protects
+   an approved guest's execution from the host within the documented threat
+   model.
+KBS
+   Key Broker Service. The Trustee API that applies resource policy and returns
+   a specific key or resource only after the required authorization succeeds.
+AS
+   Attestation Service. The Trustee component that verifies evidence, evaluates
+   appraisal policy and reference values, and signs an attestation result.
+RVPS
+   Reference Value Provider Service. Trustee storage and APIs for approved
+   measurements and TCB values used during appraisal.
+EAR
+   EAT Attestation Result. The signed appraisal result consumed by release and
+   NVFlare participant-authorization policy.
+InitData
+   CoCo launch data whose digest is bound into TEE evidence, including inputs
+   used to select the admitted guest-agent policy.
+genpolicy
+   The CoCo/Kata tool that derives a guest-agent policy from the intended Pod
+   workload. Its output is a security input that must be reviewed and bound.
 
 Troubleshooting by symptom
 --------------------------
