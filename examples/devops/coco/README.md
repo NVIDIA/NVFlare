@@ -118,12 +118,18 @@ Operator, including an applicable Ubuntu 26.04 host-managed-driver deployment.
 This is conditional, not an instruction to install NVIDIA host drivers on
 passthrough GPUs or to disable driver management solely because of the OS.
 
-Keep the supported version combination explicit:
+Keep the component version combination explicit:
 [NVIDIA CoCo v1.0](https://docs.nvidia.com/confidential-computing/containers/v1.0.0/supported-platforms)
 lists Kata 3.29 and Ubuntu 25.10;
 [v1.1](https://docs.nvidia.com/confidential-computing/containers/v1.1.0/supported-platforms)
 lists Kata 4.0 and adds Ubuntu 26.04. This example uses the pinned
 Kata/genpolicy 3.29.0 profile.
+
+> **Warning:** Kata 3.29.0 on Ubuntu 26.04 has been tested and works for this
+> example. This combination is not listed in the NVIDIA qualification matrices
+> linked above; passing the example's setup and diagnostic checks does not
+> establish platform qualification. A later NVFlare release will align Kata and
+> the other components with the updated upstream stack.
 
 For new-host BIOS, CPU TEE, firmware, and GPU preparation, follow the optional
 [beginner prerequisite appendix](PREREQUISITES.md). It helps beginners bring up

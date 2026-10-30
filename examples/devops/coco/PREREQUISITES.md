@@ -23,8 +23,13 @@ and availability configuration beyond this example.
 The [NVIDIA v1.0 supported-platform matrix](https://docs.nvidia.com/confidential-computing/containers/v1.0.0/supported-platforms)
 lists Kata 3.29 with Ubuntu 25.10. The [v1.1 matrix](https://docs.nvidia.com/confidential-computing/containers/v1.1.0/supported-platforms)
 adds Ubuntu 26.04 with Kata 4.0.0. NVFlare 2.9 requires the matching
-Kata/genpolicy 3.29.0 profile; support for newer Kata/genpolicy is intended for a
-future NVFlare upgrade.
+Kata/genpolicy 3.29.0 profile.
+
+> **Warning:** Kata 3.29.0 on Ubuntu 26.04 has been tested and works for this
+> example. This combination is not listed in the NVIDIA qualification matrices
+> linked above; passing the example's setup and diagnostic checks does not
+> establish platform qualification. A later NVFlare release will align Kata and
+> the other components with the updated upstream stack.
 
 | Component | Reference version |
 | --- | --- |
