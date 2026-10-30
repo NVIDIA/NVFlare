@@ -177,8 +177,8 @@ def export_pretrained(backend, ckpt_path: str | Path, output_dir: str | Path) ->
 def main() -> int:
     import argparse
 
+    from decent_vla._helpers.builders import build_backend_factory
     from decent_vla.configs.loader import load_run_config
-    from decent_vla.runtime.builders import build_backend_factory
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, help="decent-vla run config YAML")

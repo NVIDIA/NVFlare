@@ -117,11 +117,11 @@ def run_personalized_eval(
     Per-client results are provenance-cached like the generic eval: a crashed
     eval re-runs only the missing clients.
     """
+    from decent_vla._helpers.builders import build_benchmark
+    from decent_vla._helpers.checkpoints import latest_server_checkpoint
+    from decent_vla._helpers.client_checkpoint import client_checkpoints
+    from decent_vla._helpers.eval_runner import _checkpoint_identity, _eval_config_hash, apply_action_horizon
     from decent_vla.core.partitioner import PartitionManifest
-    from decent_vla.runtime.builders import build_benchmark
-    from decent_vla.runtime.checkpoints import latest_server_checkpoint
-    from decent_vla.runtime.client_checkpoint import client_checkpoints
-    from decent_vla.runtime.eval_runner import _checkpoint_identity, _eval_config_hash, apply_action_horizon
 
     run_dir = Path(run_dir)
     eval_dir = Path(eval_dir)

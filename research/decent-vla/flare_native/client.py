@@ -12,75 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""NVFlare Client-API loop: a thin envelope around the local policy training loop.
+"""FLARE Client API entry point for local VLA training.
 
-The loop runs inside ONE process for the whole job (in-process executor,
-launch_once), so the warm ClientState in `runtime/client_state.py` —
-backend, Adam moments, stepping scheduler, cycling dataloader —
-persists across rounds throughout the FLARE job. The run config
-travels inside the job (`job.build_job` packages it into the app's `config/`
-folder) and is named by --config; identity comes from the nvflare site name.
+`job.py` ships this file in each app's `custom/` folder. FLARE executes it
+in-process by default or as `python3 -u custom/client.py`; the warm policy,
+optimizer, scheduler and data iterator therefore remain live across rounds.
 """
 
 from __future__ import annotations
 
-import logging
+import argparse
 import os
 from pathlib import Path
-
-log = logging.getLogger(__name__)
-
-
-# The files a run config names that `job.staged_job` packages next to it: the
-# lerobot training config and the held-out task spec. In the packaged config
-# each is the file's bare name. The two functions below name the same fields,
-# one in the raw YAML (submit side), one in the loaded config (site side).
-def packaged_refs(raw: dict) -> list[tuple[str, dict, str]]:
-    """Where a raw run config names its packaged files: (config key, the
-    mapping that holds it, its field), for each place the loader accepts."""
-    extra = (raw.get("backend") or {}).get("extra") or {}
-    data = raw.get("data") or {}
-    refs = [("backend.extra.train_config_path", extra, "train_config_path"), ("data.held_out", data, "held_out")]
-    if isinstance(data.get("partitioning"), dict):  # the `data.partitioning: {scheme, held_out, ...}` form
-        refs.append(("data.partitioning.held_out", data["partitioning"], "held_out"))
-    return refs
-
-
-def resolve_packaged_paths(cfg, config_dir) -> None:
-    """Point the packaged file references of a job's run config at `config_dir`."""
-
-    def resolve(value):
-        return str(Path(config_dir) / value) if value and not os.path.isabs(value) else value
-
-    extra = cfg.backend.extra or {}
-    if extra.get("train_config_path"):
-        extra["train_config_path"] = resolve(extra["train_config_path"])
-    cfg.data.held_out = resolve(cfg.data.held_out)
-
-
-def load_job_config(config_path):
-    """Load the run config packaged in a job, with its packaged files resolved."""
-    from decent_vla.configs import load_run_config
-
-    cfg = load_run_config(str(config_path))
-    resolve_packaged_paths(cfg, Path(config_path).parent)
-    return cfg
-
-
-def apply_site_paths(cfg, run_dir) -> None:
-    """Resolve site data against DECENT_VLA_WORKDIR and outputs against the job."""
-    site_workdir = os.environ.get("DECENT_VLA_WORKDIR")
-    if site_workdir:
-        _chdir(site_workdir, "DECENT_VLA_WORKDIR")
-    if not os.path.isabs(cfg.fl.output_dir):
-        cfg.fl.output_dir = str(Path(run_dir) / cfg.fl.output_dir)
-    log.info("site paths: cwd %s, outputs %s", os.getcwd(), cfg.fl.output_dir)
-
-
-def _chdir(path: str, what: str) -> None:
-    if not os.path.isdir(path):
-        raise FileNotFoundError(f"{what} {path!r} does not exist on this site")
-    os.chdir(path)
 
 
 def cid_from_site(site_name: str, site_prefix: str) -> str:
@@ -121,11 +64,12 @@ def client_main(config_arg=None, app_dir=None):
     from nvflare.apis.fl_constant import FLMetaKey
     from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 
-    from decent_vla.runtime import wire
-    from decent_vla.runtime.builders import build_backend_factory, partition_for, resolve_device
-    from decent_vla.runtime.client_checkpoint import resume_disabled, save_client_state
-    from decent_vla.runtime.client_state import build_client_state, fast_forward_scheduler
-    from decent_vla.runtime.training import seed_training, train_steps
+    from decent_vla._helpers import wire
+    from decent_vla._helpers.builders import build_backend_factory, partition_for, resolve_device
+    from decent_vla._helpers.client_checkpoint import resume_disabled, save_client_state
+    from decent_vla._helpers.client_state import build_client_state, fast_forward_scheduler
+    from decent_vla._helpers.site import apply_site_paths, load_job_config
+    from decent_vla._helpers.training import seed_training, train_steps
 
     config_path = resolve_config_path(config_arg, str(Path(app_dir) / "config") if app_dir else None)
     cfg = load_job_config(config_path)
@@ -195,3 +139,20 @@ def client_main(config_arg=None, app_dir=None):
                 meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: samples},
             )
         )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="decent-vla nvflare client")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="run config YAML, relative to the app's config/ folder (fallback: DECENT_VLA_CONFIG)",
+    )
+    args = parser.parse_args()
+
+    # This file sits in <app>/custom/.
+    client_main(args.config, app_dir=str(Path(__file__).resolve().parent.parent))
+
+
+if __name__ == "__main__":
+    main()

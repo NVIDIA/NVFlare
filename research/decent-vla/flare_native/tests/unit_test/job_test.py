@@ -21,11 +21,11 @@ import pytest
 import yaml
 
 from decent_vla.configs import load_run_config
-from decent_vla.runtime.nvflare.job import staged_job
 
 spec = importlib.util.spec_from_file_location("vla_job", Path(__file__).resolve().parents[2] / "job.py")
 job = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(job)
+staged_job = job.staged_job
 
 
 @pytest.mark.parametrize("smoke", [False, True])

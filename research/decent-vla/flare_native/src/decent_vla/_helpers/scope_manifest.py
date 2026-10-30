@@ -28,7 +28,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from decent_vla.runtime import wire
+from decent_vla._helpers import wire
 
 
 def write_scope_manifest(out_dir: str | Path, backend_cfg: Any, fl_cfg: Any, backend: Any) -> Path:

@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
+from decent_vla._helpers.builders import build_benchmark, resolve_device
 from decent_vla.core.results import (
     SCHEMA_VERSION,
     DeviceInfo,
@@ -55,7 +56,6 @@ from decent_vla.core.results import (
     tag_suites,
     write_results,
 )
-from decent_vla.runtime.builders import build_benchmark, resolve_device
 
 if TYPE_CHECKING:
     from decent_vla.configs.schemas import RunConfig

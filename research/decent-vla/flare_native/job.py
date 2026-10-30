@@ -15,12 +15,145 @@
 """Compose and export a VLA job for nvflare simulator/job submit."""
 
 import argparse
+import contextlib
+import os
+import shutil
+import tempfile
 from pathlib import Path
 
 import yaml
 
 SUITES = ["libero_spatial", "libero_object", "libero_goal", "libero_10"]
 LORA_TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+
+# Names of the files the job ships: the client script goes in each app's
+# custom/ folder, the run config (and the files it names) in config/.
+CLIENT_SCRIPT = "client.py"
+RUN_CONFIG = "decent_vla_run.yaml"
+
+
+# The files a run config names that `job.staged_job` packages next to it: the
+# lerobot training config and the held-out task spec. In the packaged config
+# each is the file's bare name.
+def packaged_refs(raw: dict) -> list[tuple[str, dict, str]]:
+    """Where a raw run config names its packaged files: (config key, the
+    mapping that holds it, its field), for each place the loader accepts."""
+    extra = (raw.get("backend") or {}).get("extra") or {}
+    data = raw.get("data") or {}
+    refs = [("backend.extra.train_config_path", extra, "train_config_path"), ("data.held_out", data, "held_out")]
+    if isinstance(data.get("partitioning"), dict):  # the `data.partitioning: {scheme, held_out, ...}` form
+        refs.append(("data.partitioning.held_out", data["partitioning"], "held_out"))
+    return refs
+
+
+@contextlib.contextmanager
+def staged_job(config_path: str):
+    """Stage every file the job ships, by the name it has inside the job, and
+    run the block from that folder. Yields (stage folder, config file names).
+
+    The job carries its own run config, the files that config names
+    (rewritten to bare names) and the client script,
+    so a deployed site needs neither the source tree nor the submitter's
+    paths. FedJob resolves relative resource names against the cwd both when
+    the job is built and when it is exported, so both happen in here.
+    """
+    raw = yaml.safe_load(Path(config_path).read_text()) or {}
+    cwd = os.getcwd()
+    with tempfile.TemporaryDirectory(prefix="decent_vla_job_") as stage:
+        config_files = [RUN_CONFIG]
+        for key, holder, field in packaged_refs(raw):
+            value = holder.get(field)
+            if not value:
+                continue
+            # Resolve input files against the exporting process cwd.
+            src = Path(cwd, value)
+            if not src.is_file():
+                raise FileNotFoundError(f"{key}={value!r}: no such file under {cwd}")
+            if src.name in (RUN_CONFIG, CLIENT_SCRIPT) or src.name in config_files:
+                raise ValueError(f"{key}: {src.name!r} is already a file name in the job")
+            shutil.copy(src, Path(stage, src.name))
+            holder[field] = src.name
+            config_files.append(src.name)
+        Path(stage, RUN_CONFIG).write_text(yaml.safe_dump(raw, sort_keys=False))
+        shutil.copy(Path(__file__).with_name(CLIENT_SCRIPT), Path(stage, CLIENT_SCRIPT))
+        os.chdir(stage)
+        try:
+            yield Path(stage), config_files
+        finally:
+            os.chdir(cwd)
+
+
+class JobConfigFiles:
+    """FedJob component that puts files in the app's config/ folder.
+
+    Not in custom/: `nvflare job submit` parses and rewrites every .yaml,
+    .json and .conf file under custom/, but in config/ only its own
+    config_fed_* files.
+    """
+
+    def __init__(self, paths: list[str]):
+        self.paths = list(paths)
+
+    def add_to_fed_job(self, job, ctx, **kwargs):
+        for path in self.paths:
+            job.add_file_source(path, None, "config", ctx)
+
+
+def build_job(cfg, staged: tuple[Path, list[str]]):
+    """Wire native FedAvg/FedOpt, a LearnablePersistor and Client API trainers."""
+    from nvflare.client.config import ExchangeFormat, TransferType
+    from nvflare.job_config.api import FedJob
+    from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+
+    from decent_vla.persistor import VLAPersistor
+    from decent_vla.workflows import VLAFedAdam, VLAFedAvg
+
+    # min_clients is the job's min_sites: FLARE aborts the job once fewer sites
+    # are alive, so it follows the round loop's quorum.
+    job = FedJob(name=cfg.name or "decent-vla", min_clients=cfg.fl.min_clients or cfg.data.num_clients)
+    # Sites run the installed decent_vla package. Without this FedJob copies the
+    # sources of the workflow module and its imports into custom/, a partial
+    # package beside the installed one.
+    job.set_app_packages(["decent_vla"])
+    stage, config_files = staged
+    configs = [str(stage / name) for name in config_files]
+    job.to_server(VLAPersistor(config_path=RUN_CONFIG), id="persistor")
+    workflow = VLAFedAdam if cfg.fl.strategy.name == "fedadam" else VLAFedAvg
+    job.to_server(
+        workflow(
+            persistor_id="persistor",
+            num_clients=cfg.data.num_clients,
+            num_rounds=cfg.fl.num_rounds,
+            ignore_result_error=None,
+        )
+    )
+    job.to_server(JobConfigFiles(configs))
+    job.to_clients(JobConfigFiles(configs))
+    job.to_clients(
+        ScriptRunner(
+            # A name inside the job: in-process mode finds it in custom/, and
+            # external-process mode runs `python3 -u custom/client.py`.
+            script=CLIENT_SCRIPT,
+            script_args=f"--config {RUN_CONFIG}",
+            launch_external_process=cfg.fl.nvflare.launch_external_process,
+            # NUMPY end-to-end + FULL transfer = the Client API applies no
+            # framework conversion or diffing; params are exactly the clients'
+            # wire arrays (deltas are computed in the Client API training loop).
+            framework=FrameworkType.NUMPY,
+            server_expected_format=ExchangeFormat.NUMPY,
+            params_transfer_type=TransferType.FULL,
+        )
+    )
+    return job
+
+
+def export_job(cfg, config_path: str, job_dir: str | Path = "jobs") -> Path:
+    """Export once; use nvflare simulator/job submit to execute the same job."""
+    job_dir = Path(job_dir).resolve()
+    with staged_job(config_path) as staged:
+        build_job(cfg, staged).export_job(str(job_dir))
+    return job_dir / cfg.name
 
 
 def train_pipeline(policy, tuning):
@@ -210,7 +343,6 @@ def main():
     parser = define_parser()
     args = parser.parse_args()
     from decent_vla.configs import load_run_config
-    from decent_vla.runtime.nvflare.job import export_job
 
     try:
         path = Path(args.config) if args.config else write_config(args)

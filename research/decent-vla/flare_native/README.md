@@ -11,6 +11,24 @@ the repository does not store a file for each algorithm/tuning/smoke combination
 See [AUTHOR_COMPARISON.md](AUTHOR_COMPARISON.md) for deterministic comparison
 with the original implementation and GPU/sequential execution constraints.
 
+## Project structure
+
+The FLARE-facing files follow the layout used by the neighboring research examples:
+
+```text
+flare_native/
+├── job.py                     # compose and export the FLARE job
+├── client.py                  # FLARE Client API training entry point
+├── evaluate.py
+└── src/decent_vla/
+    ├── workflows.py           # native FedAvg and FedOpt workflow adapters
+    ├── persistor.py           # FLARE LearnablePersistor
+    ├── adapters/              # policy-specific implementations
+    ├── configs/               # run configuration
+    ├── core/                  # policy and data contracts
+    └── _helpers/              # local training, checkpoints, wire and evaluation support
+```
+
 ## Setup and data
 
 Run from the directory containing this README. The package requires FLARE

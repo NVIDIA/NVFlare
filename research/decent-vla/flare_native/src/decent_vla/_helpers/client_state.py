@@ -89,7 +89,7 @@ def build_client_state(
     # fall back to older eligible blobs rather than giving up: silently
     # cold-resetting wipes every personal parameter on personalization arms.
     if client_ckpt_dir is not None:
-        from decent_vla.runtime.client_checkpoint import (
+        from decent_vla._helpers.client_checkpoint import (
             client_checkpoints,
             load_client_state,
         )

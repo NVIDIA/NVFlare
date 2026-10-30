@@ -23,9 +23,9 @@ from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 
+from decent_vla._helpers.training import train_steps
 from decent_vla.configs.schemas import StrategyConfig
-from decent_vla.runtime.nvflare.controller import VLAFedAvg
-from decent_vla.runtime.training import train_steps
+from decent_vla.workflows import VLAFedAvg
 
 
 def test_sample_weighting_uses_native_aggregation_in_fp32():

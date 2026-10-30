@@ -171,7 +171,7 @@ the migration/unfolding instructions, and comparison-tool references in
 `tests/README.md`. Check for references to the removed files and
 `DVLA_REFERENCE_*` hooks.
 
-Keep `job.py`, `evaluate.py`, policy/data adapters, native FLARE workflows,
+Keep `job.py`, `client.py`, `evaluate.py`, policy/data adapters, native FLARE workflows,
 persistence, deterministic seeding, training metrics, and the remaining native
 unit/deployment tests. They support normal use of the example rather than the
 original-versus-native comparison. Keep their test helpers and the policy

@@ -152,7 +152,7 @@ def _build_fl(d: dict | None) -> FLConfig | None:
         raise ConfigError("fl.num_rounds and fl.local_steps must be positive")
     # Fail fast on a bad wire_dtype: otherwise a typo surfaces only at the first
     # broadcast, minutes into a run that has already loaded a 14 GB model.
-    from decent_vla.runtime import wire
+    from decent_vla._helpers import wire
 
     try:
         wire.resolve(d.get("wire_dtype", "fp16"))

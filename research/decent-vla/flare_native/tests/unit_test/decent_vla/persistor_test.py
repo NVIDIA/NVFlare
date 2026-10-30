@@ -20,7 +20,7 @@ from types import SimpleNamespace
 import torch
 import yaml
 
-from decent_vla.runtime.nvflare.persistor import VLAPersistor
+from decent_vla.persistor import VLAPersistor
 
 
 def test_native_checkpoint_restores_weights_round_and_adam_moments(tmp_path):

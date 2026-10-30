@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import pytest
 
+from decent_vla._helpers.builders import partition_for
 from decent_vla.configs.schemas import BackendConfig, DataConfig, FLConfig, RunConfig, StrategyConfig
-from decent_vla.runtime.builders import partition_for
 
 
 class _Cls:

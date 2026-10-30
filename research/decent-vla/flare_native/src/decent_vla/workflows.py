@@ -26,7 +26,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.fedopt_ctl import FedOpt
 
-from decent_vla.runtime import wire
+from decent_vla._helpers import wire
 
 
 def _wire_array(value, dtype):
@@ -55,7 +55,7 @@ class VLAWorkflow:
     def run(self):
         self.model = self.load_model()
         self.cfg = cfg = self.persistor.cfg
-        from decent_vla.runtime import observability
+        from decent_vla._helpers import observability
 
         observability.configure_wandb(cfg)
         self.start_round = self.persistor.start_round
@@ -135,7 +135,7 @@ class VLAWorkflow:
                 "mean_client_loss": sum(losses.values()) / len(losses) if losses else None,
             }
         )
-        from decent_vla.runtime import observability
+        from decent_vla._helpers import observability
 
         observability.wandb_round_log(
             self.cfg.name,
