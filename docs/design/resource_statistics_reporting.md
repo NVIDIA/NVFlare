@@ -78,14 +78,32 @@ serialization, other fractional quantities are quantized to nine digits using
 round-half-even, trailing fractional zeros are removed, and the result is checked
 again.
 
-A group is a category of capacity with compatible hardware descriptions. Grouping
-keeps different kinds of hardware distinguishable when reports are combined. For
-example, reports combining observations of a full GPU and a MIG compute instance
-keep them in separate GPU groups;
-their counts and capacity-time do not imply that a MIG instance is equivalent to a
-full GPU. CPU groups similarly preserve known model and architecture differences
-when capacity can be attributed to each group. A scalar CPU total alone hides those distinctions; when a shared quota cannot be attributed by model, the report
-keeps an aggregate group rather than inventing per-model values.
+A group is a category of capacity with compatible hardware descriptions. It
+preserves distinctions when observations from different executions are combined.
+For example, suppose two participants report these observations:
+
+| Participant | CPU capacity | CUDA capacity | Duration |
+| --- | --- | --- | ---: |
+| Site A | 4 units of CPU model A | 1 full GPU | 60 seconds |
+| Site B | 8 units of CPU model B | 1 MIG compute instance | 10 seconds |
+
+The job total keeps a separate capacity-time group for each kind of hardware:
+
+| Hardware group | Capacity-time calculation | Result |
+| --- | --- | ---: |
+| CPU model A | 4 units × 60 seconds | 240 CPU-unit-seconds |
+| CPU model B | 8 units × 10 seconds | 80 CPU-unit-seconds |
+| Full GPU | 1 device × 60 seconds | 60 device-seconds |
+| MIG compute instance | 1 instance × 10 seconds | 10 instance-seconds |
+
+The CPU groups show which models supplied the observed capacity-time; a single
+320 CPU-unit-second total hides that distinction. This grouping assumes each CPU
+capacity is attributable to its model. When a shared quota cannot be attributed by
+model, the report keeps an aggregate group instead. The GPU groups remain separate:
+a MIG instance is not treated as equivalent to a full GPU. An operator comparing
+this job with another that observed one full GPU for 10 seconds can see that this
+job observed a full GPU for longer and select it for further investigation. These
+values do not measure CPU or GPU busy time or prove exclusive allocation.
 
 CPU groups may include `model` and `architecture`. GPU groups use
 `kind: "full_gpu"|"mig_compute_instance"|"cuda_device_unclassified"` and may
