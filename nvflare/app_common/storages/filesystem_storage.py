@@ -387,7 +387,13 @@ class FilesystemStorage(StorageSpec):
             os.remove(download_file)
         src = os.path.join(full_uri, component_name)
         if os.path.exists(src):
-            os.symlink(src, download_file)
+            try:
+                os.symlink(src, download_file)
+            except OSError:
+                # Symlink creation can require extra privileges on Windows.
+                # Download preparation must still work in an ordinary
+                # unprivileged installation, at the cost of a local copy.
+                shutil.copyfile(src, download_file)
         else:
             log.debug(f"{src} does not exist, skipping the creation of the symlink {download_file} for download.")
 

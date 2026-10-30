@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -123,6 +124,48 @@ def test_run_routes_authorization_error_through_auth_failed_envelope(capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["error_code"] == "AUTH_FAILED"
     assert payload["message"] == "Authorization failed. — user not authorized for the action 'configure_job_log'"
+
+
+@pytest.mark.parametrize("job_id, study", [("job-1", None), (None, "study-1")])
+def test_resources_authorization_denial_uses_existing_cli_exit_and_envelope(monkeypatch, capsys, job_id, study):
+    import argparse
+
+    from nvflare.tool import cli_schema
+    from nvflare.tool.resources import resources_cli
+
+    parser = argparse.ArgumentParser(prog="nvflare")
+    resources_cli.def_resources_cli_parser(parser.add_subparsers(dest="command"))
+    error = AuthorizationError("not authorized for resource statistics")
+
+    class Session:
+        def get_job_resources(self, job_id, site=None):
+            raise error
+
+        def get_study_resources(self):
+            raise error
+
+    args = MagicMock()
+    args.format = "json"
+    args.connect_timeout = 5.0
+    args.sub_command = "resources"
+    args.version = False
+    args.job_id, args.study, args.site = job_id, study, None
+    monkeypatch.setattr(resources_cli, "_resources_session", lambda *args, **kwargs: nullcontext(Session()))
+    monkeypatch.setattr(cli_schema, "handle_schema_flag", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli_mod, "parse_args", lambda *_args, **_kwargs: (parser, args, {}))
+    monkeypatch.setattr(cli_mod, "handlers", {"resources": resources_cli.handle_resources_cmd})
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+    monkeypatch.setattr(cli_output, "set_output_format", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli_output, "set_connect_timeout", lambda *args, **kwargs: None)
+
+    with pytest.raises(SystemExit) as raised:
+        cli_mod.run("nvflare")
+
+    assert raised.value.code == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error_code"] == "AUTH_FAILED"
+    assert "Authorization failed" in payload["message"]
+    assert payload["error_code"] != "RESOURCE_DATA_UNAVAILABLE"
 
 
 def test_run_routes_cli_exception_through_error_envelope(capsys):

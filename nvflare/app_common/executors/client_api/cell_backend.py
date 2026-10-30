@@ -302,6 +302,7 @@ class CellBackendBase(ClientAPIBackendSpec):
                     Topic.ERROR,
                     **{MsgKey.REASON: f"no live result source matching task_id {task_id!r}"},
                 )
+            self._on_trainer_message_traffic(session, payload.get(MsgKey.MESSAGE_TRAFFIC))
             session.result_source_live.clear()
             session.result_source_task_id = None
             self._on_result_source_settled(session, task_id)
@@ -314,6 +315,9 @@ class CellBackendBase(ClientAPIBackendSpec):
 
     def _on_result_source_settled(self, session: CellSession, task_id: str) -> None:
         """Hook for mode-specific retirement of accepted result-source state."""
+
+    def _on_trainer_message_traffic(self, session: CellSession, traffic) -> None:
+        """Optional measurements carried by an already validated session message."""
 
     def _remember_result_authority(self, task_id: str, result_id: str, attempt_id: str) -> None:
         self._result_authority[task_id] = (result_id, attempt_id)

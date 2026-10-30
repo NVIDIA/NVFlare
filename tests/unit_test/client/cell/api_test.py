@@ -128,6 +128,9 @@ class FakeCell:
     def get_fqcn(self):
         return self.fqcn
 
+    def get_traffic_stats(self):
+        return {}
+
     def start(self):
         self.started = True
 
@@ -1527,6 +1530,23 @@ class TestInit:
 
 
 class TestReceiveSend:
+    def test_existing_settlement_request_carries_totals_without_peer_identities(self, bootstrap_path, env):
+        api = _init_api(bootstrap_path, env)
+        env.get_traffic_stats = lambda: {
+            "server.job-1": {"sent": 123, "received": 456},
+            "site-1.job-1": {"sent": 7, "received": 11},
+        }
+        try:
+            api._notify_result_source_settled("task-1")
+            payload = [value for topic, _, value in env.requests if topic == Topic.RESULT_SOURCE_SETTLED][-1]
+            assert payload == {
+                MsgKey.SESSION_ID: SESSION_ID,
+                MsgKey.TASK_ID: "task-1",
+                MsgKey.MESSAGE_TRAFFIC: {"sent_bytes": "130", "received_bytes": "467"},
+            }
+        finally:
+            api.shutdown()
+
     def test_receive_gets_direct_cell_shareable(self, bootstrap_path, env):
         api = _init_api(bootstrap_path, env)
         try:
@@ -2046,7 +2066,13 @@ class TestReceiveSend:
             assert api._current_task is None
             assert api._result_receiver_ids is None
             settled = [payload for topic, _, payload in env.requests if topic == Topic.RESULT_SOURCE_SETTLED]
-            assert settled == [{MsgKey.SESSION_ID: SESSION_ID, MsgKey.TASK_ID: task_id}]
+            assert settled == [
+                {
+                    MsgKey.SESSION_ID: SESSION_ID,
+                    MsgKey.TASK_ID: task_id,
+                    MsgKey.MESSAGE_TRAFFIC: {"sent_bytes": "0", "received_bytes": "0"},
+                }
+            ]
             with pytest.raises(RuntimeError, match='"receive" needs to be called'):
                 api.send(sent_model)
         finally:
@@ -2113,7 +2139,8 @@ class TestReceiveSend:
 
             reply = env.deliver(Topic.SHUTDOWN, CJ_FQCN, {MsgKey.SESSION_ID: SESSION_ID})
 
-            assert reply.payload == {MsgKey.RESULT_SOURCE_LIVE: False}
+            assert reply.payload[MsgKey.RESULT_SOURCE_LIVE] is False
+            assert MsgKey.MESSAGE_TRAFFIC in reply.payload
             assert sender.is_alive()
             assert env.stopped is False
             release_settlement.set()
@@ -2207,7 +2234,8 @@ class TestReceiveSend:
                 result_cancel = env.request_kwargs[index]["abort_signal"]
                 assert result_cancel is api._result_abort_signal
                 shutdown_reply = env.deliver(Topic.SHUTDOWN, CJ_FQCN, {MsgKey.SESSION_ID: SESSION_ID})
-                assert shutdown_reply.payload == {MsgKey.RESULT_SOURCE_LIVE: True}
+                assert shutdown_reply.payload[MsgKey.RESULT_SOURCE_LIVE] is True
+                assert MsgKey.MESSAGE_TRAFFIC in shutdown_reply.payload
                 assert api._abort_signal.triggered is True
                 assert result_cancel.triggered is False
                 assert env.stopped is False, "SHUTDOWN must not close Cell while send is active"
@@ -2236,7 +2264,8 @@ class TestReceiveSend:
 
             reply = env.deliver(Topic.SHUTDOWN, CJ_FQCN, {MsgKey.SESSION_ID: SESSION_ID})
 
-            assert reply.payload == {MsgKey.RESULT_SOURCE_LIVE: False}
+            assert reply.payload[MsgKey.RESULT_SOURCE_LIVE] is False
+            assert MsgKey.MESSAGE_TRAFFIC in reply.payload
             assert env.stopped is False
         finally:
             api.shutdown()

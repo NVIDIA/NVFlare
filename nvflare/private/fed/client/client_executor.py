@@ -29,6 +29,7 @@ from nvflare.apis.fl_constant import (
     ReservedKey,
     RunProcessKey,
     SystemConfigs,
+    WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
@@ -43,6 +44,14 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey, RequestHeader, new_cell_message
+from nvflare.private.fed.resource_stats.collector import assemble_participant_summary
+from nvflare.private.fed.resource_stats.contract import validate_record
+from nvflare.private.fed.resource_stats.handoff import (
+    canonical_json_bytes,
+    read_terminal_handoff,
+    remove_terminal_handoff,
+)
+from nvflare.private.fed.resource_stats.message_traffic import retire_job_traffic
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.private.fed.utils.job_cert_utils import remove_job_cert
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -59,6 +68,7 @@ REPORTABLE_JOB_FAILURES = {
 }
 
 _ABORT_REQUESTED_KEY = "_abort_requested"
+_CPU_ATTEMPT_DIR = ".resource_stats_cpu_attempts"
 _RESTART_KEY = "_restart"
 
 
@@ -69,6 +79,129 @@ class _JobRestart:
     args: dict
     launch_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     attempts: int = 0  # Replacement launches since the last successful initialization.
+
+
+def _log_resource_warning(logger, message: str) -> None:
+    try:
+        logger.warning(message)
+    except Exception:
+        pass
+
+
+def _record_client_cpu_attempt(workspace: Workspace, job_id: str, logger) -> bool:
+    """Persist launch evidence outside the run directory, which redeployment removes.
+
+    Return whether an earlier attempt may have unreported measurements. A
+    marker write failure is conservatively incomplete, but never prevents the
+    job launch.
+    """
+
+    try:
+        checked_job_id = Workspace._check_job_id(job_id)
+        marker_dir = Workspace._join_under_root(workspace.root_dir, _CPU_ATTEMPT_DIR)
+        marker_dir_created = False
+        try:
+            os.mkdir(marker_dir, 0o700)
+            marker_dir_created = True
+        except FileExistsError:
+            pass
+        marker_path = Workspace._join_under_root(workspace.root_dir, _CPU_ATTEMPT_DIR, checked_job_id)
+        try:
+            marker_fd = os.open(marker_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            return True
+        try:
+            os.fsync(marker_fd)
+        finally:
+            os.close(marker_fd)
+
+        # Commit the directory entry before launching the worker. If this
+        # fails, the current attempt's subtotals must not be labeled complete.
+        dir_fd = os.open(marker_dir, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+        if marker_dir_created:
+            root_fd = os.open(workspace.root_dir, os.O_RDONLY)
+            try:
+                os.fsync(root_fd)
+            finally:
+                os.close(root_fd)
+        return False
+    except Exception as e:
+        _log_resource_warning(
+            logger,
+            f"could not persist resource-measurement attempt history for job {job_id}: {secure_format_exception(e)}",
+        )
+        return True
+
+
+def _build_participant_resource_report(
+    job_id: str,
+    participant_name: str,
+    workspace: str,
+    logger,
+    prior_attempt_incomplete: bool = False,
+) -> bytes | None:
+    """Read the private child handoff and build the public report.
+
+    Identity comes from the authenticated client parent, never from the child
+    file. Reporting errors are contained so they cannot change the terminal
+    outcome. The local handoff is consumed before resource release; server
+    communication happens afterward.
+    """
+
+    run_dir = None
+    handoff = None
+    try:
+        # Use Workspace's path validation without requiring startup and site
+        # configuration directories to remain present after the child exits.
+        checked_job_id = Workspace._check_job_id(job_id)
+        run_dir = Workspace._join_under_root(workspace, WorkspaceConstants.WORKSPACE_PREFIX + checked_job_id)
+        handoff = read_terminal_handoff(run_dir)
+    except Exception as e:
+        _log_resource_warning(
+            logger,
+            f"could not read resource statistics for job {job_id}: {secure_format_exception(e)}",
+        )
+
+    try:
+        report = assemble_participant_summary(
+            job_id=str(job_id),
+            participant_name=participant_name,
+            child_handoff=handoff,
+        )
+        if prior_attempt_incomplete:
+            # These are job/participant totals, not current-attempt totals.
+            # Preserve the observed subtotal but do not claim that a new
+            # worker's counters cover measurements lost with an earlier one.
+            for name in ("resource_capacity", "resource_time", "cpu_consumed", "message_traffic"):
+                measurement = (
+                    report[name]
+                    if name in {"resource_capacity", "resource_time"}
+                    else report["resource_utilization"][name]
+                )
+                if measurement.get("status", "reported") in {"reported", "partial"}:
+                    measurement["status"] = "partial"
+                    measurement["issues"] = sorted(set(measurement.get("issues", [])) | {"observation_incomplete"})
+            validate_record(report)
+        return canonical_json_bytes(report)
+    except Exception as e:
+        _log_resource_warning(
+            logger,
+            f"could not assemble resource statistics for job {job_id}: {secure_format_exception(e)}",
+        )
+        return None
+    finally:
+        if run_dir is not None:
+            try:
+                remove_terminal_handoff(run_dir)
+            except Exception as e:
+                _log_resource_warning(
+                    logger,
+                    f"could not remove resource-statistics handoff for job {job_id}: {secure_format_exception(e)}",
+                )
 
 
 class _PendingJobHandle(JobHandleSpec):
@@ -222,8 +355,8 @@ class JobExecutor(ClientExecutor):
         self.logger = get_obj_logger(self)
         self.startup = startup
         self.run_processes = {}
+        self._cpu_seen_job_launches: set[str] = set()
         self.lock = threading.Lock()
-
         self.job_query_timeout = ConfigService.get_float_var(
             name="job_query_timeout", conf=SystemConfigs.APPLICATION_CONF, default=5.0
         )
@@ -345,18 +478,27 @@ class JobExecutor(ClientExecutor):
         with self.lock:
             if job_id in self.run_processes:
                 raise RuntimeError(f"client app for job '{job_id}' is still registered")
+            schedule_count = job_meta.get(JobMetaKey.SCHEDULE_COUNT.value)
+            prior_attempt_incomplete = job_id in self._cpu_seen_job_launches or (
+                isinstance(schedule_count, int) and not isinstance(schedule_count, bool) and schedule_count > 1
+            )
+            self._cpu_seen_job_launches.add(job_id)
             self.run_processes[job_id] = {
                 RunProcessKey.JOB_HANDLE: pending_handle,
                 RunProcessKey.STATUS: ClientStatus.STARTING,
                 _ABORT_REQUESTED_KEY: False,
                 _RESTART_KEY: restart,
             }
-
+        # Record before launch so a fresh site parent cannot mistake a
+        # relaunched job for its first process after redeployment/restart.
+        # Keep filesystem sync outside the shared process-state lock.
+        prior_attempt_incomplete |= _record_client_cpu_attempt(workspace, job_id, self.logger)
         try:
             self._launch_job(job_id, restart, pending_handle, fl_ctx)
         except BaseException:
             with self.lock:
                 if self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE) is pending_handle:
+                    retire_job_traffic(client.cell, job_id)
                     self.run_processes.pop(job_id, None)
             raise
 
@@ -364,7 +506,16 @@ class JobExecutor(ClientExecutor):
 
         thread = threading.Thread(
             target=self._wait_child_process_finish,
-            args=(client, job_id, allocated_resource, token, resource_manager, args.workspace, fl_ctx),
+            args=(
+                client,
+                job_id,
+                allocated_resource,
+                token,
+                resource_manager,
+                args.workspace,
+                fl_ctx,
+                prior_attempt_incomplete,
+            ),
         )
         thread.start()
 
@@ -745,6 +896,12 @@ class JobExecutor(ClientExecutor):
             process[RunProcessKey.JOB_HANDLE] = pending_handle
             process[RunProcessKey.STATUS] = ClientStatus.STARTING
         self.logger.info(f"job {job_id}: restarting CJ (attempt {restart.attempts}/{self.max_cj_restart_failures})")
+        try:
+            # The next process must not inherit an earlier process's final
+            # measurements if its own handoff is lost.
+            remove_terminal_handoff(Workspace.run_dir_path(restart.args[JobProcessArgs.WORKSPACE][1], job_id))
+        except Exception as e:
+            _log_resource_warning(self.logger, f"could not retire prior resource handoff: {secure_format_exception(e)}")
         previous = job_handle._job_handle if isinstance(job_handle, _PendingJobHandle) else job_handle
         fl_ctx.set_prop(FLContextKey.JOB_RESTART_HANDLE, previous, private=True, sticky=False)
         try:
@@ -754,82 +911,126 @@ class JobExecutor(ClientExecutor):
         return True
 
     def _wait_child_process_finish(
-        self, client, job_id, allocated_resource, token, resource_manager, workspace, fl_ctx
+        self,
+        client,
+        job_id,
+        allocated_resource,
+        token,
+        resource_manager,
+        workspace,
+        fl_ctx,
+        prior_attempt_incomplete=False,
     ):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
         job_handle = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
-        run_dir = Workspace.run_dir_path(workspace, job_id)
+        request = None
         try:
-            while job_handle:
-                job_handle.wait()
-                return_code = get_return_code(job_handle, job_id, workspace, self.logger)
-                try:
-                    if not self._restart_job(job_id, job_handle, return_code, fl_ctx):
-                        break
-                except Exception as e:
-                    # A submission exception may mean the backend accepted the job.
-                    # Without a handle proving otherwise, never submit again.
-                    self.logger.error(f"job {job_id}: cannot restart CJ: {secure_format_exception(e)}")
-                    return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
-                    break
-                job_handle = self.run_processes[job_id][RunProcessKey.JOB_HANDLE]
-        finally:
-            # Keep the same job credential throughout replacement; remove it only
-            # when this logical job finishes. Checkpoints and application files stay.
-            remove_job_cert(run_dir)
-        if job_handle:
-            with self.lock:
-                process = self.run_processes.get(job_id, {})
-                process_status = process.get(RunProcessKey.STATUS)
-                abort_requested = process.get(_ABORT_REQUESTED_KEY, False)
-            # A generic RC 1 is actionable only while a checked-in worker is still active.
-            # STARTING remains an infrastructure failure, while STOPPED teardown noise and
-            # launcher UNKNOWN retain their existing non-reportable behavior.
-            if return_code == JobReturnCode.EXECUTION_ERROR and not abort_requested:
-                if process_status == ClientStatus.STARTING:
-                    return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
-                elif process_status == ClientStatus.STARTED:
-                    return_code = ProcessExitCode.EXCEPTION
-
-            self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
-
-            # Every terminal result resolves the server's pending client outcome, including success.
-            failure_reason = REPORTABLE_JOB_FAILURES.get(return_code)
             try:
-                request = new_cell_message(
-                    headers={},
-                    payload={
+                try:
+                    while job_handle:
+                        job_handle.wait()
+                        return_code = get_return_code(job_handle, job_id, workspace, self.logger)
+                        try:
+                            if not self._restart_job(job_id, job_handle, return_code, fl_ctx):
+                                break
+                        except Exception as e:
+                            # An accepted launch can fail without confirming settlement.
+                            self.logger.error(f"job {job_id}: cannot restart CJ: {secure_format_exception(e)}")
+                            prior_attempt_incomplete = True
+                            return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
+                            break
+                        prior_attempt_incomplete = True
+                        job_handle = self.run_processes[job_id][RunProcessKey.JOB_HANDLE]
+                finally:
+                    # The exited job process's credential must be removed before reporting.
+                    remove_job_cert(Workspace.run_dir_path(workspace, job_id))
+                if job_handle:
+                    with self.lock:
+                        process = self.run_processes.get(job_id, {})
+                        process_status = process.get(RunProcessKey.STATUS)
+                        abort_requested = process.get(_ABORT_REQUESTED_KEY, False)
+                    # A generic RC 1 is actionable only while a checked-in worker is still active.
+                    # STARTING remains an infrastructure failure, while STOPPED teardown noise and
+                    # launcher UNKNOWN retain their existing non-reportable behavior.
+                    if return_code == JobReturnCode.EXECUTION_ERROR and not abort_requested:
+                        if process_status == ClientStatus.STARTING:
+                            return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
+                        elif process_status == ClientStatus.STARTED:
+                            return_code = ProcessExitCode.EXCEPTION
+
+                    self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
+
+                    failure_reason = REPORTABLE_JOB_FAILURES.get(return_code)
+                    participant_summary = None
+                    try:
+                        participant_summary = _build_participant_resource_report(
+                            job_id=job_id,
+                            participant_name=client.client_name,
+                            workspace=workspace,
+                            logger=self.logger,
+                            prior_attempt_incomplete=prior_attempt_incomplete,
+                        )
+                    except Exception as e:
+                        _log_resource_warning(
+                            self.logger,
+                            f"could not prepare resource statistics for job {job_id}: {secure_format_exception(e)}",
+                        )
+                    payload = {
                         JobOutcomeMsgKey.JOB_ID: job_id,
                         JobOutcomeMsgKey.CODE: return_code,
                         JobOutcomeMsgKey.REASON: failure_reason,
-                    },
-                )
-                reply = self.client.send_request_before_shutdown(
-                    target=FQCN.ROOT_SERVER,
-                    channel=CellChannel.SERVER_MAIN,
-                    topic=CellChannelTopic.REPORT_JOB_OUTCOME,
-                    request=request,
-                    timeout=self.job_query_timeout,
-                    optional=True,
-                )
-                if reply is None:
-                    # Shutdown invalidates the site token. The server's client-quit/dead-client
-                    # path resolves any outcome still pending after communication stops.
-                    self.logger.info(
-                        f"not reporting terminal outcome of job {job_id}: client communication has stopped"
+                    }
+                    if participant_summary is not None:
+                        payload[JobOutcomeMsgKey.RESOURCE_REPORT] = {
+                            JobOutcomeMsgKey.PARTICIPANT_SUMMARY: participant_summary,
+                        }
+                    request = new_cell_message(
+                        headers={},
+                        payload=payload,
                     )
-                elif reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
-                    self.logger.error(f"could not report terminal outcome of job {job_id}")
-            except Exception as e:
-                self.logger.error(f"could not report terminal outcome of job {job_id}: {secure_format_exception(e)}")
+            finally:
+                # The child has stopped and its terminal handoff, when present, has been
+                # consumed above.  Return compute resources before terminal reporting can
+                # block on CellNet or server-side validation.
+                if allocated_resource:
+                    resource_manager.free_resources(
+                        resources=allocated_resource, token=token, fl_ctx=client.engine.new_context()
+                    )
+                self.logger.debug(f"run ({job_id}): child worker resources freed.")
 
-        if allocated_resource:
-            resource_manager.free_resources(
-                resources=allocated_resource, token=token, fl_ctx=client.engine.new_context()
-            )
-        with self.lock:
-            self.run_processes.pop(job_id, None)
-        self.logger.debug(f"run ({job_id}): child worker resources freed.")
+            if request is not None:
+                try:
+                    reply = self.client.send_request_before_shutdown(
+                        target=FQCN.ROOT_SERVER,
+                        channel=CellChannel.SERVER_MAIN,
+                        topic=CellChannelTopic.REPORT_JOB_OUTCOME,
+                        request=request,
+                        timeout=self.job_query_timeout,
+                        optional=True,
+                    )
+                    if reply is None:
+                        # Shutdown invalidates the site token. The server's client-quit/dead-client
+                        # path resolves any outcome still pending after communication stops.
+                        self.logger.info(
+                            f"not reporting terminal outcome of job {job_id}: client communication has stopped"
+                        )
+                    elif reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
+                        self.logger.error(f"could not report terminal outcome of job {job_id}")
+                    elif isinstance(reply.payload, dict):
+                        report_status = reply.payload.get(JobOutcomeMsgKey.RESOURCE_REPORT_STATUS)
+                        if report_status and report_status not in ("accepted", "duplicate"):
+                            _log_resource_warning(
+                                self.logger,
+                                f"resource statistics for job {job_id} were not accepted: {report_status}",
+                            )
+                except Exception as e:
+                    self.logger.error(
+                        f"could not report terminal outcome of job {job_id}: {secure_format_exception(e)}"
+                    )
+        finally:
+            with self.lock:
+                retire_job_traffic(client.cell, job_id)
+                self.run_processes.pop(job_id, None)
 
         engine = fl_ctx.get_engine()
         fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)

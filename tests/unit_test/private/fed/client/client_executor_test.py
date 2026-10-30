@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import shutil
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,25 +30,41 @@ from nvflare.apis.fl_constant import (
     JobConstants,
     ReservedKey,
     RunProcessKey,
+    WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobProcessArgs, JobReturnCode, publish_job_handle
+from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey, RequestHeader
+from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_executor import (
     _ABORT_REQUESTED_KEY,
+    _CPU_ATTEMPT_DIR,
     _RESTART_KEY,
     REPORTABLE_JOB_FAILURES,
     JobExecutor,
+    _build_participant_resource_report,
     _PendingJobHandle,
+    _record_client_cpu_attempt,
 )
+from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.communicator import Communicator
+from nvflare.private.fed.resource_stats.contract import capacity_to_resource_time
+from nvflare.private.fed.resource_stats.handoff import (
+    INTERNAL_HANDOFF_KIND,
+    INTERNAL_HANDOFF_VERSION,
+    terminal_handoff_path,
+    write_terminal_handoff,
+)
 from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_cert
 from tests.timing_utils import isolate_time
 
@@ -136,6 +153,28 @@ def test_recovery_limits_failed_starts_not_successful_replacements(tmp_path, out
     assert launcher.launch_job.call_count == launches
     assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == final_code
     assert all(call.args[0] == {JobConstants.JOB_ID: "job-1"} for call in launcher.launch_job.call_args_list)
+
+
+def test_recovery_retires_old_statistics_before_launch_with_previous_handle(tmp_path):
+    handoff = Path(terminal_handoff_path(str(tmp_path / "job-1")))
+
+    def publish_old_handoff(executor, index, handle):
+        if index == 0:
+            handoff.parent.mkdir(parents=True, exist_ok=True)
+            handoff.write_text("earlier generation measurements")
+
+    def check_replacement(executor, index, handle, ctx):
+        if index == 1:
+            assert not handoff.exists()
+            assert ctx.get_prop(FLContextKey.JOB_RESTART_HANDLE) is not None
+
+    launcher, _, _ = _run_recovery(
+        tmp_path,
+        [(True, 104), (True, 0)],
+        on_wait=publish_old_handoff,
+        on_launch=check_replacement,
+    )
+    assert launcher.launch_job.call_count == 2
 
 
 @pytest.mark.parametrize("code", [0, 9, 102, 103, 127])
@@ -335,6 +374,206 @@ def test_reportable_job_failures_has_expected_codes():
     assert REPORTABLE_JOB_FAILURES == EXPECTED_REPORTABLE_JOB_FAILURES
 
 
+def test_build_participant_resource_report_binds_parent_identity_and_removes_handoff(tmp_path):
+    run_dir = Workspace._join_under_root(str(tmp_path), WorkspaceConstants.WORKSPACE_PREFIX + "job-1")
+    handoff = {
+        "duration_seconds": "10",
+        "internal_version": INTERNAL_HANDOFF_VERSION,
+        "kind": INTERNAL_HANDOFF_KIND,
+        "resource_capacity": {"status": "unavailable", "issues": ["observation_incomplete"]},
+        "resource_time": capacity_to_resource_time(
+            {"status": "unavailable", "issues": ["observation_incomplete"]}, "10"
+        ),
+        "workspace_filesystem": {"capacity_bytes": "1099511627776"},
+        "resource_utilization": {
+            "cpu_consumed": {"cpu_seconds": "12.5"},
+            "retained_content": {"status": "unavailable", "issues": ["unsupported"]},
+            "message_traffic": {
+                "sent_bytes": "1200",
+                "received_bytes": "800",
+            },
+        },
+    }
+    write_terminal_handoff(run_dir, handoff)
+
+    report_bytes = _build_participant_resource_report(
+        job_id="job-1",
+        participant_name="site-1",
+        workspace=str(tmp_path),
+        logger=MagicMock(),
+    )
+
+    report = json.loads(report_bytes)
+    assert report["participant_name"] == "site-1"
+    assert report["job_id"] == "job-1"
+    assert report["workspace_filesystem"]["capacity_bytes"] == "1099511627776"
+    assert report["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": "12.5"}
+    assert report["resource_utilization"]["message_traffic"] == {
+        "sent_bytes": "1200",
+        "received_bytes": "800",
+    }
+    assert not terminal_handoff_path(run_dir).exists()
+
+
+def test_client_relaunch_preserves_unavailable_observations_without_inventing_values(tmp_path):
+    run_dir = Workspace._join_under_root(str(tmp_path), WorkspaceConstants.WORKSPACE_PREFIX + "job-1")
+    write_terminal_handoff(
+        run_dir,
+        {
+            "duration_seconds": "10",
+            "internal_version": INTERNAL_HANDOFF_VERSION,
+            "kind": INTERNAL_HANDOFF_KIND,
+            "resource_capacity": {"status": "unavailable", "issues": ["observation_incomplete"]},
+            "resource_time": capacity_to_resource_time(
+                {"status": "unavailable", "issues": ["observation_incomplete"]}, "10"
+            ),
+            "workspace_filesystem": {"status": "unavailable", "issues": ["observation_incomplete"]},
+            "resource_utilization": {
+                "cpu_consumed": {"cpu_seconds": "12.5"},
+                "retained_content": {"status": "unavailable", "issues": ["observation_incomplete"]},
+                "message_traffic": {"status": "unavailable", "issues": ["observation_incomplete"]},
+            },
+        },
+    )
+    data = _build_participant_resource_report(
+        job_id="job-1",
+        participant_name="site-1",
+        workspace=str(tmp_path),
+        logger=MagicMock(),
+        prior_attempt_incomplete=True,
+    )
+    report = json.loads(data)
+    assert report["resource_utilization"]["cpu_consumed"] == {
+        "status": "partial",
+        "issues": ["observation_incomplete"],
+        "cpu_seconds": "12.5",
+    }
+    assert report["resource_capacity"]["status"] == "unavailable"
+    assert report["resource_utilization"]["message_traffic"] == {
+        "status": "unavailable",
+        "issues": ["observation_incomplete"],
+    }
+
+
+@pytest.mark.parametrize("already_partial", [False, True])
+def test_client_relaunch_marks_capacity_cpu_and_traffic_observations_incomplete(tmp_path, already_partial):
+    run_dir = Workspace._join_under_root(str(tmp_path), WorkspaceConstants.WORKSPACE_PREFIX + "job-1")
+    resource_capacity = {
+        "cpu": {"groups": [{"model": "Example CPU", "units": "8"}]},
+        "memory": {"bytes": "4096"},
+        "gpu": {"groups": [{"kind": "cuda_device_unclassified", "count": "1"}]},
+    }
+    consumed = {"cpu_seconds": "12.5"}
+    message_traffic = {"sent_bytes": "1200", "received_bytes": "800"}
+    if already_partial:
+        for measurement in (resource_capacity, consumed):
+            measurement.update(status="partial", issues=["attribution_incomplete"])
+        message_traffic.update(status="partial", issues=["observation_incomplete"])
+    write_terminal_handoff(
+        run_dir,
+        {
+            "duration_seconds": "10",
+            "internal_version": INTERNAL_HANDOFF_VERSION,
+            "kind": INTERNAL_HANDOFF_KIND,
+            "resource_capacity": resource_capacity,
+            "resource_time": capacity_to_resource_time(resource_capacity, "10"),
+            "workspace_filesystem": {"capacity_bytes": "1099511627776"},
+            "resource_utilization": {
+                "cpu_consumed": consumed,
+                "retained_content": {"bytes": "1024"},
+                "message_traffic": message_traffic,
+            },
+        },
+    )
+
+    data = _build_participant_resource_report(
+        job_id="job-1",
+        participant_name="site-1",
+        workspace=str(tmp_path),
+        logger=MagicMock(),
+        prior_attempt_incomplete=True,
+    )
+
+    report = json.loads(data)
+    expected_issues = (
+        ["attribution_incomplete", "observation_incomplete"] if already_partial else ["observation_incomplete"]
+    )
+    for name in ("resource_capacity", "cpu_consumed"):
+        measurement = report if name == "resource_capacity" else report["resource_utilization"]
+        assert measurement[name]["status"] == "partial"
+        assert measurement[name]["issues"] == expected_issues
+    assert report["resource_utilization"]["message_traffic"]["status"] == "partial"
+    assert report["resource_utilization"]["message_traffic"]["issues"] == ["observation_incomplete"]
+    assert report["duration_seconds"] == "10"
+    assert report["resource_capacity"]["cpu"] == resource_capacity["cpu"]
+    assert report["resource_capacity"]["memory"] == resource_capacity["memory"]
+    assert report["resource_capacity"]["gpu"] == resource_capacity["gpu"]
+    assert report["resource_time"]["gpu"]["groups"] == [{"kind": "cuda_device_unclassified", "instance_seconds": "10"}]
+    assert report["resource_utilization"]["cpu_consumed"]["cpu_seconds"] == "12.5"
+    assert report["resource_utilization"]["message_traffic"]["sent_bytes"] == message_traffic["sent_bytes"]
+    assert report["resource_utilization"]["message_traffic"]["received_bytes"] == message_traffic["received_bytes"]
+    assert report["workspace_filesystem"] == {"capacity_bytes": "1099511627776"}
+    assert report["resource_utilization"]["retained_content"] == {"bytes": "1024"}
+    assert not terminal_handoff_path(run_dir).exists()
+
+
+@pytest.mark.parametrize("prior_attempt_incomplete", [False, True])
+def test_client_report_preserves_job_process_traffic_without_parent_counters(tmp_path, prior_attempt_incomplete):
+    run_dir = Workspace._join_under_root(str(tmp_path), WorkspaceConstants.WORKSPACE_PREFIX + "job-1")
+    write_terminal_handoff(
+        run_dir,
+        {
+            "duration_seconds": "10",
+            "internal_version": INTERNAL_HANDOFF_VERSION,
+            "kind": INTERNAL_HANDOFF_KIND,
+            "resource_capacity": {"status": "unavailable", "issues": ["observation_incomplete"]},
+            "resource_time": capacity_to_resource_time(
+                {"status": "unavailable", "issues": ["observation_incomplete"]}, "10"
+            ),
+            "workspace_filesystem": {"capacity_bytes": "1099511627776"},
+            "resource_utilization": {
+                "cpu_consumed": {"cpu_seconds": "12.5"},
+                "retained_content": {"bytes": "1024"},
+                "message_traffic": {"sent_bytes": "1200", "received_bytes": "800"},
+            },
+        },
+    )
+
+    data = _build_participant_resource_report(
+        job_id="job-1",
+        participant_name="site-1",
+        workspace=str(tmp_path),
+        logger=MagicMock(),
+        prior_attempt_incomplete=prior_attempt_incomplete,
+    )
+
+    report = json.loads(data)
+    expected_traffic = {"sent_bytes": "1200", "received_bytes": "800"}
+    expected_consumed = {"cpu_seconds": "12.5"}
+    if prior_attempt_incomplete:
+        for measurement in (expected_traffic, expected_consumed):
+            measurement.update(status="partial", issues=["observation_incomplete"])
+    assert report["resource_utilization"]["message_traffic"] == expected_traffic
+    assert report["resource_utilization"]["cpu_consumed"] == expected_consumed
+    assert not terminal_handoff_path(run_dir).exists()
+
+
+def test_build_participant_resource_report_survives_missing_workspace(tmp_path):
+    report_bytes = _build_participant_resource_report(
+        job_id="job-1",
+        participant_name="site-1",
+        workspace=str(tmp_path / "already-cleaned"),
+        logger=MagicMock(),
+    )
+
+    report = json.loads(report_bytes)
+    assert report["participant_name"] == "site-1"
+    assert report["resource_capacity"] == {
+        "status": "unavailable",
+        "issues": ["observation_incomplete"],
+    }
+
+
 def test_abort_app_terminates_starting_job_without_worker_command():
     client = MagicMock()
     job_executor = JobExecutor(client=client, startup="startup")
@@ -501,6 +740,144 @@ def test_start_app_pending_handle_operations_before_launcher_returns(tmp_path):
             None,
             fl_ctx,
         )
+
+
+def test_start_app_does_not_create_an_unused_client_parent_counter(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    launcher = MagicMock()
+
+    def get_job_launcher(*_args, **_kwargs):
+        assert not hasattr(executor, "f3_counters")
+        return launcher
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", side_effect=get_job_launcher),
+        patch.object(threading.Thread, "start", lambda self: None),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+
+def test_start_app_removes_pending_process_when_launch_fails(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    launcher = MagicMock()
+    launcher.launch_job.side_effect = RuntimeError("launch failed")
+
+    def retire_before_unregister(cell, completed_job_id):
+        assert cell is client.cell
+        assert completed_job_id == job_id
+        assert job_id in executor.run_processes
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch(
+            "nvflare.private.fed.client.client_executor.retire_job_traffic",
+            side_effect=retire_before_unregister,
+        ) as retire,
+        pytest.raises(RuntimeError, match="launch failed"),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+    retire.assert_called_once_with(client.cell, job_id)
+    assert job_id not in executor.run_processes
+
+
+def test_client_cpu_attempt_marker_survives_parent_restart_and_redeployment(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    launcher = MagicMock()
+    launched_threads = []
+
+    def start_without_wait(thread):
+        launched_threads.append(thread)
+
+    def launch_with_fresh_parent():
+        executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+        with (
+            patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+            patch.object(threading.Thread, "start", start_without_wait),
+        ):
+            executor.start_app(
+                client,
+                job_id,
+                job_meta,
+                SimpleNamespace(workspace=str(tmp_path), set=[]),
+                None,
+                None,
+                None,
+                fl_ctx,
+            )
+        return launched_threads[-1]._args[-1]
+
+    assert launch_with_fresh_parent() is False
+    assert (tmp_path / _CPU_ATTEMPT_DIR / job_id).is_file()
+
+    # The deployer removes the run directory; the scheduler's count need not
+    # change when the parent is recreated, but the CPU marker must survive.
+    shutil.rmtree(workspace.get_run_dir(job_id))
+    (tmp_path / job_id).mkdir()
+    with open(workspace.get_job_meta_path(job_id), "w") as f:
+        json.dump(job_meta, f)
+
+    assert launch_with_fresh_parent() is True
+
+
+def test_client_cpu_attempt_marker_failure_does_not_claim_complete_or_block_launch(tmp_path, caplog):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    launcher = MagicMock()
+    launched_threads = []
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.os.open", side_effect=OSError("disk unavailable")),
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", lambda thread: launched_threads.append(thread)),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+    launcher.launch_job.assert_called_once()
+    assert launched_threads[-1]._args[-1] is True
+    assert "could not persist resource-measurement attempt history" in caplog.text
+
+
+def test_client_cpu_attempt_marker_existing_file_is_prior_attempt(tmp_path):
+    workspace = _write_deployed_meta(tmp_path, "job-1", {JobConstants.JOB_ID: "job-1"})
+    logger = MagicMock()
+
+    assert _record_client_cpu_attempt(workspace, "job-1", logger) is False
+    assert _record_client_cpu_attempt(workspace, "job-1", logger) is True
+    logger.warning.assert_not_called()
 
 
 @pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["user_abort", "heartbeat_cleanup"])
@@ -920,6 +1297,11 @@ def test_wait_child_process_reports_terminal_outcome_to_server(return_code, reas
     assert payload[JobOutcomeMsgKey.JOB_ID] == "job-1"
     assert payload[JobOutcomeMsgKey.CODE] == return_code
     assert payload[JobOutcomeMsgKey.REASON] == reason
+    resource_report = payload[JobOutcomeMsgKey.RESOURCE_REPORT]
+    assert set(resource_report) == {JobOutcomeMsgKey.PARTICIPANT_SUMMARY}
+    participant_summary = json.loads(resource_report[JobOutcomeMsgKey.PARTICIPANT_SUMMARY])
+    assert participant_summary["participant_name"] == "site-1"
+    assert participant_summary["job_id"] == "job-1"
 
     assert "job-1" not in job_executor.run_processes
     fl_ctx.set_prop.assert_any_call(FLContextKey.CURRENT_JOB_ID, "job-1", private=True, sticky=False)
@@ -1082,20 +1464,218 @@ def test_wait_child_process_reports_terminal_return_code(return_code, process_st
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
 
 
-def test_wait_child_process_cleans_up_when_terminal_outcome_report_fails():
+def test_wait_child_process_assembles_only_the_child_handoff():
     client = MagicMock()
     client.client_name = "site-1"
-    client.send_request_before_shutdown.side_effect = RuntimeError("network unavailable")
+    client.send_request_before_shutdown.return_value.get_header.return_value = ReturnCode.OK
+    job_executor = JobExecutor(client=client, startup="startup")
+
+    job_handle = MagicMock()
+    job_executor.run_processes = {
+        "job-1": {
+            RunProcessKey.JOB_HANDLE: job_handle,
+            RunProcessKey.STATUS: ClientStatus.STARTED,
+            _ABORT_REQUESTED_KEY: False,
+        }
+    }
+    engine = MagicMock()
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+    captured = {}
+
+    def assemble_report(**kwargs):
+        captured.update(kwargs)
+        return {}
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_return_code", return_value=JobReturnCode.SUCCESS),
+        patch(
+            "nvflare.private.fed.client.client_executor.assemble_participant_summary",
+            side_effect=assemble_report,
+        ),
+    ):
+        job_executor._wait_child_process_finish(
+            client=client,
+            job_id="job-1",
+            allocated_resource=None,
+            token=None,
+            resource_manager=MagicMock(),
+            workspace="/tmp/workspace",
+            fl_ctx=fl_ctx,
+        )
+
+    assert "parent_f3" not in captured
+    assert not hasattr(job_executor, "f3_counters")
+
+
+def test_wait_child_process_cleans_up_when_terminal_outcome_report_fails():
+    order = []
+    client = MagicMock()
+    client.client_name = "site-1"
+
+    def fail_request(**_kwargs):
+        order.append("send")
+        raise RuntimeError("network unavailable")
+
+    client.send_request_before_shutdown.side_effect = fail_request
     job_executor = JobExecutor(client=client, startup="startup")
 
     job_handle = MagicMock()
     job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+    resource_manager = MagicMock()
+    resource_manager.free_resources.side_effect = lambda **_kwargs: order.append("free")
 
     engine = MagicMock()
     fl_ctx = MagicMock()
     fl_ctx.get_engine.return_value = engine
 
-    with patch("nvflare.private.fed.client.client_executor.get_return_code", return_value=JobReturnCode.SUCCESS):
+    def retire_before_unregister(cell, job_id):
+        assert cell is client.cell
+        assert job_id in job_executor.run_processes
+        order.append("retire")
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_return_code", return_value=JobReturnCode.SUCCESS),
+        patch(
+            "nvflare.private.fed.client.client_executor.retire_job_traffic",
+            side_effect=retire_before_unregister,
+        ),
+    ):
+        job_executor._wait_child_process_finish(
+            client=client,
+            job_id="job-1",
+            allocated_resource={"gpu": [0]},
+            token="token-1",
+            resource_manager=resource_manager,
+            workspace="/tmp/workspace",
+            fl_ctx=fl_ctx,
+        )
+
+    assert order == ["free", "send", "retire"]
+    resource_manager.free_resources.assert_called_once()
+    client.send_request_before_shutdown.assert_called_once()
+    assert "job-1" not in job_executor.run_processes
+    engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
+
+
+@pytest.mark.parametrize("return_code", [JobReturnCode.SUCCESS, JobReturnCode.ABORTED])
+def test_wait_child_process_frees_resources_after_handoff_before_terminal_request(return_code):
+    order = []
+    client = MagicMock()
+    client.client_name = "site-1"
+    client.send_request_before_shutdown.side_effect = lambda **_kwargs: order.append("send")
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_handle.wait.side_effect = lambda: order.append("wait")
+    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+    resource_manager = MagicMock()
+    resource_manager.free_resources.side_effect = lambda **_kwargs: order.append("free")
+    fl_ctx = MagicMock()
+
+    def retire_before_unregister(cell, job_id):
+        assert cell is client.cell
+        assert job_id in job_executor.run_processes
+        order.append("retire")
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_return_code", return_value=return_code),
+        patch(
+            "nvflare.private.fed.client.client_executor._build_participant_resource_report",
+            side_effect=lambda **_kwargs: order.append("handoff") or b"{}",
+        ),
+        patch(
+            "nvflare.private.fed.client.client_executor.retire_job_traffic",
+            side_effect=retire_before_unregister,
+        ),
+    ):
+        job_executor._wait_child_process_finish(
+            client=client,
+            job_id="job-1",
+            allocated_resource={"gpu": [0]},
+            token="token-1",
+            resource_manager=resource_manager,
+            workspace="/tmp/workspace",
+            fl_ctx=fl_ctx,
+        )
+
+    assert order == ["wait", "handoff", "free", "send", "retire"]
+    resource_manager.free_resources.assert_called_once_with(
+        resources={"gpu": [0]}, token="token-1", fl_ctx=client.engine.new_context.return_value
+    )
+    assert "job-1" not in job_executor.run_processes
+
+
+def test_wait_child_process_frees_resources_once_without_job_handle():
+    client = MagicMock()
+    client.client_name = "site-1"
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_executor.run_processes = {"job-1": {}}
+    resource_manager = MagicMock()
+    fl_ctx = MagicMock()
+
+    job_executor._wait_child_process_finish(
+        client=client,
+        job_id="job-1",
+        allocated_resource={"gpu": [0]},
+        token="token-1",
+        resource_manager=resource_manager,
+        workspace="/tmp/workspace",
+        fl_ctx=fl_ctx,
+    )
+
+    resource_manager.free_resources.assert_called_once_with(
+        resources={"gpu": [0]}, token="token-1", fl_ctx=client.engine.new_context.return_value
+    )
+    client.send_request_before_shutdown.assert_not_called()
+    assert "job-1" not in job_executor.run_processes
+    fl_ctx.get_engine.return_value.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
+
+
+def test_wait_child_process_frees_resources_once_when_wait_fails():
+    client = MagicMock()
+    client.client_name = "site-1"
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_handle.wait.side_effect = RuntimeError("wait failed")
+    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+    resource_manager = MagicMock()
+    fl_ctx = MagicMock()
+
+    with pytest.raises(RuntimeError, match="wait failed"):
+        job_executor._wait_child_process_finish(
+            client=client,
+            job_id="job-1",
+            allocated_resource={"gpu": [0]},
+            token="token-1",
+            resource_manager=resource_manager,
+            workspace="/tmp/workspace",
+            fl_ctx=fl_ctx,
+        )
+
+    resource_manager.free_resources.assert_called_once_with(
+        resources={"gpu": [0]}, token="token-1", fl_ctx=client.engine.new_context.return_value
+    )
+    client.send_request_before_shutdown.assert_not_called()
+    assert "job-1" not in job_executor.run_processes
+    fl_ctx.get_engine.return_value.fire_event.assert_not_called()
+
+
+def test_wait_child_process_still_reports_outcome_when_resource_report_fails():
+    client = MagicMock()
+    client.client_name = "site-1"
+    client.send_request_before_shutdown.return_value.get_header.return_value = ReturnCode.OK
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
+    fl_ctx = MagicMock()
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_return_code", return_value=JobReturnCode.SUCCESS),
+        patch(
+            "nvflare.private.fed.client.client_executor._build_participant_resource_report",
+            side_effect=RuntimeError("bad handoff"),
+        ),
+    ):
         job_executor._wait_child_process_finish(
             client=client,
             job_id="job-1",
@@ -1107,8 +1687,10 @@ def test_wait_child_process_cleans_up_when_terminal_outcome_report_fails():
         )
 
     client.send_request_before_shutdown.assert_called_once()
+    payload = client.send_request_before_shutdown.call_args.kwargs["request"].payload
+    assert payload[JobOutcomeMsgKey.CODE] == JobReturnCode.SUCCESS
+    assert JobOutcomeMsgKey.RESOURCE_REPORT not in payload
     assert "job-1" not in job_executor.run_processes
-    engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
 
 
 def test_wait_child_process_skips_terminal_outcome_after_client_communication_stops():
@@ -1185,11 +1767,6 @@ def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path, monkeyp
 
 
 def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(tmp_path, monkeypatch):
-    from pathlib import Path
-
-    from nvflare.fuel.utils.config_service import ConfigService
-    from nvflare.private.fed.client.client_app_runner import ClientAppRunner
-    from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 
     job_meta, workspace, _, _ = _make_start_app_inputs(tmp_path)
     job_meta["cj_resource_spec"] = {"site-1": {}}
@@ -1219,7 +1796,6 @@ def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(
 
 @pytest.mark.parametrize("budget", [{"num_of_cpus": 0.5}, {"memory": "1Gi"}, {"num_of_gpus": 1}])
 def test_process_cj_rejects_explicit_unenforceable_coordinator_budget(budget):
-    from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 
     context = MagicMock()
     context.get_identity_name.return_value = "site-1"
@@ -1231,8 +1807,6 @@ def test_process_cj_rejects_explicit_unenforceable_coordinator_budget(budget):
     "compute", [{"num_of_cpus": 2}, {"memory": "4Gi"}, {"num_of_licenses": 1}, {"mem_per_gpu_in_GiB": 8}]
 )
 def test_process_task_compute_requirements_fail_before_starting_cj(compute):
-    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
-    from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 
     context = Mock()
     context.get_identity_name.return_value = "site-1"
@@ -1245,7 +1819,6 @@ def test_process_task_compute_requirements_fail_before_starting_cj(compute):
 
 
 def test_process_resident_compute_admission_keeps_legacy_behavior():
-    from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 
     context = Mock()
     context.get_identity_name.return_value = "site-1"
@@ -1274,8 +1847,6 @@ def test_cp_admission_uses_shared_resource_lifetime_classifier(tmp_path):
 
 
 def test_cj_admission_uses_shared_resource_lifetime_classifier(tmp_path):
-    from nvflare.private.fed.client.client_app_runner import ClientAppRunner
-    from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 
     job_meta, workspace, _, _ = _make_start_app_inputs(tmp_path)
     job_meta["cj_resource_spec"] = {"site-1": {}}

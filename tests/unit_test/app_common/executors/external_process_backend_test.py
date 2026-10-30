@@ -174,6 +174,9 @@ class FakeCell:
     def get_fqcn(self):
         return self.fqcn
 
+    def get_traffic_stats(self):
+        return {}
+
     def is_cell_connected(self, target_fqcn):
         return target_fqcn not in self.disconnected
 
@@ -426,6 +429,79 @@ def _drive_natural_reaper(backend, trainer, monkeypatch, steps):
     backend._closed = True
     backend._wait_for_natural_exit_and_cleanup(trainer)
     return observations
+
+
+def test_traffic_snapshot_requires_existing_session_and_task_validation(env):
+    from nvflare.private.fed.resource_stats.message_traffic import snapshot_message_traffic
+
+    backend, _ = _initialized_backend(env)
+    trainer = backend._active_launch
+    try:
+        trainer.result_source_live.set()
+        trainer.result_source_task_id = "task-1"
+        payload = {
+            MsgKey.SESSION_ID: trainer.session_id,
+            MsgKey.TASK_ID: "task-1",
+            MsgKey.MESSAGE_TRAFFIC: {"sent_bytes": "123", "received_bytes": "456"},
+        }
+        invalid = dict(payload, **{MsgKey.SESSION_ID: "wrong-session"})
+        reply = env.cell.deliver(Topic.RESULT_SOURCE_SETTLED, trainer.trainer_fqcn, invalid)
+        assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.ERROR
+        assert snapshot_message_traffic(env.cell)["status"] == "partial"
+        reply = env.cell.deliver(Topic.RESULT_SOURCE_SETTLED, trainer.trainer_fqcn, payload)
+        assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_SOURCE_SETTLED
+        assert snapshot_message_traffic(env.cell) == {"sent_bytes": "123", "received_bytes": "456"}
+        assert not trainer.result_source_live.is_set()
+    finally:
+        backend.finalize(FLContext())
+
+
+def test_existing_shutdown_reply_updates_cumulative_trainer_traffic(env):
+    from nvflare.private.fed.resource_stats.message_traffic import snapshot_message_traffic
+
+    backend, _ = _initialized_backend(env)
+    trainer = backend._active_launch
+    env.cell.on_shutdown = lambda *_: make_cell_reply(
+        CellReturnCode.OK,
+        body={
+            MsgKey.RESULT_SOURCE_LIVE: False,
+            MsgKey.MESSAGE_TRAFFIC: {"sent_bytes": "200", "received_bytes": "500"},
+        },
+    )
+    try:
+        backend._request_trainer_shutdown(trainer, wait_timeout=0.1)
+        assert snapshot_message_traffic(env.cell) == {"sent_bytes": "200", "received_bytes": "500"}
+        backend._request_trainer_shutdown(trainer, wait_timeout=0.1)
+        assert snapshot_message_traffic(env.cell) == {"sent_bytes": "200", "received_bytes": "500"}
+    finally:
+        backend.finalize(FLContext())
+
+
+def test_failed_result_source_keeps_traffic_partial_after_existing_failure_cleanup(env):
+    from nvflare.private.fed.resource_stats.message_traffic import snapshot_message_traffic
+
+    backend, _ = _initialized_backend(env)
+    trainer = backend._active_launch
+    try:
+        ebp.record_external_trainer_traffic(
+            env.cell, trainer.trainer_fqcn, {"sent_bytes": "123", "received_bytes": "456"}
+        )
+        # Existing source-failure handling clears this live flag before cleanup.
+        trainer.result_source_live.clear()
+        trainer.result_failure_notified = True
+        trainer.result_failure_delivery_done.set()
+        trainer.process.exit(1)
+
+        backend._cleanup_trainer(trainer)
+
+        assert snapshot_message_traffic(env.cell) == {
+            "sent_bytes": "123",
+            "received_bytes": "456",
+            "status": "partial",
+            "issues": ["observation_incomplete"],
+        }
+    finally:
+        backend.finalize(FLContext())
 
 
 def _install_auto_result(env, lazy_result=False):

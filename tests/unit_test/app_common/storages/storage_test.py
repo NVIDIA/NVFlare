@@ -125,6 +125,21 @@ def test_write_multi_invalid_source_reports_path(tmp_path):
         _write(str(tmp_path / "archive.zip"), [str(missing_source)])
 
 
+def test_get_data_for_download_copies_when_symlink_is_unavailable(tmp_path):
+    storage = FilesystemStorage(root_dir=str(tmp_path / "storage"))
+    storage.create_object("jobs/job-1", b"job", {"name": "job-1"})
+    storage.update_object("jobs/job-1", b"workspace", "workspace")
+    destination = tmp_path / "download" / "workspace.zip"
+    destination.parent.mkdir()
+
+    with patch("nvflare.app_common.storages.filesystem_storage.os.symlink", side_effect=PermissionError("denied")):
+        storage.get_data_for_download("jobs/job-1", "workspace", str(destination))
+
+    assert destination.is_file()
+    assert not destination.is_symlink()
+    assert destination.read_bytes() == b"workspace"
+
+
 # TODO:: Add S3Storage test
 @pytest.fixture(name="storage", params=["FilesystemStorage"])
 def setup_and_teardown(request):

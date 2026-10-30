@@ -39,6 +39,7 @@ from nvflare.tool.package.package_cli import def_package_cli_parser, handle_pack
 from nvflare.tool.poc.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
 from nvflare.tool.recipe.recipe_cli import def_recipe_parser, handle_recipe_cmd
+from nvflare.tool.resources.resources_cli import def_resources_cli_parser, handle_resources_cmd
 from nvflare.tool.study.study_cli import def_study_cli_parser, handle_study_cmd
 from nvflare.tool.system.system_cli import def_system_cli_parser, handle_system_cmd
 from nvflare.utils.cli_utils import (
@@ -60,6 +61,7 @@ CMD_SIMULATOR = "simulator"
 CMD_DASHBOARD = "dashboard"
 CMD_AUTHZ_PREVIEW = "authz-preview"
 CMD_JOB = "job"
+CMD_RESOURCES = "resources"
 CMD_RECIPE = "recipe"
 CMD_CONFIG = "config"
 CMD_CERT = "cert"
@@ -465,6 +467,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_dashboard_parser(sub_cmd))
     sub_cmd_parsers.update(def_authz_preview_parser(sub_cmd))
     sub_cmd_parsers.update(def_job_cli_parser(sub_cmd))
+    sub_cmd_parsers.update(def_resources_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_recipe_parser(sub_cmd))
     sub_cmd_parsers.update(def_config_parser(sub_cmd))
     sub_cmd_parsers.update(def_cert_cli_parser(sub_cmd))
@@ -547,6 +550,7 @@ handlers = {
     CMD_DASHBOARD: handle_dashboard,
     CMD_AUTHZ_PREVIEW: handle_authz_preview,
     CMD_JOB: handle_job_cli_cmd,
+    CMD_RESOURCES: handle_resources_cmd,
     CMD_RECIPE: handle_recipe_cmd,
     CMD_CONFIG: handle_config_cmd,
     CMD_CERT: handle_cert_cmd,

@@ -25,6 +25,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.private.fed.resource_stats.cpu_consumed import register_managed_child
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 from .constants import XGB_TRAIN_TASK, XGBShareableHeader
@@ -117,6 +118,7 @@ class XGBFedController(Controller):
                 target=xgb_federated.run_federated_server, args=(len(clients), self._port)
             )
         self._xgb_fl_server.start()
+        register_managed_child(self._xgb_fl_server, descendants_may_be_unwaited=True)
         self._started = True
 
     def stop_controller(self, fl_ctx: FLContext):

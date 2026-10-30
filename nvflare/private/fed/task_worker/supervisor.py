@@ -25,7 +25,7 @@ import math
 import os
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Optional
 
 from nvflare.apis.fl_constant import ReturnCode, TaskResultReceipt
@@ -92,6 +92,9 @@ class _Attempt:
     releasing: bool = False
     released: bool = False
     result_readers: int = 0
+    resource_registered: bool = False
+    launch_called: bool = False
+    resource_unresolved: bool = False
 
 
 class TaskSupervisor:
@@ -107,10 +110,11 @@ class TaskSupervisor:
     supervisor diagnostics remain after payload release in either case.
     """
 
-    def __init__(self, *, retain_artifacts: bool = False):
+    def __init__(self, *, retain_artifacts: bool = False, resource_reducer=None):
         if not isinstance(retain_artifacts, bool):
             raise TypeError("retain_artifacts must be bool")
         self._retain_artifacts = retain_artifacts
+        self._resource_reducer = resource_reducer
         self._execution_lock = threading.Lock()
         self._state_lock = threading.RLock()
         self._diagnostic_lock = threading.Lock()
@@ -120,6 +124,26 @@ class TaskSupervisor:
         self._stopping = False
         self._settlement_unconfirmed = False
         self._issues = []
+
+    def _resource_call(self, method, *args, **kwargs):
+        if self._resource_reducer is None:
+            return None
+        try:
+            return getattr(self._resource_reducer, method)(*args, **kwargs)
+        except Exception:
+            # Optional observations never change training or settlement.
+            try:
+                self._resource_reducer.mark_incomplete()
+            except Exception:
+                pass
+        return None
+
+    def _bind_resources(self, attempt):
+        try:
+            if self._resource_reducer is not None and attempt.handle is not None:
+                self._resource_reducer.bind(attempt.identity, attempt.handle.execution_id)
+        except Exception:
+            self._resource_call("mark_incomplete")
 
     @property
     def settlement_unconfirmed(self) -> bool:
@@ -167,6 +191,10 @@ class TaskSupervisor:
             raise TaskSettlementError("task execution settlement is unconfirmed", status)
         with self._state_lock:
             attempt.settled = True
+            late_resources = attempt.resource_unresolved
+            attempt.resource_unresolved = False
+        if late_resources:
+            self._resource_call("settle", attempt.identity, attempt.store, started=True, settled=True)
         return status
 
     def _cancel(self, attempt):
@@ -248,6 +276,10 @@ class TaskSupervisor:
                 attempt = _Attempt(identity, store, runtime_root)
                 self._attempts[identity] = attempt
                 self._active = attempt
+            attempt.resource_registered = self._resource_call("register", identity) is True
+            # The runtime owner enables reporting only after reserving its budget.
+            # This is private bootstrap state, not a job or operator setting.
+            bootstrap = replace(bootstrap, resource_reporting=attempt.resource_registered)
             store.create_attempt(identity)
             store.write_input(identity, input_payload)
             bootstrap_path = store.bootstrap_path(identity)
@@ -259,15 +291,18 @@ class TaskSupervisor:
                 attempt.failed = True
                 return TaskSupervisorOutcome(identity=identity, aborted=True)
             try:
+                attempt.launch_called = True
                 handle = launcher.launch_task(request)
             except TaskLaunchError as e:
                 # Acquiring a handle is ownership, including post-spawn errors.
                 with self._state_lock:
                     attempt.handle = e.handle
+                self._bind_resources(attempt)
                 self._diagnostic(attempt, "launch_failed", execution_id=getattr(e.handle, "execution_id", None))
                 raise
             with self._state_lock:
                 attempt.handle = handle
+            self._bind_resources(attempt)
             self._diagnostic(attempt, "launched", execution_id=handle.execution_id, supervisor_pid=os.getpid())
             if handle.request.identity != launch_identity:
                 raise ValueError("launcher handle does not match owned task attempt identity")
@@ -328,6 +363,16 @@ class TaskSupervisor:
                     self._cancel(attempt)
             raise
         finally:
+            if attempt is not None and attempt.resource_registered:
+                with self._state_lock:
+                    attempt.resource_unresolved = attempt.launch_called and not attempt.settled
+                self._resource_call(
+                    "settle",
+                    attempt.identity,
+                    attempt.store,
+                    started=True if attempt.handle is not None else (None if attempt.launch_called else False),
+                    settled=attempt.settled,
+                )
             with self._state_lock:
                 if attempt is not None and (attempt.handle is None or attempt.settled):
                     if not self._settlement_unconfirmed:

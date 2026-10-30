@@ -31,6 +31,7 @@ from typing import Any, Mapping, Optional
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_download_ref
+from nvflare.private.fed.resource_stats.contract import normalize_duration, normalize_measurement
 
 from .protocol import SCHEMA_VERSION, TaskAttemptIdentity, _freeze_json, _load_json, _open_directory
 from .protocol import _open_regular as _open_protocol_file
@@ -38,6 +39,8 @@ from .protocol import _publish_exclusive, _require_payload_limit, _thaw_json
 
 _CHUNK_SIZE = 1024 * 1024
 _MAX_RECORD_BYTES = 1024 * 1024
+_MAX_RESOURCE_STATS_BYTES = 64 * 1024
+_RESOURCE_STATS_TEMP = ".resource_stats.tmp"
 _INPUT_KIND = "input"
 _RESULT_KIND = "result"
 _CHECKPOINT_KIND = "checkpoint"
@@ -182,6 +185,38 @@ def _read_json(path: str) -> dict:
     if not isinstance(value, dict):
         raise ValueError("artifact record must be a JSON object")
     return value
+
+
+def _read_json_at(directory_fd, name, limit):
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(name, flags, dir_fd=directory_fd)
+    with os.fdopen(fd, "rb") as stream:
+        metadata = os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > limit:
+            raise ValueError("resource record must be a bounded regular file")
+        encoded = stream.read(limit + 1)
+    if len(encoded) > limit:
+        raise ValueError("resource record exceeds its size limit")
+    value = _load_json(encoded)
+    if not isinstance(value, dict):
+        raise ValueError("resource record must be an object")
+    return value
+
+
+def _resource_record(identity, value):
+    required = {"schema_version", "identity", "scope", "resource_capacity", "cpu_consumed", "message_traffic"}
+    if not isinstance(value, Mapping) or not required <= set(value) <= required | {"duration_seconds"}:
+        raise ValueError("invalid execution resource record fields")
+    if value["schema_version"] != "1.0" or value["scope"] != "worker":
+        raise ValueError("unsupported execution resource record")
+    if TaskAttemptIdentity.from_dict(value["identity"]) != identity:
+        raise ValueError("execution resource record identity mismatch")
+    result = {"schema_version": "1.0", "identity": identity.to_dict(), "scope": "worker"}
+    for name in ("resource_capacity", "cpu_consumed", "message_traffic"):
+        result[name] = normalize_measurement(name, value[name])
+    if "duration_seconds" in value:
+        result["duration_seconds"] = normalize_duration(value["duration_seconds"])
+    return result
 
 
 @contextmanager
@@ -449,6 +484,70 @@ class FileTaskArtifactStore:
         actual = TaskAttemptIdentity.from_dict(_read_json(os.path.join(self.attempt_dir(identity), "identity.json")))
         if actual != identity:
             raise ValueError("invalid or stale task artifact identity")
+
+    @contextmanager
+    def _resource_directory(self, identity):
+        directory = self.attempt_dir(identity)
+        directory_fd = _open_directory(directory)
+        try:
+            before = os.fstat(directory_fd)
+            actual = TaskAttemptIdentity.from_dict(_read_json_at(directory_fd, "identity.json", _MAX_RECORD_BYTES))
+            if actual != identity:
+                raise ValueError("invalid or stale task artifact identity")
+            yield directory_fd
+            after = os.stat(directory, follow_symlinks=False)
+            if not stat.S_ISDIR(after.st_mode) or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+                raise ValueError("task resource directory was replaced")
+        finally:
+            os.close(directory_fd)
+
+    def write_resource_stats(self, identity, value):
+        """Publish one optional final sidecar independently of result commits."""
+
+        checked = _resource_record(identity, value)
+        encoded = json.dumps(checked, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        if len(encoded) > _MAX_RESOURCE_STATS_BYTES:
+            raise ValueError("execution resource record exceeds 64 KiB")
+        with self._resource_directory(identity) as directory_fd:
+            # A claimed attempt has one writer. A fixed exclusive temporary can
+            # be retired after hard loss without scanning the attempt directory.
+            temporary = _RESOURCE_STATS_TEMP
+            fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600, dir_fd=directory_fd)
+            try:
+                with os.fdopen(fd, "wb") as stream:
+                    stream.write(encoded)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.link(
+                    temporary,
+                    "resource_stats.json",
+                    src_dir_fd=directory_fd,
+                    dst_dir_fd=directory_fd,
+                    follow_symlinks=False,
+                )
+                os.fsync(directory_fd)
+            finally:
+                os.unlink(temporary, dir_fd=directory_fd)
+
+    def read_resource_stats(self, identity):
+        """Read only the owned sidecar; missing statistics are not result errors."""
+
+        with self._resource_directory(identity) as directory_fd:
+            try:
+                value = _read_json_at(directory_fd, "resource_stats.json", _MAX_RESOURCE_STATS_BYTES)
+            except FileNotFoundError:
+                return None
+            return _resource_record(identity, value)
+
+    def remove_resource_stats(self, identity):
+        """Retire settled statistics and interrupted publication, not result files."""
+
+        with self._resource_directory(identity) as directory_fd:
+            for name in ("resource_stats.json", _RESOURCE_STATS_TEMP):
+                try:
+                    os.unlink(name, dir_fd=directory_fd)
+                except FileNotFoundError:
+                    pass
 
     def claim_worker(self, identity: TaskAttemptIdentity):
         """Fence duplicate execution before any application import or callback.
