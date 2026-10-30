@@ -42,6 +42,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.deprecated import warn_deprecated
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
@@ -64,6 +65,9 @@ class WorkerComponentBuilder(ComponentBuilder):
 
     def get_module_scanner(self):
         return self.module_scanner
+
+    def has_component_build_authorizer(self):
+        return self.enforce_authorization
 
     @staticmethod
     def make_component_node(component_config, index=None):
@@ -143,6 +147,11 @@ class MultiProcessExecutor(Executor):
             components: a dictionary for component classes to their arguments
         """
         super().__init__()
+        warn_deprecated(
+            "MultiProcessExecutor and PTMultiProcessExecutor are deprecated as of NVFlare 2.10. "
+            "Use job-based Client API with external-process torchrun; see the Migration Guide.",
+            stacklevel=3,
+        )
         self.executor_id = executor_id
 
         self.components_conf = components
@@ -192,7 +201,11 @@ class MultiProcessExecutor(Executor):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
-            self.initialize(fl_ctx)
+            try:
+                self.initialize(fl_ctx)
+            except Exception:
+                self.system_panic("multi-process executor initialization failed", fl_ctx)
+                raise
         elif event_type == EventType.END_RUN:
             self.finalize(fl_ctx)
 
@@ -324,6 +337,7 @@ class MultiProcessExecutor(Executor):
                     raise ValueError(reply.get_header(MessageHeaderKey.ERROR))
         except Exception as e:
             self.log_exception(fl_ctx, f"error initializing multi_process executor: {secure_format_exception(e)}")
+            raise
 
     def receive_execute_result(self, request: CellMessage) -> CellMessage:
         return_data = request.payload

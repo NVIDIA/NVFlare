@@ -14,6 +14,7 @@
 
 import json
 import threading
+from unittest.mock import Mock
 
 import pytest
 
@@ -995,3 +996,24 @@ def test_sub_worker_initialize_rejects_unsafe_component_payload_before_build(tmp
         sub_worker._initialize(data)
 
     assert ContainerComponent.instantiated is False
+
+
+@pytest.mark.parametrize("failure_phase", ["components", "executor_id", "launcher"])
+def test_multi_process_initialization_failure_signals_fatal_error(monkeypatch, failure_phase):
+    executor = _TestMultiProcessExecutor(executor_id="trainer", components=[])
+    executor.components["trainer"] = executor
+    engine = Mock()
+    fl_ctx = FLContext()
+    monkeypatch.setattr(fl_ctx, "get_engine", lambda: engine)
+    if failure_phase == "components":
+        monkeypatch.setattr(executor, "_build_components", Mock(side_effect=RuntimeError("constructor failed")))
+    elif failure_phase == "executor_id":
+        executor.components.clear()
+    else:
+        monkeypatch.setattr(executor, "get_multi_process_command", Mock(side_effect=RuntimeError("startup failed")))
+
+    with pytest.raises((RuntimeError, ValueError)):
+        executor.handle_event(EventType.START_RUN, fl_ctx)
+
+    fatal_events = [call for call in engine.fire_event.call_args_list if call.args[0] == EventType.FATAL_SYSTEM_ERROR]
+    assert len(fatal_events) == 1

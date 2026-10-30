@@ -61,6 +61,12 @@ The above configuration is an example from hello_numpy. Each task can only be as
 
 Multi-Process Executor
 ----------------------
+.. deprecated:: 2.10
+
+   ``MultiProcessExecutor`` and ``PTMultiProcessExecutor`` remain available for
+   compatibility. For new distributed training, use Client API with external
+   ``torchrun``. See :ref:`multi_process_executor_migration`.
+
 :class:`MultiProcessExecutor<nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor>` is designed to
 easily allow the FL executor to support multi-processes execution. The behavior of the Executor remains the same
 including the firing and handling of FL events. MultiProcessExecutor allows researchers to focus on the training and
