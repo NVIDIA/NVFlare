@@ -46,16 +46,13 @@ def _configure_active_startup_kit(tmp_path, monkeypatch):
 
     config_dir = home / ".nvflare"
     config_dir.mkdir(parents=True)
-    (config_dir / "config.conf").write_text(
-        f"""
-        version = 2
-        startup_kits {{
-          active = "admin@nvidia.com"
-          entries {{
-            "admin@nvidia.com" = "{admin_dir}"
-          }}
-        }}
-        """,
+    (config_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "startup_kits": {"active": "admin@nvidia.com", "entries": {"admin@nvidia.com": str(admin_dir)}},
+            }
+        ),
         encoding="utf-8",
     )
     monkeypatch.setenv("HOME", str(home))
@@ -304,7 +301,6 @@ def test_create_job_does_not_require_active_startup_kit(monkeypatch, tmp_path):
         monkeypatch.setattr(job_cli, "prepare_app_dirs", lambda _folder, _apps: [])
         monkeypatch.setattr(job_cli, "prepare_app_scripts", lambda _folder, _dirs, _args: None)
         monkeypatch.setattr(job_cli, "get_config_dirs", lambda _folder, _apps: [])
-        monkeypatch.setattr(job_cli.ConfigFactory, "search_config_format", lambda *_args, **_kwargs: (None, None))
         monkeypatch.setattr(job_cli.shutil, "copytree", lambda *args, **kwargs: None)
         monkeypatch.setattr(job_cli, "remove_extra_files", lambda _path: None)
         monkeypatch.setattr(job_cli, "prepare_meta_config", lambda *_args, **_kwargs: None)

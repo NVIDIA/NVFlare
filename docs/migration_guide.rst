@@ -197,7 +197,7 @@ CLI Startup Kit Resolution Change
 ---------------------------------
 
 On the current ``main`` branch, server-connected CLI commands use a shared
-active startup kit registry in ``~/.nvflare/config.conf``.
+active startup kit registry in ``~/.nvflare/config.json``.
 
 Impact:
 

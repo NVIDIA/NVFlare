@@ -396,8 +396,7 @@ class TestJobMetaValidator:
         assert error
 
 
-@pytest.mark.parametrize("extension", ["json", "conf", "yml"])
-def test_submission_derives_task_admission_from_client_config(extension):
+def test_submission_derives_task_admission_from_client_config():
     from nvflare.utils.job_launcher_utils import get_resource_manager_spec
 
     meta = {
@@ -411,13 +410,21 @@ def test_submission_derives_task_admission_from_client_config(extension):
         meta,
         {"format_version": 2, "workflows": []},
         {"format_version": 3, "execution_lifetime": "task", "executors": []},
-        extension,
     )
     valid, error, submitted = JobMetaValidator().validate("split", data)
     assert valid, error
     assert submitted["cj_resource_spec"] == {"@ALL": {}}
     assert get_resource_manager_spec(submitted, "site-1") == {}
     assert submitted["resource_spec"] == meta["resource_spec"]
+
+
+@pytest.mark.parametrize("extension", ["conf", "yml", "yaml"])
+def test_submission_rejects_hocon_and_yaml_client_configs(extension):
+    meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1}
+    data = _zip_minimal_job("split", meta, {"format_version": 2, "workflows": []}, client_extension=extension)
+    valid, error, _ = JobMetaValidator().validate("split", data)
+    assert not valid
+    assert "client config is missing" in error
 
 
 def test_submission_cannot_redirect_resident_gpu_admission_with_cj_marker():
@@ -432,61 +439,6 @@ def test_submission_cannot_redirect_resident_gpu_admission_with_cj_marker():
     valid, error, _ = JobMetaValidator().validate("split", data)
     assert not valid
     assert "task-lifetime" in error
-
-
-def _zip_split_job(files):
-    meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1}
-    job = {"app/config/config_fed_server.json": "{}", "app/config/config_fed_client.yaml": "executors: []\n"}
-    if not any(name.startswith("meta.") for name in files):
-        job["meta.json"] = json.dumps(meta)
-    job.update(files)
-    bio = io.BytesIO()
-    with ZipFile(bio, "w") as archive:
-        archive.writestr("split/app/config/", "")
-        for name, text in job.items():
-            archive.writestr(f"split/{name}", text)
-    return bio.getvalue()
-
-
-@pytest.mark.parametrize(
-    "name, text",
-    [
-        ("meta.conf", 'include "/etc/site.conf"\nname = split\n'),
-        ("app/config/config_fed_client.yml", "format_version: 2\ndata_root: ${oc.env:HOME}\n"),
-        ("app/config/config_fed_client.yaml", "a: &a [1]\nb: [*a, *a]\n"),
-        ("app/config/config_fed_client.yml", 'data_root: "\\u0024{oc.env:HOME}"\n'),
-    ],
-)
-def test_submission_rejects_configs_with_hocon_or_omegaconf_features_without_parsing_them(name, text, monkeypatch):
-    from omegaconf import OmegaConf
-    from pyhocon import ConfigFactory as HoconFactory
-
-    def forbidden(*args, **kwargs):
-        pytest.fail("submission parsed an unrendered job config")
-
-    for attr in ("parse_file", "parse_URL", "parse_string"):
-        monkeypatch.setattr(HoconFactory, attr, forbidden)
-    monkeypatch.setattr(OmegaConf, "create", forbidden)
-
-    valid, error, _ = JobMetaValidator().validate("split", _zip_split_job({name: text}))
-
-    assert not valid
-    assert f"split/{name}" in error
-
-
-@pytest.mark.parametrize("lifetime", ["job", "task"])
-def test_submission_accepts_rendered_and_shadowed_configs(lifetime):
-    data = _zip_split_job(
-        {
-            "app/config/config_fed_client.yml": f"execution_lifetime: {lifetime}\nexecutors: []\n",
-            "app/config/config_fed_server.conf.default": 'include "/etc/site.conf"\n',
-        }
-    )
-
-    valid, error, submitted = JobMetaValidator().validate("split", data)
-
-    assert valid, error
-    assert ("cj_resource_spec" in submitted) == (lifetime == "task")
 
 
 def test_submission_uses_shared_resource_lifetime_classifier(monkeypatch):

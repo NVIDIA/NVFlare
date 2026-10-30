@@ -768,8 +768,8 @@ determine which parameters need adjustment for your large model workloads.
 
 These timeout values can be overridden in your job configuration files:
 
-- **Client-side parameters**: Set in ``config_fed_client.conf`` (or ``.json``) under the ``SwarmClientController`` executor args.
-- **Server-side parameters**: Set in ``config_fed_server.conf`` (or ``.json``) under the ``SwarmServerController`` workflow args.
+- **Client-side parameters**: Set in ``config_fed_client.json`` under the ``SwarmClientController`` executor args.
+- **Server-side parameters**: Set in ``config_fed_server.json`` under the ``SwarmServerController`` workflow args.
 - **Global streaming parameters**: Set at the top level of your config files (e.g., ``np_download_chunk_size``, ``tensor_download_chunk_size``).
 
 For **Recipe API users** (recommended), use the ``add_server_config()`` method:

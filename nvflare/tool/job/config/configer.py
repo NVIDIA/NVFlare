@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 from typing import Any, Dict, List, Optional, Tuple
-
-from pyhocon import ConfigFactory, ConfigTree
 
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.lighter.tool_consts import NVFLARE_PREFIX
@@ -25,11 +24,12 @@ from nvflare.tool.job.job_client_const import (
     APP_CONFIG_FILE_BASE_NAMES,
     APP_CONFIG_KEY,
     APP_SCRIPT_KEY,
-    CONFIG_FED_CLIENT_CONF,
+    CONFIG_FED_CLIENT_JSON,
     DEFAULT_APP_NAME,
     JOB_META_BASE_NAME,
     META_APP_NAME,
 )
+from nvflare.utils.cli_utils import get_config_value, pop_config_value, set_config_value
 
 
 def merge_configs_from_cli(cmd_args, app_names: List[str]) -> Tuple[Dict[str, Dict[str, tuple]], bool]:
@@ -107,15 +107,14 @@ def filter_config_name_and_values(
 
 
 def _cast_type(key_index, cli_value):
-    """Casts cli_value to correct type.
-
-    Since build_reverse_order_index is using pyhocon, we need to do the same here.
-    """
-    if key_index.value is None:
+    """Casts cli_value to a JSON value (bool, null, number, list, object), else keeps it as a string."""
+    if key_index.value is None or not isinstance(cli_value, str):
         return cli_value
 
-    new_value = ConfigFactory.parse_string(f"{key_index.key}={cli_value}")[key_index.key]
-    return new_value
+    try:
+        return json.loads(cli_value)
+    except ValueError:
+        return cli_value
 
 
 def split_array_key(key: str) -> Tuple:
@@ -171,29 +170,22 @@ def get_last_token(input_string):
         return input_string
 
 
-def handle_key_in_path_notation_or_new_key(file: str, key: str, cli_value: str, config: ConfigTree, key_indices: Dict):
+def handle_key_in_path_notation_or_new_key(file: str, key: str, cli_value: str, config: dict, key_indices: Dict):
 
     key_value = None
     parent, index, key = split_array_key(key)
     if parent is not None and index is not None:
         # we have key expressed in the form of array such as component[index]
-        parent_config_list = config.get(parent)
+        parent_config_list = get_config_value(config, parent)
         if not isinstance(parent_config_list, list):
             raise ValueError(f"invalid key '{key}' for file {file}")
-        index_config = parent_config_list[index]
-        if cli_value:
-            index_config.put(key, cli_value)
-            key_value = index_config.get(key)
-        else:
-            # if the value is None, we need to drop the key
-            index_config.pop(key)
+        config = parent_config_list[index]
+
+    if cli_value:
+        set_config_value(config, key, cli_value)
+        key_value = get_config_value(config, key)
     else:
-        # we have key has no array component.
-        if cli_value:
-            config.put(key, cli_value)
-            key_value = config.get(key)
-        else:
-            config.pop(key)
+        pop_config_value(config, key)
 
     last_token = get_last_token(key)
     if key_value:
@@ -243,8 +235,8 @@ def merge_configs(
                                         new_value = _cast_type(key_index, cli_value)
                                         key_index.value = new_value
                                         parent_key = key_index.parent_key
-                                        if parent_key and isinstance(parent_key.value, ConfigTree):
-                                            parent_key.value.put(key_index.key, new_value)
+                                        if parent_key and isinstance(parent_key.value, dict):
+                                            parent_key.value[key_index.key] = new_value
                                 else:
                                     key_indices.pop(key)
 
@@ -298,7 +290,7 @@ def get_cli_config(cmd_args: Any, app_names: List[str]) -> Dict[str, Dict[str, D
         script = os.path.basename(script)
 
         if app_cli_config_dict:
-            key = CONFIG_FED_CLIENT_CONF
+            key = CONFIG_FED_CLIENT_JSON
             for _, cli_config_dict in app_cli_config_dict.items():
 
                 if key in cli_config_dict:
@@ -306,7 +298,7 @@ def get_cli_config(cmd_args: Any, app_names: List[str]) -> Dict[str, Dict[str, D
                 else:
                     cli_config_dict[key] = {APP_SCRIPT_KEY: script}
         else:
-            app_cli_config_dict = {DEFAULT_APP_NAME: {CONFIG_FED_CLIENT_CONF: {APP_SCRIPT_KEY: script}}}
+            app_cli_config_dict = {DEFAULT_APP_NAME: {CONFIG_FED_CLIENT_JSON: {APP_SCRIPT_KEY: script}}}
 
     return app_cli_config_dict
 
@@ -327,17 +319,17 @@ def _parse_cli_config(
         job_folder: job_folder directory
         app_names: application names
         cli_configs: Array of CLI config option in the format of
-           -f filename.conf  key1=v1 key2=v2
+           -f filename.json  key1=v1 key2=v2
            where <app_name>/config is omitted, default to app/config
            or
-           -f <app_name>/filename.conf  key1=v1 key2=v2
-           where config is omitted, default to <app_name>/config/filename.conf
+           -f <app_name>/filename.json  key1=v1 key2=v2
+           where config is omitted, default to <app_name>/config/filename.json
            or
-           -f <app_name>/config/filename.conf  key1=v1 key2=v2
+           -f <app_name>/config/filename.json  key1=v1 key2=v2
            or
-           -f <app_name>/custom/filename.conf  key1=v1 key2=v2
+           -f <app_name>/custom/filename.json  key1=v1 key2=v2
 
-           if filename.conf  is meta.conf, the <app_name> = __meta_app__
+           if filename.json  is meta.json, the <app_name> = __meta_app__
 
         separated by space
     Returns:
@@ -357,7 +349,7 @@ def _parse_cli_config(
 
             if app_name not in app_names and app_name != DEFAULT_APP_NAME and app_name != META_APP_NAME:
                 raise ValueError(
-                    f"Please specify one of the app names {app_names}. For example '<app_name>/xxx.conf k1=v1 k2=v2...'"
+                    f"Please specify one of the app names {app_names}. For example '<app_name>/xxx.json k1=v1 k2=v2...'"
                 )
 
             for conf in config_data:
@@ -459,10 +451,10 @@ def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str
 
 def get_app_name_from_path(path: str):
     # path is in the format of the following:
-    # path xxx.conf
-    # path app1/xxx.conf
-    # path app1/config/xxx.conf
-    # path app1/custom/xxx.conf
+    # path xxx.json
+    # path app1/xxx.json
+    # path app1/config/xxx.json
+    # path app1/custom/xxx.json
     if _is_meta_file(os.path.basename(path)):
         return META_APP_NAME
     if os.path.isabs(path):

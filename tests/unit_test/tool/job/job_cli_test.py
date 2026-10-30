@@ -17,7 +17,6 @@ import json
 import sys
 
 import pytest
-from pyhocon import ConfigFactory as CF
 
 from nvflare.tool.job import job_cli
 from nvflare.tool.job.job_cli import convert_args_list_to_dict
@@ -35,7 +34,7 @@ class TestJobCLI:
 
     @pytest.mark.parametrize(
         "filename, expected",
-        [("config_fed_server.conf", "config_fed_server"), ("README", "README"), ("/tmp/a.b.json", "a.b")],
+        [("config_fed_server.json", "config_fed_server"), ("README", "README"), ("/tmp/a.b.json", "a.b")],
     )
     def test_find_filename_basename(self, filename, expected):
         assert job_cli.find_filename_basename(filename) == expected
@@ -43,16 +42,15 @@ class TestJobCLI:
     def test_build_job_template_indices_finds_configured_templates(self, tmp_path):
         template = tmp_path / "fedavg"
         template.mkdir()
-        (template / "config_fed_server.conf").write_text("{}")
+        (template / "config_fed_server.json").write_text("{}")
 
         config = job_cli.build_job_template_indices(str(tmp_path))
 
-        assert "fedavg" in config.get("templates")
-        assert all(config.get(f"templates.fedavg.{key}") == "NA" for key in job_cli.JOB_INFO_KEYS)
+        assert config == {"templates": {"fedavg": {key: "NA" for key in job_cli.JOB_INFO_KEYS}}}
 
     def test_get_template_info_config_parses_optional_info_file(self, tmp_path):
         assert job_cli.get_template_info_config(str(tmp_path)) is None
-        (tmp_path / job_cli.JOB_INFO_CONF).write_text('description = "demo"')
+        (tmp_path / job_cli.JOB_INFO_JSON).write_text('{"description": "demo"}')
 
         config = job_cli.get_template_info_config(str(tmp_path))
 
@@ -64,8 +62,8 @@ class TestJobCLI:
         ignored = tmp_path / "ignored"
         for directory in (server_app, client_app, ignored):
             directory.mkdir()
-        (server_app / job_cli.CONFIG_FED_SERVER_CONF).write_text("{}")
-        (client_app / job_cli.CONFIG_FED_CLIENT_CONF).write_text("{}")
+        (server_app / job_cli.CONFIG_FED_SERVER_JSON).write_text("{}")
+        (client_app / job_cli.CONFIG_FED_CLIENT_JSON).write_text("{}")
 
         assert set(job_cli.get_app_dirs_from_template(str(tmp_path))) == {str(server_app), str(client_app)}
 
@@ -79,7 +77,7 @@ class TestJobCLI:
     def test_get_src_template_requires_directory_and_info_file(self, tmp_path):
         args = argparse.Namespace(template=str(tmp_path))
         assert job_cli.get_src_template(args) is None
-        (tmp_path / job_cli.JOB_INFO_CONF).write_text("{}")
+        (tmp_path / job_cli.JOB_INFO_JSON).write_text("{}")
         assert job_cli.get_src_template(args) == str(tmp_path)
 
     def test_remove_pycache_and_extra_template_files(self, tmp_path):
@@ -97,17 +95,17 @@ class TestJobCLI:
 
         config = tmp_path / "config"
         config.mkdir()
-        for filename in (job_cli.JOB_INFO_MD, job_cli.JOB_INFO_CONF, "__init__.py"):
+        for filename in (job_cli.JOB_INFO_MD, job_cli.JOB_INFO_JSON, "__init__.py"):
             (config / filename).write_text("remove")
         (config / "__pycache__").mkdir()
-        (config / "keep.conf").write_text("keep")
+        (config / "keep.json").write_text("keep")
 
         job_cli.remove_extra_files(str(config))
 
-        assert sorted(path.name for path in config.iterdir()) == ["keep.conf"]
+        assert sorted(path.name for path in config.iterdir()) == ["keep.json"]
 
     def test_check_template_exists(self):
-        config = CF.parse_string('{templates = {fedavg = {description = "demo"}}}')
+        config = {"templates": {"fedavg": {"description": "demo"}}}
 
         job_cli.check_template_exists("fedavg", config)
         with pytest.raises(ValueError, match="Invalid template name missing"):
@@ -202,15 +200,11 @@ class TestJobCLI:
             parser.parse_args(["job", "submit", "--submit-token", token])
 
 
-@pytest.mark.parametrize("extension", ["json", "conf", "yml", "yaml"])
 @pytest.mark.parametrize("override", [False, True])
 @pytest.mark.parametrize("lifetime", ["job", "task"])
-def test_submit_preparation_preserves_resource_defaults_and_role_admission(tmp_path, extension, override, lifetime):
-    import os
+def test_submit_preparation_preserves_resource_defaults_and_role_admission(tmp_path, override, lifetime):
     import shutil
 
-    from nvflare.fuel.utils.config_service import ConfigService
-    from nvflare.fuel.utils.job_config_converter import convert_job_configs
     from nvflare.utils.job_launcher_utils import (
         get_cj_resource_spec,
         get_portable_resource_spec,
@@ -232,13 +226,7 @@ def test_submit_preparation_preserves_resource_defaults_and_role_admission(tmp_p
     }
     if lifetime == "task":
         meta["cj_resource_spec"] = {"@default": {"num_of_cpus": 0.25, "memory": "512Mi", "num_of_gpus": 0}, "@ALL": {}}
-    if extension in {"json", "conf"}:
-        text = json.dumps(meta)
-    else:
-        import yaml
-
-        text = yaml.safe_dump(meta)
-    (source / f"meta.{extension}").write_text(text)
+    (source / "meta.json").write_text(json.dumps(meta))
     (config / "config_fed_server.json").write_text(json.dumps({"format_version": 2, "workflows": []}))
     (config / "config_fed_client.json").write_text(
         json.dumps({"format_version": 3 if lifetime == "task" else 2, "execution_lifetime": lifetime, "executors": []})
@@ -247,10 +235,9 @@ def test_submit_preparation_preserves_resource_defaults_and_role_admission(tmp_p
     shutil.copytree(source, submitted)
     args = argparse.Namespace(job_folder=str(source))
     if override:
-        args.config_file = [[f"meta.{extension}", "min_clients=2"]]
+        args.config_file = [["meta.json", "min_clients=2"]]
     job_cli.prepare_job_config(args, ["app"], str(submitted))
-    uploaded = convert_job_configs(str(submitted), str(tmp_path / "upload"))
-    actual = ConfigService.load_config_dict(os.path.join(uploaded, f"meta.{extension}"))
+    actual = json.loads((submitted / "meta.json").read_text())
     expected = dict(meta, min_clients=2 if override else 1)
     assert actual == expected
     assert get_portable_resource_spec(actual, "site-1") == {"num_of_cpus": 1, "memory": "2Gi", "num_of_gpus": 3}
@@ -258,4 +245,4 @@ def test_submit_preparation_preserves_resource_defaults_and_role_admission(tmp_p
     assert get_resource_manager_spec(actual, "site-1") == ({} if lifetime == "task" else {"num_of_gpus": 3})
     if lifetime == "task":
         assert get_cj_resource_spec(actual, "site-1") == {"num_of_cpus": 0.25, "memory": "512Mi", "num_of_gpus": 0}
-    assert ConfigService.load_config_dict(str(source / f"meta.{extension}")) == meta
+    assert json.loads((source / "meta.json").read_text()) == meta

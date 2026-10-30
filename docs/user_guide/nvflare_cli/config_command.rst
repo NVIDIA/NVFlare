@@ -6,7 +6,7 @@ Config Command
 
 Use ``nvflare config`` to manage local CLI settings, including startup kit
 registration and activation. Normal users should not need to edit or reason
-about the underlying ``~/.nvflare/config.conf`` storage layout.
+about the underlying ``~/.nvflare/config.json`` storage layout.
 
 ***********************
 Command Usage

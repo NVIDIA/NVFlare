@@ -20,7 +20,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
-from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
 from nvflare.tool import cli_output
@@ -118,12 +117,12 @@ class TestPocOutput:
 
         args = MagicMock()
         args.poc_workspace_dir = "/path/to/poc"
-        config = CF.parse_string("{}")
+        config = {}
 
         with (
             patch(
                 "nvflare.tool.poc.poc_commands.load_hidden_config_state",
-                return_value=("/fake/config.conf", config, False),
+                return_value=("/fake/config.json", config, False),
             ),
             patch("nvflare.tool.poc.poc_commands.save_config") as save_config,
             patch("nvflare.tool.cli_schema.handle_schema_flag"),
@@ -131,13 +130,13 @@ class TestPocOutput:
             config_poc(args)
 
         saved_config = save_config.call_args.args[0]
-        assert saved_config.get("poc.workspace") == "/path/to/poc"
-        assert save_config.call_args.args[1] == "/fake/config.conf"
+        assert saved_config["poc"]["workspace"] == "/path/to/poc"
+        assert save_config.call_args.args[1] == "/fake/config.json"
         captured = capsys.readouterr()
         assert captured.err == ""
         data = json.loads(captured.out)
         assert data["status"] == "ok"
-        assert data["data"]["config_file"] == "/fake/config.conf"
+        assert data["data"]["config_file"] == "/fake/config.json"
         assert data["data"]["poc_workspace_dir"] == "/path/to/poc"
 
     def test_poc_config_human_output_omits_json_payload(self, capsys, monkeypatch):
@@ -146,12 +145,12 @@ class TestPocOutput:
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         args = MagicMock()
         args.poc_workspace_dir = "/path/to/poc"
-        config = CF.parse_string("{}")
+        config = {}
 
         with (
             patch(
                 "nvflare.tool.poc.poc_commands.load_hidden_config_state",
-                return_value=("/fake/config.conf", config, False),
+                return_value=("/fake/config.json", config, False),
             ),
             patch("nvflare.tool.poc.poc_commands.save_config"),
             patch("nvflare.tool.cli_schema.handle_schema_flag"),

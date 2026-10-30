@@ -27,32 +27,28 @@ from pathlib import PurePath
 from tempfile import mkdtemp
 from typing import List, Optional, Tuple
 
-from pyhocon import ConfigFactory as CF
-from pyhocon import ConfigTree
-
 from nvflare.apis.utils.job_submit_token import validate_submit_token
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.tool.cli_arg_utils import get_arg_value
 from nvflare.tool.cli_session import add_startup_kit_selection_args, new_cli_session, new_cli_session_for_args
 from nvflare.tool.job.config.configer import build_config_file_indices, filter_indices, merge_configs_from_cli
 from nvflare.tool.job.job_client_const import (
-    CONFIG_FED_CLIENT_CONF,
-    CONFIG_FED_SERVER_CONF,
+    CONFIG_FED_CLIENT_JSON,
+    CONFIG_FED_SERVER_JSON,
     CONFIG_FILE_BASE_NAME_WO_EXTS,
     DEFAULT_APP_NAME,
     JOB_CONFIG_COMP_NAME,
     JOB_CONFIG_FILE_NAME,
     JOB_CONFIG_VAR_NAME,
     JOB_CONFIG_VAR_VALUE,
-    JOB_INFO_CONF,
     JOB_INFO_CONTROLLER_TYPE,
     JOB_INFO_CONTROLLER_TYPE_KEY,
     JOB_INFO_DESC,
     JOB_INFO_DESC_KEY,
     JOB_INFO_EXECUTION_API_TYPE,
     JOB_INFO_EXECUTION_API_TYPE_KEY,
+    JOB_INFO_JSON,
     JOB_INFO_KEYS,
     JOB_INFO_MD,
     JOB_META_BASE_NAME,
@@ -147,10 +143,10 @@ def find_filename_basename(f: str):
         return basename
 
 
-def build_job_template_indices(job_templates_dir: str) -> ConfigTree:
-    conf = CF.parse_string("{ templates = {} }")
+def build_job_template_indices(job_templates_dir: str) -> dict:
+    template_conf = {}
+    conf = {TEMPLATES_KEY: template_conf}
     config_file_base_names = CONFIG_FILE_BASE_NAME_WO_EXTS
-    template_conf = conf.get(TEMPLATES_KEY)
     keys = JOB_INFO_KEYS
 
     for f in os.listdir(job_templates_dir):
@@ -160,23 +156,25 @@ def build_job_template_indices(job_templates_dir: str) -> ConfigTree:
                 config_files = [f for f in files if find_filename_basename(f) in config_file_base_names]
                 if len(config_files) > 0:
                     info_conf = get_template_info_config(template_path)
+                    template_info = template_conf.setdefault(os.path.basename(f), {})
                     for key in keys:
-                        value = info_conf.get(key, "NA") if info_conf else "NA"
-                        template_name = os.path.basename(f)
-                        template_conf.put(f"{template_name}.{key}", value)
+                        template_info[key] = info_conf.get(key, "NA") if info_conf else "NA"
 
     return conf
 
 
 def get_template_info_config(template_dir):
-    info_conf_path = os.path.join(template_dir, JOB_INFO_CONF)
-    return CF.parse_file(info_conf_path) if os.path.isfile(info_conf_path) else None
+    info_conf_path = os.path.join(template_dir, JOB_INFO_JSON)
+    if not os.path.isfile(info_conf_path):
+        return None
+    with open(info_conf_path) as f:
+        return json.load(f)
 
 
 def get_app_dirs_from_template(template_dir):
     app_dirs = []
     for root, _dirs, files in os.walk(template_dir):
-        if root != template_dir and (CONFIG_FED_SERVER_CONF in files or CONFIG_FED_CLIENT_CONF in files):
+        if root != template_dir and (CONFIG_FED_SERVER_JSON in files or CONFIG_FED_CLIENT_JSON in files):
             app_dirs.append(root)
 
     return app_dirs
@@ -223,13 +221,12 @@ def create_job(cmd_args):
         prepare_app_scripts(job_folder, app_custom_dirs, cmd_args)
         config_dirs = get_config_dirs(job_folder, app_names)
 
-        fmt, real_config_path = ConfigFactory.search_config_format(CONFIG_FED_CLIENT_CONF, config_dirs)
-        if real_config_path and not cmd_args.force:
+        if any(has_client_config_file(d) for d in config_dirs) and not cmd_args.force:
             from nvflare.tool.cli_output import print_human
 
             print_human(
                 f"""\nwarning: configuration files:\n
-                    {"config_fed_server.[json|conf|yml]"} already exists.
+                    {CONFIG_FED_CLIENT_JSON} already exists.
                 \nNot generating the config files. If you would like to overwrite, use -force option"""
             )
             return
@@ -271,7 +268,7 @@ def get_src_template_by_name(cmd_args):
 def get_src_template(cmd_args) -> Optional[str]:
     target_template = os.path.abspath(cmd_args.template)
     if os.path.isdir(target_template):
-        info_file = os.path.join(target_template, JOB_INFO_CONF)
+        info_file = os.path.join(target_template, JOB_INFO_JSON)
         if os.path.isfile(info_file):
             return target_template
 
@@ -287,7 +284,7 @@ def remove_pycache_files(custom_dir):
 
 
 def remove_extra_files(config_dir):
-    extra_file = [JOB_INFO_MD, JOB_INFO_CONF, "__init__.py", "__pycache__"]
+    extra_file = [JOB_INFO_MD, JOB_INFO_JSON, "__init__.py", "__pycache__"]
     for ef in extra_file:
         file_path = os.path.join(config_dir, ef)
         if os.path.isfile(file_path):
@@ -423,12 +420,7 @@ def list_templates(cmd_args):
 
 def update_job_templates_dir(job_templates_dir: str):
     config_file_path, nvflare_config, _migration_needed = load_hidden_config_state()
-    if nvflare_config is None:
-        from pyhocon import ConfigFactory as CF
-
-        nvflare_config = CF.parse_string("{}")
-
-    config = create_job_template_config(nvflare_config, job_templates_dir)
+    config = create_job_template_config(nvflare_config or {}, job_templates_dir)
     save_config(config, config_file_path)
 
 
@@ -495,17 +487,10 @@ def submit_job(cmd_args):
     )
 
     def _has_job_meta(path: str) -> bool:
-        for ext in (".json", ".conf", ".yml", ".yaml"):
-            if os.path.isfile(os.path.join(path, f"meta{ext}")):
-                return True
-        return False
+        return os.path.isfile(os.path.join(path, f"{JOB_META_BASE_NAME}.json"))
 
     def _has_server_config(path: str) -> bool:
-        config_dir = os.path.join(path, "app", "config")
-        for ext in (".json", ".conf", ".yml", ".yaml"):
-            if os.path.isfile(os.path.join(config_dir, f"config_fed_server{ext}")):
-                return True
-        return False
+        return os.path.isfile(os.path.join(path, DEFAULT_APP_NAME, "config", CONFIG_FED_SERVER_JSON))
 
     def _resolve_job_folder(path: str) -> str:
         if _has_job_meta(path) and _has_server_config(path):
@@ -743,7 +728,7 @@ def define_list_templates_parser(job_subparser):
         nargs="?",
         default=None,
         help="Job template directory, if not specified, "
-        "will search from ~/.nvflare/config.conf and NVFLARE_HOME env. variables",
+        "will search from ~/.nvflare/config.json and NVFLARE_HOME env. variables",
     )
     show_jobs_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     show_jobs_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
@@ -874,16 +859,16 @@ def prepare_meta_config(cmd_args, target_template_dir, app_names):
             dst_path = meta_path
             break
 
-    src_meta_path = os.path.join(target_template_dir, f"{JOB_META_BASE_NAME}.conf")
+    src_meta_path = os.path.join(target_template_dir, f"{JOB_META_BASE_NAME}.json")
     if not os.path.isfile(src_meta_path):
-        dst_config = load_default_config_template(f"{JOB_META_BASE_NAME}.conf")
-    else:
-        dst_config = CF.parse_file(src_meta_path)
+        src_meta_path = os.path.join(os.path.dirname(__file__), "config", f"{JOB_META_BASE_NAME}.json")
+    with open(src_meta_path) as f:
+        dst_config = json.load(f)
 
-    # Use existing meta.conf if user already defined it.
+    # Use existing meta.json if user already defined it.
     if not dst_path or (dst_path and cmd_args.force):
-        dst_config.put("name", job_name)
-        dst_path = os.path.join(job_folder, f"{JOB_META_BASE_NAME}.conf")
+        dst_config["name"] = job_name
+        dst_path = os.path.join(job_folder, f"{JOB_META_BASE_NAME}.json")
         save_config(dst_config, dst_path)
 
     # clean up
@@ -894,13 +879,6 @@ def prepare_meta_config(cmd_args, target_template_dir, app_names):
             meta_path = os.path.join(config_dir, mf)
             if os.path.isfile(meta_path):
                 os.remove(meta_path)
-
-
-def load_default_config_template(config_file_name: str):
-    file_dir = os.path.dirname(__file__)
-    # src config here is always pyhocon
-    config_template = CF.parse_file(os.path.join(file_dir, f"config/{config_file_name}"))
-    return config_template
 
 
 def dst_app_path(job_folder: str, app_name="app"):

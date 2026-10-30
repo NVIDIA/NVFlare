@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from pyhocon import ConfigFactory as CF
+import json
 
-from nvflare.tool.job.config.config_indexer import KeyIndex, build_dict_reverse_order_index
+from nvflare.tool.job.config.config_indexer import KeyIndex, build_dict_reverse_order_index, load_json_conf
 from nvflare.tool.job.config.configer import extract_string_with_index, filter_config_name_and_values
 
 
 class TestConfigIndex:
     def test_dict_indexer(self):
-        key_indices = build_dict_reverse_order_index(config=CF.from_dict({}))
+        key_indices = build_dict_reverse_order_index(config={})
         assert len(key_indices) == 0
 
         config_dict = dict(
@@ -41,7 +41,7 @@ class TestConfigIndex:
             )
         )
 
-        config = CF.from_dict(config_dict)
+        config = config_dict
         x_key = KeyIndex(key="x", value=config.get("x"), parent_key=None)
 
         x1_key = KeyIndex(key="x1", value=config.get("x").get("x1"), parent_key=x_key)
@@ -93,7 +93,7 @@ class TestConfigIndex:
             "s[1]": s1_key,
         }
 
-        key_indices = build_dict_reverse_order_index(config=CF.from_dict(config_dict))
+        key_indices = build_dict_reverse_order_index(config=config_dict)
 
         print("\n\n")
         for key in key_indices:
@@ -147,7 +147,7 @@ class TestConfigIndex:
                               "id": "df_stats_generator",
                               "path": "df_statistics.DFStatistics",
                               "args": {
-                                "data_path": "data.csv"
+                                "data_path": "data.csv",
                                 "other_path": null
                               }
                             },
@@ -162,7 +162,7 @@ class TestConfigIndex:
                         ]
                     }
                     """
-        conf = CF.parse_string(config_str)
+        conf = json.loads(config_str)
         key_indices = build_dict_reverse_order_index(config=conf)
         exclude_key_list = []
         result = filter_config_name_and_values(exclude_key_list, key_indices)
@@ -173,16 +173,10 @@ class TestConfigIndex:
 
 
 def test_json_indexing_preserves_resource_keys_and_application_values(tmp_path):
-    import json
-
-    from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
-    from nvflare.tool.job.config.config_indexer import load_pyhocon_conf
-
     original = {
         "@default": {"@ALL": 1},
         "nested": [{"@ALL": "α ${literal}", "windows\\path": 2, 'a"b': 3, "line\nkey": 4, "devices": [0, 1]}],
     }
     path = tmp_path / "config.json"
     path.write_text(json.dumps(original))
-    config, _ = load_pyhocon_conf(path.name, str(tmp_path))
-    assert PyhoconConfig(config).to_dict() == original
+    assert load_json_conf(str(path)) == original

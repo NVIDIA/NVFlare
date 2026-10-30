@@ -90,16 +90,15 @@ class JobMetaValidator(JobMetaValidatorSpec):
     @staticmethod
     def _validate_meta(job_name: str, zf: ZipFile) -> Optional[dict]:
         base_meta_file = f"{job_name}/{JobConstants.META}"
-        logger.debug(f"validate file {base_meta_file}.[json|conf|yml] exists for job {job_name}")
+        logger.debug(f"validate file {base_meta_file}.json exists for job {job_name}")
 
         meta = None
         for ext, fmt in ConfigFormat.config_ext_formats().items():
             meta_file = f"{base_meta_file}{ext}"
             if meta_file in zf.namelist():
                 config_loader = ConfigFactory.get_config_loader(fmt)
-                meta_data = zf.read(meta_file).decode()
-                ConfigFactory.check_plain_data(meta_data, fmt, meta_file)
-                meta = config_loader.load_config_from_str(meta_data).to_dict()
+                meta_data = zf.read(meta_file)
+                meta = config_loader.load_config_from_str(meta_data.decode()).to_dict()
                 break
         if meta:
             job_id = meta.get(JobMetaKey.JOB_ID.value)
@@ -112,7 +111,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
         if not meta:
             raise ValueError(
-                f"{JobConstants.META}.[json|conf|yml] not existing for job {job_name}, possible in legacy job format.  Please upgrade the job structure."
+                f"{JobConstants.META}.json not existing for job {job_name}, possible in legacy job format.  Please upgrade the job structure."
             )
 
         deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value)
@@ -222,9 +221,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
             config_path = f"{zip_folder}{basename}{ext}"
             if config_path in zip_file.namelist():
                 config_loader = ConfigFactory.get_config_loader(fmt)
-                config_data = zip_file.read(config_path).decode()
-                ConfigFactory.check_plain_data(config_data, fmt, config_path)
-                return config_loader.load_config_from_str(config_data).to_dict()
+                return config_loader.load_config_from_str(zip_file.read(config_path).decode()).to_dict()
         return None
 
     @staticmethod

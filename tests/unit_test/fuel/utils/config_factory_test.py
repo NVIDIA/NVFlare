@@ -50,11 +50,6 @@ class TestConfigFactory:
             arrs=[1, 2, 5, 6],
         )
 
-        # note this tests assume Pyhocon and OmegaConf both are installed.
-        # to test only Pyhocon installed (but OmegaConf not installed) or
-        # OmegaConf installed (but Pyhocon Not installed)
-        # One can simply filter one config format out. The code should still work without asking for other dependency
-
         for ext in ext2fmts:
             fmt = ext2fmts[ext]
             loader: ConfigLoader = fmt2loaders[fmt]
@@ -65,13 +60,13 @@ class TestConfigFactory:
 
     def _walk_result(self, search_dir):
         if search_dir == ".":
-            return [(".", [], ["fed_client_config.conf", "fed_client_config.yml"])]
+            return [(".", [], ["fed_client_config.conf", "fed_client_config.yml", "fed_client_config.json.default"])]
 
         elif search_dir == "/tmp/nvflare":
 
             return [
                 ("/tmp/nvflare", ["site-1", "xyz"], []),
-                ("/tmp/nvflare/site-1", [], ["fed_client_config.conf"]),
+                ("/tmp/nvflare/site-1", [], ["fed_client_config.json"]),
                 ("/tmp/nvflare/xyz", [], ["hello.txt"]),
             ]
         else:
@@ -80,12 +75,12 @@ class TestConfigFactory:
     @pytest.mark.parametrize(
         "init_file_path, search_dirs, expected_loc, expected_fmt",
         [
-            ["fed_client_config.json", ["."], "./fed_client_config.conf", ConfigFormat.PYHOCON],
+            ["fed_client_config.json", ["."], "./fed_client_config.json.default", ConfigFormat.JSON],
             [
                 "fed_client_config.json",
                 ["/tmp/nvflare"],
-                "/tmp/nvflare/site-1/fed_client_config.conf",
-                ConfigFormat.PYHOCON,
+                "/tmp/nvflare/site-1/fed_client_config.json",
+                ConfigFormat.JSON,
             ],
         ],
     )
@@ -112,28 +107,28 @@ class TestConfigFactory:
                     "user_email_match/app/custom/",
                     "user_email_match/app/config/",
                     "user_email_match/app/custom/local_psi.py",
-                    "user_email_match/app/config/config_fed_client.conf",
-                    "user_email_match/app/config/config_fed_server.conf",
+                    "user_email_match/app/config/config_fed_client.json",
+                    "user_email_match/app/config/config_fed_server.json",
                     "user_email_match/meta.json",
                     "user_email_match/app/",
                     "user_email_match/app/custom/",
                     "user_email_match/app/config/",
                     "user_email_match/app/custom/local_psi.py",
-                    "user_email_match/app/config/config_fed_client.conf",
-                    "user_email_match/app/config/config_fed_server.conf",
+                    "user_email_match/app/config/config_fed_client.json",
+                    "user_email_match/app/config/config_fed_server.json",
                     "user_email_match/meta.json",
                     "user_email_match/app/",
                     "user_email_match/app/custom/",
                     "user_email_match/app/config/",
                     "user_email_match/app/custom/local_psi.py",
-                    "user_email_match/app/config/config_fed_client.conf",
-                    "user_email_match/app/config/config_fed_server.conf" "user_email_match/meta.json",
+                    "user_email_match/app/config/config_fed_client.json",
+                    "user_email_match/app/config/config_fed_server.json" "user_email_match/meta.json",
                     "user_email_match/app/",
                     "user_email_match/app/custom/",
                     "user_email_match/app/config/",
                     "user_email_match/app/custom/local_psi.py",
-                    "user_email_match/app/config/config_fed_client.conf",
-                    "user_email_match/app/config/config_fed_server.conf",
+                    "user_email_match/app/config/config_fed_client.json",
+                    "user_email_match/app/config/config_fed_server.json",
                 ],
             ]
         ],
@@ -146,47 +141,3 @@ class TestConfigFactory:
             return full_path in namelist
 
         assert expected == ConfigFactory.match_config(None, init_file_path, match)
-
-
-@pytest.mark.parametrize(
-    "name, text",
-    [
-        ("config_fed_client.conf", 'include "/etc/site.conf"\nexecutors = []\n'),
-        ("config_fed_client.conf", "data_root = ${HOME}\n"),
-        ("config_fed_client.yml", "data_root: ${oc.env:HOME}\n"),
-        ("config_fed_client.yml", 'data_root: "\\u0024{oc.env:HOME}"\n'),
-        ("config_fed_client.yml", "a: &a [1]\nb: [*a, *a]\n"),
-    ],
-)
-def test_configs_outside_site_folders_must_be_plain_data(tmp_path, monkeypatch, name, text):
-    from omegaconf import OmegaConf
-    from pyhocon import ConfigFactory as HoconFactory
-
-    def forbidden(*args, **kwargs):
-        pytest.fail("parsed a config that uses HOCON or OmegaConf features")
-
-    for attr in ("parse_file", "parse_URL", "parse_string"):
-        monkeypatch.setattr(HoconFactory, attr, forbidden)
-    monkeypatch.setattr(OmegaConf, "load", forbidden)
-    monkeypatch.setattr(ConfigFactory, "_trusted_dirs", [])
-    (tmp_path / name).write_text(text)
-
-    with pytest.raises(ValueError, match="HOCON or OmegaConf features"):
-        ConfigFactory.load_config("config_fed_client.json", [str(tmp_path)])
-
-
-def test_site_folders_keep_hocon_features(tmp_path, monkeypatch):
-    monkeypatch.setattr(ConfigFactory, "_trusted_dirs", [])
-    local = tmp_path / "local"
-    local.mkdir()
-    (local / "shared.conf").write_text("lr = 0.1\n")
-    (local / "resources.conf").write_text('include "shared.conf"\nhome = ${SITE_TEST_HOME}\n')
-    monkeypatch.setenv("SITE_TEST_HOME", "/site")
-    plain = tmp_path / "job"
-    plain.mkdir()
-    (plain / "config_fed_client.yml").write_text("lr: 0.1\n")
-
-    ConfigFactory.trust_config_dirs(str(local))
-
-    assert ConfigFactory.load_config("resources.json", [str(local)]).to_dict() == {"lr": 0.1, "home": "/site"}
-    assert ConfigFactory.load_config("config_fed_client.json", [str(plain)]).to_dict() == {"lr": 0.1}

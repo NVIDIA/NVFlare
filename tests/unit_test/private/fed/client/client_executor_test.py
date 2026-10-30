@@ -1154,62 +1154,22 @@ def test_start_app_rejects_cj_budget_drift(tmp_path):
         )
 
 
-@pytest.mark.parametrize("config_case", ["nested_json", "hocon_include", "yaml_environment"])
-def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path, monkeypatch, config_case):
+def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path):
     job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
     job_meta["cj_resource_spec"] = {"site-1": {}}
     with open(workspace.get_job_meta_path("job-1"), "w") as stream:
         json.dump(job_meta, stream)
     config = Path(workspace.get_app_config_dir("job-1"))
     config.mkdir(parents=True)
-    if config_case == "nested_json":
-        (config / "config_fed_client.conf").write_text("execution_lifetime = task\n")
-        (config / "shadow").mkdir()
-        (config / "shadow" / "config_fed_client.json").write_text('{"execution_lifetime":"job"}')
-    elif config_case == "hocon_include":
-        (config / "config_fed_client.conf").write_text('execution_lifetime = task\ninclude "runtime-mode.conf"\n')
-        (config / "runtime-mode.conf").write_text("execution_lifetime = job\n")
-    else:
-        (config / "config_fed_client.yml").write_text("execution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\n")
-        monkeypatch.setenv("NVFLARE_LIFETIME", "job")
-    # Job configs must be plain data, so includes and environment interpolations are rejected outright.
-    expected = "resolved client execution_lifetime" if config_case == "nested_json" else "HOCON or OmegaConf features"
+    (config / "config_fed_client.json.default").write_text('{"execution_lifetime":"task"}')
+    (config / "shadow").mkdir()
+    (config / "shadow" / "config_fed_client.json").write_text('{"execution_lifetime":"job"}')
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher") as choose:
-        with pytest.raises(ValueError, match=expected):
+        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
             JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
                 client, "job-1", job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, context
             )
     choose.assert_not_called()
-
-
-def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(tmp_path, monkeypatch):
-    from pathlib import Path
-
-    from nvflare.private.fed.client.client_app_runner import ClientAppRunner
-    from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
-
-    job_meta, workspace, _, _ = _make_start_app_inputs(tmp_path)
-    job_meta["cj_resource_spec"] = {"site-1": {}}
-    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
-        json.dump(job_meta, stream)
-    config = Path(workspace.get_app_config_dir("job-1"))
-    config.mkdir(parents=True)
-    path = config / "config_fed_client.yml"
-    path.write_text("format_version: 3\nexecution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\nexecutors: []\n")
-    monkeypatch.setenv("NVFLARE_LIFETIME", "job")
-    args = SimpleNamespace(
-        workspace=str(tmp_path),
-        job_id="job-1",
-        client_name="site-1",
-        client_config="config/config_fed_client.json",
-        set=[],
-        sp_scheme="grpc",
-        sp_target="server:8002",
-    )
-    with patch.object(ClientJsonConfigurator, "configure") as build:
-        with pytest.raises(ValueError, match="HOCON or OmegaConf features"):
-            ClientAppRunner().create_client_runner(workspace.get_app_dir("job-1"), args, "config", MagicMock(), False)
-    build.assert_not_called()
 
 
 @pytest.mark.parametrize("budget", [{"num_of_cpus": 0.5}, {"memory": "1Gi"}, {"num_of_gpus": 1}])

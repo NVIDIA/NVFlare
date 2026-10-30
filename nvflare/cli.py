@@ -18,8 +18,6 @@ import os
 import sys
 import traceback
 
-from pyhocon import ConfigFactory as CF
-
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
@@ -44,12 +42,10 @@ from nvflare.tool.system.system_cli import def_system_cli_parser, handle_system_
 from nvflare.utils.cli_utils import (
     CONFIG_VERSION,
     CURRENT_CONFIG_VERSION,
-    backup_hidden_config_file,
     create_job_template_config,
     create_poc_workspace_config,
-    find_startup_kit_config_keys,
+    get_config_value,
     load_hidden_config_state,
-    remove_startup_kit_config_keys,
     save_config,
 )
 
@@ -216,29 +212,13 @@ def handle_config_cmd(args):
     )
 
     config_file_path, loaded_config, _migration_needed = load_hidden_config_state()
-    nvflare_config = loaded_config or CF.parse_string("{}")
+    nvflare_config = loaded_config or {}
     requested_startup_kit = getattr(args, "startup_kit_dir", None)
     requested_poc_workspace = args.poc_workspace_dir
     requested_job_templates = getattr(args, "job_templates_dir", None)
 
     if requested_startup_kit is None and requested_poc_workspace is None and requested_job_templates is None:
-        # Read-only: print existing config
-        poc_workspace_dir = None
-        job_templates_dir = None
-        if nvflare_config:
-            poc_workspace_dir = nvflare_config.get("poc.workspace", None) or nvflare_config.get(
-                "poc_workspace.path", None
-            )
-            job_templates_dir = nvflare_config.get("job_template.path", None)
-        active_startup_kit = nvflare_config.get("startup_kits.active", None) if nvflare_config else None
-        data = {
-            "config_file": config_file_path,
-            "poc_workspace_dir": poc_workspace_dir,
-            "active_startup_kit": active_startup_kit,
-        }
-        if job_templates_dir is not None:
-            data["job_templates_dir"] = job_templates_dir
-        output_ok(data)
+        output_ok(_config_summary(config_file_path, nvflare_config))
         return
 
     try:
@@ -262,38 +242,25 @@ def handle_config_cmd(args):
                 "use 'nvflare job create --job_templates_dir <dir>' for custom templates."
             )
             nvflare_config = create_job_template_config(nvflare_config, requested_job_templates)
-        removed_startup_kit_keys = find_startup_kit_config_keys(nvflare_config)
-        nvflare_config = remove_startup_kit_config_keys(nvflare_config)
     except (StartupKitConfigError, ValueError) as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
 
-    nvflare_config.put(CONFIG_VERSION, CURRENT_CONFIG_VERSION)
-    backup_path = backup_hidden_config_file(config_file_path) if removed_startup_kit_keys else None
+    nvflare_config[CONFIG_VERSION] = CURRENT_CONFIG_VERSION
     save_config(nvflare_config, config_file_path)
-    if removed_startup_kit_keys:
-        message = "Warning: removed startup kit config keys now managed by 'nvflare config': " + ", ".join(
-            removed_startup_kit_keys
-        )
-        if backup_path:
-            message += f"; backup saved to {backup_path}"
-        print_human(message)
+    output_ok(_config_summary(config_file_path, nvflare_config))
 
-    poc_workspace_dir = None
-    job_templates_dir = None
-    if nvflare_config:
-        poc_workspace_dir = nvflare_config.get("poc.workspace", None) or nvflare_config.get("poc_workspace.path", None)
-        job_templates_dir = nvflare_config.get("job_template.path", None)
-    active_startup_kit = nvflare_config.get("startup_kits.active", None) if nvflare_config else None
 
+def _config_summary(config_file_path: str, nvflare_config: dict) -> dict:
     data = {
         "config_file": config_file_path,
-        "poc_workspace_dir": poc_workspace_dir,
-        "active_startup_kit": active_startup_kit,
+        "poc_workspace_dir": get_config_value(nvflare_config, "poc.workspace"),
+        "active_startup_kit": get_config_value(nvflare_config, "startup_kits.active"),
     }
+    job_templates_dir = get_config_value(nvflare_config, "job_template.path")
     if job_templates_dir is not None:
         data["job_templates_dir"] = job_templates_dir
-    output_ok(data)
+    return data
 
 
 def _get_subcommand_choices(parser):

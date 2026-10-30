@@ -13,32 +13,23 @@
 # limitations under the License.
 import dataclasses
 import inspect
-import os.path
-from typing import Any, Dict, List, Optional, Tuple, Union
+import json
+from typing import Any, Dict, List, Optional, Tuple
 
-from pyhocon import ConfigFactory as CF
-from pyhocon import ConfigTree
-
-from nvflare.fuel.utils.config import Config, ConfigFormat
-from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.import_utils import optional_import
 
 
 @dataclasses.dataclass
 class KeyIndex:
     key: str
-    value: Union[None, Any, ConfigTree] = None
+    value: Any = None
     parent_key: Optional["KeyIndex"] = None
     index: Optional[int] = None
     component_name: Optional[str] = None
 
 
-def build_reverse_order_index(input_config_file_path: str) -> Tuple[str, ConfigTree, List[str], Dict]:
-    # use pyhocon to load config
-    config_dir = os.path.dirname(input_config_file_path)
-    config_dir = None if not config_dir else config_dir
-    config_file_path = os.path.basename(input_config_file_path)
-    config, config_file_path = load_pyhocon_conf(config_file_path, config_dir)
+def build_reverse_order_index(config_file_path: str) -> Tuple[str, dict, List[str], Dict]:
+    config = load_json_conf(config_file_path)
 
     components: list = config.get("components", None)
     excluded_list = [comp.get("id") for comp in components] if components else []
@@ -68,38 +59,15 @@ def build_reverse_order_index(input_config_file_path: str) -> Tuple[str, ConfigT
     return config_file_path, config, excluded_list, key_indices
 
 
-def _quote_resource_keys(value):
-    # Pyhocon.from_dict treats keys as paths and drops an unquoted @ prefix.
-    # Preserve reserved resource defaults/site markers without changing its
-    # existing interpretation of other application keys or escaping values.
-    if isinstance(value, dict):
-        return {
-            f'"{key}"' if isinstance(key, str) and key.startswith("@") else key: _quote_resource_keys(child)
-            for key, child in value.items()
-        }
-    if isinstance(value, list):
-        return [_quote_resource_keys(child) for child in value]
-    return value
-
-
-def load_pyhocon_conf(config_file_path: str, search_dir: Optional[str]) -> Tuple[ConfigTree, str]:
-    """Loads config using pyhocon."""
+def load_json_conf(config_file_path: str) -> dict:
     try:
-        # Job tools run on the author's machine, where HOCON and OmegaConf features are allowed.
-        ConfigFactory.trust_config_dirs(search_dir or os.path.dirname(os.path.abspath(config_file_path)))
-        temp_conf: Config = ConfigFactory.load_config(config_file_path, [search_dir])
-        if temp_conf:
-            config_file_path = temp_conf.file_path
-            if temp_conf.format == ConfigFormat.PYHOCON:
-                config: ConfigTree = temp_conf.conf
-            else:
-                config: ConfigTree = CF.from_dict(_quote_resource_keys(temp_conf.to_dict()))
-        else:
-            raise ValueError(f"Config is None for file:'{config_file_path}'.")
-
+        with open(config_file_path) as f:
+            config = json.load(f)
     except Exception as e:
-        raise RuntimeError(f"filed to parse file {config_file_path}:", e)
-    return config, config_file_path
+        raise RuntimeError(f"failed to parse file {config_file_path}: {e}") from e
+    if not isinstance(config, dict):
+        raise RuntimeError(f"failed to parse file {config_file_path}: expected a JSON object")
+    return config
 
 
 def build_list_reverse_order_index(
@@ -137,7 +105,7 @@ def build_list_reverse_order_index(
                 add_to_indices(elmt_key, key_index, key_indices)
                 if key == "name":
                     key_index.component_name = value
-        elif isinstance(value, ConfigTree):
+        elif isinstance(value, dict):
             key_indices = build_dict_reverse_order_index(
                 config=value, excluded_keys=excluded_keys, root_index=key_index, key_indices=key_indices
             )
@@ -177,7 +145,7 @@ def has_none_primitives_in_list(values: List):
 
 
 def build_dict_reverse_order_index(
-    config: ConfigTree,
+    config: dict,
     excluded_keys: List[str] = None,
     root_index: Optional[KeyIndex] = None,
     key_indices: Optional[Dict] = None,
@@ -206,7 +174,7 @@ def build_dict_reverse_order_index(
             else:
                 add_to_indices(key, key_index, key_indices)
 
-        elif isinstance(value, ConfigTree):
+        elif isinstance(value, dict):
             key_indices = build_dict_reverse_order_index(
                 config=value, excluded_keys=excluded_keys, root_index=key_index, key_indices=key_indices
             )
@@ -261,7 +229,7 @@ def add_class_defaults_to_key(excluded_keys, key_index, key_indices, results):
     if import_flag:
         params = inspect.signature(module.__init__).parameters
         args_config = None
-        if parent_key and parent_key.value and isinstance(parent_key.value, ConfigTree):
+        if parent_key and parent_key.value and isinstance(parent_key.value, dict):
             args_config = parent_key.value.get("args", None)
         for v in params.values():
             if (

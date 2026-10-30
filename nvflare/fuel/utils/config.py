@@ -20,21 +20,13 @@ from typing import Any, Dict, List, Optional
 
 class ConfigFormat(Enum):
     JSON = "JSON"
-    PYHOCON = "PYHOCON"
-    OMEGACONF = "OMEGACONF"
 
     @classmethod
     def config_ext_formats(cls):
         return OrderedDict(
             {
                 ".json": ConfigFormat.JSON,
-                ".conf": ConfigFormat.PYHOCON,
-                ".yml": ConfigFormat.OMEGACONF,
-                ".yaml": ConfigFormat.OMEGACONF,
                 ".json.default": ConfigFormat.JSON,
-                ".conf.default": ConfigFormat.PYHOCON,
-                ".yml.default": ConfigFormat.OMEGACONF,
-                ".yaml.default": ConfigFormat.OMEGACONF,
             }
         )
 
@@ -65,9 +57,7 @@ class Config(ABC):
 
     def get_native_conf(self):
         """Returns the original underline config object representation if you prefer to use it directly.
-           Pyhocon → ConfigTree
            JSON → Dict
-           OMEGACONF → ConfigDict
 
         Returns:
             A native config object
@@ -102,8 +92,6 @@ class Config(ABC):
     def to_str(self, element: Optional[Dict] = None) -> str:
         """Converts dict element to the str representation of the underline configuration, if element is not None
            For example, for JsonFormat, the method return json string
-           for PyhoconFormat, the method return pyhocon string
-           for OmegaconfFormat, the method returns YAML string representation
 
            If the element is None, return the underline config to string presentation
 
@@ -144,7 +132,7 @@ class ConfigLoader(ABC):
     def load_config_from_str(self, config_str: str) -> Config:
         """Load Configuration based on the string representation of the underline configuration.
 
-           For example, Json String for Jsonformat. python conf string or yaml string presentation
+           For example, Json String for Jsonformat.
 
         Args:
             config_str (str): string for configuration to be loaded

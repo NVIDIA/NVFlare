@@ -49,16 +49,13 @@ def _configure_active_startup_kit(tmp_path, monkeypatch):
 
     config_dir = home / ".nvflare"
     config_dir.mkdir(parents=True)
-    (config_dir / "config.conf").write_text(
-        f"""
-        version = 2
-        startup_kits {{
-          active = "admin@nvidia.com"
-          entries {{
-            "admin@nvidia.com" = "{admin_dir}"
-          }}
-        }}
-        """,
+    (config_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "startup_kits": {"active": "admin@nvidia.com", "entries": {"admin@nvidia.com": str(admin_dir)}},
+            }
+        ),
         encoding="utf-8",
     )
     monkeypatch.setenv("HOME", str(home))

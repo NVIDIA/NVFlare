@@ -32,45 +32,45 @@ MERGE_CONFIG_TEST_CASES = [
     (
         "launch_once",
         [
-            ["app/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=false"],
-            ["meta.conf", "min_clients=3"],
+            ["app/config_fed_client.json", "app_script=cifar10_fl.py", "launch_once=false"],
+            ["meta.json", "min_clients=3"],
         ],
         "launch_everytime",
-        [["app/config_fed_client.conf"], ["meta.conf"]],
+        [["app/config_fed_client.json"], ["meta.json"]],
     ),
     (
         "launch_once",
         [
-            ["config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=false"],
-            ["meta.conf", "min_clients=3"],
+            ["config_fed_client.json", "app_script=cifar10_fl.py", "launch_once=false"],
+            ["meta.json", "min_clients=3"],
         ],
         "launch_everytime",
-        [["app/config_fed_client.conf"], ["meta.conf"]],
+        [["app/config_fed_client.json"], ["meta.json"]],
     ),
     (
         "launch_once",
         [
-            ["app/config/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=false"],
-            ["meta.conf", "min_clients=3"],
+            ["app/config/config_fed_client.json", "app_script=cifar10_fl.py", "launch_once=false"],
+            ["meta.json", "min_clients=3"],
         ],
         "launch_everytime",
-        [["app/config_fed_client.conf"], ["meta.conf"]],
+        [["app/config_fed_client.json"], ["meta.json"]],
     ),
 ]
 
 GET_CLI_USE_CASES = [
     (
         "launch_once",
-        [["config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=False"]],
-        {DEFAULT_APP_NAME: {"config_fed_client.conf": {"app_script": "cifar10_fl.py", "launch_once": "False"}}},
+        [["config_fed_client.json", "app_script=cifar10_fl.py", "launch_once=False"]],
+        {DEFAULT_APP_NAME: {"config_fed_client.json": {"app_script": "cifar10_fl.py", "launch_once": "False"}}},
     ),
-    ("launch_once", [["meta.conf", "min_clients=3"]], {META_APP_NAME: {"meta.conf": {"min_clients": "3"}}}),
+    ("launch_once", [["meta.json", "min_clients=3"]], {META_APP_NAME: {"meta.json": {"min_clients": "3"}}}),
 ]
 
 GET_CONFIG_FILE_PATH_TEST_CASES = [
-    ("meta.conf", "meta.conf"),
-    ("config_fed_client.conf", "app/config/config_fed_client.conf"),
-    ("app/config/config_fed_client.conf", "app/config/config_fed_client.conf"),
+    ("meta.json", "meta.json"),
+    ("config_fed_client.json", "app/config/config_fed_client.json"),
+    ("app/config/config_fed_client.json", "app/config/config_fed_client.json"),
     ("app/custom/config.yaml", "app/custom/config.yaml"),
     ("app/custom/config.yml", "app/custom/config.yml"),
     ("app/custom/code/config.yml", "app/custom/code/config.yml"),
@@ -109,7 +109,7 @@ class TestConfiger:
             app_expected = {}
             for file in expected.get(app):
                 basename = os.path.basename(file)
-                if basename == "meta.conf":
+                if basename == "meta.json":
                     full_path = os.path.realpath(os.path.join(args.job_folder, basename))
                 else:
                     full_path = os.path.realpath(os.path.join(args.job_folder, "app/config", basename))
@@ -162,7 +162,7 @@ class TestConfiger:
         # Remove one existing executor arg and add another.
         config_file = [
             [
-                "config_fed_client.conf",
+                "config_fed_client.json",
                 "executors[0].executor.args.train_with_evaluation-",
                 "executors[0].executor.args.cuda_empty_cache=true",
             ]
@@ -176,10 +176,11 @@ class TestConfiger:
         file, merged = list(file_merged.items())[0]
         config, excluded_key_list, key_indices = merged
 
-        assert config.get("executors")[0].get("executor.args.train_with_evaluation", None) is None
+        executor_args = config["executors"][0]["executor"]["args"]
+        assert "train_with_evaluation" not in executor_args
         assert key_indices.get("train_with_evaluation", None) is None
 
-        assert config.get("executors")[0].get("executor.args.cuda_empty_cache", None) == "true"
+        assert executor_args["cuda_empty_cache"] == "true"
         assert key_indices.get("cuda_empty_cache", None) is not None
 
     def test_split_key(self):
