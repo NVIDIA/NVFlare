@@ -125,6 +125,14 @@ Dashboard Changes
 
 Action: API integrations that send ``props`` must omit it.
 
+Dashboard Dependencies Are Optional
+-----------------------------------
+
+The base ``nvflare`` package no longer installs Flask or the other Dashboard
+web dependencies. Action: install ``nvflare[dashboard]`` where you run the
+Dashboard, and ``nvflare[edge-http]`` on HTTP routing-proxy hosts. Docker
+builds follow the same split.
+
 Collab API (Technical Preview)
 ------------------------------
 
