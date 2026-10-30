@@ -19,6 +19,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from nvflare.private.fed.resource_stats.contract import normalize_measurement
 from nvflare.private.fed.resource_stats.probes import gpu_nvidia
 
 
@@ -167,11 +168,18 @@ def test_driver_positive_count_needs_no_cuda_runtime_or_nvml(monkeypatch):
     driver = _driver(count=2)
     _install(monkeypatch, driver)
 
-    assert gpu_nvidia.probe_gpu() == {
+    result = gpu_nvidia.probe_gpu()
+    assert (
+        normalize_measurement(
+            "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": result}
+        )["gpu"]
+        == result
+    )
+    assert result == {
         "groups": [
             {
                 "kind": "cuda_device_unclassified",
-                "count": 2,
+                "count": "2",
                 "model": "NVIDIA H100 80GB HBM3",
                 "memory_bytes": str(80 * 2**30),
             }
@@ -186,7 +194,10 @@ def test_zero_and_explicit_no_device_results_are_observed_zero(monkeypatch, init
     driver = _driver(count=0, init_result=init_result, count_result=count_result)
     _install(monkeypatch, driver)
 
-    assert gpu_nvidia.probe_gpu() == {"groups": []}
+    result = gpu_nvidia.probe_gpu()
+    assert normalize_measurement(
+        "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": result}
+    )["gpu"] == {"groups": []}
     if init_result == 100:
         assert driver.calls == [("cuInit", 0)]
 
@@ -215,7 +226,7 @@ def test_raw_visible_devices_never_sets_or_overrides_driver_count(monkeypatch, m
     assert gpu_nvidia.probe_gpu() == {"groups": []}
 
     _install(monkeypatch, _driver(count=1))
-    assert sum(group["count"] for group in gpu_nvidia.probe_gpu()["groups"]) == 1
+    assert sum(int(group["count"]) for group in gpu_nvidia.probe_gpu()["groups"]) == 1
 
 
 @pytest.mark.parametrize("count", [-1, gpu_nvidia.MAX_CUDA_DEVICES + 1])
@@ -269,7 +280,7 @@ def test_nvml_exception_cannot_block_a_known_driver_count(monkeypatch):
     result = gpu_nvidia.probe_gpu()
 
     assert result["groups"][0]["kind"] == "cuda_device_unclassified"
-    assert result["groups"][0]["count"] == 1
+    assert result["groups"][0]["count"] == "1"
     assert nvml.calls[-1] == ("nvmlShutdown",)
 
 
@@ -298,14 +309,21 @@ def test_full_mig_and_unclassified_devices_are_exclusive_groups(monkeypatch):
     )
     _install(monkeypatch, driver, nvml)
 
-    groups = gpu_nvidia.probe_gpu()["groups"]
+    result = gpu_nvidia.probe_gpu()
+    assert (
+        normalize_measurement(
+            "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": result}
+        )["gpu"]
+        == result
+    )
+    groups = result["groups"]
 
     assert {group["kind"] for group in groups} == {
         "full_gpu",
         "mig_compute_instance",
         "cuda_device_unclassified",
     }
-    assert sum(group["count"] for group in groups) == 3
+    assert sum(int(group["count"]) for group in groups) == 3
     assert {group["kind"]: group["memory_bytes"] for group in groups} == {
         "full_gpu": str(80 * 2**30),
         "mig_compute_instance": str(10 * 2**30),
@@ -319,13 +337,13 @@ def test_missing_uuid_name_and_memory_do_not_erase_driver_count(monkeypatch):
     driver = _driver(models=[None], memories=[None], uuids=[None])
     _install(monkeypatch, driver, _nvml())
 
-    assert gpu_nvidia.probe_gpu() == {"groups": [{"kind": "cuda_device_unclassified", "count": 1}]}
+    assert gpu_nvidia.probe_gpu() == {"groups": [{"kind": "cuda_device_unclassified", "count": "1"}]}
 
 
 def test_invalid_optional_model_does_not_erase_count(monkeypatch):
     _install(monkeypatch, _driver(models=["NVIDIA <private-description>"]))
     group = gpu_nvidia.probe_gpu()["groups"][0]
-    assert group["count"] == 1
+    assert group["count"] == "1"
     assert "model" not in group
 
 
@@ -345,11 +363,11 @@ def test_device_get_race_keeps_the_counted_ordinal(monkeypatch):
 
     groups = gpu_nvidia.probe_gpu()["groups"]
 
-    assert sum(group["count"] for group in groups) == 2
+    assert sum(int(group["count"]) for group in groups) == 2
     assert {group["kind"] for group in groups} == {"full_gpu", "cuda_device_unclassified"}
     assert next(group for group in groups if group["kind"] == "cuda_device_unclassified") == {
         "kind": "cuda_device_unclassified",
-        "count": 1,
+        "count": "1",
     }
 
 
@@ -362,7 +380,7 @@ def test_duplicate_driver_uuids_are_not_used_for_nvml_classification(monkeypatch
     result = gpu_nvidia.probe_gpu()
 
     assert result["groups"][0]["kind"] == "cuda_device_unclassified"
-    assert result["groups"][0]["count"] == 2
+    assert result["groups"][0]["count"] == "2"
     assert nvml.calls == [("nvmlInit_v2",), ("nvmlShutdown",)]
 
 

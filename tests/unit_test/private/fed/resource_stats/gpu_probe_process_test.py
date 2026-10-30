@@ -22,6 +22,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from nvflare.private.fed.resource_stats.contract import normalize_measurement
 from nvflare.private.fed.resource_stats.probes import gpu_nvidia
 from nvflare.private.fed.resource_stats.probes import gpu_probe_process as probe
 
@@ -69,7 +70,7 @@ def _helper(monkeypatch, encoded, *, ready=True):
 @pytest.mark.parametrize(
     "encoded,expected",
     [
-        (b'{"groups":[{"kind":"full_gpu","count":2}]}\n', {"groups": [{"kind": "full_gpu", "count": 2}]}),
+        (b'{"groups":[{"kind":"full_gpu","count":"2"}]}\n', {"groups": [{"kind": "full_gpu", "count": "2"}]}),
         (b'{"groups":[]}\n', {"groups": []}),
         (b"null\n", None),
         (b"not-json\n", None),
@@ -99,11 +100,11 @@ def test_helper_output_and_failure_semantics(monkeypatch, encoded, expected):
 
 
 def test_completed_result_is_reused_without_mutable_aliases(monkeypatch):
-    _, commands, waits, _ = _helper(monkeypatch, b'{"groups":[{"kind":"full_gpu","count":2}]}\n')
+    _, commands, waits, _ = _helper(monkeypatch, b'{"groups":[{"kind":"full_gpu","count":"2"}]}\n')
     session = probe.GpuProbe()
     try:
-        session.result()["groups"][0]["count"] = 99
-        assert session.result()["groups"][0]["count"] == 2
+        session.result()["groups"][0]["count"] = "99"
+        assert session.result()["groups"][0]["count"] == "2"
         assert len(commands) == len(waits) == 1
     finally:
         session.close()
@@ -175,16 +176,23 @@ def test_large_optional_descriptions_do_not_erase_device_count(monkeypatch):
     monkeypatch.setattr(
         gpu_nvidia,
         "probe_gpu",
-        lambda: {"groups": [{"kind": "full_gpu", "count": 1, "model": "x" * 128} for _ in range(1000)]},
+        lambda: {"groups": [{"kind": "full_gpu", "count": "1", "model": "x" * 128} for _ in range(1000)]},
     )
     output = io.BytesIO()
     monkeypatch.setattr(gpu_nvidia, "sys", SimpleNamespace(stdout=SimpleNamespace(buffer=output)))
     gpu_nvidia.main()
-    assert json.loads(output.getvalue()) == {"groups": [{"kind": "full_gpu", "count": 1000}]}
+    result = json.loads(output.getvalue())
+    assert (
+        normalize_measurement(
+            "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": result}
+        )["gpu"]
+        == result
+    )
+    assert result == {"groups": [{"kind": "full_gpu", "count": "1000"}]}
 
 
 def test_large_ready_result_can_drain_after_long_execution(monkeypatch):
-    value = {"groups": [{"kind": "full_gpu", "count": 1, "model": "A" * 80} for _ in range(100)]}
+    value = {"groups": [{"kind": "full_gpu", "count": "1", "model": "A" * 80} for _ in range(100)]}
     _, _, waits, _ = _helper(monkeypatch, json.dumps(value).encode() + b"\n")
     session = probe.GpuProbe()
     try:

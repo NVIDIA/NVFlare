@@ -196,6 +196,7 @@ def probe_gpu() -> Optional[dict[str, list[dict[str, Any]]]]:
     observed zero. No loadable Driver, other Driver errors, or a count outside
     0..4096 are unavailable. Classification failures never change a known
     positive count. Each Driver ordinal contributes to one group exactly once.
+    Counts are integer-valued decimal strings, matching the capacity contract.
     """
 
     driver = _load_driver()
@@ -226,6 +227,8 @@ def probe_gpu() -> Optional[dict[str, list[dict[str, Any]]]]:
             },
         )
         group["count"] += 1
+    for group in groups.values():
+        group["count"] = str(group["count"])
     return {"groups": [groups[key] for key in sorted(groups, key=lambda item: tuple(value or "" for value in item))]}
 
 
@@ -258,7 +261,7 @@ def main(*, parent_pid: Optional[int] = None, deadline: Optional[float] = None):
         counts = Counter()
         for group in value["groups"]:
             counts[group["kind"]] += int(group["count"])
-        value = {"groups": [{"kind": kind, "count": count} for kind, count in sorted(counts.items())]}
+        value = {"groups": [{"kind": kind, "count": str(count)} for kind, count in sorted(counts.items())]}
         encoded = json.dumps(value, separators=(",", ":"), allow_nan=False).encode("utf-8")
     if parent_pid is not None:
         signal.setitimer(signal.ITIMER_REAL, 0)
