@@ -79,6 +79,14 @@ The Azure integration currently accepts AMD SEV-SNP with ``gpu_tee: none``.
   then proceed with the inputs in the
   :github_nvflare_link:`four-step deployment workflow
   <examples/devops/coco/README.md>`.
+
+  The optional :github_nvflare_link:`beginner prerequisite appendix
+  <examples/devops/coco/PREREQUISITES.md>` helps beginners bring up the
+  prerequisite systems for the NVFlare CoCo workflow. Consult the official
+  documentation for each component and the version you deploy. If there is any
+  discrepancy, the component's official documentation takes precedence. Its
+  two-machine example keeps Trustee separate from Kubernetes; review its
+  Ubuntu 26.04 and pinned-runtime qualification limits before following it.
 * For Azure, follow the selected :doc:`Azure deployment guide <azure/index>`
   for the cloud resources and attestation setup.
 

@@ -2,6 +2,11 @@
 
 **Complete and verify these prerequisites before starting the four-step workflow:**
 
+This optional [beginner prerequisite appendix](PREREQUISITES.md) helps beginners
+bring up the prerequisite systems for the NVFlare CoCo workflow. Consult the
+official documentation for each component and the version you deploy. If there
+is any discrepancy, the component's official documentation takes precedence.
+
 - A running, configured **Trustee service (KBS/AS/RVPS)**. Follow the
   [official Trustee installation guide](https://confidentialcontainers.org/docs/attestation/installation/).
 - A **CoCo-ready Kubernetes cluster with the supported Kata confidential runtime**.
@@ -120,9 +125,12 @@ lists Kata 3.29 and Ubuntu 25.10;
 lists Kata 4.0 and adds Ubuntu 26.04. The newer matrix does not qualify this
 example's pinned Kata 3.29.0 profile for Ubuntu 26.04.
 
-Comprehensive new-host BIOS, CPU TEE, firmware, and GPU qualification remains a
-separate platform-owner follow-up. This workflow assumes that qualification is
-already complete; the checks and upstream links above do not perform it.
+For new-host BIOS, CPU TEE, firmware, and GPU preparation, follow the optional
+[beginner prerequisite appendix](PREREQUISITES.md). It helps beginners bring up
+the prerequisite systems; the official documentation for each component and
+version takes precedence if there is any discrepancy. This workflow assumes
+that hardware qualification is already complete; the checks above do not
+perform it.
 
 ## Workflow
 
