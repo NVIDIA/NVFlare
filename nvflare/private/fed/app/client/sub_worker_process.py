@@ -98,7 +98,12 @@ class EventRelayer(FLComponent):
             fl_ctx.set_prop(
                 FLContextKey.EVENT_ORIGIN_SITE, CommunicateData.MULTI_PROCESS_EXECUTOR, private=True, sticky=False
             )
+            if event_type == EventType.START_RUN:
+                # Only failures from this rank's startup handlers count here.
+                fl_ctx.remove_prop(FLContextKey.EXCEPTIONS, force_removal=True)
             self.fire_event(event_type=event_type, fl_ctx=fl_ctx)
+            if event_type == EventType.START_RUN and fl_ctx.get_prop(FLContextKey.EXCEPTIONS):
+                raise RuntimeError("rank startup handlers failed")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """To handle the event.
