@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Train the GI hemorrhage risk model across the OMOP CDM sites with federated Newton-Raphson logistic regression."""
+"""Fit the GI hemorrhage model across the OMOP CDM sites with federated Newton-Raphson logistic regression."""
 
 import argparse
 
 from cohort import FEATURES
-from prepare_data import DATA_ROOT
+from prepare_data import DATA_ROOT, SITE_FRACTIONS
 
 from nvflare.app_common.np.recipes.lr.fedavg import FedAvgLrRecipe
 from nvflare.recipe import SimEnv
@@ -25,20 +25,18 @@ from nvflare.recipe import SimEnv
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--n_clients", type=int, default=3)
-    parser.add_argument("--num_rounds", type=int, default=15)
     parser.add_argument("--data_root", default=DATA_ROOT)
     args = parser.parse_args()
 
     recipe = FedAvgLrRecipe(
         name="omop_gi_bleed",
-        min_clients=args.n_clients,
-        num_rounds=args.num_rounds,
+        min_clients=len(SITE_FRACTIONS),
+        num_rounds=15,
         num_features=len(FEATURES),
         train_script="client.py",
         train_args=f"--data_root {args.data_root}",
     )
-    run = recipe.execute(SimEnv(num_clients=args.n_clients))
+    run = recipe.execute(SimEnv(num_clients=len(SITE_FRACTIONS)))
     print("result location =", run.get_result())
 
 
