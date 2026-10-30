@@ -50,12 +50,14 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.file_downloader import add_file, download_file
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ
 from nvflare.private.fed.utils.job_cert_utils import (
     JOB_CERT_DIR_NAME,
@@ -692,6 +694,16 @@ def workspace_download_complete(workspace_root: str) -> bool:
         return False
 
 
+def _initialize_workspace_config(workspace_root: str) -> None:
+    """Use site communication settings for both downloaded and retained workspaces."""
+    # A job's comm_config.json must not override the site, even if the site has no config.
+    site_config_dir = os.path.join(workspace_root, "local")
+    config_path = [site_config_dir, workspace_root] if os.path.isdir(site_config_dir) else [workspace_root]
+    CommConfigurator.reload_from_dir(site_config_dir)
+    # Clear scalar values last so bootstrap reads during reload cannot leave cached defaults.
+    ConfigService.refresh_config_path(config_path)
+
+
 def download_workspace(args, secure_mode: bool) -> None:
     owner_fqcn = os.environ.get(ENV_WORKSPACE_OWNER_FQCN, "")
     if not owner_fqcn:
@@ -710,6 +722,7 @@ def download_workspace(args, secure_mode: bool) -> None:
             raise RuntimeError("persistent workspace initialization marker must be a regular file")
         # CP has already confirmed the previous CJ and its workers exited.
         # Downloading again could overwrite their checkpoints with CP's old copy.
+        _initialize_workspace_config(args.workspace)
         return
     temp_dir = tempfile.mkdtemp(prefix="workspace-download-")
     try:
@@ -731,6 +744,7 @@ def download_workspace(args, secure_mode: bool) -> None:
         with zipfile.ZipFile(bundle_path) as zf:
             _validate_relative_zip_members(zf)
             zf.extractall(args.workspace)
+        _initialize_workspace_config(args.workspace)
         if persistent:
             open(ready_file, "x").close()
     finally:

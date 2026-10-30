@@ -43,11 +43,16 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     upload_results_on_shutdown,
     workspace_download_complete,
 )
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from nvflare.fuel.f3.comm_config import DEFAULT_MAX_MSG_SIZE, CommConfigurator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys
 from nvflare.private.fed.utils.job_cert_utils import job_cert_uris
 from tests.timing_utils import isolate_time
@@ -968,3 +973,198 @@ def _isolate_module_clocks(monkeypatch):
         monkeypatch,
         "nvflare.app_opt.job_launcher.workspace_cell_transfer",
     )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_communication_config(monkeypatch):
+    for name, value in (
+        ("_sections", {}),
+        ("_config_path", []),
+        ("_cmd_args", None),
+        ("_var_dict", None),
+        ("_var_values", {}),
+    ):
+        monkeypatch.setattr(ConfigService, name, value)
+    monkeypatch.setattr(CommConfigurator, "_config_loaded", False)
+    monkeypatch.setattr(CommConfigurator, "_configuration", None)
+
+
+@pytest.mark.parametrize("owner", ["site-1", "server"])
+@pytest.mark.parametrize("extension", ["json", "conf", "yaml"])
+@pytest.mark.parametrize("security", ["mtls", "clear"])
+@pytest.mark.parametrize("job_override", [False, True])
+def test_downloaded_site_security_replaces_bootstrap_defaults(
+    tmp_path, monkeypatch, owner, extension, security, job_override
+):
+    # Even unstarted configuration probes register Cells and statistics pools.
+    monkeypatch.setattr(CoreCell, "ALL_CELLS", {})
+    monkeypatch.setattr(StatsPoolManager, "pools", {})
+    # Workspace transfer constructs a Cell before the site files are available.
+    # The parent link carries its explicit security; a later CJ listener needs
+    # the downloaded site settings rather than this early process-wide cache.
+    bootstrap = Cell(
+        f"{owner}.{JOB_ID}.workspace",
+        "tcp://localhost:1234",
+        secure=False,
+        credentials={},
+        create_internal_listener=False,
+    )
+    assert bootstrap.core_cell.connector_manager.int_resources["connection_security"] == "clear"
+    config = {
+        "internal": {"scheme": "tcp", "resources": {"host": owner, "port": 8102, "connection_security": security}}
+    }
+    config["max_message_size"] = 16777216
+    text = json.dumps(config)
+    if extension == "yaml":
+        text = f"max_message_size: 16777216\ninternal:\n  scheme: tcp\n  resources:\n    host: {owner}\n    port: 8102\n    connection_security: {security}\n"
+    bundle = tmp_path / "bundle.zip"
+    entries = {f"local/comm_config.{extension}": text.encode()}
+    if job_override:
+        # A secure launch creates the job credential directory before the site
+        # config is extracted. The job's own config must never shadow the site.
+        shadow = {
+            "internal": {
+                "scheme": "tcp",
+                "resources": {
+                    "host": "job-override",
+                    "port": 9001,
+                    "connection_security": "clear" if security == "mtls" else "mtls",
+                },
+            },
+            "max_message_size": 1024,
+        }
+        entries[f"{JOB_ID}/app/config/comm_config.json"] = json.dumps(shadow).encode()
+    _make_zip(str(bundle), entries)
+    fake = _FakeCell(
+        fqcn=owner, reply=make_reply(ReturnCode.OK, body={"ref_id": "ref-1", "sha256": _hash_file(str(bundle))})
+    )
+    monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, owner)
+    monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token-1")
+    monkeypatch.setattr("nvflare.app_opt.job_launcher.workspace_cell_transfer._get_bootstrap_cell", lambda *_: fake)
+    monkeypatch.setattr(
+        "nvflare.app_opt.job_launcher.workspace_cell_transfer.download_file", lambda **_: (None, str(bundle))
+    )
+    args = SimpleNamespace(
+        workspace=str(tmp_path / "workspace"),
+        job_id=JOB_ID,
+        job_cert_pem="cert" if job_override else None,
+        job_key_pem="key" if job_override else None,
+    )
+    ConfigService.add_section("existing", {"marker": "kept"})
+    job_cell = None
+    try:
+        download_workspace(args, secure_mode=job_override)
+        assert ConfigService.get_section("existing") == {"marker": "kept"}
+        # Normal startup initialization still follows the download. Repeating it
+        # cannot repair a CommConfigurator that cached the bootstrap defaults.
+        ConfigService.initialize(section_files={}, config_path=[args.workspace])
+        job_cell = Cell(
+            f"{owner}.{JOB_ID}", "tcp://localhost:1234", secure=False, credentials={}, create_internal_listener=False
+        )
+        manager = job_cell.core_cell.connector_manager
+        assert manager.int_resources["connection_security"] == security
+        assert job_cell.core_cell.max_msg_size == 16777216
+        assert manager.int_resources["host"] == owner
+        assert manager.int_resources["port"] == 8102
+        assert bootstrap.core_cell.connector_manager.int_resources["connection_security"] == "clear"
+    finally:
+        if job_cell:
+            job_cell.stop()
+        bootstrap.stop()
+
+
+@pytest.mark.parametrize("local_dir_present", [False, True])
+@pytest.mark.parametrize("reuse_workspace", [False, True])
+def test_job_comm_config_is_ignored_without_site_comm_config(tmp_path, monkeypatch, local_dir_present, reuse_workspace):
+    monkeypatch.setattr(CoreCell, "ALL_CELLS", {})
+    monkeypatch.setattr(StatsPoolManager, "pools", {})
+    bootstrap = None
+    if not reuse_workspace:
+        bootstrap = Cell(
+            f"site-1.{JOB_ID}.workspace",
+            "tcp://localhost:1234",
+            secure=False,
+            credentials={},
+            create_internal_listener=False,
+        )
+    job_config = {
+        "internal": {
+            "scheme": "tcp",
+            "resources": {"host": "job-override", "port": 9001, "connection_security": "mtls"},
+        },
+        "max_message_size": 1024,
+    }
+    entries = {f"{JOB_ID}/app/config/comm_config.json": json.dumps(job_config).encode()}
+    if local_dir_present:
+        entries["local/resources.json"] = b'{"resources":{}}'
+    bundle = tmp_path / "bundle.zip"
+    _make_zip(str(bundle), entries)
+    fake = _FakeCell(
+        fqcn="site-1", reply=make_reply(ReturnCode.OK, body={"ref_id": "ref-1", "sha256": _hash_file(str(bundle))})
+    )
+    monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "site-1")
+    monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token-1")
+    monkeypatch.setattr("nvflare.app_opt.job_launcher.workspace_cell_transfer._get_bootstrap_cell", lambda *_: fake)
+    monkeypatch.setattr(
+        "nvflare.app_opt.job_launcher.workspace_cell_transfer.download_file", lambda **_: (None, str(bundle))
+    )
+    args = SimpleNamespace(workspace=str(tmp_path / "workspace"), job_id=JOB_ID, job_cert_pem="cert", job_key_pem="key")
+    monkeypatch.setenv(ENV_PERSISTENT_WORKSPACE, "1" if reuse_workspace else "0")
+    if reuse_workspace:
+        # A replacement CJ starts with fresh configuration caches and no
+        # bootstrap Cell, but the previous CJ's workspace is already present.
+        with zipfile.ZipFile(bundle) as zf:
+            zf.extractall(args.workspace)
+        (tmp_path / "workspace" / WORKSPACE_READY_FILE).touch()
+    job_cell = None
+    try:
+        download_workspace(args, secure_mode=True)
+        assert len(fake.requests) == (0 if reuse_workspace else 1)
+        ConfigService.initialize(section_files={}, config_path=[args.workspace])
+        job_cell = Cell(
+            f"site-1.{JOB_ID}", "tcp://localhost:1234", secure=False, credentials={}, create_internal_listener=False
+        )
+        manager = job_cell.core_cell.connector_manager
+        assert manager.int_resources == {"host": "localhost", "connection_security": "clear"}
+        assert job_cell.core_cell.max_msg_size == DEFAULT_MAX_MSG_SIZE
+        assert CommConfigurator().get_config() is None
+    finally:
+        if job_cell:
+            job_cell.stop()
+        if bootstrap:
+            bootstrap.stop()
+
+
+def test_download_discards_bootstrap_scalar_reads_during_comm_reload(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    bootstrap_config = CommConfigurator()
+    assert bootstrap_config.get_config() is None
+    assert bootstrap_config.get_max_message_size() == DEFAULT_MAX_MSG_SIZE
+
+    site_config = {"max_message_size": 16777216, "streaming_chunk_size": 65536}
+    bundle = tmp_path / "bundle.zip"
+    _make_zip(str(bundle), {"local/comm_config.json": json.dumps(site_config).encode()})
+    fake = _FakeCell(fqcn="site-1", reply=make_reply(ReturnCode.OK, body={"ref_id": "ref-1"}))
+    monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "site-1")
+    monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token-1")
+    monkeypatch.setattr("nvflare.app_opt.job_launcher.workspace_cell_transfer._get_bootstrap_cell", lambda *_: fake)
+    monkeypatch.setattr(
+        "nvflare.app_opt.job_launcher.workspace_cell_transfer.download_file", lambda **_: (None, str(bundle))
+    )
+    reload_from_dir = CommConfigurator.reload_from_dir
+
+    def reload_after_bootstrap_read(config_dir):
+        # Deterministically inject a live bootstrap callback's scalar reads just
+        # before the downloaded communication config replaces the old defaults.
+        assert bootstrap_config.get_max_message_size() == DEFAULT_MAX_MSG_SIZE
+        assert bootstrap_config.get_streaming_chunk_size(1234) == 1234
+        reload_from_dir(config_dir)
+
+    monkeypatch.setattr(CommConfigurator, "reload_from_dir", reload_after_bootstrap_read)
+    args = SimpleNamespace(workspace=str(tmp_path / "workspace"), job_id=JOB_ID)
+
+    download_workspace(args, secure_mode=False)
+
+    job_config = CommConfigurator()
+    assert job_config.get_max_message_size() == site_config["max_message_size"]
+    assert job_config.get_streaming_chunk_size(1234) == site_config["streaming_chunk_size"]

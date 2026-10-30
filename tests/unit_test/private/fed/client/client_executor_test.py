@@ -73,6 +73,8 @@ def _run_recovery(tmp_path, outcomes, on_wait=None, limit=3, confirmed=True, is_
         launch_id = executor.run_processes["job-1"][_RESTART_KEY].launch_id
         option = f"{RequestHeader.CJ_LAUNCH_ID}={launch_id}"
         assert ctx.get_prop(FLContextKey.ARGS).set == ["print_conf=True", option]
+        assert ctx.get_prop(FLContextKey.ALLOCATED_RESOURCES) == {"gpu": 1}
+        assert ctx._get_ctx_manager().new_context().get_prop(FLContextKey.ALLOCATED_RESOURCES) is None
         assert ctx._get_ctx_manager().new_context().get_prop(FLContextKey.ARGS).set == ["parent-only=True"]
         assert ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.OPTIONS][1].split() == [
             "print_conf=True",
