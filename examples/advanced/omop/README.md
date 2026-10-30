@@ -8,14 +8,8 @@ The federated model is identical to the model you would get by pooling all patie
 
 ## What is OMOP?
 
-The [OMOP Common Data Model](https://ohdsi.github.io/CommonDataModel/) is an open standard for observational health data, maintained by the [OHDSI](https://www.ohdsi.org/) community.
-It standardizes the schema, so every site stores its data in the same person-centric tables such as `PERSON`, `CONDITION_OCCURRENCE`, and `DRUG_EXPOSURE`.
-It also standardizes the vocabulary: during the extract-transform-load (ETL) step, every local code is mapped to a standard concept, mostly SNOMED CT for conditions and RxNorm for drugs.
-An ICD-10-CM `K92.2` diagnosis at one hospital and a SNOMED CT `74474003` diagnosis at another both become `condition_concept_id = 192671` (Gastrointestinal hemorrhage).
-The vocabulary tables ship with every CDM, and `CONCEPT_ANCESTOR` encodes the concept hierarchy, so a query for the ingredient celecoxib also finds every celecoxib product.
-
-For federated learning, this removes the hardest part of the setup.
-A study written once against the CDM runs unchanged at every site and returns the same covariates in the same order, so the model updates from different sites line up without per-site harmonization code.
+The [OMOP Common Data Model](https://ohdsi.github.io/CommonDataModel/), maintained by [OHDSI](https://www.ohdsi.org/), gives every site the same tables and maps every local code to a standard concept, so an ICD-10-CM `K92.2` and a SNOMED `74474003` diagnosis both become concept `192671` (Gastrointestinal hemorrhage).
+A study written once against the CDM therefore runs unchanged at every site and yields the same features in the same order, which is exactly what federated learning needs.
 
 ## The study
 
