@@ -37,7 +37,7 @@ The following participant record uses a placeholder for the schema version:
 
 ```json
 {
-  "schema_version": "<schema version>",
+  "schema_version": "1.0",
   "kind": "nvflare.resource_stats.participant_summary",
   "job_id": "job-42",
   "participant_name": "site-1",
