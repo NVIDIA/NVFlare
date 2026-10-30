@@ -21,11 +21,10 @@ if os.environ.get("DVLA_REFERENCE_PROBE") == "1":
     import random
     from pathlib import Path
 
-    import numpy as np
-    import torch
-
     import decent_vla.runtime.builders as builders
     import decent_vla.runtime.round_loop as rounds
+    import numpy as np
+    import torch
 
     # Resolve all reference adapters from the parent source tree. The native
     # package has no CLI/plugin entry points in its installed metadata.

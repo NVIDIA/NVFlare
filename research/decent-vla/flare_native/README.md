@@ -20,12 +20,12 @@ flare_native/
 ├── job.py                     # compose and export the FLARE job
 ├── client.py                  # FLARE Client API training entry point
 ├── evaluate.py
-└── src/decent_vla/
+└── src/
     ├── workflows.py           # native FedAvg and FedOpt workflow adapters
     ├── persistor.py           # FLARE LearnablePersistor
     ├── adapters/              # policy-specific implementations
     ├── configs/               # run configuration
-    └── _helpers/              # partitioning, training, checkpoints and evaluation support
+    └── support/               # partitioning, training, checkpoints and evaluation support
 ```
 
 ## Setup and data
@@ -116,7 +116,8 @@ GPU map can rotate client processes and lose warm training state. See
 reducing concurrency. A one-client, one-round job with the desired local-step
 budget provides the centralized baseline through the same FLARE workflow.
 
-For deployment, install this package on every site and submit the same job:
+Exported jobs include the native `src/` tree. Install the policy dependencies
+and NVFlare on every site, then submit the same job:
 
 ```bash
 nvflare job submit -j jobs/<name>
@@ -131,10 +132,10 @@ Use an absolute `fl.output_dir` to choose a fixed site-local output folder.
 Download deployed results with `nvflare job download <job-id>`.
 
 A completed run writes `config.json`, data/scope manifests, `training_curve.json`,
-periodic `checkpoints/server_round_NNNN.pt`, final `server_round_final.pt`, and
-the backend export `round_NNNN.pt`. Check the final artifact and logs: FLARE
+periodic `checkpoints/server_round_NNNN.pt` and final `server_round_final.pt`.
+Check the final artifact and logs: FLARE
 2.8.1 can return zero after a workflow error. Reusing outputs auto-resumes from
-periodic checkpoints unless `DECENT_VLA_NO_RESUME=1` is set. Set
+periodic FLARE checkpoints unless `DECENT_VLA_NO_RESUME=1` is set. Set
 `fl.round_timeout_s` for deployment; an unmet quorum aborts through FLARE.
 
 ## Evaluate

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the GR00T LIBERO evaluation environment (.venv-groot-eval): Python 3.10 with the LIBERO simulator,
-# robosuite, MuJoCo and decent-vla. The simulator needs package versions that the GR00T training environment
+# robosuite, MuJoCo and the native FLARE example. The simulator needs package versions that the GR00T training environment
 # cannot share, so evaluation has its own environment. gr00t itself comes from the Isaac-GR00T clone that
 # scripts/setup_groot.sh made, through PYTHONPATH, so evaluation runs the model code that training ran.
 # The package list (scripts/groot_eval_requirements.txt) is for aarch64 machines such as GH200 nodes.
@@ -27,5 +27,5 @@ uv pip install --python "$VENV" --no-deps -e .
 # robosuite writes a log file to /tmp by default, which fails where /tmp is read-only.
 sed -i 's/^FILE_LOGGING_LEVEL\s*=.*/FILE_LOGGING_LEVEL = None/' "$VENV"/lib/python3.10/site-packages/robosuite/macros.py
 
-PYTHONPATH="$PWD/$GROOT_DIR" "$VENV/bin/python" -c "import libero, robosuite, mujoco, gr00t, decent_vla; print('imports OK')"
+PYTHONPATH="$PWD/$GROOT_DIR" "$VENV/bin/python" -c "import libero, robosuite, mujoco, gr00t, src; print('imports OK')"
 echo "GR00T eval env ready: source $VENV/bin/activate && export PYTHONPATH=\$PWD/$GROOT_DIR MUJOCO_GL=egl"

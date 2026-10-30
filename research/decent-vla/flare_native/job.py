@@ -30,7 +30,8 @@ LORA_TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", 
 # Names of the files the job ships: the client script goes in each app's
 # custom/ folder, the run config (and the files it names) in config/.
 CLIENT_SCRIPT = "client.py"
-RUN_CONFIG = "decent_vla_run.yaml"
+RUN_CONFIG = "run.yaml"
+SOURCE_DIR = Path(__file__).resolve().parent / "src"
 
 
 # The files a run config names that `job.staged_job` packages next to it: the
@@ -60,7 +61,7 @@ def staged_job(config_path: str):
     """
     raw = yaml.safe_load(Path(config_path).read_text()) or {}
     cwd = os.getcwd()
-    with tempfile.TemporaryDirectory(prefix="decent_vla_job_") as stage:
+    with tempfile.TemporaryDirectory(prefix="vla_flare_job_") as stage:
         config_files = [RUN_CONFIG]
         for key, holder, field in packaged_refs(raw):
             value = holder.get(field)
@@ -82,6 +83,19 @@ def staged_job(config_path: str):
             yield Path(stage), config_files
         finally:
             os.chdir(cwd)
+
+
+class JobSourceFiles:
+    """Bundle the native source tree into an app's custom/src folder."""
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    def add_to_fed_job(self, job, ctx, **kwargs):
+        for path in sorted(self.root.rglob("*.py")):
+            relative = path.relative_to(self.root)
+            destination = str(Path("src") / relative.parent)
+            job.add_file_source(str(path), destination, "custom", ctx)
 
 
 class JobConfigFiles:
@@ -106,18 +120,20 @@ def build_job(cfg, staged: tuple[Path, list[str]]):
     from nvflare.job_config.api import FedJob
     from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
-    from decent_vla.persistor import VLAPersistor
-    from decent_vla.workflows import VLAFedAdam, VLAFedAvg
+    from src.persistor import VLAPersistor
+    from src.workflows import VLAFedAdam, VLAFedAvg
 
     # min_clients is the job's min_sites: FLARE aborts the job once fewer sites
     # are alive, so it follows the round loop's quorum.
-    job = FedJob(name=cfg.name or "decent-vla", min_clients=cfg.fl.min_clients or cfg.data.num_clients)
-    # Sites run the installed decent_vla package. Without this FedJob copies the
-    # sources of the workflow module and its imports into custom/, a partial
-    # package beside the installed one.
-    job.set_app_packages(["decent_vla"])
+    job = FedJob(name=cfg.name or "vla-flare", min_clients=cfg.fl.min_clients or cfg.data.num_clients)
+    # The whole native source tree is packaged into each app. Mark it as an
+    # app package so FedJob does not also copy a partial import graph.
+    job.set_app_packages(["src"])
     stage, config_files = staged
     configs = [str(stage / name) for name in config_files]
+    source = JobSourceFiles(SOURCE_DIR)
+    job.to_server(source)
+    job.to_clients(source)
     job.to_server(VLAPersistor(config_path=RUN_CONFIG), id="persistor")
     workflow = VLAFedAdam if cfg.fl.strategy.name == "fedadam" else VLAFedAvg
     job.to_server(
@@ -262,7 +278,6 @@ def create_config(args):
             cfg["eval"] = {
                 "benchmark": {"name": "libero", "suites": SUITES[:1] if args.smoke else SUITES},
                 "n_episodes_per_task": 1 if args.smoke else 10,
-                "eval_all_tasks": True,
                 "seed": args.seed,
             }
         else:
@@ -306,7 +321,7 @@ def create_config(args):
 
 
 def write_config(args):
-    from decent_vla.configs import load_run_config
+    from src.configs.loader import load_run_config
 
     cfg = create_config(args)
     folder = Path(cfg["fl"]["output_dir"]).resolve()
@@ -342,7 +357,7 @@ def define_parser():
 def main():
     parser = define_parser()
     args = parser.parse_args()
-    from decent_vla.configs import load_run_config
+    from src.configs.loader import load_run_config
 
     try:
         path = Path(args.config) if args.config else write_config(args)

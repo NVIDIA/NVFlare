@@ -27,7 +27,7 @@ from pathlib import Path
 
 
 def cid_from_site(site_name: str, site_prefix: str) -> str:
-    """Map an nvflare site name to a decent-vla cid.
+    """Map an NVFlare site name to the configured client id.
 
     site_prefix "" means sites are named c0..cN-1 directly (what the simulator
     env does); a prefix like "site-" maps the conventional 1-based
@@ -36,7 +36,7 @@ def cid_from_site(site_name: str, site_prefix: str) -> str:
     if not site_prefix:
         if not (site_name.startswith("c") and site_name[1:].isdigit()):
             raise ValueError(
-                f"nvflare site name {site_name!r} is not a decent-vla cid; either name "
+                f"NVFlare site name {site_name!r} is not a client id; either name "
                 f"sites c0..cN-1 or set fl.nvflare.site_prefix to their common prefix"
             )
         return site_name
@@ -64,12 +64,12 @@ def client_main(config_arg=None, app_dir=None):
     from nvflare.apis.fl_constant import FLMetaKey
     from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 
-    from decent_vla._helpers import wire
-    from decent_vla._helpers.builders import build_backend_factory, partition_for, resolve_device
-    from decent_vla._helpers.client_checkpoint import resume_disabled, save_client_state
-    from decent_vla._helpers.client_state import build_client_state, fast_forward_scheduler
-    from decent_vla._helpers.site import apply_site_paths, load_job_config
-    from decent_vla._helpers.training import seed_training, train_steps
+    from src.support import wire
+    from src.support.builders import build_backend_factory, partition_for, resolve_device
+    from src.support.client_checkpoint import resume_disabled, save_client_state
+    from src.support.client_state import build_client_state, fast_forward_scheduler
+    from src.support.site import apply_site_paths, load_job_config
+    from src.support.training import seed_training, train_steps
 
     config_path = resolve_config_path(config_arg, str(Path(app_dir) / "config") if app_dir else None)
     cfg = load_job_config(config_path)
@@ -142,7 +142,7 @@ def client_main(config_arg=None, app_dir=None):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="decent-vla nvflare client")
+    parser = argparse.ArgumentParser(description="native VLA FLARE client")
     parser.add_argument(
         "--config",
         default=None,

@@ -3,7 +3,7 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "decent-vla"
+name = "nvflare-vla"
 version = "0.2.0"
 description = "Federated fine-tuning of vision-language-action (VLA) policies with NVIDIA FLARE."
 readme = "README.md"
@@ -34,7 +34,7 @@ dependencies = [
 # lerobot policies (SmolVLA, pi0, pi0.5, ACT). `pi` pulls the transformers version
 # pi0.5/PaliGemma needs; `dataset` pulls LeRobotDataset loading.
 # Pinned to lerobot main of 2026-06-13 (version 0.5.2, between the v0.5.1 and v0.6.0
-# tags), the lerobot decent-vla was developed against. lerobot requires Python >= 3.12.
+# tags), this example was developed against. lerobot requires Python >= 3.12.
 lerobot = [
     "lerobot[pi,dataset] @ git+https://github.com/huggingface/lerobot@8515d456be1dbef8c133f07188c785e683eca899",
     "draccus",
@@ -46,10 +46,8 @@ peft = ["peft>=0.11", "accelerate>=1.0"]
 dev = ["pytest>=7.4"]
 
 [tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-dir]
-"" = "src"
+where = ["."]
+include = ["src*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -65,5 +63,5 @@ target-version = ["py310", "py311", "py312"]
 [tool.isort]
 profile = "black"
 line_length = 120
-known_first_party = ["decent_vla"]
+known_first_party = ["src"]
 skip = [".venv", ".venv-groot", ".venv-groot-eval", "third_party", "build", "dist"]

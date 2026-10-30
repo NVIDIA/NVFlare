@@ -6,7 +6,7 @@ independent `flare_native/` candidate. The baseline is PR #5566 revision
 
 ## Compare
 
-Install the **native** package and the policy dependencies following
+Install the native example and its policy dependencies following
 [README.md](README.md#setup-and-data). Run from `flare_native/` in that environment:
 
 ```bash
@@ -26,9 +26,9 @@ python scripts/compare_training.py --reference-dir .. \
 
 The runner executes the parent implementation's `decent_vla.cli.main` from
 `--reference-dir`, then exports the native job with `job.py --config` and runs
-`nvflare simulator`. Each source is selected through a separate subprocess and
-`PYTHONPATH`. Install the native package once; both sources share the `decent-vla`
-package name. After unfolding the candidate, point
+`nvflare simulator`. Each source is selected through a separate subprocess and `PYTHONPATH`; the
+original keeps its `decent_vla` package while the native job bundles `src`.
+After unfolding the candidate, point
 `--reference-dir` at a separate original checkout. Generated pipeline paths
 are shared by the two comparison jobs and packaged into exported deployments.
 

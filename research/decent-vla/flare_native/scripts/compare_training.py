@@ -199,9 +199,10 @@ def main():
         if any((out / p).exists() for p in ("reference", "native", "reference.yaml", "native.yaml", metadata.name)):
             parser.error("choose a fresh comparison output directory")
         sources = {"reference": args.reference_dir.resolve(), "native": args.native_dir.resolve()}
-        for label, source in sources.items():
-            if not (source / "src/decent_vla").is_dir():
-                parser.error(f"{label} source is missing src/decent_vla: {source}")
+        if not (sources["reference"] / "src/decent_vla").is_dir():
+            parser.error(f"reference source is missing src/decent_vla: {sources['reference']}")
+        if not (sources["native"] / "src/__init__.py").is_file():
+            parser.error(f"native source is missing src/__init__.py: {sources['native']}")
         try:
             cfg = prepare_config(
                 yaml.safe_load(args.config.read_text()),
@@ -231,7 +232,7 @@ def main():
         }
         metadata.write_text(json.dumps(info, indent=2))
         # Only the reference config carries its old CLI launcher settings.
-        from decent_vla.configs import load_run_config
+        from src.configs.loader import load_run_config
 
         configs = {}
         for label in sources:
@@ -239,10 +240,15 @@ def main():
             raw["fl"]["output_dir"] = str(out / label)
             raw["fl"]["nvflare"]["workspace"] = str(out / label / "workspace")
             if label == "native":
+                raw.pop("wandb", None)
+                raw.get("backend", {}).pop("model", None)
+                raw.get("data", {}).pop("revision", None)
+                raw.get("data", {}).pop("task_key", None)
+                raw.get("fl", {}).get("strategy", {}).pop("aggregate_lora_only", None)
                 raw["fl"].pop("mode")
                 for key in ("env", "threads", "gpu", "workspace", "job_dir"):
                     raw["fl"]["nvflare"].pop(key, None)
-                for key in ("after_training", "every_n_rounds", "only"):
+                for key in ("after_training", "every_n_rounds", "only", "eval_all_tasks", "save_episodes"):
                     (raw.get("eval") or {}).pop(key, None)
             config = out / f"{label}.yaml"
             config.write_text(yaml.safe_dump(raw))
@@ -252,7 +258,7 @@ def main():
         for label, source in sources.items():
             env = {
                 **os.environ,
-                "PYTHONPATH": str(source / "src"),
+                "PYTHONPATH": str(source / "src") if label == "reference" else str(source),
                 "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""),
                 "PYTHONHASHSEED": str(cfg.get("seed", 42)),
                 "CUBLAS_WORKSPACE_CONFIG": ":4096:8",

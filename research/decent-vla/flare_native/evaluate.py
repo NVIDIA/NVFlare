@@ -20,11 +20,11 @@ import logging
 import time
 from pathlib import Path
 
-from decent_vla._helpers.builders import build_backend_factory, resolve_device
-from decent_vla._helpers.eval_runner import run_eval
-from decent_vla._helpers.personalized_eval import run_personalized_eval
-from decent_vla._helpers.results import now_iso
-from decent_vla.configs import load_run_config
+from src.configs.loader import load_run_config
+from src.support.builders import build_backend_factory, resolve_device
+from src.support.eval_runner import run_eval
+from src.support.personalized_eval import run_personalized_eval
+from src.support.results import now_iso
 
 
 def main():

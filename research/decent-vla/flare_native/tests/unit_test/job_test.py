@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from decent_vla.configs import load_run_config
+from src.configs.loader import load_run_config
 
 spec = importlib.util.spec_from_file_location("vla_job", Path(__file__).resolve().parents[2] / "job.py")
 job = importlib.util.module_from_spec(spec)
@@ -69,7 +69,7 @@ def test_generated_pipeline_is_packaged_for_deployment(tmp_path):
     args = job.define_parser().parse_args(["--policy", "pi05", "--smoke", "--output-dir", str(tmp_path)])
     path = job.write_config(args)
     with staged_job(str(path)) as (stage, files):
-        raw = yaml.safe_load((stage / "decent_vla_run.yaml").read_text())
+        raw = yaml.safe_load((stage / "run.yaml").read_text())
         name = raw["backend"]["extra"]["train_config_path"]
         assert name == "train_pipeline.yaml" and name in files
         assert yaml.safe_load((stage / name).read_text())["policy"]["empty_cameras"] == 1

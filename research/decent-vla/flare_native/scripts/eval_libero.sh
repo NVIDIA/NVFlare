@@ -21,7 +21,7 @@ export MUJOCO_GL="${MUJOCO_GL:-egl}"
 
 RUN_DIR="$(dirname "$(dirname "$CKPT")")"
 TAG="$(basename "$CKPT" .pt)"
-PRETRAINED=$(python -m decent_vla.adapters.lerobot.export \
+PRETRAINED=$(python -m src.adapters.lerobot.export \
     --config "$CONFIG" --ckpt "$CKPT" --output-dir "$RUN_DIR/export/$TAG" | tail -1)
 echo "[eval] exported policy: $PRETRAINED"
 
