@@ -76,9 +76,11 @@ def build_env(tmp_path):
     return env, calls
 
 
+@pytest.mark.parametrize("engine", ["docker", "podman"])
 @pytest.mark.parametrize("network", [None, "default", "host"])
-def test_build_network_is_explicit_and_preserves_image_pin(tmp_path, build_env, network):
+def test_build_network_is_explicit_and_preserves_image_pin(tmp_path, build_env, network, engine):
     env, calls = build_env
+    env["TDX_VERIFIER_ENGINE"] = engine
     if network is not None:
         env["TDX_VERIFIER_BUILD_NETWORK"] = network
     output = tmp_path / "output"
@@ -86,7 +88,9 @@ def test_build_network_is_explicit_and_preserves_image_pin(tmp_path, build_env, 
     assert result.returncode == 0, result.stderr
     commands = [json.loads(line) for line in calls.read_text().splitlines()]
     build = next(command for command in commands if command[0] == "build")
-    assert build[1:5] == ["--network", network or "default", "--pull", "--platform"]
+    expected_network = "host" if network == "host" else ("private" if engine == "podman" else "default")
+    expected_pull = "--pull=always" if engine == "podman" else "--pull"
+    assert build[1:5] == ["--network", expected_network, expected_pull, "--platform"]
     assert (output / "tdx-evidence-verify.image-id").read_text().strip() == IMAGE_ID
     assert f"IMAGE_ID='{IMAGE_ID}'" in (output / "tdx-evidence-verify").read_text()
 

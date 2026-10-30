@@ -30,6 +30,8 @@ else
         printf 'Use rootless Podman as the capture user; sudo Podman is unsupported\n' >&2; exit 1;
     }
     PULL=(--pull=always)
+    # Podman uses private for its default build network namespace.
+    if [[ ${BUILD_NETWORK} == default ]]; then BUILD_NETWORK=private; fi
 fi
 [[ "$(uname -m)" == x86_64 ]] || { printf 'Intel DCAP verifier requires x86_64\n' >&2; exit 1; }
 IMAGE="nvflare-tdx-evidence-verify:trustee-338610fbfed57b66"

@@ -131,6 +131,20 @@ again during the sample in step 7. A missing module, zero private KeyIDs,
 initialization error, or unsupported CPU is a failure, not a skipped check.
 See [Linux TDX host support](https://docs.kernel.org/arch/x86/tdx.html).
 
+TDX attestation also requires a host Quote Generation Service (QGS). Follow
+Intel's official [QGS installation and configuration instructions](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/05/host_os_setup/#set-up-quote-generation-service-qgs),
+including platform certificate provisioning and PCK certificate retrieval.
+For the Kata 3.29.0 TDX profile used here, explicitly configure QGS to listen on
+vsock port `4050` to match Kata's quote-generation endpoint, then restart
+`qgsd.service`. Leaving the QGS port setting commented selects a Unix socket
+instead; a running service alone does not demonstrate a usable quote path.
+
+Once a TDX guest is available, follow Intel's official
+[TD quote-generation check](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/07/trust_domain_at_runtime/#td-quote-generation)
+inside the guest and confirm that it produces a nonempty `quote.dat` before
+[measurement capture](../MEASUREMENTS.md). Resolve quote-generation failures
+before proceeding with TDX attestation.
+
 ### Check GPU isolation for either branch
 
 ~~~bash
@@ -626,6 +640,8 @@ Expected: `Guest DNS and TLS: PASS`, `Guest AA token route: PASS`, and successfu
 Pod completion. The AA request deliberately omits `token_type`: the
 [AA REST router](https://github.com/confidential-containers/guest-components/blob/v0.21.0/api-server-rest/src/router.rs)
 returns `400` for that incomplete request when its token route is enabled.
+Neither this route check nor the CUDA sample in step 7 exercises TDX quote
+generation. For TDX, complete the Intel quote-generation check linked above.
 A connection failure or `404` does not pass. No token is requested or logged;
 successful token issuance is checked after platform references are registered
 in the four-step workflow. Harbor's
