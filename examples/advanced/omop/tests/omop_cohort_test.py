@@ -16,9 +16,10 @@ from pathlib import Path
 
 import duckdb
 import numpy as np
+import pytest
 from cohort import FEATURES, load_cohort
 
-CDM = """
+CDM_SQL = """
 create table person (person_id bigint, gender_concept_id bigint, year_of_birth bigint);
 create table observation_period (
     person_id bigint, observation_period_start_date date, observation_period_end_date date
@@ -49,12 +50,16 @@ insert into condition_occurrence values
 """
 
 
-def test_cohort_applies_washout_follow_up_prior_outcome_and_concept_hierarchy(tmp_path: Path) -> None:
+@pytest.fixture
+def cdm(tmp_path: Path) -> Path:
     database = tmp_path / "site-1.duckdb"
     with duckdb.connect(str(database)) as con:
-        con.execute(CDM)
+        con.execute(CDM_SQL)
+    return database
 
-    person_ids, features, labels = load_cohort(database)
+
+def test_cohort_applies_washout_follow_up_prior_outcome_and_concept_hierarchy(cdm: Path) -> None:
+    person_ids, features, labels = load_cohort(cdm)
 
     expected = np.zeros((3, len(FEATURES)))
     expected[:, FEATURES.index("age_decades")] = [0.5, -0.4, 0.0]
