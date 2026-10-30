@@ -31,6 +31,7 @@ TESTS = (
     "tests/integration_test/fast/process_launcher_lifecycle_test.py",
     "tests/integration_test/fast/resource_stats_cpu_process_test.py",
     "tests/integration_test/fast/resource_stats_gpu_helper_test.py",
+    "tests/integration_test/fast/resource_stats_task_process_test.py",
     "tests/integration_test/fast/server_transit_e2e_test.py",
     "tests/integration_test/fast/step_ca_admin_cert_process_test.py",
     "tests/integration_test/fast/streaming_pass_through_test.py",

@@ -30,7 +30,7 @@ from nvflare.apis.fl_constant import (
     SiteType,
 )
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_launcher_spec import JobReturnCode
+from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
@@ -47,7 +47,10 @@ from nvflare.private.fed.server.server_engine import ServerEngine
     ("stored_byoc", "deployed_byoc", "expected_byoc"),
     [(None, True, True), (True, False, False)],
 )
-def test_start_runner_process_uses_deployed_byoc_decision(tmp_path, stored_byoc, deployed_byoc, expected_byoc):
+@pytest.mark.parametrize("restored_attempt", [False, True])
+def test_start_runner_process_uses_deployed_byoc_decision(
+    tmp_path, stored_byoc, deployed_byoc, expected_byoc, restored_attempt
+):
     job_id = "job-1"
     tmp_path.joinpath("startup").mkdir()
     tmp_path.joinpath("local").mkdir()
@@ -90,13 +93,16 @@ def test_start_runner_process_uses_deployed_byoc_decision(tmp_path, stored_byoc,
         patch("nvflare.private.fed.server.server_engine.get_job_launcher", return_value=launcher) as get_launcher,
         patch("nvflare.private.fed.server.server_engine.threading.Thread") as thread_cls,
     ):
-        engine._start_runner_process(job, {}, None, fl_ctx)
+        engine._start_runner_process(job, {}, None, fl_ctx, restored_attempt=restored_attempt)
 
     launch_meta = launcher.launch_job.call_args.args[0]
     assert launch_meta.get(AppValidationKey.BYOC, False) is expected_byoc
     assert get_launcher.call_args.args[0] == launch_meta
     assert job.meta == job_meta
     thread_cls.return_value.start.assert_called_once()
+    job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+    options = job_args[JobProcessArgs.OPTIONS][1]
+    assert ("resource_prior_attempt_incomplete=True" in options) is restored_attempt
 
 
 def test_start_runner_process_requires_deployed_job_metadata(tmp_path):

@@ -177,7 +177,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def validate_targets(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self.client_manager.get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, fl_ctx: FLContext, job: Job = None, job_clients=None, snapshot=None) -> str:
+    def start_app_on_server(
+        self, fl_ctx: FLContext, job: Job = None, job_clients=None, snapshot=None, restored_attempt: bool = False
+    ) -> str:
         if not isinstance(job, Job):
             return "Must provide a job object to start the server app."
 
@@ -191,7 +193,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
             self.engine_info.status = MachineStatus.STARTING
 
-            self._start_runner_process(job, job_clients, snapshot, fl_ctx)
+            self._start_runner_process(job, job_clients, snapshot, fl_ctx, restored_attempt=restored_attempt)
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
@@ -234,7 +236,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                 self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
 
-    def _start_runner_process(self, job, job_clients, snapshot, fl_ctx: FLContext):
+    def _start_runner_process(self, job, job_clients, snapshot, fl_ctx: FLContext, restored_attempt: bool = False):
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         job_id = job.job_id
         meta_file = workspace_obj.get_job_meta_path(job_id)
@@ -280,6 +282,11 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         command_options += f" restore_snapshot={restore_snapshot} print_conf=True"
         args.set.append("print_conf=True")
         args.set.append(f"restore_snapshot={restore_snapshot}")
+        if restored_attempt:
+            # Restoring a job does not always include a component snapshot. The
+            # resource reporter still needs to know that an earlier process ran.
+            command_options += " resource_prior_attempt_incomplete=True"
+            args.set.append("resource_prior_attempt_incomplete=True")
 
         # create token and signature for SJ
         token = job_id  # use the run_number as the auth token
