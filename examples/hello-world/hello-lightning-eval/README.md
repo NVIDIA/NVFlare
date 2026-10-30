@@ -44,7 +44,7 @@ bash prepare_data.sh
 Train a model on CIFAR-10 that will be evaluated across clients:
 
 ```bash
-python generate_pretrain_models.py --epochs 1 --batch_size 32 --output pretrained_model.pt
+python generate_pretrain_models.py --epochs 1 --batch_size 32 --output ./pretrained_model.pt
 ```
 
 This will:
