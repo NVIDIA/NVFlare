@@ -24,6 +24,7 @@ import threading
 import time
 from copy import deepcopy
 
+from ..contract import normalize_measurement
 from . import gpu_nvidia
 
 # Healthy cold initialization can take several seconds per GPU. This is a
@@ -64,8 +65,29 @@ class GpuProbe:
         except (OSError, ValueError, subprocess.SubprocessError):
             self.close()
 
+    def _accept_frame(self, encoded, index):
+        frame = json.loads(encoded)
+        if not isinstance(frame, dict) or set(frame) != {"phase", "gpu"}:
+            raise ValueError("invalid GPU discovery frame")
+        phase = frame["phase"]
+        if phase not in ("count", "complete") or (phase == "count" and index != 1):
+            raise ValueError("invalid GPU discovery phase")
+        if frame["gpu"] is None:
+            if phase != "complete" or self._value is not None:
+                raise ValueError("missing GPU discovery count")
+        else:
+            value = normalize_measurement(
+                "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": frame["gpu"]}
+            )["gpu"]
+            total = sum(int(group["count"]) for group in value["groups"])
+            if self._value is not None and total != sum(int(group["count"]) for group in self._value["groups"]):
+                raise ValueError("GPU enrichment changed the verified count")
+            self._value = value
+        self._completed = phase == "complete"
+        return self._completed
+
     def result(self, *, timeout: float = _FINAL_WAIT_SECONDS):
-        """Reuse the completed observation, or wait only for remaining discovery."""
+        """Wait only for a verified count; use enrichment only if already ready."""
 
         if os.getpid() != self._owner_pid:
             return None
@@ -77,37 +99,43 @@ class GpuProbe:
                 return None
             try:
                 encoded = bytearray()
+                received = frames = 0
                 final_deadline = time.monotonic() + timeout
                 deadline = min(self._deadline, final_deadline)
                 with selectors.DefaultSelector() as selector:
                     selector.register(self._process.stdout, selectors.EVENT_READ)
-                    while len(encoded) <= _MAX_OUTPUT_BYTES:
-                        remaining = max(0.0, deadline - time.monotonic())
-                        # A completed result remains readable after a long job.
+                    while frames < 2:
+                        if b"\n" in encoded:
+                            line, _, encoded = encoded.partition(b"\n")
+                            if len(line) + 1 > _MAX_OUTPUT_BYTES:
+                                break
+                            frames += 1
+                            if self._accept_frame(line, frames):
+                                break
+                            continue
+                        if len(encoded) >= _MAX_OUTPUT_BYTES or received >= 2 * _MAX_OUTPUT_BYTES:
+                            break
+                        # Once count is known, optional enrichment never waits.
+                        remaining = 0.0 if self._value is not None else max(0.0, deadline - time.monotonic())
                         if not selector.select(remaining):
                             break
                         chunk = os.read(self._process.stdout.fileno(), min(4096, _MAX_OUTPUT_BYTES + 1 - len(encoded)))
                         if not chunk:
                             break
-                        if not encoded:
-                            # A completed frame can exceed pipe capacity. After
-                            # a long execution, let its already-ready producer
-                            # finish the bounded write despite the old deadline.
+                        if not received:
+                            # A standalone complete frame can exceed pipe capacity.
+                            # Ready output may drain within the caller's budget.
                             deadline = min(final_deadline, max(deadline, time.monotonic() + _OUTPUT_TIMEOUT_SECONDS))
-                        encoded.extend(chunk)
-                        if b"\n" in encoded:
-                            self._completed = True
-                            if len(encoded) <= _MAX_OUTPUT_BYTES:
-                                value = json.loads(encoded)
-                                if isinstance(value, dict):
-                                    self._value = value
+                        received += len(chunk)
+                        if received > 2 * _MAX_OUTPUT_BYTES:
                             break
-            except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+                        encoded.extend(chunk)
+            except (OSError, ValueError, TypeError, RecursionError, subprocess.SubprocessError):
                 pass
             return deepcopy(self._value)
 
-    def close(self, *, wait: bool = True):
-        """Release this owner's helper; wait=False kills and reaps off-thread."""
+    def close(self):
+        """Release the initialization hold and reap only this owner's helper."""
 
         if os.getpid() != self._owner_pid or self._closed:
             return
@@ -122,15 +150,6 @@ class GpuProbe:
         except OSError:
             pass
         try:
-            if not wait:
-                # Task completion must not wait for optional discovery or
-                # native shutdown. The helper remains in the owned execution
-                # scope; launcher settlement still accounts for its exit.
-                try:
-                    process.kill()
-                finally:
-                    self._start_reaper(process)
-                return
             if not self._completed:
                 # Do not add a graceful-exit wait to an unfinished discovery.
                 process.kill()
@@ -143,7 +162,8 @@ class GpuProbe:
             # A driver stuck in the kernel can defer even SIGKILL. Keep its
             # sole reaper alive without extending the execution's blocking
             # collection budget or handing it to an unrelated runtime owner.
-            self._start_reaper(process)
+            self._reaper = threading.Thread(target=self._reap, args=(process,), daemon=True, name="gpu-probe-reap")
+            self._reaper.start()
         except (OSError, subprocess.SubprocessError):
             pass
         finally:
@@ -152,10 +172,6 @@ class GpuProbe:
                     process.stdout.close()
             except OSError:
                 pass
-
-    def _start_reaper(self, process):
-        self._reaper = threading.Thread(target=self._reap, args=(process,), daemon=True, name="gpu-probe-reap")
-        self._reaper.start()
 
     @staticmethod
     def _reap(process):

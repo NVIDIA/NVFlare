@@ -27,6 +27,10 @@ from nvflare.private.fed.resource_stats.probes import gpu_nvidia
 from nvflare.private.fed.resource_stats.probes import gpu_probe_process as probe
 
 
+def _frame(value, *, phase="complete"):
+    return json.dumps({"phase": phase, "gpu": value}).encode() + b"\n"
+
+
 class FakeSelector:
     def __init__(self, waits, ready):
         self.waits = waits
@@ -68,18 +72,23 @@ def _helper(monkeypatch, encoded, *, ready=True):
 
 
 @pytest.mark.parametrize(
-    "encoded,expected",
+    "encoded,expected,completed",
     [
-        (b'{"groups":[{"kind":"full_gpu","count":"2"}]}\n', {"groups": [{"kind": "full_gpu", "count": "2"}]}),
-        (b'{"groups":[]}\n', {"groups": []}),
-        (b"null\n", None),
-        (b"not-json\n", None),
-        (b'{"groups":[]}', None),  # Incomplete protocol frame, even if valid JSON.
-        (b"x" * (64 * 1024 + 1), None),
-        (b"", None),  # Native crash or initialization deadline before a result.
+        (
+            _frame({"groups": [{"kind": "full_gpu", "count": "2"}]}),
+            {"groups": [{"kind": "full_gpu", "count": "2"}]},
+            True,
+        ),
+        (_frame({"groups": []}), {"groups": []}, True),
+        (_frame(None), None, True),
+        (b"not-json\n", None, False),
+        (b'{"groups":[]}\n', None, False),  # Raw diagnostics are not hold-protocol frames.
+        (_frame({"groups": []})[:-1], None, False),
+        (b"x" * (64 * 1024 + 1), None, False),
+        (b"", None, False),  # Native crash or initialization deadline before a result.
     ],
 )
-def test_helper_output_and_failure_semantics(monkeypatch, encoded, expected):
+def test_helper_output_and_failure_semantics(monkeypatch, encoded, expected, completed):
     _, commands, waits, lifecycle = _helper(monkeypatch, encoded)
     session = probe.GpuProbe()
     try:
@@ -95,12 +104,12 @@ def test_helper_output_and_failure_semantics(monkeypatch, encoded, expected):
     finally:
         session.close()
     assert lifecycle == (
-        ["release", "wait", "close-output"] if b"\n" in encoded else ["release", "kill", "wait", "close-output"]
+        ["release", "wait", "close-output"] if completed else ["release", "kill", "wait", "close-output"]
     )
 
 
 def test_completed_result_is_reused_without_mutable_aliases(monkeypatch):
-    _, commands, waits, _ = _helper(monkeypatch, b'{"groups":[{"kind":"full_gpu","count":"2"}]}\n')
+    _, commands, waits, _ = _helper(monkeypatch, _frame({"groups": [{"kind": "full_gpu", "count": "2"}]}))
     session = probe.GpuProbe()
     try:
         session.result()["groups"][0]["count"] = "99"
@@ -122,7 +131,7 @@ def test_startup_time_counts_against_remaining_deadline(monkeypatch):
 
 
 def test_long_job_can_read_already_completed_discovery(monkeypatch):
-    _, _, waits, _ = _helper(monkeypatch, b'{"groups":[]}\n')
+    _, _, waits, _ = _helper(monkeypatch, _frame({"groups": []}))
     session = probe.GpuProbe()
     try:
         monkeypatch.setattr(probe, "time", SimpleNamespace(monotonic=lambda: 100.0))
@@ -152,7 +161,7 @@ def test_unresponsive_helper_is_killed_and_reaped_on_close(monkeypatch):
 
 
 def test_forked_child_cannot_use_or_close_parent_probe(monkeypatch):
-    _, _, waits, lifecycle = _helper(monkeypatch, b'{"groups":[]}\n')
+    _, _, waits, lifecycle = _helper(monkeypatch, _frame({"groups": []}))
     session = probe.GpuProbe()
     try:
         with monkeypatch.context() as forked:
@@ -192,8 +201,8 @@ def test_large_optional_descriptions_do_not_erase_device_count(monkeypatch):
 
 
 def test_large_ready_result_can_drain_after_long_execution(monkeypatch):
-    value = {"groups": [{"kind": "full_gpu", "count": "1", "model": "A" * 80} for _ in range(100)]}
-    _, _, waits, _ = _helper(monkeypatch, json.dumps(value).encode() + b"\n")
+    value = {"groups": [{"kind": "full_gpu", "count": "1", "model": f"A{index:03}" + "A" * 80} for index in range(100)]}
+    _, _, waits, _ = _helper(monkeypatch, _frame(value))
     session = probe.GpuProbe()
     try:
         monkeypatch.setattr(probe, "time", SimpleNamespace(monotonic=lambda: 100.0))
@@ -246,60 +255,61 @@ def test_kernel_delayed_exit_retains_a_reaper_without_blocking_owner(monkeypatch
         session.close()
 
 
-@pytest.mark.parametrize("ready", [False, True])
-def test_nonblocking_result_reads_only_ready_output(monkeypatch, ready):
-    _, _, waits, _ = _helper(monkeypatch, b'{"groups":[]}\n', ready=ready)
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        b"",  # Optional native discovery is still running or crashed.
+        b'{"phase":"complete",',  # An incomplete frame must not wait.
+        b"not-json\n",
+        _frame(None),
+        _frame({"groups": [{"kind": "full_gpu", "count": "3"}]}),
+        _frame({"groups": [{"kind": "full_gpu", "count": 2}]}),
+        _frame({"groups": [{"kind": "full_gpu", "count": "2", "uuid": "private"}]}),
+        _frame({"groups": [{"kind": "full_gpu", "count": "2"}]}, phase="count"),
+        _frame({"groups": [{"kind": "full_gpu", "count": "2"}]}, phase="unknown"),
+        b"x" * (probe._MAX_OUTPUT_BYTES + 1),
+        b'{"phase":"complete","gpu":' + b"[" * 1500 + b"]" * 1500 + b"}\n",
+    ],
+)
+def test_verified_count_survives_unfinished_or_invalid_enrichment(monkeypatch, suffix):
+    initial = {"groups": [{"kind": "cuda_device_unclassified", "count": "2"}]}
+    _, _, waits, lifecycle = _helper(monkeypatch, _frame(initial, phase="count") + suffix)
     session = probe.GpuProbe()
     try:
-        assert session.result(timeout=0) == ({"groups": []} if ready else None)
-        assert waits == [0.0]
+        assert session.result() == initial
+        assert session.result() == initial
+        assert not session._completed
+        assert waits[0] == 2.0
+        assert all(timeout == 0.0 for timeout in waits[1:])
     finally:
         session.close()
+    assert lifecycle == ["release", "kill", "wait", "close-output"]
 
 
-@pytest.mark.parametrize("completed", [False, True])
-@pytest.mark.parametrize("kill_error", [False, True])
-def test_nonblocking_close_kills_once_and_only_reaps_off_thread(monkeypatch, completed, kill_error):
-    process, _, _, lifecycle = _helper(monkeypatch, b'{"groups":[]}\n', ready=completed)
-    owner = threading.get_ident()
-    entered = threading.Event()
-    release = threading.Event()
-    reaped = threading.Event()
-    calls = []
-
-    def kill():
-        lifecycle.append("kill")
-        if kill_error:
-            raise OSError("helper already exited")
-
-    def wait(timeout=None):
-        calls.append((threading.get_ident(), timeout))
-        if threading.get_ident() == owner:
-            raise AssertionError("nonblocking close waited on its caller")
-        entered.set()
-        release.wait()
-        reaped.set()
-        return -9
-
-    process.kill = kill
-    process.wait = wait
+def test_ready_enrichment_replaces_count_once_without_waiting(monkeypatch):
+    initial = {"groups": [{"kind": "cuda_device_unclassified", "count": "2"}]}
+    final = {"groups": [{"kind": "full_gpu", "count": "2", "model": "NVIDIA H100"}]}
+    _, _, waits, lifecycle = _helper(monkeypatch, b"")
+    chunks = iter((_frame(initial, phase="count"), _frame(final)))
+    monkeypatch.setattr(probe.os, "read", lambda _fd, _size: next(chunks))
     session = probe.GpuProbe()
     try:
-        assert session.result(timeout=0) == ({"groups": []} if completed else None)
-        session.close(wait=False)
-        assert entered.wait(5)
-        assert not reaped.is_set()
-        reaper = session._reaper
-        assert reaper.daemon and reaper.is_alive()
-        assert calls == [(reaper.ident, None)]
-        session.close(wait=False)
-        session.close()
-        assert session._reaper is reaper
-        assert lifecycle == ["release", "kill", "close-output"]
+        assert session.result() == final
+        assert session._completed
+        assert session.result() == final
+        assert waits == [2.0, 0.0]
     finally:
-        release.set()
-        if session._reaper is not None:
-            session._reaper.join(5)
-            assert not session._reaper.is_alive()
         session.close()
-    assert reaped.is_set()
+    assert lifecycle == ["release", "wait", "close-output"]
+
+
+def test_discovery_protocol_does_not_accept_a_third_frame(monkeypatch):
+    initial = {"groups": [{"kind": "cuda_device_unclassified", "count": "2"}]}
+    final = {"groups": [{"kind": "full_gpu", "count": "2"}]}
+    _helper(monkeypatch, _frame(initial, phase="count") + _frame(initial, phase="count") + _frame(final))
+    session = probe.GpuProbe()
+    try:
+        assert session.result() == initial
+        assert not session._completed
+    finally:
+        session.close()

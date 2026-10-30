@@ -33,9 +33,10 @@ import signal
 import sys
 import time
 from collections import Counter
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 CUDA_SUCCESS = 0
+CUDA_ERROR_NOT_INITIALIZED = 3
 CUDA_ERROR_NO_DEVICE = 100
 MAX_CUDA_DEVICES = 4096
 _MAX_OUTPUT_BYTES = 64 * 1024
@@ -190,7 +191,32 @@ def _classify_with_nvml(devices: list[dict[str, Any]]) -> None:
         _result(nvml_shutdown)
 
 
-def probe_gpu() -> Optional[dict[str, list[dict[str, Any]]]]:
+def probe_initialized_gpu() -> Optional[dict[str, list[dict[str, Any]]]]:
+    """Read application-owned CUDA state without initialization or enrichment.
+
+    A successful Driver count takes precedence over later environment changes.
+    An exactly empty mask establishes zero only when CUDA is not initialized.
+    This path never calls cuInit or queries optional metadata/NVML.
+    """
+
+    driver = _load_driver()
+    if driver is None:
+        return None
+    cu_get_count = _bind(driver, "cuDeviceGetCount", [ctypes.POINTER(ctypes.c_int)])
+    count = ctypes.c_int(-1)
+    status = _result(cu_get_count, ctypes.byref(count))
+    if status == CUDA_ERROR_NOT_INITIALIZED and os.environ.get("CUDA_VISIBLE_DEVICES") == "":
+        return {"groups": []}
+    if status == CUDA_ERROR_NO_DEVICE:
+        return {"groups": []}
+    if status != CUDA_SUCCESS or count.value < 0 or count.value > MAX_CUDA_DEVICES:
+        return None
+    return {"groups": [{"kind": "cuda_device_unclassified", "count": str(count.value)}] if count.value else []}
+
+
+def probe_gpu(
+    *, on_count: Optional[Callable[[dict[str, Any]], None]] = None
+) -> Optional[dict[str, list[dict[str, Any]]]]:
     """Return one capacity group per kind/model/memory set, or unknown.
 
     With a loadable Driver, an exactly empty CUDA_VISIBLE_DEVICES is observed
@@ -200,6 +226,7 @@ def probe_gpu() -> Optional[dict[str, list[dict[str, Any]]]]:
     Classification failures never change a known positive count. Each Driver
     ordinal contributes to one group exactly once.
     Counts are integer-valued decimal strings, matching the capacity contract.
+    on_count publishes a positive count before optional metadata or NVML work.
     """
 
     driver = _load_driver()
@@ -215,6 +242,8 @@ def probe_gpu() -> Optional[dict[str, list[dict[str, Any]]]]:
     if count == 0:
         return {"groups": []}
 
+    if on_count is not None:
+        on_count({"groups": [{"kind": "cuda_device_unclassified", "count": str(count)}]})
     devices = _driver_devices(driver, count)
     try:
         _classify_with_nvml(devices)
@@ -256,28 +285,36 @@ def _protect_owner(parent_pid: int, deadline: float) -> None:
     signal.setitimer(signal.ITIMER_REAL, remaining)
 
 
-def main(*, parent_pid: Optional[int] = None, deadline: Optional[float] = None):
-    """Run with ordinary Python startup without importing the NVFlare package."""
-
-    if parent_pid is not None:
-        _protect_owner(parent_pid, deadline)
-    value = probe_gpu()
-    encoded = json.dumps(value, separators=(",", ":"), allow_nan=False).encode("utf-8")
+def _write_output(value, *, phase=None):
+    payload = value if phase is None else {"phase": phase, "gpu": value}
+    encoded = json.dumps(payload, separators=(",", ":"), allow_nan=False).encode("utf-8")
     if len(encoded) + 1 > _MAX_OUTPUT_BYTES:
         # Optional descriptions cannot erase an already enumerated CUDA count.
         counts = Counter()
         for group in value["groups"]:
             counts[group["kind"]] += int(group["count"])
         value = {"groups": [{"kind": kind, "count": str(count)} for kind, count in sorted(counts.items())]}
-        encoded = json.dumps(value, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    if parent_pid is not None:
-        signal.setitimer(signal.ITIMER_REAL, 0)
+        payload = value if phase is None else {"phase": phase, "gpu": value}
+        encoded = json.dumps(payload, separators=(",", ":"), allow_nan=False).encode("utf-8")
     sys.stdout.buffer.write(encoded + b"\n")
     sys.stdout.buffer.flush()
-    if parent_pid is not None:
-        # Keeping the CUDA client alive avoids a second cold initialization
-        # when application code first uses its GPU. Parent closure releases it.
-        sys.stdin.buffer.read(1)
+
+
+def main(*, parent_pid: Optional[int] = None, deadline: Optional[float] = None):
+    """Run with ordinary Python startup without importing the NVFlare package."""
+
+    if parent_pid is None:
+        _write_output(probe_gpu())
+        return
+    _protect_owner(parent_pid, deadline)
+    # The hold protocol publishes a small verified count before optional work.
+    # The complete frame replaces it only when enrichment is already available.
+    value = probe_gpu(on_count=lambda value: _write_output(value, phase="count"))
+    signal.setitimer(signal.ITIMER_REAL, 0)
+    _write_output(value, phase="complete")
+    # Keeping the CUDA client alive avoids a second cold initialization when
+    # application code first uses its GPU. Parent closure releases it.
+    sys.stdin.buffer.read(1)
 
 
 if __name__ == "__main__":

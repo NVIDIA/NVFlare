@@ -15,12 +15,16 @@
 """Controlled Driver/NVML fakes: no GPU, CUDA Runtime, or NVML is required."""
 
 import ctypes
+import io
+import json
+import threading
 from types import SimpleNamespace
 
 import pytest
 
 from nvflare.private.fed.resource_stats.contract import normalize_measurement
 from nvflare.private.fed.resource_stats.probes import gpu_nvidia
+from tests.timing_utils import ThreadGroup
 
 
 @pytest.fixture(autouse=True)
@@ -461,3 +465,136 @@ def test_linux_system_loader_uses_versioned_driver_soname_only(monkeypatch):
 
     assert gpu_nvidia.probe_gpu() == {"groups": []}
     assert calls == [("libcuda.so.1",)]
+
+
+def _hold_output(monkeypatch):
+    output = io.BytesIO()
+    monkeypatch.setattr(
+        gpu_nvidia,
+        "sys",
+        SimpleNamespace(stdout=SimpleNamespace(buffer=output), stdin=SimpleNamespace(buffer=io.BytesIO())),
+    )
+    monkeypatch.setattr(gpu_nvidia, "_protect_owner", lambda *_args: None)
+    monkeypatch.setattr(gpu_nvidia, "signal", SimpleNamespace(ITIMER_REAL=0, setitimer=lambda *_args: None))
+    return output
+
+
+def test_hold_publishes_count_before_optional_metadata_and_blocked_nvml(monkeypatch):
+    _install(monkeypatch, _driver(count=2))
+    output = _hold_output(monkeypatch)
+    initial = {"groups": [{"kind": "cuda_device_unclassified", "count": "2"}]}
+    entered = threading.Event()
+    release = threading.Event()
+    driver_devices = gpu_nvidia._driver_devices
+
+    def devices(driver, count):
+        assert json.loads(output.getvalue()) == {"phase": "count", "gpu": initial}
+        return driver_devices(driver, count)
+
+    def classify(devices):
+        entered.set()
+        release.wait()
+        for device in devices:
+            device["kind"] = "full_gpu"
+
+    monkeypatch.setattr(gpu_nvidia, "_driver_devices", devices)
+    monkeypatch.setattr(gpu_nvidia, "_classify_with_nvml", classify)
+    with ThreadGroup(release) as threads:
+        threads.start(gpu_nvidia.main, parent_pid=123, deadline=40.0)
+        assert entered.wait(5)
+        assert json.loads(output.getvalue()) == {"phase": "count", "gpu": initial}
+    frames = [json.loads(line) for line in output.getvalue().splitlines()]
+    assert len(frames) == 2
+    assert frames[1]["phase"] == "complete"
+    final = frames[1]["gpu"]
+    assert final["groups"][0]["kind"] == "full_gpu"
+    assert final["groups"][0]["count"] == "2"
+    assert (
+        normalize_measurement(
+            "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": final}
+        )["gpu"]
+        == final
+    )
+
+
+@pytest.mark.parametrize("available", [False, True])
+def test_hold_zero_or_unavailable_emits_one_complete_frame(monkeypatch, available):
+    _install(monkeypatch, _driver(count=0) if available else None)
+    output = _hold_output(monkeypatch)
+    gpu_nvidia.main(parent_pid=123, deadline=40.0)
+    frames = [json.loads(line) for line in output.getvalue().splitlines()]
+    assert frames == [{"phase": "complete", "gpu": {"groups": []} if available else None}]
+
+
+@pytest.mark.parametrize(
+    "count,count_result,expected",
+    [
+        (2, 0, {"groups": [{"kind": "cuda_device_unclassified", "count": "2"}]}),
+        (0, 0, {"groups": []}),
+        (1, 100, {"groups": []}),
+        (1, 3, None),  # CUDA_ERROR_NOT_INITIALIZED: never initialize just to report.
+        (1, 999, None),
+        (-1, 0, None),
+        (gpu_nvidia.MAX_CUDA_DEVICES + 1, 0, None),
+    ],
+)
+def test_initialized_probe_queries_only_existing_driver_count(monkeypatch, count, count_result, expected):
+    driver = _driver(count=count, count_result=count_result, missing_symbols=("cuInit",))
+    _install(monkeypatch, driver)
+    bind = gpu_nvidia._bind
+
+    def count_only(library, name, argtypes):
+        assert name == "cuDeviceGetCount", "initialized-only probe requested initialization or metadata"
+        return bind(library, name, argtypes)
+
+    monkeypatch.setattr(gpu_nvidia, "_bind", count_only)
+    monkeypatch.setattr(gpu_nvidia, "_load_nvml", lambda: pytest.fail("initialized-only probe loaded NVML"))
+    result = gpu_nvidia.probe_initialized_gpu()
+    assert result == expected
+    assert driver.calls == [("cuDeviceGetCount",)]
+    if result is not None:
+        assert (
+            normalize_measurement(
+                "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": result}
+            )["gpu"]
+            == result
+        )
+
+
+@pytest.mark.parametrize(
+    "count_result,expected",
+    [
+        (0, {"groups": [{"kind": "cuda_device_unclassified", "count": "2"}]}),
+        (3, {"groups": []}),
+        (999, None),
+    ],
+)
+def test_initialized_count_precedes_empty_mask_and_only_cold_cuda_uses_zero(monkeypatch, count_result, expected):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    driver = _driver(count=2, count_result=count_result, missing_symbols=("cuInit",))
+    _install(monkeypatch, driver)
+    assert gpu_nvidia.probe_initialized_gpu() == expected
+    assert driver.calls == [("cuDeviceGetCount",)]
+
+
+@pytest.mark.parametrize("empty_mask", [False, True])
+def test_initialized_probe_missing_driver_or_count_symbol_is_unavailable(monkeypatch, empty_mask):
+    if empty_mask:
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    _install(monkeypatch, None)
+    assert gpu_nvidia.probe_initialized_gpu() is None
+    driver = _driver(missing_symbols=("cuDeviceGetCount",))
+    _install(monkeypatch, driver)
+    assert gpu_nvidia.probe_initialized_gpu() is None
+    assert driver.calls == []
+
+
+@pytest.mark.parametrize("mask", [" ", "invalid", "1,0"])
+def test_initialized_probe_leaves_other_masks_to_driver(monkeypatch, mask):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
+    driver = _driver(count=2)
+    _install(monkeypatch, driver)
+    assert gpu_nvidia.probe_initialized_gpu() == {"groups": [{"kind": "cuda_device_unclassified", "count": "2"}]}
+    assert driver.calls == [("cuDeviceGetCount",)]
+    _install(monkeypatch, _driver(count_result=3))
+    assert gpu_nvidia.probe_initialized_gpu() is None
