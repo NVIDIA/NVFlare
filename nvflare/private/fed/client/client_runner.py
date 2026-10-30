@@ -34,6 +34,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.apis.task_launcher_spec import TaskExecutionInterrupted
 from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
@@ -269,6 +270,8 @@ class ClientRunner(TBI):
         abort_signal = Signal(parent=self.run_abort_signal)
         try:
             reply = self._do_task(task, fl_ctx, abort_signal)
+        except TaskExecutionInterrupted:
+            raise
         except Exception as ex:
             self.log_exception(fl_ctx, secure_format_exception(ex))
             reply = make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -472,6 +475,9 @@ class ClientRunner(TBI):
                     msg=f"submit result: {ReturnCode.EXECUTION_RESULT_ERROR}",
                 )
 
+        except TaskExecutionInterrupted:
+            # Do not close the outstanding server assignment with an error result.
+            raise
         except RuntimeError as e:
             self.log_exception(
                 fl_ctx, f"RuntimeError from executor {executor_name}: {secure_format_exception(e)}: Aborting the job!"
@@ -799,6 +805,10 @@ class ClientRunner(TBI):
                             fl_ctx, f"could not notify CP of runner readiness: {secure_format_exception(e)}"
                         )
             self._try_run()
+        except TaskExecutionInterrupted:
+            # Unwind through normal cleanup, but skip the successful STOPPED
+            # notification. The process monitor reports a recoverable nonzero exit.
+            raise
         except Exception as e:
             with self.engine.new_context() as fl_ctx:
                 self.log_exception(fl_ctx, f"processing error in RUN execution: {secure_format_exception(e)}")
