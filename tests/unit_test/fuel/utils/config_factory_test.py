@@ -59,7 +59,7 @@ class TestConfigFactory:
             fmt = ext2fmts[ext]
             loader: ConfigLoader = fmt2loaders[fmt]
             assert isinstance(loader, ConfigLoader)
-            assert loader.get_format() == (ConfigFormat.JSON if fmt == ConfigFormat.PYHOCON else fmt)
+            assert loader.get_format() == fmt
             config = loader.load_config_from_dict(config_dicts)
             assert config.to_dict() == config_dicts
 
@@ -146,12 +146,3 @@ class TestConfigFactory:
             return full_path in namelist
 
         assert expected == ConfigFactory.match_config(None, init_file_path, match)
-
-    def test_conf_files_are_parsed_as_json(self, tmp_path):
-        config_file = tmp_path / "site.conf"
-        config_file.write_text('include "/etc/hosts"\na = ${HOME}')
-        with pytest.raises(ValueError):
-            ConfigFactory.load_config(str(config_file))
-
-        config_file.write_text('{"a": "${HOME}"}')
-        assert ConfigFactory.load_config(str(config_file)).to_dict() == {"a": "${HOME}"}

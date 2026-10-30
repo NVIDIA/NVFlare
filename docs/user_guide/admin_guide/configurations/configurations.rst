@@ -18,12 +18,9 @@ If multiple configuration formats coexist, then their usage will be prioritized 
 ``.json -> .conf -> .yml -> .yaml``
 
 HOCON includes and substitutions, and OmegaConf interpolations, can read files, URLs, and environment variables.
-FLARE servers and clients therefore parse ``.conf`` files as JSON, never resolve YAML interpolations, and reject
-YAML aliases. Job submission and the simulator render HOCON and OmegaConf job configs on the submitting machine,
-so existing jobs keep working; any environment variables they reference are read from the submitter's environment.
-Resubmit HOCON or OmegaConf jobs that were stored on the server before upgrading.
-Site configuration files (for example ``local/resources.conf``) are not rendered: convert HOCON site files to JSON,
-for example with ``pyhocon -i resources.conf -f json -o resources.json``.
+Job submission and the simulator therefore render HOCON and OmegaConf job configs to plain data on the submitting
+machine, so environment variables a job config references are read from the submitter's environment. The server
+rejects submitted job configs that still use these features. Site configuration files are not affected.
 
 See the sections below for more in-depth information about the different capabilities and types of configuration files:
 

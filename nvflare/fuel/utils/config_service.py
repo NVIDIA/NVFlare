@@ -202,10 +202,11 @@ class ConfigService:
             file_basename: base name of the config file to be loaded.
             for example: file_basename = config_fed_server.json
             what the function does is to search for config file that matches
-            config_fed_server.[json|conf|yml|yaml], then the matching .default files,
-            in given search directories: cls._config_path.
-            .json and .conf files are parsed as JSON. YAML files are parsed by OmegaConf without
-            resolving interpolations; aliases are rejected.
+            config_fed_server.[json|json.default|conf|conf.default|yml|yml.default]
+            in given search directories: cls._config_path
+            if json or json.default is not found;
+            then switch to Pyhoncon [.conf] or corresponding default file; if still not found; then we switch
+            to YAML files. We use OmegaConf to load YAML
             search_dirs: which directories to search.
 
         Returns: Dictionary from the configuration

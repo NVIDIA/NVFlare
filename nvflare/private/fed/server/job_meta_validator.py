@@ -14,6 +14,7 @@
 
 import collections
 import logging
+import re
 from io import BytesIO
 from typing import Optional, Set, Tuple
 from zipfile import ZipFile
@@ -26,6 +27,7 @@ from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.job_config_converter import needs_rendering, used_configs
 from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
@@ -49,6 +51,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
     """Job validator"""
 
     def _validate_zf(self, job_name, zf):
+        self._reject_unrendered_configs(job_name, zf)
         meta = self._validate_meta(job_name, zf)
         site_list = self._validate_deploy_map(job_name, meta)
         self._validate_app(job_name, meta, zf)
@@ -86,6 +89,22 @@ class JobMetaValidator(JobMetaValidatorSpec):
             return False, str(e), meta
 
         return True, "", meta
+
+    @staticmethod
+    def _reject_unrendered_configs(job_name: str, zf: ZipFile):
+        # HOCON includes and substitutions, and OmegaConf interpolations, read site files, URLs,
+        # and environment variables when sites parse job configs. Job tools render them before submission.
+        prefix = f"{job_name}/"
+        configs = [
+            name
+            for name in zf.namelist()
+            if name.startswith(prefix) and re.fullmatch(r"meta\.[^/]+|[^/]+/config/[^/]+", name[len(prefix) :])
+        ]
+        for name, fmt in used_configs(configs):
+            if fmt in (ConfigFormat.PYHOCON, ConfigFormat.OMEGACONF) and needs_rendering(
+                zf.read(name).decode(errors="replace"), fmt
+            ):
+                raise ValueError(f"job config {name} is not plain data; submit the job with current FLARE tools")
 
     @staticmethod
     def _validate_meta(job_name: str, zf: ZipFile) -> Optional[dict]:

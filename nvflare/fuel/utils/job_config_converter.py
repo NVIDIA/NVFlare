@@ -14,8 +14,9 @@
 
 """Render HOCON and OmegaConf job configs on the author's machine.
 
-FLARE sites parse .conf files as JSON and never resolve YAML interpolations or aliases.
-Includes, substitutions, and interpolations are resolved here with the author's files and environment.
+Includes, substitutions, and interpolations can read site files, URLs, and environment variables,
+so the server rejects submitted job configs that still use them. Job tools resolve them here
+with the author's files and environment.
 """
 
 import glob
@@ -24,7 +25,6 @@ import os
 import shutil
 
 from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.fuel_opt.utils.omegaconf_loader import reject_yaml_aliases
 
 
 def load_omegaconf_job_config(path: str) -> dict:
@@ -34,7 +34,7 @@ def load_omegaconf_job_config(path: str) -> dict:
     return OmegaConf.to_container(OmegaConf.load(path), resolve=True)
 
 
-def _used_configs(paths):
+def used_configs(paths):
     """Keeps, per folder and config name, the file runtime lookup picks first by extension precedence."""
     ext_formats = ConfigFormat.config_ext_formats()
     exts = list(ext_formats)
@@ -49,17 +49,18 @@ def _used_configs(paths):
     return [(path, ext_formats[ext]) for path, ext in used.values()]
 
 
-def _needs_rendering(path: str, fmt: ConfigFormat) -> bool:
-    with open(path, encoding="utf-8") as f:
-        text = f.read()
+def needs_rendering(text: str, fmt: ConfigFormat) -> bool:
+    """Whether a HOCON or OmegaConf config uses features beyond plain data, or YAML aliases."""
     try:
         if fmt == ConfigFormat.PYHOCON:
             json.loads(text)
-        else:
-            reject_yaml_aliases(text)
+            return False
+        import yaml
+
+        # Aliases let a few bytes expand into an exponentially large config.
+        return "${" in text or any(isinstance(e, yaml.AliasEvent) for e in yaml.parse(text, Loader=yaml.SafeLoader))
     except Exception:
         return True
-    return fmt == ConfigFormat.OMEGACONF and "${" in text
 
 
 def _render(path: str, fmt: ConfigFormat) -> str:
@@ -80,9 +81,12 @@ def convert_job_configs(job_dir: str, work_dir: str) -> str:
     # Legacy app folders without meta keep their configs in config/ directly.
     patterns = ["meta.*", os.path.join("config", "*"), os.path.join("*", "config", "*")]
     to_render = []
-    for path, fmt in _used_configs(path for pattern in patterns for path in glob.glob(os.path.join(root, pattern))):
-        if fmt not in (ConfigFormat.PYHOCON, ConfigFormat.OMEGACONF) or not _needs_rendering(path, fmt):
+    for path, fmt in used_configs(path for pattern in patterns for path in glob.glob(os.path.join(root, pattern))):
+        if fmt not in (ConfigFormat.PYHOCON, ConfigFormat.OMEGACONF):
             continue
+        with open(path, encoding="utf-8", errors="replace") as f:
+            if not needs_rendering(f.read(), fmt):
+                continue
         rel_path = os.path.relpath(path, job_dir)
         # Writing through a linked file or folder would overwrite a file outside the job.
         if os.path.realpath(path) != os.path.join(os.path.realpath(job_dir), rel_path):
