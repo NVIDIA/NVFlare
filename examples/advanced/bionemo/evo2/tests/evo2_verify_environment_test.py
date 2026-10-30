@@ -141,7 +141,7 @@ def test_runtime_requirements_are_single_sourced_for_the_container():
     ]
     dockerfile = (example_dir / "Dockerfile").read_text(encoding="utf-8")
 
-    assert requirements == ["nvflare[PT]>=2.9.0", "-r requirements-runtime.txt"]
+    assert requirements == ["torch", "torchvision", "-r requirements-runtime.txt"]
     assert runtime_requirements == [
         "datasets==5.0.1",
         "matplotlib==3.11.1",

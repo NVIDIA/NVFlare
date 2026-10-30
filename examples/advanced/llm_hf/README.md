@@ -17,8 +17,10 @@ We conducted experiments on 48GB RTX 6000 Ada GPUs.
 
 ## Setup
 Please make sure you set up virtual environment following [example root readme](../../README.md).
-Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
+Install NVFlare first, then the additional requirements (`requirements.txt` does not install NVFlare):
 ```
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+python3 -m pip install nvflare
 python3 -m pip install -r requirements.txt
 ```
 Git LFS is also necessary for downloads, please follow the steps in this [link](https://github.com/git-lfs/git-lfs/blob/main/INSTALLING.md).

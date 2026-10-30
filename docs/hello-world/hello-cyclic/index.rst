@@ -58,6 +58,8 @@ Install the dependency
 
 .. code-block:: text
 
+   # Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+   pip install nvflare
    pip install -r requirements.txt
 
 Code Structure

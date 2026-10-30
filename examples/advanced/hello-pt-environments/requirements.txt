@@ -1,1 +1,2 @@
-nvflare[PT]>=2.10.0rc0,<2.11
+torch
+torchvision

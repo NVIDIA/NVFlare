@@ -6,7 +6,8 @@ actual `client.py`, `model.py`, and `prepare_data.py`; only the Recipe options a
 Keep this directory at `advanced/hello-pt-environments` beside `hello-world/hello-pt`. A full source checkout already
 has that layout. `nvflare examples get hello-pt-environments` downloads both catalog entries at those relative paths.
 
-Complete the beginner simulation first so you already understand its training, evaluation, and artifacts:
+This example requires NVFlare 2.10 or later. Complete the beginner simulation first so you already understand its
+training, evaluation, and artifacts:
 
 ```bash
 cd ../../hello-world/hello-pt
@@ -14,19 +15,20 @@ python job.py
 cd ../../advanced/hello-pt-environments
 ```
 
-If you started from a source checkout, install that checkout with its PyTorch
-extra before entering this directory:
+If you started from a source checkout, install that checkout before entering
+this directory, then install the example dependencies (PyTorch and torchvision):
 
 ```bash
 cd /path/to/NVFlare
-python -m pip install -e ".[PT]"
+python -m pip install -e .
 cd examples/advanced/hello-pt-environments
+python -m pip install -r requirements.txt
 ```
 
 If you arrived through `nvflare examples get hello-pt-environments`, keep using
-the revision-matched NVFlare installation and `PT` extra already in that
-environment. Do not install this directory's `requirements.txt` over a nightly
-or editable NVFlare installation.
+the revision-matched NVFlare installation already in that environment, then
+install this directory's `requirements.txt` (PyTorch and torchvision; it does
+not install NVFlare).
 
 ## Compare the three environments
 

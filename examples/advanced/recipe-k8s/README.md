@@ -1,10 +1,9 @@
 # Submit a CIFAR-10 Recipe Job to Two Kubernetes Clients
 
-> **Development Branch Notice**
-> This example uses `set_recipe_meta`, part of the NVFlare 2.9 Recipe API. The
-> `requirements.txt` file pins the first upcoming NVFlare release that supports
-> it. Until that package is published on PyPI, install NVFlare from this
-> repository instead of changing the pin to an older release.
+> **Version requirement**
+> This example uses `set_recipe_meta`, part of the NVFlare 2.9 Recipe API, so it
+> needs NVFlare 2.9 or later. Install NVFlare first, as described in
+> [Install](#install); `requirements.txt` does not install it.
 
 This example submits a PyTorch FedAvg job that trains a small CIFAR-10 image
 classifier to an existing production NVFlare system with one server and two
@@ -91,17 +90,12 @@ independent Kubernetes environments.
 
 ## Install
 
-From the repository root, install the current source while NVFlare 2.9 is not
-yet published:
+Install NVFlare first, then the example dependencies (PyTorch and torchvision;
+`requirements.txt` does not install NVFlare). From the repository root:
 
 ```bash
-python3 -m pip install -e ".[PT]"
-```
-
-After the pinned release is available, the example dependencies can instead be
-installed normally:
-
-```bash
+# Stable release; use nvflare-nightly for a nightly build, or `-e .` for this checkout
+python3 -m pip install "nvflare>=2.9"
 python3 -m pip install -r examples/advanced/recipe-k8s/requirements.txt
 ```
 

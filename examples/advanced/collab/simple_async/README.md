@@ -14,7 +14,7 @@ recipe and launch code at the bottom.
 
 ## Run
 
-With NVFlare installed, download and run the standalone example:
+With NVFlare 2.9 or later installed, download and run the standalone example:
 
 ```bash
 nvflare examples get collab-simple-async
@@ -26,8 +26,9 @@ python job.py
 Alternatively, from the NVFlare repository root:
 
 ```bash
-python -m pip install -e ".[PT]"
+python -m pip install -e .
 cd examples/advanced/collab/simple_async
+python -m pip install -r requirements.txt
 python job.py
 ```
 

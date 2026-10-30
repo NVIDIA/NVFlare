@@ -158,6 +158,8 @@ Follow the [Installation](../../README.md) instructions to install NVIDIA FLARE.
 Install additional requirements:
 
 ```bash
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+python3 -m pip install nvflare
 python3 -m pip install -r requirements.txt
 ```
 
@@ -184,7 +186,6 @@ python3 -m pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_sp
 
 **Alternative (Simpler):** If you encounter installation issues or don't need the performance optimizations provided by the optional packages, you can run with just the core PyTorch Geometric library (already installed in requirements.txt). Simply skip installing the optional extensions above.
 
-Note: If you already have a specific version of nvflare installed in your environment, you may want to remove nvflare from the requirements to avoid reinstalling.
 
 ### Task 1: Protein Classification
 

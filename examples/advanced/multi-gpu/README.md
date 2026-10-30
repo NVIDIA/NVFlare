@@ -49,6 +49,8 @@ Each example follows the same pattern:
 cd pt/  # or lightning/
 
 # Install dependencies
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 
 # Download dataset

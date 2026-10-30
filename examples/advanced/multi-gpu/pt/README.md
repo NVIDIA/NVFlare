@@ -62,6 +62,8 @@ python job.py --export --export-dir /tmp/nvflare/jobs/job_config
 ## Requirements
 
 ```bash
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 ```
 

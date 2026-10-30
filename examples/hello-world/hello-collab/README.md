@@ -23,6 +23,8 @@ Install the example dependencies, then run the job in simulation:
 
 ```bash
 cd examples/hello-world/hello-collab
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+python -m pip install "nvflare>=2.9"
 python -m pip install -r requirements.txt
 python job.py
 ```

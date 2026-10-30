@@ -14,15 +14,15 @@ NVIDIA FLARE Installation
 -------------------------
 
 For the complete installation instructions, see :doc:`Installation </installation>`. For a released NVFlare
-package, choose the matching command to add its PyTorch extra:
+package, install NVFlare first with the matching command:
 
 .. code-block:: bash
 
    # Stable installation
-   python -m pip install "nvflare[PT]"
+   python -m pip install nvflare
 
    # Nightly installation
-   python -m pip install "nvflare-nightly[PT]"
+   python -m pip install nvflare-nightly
 
 Then download the matching example:
 
@@ -39,10 +39,11 @@ mode before entering the example directory:
    git clone https://github.com/NVIDIA/NVFlare.git
    cd NVFlare
    git switch <release branch>
-   python -m pip install -e ".[PT]"
+   python -m pip install -e .
    cd examples/hello-world/hello-lightning
 
-Install the remaining example dependencies from that directory:
+Then install the example dependencies from that directory. ``requirements.txt`` does
+not install NVFlare:
 
 .. code-block:: bash
 

@@ -5,6 +5,8 @@ This tutorial shows how simple it is to run an end-to-end classification pipelin
 ### 0. Install Requirements
 
 ```bash
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 ```
 

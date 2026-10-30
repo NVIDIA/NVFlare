@@ -15,6 +15,8 @@ Follow the instructions for setting up a [virtual environment](../../README.md#s
 
 ```bash
 # For MedNIST example
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r mednist/requirements.txt
 
 # For Spleen CT Segmentation example

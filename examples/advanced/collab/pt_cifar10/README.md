@@ -16,7 +16,7 @@ It is recommended to create a virtual environment before running the example.
 
 For complete installation instructions, see the
 [NVIDIA FLARE installation guide](https://nvflare.readthedocs.io/en/main/installation.html).
-If NVFlare is already installed, download the example and enter its directory:
+If NVFlare 2.9 or later is already installed, download the example and enter its directory:
 
 ```bash
 nvflare examples get collab-pt

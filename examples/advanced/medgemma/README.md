@@ -45,6 +45,8 @@ From this directory:
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+python -m pip install nvflare
 python -m pip install -r requirements.txt
 ```
 

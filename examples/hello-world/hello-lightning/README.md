@@ -7,15 +7,15 @@ configurations.
 For the complete installation instructions, see
 [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
 
-For an installed stable or nightly package, add the PyTorch extra to that same
-distribution. Choose the matching installation command:
+Install NVFlare first, as a stable or nightly package. Choose the matching
+installation command:
 
 ```bash
 # Stable installation
-python -m pip install "nvflare[PT]"
+python -m pip install nvflare
 
 # Nightly installation
-python -m pip install "nvflare-nightly[PT]"
+python -m pip install nvflare-nightly
 ```
 
 Then download the matching example without a repository checkout:
@@ -32,11 +32,12 @@ maintained example directory:
 git clone https://github.com/NVIDIA/NVFlare.git
 cd NVFlare
 git switch <release branch>
-python -m pip install -e ".[PT]"
+python -m pip install -e .
 cd examples/hello-world/hello-lightning
 ```
 
-Install the remaining example dependencies from that directory:
+Then install the example dependencies from that directory. `requirements.txt` does
+not install NVFlare:
 
 ```bash
 python -m pip install -r requirements.txt

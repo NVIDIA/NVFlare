@@ -34,6 +34,8 @@ And install the required dependencies in the example folder (NVFlare/examples/ad
 
 .. code-block:: shell
 
+  # Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+  (nvflare-env) $ python3 -m pip install nvflare
   (nvflare-env) $ python3 -m pip install -r requirements.txt
 
 

@@ -194,6 +194,8 @@ Before running the examples, set up your environment:
 1. Create a virtual environment and install Jupyterlab (see [example root README](../../README.md))
 2. Install additional requirements:
    ```bash
+   # Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+   python3 -m pip install nvflare
    python3 -m pip install -r requirements.txt
    ```
 3. Set up encryption plugins by following the [encryption plugins instructions](../../../integration/xgboost/encryption_plugins)

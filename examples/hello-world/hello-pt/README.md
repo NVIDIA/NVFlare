@@ -7,16 +7,17 @@ tracking service.
 
 ## Install
 
-Create and activate a virtual environment. If you downloaded this directory
-with `nvflare examples get hello-pt`, add the `PT` extra to the same
-NVFlare distribution already in use by running the matching command:
+Create and activate a virtual environment and install NVFlare first. If you
+downloaded this directory with `nvflare examples get hello-pt`, keep the
+NVFlare distribution you used for that command. Otherwise choose the matching
+command:
 
 ```bash
 # Stable installation
-python -m pip install "nvflare[PT]"
+python -m pip install nvflare
 
 # Nightly installation
-python -m pip install "nvflare-nightly[PT]"
+python -m pip install nvflare-nightly
 ```
 
 Do not run both commands. If you are working from a source checkout instead,
@@ -26,11 +27,12 @@ stay aligned:
 ```bash
 git clone https://github.com/NVIDIA/NVFlare.git
 cd NVFlare
-python -m pip install -e ".[PT]"
+python -m pip install -e .
 cd examples/hello-world/hello-pt
 ```
 
-Install the remaining example dependencies from the example directory:
+Then install the example dependencies (`torch` and `torchvision`) from the example
+directory. `requirements.txt` does not install NVFlare:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -301,8 +303,8 @@ nvflare examples get hello-pt-environments
 cd hello-pt-environments/advanced/hello-pt-environments
 ```
 
-Keep using the same revision-matched NVFlare installation and `PT` extra from
-the beginner example. Then follow that directory's README to run the same
+Keep using the same revision-matched NVFlare installation from the beginner
+example, and install the next example's `requirements.txt`. Then follow that directory's README to run the same
 learning application in a local POC or an already-running production
 deployment. It also covers experiment tracking, full cross-site evaluation,
 external-process execution, and memory tuning.

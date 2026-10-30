@@ -32,6 +32,8 @@ Install the required dependencies (NVFlare/examples/advanced/experiment-tracking
 
 .. code-block:: shell
 
+  # Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+  (nvflare-env) $ python3 -m pip install nvflare
   (nvflare-env) $ python3 -m pip install -r requirements.txt
 
 When running, make sure to set `PYTHONPATH` to include the custom files of the example (replacing the path below

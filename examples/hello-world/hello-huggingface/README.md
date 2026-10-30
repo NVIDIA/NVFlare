@@ -8,20 +8,21 @@ to create a virtual environment and run everything within a virtualenv.
 For the complete installation instructions, see
 [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
 
-Install the PyTorch extra on the same NVFlare distribution that supplied this example:
+Install NVFlare first, using the same distribution that supplied this example:
 
 ```bash
 # Stable installation
-python -m pip install "nvflare[PT]"
+python -m pip install nvflare
 
 # Nightly installation
-python -m pip install "nvflare-nightly[PT]"
+python -m pip install nvflare-nightly
 
 # Editable installation, run from the NVFlare checkout
-python -m pip install -e ".[PT]"
+python -m pip install -e .
 ```
 
-Then install the remaining example dependencies from this directory:
+Then install the example dependencies from this directory. `requirements.txt` does not
+install NVFlare:
 
 ```bash
 python -m pip install -r requirements.txt

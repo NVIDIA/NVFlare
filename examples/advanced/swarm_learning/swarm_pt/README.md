@@ -163,6 +163,8 @@ an actual `val_loss` of 2.31 is displayed as -2.31.
 ### Step 1 — Install dependencies
 
 ```bash
+# Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+pip install nvflare
 pip install -r requirements.txt
 ```
 

@@ -21,12 +21,12 @@ Get and install the example
 ---------------------------
 
 Create and activate a Python virtual environment. For a released NVFlare
-package, install its PyTorch extra and download the example that matches the
-installed package revision:
+package, install NVFlare and download the example that matches the installed
+package revision:
 
 .. code-block:: bash
 
-   python -m pip install "nvflare[PT]"
+   python -m pip install nvflare
    nvflare examples get hello-pt
    cd hello-pt
 
@@ -37,7 +37,7 @@ editable mode so its package and example stay aligned:
 
    git clone https://github.com/NVIDIA/NVFlare.git
    cd NVFlare
-   python -m pip install -e ".[PT]"
+   python -m pip install -e .
    cd examples/hello-world/hello-pt
 
 Install the remaining example dependencies from that directory:

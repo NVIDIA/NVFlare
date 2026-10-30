@@ -21,6 +21,8 @@ requirements, and run the job recipe:
 .. code-block:: shell
 
    $ cd examples/hello-world/hello-tf
+   # Install NVFlare first (stable shown; use nvflare-nightly, or "pip install -e ." from a source checkout)
+   $ python3 -m pip install nvflare
    $ python3 -m pip install -r requirements.txt
    $ python3 job.py
 

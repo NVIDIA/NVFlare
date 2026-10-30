@@ -13,12 +13,13 @@ three rounds. It runs on a CPU and needs no dataset download.
 From the NVFlare repository root, in an activated virtual environment:
 
 ```bash
-python -m pip install -e ".[PT]"
+python -m pip install -e .
+python -m pip install -r examples/hello-world/hello-collab/requirements.txt
 python examples/hello-world/hello-collab/job.py
 ```
 
-These examples use the Collab implementation in this repository; the command
-above installs it together with PyTorch and torchvision. See the
+These examples use the Collab implementation in this repository; the first
+command above installs it, and the second installs PyTorch and torchvision. See the
 [installation guide](https://nvflare.readthedocs.io/en/main/installation.html)
 for environment setup.
 
