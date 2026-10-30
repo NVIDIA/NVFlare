@@ -80,8 +80,10 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from src.support.optim import build_warmup_cosine
+from src.support.optim import build_optimizer as make_optimizer
+from src.support.parameters import load_model_checkpoint, set_model_state, trainable_state
 from src.support.partitioning import EpisodeMeta
+from src.support.training import cycle_loader, dataloader_kwargs
 
 if TYPE_CHECKING:
     from src.configs.schemas import BackendConfig, DataConfig, OptimConfig
@@ -454,11 +456,7 @@ class GrootBackend:
             len(combined),
         )
 
-        kwargs: dict = dict(
-            num_workers=data_cfg.num_workers,
-            collate_fn=self._processor.collator,
-            pin_memory=(self.device.type == "cuda"),
-        )
+        kwargs = dataloader_kwargs(data_cfg, self.device, collate_fn=self._processor.collator)
         if bool(extra.get("shard_grouped_batches", False)):
             # See _ShardGroupedBatchSampler: a global shuffle over ~30 shards
             # re-decodes a whole ~1000-timestep shard for every single sample.
@@ -481,14 +479,7 @@ class GrootBackend:
             kwargs["batch_size"] = data_cfg.batch_size
             kwargs["shuffle"] = True
             kwargs["drop_last"] = False
-        if data_cfg.num_workers > 0:
-            mp_context = extra.get("dataloader_mp_context")
-            if mp_context:
-                kwargs["multiprocessing_context"] = mp_context
-            kwargs["prefetch_factor"] = int(extra.get("prefetch_factor", 1))
-            kwargs["persistent_workers"] = bool(extra.get("persistent_workers", False))
-        loader = DataLoader(combined, **kwargs)
-        return _cycle(loader)
+        return cycle_loader(DataLoader(combined, **kwargs))
 
     def _build_and_wire_datasets(
         self,
@@ -582,123 +573,16 @@ class GrootBackend:
         return result
 
     def build_optimizer(self, optim_cfg: OptimConfig) -> tuple[torch.optim.Optimizer, object | None]:
-        """AdamW over trainable params (LoRA + action head) + warmup-cosine LR."""
-        params = [p for p in self._model.parameters() if p.requires_grad]
-        opt_name = (optim_cfg.name or "adamw").lower()
-        if opt_name == "adamw":
-            opt = torch.optim.AdamW(
-                params,
-                lr=optim_cfg.lr,
-                betas=tuple(optim_cfg.betas),
-                eps=optim_cfg.eps,
-                weight_decay=optim_cfg.weight_decay,
-            )
-        elif opt_name == "adam":
-            opt = torch.optim.Adam(
-                params,
-                lr=optim_cfg.lr,
-                betas=tuple(optim_cfg.betas),
-                eps=optim_cfg.eps,
-                weight_decay=optim_cfg.weight_decay,
-            )
-        else:
-            raise ValueError(f"Unknown optimizer name: {optim_cfg.name!r}")
-
-        scheduler = None
-        if optim_cfg.scheduler == "cosine":
-            scheduler = build_warmup_cosine(
-                opt,
-                lr=optim_cfg.lr,
-                warmup_steps=optim_cfg.warmup_steps,
-                decay_steps=optim_cfg.decay_steps,
-                decay_lr=optim_cfg.decay_lr,
-            )
-        return opt, scheduler
-
-    # ------------------------------------------------------------------
-    # parameter exchange (the FL boundary)
-    # ------------------------------------------------------------------
+        return make_optimizer(self._model, optim_cfg)
 
     def get_state(self, scope: str = "shared") -> dict[str, torch.Tensor]:
-        """Return all TRAINABLE parameters — exactly LoRA adapters + action head.
-
-        Mirrors the lerobot adapter: take the names of every parameter with
-        ``requires_grad`` and slice them (plus their sub-keys) out of the full
-        ``state_dict``, detached + cloned. Filtering on a ``lora_`` substring
-        would silently drop the trained action head from aggregation.
-
-        With ``backend.shared_params`` set, "shared" is the matching trainable
-        subset and "personal" its complement (the personalization seam);
-        otherwise shared = all trainable and personal is empty. "all" is
-        always the full trainable set — checkpoints/restore use it.
-        """
-        from src.support.parameters import trainable_state_keys
-
-        keys = trainable_state_keys(self._model)
-        trainable = {k: v.detach().clone() for k, v in self._model.state_dict().items() if k in keys}
-        if scope == "all":
-            return trainable
-        from src.support.parameters import resolve_shared_names
-
-        shared = resolve_shared_names(trainable, self.cfg.shared_params)
-        if scope == "personal":
-            return {k: v for k, v in trainable.items() if k not in shared}
-        return {k: v for k, v in trainable.items() if k in shared}
+        return trainable_state(self._model, self.cfg.shared_params, scope)
 
     def set_state(self, state: dict[str, torch.Tensor], scope: str = "shared") -> None:
-        """Load shared params with dtype/device casting; non-strict."""
-        if scope == "personal":
-            return
-        own = self._model.state_dict()
-        for k, v in state.items():
-            if k in own:
-                own[k] = v.to(own[k].dtype).to(own[k].device)
-        self._model.load_state_dict(own, strict=False)
+        set_model_state(self._model, state)
 
     def load_checkpoint(self, path: str) -> None:
-        """Load a trainable-state checkpoint written by ``save_checkpoint``.
-
-        Also accepts a server checkpoint (``{"state": shared_state,
-        "round": N}``). Fails loudly if no keys overlap, so we never silently
-        run the un-finetuned base model (the documented action-head failure
-        mode).
-        """
-        p = Path(path)
-        blob = torch.load(p, map_location=self.device, weights_only=False)
-        sd = blob
-        if isinstance(blob, dict):
-            if "state_dict" in blob:
-                sd = blob["state_dict"]
-            elif "state" in blob and isinstance(blob["state"], dict):
-                sd = blob["state"]
-        own = set(self._model.state_dict())
-        if not own & set(sd):
-            raise ValueError(
-                f"checkpoint {p} shares no keys with the GR00T model state_dict; "
-                "refusing to silently load nothing (arm/config mismatch?)"
-            )
-        absent = set(sd) - own
-        if absent:
-            # e.g. a LoRA checkpoint loaded into a non-LoRA (action-head-only)
-            # model: the shared keys overlap but every lora_* weight would be
-            # silently dropped. Arm mismatch — fail loudly. A server
-            # {"state": shared_state} blob is a subset, so it has no absent keys.
-            raise ValueError(
-                f"checkpoint {p} has {len(absent)} key(s) the GR00T model cannot "
-                f"receive (e.g. {sorted(absent)[:3]}); the eval config's arm "
-                "(LoRA vs full fine-tune) likely does not match the checkpoint. "
-                "Refusing to silently drop them — load with the matching config."
-            )
-        # Legal but never silent — see support.parameters.partial_load_warning. Matters
-        # most here: a GR00T backbone-share server checkpoint is 1.52B of a
-        # 3.14B model, so exporting it alone leaves the whole action head at its
-        # pretrained values.
-        from src.support.parameters import partial_load_warning, trainable_state_keys
-
-        msg = partial_load_warning(trainable_state_keys(self._model), sd, str(p))
-        if msg:
-            log.warning("%s", msg)
-        self.set_state(sd, scope="shared")
+        load_model_checkpoint(self._model, path, self.device, "GR00T model")
 
     # ------------------------------------------------------------------
     # inference (eval path — out of scope this pass)
@@ -1077,17 +961,3 @@ class _ShardGroupedBatchSampler:
                 if self._drop_last and len(batch) < self._batch_size:
                     continue
                 yield batch
-
-
-def _cycle(iterable):
-    """Infinite iterator over a DataLoader (re-iterates on exhaustion).
-
-    Inlined (mirrors the lerobot adapter) so the round loop can pull
-    ``local_steps`` batches without worrying about epoch boundaries.
-    """
-    iterator = iter(iterable)
-    while True:
-        try:
-            yield next(iterator)
-        except StopIteration:
-            iterator = iter(iterable)

@@ -34,9 +34,7 @@ def _cfg(repos):
     return RunConfig(
         name="t",
         backend=BackendConfig(name="mock"),
-        data=DataConfig(
-            name="lerobot", partitioning="explicit_repos", client_repo_ids=repos, num_clients=len(repos) if repos else 1
-        ),
+        data=DataConfig(partitioning="explicit_repos", client_repo_ids=repos, num_clients=len(repos) if repos else 1),
         fl=FLConfig(strategy=StrategyConfig(name="fedavg"), num_rounds=1, local_steps=1),
     )
 

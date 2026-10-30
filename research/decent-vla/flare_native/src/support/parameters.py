@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from fnmatch import fnmatchcase
+from pathlib import Path
 
 import torch
 
@@ -133,3 +134,53 @@ def partial_load_warning(trainable: Iterable[str], loaded: Iterable[str], source
         f"holds only the shared subset, and the personal half has to be overlaid "
         f"from a client state (eval.personalized)."
     )
+
+
+def trainable_state(model: torch.nn.Module, shared_patterns, scope: str = "shared") -> dict[str, torch.Tensor]:
+    """Clone the trainable tensors selected for FL exchange or local persistence."""
+    keys = trainable_state_keys(model)
+    state = {k: v.detach().clone() for k, v in model.state_dict().items() if k in keys}
+    if scope == "all":
+        return state
+    shared = resolve_shared_names(state, shared_patterns)
+    if scope == "personal":
+        return {k: v for k, v in state.items() if k not in shared}
+    if scope != "shared":
+        raise ValueError(f"Unknown parameter scope: {scope!r}")
+    return {k: v for k, v in state.items() if k in shared}
+
+
+def set_model_state(model: torch.nn.Module, state: dict[str, torch.Tensor]) -> None:
+    """Load an FL tensor subset with the model's dtype and device."""
+    own = model.state_dict()
+    own.update({k: v.to(device=own[k].device, dtype=own[k].dtype) for k, v in state.items() if k in own})
+    model.load_state_dict(own, strict=False)
+
+
+def load_model_checkpoint(model: torch.nn.Module, path: str | Path, device, label: str) -> None:
+    """Load a native server or policy checkpoint, rejecting incompatible keys."""
+    path = Path(path)
+    blob = torch.load(path, map_location=device, weights_only=False)
+    state = blob
+    if isinstance(blob, dict):
+        if isinstance(blob.get("state_dict"), dict):
+            state = blob["state_dict"]
+        elif isinstance(blob.get("state"), dict):
+            state = blob["state"]
+    if not isinstance(state, dict):
+        raise ValueError(f"checkpoint {path} does not contain a tensor state")
+    own = set(model.state_dict())
+    if not own.intersection(state):
+        raise ValueError(f"checkpoint {path} shares no keys with the {label} state_dict")
+    absent = set(state) - own
+    if absent:
+        raise ValueError(
+            f"checkpoint {path} has {len(absent)} key(s) the {label} cannot receive "
+            f"(e.g. {sorted(absent)[:3]}); use the matching model configuration"
+        )
+    warning = partial_load_warning(trainable_state_keys(model), state, str(path))
+    if warning:
+        import logging
+
+        logging.getLogger(__name__).warning("%s", warning)
+    set_model_state(model, state)

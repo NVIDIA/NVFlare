@@ -223,7 +223,6 @@ def create_config(args):
         "device": "cpu" if policy == "mock" else "auto",
         "backend": {"name": "mock" if policy == "mock" else "groot" if policy == "groot" else "lerobot"},
         "data": {
-            "name": "mock" if policy == "mock" else "groot" if policy == "groot" else "lerobot",
             "batch_size": 8,
             "num_workers": 0,
             "num_clients": clients,

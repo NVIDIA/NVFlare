@@ -38,7 +38,6 @@ class TaskResult:
     n_episodes: int
     n_success: int
     success_rate: float
-    mean_episode_length: float = 0.0
 
 
 @dataclass
@@ -51,11 +50,7 @@ class BenchmarkSuiteResult:
 
 @dataclass
 class BenchmarkResult:
-    benchmark: str
     suites: dict[str, BenchmarkSuiteResult]
-    overall_n_episodes: int
-    overall_n_success: int
-    overall_success_rate: float
 
 
 @dataclass
@@ -84,7 +79,6 @@ class RunResults:
     seed: int
     suites: dict[str, dict[str, Any]]
     overall: dict[str, Any]
-    extra: dict[str, Any] = field(default_factory=dict)
     # v1.1: seen/held-out aggregates + partition provenance (defaults keep
     # 1.0 files readable).
     aggregates: dict[str, Any] = field(default_factory=dict)

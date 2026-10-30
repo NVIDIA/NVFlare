@@ -27,6 +27,8 @@ import torch
 from torch import nn
 
 from src.configs.schemas import BackendConfig, DataConfig, OptimConfig
+from src.support.optim import build_optimizer as make_optimizer
+from src.support.parameters import load_model_checkpoint, set_model_state, trainable_state
 from src.support.partitioning import EpisodeMeta
 
 
@@ -149,43 +151,18 @@ class MockBackend:
         return {"loss": loss}
 
     def build_optimizer(self, optim_cfg: OptimConfig) -> tuple[torch.optim.Optimizer, object | None]:
-        opt = torch.optim.AdamW(
-            [p for p in self._model.parameters() if p.requires_grad],
-            lr=optim_cfg.lr,
-            betas=optim_cfg.betas,
-            eps=optim_cfg.eps,
-            weight_decay=optim_cfg.weight_decay,
-        )
-        return opt, None
+        return make_optimizer(self._model, optim_cfg)
 
     # ----- parameter exchange -----
 
     def get_state(self, scope: str = "shared") -> dict[str, torch.Tensor]:
-        # Mirror the real adapters: "all" = every TRAINABLE param; "shared" =
-        # the cfg.shared_params subset of it; "personal" = the complement.
-        # Without patterns, shared == all and personal is empty (historical).
-        trainable_names = {n for n, p in self._model.named_parameters() if p.requires_grad}
-        trainable = {k: v.detach().clone() for k, v in self._model.state_dict().items() if k in trainable_names}
-        if scope == "all":
-            return trainable
-        from src.support.parameters import resolve_shared_names
-
-        shared = resolve_shared_names(trainable, self.cfg.shared_params)
-        if scope == "personal":
-            return {k: v for k, v in trainable.items() if k not in shared}
-        return {k: v for k, v in trainable.items() if k in shared}
+        return trainable_state(self._model, self.cfg.shared_params, scope)
 
     def set_state(self, state: dict[str, torch.Tensor], scope: str = "shared") -> None:
-        if scope == "personal":
-            return  # nothing to set
-        own = self._model.state_dict()
-        casted = {k: v.to(own[k].dtype).to(own[k].device) for k, v in state.items() if k in own}
-        own.update(casted)
-        self._model.load_state_dict(own, strict=False)
+        set_model_state(self._model, state)
 
     def load_checkpoint(self, path: str) -> None:
-        blob = torch.load(path, map_location=self.device, weights_only=False)
-        self._model.load_state_dict(blob["state_dict"], strict=False)
+        load_model_checkpoint(self._model, path, self.device, "mock model")
 
     # ----- inference -----
 

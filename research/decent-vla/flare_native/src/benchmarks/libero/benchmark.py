@@ -167,9 +167,6 @@ class LIBEROBenchmark:
         from libero.libero.envs import OffScreenRenderEnv
 
         suite_results: dict[str, BenchmarkSuiteResult] = {}
-        total_eps = 0
-        total_succ = 0
-
         for raw_name in suites:
             sname = _ALIASES.get(raw_name, raw_name)
             suite = get_benchmark_dict()[sname]()
@@ -227,8 +224,6 @@ class LIBEROBenchmark:
                 success_rate=suite_succ / suite_eps if suite_eps else 0.0,
                 per_task=per_task,
             )
-            total_eps += suite_eps
-            total_succ += suite_succ
             log.info(
                 "LIBERO suite %s: %d/%d episodes successful",
                 sname,
@@ -236,13 +231,7 @@ class LIBEROBenchmark:
                 suite_eps,
             )
 
-        return BenchmarkResult(
-            benchmark=self.name,
-            suites=suite_results,
-            overall_n_episodes=total_eps,
-            overall_n_success=total_succ,
-            overall_success_rate=total_succ / total_eps if total_eps else 0.0,
-        )
+        return BenchmarkResult(suites=suite_results)
 
     def _rollout(self, policy: Any, env, task, init_states, episode_idx: int, seed: int) -> bool:
         env.reset()

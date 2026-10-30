@@ -68,7 +68,6 @@ class BackendConfig:
 class DataConfig:
     """Dataset + partitioning spec."""
 
-    name: str = "mock"
     repo_id: str | None = None
     batch_size: int = 8
     num_workers: int = 0

@@ -40,6 +40,24 @@ def seed_training(seed: int, deterministic: bool = False) -> None:
         torch.backends.cudnn.allow_tf32 = False
 
 
+def dataloader_kwargs(data_cfg, device, **kwargs) -> dict:
+    """Add the common worker and device settings used by VLA DataLoaders."""
+    kwargs.update(num_workers=data_cfg.num_workers, pin_memory=device.type == "cuda")
+    if data_cfg.num_workers > 0:
+        extra = data_cfg.extra or {}
+        if extra.get("dataloader_mp_context"):
+            kwargs["multiprocessing_context"] = extra["dataloader_mp_context"]
+        kwargs["prefetch_factor"] = int(extra.get("prefetch_factor", 1))
+        kwargs["persistent_workers"] = bool(extra.get("persistent_workers", False))
+    return kwargs
+
+
+def cycle_loader(loader):
+    """Re-create a DataLoader iterator at every epoch."""
+    while True:
+        yield from loader
+
+
 class _SharedParameterView(torch.nn.Module):
     """Expose shared parameters to FLARE's FedProx loss without copying a VLA.
 

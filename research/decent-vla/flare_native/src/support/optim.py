@@ -74,3 +74,24 @@ def build_warmup_cosine(
         optimizer,
         lr_lambda=lambda step: _warmup_cosine_factor(step, warmup_steps, decay_steps, floor),
     )
+
+
+def build_optimizer(model, cfg):
+    """Build the client optimizer and optional warmup-cosine scheduler."""
+    optimizers = {"adam": torch.optim.Adam, "adamw": torch.optim.AdamW}
+    name = (cfg.name or "adamw").lower()
+    if name not in optimizers:
+        raise ValueError(f"Unknown optimizer name: {cfg.name!r}")
+    optimizer = optimizers[name](
+        [p for p in model.parameters() if p.requires_grad],
+        lr=cfg.lr,
+        betas=tuple(cfg.betas),
+        eps=cfg.eps,
+        weight_decay=cfg.weight_decay,
+    )
+    scheduler = (
+        build_warmup_cosine(optimizer, cfg.lr, cfg.warmup_steps, cfg.decay_steps, cfg.decay_lr)
+        if cfg.scheduler == "cosine"
+        else None
+    )
+    return optimizer, scheduler

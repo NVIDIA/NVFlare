@@ -81,9 +81,6 @@ class MockBenchmark:
     ) -> BenchmarkResult:
         rng = np.random.default_rng(seed)
         suite_results: dict[str, BenchmarkSuiteResult] = {}
-        total_eps = 0
-        total_succ = 0
-
         for suite in suites:
             tasks = self._suite_tasks(suite)
             per_task: list[TaskResult] = []
@@ -91,7 +88,6 @@ class MockBenchmark:
             suite_succ = 0
             for task_id, task_name in tasks:
                 t_succ = 0
-                t_lengths = []
                 for ep_i in range(n_episodes_per_task):
                     policy.reset({"task_id": task_id, "seed": int(rng.integers(1 << 30))})
                     cum_norm_sq = 0.0
@@ -108,7 +104,6 @@ class MockBenchmark:
                     ok = cum_norm_sq < self.SUCCESS_THRESHOLD
                     if ok:
                         t_succ += 1
-                    t_lengths.append(self.EPISODE_LENGTH)
                     if progress_cb is not None:
                         progress_cb(suite, task_id, ep_i, ok)
                 per_task.append(
@@ -118,7 +113,6 @@ class MockBenchmark:
                         n_episodes=n_episodes_per_task,
                         n_success=t_succ,
                         success_rate=t_succ / n_episodes_per_task if n_episodes_per_task else 0.0,
-                        mean_episode_length=(sum(t_lengths) / len(t_lengths)) if t_lengths else 0.0,
                     )
                 )
                 suite_eps += n_episodes_per_task
@@ -129,13 +123,4 @@ class MockBenchmark:
                 success_rate=suite_succ / suite_eps if suite_eps else 0.0,
                 per_task=per_task,
             )
-            total_eps += suite_eps
-            total_succ += suite_succ
-
-        return BenchmarkResult(
-            benchmark=self.name,
-            suites=suite_results,
-            overall_n_episodes=total_eps,
-            overall_n_success=total_succ,
-            overall_success_rate=total_succ / total_eps if total_eps else 0.0,
-        )
+        return BenchmarkResult(suites=suite_results)

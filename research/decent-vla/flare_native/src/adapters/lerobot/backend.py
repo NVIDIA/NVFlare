@@ -52,8 +52,10 @@ import torch
 
 from src.configs.schemas import BackendConfig, DataConfig, OptimConfig
 from src.support.lora import apply_peft
-from src.support.optim import build_warmup_cosine
+from src.support.optim import build_optimizer as make_optimizer
+from src.support.parameters import load_model_checkpoint, set_model_state, trainable_state
 from src.support.partitioning import EpisodeMeta
+from src.support.training import cycle_loader, dataloader_kwargs
 
 log = logging.getLogger(__name__)
 
@@ -225,23 +227,15 @@ class LeRobotBackend:
         # / libav state. `prefetch_factor` (e.g. 1) caps shared-memory
         # pressure. Both are opt-in via
         # data.extra so CPU/mock paths keep torch defaults.
-        extra = data_cfg.extra or {}
-        kwargs: dict = dict(
+        kwargs = dataloader_kwargs(
+            data_cfg,
+            self.device,
             batch_size=data_cfg.batch_size,
             shuffle=shuffle,
             sampler=sampler,
-            num_workers=data_cfg.num_workers,
-            pin_memory=(self.device.type == "cuda"),
             drop_last=False,
         )
-        if data_cfg.num_workers > 0:
-            mp_context = extra.get("dataloader_mp_context")
-            if mp_context:
-                kwargs["multiprocessing_context"] = mp_context
-            kwargs["prefetch_factor"] = int(extra.get("prefetch_factor", 1))
-            kwargs["persistent_workers"] = bool(extra.get("persistent_workers", False))
-        loader = DataLoader(dataset, **kwargs)
-        return _cycle(loader)
+        return cycle_loader(DataLoader(dataset, **kwargs))
 
     def _build_concat_dataloader(self, data_cfg, partition_indices):
         """explicit_repos: client trains on the FULL data of every repo in its
@@ -289,21 +283,14 @@ class LeRobotBackend:
         )
 
         concat = ConcatDataset(datasets)
-        extra = data_cfg.extra or {}
-        kwargs: dict = dict(
+        kwargs = dataloader_kwargs(
+            data_cfg,
+            self.device,
             batch_size=data_cfg.batch_size,
             sampler=SubsetRandomSampler(combined_idx),
-            num_workers=data_cfg.num_workers,
-            pin_memory=(self.device.type == "cuda"),
             drop_last=False,
         )
-        if data_cfg.num_workers > 0:
-            mp_context = extra.get("dataloader_mp_context")
-            if mp_context:
-                kwargs["multiprocessing_context"] = mp_context
-            kwargs["prefetch_factor"] = int(extra.get("prefetch_factor", 1))
-            kwargs["persistent_workers"] = bool(extra.get("persistent_workers", False))
-        return _cycle(DataLoader(concat, **kwargs))
+        return cycle_loader(DataLoader(concat, **kwargs))
 
     def num_train_frames(self) -> int | None:
         """Frames the current client's dataloader samples per epoch — the
@@ -347,131 +334,16 @@ class LeRobotBackend:
         return result
 
     def build_optimizer(self, optim_cfg: OptimConfig) -> tuple[torch.optim.Optimizer, object | None]:
-        """Build optimizer over trainable params (LoRA-filtered if LoRA is on)."""
-        params = [p for p in self._policy.parameters() if p.requires_grad]
-        opt_name = (optim_cfg.name or "adamw").lower()
-        if opt_name == "adamw":
-            opt = torch.optim.AdamW(
-                params,
-                lr=optim_cfg.lr,
-                betas=tuple(optim_cfg.betas),
-                eps=optim_cfg.eps,
-                weight_decay=optim_cfg.weight_decay,
-            )
-        elif opt_name == "adam":
-            opt = torch.optim.Adam(
-                params,
-                lr=optim_cfg.lr,
-                betas=tuple(optim_cfg.betas),
-                eps=optim_cfg.eps,
-                weight_decay=optim_cfg.weight_decay,
-            )
-        else:
-            raise ValueError(f"Unknown optimizer name: {optim_cfg.name!r}")
-
-        scheduler = None
-        if optim_cfg.scheduler == "cosine":
-            # lerobot recipe parity: linear warmup to peak lr, cosine decay
-            # to decay_lr over decay_steps, constant floor after.
-            scheduler = build_warmup_cosine(
-                opt,
-                lr=optim_cfg.lr,
-                warmup_steps=optim_cfg.warmup_steps,
-                decay_steps=optim_cfg.decay_steps,
-                decay_lr=optim_cfg.decay_lr,
-            )
-
-        return opt, scheduler
-
-    # ------------------------------------------------------------------
-    # parameter exchange (the FL boundary)
-    # ------------------------------------------------------------------
+        return make_optimizer(self._policy, optim_cfg)
 
     def get_state(self, scope: str = "shared") -> dict[str, torch.Tensor]:
-        """Return all TRAINABLE parameters (exactly what the optimizer trains).
-
-        With LoRA (PEFT wraps only the VLM backbone) this is the LoRA
-        adapters *plus* everything left trainable outside the wrapped
-        submodule — action head / expert projections. Filtering by a
-        ``lora_`` key substring instead would silently drop the trained
-        action head from aggregation and broadcast (the documented
-        action-head failure mode: server checkpoint evals ~0%).
-        Without LoRA it is all trainable params (full FT).
-
-        Detached + cloned. Buffers are excluded (named_parameters only).
-        With `backend.shared_params` set, "shared" is the matching trainable
-        subset and "personal" its complement (the personalization seam);
-        otherwise shared = all trainable and personal is empty. "all" is
-        always the full trainable set — checkpoints/restore use it.
-        """
-        from src.support.parameters import trainable_state_keys
-
-        keys = trainable_state_keys(self._policy)
-        trainable = {k: v.detach().clone() for k, v in self._policy.state_dict().items() if k in keys}
-        if scope == "all":
-            return trainable
-        from src.support.parameters import resolve_shared_names
-
-        shared = resolve_shared_names(trainable, self.cfg.shared_params)
-        if scope == "personal":
-            return {k: v for k, v in trainable.items() if k not in shared}
-        return {k: v for k, v in trainable.items() if k in shared}
+        return trainable_state(self._policy, self.cfg.shared_params, scope)
 
     def set_state(self, state: dict[str, torch.Tensor], scope: str = "shared") -> None:
-        if scope == "personal":
-            return
-        own = self._policy.state_dict()
-        for k, v in state.items():
-            if k in own:
-                own[k] = v.to(own[k].dtype).to(own[k].device)
-        self._policy.load_state_dict(own, strict=False)
+        set_model_state(self._policy, state)
 
     def load_checkpoint(self, path: str) -> None:
-        p = Path(path)
-        blob = torch.load(p, map_location=self.device, weights_only=False)
-        sd = blob
-        if isinstance(blob, dict):
-            if "state_dict" in blob:
-                sd = blob["state_dict"]
-            elif "state" in blob and isinstance(blob["state"], dict):
-                sd = blob["state"]
-        self._checked_load_state_dict(sd, str(p))
-
-    def _checked_load_state_dict(self, sd: dict[str, torch.Tensor], source: str) -> None:
-        """Load ``sd`` non-strict, but refuse the two silent-drop failure modes.
-
-        ``load_state_dict(strict=False)`` silently ignores (a) a checkpoint that
-        shares NO keys — eval then runs the base model (~0%), and (b) a checkpoint
-        whose keys are ABSENT from the policy, e.g. a LoRA checkpoint (``lora_A``/
-        ``lora_B`` keys) loaded into a full-FT-configured policy: the shared
-        action-head keys overlap so a zero-overlap check passes while every LoRA
-        weight is dropped. Both mean the eval config's arm doesn't match the
-        checkpoint. Fail loudly. A legitimate partial load (the server's
-        ``{"state": shared_state}`` blob) is a strict subset of the policy keys,
-        so it has no absent keys and passes — but not *silently*: see the
-        coverage warning below.
-        """
-        from src.support.parameters import partial_load_warning, trainable_state_keys
-
-        own = set(self._policy.state_dict())
-        if not own & set(sd):
-            raise ValueError(
-                f"checkpoint {source} shares no keys with the policy state_dict; "
-                "refusing to silently load nothing (arm/config mismatch?)"
-            )
-        absent = set(sd) - own
-        if absent:
-            raise ValueError(
-                f"checkpoint {source} has {len(absent)} key(s) the policy cannot "
-                f"receive (e.g. {sorted(absent)[:3]}); this usually means the eval "
-                "config's arm (LoRA vs full fine-tune) does not match the checkpoint. "
-                "Refusing to silently drop them — load with the matching config."
-            )
-        # Legal but never silent — see support.parameters.partial_load_warning.
-        msg = partial_load_warning(trainable_state_keys(self._policy), sd, source)
-        if msg:
-            log.warning("%s", msg)
-        self._policy.load_state_dict(sd, strict=False)
+        load_model_checkpoint(self._policy, path, self.device, "policy")
 
     # ------------------------------------------------------------------
     # inference
@@ -713,20 +585,6 @@ def _build_processors(tp_cfg, ds_meta, policy, device: torch.device, tokenizer_o
         pretrained_path=pretrained_path,
         **kwargs,
     )
-
-
-def _cycle(iterable):
-    """Infinite iterator over a DataLoader (re-iterates on exhaustion).
-
-    Inlined to avoid depending on lerobot's internal `cycle` helper, which moved
-    out of `lerobot.datasets.utils` in 0.5.2.
-    """
-    iterator = iter(iterable)
-    while True:
-        try:
-            yield next(iterator)
-        except StopIteration:
-            iterator = iter(iterable)
 
 
 def _resolve_local_root(repo_id: str | None, explicit_root: str | None = None) -> str | None:

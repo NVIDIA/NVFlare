@@ -51,7 +51,6 @@ class HeldOutTask:
 @dataclass(frozen=True)
 class HeldOutSpec:
     tasks: tuple[HeldOutTask, ...]
-    description: str = ""
 
     @property
     def dataset_task_indices(self) -> set[int]:
@@ -73,7 +72,7 @@ def load_heldout_json(path: str | Path) -> HeldOutSpec:
         )
         for t in raw["tasks"]
     )
-    return HeldOutSpec(tasks=tasks, description=raw.get("description", ""))
+    return HeldOutSpec(tasks=tasks)
 
 
 @dataclass
