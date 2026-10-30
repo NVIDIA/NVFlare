@@ -19,10 +19,8 @@ cd "$HOME/coco-private/downloads"
 This reference uses one physical GPU and one Kubernetes node. It does not cover
 HA control planes, nested virtualization, shared GPUs, or multi-GPU/NVSwitch
 configuration. Use the component documentation for those configurations.
-The Ubuntu 26.04/Kata 3.29 combination has not been qualified by this appendix;
-these are setup instructions to validate, not a claim of a working reference.
-The [compatibility notice](../PREREQUISITES.md#compatibility-status) applies throughout.
-TDX remains experimental for this NVFlare profile.
+Use the [component versions](../PREREQUISITES.md#component-versions) specified in
+the parent appendix.
 
 ## 1. Prepare firmware and CPU virtualization before Kubernetes
 

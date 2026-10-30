@@ -18,7 +18,7 @@ Larger deployments can separate the registry, builder, Trustee, control plane,
 and workers across more machines; they need corresponding network, credential,
 and availability configuration beyond this example.
 
-## Compatibility status
+## Component versions
 
 The [NVIDIA v1.0 supported-platform matrix](https://docs.nvidia.com/confidential-computing/containers/v1.0.0/supported-platforms)
 lists Kata 3.29 with Ubuntu 25.10. The [v1.1 matrix](https://docs.nvidia.com/confidential-computing/containers/v1.1.0/supported-platforms)
@@ -50,7 +50,7 @@ Obtain these inputs before installing Kubernetes:
 
 - The supported CPU/GPU models and the server vendor's BIOS, firmware, and
   CPU-TEE enablement instructions. The simplified worker has **one GPU**;
-  multi-GPU/NVSwitch/PPCIE deployments need their own qualified configuration.
+  multi-GPU/NVSwitch/PPCIE deployments require additional platform configuration.
 - Stable, mutually reachable host addresses, SSH access, and an operator account
   with sudo privileges on each host. The trusted operator must be permitted to
   inspect runtime artifacts and QEMU processes and launch diagnostic collectors.
@@ -124,8 +124,7 @@ timedatectl status
 
 Expected: all tests succeed, each address belongs to the intended machine,
 routes do not overlap the chosen cluster ranges, and the clock is synchronized.
-Fix addresses, routing, or time service before continuing. Hardware support is
-checked separately; an OS/version check is not confidential-computing acceptance.
+Fix addresses, routing, or time service before continuing.
 
 ## 2. Install the common tools — both hosts
 
@@ -138,7 +137,7 @@ the following commands. Keep Docker installation confined to Host A.
 
 ## 3. Prepare confidential hardware — Host B
 
-Follow [host qualification and TEE preparation](appendix/HOST_CLUSTER.md).
+Follow [host and TEE preparation](appendix/HOST_CLUSTER.md).
 Complete its hardware/firmware section, reboot, and pass its post-reboot checks
 **before** installing Kubernetes. Use the branch for the actual CPU vendor.
 

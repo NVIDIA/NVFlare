@@ -11,9 +11,6 @@ commands against an existing registry or Trustee installation.
 > and the version you deploy. If there is any discrepancy, the component’s
 > official documentation takes precedence.
 
-The Ubuntu 26.04/Kata 3.29 combination still needs the hardware qualification
-described in the parent appendix.
-
 ## 1. Prepare tools on Host A
 
 Keep the settings selected in the parent appendix available in this shell:

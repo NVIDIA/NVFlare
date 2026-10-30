@@ -69,7 +69,7 @@ evidence, `cpu_tee` instead uses `snp` or `tdx`.
 The guest must provide its local AA token API at
 `http://127.0.0.1:8006/aa/token`. GPU profiles allocate one `nvidia.com/pgpu`
 per Pod and require successful CPU and GPU appraisal. CPU-only profiles need
-no GPU Operator. TDX remains experimental pending complete hardware acceptance.
+no GPU Operator.
 
 ## Check GPU Operator readiness
 
@@ -103,8 +103,8 @@ Check the effective configuration and selected worker against the
 
 For CC mode values, use the installed release's
 [mode-label semantics](https://docs.nvidia.com/confidential-computing/containers/configure-cc-mode):
-`on` is the normal single-GPU mode; `ppcie` requires a separately qualified
-Hopper PPCIE configuration. Missing/false readiness, `off`, `failed`, or an
+`on` is the normal single-GPU mode; `ppcie` requires a Hopper PPCIE
+configuration. Missing/false readiness, `off`, `failed`, or an
 incomplete mode transition requires platform-owner repair before capture.
 These labels indicate operational readiness, not attestation.
 
@@ -122,15 +122,14 @@ Keep the supported version combination explicit:
 [NVIDIA CoCo v1.0](https://docs.nvidia.com/confidential-computing/containers/v1.0.0/supported-platforms)
 lists Kata 3.29 and Ubuntu 25.10;
 [v1.1](https://docs.nvidia.com/confidential-computing/containers/v1.1.0/supported-platforms)
-lists Kata 4.0 and adds Ubuntu 26.04. The newer matrix does not qualify this
-example's pinned Kata 3.29.0 profile for Ubuntu 26.04.
+lists Kata 4.0 and adds Ubuntu 26.04. This example uses the pinned
+Kata/genpolicy 3.29.0 profile.
 
 For new-host BIOS, CPU TEE, firmware, and GPU preparation, follow the optional
 [beginner prerequisite appendix](PREREQUISITES.md). It helps beginners bring up
 the prerequisite systems; the official documentation for each component and
-version takes precedence if there is any discrepancy. This workflow assumes
-that hardware qualification is already complete; the checks above do not
-perform it.
+version takes precedence if there is any discrepancy. Complete host preparation
+before starting this workflow.
 
 ## Workflow
 
