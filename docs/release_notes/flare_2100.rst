@@ -6,156 +6,22 @@ What's New in FLARE v2.10.0
 
 Highlights:
 
+- **Resource efficiency** — opt-in task-scoped execution that lowers GPU
+  waste, especially on HPC Slurm and Kubernetes clusters: GPUs are held only
+  while a task trains and are released between tasks
+- **Memory and large models** — opt-in disk-backed FedAvg and FedProx
+  aggregation, and disk-backed tensors for task-worker payloads
+- **Reliability** — automatic recovery of failed client jobs, such as after
+  scheduler wall-time limits
+- **Developer experience** — a rewritten Quick Start, an example catalog
+  (``nvflare examples list`` / ``get``), progress logging, and refreshed
+  self-paced chapters
 - **Security and identity** — optional single sign-on for administrators
   through an OpenID Connect identity provider (step-ca), optional
   certificate-derived study memberships, and per-job certificates (required
   in secure mode)
-- **Memory and large models** — opt-in disk-backed FedAvg and FedProx
-  aggregation, and disk-backed tensors for task-worker payloads
-- **Resource efficiency** — opt-in task-scoped execution that lowers GPU
-  waste, especially on HPC Slurm and Kubernetes clusters: GPUs are held only
-  while a task trains and are released between tasks
-- **Reliability** — automatic recovery of failed client jobs, such as after
-  scheduler wall-time limits
 - **Networking and deployment** — outbound HTTP proxy support, GPU
   reservation for Docker jobs, and a staged 2.10 upgrade path
-- **Developer experience** — a rewritten Quick Start, an example catalog
-  (``nvflare examples list`` / ``get``), progress logging, and refreshed
-  self-paced chapters
-
-Security and Identity
-=====================
-
-Single sign-on and certificate-derived study memberships are **optional**.
-They are off unless you configure them, and existing static admin startup kits
-and registry-based study access keep working unchanged. Per-job certificates
-are different: in secure mode they are required, with no fallback to the site
-certificate, so secure projects must be re-provisioned (see below).
-
-Single Sign-On for Administrators (Optional)
---------------------------------------------
-
-Administrators can sign in through their organization's OpenID Connect (OIDC)
-identity provider. An admin startup kit can be provisioned without a bundled
-key by setting ``admin_cert_provider``. At login, the built-in ``step_ca``
-provider uses the ``step`` CLI, where step-ca performs the OIDC login and maps
-the identity provider's claims to a certificate identity, organization, and
-FLARE role, and issues an admin certificate chain rooted in the FLARE project
-CA.
-
-- FLARE validates the chain, validity period, key match, identity,
-  organization, and role before use, then relies on the existing admin mTLS
-  login, authorization, and job-signing paths. No OIDC tokens are introduced
-  into the server or clients.
-- Valid certificates are cached per OS user until they enter the renewal
-  window, so the browser flow does not run for every CLI command.
-- Static admin startup kits are unchanged and can coexist with provider-backed
-  kits in the same ``project.yml``. A provider-backed kit cannot also use an
-  externally supplied admin certificate.
-- Requires the ``step`` CLI on the admin machine and a ``provisioner`` setting
-  in the provider configuration.
-- A downloadable step-ca template maps issuer-validated OIDC claims to
-  certificate identity, role, and study memberships, and a certificate
-  deployment guide is published.
-- Admin login child processes are cleaned up after a timeout.
-
-Per-Job Credentials and Studies
--------------------------------
-
-- **Per-job certificates (required in secure mode).** In secure mode, each
-  job process (server job and client job) uses its own short-lived credential
-  issued by a job-signing CA, keeping the site's long-lived private key out of
-  job processes. ``CertBuilder`` generates the job CA into the server startup
-  kit by default, or the deployment can install its own (``external_job_ca``).
-  A secure-mode server without a job CA refuses to deploy jobs; there is no
-  fallback to the site certificate. Existing secure-mode projects must be
-  re-provisioned, and the server and clients must run the same release.
-  Non-secure deployments are not affected. Isolation does not apply to launch
-  modes that cannot keep the site key out of the job process (for example the
-  in-process launcher or Slurm ``sandbox: none``).
-- **Certificate-derived study memberships (optional).** Administrators can
-  access named studies through registry membership or, in addition, through
-  membership carried in a validated certificate (one membership per URI SAN,
-  up to 64 studies). Existing registry-based access is unchanged, and the
-  registry stays authoritative for study existence and site enrollment.
-- **Study environment settings.** Process jobs apply the selected study's
-  ``env`` and ``secret_env`` from ``local/study_runtime.yaml``.
-
-Provisioning and Certificates
------------------------------
-
-- Externally supplied endpoint certificates and server job CA.
-- Public-root-only provisioning, and externally supplied file-based admin
-  credentials.
-
-Hardening
----------
-
-- Dashboard role self-assignment and client property injection are blocked.
-- PSI no longer logs site sizes or identities, and no longer echoes duplicate
-  item values in validation errors.
-- ``netrc`` can no longer override example API tokens.
-
-Memory and Large Models
-=======================
-
-Disk-Backed Aggregation
------------------------
-
-The PyTorch ``FedAvgRecipe`` and ``FedProxRecipe`` accept
-``enable_disk_aggregation=True``. Incoming updates remain disk references,
-and aggregation reduces one tensor key at a time, so the server does not hold
-the global model and all client updates in memory. The global model is
-persisted as safetensors.
-
-.. code-block:: python
-
-   from nvflare.app_opt.pt.recipes import FedAvgRecipe
-
-   recipe = FedAvgRecipe(
-       min_clients=2,
-       num_rounds=3,
-       train_script="client.py",
-       enable_disk_aggregation=True,
-       initial_ckpt="/models/initial.safetensors",
-   )
-
-- Opt-in; the default keeps in-memory aggregation and persistence.
-- Requires an initial safetensors checkpoint (a single file or a Hugging Face
-  safetensors directory or index; directories and indexes need absolute
-  server paths).
-- Requires writable, disk-backed temporary and workspace storage with enough
-  capacity for incoming updates and checkpoint slots. Memory still depends on
-  tensor and batch size, concurrent transfers, and filesystem cache.
-- Limits: custom ``model``, ``aggregator``, ``model_persistor``,
-  ``model_locator``, or checkpoint filenames are rejected; persistence is
-  weights-only with sequential checkpoint slots; native DCP, historical
-  snapshots, full training-state or high-availability resume, and power-loss
-  recovery are outside scope.
-- Disk aggregation selects incoming-tensor offload itself; explicitly setting
-  ``enable_tensor_disk_offload=False`` or a non-PyTorch
-  ``server_expected_format`` with it is rejected.
-- Incoming-tensor offload (``enable_tensor_disk_offload=True``, introduced in
-  2.8) continues to be available when the global model stays in memory. It
-  requires ``server_expected_format=ExchangeFormat.PYTORCH``.
-- A deliberate download cancellation during workflow finalization is now
-  distinguished from a genuine transfer failure, so a late cancelled download
-  no longer terminates the server job.
-
-Disk-Backed Task-Worker Payloads
---------------------------------
-
-For PyTorch task-lifetime jobs, tensors in worker hand-offs are stored in
-adjacent safetensors files, with tensor descriptors kept in the payload, so
-the resident Client Job does not reconstruct full models. Incoming tensor
-files are reused by hard link, and attempt files are released after terminal
-receipt.
-
-.. note::
-
-   Behavior change: unfiltered Client Job input hooks receive local tensor
-   references that support metadata and ``nbytes``, not tensor attributes such
-   as ``.shape`` or ``.numel()``. Workers receive tensors.
 
 Resource Efficiency
 ===================
@@ -250,6 +116,67 @@ connection down with it.
 - Checkpoint continuity across tasks is opt-in through
   ``flare.system_info()["task_checkpoint"]``.
 
+Memory and Large Models
+=======================
+
+Disk-Backed Aggregation
+-----------------------
+
+The PyTorch ``FedAvgRecipe`` and ``FedProxRecipe`` accept
+``enable_disk_aggregation=True``. Incoming updates remain disk references,
+and aggregation reduces one tensor key at a time, so the server does not hold
+the global model and all client updates in memory. The global model is
+persisted as safetensors.
+
+.. code-block:: python
+
+   from nvflare.app_opt.pt.recipes import FedAvgRecipe
+
+   recipe = FedAvgRecipe(
+       min_clients=2,
+       num_rounds=3,
+       train_script="client.py",
+       enable_disk_aggregation=True,
+       initial_ckpt="/models/initial.safetensors",
+   )
+
+- Opt-in; the default keeps in-memory aggregation and persistence.
+- Requires an initial safetensors checkpoint (a single file or a Hugging Face
+  safetensors directory or index; directories and indexes need absolute
+  server paths).
+- Requires writable, disk-backed temporary and workspace storage with enough
+  capacity for incoming updates and checkpoint slots. Memory still depends on
+  tensor and batch size, concurrent transfers, and filesystem cache.
+- Limits: custom ``model``, ``aggregator``, ``model_persistor``,
+  ``model_locator``, or checkpoint filenames are rejected; persistence is
+  weights-only with sequential checkpoint slots; native DCP, historical
+  snapshots, full training-state or high-availability resume, and power-loss
+  recovery are outside scope.
+- Disk aggregation selects incoming-tensor offload itself; explicitly setting
+  ``enable_tensor_disk_offload=False`` or a non-PyTorch
+  ``server_expected_format`` with it is rejected.
+- Incoming-tensor offload (``enable_tensor_disk_offload=True``, introduced in
+  2.8) continues to be available when the global model stays in memory. It
+  requires ``server_expected_format=ExchangeFormat.PYTORCH``.
+- A deliberate download cancellation during workflow finalization is now
+  distinguished from a genuine transfer failure, so a late cancelled download
+  no longer terminates the server job.
+
+Disk-Backed Task-Worker Payloads
+--------------------------------
+
+For PyTorch task-lifetime jobs, tensors in worker hand-offs are stored in
+adjacent safetensors files, with tensor descriptors kept in the payload, so
+the resident Client Job does not reconstruct full models. Incoming tensor
+files are reused by hard link, and attempt files are released after terminal
+receipt.
+
+.. note::
+
+   Behavior change: unfiltered Client Job input hooks receive local tensor
+   references that support metadata and ``nbytes``, not tensor attributes such
+   as ``.shape`` or ``.numel()``. Workers receive tensors.
+
 Reliability
 ===========
 
@@ -280,20 +207,6 @@ workspace; application code restores its checkpoint.
 - ``max_cj_restart_failures`` (default three consecutive failed replacement
   initializations; a successful one resets the count) bounds retries.
 
-Networking and Deployment
-=========================
-
-- **Upgrade path.** A 2.10 client can be staged before a server upgrade: it
-  waits, using a transport-only probe at a configurable interval (default 60
-  seconds), until it sees a compatible server.
-- **Outbound proxies.** The HTTPS (WebSocket) transport honors standard proxy
-  environment variables; ``wss_proxy``, ``no_proxy``, and Basic proxy
-  credentials are documented.
-- **Docker GPU reservation.** Docker jobs reuse the client's GPU resource
-  manager, so concurrent jobs no longer receive the same GPUs. Passthrough
-  clients keep their previous behavior.
-- Lightweight per-peer payload byte counters in CellNet.
-
 Developer Experience
 ====================
 
@@ -308,6 +221,93 @@ Developer Experience
   status, a warning when export flags are not declared by the script,
   per-deployment POC workspace isolation, and an optional sampling seed for
   client selection.
+
+Security and Identity
+=====================
+
+Single sign-on and certificate-derived study memberships are **optional**.
+They are off unless you configure them, and existing static admin startup kits
+and registry-based study access keep working unchanged. Per-job certificates
+are different: in secure mode they are required, with no fallback to the site
+certificate, so secure projects must be re-provisioned (see below).
+
+Single Sign-On for Administrators (Optional)
+--------------------------------------------
+
+Administrators can sign in through their organization's OpenID Connect (OIDC)
+identity provider. An admin startup kit can be provisioned without a bundled
+key by setting ``admin_cert_provider``. At login, the built-in ``step_ca``
+provider uses the ``step`` CLI, where step-ca performs the OIDC login and maps
+the identity provider's claims to a certificate identity, organization, and
+FLARE role, and issues an admin certificate chain rooted in the FLARE project
+CA.
+
+- FLARE validates the chain, validity period, key match, identity,
+  organization, and role before use, then relies on the existing admin mTLS
+  login, authorization, and job-signing paths. No OIDC tokens are introduced
+  into the server or clients.
+- Valid certificates are cached per OS user until they enter the renewal
+  window, so the browser flow does not run for every CLI command.
+- Static admin startup kits are unchanged and can coexist with provider-backed
+  kits in the same ``project.yml``. A provider-backed kit cannot also use an
+  externally supplied admin certificate.
+- Requires the ``step`` CLI on the admin machine and a ``provisioner`` setting
+  in the provider configuration.
+- A downloadable step-ca template maps issuer-validated OIDC claims to
+  certificate identity, role, and study memberships, and a certificate
+  deployment guide is published.
+- Admin login child processes are cleaned up after a timeout.
+
+Per-Job Credentials and Studies
+-------------------------------
+
+- **Per-job certificates (required in secure mode).** In secure mode, each
+  job process (server job and client job) uses its own short-lived credential
+  issued by a job-signing CA, keeping the site's long-lived private key out of
+  job processes. ``CertBuilder`` generates the job CA into the server startup
+  kit by default, or the deployment can install its own (``external_job_ca``).
+  A secure-mode server without a job CA refuses to deploy jobs; there is no
+  fallback to the site certificate. Existing secure-mode projects must be
+  re-provisioned, and the server and clients must run the same release.
+  Non-secure deployments are not affected. Isolation does not apply to launch
+  modes that cannot keep the site key out of the job process (for example the
+  in-process launcher or Slurm ``sandbox: none``).
+- **Certificate-derived study memberships (optional).** Administrators can
+  access named studies through registry membership or, in addition, through
+  membership carried in a validated certificate (one membership per URI SAN,
+  up to 64 studies). Existing registry-based access is unchanged, and the
+  registry stays authoritative for study existence and site enrollment.
+- **Study environment settings.** Process jobs apply the selected study's
+  ``env`` and ``secret_env`` from ``local/study_runtime.yaml``.
+
+Provisioning and Certificates
+-----------------------------
+
+- Externally supplied endpoint certificates and server job CA.
+- Public-root-only provisioning, and externally supplied file-based admin
+  credentials.
+
+Hardening
+---------
+
+- Dashboard role self-assignment and client property injection are blocked.
+- PSI no longer logs site sizes or identities, and no longer echoes duplicate
+  item values in validation errors.
+- ``netrc`` can no longer override example API tokens.
+
+Networking and Deployment
+=========================
+
+- **Upgrade path.** A 2.10 client can be staged before a server upgrade: it
+  waits, using a transport-only probe at a configurable interval (default 60
+  seconds), until it sees a compatible server.
+- **Outbound proxies.** The HTTPS (WebSocket) transport honors standard proxy
+  environment variables; ``wss_proxy``, ``no_proxy``, and Basic proxy
+  credentials are documented.
+- **Docker GPU reservation.** Docker jobs reuse the client's GPU resource
+  manager, so concurrent jobs no longer receive the same GPUs. Passthrough
+  clients keep their previous behavior.
+- Lightweight per-peer payload byte counters in CellNet.
 
 Bug Fixes
 =========
@@ -411,4 +411,3 @@ below, see the :ref:`migration_guide`.
   Review existing files before upgrading.
 - Task-lifetime PyTorch jobs: unfiltered Client Job input hooks receive tensor
   references (see Memory and Large Models).
-
