@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -209,7 +210,8 @@ def run_delivery(args):
         command.extend(["--gpu", gpu])
     command.extend(["--bind-address", args.bind_address])
     print(f"Launching: {shlex.join(command)}", flush=True)
-    subprocess.run(command, check=True)
+    # Replace cvmctl with the launcher so signals reach its QEMU cleanup path.
+    os.execv(command[0], command)
 
 
 def approve(args):
@@ -476,7 +478,11 @@ def parser():
     host = checks.add_parser("host")
     host.add_argument("--platform", choices=PLATFORMS, help="default: auto-detect the single enabled host TEE")
     host.add_argument("--firmware", type=Path, required=True)
-    host.add_argument("--shim", type=Path, help="reviewed signed shim required with TDX Secure Boot .ms.fd")
+    host.add_argument(
+        "--shim",
+        type=Path,
+        help="configured shim path required with TDX Secure Boot .ms.fd (preflight checks existence only)",
+    )
     host.add_argument("--quote-probe", type=Path, help="executable that boots a TD and verifies a nonempty quote")
     host.add_argument("--gpu", action="store_true", help="also screen an installed NVIDIA confidential-GPU host")
     host.add_argument(

@@ -70,10 +70,11 @@ def check_gpu_host(sysfs=SYSFS):
                 vfio_devices.append(device)
         except OSError:
             continue
-    if vfio_devices:
+    host_driver_devices = [device for device in devices if device not in vfio_devices]
+    if not host_driver_devices:
         print(
-            f"GPU host screening passed for {len(vfio_devices)} VFIO-bound NVIDIA display device(s); "
-            "driver, VBIOS and confidential-computing qualification must run inside the guest."
+            f"GPU IOMMU/VFIO screening passed for {len(vfio_devices)} VFIO-bound NVIDIA display device(s); "
+            "driver, VBIOS and confidential-computing qualification have not run and must run inside the guest."
         )
         return
     try:
@@ -102,7 +103,13 @@ def check_gpu_host(sysfs=SYSFS):
     except OSError:
         raise BuildError("nvidia-smi disappeared during GPU qualification") from None
     require(cc.returncode == 0, "GPU does not expose NVIDIA confidential-computing status through nvidia-smi")
-    print(f"GPU host screening passed for {len(devices)} assignable NVIDIA display device(s).")
+    message = f"GPU host screening passed for {len(host_driver_devices)} host-driver NVIDIA display device(s)"
+    if vfio_devices:
+        message += (
+            f"; {len(vfio_devices)} VFIO-bound device(s) passed only IOMMU/VFIO screening and require "
+            "driver, VBIOS and confidential-computing qualification inside the guest"
+        )
+    print(message + ".")
 
 
 def snp_vcek_paths(store, vcek_url):
@@ -188,9 +195,9 @@ def check_host(firmware, quote_probe=None, *, platform="intel_tdx", gpu=False, s
     firmware = Path(firmware)
     require(firmware.is_file(), "TDVF firmware is missing")
     if shim is not None:
-        require(Path(shim).is_file(), "Reviewed TDX shim is missing")
+        require(Path(shim).is_file(), "Configured TDX shim is missing (preflight checks existence only)")
     if firmware.name.endswith(".ms.fd"):
-        require(shim is not None, "Secure Boot .ms.fd requires a reviewed signed shim")
+        require(shim is not None, "Secure Boot .ms.fd requires a configured shim path")
     cmdline = Path("/proc/cmdline").read_text().split()
     require("nohibernate" in cmdline, "Add nohibernate to the host kernel command line and reboot")
     enabled = Path("/sys/module/kvm_intel/parameters/tdx")
@@ -208,6 +215,8 @@ def check_host(firmware, quote_probe=None, *, platform="intel_tdx", gpu=False, s
         "Configure the approved PCS/collateral service in sgx_default_qcnl.conf",
     )
     print("Host prerequisites passed; absence of early TDX dmesg is not an error (module initialization can be lazy).")
+    if gpu:
+        check_gpu_host()
     if quote_probe is None:
         return False
     probe = Path(quote_probe).resolve()
@@ -218,6 +227,4 @@ def check_host(firmware, quote_probe=None, *, platform="intel_tdx", gpu=False, s
         "Quote probe failed: inspect qgsd journal, collateral service credentials and platform registration before building",
     )
     print("Quote probe passed.")
-    if gpu:
-        check_gpu_host()
     return True

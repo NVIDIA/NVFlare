@@ -15,8 +15,10 @@
 """QGS configurations supplied by Intel packages and sectioned variants."""
 
 import datetime
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -85,17 +87,43 @@ class PreflightTests(unittest.TestCase):
             driver.mkdir(parents=True)
             (device / "driver").symlink_to(driver)
             with patch("cvm.host.preflight.subprocess.run") as run:
-                check_gpu_host(sysfs)
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    check_gpu_host(sysfs)
             run.assert_not_called()
+            self.assertIn("GPU IOMMU/VFIO screening passed", stdout.getvalue())
+            self.assertIn("confidential-computing qualification have not run", stdout.getvalue())
 
-    def test_tdx_secure_boot_preflight_requires_and_accepts_reviewed_shim(self):
+    def test_gpu_preflight_checks_host_driver_devices_on_mixed_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sysfs = Path(directory)
+            drivers = sysfs / "bus/pci/drivers"
+            vfio_driver, nvidia_driver = drivers / "vfio-pci", drivers / "nvidia"
+            vfio_driver.mkdir(parents=True)
+            nvidia_driver.mkdir()
+            for address, driver in (("0000:01:00.0", vfio_driver), ("0000:02:00.0", nvidia_driver)):
+                device = sysfs / "bus/pci/devices" / address
+                device.mkdir(parents=True)
+                (device / "vendor").write_text("0x10de\n")
+                (device / "class").write_text("0x030200\n")
+                (device / "iommu_group").mkdir()
+                (device / "driver").symlink_to(driver)
+            result = type("Result", (), {"returncode": 0})()
+            stdout = io.StringIO()
+            with patch("cvm.host.preflight.subprocess.run", return_value=result) as run, redirect_stdout(stdout):
+                check_gpu_host(sysfs)
+            self.assertEqual(run.call_count, 2)
+            self.assertIn("1 host-driver", stdout.getvalue())
+            self.assertIn("1 VFIO-bound device(s) passed only IOMMU/VFIO screening", stdout.getvalue())
+
+    def test_tdx_secure_boot_preflight_requires_and_accepts_configured_shim(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             firmware = root / "OVMF.inteltdx.ms.fd"
             shim = root / "shim.efi"
             firmware.touch()
             shim.touch()
-            with self.assertRaisesRegex(BuildError, "reviewed signed shim"):
+            with self.assertRaisesRegex(BuildError, "configured shim path"):
                 check_host(firmware)
             with (
                 patch("cvm.host.preflight.subprocess.run", return_value=type("Result", (), {"returncode": 0})()),
@@ -109,6 +137,25 @@ class PreflightTests(unittest.TestCase):
                 patch.object(Path, "is_file", autospec=True, return_value=True),
             ):
                 self.assertFalse(check_host(firmware, shim=shim))
+
+    def test_tdx_gpu_preflight_runs_without_quote_probe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            firmware = Path(directory) / "OVMF.inteltdx.fd"
+            firmware.touch()
+            with (
+                patch("cvm.host.preflight.subprocess.run", return_value=type("Result", (), {"returncode": 0})()),
+                patch("cvm.host.preflight.check_qgs_config"),
+                patch("cvm.host.preflight.check_gpu_host") as check_gpu,
+                patch.object(
+                    Path,
+                    "read_text",
+                    autospec=True,
+                    side_effect=lambda path: "nohibernate" if str(path) == "/proc/cmdline" else "Y",
+                ),
+                patch.object(Path, "is_file", autospec=True, return_value=True),
+            ):
+                self.assertFalse(check_host(firmware, gpu=True))
+            check_gpu.assert_called_once_with()
 
     def test_headerless_and_sectioned_qgs_configs(self):
         for content in (

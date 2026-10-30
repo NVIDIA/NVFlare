@@ -17,7 +17,6 @@
 import contextlib
 import io
 import json
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -470,7 +469,7 @@ class CliTests(unittest.TestCase):
             )
             with (
                 patch.object(cli.oci, "materialize", return_value=result) as materialize,
-                patch.object(cli.subprocess, "run") as run,
+                patch.object(cli.os, "execv") as execv,
                 contextlib.redirect_stdout(io.StringIO()),
             ):
                 cli.main(
@@ -497,18 +496,16 @@ class CliTests(unittest.TestCase):
                 archive_sha256=None,
                 cosign_key="release.pub",
             )
-            run.assert_called_once_with(
-                [
-                    str(launcher.resolve()),
-                    "--cvm-bundle",
-                    "/opt/cvm/profile/intel_tdx",
-                    "--gpu",
-                    "0000:41:00.0",
-                    "--bind-address",
-                    "127.0.0.1",
-                ],
-                check=True,
-            )
+            command = [
+                str(launcher.resolve()),
+                "--cvm-bundle",
+                "/opt/cvm/profile/intel_tdx",
+                "--gpu",
+                "0000:41:00.0",
+                "--bind-address",
+                "127.0.0.1",
+            ]
+            execv.assert_called_once_with(command[0], command)
 
     def test_run_refuses_a_non_delivery_artifact(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -519,7 +516,7 @@ class CliTests(unittest.TestCase):
             )
             with (
                 patch.object(cli.oci, "materialize", return_value=result),
-                patch.object(cli.subprocess, "run") as run,
+                patch.object(cli.os, "execv") as execv,
                 contextlib.redirect_stderr(io.StringIO()),
                 self.assertRaises(SystemExit) as error,
             ):
@@ -532,7 +529,7 @@ class CliTests(unittest.TestCase):
                     ]
                 )
             self.assertEqual(error.exception.code, 1)
-            run.assert_not_called()
+            execv.assert_not_called()
 
     def test_run_has_no_unverified_execution_path(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -565,7 +562,7 @@ class CliTests(unittest.TestCase):
             )
             with (
                 patch.object(cli.oci, "materialize", return_value=result),
-                patch.object(cli.subprocess, "run") as run,
+                patch.object(cli.os, "execv") as execv,
                 contextlib.redirect_stderr(io.StringIO()),
                 self.assertRaises(SystemExit) as error,
             ):
@@ -578,9 +575,9 @@ class CliTests(unittest.TestCase):
                     ]
                 )
             self.assertEqual(error.exception.code, 1)
-            run.assert_not_called()
+            execv.assert_not_called()
 
-    def test_run_launcher_failure_is_reported_without_a_traceback(self):
+    def test_run_launcher_exec_failure_is_reported_without_a_traceback(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "delivery"
             launcher = output / "intel_tdx" / "launch_cvm.sh"
@@ -594,7 +591,7 @@ class CliTests(unittest.TestCase):
             stderr = io.StringIO()
             with (
                 patch.object(cli.oci, "materialize", return_value=result),
-                patch.object(cli.subprocess, "run", side_effect=subprocess.CalledProcessError(1, [str(launcher)])),
+                patch.object(cli.os, "execv", side_effect=OSError("exec failed")),
                 contextlib.redirect_stderr(stderr),
                 contextlib.redirect_stdout(io.StringIO()),
                 self.assertRaises(SystemExit) as error,
@@ -608,7 +605,7 @@ class CliTests(unittest.TestCase):
                     ]
                 )
             self.assertEqual(error.exception.code, 1)
-            self.assertIn("returned non-zero exit status", stderr.getvalue())
+            self.assertIn("exec failed", stderr.getvalue())
             self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_admin_acl_prints_a_bundle_scoped_resource_role(self):

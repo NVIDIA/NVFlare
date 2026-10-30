@@ -147,7 +147,8 @@ dependency until the quote smoke test.
    A Secure Boot deployment must separately validate its signed kernel/shim chain;
    `platforms.intel_tdx.shim` supplies the shim to QEMU's `-shim` option, and a
    standalone preflight for that profile must pass the same path with
-   `--shim /path/to/shim.efi`.
+   `--shim /path/to/shim.efi`. Host preflight checks that this configured file
+   exists; it does not verify the shim's signature, digest, or approval status.
 5. Run a minimal TD quote smoke test against the intended collateral/backend path.
    A successful local TDREPORT is not proof that QGS can generate a signed quote.
 
