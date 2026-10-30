@@ -60,7 +60,7 @@ class Cifar10Trainer:
         self.data_root = data_root
         self.local_batch_size = local_batch_size
         self.local_lr = local_lr
-        self.device_name = device
+        self.device = device
         self.num_threads = num_threads
         self.train_idx_root = train_idx_root
         self.aggregation_epochs = aggregation_epochs
@@ -93,7 +93,7 @@ class Cifar10Trainer:
         self.logger.info(f"[{collab.site_name}] loaded FedAvg-compatible CIFAR-10 training settings")
 
     def _device(self) -> torch.device:
-        return torch.device(self.device_name or ("cuda" if torch.cuda.is_available() else "cpu"))
+        return torch.device(self.device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
     def _build_dataloader(self, logical_name: str) -> DataLoader:
         if logical_name in self._dataloaders:

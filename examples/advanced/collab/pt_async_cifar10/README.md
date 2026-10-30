@@ -36,12 +36,12 @@ For a source checkout, install that checkout from its repository root with
 
 ```text
 pt_async_cifar10/
-├── async_aggregator.py  # Server-side FedBuff scheduler and aggregation
+├── async_aggregator.py  # CIFAR model, evaluation, and artifact hooks
 ├── trainer.py           # Published client-side local training
-├── model.py             # FedAvg ModerateCNN and state helpers
+├── model.py             # FedAvg ModerateCNN, state and arithmetic helpers
 ├── cifar10_data.py      # Local CIFAR-10 download and Dirichlet splitter
 ├── prepare_data.sh      # Standalone CIFAR-10 download entry point
-├── job.py               # CollabRecipe CLI and simulator wiring
+├── job.py               # AsyncRecipe CLI and simulator wiring
 └── requirements.txt
 ```
 
@@ -67,8 +67,8 @@ Common configurations are:
 | $O=B<K$ | Minimum-response synchronization: aggregate and refill in batches of $B$ while $K-B$ jobs may remain active |
 | $O=B=K$ | Synchronous FedAvg-style rounds: all jobs finish before aggregation and redistribution |
 
-Because the server dispatches all $K$ initial slots with a nonblocking group
-call, $K$ is also the configured client-training parallelism. It may be smaller
+Because the server dispatches all $K$ initial slots with nonblocking calls,
+$K$ is also the configured client-training parallelism. It may be smaller
 than `--num-clients`, but cannot exceed the available physical clients.
 
 `--num-rounds` counts global aggregations, not client dispatches. The default
@@ -116,8 +116,9 @@ model version.
 
 ## Server-Side Workflow
 
-`Cifar10AsyncAggregator.execute()` uses `@collab.main` as the server workflow
-entry point. It:
+`AsyncRecipe` runs the shared `AsyncWorkflow.execute()` entry point, marked
+with `@collab.main`. `Cifar10AsyncApplication` supplies model/evaluation/artifact
+hooks. The shared workflow:
 
 1. fills $K$ physical client-job slots;
 2. invokes selected clients with a nonblocking Collab group call;
@@ -130,10 +131,15 @@ The server computes each client delta relative to that assignment's base
 model, weights updates by local training steps, and applies the FedBuff average
 with `--server-lr` to match the existing FedAvg example.
 
+See the [async recipe guide](../../../../docs/user_guide/data_scientist_guide/async_recipe.rst)
+for configuration, client contracts, application hooks, and component scope.
+
 ## Job Recipe Code
 
-`job.py` constructs a `CollabRecipe` with the server workflow and published
-client trainer. `recipe.execute(SimEnv(...))` starts the requested physical
+`job.py` constructs an `AsyncRecipe` with a published client trainer,
+`PTModelAdapter`, and CIFAR evaluation/artifact hooks. The recipe owns
+assignment tracking, K/B/O scheduling, and step-weighted buffered aggregation.
+`async_aggregator.py` contains only the model/evaluation hooks. `recipe.execute(SimEnv(...))` starts the requested physical
 simulator clients. Each physical client retains its optimizer, learning-rate
 scheduler, data loader, and corresponding `site-<N>` shard across assignments.
 The cosine schedule reaches its minimum after `--total-client-rounds`
@@ -219,14 +225,18 @@ server evaluates every saved version on that common test set. Deferring
 evaluation prevents evaluation work from changing client completion order,
 open-slot timing, staleness, or the asynchronous participation sequence.
 
-### Matched comparison
+## Seeds and arrival timing
 
-The two synchronous curves align when the model, client data, optimizer,
-learning-rate schedule, and accepted-update budget are matched. FedBuff uses
-the same 400 accepted updates, but its immediate slot refill and stale updates
-produce a different, more variable trajectory.
+`--split-seed` controls the prepared shards; `--setup-seed` controls initial
+model weights. `--run-seed` sets the server-side RNG after model setup. Client
+training uses ordinary persistent loaders, optimizer and scheduler state; this
+example does not impose per-assignment RNG scopes or replay.
 
-![FedAvg and FedBuff comparison](comparison_results/fedavg_fedbuff_comparison.png)
+Actual arrivals depend on training and RPC timing. `schedule.jsonl` records the
+observed assignment IDs, physical/logical clients and base versions. For fixed
+replay and assignment seed helpers, see the separate
+[async research example](../pt_async_cifar10_reproducible/README.md). Its client contract can
+be adopted explicitly when building a reproducible training experiment.
 
 ## Outputs
 
@@ -236,6 +246,7 @@ contains:
 
 - `eval_snapshots/model_version_<N>.pt`
 - `accuracy_history.json`
+- `schedule.jsonl`
 - `final_model/global_model.pt`
 - `tensorboard/`
 
