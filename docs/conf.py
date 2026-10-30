@@ -115,7 +115,7 @@ llms_txt_suffix_mode = "replace"
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ["_build", "constraints.txt", "requirements-build.txt"]
+exclude_patterns = ["_build", "constraints.txt", "requirements-build.txt", "requirements-preview.txt"]
 
 if _skip_api:
     # Exclude auto-generated API files but keep the committed stub
