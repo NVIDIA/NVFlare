@@ -6,35 +6,75 @@ Migration Guide
 
 This guide covers API and configuration changes when upgrading between FLARE releases.
 
-Upgrading from 2.8.0 to 2.9.0
+Upgrading from 2.9.0 to 2.9.1
 =============================
 
-On-Premises Confidential Computing Key Backend
-----------------------------------------------
+2.9.1 is a patch release. Deployments that do not use confidential computing
+are affected only by the Dashboard change below.
 
-In FLARE 2.9.0, the on-premises Confidential Federated AI deployment uses CVM
-Builder through the unified confidential-computing provisioning interface. A
-participant selects ``cc_deployment_mode: bare_metal_cvm`` in its ``cc_config``
-and the project supplies a shared ``cc_project_config``. This replaces the previous
-on-premises HashiCorp Vault plus Trustee KBS deployment. CVM Builder stores
-binding-addressed vault keys directly in Trustee resource storage, so HashiCorp
-Vault is no longer part of the key path.
+Confidential Computing Provisioning (Technical Preview)
+-------------------------------------------------------
+
+Confidential computing was introduced as a technical preview in 2.7.0, with
+its own provisioning syntax and a HashiCorp Vault plus Trustee KBS key backend
+(also present in 2.8 and 2.9.0). In 2.9.1 all confidential deployments use one
+unified provisioning interface: a participant selects ``cc_deployment_mode``
+(``bare_metal_cvm``, ``coco``, or ``azure_cc``) in its ``cc_config``, and the
+project supplies a shared ``cc_project_config``. On-premises CVMs are built
+with CVM Builder, which stores binding-addressed vault keys directly in Trustee
+resource storage, so HashiCorp Vault is no longer part of the key path.
 
 Impact:
 
-- Existing HashiCorp Vault secrets, measurements and deliveries are not imported.
-  There is no in-place upgrade of an existing deployment.
-- Before switching a project to ``bare_metal_cvm``, deploy the supported upstream
-  Trustee, publish the approved generic CVM references and policies, and build
-  fresh application vaults.
-- Previously delivered CVMs keep working against their existing backend until you
-  rebuild them; the two key backends are not interchangeable for one delivery.
+- The earlier on-premises provisioning syntax and packager entry points are
+  rejected; there is no compatibility mode. Convert the whole project and its
+  examples together. The ``examples/advanced/cc_provision`` example is
+  replaced by ``examples/advanced/cvm_builder``.
+- Existing HashiCorp Vault secrets, measurements and deliveries are not
+  imported. There is no in-place upgrade of an existing deployment; build
+  fresh.
+- Before switching a project to ``bare_metal_cvm``, deploy the supported
+  upstream Trustee, publish the approved generic CVM references and policies,
+  and build fresh application vaults.
+- Plan to rebuild and redeliver CVMs. The old and new key backends are not
+  wire- or storage-compatible, and 2.9.1 does not import 2.9.0 deliveries.
 
-See :ref:`cvm_builder` for the provisioning configuration, :ref:`cc_architecture`
-for the resulting trust model, and the
-:github_nvflare_link:`Trustee deployment guide
+See :ref:`cc_deployment` for the provisioning configuration, :ref:`cvm_builder`
+for bare-metal CVMs, :ref:`cc_architecture` for the resulting trust model, and
+the :github_nvflare_link:`Trustee deployment guide
 <nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>` for the current backend and
 the migration boundary.
+
+Confidential Computing Job Policy
+---------------------------------
+
+Launcher-defined BYOC content (executable content in Docker, Kubernetes, and
+Slurm launcher specifications) is now classified as BYOC at submission time and
+rejected in confidential computing, for every confidential computing role.
+Package the code in the approved workload image and add only exact, reviewed
+classes to ``class_allow_list``.
+
+Dashboard Client ``props`` Are Rejected
+---------------------------------------
+
+Dashboard client creation and PATCH requests that contain ``props`` are
+rejected with HTTP 400, and client-kit generation ignores previously stored
+``props``. The Dashboard UI's client name and capacity requests are not
+affected.
+
+Action: API integrations that send ``props`` must omit it.
+
+Agent Skills
+------------
+
+NVFlare skills are published with a shared catalog bundle, and the skills
+reference each other. Install the complete NVFlare skill set together.
+
+Examples
+--------
+
+The Hello World examples and their requirements are updated for NVFlare 2.9.1.
+Reinstall an example's requirements if you created its environment for 2.9.0.
 
 Upgrading from 2.7.2 to 2.8.0
 =============================
