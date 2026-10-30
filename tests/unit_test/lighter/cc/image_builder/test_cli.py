@@ -42,7 +42,7 @@ class CliTests(unittest.TestCase):
                 ("container: [secret-token\n", "Invalid configuration YAML at line"),
                 ("secret-token: unexpected\n", "Unknown application input"),
                 (dict(valid, requires_gpu="secret-token"), "requires_gpu must be boolean"),
-                (dict(valid, docker_archive="secret-token.tar"), "Invalid vault_build.yml inputs"),
+                (dict(valid, docker_archive="secret-token.tar"), "Input does not exist"),
             )
             for value, diagnostic in cases:
                 path.write_text(value if isinstance(value, str) else json.dumps(value))
@@ -126,6 +126,14 @@ class CliTests(unittest.TestCase):
                     for operation in (project, profile, protect, key):
                         operation.assert_not_called()
 
+    def test_vault_cli_reports_argument_errors_without_recovery_misdirection(self):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as error:
+            cli.main(["vault", "vault_build.yml", "--cosign-key", "signing.key"])
+        self.assertEqual(error.exception.code, 1)
+        self.assertIn("--cosign-signing-key requires --publish", stderr.getvalue())
+        self.assertNotIn("resume release", stderr.getvalue())
+
     def test_build_and_finalize_are_distinct_commands(self):
         with patch.object(cli.cvm, "build") as build, patch.object(cli, "report_bundle"):
             cli.main(["build", "profile.yml", "-p", "intel_tdx", "--defer-measurements", "--gpu", "0000:01:00.0"])
@@ -189,7 +197,12 @@ class CliTests(unittest.TestCase):
                     ]
                 )
             preflight.assert_called_once_with(
-                Path("tdvf.fd"), Path("quote-probe"), platform="intel_tdx", gpu=False, snp_vcek_store=None
+                Path("tdvf.fd"),
+                Path("quote-probe"),
+                platform="intel_tdx",
+                gpu=False,
+                snp_vcek_store=None,
+                shim=None,
             )
             build.assert_called_once_with(
                 "profile.yml",
@@ -337,12 +350,47 @@ class CliTests(unittest.TestCase):
     def test_host_preflight_without_quote_probe_retains_incomplete_status(self):
         with (
             patch.object(cli, "check_host", return_value=False) as check,
+            patch.object(cli, "host_capabilities", return_value={"intel_tdx"}),
             contextlib.redirect_stderr(io.StringIO()),
             self.assertRaises(SystemExit) as error,
         ):
             cli.main(["preflight", "host", "--firmware", "tdvf.fd"])
-        check.assert_called_once_with(Path("tdvf.fd"), None, platform="intel_tdx", gpu=False, snp_vcek_store=None)
+        check.assert_called_once_with(
+            Path("tdvf.fd"), None, platform="intel_tdx", gpu=False, snp_vcek_store=None, shim=None
+        )
         self.assertEqual(error.exception.code, 2)
+
+    def test_host_preflight_auto_detects_snp_and_forwards_reviewed_shim(self):
+        with (
+            patch.object(cli, "check_host", return_value=True) as check,
+            patch.object(cli, "host_capabilities", return_value={"amd_sev_snp"}),
+        ):
+            cli.main(["preflight", "host", "--firmware", "ovmf.fd"])
+        check.assert_called_once_with(
+            Path("ovmf.fd"), None, platform="amd_sev_snp", gpu=False, snp_vcek_store=None, shim=None
+        )
+
+        with patch.object(cli, "check_host", return_value=True) as check:
+            cli.main(
+                [
+                    "preflight",
+                    "host",
+                    "--platform",
+                    "intel_tdx",
+                    "--firmware",
+                    "OVMF.ms.fd",
+                    "--shim",
+                    "shim.efi",
+                ]
+            )
+        check.assert_called_once_with(
+            Path("OVMF.ms.fd"),
+            None,
+            platform="intel_tdx",
+            gpu=False,
+            snp_vcek_store=None,
+            shim=Path("shim.efi"),
+        )
 
     def test_approval_repackages_only_after_successful_validation(self):
         with (

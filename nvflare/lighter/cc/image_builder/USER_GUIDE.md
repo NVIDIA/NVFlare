@@ -5,8 +5,8 @@ The launcher preserves the previous clear applog disk before every relaunch in
 three newest images with mode 0600. Inspect a retained image on a trusted host,
 for example with `guestmount -a applog-history/FILE.qcow2 -m /dev/sda MOUNT_DIR`.
 Copy any required record elsewhere before more than three later launches.
-The launcher removes the oldest retained copy before creating the next one. If
-the new best-effort copy still fails, it removes the partial file, warns, and
+The launcher creates and atomically renames the new copy before pruning the
+oldest retained image. If the best-effort copy fails, it removes the partial file, warns, and
 continues; clear-log retention never blocks the CVM from starting.
 
 Each platform/application delivery is an OCI artifact containing its complete
@@ -66,6 +66,19 @@ sudo ./cvmctl run vault_DEPLOYMENT_intel_tdx.oci.tar \
 `--gpu PCI_ADDRESS` for explicit GPU placement or use `--cvm-bundle PATH` for
 the advanced shared-bundle override. The launcher still performs every host,
 manifest, vault, and TEE check described below.
+
+`cvmctl run` is the first-launch materialization command. To restart while
+preserving writes under `/vault/application/runtime` and
+`/vault/application/data`, invoke the existing launcher by absolute path:
+
+```sh
+sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/launch_cvm.sh
+```
+
+Repeat the original launcher `--gpu PCI_ADDRESS` and `--bind-address` options
+when they were used. Do not run `cvmctl run` again with the same output: the
+command refuses to overwrite it. Choosing a new output restores the pristine
+published `vault.qcow2`, so it is a new deployment rather than a restart.
 
 ## 3. Materialize without launching
 

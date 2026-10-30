@@ -190,7 +190,8 @@ def install(config, directory, candidate=False):
         require(type(warning_window) is int and warning_window >= 0, "Invalid reference expiry warning window")
         if expected_refs and min(expirations[name] for name in expected_refs) - time.time() <= warning_window:
             warnings.warn(
-                "One or more RVPS references expire within the configured warning window; renew reviewed records",
+                "One or more RVPS references expire within the configured warning window; approve a new profile "
+                "version before they expire",
                 RuntimeWarning,
                 stacklevel=2,
             )

@@ -21,9 +21,11 @@ Common start checklist
    Intel collateral, NVIDIA attestation endpoints, registry, and federation
    ports. Start any Intel Tiber Trust account and platform-registration work
    during procurement because it can add lead time.
-#. Build the workload into the approved image. BYOC and external-process
-   executors are denied in CC mode. Add only exact, reviewed class names to
-   ``class_allow_list``.
+#. Build the workload into the approved image. CC mode blocks BYOC in every
+   deployment mode. The packaged CoCo runtime does not support external-process
+   execution; the bare-metal examples use a reviewed in-process executor fixed
+   in the measured image. Add only exact, reviewed class names to
+   ``class_allow_list`` and validate the executor for the selected mode.
 #. Put the shared Trustee or Azure MAA object in ``cc_project.yml`` and the mode
    selection in each participant ``cc_config``. Run ``nvflare provision`` and
    retain the private build receipts and public ``cc_manifests`` separately.
@@ -51,9 +53,14 @@ Bare-metal CVM checklist
 #. Build an uncompressed ``application.tar``, size the vault, and provision.
    Provisioning invokes ``cvmctl vault`` for each protected participant; a
    direct builder workflow can call it with publication options. Launch the
-   immutable delivery with ``cvmctl run``.
-#. After a failed launch, inspect the fixed ``phase=`` identifier and the newest
-   retained ``applog-history`` image before retrying.
+   immutable delivery with ``cvmctl run`` for its first launch. Restart the same
+   delivery with the absolute ``launch_cvm.sh`` path inside the materialized
+   directory; rematerializing restores a pristine vault and loses prior guest
+   writes.
+#. After a failed launch, inspect the fixed ``phase=`` identifier in the
+   attached launcher/serial output. The applog disk is available only after the
+   vault mounts, and the failed run is copied to ``applog-history`` at the next
+   launch.
 
 CoCo checklist
 --------------
@@ -141,33 +148,55 @@ Troubleshooting by symptom
    * - ``phase=configuration``
      - Check the measured runtime configuration and root-only runtime-state
        directory before investigating Trustee.
-     - Retained CVM applog; ``runtime.json``
+     - Attached ``cvmctl run``/``launch_cvm.sh`` serial output; ``runtime.json``
    * - ``phase=network``
      - Check the measured nftables table, learned DNS resolvers, and configured
        bootstrap egress.
-     - Retained CVM applog; host network configuration
+     - Attached launcher serial output; host network configuration
    * - ``phase=time_sync``
      - Check NTS reachability and clock convergence before attestation.
-     - Retained CVM applog; chrony sources
+     - Attached launcher serial output; chrony sources
+   * - ``CVM_STARTUP_FAILURE=verity``
+     - Treat the generic root as corrupt or mismatched. Re-authenticate and
+       rematerialize the delivery; do not disable dm-verity.
+     - Initramfs output on the attached serial console
    * - ``phase=attestation`` or no Trustee token
-     - Check DNS for the Trustee host, KBS/AS TLS, and platform collateral egress.
-     - Retained CVM applog; Trustee AS logs
+     - Check DNS/TLS and collateral first, then the selected policy, AS signing
+       key, approved TCB/measurements, and RVPS expiry. A non-affirming EAR or
+       wrong AS key fails here before resource retrieval.
+     - Attached launcher serial output; Trustee AS/verifier logs
    * - ``phase=key_release``
-     - Check the immutable resource path, release policy, admin/JWT expiry, and
-       RVPS reference expiry. A valid quote alone does not authorize a key.
-     - Retained applog; KBS policy audit
+     - After an affirmative EAR, check the immutable resource path, release
+       policy, resource presence, and bundle/platform binding.
+     - Attached launcher serial output; KBS policy audit
    * - ``phase=vault_identity``
      - Check that the exact vault and generic bundle match and that the header,
        UUID, platform, and hardware binding were not changed.
-     - Retained applog; ``vault_manifest.json``
+     - Attached launcher serial output; ``vault_manifest.json``
    * - ``phase=payload_authentication``
      - Check dm-integrity, manifest identity, application archive identity, and
        measured service files. Do not bypass the failing check.
-     - Retained applog; acceptance result
+     - Attached launcher serial output; mounted applog; acceptance result
    * - ``phase=supervision``
      - Check proof renewal, workload lifecycle, vault closure, and containment
        diagnostics after successful startup.
-     - Retained applog; CVM audit records
+     - Mounted applog; CVM audit records
+   * - Required CC participant is missing or unreachable
+     - Confirm every protected participant registered before the bounded startup
+       deadline and that federation ports and names match the provisioned kits.
+     - Server/client logs: ``Waiting for required CC participant registration``
+       or ``Missing required CC participants``; admin-console client status
+   * - Registration or peer proof is rejected
+     - Compare the participant name, issuer, signed EAR claims, proof key, and
+       configured workload constraints. Do not resubmit the job until the peer
+       identity mismatch is understood.
+     - Server/client logs: ``CC info validation failed`` or
+       ``Cross-site validation failed``
+   * - CCManager shuts down a server or client
+     - Find the first validation failure before the shutdown line, correct the
+       failed participant or policy, then restart the whole required federation.
+     - ``Shutting down site ... due to`` and
+       ``CC system shutdown initiated`` in the NVFlare logs
    * - TDX quote stops after about 168 hours
      - Match the cache-expiry and collateral error sequence, coordinate a
        ``qgsd`` restart, then run a fresh challenge-bound quote test.
@@ -202,11 +231,21 @@ Troubleshooting by symptom
        restart only after the attestation or readiness cause is corrected.
      - Trusted guest audit output and service appraisal logs
 
+After a successful launch, the launcher remains attached, the server and every
+required client appear online in the admin console, and each NVFlare log records
+``Initialized CCManager`` followed by ``Cross-site validation passed``. A job is
+then accepted without ``CC participant validation failed``. Early startup phases
+run before the applog disk is mounted, so their ``phase=`` lines exist only in
+the attached serial output. ``applog-history`` is created at the next launch and
+contains the preceding run, not the run currently starting.
+
 Credential and reference expiry belongs in the deployment calendar. Trustee
 administration JWTs are capped at 30 days, and RVPS records use the explicit
 ``--expires`` value. Set ``expiry_warning_seconds`` to the site's maintenance
-lead time (seven days by default). Rotate before that window; do not wait for a
-production key-release denial.
+lead time (seven days by default). Rotate JWTs before that window. An RVPS
+deadline cannot be extended for an existing profile: create a new profile
+version, repeat acceptance and approval, and install its new record before the
+old one expires.
 
 Day-2 rebuild matrix
 --------------------
@@ -235,20 +274,25 @@ Day-2 rebuild matrix
        references, and launch a newly approved release when its policy binding
        changes.
    * - Trustee AS signing key or endpoint identity
-     - Re-provision signed kits and rebuild artifacts that pin the key or CA.
+     - Create a new profile version; rebuild, run full acceptance and approval,
+       then rebuild every dependent vault because the URL, CA, and AS key are
+       measured inputs.
      - Re-provision kits and redistribute the authenticated key/CA handoff.
-   * - Expiring JWT or RVPS expiry only
-     - Rotate the credential or renew reviewed reference records under the same
-       approved values; do not rebuild unrelated application bytes.
-     - Rotate the credential or renew reviewed reference records; verify the
-       active policy and release afterward.
+   * - Expiring administration JWT only
+     - Rotate the credential; no CVM or vault rebuild is required.
+     - Rotate the credential and verify the active policy afterward.
+   * - Expiring RVPS approval
+     - Create a new profile version, references, acceptance, and approval, then
+       rebuild dependent vaults. Re-importing the same profile does not renew it.
+     - Install a newly reviewed reference record according to the CoCo rollout
+       policy; verify the active policy afterward.
 
 Deferred tooling
 ----------------
 
 An aggregated ``doctor`` command, automatic SNP TCB discovery, a productized
 lab Trustee bootstrap, a self-contained measured TDX signed-quote probe, and
-unattended approval for CI require separate security design. Existing
-120-second approvals remain interactive and fail closed. Until that probe is
+unattended approval for CI require separate security design. Approval remains an
+explicit offline-authority action and fails closed. Until that probe is
 qualified, ``cvmctl preflight host --quote-probe`` requires a site-approved
 executable that boots a bounded TD and verifies current collateral.

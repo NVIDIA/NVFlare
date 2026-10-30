@@ -1,9 +1,9 @@
 # Build a CVM bundle and application vault
 
 > **Candidate profile only (checked 2026-10-28).** The checked-in
-> `cpu-2026.09-r5` profile has `production_ready: false` because its pinned
-> kernel `7.0.0-31-generic` passed the formerly failing post-scan corruption
-> case in the rc4 and rc5 runs. The full current-source production matrix and a
+> `cpu-2026.09-r5` profile remains `production_ready: false`: its pinned kernel
+> `7.0.0-31-generic` now passes the formerly failing post-scan corruption case
+> in the rc4 and rc5 runs, but the full current-source production matrix and a
 > signed approval are still incomplete, so production approval rejects this
 > exact profile. Kernel qualification is part of an exact profile and cannot be
 > inferred from one passing test. For a
@@ -26,24 +26,34 @@ used by `cvmctl vault`.
 
 ## Normal build, seal, and run flow
 
-For a site where one authorized operator holds the required acceptance, Trustee,
-and release credentials, the normal workflow is three commands:
+The documented production workflow keeps the exact finalized bundle visible at
+each trust handoff:
 
-1. `cvmctl build` screens the host, constructs and finalizes the generic CVM,
-   runs the acceptance adapter, signs approval, enables the bundle in Trustee,
-   and optionally publishes the signed generic artifact.
-2. `cvmctl vault` seals every requested application delivery, uploads its key,
-   packages it, and optionally publishes every signed OCI artifact.
-3. `cvmctl run` authenticates one delivery, materializes it, and launches it on
-   a matching runtime host.
+1. `cvmctl build` screens the host, constructs, measures, and finalizes the
+   generic CVM as an unapproved candidate.
+2. The Trustee administrator installs that exact candidate into the isolated
+   acceptance phase of the eventual production-identity Trustee. The acceptance
+   operator creates a candidate vault and runs the checked-in acceptance runner.
+3. The acceptance authority signs the complete report with `cvmctl admin
+   approve`; the Trustee and release operators then install and publish the
+   approved generic artifact.
+4. `cvmctl vault` seals and optionally publishes each application delivery.
+5. `cvmctl run` authenticates and materializes a delivery for its first launch.
+   Later launches use the existing materialized directory so guest writes are
+   retained.
 
 ```sh
 sudo ./cvmctl build config/cvm_profile.yml \
-  --quote-probe /usr/local/sbin/site_tdx_quote_probe \
-  --acceptance-runner /usr/local/sbin/site_acceptance_runner \
-  --approval-key /secure/acceptance-signing.key \
-  --install-config /srv/trustee/production-admin.json \
-  --publish registry.example.org/cvm/profiles:cpu-2026.10-intel_tdx \
+  --quote-probe /usr/local/sbin/site_tdx_quote_probe
+
+# Complete §2.1 with this exact finalized bundle, then:
+sudo ./cvmctl admin approve target/cvm_PROFILE/PLATFORM \
+  /srv/cvm/acceptance-report.json \
+  --signing-key /secure/acceptance-signing.key
+sudo ./cvmctl admin install /srv/trustee/production-admin.json \
+  target/cvm_PROFILE/PLATFORM
+sudo ./cvmctl publish target/cvm_PROFILE/cvm_PROFILE_PLATFORM.oci.tar \
+  registry.example.org/cvm/profiles:cpu-2026.10-intel_tdx \
   --cosign-signing-key /secure/release-signing.key
 
 sudo ./cvmctl vault config/vault_build.yml \
@@ -56,12 +66,18 @@ sudo ./cvmctl run \
   --output /srv/cvm/site-1
 ```
 
-The integrated path preserves every gate: production Trustee installation and
-publication require the accepted bundle's signed approval, and integrated
-publication always requires Cosign. Omit the corresponding options when separate
-operators own those credentials. The detailed commands in this guide support
-that role separation, deferred measurement on another host, offline delivery,
-and recovery after a completed intermediate step. The quote probe in the example
+The detailed commands support role separation, deferred measurement on another
+host, offline delivery, and recovery after a completed intermediate step. A
+site may automate the same sequence with `--acceptance-runner`, `--approval-key`,
+`--install-config`, and signed publication. That runner is a site adapter called
+as `RUNNER BUNDLE REPORT`: it must install `BUNDLE` as a candidate, create and
+launch a candidate vault for that exact build ID, run the complete matrix, and
+atomically write `REPORT` only after all checks pass. The checked-in
+`acceptance_runner` is the lower-level evidence generator used after the
+candidate vault and isolated Trustee are prepared; it is not that adapter and
+cannot be passed directly to `cvmctl build`.
+
+The quote probe in the example
 is TDX-only; omit it for SNP, whose host preflight checks SNP devices and kernel
 capabilities directly. Sections 1, 2, 4, and 5 explain this normal path. Section
 3 and the lower-level commands are for split roles, cross-host measurement,
@@ -129,7 +145,9 @@ dependency until the quote smoke test.
    [VALIDATION.md](VALIDATION.md#recorded-tdx-firmware-input). TDX measurements
    authenticate this firmware and kernel through the approved launch profile.
    A Secure Boot deployment must separately validate its signed kernel/shim chain;
-   `platforms.intel_tdx.shim` supplies the shim to QEMU's `-shim` option.
+   `platforms.intel_tdx.shim` supplies the shim to QEMU's `-shim` option, and a
+   standalone preflight for that profile must pass the same path with
+   `--shim /path/to/shim.efi`.
 5. Run a minimal TD quote smoke test against the intended collateral/backend path.
    A successful local TDREPORT is not proof that QGS can generate a signed quote.
 
@@ -187,8 +205,11 @@ sudo ./cvmctl preflight host --platform amd_sev_snp \
 The check requires an AMD CPU advertising ``sev_snp``, enabled
 ``kvm_amd.sev_snp``, host ``/dev/sev``, and populated IOMMU groups. Use
 ``--gpu`` on an installed GPU target to require an assignable NVIDIA display
-device, working driver/VBIOS inventory, and the confidential-computing status
-interface. These checks screen a host; signed evidence, current KDS collateral,
+device. A device still owned by the NVIDIA host driver must expose working
+driver/VBIOS inventory and the confidential-computing status interface. A
+device already bound to ``vfio-pci`` is accepted for passthrough; its driver,
+VBIOS, and confidential-computing qualification run inside the measured guest.
+These checks screen a host; signed evidence, current KDS collateral,
 approved references, and negative acceptance still determine qualification.
 Before procuring a GPU, obtain the vendor's confidential-computing support
 statement for the exact SKU and VBIOS and confirm that its RIM and the selected
@@ -666,14 +687,18 @@ sudo ./cvmctl vault acceptance-vault.yml --candidate \
 
 `acceptance-vault.yml` uses the normal vault schema and an application image that
 runs the test-only `tests/integration_test/lighter/cc/image_builder/lab_guest_agent.py`.
-The checked-in `acceptance_runner.py` is the official evidence generator. It runs
+The checked-in `acceptance_runner.py` is the official lower-level evidence
+generator. It runs
 the isolated Trustee administration tests and the hardware tests, signs every
 passing result with a dedicated site evidence key, verifies that every check
 required by the exact manifest is present, and writes the report consumed by
 `admin approve`. The evidence key is separate from the offline approval key.
 
-Prepare and start the isolated lab Trustee as described under **Reproducing
-tests** in [VALIDATION.md](VALIDATION.md). Provision one additional disposable
+Prepare and start the isolated acceptance Trustee with the eventual production
+transport CA, AS signer, measured hostname, configuration, and state as described
+in [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#keep-acceptance-and-production-on-the-same-trustee-identity).
+The local process remains isolated from production clients while the matrix
+runs. Provision one additional disposable
 vault key under this bundle and set `CVM_OTHER_RESOURCE` to its
 `keys/BUILD_ID/BINDING` path; the runner uses it for the live cross-vault denial.
 Then run:
@@ -698,7 +723,9 @@ The output directory must not already exist. The runner enables the network,
 interruption, revocation, and GPU fault cases required by the selected manifest;
 there is no reduced production mode that silently skips a required check. It
 requires the isolated Trustee to run on the acceptance host so its bounded NRAS
-fault injection cannot affect another deployment. A passing GPU boot establishes
+fault injection and SNP KDS blocking cannot affect another deployment. These
+local fault cases exercise the staged instance that will be promoted; they must
+never target an open production service. A passing GPU boot establishes
 `gpu_positive_key_release` and `gpu_policy_selection` at the actual security
 boundary: Trustee accepts the composite CPU/GPU EAR, returns the vault key, and
 the measured guest opens the vault and starts the workload. No application-created

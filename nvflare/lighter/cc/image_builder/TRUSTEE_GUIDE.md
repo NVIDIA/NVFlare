@@ -90,8 +90,11 @@ Both paths use the same pinned KBS binary and schema:
   CoCo's default policy or records.
 - **Standalone upstream Trustee:** create a dedicated service identity and
   persistent local filesystem, install the clean KBS binary built in §1, and
-  use [trustee/kbs.json](trustee/kbs.json) as the complete starting
-  configuration. Create the unprivileged service identity and install the
+  use [trustee/kbs.json](trustee/kbs.json) as the base schema template. It is
+  intentionally not deployable unchanged: replace its sample selectors and
+  bundle-scoped ACL, add the required SNP/GPU verifier entries described in §5,
+  and install only reviewed policies and references. Create the unprivileged
+  service identity and install the
   binary, provenance, configuration, and initial deny-all resource policy:
 
   ```bash
@@ -240,11 +243,47 @@ instance over cloning it.
 behavior for a profile built with that lab identity, but its approval is not
 portable to a bundle built with production `kbs_cert`, `as_public_key`, or URL.
 
+For production acceptance, stage the eventual Trustee identity in a protected
+directory and run the same local harness against it before the endpoint is
+opened. The directory must contain `ca.pem`, `as-ca.pem`, `as-public.pem`,
+`server.{key,pem}`, `as.{key,pem}`, `kbs-admin.{key,pub}`, plus the
+`builder`, `admin`, and `untrusted` test identity key/certificate pairs used by
+the negative signer tests. Private keys must be owner-only (for example, mode
+`0600`). Prepare the lab with the measured production hostname:
+
+```sh
+PYTHONPATH=nvflare/lighter/cc/image_builder python3 \
+  tests/integration_test/lighter/cc/image_builder/prepare_lab.py \
+  /srv/cvm/acceptance --platform intel_tdx \
+  --identity-directory /secure/staged-trustee-identity \
+  --kbs-url https://trustee.example.org:8443
+```
+
+Populate the public guest inputs and reviewed references listed in the CVM
+Builder README, build Trustee at the pinned revision in
+`/srv/cvm/acceptance/trustee-source`, and route
+`trustee.example.org` to this isolated host from the candidate guest. Start the
+local staged service from the repository root:
+
+```sh
+sudo env PYTHONPATH="$PWD/nvflare/lighter/cc/image_builder" \
+  python3 tests/integration_test/lighter/cc/image_builder/lab_kbs.py \
+  /srv/cvm/acceptance
+```
+
+The acceptance runner deliberately sets `CVM_BACKEND_LOCAL=1`: NRAS fault
+injection and SNP KDS blocking modify only this local staged service and must
+not run against an open production instance. After all checks pass, promote the
+same transport CA, AS signer, measured hostname, KBS configuration, policies,
+references, and administration state. If any of those measured identities
+change, create a new profile version and repeat build, acceptance, approval, and
+vault sealing.
+
 ## 5. Configure upstream KBS
 
 For a standalone deployment, copy [trustee/kbs.json](trustee/kbs.json) as the
-base and adjust its listener, certificate paths, selectors, and verifier
-settings. For CoCo, merge the same settings into its existing configuration.
+base and adjust its listener, certificate paths, selectors, bundle-scoped ACL,
+and verifier settings. For CoCo, merge the same settings into its existing configuration.
 This is the upstream v0.22 schema. Its `cvm-policy` role can publish resource policy and query named
 references. It cannot replace AS policies, register references, or mutate native
 KBS resources. The separate `cvm-resources` role permits native resource POST and DELETE under
@@ -254,6 +293,15 @@ approved bundle: `./cvmctl admin acl <build_id>` prints the `cvm-resources-<buil
 ACL entry to merge into `kbs.json`, and the builder accepts that role name for
 signed tokens as well. It cannot publish policy. This upstream ACL is
 endpoint-based: do not describe its resource token as create-only.
+
+The checked-in file contains only a placeholder bundle-scoped ACL. Replace
+`EXAMPLE_BUILD_ID` with the exact approved build ID; it intentionally omits the
+broad `cvm-resources` role. For production SNP, add the upstream
+`snp_verifier` `OfflineStore` that points at the authenticated per-host VCEK
+store described in the build guide. For an NVIDIA CC profile, add the reviewed
+`nvidia_verifier` remote endpoint. CPU-only TDX needs neither entry. Treat these
+as required mode-specific edits, then validate the complete deployed JSON with
+`cvmctl preflight trustee` before generating the deployment receipt.
 
 The reference configuration explicitly selects Intel's `standard` TCB update
 channel for DCAP verification:
@@ -407,7 +455,8 @@ requires fresh CPU/GPU appraisals, exact device count and distinct GPU identitie
 ## 6. Use native Trustee resource administration
 
 The trusted token issuer creates a signed JWT accepted by the existing KBS admin
-identity provider. For the example ACL, use `role: cvm-resources`,
+identity provider. For the example ACL, use
+`role: cvm-resources-<exact-build-id>`,
 `iss: cvm-builder`, `aud: coco-trustee`, and valid `iat`, `nbf`, and `exp` claims.
 Set its validity to cover the build, at most 30 days, and rotate it through your
 existing credential workflow; the builder refuses expired tokens and tokens whose
@@ -421,7 +470,7 @@ bundle-scoped role whose ACL is printed by `cvmctl admin acl BUILD_ID`:
 ```sh
 build_id=cvm-EXACT_BUILD_ID
 ./cvmctl admin acl "$build_id"
-./cvmctl admin token \
+sudo ./cvmctl admin token \
   --private-key /protected/kbs-admin.key \
   --role "cvm-resources-$build_id" \
   --lifetime 3600 \
@@ -439,6 +488,9 @@ trustee:
   ca: ./credentials/kbs-ca.pem
   admin_token_file: ./credentials/kbs-resource-token.jwt
   expiry_warning_seconds: 604800
+approval:
+  public_keys:
+    - ./credentials/acceptance-signing.pub
 ```
 
 The token file contains only the signed JWT, with restricted file permissions.
@@ -447,8 +499,9 @@ locally before retrieving the generic image or sealing a vault, then reads and
 checks it again when uploading the 64-byte key with
 `POST /kbs/v0/resource/keys/<build_id>/<binding_id>`. Operators may therefore
 rotate a still-valid token during a long build. Set `expiry_warning_seconds` to
-the maintenance lead time (seven days by default) and rotate the token or
-reviewed RVPS records before a denial. Guest retrieval still requires
+the maintenance lead time (seven days by default) and rotate the token before a
+denial. An expiring RVPS approval requires a new profile version, fresh
+acceptance, and approval; importing the same profile cannot extend it. Guest retrieval still requires
 successful attestation and resource policy authorization; administration
 credentials are never delivered to guests.
 
@@ -500,15 +553,27 @@ references. Import a finalized bundle's reviewed values with an operator-chosen
 expiry:
 
 ```sh
-sudo -u cvm-trustee ./cvmctl references /path/to/bundle   --store /var/lib/cvm-trustee/storage/reference_value   --state /var/lib/cvm-trustee/admin --expires 2026-12-01T00:00:00Z
+sudo -u cvm-trustee /opt/cvm-builder/cvmctl references /path/to/bundle \
+  --store /var/lib/cvm-trustee/storage/reference_value \
+  --state /var/lib/cvm-trustee/admin \
+  --expires 2026-12-01T00:00:00Z
 ```
+
+Install the reviewed builder and its Python environment under
+`/opt/cvm-builder` (or another path traversable by `cvm-trustee`) before using
+this command. Do not point the service user at a root-only source checkout or
+virtual environment.
 
 The import writes one upstream RVPS record named `cvm_profile_<digest>` per
 security profile. Its value contains the profile's references and per-value
 deadlines. The rendered AS policy queries only that record and enforces every
 deadline because v0.22 RVPS does not itself reject expired metadata. Existing
 approvals cannot be silently broadened or renewed. Missing or expired approvals
-deny appraisal. Measurements remain in Trustee property storage.
+deny appraisal. Re-running the import for the same profile preserves both its
+per-value deadlines and existing record-level expiration, even when a later
+`--expires` is supplied. To extend a deadline, create a new profile version,
+repeat acceptance, and approve its new record. Measurements remain in Trustee
+property storage.
 
 Apply configuration through the selected deployment's rollout mechanism. Run
 `./cvmctl preflight trustee` on the trusted deployment host and confirm the
@@ -584,7 +649,7 @@ After testing the actual native deployment, generate that clean receipt from
 the exact KBS configuration and installed policy bytes:
 
 ```sh
-./cvmctl admin deployment-receipt \
+sudo ./cvmctl admin deployment-receipt \
   /etc/cvm-trustee/trustee-build.json /etc/cvm-trustee/kbs.json \
   --policy cvm-cpu-2026-09-r5_cpu=/var/lib/cvm-trustee/storage/attestation_service_policy/cvm-cpu-2026-09-r5_cpu.rego \
   --policy-selection-tested \

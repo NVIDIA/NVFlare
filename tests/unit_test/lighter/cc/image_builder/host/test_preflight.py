@@ -25,7 +25,14 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 from cvm.common.errors import BuildError
-from cvm.host.preflight import check_qgs_config, check_snp_host, check_snp_vcek_store, snp_vcek_paths
+from cvm.host.preflight import (
+    check_gpu_host,
+    check_host,
+    check_qgs_config,
+    check_snp_host,
+    check_snp_vcek_store,
+    snp_vcek_paths,
+)
 
 
 class PreflightTests(unittest.TestCase):
@@ -65,6 +72,43 @@ class PreflightTests(unittest.TestCase):
             (sysfs / "module/kvm_amd/parameters/sev_snp").write_text("N\n")
             with self.assertRaisesRegex(BuildError, "BIOS"):
                 check_snp_host(firmware, procfs=procfs, sysfs=sysfs, devfs=devfs)
+
+    def test_gpu_preflight_accepts_vfio_bound_passthrough_device(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sysfs = Path(directory)
+            device = sysfs / "bus/pci/devices/0000:01:00.0"
+            device.mkdir(parents=True)
+            (device / "vendor").write_text("0x10de\n")
+            (device / "class").write_text("0x030200\n")
+            (device / "iommu_group").mkdir()
+            driver = sysfs / "bus/pci/drivers/vfio-pci"
+            driver.mkdir(parents=True)
+            (device / "driver").symlink_to(driver)
+            with patch("cvm.host.preflight.subprocess.run") as run:
+                check_gpu_host(sysfs)
+            run.assert_not_called()
+
+    def test_tdx_secure_boot_preflight_requires_and_accepts_reviewed_shim(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            firmware = root / "OVMF.inteltdx.ms.fd"
+            shim = root / "shim.efi"
+            firmware.touch()
+            shim.touch()
+            with self.assertRaisesRegex(BuildError, "reviewed signed shim"):
+                check_host(firmware)
+            with (
+                patch("cvm.host.preflight.subprocess.run", return_value=type("Result", (), {"returncode": 0})()),
+                patch("cvm.host.preflight.check_qgs_config"),
+                patch.object(
+                    Path,
+                    "read_text",
+                    autospec=True,
+                    side_effect=lambda path: "nohibernate" if str(path) == "/proc/cmdline" else "Y",
+                ),
+                patch.object(Path, "is_file", autospec=True, return_value=True),
+            ):
+                self.assertFalse(check_host(firmware, shim=shim))
 
     def test_headerless_and_sectioned_qgs_configs(self):
         for content in (

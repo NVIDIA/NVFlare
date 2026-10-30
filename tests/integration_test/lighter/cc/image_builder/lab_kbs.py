@@ -84,9 +84,8 @@ def main(directory):
     resource_policy.parent.mkdir(exist_ok=True)
     if not resource_policy.exists():
         resource_policy.write_text("package policy\nimport rego.v1\ndefault allow := false\n")
-    (pki / "as-chain.pem").write_bytes(
-        (pki / "as.pem").read_bytes() + (directory / "inputs/test-as-ca.pem").read_bytes()
-    )
+    as_chain = state / "as-chain.pem"
+    as_chain.write_bytes((pki / "as.pem").read_bytes() + (directory / "inputs/test-as-ca.pem").read_bytes())
     (storage / "repository").mkdir(mode=0o700, exist_ok=True)
     policy_id_map = {}
     immutable_as_policies = {}
@@ -167,7 +166,7 @@ def main(directory):
             "attestation_token_broker": {
                 "duration_min": 5,
                 "issuer_name": "CoCo-Attestation-Service",
-                "signer": {"key_path": str(pki / "as.key"), "cert_path": str(pki / "as-chain.pem")},
+                "signer": {"key_path": str(pki / "as.key"), "cert_path": str(as_chain)},
             },
         },
         "plugins": [{"name": "resource", "storage_backend_type": "kvstorage"}],

@@ -17,6 +17,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -38,7 +39,9 @@ class TrusteeBootstrapTests(unittest.TestCase):
                     serialization.NoEncryption(),
                 )
             )
-            output = issue_admin_token(private, "cvm-resources-build_1", root / "token.jwt", lifetime=60, now=100)
+            with patch("cvm.trustee.bootstrap.protect_process") as protect:
+                output = issue_admin_token(private, "cvm-resources-build_1", root / "token.jwt", lifetime=60, now=100)
+            protect.assert_called_once_with()
             header, claims, signature = output.read_text().strip().split(".")
             payload = json.loads(base64.urlsafe_b64decode(claims + "=" * (-len(claims) % 4)))
             self.assertEqual(
@@ -56,8 +59,9 @@ class TrusteeBootstrapTests(unittest.TestCase):
                 base64.urlsafe_b64decode(signature + "=" * (-len(signature) % 4)), f"{header}.{claims}".encode()
             )
             self.assertEqual(output.stat().st_mode & 0o777, 0o600)
-            with self.assertRaises(BuildError):
+            with patch("cvm.trustee.bootstrap.protect_process") as protect, self.assertRaises(BuildError):
                 issue_admin_token(private, "cvm-resources", root / "long.jwt", lifetime=30 * 86400 + 1)
+            protect.assert_not_called()
 
     def test_deployment_receipt_hashes_exact_policy_files(self):
         with tempfile.TemporaryDirectory() as directory:

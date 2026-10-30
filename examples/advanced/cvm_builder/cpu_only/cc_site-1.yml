@@ -4,6 +4,9 @@ cpu_tee: amd_sev_snp
 gpu_tee: none
 attestation:
   service: trustee
+# The parent example job uses this measured-image, in-process executor.
+class_allow_list:
+  - cvm_client_api_executor.CVMClientAPIExecutor
 workload:
   source:
     type: docker_archive

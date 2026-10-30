@@ -20,6 +20,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import tempfile
 import threading
 import unittest
@@ -176,7 +177,42 @@ class LabProfileTests(unittest.TestCase):
             ):
                 prepare.prepare(directory, http_only=True)
             apt.assert_not_called()
-            self.assertEqual(set(read_json(Path(directory) / "lab-state.json")), {"pki"})
+            self.assertEqual(
+                set(read_json(Path(directory) / "lab-state.json")),
+                {"pki", "identity", "kbs_url"},
+            )
+            self.assertTrue((Path(directory) / "config/attestation_policy.rego").is_file())
+            self.assertTrue((Path(directory) / "config/gpu_policy.json").is_file())
+
+    def test_prepare_lab_can_stage_the_eventual_production_identity(self):
+        prepare = load_helper("prepare_lab")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "seed"
+            with contextlib.redirect_stdout(io.StringIO()):
+                prepare.prepare(seed, http_only=True)
+            identity = Path(read_json(seed / "lab-state.json")["pki"])
+            for source, name in (
+                (seed / "inputs/test-ca.pem", "ca.pem"),
+                (seed / "inputs/test-as-ca.pem", "as-ca.pem"),
+                (seed / "inputs/test-as-public.pem", "as-public.pem"),
+            ):
+                shutil.copyfile(source, identity / name)
+            lab = root / "lab"
+            with contextlib.redirect_stdout(io.StringIO()):
+                prepare.prepare(
+                    lab,
+                    http_only=True,
+                    identity_directory=identity,
+                    kbs_url="https://10.0.2.2:19199",
+                )
+            state = read_json(lab / "lab-state.json")
+            self.assertEqual(state["pki"], str(identity.resolve()))
+            self.assertEqual(state["identity"], "provided")
+            self.assertEqual((lab / "inputs/test-ca.pem").read_bytes(), (identity / "ca.pem").read_bytes())
+            self.assertEqual(
+                (lab / "inputs/test-as-public.pem").read_bytes(), (identity / "as-public.pem").read_bytes()
+            )
 
     def test_cli_supports_one_or_repeated_platform_selection(self):
         prepare = load_helper("prepare_lab")
@@ -185,7 +221,13 @@ class LabProfileTests(unittest.TestCase):
             with self.subTest(platforms=selected), patch("sys.argv", argv), patch.object(prepare, "prepare") as call:
                 prepare.main()
             call.assert_called_once_with(
-                "/lab", http_only=False, platforms=selected, package_profile=None, pins_from_host=False
+                "/lab",
+                http_only=False,
+                platforms=selected,
+                package_profile=None,
+                pins_from_host=False,
+                identity_directory=None,
+                kbs_url="https://10.0.2.2:19199",
             )
 
     def test_cli_forwards_package_pin_overrides(self):
@@ -195,7 +237,13 @@ class LabProfileTests(unittest.TestCase):
         with patch("sys.argv", argv), patch.object(prepare, "prepare") as call:
             prepare.main()
         call.assert_called_once_with(
-            "/lab", http_only=False, platforms=None, package_profile="pins.yml", pins_from_host=True
+            "/lab",
+            http_only=False,
+            platforms=None,
+            package_profile="pins.yml",
+            pins_from_host=True,
+            identity_directory=None,
+            kbs_url="https://10.0.2.2:19199",
         )
 
     def test_invalid_platform_selection_is_rejected_before_creating_inputs(self):

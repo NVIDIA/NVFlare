@@ -100,8 +100,9 @@ configuration check is not hardware acceptance.
 * Package reviewed application code and dependencies in the approved workload
   image. CC mode blocks BYOC jobs, including launcher-defined executable content.
   Use exact, reviewed ``class_allow_list`` entries for additional components.
-* Validate the job's executor against the selected deployment. External-process
-  execution has failed in sealed CoCo deployments; follow the documented
+* Validate the job's executor against the selected deployment. The packaged
+  CoCo runtime does not support external-process execution; bare-metal examples
+  use a reviewed in-process executor fixed in the measured image. Follow the documented
   :github_nvflare_link:`in-process executor guidance
   <examples/devops/coco/provision/README.md#prepare-the-workload-and-project>`.
   Changing code or policy requires a new approved release.

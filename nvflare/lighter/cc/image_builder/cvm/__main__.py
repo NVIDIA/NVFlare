@@ -31,6 +31,7 @@ from .common.contracts import PLATFORMS
 from .common.errors import BuildError, ConfigurationError
 from .common.io import read_json, write_json
 from .common.linux import enable_diagnostics
+from .host.platforms import host_capabilities
 from .host.preflight import check_host
 from .trustee import admin
 from .trustee.bootstrap import create_deployment_receipt, issue_admin_token
@@ -97,6 +98,7 @@ def build_preflight(args):
         platform=platform,
         gpu=profile["gpu"] == "nvidia_cc",
         snp_vcek_store=args.snp_vcek_store,
+        shim=settings.get("shim"),
     )
     if platform == "intel_tdx" and not quote_checked:
         print(
@@ -140,9 +142,9 @@ def build(args):
 
 def build_vault(args):
     if args.cosign_key and not args.publish:
-        raise BuildError("--cosign-signing-key requires --publish")
+        raise ConfigurationError("--cosign-signing-key requires --publish")
     if args.publish and not args.cosign_key:
-        raise BuildError("Combined publication requires --cosign-signing-key")
+        raise ConfigurationError("Combined publication requires --cosign-signing-key")
     result = vault.build(args.config, args.output, args.candidate, args.dev, args.plain_http, args.project_config)
     print(f"Vault staging: {result}")
     artifacts = read_json(result / "oci_artifacts.json")["artifacts"]
@@ -222,12 +224,19 @@ def acceptance_report(args):
 
 
 def host_preflight(args):
+    platform = args.platform
+    if platform is None:
+        capabilities = host_capabilities()
+        if len(capabilities) != 1:
+            raise BuildError("Cannot unambiguously auto-detect an SNP/TDX host; specify --platform")
+        platform = next(iter(capabilities))
     if not check_host(
         args.firmware,
         args.quote_probe,
-        platform=args.platform,
+        platform=platform,
         gpu=args.gpu,
         snp_vcek_store=args.snp_vcek_store,
+        shim=args.shim,
     ):
         print(
             "Quote generation NOT checked. Run --quote-probe with a site smoke test before building. "
@@ -465,8 +474,9 @@ def parser():
     preflight = commands.add_parser("preflight", help="check host or Trustee prerequisites")
     checks = preflight.add_subparsers(required=True)
     host = checks.add_parser("host")
-    host.add_argument("--platform", choices=PLATFORMS, default="intel_tdx")
+    host.add_argument("--platform", choices=PLATFORMS, help="default: auto-detect the single enabled host TEE")
     host.add_argument("--firmware", type=Path, required=True)
+    host.add_argument("--shim", type=Path, help="reviewed signed shim required with TDX Secure Boot .ms.fd")
     host.add_argument("--quote-probe", type=Path, help="executable that boots a TD and verifies a nonempty quote")
     host.add_argument("--gpu", action="store_true", help="also screen an installed NVIDIA confidential-GPU host")
     host.add_argument(

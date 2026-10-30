@@ -59,10 +59,23 @@ def check_gpu_host(sysfs=SYSFS):
             vendor = (device / "vendor").read_text().strip().lower()
             class_code = int((device / "class").read_text().strip(), 16) >> 16
             if vendor == "0x10de" and class_code == 0x03 and (device / "iommu_group").exists():
-                devices.append(device.name)
+                devices.append(device)
         except (OSError, ValueError):
             continue
     require(devices, "No NVIDIA display GPU with an IOMMU group was detected")
+    vfio_devices = []
+    for device in devices:
+        try:
+            if (device / "driver").resolve().name == "vfio-pci":
+                vfio_devices.append(device)
+        except OSError:
+            continue
+    if vfio_devices:
+        print(
+            f"GPU host screening passed for {len(vfio_devices)} VFIO-bound NVIDIA display device(s); "
+            "driver, VBIOS and confidential-computing qualification must run inside the guest."
+        )
+        return
     try:
         inventory = subprocess.run(
             [
@@ -164,19 +177,20 @@ def check_snp_host(firmware, *, gpu=False, vcek_store=None, procfs=PROCFS, sysfs
     return True
 
 
-def check_host(firmware, quote_probe=None, *, platform="intel_tdx", gpu=False, snp_vcek_store=None):
+def check_host(firmware, quote_probe=None, *, platform="intel_tdx", gpu=False, snp_vcek_store=None, shim=None):
     """Check platform prerequisites; return whether attestation was exercised."""
     require(platform in ("intel_tdx", "amd_sev_snp"), "Unsupported host preflight platform")
     if platform == "amd_sev_snp":
         require(quote_probe is None, "SNP host preflight does not accept a TDX quote probe")
+        require(shim is None, "SNP host preflight does not accept a TDX shim")
         return check_snp_host(firmware, gpu=gpu, vcek_store=snp_vcek_store)
     require(snp_vcek_store is None, "--snp-vcek-store applies only to amd_sev_snp")
     firmware = Path(firmware)
     require(firmware.is_file(), "TDVF firmware is missing")
-    require(
-        not firmware.name.endswith(".ms.fd"),
-        "Secure Boot .ms.fd needs a separately validated signed shim/kernel path; use the documented direct-boot TDVF",
-    )
+    if shim is not None:
+        require(Path(shim).is_file(), "Reviewed TDX shim is missing")
+    if firmware.name.endswith(".ms.fd"):
+        require(shim is not None, "Secure Boot .ms.fd requires a reviewed signed shim")
     cmdline = Path("/proc/cmdline").read_text().split()
     require("nohibernate" in cmdline, "Add nohibernate to the host kernel command line and reboot")
     enabled = Path("/sys/module/kvm_intel/parameters/tdx")

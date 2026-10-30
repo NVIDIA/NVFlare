@@ -394,7 +394,9 @@ workload and use exact, reviewed ``class_allow_list`` entries for additional
 components. Code or policy changes require a new approved release.
 
 Validate the executor and persistence behavior for the selected deployment.
-External-process execution has failed in sealed CoCo deployments; see the
+The packaged CoCo runtime does not support external-process execution;
+bare-metal examples use a reviewed in-process executor fixed in the measured
+image. See the
 :github_nvflare_link:`in-process executor guidance
 <examples/devops/coco/provision/README.md#prepare-the-workload-and-project>`.
 An approved executor is not a substitute for reviewing application behavior

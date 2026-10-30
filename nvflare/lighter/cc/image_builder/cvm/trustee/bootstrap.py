@@ -25,6 +25,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from ..common.errors import require
 from ..common.io import canonical, digest_file, is_sha256, read_json, write_json
+from ..common.linux import protect_process
 from ..common.versions import (
     COCO_ACTIX_HTTP_CRATE_SHA256,
     COCO_ACTIX_HTTP_SOURCE_SHA256,
@@ -103,6 +104,7 @@ def issue_admin_token(
         "Trustee administration token lifetime must be from 1 second through 30 days",
     )
     require(isinstance(issuer, str) and issuer and isinstance(audience, str) and audience, "Invalid token identity")
+    protect_process()
     key = serialization.load_pem_private_key(Path(private_key).read_bytes(), password=None)
     require(isinstance(key, ed25519.Ed25519PrivateKey), "KBS administration requires an Ed25519 key")
     issued = int(time.time() if now is None else now)

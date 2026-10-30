@@ -140,16 +140,20 @@ They provide concrete Ubuntu 26.04 defaults, conventional locations, and sample
 values. A bare `sudo ./cvmctl build` reads that profile and auto-detects the one
 local target platform; no platform argument is required.
 
-## Normal three-command flow
+## Optional site-automated flow
 
-An authorized operator can complete the lifecycle without chaining lower-level
-commands. Production normally separates build, acceptance-signing, Trustee
+An authorized operator can automate the lifecycle without manually chaining
+lower-level commands. Production normally separates build, acceptance-signing, Trustee
 administration, and registry-publishing roles. Use the combined options only
 when one operator is explicitly authorized to hold all of those credentials;
 otherwise transfer the printed output to the role that runs the corresponding
 lower-level command. `build` screens the host, constructs and finalizes the generic CVM,
 runs the trusted acceptance adapter, signs its approval, enables
-the approved bundle in Trustee, and publishes the signed OCI artifact:
+the approved bundle in Trustee, and publishes the signed OCI artifact. The
+`site_acceptance_runner` name below is a site-supplied adapter, not a shipped
+command. Called as `RUNNER BUNDLE REPORT`, it must install that exact candidate,
+create and launch its candidate vault, run the complete checked-in acceptance
+suite, and write the report only on success:
 
 ```sh
 sudo ./cvmctl build config/cvm_profile.yml \
@@ -167,6 +171,12 @@ production bundle or publishes an unsigned artifact. Omit `--install-config` or
 the output needed by that operator. `--quote-probe` is the TDX signed-quote
 smoke test; omit it for an SNP build, whose host screening uses the SNP devices
 and kernel capabilities directly.
+
+The default, fully documented path is the split exact-manifest flow in
+[BUILD_GUIDE.md](BUILD_GUIDE.md#21-exact-manifest-acceptance-and-approval). The
+checked-in `acceptance_runner` is its lower-level evidence generator after the
+candidate Trustee and candidate vault exist; passing it directly to `build`
+cannot perform those prerequisite steps.
 
 `vault` seals every requested platform delivery and publishes each signed
 artifact. A multi-platform destination must contain `{artifact}`, which expands
@@ -192,12 +202,15 @@ sudo ./cvmctl run \
 followed by the printed absolute launch command when transfer and launch must be
 separate, or use the advanced commands below when construction, acceptance,
 Trustee administration, and release signing are assigned to different people.
+For a restart, invoke the existing materialized `launch_cvm.sh` by absolute path;
+do not rematerialize the delivery, because a new output restores a pristine
+vault and discards prior guest writes.
 
 ## Command details and advanced handoffs
 
-The three commands above are the normal operator path. The lower-level commands
-exist for sites that separate construction, acceptance, Trustee administration,
-release signing, transfer, and runtime operations.
+The lower-level commands are the default operator path for sites that separate
+construction, acceptance, Trustee administration, release signing, transfer,
+and runtime operations. The automated options above compose those same gates.
 
 ### Build and approve the reusable CVM
 
@@ -274,7 +287,9 @@ calling `vault` separately. See the
 ### Run or stage a delivery
 
 Use `cvmctl run` for the normal runtime path. It authenticates the publisher,
-materializes the delivery, and launches QEMU. Use `cvmctl pull` only when staging
+materializes the delivery, and launches QEMU for the first time. Restart through
+the existing materialized `launch_cvm.sh` so persistent guest writes survive.
+Use `cvmctl pull` only when staging
 and launch belong to different operations; it prints the absolute launcher
 command. [USER_GUIDE.md](USER_GUIDE.md) covers archive checksums, registry
 signatures, GPU selection, shutdown, logs, and exclusive vault attachment.
@@ -319,7 +334,13 @@ all construction sources, provisioning logic, payload lists and launch assets.
 ### 30-minute dev-mode walkthrough
 
 This path exercises reusable CVM construction, application sealing, and launch
-on an x86-64 Linux host without TEE hardware or Trustee. It produces a separate `dev-` profile and an
+on an x86-64 Linux host without TEE hardware or a running Trustee. It still
+validates the production-shaped public build inputs in `cvm_profile.yml`: the
+Ubuntu base image, build and guest firmware, reviewed `kbs-client-cpu` plus its
+provenance matching `trustee_commit`, KBS CA, AS public key, attestation policy,
+and syntactically complete TCB references for every enabled platform. Obtain or
+build those inputs using sections 1 and 2 of the build guide before starting;
+`--dev` skips live attestation and key release, not input validation. It produces a separate `dev-` profile and an
 unencrypted development vault. With the base image, dependencies, and Docker
 application image already available, the walkthrough is intended to fit a
 30-minute evaluation window.
@@ -399,8 +420,12 @@ This builds an sdist and a wheel from that sdist in a temporary directory,
 compares the packaged builder assets with the source, and runs the CLI and GPU
 input validation against the wheel's contents, including the NVAT patch.
 
-`tests/integration_test/lighter/cc/image_builder/prepare_lab.py` and `tests/integration_test/lighter/cc/image_builder/lab_kbs.py` create an isolated test deployment
-with disposable PKI and explicit loopback ports. Its generated profile takes the
+`tests/integration_test/lighter/cc/image_builder/prepare_lab.py` and
+`tests/integration_test/lighter/cc/image_builder/lab_kbs.py` create an isolated
+test deployment with disposable PKI and explicit loopback ports. For production
+acceptance, `--identity-directory` and `--kbs-url` instead stage the eventual
+production CA, AS signer, server identity, and measured hostname as described in
+the Trustee guide. Its generated profile takes the
 apt pins from the validated checked-in profile, because the reusable CVM build installs them
 inside the guest base image and a build host whose mirror lags the guest
 repository would force an apt downgrade. Use `--package-profile` to supply a
@@ -426,7 +451,22 @@ Repeat the option to select both; omitting it preserves the two-platform default
 The generated TCB reference file is deliberately empty. Populate reviewed,
 approved references for the selected platforms before building. Selecting a
 platform at build time does not exempt other enabled profile platforms from
-reference validation. `--http-only` prepares disposable PKI without guest inputs.
+reference validation. Also copy the Ubuntu cloud image to
+`inputs/ubuntu-26.04-server-cloudimg-amd64.img`, install/build
+`inputs/kbs-client-cpu`, and record its reviewed
+`inputs/kbs_client_cpu_build.json`; `prepare_lab.py` now creates the policy files
+under `config/` itself. Build the pinned Trustee checkout and binary under
+`trustee-source`, then start the isolated service from the repository root:
+
+```sh
+sudo env PYTHONPATH="$PWD/nvflare/lighter/cc/image_builder" \
+  python3 tests/integration_test/lighter/cc/image_builder/lab_kbs.py \
+  /path/to/isolated-lab
+```
+
+The command writes `lab-kbs/kbs.json`, `admin.json`, `resources.json`, and the
+protected KBS log. `--http-only` prepares PKI and policy files without guest
+inputs; it is sufficient only for protocol fixtures, not hardware acceptance.
 
 Recorded versions, test results, artifact hashes and remaining production gates
 are in [VALIDATION.md](VALIDATION.md). The checked-in profile is a template, not

@@ -346,12 +346,12 @@ def load_yaml(path):
 
 
 def local_path(config_path, value, directory=False):
-    require(isinstance(value, str) and value, "Expected input path")
+    require_config(isinstance(value, str) and value, "Expected input path")
     path = Path(value)
     if not path.is_absolute():
         path = Path(config_path).resolve().parent / path
     path = path.resolve()
-    require(path.is_dir() if directory else path.is_file(), f"Input does not exist: {path}")
+    require_config(path.is_dir() if directory else path.is_file(), "Input does not exist; check the configured path")
     return str(path)
 
 

@@ -77,11 +77,11 @@ def _warn_jwt_expiry(path, warning_window, now=None):
         return
     if type(expiration) not in (int, float):
         return
+    current = time.time() if now is None else now
+    if expiration <= current:
+        raise ValueError("Trustee administration token has expired; issue a fresh short-lived token")
     warning_key = (str(Path(path).resolve()), expiration)
-    if (
-        expiration - (time.time() if now is None else now) <= warning_window
-        and warning_key not in _WARNED_TOKEN_EXPIRATIONS
-    ):
+    if expiration - current <= warning_window and warning_key not in _WARNED_TOKEN_EXPIRATIONS:
         _WARNED_TOKEN_EXPIRATIONS.add(warning_key)
         warnings.warn(
             "Trustee administration token expires within the configured warning window; rotate it before provisioning",

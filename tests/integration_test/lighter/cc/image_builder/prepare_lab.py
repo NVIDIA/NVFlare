@@ -12,25 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Prepare isolated public profile inputs and temporary lab PKI on a Linux host.
-
-The PKI is for disposable tests only. It never reads existing KBS private keys.
-"""
+"""Prepare isolated public profile inputs and a disposable or explicitly staged KBS identity."""
 
 import argparse
 import datetime
 import ipaddress
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
-from cvm.build.config import PROFILE_DEFAULTS
+from cvm.build.config import PROFILE_DEFAULTS, SOURCE
 from cvm.common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE
 from cvm.common.io import write_json
 
@@ -92,13 +91,69 @@ def kernel_version(pins):
     return release
 
 
-def prepare(directory, *, http_only=False, platforms=None, package_profile=None, pins_from_host=False):
+def validate_identity(pki, kbs_url):
+    """Require the staged public identity and private signing keys to agree."""
+    parsed = urlsplit(kbs_url)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise SystemExit("--kbs-url must be an HTTPS URL without credentials")
+    try:
+        ca = x509.load_pem_x509_certificate((pki / "ca.pem").read_bytes())
+        as_ca = x509.load_pem_x509_certificate((pki / "as-ca.pem").read_bytes())
+        server = x509.load_pem_x509_certificate((pki / "server.pem").read_bytes())
+        as_certificate = x509.load_pem_x509_certificate((pki / "as.pem").read_bytes())
+        server_key = serialization.load_pem_private_key((pki / "server.key").read_bytes(), None)
+        as_key = serialization.load_pem_private_key((pki / "as.key").read_bytes(), None)
+        as_public = serialization.load_pem_public_key((pki / "as-public.pem").read_bytes())
+        admin_key = serialization.load_pem_private_key((pki / "kbs-admin.key").read_bytes(), None)
+        admin_public = serialization.load_pem_public_key((pki / "kbs-admin.pub").read_bytes())
+        san = server.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    except (OSError, TypeError, ValueError, x509.ExtensionNotFound):
+        raise SystemExit("Acceptance identity contains an invalid key or certificate") from None
+
+    def encoded(key):
+        return key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+
+    if encoded(server_key.public_key()) != encoded(server.public_key()) or server.issuer != ca.subject:
+        raise SystemExit("Acceptance server key/certificate or transport CA identity does not match")
+    if (
+        encoded(as_key.public_key()) != encoded(as_certificate.public_key())
+        or encoded(as_public) != encoded(as_certificate.public_key())
+        or as_certificate.issuer != as_ca.subject
+    ):
+        raise SystemExit("Acceptance AS key, certificate, public key, or signing CA identity does not match")
+    if encoded(admin_key.public_key()) != encoded(admin_public):
+        raise SystemExit("Acceptance KBS administration key pair does not match")
+    try:
+        address = ipaddress.ip_address(parsed.hostname)
+    except ValueError:
+        if parsed.hostname not in san.get_values_for_type(x509.DNSName):
+            raise SystemExit("Acceptance server certificate does not cover the measured KBS hostname") from None
+    else:
+        if address not in san.get_values_for_type(x509.IPAddress):
+            raise SystemExit("Acceptance server certificate does not cover the measured KBS address")
+
+
+def prepare(
+    directory,
+    *,
+    http_only=False,
+    platforms=None,
+    package_profile=None,
+    pins_from_host=False,
+    identity_directory=None,
+    kbs_url="https://10.0.2.2:19199",
+):
     platforms = list(PLATFORMS if platforms is None else platforms)
     if not platforms or len(set(platforms)) != len(platforms) or any(p not in PLATFORMS for p in platforms):
         raise SystemExit("Select distinct supported lab platforms")
     directory = Path(directory).resolve()
+    directory.mkdir(parents=True, exist_ok=True)
     inputs = directory / "inputs"
     inputs.mkdir(exist_ok=True)
+    configuration = directory / "config"
+    configuration.mkdir(exist_ok=True)
+    shutil.copyfile(SOURCE / "config/attestation_policy.rego", configuration / "attestation_policy.rego")
+    shutil.copyfile(SOURCE / "config/gpu_policy.json", configuration / "gpu_policy.json")
     tdx_firmware = Path(os.environ.get("CVM_TDX_FIRMWARE", inputs / "OVMF.inteltdx.fd")).resolve()
     if not http_only and "intel_tdx" in platforms and not tdx_firmware.is_file():
         raise SystemExit("Provide the validated TDVF at inputs/OVMF.inteltdx.fd or set CVM_TDX_FIRMWARE")
@@ -203,9 +258,48 @@ def prepare(directory, *, http_only=False, platforms=None, package_profile=None,
     (pki / "kbs-admin.pub").write_bytes(
         admin_key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
     )
+    if identity_directory is not None:
+        shutil.rmtree(pki)
+        pki = Path(identity_directory).expanduser().resolve()
+        required = {
+            "ca.pem",
+            "as-ca.pem",
+            "as-public.pem",
+            "server.key",
+            "server.pem",
+            "as.key",
+            "as.pem",
+            "builder.key",
+            "builder.pem",
+            "admin.key",
+            "admin.pem",
+            "untrusted.key",
+            "untrusted.pem",
+            "kbs-admin.key",
+            "kbs-admin.pub",
+        }
+        missing = sorted(name for name in required if not (pki / name).is_file())
+        if missing:
+            raise SystemExit("Acceptance identity directory is missing: " + ", ".join(missing))
+        permissive = sorted(name for name in required if name.endswith(".key") and (pki / name).stat().st_mode & 0o077)
+        if permissive:
+            raise SystemExit("Acceptance private keys must not be group/world accessible: " + ", ".join(permissive))
+        validate_identity(pki, kbs_url)
+        shutil.copyfile(pki / "ca.pem", inputs / "test-ca.pem")
+        shutil.copyfile(pki / "as-ca.pem", inputs / "test-as-ca.pem")
+        shutil.copyfile(pki / "as-public.pem", inputs / "test-as-public.pem")
     if http_only:
-        write_json(directory / "lab-state.json", {"pki": str(pki)})
-        print("Prepared disposable HTTPS test PKI")
+        write_json(
+            directory / "lab-state.json",
+            {
+                "pki": str(pki),
+                "identity": "provided" if identity_directory is not None else "disposable",
+                "kbs_url": kbs_url,
+            },
+        )
+        print(
+            "Prepared staged HTTPS identity" if identity_directory is not None else "Prepared disposable HTTPS test PKI"
+        )
         return
     pins = package_pins(package_profile, pins_from_host)
     profile = {
@@ -214,7 +308,7 @@ def prepare(directory, *, http_only=False, platforms=None, package_profile=None,
         "guest_release": "26.04",
         "base_image": str(inputs / "ubuntu-26.04-server-cloudimg-amd64.img"),
         "build_firmware": "/usr/share/ovmf/OVMF.fd",
-        "kbs_url": "https://10.0.2.2:19199",
+        "kbs_url": kbs_url,
         "kbs_cert": str(inputs / "test-ca.pem"),
         "as_public_key": str(inputs / "test-as-public.pem"),
         "token_algorithm": "ES256",
@@ -261,8 +355,20 @@ def prepare(directory, *, http_only=False, platforms=None, package_profile=None,
     # reviewed. Never copy measured guest values into an allow policy blindly.
     write_json(inputs / "test-tcb-references.json", {})
     (inputs / "lab-profile.yml").write_text(yaml.safe_dump(profile))
-    write_json(directory / "lab-state.json", {"pki": str(pki), "profile": str(inputs / "lab-profile.yml")})
-    print("Prepared disposable lab inputs and PKI")
+    write_json(
+        directory / "lab-state.json",
+        {
+            "pki": str(pki),
+            "profile": str(inputs / "lab-profile.yml"),
+            "identity": "provided" if identity_directory is not None else "disposable",
+            "kbs_url": kbs_url,
+        },
+    )
+    print(
+        "Prepared staged acceptance inputs"
+        if identity_directory is not None
+        else "Prepared disposable lab inputs and PKI"
+    )
 
 
 def main():
@@ -271,6 +377,15 @@ def main():
     parser.add_argument("--http-only", action="store_true")
     parser.add_argument(
         "-p", "--platform", choices=PLATFORMS, action="append", help="Include only this platform; repeat for both"
+    )
+    parser.add_argument(
+        "--identity-directory",
+        help="protected staged production-identity PKI directory; omit only for disposable protocol tests",
+    )
+    parser.add_argument(
+        "--kbs-url",
+        default="https://10.0.2.2:19199",
+        help="measured KBS URL; use the eventual production hostname for acceptance",
     )
     parser.add_argument(
         "--package-profile",
@@ -288,6 +403,8 @@ def main():
         platforms=args.platform,
         package_profile=args.package_profile,
         pins_from_host=args.pins_from_host,
+        identity_directory=args.identity_directory,
+        kbs_url=args.kbs_url,
     )
 
 

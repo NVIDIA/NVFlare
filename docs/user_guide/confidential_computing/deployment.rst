@@ -128,8 +128,18 @@ trust. Certificate and public-key files come from the corresponding service
 administrator; publisher credentials stay on trusted provisioning infrastructure.
 
 ``expiry_warning_seconds`` defaults to seven days. Provisioning warns when the
-parseable administration JWT enters that window; CVM publication applies the
+parseable administration JWT enters that window and rejects it after expiry;
+CVM publication applies the
 same window to reviewed RVPS references.
+
+Upgrade the provisioner and every runtime image together before switching an
+existing project to the canonical ``intel_tdx`` and ``amd_sev_snp`` names. New
+kits write those canonical values into ``workload_constraints``. A runtime from
+2.9.0 or 2.9.1 accepts only its earlier ``tdx``/``snp`` spelling and will reject
+a newly generated kit during authorizer initialization. Existing 2.9.0/2.9.1
+kits keep working unchanged, and the new reader accepts legacy aliases during
+upgrade, but re-provisioning always emits canonical names and therefore requires
+the updated runtime image.
 If ``workload_constraints`` is present, it must contain exactly every protected
 participant that selects this service. Use logical name ``server`` for the root
 server and participant names for clients. ``proof_iat_leeway_seconds`` accepts

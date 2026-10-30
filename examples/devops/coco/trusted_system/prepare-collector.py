@@ -39,6 +39,7 @@ def prepare(config, directory):
     ]
     env = helper["read_config"](Path(config).resolve(strict=True), keys)
     tee = env.get("CPU_TEE")
+    tee = {"snp": "amd_sev_snp", "tdx": "intel_tdx"}.get(tee, tee)
     if tee not in ("amd_sev_snp", "intel_tdx"):
         raise ValueError("Select CPU_TEE=amd_sev_snp or CPU_TEE=intel_tdx for the public collector")
     directory = Path(directory).absolute()

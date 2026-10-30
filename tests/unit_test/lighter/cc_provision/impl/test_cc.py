@@ -688,6 +688,14 @@ def test_project_config_warns_before_parseable_admin_token_expiry(tmp_path):
         _warn_jwt_expiry(token, 30, now=1000)
 
 
+def test_project_config_rejects_expired_admin_token(tmp_path):
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": 999}).encode()).rstrip(b"=").decode()
+    token = tmp_path / "admin.jwt"
+    token.write_text(f"header.{payload}.signature")
+    with pytest.raises(ValueError, match="has expired"):
+        _warn_jwt_expiry(token, 120, now=1000)
+
+
 @pytest.mark.parametrize("value", [-1, 1.5, "604800", True])
 def test_project_config_rejects_invalid_expiry_warning_window(tmp_path, value):
     _coco_project(tmp_path)

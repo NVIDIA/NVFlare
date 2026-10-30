@@ -563,7 +563,7 @@ class ProfileTests(unittest.TestCase):
             config.profile(path)
         settings["shim"] = "missing-shim.efi"
         path.write_text(yaml.safe_dump(value))
-        with self.assertRaisesRegex(BuildError, "Input does not exist.*missing-shim"):
+        with self.assertRaisesRegex(BuildError, "Input does not exist"):
             config.profile(path)
 
     def test_profile_rejects_typos_and_removed_options(self):
