@@ -5,8 +5,9 @@ What's New in FLARE v2.9.1
 **************************
 
 FLARE 2.9.1 is a patch release of 2.9. Its main change is an updated
-confidential computing deployment stack (the first version was a technical
-preview in 2.7.0). It remains a technical preview and entirely optional:
+confidential computing deployment stack, which follows the NVIDIA confidential
+computing reference architecture (the first version was a technical preview in
+2.7.0). It remains a technical preview and entirely optional:
 nothing changes for deployments that do not use it. The other changes that can
 affect existing deployments are a Dashboard restriction and a few bug fixes.
 
@@ -29,6 +30,21 @@ Confidential Computing
    configuration targets do not imply hardware acceptance for every platform,
    software revision, or workload. Consult the validation status of the
    selected deployment before approving it for use.
+
+NVIDIA Confidential Computing Reference Architecture
+----------------------------------------------------
+
+The new confidential computing stack follows the NVIDIA confidential computing
+reference architectures: CoCo participants follow the `NVIDIA Confidential
+Containers Reference Architecture
+<https://docs.nvidia.com/confidential-computing/containers/overview>`_, and CVM
+Builder follows the `NVIDIA Confidential VM Reference Architecture
+<https://docs.nvidia.com/enterprise-reference-architectures/deploying-proprietary-models-confidential-compute-self-hosted-vms/latest/scope.html>`_
+for self-hosted confidential VMs, with attestation-gated secret release through
+Trustee. The NVIDIA Confidential VM reference architecture addresses
+GPU-accelerated inference; it does not qualify a federated training workload by
+itself. See :ref:`cc_architecture_overview` for how FLARE maps its components,
+trust boundaries, and attestation flow onto these architectures.
 
 Unified Provisioning Interface
 ------------------------------
