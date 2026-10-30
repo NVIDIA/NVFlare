@@ -35,16 +35,11 @@ NVIDIA Confidential Computing Reference Architecture
 ----------------------------------------------------
 
 The new confidential computing stack follows the NVIDIA confidential computing
-reference architectures: CoCo participants follow the `NVIDIA Confidential
-Containers Reference Architecture
-<https://docs.nvidia.com/confidential-computing/containers/overview>`_, and CVM
-Builder follows the `NVIDIA Confidential VM Reference Architecture
-<https://docs.nvidia.com/enterprise-reference-architectures/deploying-proprietary-models-confidential-compute-self-hosted-vms/latest/scope.html>`_
-for self-hosted confidential VMs, with attestation-gated secret release through
-Trustee. The NVIDIA Confidential VM reference architecture addresses
-GPU-accelerated inference; it does not qualify a federated training workload by
-itself. See :ref:`cc_architecture_overview` for how FLARE maps its components,
-trust boundaries, and attestation flow onto these architectures.
+reference architectures, for both Confidential Containers (CoCo) and
+self-hosted confidential VMs (CVM Builder). See
+:ref:`cc_architecture_overview` for how FLARE maps its components, trust
+boundaries, and attestation flow onto them, and for links to the NVIDIA
+reference architecture documents.
 
 Unified Provisioning Interface
 ------------------------------
