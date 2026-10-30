@@ -45,7 +45,9 @@ class DataFreeSynthesizer:
     their configuration; module transforms are moved to device in place.
 
     rng is an optional caller-owned CPU generator shared by default noise and
-    augmentation. Global/model and custom-callable RNG remain caller-owned too.
+    augmentation, independent of the process default device. Noise is moved
+    to device for model execution. Global/model and custom-callable RNG remain
+    caller-owned too.
     Basic KD imports do not import this optional module.
 
     Example::
@@ -118,7 +120,7 @@ class DataFreeSynthesizer:
                 raise ValueError(f"{name} must be a positive integer")
         noise = (
             (
-                torch.randn(batch_size, self.latent_size, generator=self.rng)
+                torch.randn(batch_size, self.latent_size, generator=self.rng, device="cpu")
                 if self.latent_sampler is None
                 else self.latent_sampler(batch_size, self.rng)
             )

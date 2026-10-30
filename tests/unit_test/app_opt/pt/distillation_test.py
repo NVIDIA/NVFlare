@@ -376,3 +376,32 @@ def test_synthesis_checkpoint_restores_optimizer_and_external_rng_continuation()
     assert restored.num_steps == synthesis.num_steps == 5
     for name, value in restored.generator.state_dict().items():
         torch.testing.assert_close(value, synthesis.generator.state_dict()[name], rtol=0, atol=0)
+
+
+def test_cpu_sampling_and_synthesis_ignore_the_process_default_device():
+    from nvflare.app_opt.pt.distillation.classification import sample_by_class
+    from nvflare.app_opt.pt.distillation.image import ImageTransform
+    from nvflare.app_opt.pt.distillation.pool import SyntheticPool
+    from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
+
+    images = torch.arange(64, dtype=torch.float32).reshape(4, 1, 4, 4) / 64
+    targets = torch.tensor([0, 1, 0, 1])
+    pool = SyntheticPool(4)
+    pool.add(images, targets)
+    for rng in (None, torch.Generator(device="cpu").manual_seed(3)):
+        synthesis = DataFreeSynthesizer(
+            [nn.Sequential(nn.Flatten(), nn.Linear(16, 2))], input_shape=(1, 4, 4), latent_size=2, rng=rng
+        )
+        # Meta catches implicit device allocations without requiring a CUDA runner.
+        with torch.device("meta"):
+            samples, labels = pool.sample(8, generator=rng)
+            balanced, _ = pool.sample(8, sampler=partial(sample_by_class, probabilities=[0.4, 0.6]), generator=rng)
+            transformed = ImageTransform(mean=[0.5], std=[0.25], generator=rng)(images)
+            generated, metrics = synthesis.synthesize(2, 1)
+        assert samples.device.type == labels.device.type == balanced.device.type == "cpu"
+        indices = (samples[:, 0, 0, 0] * 4).long()
+        assert torch.equal(samples, images[indices]) and torch.equal(labels, targets[indices])
+        assert transformed.device.type == generated.device.type == "cpu"
+        assert transformed.shape == images.shape and generated.shape == (2, 1, 4, 4)
+        assert torch.isfinite(transformed).all() and torch.isfinite(generated).all()
+        assert metrics["steps"] == synthesis.num_steps == 1

@@ -58,7 +58,9 @@ class ImageTransform(nn.Module):
     A crop offset is sampled per batch and flip decisions per image. Defaults
     preserve [0, 1] image values. Supply mean/std for the teacher's normalization
     or replace the transform for another input domain. Randomness uses the
-    caller's CPU generator, or the global CPU RNG; its state is not serialized.
+    caller's CPU generator, or the global CPU RNG, regardless of the process
+    default device; its state is not serialized. Move this module to the image
+    device when using normalization; random decisions are transferred as needed.
     """
 
     def __init__(self, padding=2, flip_probability=0.5, mean=None, std=None, generator=None):
@@ -70,8 +72,8 @@ class ImageTransform(nn.Module):
         self.padding = padding
         self.flip_probability = flip_probability
         self.generator = generator
-        mean = None if mean is None else torch.as_tensor(mean, dtype=torch.float32).reshape(1, -1, 1, 1)
-        std = None if std is None else torch.as_tensor(std, dtype=torch.float32).reshape(1, -1, 1, 1)
+        mean = None if mean is None else torch.as_tensor(mean, dtype=torch.float32, device="cpu").reshape(1, -1, 1, 1)
+        std = None if std is None else torch.as_tensor(std, dtype=torch.float32, device="cpu").reshape(1, -1, 1, 1)
         if std is not None and (
             mean.shape != std.shape
             or not torch.isfinite(mean).all()
@@ -88,9 +90,12 @@ class ImageTransform(nn.Module):
         height, width = images.shape[-2:]
         if self.padding:
             images = F.pad(images, (self.padding,) * 4, mode="replicate")
-            top, left = torch.randint(2 * self.padding + 1, (2,), generator=self.generator).tolist()
+            top, left = torch.randint(2 * self.padding + 1, (2,), generator=self.generator, device="cpu").tolist()
             images = images[:, :, top : top + height, left : left + width]
-        flip = torch.rand((len(images), 1, 1, 1), generator=self.generator).to(images.device) < self.flip_probability
+        flip = (
+            torch.rand((len(images), 1, 1, 1), generator=self.generator, device="cpu").to(images.device)
+            < self.flip_probability
+        )
         images = torch.where(flip, images.flip(-1), images)
         if self.mean is not None:
             if images.shape[1] != self.mean.shape[1]:

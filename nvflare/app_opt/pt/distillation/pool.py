@@ -75,7 +75,7 @@ class SyntheticPool:
         if not len(self):
             raise ValueError("cannot sample an empty synthetic pool")
         indices = (
-            torch.randint(len(self), (batch_size,), generator=generator)
+            torch.randint(len(self), (batch_size,), generator=generator, device="cpu")
             if sampler is None
             else sampler(self._inputs, self._targets, batch_size, generator)
         )

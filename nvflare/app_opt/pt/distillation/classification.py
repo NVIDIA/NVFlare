@@ -123,7 +123,7 @@ class ClassificationObjective:
 
 
 def _probabilities(values):
-    values = torch.as_tensor(values).detach().cpu().float()
+    values = torch.as_tensor(values, device="cpu").detach().float()
     total = values.sum()
     if values.ndim != 1 or not len(values) or not torch.isfinite(values).all() or (values < 0).any():
         raise ValueError("class probabilities must be a finite nonnegative vector")
@@ -165,7 +165,9 @@ def mean_class_probabilities(
     The caller supplies probe data/randomness. This is a probe-dependent proxy,
     not a guarantee of recovering the original training class proportions.
     The result is a CPU vector with no fixed class count. Original model state,
-    mode, gradients and device are untouched.
+    mode, gradients and device are untouched. Use FP32 model outputs; FP16/AMP
+    support is outside this helper's scope. Arithmetic, including accumulation,
+    uses the model output dtype without automatic casting or overflow recovery.
     """
     if not math.isfinite(temperature) or temperature <= 0:
         raise ValueError("temperature must be finite and positive")

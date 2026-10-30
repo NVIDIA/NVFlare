@@ -17,6 +17,11 @@
 Basic KD uses losses, teachers and trainer. Optional data-free helpers are
 imported explicitly from synthesis, pool, classification, image and features;
 importing basic KD does not load those modules or construct any models.
+
+These helpers target FP32 models/inputs. FP16/AMP execution, automatic precision
+conversion and overflow recovery are outside the current scope. Models execute
+on the configured device; stored snapshots/pools and built-in random draws use
+CPU explicitly, independent of the process default device.
 """
 
 from .losses import kl_divergence
