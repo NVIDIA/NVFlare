@@ -345,6 +345,10 @@ Networking and Deployment
   manager, so concurrent jobs no longer receive the same GPUs. Passthrough
   clients keep their previous behavior.
 - Lightweight per-peer payload byte counters in CellNet.
+- **Optional Dashboard dependencies.** Flask and the other Dashboard web
+  dependencies are no longer installed with the base package. Install
+  ``nvflare[dashboard]`` for the Dashboard and ``nvflare[edge-http]`` for HTTP
+  routing-proxy hosts; a clear message appears when they are missing.
 
 Bug Fixes
 =========
@@ -425,19 +429,54 @@ Logging and Job Isolation
 Examples and Research
 =====================
 
-- Federated BioNeMo Evo2 fine-tuning, Gen3 data access for study workloads,
-  Nemotron 3.5 Lightning support in the NeMo PEFT example, and a Hello PyTorch
-  quickstart with environment continuity.
-- Collab API (technical preview): simple asynchronous MNIST and full FedBuff
-  on CIFAR-10, a reusable buffered asynchronous ``AsyncRecipe`` with
-  independent active-client, buffer, and refill settings, a reproducible
-  asynchronous CIFAR-10 example, and a minimal distributed SQL example.
+Examples
+--------
+
+- **Federated BioNeMo Evo2 fine-tuning.** Federated LoRA fine-tuning of Evo2
+  1B on three-class splice-site classification with sample-weighted FedAvg and
+  external BioNeMo trainer processes scheduled on one GPU.
+- **Gen3 data access.** A federated regression example in which each client
+  downloads its CSV files from Gen3 using credentials from site-owned study
+  runtime settings.
+- **NeMo PEFT.** An opt-in ``--model_profile=lightning35`` path adds Nemotron
+  3.5 Lightning federated LoRA training, prediction, and evaluation, and the
+  Nemotron 3 Nano defaults are unchanged.
+- **Hello PyTorch.** The quickstart is meaningful by default, with an advanced
+  variant that keeps the Python environment across the job.
+- **Collab API (technical preview).** A simple asynchronous MNIST example that
+  accepts updates as they arrive, full online FedBuff on CIFAR-10 with
+  configurable active jobs, buffer size, and dispatch threshold, a reusable
+  buffered asynchronous ``AsyncRecipe``, a reproducible asynchronous CIFAR-10
+  example, and a minimal distributed SQL example.
+- **K-Means and SVM.** Documentation states what each site shares with the
+  server, and K-Means no longer produces NaN centers when a cluster receives
+  no assignments.
+- **External code.** The examples README links public NVFlare implementations
+  from partners and the community.
+
+Algorithms
+----------
+
 - PyTorch distillation helpers under ``nvflare.app_opt.pt.distillation``:
   supplied-data knowledge distillation and optional data-free synthesis, usable
   without a federated runtime.
-- Research: AgenticFL (an agent-negotiated workflow on a 39-site retinal
-  cohort), FedSCS aggregation, FedRevive, FedCoRe (Qwen3-VL missing
-  modality), BreastG-FCL, and a cross-round client-drift monitoring example.
+
+Research
+--------
+
+- **FedSCS.** Robust aggregation that weights client updates by peer-update
+  similarity and temporal stability.
+- **FedRevive.** One Collab API workflow for FedAvg, FedBuff, and FedRevive with
+  server-side data-free knowledge distillation.
+- **FedCoRe.** A Qwen3-VL starter for federated cross-modal completion of
+  missing images, using synthetic data.
+- **BreastG-FCL.** Graph-conditioned federated continual learning for breast
+  cancer radiogenomics on TCGA-BRCA, built on the Collab API.
+- **AgenticFL.** An agent-negotiated workflow that assesses client metadata,
+  generates client-local data adapters and training code, and runs FedAvg,
+  demonstrated on a 39-site retinal cohort.
+- **Client drift monitoring.** The externally maintained telltale example is
+  listed in the research README.
 
 Upgrade and Compatibility
 =========================
