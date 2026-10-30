@@ -23,7 +23,7 @@ through lerobot's own `save_checkpoint`.
 Usage (CPU is fine — it's weight surgery, not training):
 
     python -m decent_vla.adapters.lerobot.export \
-        --config examples/smolvla_libero_lora_nvflare.yaml \
+        --config outputs/smolvla_libero_lora_nvflare/run.yaml \
         --ckpt outputs/smolvla_libero_lora_nvflare/checkpoints/server_round_final.pt \
         --output-dir outputs/smolvla_libero_lora_nvflare/export
 """

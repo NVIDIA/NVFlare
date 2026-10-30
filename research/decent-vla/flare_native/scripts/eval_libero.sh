@@ -26,7 +26,7 @@ PRETRAINED=$(python -m decent_vla.adapters.lerobot.export \
 echo "[eval] exported policy: $PRETRAINED"
 
 # LIBERO emits observation.images.image (agent view) and image2 (wrist). Map them onto the policy's first two
-# cameras, as in training (examples/*_train_pipeline*.yaml); the third camera is zero-filled (empty_cameras=1).
+# cameras, as in training (the generated train_pipeline.yaml); the third camera is zero-filled (empty_cameras=1).
 POLICY_TYPE=$(python -c 'import json, sys; print(json.load(open(sys.argv[1] + "/config.json"))["type"])' "$PRETRAINED")
 case "$POLICY_TYPE" in
     pi05)

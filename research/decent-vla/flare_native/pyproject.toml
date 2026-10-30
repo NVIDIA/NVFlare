@@ -31,8 +31,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Compatibility extra: FLARE is a required dependency of this native version.
-nvflare = []
 # lerobot policies (SmolVLA, pi0, pi0.5, ACT). `pi` pulls the transformers version
 # pi0.5/PaliGemma needs; `dataset` pulls LeRobotDataset loading.
 # Pinned to lerobot main of 2026-06-13 (version 0.5.2, between the v0.5.1 and v0.6.0
@@ -42,14 +40,10 @@ lerobot = [
     "draccus",
     "num2words",   # SmolVLM (SmolVLA) processor dependency that lerobot does not pull
 ]
-# GR00T N1.7 runs from a clone of NVIDIA Isaac-GR00T in its own Python 3.10 env
-# (scripts/setup_groot.sh), not as a pip dependency, so this extra is empty.
-groot = []
 # LIBERO simulation for evaluation (robosuite/bddl through lerobot's libero extra).
 libero = ["lerobot[libero] @ git+https://github.com/huggingface/lerobot@8515d456be1dbef8c133f07188c785e683eca899"]
 peft = ["peft>=0.11", "accelerate>=1.0"]
-dev = ["pytest>=7.4", "pytest-cov>=4.1"]
-all = ["decent-vla[nvflare,peft,lerobot,groot,libero]"]
+dev = ["pytest>=7.4"]
 
 [project.scripts]
 decent-vla = "decent_vla.cli.main:main"

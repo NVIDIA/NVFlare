@@ -16,8 +16,8 @@
 tasks of each requested suite regardless of the training pool.
 
 Imports of the `libero` package are lazy (inside methods): `libero` comes
-from lerobot's [libero] extra or a clone on PYTHONPATH (LIBERO_DIR), and the
-tests fake the namespace. Real-sim validation is a GPU run, not a unit test.
+from lerobot's [libero] extra or a clone on PYTHONPATH (LIBERO_DIR).
+Rollout validation requires the real simulation environment.
 Suite names are validated at config-parse time (fail before the job starts,
 not 20 minutes in).
 """

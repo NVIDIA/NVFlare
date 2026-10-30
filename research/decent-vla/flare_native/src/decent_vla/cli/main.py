@@ -120,7 +120,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             print(f"         [{i}] {torch.cuda.get_device_name(i)}")
     # Informational dependency checks (spec §10) — never change the exit code.
     for pkg, extra in (
-        ("nvflare", "[nvflare] extra"),
+        ("nvflare", "required dependency"),
         ("peft", "[peft] extra"),
     ):
         try:

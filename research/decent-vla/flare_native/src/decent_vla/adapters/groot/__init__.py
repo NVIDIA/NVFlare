@@ -20,9 +20,7 @@ the base checkpoint ``nvidia/GR00T-N1.7-3B`` with embodiment ``LIBERO_PANDA``.
 
 Requires Isaac-GR00T (cloned to ``third_party/Isaac-GR00T``) plus its
 dependency stack (Python 3.10, transformers 4.57.3, torch 2.7.1, peft) in a
-dedicated env — see ``scripts/setup_groot.sh``. The decent-vla ``[groot]``
-extra is intentionally empty (``pyproject.toml``): GR00T is installed
-out-of-band, not as a pip dependency.
+dedicated env — see ``scripts/setup_groot.sh``.
 
 Imports cleanly without gr00t installed (heavy imports are function-local).
 """

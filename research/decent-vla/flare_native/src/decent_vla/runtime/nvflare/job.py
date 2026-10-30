@@ -161,36 +161,13 @@ def build_job(cfg, staged: tuple[Path, list[str]], workdir: str | None = None, o
 
 
 def split_gpu_groups(gpu: str) -> list[str]:
-    """Split a simulator GPU map into groups, mirroring nvflare's `split_gpus`.
+    """Use the pinned FLARE simulator's GPU grouping rules."""
+    from nvflare.private.fed.utils.fed_utils import split_gpus
 
-    Grammar: comma-separated device ids, `[a,b]` binding several ids into ONE
-    group. `"0,1"` is two groups; `"[0,1]"` is one group of two cards.
-
-    Reimplemented rather than imported so the check runs at config-load time
-    without nvflare installed (the test suite fakes the nvflare namespace).
-    Verified equal to `nvflare.private.fed.utils.fed_utils.split_gpus` on
-    nvflare 2.8.1 over every map these configs use.
-    """
-    out, buf, depth = [], [], 0
-    for ch in gpu.replace(" ", ""):
-        if ch == "[":
-            depth += 1
-        elif ch == "]":
-            depth -= 1
-            if depth < 0:
-                raise ValueError(f"fl.nvflare.gpu={gpu!r}: brackets not paired")
-        elif ch == "," and depth == 0:
-            out.append("".join(buf))
-            buf = []
-            continue
-        else:
-            buf.append(ch)
-    if depth:
-        raise ValueError(f"fl.nvflare.gpu={gpu!r}: brackets not paired")
-    out.append("".join(buf))
-    if any(not g for g in out):
+    groups = split_gpus(gpu)
+    if any(not group for group in groups):
         raise ValueError(f"fl.nvflare.gpu={gpu!r}: empty GPU group")
-    return out
+    return groups
 
 
 def check_gpu_map(gpu: str | None, n_clients: int) -> list[str]:

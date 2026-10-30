@@ -27,7 +27,6 @@ does NOT crash the whole CLI. `decent-vla doctor` shows the errors.
 
 from __future__ import annotations
 
-import importlib
 import importlib.metadata as ilmd
 from dataclasses import dataclass, field
 from typing import Any
@@ -45,12 +44,7 @@ class Registry:
 
 
 def _load_group(group: str, registry: Registry, bucket: dict[str, Any]) -> None:
-    try:
-        eps = ilmd.entry_points(group=group)
-    except TypeError:
-        # Python 3.9 fallback (we require 3.10 but be defensive)
-        eps = ilmd.entry_points().get(group, [])
-    for ep in eps:
+    for ep in ilmd.entry_points(group=group):
         try:
             obj = ep.load()
             bucket[ep.name] = obj
@@ -74,11 +68,3 @@ def discover() -> Registry:
 # Module-level cache. CLI commands call discover() lazily; tests can
 # monkeypatch this.
 registry = discover()
-
-
-def reload() -> Registry:
-    """Force a fresh discovery (used by tests)."""
-    global registry
-    importlib.reload(ilmd)
-    registry = discover()
-    return registry

@@ -114,16 +114,7 @@ def _build_lora(d: dict | None) -> LoRAConfig | None:
 
 def _build_backend(d: dict) -> BackendConfig:
     _reject_unknown(d, _fields_of(BackendConfig), "backend")
-    return BackendConfig(
-        name=d["name"],
-        model=d.get("model", {}),
-        pretrained_path=d.get("pretrained_path"),
-        lora=_build_lora(d.get("lora")),
-        optim=_build_optim(d.get("optim")),
-        trainable_params=d.get("trainable_params"),
-        shared_params=d.get("shared_params"),
-        extra=d.get("extra", {}),
-    )
+    return BackendConfig(**{**d, "lora": _build_lora(d.get("lora")), "optim": _build_optim(d.get("optim"))})
 
 
 def _build_data(d: dict | None) -> DataConfig:
@@ -172,20 +163,7 @@ def _build_fl(d: dict | None) -> FLConfig | None:
         wire.resolve(d.get("wire_dtype", "fp16"))
     except ValueError as e:
         raise ConfigError(str(e)) from e
-    return FLConfig(
-        strategy=strategy,
-        num_rounds=d.get("num_rounds", 10),
-        local_steps=d.get("local_steps", 50),
-        mode="nvflare",
-        nvflare=_build_nvflare(d.get("nvflare")),
-        min_clients=d.get("min_clients"),
-        round_timeout_s=d.get("round_timeout_s"),
-        save_every_n_rounds=d.get("save_every_n_rounds"),
-        output_dir=d.get("output_dir", "outputs/fl_run"),
-        persist_client_state=d.get("persist_client_state", False),
-        client_state_keep=d.get("client_state_keep"),
-        wire_dtype=d.get("wire_dtype", "fp16"),
-    )
+    return FLConfig(**{**d, "strategy": strategy, "mode": "nvflare", "nvflare": _build_nvflare(d.get("nvflare"))})
 
 
 _WANDB_MODES = ("online", "offline", "disabled")
@@ -207,17 +185,7 @@ def _build_wandb(d: dict | None) -> WandbConfig:
     tags = d.get("tags") or []
     if not isinstance(tags, (list, tuple)):
         raise ConfigError(f"wandb.tags must be a list, got {type(tags).__name__}")
-    return WandbConfig(
-        enabled=d.get("enabled"),
-        project=d.get("project"),
-        entity=d.get("entity"),
-        name=d.get("name"),
-        group=d.get("group"),
-        job_type=d.get("job_type"),
-        mode=mode,
-        tags=[str(x) for x in tags],
-        notes=d.get("notes"),
-    )
+    return WandbConfig(**{**d, "mode": mode, "tags": [str(x) for x in tags]})
 
 
 def _build_train(d: dict | None) -> TrainConfig | None:
@@ -241,19 +209,7 @@ def _build_eval(d: dict | None) -> EvalConfig | None:
     if d is None:
         return None
     _reject_unknown(d, _fields_of(EvalConfig), "eval")
-    return EvalConfig(
-        benchmark=_build_benchmark(d.get("benchmark")),
-        n_episodes_per_task=d.get("n_episodes_per_task", 5),
-        seed=d.get("seed", 42),
-        after_training=d.get("after_training", True),
-        every_n_rounds=d.get("every_n_rounds"),
-        eval_all_tasks=d.get("eval_all_tasks", True),
-        only=d.get("only", False),
-        output_dir=d.get("output_dir"),
-        save_episodes=d.get("save_episodes", False),
-        personalized=d.get("personalized", False),
-        n_action_steps=d.get("n_action_steps"),
-    )
+    return EvalConfig(**{**d, "benchmark": _build_benchmark(d.get("benchmark"))})
 
 
 def validate_run_config(cfg: RunConfig) -> None:

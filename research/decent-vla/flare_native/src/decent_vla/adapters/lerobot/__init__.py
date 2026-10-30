@@ -22,7 +22,7 @@ Covers any policy class registered with `lerobot.policies.factory.make_policy`
 The adapter accepts a path to an existing lerobot `TrainPipelineConfig`
 YAML in `backend.extra.train_config_path`; this lets you reuse configs
 you already have rather than re-expressing every lerobot field in
-decent-vla's schema. See `examples/smolvla_libero_fl_fedavg.yaml`.
+decent-vla's schema. Generate a recipe with `python job.py --policy smolvla --generate-only`.
 """
 
 from __future__ import annotations

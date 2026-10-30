@@ -80,13 +80,7 @@ def save_client_state(ckpt_dir: str | Path, state, round_idx: int, keep: int | N
     torch.save(blob, tmp)
     tmp.rename(path)
     if keep is not None and keep > 0:
-        rx = _round_re(state.client_id)
-        rounds: list[tuple[int, Path]] = []
-        for p in ckpt_dir.glob(_CLIENT_CKPT_GLOB.format(cid=state.client_id)):
-            m = rx.match(p.name)
-            if m:
-                rounds.append((int(m.group(1)), p))
-        for _, old in sorted(rounds)[:-keep]:
+        for _, old in client_checkpoints(ckpt_dir, state.client_id)[:-keep]:
             old.unlink(missing_ok=True)
     return path
 
@@ -103,22 +97,6 @@ def client_checkpoints(ckpt_dir: str | Path, cid: str) -> list[tuple[int, Path]]
         if m:
             out.append((int(m.group(1)), p))
     return sorted(out)
-
-
-def latest_client_checkpoint(ckpt_dir: str | Path, cid: str) -> Path | None:
-    """Highest-round ``<cid>_round_NNNN.pt`` for this client, or None."""
-    ckpt_dir = Path(ckpt_dir)
-    if not ckpt_dir.is_dir():
-        return None
-    rx = _round_re(cid)
-    best: Path | None = None
-    best_round = -1
-    for p in ckpt_dir.glob(_CLIENT_CKPT_GLOB.format(cid=cid)):
-        m = rx.match(p.name)
-        if m and int(m.group(1)) > best_round:
-            best_round = int(m.group(1))
-            best = p
-    return best
 
 
 def load_client_state(path: str | Path) -> dict:

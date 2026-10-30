@@ -101,8 +101,7 @@ class NVFlareConfig:
 
     Generic FL knobs (num_rounds, local_steps, min_clients, round_timeout_s,
     save_every_n_rounds, wire_dtype, persist_client_state, output_dir) live on
-    FLConfig and are shared across runtimes; only nvflare-execution specifics
-    belong here.
+    FLConfig; simulator/deployment specifics belong here.
     """
 
     env: str = "simulator"  # "simulator" (in-process, blocking) | "export" (write a
@@ -124,17 +123,7 @@ class NVFlareConfig:
     # have answered, seconds to wait for the rest before the round
     # closes (FLARE's ScatterAndGather default). The round closes
     # sooner if every client answers.
-    memory_gc_rounds: int = 1  # run gc.collect()+malloc_trim() every N server rounds
-    # (0 = never). NVFlare puts this cleanup on its CONCRETE
-    # workflows (BaseFedAvg._maybe_cleanup_memory); a custom
-    # ModelController subclass like ours silently opts out.
-    # That matters because the normal task-exit path
-    # (wf_comm_server._do_check_tasks) never nulls task.data,
-    # and Task<->ClientTask is a reference CYCLE, so refcounting
-    # alone can never free a finished round's payload — only a
-    # gen-2 collection can. MEASURED consequence at pi0.5 scale:
-    # the server banked ~6.7 GiB per round and was OOM-killed at
-    # round ~8 of 50.
+    memory_gc_rounds: int = 1  # native workflow garbage-collection cadence (0 = never)
     job_dir: str | None = None  # export env: where to write the job folder;
     # default <fl.output_dir>/nvflare_job
 
@@ -144,7 +133,7 @@ class FLConfig:
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     num_rounds: int = 10
     local_steps: int = 50
-    mode: str = "nvflare"  # "local" (single-process) | "nvflare"
+    mode: str = "nvflare"  # "local" is a compatibility alias for the FLARE simulator
     nvflare: NVFlareConfig = field(default_factory=NVFlareConfig)
     min_clients: int | None = None  # min client updates per round (default: all)
     round_timeout_s: float | None = None  # per-round timeout
