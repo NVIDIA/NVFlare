@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from tests.hello_pt_test_utils import (
+    HELLO_PT_DIR,
     REPO_ROOT,
     assert_hello_pt_failure_summary,
     load_hello_pt_module,
@@ -51,6 +52,31 @@ def test_task_cli_export_remains_available_for_native_sites(tmp_path, environmen
     config = json.loads((tmp_path / "hello-pt" / "app" / "config" / "config_fed_client.json").read_text())
     assert config["execution_lifetime"] == "task"
     assert config["format_version"] == 3
+
+
+@pytest.mark.parametrize("resume_flag", ["--resume_training", "--no-resume_training"])
+def test_beginner_task_cli_export_preserves_checkpoint_selection(tmp_path, resume_flag):
+    run_hello_pt_export(
+        [
+            sys.executable,
+            "job.py",
+            "--execution_lifetime",
+            "task",
+            resume_flag,
+            "--export",
+            "--export-dir",
+            str(tmp_path),
+        ],
+        cwd=HELLO_PT_DIR,
+        env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
+    )
+    config = json.loads((tmp_path / "hello-pt" / "app" / "config" / "config_fed_client.json").read_text())
+    assert config["execution_lifetime"] == "task"
+    assert config["executors"][0]["executor"]["args"]["task_script_args"] == [
+        "--dataset",
+        "synthetic",
+        resume_flag,
+    ]
 
 
 @pytest.fixture

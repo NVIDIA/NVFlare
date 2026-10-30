@@ -19,7 +19,7 @@ from model import MODEL_SEED, create_model
 from prepare_data import add_dataset_arguments
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv, add_final_global_evaluation
+from nvflare.recipe import SimEnv, add_final_global_evaluation, is_export_requested
 
 DEFAULT_NUM_CLIENTS = 2
 DEFAULT_NUM_ROUNDS = 3
@@ -55,7 +55,7 @@ def define_parser() -> argparse.ArgumentParser:
         "--resume_training",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Restore the PyTorch checkpoint between task workers (task mode defaults to enabled).",
+        help="Restore the PyTorch checkpoint in exported task jobs only (task mode defaults to enabled).",
     )
     parser.add_argument(
         "--execution_lifetime",
@@ -65,6 +65,16 @@ def define_parser() -> argparse.ArgumentParser:
     )
 
     return parser
+
+
+def parse_args(argv=None):
+    parser = define_parser()
+    args = parser.parse_args(argv)
+    if args.execution_lifetime == "task" and not is_export_requested():
+        parser.error(
+            "task lifetime requires --export for a configured Kubernetes/Slurm site; local simulation requires job lifetime"
+        )
+    return args
 
 
 def create_recipe(args):
@@ -102,7 +112,7 @@ def create_recipe(args):
 
 
 def main(argv=None):
-    args = define_parser().parse_args(argv)
+    args = parse_args(argv)
     recipe = create_recipe(args)
 
     env = SimEnv(num_clients=args.n_clients)

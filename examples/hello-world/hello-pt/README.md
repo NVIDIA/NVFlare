@@ -250,8 +250,10 @@ momentum, the DataLoader generator and PyTorch RNG state with `torch.load` /
 `torch.save`. `flare.system_info()["task_checkpoint"]` provides an
 isolated input path (or `None` initially) and a pending output path. The checkpoint
 stays client-local and is not sent to the server. The incoming global model
-always supplies the next round's weights. Use `--no-resume_training` in task mode
-to choose fresh optimizer and RNG state for every assignment.
+always supplies the next round's weights. The `--resume_training` and
+`--no-resume_training` options apply only to exported task jobs for configured
+scheduler-backed sites. Add `--no-resume_training` to the task export command
+above to choose fresh optimizer and RNG state for every assignment.
 
 The script chooses the checkpoint contents and writes the pending file after
 training. The runtime binds it to the completed result and promotes it only after
