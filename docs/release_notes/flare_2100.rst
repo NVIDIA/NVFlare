@@ -12,11 +12,12 @@ Highlights:
   in secure mode)
 - **Memory and large models** — opt-in disk-backed FedAvg and FedProx
   aggregation, and disk-backed tensors for task-worker payloads
-- **Execution and reliability** — opt-in task-scoped execution that lowers GPU
+- **Resource efficiency** — opt-in task-scoped execution that lowers GPU
   waste, especially on HPC Slurm and Kubernetes clusters: GPUs are held only
   while a task trains and are released between tasks (available on
-  Kubernetes), and automatic recovery of failed client jobs after scheduler
-  wall-time limits
+  Kubernetes)
+- **Reliability** — automatic recovery of failed client jobs, such as after
+  scheduler wall-time limits
 - **Networking and deployment** — outbound HTTP proxy support, GPU
   reservation for Docker jobs, and a staged 2.10 upgrade path
 - **Developer experience** — a rewritten Quick Start, an example catalog
@@ -157,8 +158,8 @@ receipt.
    references that support metadata and ``nbytes``, not tensor attributes such
    as ``.shape`` or ``.numel()``. Workers receive tensors.
 
-Execution and Reliability
-=========================
+Resource Efficiency
+===================
 
 Task-Scoped Execution
 ---------------------
@@ -213,6 +214,9 @@ connection down with it.
   Lightning ``restore_state=True``.
 - Checkpoint continuity across tasks is opt-in through
   ``flare.system_info()["task_checkpoint"]``.
+
+Reliability
+===========
 
 Automatic Client Job Recovery
 -----------------------------
