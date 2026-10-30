@@ -127,12 +127,17 @@ Before moving or adding a suite, check the actual workflow/runner command that
 collects it. Directory placement alone does not schedule a test. Preserve intended
 OS/Python coverage, dependency setup, and coverage reporting when splitting suites.
 
-Premerge runs the extracted process/transport suites serially in a fresh pytest
+Premerge runs the extracted process/transport and CLI suites serially in a fresh pytest
 invocation on every existing unit-test OS/Python combination, outside the unit
 xdist run. Their shared selection is `ci/run_process_contracts.py`; the coverage
 job uses the same list with `--cov-append`. Other integration suites have their
 own CI selections; do not add every fast suite to this specific runner. Keep
 conditional skip reasons visible in CI logs, for example with pytest `-rs`.
+
+The shared selection also includes harness cleanup regressions and concurrency
+cases whose product-deadlock watchdog must live in a separate process. Temporary
+Git repositories explicitly disable commit signing; they must work even when the
+invoking user's Git configuration requires a signing key.
 
 Review these behavioral contracts through helpers and fixtures. A source-pattern
 scan or a focused passing run does not establish that an entire suite is stable.
