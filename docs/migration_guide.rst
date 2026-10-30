@@ -141,6 +141,18 @@ Client Job input hooks receive local tensor references that support metadata
 and ``nbytes``, not tensor attributes such as ``.shape`` or ``.numel()``.
 Workers receive tensors.
 
+Task lifetime requires an explicit Kubernetes or Slurm task launcher in the
+site configuration; Process and Docker sites reject a task-lifetime app, so a
+recipe-wide ``execution_lifetime="task"`` does not downgrade them. Keep those
+sites at job lifetime through per-site client apps.
+
+Kubernetes: Pod Patch Permission
+--------------------------------
+
+Kubernetes job Pods use a settlement finalizer, so the server's Role needs
+``patch`` permission on Pods. The server Helm chart adds it; add it to any
+custom Role.
+
 Internal Renames With Compatibility Aliases
 -------------------------------------------
 
