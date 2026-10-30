@@ -5,8 +5,14 @@ resource reservation, and persistent job workspace. The replacement uses normal
 `GET_TASK` delivery: the unchanged server resends an outstanding assignment with
 its existing task and attempt IDs. User code restores its own checkpoint.
 
-Implemented for Process, Docker, Slurm, and Kubernetes. Kubernetes requires the
-persistent jobs PVC profile. CP and the server must remain running.
+Implemented for eligible resident (`execution_lifetime="job"`) Process, Docker
+and Slurm client jobs, and for Kubernetes client jobs in job or task lifetime.
+Kubernetes requires the persistent jobs PVC profile and confirmed shutdown of the
+CJ and its workers. See the
+[Kubernetes persistence and resume contract](../user_guide/admin_guide/deployment/kubernetes_task_launcher.rst#persistent-files-and-cj-resume).
+Local Process/Docker task execution is deferred; the
+[retired Process task-mode eligibility gap](#process-task-mode-recovery-gap) is described below.
+CP and the server must remain running.
 Hierarchical federation recovery is outside this feature's scope. Intermediate
 CJs retain their existing failure behavior because replacement cannot restore
 their in-memory child-result receipts; automatic recovery is limited to leaf CJs.
@@ -40,9 +46,9 @@ application errors, rejected submissions and cancellation do not trigger recover
 
 Kubernetes supports this path with the persistent jobs PVC. Integration with the
 [Slurm task-adapter proposal](https://github.com/NVIDIA/NVFlare/pull/5513)
-remains separate work; resident Slurm CJ recovery is unchanged. Process task
-mode retains its existing behavior and the
-[eligibility gap](#process-task-mode-recovery-gap) below.
+remains separate work; resident Slurm CJ recovery is unchanged. Local Process/Docker
+task mode is deferred because its CJ restart gates do not establish worker
+settlement; see the [eligibility gap](#process-task-mode-recovery-gap) below.
 
 ### Wall-limit and owner-loss timeline
 
@@ -140,19 +146,18 @@ stay unchanged. Logs map server attempts to physical worker IDs.
 
 ### Process task-mode recovery gap
 
-In the current Process task implementation, each task worker starts a separate
+In the retired Process task implementation, each task worker started a separate
 process group. `ProcessHandle.can_restart()` checks the CJ's own group and
 `client_api_bootstrap_*.json` external-trainer files; it does not check task-worker
-groups or exclude task lifetime. Consequently, CP can find CJ replacement eligible
-without proof that its task workers have stopped. The worker's startup parent-PID
-check is not CP-owned settlement evidence after a later CJ failure.
+groups or exclude task lifetime. Consequently, CP could find CJ replacement eligible
+without proof that its task workers had stopped. The worker's startup parent-PID
+check was not CP-owned settlement evidence after a later CJ failure.
 
-This is an implementation eligibility gap, not supported task-mode recovery and
-not a guarantee that every replacement will launch overlapping compute. The
-[local task-backend removal proposal](https://github.com/NVIDIA/NVFlare/pull/5592)
-defers Process/Docker task mode instead of adding a new local recovery owner.
-Until it lands, do not qualify Process task-CJ replacement as safe solely from
-CJ-group exit. This documentation does not change or repair that restart gate.
+This eligibility gap motivated deferring local Process/Docker task execution.
+Shared client-parent admission now rejects local task-lifetime jobs before
+launching a CJ. The deferral adds no task-worker recovery owner and leaves
+resident restart gates unchanged. CJ-group exit alone must not be used as proof
+that an independently launched worker has settled.
 See the [backend/lifetime matrix](task_worker_lifecycle.md#backend-and-recovery-boundaries).
 
 ## Task and checkpoint boundaries

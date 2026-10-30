@@ -109,6 +109,12 @@ the deployed resolved mode; CJ checks it again before constructing application
 components. A task admission marker cannot excuse a resident CJ from compute
 resource reservation if local configuration resolves to job lifetime.
 
+Before starting a task-lifetime CJ, the client parent validates the canonical
+native task policy and requires its matching supported client-job launcher.
+Process, Docker and unsupported custom launchers are rejected at this shared
+admission boundary before the CJ starts. Job-lifetime apps keep their existing
+launcher selection, including mixed-lifetime deployments at different sites.
+
 The scheduler's resource-manager request is obtained through
 `get_resource_manager_spec`. For a task site this uses only the coordinator
 budget; `get_compute_resource_manager_spec` resolves compute admission fields
@@ -117,12 +123,11 @@ runtime's resource requests. CPU and memory are enforced by a capable backend,
 rather than implicitly reserved in the legacy NVFlare GPU resource manager.
 
 Custom resources, licenses and per-GPU memory requirements need explicit backend
-enforcement. The current Kubernetes and Process task paths reject unsupported
-compute resource-manager claims. Process validates its compute CPU/memory and
-custom resource claims before starting a normalized task CJ and again before
-executing a task, so unsupported sites fail once at launch. Removing the compute GPU from whole-job admission
-must never silently drop these other requirements. Unsupported Process CPU/memory
-limits or coordinator GPU requirements likewise fail explicitly.
+enforcement. Kubernetes task execution rejects unsupported compute resource-manager
+claims. Local Process and Docker task execution are deferred and reject task jobs;
+their job-mode launchers remain supported. Removing compute GPUs from whole-job
+admission must never silently drop other requirements. A scheduler-backed task
+launcher must enforce the request or reject it before compute.
 
 With one available GPU, two Kubernetes task CJs can remain resident while their
 worker Pods use that GPU successively. Kubernetes owns scheduling and fairness;

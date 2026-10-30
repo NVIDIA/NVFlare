@@ -233,11 +233,14 @@ the preparation command in its error log. This happens after the simulator start
 to avoid depending on a client process's working directory. Exporting a job does
 not require a local cache; prepare the data on its execution clients instead.
 
-To compare compute lifetimes with the same initial weights and training order:
+Local simulation uses job lifetime. Process/Docker task mode is deferred.
+To compare compute lifetimes, export a task job and run it on a configured
+scheduler-backed site (Kubernetes; Slurm integration is separate), using the same
+initial weights and training order:
 
 ```bash
 CUDA_VISIBLE_DEVICES="" python job.py --torch_threads 1 --dataset cifar10 --data_root /data/cifar --seed 731
-CUDA_VISIBLE_DEVICES="" python job.py --torch_threads 1 --dataset cifar10 --data_root /data/cifar --seed 731 --execution_lifetime task
+python job.py --torch_threads 1 --dataset cifar10 --data_root /data/cifar --seed 731 --execution_lifetime task --export
 ```
 
 PyTorch thread settings are unchanged by default; pass `--torch_threads 1` explicitly
@@ -247,8 +250,10 @@ momentum, the DataLoader generator and PyTorch RNG state with `torch.load` /
 `torch.save`. `flare.system_info()["task_checkpoint"]` provides an
 isolated input path (or `None` initially) and a pending output path. The checkpoint
 stays client-local and is not sent to the server. The incoming global model
-always supplies the next round's weights. Use `--no-resume_training` in task mode
-to choose fresh optimizer and RNG state for every assignment.
+always supplies the next round's weights. The `--resume_training` and
+`--no-resume_training` options apply only to exported task jobs for configured
+scheduler-backed sites. Add `--no-resume_training` to the task export command
+above to choose fresh optimizer and RNG state for every assignment.
 
 The script chooses the checkpoint contents and writes the pending file after
 training. The runtime binds it to the completed result and promotes it only after

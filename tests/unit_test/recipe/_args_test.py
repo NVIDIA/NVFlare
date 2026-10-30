@@ -53,6 +53,25 @@ def test_recipe_args_import_strips_export_flags_from_sys_argv(monkeypatch, tmp_p
     assert args_module._peek_recipe_args() == (True, "/tmp/out")
 
 
+@pytest.mark.parametrize("flags,expected", [([], False), (["--export"], True), (["--", "--export"], False)])
+def test_public_export_query_preserves_the_consumed_cli_decision(monkeypatch, flags, expected):
+    import sys
+
+    from nvflare.recipe import _args as args_module
+    from nvflare.recipe import is_export_requested
+
+    monkeypatch.setattr(sys, "argv", ["job.py", *flags])
+    importlib.reload(args_module)
+    assert is_export_requested() is expected
+
+    # A script can no longer find a consumed flag in argv, and later edits must
+    # not turn export on or off after Recipe has recorded its decision.
+    later_argv = ["job.py"] if expected else ["job.py", "--export"]
+    monkeypatch.setattr(sys, "argv", later_argv.copy())
+    assert is_export_requested() is expected
+    assert sys.argv == later_argv
+
+
 @pytest.mark.parametrize("flags", [["--log_config", "full"], ["--log_config=full"]])
 def test_shared_logging_argument_overrides_script_default(monkeypatch, flags):
     import sys

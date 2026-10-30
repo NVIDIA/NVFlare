@@ -28,12 +28,8 @@ from nvflare.apis.task_launcher_spec import (
     TaskSettlementError,
     UnsupportedTaskResourceError,
 )
-from nvflare.app_common.task_launcher.process_launcher import (
-    ProcessTaskHandle,
-    ProcessTaskLauncher,
-    _OwnedProcessAdapter,
-)
 from nvflare.utils.process_utils import ProcessAdapter
+from tests.local_task_launcher import ProcessTaskHandle, ProcessTaskLauncher, _OwnedProcessAdapter
 from tests.process_launcher_test_utils import cleanup_launched_groups  # noqa: F401 (pytest fixture registration)
 from tests.process_launcher_test_utils import _mock_handle, _process_running, _request, requires_waitid
 
@@ -401,9 +397,7 @@ def test_launcher_rejects_invalid_request_and_unsupported_platform(tmp_path, mon
 def test_spawn_failure_allows_retry_of_same_attempt(tmp_path, monkeypatch):
     launcher = ProcessTaskLauncher(max_attempt_identities=1)
     request = _request(tmp_path, "retry-spawn", "pass")
-    monkeypatch.setattr(
-        "nvflare.app_common.task_launcher.process_launcher.spawn_process", Mock(side_effect=OSError("spawn failed"))
-    )
+    monkeypatch.setattr("tests.local_task_launcher.spawn_process", Mock(side_effect=OSError("spawn failed")))
     for _ in range(2):
         with pytest.raises(OSError, match="spawn failed"):
             launcher.launch_task(request)
@@ -468,7 +462,7 @@ def test_polling_retains_leader_and_reaps_only_after_group_settlement(tmp_path, 
 def test_missing_nonreaping_wait_support_is_rejected_before_spawn(tmp_path, monkeypatch, missing):
     monkeypatch.delattr(os, missing, raising=False)
     spawn = Mock()
-    monkeypatch.setattr("nvflare.app_common.task_launcher.process_launcher.spawn_process", spawn)
+    monkeypatch.setattr("tests.local_task_launcher.spawn_process", spawn)
     with pytest.raises(TaskLauncherError, match="waitid/WNOWAIT"):
         ProcessTaskLauncher().launch_task(_request(tmp_path, "unsupported-wait", "pass"))
     spawn.assert_not_called()
