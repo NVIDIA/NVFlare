@@ -124,8 +124,3 @@ def load_cohort(database: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarra
         rows = con.execute(COHORT_SQL).fetchnumpy()
     features = np.column_stack([rows[name] for name in FEATURES]).astype(np.float64)
     return rows["person_id"], features, rows["outcome"].astype(np.float64).reshape(-1, 1)
-
-
-def is_test(person_ids: np.ndarray) -> np.ndarray:
-    """Hold out the patients whose ``person_id`` ends in 0, 1 or 2 for evaluation."""
-    return person_ids % 10 < 3

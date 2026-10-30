@@ -18,7 +18,6 @@ import argparse
 import hashlib
 import urllib.request
 import zipfile
-from collections.abc import Sequence
 from pathlib import Path
 
 import duckdb
@@ -30,17 +29,11 @@ EUNOMIA_URL = (
 )
 EUNOMIA_SHA256 = "081b82e84c90e2904e02c26546e46412b01cce566071c77e0c4a355c2d0612f9"
 DATA_ROOT = "/tmp/nvflare/dataset/omop"
+SITE_FRACTIONS = (0.55, 0.3, 0.15)
 
 
 def download_cdm(data_root: Path) -> Path:
-    """Download and extract the Eunomia GiBleed CSV files.
-
-    Args:
-        data_root: Directory that receives the archive and the extracted CSV files.
-
-    Returns:
-        The directory holding one CSV file per OMOP CDM table.
-    """
+    """Download and extract the Eunomia CSV files and return the directory holding one file per CDM table."""
     archive = data_root / "GiBleed_5.3.zip"
     if not archive.exists():
         data_root.mkdir(parents=True, exist_ok=True)
@@ -54,30 +47,12 @@ def download_cdm(data_root: Path) -> Path:
     return data_root / "GiBleed_5.3"
 
 
-def split_sites(cdm_dir: Path, data_root: Path, fractions: Sequence[float], seed: int) -> list[Path]:
-    """Assign every patient to one site and write each site's OMOP CDM.
-
-    Clinical tables keep only the site's own patients, while vocabulary and metadata tables are copied whole.
-
-    Args:
-        cdm_dir: Directory holding one CSV file per OMOP CDM table.
-        data_root: Directory that receives one ``site-<n>.duckdb`` database per site.
-        fractions: Share of the patients assigned to each site.
-        seed: Seed for the random assignment.
-
-    Returns:
-        The site databases in site order.
-
-    Raises:
-        ValueError: If a fraction is not positive or the fractions do not sum to 1.
-    """
-    if min(fractions) <= 0 or not np.isclose(sum(fractions), 1.0):
-        raise ValueError(f"fractions must be positive and sum to 1, got {list(fractions)}")
+def split_sites(cdm_dir: Path, data_root: Path) -> None:
+    """Assign every patient at random to a site and write each site's CDM, copying vocabulary tables whole."""
     tables = {path.stem.lower(): path for path in sorted(cdm_dir.glob("*.csv"))}
     person_ids = duckdb.read_csv(str(tables["person"]), normalize_names=True).fetchnumpy()["person_id"]
-    shuffled = np.random.default_rng(seed).permutation(np.sort(person_ids))
-    cuts = (np.cumsum(fractions)[:-1] * len(shuffled)).astype(int)
-    databases = []
+    shuffled = np.random.default_rng(0).permutation(np.sort(person_ids))
+    cuts = (np.cumsum(SITE_FRACTIONS)[:-1] * len(shuffled)).astype(int)
     for number, members in enumerate(np.split(shuffled, cuts), start=1):
         database = data_root / f"site-{number}.duckdb"
         database.unlink(missing_ok=True)
@@ -89,15 +64,10 @@ def split_sites(cdm_dir: Path, data_root: Path, fractions: Sequence[float], seed
                     rows = rows.filter("cast(person_id as bigint) in (from members)")
                 rows.create(table)
         print(f"site-{number}: {len(members)} patients -> {database}")
-        databases.append(database)
-    return databases
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data_root", default=DATA_ROOT)
-    parser.add_argument("--fractions", type=float, nargs="+", default=[0.55, 0.3, 0.15])
-    parser.add_argument("--seed", type=int, default=0)
-    args = parser.parse_args()
-    data_root = Path(args.data_root)
-    split_sites(download_cdm(data_root), data_root, args.fractions, args.seed)
+    data_root = Path(parser.parse_args().data_root)
+    split_sites(download_cdm(data_root), data_root)
