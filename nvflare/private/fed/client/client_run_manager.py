@@ -99,7 +99,6 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
             self.handlers = []
 
         # get job meta!
-        # Rank sub-workers have a local engine but no federated client.
         client_config = client.client_args if client else {}
         fqsn = client_config.get("fqsn", client.client_name if client else client_name)
         is_leaf = client_config.get("is_leaf", True)

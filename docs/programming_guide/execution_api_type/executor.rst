@@ -79,12 +79,6 @@ MultiProcessExecutor, configure the task executor to use MultiProcessExecutor (c
 only implemented MultiProcessExecutor), and configure the existing executor as the "executor_id", and the number of
 processes to use.
 
-The optional ``task_timeout`` argument sets a positive execution limit in seconds.
-Its default, ``None``, leaves training duration unlimited. Cancellation, launcher
-exit, failed command delivery, and reported rank failures stop the wait independently
-of this limit. A successful task waits for every rank to finish and returns rank
-zero's result.
-
 .. code-block:: json
 
     {
