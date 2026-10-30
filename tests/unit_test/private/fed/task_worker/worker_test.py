@@ -39,6 +39,7 @@ from nvflare.private.fed.task_worker import (
 )
 from nvflare.private.fed.task_worker.runtime import TaskRuntime, UnsupportedTaskRuntimeService
 from tests.task_worker_test_utils import _identity, _stage, _workspace
+from tests.timing_utils import isolate_time
 
 
 @pytest.mark.parametrize(
@@ -332,7 +333,11 @@ def test_worker_rejects_non_executor_component(monkeypatch):
 
 def test_invalid_executor_result_still_finalizes_executor(tmp_path, monkeypatch):
     workspace = worker.Workspace(str(_workspace(tmp_path)), site_name="site-1")
-    bootstrap = WorkerBootstrap(_identity("invalid-result"), str(tmp_path), workspace.get_root_dir(), {})
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    identity = _identity("invalid-result")
+    store.create_attempt(identity)
+    store.write_input(identity, Shareable())
+    bootstrap = WorkerBootstrap(identity, store.root_dir, workspace.get_root_dir(), {})
     finalized = Mock()
     executor = SimpleNamespace(execute=lambda *_args: {}, finalize=finalized)
 
@@ -341,7 +346,7 @@ def test_invalid_executor_result_still_finalizes_executor(tmp_path, monkeypatch)
 
     monkeypatch.setattr(worker, "_build_executor", build_executor)
     with pytest.raises(TypeError, match="instead of Shareable"):
-        worker._execute(bootstrap, Shareable(), workspace)
+        worker._execute(bootstrap, workspace, store, worker.AttemptBinding(identity))
     finalized.assert_called_once()
 
 
@@ -755,3 +760,15 @@ def test_direct_exception_cannot_replace_an_earlier_panic_or_abort(tmp_path, mon
     assert calls.count("finalize") == 1
     with pytest.raises(IncompleteTaskArtifactError):
         store.read_completion(identity)
+
+
+def test_session_worker_stops_waiting_when_its_client_job_is_gone(tmp_path, monkeypatch):
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    bootstrap = WorkerBootstrap(_identity("attempt-1"), str(tmp_path), str(tmp_path), {}, session_dir=str(session_dir))
+    parents = iter([4242, 4242, 1])
+    isolate_time(monkeypatch, worker)
+    monkeypatch.setattr(worker.os, "getppid", lambda: next(parents))
+    monkeypatch.setattr(worker.time, "sleep", lambda _interval: None)
+
+    assert list(worker._attempt_identities(bootstrap)) == [bootstrap.identity]

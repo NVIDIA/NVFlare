@@ -40,6 +40,8 @@ from nvflare.private.fed.task_worker import (
     ContextProperty,
     FileTaskArtifactStore,
     IncompleteTaskArtifactError,
+    artifacts,
+    protocol,
     read_bootstrap,
 )
 from tests.task_worker_test_utils import _identity, _live, _stage, _wait_until, _workspace
@@ -499,6 +501,57 @@ def test_launcher_preserves_descendant_shutdown_windows(tmp_path, shutdown):
     finally:
         if not handle.poll().settled:
             handle.cancel()
+
+
+def _stage_session(tmp_path, executor_path, marker):
+    workspace_root = _workspace(tmp_path)
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    first, second = _identity("attempt-1"), _identity("attempt-2", task_id="task-2", task_name="validate")
+    bootstrap_path = _stage(
+        store,
+        first,
+        workspace_root,
+        executor={"path": executor_path, "args": {"marker_path": str(marker)}},
+        data=Shareable({"value": 3}),
+        session_dir=str(session_dir),
+    )
+    store.create_attempt(second)
+    store.write_input(second, Shareable({"value": 10}))
+    artifacts._write_json_exclusive(str(session_dir), "000002.json", second.to_dict())
+    artifacts._write_json_exclusive(str(session_dir), protocol.SESSION_END_MARKER, {})
+    return store, first, second, bootstrap_path
+
+
+def test_session_worker_serves_staged_attempts_on_one_executor_until_the_end_marker(tmp_path):
+    marker = tmp_path / "events.txt"
+    store, first, second, bootstrap_path = _stage_session(tmp_path, "worker_components.ProbeExecutor", marker)
+
+    process = _run_process(bootstrap_path)
+
+    assert process.returncode == 0, process.stderr
+    result_1, completion_1 = store.read_result(first)
+    result_2, completion_2 = store.read_result(second)
+    assert (result_1["value"], result_2["value"]) == (7, 14)
+    assert result_1["pid"] == result_2["pid"] == completion_1.worker_pid == completion_2.worker_pid
+    assert (result_1["task_id"], result_2["task_id"]) == ("task-1", "task-2")
+    assert completion_2.started_at >= completion_1.completed_at
+    assert marker.read_text().splitlines() == ["initialize", "finalize"]
+
+
+def test_session_worker_failure_keeps_the_earlier_completion_and_ends_the_session(tmp_path):
+    marker = tmp_path / "events.txt"
+    store, first, second, bootstrap_path = _stage_session(tmp_path, "worker_components.FailLargeValueExecutor", marker)
+
+    process = _run_process(bootstrap_path)
+
+    assert process.returncode != 0
+    assert store.read_result(first)[0]["value"] == 7
+    assert not Path(store.attempt_dir(first), "failure.json").exists()
+    assert store.read_failure(second)["error_type"] == "ValueError"
+    assert not Path(store.attempt_dir(second), "completion.json").exists()
+    assert marker.read_text().splitlines() == ["initialize", "finalize"]
 
 
 pytestmark = [pytest.mark.timeout(120), pytest.mark.usefixtures("isolated_fobs")]

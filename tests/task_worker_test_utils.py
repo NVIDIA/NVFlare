@@ -70,6 +70,13 @@ class RaiseExecutor(ProbeExecutor):
         raise ValueError("deliberate worker failure")
 
 
+class FailLargeValueExecutor(ProbeExecutor):
+    def execute(self, task_name, shareable, fl_ctx, abort_signal):
+        if shareable["value"] > 5:
+            raise ValueError("deliberate worker failure")
+        return super().execute(task_name, shareable, fl_ctx, abort_signal)
+
+
 class FailingFinalizeStatistics(Statistics):
     def features(self):
         return {}
@@ -117,7 +124,7 @@ def _identity(attempt_id, task_id="task-1", task_name="train"):
     )
 
 
-def _stage(store, identity, workspace_root, executor, data, components=(), context_properties=None):
+def _stage(store, identity, workspace_root, executor, data, components=(), context_properties=None, session_dir=None):
     if not executor:
         executor = {"path": "nvflare.app_common.np.np_trainer.NPTrainer"}
     store.create_attempt(identity)
@@ -130,6 +137,7 @@ def _stage(store, identity, workspace_root, executor, data, components=(), conte
         components=components,
         context_properties=context_properties or {},
         max_payload_bytes=store.max_payload_bytes,
+        session_dir=session_dir,
     )
     path = store.bootstrap_path(identity)
     write_bootstrap(path, bootstrap)
