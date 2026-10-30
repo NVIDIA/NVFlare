@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 import os
 
@@ -59,7 +60,8 @@ def is_log_streaming_allowed(fl_ctx: FLContext = None) -> bool:
         path = ws.get_resources_file_path()
         if not path or not os.path.exists(path):
             return True
-        data = ConfigService.load_config_dict(path)
+        with open(path) as f:
+            data = json.load(f)
     except Exception as ex:
         _logger.debug(f"failed to read resources.json for {ALLOW_LOG_STREAMING_VAR} check: {ex}")
         return True
