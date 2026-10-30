@@ -69,8 +69,15 @@ CA/bundle is scoped to the Skopeo operations automatically.
 ## Make a TDX verifier available if needed
 
 Skip this section when `TDX_VERIFIER` already names a compatible verifier.
-The supplied helper builds a Docker-based verifier on an x86_64 capture worker;
-Docker must be usable directly or through noninteractive `sudo`.
+The supplied helper builds a container-based verifier on an x86_64 capture
+worker. Docker is the default and must be usable directly or through
+noninteractive `sudo`. Alternatively, prefix the build command below with
+`TDX_VERIFIER_ENGINE=podman` to select rootless Podman.
+The [beginner prerequisite appendix](PREREQUISITES.md) describes preparing
+Podman on the Kubernetes worker without replacing its containerd installation.
+This optional appendix helps beginners bring up the prerequisite systems.
+Consult the official documentation for each component and the version you
+deploy; it takes precedence if there is any discrepancy.
 
 ~~~bash
 VERIFIER_DIR="$HOME/coco-private/tdx-verifier"
@@ -85,8 +92,15 @@ TDX_VERIFIER="$HOME/coco-private/tdx-verifier/tdx-evidence-verify"
 ~~~
 
 `run-verifier.sh` in the source is a template, not the generated executable.
-Build on the capture worker with the same Docker daemon used for verification:
-the generated wrapper embeds a local image ID. The version command checks that
+Build on the capture worker using the engine and image store used for
+verification. The generated wrapper embeds the selected engine and immutable
+image ID; changing `TDX_VERIFIER_ENGINE` later does not change that wrapper.
+For Podman, build and run capture as the same user, with rootless Podman working
+without `sudo`. The wrapper preserves that user's UID/GID so it can read private
+evidence files without changing their permissions. Do not run the generated
+Podman wrapper through `sudo` or switch its image store.
+See the [Podman user namespace documentation](https://docs.podman.io/en/latest/markdown/podman-run.1.html#userns-mode)
+for `keep-id` behavior. The version command checks that
 wrapper/image; quote verification additionally needs HTTPS access to Intel PCS
 and an accurate clock. Capture supplies evidence JSON, challenge bytes, and
 InitData TOML to the verifier, which returns verified claims JSON. The supplied
