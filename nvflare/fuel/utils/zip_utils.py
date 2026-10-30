@@ -177,7 +177,7 @@ def _validate_zip_entries(z: ZipFile, output_dir_name: str) -> None:
 
 
 def unzip_single_file_from_bytes(zip_data: bytes, output_dir_name: str, file_path: str):
-    """Decompresses a zip and extracts single specified file to the specified output directory.
+    """Extract a single ZIP entry under the output directory, preserving its relative path.
 
     Args:
         zip_data: the input zip data
@@ -189,14 +189,8 @@ def unzip_single_file_from_bytes(zip_data: bytes, output_dir_name: str, file_pat
     # outside output_dir_name.
     _validate_zip_entry_name(file_path, os.path.realpath(output_dir_name))
 
-    path_to_file, _ = split_path(file_path)
-    output_dir_name = os.path.join(output_dir_name, path_to_file)
-    os.makedirs(output_dir_name)
-    if not os.path.exists(output_dir_name):
-        raise FileNotFoundError(f'output directory "{output_dir_name}" does not exist')
-
-    if not os.path.isdir(output_dir_name):
-        raise NotADirectoryError(f'"{output_dir_name}" is not a valid directory')
+    # ZipFile.extract creates the member's subdirectories relative to this root.
+    os.makedirs(output_dir_name, exist_ok=True)
 
     with ZipFile(io.BytesIO(zip_data), "r") as z:
         info = z.getinfo(file_path)
