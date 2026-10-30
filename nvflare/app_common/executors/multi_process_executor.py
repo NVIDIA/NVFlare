@@ -195,7 +195,11 @@ class MultiProcessExecutor(Executor):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
-            self.initialize(fl_ctx)
+            try:
+                self.initialize(fl_ctx)
+            except Exception:
+                self.system_panic("multi-process executor initialization failed", fl_ctx)
+                raise
         elif event_type == EventType.END_RUN:
             self.finalize(fl_ctx)
 
@@ -327,7 +331,6 @@ class MultiProcessExecutor(Executor):
                     raise ValueError(reply.get_header(MessageHeaderKey.ERROR))
         except Exception as e:
             self.log_exception(fl_ctx, f"error initializing multi_process executor: {secure_format_exception(e)}")
-            self.system_panic("multi-process executor initialization failed", fl_ctx)
             raise
 
     def receive_execute_result(self, request: CellMessage) -> CellMessage:
