@@ -64,9 +64,8 @@ Multi-Process Executor
 .. deprecated:: 2.10
 
    ``MultiProcessExecutor`` and ``PTMultiProcessExecutor`` remain available for
-   compatibility throughout 2.10. Use job-based Client API with an external
-   ``torchrun`` launcher for new distributed training jobs. See
-   :ref:`multi_process_executor_migration` for the application changes required.
+   compatibility. For new distributed training, use Client API with external
+   ``torchrun``. See :ref:`multi_process_executor_migration`.
 
 :class:`MultiProcessExecutor<nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor>` is designed to
 easily allow the FL executor to support multi-processes execution. The behavior of the Executor remains the same
@@ -86,12 +85,6 @@ MultiProcessExecutor, configure the task executor to use MultiProcessExecutor (c
 only implemented MultiProcessExecutor), and configure the existing executor as the "executor_id", and the number of
 processes to use.
 
-The optional ``task_timeout`` argument sets a positive execution limit in seconds.
-Its default, ``None``, leaves training duration unlimited. Cancellation, launcher
-exit, failed command delivery, and reported rank failures stop the wait independently
-of this limit. A successful task waits for every rank to finish and returns rank
-zero's result.
-
 .. code-block:: json
 
     {
@@ -101,7 +94,7 @@ zero's result.
             "train"
           ],
           "executor": {
-            "path": "nvflare.app_opt.pt.multi_process_executor.PTMultiProcessExecutor",
+            "path": "nvflare.app_common.pt.pt_multi_process_executor.PTMultiProcessExecutor",
             "args": {
               "executor_id": "trainer",
               "num_of_processes": 2,
