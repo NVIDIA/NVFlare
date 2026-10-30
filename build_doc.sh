@@ -91,16 +91,28 @@ if sys.platform == "linux" and platform.machine() == "x86_64":
 PY_DOC_ENV
 }
 
+function skip_api_docs() {
+    case "${SKIP_API_DOCS:-}" in
+        1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 function build_html_docs() {
-    if python -c 'import platform, sys; sys.exit(not (sys.platform == "linux" and platform.machine() == "x86_64" and sys.version_info[:2] == (3, 10)))'; then
-        python -m pip install --no-cache-dir --constraint docs/constraints.txt pip setuptools wheel versioneer PyYAML
-        python -m pip install --no-cache-dir --no-build-isolation --requirement docs/requirements-build.txt
+    if skip_api_docs; then
+        if python -c 'import platform, sys; sys.exit(not (sys.platform == "linux" and platform.machine() == "x86_64" and sys.version_info[:2] == (3, 10)))'; then
+            python -m pip install --no-cache-dir --constraint docs/constraints.txt --requirement docs/requirements-preview.txt
+        else
+            python -m pip install --requirement docs/requirements-preview.txt
+        fi
+        echo "${blue}Skipping API reference generation (SKIP_API_DOCS is set)${noColor}"
     else
-        python -m pip install -e ".[doc-build]"
-    fi
-    if [[ "${SKIP_API_DOCS:-0}" == "1" ]]; then
-        echo "${blue}Skipping API reference generation (SKIP_API_DOCS=1)${noColor}"
-    else
+        if python -c 'import platform, sys; sys.exit(not (sys.platform == "linux" and platform.machine() == "x86_64" and sys.version_info[:2] == (3, 10)))'; then
+            python -m pip install --no-cache-dir --constraint docs/constraints.txt pip setuptools wheel versioneer PyYAML
+            python -m pip install --no-cache-dir --no-build-isolation --requirement docs/requirements-build.txt
+        else
+            python -m pip install -e ".[doc-build]"
+        fi
         echo "${blue}Generating API reference...${noColor}"
     fi
     sphinx-build -b html docs docs/_build
@@ -148,7 +160,9 @@ fi
 if [[ $doHTML == true ]]
 then
     echo "${separator}${blue}html${noColor}"
-    check_doc_environment
+    if ! skip_api_docs; then
+        check_doc_environment
+    fi
     clean_docs
     build_html_docs
     echo "${green}done!${noColor}"
