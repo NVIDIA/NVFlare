@@ -20,17 +20,11 @@ and availability configuration beyond this example.
 
 ## Compatibility status
 
-**This Ubuntu 26.04/Kata 3.29 combination has not been qualified as a complete
-fresh-host reference deployment.** The instructions are a preparation recipe,
-not a claim of successful SNP/TDX hardware acceptance. Stop at a failed check;
-do not silently substitute versions to make a command pass. TDX remains
-experimental in the NVFlare 2.9 CoCo workflow.
-
 The [NVIDIA v1.0 supported-platform matrix](https://docs.nvidia.com/confidential-computing/containers/v1.0.0/supported-platforms)
 lists Kata 3.29 with Ubuntu 25.10. The [v1.1 matrix](https://docs.nvidia.com/confidential-computing/containers/v1.1.0/supported-platforms)
-adds Ubuntu 26.04 with Kata 4.0.0. Neither matrix validates the combination in
-this appendix. NVFlare 2.9 requires the matching Kata/genpolicy 3.29.0 profile;
-support for newer Kata/genpolicy is intended for a future NVFlare upgrade.
+adds Ubuntu 26.04 with Kata 4.0.0. NVFlare 2.9 requires the matching
+Kata/genpolicy 3.29.0 profile; support for newer Kata/genpolicy is intended for a
+future NVFlare upgrade.
 
 | Component | Reference version |
 | --- | --- |
