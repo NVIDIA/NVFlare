@@ -9,7 +9,7 @@ This guide covers API and configuration changes when upgrading between FLARE rel
 Upgrading from 2.9.0 to 2.9.1
 =============================
 
-2.9.1 is a patch release. Deployments that do not use confidential computing
+Deployments that do not use confidential computing
 are affected only by the Dashboard change below.
 
 Confidential Computing Provisioning (Technical Preview)
