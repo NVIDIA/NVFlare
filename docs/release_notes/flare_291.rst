@@ -4,12 +4,12 @@
 What's New in FLARE v2.9.1
 **************************
 
-FLARE 2.9.1 is a patch release of 2.9. Its main change is an updated
-confidential computing deployment stack, which follows the NVIDIA confidential
-computing reference architecture (the first version was a technical preview in
-2.7.0). It remains a technical preview and entirely optional:
-nothing changes for deployments that do not use it. The other changes that can
-affect existing deployments are a Dashboard restriction and a few bug fixes.
+FLARE 2.9.1 updates the confidential computing deployment stack, which follows
+the NVIDIA confidential computing reference architecture. The first version
+was a technical preview in 2.7.0, and the stack remains a technical preview and
+entirely optional: nothing changes for deployments that do not use it. The
+other changes that can affect existing deployments are a Dashboard restriction
+and a few bug fixes.
 
 Highlights:
 
