@@ -803,9 +803,11 @@ def test_start_app_removes_pending_process_when_launch_fails(tmp_path):
     assert job_id not in executor.run_processes
 
 
-def test_client_cpu_attempt_marker_survives_parent_restart_and_redeployment(tmp_path):
+@pytest.mark.parametrize("schedule_count", [1, 3])
+def test_client_cpu_attempt_marker_survives_parent_restart_and_redeployment(tmp_path, schedule_count):
     job_id = "job-1"
     job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    job_meta[JobMetaKey.SCHEDULE_COUNT.value] = schedule_count
     launcher = MagicMock()
     launched_threads = []
 
@@ -1558,8 +1560,9 @@ def test_wait_child_process_cleans_up_when_terminal_outcome_report_fails():
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
 
 
-@pytest.mark.parametrize("return_code", [JobReturnCode.SUCCESS, JobReturnCode.ABORTED])
-def test_wait_child_process_frees_resources_after_handoff_before_terminal_request(return_code):
+@pytest.mark.parametrize("return_code", [JobReturnCode.SUCCESS, JobReturnCode.ABORTED, ProcessExitCode.EXCEPTION])
+@pytest.mark.parametrize("release_fails", [False, True])
+def test_wait_child_process_attempts_release_after_handoff_before_terminal_request(return_code, release_fails, caplog):
     order = []
     client = MagicMock()
     client.client_name = "site-1"
@@ -1569,7 +1572,13 @@ def test_wait_child_process_frees_resources_after_handoff_before_terminal_reques
     job_handle.wait.side_effect = lambda: order.append("wait")
     job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
     resource_manager = MagicMock()
-    resource_manager.free_resources.side_effect = lambda **_kwargs: order.append("free")
+
+    def release_resources(**_kwargs):
+        order.append("free")
+        if release_fails:
+            raise RuntimeError("release failed")
+
+    resource_manager.free_resources.side_effect = release_resources
     fl_ctx = MagicMock()
 
     def retire_before_unregister(cell, job_id):
@@ -1602,7 +1611,12 @@ def test_wait_child_process_frees_resources_after_handoff_before_terminal_reques
     resource_manager.free_resources.assert_called_once_with(
         resources={"gpu": [0]}, token="token-1", fl_ctx=client.engine.new_context.return_value
     )
+    payload = client.send_request_before_shutdown.call_args.kwargs["request"].payload
+    assert payload[JobOutcomeMsgKey.CODE] == return_code
+    assert payload[JobOutcomeMsgKey.RESOURCE_REPORT] == {JobOutcomeMsgKey.PARTICIPANT_SUMMARY: b"{}"}
+    assert ("could not free resources for job job-1" in caplog.text) is release_fails
     assert "job-1" not in job_executor.run_processes
+    fl_ctx.get_engine.return_value.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
 
 
 def test_wait_child_process_frees_resources_once_without_job_handle():
@@ -1631,7 +1645,8 @@ def test_wait_child_process_frees_resources_once_without_job_handle():
     fl_ctx.get_engine.return_value.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
 
 
-def test_wait_child_process_frees_resources_once_when_wait_fails():
+@pytest.mark.parametrize("release_fails", [False, True])
+def test_wait_child_process_frees_resources_once_when_wait_fails(release_fails):
     client = MagicMock()
     client.client_name = "site-1"
     job_executor = JobExecutor(client=client, startup="startup")
@@ -1639,6 +1654,8 @@ def test_wait_child_process_frees_resources_once_when_wait_fails():
     job_handle.wait.side_effect = RuntimeError("wait failed")
     job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
     resource_manager = MagicMock()
+    if release_fails:
+        resource_manager.free_resources.side_effect = RuntimeError("release failed")
     fl_ctx = MagicMock()
 
     with pytest.raises(RuntimeError, match="wait failed"):

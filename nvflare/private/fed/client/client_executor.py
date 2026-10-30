@@ -478,10 +478,8 @@ class JobExecutor(ClientExecutor):
         with self.lock:
             if job_id in self.run_processes:
                 raise RuntimeError(f"client app for job '{job_id}' is still registered")
-            schedule_count = job_meta.get(JobMetaKey.SCHEDULE_COUNT.value)
-            prior_attempt_incomplete = job_id in self._cpu_seen_job_launches or (
-                isinstance(schedule_count, int) and not isinstance(schedule_count, bool) and schedule_count > 1
-            )
+            # Scheduling retries can occur without any prior client execution.
+            prior_attempt_incomplete = job_id in self._cpu_seen_job_launches
             self._cpu_seen_job_launches.add(job_id)
             self.run_processes[job_id] = {
                 RunProcessKey.JOB_HANDLE: pending_handle,
@@ -992,11 +990,15 @@ class JobExecutor(ClientExecutor):
                 # The child has stopped and its terminal handoff, when present, has been
                 # consumed above.  Return compute resources before terminal reporting can
                 # block on CellNet or server-side validation.
-                if allocated_resource:
-                    resource_manager.free_resources(
-                        resources=allocated_resource, token=token, fl_ctx=client.engine.new_context()
-                    )
-                self.logger.debug(f"run ({job_id}): child worker resources freed.")
+                try:
+                    if allocated_resource:
+                        resource_manager.free_resources(
+                            resources=allocated_resource, token=token, fl_ctx=client.engine.new_context()
+                        )
+                except Exception as e:
+                    self.logger.error(f"could not free resources for job {job_id}: {secure_format_exception(e)}")
+                else:
+                    self.logger.debug(f"run ({job_id}): child worker resources freed.")
 
             if request is not None:
                 try:
