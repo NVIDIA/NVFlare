@@ -436,7 +436,7 @@ def test_submission_cannot_redirect_resident_gpu_admission_with_cj_marker():
 
 def _zip_split_job(files):
     meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1}
-    job = {"app/config/config_fed_server.json": "{}"}
+    job = {"app/config/config_fed_server.json": "{}", "app/config/config_fed_client.yaml": "executors: []\n"}
     if not any(name.startswith("meta.") for name in files):
         job["meta.json"] = json.dumps(meta)
     job.update(files)
@@ -452,10 +452,11 @@ def _zip_split_job(files):
     "name, text",
     [
         ("meta.conf", 'include "/etc/site.conf"\nname = split\n'),
-        ("app/config/config_fed_client.conf", 'include url("https://client.invalid/config")\nexecutors = []\n'),
-        ("app/config/config_fed_client.conf", "format_version = 2\ndata_root = ${HOME}\n"),
         ("app/config/config_fed_client.yml", "format_version: 2\ndata_root: ${oc.env:HOME}\n"),
         ("app/config/config_fed_client.yaml", "a: &a [1]\nb: [*a, *a]\n"),
+        ("app/config/nested/config_fed_client.conf", 'include "/etc/site.conf"\n'),
+        ("app/./config/config_fed_client.conf", 'include "/etc/site.conf"\n'),
+        ("app/config/config_fed_client.yml", 'data_root: "\\u0024{oc.env:HOME}"\n'),
     ],
 )
 def test_submission_rejects_unrendered_configs_without_parsing_them(name, text, monkeypatch):

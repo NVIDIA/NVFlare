@@ -27,14 +27,7 @@ import shutil
 from nvflare.fuel.utils.config import ConfigFormat
 
 
-def load_omegaconf_job_config(path: str) -> dict:
-    """Loads a YAML job config with OmegaConf aliases and interpolations resolved, for author-side tools."""
-    from omegaconf import OmegaConf
-
-    return OmegaConf.to_container(OmegaConf.load(path), resolve=True)
-
-
-def used_configs(paths):
+def _used_configs(paths):
     """Keeps, per folder and config name, the file runtime lookup picks first by extension precedence."""
     ext_formats = ConfigFormat.config_ext_formats()
     exts = list(ext_formats)
@@ -57,8 +50,12 @@ def needs_rendering(text: str, fmt: ConfigFormat) -> bool:
             return False
         import yaml
 
-        # Aliases let a few bytes expand into an exponentially large config.
-        return "${" in text or any(isinstance(e, yaml.AliasEvent) for e in yaml.parse(text, Loader=yaml.SafeLoader))
+        # Aliases let a few bytes expand into an exponentially large config. Scalars are checked
+        # after YAML unescaping, so "\u0024{" cannot hide an interpolation.
+        return any(
+            isinstance(e, yaml.AliasEvent) or (isinstance(e, yaml.ScalarEvent) and "${" in e.value)
+            for e in yaml.parse(text, Loader=yaml.SafeLoader)
+        )
     except Exception:
         return True
 
@@ -71,7 +68,7 @@ def _render(path: str, fmt: ConfigFormat) -> str:
 
     from omegaconf import OmegaConf
 
-    return OmegaConf.to_yaml(load_omegaconf_job_config(path))
+    return OmegaConf.to_yaml(OmegaConf.to_container(OmegaConf.load(path), resolve=True))
 
 
 def convert_job_configs(job_dir: str, work_dir: str) -> str:
@@ -81,7 +78,7 @@ def convert_job_configs(job_dir: str, work_dir: str) -> str:
     # Legacy app folders without meta keep their configs in config/ directly.
     patterns = ["meta.*", os.path.join("config", "*"), os.path.join("*", "config", "*")]
     to_render = []
-    for path, fmt in used_configs(path for pattern in patterns for path in glob.glob(os.path.join(root, pattern))):
+    for path, fmt in _used_configs(path for pattern in patterns for path in glob.glob(os.path.join(root, pattern))):
         if fmt not in (ConfigFormat.PYHOCON, ConfigFormat.OMEGACONF):
             continue
         with open(path, encoding="utf-8", errors="replace") as f:

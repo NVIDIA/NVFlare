@@ -27,7 +27,7 @@ from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.fuel.utils.job_config_converter import needs_rendering, used_configs
+from nvflare.fuel.utils.job_config_converter import needs_rendering
 from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
@@ -94,17 +94,25 @@ class JobMetaValidator(JobMetaValidatorSpec):
     def _reject_unrendered_configs(job_name: str, zf: ZipFile):
         # HOCON includes and substitutions, and OmegaConf interpolations, read site files, URLs,
         # and environment variables when sites parse job configs. Job tools render them before submission.
-        prefix = f"{job_name}/"
-        configs = [
-            name
-            for name in zf.namelist()
-            if name.startswith(prefix) and re.fullmatch(r"meta\.[^/]+|[^/]+/config/[^/]+", name[len(prefix) :])
-        ]
-        for name, fmt in used_configs(configs):
-            if fmt in (ConfigFormat.PYHOCON, ConfigFormat.OMEGACONF) and needs_rendering(
-                zf.read(name).decode(errors="replace"), fmt
-            ):
-                raise ValueError(f"job config {name} is not plain data; submit the job with current FLARE tools")
+        # Mirror runtime lookup: the first extension found anywhere under the app's config folder wins.
+        ext_formats = ConfigFormat.config_ext_formats()
+        found = collections.defaultdict(lambda: collections.defaultdict(list))
+        for info in zf.infolist():
+            # Match the path extraction writes: it drops empty, "." and ".." segments, and later duplicates win.
+            path = "/".join(part for part in info.filename.split("/") if part not in ("", ".", ".."))
+            match = re.fullmatch(rf"{re.escape(job_name)}/(?:([^/]+)/config/(?:.+/)?)?([^/.]+)(\..+)", path)
+            if match and match.group(3) in ext_formats and (match.group(1) or match.group(2) == JobConstants.META):
+                found[match.group(1, 2)][match.group(3)].append(info)
+        for entries_by_ext in found.values():
+            ext = next(ext for ext in ext_formats if ext in entries_by_ext)
+            fmt = ext_formats[ext]
+            for info in entries_by_ext[ext]:
+                if fmt in (ConfigFormat.PYHOCON, ConfigFormat.OMEGACONF) and needs_rendering(
+                    zf.read(info).decode(errors="replace"), fmt
+                ):
+                    raise ValueError(
+                        f"job config {info.filename} is not plain data; submit the job with current FLARE tools"
+                    )
 
     @staticmethod
     def _validate_meta(job_name: str, zf: ZipFile) -> Optional[dict]:

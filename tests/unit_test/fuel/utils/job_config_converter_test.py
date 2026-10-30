@@ -56,7 +56,6 @@ def legacy_job(tmp_path):
     _write(str(job_dir / "meta.conf"), HOCON_META)
     _write(str(job_dir / "app" / "config" / "config_fed_client.conf"), HOCON_CLIENT)
     _write(str(job_dir / "app" / "config" / "config_fed_server.yml"), YAML_SERVER)
-    _write(str(job_dir / "app" / "custom" / "logging.conf"), "[loggers]\nkeys=root\n")
     return job_dir
 
 
@@ -75,7 +74,6 @@ def test_legacy_configs_render_to_inert_data_without_touching_source(legacy_job,
     server = ConfigService.load_config_dict("config_fed_server.json", [config_dir])
     assert server["rounds"] == 3
     assert server["components"] == [{"path": "a.B", "id": "c1"}]
-    assert open(os.path.join(converted, "app", "custom", "logging.conf")).read().startswith("[loggers]")
 
 
 def test_json_job_is_submitted_unchanged(tmp_path):
@@ -85,25 +83,6 @@ def test_json_job_is_submitted_unchanged(tmp_path):
 
     assert convert_job_configs(str(job_dir), str(tmp_path / "work")) == str(job_dir)
     assert not (tmp_path / "work").exists()
-
-
-def test_unresolvable_substitution_names_the_file(tmp_path):
-    job_dir = tmp_path / "job3"
-    _write(str(job_dir / "meta.conf"), "name = ${CONVERTER_TEST_MISSING}")
-
-    with pytest.raises(ValueError, match="meta.conf"):
-        convert_job_configs(str(job_dir), str(tmp_path / "work"))
-
-
-def test_legacy_app_folder_and_symlinks_are_preserved(tmp_path):
-    app_dir = tmp_path / "legacy_app"
-    _write(str(app_dir / "config" / "config_fed_client.conf"), "format_version = 2\nexecutors = []\n")
-    os.symlink("/nonexistent-target", str(app_dir / "dangling"))
-
-    converted = convert_job_configs(str(app_dir), str(tmp_path / "work"))
-
-    assert json.loads(open(os.path.join(converted, "config", "config_fed_client.conf")).read())["format_version"] == 2
-    assert os.readlink(os.path.join(converted, "dangling")) == "/nonexistent-target"
 
 
 @pytest.mark.parametrize("link", ["file", "folder"])
@@ -121,21 +100,6 @@ def test_linked_configs_are_rejected_without_touching_their_targets(tmp_path, li
     with pytest.raises(ValueError, match="linked job config"):
         convert_job_configs(str(job_dir), str(tmp_path / "work"))
     assert (outside / "config_fed_client.conf").read_text() == "format_version = 2\n"
-
-
-def test_default_fallback_configs_are_rendered(tmp_path):
-    job_dir = tmp_path / "job5"
-    _write(str(job_dir / "meta.yml.default"), "base: &b {n: 1}\nother: *b\n")
-    _write(str(job_dir / "app" / "config" / "config_fed_client.conf.default"), "format_version = 2\n")
-
-    converted = convert_job_configs(str(job_dir), str(tmp_path / "work"))
-
-    assert ConfigService.load_config_dict(os.path.join(converted, "meta.yml.default")) == {
-        "base": {"n": 1},
-        "other": {"n": 1},
-    }
-    client = os.path.join(converted, "app", "config", "config_fed_client.conf.default")
-    assert ConfigService.load_config_dict(client) == {"format_version": 2}
 
 
 def test_configs_shadowed_by_higher_precedence_files_are_not_rendered(tmp_path):

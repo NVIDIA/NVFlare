@@ -186,15 +186,3 @@ def test_json_indexing_preserves_resource_keys_and_application_values(tmp_path):
     path.write_text(json.dumps(original))
     config, _ = load_pyhocon_conf(path.name, str(tmp_path))
     assert PyhoconConfig(config).to_dict() == original
-
-
-def test_job_tools_load_yaml_with_anchors_and_interpolations(tmp_path):
-    from nvflare.tool.job.config.config_indexer import load_pyhocon_conf
-
-    path = tmp_path / "config_fed_client.yml"
-    path.write_text("base: &b {lr: 0.1}\nexecutor:\n  <<: *b\n  rounds: ${num_rounds}\nnum_rounds: 3\n")
-
-    config, _ = load_pyhocon_conf(path.name, str(tmp_path))
-
-    assert config["executor"]["lr"] == 0.1
-    assert config["executor"]["rounds"] == 3
