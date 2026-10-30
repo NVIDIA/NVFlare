@@ -62,6 +62,9 @@ jobs:
           uv pip install --system --no-deps "flwr>=1.16,<1.26"
       - name: Run unit test
         run: ./runtest.sh --numprocesses=auto -u
+      - name: Run multiprocess executor lifecycle contracts
+        timeout-minutes: 5
+        run: python3 -m pytest -q tests/integration_test/fast/multi_process_executor_test.py
 
   wheel-build:
     runs-on: ${{ matrix.os }}

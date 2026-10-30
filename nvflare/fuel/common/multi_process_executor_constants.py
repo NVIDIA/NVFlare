@@ -27,6 +27,7 @@ class CommunicationMetaData(object):
     SHAREABLE = "shareable"
     RELAYER = "relayer"
     RANK_PROCESS_STARTED = "rank_process_started"
+    EXECUTION_ID = "execution_id"
     PARENT_PASSWORD = "parent process secret password"
     CHILD_PASSWORD = "client process secret password"
 
