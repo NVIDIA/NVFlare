@@ -33,6 +33,7 @@ from nvflare.lighter.provisioner import Provisioner
 from .cert import deserialize_ca_key
 from .models import Client, Project, User
 from .store import Store, inc_dl
+from .validation import CLIENT_NAMES, SERVER_NAMES, USER_NAMES, validate_names
 
 
 class DummyLogger:
@@ -84,6 +85,10 @@ def _gen_kit(download_key, prepare_target_cb=None, **cb_kwargs):
     if not re.match(allowed_pattern, download_key):
         raise RuntimeError(f"ERROR: detected unsafe download key: {download_key}")
 
+    # Check legacy records before reading keys or creating provisioning files.
+    project = Project.query.first()
+    validate_names({"server1": project.server1}, SERVER_NAMES)
+    validate_names({"organization": User.query.get(1).organization.name}, {"organization": "org"})
     prop_mgr = PropertyManager()
 
     u = Store.get_user(1)
@@ -148,6 +153,8 @@ def _gen_kit(download_key, prepare_target_cb=None, **cb_kwargs):
 
 
 def gen_client_blob(key, id):
+    client = Client.query.get(id)
+    validate_names({"name": client.name, "organization": client.organization.name}, CLIENT_NAMES)
     return _gen_kit(key, _prepare_client, client_id=id)
 
 
@@ -169,6 +176,8 @@ def _prepare_client(prop_mgr: PropertyManager, prov_project: ProvProject, client
 
 
 def gen_user_blob(key, id):
+    user = User.query.get(id)
+    validate_names({"email": user.email, "organization": user.organization.name, "role": user.role.name}, USER_NAMES)
     return _gen_kit(key, _prepare_user, user_id=id)
 
 

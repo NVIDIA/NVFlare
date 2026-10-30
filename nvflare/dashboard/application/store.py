@@ -19,6 +19,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from .cert import Entity, make_root_cert
 from .models import Client, Organization, Project, Role, User, db
+from .validation import CLIENT_NAMES, SERVER_NAMES, USER_NAMES, validate_names
 
 log = logging.getLogger(__name__)
 
@@ -125,6 +126,9 @@ class Store(object):
         project = Project.query.first()
         if project.frozen:
             return {"status": "Project is frozen"}
+        validate_names(req, SERVER_NAMES, allow_empty=("server1",))
+        if req.get("frozen"):
+            validate_names({"server1": req.get("server1", project.server1)}, SERVER_NAMES)
         req.pop("id", None)
 
         short_name = req.pop("short_name", "")
@@ -179,6 +183,7 @@ class Store(object):
 
     @classmethod
     def create_client(cls, req, creator):
+        validate_names(req, CLIENT_NAMES, required=CLIENT_NAMES)
         creator_id = User.query.filter_by(email=creator).first().id
         name = req.get("name")
         organization = req.get("organization", "")
@@ -229,6 +234,7 @@ class Store(object):
 
     @classmethod
     def patch_client_by_project_admin(cls, id, req):
+        validate_names(req, CLIENT_NAMES)
         client = Client.query.get(id)
 
         organization = req.pop("organization", None)
@@ -258,6 +264,7 @@ class Store(object):
 
     @classmethod
     def patch_client_by_creator(cls, id, req):
+        validate_names(req, {"name": "client"})
         client = Client.query.get(id)
         _ = req.pop("approval_state", None)
         _ = req.pop("organization", None)
@@ -308,6 +315,12 @@ class Store(object):
                 log.error("Non-seeding create_user cannot create requested role")
                 return None
             approval_state = 0
+        validate_names(
+            req,
+            USER_NAMES,
+            required=("email", "organization", "role") if seeding else ("email",),
+            allow_empty=() if seeding else ("organization", "role"),
+        )
         org = get_or_create(db.session, Organization, name=organization)
         role = get_or_create(db.session, Role, name=role_name)
         try:
@@ -361,6 +374,7 @@ class Store(object):
 
     @classmethod
     def patch_user_by_project_admin(cls, id, req):
+        validate_names(req, {"organization": "org", "role": "simple_name"})
         user = User.query.get(id)
         org_name = req.pop("organization", None)
         if org_name is not None:
@@ -388,6 +402,9 @@ class Store(object):
         role = req.pop("role", None)
         if role is not None and (not isinstance(role, str) or role not in _SELF_ASSIGNABLE_ROLES):
             return {"status": "error"}
+        # Validate before get_or_create, which commits the session.
+        if "organization" in req and user.organization.name == "":
+            validate_names(req, {"organization": "org"})
         if role is not None and user.role.name == "":
             role = get_or_create(db.session, Role, name=role)
             user.role_id = role.id
