@@ -25,6 +25,7 @@ from nvflare.apis.fl_constant import ProcessType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
+from nvflare.private.fed.resource_stats.cpu_consumed import register_managed_child
 
 
 class WandBTask(NamedTuple):
@@ -166,6 +167,7 @@ class WandBReceiver(AnalyticsReceiver):
             p = Process(target=self._process_queue_tasks, args=(q,))
             self.processes[site_name] = p
             p.start()
+            register_managed_child(p, descendants_may_be_unwaited=True)
             time.sleep(0.2)
 
     def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin: str):

@@ -104,7 +104,9 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def start_app_on_server(self, fl_ctx: FLContext, job: Job = None, job_clients=None, snapshot=None) -> str:
+    def start_app_on_server(
+        self, fl_ctx: FLContext, job: Job = None, job_clients=None, snapshot=None, restored_attempt: bool = False
+    ) -> str:
         """Start the FL app on Server.
 
         Returns:

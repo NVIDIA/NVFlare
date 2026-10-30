@@ -43,6 +43,8 @@ from nvflare.job_config.task_execution import (
     STATISTICS_EXECUTOR_PATH,
     task_constructor_args,
 )
+from nvflare.private.fed.resource_stats.collector import ExecutionResourceCollector
+from nvflare.private.fed.resource_stats.contract import normalize_duration, normalize_measurement
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
 from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
@@ -235,6 +237,24 @@ def _execute(
     return result, runtime
 
 
+def _stop_resources(collection):
+    try:
+        if collection is not None:
+            snapshot = collection.stop()
+            checked = {
+                name: normalize_measurement(name, snapshot[name]) for name in ("resource_capacity", "cpu_consumed")
+            }
+            if "duration_seconds" in snapshot:
+                checked["duration_seconds"] = normalize_duration(snapshot["duration_seconds"])
+            return checked
+    except Exception:
+        pass
+    return {
+        "resource_capacity": {"status": "unavailable", "issues": ["observation_incomplete"]},
+        "cpu_consumed": {"status": "unavailable", "issues": ["observation_incomplete"]},
+    }
+
+
 def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_keys=()) -> TaskCompletion:
     """Run one bootstrap and commit its result after successful finalization."""
 
@@ -254,6 +274,8 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
     store.claim_worker(identity)
     owns_auditor = False
     transport = None
+    collection = None
+    resource_snapshot = None
     try:
         # Record policy decisions even before application logging or imports.
         if AuditService.get_auditor() is None:
@@ -262,6 +284,12 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
         # Policy preflight precedes logging factories, custom decomposers and payload decoding.
         _runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys)
         _authorize_bootstrap(bootstrap, workspace, fl_ctx)
+        if bootstrap.resource_reporting:
+            try:
+                collection = ExecutionResourceCollector()
+            except Exception:
+                # Resource statistics are optional; execution remains authoritative.
+                pass
         if workspace.get_log_config_file_path():
             configure_logging(workspace, identity.job_id, file_prefix=f"task_{identity.attempt_id}")
         else:
@@ -295,16 +323,24 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
         # Serialization can invoke application decomposers. Fail early here;
         # the publication guard makes the final decision after verification.
         runtime.raise_if_failed()
-        usage = resource.getrusage(resource.RUSAGE_SELF)
-        completed_at = time.time()
-        diagnostics = {
-            "elapsed_seconds": time.monotonic() - started_monotonic,
-            "user_cpu_seconds": usage.ru_utime,
-            "system_cpu_seconds": usage.ru_stime,
-            "max_rss_native_units": usage.ru_maxrss,
-            "max_rss_unit": "bytes" if sys.platform == "darwin" else "kibibytes",
-        }
         checkpoint = store.stage_checkpoint(identity)
+        if bootstrap.resource_reporting:
+            resource_snapshot = _stop_resources(collection)
+            diagnostics = {}
+            if "duration_seconds" in resource_snapshot:
+                diagnostics["elapsed_seconds"] = float(resource_snapshot["duration_seconds"])
+            if "cpu_seconds" in resource_snapshot["cpu_consumed"]:
+                diagnostics["cpu_seconds"] = float(resource_snapshot["cpu_consumed"]["cpu_seconds"])
+        else:
+            usage = resource.getrusage(resource.RUSAGE_SELF)
+            diagnostics = {
+                "elapsed_seconds": time.monotonic() - started_monotonic,
+                "user_cpu_seconds": usage.ru_utime,
+                "system_cpu_seconds": usage.ru_stime,
+                "max_rss_native_units": usage.ru_maxrss,
+                "max_rss_unit": "bytes" if sys.platform == "darwin" else "kibibytes",
+            }
+        completed_at = time.time()
         if checkpoint is not None:
             diagnostics["checkpoint"] = checkpoint.to_dict()
         return store.commit_staged_result(
@@ -332,15 +368,42 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             pass
         raise
     finally:
+        if bootstrap.resource_reporting and resource_snapshot is None:
+            resource_snapshot = _stop_resources(collection)
         sys.path[:] = old_sys_path
         if owns_auditor:
             AuditService.close()
+        close_failed = False
         if transport is not None:
             # The outcome is already on disk; a session that will not close cleanly must not replace it.
             try:
                 transport.close()
             except Exception as e:
+                close_failed = True
                 logging.getLogger(__name__).warning("could not close the cell session: %s", secure_format_exception(e))
+        if bootstrap.resource_reporting:
+            try:
+                traffic = (
+                    transport.traffic_snapshot(incomplete=close_failed)
+                    if transport is not None
+                    else {"sent_bytes": "0", "received_bytes": "0"}
+                )
+            except Exception:
+                traffic = {"status": "unavailable", "issues": ["observation_incomplete"]}
+            try:
+                store.write_resource_stats(
+                    identity,
+                    {
+                        "schema_version": "1.0",
+                        "identity": identity.to_dict(),
+                        "scope": "worker",
+                        **resource_snapshot,
+                        "message_traffic": traffic,
+                    },
+                )
+            except Exception:
+                # A missing sidecar becomes a gap, never a changed training result.
+                pass
 
 
 def main():
