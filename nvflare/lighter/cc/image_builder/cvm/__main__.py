@@ -205,7 +205,7 @@ def run_delivery(args):
         raise BuildError("Materialized delivery does not contain its launcher")
     command = [str(launcher)]
     if args.cvm_bundle:
-        command.extend(["--cvm-bundle", args.cvm_bundle])
+        command.extend(["--cvm-bundle", str(Path(args.cvm_bundle).resolve())])
     for gpu in args.gpu or ():
         command.extend(["--gpu", gpu])
     command.extend(["--bind-address", args.bind_address])

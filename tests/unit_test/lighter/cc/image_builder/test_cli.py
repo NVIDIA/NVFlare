@@ -481,7 +481,7 @@ class CliTests(unittest.TestCase):
                         "--output",
                         str(output),
                         "--cvm-bundle",
-                        "/opt/cvm/profile/intel_tdx",
+                        "profiles/intel_tdx",
                         "--gpu",
                         "0000:41:00.0",
                         "--bind-address",
@@ -499,7 +499,7 @@ class CliTests(unittest.TestCase):
             command = [
                 str(launcher.resolve()),
                 "--cvm-bundle",
-                "/opt/cvm/profile/intel_tdx",
+                str(Path("profiles/intel_tdx").resolve()),
                 "--gpu",
                 "0000:41:00.0",
                 "--bind-address",
