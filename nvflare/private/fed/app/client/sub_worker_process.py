@@ -98,7 +98,12 @@ class EventRelayer(FLComponent):
             fl_ctx.set_prop(
                 FLContextKey.EVENT_ORIGIN_SITE, CommunicateData.MULTI_PROCESS_EXECUTOR, private=True, sticky=False
             )
+            if event_type == EventType.START_RUN:
+                # Only failures from this rank's startup handlers count here.
+                fl_ctx.remove_prop(FLContextKey.EXCEPTIONS, force_removal=True)
             self.fire_event(event_type=event_type, fl_ctx=fl_ctx)
+            if event_type == EventType.START_RUN and fl_ctx.get_prop(FLContextKey.EXCEPTIONS):
+                raise RuntimeError("rank startup handlers failed")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """To handle the event.
@@ -211,6 +216,10 @@ class SubWorkerExecutor(Runner):
 
         job_id = self.args.job_id
         self._get_client_run_manager(job_id)
+        self.run_manager.cell = self.cell
+        self.run_manager.conf = component_builder
+        with self.run_manager.new_context() as fl_ctx:
+            component_builder.fl_ctx = fl_ctx
 
         parent_fqcn = FQCN.join([self.args.client_name, self.args.job_id])
         relayer = EventRelayer(self.cell, parent_fqcn, self.local_rank)
