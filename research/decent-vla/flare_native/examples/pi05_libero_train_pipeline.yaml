@@ -1,0 +1,27 @@
+# lerobot `TrainPipelineConfig` for the pi0.5 configs (pi05_libero_*.yaml), full
+# fine-tuning and LoRA alike. Parsed by lerobot's draccus loader inside the adapter
+# (adapters/lerobot/backend.py::_load_train_pipeline_config).
+#
+# pi05_base expects three openpi-style cameras (base_0_rgb, left_wrist_0_rgb,
+# right_wrist_0_rgb), but HuggingFaceVLA/libero ships `image` (third-person view) and
+# `image2` (wrist). The rename_map maps those onto the first two expected keys; the model
+# fills the missing right_wrist_0_rgb with padding (empty_cameras: 1).
+policy:
+  type: pi05
+  pretrained_path: lerobot/pi05_base
+  push_to_hub: false
+  # torch.compile is off: its autotuning failed on some GPUs we used. Correctness is unaffected.
+  compile_model: false
+  gradient_checkpointing: true
+  empty_cameras: 1
+  normalization_mapping:
+    ACTION: MEAN_STD
+    STATE: MEAN_STD
+    VISUAL: IDENTITY
+dataset:
+  repo_id: HuggingFaceVLA/libero
+  revision: main
+  video_backend: pyav
+rename_map:
+  observation.images.image: observation.images.base_0_rgb
+  observation.images.image2: observation.images.left_wrist_0_rgb

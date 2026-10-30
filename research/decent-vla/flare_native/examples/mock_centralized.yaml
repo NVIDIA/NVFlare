@@ -1,0 +1,29 @@
+name: mock_centralized
+seed: 42
+device: cpu
+
+backend:
+  name: mock
+  optim:
+    name: adamw
+    lr: 1.0e-3
+    weight_decay: 0.0
+
+data:
+  name: mock
+  batch_size: 8
+  num_clients: 1
+  partitioning: iid
+
+train:
+  num_steps: 20
+  save_every: 100
+  output_dir: outputs/mock_centralized
+
+eval:
+  benchmark:
+    name: mock
+    suites: [default]
+  n_episodes_per_task: 3
+  seed: 0
+  after_training: true

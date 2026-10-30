@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "decent-vla"
+version = "0.2.0"
+description = "Federated fine-tuning of vision-language-action (VLA) policies with NVIDIA FLARE."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [{ name = "Zhekai Duan" }, { name = "Kevin Ziyang Xie" }, { name = "Chris Xiaoxuan Lu" }]
+keywords = ["federated-learning", "nvflare", "vla", "robotics", "lerobot", "groot"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Intended Audience :: Science/Research",
+]
+dependencies = [
+    # Capped below 2.11: the default PyPI wheels from torch 2.11 on bundle CUDA 13.0,
+    # which needs a newer driver than CUDA 12.x machines have. On GPU machines install
+    # the torch build that matches the driver first, from the PyTorch index.
+    "torch>=2.4,<2.11",
+    "numpy>=1.24",
+    "nvflare==2.8.1",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Compatibility extra: FLARE is a required dependency of this native version.
+nvflare = []
+# lerobot policies (SmolVLA, pi0, pi0.5, ACT). `pi` pulls the transformers version
+# pi0.5/PaliGemma needs; `dataset` pulls LeRobotDataset loading.
+# Pinned to lerobot main of 2026-06-13 (version 0.5.2, between the v0.5.1 and v0.6.0
+# tags), the lerobot decent-vla was developed against. lerobot requires Python >= 3.12.
+lerobot = [
+    "lerobot[pi,dataset] @ git+https://github.com/huggingface/lerobot@8515d456be1dbef8c133f07188c785e683eca899",
+    "draccus",
+    "num2words",   # SmolVLM (SmolVLA) processor dependency that lerobot does not pull
+]
+# GR00T N1.7 runs from a clone of NVIDIA Isaac-GR00T in its own Python 3.10 env
+# (scripts/setup_groot.sh), not as a pip dependency, so this extra is empty.
+groot = []
+# LIBERO simulation for evaluation (robosuite/bddl through lerobot's libero extra).
+libero = ["lerobot[libero] @ git+https://github.com/huggingface/lerobot@8515d456be1dbef8c133f07188c785e683eca899"]
+peft = ["peft>=0.11", "accelerate>=1.0"]
+dev = ["pytest>=7.4", "pytest-cov>=4.1"]
+all = ["decent-vla[nvflare,peft,lerobot,groot,libero]"]
+
+[project.scripts]
+decent-vla = "decent_vla.cli.main:main"
+
+# Backends and benchmarks are found through these entry points, so the
+# package must be installed (`pip install -e .`); a bare src/ on the path is not enough.
+[project.entry-points."decent_vla.backends"]
+mock    = "decent_vla.adapters._mock.backend:MockBackend"
+lerobot = "decent_vla.adapters.lerobot.backend:LeRobotBackend"
+groot   = "decent_vla.adapters.groot.backend:GrootBackend"
+
+[project.entry-points."decent_vla.benchmarks"]
+mock   = "decent_vla.benchmarks._mock:MockBenchmark"
+libero = "decent_vla.benchmarks.libero:LIBEROBenchmark"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.black]
+line-length = 120
+target-version = ["py310", "py311", "py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["decent_vla"]
+skip = [".venv", ".venv-groot", ".venv-groot-eval", "third_party", "build", "dist"]
