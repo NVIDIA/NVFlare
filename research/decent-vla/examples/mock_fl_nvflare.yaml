@@ -1,0 +1,36 @@
+name: mock_fl_nvflare
+seed: 42
+device: cpu
+
+backend:
+  name: mock
+  optim:
+    name: adamw
+    lr: 1.0e-3
+    weight_decay: 0.0
+
+data:
+  name: mock
+  batch_size: 8
+  num_clients: 2
+  partitioning: iid
+
+fl:
+  strategy:
+    name: fedavg
+  num_rounds: 2
+  local_steps: 2
+  mode: nvflare
+  output_dir: outputs/mock_fl_nvflare
+  # nvflare block is optional; defaults = in-process simulator, sites c0/c1,
+  # threads = num_clients (keeps warm client state in memory across rounds).
+  nvflare:
+    env: simulator
+
+eval:
+  benchmark:
+    name: mock
+    suites: [default]
+  n_episodes_per_task: 3
+  seed: 0
+  after_training: true

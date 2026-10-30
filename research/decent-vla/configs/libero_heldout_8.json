@@ -1,0 +1,53 @@
+{
+  "description": "FL vs cent — held-out task generalization (pi05 LoRA r=64). Compositional held-out: 2 tasks per LIBERO suite (8 total). Each held-out task's primitives appear in >=1 other training task, so the model must compose at language-conditioning time. Yields clean 8-client x 4-task FL partition (32 train + 8 eval = 40 total). Task names match HuggingFaceVLA/libero dataset metadata exactly (lowercase, filename-derived; differs from BDDL :language field).",
+  "tasks": [
+    {
+      "suite": "libero_spatial",
+      "dataset_task_index": 32,
+      "eval_task_id": 5,
+      "task_name": "pick up the black bowl on the ramekin and place it on the plate"
+    },
+    {
+      "suite": "libero_spatial",
+      "dataset_task_index": 30,
+      "eval_task_id": 6,
+      "task_name": "pick up the black bowl next to the cookie box and place it on the plate"
+    },
+    {
+      "suite": "libero_object",
+      "dataset_task_index": 27,
+      "eval_task_id": 6,
+      "task_name": "pick up the butter and place it in the basket"
+    },
+    {
+      "suite": "libero_object",
+      "dataset_task_index": 29,
+      "eval_task_id": 8,
+      "task_name": "pick up the chocolate pudding and place it in the basket"
+    },
+    {
+      "suite": "libero_goal",
+      "dataset_task_index": 17,
+      "eval_task_id": 1,
+      "task_name": "put the bowl on the stove"
+    },
+    {
+      "suite": "libero_goal",
+      "dataset_task_index": 14,
+      "eval_task_id": 2,
+      "task_name": "put the wine bottle on top of the cabinet"
+    },
+    {
+      "suite": "libero_10",
+      "dataset_task_index": 3,
+      "eval_task_id": 2,
+      "task_name": "turn on the stove and put the moka pot on it"
+    },
+    {
+      "suite": "libero_10",
+      "dataset_task_index": 5,
+      "eval_task_id": 0,
+      "task_name": "put both the alphabet soup and the tomato sauce in the basket"
+    }
+  ]
+}

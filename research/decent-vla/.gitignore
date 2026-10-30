@@ -1,0 +1,7 @@
+outputs/
+data/
+third_party/
+.venv/
+.venv-groot/
+.venv-groot-eval/
+*.egg-info/
