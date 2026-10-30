@@ -26,12 +26,13 @@ from nvflare.recipe import SimEnv
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data_root", default=DATA_ROOT)
+    parser.add_argument("--num_rounds", type=int, default=15)
     args = parser.parse_args()
 
     recipe = FedAvgLrRecipe(
         name="omop_gi_bleed",
         min_clients=len(SITE_FRACTIONS),
-        num_rounds=15,
+        num_rounds=args.num_rounds,
         num_features=len(FEATURES),
         train_script="client.py",
         train_args=f"--data_root {args.data_root}",
