@@ -3,19 +3,20 @@
 ## Purpose
 
 Resource statistics provides a final, best-effort account of the resources visible
-to a job, its recorded CPU work, retained file sizes, and messaging payload. It
-lets users inspect a participant or compare retained jobs without installing
-a monitoring service or changing their application.
+to a job, its recorded CPU work, retained file sizes, and message payloads. It
+lets users inspect a participant or compare retained jobs without installing a
+monitoring service or changing their applications.
 
 The public report format is **4.0**. Collection follows the runtime's execution
-boundaries and admission checks. A supported execution mode supplies attributable
-measurements and lifecycle ownership; statistics does not select or enable backends.
+boundaries and admission checks. Each execution mode provides attributable
+measurements and lifecycle ownership; resource statistics does not select or
+enable backends.
 
 ## Detailed design
 
-This page introduces the contract. The following pages describe the component
-interfaces, algorithms and lifecycle decisions behind it. Read them in this order;
-all three describe the same format 4.0.
+This page introduces the contract. The following pages describe its
+component interfaces, algorithms, and lifecycle decisions. All three use format
+4.0 and can be read in this order:
 
 1. [Measurement and accounting](resource_statistics_measurement.md): the APIs,
    limits, execution windows and formulas used to obtain each measurement.
@@ -26,12 +27,13 @@ all three describe the same format 4.0.
 
 ## Measurement contract
 
-A participant is the server or a client site. It has one final rollup, one
-shared participant `duration_seconds`, and separate capacity and utilization
+A participant is the server or a client site. Each participant has one final
+rollup, a shared `duration_seconds`, and separate capacity and utilization
 measurements. `resource_capacity` is the job-process startup snapshot.
 `resource_time` rolls up capacity multiplied by each execution's own duration;
 it uses the same representation as job/study totals. Worker records stay internal.
-This abbreviated resident example omits identity and optional descriptions:
+The following abbreviated example for a resident job omits identity and optional
+descriptions:
 
 ```json
 {
@@ -111,10 +113,10 @@ and memory probes use existing affinity and visible cgroup limits. CUDA
 enumeration uses the system Driver; optional NVML only improves device
 classification. No mandatory PyTorch dependency is added.
 
-Driver enumeration can initialize CUDA in its calling process. It runs in a
-bounded fresh helper process to avoid altering application CUDA initialization.
-It inherits the execution's finalized visibility and limits and has bounded
-lifetime under the existing process owner.
+Driver enumeration can initialize CUDA in its calling process. To avoid altering
+the application's CUDA initialization, it runs in a fresh helper process with a
+bounded lifetime under the existing process owner. The helper inherits the
+execution's finalized visibility and limits.
 
 The parent supplies participant identity and attaches the report to the existing
 `REPORT_JOB_OUTCOME` request. The server retains accepted reports until
@@ -160,39 +162,40 @@ capacity by the coordinator's lifetime.
 
 Task-mode CPU uses coordinator self CPU plus disjoint worker CPU; workers are
 not also added through the coordinator's waited-child counters. A reused worker
-session contributes once even when it runs several assignments. Saved-result
+session contributes once, even when it runs several assignments. Saved-result
 retransmission adds actual traffic but no compute; failed physical work still
-contributes. Multi-rank adapters must avoid repeating shared capacity per rank.
+contributes. Multi-rank adapters avoid repeating shared capacity per rank.
 
 Worker reports are optional measurement artifacts, separate from task completion,
 checkpoint promotion, receipts and resource settlement. Missing observations mark
 the affected rollups partial or unavailable. Statistics never authorizes publication,
-retry, recovery or cleanup. If a known participant window does not contain all
-included work, omit its duration and CPU average rather than use a misleading
-denominator; valid CPU and capacity-time totals remain useful.
+retry, recovery or cleanup. If the participant window cannot be shown to contain
+all included work, the report omits its duration and CPU average. Valid CPU and capacity-time totals
+remain useful.
 
-The accounting path is shared across supported Process, Docker, Kubernetes,
-Slurm and custom task launchers. External/attach, grouped and distributed workers
-use the same rollup when their runtime supplies execution identity, attributable
-measurement scopes, artifact access and lifecycle ownership. Runtime support and
-statistics integration are both required for a mode to provide this accounting.
-Collection does not bypass runtime admission checks.
+A common accounting path handles admitted Process, Docker, Kubernetes, Slurm and
+custom task launchers, as well as external/attach, grouped and distributed workers.
+It uses runtime-provided execution identity, attributable measurement scopes,
+artifact access and lifecycle ownership. Collection follows runtime admission
+checks.
 
 ## User interface
 
-Use `nvflare resources` to inspect a finalized job, a participant, or a study.
+The `nvflare resources` command inspects a finalized job, a participant, or a
+study:
 
 ```bash
 nvflare resources --job JOB_ID
 nvflare resources --job JOB_ID --site site-1
+nvflare resources --job JOB_ID --study STUDY_NAME
 nvflare resources --study STUDY_NAME
 nvflare resources --job JOB_ID --format json
 nvflare resources --schema
 ```
 
-The command serves people and agents. Capacity-time and utilization
-are rolled up per participant, including the selected-site view. Participant
-detail labels the raw snapshot **Job-process startup capacity**; for task jobs
+A job query searches the default study unless `--study` specifies another study.
+The command presents capacity-time and utilization per participant, including in
+the selected-site view. Participant detail labels the raw snapshot **Job-process startup capacity**; for task jobs
 this is coordinator capacity, not a worker inventory. GPU counts are integers;
 CPU quotas, average CPU use and capacity-time may be fractional. Text uses at
 most two decimals without trailing zeros, with `<0.01` for small positive values.
