@@ -28,6 +28,7 @@ from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed25519, rsa
 from cryptography.x509.oid import NameOID
 
 import nvflare.lighter.utils as lighter_utils
+from nvflare.fuel.sec.cert_uri import JOB_URI_KIND, cert_uri, job_ca_marker_uri
 from nvflare.lighter.impl.cert import serialize_cert
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import Identity, cert_to_dict
@@ -533,6 +534,54 @@ class TestVerifyFolderSignature:
         sign_folders(str(folder), client_pri_key, crt_path=str(client_crt_path))
 
         assert verify_folder_signature(str(folder), str(root_ca_path), single_signer=False) is False
+
+    @pytest.mark.parametrize(
+        "job_scoped, job_ca, accepted",
+        [
+            (True, False, False),
+            (True, True, False),
+            (False, True, False),
+            (False, False, True),
+        ],
+        ids=["job_leaf", "job_ca_leaf", "job_ca_unmarked_leaf", "admin_intermediate"],
+    )
+    def test_verify_folder_signature_enforces_signer_scope(self, tmp_path, job_scoped, job_ca, accepted):
+        root_key, root_pub = lighter_utils.generate_keys()
+        root_cert = lighter_generate_cert(Identity("root"), Identity("root"), root_key, root_pub, ca=True)
+        ca_key, ca_pub = lighter_utils.generate_keys()
+        ca_cert = lighter_generate_cert(
+            Identity("issuer"),
+            root_cert.subject,
+            root_key,
+            ca_pub,
+            ca=True,
+            ca_path_length=0,
+            uri_names=[job_ca_marker_uri()] if job_ca else [],
+        )
+        signer_key, signer_pub = lighter_utils.generate_keys()
+        signer_cert = lighter_generate_cert(
+            Identity("alice@nvidia.com", "nvidia", "lead"),
+            ca_cert.subject,
+            ca_key,
+            signer_pub,
+            uri_names=[cert_uri(JOB_URI_KIND, "job-123")] if job_scoped else [],
+        )
+        # All cases have a valid chain and admin identity; only credential scope differs.
+        lighter_utils.verify_cert_chain(signer_cert, [ca_cert], root_cert)
+        root_ca_path = tmp_path / "root.crt"
+        signer_crt_path = tmp_path / "signer.crt"
+        root_ca_path.write_bytes(serialize_cert(root_cert))
+        signer_crt_path.write_bytes(serialize_cert(signer_cert) + serialize_cert(ca_cert))
+        folder = tmp_path / "signed_folder"
+        folder.mkdir()
+        (folder / "config.json").write_text("{}")
+        sign_folders(str(folder), signer_key, crt_path=str(signer_crt_path))
+
+        verified, signers = verify_folder_signature_and_get_signers(str(folder), str(root_ca_path))
+
+        assert verified is accepted
+        assert signers == ([("alice@nvidia.com", "nvidia", "lead")] if accepted else [])
+        assert verify_folder_signature(str(folder), str(root_ca_path)) is accepted
 
     def test_verify_folder_signature_accepts_submitter_cert_with_custom_role(self, tmp_path):
         root_pri_key, root_pub_key = lighter_utils.generate_keys()
