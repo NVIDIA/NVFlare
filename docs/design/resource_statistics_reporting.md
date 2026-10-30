@@ -1,8 +1,8 @@
 # Resource statistics: reports, delivery and queries
 
-Public resource reports use **schema format 4.0**. This page
-defines the records, delivery, and query behavior introduced in the
-[overview](resource_statistics_design.md). The
+Public resource-statistics records use schema version **4.0**, identified by
+their `schema_version` field. This page defines the records, delivery, and query
+behavior introduced in the [overview](resource_statistics_design.md). The
 [measurement design](resource_statistics_measurement.md) explains how values are
 obtained, and the [implementation design](resource_statistics_implementation.md)
 maps components to their lifecycle hooks.
@@ -174,7 +174,7 @@ a site's self-report.
 
 ### Limits and retries
 
-The following format-4 implementation bounds are not additional configuration
+The following implementation bounds are not additional configuration
 options. A producer must stop before exceeding them, and a receiver must enforce
 them independently.
 
@@ -208,7 +208,7 @@ equivalent retry. There is no separate statistics sender, retry journal, or
 acknowledgement protocol. Older peers may omit the report or its reply status;
 this indicates absent statistics rather than an outcome failure. An older archive
 without the bundle is unavailable, not a zero measurement, and an unsupported
-version must not be interpreted as format 4.0.
+schema version must not be interpreted as version 4.0.
 
 ## Server ledger and archive publication
 
@@ -328,8 +328,8 @@ described above.
 
 ## Compatibility and failure boundary
 
-Format 4.0 requires `resource_time` for every participant, including resident
-jobs. It does not provide a fallback that reinterprets startup capacity as a task
+Schema version 4.0 requires `resource_time` for every participant, including
+resident jobs. It does not provide a fallback that reinterprets startup capacity as a task
 rollup, and unsupported formats are not silently upgraded. Unsupported or absent
 archives are reported as unavailable; deployment may still complete normally when
 a peer does not send statistics.

@@ -1,6 +1,6 @@
 # Resource statistics: runtime integration
 
-This page describes the components and lifecycle of the format-4 design introduced
+This page describes the components and lifecycle of resource statistics introduced
 in the [overview](resource_statistics_design.md). The [measurement design](resource_statistics_measurement.md)
 defines the algorithms; the [reporting design](resource_statistics_reporting.md)
 defines records, validation, delivery and queries. The internal interfaces below

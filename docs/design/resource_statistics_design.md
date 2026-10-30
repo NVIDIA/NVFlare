@@ -7,16 +7,14 @@ to a job, its recorded CPU work, retained file sizes, and message payloads. It
 lets users inspect a participant or compare retained jobs without installing a
 monitoring service or changing their applications.
 
-The public report format is **4.0**. Collection follows the runtime's execution
-boundaries and admission checks. Each execution mode provides attributable
-measurements and lifecycle ownership; resource statistics does not select or
-enable backends.
+Collection follows the runtime's execution boundaries and admission checks. Each
+execution mode provides attributable measurements and lifecycle ownership; resource
+statistics does not select or enable backends.
 
 ## Detailed design
 
 This page introduces the contract. The following pages describe its
-component interfaces, algorithms, and lifecycle decisions. All three use format
-4.0 and can be read in this order:
+component interfaces, algorithms, and lifecycle decisions:
 
 1. [Measurement and accounting](resource_statistics_measurement.md): the APIs,
    limits, execution windows and formulas used to obtain each measurement.

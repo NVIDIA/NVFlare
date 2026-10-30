@@ -1,6 +1,6 @@
 # Resource statistics: measurement and accounting
 
-This page defines measurement and accounting for format 4.0. The
+This page describes how resource statistics are measured and accounted for. The
 [overview](resource_statistics_design.md) defines the user contract, and the
 [reporting design](resource_statistics_reporting.md) defines wire validation and
 identity. Execution records and intervals are internal artifacts; the public
