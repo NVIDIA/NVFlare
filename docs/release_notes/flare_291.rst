@@ -8,8 +8,8 @@ FLARE 2.9.1 updates the confidential computing deployment stack, which follows
 the NVIDIA confidential computing reference architecture. The first version
 was a technical preview in 2.7.0, and the stack remains a technical preview and
 entirely optional: nothing changes for deployments that do not use it. The
-other changes that can affect existing deployments are a Dashboard restriction
-and a few bug fixes.
+other changes that can affect existing deployments are checkpoint path
+restrictions, a Dashboard restriction, and a few bug fixes.
 
 Highlights:
 
@@ -101,9 +101,14 @@ Security and Hardening
 - **Confidential computing.** Launcher-defined bring-your-own-code (BYOC) jobs,
   which carry their own executable content in Docker, Kubernetes, or Slurm
   launcher specifications instead of using the approved workload image, are
-  blocked in confidential computing, and checkpoint paths that escape the application root
-  are rejected. CVM build inputs are validated more strictly, and the vault
-  capacity is checked before a build.
+  blocked in confidential computing. CVM build inputs are validated more
+  strictly, and the vault capacity is checked before a build.
+- **PyTorch checkpoint paths (all deployments).** ``PTFileModelPersistor``
+  requires a checkpoint directory relative to and within the application
+  directory, and checkpoint filenames relative to and within the checkpoint
+  directory. Absolute paths and paths that resolve outside the application
+  directory, including through symlinks, are rejected. See the
+  :ref:`migration_guide` for required configuration changes.
 - **Dashboard.** Client creation and PATCH requests that contain ``props`` are
   rejected with HTTP 400, and client-kit generation ignores previously stored
   ``props``, so client properties can no longer supply provisioning paths that
@@ -151,5 +156,8 @@ See the :ref:`migration_guide` for details.
   existing deployment, and the change affects only deployments that use
   confidential computing.
 - Dashboard API integrations that send client ``props`` must omit it.
+- ``PTFileModelPersistor`` configurations with absolute or escaping checkpoint
+  output paths must use paths within the application directory instead, in all
+  deployments.
 - Confidential computing jobs can no longer carry launcher-defined BYOC
   content.
