@@ -38,6 +38,7 @@ from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
 from nvflare.private.admin_defs import MsgHeader, error_reply, ok_reply
+from nvflare.private.fed.resource_stats.contract import SCHEMA_VERSION
 from nvflare.private.fed.server import cmd_utils as cmd_utils_module
 from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import (
@@ -356,6 +357,7 @@ class _FakeEngine:
 class _FakeListedJob:
     def __init__(self, meta):
         self.meta = meta
+        self.job_id = meta.get(JobMetaKey.JOB_ID.value)
 
 
 class _FakeListJobDefManager:
@@ -1193,6 +1195,183 @@ def test_list_jobs_defaults_to_default_study_when_session_study_missing(monkeypa
     assert len(conn.tables[0].rows) == 1
     assert conn.tables[0].rows[0][1][JobMetaKey.STUDY.value] == "default"
     assert len(conn.successes) == 1
+
+
+def test_get_study_resources_refuses_oversized_response(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "MAX_STUDY_SUMMARY_BYTES", 1)
+    conn = _MockConnection(app_ctx=_FakeListEngine([]), props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    assert conn.dicts == []
+    assert "exceeds 1 bytes" in conn.errors[0][0]
+
+
+def test_get_study_resources_enforces_incremental_row_byte_budget(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "MAX_STUDY_SUMMARY_BYTES", 10)
+    monkeypatch.setattr(job_cmds_module, "canonical_json_bytes", lambda _value: b"123456")
+    monkeypatch.setattr(
+        job_cmds_module,
+        "derive_study_totals",
+        lambda _rows: pytest.fail("study totals must not be derived after the row budget is exhausted"),
+    )
+    jobs = [
+        _FakeListedJob({JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: RunStatus.RUNNING}),
+        _FakeListedJob({JobMetaKey.JOB_ID.value: "job-2", JobMetaKey.STATUS.value: RunStatus.RUNNING}),
+    ]
+    conn = _MockConnection(app_ctx=_FakeListEngine(jobs), props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    assert conn.dicts == []
+    assert conn.errors[0][0] == "study resource rows exceed 10 bytes"
+
+
+def test_get_study_resources_normalizes_run_status_enum(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "job-1",
+            JobMetaKey.STATUS.value: RunStatus.RUNNING,
+        }
+    )
+    conn = _MockConnection(app_ctx=_FakeListEngine([job]), props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    result, _meta = conn.dicts[0]
+    assert result["jobs"] == [
+        {"job_id": "job-1", "job_name": "job-1", "job_status": "RUNNING", "resource_data": "nonterminal"}
+    ]
+
+
+def test_get_study_resources_stages_workspace_instead_of_loading_component(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "derive_job_totals",
+        lambda participants: {"marker": participants[0]},
+    )
+    monkeypatch.setattr(job_cmds_module, "derive_study_totals", lambda rows: {"derived": True})
+    monkeypatch.setattr(job_cmds_module, "validate_record", lambda record: None)
+    job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "job-1",
+            JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED,
+        }
+    )
+    engine = _FakeListEngine([job])
+    staged_paths = []
+
+    def _stage_workspace(jid, download_dir, component, download_file, fl_ctx):
+        archive_path = Path(download_dir) / jid / download_file
+        archive_path.parent.mkdir(parents=True)
+        archive_path.write_bytes(b"staged workspace")
+        staged_paths.append(archive_path)
+
+    class _PathReader:
+        def __init__(self, workspace_path):
+            assert Path(workspace_path).read_bytes() == b"staged workspace"
+
+        @staticmethod
+        def read_resource_summary():
+            return {"schema_version": SCHEMA_VERSION, "job_id": "job-1", "participants": ["included"]}
+
+    engine.job_def_manager.get_storage_for_download = MagicMock(side_effect=_stage_workspace)
+    engine.job_def_manager.get_storage_component = MagicMock(
+        side_effect=AssertionError("study query must not materialize workspace bytes")
+    )
+    monkeypatch.setattr(job_cmds_module, "WorkspaceResourceStatsReader", _PathReader)
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    assert conn.errors == []
+    result, _meta = conn.dicts[0]
+    assert result["jobs"] == [
+        {
+            "job_id": "job-1",
+            "job_name": "job-1",
+            "job_status": RunStatus.FINISHED_COMPLETED.value,
+            "resource_data": "included",
+            "totals": {"marker": "included"},
+        }
+    ]
+    engine.job_def_manager.get_storage_for_download.assert_called_once()
+    engine.job_def_manager.get_storage_component.assert_not_called()
+    assert len(staged_paths) == 1
+    assert not staged_paths[0].exists()
+
+
+def test_get_study_resources_uses_job_metadata_name_without_archived_copy(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "derive_job_totals",
+        lambda participants: {"marker": participants},
+    )
+    monkeypatch.setattr(job_cmds_module, "derive_study_totals", lambda rows: {"derived": True})
+    monkeypatch.setattr(job_cmds_module, "validate_record", lambda record: None)
+    job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "job-1",
+            JobMetaKey.JOB_NAME.value: "trusted-name",
+            JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED,
+        }
+    )
+    engine = _FakeListEngine([job])
+
+    def _stage_workspace(jid, download_dir, component, download_file, fl_ctx):
+        archive_path = Path(download_dir) / jid / download_file
+        archive_path.parent.mkdir(parents=True)
+        archive_path.write_bytes(b"staged workspace")
+
+    class _PathReader:
+        archive_job_id = "job-1"
+
+        def __init__(self, workspace_path):
+            assert Path(workspace_path).read_bytes() == b"staged workspace"
+
+        @staticmethod
+        def read_resource_summary():
+            return {
+                "schema_version": SCHEMA_VERSION,
+                "job_id": _PathReader.archive_job_id,
+                "participants": [],
+            }
+
+    engine.job_def_manager.get_storage_for_download = MagicMock(side_effect=_stage_workspace)
+    monkeypatch.setattr(job_cmds_module, "WorkspaceResourceStatsReader", _PathReader)
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    assert conn.errors == []
+    result, _meta = conn.dicts[0]
+    assert result["jobs"] == [
+        {
+            "job_id": "job-1",
+            "job_name": "trusted-name",
+            "job_status": RunStatus.FINISHED_COMPLETED.value,
+            "resource_data": "included",
+            "totals": {"marker": []},
+        }
+    ]
+
+    _PathReader.archive_job_id = "job-2"
+    mismatch_conn = _MockConnection(app_ctx=engine, props={ConnProps.ACTIVE_STUDY: "default"})
+    JobCommandModule().get_study_resources(mismatch_conn, ["get_study_resources"])
+    assert mismatch_conn.errors == []
+    assert mismatch_conn.dicts[0][0]["jobs"] == [
+        {
+            "job_id": "job-1",
+            "job_name": "trusted-name",
+            "job_status": RunStatus.FINISHED_COMPLETED.value,
+            "resource_data": "unavailable",
+        }
+    ]
 
 
 def test_list_jobs_ignores_duration_parse_failures(monkeypatch):

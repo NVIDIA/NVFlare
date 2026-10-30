@@ -410,6 +410,78 @@ class Session(SessionSpec):
             raise InternalError("server failed to return job meta")
         return job_meta
 
+    def get_job_resources(self, job_id: str, site: str = None) -> dict:
+        """Return the finalized resource-statistics report for one job.
+
+        Reports participant-visible CPU, memory, and CUDA-device capacity,
+        CPU time consumed, run-directory file bytes, selected message traffic,
+        together with accumulated execution capacity-time. A site
+        query also includes its final workspace-filesystem capacity. Queries
+        sum recorded capacity-time; capacity does not establish that
+        the job used a GPU. Data is only available after
+        the job has finished and the server has finalized its resource report;
+        calling this before finalization raises :class:`JobNotDone`.
+
+        ``resource_capacity`` records the job-process startup CPU, RAM, and CUDA
+        devices. ``resource_time`` sums each execution's capacity-time once.
+        ``resource_utilization`` groups ``cpu_consumed`` (CPU seconds),
+        ``retained_content`` (run-directory file bytes), and ``message_traffic``
+        (sent and received CellNet payload bytes for the job and its managed
+        trainers). Each measurement retains its own status and issues.
+        One participant-level ``duration_seconds`` supports CPU averages and
+        describes a containing window; worker durations remain internal.
+        These quantities do not measure GPU busy time or unique
+        cluster hardware when participants share physical resources.
+
+        The default command wait is 300 seconds because reading the existing
+        workspace archive can take time. An explicit session command timeout
+        takes precedence. A timeout does not cancel the server's archive read.
+
+        Args:
+            job_id: ID of the job
+            site: optional participant name (e.g. a client site, or "server")
+                to also include that participant's own report in the result
+
+        Returns: a dict with key ``resource_summary`` (the job-level rollup),
+            plus ``participant_summary`` when ``site`` is given. See
+            :ref:`job_cli` ("Job Resources" section) for the full field
+            reference.
+
+        """
+        self._validate_job_id(job_id)
+        parts = [AdminCommandNames.GET_JOB_RESOURCES, job_id]
+        if site is not None:
+            if not isinstance(site, str) or not site:
+                raise InvalidArgumentError("site must be a non-empty string")
+            parts.extend(["--site", site])
+        reply = self._do_command(join_args(parts), enforce_meta=False)
+        return self._get_dict_data(reply)
+
+    def get_study_resources(self) -> dict:
+        """Return resource statistics across retained jobs in the active study.
+
+        Scans retained, finalized jobs the caller may inspect in the active study (see
+        :ref:`flare_api_initialization` for how the active study is selected)
+        and derives additive totals from the current resource-report format.
+        The server checks each job with the same permission as
+        ``get_job_resources`` before reading its archive. Restricted jobs are
+        omitted from rows, totals, and coverage counts, without a denied-job
+        count. An empty result means no accessible retained jobs were found.
+        Accessible jobs that are not yet finalized, or whose resource data is
+        unavailable, are counted under ``coverage`` but excluded from numeric totals.
+
+        The default command wait is 300 seconds; an explicit session command
+        timeout takes precedence. The server stages each existing workspace
+        archive in sequence. A timeout does not cancel that scan.
+
+        Returns: a dict describing the study-level rollup (``jobs``,
+            ``coverage``, and ``totals``). See :ref:`job_cli`
+            ("Job Resources" section) for the full field reference.
+
+        """
+        reply = self._do_command(AdminCommandNames.GET_STUDY_RESOURCES, enforce_meta=False)
+        return self._get_dict_data(reply)
+
     def list_jobs(
         self,
         detailed: bool = False,

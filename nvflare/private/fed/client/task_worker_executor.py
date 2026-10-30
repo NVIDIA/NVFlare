@@ -37,6 +37,7 @@ from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OF
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.private.defs import CellChannel, RequestHeader
+from nvflare.private.fed.resource_stats.task_rollup import get_task_resource_reducer
 from nvflare.private.fed.task_worker import cell_session
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import (
@@ -71,7 +72,10 @@ class TaskWorkerExecutor(Executor):
             poll_interval=policy.poll_interval,
         )
         self.result_wait_timeout = result_wait_timeout
-        self.supervisor = TaskSupervisor(retain_artifacts=policy.artifact_cleanup == "retain")
+        self.supervisor = TaskSupervisor(
+            retain_artifacts=policy.artifact_cleanup == "retain",
+            resource_reducer=get_task_resource_reducer(),
+        )
         self._gate = threading.Lock()
         self._state_lock = threading.Lock()
         self._done = threading.Event()

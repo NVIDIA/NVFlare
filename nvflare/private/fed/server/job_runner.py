@@ -45,6 +45,18 @@ from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
+from nvflare.private.fed.resource_stats.collector import assemble_participant_summary
+from nvflare.private.fed.resource_stats.coordinator import (
+    RESOURCE_REPORT_ACCEPTED,
+    RESOURCE_REPORT_DUPLICATE,
+    ResourceStatsCoordinator,
+)
+from nvflare.private.fed.resource_stats.handoff import (
+    canonical_json_bytes,
+    read_terminal_handoff,
+    remove_terminal_handoff,
+)
+from nvflare.private.fed.resource_stats.message_traffic import retire_job_traffic
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
@@ -65,6 +77,7 @@ WORKSPACE_SAVE_RETRY_GRACE_TIME = 60
 @dataclass
 class _FinishedJobState:
     status: RunStatus
+    resource_stats_finalized: bool = False
     workspace_archival_complete: bool = False
     workspace_save_started_at: float | None = None
     workspace_archive_written: bool = False
@@ -119,6 +132,7 @@ class JobRunner(FLComponent):
         self._finished_job_states = {}
         self._pending_client_outcomes = {}
         self._client_outcome_deadlines = {}
+        self.resource_stats = ResourceStatsCoordinator()
         self.client_outcome_wait_timeout = ConfigService.get_float_var(
             name=ConfigVarName.CLIENT_OUTCOME_WAIT_TIMEOUT, conf=SystemConfigs.APPLICATION_CONF, default=900.0
         )
@@ -146,6 +160,31 @@ class JobRunner(FLComponent):
             if client_name is None:
                 return set(self._pending_client_outcomes)
             return {job_id for job_id, clients in self._pending_client_outcomes.items() if client_name in clients}
+
+    def accept_client_resource_report(self, job_id: str, client_name: str, resource_report) -> str:
+        """Accept a report using the authenticated client name supplied by FedServer."""
+
+        return self.resource_stats.accept_resource_report(job_id, client_name, resource_report)
+
+    def _accept_server_resource_report(self, job_id: str, fl_ctx: FLContext) -> None:
+        """Turn the fixed server-child handoff into the trusted server participant report."""
+
+        run_dir = fl_ctx.get_workspace().get_run_dir(job_id)
+        try:
+            report = assemble_participant_summary(
+                job_id=job_id,
+                participant_name=SiteType.SERVER,
+                child_handoff=read_terminal_handoff(run_dir),
+            )
+            status = self.resource_stats.accept_resource_report(
+                job_id,
+                SiteType.SERVER,
+                {"participant_summary": canonical_json_bytes(report)},
+            )
+            if status not in {RESOURCE_REPORT_ACCEPTED, RESOURCE_REPORT_DUPLICATE}:
+                self.log_warning(fl_ctx, f"Server resource report for job ({job_id}) was {status}")
+        finally:
+            remove_terminal_handoff(run_dir)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:
@@ -335,7 +374,14 @@ class JobRunner(FLComponent):
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
         return run_number, failed_clients
 
-    def _start_run(self, job_id: str, job: Job, client_sites: Dict[str, DispatchInfo], fl_ctx: FLContext):
+    def _start_run(
+        self,
+        job_id: str,
+        job: Job,
+        client_sites: Dict[str, DispatchInfo],
+        fl_ctx: FLContext,
+        expected_client_names=None,
+    ):
         """Start the application
 
         Args:
@@ -348,6 +394,40 @@ class JobRunner(FLComponent):
 
         # job_clients is a dict of: token => Client
         assert isinstance(job_clients, dict)
+        run_dir = fl_ctx.get_workspace().get_run_dir(job_id)
+        expected_names = list(client_sites.keys() if expected_client_names is None else expected_client_names)
+        try:
+            self.resource_stats.start_job(job_id, expected_names, run_dir)
+            expected_resource_participants = sorted(expected_names)
+            job.meta[JobMetaKey.RESOURCE_PARTICIPANTS] = expected_resource_participants
+            try:
+                job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+                job_manager.update_meta(
+                    job_id,
+                    {JobMetaKey.RESOURCE_PARTICIPANTS.value: expected_resource_participants},
+                    fl_ctx,
+                )
+            except Exception as e:
+                # The report can still be produced in this server process.  A
+                # persistence failure only reduces roster fidelity if the root
+                # server itself restarts before finalization.
+                self.log_warning(
+                    fl_ctx,
+                    f"Could not persist the resource participant list for job ({job_id}): "
+                    f"{secure_format_exception(e)}",
+                )
+        except Exception as e:
+            # Resource reporting is optional observability and must not prevent a job
+            # from starting when its local staging path cannot be prepared.
+            self.resource_stats.forget_job(job_id)
+            try:
+                self.resource_stats.discard_run_artifacts(run_dir)
+            except Exception:
+                pass
+            self.log_warning(
+                fl_ctx,
+                f"Resource statistics are unavailable for job ({job_id}): {secure_format_exception(e)}",
+            )
         participating_clients = [c.to_dict() for c in job_clients.values()]
         # start_client_job serializes job.meta into request headers; make sure
         # JOB_CLIENTS is available before client startup.
@@ -543,6 +623,31 @@ class JobRunner(FLComponent):
                             status = finished_state.status
                             # Publish terminal status only after artifacts are ready for download.
                             if not finished_state.workspace_archival_complete:
+                                if not finished_state.resource_stats_finalized:
+                                    if self.resource_stats.has_job(job.job_id):
+                                        try:
+                                            self._accept_server_resource_report(
+                                                job.job_id,
+                                                completion_ctx,
+                                            )
+                                            self.resource_stats.finalize_job(job.job_id)
+                                        except Exception as e:
+                                            # Resource statistics are observability data. Never change the job outcome or
+                                            # suppress its normal workspace archive when this optional bundle cannot be built.
+                                            self.log_exception(
+                                                completion_ctx,
+                                                f"Failed to finalize resource statistics for job ({job.job_id}): "
+                                                f"{secure_format_exception(e)}",
+                                            )
+                                            try:
+                                                self.resource_stats.discard_job_artifacts(job.job_id)
+                                            except Exception as cleanup_error:
+                                                self.log_exception(
+                                                    completion_ctx,
+                                                    f"Failed to discard incomplete resource statistics for job "
+                                                    f"({job.job_id}): {secure_format_exception(cleanup_error)}",
+                                                )
+                                    finished_state.resource_stats_finalized = True
                                 try:
                                     self._save_workspace(completion_ctx, finished_state, job.job_id)
                                 except Exception as e:
@@ -579,11 +684,16 @@ class JobRunner(FLComponent):
                                     f"Failed to publish finished status for job ({job.job_id}): {secure_format_exception(e)}",
                                 )
                                 continue
+                            try:
+                                retire_job_traffic(engine.get_cell(), job_id, job.meta.get(JobMetaKey.JOB_CLIENTS, ()))
+                            except Exception:
+                                pass
                             with self.lock:
                                 del self.running_jobs[job_id]
                                 self._finished_job_states.pop(job_id, None)
                                 self._pending_client_outcomes.pop(job_id, None)
                                 self._client_outcome_deadlines.pop(job_id, None)
+                            self.resource_stats.forget_job(job_id)
                             if status == RunStatus.FINISHED_ABORTED:
                                 self._fire_job_lifecycle_event(EventType.JOB_ABORTED, job_id, completion_ctx)
                             self._fire_job_lifecycle_event(EventType.JOB_COMPLETED, job_id, completion_ctx)
@@ -763,7 +873,14 @@ class JobRunner(FLComponent):
                                 job=ready_job,
                                 client_sites=deployable_clients,
                                 fl_ctx=fl_ctx,
+                                expected_client_names=client_sites.keys(),
                             )
+                            if failed_clients:
+                                # These sites are still registered as expected resource-statistics
+                                # participants (so their utilization roster stays complete), but they
+                                # never launch a worker process, so mark them "disabled" instead of
+                                # letting them render as "missing" for a reason the server already knows.
+                                self.resource_stats.disable_clients(job_id, failed_clients)
                             with self.lock:
                                 self.running_jobs[job_id] = ready_job
                             job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
@@ -780,6 +897,21 @@ class JobRunner(FLComponent):
                                     self.log_error(
                                         fl_ctx, f"Failed to stop job {job_id}: {secure_format_exception(stop_error)}"
                                     )
+                                try:
+                                    self.resource_stats.discard_job_artifacts(job_id)
+                                except Exception as cleanup_error:
+                                    self.log_warning(
+                                        fl_ctx,
+                                        f"Failed to discard incomplete resource statistics for job ({job_id}): "
+                                        f"{secure_format_exception(cleanup_error)}",
+                                    )
+                                self.resource_stats.forget_job(job_id)
+                                try:
+                                    retire_job_traffic(
+                                        engine.get_cell(), job_id, ready_job.meta.get(JobMetaKey.JOB_CLIENTS, ())
+                                    )
+                                except Exception:
+                                    pass
                             try:
                                 # Cancel pending reservations without freeing allocations of started clients.
                                 engine.cancel_client_resources(
@@ -837,7 +969,31 @@ class JobRunner(FLComponent):
         try:
             job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
             job = job_manager.get_job(jid=job_id, fl_ctx=fl_ctx)
-            err = engine.start_app_on_server(fl_ctx, job=job, job_clients=job_clients, snapshot=snapshot)
+            # Rebuild the trusted participant list before the restored server app can
+            # complete.  Otherwise every client report received after a server restart
+            # is rejected as not_expected because coordinator state is process-local.
+            run_dir = fl_ctx.get_workspace().get_run_dir(job_id)
+            expected_names = job.meta.get(JobMetaKey.RESOURCE_PARTICIPANTS)
+            if not isinstance(expected_names, list) or not all(
+                isinstance(name, str) and name for name in expected_names
+            ):
+                expected_names = [client.name for client in job_clients.values()]
+            try:
+                self.resource_stats.start_job(
+                    job_id,
+                    expected_names,
+                    run_dir,
+                    reset_existing=True,
+                )
+            except Exception as e:
+                self.resource_stats.forget_job(job_id)
+                self.log_warning(
+                    fl_ctx,
+                    f"Resource statistics are unavailable for restored job ({job_id}): {secure_format_exception(e)}",
+                )
+            err = engine.start_app_on_server(
+                fl_ctx, job=job, job_clients=job_clients, snapshot=snapshot, restored_attempt=True
+            )
             if err:
                 raise RuntimeError(f"Could not restore the server App for job: {job_id}.")
             with self.lock:
