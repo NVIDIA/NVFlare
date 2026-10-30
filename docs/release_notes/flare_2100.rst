@@ -12,9 +12,10 @@ Highlights:
   in secure mode)
 - **Memory and large models** — opt-in disk-backed FedAvg and FedProx
   aggregation, and disk-backed tensors for task-worker payloads
-- **Execution and reliability** — opt-in task-scoped execution that gives each
-  assignment its own compute worker on Kubernetes, and automatic recovery of
-  failed client jobs after scheduler wall-time limits
+- **Execution and reliability** — opt-in task-scoped execution that lowers GPU
+  waste: GPUs are held only while a task trains and are released between
+  tasks (Kubernetes), and automatic recovery of failed client jobs after
+  scheduler wall-time limits
 - **Networking and deployment** — outbound HTTP proxy support, GPU
   reservation for Docker jobs, and a staged 2.10 upgrade path
 - **Developer experience** — a rewritten Quick Start, an example catalog
@@ -161,24 +162,22 @@ Execution and Reliability
 Task-Scoped Execution
 ---------------------
 
-**Purpose.** On an HPC cluster a federated site normally runs its Client Job
-inside one scheduler allocation for the whole job. Federated training does not
-use that allocation well:
-
-- A job that outlives the allocation's wall-time limit is killed in the middle
-  of training and has to be resubmitted.
-- Much of the allocation is not training. The site waits for the server to
-  aggregate, for slower sites, and for its own result upload, while the
-  allocated GPUs sit idle and count against the site's quota.
+**Purpose.** Federated training leaves GPUs idle. A site's GPUs sit
+allocated while the site waits for the server to aggregate, for slower sites,
+and for its own result upload, and that idle time counts against the site's
+quota and keeps the GPU node unavailable to other work. By default the Client
+Job holds its resources for the whole job, so on a shared or scheduled cluster
+(HPC or Kubernetes) the GPU node cannot be released between tasks.
 
 FLARE 2.10 adds an opt-in ``execution_lifetime="task"`` setting that
 separates the lifetime of computation from the lifetime of federation
 coordination. A lightweight Client Job keeps the federation connection, task
 acquisition, filters, privacy services, experiment tracking, and result
 submission. Each assigned task runs in a fresh compute worker, and the
-worker's resources are released as soon as it has published its output and
-physically exited, before the result is uploaded and before the next round
-begins. Job lifetime remains the default.
+worker's GPU and other resources are released as soon as it has published its
+output and physically exited, before the result is uploaded and before the next
+round begins. The GPU node is therefore free between tasks. Job lifetime
+remains the default.
 
 **Kubernetes.** Task execution is available on Kubernetes (CPU and
 GPU) through the existing ``ClientK8sJobLauncher``; trusted site policy
@@ -186,9 +185,10 @@ selects image, namespace, account, and resource defaults. A CPU Client Job can
 stay connected while a task Pod owns the training GPUs, and the GPUs return to
 the cluster when the Pod settles.
 
-**Other use cases.** Between assignments, released GPUs can serve other
-workloads on a shared cluster. A crashed or killed worker does not take the
-federation connection down with it.
+**Other benefits.** Between assignments, released GPUs can serve other
+workloads on a shared cluster, and a wall-time limit now bounds one task rather
+than the whole job. A crashed or killed worker does not take the federation
+connection down with it.
 
 **What this does and does not do.**
 
