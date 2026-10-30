@@ -12,8 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-_SECURE_SCHEME_MAPPING = {"atcp": "satcp", "tcp": "stcp", "grpc": "grpcs", "http": "https"}
-_CLEAR_SCHEME_MAPPING = {"satcp": "atcp", "stcp": "tcp", "grpcs": "grpc", "https": "http"}
+_SECURE_SCHEME_MAPPING = {
+    "atcp": "satcp",
+    "tcp": "stcp",
+    "grpc": "grpcs",
+    "agrpc": "agrpcs",
+    "http": "https",
+}
+_CLEAR_SCHEME_MAPPING = {
+    "satcp": "atcp",
+    "stcp": "tcp",
+    "grpcs": "grpc",
+    "agrpcs": "agrpc",
+    "https": "http",
+}
 
 
 def make_url(scheme: str, address, secure: bool) -> str:
