@@ -132,6 +132,9 @@ The ``async_aggregation`` example is renamed ``response_callbacks``, and its
 entry point is ``job.py``. Update any paths or commands that refer to the old
 name.
 
+The ``simple_logging`` helper is removed from the Collab API. Delete its calls;
+logging is already configured when the code runs inside an NVFlare job.
+
 Task-Scoped Execution (Opt-In)
 ------------------------------
 

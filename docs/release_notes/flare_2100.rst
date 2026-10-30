@@ -243,11 +243,21 @@ Developer Experience
   without cloning the repository. Examples that reuse another example, such
   as ``hello-pt-environments``, download their dependency with them, and the
   GitHub API can be accessed with a token.
-- **Recipes, Simulator, and POC.** Progress logging and run summaries across
-  workflows and recipe runs, clearer Recipe script arguments and simulation
-  status, a warning when export flags are not declared by the script,
-  per-deployment POC workspace isolation, and an optional sampling seed for
-  client selection.
+- **Progress log mode.** An opt-in ``progress`` log configuration
+  (``python job.py --log_config progress``) shows what a data scientist follows
+  during a run: the current round, client, aggregated and evaluation metrics,
+  and labeled warnings and errors. Progress reporting covers the round-based
+  recipes and extends across workflows. For the Hello PyTorch example the
+  console drops from 203 lines to 77. ``concise`` stays the default, and
+  ``msg_only``, ``full``, and ``verbose`` are unchanged.
+- **Run summary.** ``Run.get_result()`` reports a successful run's rounds,
+  cross-site evaluation, elapsed time, and artifact locations. For a failed or
+  aborted run it reports the most relevant client or server error, the
+  application source location, logs, and the retained result workspace.
+- **Recipes, Simulator, and POC.** Clearer Recipe script arguments and
+  simulation status, a warning when export flags are not declared by the
+  script, per-deployment POC workspace isolation, bounded POC readiness
+  checks, and an optional sampling seed for client selection.
 
 Security and Identity
 =====================
@@ -398,6 +408,9 @@ Recipes, Simulator, and POC
 - Simulator launch works when the interpreter or workspace path contains a
   space.
 - POC readiness checks no longer fail prematurely or wait without a bound.
+- ``nvflare poc prepare`` validates client names, including repeated names and
+  names already used by another participant, before it removes the existing
+  workspace, and reports an invalid-argument error.
 - Configuration format detection for multi-dot file names, and saving a
   configuration with a YAML extension.
 
@@ -405,6 +418,8 @@ Logging and Job Isolation
 -------------------------
 
 - Job-scoped live logs are preserved during graceful shutdown.
+- Setting a single client's log level with ``Session.configure_site_log`` or
+  ``nvflare system log-config --site`` works.
 - Concurrent jobs no longer share server-parent context IDs and metric timers.
 
 Examples and Research
@@ -446,7 +461,8 @@ below, see the :ref:`migration_guide`.
   ``Session.clone_job()`` are deprecated. Cloned jobs retain the original
   signatures, signer, and certificate expiration.
 - Collab API (technical preview): the ``async_aggregation`` example is renamed
-  ``response_callbacks``.
+  ``response_callbacks``, and the ``simple_logging`` helper is removed because
+  the job runtime already configures logging.
 - Internal client terminal-report names are renamed from job failure to job
   outcome; the previous constants, class, and wire value remain as aliases.
 - Process jobs now apply ``local/study_runtime.yaml`` (previously ignored).
