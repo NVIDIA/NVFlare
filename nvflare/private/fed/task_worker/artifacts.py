@@ -25,7 +25,7 @@ import stat
 import time
 import uuid
 from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Mapping, Optional
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
@@ -188,13 +188,19 @@ def _read_json(path: str) -> dict:
 def _verified_checkpoint(path, max_payload_bytes):
     """Read a committed opaque checkpoint and the result it belongs to."""
     record = _read_json(path)
+    required = {"schema_version", "identity", "checkpoint", "result"}
     if (
-        set(record) != {"schema_version", "identity", "checkpoint", "result"}
+        not required.issubset(record)
+        or set(record) - required - {"assignment"}
         or type(record["schema_version"]) is not int
         or record["schema_version"] != SCHEMA_VERSION
     ):
         raise ValueError("invalid checkpoint record")
     identity = TaskAttemptIdentity.from_dict(record["identity"])
+    if "assignment" in record:
+        assignment = TaskAttemptIdentity.from_dict(record["assignment"])
+        if replace(assignment, attempt_id=identity.attempt_id) != identity:
+            raise ValueError("checkpoint assignment does not match its completion")
     reference = ArtifactReference.from_dict(record["checkpoint"])
     result = ArtifactReference.from_dict(record["result"])
     if reference.kind != _CHECKPOINT_KIND or result.kind != _RESULT_KIND:
@@ -667,7 +673,7 @@ class FileTaskArtifactStore:
         os.unlink(path)
         return reference
 
-    def commit_checkpoint(self, completion, checkpoint_file, *, publication_guard=nullcontext):
+    def commit_checkpoint(self, completion, checkpoint_file, *, publication_guard=nullcontext, assignment=None):
         """CJ promotes state only from the verified, physically settled result."""
         config = completion.diagnostics.get("checkpoint")
         if config is None:
@@ -684,6 +690,8 @@ class FileTaskArtifactStore:
                 if previous == completion.identity:
                     if record["checkpoint"] != reference.to_dict() or record["result"] != completion.result.to_dict():
                         raise ValueError("checkpoint completion was changed")
+                    if assignment is not None and record.get("assignment") != assignment.to_dict():
+                        raise ValueError("checkpoint assignment was changed")
                     return
         record = {
             "schema_version": SCHEMA_VERSION,
@@ -691,6 +699,10 @@ class FileTaskArtifactStore:
             "checkpoint": reference.to_dict(),
             "result": completion.result.to_dict(),
         }
+        if assignment is not None:
+            if replace(assignment, attempt_id=completion.identity.attempt_id) != completion.identity:
+                raise ValueError("checkpoint assignment does not match its completion")
+            record["assignment"] = assignment.to_dict()
         encoded = json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
         if len(encoded) > _MAX_RECORD_BYTES:
             raise ValueError("checkpoint record is too large")
@@ -717,6 +729,24 @@ class FileTaskArtifactStore:
             raise
         if previous_payload is not None and previous_payload != payload_path:
             _remove_checkpoint_payload(previous_payload)
+
+    def committed_checkpoint_completion(self, assignment, checkpoint_file):
+        """Find the saved completion that already advanced this server assignment."""
+        if not os.path.lexists(checkpoint_file):
+            return None
+        record = _read_json(checkpoint_file)
+        if record.get("assignment") != assignment.to_dict():
+            return None
+        with _verified_checkpoint(checkpoint_file, self.max_payload_bytes) as (record, identity, _, _):
+            if record.get("assignment") != assignment.to_dict():
+                raise ValueError("checkpoint assignment changed during recovery")
+            completion = self.read_completion(identity)
+            if (
+                completion.result.to_dict() != record["result"]
+                or completion.diagnostics.get("checkpoint") != record["checkpoint"]
+            ):
+                raise ValueError("checkpoint does not match its saved completion")
+            return completion
 
     def read_completion(self, identity: TaskAttemptIdentity) -> TaskCompletion:
         self._check_identity(identity)

@@ -22,28 +22,37 @@ Build from the repository root:
 docker build -f docker/Dockerfile.parent -t nvflare-parent:latest .
 ```
 
-The dashboard can use the same runtime image. If you want a dashboard-specific
-image name, tag the same build with both names:
+The default `NVFLARE_EXTRAS=K8S` installs the Kubernetes Python client for parent
+processes that launch Kubernetes jobs. It does not include Dashboard's web
+dependencies.
 
-```bash
-docker build -f docker/Dockerfile.parent \
-  -t nvflare-parent:latest \
-  -t nvflare-dashboard:latest \
-  .
-```
-
-Then start the dashboard with the dashboard tag:
-
-```bash
-nvflare dashboard --start -i nvflare-dashboard:latest --port 8443
-```
-
-Use this image in `docker.yaml` or `k8s.yaml` as the parent image:
+Use `nvflare-parent:latest` in `docker.yaml` or `k8s.yaml` as the parent image:
 
 ```yaml
 parent:
   docker_image: nvflare-parent:latest
 ```
+
+## Dashboard Image
+
+Dashboard itself does not require Kubernetes. To reuse the parent Dockerfile,
+build with both `K8S` and `dashboard`:
+
+```bash
+docker build -f docker/Dockerfile.parent \
+  --build-arg NVFLARE_EXTRAS=K8S,dashboard \
+  -t nvflare-dashboard:latest \
+  .
+```
+
+The argument replaces the default extras list. Retain `K8S` because this
+Dockerfile checks the Kubernetes client at build time; no Kubernetes cluster is
+needed to build or run Dashboard.
+
+Publish the Dashboard build under a registry tag the launcher can pull, then use
+that tag with `nvflare dashboard --start -i <image> --port 8443`. The launcher
+host needs only base NVFlare and Docker access; the container image needs the
+`dashboard` extra. Retagging the default parent build does not add it.
 
 ## Job Image
 
@@ -85,8 +94,7 @@ containers include `/etc/pip/constraint.txt` to protect the tested package set.
 ## Choosing an Image
 
 - Use `Dockerfile.parent` for parent server/client processes.
-- Use `Dockerfile.parent` for the dashboard runtime; tag the same build as a
-  dashboard image if you want a dashboard-specific image name.
+- Use the [Dashboard build](#dashboard-image) for the Dashboard runtime.
 - Use `Dockerfile.job` for submitted job containers.
 - Do not rely on a shell being available in the parent image; it is absent by
   design.

@@ -559,6 +559,34 @@ def test_checkpoint_commit_is_atomic_idempotent_and_survives_payload_release(tmp
         assert stream.read() == b"round-one state"
 
 
+@pytest.mark.parametrize("field", ["job_id", "site_name", "task_id", "task_name", "attempt_id"])
+def test_committed_checkpoint_recovery_matches_the_complete_server_assignment(tmp_path, field):
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    path = str(tmp_path / "state" / "train.checkpoint")
+    assignment = _identity("server-attempt")
+    completion = _checkpoint_completion(store, _identity("worker-attempt"), b"state")
+    assert store.committed_checkpoint_completion(assignment, path) is None
+    store.commit_checkpoint(completion, path, assignment=assignment)
+    store.commit_checkpoint(completion, path, assignment=assignment)
+    assert store.committed_checkpoint_completion(assignment, path) == completion
+    assert store.committed_checkpoint_completion(replace(assignment, **{field: "different"}), path) is None
+    with pytest.raises(ValueError, match="checkpoint assignment was changed"):
+        store.commit_checkpoint(completion, path, assignment=replace(assignment, attempt_id="different"))
+
+
+def test_committed_checkpoint_recovery_rejects_a_different_saved_result(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    path = tmp_path / "state" / "train.checkpoint"
+    assignment = _identity("server-attempt")
+    completion = _checkpoint_completion(store, _identity("worker-attempt"), b"state")
+    store.commit_checkpoint(completion, str(path), assignment=assignment)
+    record = json.loads(path.read_text())
+    record["result"]["sha256"] = "0" * 64
+    path.write_text(json.dumps(record))
+    with pytest.raises(ValueError, match="does not match its saved completion"):
+        store.committed_checkpoint_completion(assignment, str(path))
+
+
 @pytest.mark.parametrize("previous", [False, True])
 @pytest.mark.parametrize("fault", ["sync", "cleanup", "close", "warning"])
 def test_published_checkpoint_keeps_matching_result_on_late_io_error(tmp_path, monkeypatch, caplog, previous, fault):

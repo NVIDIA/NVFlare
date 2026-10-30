@@ -30,7 +30,8 @@ clients to the cloud using the startup kits, you just need the following command
 
 Deploy NVFLARE Dashboard in the Cloud
 =====================================
-If you decide to use leverage NVFLARE Dashboard to provision and distribute your startup kit, you will first need to set up NVFLARE Dashboard.
+To use Dashboard for provisioning and kit distribution, deploy an image containing
+the ``dashboard`` extra; see :doc:`/user_guide/nvflare_cli/dashboard_command` for the build recipe.
 Let us assume that you are the project admin and would like to set up the NVFLARE Dashboard Web Application on the cloud, and you have all the
 needed credentials to access and create the cloud infrastructure. In Azure, your role in Azure
 subscription must be able to create Resource Group, Virtual Machine and configure Network Security Group and its rules.
