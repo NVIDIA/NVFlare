@@ -8,6 +8,36 @@ Introduction to the Dashboard Command
 The Dashboard command allows users to start the :ref:`dashboard_api` to provide a simple way to collect information
 of clients and users from different organizations and generate startup kits for users to download.
 
+Installing Dashboard Dependencies
+=================================
+
+The base ``nvflare`` installation includes the Dashboard command but not the
+optional Dashboard web dependencies. Install the ``dashboard`` extra on a host
+that runs Dashboard locally:
+
+.. code-block:: shell
+
+    $ python3 -m pip install "nvflare[dashboard]"
+    $ nvflare dashboard --start --local
+
+When Dashboard runs in Docker, the launcher host only needs the base NVFlare
+package and Docker access. The container image supplied with ``--image`` must
+include the ``dashboard`` extra. For example, build the Dashboard image from
+the repository root with:
+
+.. code-block:: shell
+
+    $ docker build -f docker/Dockerfile.parent \
+        --build-arg NVFLARE_EXTRAS=K8S,dashboard \
+        -t nvflare-dashboard:latest .
+
+``K8S`` installs the parent image's Kubernetes Python client, which its build
+check requires; ``dashboard`` adds Dashboard's web dependencies. Dashboard
+itself does not require Kubernetes or a cluster.
+
+Publish the resulting image under a registry tag the Docker host or cloud VM
+can pull before using that tag with ``--image``.
+
 Syntax and Usage
 =================
 
@@ -104,6 +134,7 @@ listens to port 443, unless the ``--port`` option is used to specify a different
 
 .. note::
 
-    Running Dashboard requires Docker. You have to ensure your system can pull and run Docker images. The initial docker pull may take some time depending on your network connection.
+    Container-based launches require Docker and access to pull the selected image;
+    ``--local`` does not require Docker.
 
 To stop the running Dashboard, run ``nvflare dashboard --stop``.
