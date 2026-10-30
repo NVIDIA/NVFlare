@@ -104,7 +104,9 @@ Config helpers:
 ``recipe.add_client_config(config, clients=None)``
    Add top-level generated client app configuration parameters. If ``clients``
    is omitted, the config applies to all generated client apps. The dictionary
-   is stored in clear text and must not contain secret values.
+   is stored in clear text and must not contain secret values. For
+   ``execution_lifetime`` selection, eligible recipes, and application-state
+   requirements, see :ref:`recipe_execution_lifetime`.
 
 ``recipe.add_server_config(config)``
    Add top-level generated server app configuration parameters. The dictionary

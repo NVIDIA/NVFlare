@@ -541,7 +541,7 @@ def add_cross_site_evaluation(
 
     This utility automatically configures cross-site evaluation by:
     - Auto-detecting the framework from the recipe
-    - Adding the appropriate model locator
+    - Reusing the recipe's registered model locator, or adding the appropriate locator
     - Adding the CrossSiteModelEval controller
     - Adding ValidationJsonGenerator for results
     - Auto-adding the appropriate validator to clients (for NumPy recipes)
@@ -556,13 +556,21 @@ def add_cross_site_evaluation(
     This function is idempotent and will raise a RuntimeError if called more than once
     on the same recipe to prevent duplicate component registration.
 
-    **IMPORTANT for PyTorch**: Your client training script must handle validation tasks by
-    checking `flare.is_evaluate()` and returning metrics without training. Example pattern:
+    **IMPORTANT for PyTorch**: Client scripts must handle local-model submission
+    through `flare.is_submit_model()` and validation through `flare.is_evaluate()`.
+    Keep the most recent trained local model separately because validation can load
+    a different model. Local-model submission requires job lifetime. Example pattern:
 
         ```python
         # In your client script:
+        last_trained_params = None
         while flare.is_running():
             input_model = flare.receive()
+            if flare.is_submit_model():
+                if last_trained_params is None:
+                    raise RuntimeError("No trained local model is available")
+                flare.send(flare.FLModel(params=last_trained_params, params_type=flare.ParamsType.FULL))
+                continue
             model.load_state_dict(input_model.params)
 
             # Evaluate model (always required)
@@ -574,7 +582,9 @@ def add_cross_site_evaluation(
                 flare.send(output_model)
                 continue  # Skip training for validation-only tasks
 
-            # Normal training code here...
+            # Normal training and sending of the training result goes here.
+            # Snapshot the trained local model before receiving another task:
+            last_trained_params = {name: value.detach().cpu().clone() for name, value in model.state_dict().items()}
         ```
 
     Example (NumPy - fully automatic):
@@ -600,7 +610,7 @@ def add_cross_site_evaluation(
             model=MyModel(), train_script="client.py"
         )
 
-        # Note: client.py must handle flare.is_evaluate() for validation
+        # Note: client.py must handle both flare.is_submit_model() and flare.is_evaluate().
         add_cross_site_evaluation(recipe)
         ```
 
@@ -694,34 +704,39 @@ def add_cross_site_evaluation(
 
     model_locator_type = framework_to_locator[framework]
 
-    # Get model locator configuration from registry
-    locator_config = MODEL_LOCATOR_REGISTRY[model_locator_type]
+    comp_ids = getattr(recipe._job, "comp_ids", None)
+    model_locator_id = comp_ids.get("locator_id") if isinstance(comp_ids, dict) else None
+    if not model_locator_id:
+        # Get model locator configuration from registry
+        locator_config = MODEL_LOCATOR_REGISTRY[model_locator_type]
 
-    # Import and create model locator
-    module = importlib.import_module(locator_config["locator_module"])
-    locator_class = getattr(module, locator_config["locator_class"])
+        # Import and create model locator
+        module = importlib.import_module(locator_config["locator_module"])
+        locator_class = getattr(module, locator_config["locator_class"])
 
-    # Create model locator with appropriate parameters
-    locator_kwargs = {}
-    if locator_config["persistor_param"] is not None:
-        # For frameworks requiring persistor_id (PyTorch, TensorFlow), get it from comp_ids
-        if hasattr(recipe._job, "comp_ids"):
-            persistor_id = recipe._job.comp_ids.get("persistor_id", "")
-            if not persistor_id:
+        # Create model locator with appropriate parameters
+        locator_kwargs = {}
+        if locator_config["persistor_param"] is not None:
+            # For frameworks requiring persistor_id (PyTorch, TensorFlow), get it from comp_ids
+            if hasattr(recipe._job, "comp_ids"):
+                persistor_id = recipe._job.comp_ids.get("persistor_id", "")
+                if not persistor_id:
+                    raise ValueError(
+                        f"Cross-site evaluation requires a persistor for {framework_to_locator[framework]} recipes, "
+                        "but no persistor_id was found in the generated job. "
+                        f"Ensure your recipe includes a model to create a persistor."
+                    )
+                locator_kwargs[locator_config["persistor_param"]] = persistor_id
+            else:
                 raise ValueError(
-                    f"Cross-site evaluation requires a persistor for {framework_to_locator[framework]} recipes, "
-                    "but no persistor_id was found in the generated job. "
-                    f"Ensure your recipe includes a model to create a persistor."
+                    f"Recipe {type(recipe).__name__} does not have comp_ids. "
+                    f"Cross-site evaluation requires recipes that track component IDs."
                 )
-            locator_kwargs[locator_config["persistor_param"]] = persistor_id
-        else:
-            raise ValueError(
-                f"Recipe {type(recipe).__name__} does not have comp_ids. "
-                f"Cross-site evaluation requires recipes that track component IDs."
-            )
 
-    model_locator = locator_class(**locator_kwargs)
-    model_locator_id = recipe._job.to_server(model_locator)
+        model_locator = locator_class(**locator_kwargs)
+        model_locator_id = recipe._job.to_server(model_locator)
+        if isinstance(comp_ids, dict):
+            comp_ids["locator_id"] = model_locator_id
 
     # Add validation JSON generator
     recipe._job.to_server(ValidationJsonGenerator())

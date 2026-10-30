@@ -32,6 +32,12 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=5, help="Number of clients")
     parser.add_argument("--num_rounds", type=int, default=50, help="Number of training rounds")
     parser.add_argument(
+        "--execution_lifetime",
+        choices=("job", "task"),
+        default="job",
+        help="Keep client compute for the job (default) or use a fresh CPU worker per task (NVFlare 2.10+)",
+    )
+    parser.add_argument(
         "--data_path",
         type=str,
         default="/tmp/nvflare/dataset/HIGGS.csv",
@@ -98,6 +104,7 @@ def main():
     recipe = SklearnFedAvgRecipe(
         name="sklearn_linear",
         min_clients=n_clients,
+        execution_lifetime=args.execution_lifetime,
         num_rounds=num_rounds,
         model_params={
             "n_classes": 2,
