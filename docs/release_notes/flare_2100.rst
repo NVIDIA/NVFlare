@@ -237,11 +237,10 @@ connection down with it.
   FedAvg, K-means and SVM recipes accept an ``execution_lifetime`` parameter
   to select job or task lifetime. FedCE stays at job lifetime, and the
   shipped scikit-learn examples continue across rounds in fresh workers.
-- Task lifetime requires an explicit Kubernetes or Slurm task launcher in the
-  site configuration. Local Process and Docker task execution is not
-  supported, and those sites reject a task-lifetime app. Job lifetime remains
-  supported on Process, Docker, Kubernetes, and Slurm, and a federated job can
-  mix job-lifetime and task-lifetime sites through per-site client apps.
+- Task lifetime on local Process and Docker backends is deprecated; use the
+  Kubernetes or Slurm task launchers. Job lifetime remains supported on
+  Process, Docker, Kubernetes, and Slurm, and a federated job can mix
+  job-lifetime and task-lifetime sites through per-site client apps.
 - Supported executors are the Client API executor in ``in_process`` mode, the
   statistics executor, and the NPTrainer compatibility path. Client API
   ``external_process`` and attach modes, both SCAFFOLD implementations, and
