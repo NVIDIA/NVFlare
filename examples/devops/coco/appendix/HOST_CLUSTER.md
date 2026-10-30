@@ -521,8 +521,35 @@ its driver-management guidance. The ordinary container GPU device plugin and
 
 If the mode is off/failed, operands fail, or the GPU is still host-driver bound,
 inspect the relevant operand logs and the vendor firmware requirements. Do not
-manually set readiness labels to make scheduling succeed. NFD must also discover
-the actual SNP/TDX feature used by the RuntimeClass selector.
+manually set readiness labels to make scheduling succeed.
+
+GPU Operator is the only NFD installer in this recipe. Kata was installed before
+NFD was available, so its one-time setup could not create the TEE discovery
+rules. GPU Operator's `nfd.nodefeaturerules=true` does not install Kata's SNP/TDX
+rules. Now that NFD is available, apply the rules from the pinned Kata release
+and wait for NFD to discover the selected worker's actual TEE:
+
+~~~bash
+kubectl wait --for=condition=Established \
+  crd/nodefeaturerules.nfd.k8s-sigs.io --timeout=120s
+kubectl apply -f \
+  https://raw.githubusercontent.com/kata-containers/kata-containers/8dccf4cf37aeea4b6c2caacf3e61510d6eef2f71/tools/packaging/kata-deploy/node-feature-rules/x86_64-tee-keys.yaml
+case "$CPU_TEE" in
+  snp) TEE_FEATURE_PATH='{.metadata.labels.amd\.feature\.node\.kubernetes\.io/snp}' ;;
+  tdx) TEE_FEATURE_PATH='{.metadata.labels.intel\.feature\.node\.kubernetes\.io/tdx}' ;;
+  *) printf 'CPU_TEE must be snp or tdx\n' >&2; exit 1 ;;
+esac
+kubectl wait --for="jsonpath=${TEE_FEATURE_PATH}=true" \
+  "node/$NODE_NAME" --timeout=5m
+kubectl get node "$NODE_NAME" \
+  -L amd.feature.node.kubernetes.io/snp,intel.feature.node.kubernetes.io/tdx
+~~~
+
+Expected: the wait succeeds and the label for the selected `CPU_TEE` is `true`.
+This label must match the selected RuntimeClass's node selector before step 7.
+If it is missing, inspect the NFD master/worker logs, the `amd64-tee-keys`
+NodeFeatureRule, and the firmware/KVM checks in step 1. Do not set TEE labels
+manually or proceed with a RuntimeClass whose selector does not match the node.
 
 ## 7. Run a confidential GPU workload
 
