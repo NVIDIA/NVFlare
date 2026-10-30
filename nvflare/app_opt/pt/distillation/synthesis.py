@@ -19,60 +19,68 @@ from copy import deepcopy
 import torch
 from torch import nn
 
-from .classification import ClassificationObjective
-from .image import ImageGenerator, ImageTransform
 from .teachers import _snapshot_state
 from .trainer import _model
 
 
 class DataFreeSynthesizer:
-    """Optimize a generator through frozen models and return model-ready inputs.
+    """Optimize a supplied generator through frozen models.
 
-    Defaults are an ImageGenerator producing RGB 32x32 images, confidence plus
-    diversity ClassificationObjective, Adam(lr=3e-3, betas=(0.5, 0.999)), and
-    ImageTransform crop/flip. input_shape configures the default generator;
-    no dataset normalization is assumed.
+    generator is a module/factory mapping a latent tensor to batched inputs; it
+    is moved/trained in place. objective(inputs, teachers, student, targets)
+    returns a scalar to MINIMIZE. optimizer_factory receives the generator's
+    trainable parameters. These task and optimization choices are required;
+    this helper does not assume images, classification, or an optimizer policy.
+    Concrete architectures, objective weights, augmentation/normalization, and
+    optimizer hyperparameters belong to the calling application or research code.
 
-    Replace generator, objective, optimizer_factory and transform for another
-    task. generator is a module/factory mapping a latent tensor to a batched
-    input tensor; it is moved/trained in place. latent_sampler(batch_size, rng)
-    may replace CPU Gaussian noise of shape [batch_size, latent_size].
-    objective(inputs, teachers, student, targets) returns a scalar to MINIMIZE.
+    transform optionally maps generated inputs to model-ready inputs and defaults
+    to identity. latent_sampler(batch_size, rng) may replace CPU Gaussian noise
+    of shape [batch_size, latent_size].
 
     Teacher/student modules or factory results are copied, frozen and put in
     eval mode. Their forwards remain differentiable with respect to inputs.
     Only generator parameter gradients are accumulated. Custom callables own
     their configuration; module transforms are moved to device in place.
 
-    rng is an optional caller-owned CPU generator shared by default noise and
-    augmentation, independent of the process default device. Noise is moved
-    to device for model execution. Global/model and custom-callable RNG remain
+    rng is an optional caller-owned CPU generator used by the Gaussian latent
+    sampler, independent of the process default device. Noise is moved to device
+    for model execution. Model, transform, and custom-callable RNG remain
     caller-owned too.
     Basic KD imports do not import this optional module.
 
     Example::
 
-        from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
+        from functools import partial
+        import torch
+        from torch import nn
         from nvflare.app_opt.pt.distillation.pool import SyntheticPool
+        from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
 
-        synthesis = DataFreeSynthesizer([teacher], input_shape=(1, 16, 16))
+        synthesis = DataFreeSynthesizer(
+            [teacher],
+            generator=nn.Linear(8, 4),
+            objective=lambda inputs, teachers, student, targets: teachers[0](inputs).square().mean(),
+            optimizer_factory=partial(torch.optim.Adam, lr=3e-3),
+            latent_size=8,
+        )
         inputs, metrics = synthesis.synthesize(batch_size=4, steps=2)
         pool = SyntheticPool(max_samples=128)
         pool.add(inputs)
-        # Samples already include the synthesis transform/normalization.
+        # Samples already include any transform supplied to the synthesizer.
         trainer.fit([pool.sample(4)[0]])
     """
 
     def __init__(
         self,
         teachers,
-        generator=None,
-        objective=None,
-        optimizer_factory=None,
+        *,
+        generator,
+        objective,
+        optimizer_factory,
         transform=None,
         student=None,
         device="cpu",
-        input_shape=(3, 32, 32),
         latent_size=128,
         latent_sampler=None,
         rng=None,
@@ -85,21 +93,19 @@ class DataFreeSynthesizer:
         self.student = (
             None if student is None else deepcopy(_model(student)).to(self.device).eval().requires_grad_(False)
         )
-        self.generator = (ImageGenerator(latent_size, input_shape) if generator is None else _model(generator)).to(
-            self.device
-        )
+        self.generator = _model(generator).to(self.device)
         self.parameters = [value for value in self.generator.parameters() if value.requires_grad]
         if not self.parameters:
             raise ValueError("generator must have trainable parameters")
-        self.objective = ClassificationObjective() if objective is None else objective
-        self.transform = ImageTransform(generator=rng) if transform is None else transform
+        if not callable(objective):
+            raise TypeError("objective must be callable")
+        if not callable(optimizer_factory):
+            raise TypeError("optimizer_factory must be callable")
+        self.objective = objective
+        self.transform = nn.Identity() if transform is None else transform
         if isinstance(self.transform, nn.Module):
             self.transform = self.transform.to(self.device)
-        self.optimizer = (
-            torch.optim.Adam(self.parameters, lr=3e-3, betas=(0.5, 0.999))
-            if optimizer_factory is None
-            else optimizer_factory(self.parameters)
-        )
+        self.optimizer = optimizer_factory(self.parameters)
         if not isinstance(self.optimizer, torch.optim.Optimizer):
             raise TypeError("optimizer_factory must return a torch optimizer")
         self.latent_size, self.latent_sampler, self.rng = latent_size, latent_sampler, rng

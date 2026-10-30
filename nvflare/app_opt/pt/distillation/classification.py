@@ -69,19 +69,20 @@ def adversarial_disagreement(teacher_logits, student_logits, only_agree=True):
 
 
 class ClassificationObjective:
-    """Composable image/classification synthesis default.
+    """Compose explicitly weighted classification synthesis terms.
 
-    Confidence and batch diversity are enabled by default. Feature matching and
-    adversarial disagreement are opt-in. feature_adapter(model, inputs) returns
+    Callers choose confidence/diversity weights explicitly. Feature matching and
+    adversarial disagreement are optional. feature_adapter(model, inputs) returns
     (raw_output, scalar_feature_loss); its default uses BatchNorm input statistics.
     Supply an adapter for other trackers/layouts. output_adapter extracts aligned
-    logits from model outputs. No class count or image dimensions are fixed.
+    logits from model outputs. No class count or input dimensions are fixed.
     """
 
     def __init__(
         self,
-        confidence_weight=1.0,
-        diversity_weight=1.0,
+        *,
+        confidence_weight,
+        diversity_weight,
         feature_weight=0.0,
         adversarial_weight=0.0,
         output_adapter=None,

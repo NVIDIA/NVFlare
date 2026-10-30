@@ -15,8 +15,10 @@
 """Standalone PyTorch distillation helpers.
 
 Basic KD uses losses, teachers and trainer. Optional data-free helpers are
-imported explicitly from synthesis, pool, classification, image and features;
-importing basic KD does not load those modules or construct any models.
+imported explicitly from synthesis, pool, classification and features;
+importing basic KD does not load those modules or construct any models. The
+synthesis helper does not choose a task model, objective weights, augmentation,
+or optimizer policy; applications supply them explicitly.
 
 These helpers target FP32 models/inputs. FP16/AMP execution, automatic precision
 conversion and overflow recovery are outside the current scope. Models execute

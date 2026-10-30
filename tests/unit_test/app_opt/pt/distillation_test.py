@@ -254,13 +254,20 @@ def test_class_sampling_and_probe_probabilities_have_no_fixed_class_count():
         torch.testing.assert_close(value, original[name])
 
 
-def test_synthesis_defaults_train_only_generator_and_return_model_ready_inputs():
+def test_synthesis_uses_supplied_classification_components_and_returns_model_ready_inputs():
+    from nvflare.app_opt.pt.distillation.classification import ClassificationObjective
     from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
 
     teacher = nn.Sequential(nn.Flatten(), nn.Linear(1 * 8 * 12, 4)).train()
     original = deepcopy(teacher.state_dict())
+    generator = nn.Sequential(nn.Linear(4, 1 * 8 * 12), nn.Unflatten(1, (1, 8, 12)), nn.Sigmoid())
     synthesis = DataFreeSynthesizer(
-        [teacher], input_shape=(1, 8, 12), latent_size=4, rng=torch.Generator().manual_seed(3)
+        [teacher],
+        generator=generator,
+        objective=ClassificationObjective(confidence_weight=1, diversity_weight=1),
+        optimizer_factory=partial(torch.optim.Adam, lr=3e-3, betas=(0.5, 0.999)),
+        latent_size=4,
+        rng=torch.Generator().manual_seed(3),
     )
     initial = deepcopy(synthesis.generator.state_dict())
     inputs, metrics = synthesis.synthesize(batch_size=2, steps=2, targets=torch.tensor([0, 3]))
@@ -269,7 +276,7 @@ def test_synthesis_defaults_train_only_generator_and_return_model_ready_inputs()
     assert torch.isfinite(inputs).all() and 0 <= inputs.min() <= inputs.max() <= 1
     assert metrics["steps"] == synthesis.num_steps == 2
     assert torch.isfinite(torch.tensor(metrics["loss"]))
-    assert not torch.equal(synthesis.generator.state_dict()["project.weight"], initial["project.weight"])
+    assert not torch.equal(synthesis.generator.state_dict()["0.weight"], initial["0.weight"])
     assert teacher.training
     for name, value in teacher.state_dict().items():
         torch.testing.assert_close(value, original[name])
@@ -355,7 +362,7 @@ def test_synthesis_checkpoint_restores_optimizer_and_external_rng_continuation()
             [nn.Linear(3, 1)],
             generator=nn.Linear(2, 3),
             objective=lambda inputs, teachers, student, targets: teachers[0](inputs).square().mean(),
-            transform=nn.Identity(),
+            optimizer_factory=partial(torch.optim.Adam, lr=3e-3),
             latent_size=2,
             rng=torch.Generator().manual_seed(4),
         )
@@ -379,8 +386,7 @@ def test_synthesis_checkpoint_restores_optimizer_and_external_rng_continuation()
 
 
 def test_cpu_sampling_and_synthesis_ignore_the_process_default_device():
-    from nvflare.app_opt.pt.distillation.classification import sample_by_class
-    from nvflare.app_opt.pt.distillation.image import ImageTransform
+    from nvflare.app_opt.pt.distillation.classification import ClassificationObjective, sample_by_class
     from nvflare.app_opt.pt.distillation.pool import SyntheticPool
     from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
 
@@ -390,18 +396,21 @@ def test_cpu_sampling_and_synthesis_ignore_the_process_default_device():
     pool.add(images, targets)
     for rng in (None, torch.Generator(device="cpu").manual_seed(3)):
         synthesis = DataFreeSynthesizer(
-            [nn.Sequential(nn.Flatten(), nn.Linear(16, 2))], input_shape=(1, 4, 4), latent_size=2, rng=rng
+            [nn.Linear(16, 2)],
+            generator=nn.Linear(2, 16),
+            objective=ClassificationObjective(confidence_weight=1, diversity_weight=1),
+            optimizer_factory=partial(torch.optim.Adam, lr=3e-3),
+            latent_size=2,
+            rng=rng,
         )
         # Meta catches implicit device allocations without requiring a CUDA runner.
         with torch.device("meta"):
             samples, labels = pool.sample(8, generator=rng)
             balanced, _ = pool.sample(8, sampler=partial(sample_by_class, probabilities=[0.4, 0.6]), generator=rng)
-            transformed = ImageTransform(mean=[0.5], std=[0.25], generator=rng)(images)
             generated, metrics = synthesis.synthesize(2, 1)
         assert samples.device.type == labels.device.type == balanced.device.type == "cpu"
         indices = (samples[:, 0, 0, 0] * 4).long()
         assert torch.equal(samples, images[indices]) and torch.equal(labels, targets[indices])
-        assert transformed.device.type == generated.device.type == "cpu"
-        assert transformed.shape == images.shape and generated.shape == (2, 1, 4, 4)
-        assert torch.isfinite(transformed).all() and torch.isfinite(generated).all()
+        assert generated.device.type == "cpu" and generated.shape == (2, 16)
+        assert torch.isfinite(generated).all()
         assert metrics["steps"] == synthesis.num_steps == 1
