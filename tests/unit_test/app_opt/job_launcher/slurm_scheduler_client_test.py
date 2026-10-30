@@ -93,11 +93,11 @@ def test_accounting_recovers_unique_submission_name_across_midnight():
     runner = Runner()
     adapter = _adapter(runner)
     runner.results.append(_result(f"42|unique-name|{adapter.user}|COMPLETED|0:0|0:0\n"))
-    result = adapter.accounting_by_name("unique-name", 1)
+    result = adapter.accounting_by_name("unique-name", 1, start_time="2026-10-28T23:59:00")
     assert result.records[0].job_id == "42"
     argv = runner.calls[0][0]
     assert "--name=unique-name" in argv
-    assert "--starttime=1970-01-01" in argv
+    assert "--starttime=2026-10-28T23:59:00" in argv
     assert f"--user={adapter.user}" in argv
 
 

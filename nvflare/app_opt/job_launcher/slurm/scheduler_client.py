@@ -210,11 +210,11 @@ class _SlurmCliAdapter:
     ) -> QueryResult:
         return self._accounting(job_name, timeout, job_id=job_id, cluster=cluster)
 
-    def accounting_by_name(self, job_name: str, timeout: float) -> QueryResult:
+    def accounting_by_name(self, job_name: str, timeout: float, *, start_time: str) -> QueryResult:
         """Recover a lost submission ID using its unique per-launch job name."""
-        return self._accounting(job_name, timeout)
+        return self._accounting(job_name, timeout, start_time=start_time)
 
-    def _accounting(self, job_name, timeout, job_id=None, cluster=None):
+    def _accounting(self, job_name, timeout, job_id=None, cluster=None, start_time=None):
         command = self._run(
             [
                 self.executables["sacct"],
@@ -222,7 +222,7 @@ class _SlurmCliAdapter:
                 "-n",
                 "-P",
                 f"--jobs={job_id}" if job_id is not None else f"--name={job_name}",
-                *(["--starttime=1970-01-01", f"--user={self.user}"] if job_id is None else []),
+                *([f"--starttime={start_time}", f"--user={self.user}"] if job_id is None else []),
                 f"--format={SACCT_FORMAT}",
                 *([f"--clusters={cluster}"] if cluster else []),
             ],

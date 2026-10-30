@@ -59,6 +59,7 @@ from nvflare.private.fed.utils.job_cert_utils import stage_job_startup_dir
 
 _HEALTHY_MISSES = 5
 _ACCOUNTING_RETRY_INTERVAL = 6.0
+_IDENTITY_ACCOUNTING_MAX_INTERVAL = 60.0
 _JOB_NAME_SITE_LENGTH = 32
 
 
@@ -418,12 +419,17 @@ class SlurmJobManager:
                     handle.job_id = active.records[0].job_id
                 else:
                     now = self._monotonic()
-                    if now - handle.identity_last_query < _ACCOUNTING_RETRY_INTERVAL:
+                    if now - handle.identity_last_query < handle.identity_query_interval:
                         return JobReturnCode.UNKNOWN
                     handle.identity_last_query = now
-                    recovered = self.adapter.accounting_by_name(handle.job_name, timeout=self.config.query_timeout)
+                    recovered = self.adapter.accounting_by_name(
+                        handle.job_name, timeout=self.config.query_timeout, start_time=handle.identity_start_time
+                    )
                     if recovered.status != LookupStatus.FOUND:
                         # Even repeated absence cannot disprove a delayed submit.
+                        handle.identity_query_interval = min(
+                            handle.identity_query_interval * 2, _IDENTITY_ACCOUNTING_MAX_INTERVAL
+                        )
                         return JobReturnCode.UNKNOWN
                     handle.job_id = recovered.records[0].job_id
             if active.status == LookupStatus.NOT_FOUND:
@@ -493,6 +499,10 @@ class SlurmJobHandle(JobHandleSpec):
         self.cluster = None
         self.submission_pending = True
         self.identity_last_query = float("-inf")
+        # Scope accounting searches to this submission, including a small
+        # clock-skew allowance, rather than scanning history since the epoch.
+        self.identity_start_time = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 60))
+        self.identity_query_interval = _ACCOUNTING_RETRY_INTERVAL
         self.cancel_requested = False
         self.user_abort = False
         self.terminal_result = None

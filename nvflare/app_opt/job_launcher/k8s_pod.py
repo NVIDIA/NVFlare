@@ -15,32 +15,6 @@
 
 import copy
 
-
-def pod_shutdown_confirmed(pod):
-    """Require kubelet container/sandbox evidence; deletion or node loss is insufficient."""
-    if not pod.spec.node_name:
-        # An unbound, deleting Pod cannot be scheduled.
-        return bool(pod.metadata.deletion_timestamp)
-    if pod.status.phase not in ("Succeeded", "Failed") or pod.status.reason in ("NodeLost", "Shutdown"):
-        return False
-    sandbox_down = any(
-        condition.type == "PodReadyToStartContainers" and condition.status == "False"
-        for condition in (pod.status.conditions or [])
-    )
-    containers = [
-        *(pod.spec.containers or []),
-        *(pod.spec.init_containers or []),
-        *(pod.spec.ephemeral_containers or []),
-    ]
-    statuses = [
-        *(pod.status.container_statuses or []),
-        *(pod.status.init_container_statuses or []),
-        *(pod.status.ephemeral_container_statuses or []),
-    ]
-    terminated = {status.name for status in statuses if status.state and status.state.terminated is not None}
-    return sandbox_down and bool(containers) and all(container.name in terminated for container in containers)
-
-
 _PENDING_FAILURE_WAITING_REASONS = {
     "CreateContainerConfigError",
     "CreateContainerError",

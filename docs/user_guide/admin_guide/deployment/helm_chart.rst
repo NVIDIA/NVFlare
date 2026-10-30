@@ -987,8 +987,11 @@ Launcher RBAC
 The generated chart creates a ServiceAccount and namespace-scoped
 Role/RoleBinding by default. The launcher needs permission to:
 
-* create, delete, get, list, and watch pods;
+* create, delete, get, list, patch, and watch pods;
 * create, get, update, patch, and delete Secrets.
+
+Pod patch permission is required to release the job's settlement finalizer
+after shutdown is confirmed. Include it in custom launcher Roles as well.
 
 The Secret permission is required because the launcher creates or updates a
 per-site startup-kit Secret for dynamically launched job pods, and a per-job

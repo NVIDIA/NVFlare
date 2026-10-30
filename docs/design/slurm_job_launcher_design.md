@@ -143,8 +143,10 @@ An invocation timeout, exception, or output other than one line matching the Slu
 If acceptance remains possible, the manager publishes a cleanup handle before propagating the failure. It retains
 the files and requests cancellation. A known ID is monitored directly; otherwise `squeue` recovers the ID using
 the exact launch name, submitting UID and comment. If the allocation has already left the live queue, `sacct`
-can recover it by the unique launch name and submitting user. Accounting lookup spans earlier days so a lost
-reply across midnight can still be reconciled. Empty or unavailable lookups leave an unidentified submission
+can recover it by the unique launch name and submitting user. Accounting lookup starts one minute before
+submission, so a lost reply across midnight can still be reconciled without scanning all accounting history.
+Unknown-ID accounting retries back off from six seconds to a maximum one-minute interval.
+Empty or unavailable lookups leave an unidentified submission
 unsettled; the manager never resubmits it. Explicit rejection and known command-spawn failures clean up immediately.
 
 An out-of-contract `job-id;cluster` result triggers `scancel -M`, a critical log, and an infrastructure launch

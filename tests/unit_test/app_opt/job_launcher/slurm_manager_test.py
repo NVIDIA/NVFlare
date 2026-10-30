@@ -87,8 +87,8 @@ class Adapter:
         self.calls.append(("live", job_name, marker, job_id, timeout))
         return self._take(self.live)
 
-    def accounting_by_name(self, job_name, timeout):
-        self.calls.append(("accounting_name", job_name, timeout))
+    def accounting_by_name(self, job_name, timeout, *, start_time):
+        self.calls.append(("accounting_name", job_name, timeout, start_time))
         return self._take(self.accounting_id)
 
     def accounting_by_id(self, job_id, job_name, timeout):
@@ -523,11 +523,52 @@ def test_lost_submission_reply_recovers_identity_and_settles(tmp_path, discovere
         assert any(call[0] == "cancel" for call in adapter.calls)
         adapter.live = _query(LookupStatus.NOT_FOUND)
     adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="COMPLETED"))
-    clock.value += 7
+    clock.value += handle.identity_query_interval + 7
     assert handle.poll() == JobReturnCode.SUCCESS
     assert not manager._handles
     assert not Path(handle.job_dir).exists()
     assert not handle.can_restart()  # failed launch cleanup cannot admit a replacement
+
+
+def test_pending_submission_records_cancel_without_querying_or_settling(tmp_path):
+    adapter = Adapter()
+    manager = _manager(tmp_path, adapter)
+    submit = adapter.submit
+
+    def in_flight(argv, timeout):
+        handle = manager._handles["job-1"]
+        handle.terminate()
+        assert handle.poll() == JobReturnCode.UNKNOWN
+        assert not adapter.calls
+        assert handle.cancel_requested
+        return submit(argv, timeout)
+
+    adapter.submit = in_flight
+    adapter.live = _query(LookupStatus.FOUND, _record())
+    handle = manager.launch(_plan(tmp_path))
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert any(call[0] == "cancel" for call in adapter.calls)
+
+
+def test_unknown_submission_accounting_is_scoped_and_backs_off(tmp_path, monkeypatch):
+    adapter = Adapter()
+    adapter.submission = SubmissionResult(_command(stdout="lost identity"))
+    clock = Clock()
+    monkeypatch.setattr(manager_module.time, "time", lambda: 1793318400.0)
+    manager = _manager(tmp_path, adapter, monotonic=clock)
+    with pytest.raises(SlurmLauncherError) as caught:
+        manager.launch(_plan(tmp_path))
+    handle = caught.value.handle
+    for second in range(181):
+        clock.value = second
+        assert handle.poll() == JobReturnCode.UNKNOWN
+    queries = [call for call in adapter.calls if call[0] == "accounting_name"]
+    assert len(queries) == 5  # at 0, 12, 36, 84 and 144 seconds
+    assert handle.identity_query_interval == 60
+    assert {call[3] for call in queries} == {
+        manager_module.time.strftime("%Y-%m-%dT%H:%M:%S", manager_module.time.localtime(1793318400.0 - 60))
+    }
+    assert manager._handles["job-1"] is handle
 
 
 @pytest.mark.timeout(10)
@@ -607,9 +648,12 @@ def test_unsupported_cluster_retains_handle_until_observed_settlement(tmp_path):
     with pytest.raises(SlurmLauncherError) as caught:
         manager.launch(_plan(tmp_path))
     handle = caught.value.handle
+    adapter.cancel_suffix.reset_mock()
+    adapter.cancel = MagicMock()
     assert handle.poll() == JobReturnCode.UNKNOWN
     assert Path(handle.job_dir).exists()
-    adapter.cancel_suffix.assert_called_with("42", "remote", timeout=10)
+    adapter.cancel_suffix.assert_called_once_with("42", "remote", timeout=10)
+    adapter.cancel.assert_not_called()
     adapter.active_by_id.return_value = _query(LookupStatus.NOT_FOUND)
     assert handle.poll() == ProcessExitCode.INFRASTRUCTURE_ERROR
     assert adapter.active_by_id.call_args.kwargs["cluster"] == "remote"
