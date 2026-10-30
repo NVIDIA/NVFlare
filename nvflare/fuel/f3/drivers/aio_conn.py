@@ -49,13 +49,21 @@ class AioConnection(Connection):
     def close(self):
         self.aio_ctx.get_event_loop().call_soon_threadsafe(self._close)
 
+    def force_close(self):
+        self.aio_ctx.get_event_loop().call_soon_threadsafe(self._force_close)
+
+    def _force_close(self):
+        if not self.writer:
+            return
+        self.closing = True
+        self.writer.transport.abort()
+
     def _close(self):
         # A graceful close can wait forever for a peer that stopped reading.
         # During driver shutdown, discard queued writes so its connection
         # handlers and listener can finish without depending on that peer.
         if self.writer and self.connector.driver.is_stopping():
-            self.closing = True
-            self.writer.transport.abort()
+            self._force_close()
             return
 
         if self.closing:
