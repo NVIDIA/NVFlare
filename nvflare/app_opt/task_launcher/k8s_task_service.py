@@ -56,6 +56,7 @@ def _status_dict(status):
         settled=status.settled,
         cancel_requested=status.cancel_requested,
         failure_reason=status.failure_reason,
+        retryable=status.retryable,
     )
 
 
@@ -412,6 +413,7 @@ class K8sRemoteTaskHandle(TaskHandleSpec):
                 cancel_requested=self._cancel_requested,
                 settled=status.settled,
                 failure_reason=f"CP task observation unavailable: {type(error).__name__}",
+                retryable=status.retryable,
             )
 
     def wait_for_settlement(self, timeout=None):

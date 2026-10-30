@@ -24,8 +24,10 @@ import pytest
 
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     BOOTSTRAP_CONNECT_TIMEOUT,
+    ENV_PERSISTENT_WORKSPACE,
     ENV_WORKSPACE_OWNER_FQCN,
     ENV_WORKSPACE_TRANSFER_TOKEN,
+    WORKSPACE_READY_FILE,
     WorkspaceTransferManager,
     _bootstrap_auth_identity_map,
     _bootstrap_credentials,
@@ -39,6 +41,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     make_workspace_transfer_fqcn,
     upload_results,
     upload_results_on_shutdown,
+    workspace_download_complete,
 )
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
@@ -551,7 +554,9 @@ class TestWorkspaceBootstrapHelpers:
         with pytest.raises(RuntimeError, match=ENV_WORKSPACE_TRANSFER_TOKEN):
             download_workspace(args, secure_mode=False)
 
-    def test_download_workspace_extracts_bundle(self, monkeypatch):
+    @pytest.mark.parametrize("persistent", [False, True])
+    def test_download_workspace_extracts_bundle(self, monkeypatch, persistent):
+        monkeypatch.setenv(ENV_PERSISTENT_WORKSPACE, "1" if persistent else "0")
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
             zip_path = os.path.join(tmp, "workspace.zip")
             _make_zip(
@@ -593,6 +598,31 @@ class TestWorkspaceBootstrapHelpers:
             assert request.payload["transfer_token"] == "token-1"
             assert os.path.exists(os.path.join(ws_root, "local", "resources.json"))
             assert os.path.exists(os.path.join(ws_root, JOB_ID, "app", "config", "config_train.json"))
+            config_path = os.path.join(ws_root, JOB_ID, "app", "config", "config_train.json")
+            _write_file(config_path, b"updated on the PVC")
+            download_workspace(args, secure_mode=False)
+            with open(config_path, "rb") as stream:
+                assert stream.read() == (b"updated on the PVC" if persistent else b'{"rounds":3}')
+            assert len(fake_cell.requests) == (1 if persistent else 2)
+            assert os.path.exists(os.path.join(ws_root, WORKSPACE_READY_FILE)) == persistent
+
+    @pytest.mark.parametrize("kind", ["symlink", "pipe", "directory"])
+    def test_workspace_initialization_record_must_be_a_regular_file(self, tmp_path, monkeypatch, kind):
+        record = tmp_path / WORKSPACE_READY_FILE
+        if kind == "symlink":
+            other = tmp_path / "other"
+            other.write_text(JOB_ID)
+            record.symlink_to(other)
+        elif kind == "pipe":
+            os.mkfifo(record)
+        else:
+            record.mkdir()
+        assert not workspace_download_complete(str(tmp_path))
+        monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "site-1.parent")
+        monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token-1")
+        monkeypatch.setenv(ENV_PERSISTENT_WORKSPACE, "1")
+        with pytest.raises(RuntimeError, match="initialization marker must be a regular file"):
+            download_workspace(SimpleNamespace(workspace=str(tmp_path), job_id=JOB_ID), secure_mode=False)
 
     def test_upload_results_noop_when_env_not_set(self, monkeypatch):
         monkeypatch.delenv(ENV_WORKSPACE_OWNER_FQCN, raising=False)
@@ -1044,16 +1074,19 @@ def test_downloaded_site_security_replaces_bootstrap_defaults(
 
 
 @pytest.mark.parametrize("local_dir_present", [False, True])
-def test_job_comm_config_is_ignored_without_site_comm_config(tmp_path, monkeypatch, local_dir_present):
+@pytest.mark.parametrize("reuse_workspace", [False, True])
+def test_job_comm_config_is_ignored_without_site_comm_config(tmp_path, monkeypatch, local_dir_present, reuse_workspace):
     monkeypatch.setattr(CoreCell, "ALL_CELLS", {})
     monkeypatch.setattr(StatsPoolManager, "pools", {})
-    bootstrap = Cell(
-        f"site-1.{JOB_ID}.workspace",
-        "tcp://localhost:1234",
-        secure=False,
-        credentials={},
-        create_internal_listener=False,
-    )
+    bootstrap = None
+    if not reuse_workspace:
+        bootstrap = Cell(
+            f"site-1.{JOB_ID}.workspace",
+            "tcp://localhost:1234",
+            secure=False,
+            credentials={},
+            create_internal_listener=False,
+        )
     job_config = {
         "internal": {
             "scheme": "tcp",
@@ -1076,9 +1109,17 @@ def test_job_comm_config_is_ignored_without_site_comm_config(tmp_path, monkeypat
         "nvflare.app_opt.job_launcher.workspace_cell_transfer.download_file", lambda **_: (None, str(bundle))
     )
     args = SimpleNamespace(workspace=str(tmp_path / "workspace"), job_id=JOB_ID, job_cert_pem="cert", job_key_pem="key")
+    monkeypatch.setenv(ENV_PERSISTENT_WORKSPACE, "1" if reuse_workspace else "0")
+    if reuse_workspace:
+        # A replacement CJ starts with fresh configuration caches and no
+        # bootstrap Cell, but the previous CJ's workspace is already present.
+        with zipfile.ZipFile(bundle) as zf:
+            zf.extractall(args.workspace)
+        (tmp_path / "workspace" / WORKSPACE_READY_FILE).touch()
     job_cell = None
     try:
         download_workspace(args, secure_mode=True)
+        assert len(fake.requests) == (0 if reuse_workspace else 1)
         ConfigService.initialize(section_files={}, config_path=[args.workspace])
         job_cell = Cell(
             f"site-1.{JOB_ID}", "tcp://localhost:1234", secure=False, credentials={}, create_internal_listener=False
@@ -1090,7 +1131,8 @@ def test_job_comm_config_is_ignored_without_site_comm_config(tmp_path, monkeypat
     finally:
         if job_cell:
             job_cell.stop()
-        bootstrap.stop()
+        if bootstrap:
+            bootstrap.stop()
 
 
 def test_download_discards_bootstrap_scalar_reads_during_comm_reload(tmp_path, monkeypatch):

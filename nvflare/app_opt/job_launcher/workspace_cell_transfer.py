@@ -75,6 +75,8 @@ ENV_WORKSPACE_OWNER_FQCN = "NVFL_WORKSPACE_OWNER_FQCN"
 ENV_WORKSPACE_TRANSFER_TOKEN = "NVFL_WORKSPACE_TRANSFER_TOKEN"
 
 WORKSPACE_TRANSFER_CHANNEL = "workspace_transfer"
+ENV_PERSISTENT_WORKSPACE = "NVFL_PERSISTENT_WORKSPACE"
+WORKSPACE_READY_FILE = ".nvflare_workspace_ready"
 TOPIC_PREPARE_DOWNLOAD = "prepare_download"
 TOPIC_PUBLISH_RESULTS = "publish_results"
 
@@ -685,6 +687,23 @@ def _install_job_cert(args) -> None:
         write_job_cert(_run_dir(args.workspace, args.job_id), cert_pem.encode("ascii"), key_pem.encode("ascii"))
 
 
+def workspace_download_complete(workspace_root: str) -> bool:
+    try:
+        return stat.S_ISREG(os.lstat(os.path.join(workspace_root, WORKSPACE_READY_FILE)).st_mode)
+    except OSError:
+        return False
+
+
+def _initialize_workspace_config(workspace_root: str) -> None:
+    """Use site communication settings for both downloaded and retained workspaces."""
+    # A job's comm_config.json must not override the site, even if the site has no config.
+    site_config_dir = os.path.join(workspace_root, "local")
+    config_path = [site_config_dir, workspace_root] if os.path.isdir(site_config_dir) else [workspace_root]
+    CommConfigurator.reload_from_dir(site_config_dir)
+    # Clear scalar values last so bootstrap reads during reload cannot leave cached defaults.
+    ConfigService.refresh_config_path(config_path)
+
+
 def download_workspace(args, secure_mode: bool) -> None:
     owner_fqcn = os.environ.get(ENV_WORKSPACE_OWNER_FQCN, "")
     if not owner_fqcn:
@@ -696,6 +715,15 @@ def download_workspace(args, secure_mode: bool) -> None:
     os.makedirs(args.workspace, exist_ok=True)
     # the bootstrap cell authenticates with the job credential, so install it before creating the cell
     _install_job_cert(args)
+    persistent = os.environ.get(ENV_PERSISTENT_WORKSPACE) == "1"
+    ready_file = os.path.join(args.workspace, WORKSPACE_READY_FILE)
+    if persistent and os.path.lexists(ready_file):
+        if not workspace_download_complete(args.workspace):
+            raise RuntimeError("persistent workspace initialization marker must be a regular file")
+        # CP has already confirmed the previous CJ and its workers exited.
+        # Downloading again could overwrite their checkpoints with CP's old copy.
+        _initialize_workspace_config(args.workspace)
+        return
     temp_dir = tempfile.mkdtemp(prefix="workspace-download-")
     try:
         cell = _get_bootstrap_cell(args, owner_fqcn, secure_mode)
@@ -716,18 +744,9 @@ def download_workspace(args, secure_mode: bool) -> None:
         with zipfile.ZipFile(bundle_path) as zf:
             _validate_relative_zip_members(zf)
             zf.extractall(args.workspace)
-        # The bootstrap Cell was created before the site configuration existed
-        # and may have cached clear/default communication settings. Make the
-        # downloaded workspace visible and reload those settings before any
-        # subsequent job Cell or configuration-built component is created.
-        # A job can also contain comm_config.json. Reload communication settings
-        # only from the site-owned local directory, even when it has no config.
-        site_config_dir = os.path.join(args.workspace, "local")
-        config_path = [site_config_dir, args.workspace] if os.path.isdir(site_config_dir) else [args.workspace]
-        CommConfigurator.reload_from_dir(site_config_dir)
-        # Invalidate scalar values last so bootstrap reads during the reload
-        # cannot leave old defaults cached for subsequent job components.
-        ConfigService.refresh_config_path(config_path)
+        _initialize_workspace_config(args.workspace)
+        if persistent:
+            open(ready_file, "x").close()
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 

@@ -188,6 +188,7 @@ class FLContextKey:
     SITE_OBJ = "_site_obj_"
     JOB_LAUNCHER = "_job_launcher"
     JOB_HANDLE_CALLBACK = "_job_handle_callback"
+    JOB_RESTART_HANDLE = "_job_restart_handle"  # Confirmed previous execution, only during replacement launch.
     SNAPSHOT = "job_snapshot"
 
     CLIENT_REGISTER_DATA = "_client_register_data"
