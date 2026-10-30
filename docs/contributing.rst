@@ -102,6 +102,16 @@ uses the same pinned CPU framework environment as Read the Docs; other supported
 environments use the documentation extra. Keep this environment separate from
 the development or training environment.
 
+For a quick preview of narrative pages, omit the generated Python API reference:
+
+.. code:: bash
+
+   ./build_doc.sh --html --skip-api
+
+This mode installs only Sphinx and its documentation extensions. The API landing
+page and Python cross-references are incomplete, so use the full build before
+publishing or reviewing API documentation.
+
 Open ``docs/_build/index.html`` to read the generated HTML. To clean generated files:
 
 .. code:: bash
