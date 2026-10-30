@@ -64,12 +64,6 @@ affected.
 
 Action: API integrations that send ``props`` must omit it.
 
-Agent Skills
-------------
-
-NVFlare skills are published with a shared catalog bundle, and the skills
-reference each other. Install the complete NVFlare skill set together.
-
 Examples
 --------
 

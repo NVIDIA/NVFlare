@@ -19,7 +19,6 @@ Highlights:
 - **Security hardening** — launcher-defined bring-your-own-code (BYOC) jobs
   blocked in confidential computing, checkpoint path confinement, and Dashboard
   client ``props`` rejected
-- **Agent Skills** — published with a shared catalog bundle
 
 Confidential Computing
 ======================
@@ -109,14 +108,6 @@ Security and Hardening
   rejected with HTTP 400, and client-kit generation ignores previously stored
   ``props``, so client properties can no longer supply provisioning paths that
   include server-local files in downloadable kits.
-
-Agent Skills
-============
-
-NVFlare skills are published with a shared catalog bundle, and the benchmark
-provenance of the Auto-FL, PyTorch, Lightning, federated statistics, orient,
-and diagnose-job skills is refreshed. Install the complete NVFlare skill set
-together so the cross-references between skills resolve.
 
 Bug Fixes
 =========
