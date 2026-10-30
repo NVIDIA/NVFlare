@@ -780,6 +780,15 @@ class JobRunner(FLComponent):
                                     self.log_error(
                                         fl_ctx, f"Failed to stop job {job_id}: {secure_format_exception(stop_error)}"
                                     )
+                            try:
+                                # Cancel pending reservations without freeing allocations of started clients.
+                                engine.cancel_client_resources(
+                                    {site: (True, info.token) for site, info in client_sites.items()},
+                                    {site: info.resource_requirements for site, info in client_sites.items()},
+                                    fl_ctx,
+                                )
+                            except Exception:
+                                self.log_exception(fl_ctx, f"Failed to cancel resources for job {ready_job.job_id}")
                             with self._start_lock:
                                 if self._check_job_status(
                                     job_manager, ready_job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx

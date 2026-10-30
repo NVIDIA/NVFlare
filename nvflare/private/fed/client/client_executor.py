@@ -291,6 +291,7 @@ class JobExecutor(ClientExecutor):
         with open(meta_file, "w") as f:
             json.dump(job_meta, f, indent=4)
 
+        fl_ctx.set_prop(FLContextKey.ALLOCATED_RESOURCES, allocated_resource, private=True, sticky=False)
         job_launcher: JobLauncherSpec = get_job_launcher(job_meta, fl_ctx)
 
         # prepare command args for the job process
@@ -744,7 +745,12 @@ class JobExecutor(ClientExecutor):
             process[RunProcessKey.JOB_HANDLE] = pending_handle
             process[RunProcessKey.STATUS] = ClientStatus.STARTING
         self.logger.info(f"job {job_id}: restarting CJ (attempt {restart.attempts}/{self.max_cj_restart_failures})")
-        self._launch_job(job_id, restart, pending_handle, fl_ctx)
+        previous = job_handle._job_handle if isinstance(job_handle, _PendingJobHandle) else job_handle
+        fl_ctx.set_prop(FLContextKey.JOB_RESTART_HANDLE, previous, private=True, sticky=False)
+        try:
+            self._launch_job(job_id, restart, pending_handle, fl_ctx)
+        finally:
+            fl_ctx.remove_prop(FLContextKey.JOB_RESTART_HANDLE)
         return True
 
     def _wait_child_process_finish(

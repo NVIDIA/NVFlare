@@ -31,7 +31,7 @@ from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import read_bootstrap
-from tests.unit_test.app_opt.task_launcher.k8s_launcher_test import PodApi
+from tests.k8s_task_test_utils import PodApi, wire_client
 
 
 @pytest.fixture
@@ -93,7 +93,6 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
     assert type(policy.launcher) is K8sTaskLauncher
     assert policy.worker_environment() == {}
     context = FLContext()
-    from tests.unit_test.app_opt.task_launcher.k8s_task_service_test import wire_client
 
     cell, service = wire_client(monkeypatch)
     cell.decode_pass_through_topics = set()

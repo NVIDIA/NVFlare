@@ -199,9 +199,8 @@ def _atomic_publish(path: str, encoded: bytes):
 class TaskAttemptIdentity:
     """Assignment plus authority-issued physical attempt; artifacts must match both.
 
-    The client adapter receives attempt_id from the scheduling server, never
-    invents it. Local unit-level supervisors can be driven by another trusted
-    scheduling authority. A new physical attempt requires a new authority ID.
+    The client adapter scopes the server's attempt ID to the CP-issued CJ launch
+    when available. Local supervisors may use another trusted scheduling authority.
     """
 
     job_id: str

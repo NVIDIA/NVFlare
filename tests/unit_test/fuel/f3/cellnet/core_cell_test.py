@@ -30,11 +30,12 @@ from nvflare.fuel.f3.cellnet.core_cell import (
 )
 from nvflare.fuel.f3.cellnet.credential_manager import CredentialManager
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
+from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo
 from nvflare.fuel.f3.cellnet.registry import Registry
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 
 
 def _cell(fqcn="site-1"):
@@ -70,6 +71,57 @@ def test_cell_agent_validates_fqcn():
     assert agent.get_fqcn() == "SITE-1"
     with pytest.raises(ValueError, match="Invalid FQCN"):
         CellAgent("bad name", Endpoint("bad"))
+
+
+@pytest.fixture
+def clean_core_cells():
+    original_cells = dict(CoreCell.ALL_CELLS)
+    original_pools = dict(StatsPoolManager.pools)
+    CoreCell.ALL_CELLS.clear()
+    StatsPoolManager.pools.clear()
+    yield
+    for cell in CoreCell.ALL_CELLS.values():
+        cell.running = False
+    CoreCell.ALL_CELLS.clear()
+    CoreCell.ALL_CELLS.update(original_cells)
+    StatsPoolManager.pools.clear()
+    StatsPoolManager.pools.update(original_pools)
+
+
+def _core_cell(fqcn):
+    return CoreCell(fqcn=fqcn, root_url="tcp://127.0.0.1:8002", secure=False, credentials={})
+
+
+def test_core_cell_registers_under_the_name_it_reports(clean_core_cells):
+    # A padded name used to key ALL_CELLS as given while my_info held the stripped
+    # spelling, so every lookup for the canonical name missed the cell.
+    cell = _core_cell(" server")
+
+    assert cell.my_info.fqcn == FQCN.ROOT_SERVER
+    assert list(CoreCell.ALL_CELLS) == [FQCN.ROOT_SERVER]
+    assert FQCN.ROOT_SERVER in CoreCell.ALL_CELLS
+
+
+def test_core_cell_rejects_a_duplicate_that_differs_only_by_padding(clean_core_cells):
+    _core_cell(" server")
+
+    with pytest.raises(ValueError, match="already a cell named"):
+        _core_cell("server")
+
+
+def test_cell_agent_still_accepts_a_padded_fqcn():
+    # validate no longer strips, so the constructor has to normalize first for this
+    # name to keep working.
+    assert CellAgent(" site-1 ", Endpoint("site-1")).get_fqcn() == "site-1"
+
+
+@pytest.mark.parametrize("bad_fqcn", [None, 42])
+def test_constructors_report_a_non_str_fqcn_as_value_error(bad_fqcn, clean_core_cells):
+    with pytest.raises(ValueError, match="must be str"):
+        CellAgent(bad_fqcn, Endpoint("site-1"))
+
+    with pytest.raises(ValueError, match="must be str"):
+        _core_cell(bad_fqcn)
 
 
 @pytest.mark.parametrize(
