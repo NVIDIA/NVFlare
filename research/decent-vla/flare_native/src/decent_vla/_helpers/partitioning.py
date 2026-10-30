@@ -28,7 +28,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from decent_vla.core.results import config_hash
+from decent_vla._helpers.results import config_hash
 
 
 @dataclass(frozen=True)

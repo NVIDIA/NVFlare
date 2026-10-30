@@ -32,13 +32,11 @@ from typing import Any
 
 import torch
 
-from decent_vla.core.backend import Backend
-
 
 @dataclass
 class ClientState:
     client_id: str
-    backend: Backend
+    backend: Any
     optimizer: Any
     scheduler: object | None
     dataloader: Iterator

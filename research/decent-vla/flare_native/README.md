@@ -25,8 +25,7 @@ flare_native/
     ├── persistor.py           # FLARE LearnablePersistor
     ├── adapters/              # policy-specific implementations
     ├── configs/               # run configuration
-    ├── core/                  # policy and data contracts
-    └── _helpers/              # local training, checkpoints, wire and evaluation support
+    └── _helpers/              # partitioning, training, checkpoints and evaluation support
 ```
 
 ## Setup and data

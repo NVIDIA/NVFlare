@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""LeRobotPolicy — inference wrapper for any `PreTrainedPolicy`.
-
-This is what `LeRobotBackend.build_policy()` returns. It implements the
-`decent_vla.core.policy.Policy` protocol by delegating to the lerobot
-policy's `select_action(observation)` method.
-"""
+"""Inference wrapper for a lerobot `PreTrainedPolicy`."""
 
 from __future__ import annotations
 

@@ -16,7 +16,7 @@
 
 import pytest
 
-from decent_vla.core.partitioner import EpisodeMeta, HeldOutSpec, HeldOutTask, partition_episodes
+from decent_vla._helpers.partitioning import EpisodeMeta, HeldOutSpec, HeldOutTask, partition_episodes
 
 
 @pytest.mark.parametrize("scheme", ["task_round_robin", "iid_episode"])

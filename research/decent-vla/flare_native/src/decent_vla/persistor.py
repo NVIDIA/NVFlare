@@ -27,12 +27,11 @@ from nvflare.app_common.abstract.model import make_model_learnable
 from nvflare.app_common.app_constant import AppConstants
 
 from decent_vla._helpers.builders import build_backend_factory, partition_for
-from decent_vla._helpers.checkpoints import latest_server_checkpoint
+from decent_vla._helpers.checkpoints import CheckpointSpec, latest_server_checkpoint
 from decent_vla._helpers.client_checkpoint import resume_disabled
 from decent_vla._helpers.scope_manifest import write_scope_manifest
 from decent_vla._helpers.site import apply_site_paths, load_job_config
 from decent_vla._helpers.training import seed_training
-from decent_vla.core.types import CheckpointSpec
 
 
 class VLAPersistor(LearnablePersistor):

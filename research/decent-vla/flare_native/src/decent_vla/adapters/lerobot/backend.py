@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""LeRobotBackend — Backend protocol implementation for HuggingFace lerobot policies.
+"""FLARE training adapter for HuggingFace lerobot policies.
 
 Design note: rather than re-expressing every lerobot config field in
 decent-vla's schema, this adapter accepts a path to an existing lerobot
@@ -36,10 +36,9 @@ The `train_config_path` YAML is the same lerobot training config you'd
 pass to `lerobot-train` — `policy.type`, `dataset.repo_id`, etc.
 
 Partitioning is episode-level (splitting an episode across clients
-breaks action-chunk policies): the adapter exposes the optional
-`list_episodes(data_cfg)` Backend method (episode -> task metadata from
-`LeRobotDatasetMetadata`), and the generic
-`core/partitioner.py::partition_episodes` does the actual split.
+breaks action-chunk policies): `list_episodes(data_cfg)` exposes task
+metadata from `LeRobotDatasetMetadata`, and
+`_helpers/partitioning.py::partition_episodes` does the actual split.
 """
 
 from __future__ import annotations
@@ -47,14 +46,15 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
+from typing import Any
 
 import torch
 
+from decent_vla._helpers.checkpoints import CheckpointSpec
+from decent_vla._helpers.lora import apply_peft
+from decent_vla._helpers.optim import build_warmup_cosine
+from decent_vla._helpers.partitioning import EpisodeMeta, partition_episodes
 from decent_vla.configs.schemas import BackendConfig, DataConfig, OptimConfig
-from decent_vla.core.lora import apply_peft
-from decent_vla.core.optim import build_warmup_cosine
-from decent_vla.core.partitioner import EpisodeMeta, partition_episodes
-from decent_vla.core.types import Batch, CheckpointSpec, LossDict, ParamScope
 
 log = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ _LORA_ATTR_PRIORITY = ("paligemma_with_expert", "vlm_with_expert", "vlm")
 
 
 class LeRobotBackend:
-    """lerobot-policy backend. Satisfies `decent_vla.core.backend.Backend`."""
+    """Train a lerobot policy through the FLARE client loop."""
 
     def __init__(self, cfg: BackendConfig, device: torch.device, data_cfg: DataConfig | None = None):
         self.cfg = cfg
@@ -139,7 +139,7 @@ class LeRobotBackend:
         # final word on requires_grad, after the policy's native flags and
         # LoRA. Closes the gap for policies without freeze flags (PI05Config).
         if cfg.trainable_params is not None:
-            from decent_vla.core.scope import apply_trainable_patterns
+            from decent_vla._helpers.parameters import apply_trainable_patterns
 
             apply_trainable_patterns(self._policy, cfg.trainable_params)
 
@@ -162,7 +162,7 @@ class LeRobotBackend:
     # training loop primitives
     # ------------------------------------------------------------------
 
-    def build_dataloader(self, data_cfg: DataConfig, partition_indices: list[int] | None) -> Iterator[Batch]:
+    def build_dataloader(self, data_cfg: DataConfig, partition_indices: list[int] | None) -> Iterator[Any]:
         """Build a cycling iterator over training batches.
 
         `partition_indices` here are interpreted as **episode indices**
@@ -313,7 +313,7 @@ class LeRobotBackend:
 
     @staticmethod
     def list_episodes(data_cfg: DataConfig) -> list[EpisodeMeta]:
-        """Optional Backend method (see core/backend.py): episode -> task metadata.
+        """Return episode-to-task metadata for deterministic partitioning.
 
         Reads only `LeRobotDatasetMetadata` (no full-data download), so this
         is cheap. Static because it needs nothing but the dataset identity:
@@ -328,8 +328,8 @@ class LeRobotBackend:
         root = _resolve_local_root(repo_id, (data_cfg.extra or {}).get("root"))
         return _list_lerobot_episodes(repo_id, root=root)
 
-    def compute_loss(self, batch: Batch) -> LossDict:
-        """Forward pass. lerobot returns `(loss, output_dict)`; we wrap to LossDict."""
+    def compute_loss(self, batch: Any) -> dict[str, torch.Tensor]:
+        """Return the training loss and scalar metrics from a lerobot forward pass."""
         self._policy.train()
         # The preprocessor pipeline handles tokenization, observation rename,
         # normalization, and device placement (mirrors lerobot_train.py's
@@ -340,7 +340,7 @@ class LeRobotBackend:
                 loss, output_dict = self._policy.forward(batch)
         else:
             loss, output_dict = self._policy.forward(batch)
-        result: LossDict = {"loss": loss}
+        result: dict[str, torch.Tensor] = {"loss": loss}
         if isinstance(output_dict, dict):
             for k, v in output_dict.items():
                 if isinstance(v, torch.Tensor) and v.numel() == 1:
@@ -388,7 +388,7 @@ class LeRobotBackend:
     # parameter exchange (the FL boundary)
     # ------------------------------------------------------------------
 
-    def get_state(self, scope: ParamScope = "shared") -> dict[str, torch.Tensor]:
+    def get_state(self, scope: str = "shared") -> dict[str, torch.Tensor]:
         """Return all TRAINABLE parameters (exactly what the optimizer trains).
 
         With LoRA (PEFT wraps only the VLM backbone) this is the LoRA
@@ -405,20 +405,20 @@ class LeRobotBackend:
         otherwise shared = all trainable and personal is empty. "all" is
         always the full trainable set — checkpoints/restore use it.
         """
-        from decent_vla.core.scope import trainable_state_keys
+        from decent_vla._helpers.parameters import trainable_state_keys
 
         keys = trainable_state_keys(self._policy)
         trainable = {k: v.detach().clone() for k, v in self._policy.state_dict().items() if k in keys}
         if scope == "all":
             return trainable
-        from decent_vla.core.scope import resolve_shared_names
+        from decent_vla._helpers.parameters import resolve_shared_names
 
         shared = resolve_shared_names(trainable, self.cfg.shared_params)
         if scope == "personal":
             return {k: v for k, v in trainable.items() if k not in shared}
         return {k: v for k, v in trainable.items() if k in shared}
 
-    def set_state(self, state: dict[str, torch.Tensor], scope: ParamScope = "shared") -> None:
+    def set_state(self, state: dict[str, torch.Tensor], scope: str = "shared") -> None:
         if scope == "personal":
             return
         own = self._policy.state_dict()
@@ -482,7 +482,7 @@ class LeRobotBackend:
         so it has no absent keys and passes — but not *silently*: see the
         coverage warning below.
         """
-        from decent_vla.core.scope import partial_load_warning, trainable_state_keys
+        from decent_vla._helpers.parameters import partial_load_warning, trainable_state_keys
 
         own = set(self._policy.state_dict())
         if not own & set(sd):
@@ -498,7 +498,7 @@ class LeRobotBackend:
                 "config's arm (LoRA vs full fine-tune) does not match the checkpoint. "
                 "Refusing to silently drop them — load with the matching config."
             )
-        # Legal but never silent — see core.scope.partial_load_warning.
+        # Legal but never silent — see _helpers.parameters.partial_load_warning.
         msg = partial_load_warning(trainable_state_keys(self._policy), sd, source)
         if msg:
             log.warning("%s", msg)
@@ -893,7 +893,7 @@ def partition_lerobot_dataset(
     """Return one list of episode indices per client.
 
     Thin wrapper over `list_episodes` + the generic
-    `core/partitioner.py::partition_episodes` ("task" and "iid"/"iid_episode"
+    `_helpers/partitioning.py::partition_episodes` ("task" and "iid"/"iid_episode"
     resolve through its scheme aliases). Uses the dataset metadata only
     (no full-data load), so this is cheap.
     """

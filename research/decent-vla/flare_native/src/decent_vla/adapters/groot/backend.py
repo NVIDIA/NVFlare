@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""GrootBackend — Backend protocol implementation for NVIDIA Isaac-GR00T N1.7.
+"""FLARE training adapter for NVIDIA Isaac-GR00T N1.7.
 
 Drives the ``Gr00tN1d7`` model (Cosmos-Reason2-2B / Qwen3-VL backbone) for
 federated **LoRA** finetuning of the foundation model on LIBERO. The recipe:
@@ -80,13 +80,12 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from decent_vla.core.optim import build_warmup_cosine
-from decent_vla.core.partitioner import EpisodeMeta
-from decent_vla.core.types import Batch, CheckpointSpec, LossDict, ParamScope
+from decent_vla._helpers.checkpoints import CheckpointSpec
+from decent_vla._helpers.optim import build_warmup_cosine
+from decent_vla._helpers.partitioning import EpisodeMeta
 
 if TYPE_CHECKING:
     from decent_vla.configs.schemas import BackendConfig, DataConfig, OptimConfig
-    from decent_vla.core.policy import Policy
 
 log = logging.getLogger(__name__)
 
@@ -171,7 +170,7 @@ def _assert_targets_match(module, targets, path: str) -> None:
 
 
 class GrootBackend:
-    """Isaac-GR00T N1.7 backend. Satisfies ``decent_vla.core.backend.Backend``."""
+    """Train an Isaac-GR00T N1.7 policy through the FLARE client loop."""
 
     def __init__(self, cfg: BackendConfig, device: torch.device):
         self.cfg = cfg
@@ -253,7 +252,7 @@ class GrootBackend:
         # Final override on requires_grad, composing with (after) the native
         # tune_* flags and LoRA above.
         if cfg.trainable_params is not None:
-            from decent_vla.core.scope import apply_trainable_patterns
+            from decent_vla._helpers.parameters import apply_trainable_patterns
 
             apply_trainable_patterns(model, cfg.trainable_params)
 
@@ -296,7 +295,7 @@ class GrootBackend:
           (``to_q``/``to_k``/``to_v``/``to_out.0``, ``ff.net.0.proj``,
           ``ff.net.2``), NOT the Qwen names — see ``_DEFAULT_LORA_TARGETS``.
 
-        We do NOT use ``core/lora.py::apply_peft``: that helper picks a
+        We do NOT use ``_helpers/lora.py::apply_peft``: that helper picks a
         submodule by attr-name priority and re-assigns on the model root, which
         cannot express a path three levels deep.
         """
@@ -361,7 +360,7 @@ class GrootBackend:
     # training loop primitives
     # ------------------------------------------------------------------
 
-    def build_dataloader(self, data_cfg: DataConfig, partition_indices: list[int] | None) -> Iterator[Batch]:
+    def build_dataloader(self, data_cfg: DataConfig, partition_indices: list[int] | None) -> Iterator[Any]:
         """Build a cycling iterator over collated GR00T training batches.
 
         ``partition_indices`` are **episode indices** (GR00T data is episodic).
@@ -545,7 +544,7 @@ class GrootBackend:
                 s.set_processor(self._processor)
         return sharded_list
 
-    def compute_loss(self, batch: Batch) -> LossDict:
+    def compute_loss(self, batch: Any) -> dict[str, torch.Tensor]:
         """Forward pass. ``Gr00tN1d7.forward(inputs_dict)`` returns a dict-like
         ``BatchFeature`` with ``"loss"`` (flow-matching MSE).
 
@@ -569,7 +568,7 @@ class GrootBackend:
             out = self._model(inner)
 
         loss = out["loss"]
-        result: LossDict = {"loss": loss}
+        result: dict[str, torch.Tensor] = {"loss": loss}
         # Surface scalar extras (e.g. "action_loss") as detached metrics, like
         # the lerobot adapter does for lerobot's output_dict.
         try:
@@ -621,7 +620,7 @@ class GrootBackend:
     # parameter exchange (the FL boundary)
     # ------------------------------------------------------------------
 
-    def get_state(self, scope: ParamScope = "shared") -> dict[str, torch.Tensor]:
+    def get_state(self, scope: str = "shared") -> dict[str, torch.Tensor]:
         """Return all TRAINABLE parameters — exactly LoRA adapters + action head.
 
         Mirrors the lerobot adapter: take the names of every parameter with
@@ -634,20 +633,20 @@ class GrootBackend:
         otherwise shared = all trainable and personal is empty. "all" is
         always the full trainable set — checkpoints/restore use it.
         """
-        from decent_vla.core.scope import trainable_state_keys
+        from decent_vla._helpers.parameters import trainable_state_keys
 
         keys = trainable_state_keys(self._model)
         trainable = {k: v.detach().clone() for k, v in self._model.state_dict().items() if k in keys}
         if scope == "all":
             return trainable
-        from decent_vla.core.scope import resolve_shared_names
+        from decent_vla._helpers.parameters import resolve_shared_names
 
         shared = resolve_shared_names(trainable, self.cfg.shared_params)
         if scope == "personal":
             return {k: v for k, v in trainable.items() if k not in shared}
         return {k: v for k, v in trainable.items() if k in shared}
 
-    def set_state(self, state: dict[str, torch.Tensor], scope: ParamScope = "shared") -> None:
+    def set_state(self, state: dict[str, torch.Tensor], scope: str = "shared") -> None:
         """Load shared params with dtype/device casting; non-strict."""
         if scope == "personal":
             return
@@ -719,11 +718,11 @@ class GrootBackend:
                 "(LoRA vs full fine-tune) likely does not match the checkpoint. "
                 "Refusing to silently drop them — load with the matching config."
             )
-        # Legal but never silent — see core.scope.partial_load_warning. Matters
+        # Legal but never silent — see _helpers.parameters.partial_load_warning. Matters
         # most here: a GR00T backbone-share server checkpoint is 1.52B of a
         # 3.14B model, so exporting it alone leaves the whole action head at its
         # pretrained values.
-        from decent_vla.core.scope import partial_load_warning, trainable_state_keys
+        from decent_vla._helpers.parameters import partial_load_warning, trainable_state_keys
 
         msg = partial_load_warning(trainable_state_keys(self._model), sd, str(p))
         if msg:
@@ -734,7 +733,7 @@ class GrootBackend:
     # inference (eval path — out of scope this pass)
     # ------------------------------------------------------------------
 
-    def build_policy(self) -> Policy:
+    def build_policy(self):
         """Return a GrootPolicy over the (FL-aggregated) in-memory model+processor.
 
         The processor carries NO LIBERO normalization statistics until they are
@@ -807,7 +806,7 @@ class GrootBackend:
         return False
 
     # ------------------------------------------------------------------
-    # optional Backend method: episode metadata for the generic partitioner
+    # Episode metadata used by deterministic site partitioning
     # ------------------------------------------------------------------
 
     @staticmethod

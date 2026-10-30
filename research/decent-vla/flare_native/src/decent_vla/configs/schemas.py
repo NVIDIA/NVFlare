@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from decent_vla.core.lora import LoRAConfig
+from decent_vla._helpers.lora import LoRAConfig
 
 
 @dataclass
@@ -30,7 +30,7 @@ class OptimConfig:
     over `warmup_steps` (0 = no ramp) to the peak `lr`, cosine decay down
     to `decay_lr` at `decay_steps`, then constant at `decay_lr`.
     `decay_lr: None` decays all the way to 0.
-    See `core/optim.py::build_warmup_cosine`.
+    See `_helpers/optim.py::build_warmup_cosine`.
     """
 
     name: str = "adamw"

@@ -16,8 +16,8 @@
 
 ``backend.py`` handles GR00T training (load model+processor, FL finetune); this
 module adds the inference path the decent-vla eval loop needs.
-``GrootBackend.build_policy()`` returns a ``GrootPolicy`` satisfying
-``decent_vla.core.policy.Policy``::
+``GrootBackend.build_policy()`` returns a ``GrootPolicy`` with the
+interface used by evaluation::
 
     reset(task_meta)           -> None              # episode start
     select_action(observation) -> np.ndarray        # 1-D, env-ready action
@@ -52,7 +52,7 @@ log = logging.getLogger(__name__)
 
 
 class GrootPolicy:
-    """decent-vla Policy over an in-memory Gr00tN1d7 model + processor."""
+    """Inference over an in-memory Gr00tN1d7 model and processor."""
 
     def __init__(
         self,
@@ -106,7 +106,7 @@ class GrootPolicy:
             self._video_key_map,
         )
 
-    # -- Policy protocol -------------------------------------------------
+    # -- evaluation interface ----------------------------------------------
 
     def reset(self, task_meta: dict) -> None:
         self._queue.clear()

@@ -12,19 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Canonical results.json schema + writer/reader.
+"""Evaluation result types and results.json helpers.
 
-Every eval (centralized post-hoc, FL-final, local debugging) writes JSON
-conforming to this schema. The experiment ledger and Notion tracker
-consume it. Two non-obvious rules:
-
-  * `config_hash` is required, computed from the normalized config dict.
-    This makes "same checkpoint, different preprocessing" eval diffs
-    detectable.
-
-  * `overall.success_rate` is total_successes / total_episodes — NEVER
-    a mean of per-suite means. Avoids the average-of-averages bug from
-    `aggregate_fl_eval.py`.
+Overall success is computed from total successes and episodes so suites
+with different sizes are weighted correctly.
 """
 
 from __future__ import annotations
@@ -38,6 +29,33 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = "1.2"
+
+
+@dataclass
+class TaskResult:
+    task_id: int
+    task_name: str
+    n_episodes: int
+    n_success: int
+    success_rate: float
+    mean_episode_length: float = 0.0
+
+
+@dataclass
+class BenchmarkSuiteResult:
+    n_episodes: int
+    n_success: int
+    success_rate: float
+    per_task: list[TaskResult] = field(default_factory=list)
+
+
+@dataclass
+class BenchmarkResult:
+    benchmark: str
+    suites: dict[str, BenchmarkSuiteResult]
+    overall_n_episodes: int
+    overall_n_success: int
+    overall_success_rate: float
 
 
 @dataclass
@@ -114,19 +132,6 @@ def write_results(path: str | Path, results: RunResults) -> None:
     with tmp.open("w") as f:
         json.dump(data, f, indent=2, sort_keys=False)
     tmp.replace(path)
-
-
-def read_results(path: str | Path) -> RunResults:
-    path = Path(path)
-    with path.open() as f:
-        data = json.load(f)
-    device_data = data.pop("device")
-    device = DeviceInfo(**device_data)
-    # Older files predate these fields; fill the v1.1/v1.2 defaults on read.
-    data.setdefault("aggregates", {})
-    data.setdefault("partition_manifest_hash", None)
-    data.setdefault("provenance", None)
-    return RunResults(device=device, **data)
 
 
 def tag_suites(suites: dict, heldout_eval_ids: dict[str, set[int]]) -> dict:

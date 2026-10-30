@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""MockBenchmark — runs `n_episodes_per_task` short episodes against a Policy.
+"""Run deterministic CPU-only evaluation episodes against a policy.
 
 Synthetic, deterministic, CPU-only. Episodes succeed when ‖action‖² is
 below a per-task threshold derived from the seed. Used to check the evaluation
@@ -25,16 +25,12 @@ n_episodes_per_task, seed, progress_cb)` shape.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 
+from decent_vla._helpers.results import BenchmarkResult, BenchmarkSuiteResult, TaskResult
 from decent_vla.configs.schemas import BenchmarkConfig
-from decent_vla.core.benchmark import (
-    BenchmarkResult,
-    BenchmarkSuiteResult,
-    TaskResult,
-)
-from decent_vla.core.policy import Policy
 
 
 class MockBenchmark:
@@ -77,7 +73,7 @@ class MockBenchmark:
 
     def evaluate(
         self,
-        policy: Policy,
+        policy: Any,
         suites: list[str],
         n_episodes_per_task: int,
         seed: int,

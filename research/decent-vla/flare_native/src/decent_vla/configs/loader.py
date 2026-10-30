@@ -31,6 +31,7 @@ from typing import Any
 
 import yaml
 
+from decent_vla._helpers.lora import LoRAConfig
 from decent_vla.configs.schemas import (
     BackendConfig,
     BenchmarkConfig,
@@ -43,7 +44,6 @@ from decent_vla.configs.schemas import (
     StrategyConfig,
     WandbConfig,
 )
-from decent_vla.core.lora import LoRAConfig
 
 
 class ConfigError(ValueError):

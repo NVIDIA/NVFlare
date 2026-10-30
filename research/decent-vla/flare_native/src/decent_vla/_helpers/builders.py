@@ -21,8 +21,8 @@ from typing import TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
+    from decent_vla._helpers.partitioning import PartitionManifest
     from decent_vla.configs.schemas import EvalConfig, RunConfig
-    from decent_vla.core.partitioner import PartitionManifest
 
 
 def build_backend_factory(cfg: RunConfig, device: torch.device):
@@ -63,12 +63,11 @@ def partition_for(cfg: RunConfig, backend_cls) -> tuple[list[list[int]], Partiti
     """Generic partitioning for ANY backend: prefers the backend's optional
     `list_episodes` metadata; falls back to a flat sample universe.
 
-    `list_episodes` is looked up on the CLASS, so it must be a staticmethod
-    or classmethod callable with `data_cfg` alone (see core/backend.py) —
-    partitioning happens before any backend is instantiated.
+    `list_episodes` is looked up on the class and called with `data_cfg`
+    before a backend instance is created.
     """
     if cfg.data.partitioning == "explicit_repos":
-        from decent_vla.core.partitioner import PartitionManifest
+        from decent_vla._helpers.partitioning import PartitionManifest
 
         repos = cfg.data.client_repo_ids
         if not repos:
@@ -90,7 +89,7 @@ def partition_for(cfg: RunConfig, backend_cls) -> tuple[list[list[int]], Partiti
         )
         return chunks, manifest
 
-    from decent_vla.core.partitioner import EpisodeMeta, load_heldout_json, partition_episodes
+    from decent_vla._helpers.partitioning import EpisodeMeta, load_heldout_json, partition_episodes
 
     list_eps = getattr(backend_cls, "list_episodes", None)
     if list_eps is None:

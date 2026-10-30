@@ -45,7 +45,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from decent_vla._helpers.builders import build_benchmark, resolve_device
-from decent_vla.core.results import (
+from decent_vla._helpers.results import (
     SCHEMA_VERSION,
     DeviceInfo,
     RunResults,
@@ -295,7 +295,7 @@ def run_eval(
     # Tag every per-task entry seen/held_out (spec §8). Without a held-out
     # spec, everything is "seen".
     if cfg.data.held_out:
-        from decent_vla.core.partitioner import load_heldout_json
+        from decent_vla._helpers.partitioning import load_heldout_json
 
         spec = load_heldout_json(cfg.data.held_out)
         heldout_eval_ids = {s: spec.eval_ids_for_suite(s) for s in {t.suite for t in spec.tasks}}
@@ -308,7 +308,7 @@ def run_eval(
     manifest_path = output_dir / "partition_manifest.json"
     partition_manifest_hash = None
     if manifest_path.exists():
-        from decent_vla.core.partitioner import PartitionManifest
+        from decent_vla._helpers.partitioning import PartitionManifest
 
         partition_manifest_hash = PartitionManifest.read(manifest_path).content_hash()
 

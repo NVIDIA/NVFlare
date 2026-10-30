@@ -12,18 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""LoRA helper shared across adapters.
-
-This module exposes `apply_peft` — a default LoRA-application helper that
-adapters can call from their `Backend.from_config`. Each adapter passes
-its own `attr_priority` (the order of backbone-submodule attr names to
-look for); the helper does the actual PEFT wrapping if `peft` is
-installed.
-
-Per the spec (§5.2), LoRA is owned by the Backend, not the framework.
-`apply_peft` is a default; adapters are free to implement custom LoRA
-logic instead.
-"""
+"""LoRA configuration and PEFT wrapping shared by policy adapters."""
 
 from __future__ import annotations
 

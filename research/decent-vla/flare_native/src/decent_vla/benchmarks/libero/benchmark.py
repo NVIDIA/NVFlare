@@ -29,15 +29,11 @@ import math
 import os
 from collections.abc import Callable
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from decent_vla.core.benchmark import (
-    BenchmarkResult,
-    BenchmarkSuiteResult,
-    TaskResult,
-)
+from decent_vla._helpers.results import BenchmarkResult, BenchmarkSuiteResult, TaskResult
 
 
 @contextmanager
@@ -63,7 +59,6 @@ def _allow_full_unpickle():
 
 if TYPE_CHECKING:
     from decent_vla.configs.schemas import BenchmarkConfig
-    from decent_vla.core.policy import Policy
 
 log = logging.getLogger(__name__)
 
@@ -161,7 +156,7 @@ class LIBEROBenchmark:
 
     def evaluate(
         self,
-        policy: Policy,
+        policy: Any,
         suites: list[str],
         n_episodes_per_task: int,
         seed: int,
@@ -249,7 +244,7 @@ class LIBEROBenchmark:
             overall_success_rate=total_succ / total_eps if total_eps else 0.0,
         )
 
-    def _rollout(self, policy: Policy, env, task, init_states, episode_idx: int, seed: int) -> bool:
+    def _rollout(self, policy: Any, env, task, init_states, episode_idx: int, seed: int) -> bool:
         env.reset()
         obs = env.set_init_state(init_states[episode_idx % len(init_states)])
         # Settle phase: step dummy no-op actions so objects dropped by

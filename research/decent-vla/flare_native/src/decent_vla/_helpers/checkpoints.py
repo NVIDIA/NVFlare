@@ -14,7 +14,17 @@
 
 """Checkpoint selection shared by native persistence and evaluation."""
 
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Literal
+
+
+@dataclass
+class CheckpointSpec:
+    """Parameters to include in a policy checkpoint."""
+
+    include: Literal["shared", "personal", "all", "lora_only"] = "all"
+    extra_state: dict[str, Any] = field(default_factory=dict)
 
 
 def latest_server_checkpoint(ckpt_dir: Path) -> Path | None:

@@ -12,13 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""MockBackend — a tiny synthetic backend for tests and smoke runs.
+"""Tiny deterministic backend for FLARE tests and smoke runs.
 
-A two-layer MLP that maps a 16-d observation to a 7-d action with MSE
-loss against random targets. Deterministic given a seed. Implements all
-12 Backend methods so strategies can be exercised end-to-end without a
-real VLA install or a GPU.
-
+A two-layer MLP maps a 16-d observation to a 7-d action with MSE loss
+against random targets, allowing local FLARE training without a GPU.
 """
 
 from __future__ import annotations
@@ -26,13 +23,14 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import torch
 from torch import nn
 
+from decent_vla._helpers.checkpoints import CheckpointSpec
+from decent_vla._helpers.partitioning import EpisodeMeta
 from decent_vla.configs.schemas import BackendConfig, DataConfig, OptimConfig
-from decent_vla.core.partitioner import EpisodeMeta
-from decent_vla.core.types import Batch, CheckpointSpec, LossDict, ParamScope
 
 
 class _MLP(nn.Module):
@@ -53,7 +51,7 @@ def _synthetic_iterator(
     seed: int,
     n_samples: int,
     indices: list[int] | None = None,
-) -> Iterator[Batch]:
+) -> Iterator[dict[str, Any]]:
     """Yields cycling (observation, action) batches. Deterministic per (seed, indices)."""
     g = torch.Generator()
     g.manual_seed(seed)
@@ -63,7 +61,7 @@ def _synthetic_iterator(
         obs_pool = obs_pool[indices]
         act_pool = act_pool[indices]
 
-    def gen() -> Iterator[Batch]:
+    def gen() -> Iterator[dict[str, Any]]:
         i = 0
         n = obs_pool.shape[0]
         if n == 0:
@@ -83,7 +81,7 @@ def _synthetic_iterator(
 
 
 class MockBackend:
-    """Tiny synthetic backend for tests and smoke runs. Satisfies `Backend`."""
+    """Tiny synthetic backend for tests and smoke runs."""
 
     IN_DIM = 16
     HIDDEN = 32
@@ -95,7 +93,7 @@ class MockBackend:
         self.device = device
         torch.manual_seed(cfg.extra.get("model_seed", 0) if cfg.extra else 0)
         self._model = _MLP(self.IN_DIM, self.HIDDEN, self.OUT_DIM).to(device)
-        from decent_vla.core.scope import apply_trainable_patterns
+        from decent_vla._helpers.parameters import apply_trainable_patterns
 
         apply_trainable_patterns(self._model, cfg.trainable_params)
         self._loss_fn = nn.MSELoss()
@@ -107,7 +105,7 @@ class MockBackend:
 
     # ----- training primitives -----
 
-    def build_dataloader(self, data_cfg: DataConfig, partition_indices: list[int] | None) -> Iterator[Batch]:
+    def build_dataloader(self, data_cfg: DataConfig, partition_indices: list[int] | None) -> Iterator[dict[str, Any]]:
         return _synthetic_iterator(
             batch_size=data_cfg.batch_size,
             in_dim=self.IN_DIM,
@@ -119,7 +117,7 @@ class MockBackend:
 
     @staticmethod
     def list_episodes(data_cfg: DataConfig) -> list[EpisodeMeta]:
-        """Optional Backend method (see core/backend.py): synthetic episode metadata.
+        """Return synthetic episode metadata for deterministic partitioning.
 
         A staticmethod so it is callable from the CLASS with `data_cfg` alone
         — partitioning runs before any backend is instantiated. Deterministic
@@ -147,7 +145,7 @@ class MockBackend:
             for i in range(eps_per_task)
         ]
 
-    def compute_loss(self, batch: Batch) -> LossDict:
+    def compute_loss(self, batch: Any) -> dict[str, torch.Tensor]:
         obs = batch["observation"].to(self.device)
         act = batch["action"].to(self.device)
         pred = self._model(obs)
@@ -166,7 +164,7 @@ class MockBackend:
 
     # ----- parameter exchange -----
 
-    def get_state(self, scope: ParamScope = "shared") -> dict[str, torch.Tensor]:
+    def get_state(self, scope: str = "shared") -> dict[str, torch.Tensor]:
         # Mirror the real adapters: "all" = every TRAINABLE param; "shared" =
         # the cfg.shared_params subset of it; "personal" = the complement.
         # Without patterns, shared == all and personal is empty (historical).
@@ -174,14 +172,14 @@ class MockBackend:
         trainable = {k: v.detach().clone() for k, v in self._model.state_dict().items() if k in trainable_names}
         if scope == "all":
             return trainable
-        from decent_vla.core.scope import resolve_shared_names
+        from decent_vla._helpers.parameters import resolve_shared_names
 
         shared = resolve_shared_names(trainable, self.cfg.shared_params)
         if scope == "personal":
             return {k: v for k, v in trainable.items() if k not in shared}
         return {k: v for k, v in trainable.items() if k in shared}
 
-    def set_state(self, state: dict[str, torch.Tensor], scope: ParamScope = "shared") -> None:
+    def set_state(self, state: dict[str, torch.Tensor], scope: str = "shared") -> None:
         if scope == "personal":
             return  # nothing to set
         own = self._model.state_dict()

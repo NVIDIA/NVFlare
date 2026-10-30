@@ -22,8 +22,6 @@ to a floor (`decay_lr`) over `decay_steps`, then constant at the floor.
 It is expressed as a multiplicative `LambdaLR` factor on the optimizer's
 base LR, so the optimizer's `lr` *is* the peak LR.
 
-Lives in `core/` (torch-only) so any adapter can use it — adapters may
-not import `runtime/`.
 """
 
 from __future__ import annotations

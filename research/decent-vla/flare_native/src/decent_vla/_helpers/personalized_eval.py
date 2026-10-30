@@ -121,7 +121,7 @@ def run_personalized_eval(
     from decent_vla._helpers.checkpoints import latest_server_checkpoint
     from decent_vla._helpers.client_checkpoint import client_checkpoints
     from decent_vla._helpers.eval_runner import _checkpoint_identity, _eval_config_hash, apply_action_horizon
-    from decent_vla.core.partitioner import PartitionManifest
+    from decent_vla._helpers.partitioning import PartitionManifest
 
     run_dir = Path(run_dir)
     eval_dir = Path(eval_dir)
