@@ -48,9 +48,9 @@ the migration boundary.
 Confidential Computing Job Policy
 ---------------------------------
 
-Launcher-defined BYOC content (executable content in Docker, Kubernetes, and
-Slurm launcher specifications) is now classified as BYOC at submission time and
-rejected in confidential computing, for every confidential computing role.
+Launcher-defined bring-your-own-code (BYOC) content, meaning executable content
+in Docker, Kubernetes, and Slurm launcher specifications, is now classified as
+BYOC at submission time and rejected in confidential computing, for every confidential computing role.
 Package the code in the approved workload image and add only exact, reviewed
 classes to ``class_allow_list``.
 

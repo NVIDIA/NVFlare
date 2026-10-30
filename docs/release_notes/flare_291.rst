@@ -16,9 +16,9 @@ Highlights:
 - **Confidential computing (technical preview)** — CVM Builder for Intel TDX
   and AMD SEV-SNP, Confidential Containers (CoCo) on Kubernetes, and one
   unified provisioning interface for bare-metal CVMs, CoCo, and Azure
-- **Security hardening** — launcher-defined BYOC jobs blocked in confidential
-  computing, checkpoint path confinement, and Dashboard client ``props``
-  rejected
+- **Security hardening** — launcher-defined bring-your-own-code (BYOC) jobs
+  blocked in confidential computing, checkpoint path confinement, and Dashboard
+  client ``props`` rejected
 - **Agent Skills** — published with a shared catalog bundle
 
 Confidential Computing
@@ -99,9 +99,10 @@ validation runs.
 Security and Hardening
 ======================
 
-- **Confidential computing.** Launcher-defined BYOC jobs (executable content in
-  Docker, Kubernetes, and Slurm launcher specifications) are blocked in
-  confidential computing, and checkpoint paths that escape the application root
+- **Confidential computing.** Launcher-defined bring-your-own-code (BYOC) jobs,
+  which carry their own executable content in Docker, Kubernetes, or Slurm
+  launcher specifications instead of using the approved workload image, are
+  blocked in confidential computing, and checkpoint paths that escape the application root
   are rejected. CVM build inputs are validated more strictly, and the vault
   capacity is checked before a build.
 - **Dashboard.** Client creation and PATCH requests that contain ``props`` are
