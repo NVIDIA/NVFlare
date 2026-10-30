@@ -76,6 +76,12 @@ class CommConfigurator:
         """
         CommConfigurator._config_loaded = False
 
+    @classmethod
+    def reload_from_dir(cls, config_dir: str):
+        """Reload communication settings from one directory, including when no file exists there."""
+        cls._configuration = ConfigService.load_config_dict(_comm_config_files[0], [config_dir], raise_exception=False)
+        cls._config_loaded = True
+
     def get_config(self):
         return self.config
 
