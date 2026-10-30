@@ -173,11 +173,10 @@ retry, recovery or cleanup. If the participant window cannot be shown to contain
 all included work, the report omits its duration and CPU average. Valid CPU and capacity-time totals
 remain useful.
 
-A common accounting path handles admitted Process, Docker, Kubernetes, Slurm and
-custom task launchers, as well as external/attach, grouped and distributed workers.
-It uses runtime-provided execution identity, attributable measurement scopes,
-artifact access and lifecycle ownership. Collection follows runtime admission
-checks.
+Resource statistics uses a common accounting path across supported launchers.
+External/attach, grouped, and distributed execution use this path when their
+runtime integrations provide execution identity, attributable measurement scopes,
+artifact access, and lifecycle ownership.
 
 ## User interface
 
