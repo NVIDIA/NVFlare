@@ -33,8 +33,7 @@ and their settlement, but may not reap, signal, retry, promote results, or delay
 settlement while awaiting a report. An optional worker artifact can be missing
 even when task completion is valid. The worker stops its CPU and capacity window
 after application finalization and result or checkpoint staging, but before the
-completion commit. Its final traffic snapshot follows normal Cell close. The
-[runtime sequence](resource_statistics_implementation.md) describes these boundaries.
+completion commit. Its final traffic snapshot follows normal Cell close.
 
 ## CPU and RAM capacity probes
 

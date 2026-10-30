@@ -13,15 +13,13 @@ statistics does not select or enable backends.
 
 ## Detailed design
 
-This page introduces the contract. The following pages describe its
-component interfaces, algorithms, and lifecycle decisions:
+This page introduces the contract. The following pages describe the measurement
+rules and reporting behavior in detail:
 
 1. [Measurement and accounting](resource_statistics_measurement.md): the APIs,
    limits, execution windows and formulas used to obtain each measurement.
 2. [Reports, delivery and queries](resource_statistics_reporting.md): record
    formats, validation, deduplication, archive publication and authorized reads.
-3. [Runtime integration](resource_statistics_implementation.md): component
-   interfaces and lifecycle behavior on success, failure, cancellation and restart.
 
 ## Measurement contract
 
@@ -105,8 +103,10 @@ User:        authorized job/site/study query -> derive totals -> render
 ```
 
 Collection starts after existing workspace preparation and before
-application construction in the client/server job entry points. It does not
-change normal Python startup, resource assignment, or process ownership. CPU
+application construction in the client/server job entry points. Observations
+are finalized during cleanup, so application construction or execution failures
+can still produce statistics. Collection does not change normal Python startup,
+resource assignment, or process ownership. CPU
 and memory probes use existing affinity and visible cgroup limits. CUDA
 enumeration uses the system Driver; optional NVML only improves device
 classification. No mandatory PyTorch dependency is added.
@@ -117,7 +117,8 @@ bounded lifetime under the existing process owner. The helper inherits the
 execution's finalized visibility and limits.
 
 The parent supplies participant identity and attaches the report to the existing
-`REPORT_JOB_OUTCOME` request. The server retains accepted reports until
+`REPORT_JOB_OUTCOME` request. It releases resources through the normal lifecycle
+even if statistics are missing, invalid, or delayed. The server retains accepted reports until
 finalization, writes participant files and then `resource_summary.json` under
 `resource_stats/`, and includes them in the normal workspace archive. Queries
 use existing per-job authorization. There is no separate statistics database,
@@ -137,6 +138,12 @@ Missing participants remain explicit gaps. A server crash before archive
 publication or a killed job process can lose statistics. Collection failures
 must not change the training outcome, delay resource release indefinitely, or
 create a second recovery protocol.
+
+When a Client Job restarts, the replacement has a new observation window. The
+final report retains available observations and marks affected measurements
+incomplete if earlier observations are missing. Its duration describes the
+observed generation containing the included work, not the elapsed time across
+restarts. Retained content comes from the final workspace scan.
 
 Filesystem scans and requested archive members are bounded. Scan deadlines are
 cooperative and cannot interrupt a blocked filesystem call. ZIP indexing has a
@@ -164,12 +171,13 @@ session contributes once, even when it runs several assignments. Saved-result
 retransmission adds actual traffic but no compute; failed physical work still
 contributes. Multi-rank adapters avoid repeating shared capacity per rank.
 
-Worker reports are optional measurement artifacts, separate from task completion,
-checkpoint promotion, receipts and resource settlement. Missing observations mark
-the affected rollups partial or unavailable. Statistics never authorizes publication,
-retry, recovery or cleanup. If the participant window cannot be shown to contain
-all included work, the report omits its duration and CPU average. Valid CPU and capacity-time totals
-remain useful.
+The runtime owns worker launch, task completion and settlement. Worker observations
+contribute once after settlement and remain separate from task results, checkpoints
+and receipts. Missing or invalid observations mark affected rollups incomplete
+without invalidating a task result. If a worker execution remains unresolved, the
+report omits participant duration and CPU average because containment in the
+participant window cannot be established. Valid CPU and capacity-time totals remain
+useful. Statistics does not authorize publication, retry, recovery or cleanup.
 
 Resource statistics uses a common accounting path across supported launchers.
 External/attach, grouped, and distributed execution use this path when their

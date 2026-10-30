@@ -2,9 +2,8 @@
 
 This page defines the resource-statistics records, delivery, and query behavior
 introduced in the [overview](resource_statistics_design.md). The
-[measurement design](resource_statistics_measurement.md) explains how values are
-obtained, and the [implementation design](resource_statistics_implementation.md)
-maps components to their lifecycle hooks.
+[measurement design](resource_statistics_measurement.md) explains how the values
+are obtained.
 
 ## Records and ownership
 
