@@ -58,7 +58,6 @@ class ServerJsonConfigurator(FedJsonConfigurator):
         self.config_file_name = config_file_name
         self.args = args
         self.app_root = app_root
-        self.workspace_obj = workspace_obj
 
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
@@ -187,7 +186,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
 
         ConfigService.initialize(
             section_files={},
-            config_path=[self.workspace_obj.get_startup_kit_dir(), self.workspace_obj.get_site_config_dir()],
+            config_path=[self.app_root],
             parsed_args=self.args,
             var_dict=self.cmd_vars,
         )

@@ -18,9 +18,10 @@ If multiple configuration formats coexist, then their usage will be prioritized 
 ``.json -> .conf -> .yml -> .yaml``
 
 HOCON includes and substitutions, and OmegaConf interpolations, can read files, URLs, and environment variables.
-Job submission and the simulator therefore render HOCON and OmegaConf job configs to plain data on the submitting
-machine, so environment variables a job config references are read from the submitter's environment. The server
-rejects submitted job configs that still use these features. Site configuration files are not affected.
+Only configuration files in a site's ``startup/`` and ``local/`` folders may use them. Other configurations, including
+job configs, must be plain data: ``.conf`` files must be valid JSON, and YAML files must not use aliases or ``${...}``.
+Job submission and the simulator render HOCON and OmegaConf job configs to plain data on the submitting machine,
+so environment variables a job config references are read from the submitter's environment.
 
 See the sections below for more in-depth information about the different capabilities and types of configuration files:
 

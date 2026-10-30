@@ -15,16 +15,16 @@
 """Render HOCON and OmegaConf job configs on the author's machine.
 
 Includes, substitutions, and interpolations can read site files, URLs, and environment variables,
-so the server rejects submitted job configs that still use them. Job tools resolve them here
+so FLARE sites only accept them in their own startup/ and local/ configs. Job tools resolve them here
 with the author's files and environment.
 """
 
 import glob
-import json
 import os
 import shutil
 
 from nvflare.fuel.utils.config import ConfigFormat
+from nvflare.fuel.utils.config_factory import uses_config_features
 
 
 def _used_configs(paths):
@@ -40,24 +40,6 @@ def _used_configs(paths):
         if key not in used or exts.index(ext) < exts.index(used[key][1]):
             used[key] = (path, ext)
     return [(path, ext_formats[ext]) for path, ext in used.values()]
-
-
-def needs_rendering(text: str, fmt: ConfigFormat) -> bool:
-    """Whether a HOCON or OmegaConf config uses features beyond plain data, or YAML aliases."""
-    try:
-        if fmt == ConfigFormat.PYHOCON:
-            json.loads(text)
-            return False
-        import yaml
-
-        # Aliases let a few bytes expand into an exponentially large config. Scalars are checked
-        # after YAML unescaping, so "\u0024{" cannot hide an interpolation.
-        return any(
-            isinstance(e, yaml.AliasEvent) or (isinstance(e, yaml.ScalarEvent) and "${" in e.value)
-            for e in yaml.parse(text, Loader=yaml.SafeLoader)
-        )
-    except Exception:
-        return True
 
 
 def _render(path: str, fmt: ConfigFormat) -> str:
@@ -82,7 +64,7 @@ def convert_job_configs(job_dir: str, work_dir: str) -> str:
         if fmt not in (ConfigFormat.PYHOCON, ConfigFormat.OMEGACONF):
             continue
         with open(path, encoding="utf-8", errors="replace") as f:
-            if not needs_rendering(f.read(), fmt):
+            if not uses_config_features(f.read(), fmt):
                 continue
         rel_path = os.path.relpath(path, job_dir)
         # Writing through a linked file or folder would overwrite a file outside the job.

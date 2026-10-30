@@ -454,12 +454,10 @@ def _zip_split_job(files):
         ("meta.conf", 'include "/etc/site.conf"\nname = split\n'),
         ("app/config/config_fed_client.yml", "format_version: 2\ndata_root: ${oc.env:HOME}\n"),
         ("app/config/config_fed_client.yaml", "a: &a [1]\nb: [*a, *a]\n"),
-        ("app/config/nested/config_fed_client.conf", 'include "/etc/site.conf"\n'),
-        ("app/./config/config_fed_client.conf", 'include "/etc/site.conf"\n'),
         ("app/config/config_fed_client.yml", 'data_root: "\\u0024{oc.env:HOME}"\n'),
     ],
 )
-def test_submission_rejects_unrendered_configs_without_parsing_them(name, text, monkeypatch):
+def test_submission_rejects_configs_with_hocon_or_omegaconf_features_without_parsing_them(name, text, monkeypatch):
     from omegaconf import OmegaConf
     from pyhocon import ConfigFactory as HoconFactory
 

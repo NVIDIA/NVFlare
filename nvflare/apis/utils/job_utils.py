@@ -63,8 +63,9 @@ def convert_legacy_zipped_app_to_job(zip_data: bytes) -> bytes:
                 # Already in job layout
                 meta_path = meta_file_path
                 config_loader = ConfigFactory.get_config_loader(fmt)
-                meta_data = in_zip.read(meta_path)
-                meta = config_loader.load_config_from_str(meta_data.decode()).to_dict()
+                meta_data = in_zip.read(meta_path).decode()
+                ConfigFactory.check_plain_data(meta_data, fmt, meta_path)
+                meta = config_loader.load_config_from_str(meta_data).to_dict()
                 if JobMetaKey.JOB_FOLDER_NAME.value not in meta:
                     meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
                 else:

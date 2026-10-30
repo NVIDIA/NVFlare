@@ -146,3 +146,47 @@ class TestConfigFactory:
             return full_path in namelist
 
         assert expected == ConfigFactory.match_config(None, init_file_path, match)
+
+
+@pytest.mark.parametrize(
+    "name, text",
+    [
+        ("config_fed_client.conf", 'include "/etc/site.conf"\nexecutors = []\n'),
+        ("config_fed_client.conf", "data_root = ${HOME}\n"),
+        ("config_fed_client.yml", "data_root: ${oc.env:HOME}\n"),
+        ("config_fed_client.yml", 'data_root: "\\u0024{oc.env:HOME}"\n'),
+        ("config_fed_client.yml", "a: &a [1]\nb: [*a, *a]\n"),
+    ],
+)
+def test_configs_outside_site_folders_must_be_plain_data(tmp_path, monkeypatch, name, text):
+    from omegaconf import OmegaConf
+    from pyhocon import ConfigFactory as HoconFactory
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("parsed a config that uses HOCON or OmegaConf features")
+
+    for attr in ("parse_file", "parse_URL", "parse_string"):
+        monkeypatch.setattr(HoconFactory, attr, forbidden)
+    monkeypatch.setattr(OmegaConf, "load", forbidden)
+    monkeypatch.setattr(ConfigFactory, "_trusted_dirs", [])
+    (tmp_path / name).write_text(text)
+
+    with pytest.raises(ValueError, match="HOCON or OmegaConf features"):
+        ConfigFactory.load_config("config_fed_client.json", [str(tmp_path)])
+
+
+def test_site_folders_keep_hocon_features(tmp_path, monkeypatch):
+    monkeypatch.setattr(ConfigFactory, "_trusted_dirs", [])
+    local = tmp_path / "local"
+    local.mkdir()
+    (local / "shared.conf").write_text("lr = 0.1\n")
+    (local / "resources.conf").write_text('include "shared.conf"\nhome = ${SITE_TEST_HOME}\n')
+    monkeypatch.setenv("SITE_TEST_HOME", "/site")
+    plain = tmp_path / "job"
+    plain.mkdir()
+    (plain / "config_fed_client.yml").write_text("lr: 0.1\n")
+
+    ConfigFactory.trust_config_dirs(str(local))
+
+    assert ConfigFactory.load_config("resources.json", [str(local)]).to_dict() == {"lr": 0.1, "home": "/site"}
+    assert ConfigFactory.load_config("config_fed_client.json", [str(plain)]).to_dict() == {"lr": 0.1}

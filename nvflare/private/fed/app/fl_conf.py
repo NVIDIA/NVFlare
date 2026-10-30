@@ -25,6 +25,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.data_event.utils import set_scope_property
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.url_utils import make_url
@@ -70,6 +71,7 @@ class FLServerStarterConfiger(JsonConfigurator):
         else:
             self.cmd_vars = {}
 
+        ConfigFactory.trust_config_dirs(workspace.get_startup_kit_dir(), workspace.get_site_config_dir())
         config_files = workspace.get_config_files_for_startup(is_server=True, for_job=True if args.job_id else False)
 
         JsonConfigurator.__init__(
@@ -203,7 +205,7 @@ class FLServerStarterConfiger(JsonConfigurator):
                 SystemConfigs.STARTUP_CONF: os.path.basename(self.server_config_file_names[0]),
                 SystemConfigs.RESOURCES_CONF: os.path.basename(self.server_config_file_names[1]),
             },
-            config_path=[self.workspace.get_startup_kit_dir(), self.workspace.get_site_config_dir()],
+            config_path=[self.args.workspace],
             parsed_args=self.args,
             var_dict=self.cmd_vars,
         )
@@ -234,6 +236,7 @@ class FLClientStarterConfiger(JsonConfigurator):
         else:
             self.cmd_vars = {}
 
+        ConfigFactory.trust_config_dirs(workspace.get_startup_kit_dir(), workspace.get_site_config_dir())
         config_files = workspace.get_config_files_for_startup(is_server=False, for_job=True if args.job_id else False)
 
         JsonConfigurator.__init__(
@@ -455,7 +458,7 @@ class FLClientStarterConfiger(JsonConfigurator):
                 SystemConfigs.STARTUP_CONF: os.path.basename(self.client_config_file_names[0]),
                 SystemConfigs.RESOURCES_CONF: os.path.basename(self.client_config_file_names[1]),
             },
-            config_path=[self.workspace.get_startup_kit_dir(), self.workspace.get_site_config_dir()],
+            config_path=[self.args.workspace],
             parsed_args=self.args,
             var_dict=self.cmd_vars,
         )

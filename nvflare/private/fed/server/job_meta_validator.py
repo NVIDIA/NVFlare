@@ -14,7 +14,6 @@
 
 import collections
 import logging
-import re
 from io import BytesIO
 from typing import Optional, Set, Tuple
 from zipfile import ZipFile
@@ -27,7 +26,6 @@ from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.fuel.utils.job_config_converter import needs_rendering
 from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
@@ -51,7 +49,6 @@ class JobMetaValidator(JobMetaValidatorSpec):
     """Job validator"""
 
     def _validate_zf(self, job_name, zf):
-        self._reject_unrendered_configs(job_name, zf)
         meta = self._validate_meta(job_name, zf)
         site_list = self._validate_deploy_map(job_name, meta)
         self._validate_app(job_name, meta, zf)
@@ -91,30 +88,6 @@ class JobMetaValidator(JobMetaValidatorSpec):
         return True, "", meta
 
     @staticmethod
-    def _reject_unrendered_configs(job_name: str, zf: ZipFile):
-        # HOCON includes and substitutions, and OmegaConf interpolations, read site files, URLs,
-        # and environment variables when sites parse job configs. Job tools render them before submission.
-        # Mirror runtime lookup: the first extension found anywhere under the app's config folder wins.
-        ext_formats = ConfigFormat.config_ext_formats()
-        found = collections.defaultdict(lambda: collections.defaultdict(list))
-        for info in zf.infolist():
-            # Match the path extraction writes: it drops empty, "." and ".." segments, and later duplicates win.
-            path = "/".join(part for part in info.filename.split("/") if part not in ("", ".", ".."))
-            match = re.fullmatch(rf"{re.escape(job_name)}/(?:([^/]+)/config/(?:.+/)?)?([^/.]+)(\..+)", path)
-            if match and match.group(3) in ext_formats and (match.group(1) or match.group(2) == JobConstants.META):
-                found[match.group(1, 2)][match.group(3)].append(info)
-        for entries_by_ext in found.values():
-            ext = next(ext for ext in ext_formats if ext in entries_by_ext)
-            fmt = ext_formats[ext]
-            for info in entries_by_ext[ext]:
-                if fmt in (ConfigFormat.PYHOCON, ConfigFormat.OMEGACONF) and needs_rendering(
-                    zf.read(info).decode(errors="replace"), fmt
-                ):
-                    raise ValueError(
-                        f"job config {info.filename} is not plain data; submit the job with current FLARE tools"
-                    )
-
-    @staticmethod
     def _validate_meta(job_name: str, zf: ZipFile) -> Optional[dict]:
         base_meta_file = f"{job_name}/{JobConstants.META}"
         logger.debug(f"validate file {base_meta_file}.[json|conf|yml] exists for job {job_name}")
@@ -124,8 +97,9 @@ class JobMetaValidator(JobMetaValidatorSpec):
             meta_file = f"{base_meta_file}{ext}"
             if meta_file in zf.namelist():
                 config_loader = ConfigFactory.get_config_loader(fmt)
-                meta_data = zf.read(meta_file)
-                meta = config_loader.load_config_from_str(meta_data.decode()).to_dict()
+                meta_data = zf.read(meta_file).decode()
+                ConfigFactory.check_plain_data(meta_data, fmt, meta_file)
+                meta = config_loader.load_config_from_str(meta_data).to_dict()
                 break
         if meta:
             job_id = meta.get(JobMetaKey.JOB_ID.value)
@@ -248,8 +222,9 @@ class JobMetaValidator(JobMetaValidatorSpec):
             config_path = f"{zip_folder}{basename}{ext}"
             if config_path in zip_file.namelist():
                 config_loader = ConfigFactory.get_config_loader(fmt)
-                config_data = zip_file.read(config_path)
-                return config_loader.load_config_from_str(config_data.decode()).to_dict()
+                config_data = zip_file.read(config_path).decode()
+                ConfigFactory.check_plain_data(config_data, fmt, config_path)
+                return config_loader.load_config_from_str(config_data).to_dict()
         return None
 
     @staticmethod

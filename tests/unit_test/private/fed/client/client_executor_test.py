@@ -1172,8 +1172,10 @@ def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path, monkeyp
     else:
         (config / "config_fed_client.yml").write_text("execution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\n")
         monkeypatch.setenv("NVFLARE_LIFETIME", "job")
+    # Job configs must be plain data, so includes and environment interpolations are rejected outright.
+    expected = "resolved client execution_lifetime" if config_case == "nested_json" else "HOCON or OmegaConf features"
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher") as choose:
-        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+        with pytest.raises(ValueError, match=expected):
             JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
                 client, "job-1", job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, context
             )
@@ -1183,7 +1185,6 @@ def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path, monkeyp
 def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(tmp_path, monkeypatch):
     from pathlib import Path
 
-    from nvflare.fuel.utils.config_service import ConfigService
     from nvflare.private.fed.client.client_app_runner import ClientAppRunner
     from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 
@@ -1195,8 +1196,6 @@ def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(
     config.mkdir(parents=True)
     path = config / "config_fed_client.yml"
     path.write_text("format_version: 3\nexecution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\nexecutors: []\n")
-    monkeypatch.delenv("NVFLARE_LIFETIME", raising=False)
-    assert ConfigService.load_config_dict(str(path))["execution_lifetime"] == "task"
     monkeypatch.setenv("NVFLARE_LIFETIME", "job")
     args = SimpleNamespace(
         workspace=str(tmp_path),
@@ -1208,7 +1207,7 @@ def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(
         sp_target="server:8002",
     )
     with patch.object(ClientJsonConfigurator, "configure") as build:
-        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
+        with pytest.raises(ValueError, match="HOCON or OmegaConf features"):
             ClientAppRunner().create_client_runner(workspace.get_app_dir("job-1"), args, "config", MagicMock(), False)
     build.assert_not_called()
 

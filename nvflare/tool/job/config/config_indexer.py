@@ -85,6 +85,8 @@ def _quote_resource_keys(value):
 def load_pyhocon_conf(config_file_path: str, search_dir: Optional[str]) -> Tuple[ConfigTree, str]:
     """Loads config using pyhocon."""
     try:
+        # Job tools run on the author's machine, where HOCON and OmegaConf features are allowed.
+        ConfigFactory.trust_config_dirs(search_dir or os.path.dirname(os.path.abspath(config_file_path)))
         temp_conf: Config = ConfigFactory.load_config(config_file_path, [search_dir])
         if temp_conf:
             config_file_path = temp_conf.file_path
