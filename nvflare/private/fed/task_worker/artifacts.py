@@ -748,6 +748,12 @@ class FileTaskArtifactStore:
                 raise ValueError("checkpoint does not match its saved completion")
             return completion
 
+    def completion_path(self, identity: TaskAttemptIdentity) -> str:
+        return os.path.join(self.attempt_dir(identity), "completion.json")
+
+    def has_failure(self, identity: TaskAttemptIdentity) -> bool:
+        return os.path.lexists(os.path.join(self.attempt_dir(identity), "failure.json"))
+
     def read_completion(self, identity: TaskAttemptIdentity) -> TaskCompletion:
         self._check_identity(identity)
         completion = TaskCompletion.from_dict(_read_json(os.path.join(self.attempt_dir(identity), "completion.json")))

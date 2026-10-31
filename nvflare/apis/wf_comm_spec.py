@@ -275,6 +275,10 @@ class WFCommSpec(ABC):
         """Called after process_task_request returns, but exception occurs before task is sent out."""
         raise NotImplementedError
 
+    def close_task_group(self, group_id: str, fl_ctx: FLContext):
+        """Tell every client that received a task of this group that the group has ended."""
+        pass
+
     def check_submission(
         self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
     ) -> bool:

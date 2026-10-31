@@ -14,6 +14,7 @@
 import threading
 import time
 from collections import OrderedDict
+from dataclasses import dataclass, field
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -45,6 +46,14 @@ _CLIENT_TASK_RESULT_RECEIVED = "___result_received"
 _SUBMISSION_CLAIM = "__submission_claim"
 _CLIENT_TASK_JOB_ID = "___job_id"
 _COMPLETED_CLIENT_TASK_CACHE_SIZE = 10000
+_CLOSURE_ANNOUNCEMENTS = 2  # replies in which a closed task group is listed to each touched client
+
+
+@dataclass
+class _GroupRecord:
+    tasks: list = field(default_factory=list)
+    clients: set = field(default_factory=set)
+    closed: bool = False
 
 
 def _check_positive_int(name, value):
@@ -111,6 +120,9 @@ class WFCommServer(FLComponent, WFCommSpec):
         self._completed_client_task_map = OrderedDict()  # client_task_id => _CompletedClientTaskInfo
         self._completed_client_task_cache_size = _COMPLETED_CLIENT_TASK_CACHE_SIZE
         self._all_done = False
+        self._task_groups = {}  # group id => _GroupRecord, until closed and none of its tasks is standing
+        self._closed_groups = {}  # client name => [group id, replies it is still announced in]
+        self._ungrouped_clients = set()  # clients whose results show they ran a grouped task outside its group
         self._task_lock = Lock()
         self._task_monitor = threading.Thread(target=self._monitor_tasks, args=(), name="wf_task", daemon=True)
         self._task_check_period = task_check_period
@@ -223,7 +235,38 @@ class WFCommServer(FLComponent, WFCommSpec):
             Tuple[str, str, Shareable]: task_name, an id for the client_task, and the data for this request
         """
         with self._controller_lock:
+            self._announce_closed_groups(client, fl_ctx)
             return self._do_process_task_request(client, fl_ctx)
+
+    def close_task_group(self, group_id: str, fl_ctx: FLContext):
+        with self._task_lock:
+            record = self._task_groups.get(group_id)
+            if record is not None:
+                record.closed = True
+            self._retire_closed_groups()
+
+    def _retire_closed_groups(self):
+        """With _task_lock held: announce a closed group once none of its tasks can still reach a client."""
+        for group_id, record in list(self._task_groups.items()):
+            if record.closed and not any(task.is_standing for task in record.tasks):
+                for client_name in record.clients:
+                    self._closed_groups.setdefault(client_name, []).append([group_id, _CLOSURE_ANNOUNCEMENTS])
+                del self._task_groups[group_id]
+
+    def _announce_closed_groups(self, client: Client, fl_ctx: FLContext):
+        # The runner copies this list onto whatever reply it finally builds. Each closure is
+        # listed in consecutive replies so one lost reply does not lose it.
+        if not self._closed_groups:
+            return
+        with self._task_lock:
+            entries = self._closed_groups.pop(client.name, None)
+            if not entries:
+                return
+            closed = [group_id for group_id, _ in entries]
+            remaining = [[group_id, left - 1] for group_id, left in entries if left > 1]
+            if remaining:
+                self._closed_groups[client.name] = remaining
+        fl_ctx.set_prop(FLContextKey.TASK_GROUPS_CLOSED, closed, private=True, sticky=False)
 
     def _do_process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         if not isinstance(client, Client):
@@ -238,6 +281,8 @@ class WFCommServer(FLComponent, WFCommSpec):
             for task in self._tasks:
                 if task.completion_status is not None:
                     # this task is finished (and waiting for the monitor to exit it)
+                    continue
+                if task.group is not None and client.name in self._ungrouped_clients:
                     continue
 
                 # do we need to send this task to this client?
@@ -390,6 +435,10 @@ class WFCommServer(FLComponent, WFCommSpec):
             client_data.add_cookie(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
             client_data.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task_to_send.attempt_id)
             client_data.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
+            if task.group is not None:
+                client_data.set_header(ReservedHeaderKey.TASK_GROUP_ID, task.group.id)
+                client_data.add_cookie(ReservedHeaderKey.TASK_GROUP_ID, task.group.id)
+                self._task_groups.setdefault(task.group.id, _GroupRecord()).clients.add(client.name)
             client_data.set_header(ReservedHeaderKey.MSG_ROOT_ID, task.msg_root_id)
             client_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
             return task_name, client_task_to_send.id, client_data
@@ -650,6 +699,12 @@ class WFCommServer(FLComponent, WFCommSpec):
                 fl_ctx.remove_prop(FLContextKey.TASK_RESULT_IS_LATE, force_removal=True)
             return
         task = client_task.task
+        if task.group is not None and result.get_header(ReservedHeaderKey.TASK_GROUP_ID) != task.group.id:
+            # An older client ran this task in a worker of its own. The group's state
+            # cannot be honoured there, so it receives no further grouped tasks.
+            with self._task_lock:
+                self._ungrouped_clients.add(client.name)
+            self.log_error(fl_ctx, f"client {client.name} does not support task groups; task {task.name} ran ungrouped")
         with task.cb_lock:
             client_task.result = result
             manager = task.props[_TASK_KEY_MANAGER]
@@ -723,6 +778,8 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         with self._task_lock:
             self._tasks.append(task)
+            if task.group is not None:
+                self._task_groups.setdefault(task.group.id, _GroupRecord()).tasks.append(task)
             self.log_info(fl_ctx, "scheduled task {}".format(task.name))
 
     def broadcast(
@@ -1029,6 +1086,10 @@ class WFCommServer(FLComponent, WFCommSpec):
                 task.completion_status = completion_status
             task.is_standing = False
             self._release_task_resources(task, fl_ctx)
+        with self._task_lock:
+            for record in self._task_groups.values():
+                record.closed = True
+            self._retire_closed_groups()
 
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
@@ -1262,6 +1323,8 @@ class WFCommServer(FLComponent, WFCommSpec):
                     self.logger.debug("Removing client_task with id={}".format(client_task.id))
                     self._remember_completed_client_task(client_task)
                     self._client_task_map.pop(client_task.id)
+            if exit_tasks:
+                self._retire_closed_groups()
 
         # do the task exit processing outside the lock to minimize the locking time
         # and to avoid potential deadlock since the CB could schedule another task
