@@ -106,6 +106,8 @@ class MoSA(nn.Module):
         for name, p in self.sam.image_encoder.named_parameters():
             if "adapter" not in name:
                 p.requires_grad = False
+        for p in self.sam.prompt_encoder.parameters():  # no prompts are used; kept frozen
+            p.requires_grad = False
 
     @property
     def blocks(self):
@@ -130,7 +132,7 @@ class MoSA(nn.Module):
         return masks
 
     def trainable_state(self):
-        """Parameters exchanged with the server (adapters, prompt encoder, mask decoder)."""
+        """Parameters exchanged with the server (adapters, mask decoder)."""
         return {n: p.detach().cpu() for n, p in self.named_parameters() if p.requires_grad}
 
     def current_prototypes(self):

@@ -17,7 +17,7 @@
 Per round the server
   * aggregates the expert of modality m (``experts.<idx(m)>``) only over clients holding m, weighted by each
     client's number of m samples (modality-restricted aggregation);
-  * aggregates every other exchanged parameter (shared adapters, prompt encoder, mask decoder) with weights
+  * aggregates every other exchanged parameter (shared adapters, mask decoder) with weights
     proportional to |D_k| * |M_k| (modality-balanced aggregation);
   * aggregates the shared-adapter prototypes with the same balanced weights and sends them back for the
     prototype-alignment loss.

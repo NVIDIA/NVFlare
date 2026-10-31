@@ -14,12 +14,12 @@ For client $k$ with dataset $D_k$, modalities $M_k$ and $n_{k,m}$ samples of mod
 | Component | Aggregation weight |
 | --- | --- |
 | Expert of modality $m$ (`experts.<idx(m)>`) | $n_{k,m} / \sum_j n_{j,m}$, only over the clients holding $m$ |
-| Shared adapters, prompt encoder, mask decoder | $\propto \|D_k\| \cdot \|M_k\|$ |
+| Shared adapters, mask decoder | $\propto \|D_k\| \cdot \|M_k\|$ |
 | Shared-adapter prototypes | the same balanced weights |
 
 Local loss: $\lambda_{bce}\,\mathrm{BCE} + \lambda_{dice}\,\mathrm{Dice} + \lambda_{proto}\,\frac{1}{2L}\sum_{l}\sum_{b\in\{attn,mlp\}} \lVert p^{local}_{l,b} - p^{global}_{l,b} \rVert_2$.
 
-Each batch has one modality and is routed through that modality's experts. The SAM backbone stays frozen. Only the adapters, the prompt encoder and the mask decoder are exchanged.
+Each batch has one modality and is routed through that modality's experts. The SAM backbone and the prompt encoder stay frozen. Only the adapters and the mask decoder are trained and exchanged, together with the shared prototypes.
 
 ## Code layout
 
