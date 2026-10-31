@@ -213,3 +213,50 @@ def test_provisioned_async_tcp_client_conn_props(tmp_path, security, routed):
         assert relay[ConnPropKey.URL] == f"{scheme}://relay-1:8004"
         assert relay[ConnPropKey.CONNECTION_SECURITY] == security
         assert relay[ConnPropKey.AUTH_IDENTITY] == "relay-1"
+
+
+@pytest.mark.parametrize("security", [ConnectionSecurity.CLEAR, ConnectionSecurity.TLS, ConnectionSecurity.MTLS])
+@pytest.mark.parametrize("routed", [False, True])
+def test_provisioned_async_grpc_client_conn_props(tmp_path, security, routed):
+    client = {"name": "site-1", "type": "client", "org": "org", "use_aio": True, "connection_security": security}
+    participants = [
+        {"name": "server.example.com", "type": "server", "org": "org", "connection_security": security},
+        client,
+    ]
+    if routed:
+        client["connect_to"] = {"name": "relay-1"}
+        participants.append(
+            {
+                "name": "relay-1",
+                "type": "relay",
+                "org": "org",
+                "listening_host": {
+                    "default_host": "relay-1",
+                    "port": 8004,
+                    "scheme": "grpc",
+                    "connection_security": security,
+                },
+            }
+        )
+
+    project = prepare_project({"api_version": 3, "name": "async-grpc", "participants": participants})
+    ctx = Provisioner(str(tmp_path), [WorkspaceBuilder(), StaticFileBuilder(scheme="grpc")]).provision(project)
+    assert not ctx.get(CtxKey.BUILD_ERROR)
+
+    kit = Path(ctx[CtxKey.CURRENT_PROD_DIR]) / "site-1"
+    config = json.loads((kit / "startup/fed_client.json").read_text())
+    assert config["servers"][0]["service"]["scheme"] == "agrpc"
+    if routed:
+        config.update(json.loads((kit / "local/relay__resources.json").read_text()))
+
+    configer = FLClientStarterConfiger.__new__(FLClientStarterConfiger)
+    configer.args = SimpleNamespace()
+    configer.logger = logging.getLogger(__name__)
+    configer.config_data = config
+    configer._determine_conn_props("site-1", config)
+
+    scheme = "agrpc" if security == ConnectionSecurity.CLEAR else "agrpcs"
+    root = get_scope_property("site-1", ConnPropKey.ROOT_CONN_PROPS)
+    assert root[ConnPropKey.URL] == f"{scheme}://server.example.com:8002"
+    assert root[ConnPropKey.CONNECTION_SECURITY] == security
+    assert root[ConnPropKey.AUTH_IDENTITY] == "server.example.com"
