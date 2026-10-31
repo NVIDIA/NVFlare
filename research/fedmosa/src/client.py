@@ -24,7 +24,7 @@ import nvflare.client as flare
 from nvflare.app_common.abstract.fl_model import FLModel
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.data import batches, load_split, modality_counts, set_seed  # noqa: E402
+from src.data import batches, epoch_subset, load_split, set_seed, subset_counts, train_seed  # noqa: E402
 from src.model import MoSA  # noqa: E402
 
 
@@ -85,11 +85,12 @@ def main():
     set_seed(32)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = MoSA(args.sam_ckpt or None, args.modalities.split(",")).to(device)
-    train = load_split(args.data_dir, client_idx, "train", args.dataset_id)
+    dataset = os.path.basename(os.path.normpath(args.data_dir))  # e.g. liver_seg (part of the subset seed)
+    volumes = load_split(args.data_dir, client_idx, "train", args.dataset_id)
     val = load_split(args.data_dir, client_idx, "val", args.dataset_id)
     test = load_split(args.data_dir, client_idx, "test", args.dataset_id)
     counts = {m: 0 for m in model.modalities}
-    counts.update(modality_counts(train))
+    counts.update(subset_counts(volumes))  # slices per epoch (a fresh 25% of every training volume)
     print(f"[{site}] client {client_idx}: train {counts}, val {len(val or [])}, test {len(test or [])}", flush=True)
     opt = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=args.lr)
     bce = torch.nn.BCEWithLogitsLoss()
@@ -112,7 +113,8 @@ def main():
         model.train()
         model.reset_prototypes()
         steps = 0
-        for _ in range(args.local_epochs):
+        for epoch in range(args.local_epochs):
+            train = epoch_subset(volumes, train_seed(dataset, args.dataset_id, client_idx, rnd, epoch))
             for x, y, m in batches(train, args.batch_size, threshold="ge"):
                 model.set_modality(m)
                 x, y = x.to(device), y.to(device)

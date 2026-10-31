@@ -50,11 +50,12 @@ git clone https://github.com/obedjamir/FedMoSA && cd FedMoSA/system
 python prepare_data.py -data liver_seg -nc 3
 ```
 
-This writes `../dataset/liver_seg/slices_<k>_*.pkl`: per client k and split, the list of
-(image uint8, mask uint8, modality) slices, the same 25% training subset and pixels the original training uses.
-`site-<k+1>` reads client k's files. Batching, rotation and transforms follow the original client: one modality
-per batch, modalities alternated, each modality shuffled and trimmed to full batches every pass, random
-90/180/270° rotation, 1024×1024 inputs and 256×256 masks.
+This writes `../dataset/liver_seg/slices_<k>_*.pkl` for every client k: all slices of its training volumes and its
+val / test slices. `site-<k+1>` reads client k's files. Every local epoch trains on a fresh random 25% of each
+training volume's slices, drawn with the same seed (dataset, run, client, round, epoch) as the original code, so both
+implementations see the same subsets. Batching, rotation and transforms follow the original client: one modality
+per batch, modalities alternated, each modality shuffled and trimmed to full batches, random 90/180/270° rotation,
+1024×1024 inputs and 256×256 masks.
 
 For a quick test with random ellipses:
 
