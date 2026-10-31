@@ -19,20 +19,21 @@ import os
 import sys
 
 import torch
-import torch.nn.functional as F
 
 import nvflare.client as flare
 from nvflare.app_common.abstract.fl_model import FLModel
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.data import SliceDataset, modality_batches, modality_counts, read_rows  # noqa: E402
+from src.data import batches, load_split, modality_counts, set_seed  # noqa: E402
 from src.model import MoSA  # noqa: E402
 
 
-def dice_loss(logits, target, eps=1e-6):
-    p = torch.sigmoid(logits)
-    inter = (p * target).sum((1, 2, 3))
-    return (1 - (2 * inter + eps) / (p.sum((1, 2, 3)) + target.sum((1, 2, 3)) + eps)).mean()
+def dice_loss(logits, target, smooth=1.0):
+    """Dice over the whole batch, as in the original client."""
+    p = torch.sigmoid(logits).view(-1)
+    t = target.view(-1)
+    inter = (p * t).sum()
+    return 1 - (2.0 * inter + smooth) / (p.sum() + t.sum() + smooth)
 
 
 def proto_loss(model, global_protos):
@@ -44,21 +45,30 @@ def proto_loss(model, global_protos):
 
 
 @torch.no_grad()
-def evaluate(model, dataset, batch_size, device):
+def evaluate(model, data, batch_size, device):
+    """Mean over batches of the batch IoU and Dice, as in the original client."""
+    if not data:
+        return None
     model.eval()
-    dices = []
-    for x, y, m in modality_batches(dataset, batch_size, shuffle=False):
+    ious, dices = [], []
+    for x, y, m in batches(data, batch_size, threshold="gt"):
         model.set_modality(m)
-        p = (torch.sigmoid(model(x.to(device))) > 0.5).float()
         y = y.to(device)
-        inter = (p * y).sum((1, 2, 3))
-        dices += ((2 * inter + 1e-6) / (p.sum((1, 2, 3)) + y.sum((1, 2, 3)) + 1e-6)).tolist()
-    return sum(dices) / max(len(dices), 1)
+        p = (torch.sigmoid(model(x.to(device))) > 0.5).float()
+        inter = (p * y).sum()
+        ious.append((inter / torch.clamp(p.sum() + y.sum() - inter, min=1.0)).item())
+        dices.append((2.0 * inter / torch.clamp(p.sum() + y.sum(), min=1.0)).item())
+    return {"iou": sum(ious) / len(ious), "dice": sum(dices) / len(dices)}
+
+
+def fmt(r):
+    return "n/a" if r is None else f"IoU {r['iou']:.4f} Dice {r['dice']:.4f}"
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-root", required=True)
+    ap.add_argument("--data-dir", required=True, help="dataset folder with the slices_*.pkl files")
+    ap.add_argument("--dataset-id", default="0")
     ap.add_argument("--sam-ckpt", default=None)
     ap.add_argument("--modalities", default="MR,CT")
     ap.add_argument("--local-epochs", type=int, default=2)
@@ -71,30 +81,43 @@ def main():
 
     flare.init()
     site = flare.get_site_name()
+    client_idx = int(site.split("-")[-1]) - 1  # site-1 -> client 0
+    set_seed(32)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = MoSA(args.sam_ckpt or None, args.modalities.split(",")).to(device)
-    train_set = SliceDataset(read_rows(args.data_root, site, "train"), train=True)
-    test_set = SliceDataset(read_rows(args.data_root, site, "test"), train=False)
-    counts = modality_counts(train_set.rows)
+    train = load_split(args.data_dir, client_idx, "train", args.dataset_id)
+    val = load_split(args.data_dir, client_idx, "val", args.dataset_id)
+    test = load_split(args.data_dir, client_idx, "test", args.dataset_id)
+    counts = {m: 0 for m in model.modalities}
+    counts.update(modality_counts(train))
+    print(f"[{site}] client {client_idx}: train {counts}, val {len(val or [])}, test {len(test or [])}", flush=True)
     opt = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=args.lr)
+    bce = torch.nn.BCEWithLogitsLoss()
 
     while flare.is_running():
         in_model = flare.receive()
         model.load_state_dict(in_model.params, strict=False)
-        global_protos = (in_model.meta or {}).get("prototypes")
-        dice_global = evaluate(model, test_set, args.batch_size, device)
+        rnd = in_model.current_round
 
+        if flare.is_evaluate() or rnd > 0:  # the global model after the previous round's aggregation
+            v, t = evaluate(model, val, args.batch_size, device), evaluate(model, test, args.batch_size, device)
+            which = "final global model" if flare.is_evaluate() else f"global model after round {rnd - 1}"
+            print(f"[{site}] {which}: val {fmt(v)} | test {fmt(t)}", flush=True)
+            metrics = {f"{s}_{k}": val_ for s, r in (("val", v), ("test", t)) if r for k, val_ in r.items()}
+            if flare.is_evaluate():
+                flare.send(FLModel(metrics=metrics))
+                continue
+
+        global_protos = (in_model.meta or {}).get("prototypes")
         model.train()
         model.reset_prototypes()
         steps = 0
         for _ in range(args.local_epochs):
-            for x, y, m in modality_batches(train_set, args.batch_size):
+            for x, y, m in batches(train, args.batch_size, threshold="ge"):
                 model.set_modality(m)
                 x, y = x.to(device), y.to(device)
                 logits = model(x)
-                loss = args.lam_bce * F.binary_cross_entropy_with_logits(logits, y) + args.lam_dice * dice_loss(
-                    logits, y
-                )
+                loss = args.lam_bce * bce(logits, y) + args.lam_dice * dice_loss(logits, y)
                 if global_protos:
                     loss = loss + args.lam_proto * proto_loss(model, global_protos)
                 opt.zero_grad()
@@ -102,16 +125,10 @@ def main():
                 opt.step()
                 steps += 1
 
-        dice_local = evaluate(model, test_set, args.batch_size, device)
-        print(
-            f"[{site}] round {in_model.current_round}: test Dice global {dice_global:.4f} -> local {dice_local:.4f}",
-            flush=True,
-        )
         protos = [{k: v.cpu().tolist() for k, v in p.items()} for p in model.mean_prototypes()]  # meta: plain lists
         flare.send(
             FLModel(
                 params=model.trainable_state(),
-                metrics={"dice": dice_global},
                 meta={"mod_counts": counts, "prototypes": protos, "NUM_STEPS_CURRENT_ROUND": steps},
             )
         )

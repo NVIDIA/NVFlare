@@ -52,6 +52,8 @@ class FedMoSAController(ModelController):
             results = self.send_model_and_wait(targets=clients, data=model)
             model = self.aggregate(results, model, rnd)
             self.save_model(model)
+        # evaluate the final global model on every client's val / test split
+        self.send_model_and_wait(task_name="validate", targets=self.sample_clients(self.num_clients), data=model)
         self.info("Finished FedMoSA.")
 
     def aggregate(self, results, global_model, rnd):
@@ -79,7 +81,8 @@ class FedMoSAController(ModelController):
                     continue
                 t = torch.as_tensor(r.params[name]).double() * wk
                 acc = t if acc is None else acc + t
-            params[name] = acc.to(torch.as_tensor(old).dtype)
+            # same container as the persistor's model (numpy), so clients decode it like the initial model
+            params[name] = acc.to(torch.as_tensor(old).dtype).numpy()
 
         protos = None
         if all(r.meta.get("prototypes") for r in results):

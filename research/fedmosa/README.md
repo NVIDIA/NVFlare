@@ -29,7 +29,7 @@ Each batch has one modality and is routed through that modality's experts. The S
 | `src/fedmosa_controller.py` | `FedMoSAController` (a `ModelController`): modality-restricted and modality-balanced aggregation, prototype aggregation |
 | `src/client.py` | Client API training script |
 | `src/model.py` | MoSA: SAM ViT-B with modality-specialized and shared adapters |
-| `src/data.py` | Slice dataset, modality-grouped batches, synthetic data for smoke tests |
+| `src/data.py` | Loading the prepared slices, the original transforms and modality-alternating batches, synthetic data |
 
 ## Setup
 
@@ -41,22 +41,37 @@ wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth
 
 ## Data
 
-Each site reads `<data-root>/<site>/{train,test}.csv` with the columns `image,mask,modality`. Each row points to 2D `.npy` slices: the image is normalized to [0, 1] and the mask is binary. The modality must be one of `--modalities`. The paper's liver setting (CHAOS CT/MR, LiTS, …) can be prepared with the preprocessing scripts of the original repository and exported to this format.
+The NVFlare example uses exactly the same slices as the original code. Build them once with the original
+pipeline of the [original repository](https://github.com/obedjamir/FedMoSA) (from its `system/`, after
+`dataset/generate_liver_seg.py`):
+
+```bash
+git clone https://github.com/obedjamir/FedMoSA && cd FedMoSA/system
+python prepare_data.py -data liver_seg -nc 3
+```
+
+This writes `../dataset/liver_seg/slices_<k>_*.pkl`: per client k and split, the list of
+(image uint8, mask uint8, modality) slices, the same 25% training subset and pixels the original training uses.
+`site-<k+1>` reads client k's files. Batching, rotation and transforms follow the original client: one modality
+per batch, modalities alternated, each modality shuffled and trimmed to full batches every pass, random
+90/180/270° rotation, 1024×1024 inputs and 256×256 masks.
 
 For a quick test with random ellipses:
 
 ```bash
-python -c "from src.data import make_synthetic; make_synthetic('/tmp/fedmosa_syn', {'site-1': ['CT'], 'site-2': ['CT', 'MR'], 'site-3': ['MR']})"
+python -c "from src.data import make_synthetic; make_synthetic('/tmp/fedmosa_syn', [['CT'], ['CT', 'MR'], ['MR']])"
 ```
 
 ## Run
 
 ```bash
-python job.py --data-root /tmp/fedmosa_syn --sites site-1,site-2,site-3 \
+python job.py --data-dir /path/to/FedMoSA/dataset/liver_seg --sites site-1,site-2,site-3 \
     --sam-ckpt sam_vit_b_01ec64.pth --num-rounds 50 --batch-size 8 --gpu 0,1,2 --threads 3
 ```
 
-`--export-only` writes the job folder to `<workspace>/jobs` for `nvflare job submit` (POC or production). Each client logs the test Dice of the global model and of the locally trained model every round.
+From round 1 on, every client logs the val and test IoU / Dice of the global model from the previous round; after
+the last round the final global model is evaluated the same way. `--export-only` writes the job folder to
+`<workspace>/jobs` for `nvflare job submit` (POC or production).
 
 ## Validation
 

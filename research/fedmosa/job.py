@@ -37,7 +37,8 @@ class InitialModel(MoSA):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-root", required=True, help="<data-root>/<site>/{train,test}.csv")
+    ap.add_argument("--data-dir", required=True, help="dataset folder with slices_*.pkl (system/prepare_data.py)")
+    ap.add_argument("--dataset-id", default="0")
     ap.add_argument("--sites", default="site-1,site-2,site-3")
     ap.add_argument("--modalities", default="MR,CT")
     ap.add_argument("--sam-ckpt", default="", help="SAM ViT-B checkpoint (sam_vit_b_01ec64.pth or MedSAM)")
@@ -48,7 +49,12 @@ def main():
     ap.add_argument("--lam-proto", type=float, default=0.01)
     ap.add_argument("--workspace", default="/tmp/nvflare/fedmosa")
     ap.add_argument("--gpu", default="")
-    ap.add_argument("--threads", type=int, default=1, help="clients trained in parallel by the simulator")
+    ap.add_argument(
+        "--threads",
+        type=int,
+        default=0,
+        help="simulator threads (default: one per site, so each client keeps its process and optimizer state)",
+    )
     ap.add_argument("--export-only", action="store_true")
     args = ap.parse_args()
 
@@ -67,7 +73,8 @@ def main():
     )
 
     script_args = [
-        "--data-root", os.path.abspath(args.data_root),
+        "--data-dir", os.path.abspath(args.data_dir),
+        "--dataset-id", args.dataset_id,
         "--modalities", args.modalities,
         "--local-epochs", str(args.local_epochs),
         "--batch-size", str(args.batch_size),
@@ -82,7 +89,9 @@ def main():
     if args.export_only:
         job.export_job(os.path.join(args.workspace, "jobs"))
     else:
-        job.simulator_run(args.workspace, n_clients=len(sites), threads=args.threads, gpu=args.gpu or None)
+        job.simulator_run(
+            args.workspace, n_clients=len(sites), threads=args.threads or len(sites), gpu=args.gpu or None
+        )
 
 
 if __name__ == "__main__":

@@ -12,94 +12,127 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""2D slice datasets for FedMoSA.
+"""FedMoSA data: the same slices, transforms and batching as the original implementation.
 
-Each site reads <data_root>/<site>/{train,test}.csv with columns image,mask,modality. Image and mask are .npy
-2D slices (image already intensity-normalized to [0, 1], mask binary). Batches are grouped by modality because
-the model routes a whole batch through one modality expert.
+Slices come from the files built by the original code (``system/prepare_data.py``) in ``<data-dir>``:
+``slices_<k>_0_train_<id>_0.25.pkl`` and ``slices_<k>_<split>_<id>.pkl`` for val / test, where site-<k+1> is
+client k. Each file is a list of (image uint8 HxW, mask uint8 HxW in {0, 255}, modality).
+
+Batches hold one modality (the model routes a whole batch through one expert). Every pass shuffles each
+modality, trims it to full batches and alternates modalities, and every slice gets a random 90/180/270 degree
+rotation, exactly as in the original client.
 """
 
-import csv
 import os
+import pickle
 import random
+from collections import OrderedDict
 
 import numpy as np
 import torch
-import torch.nn.functional as F
-from torch.utils.data import Dataset
+from PIL import Image
+from torchvision import transforms
 
-IMG_SIZE = 1024
-MASK_SIZE = 256
+TRAIN_FRACTION = 0.25  # slices per training volume kept by the original data pipeline
 
-
-class SliceDataset(Dataset):
-    def __init__(self, rows, train=True):
-        self.rows = rows
-        self.train = train
-
-    def __len__(self):
-        return len(self.rows)
-
-    def __getitem__(self, i):
-        img_path, mask_path, modality = self.rows[i]
-        img = torch.from_numpy(np.load(img_path).astype(np.float32))[None, None]
-        mask = torch.from_numpy((np.load(mask_path) > 0).astype(np.float32))[None, None]
-        img = F.interpolate(img, size=(IMG_SIZE, IMG_SIZE), mode="bilinear", align_corners=False)[0]
-        mask = F.interpolate(mask, size=(MASK_SIZE, MASK_SIZE), mode="nearest")[0]
-        if self.train:  # random 90/180/270 degree rotation, as in the original implementation
-            k = random.randint(1, 3)
-            img, mask = torch.rot90(img, k, (1, 2)), torch.rot90(mask, k, (1, 2))
-        img = ((img - 0.5) / 0.5).repeat(3, 1, 1)
-        return img, mask, modality
+transform_x = transforms.Compose(
+    [transforms.Resize((1024, 1024)), transforms.ToTensor(), transforms.Normalize(mean=[0.5], std=[0.5])]
+)
+transform_y = transforms.Compose(
+    [transforms.Resize((256, 256)), transforms.ToTensor(), transforms.Normalize(mean=[0.5], std=[0.5])]
+)
 
 
-def read_rows(data_root, site, split):
-    with open(os.path.join(data_root, site, f"{split}.csv")) as f:
-        return [(r["image"], r["mask"], r["modality"]) for r in csv.DictReader(f)]
+def set_seed(seed=32):
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.enabled = False
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
 
 
-def modality_batches(dataset, batch_size, shuffle=True):
-    """Yields (images, masks, modality) with one modality per batch."""
-    by_mod = {}
-    for i, (_, _, m) in enumerate(dataset.rows):
-        by_mod.setdefault(m, []).append(i)
-    chunks = []
-    for m, idx in by_mod.items():
-        if shuffle:
-            random.shuffle(idx)
-        chunks += [(m, idx[j : j + batch_size]) for j in range(0, len(idx), batch_size)]
-    if shuffle:
-        random.shuffle(chunks)
-    for m, idx in chunks:
-        items = [dataset[i] for i in idx]
-        yield torch.stack([x[0] for x in items]), torch.stack([x[1] for x in items]), m
+def slice_file(data_dir, client_idx, split, dataset_id="0"):
+    if split == "train":
+        return os.path.join(data_dir, f"slices_{client_idx}_0_train_{dataset_id}_{TRAIN_FRACTION}.pkl")
+    return os.path.join(data_dir, f"slices_{client_idx}_{split}_{dataset_id}.pkl")
 
 
-def modality_counts(rows):
+def load_split(data_dir, client_idx, split, dataset_id="0"):
+    """[(image uint8 HxW, mask uint8 HxW, modality), ...]; None if the split does not exist."""
+    path = slice_file(data_dir, client_idx, split, dataset_id)
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+
+def load_image(image, mask, rotate=True):
+    x = Image.fromarray(image).convert("L")
+    y = Image.fromarray(mask).convert("L")
+    if rotate:
+        angle = random.choice([90, 180, 270])
+        x, y = x.rotate(angle), y.rotate(angle)
+    return transform_x(x).repeat(3, 1, 1), transform_y(y)
+
+
+def modality_counts(data):
     counts = {}
-    for _, _, m in rows:
+    for _, _, m in data:
         counts[m] = counts.get(m, 0) + 1
     return counts
 
 
-def make_synthetic(data_root, sites_modalities, n_train=4, n_test=2, size=64, seed=0):
-    """Tiny random-ellipse dataset for smoke tests (no real images)."""
+def _alternating_batches(by_modality, batch_size):
+    """Full batches only; the modality with most batches first, then the others in order, round-robin."""
+    batched = OrderedDict((m, ds[: (len(ds) // batch_size) * batch_size]) for m, ds in by_modality.items())
+    n_batches = {m: len(ds) // batch_size for m, ds in batched.items()}
+    if not n_batches:
+        return []
+    order = sorted(n_batches, key=lambda m: n_batches[m], reverse=True)
+    ptr = {m: 0 for m in n_batches}
+    out = []
+    while True:
+        added = False
+        for m in order:
+            if ptr[m] < n_batches[m]:
+                out.append(batched[m][ptr[m] * batch_size : (ptr[m] + 1) * batch_size])
+                ptr[m] += 1
+                added = True
+        if not added:
+            return out
+
+
+def batches(data, batch_size, threshold):
+    """Yields (images, masks, modality); masks are binarized with ``>= 0.5`` (train) or ``> 0.5`` (eval)."""
+    by_modality = {}
+    for item in data:
+        by_modality.setdefault(item[2], []).append(item)
+    for m in by_modality:
+        random.shuffle(by_modality[m])
+    for batch in _alternating_batches(by_modality, batch_size):
+        pairs = [load_image(img, msk) for img, msk, _ in batch]
+        x = torch.stack([p[0] for p in pairs])
+        y = torch.stack([p[1] for p in pairs])
+        y = (y >= 0.5).float() if threshold == "ge" else (y > 0.5).float()
+        yield x, y, batch[0][2]
+
+
+def make_synthetic(data_dir, sites_modalities, n_train=8, n_test=4, size=64, seed=0):
+    """Tiny random-ellipse slices in the same file format, for smoke tests (no real images)."""
     rng = np.random.default_rng(seed)
     yy, xx = np.mgrid[:size, :size] / size
-    for site, mods in sites_modalities.items():
-        os.makedirs(os.path.join(data_root, site), exist_ok=True)
-        for split, n in (("train", n_train), ("test", n_test)):
-            rows = []
+    os.makedirs(data_dir, exist_ok=True)
+    for k, mods in enumerate(sites_modalities):
+        for split, n in (("train", n_train), ("val", n_test), ("test", n_test)):
+            data = []
             for m in mods:
-                for k in range(n):
+                for _ in range(n):
                     cy, cx, r = rng.uniform(0.3, 0.7), rng.uniform(0.3, 0.7), rng.uniform(0.1, 0.25)
-                    mask = ((yy - cy) ** 2 + (xx - cx) ** 2 < r**2).astype(np.uint8)
-                    img = np.clip(0.3 + 0.5 * mask + 0.1 * rng.standard_normal((size, size)), 0, 1)
-                    base = os.path.join(data_root, site, f"{split}_{m}_{k}")
-                    np.save(base + "_img.npy", img.astype(np.float32))
-                    np.save(base + "_mask.npy", mask)
-                    rows.append({"image": base + "_img.npy", "mask": base + "_mask.npy", "modality": m})
-            with open(os.path.join(data_root, site, f"{split}.csv"), "w", newline="") as f:
-                w = csv.DictWriter(f, fieldnames=["image", "mask", "modality"])
-                w.writeheader()
-                w.writerows(rows)
+                    mask = ((yy - cy) ** 2 + (xx - cx) ** 2 < r**2).astype(np.uint8) * 255
+                    img = np.clip(80 + 0.5 * mask + 25 * rng.standard_normal((size, size)), 0, 255).astype(np.uint8)
+                    data.append((img, mask, m))
+            with open(slice_file(data_dir, k, split), "wb") as f:
+                pickle.dump(data, f)
