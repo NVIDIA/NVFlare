@@ -46,7 +46,7 @@ class SliceDataset(Dataset):
         mask = torch.from_numpy((np.load(mask_path) > 0).astype(np.float32))[None, None]
         img = F.interpolate(img, size=(IMG_SIZE, IMG_SIZE), mode="bilinear", align_corners=False)[0]
         mask = F.interpolate(mask, size=(MASK_SIZE, MASK_SIZE), mode="nearest")[0]
-        if self.train and random.random() < 0.5:
+        if self.train:  # random 90/180/270 degree rotation, as in the original implementation
             k = random.randint(1, 3)
             img, mask = torch.rot90(img, k, (1, 2)), torch.rot90(mask, k, (1, 2))
         img = ((img - 0.5) / 0.5).repeat(3, 1, 1)

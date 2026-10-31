@@ -95,7 +95,7 @@ class MoSABlock(nn.Module):
 
 
 class MoSA(nn.Module):
-    def __init__(self, checkpoint=None, modalities=("CT", "MR"), reduction=16):
+    def __init__(self, checkpoint=None, modalities=("MR", "CT"), reduction=16):
         super().__init__()
         self.modalities = list(modalities)
         self.sam = sam_model_registry["vit_b"](checkpoint=checkpoint)

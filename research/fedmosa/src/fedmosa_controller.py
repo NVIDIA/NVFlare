@@ -36,7 +36,7 @@ EXPERT_RE = re.compile(r"\.experts\.(\d+)\.")
 
 
 class FedMoSAController(ModelController):
-    def __init__(self, *args, num_clients: int = 2, num_rounds: int = 10, modalities=("CT", "MR"), **kwargs):
+    def __init__(self, *args, num_clients: int = 2, num_rounds: int = 10, modalities=("MR", "CT"), **kwargs):
         super().__init__(*args, **kwargs)
         self.num_clients = num_clients
         self.num_rounds = num_rounds
