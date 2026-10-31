@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import os
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -2106,6 +2107,35 @@ class TestFedAvgLoadSaveModel:
         assert hasattr(controller, "save_model_file")
         assert hasattr(controller, "load_model_file")
 
+    @pytest.mark.parametrize("save_filename", ["{outside}", "../outside.pt"])
+    @pytest.mark.parametrize("operation", ["load", "save"])
+    def test_rejects_model_paths_outside_run_dir(self, tmp_path, save_filename, operation):
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        outside = str(tmp_path / "outside.pt")
+        controller = FedAvg(save_filename=save_filename.format(outside=outside))
+        controller.persistor = None
+        controller.get_run_dir = MagicMock(return_value=str(run_dir))
+
+        with pytest.raises(ValueError, match="save_filename"):
+            if operation == "load":
+                controller.load_model()
+            else:
+                controller.save_model(FLModel(params={}))
+
+    def test_accepts_model_path_under_run_dir(self, tmp_path):
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        controller = FedAvg(save_filename="models/model.pt")
+        controller.persistor = None
+        controller.get_run_dir = MagicMock(return_value=str(run_dir))
+        controller.save_model_file = MagicMock()
+        model = FLModel(params={})
+
+        controller.save_model(model)
+
+        controller.save_model_file.assert_called_once_with(model, str(run_dir / "models" / "model.pt"))
+
 
 class TestPTFedAvgModel:
     """Test PTFedAvg model type handling."""
@@ -2212,6 +2242,7 @@ class TestPTFedAvgModelPersistence:
             metrics={"accuracy": 0.85},
         )
         filepath = str(tmp_path / "test_model.pt")
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
 
         # Save and load
         controller.save_model_file(model, filepath)
@@ -2222,6 +2253,39 @@ class TestPTFedAvgModelPersistence:
         assert torch.equal(loaded.params["bias"], model.params["bias"])
         # Verify metadata
         assert loaded.metrics == model.metrics
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_direct_file_methods_resolve_parent_after_directory_symlink(self, tmp_path):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        run_dir = tmp_path / "run"
+        models = run_dir / "models"
+        checkpoints = run_dir / "checkpoints"
+        models.mkdir(parents=True)
+        (checkpoints / "cache").mkdir(parents=True)
+        (models / "latest").symlink_to("../checkpoints/cache", target_is_directory=True)
+        filepath = str(models / "latest" / ".." / "current.pt")
+        controller = PTFedAvg()
+        controller.engine = MagicMock()
+        workspace = controller.engine.get_workspace.return_value
+        workspace.get_run_dir.return_value = str(run_dir)
+        controller.fl_ctx = FLContext()
+        controller.fl_ctx.set_prop(ReservedKey.RUN_NUM, "test-job")
+        model = FLModel(params={"weight": torch.tensor([1.0, 2.0])}, metrics={"accuracy": 0.95})
+
+        controller.save_model_file(model, filepath)
+        loaded = controller.load_model_file(filepath)
+
+        assert torch.equal(loaded.params["weight"], model.params["weight"])
+        assert loaded.metrics == model.metrics
+        assert (checkpoints / "current.pt").is_file()
+        assert (checkpoints / "current.pt.metadata").is_file()
+        assert not (models / "current.pt").exists()
+        assert not (models / "current.pt.metadata").exists()
+        assert workspace.get_run_dir.call_count == 2
+        workspace.get_run_dir.assert_called_with("test-job")
 
     def test_load_model_file_without_metadata(self, tmp_path):
         """Test load_model_file works when metadata file doesn't exist."""
@@ -2235,12 +2299,82 @@ class TestPTFedAvgModelPersistence:
         params = {"weight": torch.tensor([1.0, 2.0])}
         filepath = str(tmp_path / "model_no_metadata.pt")
         torch.save(params, filepath)
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
 
         # Load without metadata file
         loaded = controller.load_model_file(filepath)
 
         assert torch.equal(loaded.params["weight"], params["weight"])
         assert loaded.metrics is None  # No metadata
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    @pytest.mark.parametrize("operation", ["load", "save"])
+    def test_rejects_metadata_sidecar_symlink_escape(self, tmp_path, operation):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        filepath = tmp_path / "model.pt"
+        torch.save({"weight": torch.tensor([1.0])}, filepath)
+        outside = tmp_path.parent / f"{tmp_path.name}-outside.metadata"
+        outside.write_bytes(b"outside must remain unchanged")
+        metadata = tmp_path / "model.pt.metadata"
+        metadata.symlink_to(outside)
+        controller = PTFedAvg()
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
+
+        with patch("nvflare.app_opt.pt.fedavg.torch.load") as load_params:
+            with pytest.raises(ValueError, match="model metadata path"):
+                if operation == "load":
+                    controller.load_model_file(str(filepath))
+                else:
+                    controller.save_model_file(FLModel(params={"weight": torch.tensor([2.0])}), str(filepath))
+            load_params.assert_not_called()
+        assert outside.read_bytes() == b"outside must remain unchanged"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_allows_metadata_sidecar_symlink_within_run_directory(self, tmp_path):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        models = tmp_path / "models"
+        metadata = tmp_path / "metadata"
+        models.mkdir()
+        metadata.mkdir()
+        filepath = models / "current.pt"
+        sidecar = models / "current.pt.metadata"
+        sidecar.symlink_to("../metadata/current.metadata")
+        controller = PTFedAvg()
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
+        model = FLModel(params={"weight": torch.tensor([1.0])}, metrics={"accuracy": 0.95})
+
+        controller.save_model_file(model, str(filepath))
+        loaded = controller.load_model_file(str(filepath))
+
+        assert loaded.metrics == {"accuracy": 0.95}
+        assert (metadata / "current.metadata").is_file()
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_checkpoint_alias_preserves_its_metadata_sidecar(self, tmp_path):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        target = tmp_path / "target.pt"
+        alias = tmp_path / "current.pt"
+        alias.symlink_to(target)
+        controller = PTFedAvg(save_filename=alias.name)
+        controller.persistor = None
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
+        model = FLModel(params={"weight": torch.tensor([1.0])}, metrics={"accuracy": 0.95})
+
+        controller.save_model(model)
+        loaded = controller.load_model()
+
+        assert loaded.metrics == {"accuracy": 0.95}
+        assert (tmp_path / "current.pt.metadata").is_file()
+        assert not (tmp_path / "target.pt.metadata").exists()
 
     def test_run_registers_tensor_decomposer(self):
         """Test that run() registers TensorDecomposer."""

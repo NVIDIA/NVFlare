@@ -30,6 +30,7 @@ from nvflare.app_common.aggregators.weighted_aggregation_helper import (
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fedprox_utils import normalize_fedprox_mu, set_fedprox_metadata
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 from nvflare.fuel.utils import fobs
@@ -520,7 +521,9 @@ class FedAvg(BaseFedAvg):
             return super().load_model()
         elif self.save_filename:
             # Try to load from file
-            filepath = os.path.join(self.get_run_dir(), self.save_filename)
+            filepath = resolve_path_under_root(
+                self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
+            )
             if os.path.exists(filepath):
                 self.info(f"Loading model from {filepath}")
                 return self.load_model_file(filepath)
@@ -544,7 +547,9 @@ class FedAvg(BaseFedAvg):
             super().save_model(model)
         elif self.save_filename:
             # Use simple file-based saving
-            filepath = os.path.join(self.get_run_dir(), self.save_filename)
+            filepath = resolve_path_under_root(
+                self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
+            )
             self.save_model_file(model, filepath)
             self.info(f"Model saved to {filepath}")
         else:

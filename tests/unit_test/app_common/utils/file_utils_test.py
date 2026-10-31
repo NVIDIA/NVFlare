@@ -44,3 +44,24 @@ def test_resolve_path_under_root_rejects_symlink_escape(tmp_path):
 
     with pytest.raises(ValueError, match="must stay inside"):
         resolve_path_under_root(str(tmp_path), "link/outside.npy", "model path")
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+def test_resolve_path_under_root_can_preserve_an_in_root_leaf_symlink(tmp_path):
+    target = tmp_path / "target.npy"
+    target.touch()
+    alias = tmp_path / "current.npy"
+    alias.symlink_to(target)
+
+    assert resolve_path_under_root(str(tmp_path), alias.name, preserve_leaf=True) == str(alias)
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+def test_resolve_path_under_root_does_not_preserve_an_escaping_leaf_symlink(tmp_path):
+    outside = tmp_path.parent / f"{tmp_path.name}_outside.npy"
+    outside.touch()
+    alias = tmp_path / "current.npy"
+    alias.symlink_to(outside)
+
+    with pytest.raises(ValueError, match="must stay inside"):
+        resolve_path_under_root(str(tmp_path), alias.name, preserve_leaf=True)
