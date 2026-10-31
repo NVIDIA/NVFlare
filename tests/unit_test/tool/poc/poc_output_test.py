@@ -1730,3 +1730,8 @@ def _isolate_module_clocks(monkeypatch):
         monkeypatch,
         "nvflare.tool.poc.poc_commands",
     )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
