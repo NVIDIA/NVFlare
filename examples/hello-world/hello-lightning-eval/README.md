@@ -157,7 +157,7 @@ Validation DataLoader 0: 100%|██████████| 417/417 [00:03<00:
 ## Notes
 
 - This example uses **1 epoch** for pre-training by default for quick demonstration (~23% accuracy)
-- For better accuracy (~50%), increase epochs: `python generate_pretrain_models.py --epochs 10`
+- For better accuracy (~50%), increase epochs: `python generate_pretrain_models.py --epochs 10 --output ./pretrained_model.pt`
 - The same CIFAR-10 dataset is used on all clients for simplicity
 - In a real federated setting, each client would have their own local test set
 - The model architecture must match between training and evaluation
