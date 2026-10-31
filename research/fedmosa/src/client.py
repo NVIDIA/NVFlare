@@ -62,7 +62,7 @@ def main():
     ap.add_argument("--sam-ckpt", default=None)
     ap.add_argument("--modalities", default="MR,CT")
     ap.add_argument("--local-epochs", type=int, default=2)
-    ap.add_argument("--batch-size", type=int, default=4)
+    ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--lam-bce", type=float, default=0.5)
     ap.add_argument("--lam-dice", type=float, default=0.5)

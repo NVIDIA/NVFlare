@@ -53,7 +53,7 @@ python -c "from src.data import make_synthetic; make_synthetic('/tmp/fedmosa_syn
 
 ```bash
 python job.py --data-root /tmp/fedmosa_syn --sites site-1,site-2,site-3 \
-    --sam-ckpt sam_vit_b_01ec64.pth --num-rounds 50 --batch-size 4 --gpu 0,1,2 --threads 3
+    --sam-ckpt sam_vit_b_01ec64.pth --num-rounds 50 --batch-size 8 --gpu 0,1,2 --threads 3
 ```
 
 `--export-only` writes the job folder to `<workspace>/jobs` for `nvflare job submit` (POC or production). Each client logs the test Dice of the global model and of the locally trained model every round.

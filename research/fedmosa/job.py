@@ -43,7 +43,7 @@ def main():
     ap.add_argument("--sam-ckpt", default="", help="SAM ViT-B checkpoint (sam_vit_b_01ec64.pth or MedSAM)")
     ap.add_argument("--num-rounds", type=int, default=50)
     ap.add_argument("--local-epochs", type=int, default=2)
-    ap.add_argument("--batch-size", type=int, default=4)
+    ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--lam-proto", type=float, default=0.01)
     ap.add_argument("--workspace", default="/tmp/nvflare/fedmosa")

@@ -66,6 +66,8 @@ class MoSABlock(nn.Module):
         self.current_proto = {}
 
     def _record(self, key, out):
+        if not self.training:  # evaluation features never enter the prototypes sent to the server
+            return
         proto = out.flatten(0, -2).mean(dim=0)
         self.current_proto[key] = proto
         s = self.proto_sum[key]
@@ -85,7 +87,7 @@ class MoSABlock(nn.Module):
             mlp = b.mlp(h)
         shared = self.shared_adapter_mlp(h)
         self._record("mlp_shared", shared)
-        self.proto_count += 1
+        self.proto_count += int(self.training)
         return x + mlp + self.adapter_mlp(h) + shared
 
     def mean_prototypes(self):
