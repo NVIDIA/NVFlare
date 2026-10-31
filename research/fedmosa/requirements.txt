@@ -1,0 +1,5 @@
+nvflare[PT]==2.9.0
+torch>=2.1
+torchvision
+numpy
+git+https://github.com/facebookresearch/segment-anything.git
