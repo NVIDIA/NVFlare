@@ -42,7 +42,6 @@ from nvflare.tool.system.system_cli import def_system_cli_parser, handle_system_
 from nvflare.utils.cli_utils import (
     CONFIG_VERSION,
     CURRENT_CONFIG_VERSION,
-    create_job_template_config,
     create_poc_workspace_config,
     get_config_value,
     load_hidden_config_state,
@@ -176,14 +175,6 @@ def def_config_parser(sub_cmd):
         default=None,
         help="POC workspace location",
     )
-    config_parser.add_argument(
-        "-jt",
-        "--job_templates_dir",
-        type=str,
-        nargs="?",
-        default=None,
-        help="job templates location (deprecated)",
-    )
     config_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     config_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     config_subparser = config_parser.add_subparsers(title="config subcommands", metavar="", dest="config_sub_cmd")
@@ -215,9 +206,8 @@ def handle_config_cmd(args):
     nvflare_config = loaded_config or {}
     requested_startup_kit = getattr(args, "startup_kit_dir", None)
     requested_poc_workspace = args.poc_workspace_dir
-    requested_job_templates = getattr(args, "job_templates_dir", None)
 
-    if requested_startup_kit is None and requested_poc_workspace is None and requested_job_templates is None:
+    if requested_startup_kit is None and requested_poc_workspace is None:
         output_ok(_config_summary(config_file_path, nvflare_config))
         return
 
@@ -236,12 +226,6 @@ def handle_config_cmd(args):
                 "use 'nvflare poc config --pw <poc-workspace-dir>'."
             )
             nvflare_config = create_poc_workspace_config(nvflare_config, requested_poc_workspace)
-        if requested_job_templates is not None:
-            print_human(
-                "Warning: 'nvflare config -jt/--job_templates_dir' is deprecated; "
-                "use 'nvflare job create --job_templates_dir <dir>' for custom templates."
-            )
-            nvflare_config = create_job_template_config(nvflare_config, requested_job_templates)
     except (StartupKitConfigError, ValueError) as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
@@ -252,15 +236,11 @@ def handle_config_cmd(args):
 
 
 def _config_summary(config_file_path: str, nvflare_config: dict) -> dict:
-    data = {
+    return {
         "config_file": config_file_path,
         "poc_workspace_dir": get_config_value(nvflare_config, "poc.workspace"),
         "active_startup_kit": get_config_value(nvflare_config, "startup_kits.active"),
     }
-    job_templates_dir = get_config_value(nvflare_config, "job_template.path")
-    if job_templates_dir is not None:
-        data["job_templates_dir"] = job_templates_dir
-    return data
 
 
 def _get_subcommand_choices(parser):

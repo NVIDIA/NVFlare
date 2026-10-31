@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.tool.job.job_client_const import CONFIG_JSON, JOB_TEMPLATES
+from nvflare.tool.job.job_client_const import CONFIG_JSON
 
 CONFIG_VERSION = "version"
 CURRENT_CONFIG_VERSION = 2
@@ -139,55 +139,9 @@ def create_poc_workspace_config(nvflare_config: dict, poc_workspace_dir: Optiona
     return set_config_value(nvflare_config, "poc.workspace", os.path.abspath(poc_workspace_dir))
 
 
-def create_job_template_config(nvflare_config: dict, job_templates_dir: Optional[str] = None) -> dict:
-    if job_templates_dir is None:
-        return nvflare_config
-
-    job_templates_dir = os.path.abspath(job_templates_dir)
-    check_dir(job_templates_dir)
-    return set_config_value(nvflare_config, "job_template.path", job_templates_dir)
-
-
 def check_dir(dir_path: str):
     if not dir_path or not os.path.isdir(dir_path):
         raise ValueError(f"directory {dir_path} doesn't exists")
-
-
-def find_job_templates_location(job_templates_dir: Optional[str] = None):
-    def check_job_templates_dir(job_temp_dir: str):
-        if job_temp_dir:
-            if not os.path.isdir(job_temp_dir):
-                raise ValueError(f"Invalid job template directory {job_temp_dir}")
-
-    if job_templates_dir is None:
-        nvflare_home = os.environ.get("NVFLARE_HOME", None)
-        if nvflare_home:
-            job_templates_dir = os.path.join(nvflare_home, JOB_TEMPLATES)
-
-    if job_templates_dir is None:
-        nvflare_config = load_hidden_config()
-        job_templates_dir = get_config_value(nvflare_config, "job_template.path") if nvflare_config else None
-
-    if job_templates_dir:
-        check_job_templates_dir(job_templates_dir)
-
-    if not job_templates_dir:
-        # get default template from nvflare wheel if package installed
-        from nvflare.tool import job as job_module
-
-        template_path = os.path.join(os.path.dirname(job_module.__file__), "templates")
-        if os.path.isdir(template_path):
-            job_templates_dir = template_path
-        else:
-            job_templates_dir = None
-
-    if not job_templates_dir:
-        raise ValueError(
-            "Required job_template directory is not specified. "
-            "Please check ~/.nvflare/config.json or set env variable NVFLARE_HOME "
-        )
-
-    return job_templates_dir
 
 
 def get_curr_dir():

@@ -144,6 +144,26 @@ class ConfigService:
         cls._var_values = {}
 
     @classmethod
+    def refresh_config_path(cls, config_path: List[str]):
+        """Prioritize new config paths and invalidate cached scalar values.
+
+        Keep registered sections, command arguments, and variable overrides.
+        This is useful when config files become available after initialization.
+        """
+        if not isinstance(config_path, list):
+            raise TypeError(f"config_dirs must be list but got {type(config_path)}")
+        if not config_path:
+            raise ValueError("config_dirs is empty")
+        for path in config_path:
+            if not isinstance(path, str):
+                raise ValueError(f"config_dirs must contain str but got {type(path)}")
+            if not os.path.isdir(path):
+                raise ValueError(f"'{path}' is not a valid directory")
+
+        cls._config_path = list(dict.fromkeys(config_path + cls._config_path))
+        cls._var_values = {}
+
+    @classmethod
     def get_section(cls, name: str):
         """Get the specified section.
 

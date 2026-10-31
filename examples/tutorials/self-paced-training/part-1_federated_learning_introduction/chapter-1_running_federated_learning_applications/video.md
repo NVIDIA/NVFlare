@@ -1,6 +1,8 @@
 # Videos: Running Federated Learning Applications
 
-These recordings accompany the original **NVFlare 2.6 / Job API** course. They have not been re-recorded for the Recipe API revision. Follow the [current notebooks](README.md) for executable 2.10 instructions, or use the [preserved 2.6 edition](https://github.com/NVIDIA/NVFlare/tree/2.6.0/examples/tutorials/self-paced-training) with these videos.
+> **Video notice:** All videos below were recorded for **NVFlare 2.6 / Job API** and do not match the current **NVFlare 2.10 / Recipe API** notebooks. They have not been re-recorded for this revision.
+>
+> Follow the [current notebooks](README.md) for setup, commands, and code; the recordings remain available as historical material. To follow the recordings step by step, use the [archived 2.6 course](https://github.com/NVIDIA/NVFlare/tree/2.6.0/examples/tutorials/self-paced-training).
 
 ## [Running FL Application](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter1/part1-chapter1-01.0-intro.mp4)
 

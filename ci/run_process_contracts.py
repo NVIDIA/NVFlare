@@ -25,10 +25,12 @@ from pathlib import Path
 TESTS = (
     "tests/integration_test/fast/autofl_process_lifecycle_test.py",
     "tests/integration_test/fast/cell_session_mtls_test.py",
+    "tests/integration_test/fast/download_parallel_test.py",
     "tests/integration_test/fast/hf_distributed_contract_test.py",
     "tests/integration_test/fast/job_cert_binding_live_test.py",
     "tests/integration_test/fast/process_launcher_lifecycle_test.py",
     "tests/integration_test/fast/server_transit_e2e_test.py",
+    "tests/integration_test/fast/step_ca_admin_cert_process_test.py",
     "tests/integration_test/fast/streaming_pass_through_test.py",
     "tests/integration_test/fast/task_execution_process_test.py",
     "tests/integration_test/fast/task_supervisor_process_test.py",

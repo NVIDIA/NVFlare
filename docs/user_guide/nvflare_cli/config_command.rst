@@ -15,7 +15,7 @@ Command Usage
 .. code-block:: none
 
    usage: nvflare config [-h] [--schema] [-d [STARTUP_KIT_DIR]]
-                         [-pw [POC_WORKSPACE_DIR]] [-jt [JOB_TEMPLATES_DIR]]
+                         [-pw [POC_WORKSPACE_DIR]]
                          {add,use,inspect,list,remove} ...
 
 *****************
@@ -46,8 +46,5 @@ Configuration notes:
 - ``nvflare config -pw/--poc_workspace_dir`` remains accepted for compatibility,
   but is deprecated. Use ``nvflare poc config --pw <poc-workspace-dir>`` for new
   workflows.
-- ``nvflare config -jt/--job_templates_dir`` remains accepted for compatibility,
-  but job template config is deprecated. Prefer passing custom template
-  locations to job commands that need them.
 - Development-only spellings such as ``--poc.workspace``, ``--poc.startup_kit``,
   and ``--prod.startup_kit`` are not supported compatibility flags.

@@ -129,6 +129,12 @@ NVFlare provides several optional dependency groups that you can install based o
 
      $ pip install nvflare[MONITORING]
 
+* **DASHBOARD** - Dashboard web interface:
+
+  .. code-block:: shell
+
+     $ python3 -m pip install "nvflare[dashboard]"
+
 You can also install multiple optional dependencies at once:
 
 .. code-block:: shell

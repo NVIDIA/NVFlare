@@ -24,6 +24,60 @@ NUM_GPU_KEY = "num_of_gpus"
 GPU_MEM_KEY = "mem_per_gpu_in_GiB"
 
 
+def test_exclusive_pool_uses_process_mode_mask_without_host_access(monkeypatch):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1,3,5,7")
+    manager = GPUResourceManager(4, 0, ignore_host=True, exclusive=True)
+    ctx = FLContext()
+    first_req = {NUM_GPU_KEY: 2}
+    enough, first_token = manager.check_resources(first_req, ctx)
+    assert enough
+    first = manager.allocate_resources(first_req, first_token, ctx)
+    assert first == {1: 1, 3: 1}
+    enough, second_token = manager.check_resources({NUM_GPU_KEY: 1}, ctx)
+    assert enough
+    second = manager.allocate_resources({NUM_GPU_KEY: 1}, second_token, ctx)
+    assert second == {5: 1}
+    assert manager.check_resources(first_req, ctx) == (False, "")
+    manager.free_resources(first, first_token, ctx)
+    assert manager.check_resources(first_req, ctx)[0]
+
+
+@pytest.mark.parametrize("budget,requested,enough", [(16, 32, False), (16, 16, True), (16, 0, True), (0, 32, True)])
+def test_exclusive_memory_admission(budget, requested, enough):
+    manager = GPUResourceManager(1, budget, ignore_host=True, exclusive=True)
+    requirement = {NUM_GPU_KEY: 1, GPU_MEM_KEY: requested}
+    ctx = FLContext()
+    available, token = manager.check_resources(requirement, ctx)
+    assert available is enough
+    assert manager.mem_per_gpu_in_GiB == budget
+    if enough:
+        allocation = manager.allocate_resources(requirement, token, ctx)
+        assert allocation == {0: budget or 1}
+        assert not manager.check_resources(requirement, ctx)[0]
+        manager.free_resources(allocation, token, ctx)
+        assert manager.check_resources(requirement, ctx)[0]
+
+
+@pytest.mark.parametrize("mask", ["GPU-selected-device", "MIG-GPU-selected-device/1/0", "0,GPU-selected-device"])
+def test_host_independent_pool_rejects_unsupported_masks(monkeypatch, mask):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
+    with pytest.raises(ValueError, match="integer GPU indices"):
+        GPUResourceManager(1, 0, ignore_host=True, exclusive=True)
+
+
+@pytest.mark.parametrize("mask", ["", "GPU-selected-device", "1,3"])
+def test_ignore_host_keeps_legacy_unmasked_pool(monkeypatch, mask):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
+    manager = GPUResourceManager(2, 16, ignore_host=True)
+    assert list(manager.resources) == [0, 1]
+
+
+def test_exclusive_pool_allows_empty_parent_mask(monkeypatch):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    manager = GPUResourceManager(2, 0, ignore_host=True, exclusive=True)
+    assert list(manager.resources) == [0, 1]
+
+
 class MockEngine:
     def __init__(self, run_name="exp1"):
         self.fl_ctx_mgr = FLContextManager(

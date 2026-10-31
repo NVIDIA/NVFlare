@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import math
 import os
 import subprocess
 import tempfile
 from typing import Mapping, Sequence
 from urllib.parse import urlparse
+
+import psutil
 
 from nvflare.fuel.sec.admin_cert import ADMIN_CERT_PLACEHOLDER_CN
 from nvflare.fuel.sec.admin_cert_provider import AdminCertFiles, AdminCertProviderError
@@ -41,7 +44,7 @@ def obtain_step_ca_admin_cert_files(config: Mapping, root_ca_file: str) -> Admin
     )
     try:
         _run_step(command, timeout=command_timeout)
-    except Exception:
+    except BaseException:
         temp_dir.cleanup()
         raise
 
@@ -105,11 +108,15 @@ def _run_step(
     timeout: float = DEFAULT_STEP_CA_COMMAND_TIMEOUT,
 ):
     try:
-        return subprocess.run(
-            command,
-            check=True,
-            timeout=timeout,
-        )
+        process = subprocess.Popen(command)
+        try:
+            returncode = process.wait(timeout=timeout)
+        except BaseException:
+            _stop_step(process)
+            raise
+        if returncode:
+            raise subprocess.CalledProcessError(returncode, command)
+        return subprocess.CompletedProcess(command, returncode)
     except OSError as ex:
         raise AdminCertProviderError(
             "cannot execute the 'step' CLI; install it or configure step_ca provider_config.step_bin"
@@ -118,6 +125,27 @@ def _run_step(
         raise AdminCertProviderError(f"step ca certificate timed out after {timeout} seconds") from ex
     except subprocess.CalledProcessError as ex:
         raise AdminCertProviderError(f"step ca certificate failed with exit code {ex.returncode}") from ex
+
+
+def _stop_step(process: subprocess.Popen):
+    children = []
+    try:
+        try:
+            # Collect descendants while step is still their parent.
+            children = psutil.Process(process.pid).children(recursive=True)
+            for child in reversed(children):
+                try:
+                    child.kill()
+                except psutil.NoSuchProcess:
+                    pass
+        finally:
+            process.kill()
+            process.wait()
+        psutil.wait_procs(children, timeout=1)
+    except psutil.NoSuchProcess:
+        pass
+    except (OSError, psutil.Error) as ex:
+        logging.getLogger(__name__).warning("Failed to stop step CLI child processes: %s", ex)
 
 
 def _validate_step_ca_url(url: str):

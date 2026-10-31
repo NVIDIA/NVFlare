@@ -11,10 +11,14 @@ participants:
   - name: site-1
     type: client
     org: nvidia
+    capacity:
+      num_of_gpus: 2
 
   - name: site-2
     type: client
     org: nvidia
+    capacity:
+      num_of_gpus: 2
 
   - name: admin@nvidia.com
     type: admin

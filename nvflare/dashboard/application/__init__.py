@@ -14,11 +14,13 @@
 
 import os
 
-from flask import Flask
-from flask_jwt_extended import JWTManager
-from flask_sqlalchemy import SQLAlchemy
-
 from nvflare.dashboard.utils import EnvVar, get_web_root
+from nvflare.fuel.utils.optional_dependencies import DASHBOARD_OPTIONAL_MODULES, optional_dependency_import
+
+with optional_dependency_import("NVFlare Dashboard", "dashboard", DASHBOARD_OPTIONAL_MODULES):
+    from flask import Flask
+    from flask_jwt_extended import JWTManager
+    from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 jwt = JWTManager()
