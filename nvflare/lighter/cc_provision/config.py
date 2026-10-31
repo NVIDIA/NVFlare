@@ -14,15 +14,21 @@
 
 """Strict unified confidential-computing configuration validation."""
 
+import base64
 import ipaddress
+import json
 import re
+import time
+import warnings
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Dict, Iterable, Mapping
 from urllib.parse import urlsplit
 
 from nvflare.app_opt.confidential_computing.coco_authorizer import CoCoAuthorizer
+from nvflare.app_opt.confidential_computing.trustee_claims import normalize_cpu_tee
 from nvflare.lighter import utils
+from nvflare.lighter.cc.image_builder.cvm.common.contracts import DEFAULT_EXPIRY_WARNING_SECONDS
 from nvflare.lighter.cc_provision.deployment import (
     CPUTEE,
     GPUTEE,
@@ -58,6 +64,30 @@ LEGACY_FIELDS = {
 CLASS_PATH = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
 REPOSITORY = re.compile(r"[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*")
 DNS_LABEL = re.compile(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?")
+_WARNED_TOKEN_EXPIRATIONS = set()
+
+
+def _warn_jwt_expiry(path, warning_window, now=None):
+    """Warn on a parseable JWT expiry without treating unverified claims as authorization."""
+    try:
+        payload = Path(path).read_text().strip().split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        expiration = json.loads(base64.urlsafe_b64decode(payload))["exp"]
+    except (IndexError, KeyError, OSError, TypeError, ValueError):
+        return
+    if type(expiration) not in (int, float):
+        return
+    current = time.time() if now is None else now
+    if expiration <= current:
+        raise ValueError("Trustee administration token has expired; issue a fresh short-lived token")
+    warning_key = (str(Path(path).resolve()), expiration)
+    if expiration - current <= warning_window and warning_key not in _WARNED_TOKEN_EXPIRATIONS:
+        _WARNED_TOKEN_EXPIRATIONS.add(warning_key)
+        warnings.warn(
+            "Trustee administration token expires within the configured warning window; rotate it before provisioning",
+            RuntimeWarning,
+            stacklevel=3,
+        )
 
 
 def _mapping(value, name):
@@ -262,8 +292,15 @@ def _validate_service(name, value, config_path):
             "retry",
             "proof_iat_leeway_seconds",
             "workload_constraints",
+            "expiry_warning_seconds",
         }
-        required = allowed - {"admin_token_file", "retry", "proof_iat_leeway_seconds", "workload_constraints"}
+        required = allowed - {
+            "admin_token_file",
+            "retry",
+            "proof_iat_leeway_seconds",
+            "workload_constraints",
+            "expiry_warning_seconds",
+        }
         _exact(service, allowed, f"attestation_services.{name}", required=required)
         _https_endpoint(service["kbs_endpoint"], f"attestation_services.{name}.kbs_endpoint")
         endpoint = urlsplit(service["attestation_token_endpoint"])
@@ -283,6 +320,11 @@ def _validate_service(name, value, config_path):
         for field in ("ca_cert_file", "admin_token_file", "attestation_signing_public_key_file"):
             if field in service:
                 service[field] = str(_path(config_path, service[field], f"attestation_services.{name}.{field}"))
+        warning_window = service.setdefault("expiry_warning_seconds", DEFAULT_EXPIRY_WARNING_SECONDS)
+        if type(warning_window) is not int or warning_window < 0:
+            raise ValueError(f"attestation_services.{name}.expiry_warning_seconds must be a nonnegative integer")
+        if "admin_token_file" in service:
+            _warn_jwt_expiry(service["admin_token_file"], warning_window)
         age = _positive_int(
             service["token_expiration_seconds"], f"attestation_services.{name}.token_expiration_seconds"
         )
@@ -399,7 +441,7 @@ def load_participant_config(config_path: Path, project_config: Mapping[str, Any]
     except (ValueError, TypeError):
         raise ValueError("cc_deployment_mode must be bare_metal_cvm, coco, or azure_cc") from None
     try:
-        cpu = CPUTEE(config["cpu_tee"])
+        cpu = CPUTEE(normalize_cpu_tee(config["cpu_tee"]))
     except (ValueError, TypeError):
         raise ValueError("cpu_tee must be intel_tdx or amd_sev_snp") from None
     try:

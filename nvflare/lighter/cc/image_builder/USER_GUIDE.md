@@ -1,5 +1,14 @@
 # Run a CVM with an application vault
 
+The launcher preserves the previous clear applog disk before every relaunch in
+`applog-history/applog-<timestamp>.qcow2` beside the delivery. It retains the
+three newest images with mode 0600. Inspect a retained image on a trusted host,
+for example with `guestmount -a applog-history/FILE.qcow2 -m /dev/sda MOUNT_DIR`.
+Copy any required record elsewhere before more than three later launches.
+The launcher creates and atomically renames the new copy before pruning the
+oldest retained image. If the best-effort copy fails, it removes the partial file, warns, and
+continues; clear-log retention never blocks the CVM from starting.
+
 Each platform/application delivery is an OCI artifact containing its complete
 reusable generic CVM bundle plus one application vault. The OCI manifest has a
 reusable CVM layer and a deployment-specific vault/runtime layer. A local OCI
@@ -23,19 +32,61 @@ to the configured KBS.
 The delivery's vault capacity is selected and sealed at build time. It must hold
 both the retained Docker archive and the expanded Docker layers, plus application
 files and runtime writes. If more capacity is needed, rebuild the vault using the
-sizing formula in [BUILD_GUIDE.md](BUILD_GUIDE.md#4-vault-build); do not resize a
+sizing formula in [BUILD_GUIDE.md](BUILD_GUIDE.md#4-seal-an-application-delivery); do not resize a
 sealed delivery in place.
 
-Obtain the platform's `.oci.tar` from Vault Build or its immutable registry
+Obtain the platform's `.oci.tar` from `cvmctl vault` or its immutable registry
 reference. Install [ORAS](https://oras.land/docs/installation/) only when using a
 registry; local OCI tar materialization uses Python alone.
 
-## 2. Materialize the delivery artifact
+## 2. Authenticate, materialize, and launch
+
+Use `cvmctl run` for the normal runtime workflow. It authenticates the
+publisher, validates every OCI descriptor and layer digest, materializes the
+private delivery directory, and invokes its included launcher. For a signed
+registry artifact:
+
+```sh
+artifact=registry.example.org/cvm/my-app-site1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+sudo ./cvmctl run "$artifact" \
+  --cosign-verification-key /etc/cvm/release-signing.pub \
+  --output /srv/cvm/vault_my-app-site1
+```
+
+For an offline archive, authenticate the checksum received through the
+publisher's authenticated channel:
+
+```sh
+sudo ./cvmctl run vault_DEPLOYMENT_intel_tdx.oci.tar \
+  --archive-sha256 PUBLISHED_ARCHIVE_SHA256 \
+  --output /srv/cvm/vault_my-app-site1
+```
+
+`run` stays attached to the launcher and returns when QEMU exits. Repeat
+`--gpu PCI_ADDRESS` for explicit GPU placement or use `--cvm-bundle PATH` for
+the advanced shared-bundle override. The launcher still performs every host,
+manifest, vault, and TEE check described below.
+
+`cvmctl run` is the first-launch materialization command. To restart while
+preserving writes under `/vault/application/runtime` and
+`/vault/application/data`, invoke the existing launcher by absolute path:
+
+```sh
+sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/launch_cvm.sh
+```
+
+Repeat the original launcher `--gpu PCI_ADDRESS` and `--bind-address` options
+when they were used. Do not run `cvmctl run` again with the same output: the
+command refuses to overwrite it. Choosing a new output restores the pristine
+published `vault.qcow2`, so it is a new deployment rather than a restart.
+
+## 3. Materialize without launching
 
 Use `./cvmctl pull` to authenticate the publisher, validate every OCI descriptor
 and layer digest, and materialize a private directory. A local tar needs the
 `--archive-sha256` value the publisher sent through an authenticated channel; a
-registry reference needs the `--cosign-key` that signed the digest. Skipping
+registry reference needs the `--cosign-verification-key` matching the key that
+signed the digest. Skipping
 publisher authentication requires an explicit `--allow-unverified` and is for
 isolated labs only. Its platform directory contains both manifests and
 everything needed to launch:
@@ -57,7 +108,7 @@ everything needed to launch:
 
 ### From an OCI layout tar
 
-Vault Build generates the archive's deployment ID automatically. Use the filename
+`cvmctl vault` generates the archive's deployment ID automatically. Use the filename
 provided by the builder; the ID below is illustrative. The `--output` folder is
 an operator-selected local name and is materialized as a root-only directory.
 
@@ -79,7 +130,7 @@ the pull wrapper refuses a mutable tag.
 
 ```sh
 artifact=registry.example.org/cvm/my-app-site1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-sudo ./cvmctl pull "$artifact" --cosign-key /etc/cvm/release-signing.pub \
+sudo ./cvmctl pull "$artifact" --cosign-verification-key /etc/cvm/release-signing.pub \
   --output /srv/cvm/vault_my-app-site1
 ```
 
@@ -97,7 +148,11 @@ OCI digest validation detects corruption and substitution within a selected
 artifact. The signature or the published archive digest establishes who selected
 that digest.
 
-## 3. Launch CVM
+Use this split workflow when transfer and launch belong to different roles,
+when the host should stage content before a maintenance window, or while
+recovering from a completed materialization step.
+
+## 4. Launch a materialized CVM
 
 Use the absolute launch command printed by `cvmctl pull`. Do not first `cd` as an
 unprivileged user: the materialized directory is intentionally root-only.
@@ -147,7 +202,7 @@ Writes under `/` use the RAM-backed overlay and count against
 separate `/tmp` tmpfs do not consume that limit. Use `df -h /cow` in the guest to
 inspect it.
 
-## 4. Connect to the application
+## 5. Connect to the application
 
 Only configured ports are forwarded and admitted by the guest firewall. For the
 sample vault:
@@ -159,7 +214,7 @@ curl http://127.0.0.1:8080/
 Forwarded ports listen on all host IPv4 interfaces by default, so other machines
 can reach the application. Pass `--bind-address ADDRESS` to `launch_cvm.sh` to
 listen on one host address only, and use the host firewall for source networks.
-Inside the guest, `allowed_in_cidrs` and `allowed_out_cidrs` from the vault build
+Inside the guest, `allowed_in_cidrs` and `allowed_out_cidrs` from `cvmctl vault`
 confine the allowed ports to address ranges when configured.
 
 The application receives `/vault`, `/applog`, `/user_config` and `/user_data`;
@@ -167,7 +222,7 @@ the measured root's `/usr/bin` and system runtime libraries appear read-only at
 `/host/bin` and `/host/lib` only when the vault was built with
 `container.host_bin: true`. The container starts with a reduced
 capability set, `no-new-privileges` and a process limit; see
-[BUILD_GUIDE.md](BUILD_GUIDE.md#4-vault-build) for the `container` options.
+[BUILD_GUIDE.md](BUILD_GUIDE.md#4-seal-an-application-delivery) for the `container` options.
 Only `/vault` is encrypted and authenticated at rest. `/applog` is
 the CVM's clear output-only channel, intended for logs the operator must read
 without a key. `/user_config` and `/user_data` are clear operator inputs enforced
@@ -175,7 +230,7 @@ read-only by QEMU, the guest mount, and the container bind mount. Treat all
 sidecar content as public and untrusted; keep secrets and confidential logs in
 `/vault`.
 
-## 5. Shutdown CVM
+## 6. Shutdown CVM
 
 From another shell in the same delivery directory, run:
 
@@ -203,7 +258,7 @@ holding this delivery's `vault.qcow2` (for example with `sudo lsof /path/to/vaul
 verify its command line and disk paths, stop that process, and confirm its locks
 are released before reusing the delivery.
 
-## 6. Keep vault attachment exclusive
+## 7. Keep vault attachment exclusive
 
 One `vault.qcow2` file may be attached to only one CVM at a time. A second launch
 of the same inode is refused. You may copy a delivery after its CVM is fully

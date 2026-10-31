@@ -267,7 +267,7 @@ class VaultInputTests(unittest.TestCase):
                 side_effect=BuildError("Trustee administration token has expired"),
             ),
             patch("cvm.build.vault.profile_from_image") as retrieve,
-            self.assertRaisesRegex(ConfigurationError, "Invalid cvm_project.yml inputs"),
+            self.assertRaisesRegex(ConfigurationError, "Trustee administration token has expired"),
         ):
             vault.build("/tmp/build.yml")
         retrieve.assert_not_called()

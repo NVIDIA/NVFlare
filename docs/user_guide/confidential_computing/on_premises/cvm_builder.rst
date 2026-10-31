@@ -11,6 +11,12 @@ the builder location in the project's single ``cc_project.yml``. This page
 covers the mode-specific operator workflow; it does not define a second
 provisioning schema.
 
+The operator flow is linear: build and approve the generic CVM once with
+``cvmctl build``; run ``nvflare provision``, which invokes ``cvmctl vault`` for
+each protected participant; then authenticate and launch each delivery with
+``cvmctl run``. Lower-level finalize, approval, publish, and pull commands are
+for split roles, cross-host measurement, offline transfer, and recovery.
+
 Prepare the worker
 ------------------
 
@@ -84,13 +90,17 @@ fresh operator-private output directory.
 The public CC manifest records each OCI archive checksum, OCI manifest digest,
 CVM build ID, platform, and vault resource identity. It contains no credentials
 or private staging paths. Distribute the complete ``.oci.tar`` and checksum
-through an authenticated channel, or publish it with ``cvmctl publish``. A
-recipient can use ``cvmctl pull`` to verify and materialize an archive or
-immutable registry reference.
+through an authenticated channel. A direct builder workflow can publish each
+signed delivery during ``cvmctl vault`` with ``--publish`` and
+``--cosign-signing-key``. NVFlare provisioning leaves publication as a separate release
+step with ``cvmctl publish`` because its provisioner does not hold the release
+signing key.
 
-On a matching TEE host, enter the materialized participant directory and run
-``sudo ./launch_cvm.sh``. The verified guest attests, unlocks the application
-vault, and starts the NVFlare participant. Stop it with
+On a matching TEE host, use ``cvmctl run`` to authenticate, materialize, and
+launch an archive or immutable registry reference in one operation. Use
+``cvmctl pull`` followed by ``sudo ./launch_cvm.sh`` when staging and launch
+must remain separate. The verified guest attests, unlocks the application vault,
+and starts the NVFlare participant. Stop it with
 ``sudo ./shutdown_cvm.sh``. See the :github_nvflare_link:`CVM Builder user guide
 <nvflare/lighter/cc/image_builder/USER_GUIDE.md>` for delivery and launch
 commands.

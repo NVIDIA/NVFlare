@@ -32,7 +32,7 @@ from unittest.mock import MagicMock, Mock, mock_open, patch
 
 from cvm.build.config import SOURCE
 from cvm.common.contracts import HEADER_BYTES, STORAGE_PROFILE
-from cvm.common.errors import BuildError
+from cvm.common.errors import BuildError, StartupPhaseError
 from cvm.common.evidence import serial_evidence, verify_reference
 from cvm.common.io import read_json, write_json
 from cvm.runtime import bootstrap, storage, supervisor
@@ -40,6 +40,35 @@ from cvm.runtime.systemd import notify
 
 
 class BootstrapTests(unittest.TestCase):
+    def test_startup_failures_expose_only_fixed_phase_identifiers(self):
+        for phase in (
+            "configuration",
+            "network",
+            "time_sync",
+            "attestation",
+            "key_release",
+            "vault_identity",
+            "payload_authentication",
+            "supervision",
+        ):
+            with self.subTest(phase=phase):
+                with self.assertRaises(StartupPhaseError) as error:
+                    with bootstrap.startup_phase(phase):
+                        raise BuildError("sensitive dynamic diagnostic")
+                self.assertEqual(error.exception.phase, phase)
+
+                with (
+                    patch.object(sys, "argv", ["bootstrap", "bootstrap"]),
+                    patch.object(bootstrap, "bootstrap", side_effect=error.exception),
+                    patch.object(bootstrap, "notify"),
+                    patch.object(bootstrap, "emit"),
+                    self.assertRaises(SystemExit) as stopped,
+                ):
+                    bootstrap.main()
+                message = str(stopped.exception)
+                self.assertIn(f"phase={phase}", message)
+                self.assertNotIn("sensitive", message)
+
     def test_attached_vault_skips_only_the_reference_report_probe(self):
         with (
             patch.object(bootstrap.Path, "exists", return_value=False),

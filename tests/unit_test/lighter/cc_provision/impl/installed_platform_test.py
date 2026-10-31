@@ -34,7 +34,7 @@ IMAGE = "registry.example.com/coco/collector@sha256:" + "a" * 64
 
 
 def collector(tmp_path):
-    metadata = {"schema": 1, "image": IMAGE, "image_id": "sha256:" + "b" * 64, "cpu_tee": "snp"}
+    metadata = {"schema": 1, "image": IMAGE, "image_id": "sha256:" + "b" * 64, "cpu_tee": "amd_sev_snp"}
     path = tmp_path / "collector-image.json"
     path.write_text(json.dumps(metadata))
     ca = tmp_path / "ca.crt"
@@ -68,6 +68,16 @@ def test_collector_handoff_does_not_require_a_checksum(tmp_path, supplied):
     checked, actual = workflow.load_collector(env, with_checksum=True)
     assert checked == metadata
     assert actual == workflow.digest(env["COLLECTOR_METADATA_FILE"])
+
+
+def test_existing_collector_metadata_accepts_legacy_cpu_tee_name(tmp_path):
+    metadata, env = collector(tmp_path)
+    metadata["cpu_tee"] = "snp"
+    path = Path(env["COLLECTOR_METADATA_FILE"])
+    path.write_text(json.dumps(metadata))
+    env["COLLECTOR_METADATA_SHA256"] = workflow.digest(path)
+
+    assert workflow.load_collector(env) == metadata
 
 
 @pytest.mark.parametrize("supplied", ["A" * 64, "b" * 63, 123, False, 0])

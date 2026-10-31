@@ -26,12 +26,21 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa, utils
 
 from ..common.contracts import CPU_ATTESTATION_TIMEOUT_SECONDS, GPU_ATTESTATION_TIMEOUT_SECONDS, resource_path
-from ..common.errors import BuildError, require
+from ..common.errors import BuildError, StartupPhaseError, require
 from ..common.io import write_json
 from ..common.linux import memory_file, run
 from .gpu_claims import validate_submods
 
 ATTESTATION_BUDGET_SECONDS = CPU_ATTESTATION_TIMEOUT_SECONDS
+
+
+def _appraise(config, digest, remaining):
+    try:
+        return _fresh_credentials(config, digest, remaining)
+    except StartupPhaseError:
+        raise
+    except Exception as error:
+        raise StartupPhaseError("attestation") from error
 
 
 def _fresh_credentials(config, digest, remaining):
@@ -164,7 +173,7 @@ def authorized_key(
 
     # kbs-client binds its fresh challenge and this ephemeral public key to the
     # report. The same private key must decrypt the authorized resource response.
-    credentials, claims = _fresh_credentials(config, digest, remaining)
+    credentials, claims = _appraise(config, digest, remaining)
     pem = credentials["tee_keypair"].encode("ascii")
     token = credentials["token"].encode("ascii")
     command = [config["kbs_client"], "--url", config["kbs_url"], "--cert-file", config["kbs_cert"]]
@@ -172,28 +181,30 @@ def authorized_key(
     with memory_file(pem) as tee_key:
         with memory_file(token) as token_fd:
             path = resource_path(config["build_id"], config["platform"], digest)
-            encoded = run(
-                command
-                + [
-                    "get-resource",
-                    "--path",
-                    path,
-                    "--tee-key-file",
-                    f"/proc/self/fd/{tee_key}",
-                    "--attestation-token",
-                    f"/proc/self/fd/{token_fd}",
-                ],
-                pass_fds=(tee_key, token_fd),
-                timeout=remaining(),
-                env=environment,
-                operation="KBS resource retrieval/decryption",
-                secret=True,
-            ).strip()
             try:
+                encoded = run(
+                    command
+                    + [
+                        "get-resource",
+                        "--path",
+                        path,
+                        "--tee-key-file",
+                        f"/proc/self/fd/{tee_key}",
+                        "--attestation-token",
+                        f"/proc/self/fd/{token_fd}",
+                    ],
+                    pass_fds=(tee_key, token_fd),
+                    timeout=remaining(),
+                    env=environment,
+                    operation="KBS resource retrieval/decryption",
+                    secret=True,
+                ).strip()
                 key = base64.b64decode(encoded, validate=True)
-            except ValueError:
-                raise BuildError("Invalid resource encoding") from None
-            require(len(key) == 64 and base64.b64encode(key) == encoded, "KBS returned an invalid vault secret")
+                require(len(key) == 64 and base64.b64encode(key) == encoded, "KBS returned an invalid vault secret")
+            except StartupPhaseError:
+                raise
+            except Exception as error:
+                raise StartupPhaseError("key_release") from error
             if credentials_path is not None:
                 # Publish the short-lived proof key inside the encrypted vault
                 # instead of granting the container TEE or configfs access.
@@ -220,7 +231,7 @@ def authorized_key(
                 # authorized the resource; the replacement is published only
                 # after that authorization succeeded.
                 if valid_until(claims) - time.time() <= minimum_credentials_validity:
-                    credentials, claims = _fresh_credentials(config, digest, remaining)
+                    credentials, claims = _appraise(config, digest, remaining)
                 expires_at = valid_until(claims)
                 require(
                     expires_at - time.time() > minimum_credentials_validity,

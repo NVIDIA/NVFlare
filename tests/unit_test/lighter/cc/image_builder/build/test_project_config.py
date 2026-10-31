@@ -60,7 +60,21 @@ class ProjectConfigTests(unittest.TestCase):
         service = value["trustee"]
         self.assertEqual(service["admin_token_file"], str(path.parent / "credentials/admin_token_file"))
         self.assertEqual(service["url"], "https://keys.test")
+        self.assertEqual(service["expiry_warning_seconds"], 7 * 86400)
         self.assertEqual(value["approval"]["public_keys"], [str(path.parent / "credentials/acceptance.pub")])
+
+    def test_expiry_warning_window_is_configurable(self):
+        path = self.write_project(self.root / "project")
+        value = yaml.safe_load(path.read_text())
+        value["trustee"]["expiry_warning_seconds"] = 86400
+        path.write_text(yaml.safe_dump(value))
+        self.assertEqual(config.project(self.build)["trustee"]["expiry_warning_seconds"], 86400)
+
+        for invalid in (-1, 1.5, "86400", True):
+            value["trustee"]["expiry_warning_seconds"] = invalid
+            path.write_text(yaml.safe_dump(value))
+            with self.subTest(invalid=invalid), self.assertRaises(BuildError):
+                config.project(self.build)
 
     def test_nearest_project_wins_and_invalid_nearest_does_not_fall_back(self):
         self.write_project(self.root / "project", "outer.test")

@@ -13,8 +13,12 @@ We have provided a `Dockerfile` to build the NVFlare Docker image.
 To build the NVFlare Docker image, run the following command in your terminal:
 
 ```bash
-./docker_build.sh Dockerfile nvflare-site
+./docker_build.sh Dockerfile nvflare-site /srv/nvflare/images/application.tar
 ```
+
+The third argument is required. The script writes an uncompressed Docker-save
+archive at that exact path, matching ``workload.source.path`` in the participant
+configuration, and prints the provisioning command to run next.
 
 Important notes:
 - Code directory: The local ``code`` folder is copied into the Docker image under ``/local/custom`` and placed on `PYTHONPATH`.

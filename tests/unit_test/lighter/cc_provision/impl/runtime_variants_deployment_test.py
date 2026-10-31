@@ -96,7 +96,11 @@ def test_v4_target_contract_and_pod(tmp_path, runtime_class):
 @pytest.mark.parametrize("field", ["cpu_tee", "gpu"])
 def test_cross_target_rejected(tmp_path, runtime_class, field):
     value = profile(runtime_class)
-    value[field] = "tdx" if field == "cpu_tee" and value[field] == "snp" else "snp" if field == "cpu_tee" else "invalid"
+    value[field] = (
+        "intel_tdx"
+        if field == "cpu_tee" and value[field] == "amd_sev_snp"
+        else "amd_sev_snp" if field == "cpu_tee" else "invalid"
+    )
     with pytest.raises(ValueError, match="target"):
         load(tmp_path, value)
 
@@ -128,7 +132,11 @@ def test_unapproved_resources_rejected(tmp_path, runtime_class, resources):
 @pytest.mark.parametrize("runtime_class", runtime.RUNTIME_TARGETS)
 def test_target_toml_confidential_guard(runtime_class):
     target = runtime.runtime_target(runtime_class)
-    config = {"confidential_guest": True, "sev_snp_guest": target["cpu_tee"] == "snp", "machine_type": "q35"}
+    config = {
+        "confidential_guest": True,
+        "sev_snp_guest": target["cpu_tee"] == "amd_sev_snp",
+        "machine_type": "q35",
+    }
     assert runtime.require_confidential_config(config, runtime_class) == target
     config["confidential_guest"] = False
     with pytest.raises(ValueError, match="confidential_guest"):
@@ -180,7 +188,7 @@ def test_snp_capture_keeps_legacy_encoding():
         "sev-snp-guest,id=snp,policy=196608,host-data=workload",
     ]
     target, guest = helper(argv, "kata-qemu-snp")
-    assert target["cpu_tee"] == "snp"
+    assert target["cpu_tee"] == "amd_sev_snp"
     assert guest == {"qom-type": "sev-snp-guest", "id": "snp", "policy": "196608"}
     with pytest.raises(ValueError, match="RuntimeClass"):
         helper(argv, "kata-qemu-tdx")
@@ -200,7 +208,7 @@ def test_duplicate_machine_guest_selector_rejected():
 
 
 def test_tdx_target_import_does_not_require_tomllib():
-    script = "import sys; sys.modules['tomllib'] = None; from nvflare.lighter.cc_provision import workload_launch_profile; from nvflare.lighter.cc_provision.kata_runtime_profile import runtime_target; assert runtime_target('kata-qemu-tdx')['cpu_tee'] == 'tdx'"
+    script = "import sys; sys.modules['tomllib'] = None; from nvflare.lighter.cc_provision import workload_launch_profile; from nvflare.lighter.cc_provision.kata_runtime_profile import runtime_target; assert runtime_target('kata-qemu-tdx')['cpu_tee'] == 'intel_tdx'"
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
 
@@ -215,7 +223,7 @@ def captured_inputs(runtime_class):
         **paths,
         "kernel_params": runtime.REQUIRED,
         "confidential_guest": True,
-        "sev_snp_guest": target["cpu_tee"] == "snp",
+        "sev_snp_guest": target["cpu_tee"] == "amd_sev_snp",
         "machine_type": "q35",
         "default_vcpus": 1,
         "default_memory": 8192,

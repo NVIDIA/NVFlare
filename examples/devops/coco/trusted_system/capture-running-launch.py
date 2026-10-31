@@ -62,7 +62,7 @@ def confidential_guest(argv, runtime):
                 obj[key] = value
         if obj.get("qom-type") in ("sev-guest", "sev-snp-guest", "tdx-guest"):
             guests.append(obj)
-    expected = "sev-snp-guest" if target["cpu_tee"] == "snp" else "tdx-guest"
+    expected = "sev-snp-guest" if target["cpu_tee"] == "amd_sev_snp" else "tdx-guest"
     if len(guests) != 1 or guests[0].get("qom-type") != expected:
         raise ValueError("Actual QEMU confidential guest does not match approved RuntimeClass")
     guest = guests[0]
@@ -77,7 +77,7 @@ def confidential_guest(argv, runtime):
         machine_fields[key] = value
     if machine_fields.get("confidential-guest-support") != guest["id"]:
         raise ValueError("QEMU machine does not select the approved confidential guest")
-    if target["cpu_tee"] == "tdx":
+    if target["cpu_tee"] == "intel_tdx":
         debug = guest.get("debug", False)
         if not (debug is False or (type(debug) is str and debug in ("off", "false"))):
             raise ValueError("TDX debug is not approved")

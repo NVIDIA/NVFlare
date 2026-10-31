@@ -22,11 +22,13 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import struct
 import subprocess
 import time
+import warnings
 from pathlib import Path
 
 from ..artifacts.bundle import verify_bundle
@@ -58,8 +60,17 @@ GPU_PREF64_RESERVE = "256G"
 GRACEFUL_SHUTDOWN_SECONDS = 60
 
 
-# shutdown_cvm.sh waits for the graceful window plus QEMU termination.
-SHUTDOWN_WAIT_SECONDS = GRACEFUL_SHUTDOWN_SECONDS + 60
+# Once shutdown_cvm.sh has waited for its first graceful window, the launcher
+# gets one final graceful window before bounded terminate/kill cleanup.
+QEMU_TERMINATE_SECONDS = 30
+QEMU_KILL_SECONDS = 10
+SHUTDOWN_WAIT_SECONDS = GRACEFUL_SHUTDOWN_SECONDS * 2 + QEMU_TERMINATE_SECONDS + QEMU_KILL_SECONDS + 20
+
+
+# Preserve a small, bounded set of the clear applog disk images. The guest
+# reformats the live disk on every boot, so the launcher must snapshot it before
+# reattaching it or a failed run's only diagnostic record is lost.
+APPLOG_HISTORY_LIMIT = 3
 
 
 def normalize_pci(address):
@@ -251,6 +262,7 @@ def shutdown(directory, timeout=SHUTDOWN_WAIT_SECONDS):
     pid = state.get("launcher_pid")
     start = state.get("launcher_start")
     require(type(pid) is int and type(start) is int, "Invalid launcher runtime state")
+    qmp_requested = False
     try:
         active = _process_start(pid) == start
     except FileNotFoundError:
@@ -259,8 +271,19 @@ def shutdown(directory, timeout=SHUTDOWN_WAIT_SECONDS):
         path.unlink(missing_ok=True)
         require_detached(directory)
         raise BuildError("No CVM is running for this vault directory") from None
-    os.kill(pid, signal.SIGTERM)
-    deadline = time.monotonic() + timeout
+    try:
+        # Ask the validated QEMU instance to power down directly so a normal
+        # operator-requested shutdown remains a successful launcher exit.  A
+        # launcher signal is the fallback for a missing or unresponsive QMP
+        # channel and still owns the bounded cleanup path in run_vm().
+        qmp_powerdown(qmp_socket_path(directory))
+        qmp_requested = True
+    except (OSError, ValueError, BuildError):
+        os.kill(pid, signal.SIGTERM)
+    started = time.monotonic()
+    deadline = started + timeout
+    graceful_deadline = min(deadline, started + GRACEFUL_SHUTDOWN_SECONDS)
+    signaled = not qmp_requested
     while time.monotonic() < deadline:
         try:
             if _process_start(pid) != start:
@@ -278,7 +301,15 @@ def shutdown(directory, timeout=SHUTDOWN_WAIT_SECONDS):
                 pass
             else:
                 return
+        if not signaled and time.monotonic() >= graceful_deadline:
+            # QMP only confirms that the virtual power button was delivered.
+            # Wake the validated launcher if the guest ignored it so run_vm()
+            # performs its bounded terminate/kill cleanup and releases locks.
+            os.kill(pid, signal.SIGTERM)
+            signaled = True
         time.sleep(0.2)
+    if not signaled:
+        os.kill(pid, signal.SIGTERM)
     raise BuildError("Timed out waiting for the CVM to stop")
 
 
@@ -490,6 +521,56 @@ def graceful_stop(process, qmp, timeout=GRACEFUL_SHUTDOWN_SECONDS):
         pass
 
 
+def preserve_applog(directory, applog, limit=APPLOG_HISTORY_LIMIT):
+    """Copy the previous clear applog disk before the guest reformats it."""
+    require(type(limit) is int and limit > 0, "Invalid applog retention limit")
+    directory, applog = Path(directory), Path(applog)
+    history = directory / "applog-history"
+    require(not history.is_symlink(), "Unsafe applog history directory")
+    temporary = None
+    try:
+        history.mkdir(mode=0o700, exist_ok=True)
+        os.chmod(history, 0o700)
+        # A host crash can interrupt the copy before the atomic rename. Remove
+        # such incomplete files on the next launch; they are never valid logs.
+        for stale in history.glob(".applog-*.qcow2.tmp"):
+            with contextlib.suppress(OSError):
+                stale.unlink()
+        target = history / f"applog-{time.time_ns()}.qcow2"
+        temporary = history / ("." + target.name + ".tmp")
+        try:
+            subprocess.run(
+                ["cp", "--reflink=auto", "--sparse=always", "--", str(applog), str(temporary)],
+                check=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            # GNU cp preserves sparsity and uses CoW when possible. The portable
+            # fallback keeps the same contents for non-Linux unit/development hosts.
+            shutil.copyfile(applog, temporary)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, target)
+        # Retire an old archive only after the new copy is durable at its final
+        # name. A failed copy therefore never consumes retained history.
+        archives = sorted(history.glob("applog-*.qcow2"), key=lambda path: path.name)
+        for expired in archives[: max(0, len(archives) - limit)]:
+            expired.unlink()
+    except (OSError, subprocess.CalledProcessError):
+        if temporary is not None:
+            with contextlib.suppress(OSError):
+                temporary.unlink(missing_ok=True)
+        warnings.warn(
+            "Could not preserve the previous clear applog disk; continuing launch without a new history copy",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return None
+    print(f"Preserved previous applog disk: {target}")
+    return target
+
+
 def launch(directory, bundle=None, gpu=None, bind_address="0.0.0.0"):
     directory = Path(directory).resolve()
     delivery = read_json(directory / "vault_manifest.json")
@@ -526,6 +607,7 @@ def launch(directory, bundle=None, gpu=None, bind_address="0.0.0.0"):
             fcntl.flock(vault, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise BuildError("Vault is already attached; wait for the previous CVM to exit") from None
+        preserve_applog(directory, disks[1])
         # Only the vault owner may replace its stale control socket. A rejected
         # duplicate launch must preserve the running guest's shutdown channel.
         qmp.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -590,10 +672,10 @@ def run_vm(command, directory, *, qmp=None):
             if process is not None and process.poll() is None:
                 process.terminate()
                 try:
-                    process.wait(timeout=30)
+                    process.wait(timeout=QEMU_TERMINATE_SECONDS)
                 except subprocess.TimeoutExpired:
                     process.kill()
-                    process.wait(timeout=10)
+                    process.wait(timeout=QEMU_KILL_SECONDS)
             try:
                 if state_path.is_file():
                     state = read_json(state_path)

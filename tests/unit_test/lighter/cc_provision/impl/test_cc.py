@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
 import hashlib
 import json
 import shlex
 import shutil
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -29,7 +31,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.confidential_computing.aci_authorizer import ACI_NAMESPACE, ACIAuthorizer
 from nvflare.app_opt.confidential_computing.az_cvm_authorizer import AZ_CVM_NAMESPACE, AZCVMAuthorizer
 from nvflare.app_opt.confidential_computing.cc_manager import CCManager
-from nvflare.lighter.cc_provision.config import load_participant_config, load_project_config
+from nvflare.lighter.cc_provision.config import _warn_jwt_expiry, load_participant_config, load_project_config
 from nvflare.lighter.cc_provision.deployment import CPUTEE, GPUTEE, CCDeploymentMode, WorkloadSourceType
 from nvflare.lighter.cc_provision.impl.bare_metal_cvm import BareMetalCVMDeployment
 from nvflare.lighter.cc_provision.impl.cc import CC_PACKAGER_PATH, CCBuilder
@@ -137,7 +139,7 @@ def _coco_project(tmp_path):
                     "proof_iat_leeway_seconds": 90,
                     "workload_constraints": {
                         "site-1": {
-                            "cpu_tee": "snp",
+                            "cpu_tee": "amd_sev_snp",
                             "init_data": "a" * 64,
                         }
                     },
@@ -378,7 +380,9 @@ def test_shared_trustee_policy_is_validated_and_applied_to_coco(tmp_path):
     plan = builder.plans["site-1"]
     args = builder.deployments[plan.mode].authorizer(plan, issuer=False)["args"]
     assert args["proof_iat_leeway_seconds"] == 90
-    assert args["workload_constraints"] == {"site-1": {"cpu_tee": "snp", "init_data": "a" * 64, "gpu_required": True}}
+    assert args["workload_constraints"] == {
+        "site-1": {"cpu_tee": "amd_sev_snp", "init_data": "a" * 64, "gpu_required": True}
+    }
     with pytest.raises(TypeError):
         builder.plans["site-1"].internal["workload_constraints"]["site-1"]["gpu_required"] = False
 
@@ -389,12 +393,25 @@ def test_shared_trustee_policy_is_validated_and_applied_to_coco(tmp_path):
         CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "invalid"), project))
 
     config["attestation_services"]["trustee"]["workload_constraints"]["site-1"] = {
-        "cpu_tee": "snp",
+        "cpu_tee": "amd_sev_snp",
         "gpu_required": False,
     }
     _write(tmp_path / "cc_project.yml", config)
     with pytest.raises(ValueError, match="derived from each participant's gpu_tee"):
         CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "duplicated-gpu-policy"), project))
+
+
+def test_workload_constraints_keep_the_common_cpu_tee_name(tmp_path):
+    project = _coco_project(tmp_path)
+    path = tmp_path / "cc_project.yml"
+    config = yaml.safe_load(path.read_text())
+    config["attestation_services"]["trustee"]["workload_constraints"]["site-1"]["cpu_tee"] = "amd_sev_snp"
+    _write(path, config)
+
+    builder = CCBuilder()
+    builder.initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+
+    assert builder.plans["site-1"].internal["workload_constraints"]["site-1"]["cpu_tee"] == "amd_sev_snp"
 
 
 def test_gpu_tee_defaults_missing_client_capacity_to_one(tmp_path):
@@ -598,6 +615,21 @@ def test_config_loaders_expose_declaring_paths(tmp_path):
     assert normalized["config_path"] == tmp_path / "cc_server.yml"
 
 
+@pytest.mark.parametrize("alias,canonical", [("tdx", CPUTEE.INTEL_TDX), ("snp", CPUTEE.AMD_SEV_SNP)])
+def test_participant_cpu_tee_upgrade_alias_is_normalized(tmp_path, alias, canonical):
+    _coco_project(tmp_path)
+    participant_path = tmp_path / "cc_site.yml"
+    participant = yaml.safe_load(participant_path.read_text())
+    participant["cpu_tee"] = alias
+    participant["gpu_tee"] = "none"
+    _write(participant_path, participant)
+
+    project_config = load_project_config(tmp_path / "cc_project.yml")
+    normalized = load_participant_config(participant_path, project_config)
+
+    assert normalized["cpu_tee"] is canonical
+
+
 def test_coco_does_not_require_admin_token_with_unused_cvm_tools_or_service(tmp_path):
     _coco_project(tmp_path)
     config_path = tmp_path / "cc_project.yml"
@@ -644,6 +676,37 @@ def test_optional_admin_token_still_requires_existing_file(tmp_path):
         load_project_config(tmp_path / "cc_project.yml")
 
 
+def test_project_config_warns_before_parseable_admin_token_expiry(tmp_path):
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": 1060}).encode()).rstrip(b"=").decode()
+    token = tmp_path / "admin.jwt"
+    token.write_text(f"header.{payload}.signature")
+    with pytest.warns(RuntimeWarning, match="expires within"):
+        _warn_jwt_expiry(token, 120, now=1000)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _warn_jwt_expiry(token, 120, now=1000)
+        _warn_jwt_expiry(token, 30, now=1000)
+
+
+def test_project_config_rejects_expired_admin_token(tmp_path):
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": 999}).encode()).rstrip(b"=").decode()
+    token = tmp_path / "admin.jwt"
+    token.write_text(f"header.{payload}.signature")
+    with pytest.raises(ValueError, match="has expired"):
+        _warn_jwt_expiry(token, 120, now=1000)
+
+
+@pytest.mark.parametrize("value", [-1, 1.5, "604800", True])
+def test_project_config_rejects_invalid_expiry_warning_window(tmp_path, value):
+    _coco_project(tmp_path)
+    path = tmp_path / "cc_project.yml"
+    config = yaml.safe_load(path.read_text())
+    config["attestation_services"]["trustee"]["expiry_warning_seconds"] = value
+    _write(path, config)
+    with pytest.raises(ValueError, match="expiry_warning_seconds"):
+        load_project_config(path)
+
+
 def test_project_config_retains_home_expanded_security_paths(tmp_path, monkeypatch):
     _coco_project(tmp_path)
     home = tmp_path / "home"
@@ -676,6 +739,7 @@ def test_project_config_retains_home_expanded_security_paths(tmp_path, monkeypat
     service = project_config["attestation_services"]["trustee"]
     assert service["ca_cert_file"] == str(credentials / "ca.pem")
     assert service["admin_token_file"] == str(credentials / "admin.jwt")
+    assert service["expiry_warning_seconds"] == 7 * 86400
     assert service["attestation_signing_public_key_file"] == str(credentials / "as.pem")
     assert project_config["approval"]["public_key_files"] == [str(credentials / "approval.pub")]
     assert project_config["container_registries"]["workloads"]["ca_cert_file"] == str(credentials / "registry-ca.pem")
@@ -737,6 +801,7 @@ def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
                         "kbs_endpoint": endpoint,
                         "ca_cert_file": "ca.pem",
                         "admin_token_file": "admin.jwt",
+                        "expiry_warning_seconds": 604800,
                         "token_expiration_seconds": 100,
                     },
                 ),
@@ -785,6 +850,7 @@ def test_bare_metal_rejects_maximum_age_without_delivery_headroom(
                 "kbs_endpoint": "https://trustee.example:8443",
                 "ca_cert_file": "ca.pem",
                 "admin_token_file": "admin.jwt",
+                "expiry_warning_seconds": 604800,
                 "token_expiration_seconds": maximum_token_age,
             }
         ),

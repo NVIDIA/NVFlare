@@ -50,16 +50,29 @@ SECURITY_CONTEXT = {
 @pytest.mark.parametrize(
     "runtime,tee,gpu,count",
     [
-        ("kata-qemu-snp", "snp", "none", 0),
-        ("kata-qemu-nvidia-gpu-snp", "snp", "nvidia", 1),
-        ("kata-qemu-tdx", "tdx", "none", 0),
-        ("kata-qemu-nvidia-gpu-tdx", "tdx", "nvidia", 1),
+        ("kata-qemu-snp", "amd_sev_snp", "none", 0),
+        ("kata-qemu-nvidia-gpu-snp", "amd_sev_snp", "nvidia", 1),
+        ("kata-qemu-tdx", "intel_tdx", "none", 0),
+        ("kata-qemu-nvidia-gpu-tdx", "intel_tdx", "nvidia", 1),
     ],
 )
 def test_supported_runtime_mapping(runtime, tee, gpu, count):
     target = API["runtime_target"](runtime)
     assert (target["cpu_tee"], target["gpu"], target["gpu_count"]) == (tee, gpu, count)
     assert target["config_name"] == "configuration-" + runtime.removeprefix("kata-") + ".toml"
+
+
+@pytest.mark.parametrize(
+    "runtime,cpu_tee,gpu",
+    [
+        ("kata-qemu-snp", "snp", "none"),
+        ("kata-qemu-nvidia-gpu-snp", "snp", "nvidia"),
+        ("kata-qemu-tdx", "tdx", "none"),
+        ("kata-qemu-nvidia-gpu-tdx", "tdx", "nvidia"),
+    ],
+)
+def test_existing_v4_profiles_accept_legacy_cpu_tee_names(runtime, cpu_tee, gpu):
+    assert API["require_runtime_target"]({"cpu_tee": cpu_tee, "gpu": gpu}, runtime) == API["runtime_target"](runtime)
 
 
 @pytest.mark.parametrize("runtime", [None, True, 1, "", "kata-qemu-tdx-gpu", "kata-qemu-snp-extra"])
@@ -98,7 +111,7 @@ def test_missing_disabled_duplicate_launch_option(value):
 @pytest.mark.parametrize("runtime", API["RUNTIME_TARGETS"])
 def test_confidential_guard_only_reads_existing_settings(runtime):
     tee = API["runtime_target"](runtime)["cpu_tee"]
-    qemu = {"confidential_guest": True, "sev_snp_guest": tee == "snp", "machine_type": "q35"}
+    qemu = {"confidential_guest": True, "sev_snp_guest": tee == "amd_sev_snp", "machine_type": "q35"}
     before = json.dumps(qemu, sort_keys=True)
     assert API["require_confidential_config"](qemu, runtime)["cpu_tee"] == tee
     assert json.dumps(qemu, sort_keys=True) == before
@@ -189,7 +202,7 @@ def test_ready_launch_contract_and_measured_option(tmp_path):
     installed = CONFIG
     profile = {
         "runtime_class": runtime,
-        "cpu_tee": "snp",
+        "cpu_tee": "amd_sev_snp",
         "gpu": "nvidia",
         "kata_version": "3.29.0",
         "guest_token_api": API["CAPABILITY"],
@@ -205,7 +218,7 @@ def test_ready_launch_contract_and_measured_option(tmp_path):
         },
     }
     actual = {
-        "cpu_tee": "snp",
+        "cpu_tee": "amd_sev_snp",
         "gpu": "nvidia",
         "launch_inputs": {"kernel_command_line": API["REQUIRED"], "smp": "1", "memory": "8192M"},
         "pod_resources": [resources],

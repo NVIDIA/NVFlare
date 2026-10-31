@@ -241,7 +241,11 @@ def make_collector(env, snapshot, profile, directory, namespace):
                     "imagePullPolicy": "Never",
                     "stdin": False,
                     "tty": False,
-                    "securityContext": {"privileged": target["cpu_tee"] == "snp", "runAsUser": 0, "runAsGroup": 0},
+                    "securityContext": {
+                        "privileged": target["cpu_tee"] == "amd_sev_snp",
+                        "runAsUser": 0,
+                        "runAsGroup": 0,
+                    },
                     "resources": profile["pod_resources"],
                     "volumeMounts": [{"name": "challenge", "mountPath": "/challenge", "readOnly": True}],
                 }
@@ -323,7 +327,7 @@ def collect(env, output, snapshot, profile):
         logs = subprocess.check_output(kube + ["-n", namespace, "logs", "collector"], text=True)
         (directory / "collector.log").write_text(logs)
         crypto = evidence_api()
-        if profile["cpu_tee"] == "snp":
+        if profile["cpu_tee"] == "amd_sev_snp":
             source = crypto["decode_snp"](logs, directory)
             crypto["verify_snp"](source, snapshot["verifier"], snp_floors(env), fetch_certificates=True)
         else:
@@ -337,7 +341,7 @@ def collect(env, output, snapshot, profile):
 def verify_evidence(output, env, snapshot):
     crypto = evidence_api()
     directory = output / "evidence"
-    if runtime_api()["runtime_target"](env["RUNTIME_CLASS"])["cpu_tee"] == "snp":
+    if runtime_api()["runtime_target"](env["RUNTIME_CLASS"])["cpu_tee"] == "amd_sev_snp":
         values, summary = crypto["verify_snp"](directory / "evidence-input", snapshot["verifier"], snp_floors(env))
     else:
         measured, claims = crypto["verify_tdx"](directory, snapshot["verifier"], output.name)
@@ -373,12 +377,14 @@ def capture(config, output):
     helper = helpers()
     env = helper["read_config"](Path(config).resolve(strict=True), ENV_KEYS)
     target = runtime_api()["runtime_target"](env["RUNTIME_CLASS"])
-    if target["cpu_tee"] == "snp":
+    if target["cpu_tee"] == "amd_sev_snp":
         snp_floors(env)
     output = Path(output).absolute()
-    name_pattern = r"[a-z0-9][a-z0-9_.-]{0,63}" if target["cpu_tee"] == "tdx" else r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}"
+    name_pattern = (
+        r"[a-z0-9][a-z0-9_.-]{0,63}" if target["cpu_tee"] == "intel_tdx" else r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}"
+    )
     if not re.fullmatch(name_pattern, output.name):
-        if target["cpu_tee"] == "tdx":
+        if target["cpu_tee"] == "intel_tdx":
             raise ValueError(
                 "TDX output directory name must be 1..64 lowercase alphanumeric, dot, underscore or hyphen characters, "
                 "starting with a lowercase letter or digit"

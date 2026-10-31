@@ -17,11 +17,13 @@
 import base64
 import json
 import re
+import struct
 import zlib
 
 from .errors import require
 from .io import canonical
 from .measurements import measurements, parse_snp_report, parse_tdx_report, validate_measurements
+from .references import SNP_BOOLS, SNP_INTS, SNP_LISTS, snp_guest_policy, validate_snp_policy
 
 
 def verify_reference(platform, evidence):
@@ -58,6 +60,58 @@ def require_approved_tdx_tcb(evidence, references):
             f"Reference boot TDX {name} is not approved; run cvmctl inspect-tcb, review and update the approved "
             "TCB references, increment profile_version, and rebuild",
         )
+
+
+def snp_tcb(evidence):
+    """Return the SNP TCB and launch configuration from verified local evidence."""
+    verify_reference("amd_sev_snp", evidence)
+    report = base64.b64decode(evidence["report"], validate=True)
+    version = struct.unpack_from("<I", report, 0)[0]
+    require(
+        version >= 3,
+        "SNP report v2 does not identify the CPU generation; use a v3 or later report for TCB approval",
+    )
+    require(
+        report[0x188] != 0x1A,
+        "AMD Turin SNP is not supported by the pinned Trustee v0.22 policy because it does not expose FMC SPL",
+    )
+    policy = struct.unpack_from("<Q", report, 8)[0]
+    platform_info = struct.unpack_from("<Q", report, 64)[0]
+    reported_tcb = struct.unpack_from("<Q", report, 384)[0]
+    validate_snp_policy(policy)
+    return {
+        "snp_bootloader": reported_tcb & 0xFF,
+        "snp_tee_svn": (reported_tcb >> 8) & 0xFF,
+        "snp_snp_svn": (reported_tcb >> 48) & 0xFF,
+        "snp_microcode": (reported_tcb >> 56) & 0xFF,
+        "snp_smt_enabled": bool(platform_info & 1),
+        "snp_tsme_enabled": bool(platform_info & 2),
+        "snp_guest_abi_minor": policy & 0xFF,
+        "snp_guest_abi_major": (policy >> 8) & 0xFF,
+        "snp_smt_allowed": bool(policy & (1 << 16)),
+        "snp_single_socket": bool(policy & (1 << 20)),
+    }
+
+
+def require_approved_snp_tcb(evidence, references):
+    """Reject a reference boot whose SNP TCB/configuration is not approved."""
+    candidate = snp_tcb(evidence)
+    for name in SNP_LISTS:
+        require(
+            candidate[name] in references.get(name, ()),
+            f"Reference boot SNP {name} is not approved; inspect the signed report, review and update the approved "
+            "TCB references, increment profile_version, and rebuild",
+        )
+    for name in SNP_BOOLS | SNP_INTS:
+        require(
+            candidate[name] == references.get(name),
+            f"Reference boot SNP {name} differs from the approved profile; review the reference and rebuild",
+        )
+    report = base64.b64decode(evidence["report"], validate=True)
+    require(
+        struct.unpack_from("<Q", report, 8)[0] == snp_guest_policy(references),
+        "Reference boot SNP guest policy differs from the approved profile; review the reference and rebuild",
+    )
 
 
 def serial_frames(evidence):

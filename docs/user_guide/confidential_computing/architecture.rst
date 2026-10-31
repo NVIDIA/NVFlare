@@ -17,6 +17,29 @@ The configuration does not create those trust relationships automatically.
 Hardware acceptance remains profile- and revision-specific; see
 :ref:`cc_getting_started` for the validation records.
 
+Architecture reading guide
+--------------------------
+
+.. list-table:: Choose the architecture page for the question
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Page
+     - Use it for
+     - Deployment scope
+   * - This cross-mode architecture
+     - Shared actors, trust boundaries, attestation, key release, participant
+       proofs, data paths, and protection limits.
+     - Standalone CVM, CoCo, and the distinct Azure integration.
+   * - :ref:`CVM Builder security architecture <cc_architecture>`
+     - Generic-root and application-vault construction, storage, launch, and
+       Trustee binding.
+     - Standalone ``bare_metal_cvm`` deployments.
+   * - :ref:`CoCo security architecture <coco_security_architecture>`
+     - Kata/CoCo Pod launch inputs, encrypted images, agent policy, Kubernetes
+       handoffs, and remaining qualification gaps.
+     - Kubernetes ``coco`` deployments.
+
 .. contents:: On this page
    :local:
    :depth: 2
@@ -394,7 +417,9 @@ workload and use exact, reviewed ``class_allow_list`` entries for additional
 components. Code or policy changes require a new approved release.
 
 Validate the executor and persistence behavior for the selected deployment.
-External-process execution has failed in sealed CoCo deployments; see the
+The packaged CoCo runtime does not support external-process execution;
+bare-metal examples use a reviewed in-process executor fixed in the measured
+image. See the
 :github_nvflare_link:`in-process executor guidance
 <examples/devops/coco/provision/README.md#prepare-the-workload-and-project>`.
 An approved executor is not a substitute for reviewing application behavior

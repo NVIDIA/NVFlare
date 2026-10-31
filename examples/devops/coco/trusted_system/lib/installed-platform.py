@@ -170,7 +170,7 @@ def inspect_platform(profile, env):
     config = runtime_settings(config_raw, env["RUNTIME_CLASS"])
     qemu = config["hypervisor"]["qemu"]
     target = runpy.run_path(str(HERE / "kata-runtime-profile.py"))["runtime_target"](env["RUNTIME_CLASS"])
-    verifier = Path(env["SNP_VERIFIER" if target["cpu_tee"] == "snp" else "TDX_VERIFIER"])
+    verifier = Path(env["SNP_VERIFIER" if target["cpu_tee"] == "amd_sev_snp" else "TDX_VERIFIER"])
     if not verifier.is_absolute() or not verifier.is_file() or not os.access(verifier, os.X_OK):
         raise ValueError("Configure an existing reviewed executable CPU evidence verifier")
     metadata, checksum, metadata_raw = load_collector(env, with_bytes=True)
@@ -317,8 +317,9 @@ def load_collector(env, with_checksum=False, with_bytes=False, profile=None):
     if metadata.get("schema") != 1 or metadata.get("image") != image:
         raise ValueError("Collector reference differs from publication metadata")
     if "RUNTIME_CLASS" in env:
-        target = runpy.run_path(str(HERE / "kata-runtime-profile.py"))["runtime_target"](env["RUNTIME_CLASS"])
-        declared = metadata.get("cpu_tee")
+        runtime = runpy.run_path(str(HERE / "kata-runtime-profile.py"))
+        target = runtime["runtime_target"](env["RUNTIME_CLASS"])
+        declared = runtime["normalize_cpu_tee"](metadata.get("cpu_tee"))
         if declared != target["cpu_tee"]:
             raise ValueError("Published collector target differs from the selected runtime")
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", metadata.get("image_id", "")):

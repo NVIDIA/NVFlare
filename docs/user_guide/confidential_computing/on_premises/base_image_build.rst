@@ -25,14 +25,23 @@ Run from the builder directory after preparing those inputs:
 
 .. code-block:: bash
 
-   sudo ./cvmctl build
+   sudo ./cvmctl build config/cvm_profile.yml \
+     --acceptance-runner /usr/local/sbin/site_acceptance_runner \
+     --approval-key /secure/acceptance-signing.key
 
-The command detects the target platform, builds and measures the generic image,
-and invokes the configured site acceptance runner. Use
-``./cvmctl build --help`` for explicit platform selection, deferred measurement
-and other build options. Production use requires approval of the exact bundle.
+The command detects and screens the target platform, builds and measures the
+generic image, invokes the selected site acceptance runner, and signs the
+approval. An authorized
+operator can add ``--install-config``, ``--publish``, and ``--cosign-signing-key`` to
+enable the approved result in Trustee and publish its signed OCI artifact in the
+same invocation. The command stops before those actions if acceptance or approval
+fails. Use ``./cvmctl build --help`` for explicit platform selection, a TDX quote
+probe, deferred measurement, and other build options. Production use requires
+approval of the exact bundle.
 
-Configure the existing CoCo Trustee using the :github_nvflare_link:`Trustee guide
-<nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>`. Guest KBS clients and Trustee
-must use the documented matching upstream versions. Build a generic bundle once
-per platform and profile, then reuse it for subsequent application vaults.
+Configure upstream Trustee using the :github_nvflare_link:`Trustee guide
+<nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>`. Use its standalone path or
+merge the same CVM policy and references into a CoCo-managed instance. Guest KBS
+clients and Trustee must use the documented matching upstream versions. Build a
+generic bundle once per platform and profile, then reuse it for subsequent
+application vaults.

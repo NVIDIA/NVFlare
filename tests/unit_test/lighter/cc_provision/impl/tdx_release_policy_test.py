@@ -59,7 +59,7 @@ def test_target_authentication_contract(runtime):
     cpu, gpu = release.RUNTIME_TARGETS[runtime]
     assert auth["cpu_tee"] == cpu
     assert auth["gpu"] == gpu
-    assert auth["init_data_claim"] == DIGEST + ("0" * 32 if cpu == "tdx" else "")
+    assert auth["init_data_claim"] == DIGEST + ("0" * 32 if cpu == "intel_tdx" else "")
     assert auth["required_ear_submods"] == (["cpu0", "gpu0"] if gpu == "nvidia" else ["cpu0"])
     assert auth["required_ear_trust_vectors"]["cpu0"]["configuration"] == 2
     assert release.validate_authorization(auth) == auth
@@ -87,6 +87,16 @@ def test_malformed_authorization_rejected(runtime, field, value):
     auth[field] = value
     with pytest.raises(ValueError):
         release.validate_authorization(auth)
+
+
+@pytest.mark.parametrize(
+    "alias,canonical,runtime",
+    [("tdx", "intel_tdx", "kata-qemu-tdx"), ("snp", "amd_sev_snp", "kata-qemu-nvidia-gpu-snp")],
+)
+def test_legacy_cpu_tee_alias_is_normalized_in_release_authorization(alias, canonical, runtime):
+    auth = authorization(runtime)
+    auth["cpu_tee"] = alias
+    assert release.validate_authorization(auth)["cpu_tee"] == canonical
 
 
 @pytest.mark.parametrize("runtime", RUNTIMES)

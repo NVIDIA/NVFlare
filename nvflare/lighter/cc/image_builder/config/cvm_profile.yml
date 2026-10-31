@@ -63,7 +63,7 @@ required_system_packages:
   - linux-modules-7.0.0-31-generic=7.0.0-31.31
 # CoCo v0.23.0 / unmodified Trustee v0.22.0
 trustee_commit: 512fed65642015b849f38fb13bfdec7806639987
-kbs_url: https://kbs.example.org:8443
+kbs_url: https://trustee.example.org:8443
 kbs_cert: ../inputs/kbs-ca.pem
 as_public_key: ../inputs/as-public.pem
 token_algorithm: ES256

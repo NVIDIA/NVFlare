@@ -110,6 +110,26 @@ class ReviewRegressionTests(unittest.TestCase):
         with self.assertRaisesRegex(BuildError, "Conflicting"):
             merge_records(old, {"snp_bootloader": [1, 2]}, expires)
 
+    def test_reference_reimport_does_not_rewrite_record_expiration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundle, store, state = root / "bundle", root / "rvps", root / "state"
+            bundle.mkdir()
+            write_json(bundle / "reference_values.json", {"snp_bootloader": [1]})
+            manifest = {
+                "profile_version": "cpu-r1",
+                "contract": {"profile": "cpu"},
+                "reference_value_id": "cvm-cpu-r1",
+            }
+            first = "2026-12-01T00:00:00Z"
+            later = "2027-12-01T00:00:00Z"
+            with patch("cvm.trustee.import_references.verify_bundle", return_value=manifest):
+                import_references(bundle, store, state, first)
+                import_references(bundle, store, state, later)
+            record = read_json(store / manifest["reference_value_id"])
+            self.assertEqual(record["expiration"], first)
+            self.assertEqual(record["value"]["expirations"]["snp_bootloader"], 1796083200.0)
+
     def test_cpu_and_gpu_profiles_use_separate_rvps_records(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

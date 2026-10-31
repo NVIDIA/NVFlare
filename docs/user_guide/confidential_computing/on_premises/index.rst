@@ -1,6 +1,6 @@
-*************************
-On-Premises IP Protection
-*************************
+*************************************
+Standalone Confidential VM Deployment
+*************************************
 
 The following documents describe FLARE's Confidential Federated AI deployment
 and runtime attestation support:

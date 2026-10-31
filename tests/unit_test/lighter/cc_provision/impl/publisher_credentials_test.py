@@ -30,6 +30,9 @@ from tests.unit_test.lighter.cc_provision.impl.deployment_guards_test import req
 
 ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
 PASSWORD = "fixture-password-not-for-production"
+# Publishing exercises several mocked external processes, so its wall-clock
+# guard includes headroom for highly parallel CI scheduling.
+PUBLISH_TIMEOUT_SECONDS = 60
 
 
 @pytest.fixture(scope="module")
@@ -546,7 +549,7 @@ def publishing(credential_kit, credential_bash, tmp_path):
             capture_output=True,
             text=True,
             env=environment,
-            timeout=15,
+            timeout=PUBLISH_TIMEOUT_SECONDS,
         )
         verify = None
         if publish.returncode == 0:
@@ -555,7 +558,7 @@ def publishing(credential_kit, credential_bash, tmp_path):
                 capture_output=True,
                 text=True,
                 env=environment,
-                timeout=15,
+                timeout=PUBLISH_TIMEOUT_SECONDS,
             )
         operations = [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
         assert PASSWORD not in publish.stdout + publish.stderr

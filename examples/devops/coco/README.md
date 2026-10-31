@@ -64,7 +64,8 @@ These public trust inputs serve different purposes:
 | TDX | NVIDIA | `intel_tdx` | `nvidia_cc` | `kata-qemu-nvidia-gpu-tdx` | 1 `nvidia.com/pgpu` |
 
 The table uses participant configuration values. For constraints on signed EAR
-evidence, `cpu_tee` instead uses `snp` or `tdx`.
+evidence, Trustee's signed wire format still uses `snp` or `tdx`; operator
+configuration uses `amd_sev_snp` or `intel_tdx` throughout.
 
 The guest must provide its local AA token API at
 `http://127.0.0.1:8006/aa/token`. GPU profiles allocate one `nvidia.com/pgpu`

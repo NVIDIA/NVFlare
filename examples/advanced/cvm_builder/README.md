@@ -2,6 +2,9 @@
 
 This example uses the unified confidential-computing provisioning interface to
 build a TDX server and an AMD SEV-SNP client with an NVIDIA confidential GPU.
+For the documented starting point, use the
+[single-platform CPU-only example](cpu_only/README.md); return here when the
+federation requires a mixed CPU/GPU topology.
 
 The project-wide [`cc_project.yml`](cc_project.yml) contains the Trustee,
 approval, and trusted CVM Builder settings. Each protected participant selects
@@ -20,6 +23,13 @@ runs the complete Trustee plus hardware matrix and writes the report used by
 [exact-manifest approval procedure](../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md#21-exact-manifest-acceptance-and-approval)
 before using a new generic image here.
 
+The normal lifecycle is: create and approve each reusable generic image once
+with `cvmctl build`; run `nvflare provision` below, which invokes `cvmctl vault`
+for the protected participants; then launch each authenticated delivery on its
+matching TEE host with `cvmctl run`. Use the lower-level finalize, approval,
+publish, and pull commands only when those operations belong to separate roles
+or hosts.
+
 Then run:
 
 ```bash
@@ -32,7 +42,7 @@ directory unless `build_tools.bare_metal_cvm.output_root` selects an external
 private build location. Common delivery records are written to
 `cc_manifests/<participant>.json`.
 
-The bundled client job uses `ClientAPIExecutor` to launch
+The bundled client job uses `CVMClientAPIExecutor` to launch
 `/local/custom/client.py` from the measured application image. Because the job
 does not ship custom code, `cc_site-1.yml` explicitly grants that exact class in
 the participant's `class_allow_list`. This is a reviewed per-site opt-in; do not
