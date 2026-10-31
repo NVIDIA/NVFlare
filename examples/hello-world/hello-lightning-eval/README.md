@@ -20,13 +20,13 @@ pip install -r requirements.txt
 
 ```
 hello-lightning-eval/
-├── client.py            # Client evaluation script
-├── model.py             # Model definition (LitNet with CIFAR-10)
-├── generate_pretrain.py # Script to generate pre-trained model
-├── job.py               # Job recipe using FedEvalRecipe
-├── requirements.txt     # Dependencies
-├── prepare_data.sh      # Download CIFAR-10 dataset
-└── README.md            # This file
+├── client.py                    # Client evaluation script
+├── model.py                     # Model definition (LitNet with CIFAR-10)
+├── generate_pretrain_models.py  # Script to generate pre-trained model
+├── job.py                       # Job recipe using FedEvalRecipe
+├── requirements.txt             # Dependencies
+├── prepare_data.sh              # Download CIFAR-10 dataset
+└── README.md                    # This file
 ```
 
 ## Workflow
@@ -44,7 +44,7 @@ bash prepare_data.sh
 Train a model on CIFAR-10 that will be evaluated across clients:
 
 ```bash
-python generate_pretrain.py --epochs 1 --batch_size 32 --output pretrained_model.pt
+python generate_pretrain_models.py --epochs 1 --batch_size 32 --output ./pretrained_model.pt
 ```
 
 This will:
@@ -55,7 +55,7 @@ This will:
 **Arguments:**
 - `--epochs`: Number of training epochs (default: 5). Use 1 for quick demo, 5-10 for better accuracy (~50%)
 - `--batch_size`: Batch size for training (default: 32)
-- `--output`: Output checkpoint file path (default: `pretrained_model.pt`)
+- `--output`: Output checkpoint file path (default: `/tmp/nvflare/pretrain_models/pretrained_model.pt`)
 
 **Note:** This example uses 1 epoch for quick demonstration. For better accuracy, increase the number of epochs.
 
@@ -75,7 +75,7 @@ This will:
 **Arguments:**
 - `--n_clients`: Number of simulated clients (default: 2)
 - `--batch_size`: Batch size for evaluation (default: 24)
-- `--checkpoint`: Path to pre-trained model checkpoint (default: `pretrained_model.pt`)
+- `--checkpoint`: Path to pre-trained model checkpoint (default: `/tmp/nvflare/pretrain_models/pretrained_model.pt`)
 
 ## How It Works
 
@@ -157,7 +157,7 @@ Validation DataLoader 0: 100%|██████████| 417/417 [00:03<00:
 ## Notes
 
 - This example uses **1 epoch** for pre-training by default for quick demonstration (~23% accuracy)
-- For better accuracy (~50%), increase epochs: `python generate_pretrain.py --epochs 10`
+- For better accuracy (~50%), increase epochs: `python generate_pretrain_models.py --epochs 10 --output ./pretrained_model.pt`
 - The same CIFAR-10 dataset is used on all clients for simplicity
 - In a real federated setting, each client would have their own local test set
 - The model architecture must match between training and evaluation
