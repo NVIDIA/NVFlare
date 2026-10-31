@@ -33,6 +33,7 @@ from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import add_authentication_headers, add_server_path_reply_authentication_headers
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.config_service import ConfigService, search_file
 from nvflare.fuel.utils.log_utils import configure_logging
 from nvflare.fuel.utils.url_utils import make_url
@@ -128,6 +129,7 @@ def main(args):
             print(f"Could not remove file '{name}': {ex}.  Please check your system before starting FL.")
             sys.exit(-1)
 
+    ConfigFactory.trust_config_dirs(workspace.get_startup_kit_dir(), workspace.get_site_config_dir())
     configure_logging(workspace)
     logger = logging.getLogger()
 

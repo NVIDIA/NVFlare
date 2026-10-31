@@ -325,3 +325,32 @@ def test_push_folder_retries_login_when_cell_exists_but_session_is_not_ready(tmp
     assert api.connect.call_count == 2
     assert api.login.call_count == 2
     server_execute.assert_called_once()
+
+
+def test_push_folder_signs_and_uploads_rendered_hocon_without_touching_source(tmp_path):
+    import json
+    import zipfile
+
+    upload_dir = tmp_path / "upload"
+    job_dir = upload_dir / "test_job"
+    job_dir.mkdir(parents=True)
+    (job_dir / "meta.conf").write_text("name = test_job\nmin_clients = ${n}\nn = 2\n")
+    download_dir = tmp_path / "dl"
+    download_dir.mkdir()
+    key_file = tmp_path / "test.key"
+    key_file.write_text("fake key content")
+    module = FileTransferModule(upload_dir=str(upload_dir), download_dir=str(download_dir))
+    args, ctx = _make_push_folder_args_and_ctx(str(key_file), "/path/to/cert.crt")
+
+    with (
+        patch("nvflare.fuel.hci.client.file_transfer.load_private_key_file", return_value=MagicMock()),
+        patch("nvflare.fuel.hci.client.file_transfer.sign_folders") as sign,
+        patch.object(ctx.get_api.return_value, "server_execute", return_value={}) as server_execute,
+    ):
+        module.push_folder(args, ctx)
+
+    assert sign.call_args.args[0] != str(job_dir)
+    assert (job_dir / "meta.conf").read_text().startswith("name = test_job")
+    assert server_execute.call_args.args[0] == "admin.push_folder test_job"
+    with zipfile.ZipFile(ctx.set_requester.call_args.args[0].file_name) as archive:
+        assert json.loads(archive.read("test_job/meta.conf")) == {"name": "test_job", "min_clients": 2, "n": 2}

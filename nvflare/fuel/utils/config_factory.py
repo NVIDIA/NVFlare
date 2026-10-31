@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import pathlib
 from typing import List, Optional, Tuple
@@ -22,8 +23,32 @@ from nvflare.fuel.utils.json_config_loader import JsonConfigLoader
 from nvflare.fuel.utils.log_utils import get_module_logger
 
 
+def uses_config_features(text: str, config_format: ConfigFormat) -> bool:
+    """Whether a HOCON or OmegaConf config uses features beyond plain data, or YAML aliases."""
+    if config_format not in (ConfigFormat.PYHOCON, ConfigFormat.OMEGACONF):
+        return False
+    try:
+        if config_format == ConfigFormat.PYHOCON:
+            json.loads(text)
+            return False
+        import yaml
+
+        # Aliases let a few bytes expand into an exponentially large config. Scalars are checked
+        # after YAML unescaping, so "\u0024{" cannot hide an interpolation.
+        return any(
+            isinstance(e, yaml.AliasEvent) or (isinstance(e, yaml.ScalarEvent) and "${" in e.value)
+            for e in yaml.parse(text, Loader=yaml.SafeLoader)
+        )
+    except Exception:
+        return True
+
+
 class ConfigFactory:
     logger = get_module_logger(__module__, __qualname__)
+
+    # HOCON includes and substitutions, and OmegaConf interpolations, read files, URLs, and environment
+    # variables. Only configs under these site folders may use them; others, such as job configs, must be plain data.
+    _trusted_dirs: List[str] = []
 
     OmegaConfLoader, omega_import_ok = optional_import(
         module="nvflare.fuel_opt.utils.omegaconf_loader", name="OmegaConfLoader"
@@ -41,6 +66,23 @@ class ConfigFactory:
 
     if pyhocon_import_ok:
         _fmt2Loader.update({ConfigFormat.PYHOCON: PyhoconLoader()})
+
+    @staticmethod
+    def trust_config_dirs(*dirs: str):
+        ConfigFactory._trusted_dirs.extend(os.path.realpath(d) for d in dirs)
+
+    @staticmethod
+    def is_trusted_config(file_path: str) -> bool:
+        real_path = os.path.realpath(file_path)
+        return any(real_path.startswith(d + os.sep) for d in ConfigFactory._trusted_dirs)
+
+    @staticmethod
+    def check_plain_data(text: str, config_format: ConfigFormat, source: str):
+        if uses_config_features(text, config_format):
+            raise ValueError(
+                f"{source} uses HOCON or OmegaConf features, which only site configs may use; "
+                "submit the job with FLARE tools to render it"
+            )
 
     @staticmethod
     def search_config_format(
@@ -120,6 +162,9 @@ class ConfigFactory:
         if config_format is not None and real_config_file_path is not None:
             config_loader = ConfigFactory.get_config_loader(config_format)
             if config_loader:
+                if config_format != ConfigFormat.JSON and not ConfigFactory.is_trusted_config(real_config_file_path):
+                    with open(real_config_file_path, encoding="utf-8", errors="replace") as f:
+                        ConfigFactory.check_plain_data(f.read(), config_format, real_config_file_path)
                 conf = config_loader.load_config(file_path=real_config_file_path)
                 return conf
             else:

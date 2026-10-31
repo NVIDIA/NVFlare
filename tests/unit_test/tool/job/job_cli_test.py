@@ -112,9 +112,11 @@ class TestJobCLI:
 @pytest.mark.parametrize("override", [False, True])
 @pytest.mark.parametrize("lifetime", ["job", "task"])
 def test_submit_preparation_preserves_resource_defaults_and_role_admission(tmp_path, extension, override, lifetime):
+    import os
     import shutil
 
     from nvflare.fuel.utils.config_service import ConfigService
+    from nvflare.fuel.utils.job_config_converter import convert_job_configs
     from nvflare.utils.job_launcher_utils import (
         get_cj_resource_spec,
         get_portable_resource_spec,
@@ -153,7 +155,8 @@ def test_submit_preparation_preserves_resource_defaults_and_role_admission(tmp_p
     if override:
         args.config_file = [[f"meta.{extension}", "min_clients=2"]]
     job_cli.prepare_job_config(args, ["app"], str(submitted))
-    actual = ConfigService.load_config_dict(str(submitted / f"meta.{extension}"))
+    uploaded = convert_job_configs(str(submitted), str(tmp_path / "upload"))
+    actual = ConfigService.load_config_dict(os.path.join(uploaded, f"meta.{extension}"))
     expected = dict(meta, min_clients=2 if override else 1)
     assert actual == expected
     assert get_portable_resource_spec(actual, "site-1") == {"num_of_cpus": 1, "memory": "2Gi", "num_of_gpus": 3}

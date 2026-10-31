@@ -53,6 +53,7 @@ from nvflare.fuel.utils import log_utils
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
+from nvflare.fuel.utils.job_config_converter import convert_job_configs
 from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, dynamic_log_config
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
@@ -215,6 +216,9 @@ class SimulatorRunner(FLComponent):
         )
 
         try:
+            self.args.job_folder = convert_job_configs(
+                self.args.job_folder, os.path.join(self.simulator_root, "converted_job")
+            )
             data_bytes, job_name, meta = self.validate_job_data()
 
             if not self.client_names:
