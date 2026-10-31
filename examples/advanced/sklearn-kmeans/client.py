@@ -54,7 +54,6 @@ def main():
     max_iter = 1
     n_init = 1
     reassignment_ratio = 0
-    n_clusters = 0
     writer = SummaryWriter(log_dir="./logs")
 
     # Load data
@@ -83,6 +82,7 @@ def main():
             homo = 0
         else:
             center_global = global_param["center"]
+            n_clusters = len(center_global)
 
             # local validation with global center
             # fit a standalone KMeans with just the given center

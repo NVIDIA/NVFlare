@@ -178,3 +178,15 @@ performance using area-under the curve (AUC) is:
 ## Legacy Approach
 
 > **Note**: This example has been updated to use the simplified Job Recipe API. If you need the previous JSON-based configuration approach, please refer to the [NVFlare 2.6 documentation](https://github.com/NVIDIA/NVFlare/tree/2.6/examples/advanced/sklearn-linear) or earlier versions.
+
+## Client execution lifetime
+
+See [Client Execution Lifetime](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/available_recipes.html#client-execution-lifetime)
+for platform and execution prerequisites and guidance on when to use task lifetime.
+Select task lifetime with:
+
+```bash
+python job.py --execution_lifetime task
+```
+
+The client saves and restores its native joblib classifier checkpoint, including its initialization settings and estimator state. The current server model still supplies the coefficients for each training round.

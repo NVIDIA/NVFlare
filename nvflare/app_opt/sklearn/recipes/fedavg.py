@@ -70,6 +70,9 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
 
+        execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
+            Task lifetime requires CPU in-process execution and application-owned native state restoration.
+
     Example:
         Basic usage with same config for all clients:
 
@@ -148,6 +151,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         launch_once: bool = True,
         launch_timeout: Optional[float] = 300.0,
         shutdown_timeout: float = 0.0,
+        execution_lifetime: str = "job",
     ):
         validate_model_path(model_path)
 
@@ -178,4 +182,5 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             launch_once=launch_once,
             launch_timeout=launch_timeout,
             shutdown_timeout=shutdown_timeout,
+            execution_lifetime=execution_lifetime,
         )

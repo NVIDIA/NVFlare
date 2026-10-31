@@ -82,6 +82,9 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
 
+        execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
+            Task lifetime requires CPU in-process execution and application-owned native state restoration.
+
     Example:
         ```python
         recipe = NumpyFedAvgRecipe(
@@ -140,6 +143,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         aggregation_weights: Optional[Dict[str, float]] = None,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        execution_lifetime: str = "job",
     ):
         # Store model and initial_ckpt for NumPy-specific setup (model wins over initial_model for 2.7 compat)
         self._np_model = model if model is not None else initial_model
@@ -175,6 +179,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
             aggregation_weights=aggregation_weights,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            execution_lifetime=execution_lifetime,
         )
 
         # Override framework for cross-site evaluation compatibility
