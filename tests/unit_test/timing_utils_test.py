@@ -105,6 +105,26 @@ def test_thread_group_joins_other_workers_before_reporting_a_worker_error():
     assert not other.is_alive()
 
 
+def test_partial_thread_start_releases_and_joins_started_worker(monkeypatch):
+    original_start = CheckedThread.start
+    release = threading.Event()
+    started = []
+
+    def start(thread):
+        if started:
+            raise RuntimeError("controlled startup failure")
+        original_start(thread)
+        started.append(thread)
+
+    monkeypatch.setattr(CheckedThread, "start", start)
+    with pytest.raises(RuntimeError, match="controlled startup failure"):
+        with ThreadGroup(release) as workers:
+            workers.start(release.wait)
+            workers.start(lambda: None)
+    assert len(started) == 1
+    assert not started[0].is_alive()
+
+
 def test_observed_lock_requires_an_actual_failed_acquisition():
     lock = ObservedLock()
     with ThreadGroup() as workers:

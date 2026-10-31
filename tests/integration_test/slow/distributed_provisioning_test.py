@@ -25,10 +25,8 @@ Run with:
 
 import json
 import os
-import signal
 import socket
 import stat
-import subprocess
 import sys
 import time
 import types
@@ -48,6 +46,7 @@ from nvflare.lighter.utils import load_private_key_file
 from nvflare.tool.cert.cert_commands import handle_cert_approve, handle_cert_init, handle_cert_request
 from nvflare.tool.package.package_commands import handle_package
 from nvflare.utils.process_utils import popen_in_new_session
+from tests.process_test_utils import OwnedProcesses
 
 INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
 
@@ -381,14 +380,6 @@ _STARTUP_WAIT = 5  # seconds to wait for server/clients to initialise
 _ADMIN_CONNECT_TIMEOUT = 60  # seconds to retry admin API connection before giving up
 
 
-def _kill_process_group(proc):
-    """SIGTERM the process group; ignore errors if it's already gone."""
-    try:
-        os.killpg(proc.pid, signal.SIGTERM)
-    except OSError:
-        pass
-
-
 @pytest.mark.slow
 @_TCP_BIND_SKIP
 class TestDistributedProvisioningE2E:
@@ -415,13 +406,12 @@ class TestDistributedProvisioningE2E:
         python_path = ":".join(p for p in sys.path if p)
         env["PYTHONPATH"] = python_path
 
-        def _launch(cmd):
-            return popen_in_new_session(cmd, shell=False, env=env)
+        with OwnedProcesses(process_factory=popen_in_new_session) as owner:
 
-        processes = []
+            def _launch(cmd):
+                return owner.start(cmd, shell=False, env=env)
 
-        # Start server
-        processes.append(
+            # Start server
             _launch(
                 [
                     sys.executable,
@@ -438,12 +428,10 @@ class TestDistributedProvisioningE2E:
                     "config_folder=config",
                 ]
             )
-        )
-        time.sleep(_STARTUP_WAIT)
+            time.sleep(_STARTUP_WAIT)
 
-        # Start clients
-        for client_name in ("site-1", "site-2"):
-            processes.append(
+            # Start clients
+            for client_name in ("site-1", "site-2"):
                 _launch(
                     [
                         sys.executable,
@@ -461,49 +449,36 @@ class TestDistributedProvisioningE2E:
                         "config_folder=config",
                     ]
                 )
-            )
-        time.sleep(_STARTUP_WAIT)
+            time.sleep(_STARTUP_WAIT)
 
-        # Build admin API — retry until the server is accepting connections.
-        # create_admin_api calls connect(10.0) which raises FLCommunicationError if the
-        # server is not yet ready; poll until success or _ADMIN_CONNECT_TIMEOUT is exceeded.
-        upload_dir = str(tmp_path / "upload")
-        download_dir = str(tmp_path / "download")
-        os.makedirs(upload_dir, exist_ok=True)
-        os.makedirs(download_dir, exist_ok=True)
+            # Build admin API — retry until the server is accepting connections.
+            # create_admin_api calls connect(10.0) which raises FLCommunicationError if the
+            # server is not yet ready; poll until success or _ADMIN_CONNECT_TIMEOUT is exceeded.
+            upload_dir = str(tmp_path / "upload")
+            download_dir = str(tmp_path / "download")
+            os.makedirs(upload_dir, exist_ok=True)
+            os.makedirs(download_dir, exist_ok=True)
 
-        from tests.integration_test.src.utils import create_admin_api
+            from tests.integration_test.src.utils import create_admin_api
 
-        api = None
-        deadline = time.time() + _ADMIN_CONNECT_TIMEOUT
-        while time.time() < deadline:
-            try:
-                api = create_admin_api(
-                    workspace_root_dir=os.path.dirname(provisioned["admin@myfl.com"]),
-                    upload_root_dir=upload_dir,
-                    download_root_dir=download_dir,
-                    admin_user_name="admin@myfl.com",
-                )
-                break
-            except Exception:
-                time.sleep(2)
-        if api is None:
-            pytest.fail(f"Admin API did not connect within {_ADMIN_CONNECT_TIMEOUT} s")
+            api = None
+            deadline = time.time() + _ADMIN_CONNECT_TIMEOUT
+            while time.time() < deadline:
+                try:
+                    api = create_admin_api(
+                        workspace_root_dir=os.path.dirname(provisioned["admin@myfl.com"]),
+                        upload_root_dir=upload_dir,
+                        download_root_dir=download_dir,
+                        admin_user_name="admin@myfl.com",
+                    )
+                    owner.callbacks.append(api.close)
+                    break
+                except Exception:
+                    time.sleep(2)
+            if api is None:
+                pytest.fail(f"Admin API did not connect within {_ADMIN_CONNECT_TIMEOUT} s")
 
-        yield api
-
-        # Teardown
-        try:
-            api.close()
-        except Exception:
-            pass
-        for p in processes:
-            _kill_process_group(p)
-        for p in processes:
-            try:
-                p.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                pass
+            yield api
 
     def test_hello_numpy_sag_completes(self, admin_api, tmp_path):
         """Submit hello-numpy-sag; verify it finishes with FINISHED_COMPLETED."""
