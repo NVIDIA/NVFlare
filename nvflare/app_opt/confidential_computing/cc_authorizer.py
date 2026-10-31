@@ -13,10 +13,13 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
+from threading import Event
 
 
 class CCAuthorizer(ABC):
     """Abstract base class for confidential computing authorizers"""
+
+    supports_site_binding = False
 
     @abstractmethod
     def get_namespace(self) -> str:
@@ -49,6 +52,26 @@ class CCAuthorizer(ABC):
             a boolean value indicating the token verification result
         """
         pass
+
+    def verify_for_site(self, token: str, site_name: str) -> bool:
+        """Verify for a transport-authenticated site.
+
+        Legacy attesters without a signed site claim retain their existing
+        verification semantics. Site-aware attesters must override this method.
+        """
+        return self.verify(token)
+
+    def generate_with_retry(self, timeout: float, cancel_event: Event) -> str:
+        """Generate within a caller budget when supported by the authorizer.
+
+        Legacy authorizers retain single-attempt behavior. Implementations that
+        opt into retries must preserve verification and honor cancellation.
+        This compatibility adapter cannot interrupt a blocking legacy generate()
+        call; timeout is advisory here, not a promised wall-clock bound.
+        """
+        if cancel_event.is_set():
+            raise CCTokenGenerateError("Token generation cancelled")
+        return self.generate()
 
 
 class CCTokenGenerateError(Exception):

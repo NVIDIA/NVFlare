@@ -1,0 +1,30 @@
+# Launch-shape input only. Do not apply this as an application Pod.
+# The trusted collector replaces the image, command, security context and init-data.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: approved-workload-shape
+spec:
+  runtimeClassName: kata-qemu-nvidia-gpu-snp
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  containers:
+    - name: workload
+      image: replace-with-reviewed-workload-image
+      command: ["/coco-app"]
+      resources:
+        limits:
+          nvidia.com/pgpu: 1
+      securityContext:
+        privileged: false
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        readOnlyRootFilesystem: true
+        # For NVFlare approve false explicitly (writable runtime logs/job state).
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        seccompProfile:
+          type: RuntimeDefault

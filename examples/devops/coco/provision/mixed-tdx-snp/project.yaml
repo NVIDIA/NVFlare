@@ -1,0 +1,34 @@
+# Replace project/server/admin identities before provisioning.
+api_version: 3
+name: mixed_coco_project
+description: Ordinary trusted server, TDX CPU-only site-1 and SNP/NVIDIA GPU site-2
+participants:
+- name: server.example.com
+  type: server
+  org: model_owner
+  fed_learn_port: 8002
+- name: site-1
+  type: client
+  org: data_owner_a
+  cc_config: cc_site-1.yml
+- name: site-2
+  type: client
+  org: data_owner_b
+  cc_config: cc_site-2.yml
+- name: admin@example.com
+  type: admin
+  org: model_owner
+  role: project_admin
+builders:
+- path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+- path: nvflare.lighter.impl.static_file.StaticFileBuilder
+  args:
+    config_folder: config
+- path: nvflare.lighter.impl.cert.CertBuilder
+- path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
+- path: validation_builder.ValidationBuilder
+- path: nvflare.lighter.impl.signature.SignatureBuilder
+packager:
+  path: nvflare.lighter.cc_provision.impl.coco_packager.CoCoPackager
+  args:
+    build_image_cmd: ../../admin/build_coco_image.sh
