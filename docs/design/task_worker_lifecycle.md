@@ -1,176 +1,287 @@
-# Task worker lifecycle and integration contract
+# Task execution mode: architecture and lifecycle
 
-P3 provides one stateless Process worker for an ordinary Executor. P4 adds a plain,
-role-neutral TaskSupervisor that owns its execution and artifact lifetime, plus
-the CPU Process client integration. The resident Client Job owns filters, analytics
-publication, result submission and receipts; its TaskWorkerExecutor launches a fresh
-compute worker for each assignment. Local completion, physical process settlement, and server receipt are
-separate facts.
+Task execution mode releases compute resources between federated assignments while
+keeping federation coordination alive. A job uses `execution_lifetime: "job"`
+(the default) for resident compute, or `"task"` for a fresh compute worker per
+assignment. This document defines the roles, resource contract, execution flow,
+storage, failure handling and current limits. The Kubernetes operator guide gives
+deployment commands and troubleshooting; it is not required to understand this design.
 
-## Client configuration and script lifetime
+## Compute release versus job lifetime
 
-Client configuration accepts `execution_lifetime: "job"` (the default) or `"task"`.
-Task-lifetime exports use client `format_version: 3`, which older clients reject
-instead of silently running with job lifetime. Job-lifetime exports keep version 2.
-Job lifetime keeps the existing executors and Client API backends. Task lifetime
-authorizes inert executor and component specifications in the Client Job and again
-in the worker before importing application code. Compute instances are constructed
-only in the worker. Task data and result filters always stay in the Client Job.
+Task scope separates the lifetime of computation from the lifetime of federation
+coordination. On Kubernetes, a CPU CJ can remain connected while a task Pod owns
+the training GPUs. Once the worker has published durable output and its native
+execution has physically settled, those GPUs can serve another eligible Pod.
+CJ can upload the saved result afterwards; neither job completion nor algorithm
+acceptance is required to release the worker's compute. Any GPUs explicitly
+reserved for CJ remain reserved for CJ's lifetime.
 
-In task mode, each worker constructs its executor and the explicitly supported
-compute dependency, if any. Client API scripts create their own models and
-dataloaders. StatisticsExecutor brings only the generator named by its
-`generator_id` into the worker. Its existing task handler initializes and finalizes
-the generator; the worker does not supply a generic helper lifecycle. The generator
-must initialize from local data on each assignment and cannot rely on memory from
-an earlier statistics task or pre-run handshake. The dataframe and image statistics
-examples expose `--execution_lifetime task` for this profile.
+This resource-reuse benefit requires scheduler admission and enforcement, not
+just a fresh process or `CUDA_VISIBLE_DEVICES`. Task scope by itself does not
+provide a local GPU scheduler. It also does not make an interrupted assignment
+resumable: [client-job recovery and native task-resume boundaries](client_job_recovery.md#allocation-wall-time-and-task-lifetime)
+are separate from resource release.
 
-Receivers, widgets, privacy filters and their cleansers remain resident in CJ.
-The statistics payload codecs are registered in CJ for its privacy filters and in
-the worker by the existing statistics handler. DecomposerRegister also remains in
-CJ and is constructed in the worker before input decoding when custom payload
-codecs are configured. Client API framework codecs are registered from the declared
-exchange formats in CJ before receiving federation payloads, and in the worker
-after authorization but before reading its input file. This serialization setup is
-independent of compute lifetime.
-Task workers do not build nested components or place dependency graphs.
-`component_dependencies` and `execution_scope` are rejected on worker specifications.
-The existing `args.class_attributes` constructor wrapper is supported without
-nested component construction. Ordinary constructor dictionaries marked
-`config_type: "dict"` remain data.
-Jobs cannot configure the framework's internal adapter, launcher, environment
-policy or declared task state.
+## Backend and recovery boundaries
 
-The profile permits in-process ClientAPIExecutor, StatisticsExecutor and NPTrainer.
-Executors requiring federation messaging or other resident engine services use job
-lifetime; unqualified executors fail validation before export or application imports.
+The matrix distinguishes implemented behavior from release direction. Kubernetes
+task execution is implemented; the [Slurm task adapter](https://github.com/NVIDIA/NVFlare/pull/5513)
+is an experimental draft, not deployed qualification. Local Process/Docker task
+backends are deferred: shared client-parent admission rejects local task lifetime. The
+test-only process harness exercises shared worker contracts. The historical
+Process recovery gap described below explains a boundary of the retired path.
 
-`FedJob(execution_lifetime="task")` and `job.set_execution_lifetime(...)` expose
-these controls at the Job API level. The unified and PyTorch FedAvg and PyTorch
-FedProx recipes accept `execution_lifetime="task"` in their constructors. Existing
-recipes can use `recipe.add_client_config({"execution_lifetime": "task"}, clients=...)`
-to configure existing client apps. Export validates the receiving sites' GPU
-resource/launcher settings; unrelated job-lifetime
-GPU apps in the same deployment remain valid. Resource defaults and receiving-site
-overrides use the normal launcher resource resolvers. The resource manager and all
-four launcher modes (Process, Docker, Kubernetes and Slurm) are checked; nonzero
-`num_of_gpus` or `gpus_per_node` requests are rejected for task clients. An `@ALL` client app
-cannot be combined with a site-specific lifetime; use named client apps for
-per-site lifetimes. Temporary execution-parameter overrides apply only to declared
-apps and restore their original parameters after use.
+"Release" means returning a per-task scheduler reservation while CJ/job remain
+alive, not merely masking devices or freeing GPU memory. "CP recovery" means
+adopting an existing job and its workers after CP restarts, not starting a new CP.
 
-Both lifetimes use the same InProcessClientAPI with small job/task input and
-result adapters. The task ClientAPIExecutor supports `execution_mode="in_process"`. Its script
-runs on the worker's main thread, receives one assigned model, and hands off one
-eager result through the existing Client API model, format, FULL/DIFF, metadata and
-rank semantics. The same receive/send loop exits after that send. Script arguments
-retain their boundaries, and supported secret placeholders resolve in the worker.
-Sending serializes the result durably to disk before returning and retains only
-its artifact reference in the worker. Script failure or finalizer failure still
-prevents completion. Analytics are serialized to a disk spool as each log call
-arrives, then sealed and replayed by the Client
-Job after settlement. The worker captures these records directly through the
-Client API adapter; it has no local analytics event handlers.
-Worker log lines are replayed through CJ logging after settlement, making them
-available to the existing JobLogStreamer. Replay accepts only regular files, reads
-at most 1 MiB and emits at most 4,096 lines; truncated logs remain in the workspace.
-Worker failures include their original
-error type, message and diagnostic path in the CJ exception.
+| Backend | Lifetime | Per-task compute/GPU release | Automatic CJ replacement | CP recovery | Mid-assignment resume |
+| --- | --- | --- | --- | --- | --- |
+| Process | `job` | No per-task scheduler reservation | Conditional on confirmed termination and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Process | `task` (deferred) | No scheduler-backed resource admission | Rejected before local CJ launch | Not provided | Not supported |
+| Docker | `job` | No; resident container retains its device access | Conditional on confirmed container exit and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Docker | `task` (deferred) | No supported native task profile here | Rejected before local CJ launch | Not provided | Not supported |
+| Kubernetes | `job` | No; resident CJ Pod retains its allocation | With persistent jobs PVC and confirmed shutdown | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Kubernetes | `task` | Yes, after worker Pod settlement | After confirmed CJ and worker shutdown | Not provided | Worker loss triggers CJ recovery; application restores its checkpoint |
+| Slurm | `job` | No; resident CJ allocation retains its resources | Conditional on confirmed allocation exit and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Slurm | `task` (draft) | Designed per task allocation; native qualification required | Disabled in the draft; CP retains task cleanup | Not provided | Not implemented |
 
-Script process memory, optimizer state and executor instances do not survive the
-assignment. Applications needing previous local model state must use a job-lifetime
-script or manage their own explicit persistence; this profile supplies no state
-declaration or aggregation admission mechanism. An opt-in opaque checkpoint file
-can preserve application-selected state without preserving process memory.
+Resident recovery relies on a live CP/server and a valid client registration.
+Restoring partial progress on the original assignment additionally needs a
+still-valid assignment and a compatible application checkpoint; CP does not check
+those as replacement-launch gates. A replacement may receive a later assignment
+or recompute without a checkpoint. Recovery does not automatically capture model,
+optimizer or data-loader progress. See
+[client-job recovery](client_job_recovery.md#confirmed-failures-only) for the gates,
+the [Process task-mode gap](client_job_recovery.md#process-task-mode-recovery-gap),
+and the [wall-limit ownership timeline](client_job_recovery.md#wall-limit-and-owner-loss-timeline).
 
-For Client API scripts, `flare.system_info()["task_checkpoint"]` supplies `input`
-and `output` paths. `input` is `None` on the first assignment, otherwise an isolated,
-checksum-verified copy of the last committed checkpoint for this client job,
-executor configuration and task name. `output` is a pending file unique to this
-physical attempt. The script restores and saves it using its own framework:
+## Roles and assumptions
 
-```python
-checkpoint = flare.system_info()["task_checkpoint"]
-if checkpoint["input"] is not None:
-    state = torch.load(checkpoint["input"], weights_only=True)
-    optimizer.load_state_dict(state["optimizer"])
-# Train, then save any application-selected state.
-torch.save({"optimizer": optimizer.state_dict()}, checkpoint["output"])
-flare.send(output_model)
+| Role | Job lifetime | Task lifetime |
+| --- | --- | --- |
+| Client Parent (CP) | Starts and monitors client jobs. | Starts and monitors client jobs; owns Kubernetes task Pod creation and cleanup. |
+| Client Job (CJ) | Keeps coordination and compute resident. | Keeps federation communication, filters, analytics publication and result submission resident. |
+| Task worker | No separate task runtime. | Constructs compute, executes one assignment, finalizes and exits. |
+| Server Job (SJ) | Issues assignments and receives results. | Uses the same assignment and result-receipt protocol. |
+
+Task mode requires an explicit scheduler-backed site profile: Kubernetes uses
+Pods; Slurm integration is developed separately. Local Process and Docker task
+backends are deferred. Process/Docker **job** mode, including external-process
+Client API scripts, is unchanged. There is no default local task launcher and no
+silent fallback from task to job lifetime. CPU or GPU is an independent resource choice
+within a capable backend. Site configuration selects the backend and its authority;
+a job cannot supply runtime credentials, accounts, namespace or arbitrary mounts.
+Export validates resource shape; the receiving backend must enforce the requested
+resources or reject unsupported requirements before compute.
+
+Each TaskSupervisor admits one active physical attempt. The Kubernetes CP also
+admits at most one unsettled attempt per job. Worker memory, optimizer state and
+executor instances do not survive an assignment. Application-selected checkpoint
+files can survive. In Kubernetes, confirmed CJ or worker loss can trigger
+[CJ recovery](client_job_recovery.md) after all prior executions stop, using the
+persistent jobs profile.
+Recovery preserves the assignment and checkpoints, with fresh physical worker IDs.
+CP restart adoption and distributed training remain unsupported.
+
+Four separate facts govern the lifecycle:
+
+| Fact | Meaning |
+| --- | --- |
+| Local completion | An immutable record binds the assignment identity to validated output. |
+| Physical settlement | The worker and its owned execution have stopped; output writers are quiescent. |
+| Server receipt | The server has received the complete result, or has closed the assignment. |
+| Aggregation acceptance | The algorithm decides whether and how to use the result. |
+
+None of these facts implies the others. In particular, sending a result does not
+settle a worker, and receiving a result does not promise aggregation or recovery
+after server restart.
+
+## One assignment from delivery to cleanup
+
+1. SJ issues an assignment with workflow, task and attempt IDs. Retransmission
+   preserves those IDs; CJ recovery changes only the physical worker attempt ID.
+2. CJ applies input hooks/filters and stages input plus an inert worker bootstrap.
+   Compute definitions are authorized in CJ and again in the worker before custom
+   imports, component construction or input decoding.
+3. The trusted launcher acquires a worker with the compute resource budget. CJ
+   retains federation communication and can receive cancellation while it waits.
+4. The worker initializes compute, executes once, finalizes, seals output and any
+   checkpoint candidate, and publishes an immutable completion record.
+5. The supervisor confirms physical settlement and validates completion identity,
+   worker PID, payload sizes and digests before consuming output.
+6. CJ reports diagnostics and replays worker logs. Metrics have already been
+   delivered live through the worker's Cell session. Only after those
+   fallible steps succeed does it promote a valid optional checkpoint locally,
+   followed by downstream result processing/filters and submission.
+7. CJ retries submission of that saved result until an identity-bound terminal
+   receipt or closure arrives. It does not rerun compute to recreate a lost reply.
+8. Successful attempt payloads are released only after settlement, terminal receipt
+   and reader quiescence. Failed or unresolved attempts retain their evidence.
+
+Cancellation takes precedence over network publication. A local completion never
+authorizes sending after CJ/task cancellation. Shutdown closes admission, drains
+pending launches and cancels late-acquired handles; losing a launch reply does not
+make the acquired execution unowned.
+
+## Coordinator and compute resource contract
+
+| Job metadata | Job lifetime | Task lifetime |
+| --- | --- | --- |
+| `resource_spec` | Resident CJ resources, including compute. | Resources for each compute worker. |
+| `cj_resource_spec` | Rejected for resident client apps. | Independent resident coordinator budget. |
+| `launcher_spec` | Backend-specific runtime settings. | Backend-specific runtime/compute settings; compute resource fields do not become CJ resources. |
+
+Resource admission uses the configuration-only `get_client_execution_lifetime`
+helper at export, submission, CP/CJ startup and Kubernetes profile selection.
+It currently validates the top-level `execution_lifetime` as `job` or `task`,
+defaulting to `job`. Executors with other lifetime declarations extend this one
+classifier; this does not change `prepare_task_execution`'s executor-wrapping
+rules or enable additional executors by itself.
+
+A GPU task job can use a CPU coordinator. For example, its job metadata can use:
+
+```json
+{
+  "name": "gpu-task-job",
+  "min_clients": 1,
+  "deploy_map": {"app": ["@ALL"]},
+  "resource_spec": {
+    "@default": {"num_of_cpus": 2, "memory": "4Gi", "num_of_gpus": 1},
+    "server": {"num_of_gpus": 0}
+  },
+  "cj_resource_spec": {
+    "@default": {"num_of_cpus": 0.25, "memory": "512Mi", "num_of_gpus": 0}
+  },
+  "launcher_spec": {
+    "default": {"k8s": {"image": "registry.example/nvflare-training:2.10"}}
+  }
+}
 ```
 
-The worker seals the optional file in place after executor finalization. One immutable
-completion record binds its checksum to the result. After physical settlement and
-result validation, CJ atomically promotes the checkpoint together with its owning
-completion identity and result reference. Atomic replacement is the local commit
-point: if a later directory sync or temporary-file cleanup fails, CJ retains the
-published checkpoint and returns its matching successful result, reporting a
-warning that crash durability could not be confirmed. Failures before replacement,
-cancelled promotion and malformed candidates leave the previous state unchanged.
-A missing checkpoint also leaves it unchanged. Workers receive only an attempt-local
-input copy, so accidentally overwriting it cannot change the committed checkpoint. Promotion is
-idempotent for the same completion. Result-submission retries reuse the saved
-result in CJ and never rerun training or promote state again. There is no automatic
-physical retry or cross-CJ crash recovery; a new physical attempt requires a new
-server-issued attempt ID. Promotion records local completion, not server acceptance
-or aggregation admission. Successful terminal receipts release the attempt's
-checkpoint files along with its other payloads. The committed checkpoint uses a
-small atomic manifest and an immutable payload linked from the settled attempt,
-so sealing and promotion do not copy the full file. The next worker receives one
-isolated input copy. Superseded committed payload links are removed; one committed
-checkpoint remains per client executor/task slot for the job. Retained attempts
-share storage with their committed payload instead of duplicating it.
+The client app declares `execution_lifetime: "task"`. The server keeps its existing
+resource semantics; its explicit zero-GPU override above prevents the compute GPU
+default from also applying to SJ. In Kubernetes, the job's image setting selects
+the CJ image. The worker image is fixed separately by trusted site task policy.
+Job-supplied images retain existing bring-your-own-code authorization requirements.
 
-When the server resends the same assignment and attempt ID, CJ re-reads the
-checksum-verified saved result. It does not rerun training, replay analytics or
-promote that attempt's checkpoint again, including after a newer task completed.
-Only attempts that finished CJ result processing are eligible. Missing, corrupt,
-unsettled or already released results are rejected rather than re-executed.
+Portable compute CPU counts are positive integers; CJ CPU shares may be positive
+fractions. Native Kubernetes CPU quantities can also express fractions. Portable
+memory uses positive integer Mi/Gi/Ti quantities. GPU counts are nonnegative
+integers, and explicit zero overrides a GPU site default. A GPU worker also needs
+CPU and memory.
 
-The same hello-pt `client.py` runs in both lifetimes. It retains state in resident
-job mode and explicitly restores optimizer momentum, the advancing DataLoader
-generator and CPU PyTorch RNG state in fresh task workers, then writes a candidate
-after training. It accepts earlier successful checkpoints after missed rounds and
-starts fresh when a site has no checkpoint yet. CPU thread limits are opt-in. Its
-paired numerical regression compares per-site incoming models,
-returned updates and metrics in every round, plus global checkpoints. This qualifies
-the checkpoint-aware example under matching CPU settings; changing only lifetime
-does not make arbitrary unchanged stateful training code equivalent. Applications
-must select and restore their own relevant state. Final global evaluation does not
-write a checkpoint. Cross-site local-model submission remains a job-lifetime option.
+Resource resolution has explicit boundaries:
 
-The export validator checks P4's known unsupported workflow configurations using
-actual workflow types, including subclasses. Both SCAFFOLD implementations are
-rejected because their current clients do not restore control variates between
-workers. Both cross-site evaluation implementations are rejected when they request
-local-model submission, which the current task integration does not implement.
-Global-only CrossSiteModelEval remains supported. Controllers have no task-lifetime
-markers or validation hooks. Persistent state alone does not require job lifetime;
-applications can explicitly checkpoint the state they need.
+- `resource_spec` and `cj_resource_spec` use `@default`; site overrides are merged
+  per field. Coordinator resolution also overlays a matching `@ALL` entry before
+  a named site. `launcher_spec` instead shallow-merges `default[mode]` with the
+  named site's mode block. `default` and `@default` are distinct keys.
+- Export/submission derives an empty coordinator entry for each task site when
+  needed. That entry selects site defaults and removes compute GPU requirements
+  from whole-job admission. User metadata cannot mark a resident app as task based.
+  CP and CJ check the locally resolved lifetime before launch/component construction.
+- Missing coordinator fields never inherit compute requirements. Kubernetes CJ
+  defaults are 0.25 CPU, 512Mi and zero GPUs, configurable through site
+  `ClientK8sJobLauncher.cj_resources`. Size CJ memory for filters and result handling;
+  these are resource defaults, not a workload sizing guarantee. Explicit CJ GPUs
+  are independent of worker GPUs.
+- Portable and native declarations of the same resource conflict. Legacy nested
+  resource settings remain a compatibility fallback when the matching launcher
+  block is absent; legacy/native GPU counts must remain consistent.
+- Submission preserves `@default`/`@ALL` through CLI preparation and serialization.
+  Server-side lifetime inspection does not resolve unrelated client environment
+  variables or open client HOCON includes. Declare the root lifetime literally.
 
-The initial profile supports CPU Process workers on Linux and on macOS with Python
-3.13+ providing waitid/WNOWAIT. External/attach Client API sessions, GPU task workers,
-remote task launchers, and moving task orchestration to the Client Process are not
-part of this profile. No server capability negotiation is added.
-The Collab API's resident RPC service continues to use job lifetime.
-Client API task workers also reject local-model submission and both SCAFFOLD wire
-layouts at execution time, covering manually authored configs that bypass export.
-Lightning `patch(..., restore_state=True)` rejects task lifetime because its
-optimizer/scheduler cache is in-memory; use job lifetime or disable that callback
-and restore native framework checkpoints explicitly.
+Kubernetes enforces each worker's Pod requests/limits. Two CPU CJs at the same site
+can stay resident while their workers successively use one available GPU.
+Kubernetes chooses scheduling and fairness; there is no round-robin guarantee.
+Unsupported licenses, custom resource-manager claims and per-GPU memory quotas
+must be enforced or rejected, never silently discarded. A local Process or Docker
+site rejects task lifetime; GPU visibility alone is not exclusive resource admission.
 
-## Site policy
+## Application and site configuration
 
-Only the site's canonical `local/resources.json` or its default fallback supplies
-`task_execution`. Job application and job resource overrides cannot select it.
-The default launcher is ProcessTaskLauncher, environment forwarding is explicit,
-and successful payloads are released after terminal receipt. An optional site configuration is:
+Task client exports use `format_version: 3`, so older clients reject them instead
+of silently running resident compute. Job lifetime keeps version 2. Authors use
+`FedJob(execution_lifetime="task")`, `job.set_execution_lifetime(...)`, or supported
+recipe/client configuration. Named apps can have different lifetimes at different
+sites; an `@ALL` app cannot also have a site-specific lifetime override.
+
+The supported compute profiles are in-process ClientAPIExecutor, StatisticsExecutor
+and NPTrainer. Executors requiring resident federation engine services use job
+lifetime. Statistics workers construct only the generator named by `generator_id`,
+which must initialize from local data on every assignment. Filters, widgets,
+receivers and privacy processing remain in CJ. Custom decomposers are registered
+in both runtimes before decoding; that does not move compute into CJ.
+
+Workers construct authorized inert executor/component specifications directly,
+using `initialize`, `execute` and `finalize`. Finalization also runs after partial
+initialization or failure, although forced termination cannot guarantee it.
+Workers do not dispatch application lifecycle events or build nested component
+graphs. `component_dependencies` and component `execution_scope` are rejected;
+the existing `args.class_attributes` wrapper and ordinary `config_type: "dict"`
+constructor data remain supported. Authorization precedes application logging,
+custom imports, decomposer setup and input decoding.
+
+A Client API task script runs on the worker's main thread, receives one input and
+sends one result through the shared InProcessClientAPI, then exits. Script arguments,
+FULL/DIFF exchange, metadata and rank semantics are preserved. Sending durably
+stages output; script/finalizer failure before completion still fails the attempt.
+Metrics travel live over a worker-to-CJ Cell session. CJ fires each metric into
+its active attempt's context before replying; unsupported/rejected metric data
+fails the worker, while tracking-receiver exceptions are logged as in job mode.
+A metric request waits up to 30 seconds for CJ's reply. The session closes after
+physical settlement and rejects later metrics. Analytics are not stored in an
+attempt spool or replayed on resubmission. Worker logs are replayed through CJ
+logging after settlement, bounded to 1 MiB and 4,096 lines;
+the complete file remains available for diagnosis. The first failure retains its
+type, message and diagnostic path; a later cleanup failure cannot replace it.
+
+SCAFFOLD clients do not restore their control variates between workers and are
+rejected. Local-model submission, external/attach Client API sessions and the
+resident Collab RPC service use job lifetime. Global-only cross-site evaluation
+is supported. Lightning's in-memory `restore_state=True` cache cannot restore a
+fresh task worker; use explicit native checkpoints or job lifetime.
+
+### Direct computation without a nested trainer
+
+For the supported Client API task path, the task worker is already the isolated
+compute runtime: it runs the script in its main thread through InProcessClientAPI.
+There is no second `external_process` trainer to launch solely for model handoff.
+CJ stages input files, the worker writes immutable output files, and CJ reads and
+submits that output after physical settlement. The native Pod/allocation still
+contains a worker process; removing a redundant trainer hop does not remove
+`task_worker_process.py`, TaskLauncher or the supervisor.
+
+Disk handoff replaces neither all transport nor live communication. CJ still
+owns federation downloads/uploads and filters; the [worker Cell session](task_worker_cellnet_session.md)
+delivers metrics while the worker is alive. Existing job-mode
+[external-process and Attach sessions](client_api_execution_modes.md), including
+their pass-through/download paths, are currently separate mechanisms. Task
+mode currently rejects those session modes rather than silently nesting them.
+This describes current behavior, not a decision to retain job-mode pass-through.
+
+### Site policy
+
+Only canonical site `local/resources.json` (or its default fallback) supplies
+`task_execution`. Jobs cannot select the internal adapter, launcher, environment
+policy or task state. A Kubernetes site can configure:
 
 ```json
 {
   "task_execution": {
-    "environment_variables": ["TRAINING_SECRET"],
+    "launcher": {
+      "path": "nvflare.app_opt.task_launcher.k8s_launcher.K8sTaskLauncher",
+      "args": {
+        "namespace": "site-1",
+        "image": "registry.example/nvflare-training:2.10",
+        "workspace_root": "/workspace",
+        "workspace_pvc": "site-workspace",
+        "worker_service_account": "task-worker"
+      }
+    },
     "worker_timeout": 600,
     "settlement_timeout": 10,
     "poll_interval": 0.05,
@@ -180,148 +291,237 @@ and successful payloads are released after terminal receipt. An optional site co
 }
 ```
 
-`artifact_cleanup: "retain"` keeps every attempt. `max_payload_bytes` optionally
-limits input and output payloads with the same policy. The job's executor definition
-can shorten `worker_timeout`, and ClientAPIExecutor's `result_wait_timeout` bounds
-application execution through script exit and finalizers. Framework result
-serialization pauses this application deadline. After the result has been staged,
-the site also imposes a finite `finalization_timeout` (30 seconds by default),
-including when result_wait_timeout is unset. Once application finalization finishes,
-checkpoint sealing, analytics sealing and completion publication run outside these
-application deadlines. The absolute `worker_timeout`, when configured, still bounds
-the entire worker lifetime, including artifact I/O. Sending does not waive physical
-settlement.
+The example above is only the task-policy section; the operator guide supplies
+the matching ClientK8sJobLauncher, PVC and service-account configuration.
+Worker environments come from trusted backend configuration. Forwarding arbitrary
+CJ environment variables is rejected; federation credentials and API bootstrap
+cannot be inherited by workers. CPU workers mask GPU visibility; GPU-capable backends
+arrange devices through their resource binding. `artifact_cleanup: "retain"`
+keeps attempts. Optional positive `max_payload_bytes` applies consistently to
+input, bootstrap policy and output, including all referenced tensor files.
 
-Workers receive only the framework's standard runtime environment allow-list plus
-site-approved variable names. Federation credentials, Client API bootstrap and GPU
-visibility cannot be forwarded; GPU visibility is disabled. Process workers share
-the site UID and filesystem, so this is process lifetime isolation, not a security
-sandbox. The site policy is excluded from client registration metadata.
+## Backend ownership and physical settlement
 
-## Execution and diagnostics
+The shared `task_worker_process` entry point runs a process **inside** a native
+Pod or allocation. Its name does not mean a local Process task backend. Native
+scope has no local CJ parent PID and supports PID 1. Keep this entry point, the
+worker runtime and supervisor when adding scheduler-backed launchers.
 
-The worker checks executor, statistics generator and decomposer specifications
-against site component policy before application logging, custom imports,
-decomposers or input decoding.
-It initializes the job audit sink first, preserving allow-all and warn-mode
-authorization records. Compute objects and codec registration use the existing class
-loader; no separate worker component builder is needed.
+Local process-group launch utilities live only under `tests/` for isolated
+worker/supervisor contract tests. They are not installed as an NVFlare backend
+and are not proof of Kubernetes or Slurm deployment qualification.
 
-The worker uses direct `initialize(fl_ctx)`, `execute(...)`, and `finalize(fl_ctx)`
-calls on its executor or Client API runner. Finalization also runs after partial
-initialization and execution failure. The first failure is retained in failure.json;
-a later cleanup error cannot replace it. StatisticsExecutor propagates generator
-finalization failures to its caller so they cannot produce a successful task
-completion. Decomposer registration is constructor
-setup, with no lifecycle calls. Lifecycle events, registered event handlers and
-before/after-task event hooks are not dispatched in the worker.
+In Kubernetes, the CJ's K8sTaskLauncher is a tokenless CellNet proxy. Before CJ
+starts, CP installs a backend bound to canonical site policy and admitted job/site
+resources. Bounded JSON launch/poll/cancel commands use a per-job capability token;
+the sender-set origin header is an additional consistency check. CJ cannot choose
+Pod manifests, Kubernetes credentials, namespace, account, mounts or another job's
+attempts. The CP backend creates K8sTaskHandle; CJ sees a remote handle. Job and
+task launchers share stateless Pod helpers while keeping distinct lifecycle handles.
 
-For Client API scripts, one private task runner directly initializes the shared
-InProcessClientAPI, stages input through TaskInProcessAdapter, executes the script
-and finalizes its resources. It has no separate mode-specific backend or backend
-interface wrapper. ClientAPIExecutor supplies validated settings
-but its event lifecycle is not invoked. The shared event dispatcher and job-mode
-backend selection require no task-worker hooks. Existing FLComponent logging is
-written normally; its subsequent log-event notifications are ignored. The
-system_panic compatibility call latches a failure without dispatching handlers;
-other event requests fail explicitly. Filters, widgets, application events and
-federation event routing remain owned by the CJ.
+CP owns accepted attempts even if their create or reply is still in flight. Normal
+job termination closes task admission and deletes CJ, including a never-started
+Pending CJ. CP keeps task cleanup after CJ exits. CJ end-run makes bounded cleanup
+calls and can exit while reconciliation continues. A ten-second independent CJ
+observer backs up normal job-handle polling.
 
-Wall-clock start/end timestamps are diagnostic and may move backward. Elapsed
-time uses time.monotonic(). Launcher cancellation can terminate the worker without
-running finalizers. Executors must support this stateless one-shot cancellation
-contract; finalization is not guaranteed after process termination.
+Deleting a Pod does not prove execution stopped. Task deletes use UID preconditions;
+replacements are not adopted or deleted. A finalizer keeps the owned Pod observable
+until a scheduled Pod has terminal status, all admitted containers have terminated
+and kubelet sandbox teardown is confirmed, or an unscheduled Pod's deletion fences
+scheduling. Only shutdown evidence plus confirmed Pod removal establishes settlement.
+Transient API errors preserve the last-known phase. Missing/replaced Pods, node loss
+or ambiguous create replies without evidence leave ownership fenced; a timeout or
+404 alone cannot authorize retry or result publication.
 
-There is no per-task guardian process. CJ owns the worker process group through
-its launcher, including normal cancellation, descendant settlement and shutdown
-deadlines. Abrupt CJ death can leave an active worker or its descendants running.
-Independent crash cleanup owned by CP is a follow-up; this profile does not claim
-that guarantee.
+Unknown cancellation identities are retained to fence delayed launches, capped at
+128 per job. Trusted `max_attempts` (default 10,000) bounds all retained identities,
+including cheap rejected launches. Exceeding either limit closes admission and
+cancels known execution without evicting replay fences. Existing poll/cancel and
+CP cleanup remain available. Released supervisor attempts drop heavy handles;
+lightweight launch identities remain until job shutdown.
 
-## Payload storage
+## Payloads, checkpoints and receipts
 
-PyTorch task payloads use the [disk-backed payload format](disk_backed_task_payloads.md).
-The GET_TASK route decodes pass-through references. Before task-data events, the CJ
-resolves inputs eagerly if a site or job data filter applies, or to local tensor
-files otherwise. On unfiltered tasks, CJ input hooks receive local lazy refs with
-metadata and `nbytes`; tensor operations such as `.shape`, `.numel()` and arithmetic
-are unavailable. Workers always receive ordinary mapped tensors. The existing
-clearing of `TASK_DATA` after execution, before result filters, is unchanged.
+Workers and CJ exchange small FOBS serialization records and checksum-bound files
+on a shared job filesystem. PyTorch tensors use adjacent per-tensor safetensors
+files. Unfiltered CJ input hooks receive local lazy references with metadata and
+byte sizes, rather than tensors supporting arithmetic; workers receive mapped
+tensors. If input filters apply, CJ resolves inputs eagerly before task-data events.
+CJ result callbacks/filters receive mapped tensors, and their edits are transmitted.
+Clearing `TASK_DATA` before result filters keeps its existing ordering.
 
-Input and result artifacts contain small FOBS records with tensor file descriptors
-and hashed per-tensor safetensors files alongside them. Received single-tensor files
-are hard-linked into the attempt on the same filesystem; other tensors are written
-one at a time. The runner releases receive scratch files in a `finally`, including
-when execution never starts. Result callbacks and the sender receive mapped tensors,
-so callback edits are transmitted and already-open mappings survive filename
-cleanup. Retained result files are revalidated and mapped for resubmission. Many
-small tensors require many files; temporary serialization remains proportional to
-the largest tensor plus the existing sender's bounded cache and prefetch.
+Single-tensor receive files are hard-linked when possible; otherwise serialization
+writes one tensor at a time. Receive scratch files are released in `finally`.
+Temporary serialization scales with the largest tensor and sender cache, not the
+entire model; mapped pages and filesystem cache still grow with model size, writes
+can allocate private pages, and per-tensor files consume inodes. There is no fixed
+4 GiB ceiling. `max_payload_bytes`, when configured, counts the serialization record
+and all tensor files together; other metadata limits remain separate.
 
-There is no fixed 4 GiB payload ceiling. FileTaskArtifactStore and WorkerBootstrap
-accept an optional positive max_payload_bytes supplied by the trusted site/client
-adapter. The adapter must apply the same policy to input staging, the bootstrap,
-and result reading. None leaves capacity to the filesystem and its quota. The
-separate bootstrap and metadata record limits remain in place. The payload limit
-counts the FOBS record and all referenced tensor files together.
+The store uses exclusive publication, real hard links, file/directory fsync and
+atomic small-manifest replacement on one filesystem. Hashes are computed while
+writing and verified before completion publication and before decoding. Bootstrap
+files and attempt artifacts cannot be symlinks; CP confines mapped worker paths to
+the configured job subtree. Interrupted publication temporaries can be removed
+only after writers/readers are quiescent. The storage preflight is not proof of a
+driver's cross-Pod coherence or crash durability; deployment qualification checks both.
 
-After confirming writer and reader quiescence, release_payloads also removes
-interrupted publication temporaries for its payload/metadata names. Full retention
-cleanup can remove an incomplete attempt directory whose identity.json was never
-published. An existing identity record must still be valid and match the caller.
+Completion publication is serialized with fatal, abort and direct-failure
+reporting. An observed failure or direct compute/analytics operation still in
+flight prevents publication. Successful publication seals the worker runtime
+against later operations and abort requests; returning from `flare.send` alone
+does not establish completion.
 
-FOBS serialization hashes each byte as it is written. The worker still verifies
-the stored result before publishing completion, and the reader verifies it before
-decoding. These verification passes detect changed or corrupt payloads; staging
-no longer rereads the complete file merely to calculate its initial digest.
+### Application checkpoint state
 
-Trusted bootstrap directory aliases, including /tmp on macOS, are resolved before
-opening. Bootstrap files themselves and attempt artifacts cannot be symlinks.
-Directory ancestors require search permission; directories receiving durable
-artifact writes also require read/write permission for the durability barrier.
+Scripts choose which model, optimizer, data-loader and RNG state to persist.
+`flare.system_info()["task_checkpoint"]` supplies an isolated, verified `input`
+copy of the last committed checkpoint (or None) and an attempt-unique pending
+`output` path. The script uses its own framework to load/save that opaque file.
+The worker seals it after finalization and binds its checksum to the completion.
 
-## Completion and supervisor integration
+After settlement, output validation and diagnostic/log replay, CJ atomically
+promotes the candidate with the completion identity and result reference, before
+result submission. Missing, invalid or cancelled candidates, and failures before
+checkpoint manifest replacement (including replay failure), leave previous state
+unchanged. Promotion is idempotent. Manifest replacement is the local commit point:
+a later directory-sync/cleanup error retains that checkpoint and its matching
+result, with a warning that crash durability was not confirmed. A later nonzero
+worker exit or diagnostic likewise does not erase an already verified completion;
+execution status and evidence remain separate, and failed attempts retain payloads.
 
-The worker serializes completion publication with fatal, abort, and direct failure
-reporting. A failure observed before the publication decision prevents completion.
-A direct compute or analytics operation still in progress also prevents it.
-Successful publication closes the runtime to subsequent operations and abort requests.
+The committed payload is linked from the settled attempt; superseded links are
+removed and one checkpoint remains per job/executor/task slot. A later worker gets
+one isolated input copy, so changing that copy cannot corrupt committed state.
+Resubmission reuses saved output without re-running training, replaying analytics
+or promoting again. Only attempts that finished CJ result processing are eligible;
+missing, corrupt, unsettled or released saved results fail rather than re-execute.
+Switching an arbitrary stateful script to task lifetime does not make it equivalent
+to a resident script; the application must explicitly preserve its required state.
 
-A valid completion.json can coexist with a later nonzero process exit, such as
-SIGKILL after publication, or with failure.json if the directory fsync fails after
-the completion link is installed. The worker preserves both records for diagnosis.
-A directory durability error means persistence across a host crash is uncertain.
+### Result receipt and payload release
 
-P4 must validate completion identity, worker PID, payload size and digest, and
-confirm physical settlement before consuming a result. A fully verified completion
-is evidence of finished local computation even when a later process error or
-post-publication failure diagnostic exists. Those later facts do not erase local
-completion. TaskSupervisor returns the verified result and the observed execution
-status independently, retaining payloads when execution failed or failure.json
-exists. Missing or invalid completion still fails validation after settlement.
+CJ validates workflow/task/attempt identity on every result reply:
 
-The supervisor has one job lifetime and admits one active physical attempt at a
-time. Unconfirmed settlement permanently prevents further attempts on that
-instance and retains its handle and artifacts. end_run closes admission and
-cancels known execution. If launch is still acquiring a handle, the caller must
-join its run call before discarding the supervisor; that call owns and cancels
-the late handle. There is no reset or automatic physical retry.
+| Reply | Action |
+| --- | --- |
+| `RECEIVED` | Stop resending; the server owns the complete payload. |
+| `TASK_CLOSED` | Stop resending; the assignment is no longer wanted. This does not prove an earlier upload was unused. |
+| `RETRY`, lost, malformed or mismatched reply | Retain the saved result and retry submission, without compute. |
 
-For publication, the caller validates the reply's workflow, task, and attempt
-before calling record_receipt. RETRY or unknown receipt retains the saved result.
-Default cleanup requires confirmed settlement, a decoded successful result and
-RECEIVED or TASK_CLOSED. Uploads use that in-memory snapshot, so no disk-reader
-leases are required. Cleanup is independent of admission of the next assignment.
-Explicit retention, failed cleanup and failed attempts keep their evidence. Completion and diagnostic
-records remain after successful payload release. Closure says nothing about an
-earlier upload's receipt or aggregation use.
+The server validates the authenticated site/job and assignment identity before
+filters, callbacks and aggregation. Duplicate submissions do not repeat those
+effects. Receipts also cover failed or filtered-out results; they do not promise
+aggregation acceptance or durable receipt history across server restart. Local
+checkpoint promotion therefore does not wait for algorithm acceptance or receipt.
 
-A local completion never overrides Client Job/task cancellation or authorizes
-network publication by itself. The adapter must drain pending launches during job
-shutdown, recheck cancellation before sending, retain the saved result through
-receipt retries, and release successful disk payloads after terminal receipt.
-Sim/POC/Prod E2E tests must exercise these boundaries, including process
-termination and filesystem failure after completion publication.
+Default payload cleanup requires settlement, decoded successful output and a
+terminal receipt/closure. Saved-result readers pin files while verifying/decoding
+or mapping them, so concurrent receipt cleanup waits. Existing POSIX mappings
+survive unlink; additional readers that reopen filenames must arrange ownership
+before cleanup. There is no general reader-lease API. Failure, explicit retention,
+unknown receipt or unresolved settlement keeps evidence. Completion/diagnostic
+records and the separately linked committed checkpoint survive successful release.
 
-Released attempts leave the supervisor cleanup set and drop their owned handles.
-Lightweight launch identities remain for the job lifetime to prevent relaunch.
+## Kubernetes namespaces, storage and isolation
+
+All CJs and their task Pods use the launcher's configured jobs namespace. CP can
+use that namespace or a separate control namespace with explicit permissions and
+a compatible storage arrangement. Workers always use their CJ's namespace; the
+launcher does not create a namespace per job or choose one from job metadata.
+
+The job launcher accepts an optional `startup_secret_name` shared by its CJ and
+worker Pods. The default is `nvflare-job-startup-<normalized-participant>`.
+This public-only Secret is separate from the deployment-staged CP Secret
+(`nvflare-startup-<normalized-participant>`), whose encoded keys and private
+site credentials must stay unchanged. A `startup_secret_name` override must name
+a dedicated public job kit, not CP's staged kit. Existing launcher-created
+Secrets with canonical filename keys can be retained using that override.
+Operators sharing a namespace across federations must configure unique Secret
+names per federation and participant. Each startup Secret carries the root CA's
+SHA-256 fingerprint as a label-safe base32 identity. Replacement checks that
+identity and the observed resource version; another federation's Secret causes
+launch to fail. Identical kits are reused without replacement, and concurrent
+updates re-read and revalidate ownership with a bounded retry count. An unlabeled legacy Secret can be upgraded only after matching
+its CA. Unsecured kits without a root CA use a digest of the public kit payload.
+Changing a trust root or unsecured kit requires a fresh Secret name or deliberate
+operator-managed replacement after stopping its consumers.
+
+Workers connect directly to CJ's live Cell listener, on a port selected by CJ.
+CP injects `NVFLARE_K8S_CJ_POD_IP` from `status.podIP`; K8sTaskLauncher advertises
+that IPv4 address rather than loopback or the CP's configured address. Cluster
+routing and NetworkPolicy must permit worker-to-CJ traffic on that selected port.
+CellNet currently requires IPv4 for this path. The listener keeps the site's
+internal scheme/security. In mTLS mode the bootstrap supplies the job identity,
+CA and both client/server certificate-key pairs; credential paths are identical
+inside the CJ/worker shared workspace. A startup kit without the site's private
+key remains valid because both Cell roles use the per-job credential. See the
+optional [Cell session details](task_worker_cellnet_session.md).
+
+The usual site layout has a private CP workspace PVC plus a separate shared jobs
+PVC. CP mounts the jobs claim and creates a fresh hashed job/site directory; each
+CJ/worker mounts only that directory as its workspace subPath. Task execution
+requires this durable profile. Resident jobs keep emptyDir unless the site enables
+`persist_resident_workspaces: true`, which stores their checkpoints on the same
+jobs claim. No claim is provisioned per job/task. PVCs are namespaced; control/jobs
+namespace separation needs an operator-supplied storage arrangement.
+
+CP, CJ and workers share configured nonroot UID/GID. Mode 0700 does not separate
+same-owner jobs: cross-job filesystem isolation relies on kubelet subPath mounts
+and the storage driver. Jobs never mount CP's private claim. Trusted templates
+cannot add a second full jobs-claim mount. Site seccomp/supplemental-group settings
+are preserved while required nonroot/no-escalation settings are enforced. CJ and
+workers receive no Kubernetes API token. This profile does not allocate per-job
+UIDs/claims or isolate worker access from files already inside its own job subtree.
+Additional CJ dataset volumes are not automatically inherited by task workers.
+
+Persistent job subtrees are retained after success as well as failure. Operators
+budget capacity, archive and remove them only after the job, runtimes, in-flight
+creates and readers/uploads are quiescent. Reusing an existing job/site subtree
+fails instead of adopting or overwriting it, except for CJ recovery authorized by
+the same CP's confirmed previous execution. Definitive pre-create/API rejection
+removes only a freshly reserved, unchanged empty directory; ambiguous outcomes keep
+their storage fence. There is no automatic subtree collector or CP restart adoption.
+
+## Deadlines and failure handling
+
+Elapsed deadlines use a monotonic clock; wall-clock timestamps are diagnostic.
+
+| Setting | Scope |
+| --- | --- |
+| `queue_timeout` | Time while a Kubernetes Pod is unassigned to a node; default None permits indefinite queue waiting. Diagnosed scheduling/admission failures can fail earlier. |
+| `startup_timeout` | Time from first observed Kubernetes node assignment until Running; default 120 seconds. |
+| `worker_timeout` | Optional absolute whole-worker lifetime, including queueing and artifact I/O; a job may shorten it. |
+| `result_wait_timeout` | Client API application execution through script exit/finalizers; framework result serialization pauses this deadline. |
+| `finalization_timeout` | Finite post-staging application finalization bound, default 30 seconds. Later checkpoint sealing and publication remain subject to the absolute worker deadline. |
+| `settlement_timeout` | Supervisor's bounded wait for terminal execution to settle, default 10 seconds; expiry fences further attempts and retains ownership/evidence. |
+| `cleanup_timeout` | Kubernetes cleanup-call bound; CP can continue reconciliation after CJ exits. |
+
+Resident job-mode Kubernetes `pending_timeout` remains a separate existing policy.
+Exceeding a deadline does not prove settlement. The supervisor has no reset or
+automatic physical retry after unconfirmed settlement. CP crash/restart, permanent
+node loss or missing finalizer evidence requires operator reconciliation after
+verifying runtime shutdown; clearing a stuck finalizer is not a substitute for proof.
+
+The [recovery design](client_job_recovery.md#allocation-wall-time-and-task-lifetime)
+describes confirmed worker-loss recovery and the remaining backend limits.
+Partial-progress checkpoints remain application-owned; the completion-bound
+checkpoint handoff does not periodically save unfinished work.
+
+## Qualification and optional references
+
+Qualification covers CPU/GPU and job/task modes, actual submitted resource
+requests, two CJs at one site sharing one available GPU, cancellation while queued
+or running, never-started CJ abort, CJ loss, lost replies and API outages. It also
+checks immutable output after settlement, checkpoint continuity, receipt retry
+without compute, active-reader retention, mounts/UIDs and namespace boundaries.
+Record source/image identity and distinguish unit evidence from cluster results.
+
+The following references provide deeper protocol/API detail; the contracts needed
+to understand task execution are stated above:
+
+- [Kubernetes operator guide](../user_guide/admin_guide/deployment/kubernetes_task_launcher.rst): deployment, sizing, retention and troubleshooting.
+- [Job metadata reference](job_meta_launcher_config.md): shared schema and backend-specific settings.
+- [Assignment/receipt protocol](task_assignment_admission.md): wire compatibility, hierarchy and server history.
+- [JobLauncher and JobHandle reference](job_launcher_and_job_handle.md): resident runtime APIs and other launchers.

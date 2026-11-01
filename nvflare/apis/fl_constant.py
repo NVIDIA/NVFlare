@@ -131,6 +131,7 @@ class FLContextKey:
     TASK_RESULT_SEND_SUCCESS = "__task_result_send_success__"
     TASK_RESULT_SUBMISSION_ATTEMPTED = "__task_result_submission_attempted__"
     TASK_RESULT_RECEIPT = "__task_result_receipt__"
+    TASK_RESULT_IS_LATE = "__task_result_is_late__"
     TASK_ID = ReservedKey.TASK_ID
     TASK_ATTEMPT_ID = ReservedKey.TASK_ATTEMPT_ID
     TASK_ATTEMPT_REQUIRED = ReservedKey.TASK_ATTEMPT_REQUIRED
@@ -174,6 +175,7 @@ class FLContextKey:
     COMMUNICATION_ERROR = "Flare_communication_error__"
     UNAUTHENTICATED = "Flare_unauthenticated__"
     CLIENT_RESOURCE_SPECS = "__client_resource_specs"
+    ALLOCATED_RESOURCES = "__allocated_resources"
     RESOURCE_CHECK_RESULT = "__resource_check_result"
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
@@ -185,6 +187,8 @@ class FLContextKey:
     RECONNECTED_CLIENT_NAME = "_reconnected_client_name"
     SITE_OBJ = "_site_obj_"
     JOB_LAUNCHER = "_job_launcher"
+    JOB_HANDLE_CALLBACK = "_job_handle_callback"
+    JOB_RESTART_HANDLE = "_job_restart_handle"  # Confirmed previous execution, only during replacement launch.
     SNAPSHOT = "job_snapshot"
 
     CLIENT_REGISTER_DATA = "_client_register_data"

@@ -6,4 +6,6 @@
 Examples & Tutorials
 #####################
 
-A variety of resources to help you learn federated learning with NVIDIA FLARE.
+This page has been consolidated into the :ref:`tutorials` page, which provides
+the current onboarding sequence, maintained feature tutorials, the searchable
+example catalog, and versioned training resources.

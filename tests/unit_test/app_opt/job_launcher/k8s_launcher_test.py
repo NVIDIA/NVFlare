@@ -12,12 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
+import json
 import logging
+import os
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+
+try:
+    import kubernetes.utils.quantity as _k8s_quantity
+except ImportError:
+    _k8s_quantity = None
 
 _k8s_mock = ModuleType("kubernetes")
 _k8s_client = ModuleType("kubernetes.client")
@@ -42,32 +50,49 @@ _k8s_api.core_v1_api = _k8s_core
 _k8s_mock.config = _k8s_config
 _k8s_mock.client = _k8s_client
 
-for _mod_name, _mod_obj in [
-    ("kubernetes", _k8s_mock),
-    ("kubernetes.config", _k8s_config),
-    ("kubernetes.client", _k8s_client),
-    ("kubernetes.client.rest", _k8s_rest),
-    ("kubernetes.client.api", _k8s_api),
-    ("kubernetes.client.api.core_v1_api", _k8s_core),
-]:
-    sys.modules[_mod_name] = _mod_obj
+_K8S_MODULES = {
+    "kubernetes": _k8s_mock,
+    "kubernetes.config": _k8s_config,
+    "kubernetes.client": _k8s_client,
+    "kubernetes.client.rest": _k8s_rest,
+    "kubernetes.client.api": _k8s_api,
+    "kubernetes.client.api.core_v1_api": _k8s_core,
+}
+
+if _k8s_quantity is not None:
+    _K8S_MODULES["kubernetes.utils.quantity"] = _k8s_quantity
+
+
+@pytest.fixture(autouse=True)
+def _isolate_kubernetes_modules(monkeypatch):
+    # The SDK is imported lazily by the resident launcher. Keep these stubs
+    # local to its tests so other backends can use the real SDK utilities.
+    # Restore only SDK entries: restoring all of sys.modules evicts lazily
+    # imported NVFlare modules but leaves stale references on their packages.
+    for name, module in _K8S_MODULES.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey, RunProcessKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobReturnCode
+from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.k8s_launcher import (
     JOB_RETURN_CODE_MAPPING,
     POD_STATE_MAPPING,
     WORKSPACE_MOUNT_PATH,
+    ClientK8sJobLauncher,
     JobState,
     K8sJobHandle,
     PodPhase,
     _job_args_dict,
     job_pod_name,
+    job_workspace_subpath,
     site_name_to_rfc1123,
     study_dataset_volume_name,
+    task_security_context,
     uuid4_to_rfc1123,
 )
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
@@ -84,7 +109,7 @@ _DEFAULT_VOLUME_MOUNT_LIST = [
 
 _DEFAULT_VOLUME_LIST = [
     {"name": "workspace-job", "emptyDir": {}},
-    {"name": "startup-kit", "secret": {"secretName": f"nvflare-startup-{site_name_to_rfc1123('site1')}"}},
+    {"name": "startup-kit", "secret": {"secretName": f"nvflare-job-startup-{site_name_to_rfc1123('site1')}"}},
     {"name": _DEFAULT_DATA_VOLUME_NAME, "persistentVolumeClaim": {"claimName": "data-pvc"}},
 ]
 
@@ -467,7 +492,13 @@ class TestK8sJobHandle:
         cfg = _make_job_config()
         cfg["module_args"] = None
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
-        assert handle.container_args_module_args_dict_as_list == []
+        assert handle.get_manifest()["spec"]["containers"][0]["args"] == [
+            "-u",
+            "-m",
+            cfg["command"],
+            "--set",
+            *cfg["set_list"],
+        ]
 
     def test_manifest_gpu_resources(self):
         cfg = _make_job_config()
@@ -772,7 +803,12 @@ class TestK8sJobHandle:
 
     @pytest.mark.parametrize(
         "exit_code",
-        [ProcessExitCode.EXCEPTION, ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR],
+        [
+            ProcessExitCode.EXCEPTION,
+            ProcessExitCode.UNSAFE_COMPONENT,
+            ProcessExitCode.CONFIG_ERROR,
+            ProcessExitCode.INFRASTRUCTURE_ERROR,
+        ],
     )
     def test_wait_preserves_deliberate_process_exit_code(self, exit_code):
         api = _make_api_instance()
@@ -787,7 +823,7 @@ class TestK8sJobHandle:
 
         assert handle.poll() == exit_code
 
-    def test_wait_keeps_sigkill_exit_aborted(self):
+    def test_wait_reports_sigkill_as_execution_error(self):
         api = _make_api_instance()
         resp = _make_pod_response(
             phase=PodPhase.FAILED.value,
@@ -798,7 +834,7 @@ class TestK8sJobHandle:
 
         handle.wait()
 
-        assert handle.poll() == JobReturnCode.ABORTED
+        assert handle.poll() == JobReturnCode.EXECUTION_ERROR
 
     def test_wait_poll_consistent_after_wait(self):
         api = _make_api_instance()
@@ -838,6 +874,7 @@ class TestK8sJobHandle:
         api = _make_api_instance()
         ws_transfer = Mock()
         handle = _make_handle(api=api, workspace_transfer=ws_transfer, workspace_job_id="job-raw")
+        handle.terminate()
         handle.terminate()
         ws_transfer.remove_job.assert_called_once_with("job-raw")
 
@@ -1399,7 +1436,7 @@ class TestJobArgsDict:
 # ---------------------------------------------------------------------------
 def _make_k8s_launcher_patches(patch_open=True):
     # kubernetes is imported inside launch_job (not at module level), so we rely
-    # on the sys.modules stubs injected at the top of this file.  The only
+    # on the sys.modules stubs scoped by this module's fixture. The only
     # YAML dependency we need to intercept is in the shared study_data helper,
     # plus builtins.open for reading the study-data file. CoreV1Api on the
     # already-stubbed _k8s_core module is patched with patch.object so each
@@ -1967,6 +2004,52 @@ class TestK8sJobLauncherLaunchJob:
         finally:
             _exit_patches(patches)
 
+    @pytest.mark.parametrize("abort_before_publish", [False, True], ids=["pending", "before_publish"])
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_abort_deletes_unscheduled_cj_before_pending_timeout(self, mock_time, abort_before_publish):
+        from nvflare.private.fed.client.client_engine import ClientEngine
+        from nvflare.private.fed.client.client_executor import JobExecutor, _PendingJobHandle
+        from nvflare.private.fed.client.client_status import ClientStatus
+
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, pending_timeout=120)
+        mock_api.read_namespaced_pod.return_value = _make_resource_pending_pod()
+        mock_time.time.return_value = 0.0
+        executor = JobExecutor(client=MagicMock(), startup="startup")
+        pending = _PendingJobHandle()
+        executor.run_processes[_JOB_UUID] = {
+            RunProcessKey.JOB_HANDLE: pending,
+            RunProcessKey.STATUS: ClientStatus.STARTING,
+        }
+
+        def abort(_seconds=None):
+            ClientEngine.abort_app(SimpleNamespace(client_executor=executor), _JOB_UUID)
+            mock_api.delete_namespaced_pod.assert_called_once()
+
+        def register(handle):
+            heartbeat_cleanup = pending.attach(handle)
+            if heartbeat_cleanup is not None:
+                executor.abort_app(_JOB_UUID, heartbeat_cleanup=heartbeat_cleanup)
+
+        context = _make_launch_fl_ctx()
+        context.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, register, private=True, sticky=False)
+        mock_time.sleep.side_effect = abort
+        try:
+            if abort_before_publish:
+                executor.abort_app(_JOB_UUID)
+            handle = launcher.launch_job(_make_launch_job_meta(), context)
+            assert handle.poll() == JobReturnCode.ABORTED
+            mock_api.delete_namespaced_pod.assert_called_once_with(
+                name=_EXPECTED_POD_NAME, namespace="test-ns", grace_period_seconds=0
+            )
+            self.mock_transfer.remove_job.assert_called_once_with(_JOB_UUID)
+            if abort_before_publish:
+                mock_time.sleep.assert_not_called()
+            else:
+                mock_time.sleep.assert_called_once()
+        finally:
+            _exit_patches(patches)
+
     # -- pod manifest: identity fields ----------------------------------------
 
     def test_pod_manifest_name_includes_site_to_avoid_namespace_collisions(self):
@@ -2120,7 +2203,7 @@ spec:
             training_volume = study_dataset_volume_name("study-a", "training")
             assert "template-volume" in volume_map
             assert volume_map["workspace-job"]["emptyDir"]["sizeLimit"] == "8Gi"
-            assert volume_map["startup-kit"]["secret"]["secretName"] == "nvflare-startup-site-1-f505dccd"
+            assert volume_map["startup-kit"]["secret"]["secretName"] == "nvflare-job-startup-site-1-f505dccd"
             assert volume_map[training_volume]["persistentVolumeClaim"]["claimName"] == "study-train-pvc"
 
             job_container = manifest["spec"]["containers"][0]
@@ -2733,13 +2816,14 @@ spec:
         launcher, mock_api = self._setup(patches)
         self._prime_running(mock_api)
         try:
-            fl_ctx = _make_launch_fl_ctx(set_items=["lr=0.01", "epochs=5"])
+            fl_ctx = _make_launch_fl_ctx(set_items=["lr=0.01", "epochs=5", "cj_launch_id=physical-1"])
             launcher.launch_job(_make_launch_job_meta(), fl_ctx)
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             args = manifest["spec"]["containers"][0]["args"]
             assert "--set" in args
             assert "lr=0.01" in args
             assert "epochs=5" in args
+            assert "cj_launch_id=physical-1" in args
         finally:
             _exit_patches(patches)
 
@@ -3023,7 +3107,7 @@ spec:
         try:
             launcher.launch_job(_make_launch_job_meta(gpu=2), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "2"
         finally:
             _exit_patches(patches)
 
@@ -3036,7 +3120,7 @@ spec:
             meta[JobMetaKey.RESOURCE_SPEC.value] = {"site-1": {"num_of_gpus": 2}}
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "2"
         finally:
             _exit_patches(patches)
 
@@ -3066,7 +3150,7 @@ spec:
             }
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "2"
         finally:
             _exit_patches(patches)
 
@@ -3079,7 +3163,7 @@ spec:
             meta[JobMetaKey.RESOURCE_SPEC.value] = {"site-1": {"num_of_gpus": 2}}
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 3
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "3"
         finally:
             _exit_patches(patches)
 
@@ -3153,7 +3237,7 @@ spec:
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             limits = manifest["spec"]["containers"][0]["resources"]["limits"]
-            assert limits["nvidia.com/gpu"] == 2
+            assert limits["nvidia.com/gpu"] == "2"
             assert limits["cpu"] == "1000m"
             assert limits["memory"] == "4Gi"
         finally:
@@ -3205,8 +3289,8 @@ spec:
             launcher.launch_job(_make_launch_job_meta(gpu=2), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             resources = manifest["spec"]["containers"][0]["resources"]
-            assert resources["requests"]["nvidia.com/gpu"] == 2
-            assert resources["limits"]["nvidia.com/gpu"] == 2
+            assert resources["requests"]["nvidia.com/gpu"] == "2"
+            assert resources["limits"]["nvidia.com/gpu"] == "2"
         finally:
             _exit_patches(patches)
 
@@ -3382,13 +3466,17 @@ spec:
         try:
             launcher.core_v1 = mock_api
             mock_api.create_namespaced_secret.side_effect = _FakeApiException(status=409, reason="Conflict")
+            mock_api.read_namespaced_secret.return_value = SimpleNamespace(
+                metadata=SimpleNamespace(labels={}, resource_version="7"), data={}
+            )
 
             secret_name = launcher._ensure_startup_secret("site-1", "/fake/startup")
 
-            assert secret_name == f"nvflare-startup-{site_name_to_rfc1123('site-1')}"
+            assert secret_name == f"nvflare-job-startup-{site_name_to_rfc1123('site-1')}"
             mock_api.create_namespaced_secret.assert_called_once()
             mock_api.replace_namespaced_secret.assert_called_once()
-            mock_api.read_namespaced_secret.assert_not_called()
+            mock_api.read_namespaced_secret.assert_called_once()
+            assert mock_api.replace_namespaced_secret.call_args.kwargs["body"]["metadata"]["resourceVersion"] == "7"
         finally:
             _exit_patches(patches)
 
@@ -3515,13 +3603,14 @@ class TestK8sCredentialTransport:
         return launcher, mock_api
 
     @pytest.mark.parametrize(("cert_name", "key_name"), [("client.crt", "client.key"), ("server.crt", "server.key")])
-    def test_startup_secret_never_ships_private_keys(self, tmp_path, cert_name, key_name):
+    def test_startup_secret_never_ships_private_keys(self, tmp_path, cert_name, key_name, startup_ca):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         startup_dir = tmp_path / "startup"
         startup_dir.mkdir()
         for name in ("rootCA.pem", cert_name, key_name, "job_ca.key", "fed_client.json"):
             (startup_dir / name).write_text(name)
+        (startup_dir / "rootCA.pem").write_bytes(startup_ca)
         launcher = ClientK8sJobLauncher(config_file_path=None)
         launcher.core_v1 = MagicMock()
 
@@ -3533,7 +3622,7 @@ class TestK8sCredentialTransport:
     def test_job_credential_rides_credential_secret(self):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
-        launcher._ensure_startup_secret = MagicMock(return_value="nvflare-startup-site-1")
+        launcher._ensure_startup_secret = MagicMock(return_value="nvflare-job-startup-site-1")
         try:
             with (
                 patch(
@@ -3578,7 +3667,7 @@ class TestK8sCredentialTransport:
     def test_non_secure_job_launches_without_credential(self):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
-        launcher._ensure_startup_secret = MagicMock(return_value="nvflare-startup-site-1")
+        launcher._ensure_startup_secret = MagicMock(return_value="nvflare-job-startup-site-1")
         try:
             launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
 
@@ -3708,6 +3797,9 @@ class TestK8sCredentialTransport:
         try:
             mock_api.create_namespaced_secret.side_effect = _FakeApiException(status=409, reason="Conflict")
             mock_api.patch_namespaced_secret.side_effect = _FakeApiException(status=403, reason="Forbidden")
+            mock_api.read_namespaced_secret.return_value = SimpleNamespace(
+                metadata=SimpleNamespace(labels={}, resource_version="1"), data={}
+            )
 
             handle = launcher.launch_job(_make_launch_job_meta(), _make_cred_fl_ctx())
 
@@ -3725,3 +3817,884 @@ def _isolate_module_clocks(monkeypatch):
         monkeypatch,
         "nvflare.app_opt.job_launcher.k8s_launcher",
     )
+
+
+_TASK_JOB_ID = "4df684c0-d73d-4e7e-83d6-e4e8d0171532"
+_TASK_SITE = "site-1"
+
+
+def _task_profile(pvc_root, persist_resident_workspaces=True):
+    return ClientK8sJobLauncher(
+        config_file_path=None,
+        namespace="site",
+        job_workspace_pvc="existing-pvc",
+        job_workspace_pvc_root=str(pvc_root),
+        persist_resident_workspaces=persist_resident_workspaces,
+        run_as_user=max(os.getuid(), 1),
+        run_as_group=max(os.getgid(), 1),
+    )
+
+
+def _mock_job_workspace_owner(monkeypatch, launcher):
+    # Unit-test the valid PVC profile independently of the host runner's UID.
+    # The separate ownership-guard tests continue to use real filesystem IDs.
+    real_stat = os.stat
+    directory = os.path.join(launcher.job_workspace_pvc_root, job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE))
+
+    def stat(path, *args, **kwargs):
+        info = real_stat(path, *args, **kwargs)
+        if os.fspath(path) == directory:
+            fields = list(info)
+            fields[4] = launcher.job_security_context["runAsUser"]
+            return os.stat_result(fields)
+        return info
+
+    monkeypatch.setattr(os, "stat", stat)
+
+
+def _exited_cj(handle, sandbox_down=True, exit_code=137):
+    return SimpleNamespace(
+        metadata=SimpleNamespace(uid=handle.pod_uid, deletion_timestamp=None),
+        spec=SimpleNamespace(
+            node_name="node-1",
+            containers=[SimpleNamespace(name=handle._job_container_name)],
+            init_containers=[],
+            ephemeral_containers=[],
+        ),
+        status=SimpleNamespace(
+            phase="Succeeded" if exit_code == 0 else "Failed",
+            reason="Error",
+            conditions=[SimpleNamespace(type="PodReadyToStartContainers", status="False" if sandbox_down else "True")],
+            container_statuses=[_make_terminated_container_status(handle._job_container_name, exit_code)],
+            init_container_statuses=[],
+            ephemeral_container_statuses=[],
+        ),
+    )
+
+
+@pytest.mark.parametrize("lifetime", ["job", "task"])
+@pytest.mark.parametrize("extension", ["json", "conf", "yml"])
+@pytest.mark.parametrize("budgets", ["defaults", "native_compute", "portable_compute", "cj_gpu"])
+@pytest.mark.parametrize("create_status, cleanup_status", [(None, None), (403, None), (500, None), (None, 503)])
+def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
+    tmp_path, monkeypatch, lifetime, extension, budgets, create_status, cleanup_status
+):
+    if lifetime == "task" and _k8s_quantity is None:
+        pytest.skip("Kubernetes quantity parser is required for the task backend binding")
+    (tmp_path / "startup").mkdir()
+    (tmp_path / "local").mkdir()
+    config = tmp_path / _TASK_JOB_ID / f"app_{_TASK_SITE}" / "config"
+    config.mkdir(parents=True)
+    content = (
+        json.dumps({"execution_lifetime": lifetime}) if extension == "json" else f"execution_lifetime: {lifetime}\n"
+    )
+    (config / f"config_fed_client.{extension}").write_text(content)
+    workspace = Workspace(str(tmp_path), site_name=_TASK_SITE)
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, _TASK_SITE, private=False, sticky=True)
+    fl_ctx.set_prop(ReservedKey.ENGINE, SimpleNamespace(cell=Mock()), private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.SECURE_MODE, False, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.ARGS, SimpleNamespace(workspace=str(tmp_path), set=[]), private=True, sticky=False)
+    fl_ctx.set_prop(
+        FLContextKey.JOB_PROCESS_ARGS,
+        {
+            JobProcessArgs.EXE_MODULE: ("-m", "nvflare.private.fed.app.client.worker_process"),
+            JobProcessArgs.WORKSPACE: ("-w", "/var/tmp/nvflare/workspace"),
+            JobProcessArgs.JOB_ID: ("-n", _TASK_JOB_ID),
+        },
+        private=True,
+        sticky=False,
+    )
+    pvc_root = tmp_path / "mounted-pvc"
+    pvc_root.mkdir()
+    launcher = _task_profile(pvc_root)
+    _mock_job_workspace_owner(monkeypatch, launcher)
+    (tmp_path / "local" / "resources.json").write_text(
+        json.dumps(
+            {
+                "components": [
+                    {
+                        "path": "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
+                        "args": {
+                            "namespace": "site",
+                            "job_workspace_pvc": "existing-pvc",
+                            "job_workspace_pvc_root": str(pvc_root),
+                            "run_as_user": max(os.getuid(), 1),
+                            "run_as_group": max(os.getgid(), 1),
+                        },
+                    }
+                ],
+                "task_execution": {
+                    "launcher": {
+                        "path": "nvflare.app_opt.task_launcher.k8s_launcher.K8sTaskLauncher",
+                        "args": {
+                            "namespace": "site",
+                            "image": "site/worker",
+                            "workspace_root": "/var/tmp/nvflare/workspace",
+                            "workspace_pvc": "existing-pvc",
+                            "worker_service_account": "task-no-api",
+                            "run_as_user": max(os.getuid(), 1),
+                            "run_as_group": max(os.getgid(), 1),
+                        },
+                    }
+                },
+            }
+        )
+    )
+    launcher._prepare_workspace_subpath = Mock(wraps=launcher._prepare_workspace_subpath)
+    api = launcher.core_v1 = Mock()
+    api.create_namespaced_pod.return_value.metadata.uid = "cj-uid-1"
+    if create_status:
+        from kubernetes.client.rest import ApiException
+
+        api.create_namespaced_pod.side_effect = ApiException(status=create_status)
+    api.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
+    launcher.startup_secret_name = "federation-a.site-1"
+    launcher._ensure_job_credential_secret = Mock(return_value="cj-credentials")
+    launcher._own_credential_secret = Mock()
+    meta = {
+        JobConstants.JOB_ID: _TASK_JOB_ID,
+        "launcher_spec": {_TASK_SITE: {"k8s": {"image": "site/image", "num_of_gpus": 2}}},
+    }
+    if budgets != "defaults":
+        if budgets == "portable_compute":
+            meta["resource_spec"] = {"@default": {"num_of_cpus": 2, "memory": "4Gi", "num_of_gpus": 2}}
+            del meta["launcher_spec"][_TASK_SITE]["k8s"]["num_of_gpus"]
+        else:
+            meta["launcher_spec"][_TASK_SITE]["k8s"].update(cpu="2", memory="4Gi")
+        if lifetime == "task":
+            from nvflare.utils.job_launcher_utils import normalize_cj_resource_spec
+
+            meta["cj_resource_spec"] = {
+                "@default": {"num_of_cpus": 0.5, "memory": "1Gi", "num_of_gpus": 1 if budgets == "cj_gpu" else 0}
+            }
+            normalize_cj_resource_spec(meta, {_TASK_SITE})
+
+    # Import the actual target explicitly; this test also runs without collecting task-service tests.
+    from nvflare.app_opt.task_launcher import k8s_task_service
+
+    with (
+        patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager") as transfer,
+        patch.object(k8s_task_service, "K8sTaskService") as service,
+    ):
+        transfer.get_or_create.return_value.owner_fqcn = "site-parent"
+        transfer.get_or_create.return_value.add_job.return_value = "transfer-token"
+        service.get_or_create.return_value.add_job.return_value.lock = __import__("threading").Lock()
+        handle = launcher.launch_job(meta, fl_ctx)
+    manifest = api.create_namespaced_pod.call_args.kwargs["body"]
+    assert handle.get_manifest() == manifest
+    if create_status:
+        directory = pvc_root / job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+        assert directory.exists() == (create_status == 500)
+        assert handle.terminal_return_code == JobReturnCode.EXCEPTION
+        return
+    assert (handle.task_owner is not None) == (lifetime == "task")
+    # An active CJ cannot authorize replacement, even on a persistent volume.
+    assert handle.can_restart() is False
+    spec = manifest["spec"]
+    container = spec["containers"][0]
+    assert (
+        next(volume for volume in spec["volumes"] if volume["name"] == "startup-kit")["secret"]["secretName"]
+        == "federation-a.site-1"
+    )
+    workspace_volume = next(volume for volume in spec["volumes"] if volume["name"] == "workspace-job")
+    workspace_mount = next(mount for mount in container["volumeMounts"] if mount["name"] == "workspace-job")
+    assert workspace_volume == {"name": "workspace-job", "persistentVolumeClaim": {"claimName": "existing-pvc"}}
+    assert workspace_mount["subPath"] == job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+    assert spec["automountServiceAccountToken"] is False
+    assert spec["securityContext"] == task_security_context(max(os.getuid(), 1), max(os.getgid(), 1))
+    assert container["securityContext"]["allowPrivilegeEscalation"] is False
+    if lifetime == "job":
+        assert container["resources"]["requests"]["nvidia.com/gpu"] == "2"
+        assert "serviceAccountName" not in spec
+    else:
+        from nvflare.app_opt.job_launcher.k8s_launcher import ENV_CJ_POD_IP
+
+        address = [item for item in container["env"] if item["name"] == ENV_CJ_POD_IP]
+        assert address == [
+            {
+                "name": ENV_CJ_POD_IP,
+                "valueFrom": {"fieldRef": {"apiVersion": "v1", "fieldPath": "status.podIP"}},
+            }
+        ]
+        cj_requests = container["resources"]["requests"]
+        assert cj_requests["cpu"] == ("0.25" if budgets == "defaults" else "0.5")
+        assert cj_requests["memory"] == ("512Mi" if budgets == "defaults" else "1Gi")
+        if budgets == "cj_gpu":
+            assert cj_requests["nvidia.com/gpu"] == "1"
+        else:
+            assert "nvidia.com/gpu" not in cj_requests
+            assert "nvidia.com/gpu" not in container["resources"]["limits"]
+            environment = {item["name"]: item.get("value") for item in container["env"]}
+            assert environment["CUDA_VISIBLE_DEVICES"] == ""
+            assert environment["NVIDIA_VISIBLE_DEVICES"] == "none"
+        backend = service.get_or_create.return_value.add_job.call_args.args[0]
+        assert backend.startup_secret_name == "federation-a.site-1"
+        compute_requests = backend._job_binding[2]["requests"]
+        assert compute_requests["nvidia.com/gpu"] == "2"
+        if budgets != "defaults":
+            assert compute_requests["cpu"] == "2"
+            assert compute_requests["memory"] == "4Gi"
+        assert spec["serviceAccountName"] == "task-no-api"
+    # Existing credential ownership and workspace-transfer mechanisms are retained.
+    launcher._own_credential_secret.assert_called_once()
+    transfer.get_or_create.return_value.add_job.assert_called_once_with(_TASK_JOB_ID, str(tmp_path))
+    launcher._prepare_workspace_subpath.assert_called_once_with(_TASK_JOB_ID, _TASK_SITE, None)
+    job_dir = pvc_root / workspace_mount["subPath"]
+    (job_dir / "committed-checkpoint").write_bytes(b"persist across CJ deletion")
+    (tmp_path / "cp-private-state").write_bytes(b"private")
+    assert not (job_dir / "cp-private-state").exists()
+    from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_PERSISTENT_WORKSPACE, WORKSPACE_READY_FILE
+
+    assert {item["name"]: item.get("value") for item in container["env"]}[ENV_PERSISTENT_WORKSPACE] == "1"
+    (job_dir / WORKSPACE_READY_FILE).touch()
+    api.read_namespaced_pod.return_value = _exited_cj(handle)
+    if handle.task_owner is not None:
+        handle.task_owner.backend.cleanup_timeout = 0.01
+        handle.task_owner.thread.is_alive.return_value = False
+    handle.wait()
+    assert handle.can_restart()
+    old_handle = handle
+    fl_ctx.set_prop(FLContextKey.JOB_RESTART_HANDLE, old_handle, private=True, sticky=False)
+    api.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
+    api.create_namespaced_pod.return_value.metadata.uid = "cj-uid-2"
+    if cleanup_status:
+        api.delete_namespaced_pod.side_effect = _FakeApiException(status=cleanup_status)
+    with (
+        patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager", transfer),
+        patch("nvflare.app_opt.task_launcher.k8s_task_service.K8sTaskService", service),
+    ):
+        handle = launcher.launch_job(meta, fl_ctx)
+    assert handle.pod_uid == "cj-uid-2"
+    assert handle.pod_name != old_handle.pod_name
+    api.delete_namespaced_pod.assert_called_once_with(
+        name=old_handle.pod_name,
+        namespace=old_handle.namespace,
+        body={"preconditions": {"uid": old_handle.pod_uid}},
+        _request_timeout=10.0,
+    )
+    assert handle.workspace_reservation == old_handle.workspace_reservation
+    assert handle.pod_manifest["spec"]["volumes"] == spec["volumes"]
+    assert handle.pod_manifest["spec"]["containers"][0]["volumeMounts"] == container["volumeMounts"]
+    assert launcher._ensure_job_credential_secret.call_args_list[0].args[0] != (
+        launcher._ensure_job_credential_secret.call_args_list[1].args[0]
+    )
+    assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
+    api.delete_namespaced_pod.side_effect = None
+    handle.terminate()
+    assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
+    with pytest.raises(ValueError, match="already exists"):
+        launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+    assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
+
+
+@pytest.fixture
+def recoverable_cj(tmp_path):
+    from nvflare.app_opt.job_launcher.workspace_cell_transfer import WORKSPACE_READY_FILE
+
+    handle = _make_handle(workspace_job_id="job-1")
+    handle.pod_uid = "cj-uid"
+    info = tmp_path.stat()
+    handle.workspace_reservation = (str(tmp_path), info.st_dev, info.st_ino)
+    (tmp_path / WORKSPACE_READY_FILE).touch()
+    handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle)
+    handle.wait()
+    return handle
+
+
+@pytest.mark.parametrize("task_mode", [False, True], ids=["resident", "task"])
+@pytest.mark.parametrize(
+    "exit_code, cancelled, restart_expected",
+    [
+        (0, False, False),
+        (1, False, True),
+        (9, False, False),
+        (101, False, True),
+        (102, False, False),
+        (103, False, False),
+        (104, False, True),
+        (137, False, True),
+        (143, False, True),
+        (137, True, False),
+    ],
+)
+def test_cp_monitor_recovers_confirmed_cj_failures(tmp_path, task_mode, exit_code, cancelled, restart_expected):
+    from nvflare.apis.job_launcher_spec import JobHandleSpec
+    from nvflare.app_opt.job_launcher.workspace_cell_transfer import WORKSPACE_READY_FILE
+    from nvflare.private.defs import JobOutcomeMsgKey
+    from nvflare.private.fed.client.client_executor import _RESTART_KEY, JobExecutor, _JobRestart
+    from nvflare.private.fed.client.client_status import ClientStatus
+
+    handle = _make_handle(workspace_job_id="job-1")
+    handle.pod_uid = "cj-uid"
+    info = tmp_path.stat()
+    handle.workspace_reservation = (str(tmp_path), info.st_dev, info.st_ino)
+    (tmp_path / WORKSPACE_READY_FILE).touch()
+    handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle, exit_code=exit_code)
+    if task_mode:
+        handle.task_owner = Mock()
+        handle.task_owner.backend.cleanup_timeout = 1
+        handle.task_owner.thread.is_alive.return_value = False
+    if cancelled:
+        handle.terminate()
+
+    client, ctx = MagicMock(), _make_launch_fl_ctx()
+    executor = JobExecutor(client, "startup")
+    executor.max_cj_restart_failures = 3
+    executor.run_processes["job-1"] = {
+        RunProcessKey.JOB_HANDLE: handle,
+        RunProcessKey.STATUS: ClientStatus.STARTED,
+        _RESTART_KEY: _JobRestart(Mock(), {}, {}),
+    }
+    replacement = MagicMock(spec=JobHandleSpec)
+    replacement.poll.return_value = JobReturnCode.SUCCESS
+
+    def launch(_job_id, _restart, pending, fl_ctx):
+        assert fl_ctx.get_prop(FLContextKey.JOB_RESTART_HANDLE) is handle
+        pending.attach(replacement)
+
+    executor._launch_job = Mock(side_effect=launch)
+    # An abrupt CJ exit leaves no process.rc in CP's separate private workspace.
+    executor._wait_child_process_finish(client, "job-1", None, None, None, str(tmp_path / "cp"), ctx)
+    assert executor._launch_job.call_count == int(restart_expected)
+    assert not executor.run_processes
+    assert ctx.get_prop(FLContextKey.JOB_RESTART_HANDLE) is None
+    outcome = client.send_request_before_shutdown.call_args.kwargs["request"].payload
+    assert outcome[JobOutcomeMsgKey.CODE] == (9 if cancelled else 0 if restart_expected else exit_code)
+
+
+@pytest.mark.parametrize(
+    "fault", ["ephemeral", "uninitialized", "node-lost", "missing", "api-error", "different-uid", "cancelled"]
+)
+def test_recovery_requires_durable_initialized_workspace_and_confirmed_cj(recoverable_cj, tmp_path, fault):
+    from nvflare.app_opt.job_launcher.workspace_cell_transfer import WORKSPACE_READY_FILE
+
+    handle = recoverable_cj
+    pod = handle.api_instance.read_namespaced_pod.return_value
+    if fault == "ephemeral":
+        handle.workspace_reservation = None
+    elif fault == "uninitialized":
+        (tmp_path / WORKSPACE_READY_FILE).unlink()
+    elif fault == "node-lost":
+        pod.status.reason = "NodeLost"
+    elif fault == "different-uid":
+        pod.metadata.uid = "replacement"
+    elif fault == "cancelled":
+        handle.terminate()
+    else:
+        handle.api_instance.read_namespaced_pod.side_effect = _FakeApiException(
+            status=404 if fault == "missing" else 503
+        )
+    assert handle.can_restart() is False
+
+
+@pytest.mark.parametrize("outcome", ["settled", "timeout", "cancelled"])
+@pytest.mark.parametrize("order", ["worker-first", "cj-first", "together"])
+def test_recovery_waits_for_cj_sandbox_and_cp_owned_tasks(recoverable_cj, monkeypatch, outcome, order):
+    handle = recoverable_cj
+    owner = handle.task_owner = Mock()
+    owner.backend.cleanup_timeout = 1
+    owner.thread.is_alive.return_value = order != "worker-first"
+    pod = handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle, sandbox_down=order == "cj-first")
+
+    def advance(_):
+        if outcome == "settled":
+            pod.status.conditions[0].status = "False"
+            owner.thread.is_alive.return_value = False
+        elif outcome == "cancelled":
+            handle.terminate()
+
+    with patch("nvflare.app_opt.job_launcher.k8s_launcher.time") as clock:
+        clock.monotonic.side_effect = [0, 0, 2]
+        clock.sleep.side_effect = advance
+        assert handle.can_restart() == (outcome == "settled")
+        clock.sleep.assert_called_once()
+
+
+def test_recovery_cannot_adopt_a_replaced_workspace(tmp_path, recoverable_cj):
+    launcher = _task_profile(tmp_path)
+    subpath = launcher._prepare_workspace_subpath("job-1", _TASK_SITE)
+    directory = tmp_path / subpath
+    info = directory.stat()
+    recoverable_cj.workspace_reservation = (str(directory), info.st_dev, info.st_ino)
+    directory.rename(directory.with_name("old"))
+    directory.mkdir()
+    with pytest.raises(ValueError, match="differs"):
+        launcher._prepare_workspace_subpath("job-1", _TASK_SITE, recoverable_cj)
+
+
+@pytest.mark.parametrize("fault", ["sidecar", "host", "missing-volume", "wrong-mount", "unknown-lifetime"])
+def test_unsupported_cj_profiles_fail_before_submission(tmp_path, fault):
+    path = tmp_path / "client.json"
+    path.write_text(json.dumps({"execution_lifetime": "other" if fault == "unknown-lifetime" else "task"}))
+    workspace = SimpleNamespace(get_client_app_config_file_path=lambda _: str(path))
+    manifest = {
+        "spec": {
+            "volumes": [{"name": "workspace-job", "emptyDir": {}}],
+            "containers": [
+                {"name": "cj", "volumeMounts": [{"name": "workspace-job", "mountPath": "/var/tmp/nvflare/workspace"}]}
+            ],
+        }
+    }
+    if fault == "sidecar":
+        manifest["spec"]["containers"].append({"name": "sidecar"})
+    elif fault == "host":
+        manifest["spec"]["hostPID"] = True
+    elif fault == "missing-volume":
+        manifest["spec"]["volumes"] = []
+    elif fault == "wrong-mount":
+        manifest["spec"]["containers"][0]["volumeMounts"][0]["mountPath"] = "/other"
+    with pytest.raises(ValueError):
+        launcher = _task_profile(tmp_path)
+        context = Mock()
+        context.get_prop.return_value = workspace
+        lifetime = launcher.get_execution_lifetime({JobConstants.JOB_ID: _TASK_JOB_ID}, context)
+        launcher.prepare_job_manifest(
+            copy.deepcopy(manifest), _TASK_JOB_ID, _TASK_SITE, workspace, execution_lifetime=lifetime
+        )
+
+
+def test_subpaths_are_site_and_job_scoped_without_raw_path_components():
+    paths = {
+        job_workspace_subpath(job, site) for job in (_TASK_JOB_ID, "../other") for site in (_TASK_SITE, "site/other")
+    }
+    assert len(paths) == 4
+    assert all(path.startswith("nvflare-tasks/") and ".." not in path for path in paths)
+
+
+@pytest.mark.parametrize("uid,gid", [(0, 1000), (1000, 0), (True, 1000), (1000, "1000")])
+def test_profile_requires_numeric_nonroot_filesystem_identity(uid, gid):
+    with pytest.raises(ValueError, match="explicit positive numeric ID"):
+        task_security_context(uid, gid)
+
+
+def test_cp_creates_fresh_owned_subpath_without_reusing_retained_workspace(tmp_path):
+    launcher = _task_profile(tmp_path)
+    if os.getuid() == 0:
+        with pytest.raises(ValueError, match="same nonroot numeric UID"):
+            launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+        return
+    subpath = launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+    directory = tmp_path / subpath
+    assert directory.is_dir()
+    assert directory.stat().st_uid == os.getuid()
+    (directory / "retained-result").write_bytes(b"do not discard")
+    with pytest.raises(ValueError, match="retained job/site data cannot be reused"):
+        launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+    assert (directory / "retained-result").read_bytes() == b"do not discard"
+
+
+def test_cp_rejects_unmounted_pvc_or_replaced_parent(tmp_path):
+    launcher = _task_profile(tmp_path / "unmounted")
+    with pytest.raises(ValueError, match="already be mounted"):
+        launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+    (tmp_path / "outside").mkdir()
+    (tmp_path / "nvflare-tasks").symlink_to(tmp_path / "outside")
+    with pytest.raises(ValueError, match="real directory"):
+        _task_profile(tmp_path)._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["job_workspace_pvc", "job_workspace_pvc_root", "run_as_user", "run_as_group"],
+)
+def test_client_task_settings_must_be_complete(missing):
+    settings = {
+        "job_workspace_pvc": "existing-pvc",
+        "job_workspace_pvc_root": "/cp/task-pvc",
+        "run_as_user": 1000,
+        "run_as_group": 1000,
+    }
+    settings.pop(missing)
+    with pytest.raises(ValueError, match="together"):
+        ClientK8sJobLauncher(config_file_path=None, **settings)
+
+
+@pytest.mark.parametrize("phase", ["Unknown", "Pending"])
+def test_never_started_task_cj_is_terminated_and_cp_owner_retains_cleanup(phase):
+    api = Mock()
+    api.read_namespaced_pod.return_value = SimpleNamespace(
+        status=SimpleNamespace(
+            phase=phase,
+            conditions=[SimpleNamespace(type="PodScheduled", status="True")],
+            container_statuses=[
+                SimpleNamespace(
+                    state=SimpleNamespace(waiting=SimpleNamespace(reason="ImagePullBackOff", message="pull failed"))
+                )
+            ],
+        )
+    )
+    handle = _make_handle(api=api)
+    owner = handle.task_owner = Mock()
+    handle.wait()
+    assert handle.poll() == JobReturnCode.EXCEPTION
+    owner.close.assert_called()
+    owner.release.assert_called()
+    api.delete_namespaced_pod.assert_called_once()
+
+
+def test_resident_persistence_is_an_explicit_site_choice(tmp_path):
+    launcher = _task_profile(tmp_path, persist_resident_workspaces=False)
+    manifest = {"spec": {"volumes": [{"name": "workspace-job", "emptyDir": {}}]}}
+    launcher.prepare_job_manifest(manifest, _TASK_JOB_ID, _TASK_SITE, None, execution_lifetime="job")
+    assert manifest["spec"]["volumes"][0] == {"name": "workspace-job", "emptyDir": {}}
+    assert not (tmp_path / job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)).exists()
+
+
+def test_persistent_profile_preserves_site_security_context(tmp_path, monkeypatch):
+    launcher = _task_profile(tmp_path)
+    _mock_job_workspace_owner(monkeypatch, launcher)
+    manifest = {
+        "spec": {
+            "securityContext": {
+                "seccompProfile": {"type": "RuntimeDefault"},
+                "supplementalGroups": [2000],
+                "runAsUser": 0,
+            },
+            "volumes": [{"name": "workspace-job", "emptyDir": {}}],
+            "containers": [
+                {
+                    "name": "cj",
+                    "securityContext": {"readOnlyRootFilesystem": True, "privileged": True},
+                    "volumeMounts": [{"name": "workspace-job", "mountPath": launcher.workspace_mount_path}],
+                }
+            ],
+        }
+    }
+    launcher.prepare_job_manifest(manifest, _TASK_JOB_ID, _TASK_SITE, None, execution_lifetime="job")
+    assert manifest["spec"]["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
+    assert manifest["spec"]["securityContext"]["supplementalGroups"] == [2000]
+    assert manifest["spec"]["securityContext"]["runAsUser"] == launcher.job_security_context["runAsUser"]
+    security = manifest["spec"]["containers"][0]["securityContext"]
+    assert security["readOnlyRootFilesystem"] is True
+    assert security["privileged"] is False
+
+
+@pytest.mark.parametrize("replacement", ["empty", "data", "symlink", "other-inode"])
+def test_failed_submission_cleanup_only_removes_the_fresh_empty_directory(tmp_path, replacement):
+    launcher = _task_profile(tmp_path)
+    directory = tmp_path / "fresh"
+    directory.mkdir()
+    info = directory.stat()
+    if replacement == "data":
+        (directory / "checkpoint").write_text("retain")
+    elif replacement == "symlink":
+        directory.rmdir()
+        target = tmp_path / "target"
+        target.mkdir()
+        directory.symlink_to(target, target_is_directory=True)
+    elif replacement == "other-inode":
+        directory.rename(tmp_path / "original")
+        directory.mkdir()
+    launcher._discard_empty_workspace(str(directory), info.st_dev, info.st_ino)
+    assert directory.exists() == (replacement != "empty")
+
+
+@pytest.fixture
+def startup_ca():
+    import datetime
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test-federation")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .sign(key, hashes.SHA256())
+        .public_bytes(serialization.Encoding.PEM)
+    )
+
+
+@pytest.mark.parametrize("name", [None, "federation-a.site-1", "a" * 253])
+@pytest.mark.parametrize("launcher_name", ["ClientK8sJobLauncher", "ServerK8sJobLauncher"])
+def test_startup_secret_name_defaults_or_uses_site_override(tmp_path, startup_ca, name, launcher_name):
+    from nvflare.app_opt.job_launcher.k8s_launcher import _STARTUP_FEDERATION_LABEL
+
+    (tmp_path / "rootCA.pem").write_bytes(startup_ca)
+    import nvflare.app_opt.job_launcher.k8s_launcher as launchers
+
+    launcher = getattr(launchers, launcher_name)(config_file_path=None, startup_secret_name=name)
+    launcher.core_v1 = Mock()
+    actual = launcher._ensure_startup_secret("server", str(tmp_path))
+    assert actual == (name or f"nvflare-job-startup-{site_name_to_rfc1123('server')}")
+    body = launcher.core_v1.create_namespaced_secret.call_args.kwargs["body"]
+    assert body["metadata"]["name"] == actual
+    assert len(body["metadata"]["labels"][_STARTUP_FEDERATION_LABEL]) == 52
+
+
+@pytest.mark.parametrize("name", ["", "Bad", "-bad", "bad-", "a..b", ".bad", "bad.", "a_b", "a/b", "a" * 254, 3])
+def test_startup_secret_name_rejects_invalid_dns_names(name):
+    with pytest.raises(ValueError, match="startup_secret_name"):
+        ClientK8sJobLauncher(config_file_path=None, startup_secret_name=name)
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("same_federation", [False, True])
+def test_startup_secret_replacement_checks_federation_and_resource_version(
+    tmp_path, startup_ca, legacy, same_federation
+):
+    startup = tmp_path / "startup"
+    startup.mkdir()
+    (startup / "rootCA.pem").write_bytes(startup_ca)
+    launcher = ClientK8sJobLauncher(config_file_path=None)
+    api = launcher.core_v1 = Mock()
+    launcher._ensure_startup_secret("server", str(startup))
+    first = copy.deepcopy(api.create_namespaced_secret.call_args.kwargs["body"])
+    api.create_namespaced_secret.side_effect = _FakeApiException(status=409)
+    labels = {} if legacy else first["metadata"]["labels"]
+    api.read_namespaced_secret.return_value = SimpleNamespace(
+        metadata=SimpleNamespace(labels=labels, resource_version="42"), data=first["data"]
+    )
+    # A new trust root is a different federation even with identical participant names.
+    if not same_federation:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+
+        original = x509.load_pem_x509_certificate(startup_ca)
+        key = ec.generate_private_key(ec.SECP256R1())
+        import datetime
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        other = (
+            x509.CertificateBuilder()
+            .subject_name(original.subject)
+            .issuer_name(original.issuer)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now)
+            .not_valid_after(now + datetime.timedelta(days=1))
+            .sign(key, hashes.SHA256())
+            .public_bytes(serialization.Encoding.PEM)
+        )
+        (startup / "rootCA.pem").write_bytes(other)
+        with pytest.raises(ValueError, match="different federation"):
+            launcher._ensure_startup_secret("server", str(startup))
+        api.replace_namespaced_secret.assert_not_called()
+    else:
+        (startup / "fed_client.json").write_text('{"changed":true}')
+        launcher._ensure_startup_secret("server", str(startup))
+        replacement = api.replace_namespaced_secret.call_args.kwargs["body"]
+        assert replacement["metadata"]["resourceVersion"] == "42"
+        assert replacement["metadata"]["labels"] == first["metadata"]["labels"]
+        assert "fed_client.json" in replacement["data"]
+
+
+@pytest.mark.parametrize("race", ["read_404", "replace_404", "replace_409"])
+def test_startup_secret_conflicts_do_not_bypass_ownership_checks(tmp_path, race):
+    launcher = ClientK8sJobLauncher(config_file_path=None)
+    api = launcher.core_v1 = Mock()
+    api.create_namespaced_secret.side_effect = [_FakeApiException(status=409), None]
+    api.read_namespaced_secret.return_value = SimpleNamespace(
+        metadata=SimpleNamespace(labels={}, resource_version="1"),
+        data={},
+    )
+    if race == "read_404":
+        api.read_namespaced_secret.side_effect = _FakeApiException(status=404)
+    else:
+        api.replace_namespaced_secret.side_effect = _FakeApiException(status=404 if race == "replace_404" else 409)
+        if race == "replace_404":
+            api.read_namespaced_secret.side_effect = [
+                api.read_namespaced_secret.return_value,
+                _FakeApiException(status=404),
+            ]
+    if race == "replace_409":
+        with pytest.raises(_FakeApiException):
+            launcher._ensure_startup_secret("server", str(tmp_path))
+        assert api.create_namespaced_secret.call_count == 1
+    else:
+        launcher._ensure_startup_secret("server", str(tmp_path))
+        assert api.create_namespaced_secret.call_count == 2
+        assert "resourceVersion" not in api.create_namespaced_secret.call_args.kwargs["body"]["metadata"]
+
+
+def test_kubernetes_cj_profile_uses_shared_resource_lifetime_classifier(tmp_path):
+    launcher = _task_profile(tmp_path)
+    context = Mock()
+    context.get_identity_name.return_value = "site-1"
+    workspace = context.get_prop.return_value
+    workspace.get_client_app_config_file_path.return_value = "unused.json"
+    with (
+        patch(
+            "nvflare.app_opt.job_launcher.k8s_launcher.ConfigService.load_config_dict",
+            return_value={"execution_lifetime": "task"},
+        ),
+        patch(
+            "nvflare.app_opt.job_launcher.k8s_launcher.get_client_execution_lifetime", return_value="job"
+        ) as classify,
+    ):
+        assert launcher.get_execution_lifetime({JobConstants.JOB_ID: "job"}, context) == "job"
+    classify.assert_called_once_with({"execution_lifetime": "task"})
+
+
+def test_startup_secret_without_observed_version_cannot_be_overwritten(tmp_path):
+    launcher = ClientK8sJobLauncher(config_file_path=None)
+    api = launcher.core_v1 = Mock()
+    api.create_namespaced_secret.side_effect = _FakeApiException(status=409)
+    api.read_namespaced_secret.return_value = SimpleNamespace(
+        metadata=SimpleNamespace(labels={}, resource_version=None), data={}
+    )
+    with pytest.raises(ValueError, match="resourceVersion"):
+        launcher._ensure_startup_secret("server", str(tmp_path))
+    api.replace_namespaced_secret.assert_not_called()
+
+
+@pytest.mark.parametrize("profile", ["unchanged", "legacy", "changed"])
+def test_concurrent_same_federation_launches_share_the_startup_secret(tmp_path, startup_ca, profile):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    (tmp_path / "rootCA.pem").write_bytes(startup_ca)
+    launcher = ClientK8sJobLauncher(config_file_path=None)
+    api = launcher.core_v1 = Mock()
+    launcher._ensure_startup_secret("server", str(tmp_path))
+    stored = copy.deepcopy(api.create_namespaced_secret.call_args.kwargs["body"])
+    stored["metadata"]["resourceVersion"] = "1"
+    if profile == "legacy":
+        stored["metadata"]["labels"] = {}
+    elif profile == "changed":
+        (tmp_path / "fed_server.json").write_text('{"updated":true}')
+    api.create_namespaced_secret.side_effect = _FakeApiException(status=409)
+    barrier = threading.Barrier(2)
+    lock = threading.Lock()
+    reads = 0
+
+    def read(**kwargs):
+        nonlocal reads
+        with lock:
+            snapshot = copy.deepcopy(stored)
+            reads += 1
+            initial = reads <= 2
+        if initial:
+            barrier.wait(timeout=5)
+        return SimpleNamespace(
+            metadata=SimpleNamespace(
+                labels=snapshot["metadata"]["labels"], resource_version=snapshot["metadata"]["resourceVersion"]
+            ),
+            data=snapshot["data"],
+        )
+
+    def replace(*, body, **kwargs):
+        nonlocal stored
+        with lock:
+            if body["metadata"]["resourceVersion"] != stored["metadata"]["resourceVersion"]:
+                raise _FakeApiException(status=409)
+            stored = copy.deepcopy(body)
+            stored["metadata"]["resourceVersion"] = str(int(stored["metadata"]["resourceVersion"]) + 1)
+
+    api.read_namespaced_secret.side_effect = read
+    api.replace_namespaced_secret.side_effect = replace
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(launcher._ensure_startup_secret, "server", str(tmp_path)) for _ in range(2)]
+        names = [future.result(timeout=10) for future in futures]
+    assert names[0] == names[1]
+    assert stored["metadata"]["resourceVersion"] == ("1" if profile == "unchanged" else "2")
+    if profile == "unchanged":
+        api.replace_namespaced_secret.assert_not_called()
+    else:
+        assert api.replace_namespaced_secret.call_count == 2
+
+
+def test_startup_secret_conflict_revalidates_federation_before_retry(tmp_path):
+    from nvflare.app_opt.job_launcher.k8s_launcher import _STARTUP_FEDERATION_LABEL
+
+    launcher = ClientK8sJobLauncher(config_file_path=None)
+    api = launcher.core_v1 = Mock()
+    api.create_namespaced_secret.side_effect = _FakeApiException(status=409)
+    api.read_namespaced_secret.side_effect = [
+        SimpleNamespace(metadata=SimpleNamespace(labels={}, resource_version="1"), data={}),
+        SimpleNamespace(
+            metadata=SimpleNamespace(labels={_STARTUP_FEDERATION_LABEL: "another-federation"}, resource_version="2"),
+            data={},
+        ),
+    ]
+    api.replace_namespaced_secret.side_effect = _FakeApiException(status=409)
+    with pytest.raises(ValueError, match="different federation"):
+        launcher._ensure_startup_secret("server", str(tmp_path))
+    api.replace_namespaced_secret.assert_called_once()
+
+
+@pytest.mark.parametrize("launcher_name", ["ClientK8sJobLauncher", "ServerK8sJobLauncher"])
+@pytest.mark.parametrize("site_name", ["site-1", "Site-1"])
+def test_public_job_startup_secret_preserves_deployment_staged_kit(tmp_path, startup_ca, launcher_name, site_name):
+    import nvflare.app_opt.job_launcher.k8s_launcher as launchers
+    from nvflare.tool.deploy.k8s_stage import _build_volume_bundle, _default_k8_stage_resource_names, _secret_manifest
+
+    (tmp_path / "rootCA.pem").write_bytes(startup_ca)
+    (tmp_path / "fed_client.json").write_text("{}")
+    (tmp_path / "client.key").write_bytes(b"site-private-key-canary")
+    staged = _build_volume_bundle(tmp_path)
+    _, cp_secret_name = _default_k8_stage_resource_names(tmp_path, {"siteName": site_name})
+    cp_secret = _secret_manifest(cp_secret_name, "site", staged["data"])
+    original = copy.deepcopy(cp_secret)
+    secrets = {cp_secret_name: cp_secret}
+
+    def create(namespace, body):
+        name = body["metadata"]["name"]
+        if name in secrets:
+            raise _FakeApiException(status=409)
+        secrets[name] = copy.deepcopy(body)
+
+    launcher = getattr(launchers, launcher_name)(config_file_path=None, namespace="site")
+    api = launcher.core_v1 = Mock()
+    api.create_namespaced_secret.side_effect = create
+    job_secret_name = launcher._ensure_startup_secret(site_name, str(tmp_path))
+
+    assert job_secret_name != cp_secret_name
+    assert secrets[cp_secret_name] == original
+    # CP's projected keys and private kit are unchanged; jobs mount only public files.
+    for item in staged["items"]:
+        assert secrets[cp_secret_name]["data"][item["key"]] == original["data"][item["key"]]
+    assert set(secrets[job_secret_name]["data"]) == {"rootCA.pem", "fed_client.json"}
+    api.read_namespaced_secret.assert_not_called()
+    api.replace_namespaced_secret.assert_not_called()
+
+
+@pytest.mark.parametrize("operation", ["handle_cleanup", "launch_cleanup", "owner_reference"])
+def test_secret_failure_logs_omit_api_response_contents(caplog, operation):
+    canary = "credential-body-canary"
+    api = Mock()
+    api.delete_namespaced_secret.side_effect = RuntimeError(canary)
+    api.patch_namespaced_secret.side_effect = RuntimeError(canary)
+    if operation == "handle_cleanup":
+        handle = _make_handle(api=api)
+        handle.credential_secret_name = "credential-name-canary"
+        handle._delete_credential_secret()
+    else:
+        launcher = ClientK8sJobLauncher(config_file_path=None)
+        launcher.core_v1 = api
+        if operation == "launch_cleanup":
+            launcher._delete_secret("credential-name-canary")
+        else:
+            launcher._own_credential_secret("credential-name-canary", "pod", Mock())
+    assert "Secret" in caplog.text
+    assert canary not in caplog.text
+    assert "credential-name-canary" not in caplog.text
+
+
+def test_startup_override_refuses_deployment_private_kit(tmp_path, startup_ca):
+    from nvflare.tool.deploy.k8s_stage import _build_volume_bundle
+
+    (tmp_path / "rootCA.pem").write_bytes(startup_ca)
+    (tmp_path / "client.key").write_bytes(b"site-private-key-canary")
+    staged = _build_volume_bundle(tmp_path)
+    launcher = ClientK8sJobLauncher(config_file_path=None, startup_secret_name="cp-private-kit")
+    api = launcher.core_v1 = Mock()
+    api.create_namespaced_secret.side_effect = _FakeApiException(status=409)
+    api.read_namespaced_secret.return_value = SimpleNamespace(
+        metadata=SimpleNamespace(labels={}, resource_version="42"), data=staged["data"]
+    )
+    with pytest.raises(ValueError, match="unique startup_secret_name"):
+        launcher._ensure_startup_secret(_TASK_SITE, str(tmp_path))
+    api.replace_namespaced_secret.assert_not_called()

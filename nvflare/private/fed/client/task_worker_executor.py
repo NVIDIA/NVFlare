@@ -20,10 +20,11 @@ import json
 import os
 import sys
 import threading
+import time
 from contextlib import contextmanager
+from dataclasses import replace
 from functools import partial
 
-from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -32,11 +33,11 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.task_launcher_spec import TaskLaunchRequest
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
 from nvflare.apis.utils.task_utils import materialize_lazy_download_refs
-from nvflare.app_common.executors.client_api_executor import FED_ANALYTIC_EVENT_TYPE
 from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.fobs import FOBSContextKey
-from nvflare.job_config.task_execution import validate_task_resources
-from nvflare.private.defs import CellChannel
+from nvflare.private.defs import CellChannel, RequestHeader
+from nvflare.private.fed.task_worker import cell_session
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import (
     TaskAttemptIdentity,
@@ -76,9 +77,10 @@ class TaskWorkerExecutor(Executor):
         self._done = threading.Event()
         self._done.set()
         self._started = False
+        self._start_error = None
         self._ending = False
         self._panic_reported = False
-        self._completed_attempts = set()
+        self._completed_attempts = {}
 
     def handle_event(self, event_type, fl_ctx):
         try:
@@ -89,8 +91,20 @@ class TaskWorkerExecutor(Executor):
                     cell = fl_ctx.get_engine().get_cell()
                     if cell is None:
                         raise RuntimeError("task lifetime requires a Cell from the engine")
+                    self._started = False
+                try:
+                    self.policy.launcher.handle_event(event_type, fl_ctx)
+                    # Workers join CJ with site internal security and the
+                    # launcher's worker-reachable address on CJ's own port.
+                    cell_session.listen(cell, self.policy.launcher.get_worker_listener_host())
+                    cell.decode_pass_through_topics.add(_TASK_ROUTE)
+                except Exception as error:
+                    self._start_error = str(error)
+                    self.system_panic(f"task launcher START_RUN failed: {error}", fl_ctx)
+                    raise
+                with self._state_lock:
                     self._started = True
-                cell.decode_pass_through_topics.add(_TASK_ROUTE)
+                    self._start_error = None
             elif event_type == EventType.ABORT_TASK:
                 self.supervisor.cancel_active()
             elif event_type in (EventType.ABOUT_TO_END_RUN, EventType.END_RUN):
@@ -98,13 +112,18 @@ class TaskWorkerExecutor(Executor):
                     fl_ctx.get_engine().get_cell().decode_pass_through_topics.discard(_TASK_ROUTE)
                 with self._state_lock:
                     self._ending = True
-                self.supervisor.end_run()
-                if (
-                    event_type == EventType.END_RUN
-                    and not self._done.wait(self.policy.settlement_timeout)
-                    and self.supervisor.owns_execution
-                ):
-                    self.system_panic("task worker launch/execution is still owned during job shutdown", fl_ctx)
+                parent_owned = getattr(self.policy.launcher, "cleanup_owned_by_parent", False) is True
+                if event_type == EventType.END_RUN and parent_owned:
+                    # CP already owns every accepted request, including lost replies
+                    # and in-flight creates. CJ exit cannot discard that owner.
+                    try:
+                        self.policy.launcher.handle_event(event_type, fl_ctx)
+                    finally:
+                        self.supervisor.end_run()
+                elif event_type == EventType.END_RUN:
+                    self._end_native_run(fl_ctx)
+                else:
+                    self.supervisor.end_run()
             elif event_type == EventType.CHECK_END_RUN_READINESS:
                 if not self._done.is_set() or self.supervisor.settlement_unconfirmed:
                     fl_ctx.set_prop(FLContextKey.NOT_READY_TO_END_RUN, True, private=True, sticky=False)
@@ -112,6 +131,20 @@ class TaskWorkerExecutor(Executor):
                 self._record_receipt(fl_ctx)
         finally:
             self._report_issues(fl_ctx)
+
+    def _end_native_run(self, fl_ctx):
+        # Readiness has a finite budget and event dispatch catches exceptions.
+        # The native cleanup owner must therefore hold END_RUN itself until a
+        # late launch returns and physical settlement has actually been proved.
+        while True:
+            try:
+                self.supervisor.end_run()
+            except Exception as error:
+                self.log_warning(fl_ctx, f"native task cleanup failed; retaining CJ and retrying: {error}")
+            self._report_issues(fl_ctx)
+            if not self.supervisor.owns_execution and self._done.is_set():
+                return
+            time.sleep(self.policy.poll_interval)
 
     def _report_issues(self, fl_ctx):
         for level, message in self.supervisor.take_issues():
@@ -123,14 +156,22 @@ class TaskWorkerExecutor(Executor):
         if panic:
             self.system_panic("task worker settlement is unconfirmed; retaining ownership and stopping the job", fl_ctx)
 
-    @staticmethod
-    def _identity(task_name, fl_ctx):
+    def _attempt_id(self, fl_ctx):
+        attempt_id = fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)
+        launch_id = ConfigService.get_str_var(RequestHeader.CJ_LAUNCH_ID)
+        if launch_id and isinstance(attempt_id, str) and attempt_id:
+            # The server assignment survives CJ recovery; each physical worker
+            # needs a fresh identity after CP confirms prior worker shutdown.
+            return hashlib.sha256(json.dumps([launch_id, attempt_id]).encode()).hexdigest()
+        return attempt_id
+
+    def _identity(self, task_name, fl_ctx):
         return TaskAttemptIdentity(
             fl_ctx.get_job_id(),
             fl_ctx.get_identity_name(),
             fl_ctx.get_prop(FLContextKey.TASK_ID),
             task_name,
-            fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID),
+            self._attempt_id(fl_ctx),
         )
 
     @staticmethod
@@ -165,20 +206,26 @@ class TaskWorkerExecutor(Executor):
         if not self._gate.acquire(blocking=False):
             raise RuntimeError("task worker executor already has an active attempt")
         self._done.clear()
-        identity = workspace = outcome = None
+        identity = workspace = outcome = session = None
         try:
             with self._state_lock:
                 if not self._started or self._ending:
-                    raise RuntimeError("task worker executor is not running")
+                    raise RuntimeError(self._start_error or "task worker executor is not running")
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
             identity = self._identity(task_name, fl_ctx)
             if identity in self._completed_attempts:
-                result = self.supervisor.read_saved_result(identity)
+                saved_identity = self._completed_attempts[identity]
+                result = self.supervisor.read_saved_result(saved_identity)
                 with self._checkpoint_commit_guard(abort_signal):
-                    fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, identity, private=True, sticky=False)
+                    fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, saved_identity, private=True, sticky=False)
                     return result
-            validate_task_resources(fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}, identity.site_name)
+            self.log_info(
+                fl_ctx,
+                f"Task {identity.task_id}: server attempt {fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)}, "
+                f"worker attempt {identity.attempt_id}",
+            )
+            resources = self.policy.task_resources(fl_ctx.get_prop(FLContextKey.JOB_META, {}) or {}, identity.site_name)
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT) or fl_ctx.get_workspace()
             runtime_root = self._runtime_root(workspace, identity.job_id)
             store = FileTaskArtifactStore(
@@ -188,14 +235,13 @@ class TaskWorkerExecutor(Executor):
                 json.dumps([self.executor_spec, task_name], sort_keys=True).encode("utf-8")
             ).hexdigest()
             checkpoint_file = os.path.join(runtime_root, "checkpoints", checkpoint_key + ".checkpoint")
-            bootstrap = WorkerBootstrap(
-                identity,
-                store.root_dir,
-                workspace.get_root_dir(),
-                self.executor_spec,
-                self.component_specs,
-                max_payload_bytes=self.policy.max_payload_bytes,
-            )
+            assignment = replace(identity, attempt_id=fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID))
+            outcome = self.supervisor.recover_checkpoint_result(assignment, store, checkpoint_file, runtime_root)
+            if outcome is not None:
+                self._completed_attempts[identity] = outcome.identity
+                with self._checkpoint_commit_guard(abort_signal):
+                    fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, outcome.identity, private=True, sticky=False)
+                    return outcome.result
 
             def request_factory(attempt, path):
                 store.prepare_checkpoint(attempt, checkpoint_file)
@@ -215,8 +261,22 @@ class TaskWorkerExecutor(Executor):
                     ),
                     environment=self.policy.worker_environment(),
                     cwd=workspace.get_run_dir(attempt.job_id),
+                    resources=resources,
                 )
 
+            # Metrics logged by the worker are fired into the job while the attempt is still owned.
+            session = cell_session.CellWorkerSession(
+                fl_ctx.get_engine().get_cell(), partial(self._fire_analytics, fl_ctx)
+            )
+            bootstrap = WorkerBootstrap(
+                identity,
+                store.root_dir,
+                workspace.get_root_dir(),
+                self.executor_spec,
+                self.component_specs,
+                max_payload_bytes=self.policy.max_payload_bytes,
+                cell_session=session.bootstrap_fields(),
+            )
             outcome = self.supervisor.run(
                 bootstrap=bootstrap,
                 store=store,
@@ -230,6 +290,8 @@ class TaskWorkerExecutor(Executor):
                     result_wait_deadline, store, identity, self.result_wait_timeout, self.policy.finalization_timeout
                 ),
             )
+            # The worker has settled: a record arriving now belongs to no owned attempt.
+            session.close(timeout=self.policy.settlement_timeout)
             # Finish fallible CJ replay/reporting before promoting application
             # state. The success path's finally block only releases ownership.
             self._report_issues(fl_ctx)
@@ -239,16 +301,18 @@ class TaskWorkerExecutor(Executor):
                 self.supervisor.retain_attempt(identity)
                 return make_reply(ReturnCode.TASK_ABORTED)
             fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, identity, private=True, sticky=False)
-            self._replay_analytics(outcome.analytics, fl_ctx)
             if outcome.result.get_return_code(default=ReturnCode.OK) == ReturnCode.OK:
                 store.commit_checkpoint(
                     outcome.completion,
                     checkpoint_file,
                     publication_guard=partial(self._checkpoint_commit_guard, abort_signal),
+                    assignment=assignment,
                 )
-            self._completed_attempts.add(identity)
+            self._completed_attempts[identity] = identity
             return outcome.result
         finally:
+            if session is not None:
+                session.close(timeout=self.policy.settlement_timeout)
             try:
                 if (
                     outcome is None
@@ -290,33 +354,22 @@ class TaskWorkerExecutor(Executor):
         except Exception as e:
             self.log_warning(fl_ctx, f"could not replay task worker log {path}: {e}")
 
-    def _replay_analytics(self, records, fl_ctx):
-        for record in records:
-            if record.get("event_type") not in (ANALYTIC_EVENT_TYPE, FED_ANALYTIC_EVENT_TYPE) or not isinstance(
-                record.get("federated"), bool
-            ):
-                raise ValueError("unsupported task worker analytics event")
-            send_analytic_dxo(
-                self,
-                from_shareable(record["data"]),
-                fl_ctx,
-                event_type=record["event_type"],
-                fire_fed_event=record["federated"],
-            )
+    def _fire_analytics(self, fl_ctx, data):
+        """Fire one metric the worker logged; runs on a cell thread while ``execute`` owns the attempt.
+
+        Raises only for a metric it cannot fire. Receiver failures are logged and recorded on ``fl_ctx`` by event
+        dispatch, as for a resident executor in job lifetime, so a failing tracking backend never fails training.
+        """
+        if not isinstance(data, Shareable):
+            raise ValueError("task worker analytics must be a DXO Shareable")
+        send_analytic_dxo(self, from_shareable(data), fl_ctx)
 
     def _record_receipt(self, fl_ctx):
         identity = fl_ctx.get_prop(TASK_ATTEMPT_IDENTITY)
         if not isinstance(identity, TaskAttemptIdentity):
             return
-        expected = (identity.job_id, identity.site_name, identity.task_id, identity.task_name, identity.attempt_id)
-        actual = (
-            fl_ctx.get_job_id(),
-            fl_ctx.get_identity_name(),
-            fl_ctx.get_prop(FLContextKey.TASK_ID),
-            fl_ctx.get_prop(FLContextKey.TASK_NAME),
-            fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID),
-        )
-        if actual != expected:
+        current = self._identity(fl_ctx.get_prop(FLContextKey.TASK_NAME), fl_ctx)
+        if self._completed_attempts.get(current, current) != identity:
             return
         result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
         if not isinstance(result, Shareable) or result.get_return_code(default=ReturnCode.OK) != ReturnCode.OK:

@@ -19,6 +19,7 @@ import sys
 import threading
 import uuid
 from argparse import Namespace
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, Mock, patch
 
@@ -38,6 +39,29 @@ class MockCell:
 
     def get_internal_listener_url(self):
         return "tcp://0:123"
+
+
+@pytest.mark.parametrize("extension", ["json", "conf", "yaml"])
+def test_exported_task_app_is_rejected_before_simulator_services_start(tmp_path, monkeypatch, extension):
+    source = Path(__file__).resolve().parents[4] / "data" / "jobs" / "valid_job"
+    job = tmp_path / "exported"
+    shutil.copytree(source, job)
+    config_path = job / "sag" / "config" / "config_fed_client.json"
+    config = json.loads(config_path.read_text())
+    config.update(format_version=3, execution_lifetime="task")
+    config_path.unlink()
+    config_path.with_suffix("." + extension).write_text(json.dumps(config))
+    monkeypatch.chdir(tmp_path)
+    runner = SimulatorRunner(str(job), str(tmp_path / "workspace"), n_clients=2, threads=1)
+    create_server = Mock(side_effect=AssertionError("must reject before simulator server startup"))
+    create_client = Mock(side_effect=AssertionError("must reject before simulator client startup"))
+    monkeypatch.setattr(runner.deployer, "create_fl_server", create_server)
+    monkeypatch.setattr(runner.deployer, "create_fl_client", create_client)
+
+    assert runner.setup() is False
+
+    create_server.assert_not_called()
+    create_client.assert_not_called()
 
 
 class TestSimulatorRunner:

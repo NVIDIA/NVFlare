@@ -23,6 +23,7 @@ import docker
 import nvflare
 from nvflare.apis.utils.format_check import name_check
 from nvflare.dashboard.utils import EnvVar
+from nvflare.fuel.utils.optional_dependencies import DASHBOARD_OPTIONAL_MODULES, require_optional_dependencies
 from nvflare.lighter import tplt_utils, utils
 
 supported_csp = ("azure", "aws")
@@ -165,6 +166,7 @@ def _fail_if_container_exited(container_obj):
 
 
 def start_local(env):
+    require_optional_dependencies("NVFlare Dashboard", "dashboard", DASHBOARD_OPTIONAL_MODULES)
     print("Local dashboard without docker is for development and test only")
     file_dir_path = os.path.dirname(__file__)
     wsgi_location = os.path.join(file_dir_path, "wsgi.py")

@@ -66,7 +66,7 @@ MODEL_LOCATOR_REGISTRY = {
 
 
 # User-settable keys whose values are dicts keyed by site name with dict values.
-_SITE_KEYED_META_KEYS = frozenset({JobMetaKey.RESOURCE_SPEC, JobMetaKey.JOB_LAUNCHER_SPEC})
+_SITE_KEYED_META_KEYS = frozenset({JobMetaKey.RESOURCE_SPEC, JobMetaKey.CJ_RESOURCE_SPEC, JobMetaKey.JOB_LAUNCHER_SPEC})
 
 
 def validate_aggregator_data_kind(
@@ -178,7 +178,7 @@ def _normalize_recipe_meta_value(key: JobMetaKey, key_str: str, value: Any) -> A
     """Validate ``value`` against the key's shape contract and return a
     JSON-normalized, caller-independent copy.
 
-    Per-key shapes: SCOPE is a plain string; RESOURCE_SPEC and JOB_LAUNCHER_SPEC
+    Per-key shapes: SCOPE is a plain string; RESOURCE_SPEC, CJ_RESOURCE_SPEC and JOB_LAUNCHER_SPEC
     are dicts keyed by site name with dict values; the remaining user-settable
     keys (CUSTOM_PROPS) are dicts. Catching shape errors here gives an immediate,
     contextual error instead of a late failure at server-side submission
@@ -230,7 +230,7 @@ def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
     would be silently overwritten.
 
     The value shape depends on the key: ``SCOPE`` takes a string;
-    ``RESOURCE_SPEC`` and ``JOB_LAUNCHER_SPEC`` take a dict keyed by site name
+    ``RESOURCE_SPEC``, ``CJ_RESOURCE_SPEC`` and ``JOB_LAUNCHER_SPEC`` take a dict keyed by site name
     with dict values; ``CUSTOM_PROPS`` takes a dict. Dict values must be
     completely JSON-serializable, cannot contain non-finite floats, and have
     their keys coerced to strings as they will appear in ``meta.json``. The

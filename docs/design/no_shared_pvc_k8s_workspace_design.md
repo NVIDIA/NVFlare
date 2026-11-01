@@ -1,10 +1,18 @@
 # Kubernetes Job Workspaces Without a Shared PVC
 
-This document describes the production no-shared-PVC workspace model used by
-the Kubernetes launcher. The data plane is CellNet/F3 streaming over the
-existing NVFlare communication stack. The parent participant does not expose a
-separate HTTP service for workspace transfer, and dynamically launched job pods
-do not mount the shared workspace PVC.
+This document describes the default ephemeral workspace profile for resident
+Kubernetes jobs. The data plane is CellNet/F3 streaming over the existing
+NVFlare communication stack. The parent participant does not expose a separate
+HTTP service for workspace transfer, and job Pods do not mount the parent's
+private workspace PVC.
+
+An optional persistent jobs profile uses a separate jobs PVC and assigned
+job/site subPaths, while still withholding the parent's private claim. Task mode
+requires that profile; resident jobs opt in with `persist_resident_workspaces`.
+Workspace download, startup Secrets and result upload remain in use. The
+[Kubernetes operator guide](../user_guide/admin_guide/deployment/kubernetes_task_launcher.rst)
+configures persistence; the emptyDir behavior below describes the default resident
+profile. Persistent files alone do not implement CJ resume.
 
 ## Goal
 

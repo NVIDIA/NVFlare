@@ -28,11 +28,23 @@ from .utils import (
     set_recipe_meta,
 )
 
+
+def is_export_requested() -> bool:
+    """Return whether Recipe consumed ``--export`` when this package was imported.
+
+    The recorded decision is unchanged by later edits to ``sys.argv``. Use this
+    accessor to validate script options without redeclaring Recipe's export flags.
+    """
+    exporting, _ = _args._peek_recipe_args()
+    return exporting
+
+
 __all__ = [
     "SimEnv",
     "PocEnv",
     "ProdEnv",
     "Run",
+    "is_export_requested",
     "add_experiment_tracking",
     "add_cross_site_evaluation",
     "add_final_global_evaluation",

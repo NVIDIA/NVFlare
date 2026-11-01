@@ -146,6 +146,9 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.14"
+      - name: Check unit-test timing contracts
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
+        run: python3 ci/check_unit_test_contracts.py
       - name: Run style checks
         if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         run: ./runtest.sh --torch-backend=cpu -s
@@ -223,14 +226,21 @@ jobs:
           NVFLARE_RUN_SKILL_TIER1: ${{ needs.skill-validation-selection.outputs.run-tier1-security }}
           NVFLARE_SKILL_TIER1_REQUIRED: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13' && needs.skill-validation-selection.outputs.run-tier1-security == 'true' }}
         run: ./runtest.sh --skip-install --numprocesses=auto -u
+      # These scenarios retain the unit matrix's OS/Python coverage, but run
+      # serially in a fresh pytest process with explicit lifecycle watchdogs.
+      - name: Run process and transport integration contracts
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
+        timeout-minutes: 15
+        run: python3 ci/run_process_contracts.py
       - name: Test full CI selection and failure fallback
         if: ${{ needs.full-ci-selection.outputs.run-full-ci == 'true' && matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
         run: python3 -m pytest -q tests/ci/test_should_run_full_ci.py
-      - name: Run Client API external-process lifecycle integration
+      - name: Run Client API lifecycle and CJ recovery integration
         if: ${{ needs.full-ci-selection.outputs.run-full-ci == 'true' && matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
         run: >-
           python3 -m pytest -q
           tests/integration_test/fast/client_api_external_process_lifecycle_test.py
+          tests/integration_test/fast/cj_recovery_e2e_test.py
       # Check the zero-argument learning gate and actual client-model submission
       # and evaluation across sites using the shared Hello PyTorch client.
       - name: Run Hello PyTorch learning and evaluation
@@ -310,6 +320,9 @@ jobs:
           uv pip install --system --no-deps "flwr>=1.16,<1.26"
       - name: Run unit test with coverage
         run: python3 -m pytest --numprocesses=auto -v --cov=nvflare --cov-report xml:cov.xml --dist loadgroup tests/unit_test
+      - name: Include process and transport contract coverage
+        timeout-minutes: 15
+        run: python3 ci/run_process_contracts.py --cov=nvflare --cov-append --cov-report xml:cov.xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         with:

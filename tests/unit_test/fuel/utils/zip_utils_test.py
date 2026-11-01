@@ -21,6 +21,7 @@ import pytest
 
 from nvflare.fuel.utils.zip_utils import (
     get_all_file_paths,
+    ls_zip_from_bytes,
     normpath_for_zip,
     remove_leading_dotdot,
     split_path,
@@ -130,3 +131,27 @@ class TestZipUtils:
             assert i[1] == j[1]
             assert i[2] == j[2]
         shutil.rmtree(temp_dir)
+
+    @pytest.mark.parametrize(
+        "cwd, root_dir, folder_name, expected_base",
+        [
+            (["a", "b"], "", "c", ["a", "b"]),
+            (["a", "b"], "", "./c", ["a", "b"]),
+            (["a", "b"], ".", "c", ["a", "b"]),
+            (["a", "b"], "c", "", ["a", "b", "c"]),
+            (["a", "b", "c"], ".", "", ["a", "b", "c"]),
+            (["a", "b", "c"], "", "", ["a", "b", "c"]),
+        ],
+    )
+    def test_zip_relative_root(self, create_fake_dir, monkeypatch, cwd, root_dir, folder_name, expected_base):
+        tmp_dir, _ = create_fake_dir
+        expected_folder = os.path.basename(os.path.normpath(folder_name)) if folder_name else ""
+        expected = zip_directory_to_bytes(os.path.join(tmp_dir, *expected_base), expected_folder)
+
+        monkeypatch.chdir(os.path.join(tmp_dir, *cwd))
+        zip_data = zip_directory_to_bytes(root_dir, folder_name)
+
+        names = sorted(i.filename for i in ls_zip_from_bytes(zip_data))
+        assert names == sorted(i.filename for i in ls_zip_from_bytes(expected))
+        if folder_name:
+            assert all(n.startswith("c/") for n in names)

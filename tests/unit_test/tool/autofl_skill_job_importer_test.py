@@ -43,6 +43,11 @@ def _load_importer():
     return module
 
 
+def _importer_records(caplog, module):
+    """Keep assertions on the importer's own log records, not other threads' in this worker."""
+    return [record for record in caplog.records if record.name == module.__name__]
+
+
 job_importer = _load_importer()
 AUTOFL_CONFIG_SCHEMA_VERSION = job_importer.AUTOFL_CONFIG_SCHEMA_VERSION
 DeterministicJobImporter = job_importer.DeterministicJobImporter
@@ -1690,16 +1695,15 @@ def test_importer_loads_and_imports_job_without_nvflare_in_agent_environment(
     config = isolated_importer.import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
 
     assert isolated_importer._core_looks_lower_is_better is isolated_importer._UNRESOLVED
-    assert not [record for record in caplog.records if record.name == isolated_importer.__name__]
+    assert _importer_records(caplog, isolated_importer) == []
     with caplog.at_level("WARNING", logger=isolated_importer.__name__):
         assert isolated_importer.likely_lower_is_better_metric("val_loss") is True
         assert isolated_importer.likely_lower_is_better_metric("val_loss") is True
     assert isolated_importer._core_looks_lower_is_better is isolated_importer._UNRESOLVED
-    importer_records = [record for record in caplog.records if record.name == isolated_importer.__name__]
-    assert len(importer_records) == 1
-    message = importer_records[0].getMessage()
-    assert f"{import_error.__name__}: NVFlare is unavailable in the agent environment" in message
-    assert "retrying on the next check" in message
+    records = _importer_records(caplog, isolated_importer)
+    assert len(records) == 1
+    assert f"{import_error.__name__}: NVFlare is unavailable in the agent environment" in records[0].getMessage()
+    assert "retrying on the next check" in records[0].getMessage()
     assert config["import"]["support"]["status"] == "supported"
 
 
@@ -1729,11 +1733,12 @@ def test_core_heuristic_resolution_retries_after_transient_import_failure(monkey
     assert isolated_importer._core_looks_lower_is_better is isolated_importer._UNRESOLVED
     assert isolated_importer.likely_lower_is_better_metric("val_loss") is False
     assert isolated_importer._core_looks_lower_is_better is core_heuristic
-    assert len(caplog.records) == 1
-    assert "RuntimeError: transient NVFlare initialization failure" in caplog.text
+    records = _importer_records(caplog, isolated_importer)
+    assert len(records) == 1
+    assert "RuntimeError: transient NVFlare initialization failure" in records[0].getMessage()
     assert isolated_importer.likely_lower_is_better_metric("val_loss") is False
     assert import_attempts == 2
-    assert len(caplog.records) == 1
+    assert len(_importer_records(caplog, isolated_importer)) == 1
     assert core_calls == ["val_loss", "val_loss"]
 
 

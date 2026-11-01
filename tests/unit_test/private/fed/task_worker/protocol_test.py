@@ -284,3 +284,50 @@ def test_bootstrap_carries_optional_site_payload_policy(tmp_path, bootstrap, lim
 def test_bootstrap_rejects_invalid_payload_policy(bootstrap, limit):
     with pytest.raises(ValueError, match="max_payload_bytes"):
         replace(bootstrap, max_payload_bytes=limit)
+
+
+CELL_SESSION = {"connect_url": "tcp://127.0.0.1:1", "worker_fqcn": "site-1.job-1.task_worker_1"}
+SECURE_CELL_SESSION = {
+    **CELL_SESSION,
+    "connect_url": "stcp://localhost:1",
+    "connection_security": "mtls",
+    "identity": "site-1",
+    "credentials": {
+        "ca_cert": "/kit/rootCA.pem",
+        "client_cert": "/run/job.crt",
+        "client_key": "/run/job.key",
+        "server_cert": "/run/job.crt",
+        "server_key": "/run/job.key",
+    },
+}
+
+
+@pytest.mark.parametrize("cell_session", [CELL_SESSION, SECURE_CELL_SESSION], ids=["clear", "secure"])
+def test_bootstrap_carries_the_optional_cell_session(tmp_path, bootstrap, cell_session):
+    configured = replace(bootstrap, cell_session=cell_session)
+    path = str(tmp_path / "bootstrap.json")
+    protocol.write_bootstrap(path, configured)
+    assert protocol.read_bootstrap(path).cell_session == cell_session
+    record = configured.to_dict()
+    record.pop("cell_session")
+    assert WorkerBootstrap.from_dict(record).cell_session is None
+
+
+@pytest.mark.parametrize(
+    "cell_session",
+    [
+        {**CELL_SESSION, "connect_url": ""},
+        {**CELL_SESSION, "token": "t"},
+        {**CELL_SESSION, "cj_fqcn": "x"},
+        {**CELL_SESSION, "worker_fqcn": "worker"},
+        dict(list(CELL_SESSION.items())[:-1]),
+        "tcp://x",
+        {**SECURE_CELL_SESSION, "secure": True},
+        {**SECURE_CELL_SESSION, "connection_security": ""},
+        {**SECURE_CELL_SESSION, "credentials": {"custom_ca_cert": "/kit/customRootCA.pem"}},
+        {**SECURE_CELL_SESSION, "credentials": {"client_key": "job.key"}},
+    ],
+)
+def test_bootstrap_rejects_an_invalid_cell_session(bootstrap, cell_session):
+    with pytest.raises(ValueError, match="cell_session"):
+        replace(bootstrap, cell_session=cell_session)
