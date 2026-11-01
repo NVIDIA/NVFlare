@@ -18,6 +18,7 @@ from nvflare.fuel.utils.validation_utils import (
     DefaultValuePolicy,
     check_job_name,
     check_non_empty_str,
+    check_non_negative_int,
     check_number_range,
     check_positive_int,
     check_positive_number,
@@ -249,3 +250,19 @@ class TestValidationUtils:
     def test_validate_candidates_error(self, var_name, candidate, base, default_policy, allow_none):
         with pytest.raises(ValueError):
             validate_candidates(var_name, candidate, base, default_policy, allow_none)
+
+    @pytest.mark.parametrize(
+        "check, value",
+        [
+            (check_positive_int, True),
+            (check_positive_int, False),
+            (check_non_negative_int, True),
+            (check_non_negative_int, False),
+        ],
+    )
+    def test_integer_validators_reject_booleans(self, check, value):
+        with pytest.raises(TypeError, match="must be an int"):
+            check("count", value)
+
+    def test_non_negative_int_accepts_zero(self):
+        check_non_negative_int("count", 0)
