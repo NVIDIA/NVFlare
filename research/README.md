@@ -15,6 +15,7 @@ local or upstream README for setup, data, and run instructions.
 
 | Project | Description |
 | --- | --- |
+| [FedMoSA: Federated Medical Image Segmentation under Modality Heterogeneity via Specialized Adapters](./fedmosa/README.md) | Federated SAM adaptation across clients with different modalities (CT/MR): modality-specialized and shared adapters, modality-restricted and modality-balanced aggregation and prototype alignment, using a custom `ModelController` and the Client API ([MICCAI 2026](https://link.springer.com/chapter/10.1007/978-3-032-38072-2_20)). |
 | [BreastG-FCL: Graph-Conditioned Federated Continual Learning for Breast Cancer Radiogenomics](./breastg-fcl/README.md) | TCGA-BRCA classification with TCIA spatial/temporal graph context, generative replay, and NVFlare Collab API execution ([IEEE HealthCom 2026](https://ryougish1k1.github.io/assets/pdf/qiangyang2026healthcom.pdf)). |
 | [FedRevive: Reviving Stale Updates with Data-Free Knowledge Distillation](./fedrevive/README.md) | CollabAPI implementation of FedAvg, FedBuff, and FedRevive under reproducible asynchronous arrival schedules ([arXiv 2025](https://arxiv.org/abs/2511.00655)). |
 | [FedCoRe: Federated Cross-Modal Representation Completion](./fedcore/README.md) | Missing-image completion with Qwen3-VL, valid-supervision aggregation, and an MNIST public quickstart ([arXiv 2026](https://arxiv.org/abs/2608.18311)). |
