@@ -269,6 +269,7 @@ def short_url(params: dict) -> str:
     subset = {
         k: params[k]
         for k in {DriverParams.SCHEME.value, DriverParams.HOST.value, DriverParams.PORT.value, DriverParams.PATH.value}
+        if k in params
     }
 
     return encode_url(subset)
