@@ -27,12 +27,17 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import (
     SUBMIT_TOKEN_JOB_DELETED_STATUS,
     FLContextKey,
+    ReservedKey,
     ReturnCode,
     ServerCommandKey,
     WorkspaceConstants,
 )
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey, RunStatus, SubmitRecordKey, SubmitRecordState
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.streaming import StreamContextKey
+from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
+from nvflare.app_common.streamers.log_streamer import KEY_FILE_NAME
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -1315,6 +1320,44 @@ def test_get_job_log_client_target_reads_live_workspace_log(tmp_path, monkeypatc
     assert payload == {"logs": {"site-1": "live client log\n"}}
     engine.job_def_manager.get_storage_component.assert_not_called()
     engine.job_def_manager.get_client_data.assert_not_called()
+
+
+@pytest.mark.parametrize("target", ["site-1", "all"])
+@pytest.mark.parametrize("file_name", ["log.txt", "log.json"])
+def test_get_job_log_reads_default_receiver_while_stream_is_open(tmp_path, monkeypatch, target, file_name):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    workspace = _FakeWorkspace(tmp_path / "external-log-root")
+    engine = _FakeServerEngine(workspace)
+    engine.get_client_from_name = lambda name: None
+    engine.get_component = lambda name: engine.job_def_manager
+    engine.job_def_manager.get_storage_component.return_value = None
+    engine.job_def_manager.list_components.return_value = []
+    engine.job_def_manager.get_client_data.return_value = None
+    job = _FakeListedJob({JobMetaKey.DEPLOY_MAP.value: {"app": ["server", "site-1"]}})
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1", JobCommandModule.JOB: job})
+    peer = FLContext()
+    peer.put(ReservedKey.IDENTITY_NAME, "site-1", private=True, sticky=False)
+    peer.put(ReservedKey.RUN_NUM, "job-1", private=True, sticky=False)
+    fl_ctx = FLContext()
+    fl_ctx.put(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    fl_ctx.set_peer_context(peer)
+    receiver = JobLogReceiver()
+    stream = {KEY_FILE_NAME: file_name, StreamContextKey.RC: ReturnCode.OK}
+    try:
+        receiver._on_chunk_received(b"round started\n", stream, fl_ctx)
+        engine.job_def_manager.set_client_data.assert_not_called()
+        JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", target, file_name])
+        payload, _ = conn.dicts.pop()
+        assert payload["logs"]["site-1"] == "round started\n"
+        receiver._on_chunk_received(b"batch finished\n", stream, fl_ctx)
+        JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", target, file_name])
+        payload, _ = conn.dicts.pop()
+        assert payload["logs"]["site-1"] == "round started\nbatch finished\n"
+        engine.job_def_manager.set_client_data.assert_not_called()
+        engine.job_def_manager.get_client_data.assert_not_called()
+    finally:
+        receiver._on_stream_done(stream, fl_ctx)
 
 
 def test_get_job_log_returns_selected_live_json_log_only(tmp_path, monkeypatch):
