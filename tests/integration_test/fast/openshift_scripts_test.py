@@ -18,13 +18,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from tests.git_test_utils import _git, require_signing_in_user_config
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _K8S_COMMON = _REPO_ROOT / "examples" / "devops" / "openshift" / "scripts" / "k8s_common.sh"
 _BUILD_IMAGES = _K8S_COMMON.with_name("build_images.sh")
-
-
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
 
 
 def _write_prepare_config(tmp_path: Path, **resources: str) -> str:
@@ -69,7 +67,8 @@ def test_prepare_config_allows_parent_request_overrides(tmp_path):
     assert 'memory: "4Gi"' in config
 
 
-def test_downloaded_image_builder_checks_out_provenance_revision(tmp_path):
+def test_downloaded_image_builder_checks_out_provenance_revision(tmp_path, monkeypatch):
+    require_signing_in_user_config(monkeypatch, tmp_path)
     repository = tmp_path / "repository"
     repository.mkdir()
     _git(repository, "init", "--quiet")
