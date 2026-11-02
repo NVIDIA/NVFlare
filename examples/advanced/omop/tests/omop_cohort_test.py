@@ -50,16 +50,18 @@ insert into condition_occurrence values
 """
 
 
-@pytest.fixture
-def cdm(tmp_path: Path) -> Path:
+@pytest.fixture(params=[None, "cdm"])
+def cdm(request: pytest.FixtureRequest, tmp_path: Path) -> tuple[Path, str | None]:
     database = tmp_path / "site-1.duckdb"
     with duckdb.connect(str(database)) as con:
+        if request.param:
+            con.execute(f"create schema {request.param}; use {request.param}")
         con.execute(CDM_SQL)
-    return database
+    return database, request.param
 
 
-def test_cohort_applies_washout_follow_up_prior_outcome_and_concept_hierarchy(cdm: Path) -> None:
-    person_ids, features, labels = load_cohort(cdm)
+def test_cohort_applies_washout_follow_up_prior_outcome_and_concept_hierarchy(cdm: tuple[Path, str | None]) -> None:
+    person_ids, features, labels = load_cohort(*cdm)
 
     expected = np.zeros((3, len(FEATURES)))
     expected[:, FEATURES.index("age_decades")] = [0.5, -0.4, 0.0]

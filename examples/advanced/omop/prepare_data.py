@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Download the OHDSI Eunomia GiBleed OMOP CDM and split its patients into one DuckDB database per site."""
+"""Simulate three sites by splitting the patients of the OHDSI Eunomia GiBleed OMOP CDM into one DuckDB CDM per site."""
 
 import argparse
 import hashlib

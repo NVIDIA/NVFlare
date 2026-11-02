@@ -15,7 +15,6 @@
 """Site-side Newton-Raphson logistic regression on the study cohort extracted from the site's OMOP CDM."""
 
 import argparse
-from pathlib import Path
 
 import numpy as np
 from cohort import load_cohort
@@ -37,12 +36,13 @@ def newton_raphson_terms(theta: np.ndarray, features: np.ndarray, labels: np.nda
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data_root", required=True)
+    parser.add_argument("--cdm", required=True, help="DuckDB file or PostgreSQL connection string of the site's CDM")
+    parser.add_argument("--cdm_schema", help="schema holding the CDM tables, if not the default one")
     args = parser.parse_args()
 
     flare.init()
     site = flare.get_site_name()
-    _, features, labels = load_cohort(Path(args.data_root) / f"{site}.duckdb")
+    _, features, labels = load_cohort(args.cdm, args.cdm_schema)
     print(f"{site}: {len(labels)} patients in the cohort, {int(labels.sum())} with GI hemorrhage")
 
     while flare.is_running():
