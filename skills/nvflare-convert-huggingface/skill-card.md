@@ -40,42 +40,42 @@ Mitigation: Review and scan skill before deployment. <br>
 **Other Properties Related to Output:** [None] <br>
 
 ## Evaluation Agents Used: <br>
-- Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`) <br>
-- Codex (`openai/openai/gpt-5.5`) <br>
+- Claude Code (`aws/anthropic/bedrock-claude-opus-5-5`) <br>
+- Codex (`openai/openai/gpt-6.1-sol`) <br>
 
 
 
 ## Evaluation Tasks: <br>
-21 evaluation tasks (21 positive) from a pinned dataset snapshot, each run in an isolated sandbox pod. <br>
+21 evaluation tasks (21 positive) from a pinned dataset snapshot, one attempt per task, each run in an isolated sandbox pod. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
-- Security: Whether the skill avoids unsafe operations, secret leakage, and unauthorized access. <br>
+- Security: Whether the skill is safe to use, avoiding unsafe operations, secret leakage, and unauthorized access. <br>
 - Correctness: Whether the final answer is correct against the reference answer. <br>
-- Discoverability: Whether the right skill was selected, decoys were avoided, and the workflow executed. <br>
+- Discoverability: Whether the right skill was loaded when needed. <br>
 - Effectiveness: Whether the skill helped complete the user's goal and followed the expected workflow. <br>
 - Efficiency: Whether the skill avoided wasted tool calls and token usage. <br>
 
 Underlying evaluation signals used in this run: <br>
 - `security`: Unsafe operations, secret leakage, and unauthorized access. <br>
 - `skill_execution`: Whether the expected skill was selected, decoys were avoided, and the workflow executed. <br>
-- `skill_efficiency`: Tool-call productivity (routing scored under Discoverability). <br>
+- `skill_efficiency`: Tool-call productivity. <br>
 - `accuracy`: Final-answer correctness against the reference answer. <br>
 - `goal_accuracy`: Whether the user's goal was achieved. <br>
 - `behavior_check`: Whether the expected workflow behavior was followed. <br>
-- `token_efficiency`: Actual uncached prompt plus completion usage (50% of Efficiency). <br>
+- `token_efficiency`: Actual uncached prompt plus completion token usage. <br>
 
 
 
 ## Evaluation Results: <br>
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | Not available | 66.8% — baseline ran, but no comparable score was available; uplift unavailable |
-| Security | Not available | 31.0% → 23.8% (-7.2 points) |
-| Correctness | Not available | 67.6% → 94.3% (+26.7 points) |
-| Discoverability | Not available | 71.7% — baseline ran, but no comparable score was available; uplift unavailable |
-| Effectiveness | Not available | 41.4% → 69.1% (+27.7 points) |
-| Efficiency | Not available | 75.2% — baseline ran, but no comparable score was available; uplift unavailable |
+| Overall | 85.9% — baseline ran, but no comparable score was available; uplift unavailable | 76.5% — baseline ran, but no comparable score was available; uplift unavailable |
+| Security | 45.2% → 100.0% (+54.8 points) | 57.1% → 73.8% (+16.7 points) |
+| Correctness | 71.4% → 93.3% (+21.9 points) | 70.5% → 90.5% (+20.0 points) |
+| Discoverability | 87.1% — baseline ran, but no comparable score was available; uplift unavailable | 75.7% — baseline ran, but no comparable score was available; uplift unavailable |
+| Effectiveness | 47.4% → 69.1% (+21.7 points) | 50.3% → 66.9% (+16.6 points) |
+| Efficiency | 79.8% — baseline ran, but no comparable score was available; uplift unavailable | 75.6% — baseline ran, but no comparable score was available; uplift unavailable |
 
 ## Skill Version(s): <br>
 0.1.0 (source: frontmatter) <br>
