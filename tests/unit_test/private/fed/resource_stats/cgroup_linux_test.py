@@ -59,6 +59,13 @@ def _hierarchy(monkeypatch, membership, mounts, files):
         ("v2", "garbage", "8", True),
         ("v2", probe._CGROUP_FILE_UNREADABLE, "8", True),
         ("v2", "max 100000", "8", False),
+        ("v2", "1 3", "0.333333333", False),
+        ("v2", "1 1000000000", "0.000000001", False),
+        ("v2", "1 1000000001", "8", True),
+        ("v2", "0 100000", "8", True),
+        ("v2", "1048577 1", "8", True),
+        ("v2", f"{2**64} {2**63}", "8", True),
+        ("v2", f"{2**63} {2**64}", "8", True),
     ],
 )
 def test_cpu_quota_rounding_fallback_and_unlimited(monkeypatch, version, quota, expected, partial):

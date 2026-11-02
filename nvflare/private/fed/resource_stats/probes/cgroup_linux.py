@@ -25,11 +25,10 @@ import os
 import platform
 import re
 from collections.abc import Mapping
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal, localcontext
 from pathlib import Path
 from typing import Any, Optional
 
-from ..contract import normalize_quota_units
 from ._shared import _decimal_text, _normalize_architecture, _normalize_model
 
 _CGROUP_FILE_MISSING = object()
@@ -342,7 +341,15 @@ def _quota_bound(path: Path, version: str, issues: Optional[set[str]]) -> Option
             raise ValueError("CPU quota period must be positive")
         if quota_text == "max" and version == "v2":
             return None
-        return Decimal(normalize_quota_units(int(quota_text), period))
+        quota = int(quota_text)
+        if not 0 < quota < 2**64 or not period < 2**64:
+            raise ValueError("CPU quota and period must be positive unsigned 64-bit values")
+        with localcontext() as context:
+            context.prec = 100
+            units = (Decimal(quota) / Decimal(period)).quantize(Decimal("0.000000001"), rounding=ROUND_FLOOR)
+        if not 0 < units <= 1048576:
+            raise ValueError("CPU quota is outside visible-unit or precision bounds")
+        return units
     except ValueError:
         _incomplete(issues)
         return None

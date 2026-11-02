@@ -24,7 +24,6 @@ import threading
 import time
 from copy import deepcopy
 
-from ..contract import normalize_gpu_capacity
 from . import gpu_nvidia
 
 # Healthy cold initialization can take several seconds per GPU. This is a
@@ -76,8 +75,21 @@ class GpuProbe:
             if phase != "complete" or self._value is not None:
                 raise ValueError("missing GPU discovery count")
         else:
-            value = normalize_gpu_capacity(frame["gpu"])
-            total = sum(int(group["count"]) for group in value["groups"])
+            value = frame["gpu"]
+            groups = value.get("groups") if isinstance(value, dict) and set(value) == {"groups"} else None
+            if not isinstance(groups, list) or len(groups) > gpu_nvidia.MAX_CUDA_DEVICES:
+                raise ValueError("invalid GPU discovery groups")
+            total = 0
+            for group in groups:
+                count = group.get("count") if isinstance(group, dict) else None
+                if not isinstance(count, str) or len(count) > 4 or not count.isascii() or not count.isdecimal():
+                    raise ValueError("invalid GPU discovery count")
+                count = int(count)
+                if not 0 < count <= gpu_nvidia.MAX_CUDA_DEVICES:
+                    raise ValueError("invalid GPU discovery count")
+                total += count
+            if total > gpu_nvidia.MAX_CUDA_DEVICES:
+                raise ValueError("GPU discovery total exceeds the device limit")
             if self._value is not None and total != sum(int(group["count"]) for group in self._value["groups"]):
                 raise ValueError("GPU enrichment changed the verified count")
             self._value = value

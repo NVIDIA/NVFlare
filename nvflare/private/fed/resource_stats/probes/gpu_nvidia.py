@@ -41,7 +41,11 @@ CUDA_ERROR_NO_DEVICE = 100
 MAX_CUDA_DEVICES = 4096
 _MAX_OUTPUT_BYTES = 64 * 1024
 _MODEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._()+/@-]{0,127}$")
-_UUID_IN_MODEL = re.compile(r"(?:GPU|MIG|MIG-GPU)-[0-9a-f-]{16,}", re.IGNORECASE)
+_PRIVATE_MODEL_PATTERN = re.compile(
+    r"(?:GPU|MIG|MIG-GPU)-[0-9a-f-]{16,}|(?:[0-9a-f]{4}:)?[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]|"
+    r"\b(?:serial|uuid|cuda_visible_devices|pci_bus_id|hostname)\b",
+    re.IGNORECASE,
+)
 
 
 class _CudaUuid(ctypes.Structure):
@@ -143,7 +147,7 @@ def _driver_devices(driver: Any, count: int) -> list[dict[str, Any]]:
             name_buffer = ctypes.create_string_buffer(128)
             if _result(cu_get_name, name_buffer, len(name_buffer), device.value) == CUDA_SUCCESS:
                 model = " ".join(name_buffer.value.decode("ascii", errors="ignore").split())
-                if _MODEL_PATTERN.fullmatch(model) and not _UUID_IN_MODEL.search(model):
+                if _MODEL_PATTERN.fullmatch(model) and not _PRIVATE_MODEL_PATTERN.search(model):
                     device_info["model"] = model
         if cu_total_mem is not None:
             memory = ctypes.c_size_t()

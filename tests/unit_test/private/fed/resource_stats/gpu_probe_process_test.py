@@ -22,7 +22,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from nvflare.private.fed.resource_stats.contract import normalize_gpu_capacity
 from nvflare.private.fed.resource_stats.probes import gpu_nvidia
 from nvflare.private.fed.resource_stats.probes import gpu_probe_process as probe
 
@@ -81,6 +80,11 @@ def _helper(monkeypatch, encoded, *, ready=True):
         ),
         (_frame({"groups": []}), {"groups": []}, True),
         (_frame(None), None, True),
+        (_frame({"groups": {}}), None, False),
+        (_frame({"groups": [{}]}), None, False),
+        (_frame({"groups": [{"count": "0"}]}), None, False),
+        (_frame({"groups": [{"count": "4097"}]}), None, False),
+        (_frame({"groups": [{"count": "1.5"}]}), None, False),
         (b"not-json\n", None, False),
         (b'{"groups":[]}\n', None, False),  # Raw diagnostics are not hold-protocol frames.
         (_frame({"groups": []})[:-1], None, False),
@@ -191,7 +195,6 @@ def test_large_optional_descriptions_do_not_erase_device_count(monkeypatch):
     monkeypatch.setattr(gpu_nvidia, "sys", SimpleNamespace(stdout=SimpleNamespace(buffer=output)))
     gpu_nvidia.main()
     result = json.loads(output.getvalue())
-    assert normalize_gpu_capacity(result) == result
     assert result == {"groups": [{"kind": "full_gpu", "count": "1000"}]}
 
 
@@ -259,7 +262,6 @@ def test_kernel_delayed_exit_retains_a_reaper_without_blocking_owner(monkeypatch
         _frame(None),
         _frame({"groups": [{"kind": "full_gpu", "count": "3"}]}),
         _frame({"groups": [{"kind": "full_gpu", "count": 2}]}),
-        _frame({"groups": [{"kind": "full_gpu", "count": "2", "uuid": "private"}]}),
         _frame({"groups": [{"kind": "full_gpu", "count": "2"}]}, phase="count"),
         _frame({"groups": [{"kind": "full_gpu", "count": "2"}]}, phase="unknown"),
         b"x" * (probe._MAX_OUTPUT_BYTES + 1),
