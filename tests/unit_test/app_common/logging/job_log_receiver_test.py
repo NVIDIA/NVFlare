@@ -12,18 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ReservedKey, ReturnCode, StreamCtxKey, SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import (
+    FLContextKey,
+    ReservedKey,
+    ReturnCode,
+    StreamCtxKey,
+    SystemComponents,
+    WorkspaceConstants,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import DataTypes, StorageSpec
 from nvflare.apis.streaming import StreamContextKey
+from nvflare.apis.workspace import Workspace
 from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
 from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
 from nvflare.app_common.streamers.log_streamer import KEY_FILE_NAME
+from nvflare.private.fed.server.job_runner import JobRunner
 
 
 def _allowed_client(name: str = "trusted_client", allow: bool = True):
@@ -56,6 +67,7 @@ def test_job_log_receiver_uses_trusted_peer_identity_for_storage(tmp_path, file_
     fl_ctx.put(key=ReservedKey.IDENTITY_NAME, value="server", private=True, sticky=False)
     fl_ctx.put(key=ReservedKey.RUN_NUM, value="server_job", private=True, sticky=False)
     fl_ctx.put(key=ReservedKey.ENGINE, value=engine, private=True, sticky=False)
+    fl_ctx.put(key=FLContextKey.CLIENT_NAME, value="trusted_client", private=True, sticky=False)
     fl_ctx.set_peer_context(peer_ctx)
 
     stream_ctx = {
@@ -101,6 +113,7 @@ def _make_recv_fl_ctx(client_name="trusted_client", site_allows: bool = True):
     fl_ctx = FLContext()
     fl_ctx.put(key=ReservedKey.IDENTITY_NAME, value="server", private=True, sticky=False)
     fl_ctx.put(key=ReservedKey.ENGINE, value=engine, private=True, sticky=False)
+    fl_ctx.put(key=FLContextKey.CLIENT_NAME, value=client_name, private=True, sticky=False)
     fl_ctx.set_peer_context(peer_ctx)
     return fl_ctx
 
@@ -204,14 +217,14 @@ def test_job_log_receiver_does_not_log_saved_when_storage_fails(tmp_path):
     log_info.assert_not_called()
 
 
-def test_default_receiver_without_job_manager_finalizes_in_place(tmp_path):
+def test_default_receiver_without_job_manager_moves_to_run_directory(tmp_path):
     receiver = JobLogReceiver()
     fl_ctx = _make_recv_fl_ctx()
     engine = fl_ctx.get_engine()
     engine.get_component.return_value = None
     workspace = engine.get_workspace.return_value
     run_dir = tmp_path / "trusted_job"
-    workspace.get_log_root.return_value = str(run_dir)
+    workspace.get_log_root.side_effect = lambda job_id=None: str(tmp_path if job_id is None else run_dir)
     workspace.get_run_dir.return_value = str(run_dir)
     stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.OK}
     receiver._on_chunk_received(b"simulator progress\n", stream, fl_ctx)
@@ -226,10 +239,133 @@ def test_default_receiver_without_workspace_uses_temporary_storage(tmp_path):
     fl_ctx = _make_recv_fl_ctx()
     fl_ctx.get_engine().get_workspace.return_value = None
     stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.OK}
-    with patch("nvflare.app_common.logging.job_log_receiver.tempfile.gettempdir", return_value=str(tmp_path)):
+    with patch("nvflare.app_common.logging.job_log_receiver.tempfile.mkdtemp", return_value=str(tmp_path)):
         receiver._on_chunk_received(b"progress\n", stream, fl_ctx)
         receiver._on_stream_done(stream, fl_ctx)
     assert (tmp_path / "trusted_job/trusted_client/log.txt").read_bytes() == b"progress\n"
+
+
+@pytest.mark.parametrize("claimed_client", ["..", ".", "another-client"])
+def test_receiver_rejects_forged_peer_identity(tmp_path, claimed_client):
+    server_log = tmp_path / "trusted_job/log.txt"
+    server_log.parent.mkdir()
+    server_log.write_bytes(b"server log\n")
+    fl_ctx = _make_recv_fl_ctx()
+    fl_ctx.get_peer_context().put(ReservedKey.IDENTITY_NAME, claimed_client, private=True, sticky=False)
+    receiver = JobLogReceiver(dest_dir=str(tmp_path))
+    with pytest.raises(ValueError, match="authenticated sender"):
+        receiver._on_chunk_received(b"overwrite\n", {KEY_FILE_NAME: "log.txt"}, fl_ctx)
+    assert server_log.read_bytes() == b"server log\n"
+    assert list(tmp_path.rglob("log.txt")) == [server_log]
+
+
+def test_receiver_rejects_missing_authenticated_sender(tmp_path):
+    fl_ctx = _make_recv_fl_ctx()
+    fl_ctx.put(FLContextKey.CLIENT_NAME, None, private=True, sticky=False)
+    with pytest.raises(ValueError, match="authenticated sender"):
+        JobLogReceiver(dest_dir=str(tmp_path))._on_chunk_received(b"data", {KEY_FILE_NAME: "log.txt"}, fl_ctx)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("component", ["client", "job", "file"])
+@pytest.mark.parametrize("value", [".", "..", "../escape", "/absolute", "a\\b", "nul\x00"])
+def test_receiver_rejects_invalid_path_components(tmp_path, component, value):
+    fl_ctx = _make_recv_fl_ctx(client_name=value if component == "client" else "trusted_client")
+    if component == "job":
+        fl_ctx.get_peer_context().put(ReservedKey.RUN_NUM, value, private=True, sticky=False)
+    stream = {KEY_FILE_NAME: value if component == "file" else "log.txt"}
+    with pytest.raises(ValueError, match="Invalid client log path component"):
+        JobLogReceiver(dest_dir=str(tmp_path))._on_chunk_received(b"overwrite", stream, fl_ctx)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("symlink_target", ["client_directory", "file"])
+def test_receiver_does_not_follow_symlinks(tmp_path, symlink_target):
+    root = tmp_path / "staging"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "log.txt"
+    sentinel.write_bytes(b"preserved\n")
+    client_dir = root / "trusted_job/trusted_client"
+    client_dir.parent.mkdir(parents=True)
+    try:
+        if symlink_target == "client_directory":
+            client_dir.symlink_to(outside, target_is_directory=True)
+        else:
+            client_dir.mkdir()
+            (client_dir / "log.txt").symlink_to(sentinel)
+    except OSError:
+        pytest.skip("symlink creation not permitted on this host")
+    with pytest.raises(ValueError, match="escapes staging|symlink"):
+        JobLogReceiver(dest_dir=str(root))._on_chunk_received(
+            b"overwrite", {KEY_FILE_NAME: "log.txt"}, _make_recv_fl_ctx()
+        )
+    assert sentinel.read_bytes() == b"preserved\n"
+
+
+def test_empty_stream_cannot_publish_a_sender_supplied_path(tmp_path):
+    fl_ctx = _make_recv_fl_ctx()
+    receiver = JobLogReceiver(dest_dir=str(tmp_path))
+    stream = {
+        KEY_FILE_NAME: "error_log.txt",
+        StreamContextKey.RC: ReturnCode.OK,
+        "JobLogReceiver.recv_path": str(tmp_path / "server-secret"),
+        "JobLogReceiver.recv_file": None,
+    }
+    receiver._on_stream_done(stream, fl_ctx)
+    fl_ctx.get_engine().get_component.return_value.set_client_data.assert_not_called()
+
+
+def test_stream_owner_cannot_change_and_completion_uses_recorded_owner(tmp_path):
+    fl_ctx = _make_recv_fl_ctx()
+    receiver = JobLogReceiver(dest_dir=str(tmp_path))
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.OK}
+    receiver._on_chunk_received(b"original\n", stream, fl_ctx)
+    other_ctx = _make_recv_fl_ctx(client_name="other-client")
+    with pytest.raises(ValueError, match="owner changed"):
+        receiver._on_chunk_received(b"overwrite", stream, other_ctx)
+    stream[KEY_FILE_NAME] = "forged.txt"
+    receiver._on_stream_done(stream, other_ctx)
+    path = tmp_path / "trusted_job/trusted_client/log.txt"
+    assert path.read_bytes() == b"original\n"
+    other_ctx.get_engine().get_component.return_value.set_client_data.assert_called_once_with(
+        "trusted_job", str(path), "trusted_client", f"{DataTypes.LOG.value}_log.txt", other_ctx
+    )
+
+
+@pytest.mark.parametrize("external_log_root", [False, True])
+@pytest.mark.parametrize("rc", [ReturnCode.OK, ReturnCode.TIMEOUT])
+def test_active_log_survives_job_runner_workspace_cleanup(tmp_path, external_log_root, rc):
+    (tmp_path / "startup").mkdir()
+    (tmp_path / "local").mkdir()
+    workspace = Workspace(str(tmp_path), site_name="server")
+    workspace.log_root = str(tmp_path / "external-logs") if external_log_root else None
+    Path(workspace.get_run_dir("trusted_job")).mkdir()
+    job_log_root = Path(workspace.get_log_root("trusted_job"))
+    job_log_root.mkdir(parents=True, exist_ok=True)
+    (job_log_root / "log.txt").write_bytes(b"server log\n")
+    fl_ctx = _make_recv_fl_ctx()
+    fl_ctx.put(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
+    fl_ctx.get_engine().get_workspace.return_value = workspace
+    receiver = JobLogReceiver()
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: rc}
+    receiver._on_chunk_received(b"before cleanup\n", stream, fl_ctx)
+    JobRunner(str(tmp_path))._save_workspace(fl_ctx, job_id="trusted_job")
+    assert not job_log_root.exists()
+    receiver._on_chunk_received(b"after cleanup\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    path = Path(workspace.get_log_root()) / ".client_log_streams/trusted_job/trusted_client/log.txt"
+    assert path.read_bytes() == b"before cleanup\nafter cleanup\n"
+    if os.name == "posix":
+        assert path.stat().st_mode & 0o777 == 0o600
+        assert path.parent.stat().st_mode & 0o777 == 0o700
+    manager = fl_ctx.get_engine().get_component.return_value
+    if rc == ReturnCode.OK:
+        manager.set_client_data.assert_called_once_with(
+            "trusted_job", str(path), "trusted_client", f"{DataTypes.LOG.value}_log.txt", fl_ctx
+        )
+    else:
+        manager.set_client_data.assert_not_called()
 
 
 @pytest.mark.parametrize(

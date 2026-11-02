@@ -136,9 +136,9 @@ In the Job API, you can attach a job-level receiver with:
 
 ``dest_dir`` (str, default ``None``)
     Optional directory where incoming log staging files are written. By default,
-    files use the workspace's job log root, including any configured external
-    log root. Without a workspace, the receiver falls back to the system
-    temporary directory.
+    files use a private staging directory under the workspace's site log root,
+    including any configured external log root. Without a workspace, the receiver
+    creates a private temporary directory.
 
 ``idle_timeout`` (float, default ``30.0``)
     Seconds without any message (data or heartbeat) before the receiver
@@ -148,17 +148,23 @@ In the Job API, you can attach a job-level receiver with:
 
 With the default configuration, each chunk is flushed to::
 
-    {workspace.get_log_root(job_id)}/{client_name}/{log_file_name}
+    {workspace.get_log_root()}/.client_log_streams/{job_id}/{client_name}/{log_file_name}
 
 This is the path used by authenticated ``get_job_log JOB_ID CLIENT`` and
 ``get_job_log JOB_ID all`` retrieval, so an active stream is readable before
 it closes. This requires the updated receiver on the federation server.
+Staging is outside per-job directories, so server-side abort or failure cleanup
+cannot delete an unfinished client stream. The receiver binds the client name to
+the authenticated transport sender, rejects invalid path components, and keeps
+file handles and paths in receiver-owned state. New directories and files use
+private permissions on POSIX hosts.
 An explicit ``dest_dir`` instead stages files at::
 
     {dest_dir}/{job_id}/{client_name}/{log_file_name}
 
 Custom staging supports operator-side tailing; the admin command does not
-search arbitrary custom directories for active streams. When the stream
+search arbitrary custom directories for active streams. Staging directories
+must not contain symlinks or be writable by other users on POSIX hosts. When the stream
 ends successfully, the file is handed to the job manager (if registered) for
 permanent storage. The storage backend may move the file, so the staging path
 may no longer exist after the stream ends. Without a job manager — for example
