@@ -53,19 +53,19 @@ def _hierarchy(monkeypatch, membership, mounts, files):
 @pytest.mark.parametrize(
     "version,quota,expected,partial",
     [
-        ("v1", "2", "0.666666666", False),
-        ("v2", "2 3", "0.666666666", False),
+        ("v1", "2", 2 / 3, False),
+        ("v2", "2 3", 2 / 3, False),
         ("v1", "bad", "8", True),
         ("v2", "garbage", "8", True),
         ("v2", probe._CGROUP_FILE_UNREADABLE, "8", True),
         ("v2", "max 100000", "8", False),
-        ("v2", "1 3", "0.333333333", False),
-        ("v2", "1 1000000000", "0.000000001", False),
-        ("v2", "1 1000000001", "8", True),
+        ("v2", "1 3", 1 / 3, False),
+        ("v2", "1 1000000000", 1e-9, False),
+        ("v2", "1 1000000001", 1 / 1000000001, False),
         ("v2", "0 100000", "8", True),
-        ("v2", "1048577 1", "8", True),
-        ("v2", f"{2**64} {2**63}", "8", True),
-        ("v2", f"{2**63} {2**64}", "8", True),
+        ("v2", "1048577 1", 8, False),
+        ("v2", f"{2**64} {2**63}", 2, False),
+        ("v2", f"{2**63} {2**64}", 0.5, False),
     ],
 )
 def test_cpu_quota_rounding_fallback_and_unlimited(monkeypatch, version, quota, expected, partial):
@@ -83,7 +83,7 @@ def test_cpu_quota_rounding_fallback_and_unlimited(monkeypatch, version, quota, 
     _hierarchy(monkeypatch, membership, [mount], files)
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": expected}]}
+    assert probe.probe_cpu(issues=issues) == {"units": float(expected)}
     assert issues == ({"observation_incomplete"} if partial else set())
 
 
@@ -107,7 +107,7 @@ def test_memory_limit_fallback_and_unlimited(monkeypatch, version, limit, partia
     _hierarchy(monkeypatch, membership, [mount], files)
 
     issues = set()
-    assert probe.probe_memory(issues=issues) == {"bytes": str(8 * _GIB)}
+    assert probe.probe_memory(issues=issues) == {"bytes": 8 * _GIB}
     assert issues == ({"observation_incomplete"} if partial else set())
 
 
@@ -125,8 +125,8 @@ def test_v2_capacity_uses_cpu_and_memory_ancestor_limits(monkeypatch):
         },
     )
 
-    assert probe.probe_cpu() == {"groups": [{"units": "3"}]}
-    assert probe.probe_memory() == {"bytes": str(2 * _GIB)}
+    assert probe.probe_cpu() == {"units": 3.0}
+    assert probe.probe_memory() == {"bytes": 2 * _GIB}
 
 
 def test_v1_capacity_uses_each_controller_and_ancestor(monkeypatch):
@@ -150,8 +150,8 @@ def test_v1_capacity_uses_each_controller_and_ancestor(monkeypatch):
         },
     )
 
-    assert probe.probe_cpu() == {"groups": [{"units": "2"}]}
-    assert probe.probe_memory() == {"bytes": str(_GIB)}
+    assert probe.probe_cpu() == {"units": 2.0}
+    assert probe.probe_memory() == {"bytes": _GIB}
 
 
 def test_hybrid_v2_mount_does_not_hide_v1_cpu_or_memory(monkeypatch):
@@ -173,8 +173,8 @@ def test_hybrid_v2_mount_does_not_hide_v1_cpu_or_memory(monkeypatch):
         },
     )
 
-    assert probe.probe_cpu() == {"groups": [{"units": "2"}]}
-    assert probe.probe_memory() == {"bytes": str(_GIB)}
+    assert probe.probe_cpu() == {"units": 2.0}
+    assert probe.probe_memory() == {"bytes": _GIB}
 
 
 def test_hybrid_controller_assignments_are_independent(monkeypatch):
@@ -196,8 +196,8 @@ def test_hybrid_controller_assignments_are_independent(monkeypatch):
         },
     )
 
-    assert probe.probe_cpu() == {"groups": [{"units": "1.5"}]}
-    assert probe.probe_memory() == {"bytes": str(_GIB)}
+    assert probe.probe_cpu() == {"units": 1.5}
+    assert probe.probe_memory() == {"bytes": _GIB}
 
 
 @pytest.mark.parametrize("visible_v2", [True, False])
@@ -221,8 +221,8 @@ def test_v1_assigned_controllers_do_not_depend_on_unrelated_v2_files(monkeypatch
         },
     )
 
-    assert probe.probe_cpu() == {"groups": [{"units": "2"}]}
-    assert probe.probe_memory() == {"bytes": str(_GIB)}
+    assert probe.probe_cpu() == {"units": 2.0}
+    assert probe.probe_memory() == {"bytes": _GIB}
 
 
 @pytest.mark.parametrize("bad", ["not-a-limit", probe._CGROUP_FILE_UNREADABLE, probe._CGROUP_FILE_MISSING])
@@ -247,7 +247,7 @@ def test_applicable_v1_errors_retain_fallback_even_with_a_v2_mount(monkeypatch, 
 
     issues = set()
     result = probe.probe_memory(issues=issues) if controller == "memory" else probe.probe_cpu(issues=issues)
-    assert result == ({"bytes": str(8 * _GIB)} if controller == "memory" else {"groups": [{"units": "8"}]})
+    assert result == ({"bytes": 8 * _GIB} if controller == "memory" else {"units": 8.0})
     assert issues == {"observation_incomplete"}
 
 
@@ -289,7 +289,7 @@ def test_successful_affinity_skips_cpuset_discovery_and_reads(monkeypatch, versi
     monkeypatch.setattr(probe, "_read_cgroup_file", read_without_cpuset)
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": "2"}]}
+    assert probe.probe_cpu(issues=issues) == {"units": 2.0}
     assert controllers == ["cpu"]
     assert not issues
 
@@ -304,7 +304,7 @@ def test_affinity_selected_cpus_are_still_capped_by_fractional_quota(monkeypatch
     )
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": "0.5"}]}
+    assert probe.probe_cpu(issues=issues) == {"units": 0.5}
     assert not issues
 
 
@@ -320,7 +320,7 @@ def test_affinity_failure_still_bounds_quota_by_known_online_cpus(monkeypatch, q
     _hierarchy(monkeypatch, "0::/job", [("cgroup2", "/", "/cg", "rw")], files)
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": expected}]}
+    assert probe.probe_cpu(issues=issues) == {"units": float(expected)}
     assert issues == {"observation_incomplete"}
 
 
@@ -340,7 +340,7 @@ def test_affinity_failure_uses_readable_v1_cpuset_fallback(monkeypatch, filename
     )
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": "4"}]}
+    assert probe.probe_cpu(issues=issues) == {"units": 4.0}
     assert issues == {"observation_incomplete"}
 
 
@@ -354,7 +354,7 @@ def test_affinity_and_sysconf_failure_uses_known_cpu_count(monkeypatch):
     _hierarchy(monkeypatch, "0::/job", [("cgroup2", "/", "/cg", "rw")], {"/cg/job/cpu.max": "1600000 100000"})
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": "6"}]}
+    assert probe.probe_cpu(issues=issues) == {"units": 6.0}
     assert issues == {"observation_incomplete"}
 
 
@@ -366,7 +366,7 @@ def test_unusable_sysconf_cpu_count_tries_cpu_count(monkeypatch, unknown):
     _hierarchy(monkeypatch, "", [], {})
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": "6"}]}
+    assert probe.probe_cpu(issues=issues) == {"units": 6.0}
     assert issues == {"observation_incomplete"}
 
 
@@ -387,8 +387,8 @@ def test_unreadable_or_malformed_discovery_retains_machine_capacity(monkeypatch,
     text[Path(path)] = contents
 
     cpu_issues, memory_issues = set(), set()
-    assert probe.probe_cpu(issues=cpu_issues) == {"groups": [{"units": "8"}]}
-    assert probe.probe_memory(issues=memory_issues) == {"bytes": str(8 * _GIB)}
+    assert probe.probe_cpu(issues=cpu_issues) == {"units": 8.0}
+    assert probe.probe_memory(issues=memory_issues) == {"bytes": 8 * _GIB}
     assert cpu_issues == memory_issues == {"observation_incomplete"}
 
 
@@ -396,8 +396,8 @@ def test_recorded_controller_without_a_visible_mount_retains_capacity(monkeypatc
     _hierarchy(monkeypatch, "3:cpu:/job", [], {})
 
     cpu_issues, memory_issues = set(), set()
-    assert probe.probe_cpu(issues=cpu_issues) == {"groups": [{"units": "8"}]}
-    assert probe.probe_memory(issues=memory_issues) == {"bytes": str(8 * _GIB)}
+    assert probe.probe_cpu(issues=cpu_issues) == {"units": 8.0}
+    assert probe.probe_memory(issues=memory_issues) == {"bytes": 8 * _GIB}
     assert cpu_issues == {"observation_incomplete"}
     assert not memory_issues
 
@@ -406,8 +406,8 @@ def test_unified_membership_without_a_visible_mount_retains_capacity(monkeypatch
     _hierarchy(monkeypatch, "0::/job", [], {})
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": "8"}]}
-    assert probe.probe_memory(issues=issues) == {"bytes": str(8 * _GIB)}
+    assert probe.probe_cpu(issues=issues) == {"units": 8.0}
+    assert probe.probe_memory(issues=issues) == {"bytes": 8 * _GIB}
     assert issues == {"observation_incomplete"}
 
 
@@ -415,8 +415,8 @@ def test_missing_v2_controller_files_are_not_unknown_v1_constraints(monkeypatch)
     _hierarchy(monkeypatch, "0::/job", [("cgroup2", "/", "/cg", "rw")], {})
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": "8"}]}
-    assert probe.probe_memory(issues=issues) == {"bytes": str(8 * _GIB)}
+    assert probe.probe_cpu(issues=issues) == {"units": 8.0}
+    assert probe.probe_memory(issues=issues) == {"bytes": 8 * _GIB}
     assert not issues
 
 
@@ -450,7 +450,7 @@ def test_restricted_mount_root_limits_ancestor_walk(monkeypatch):
 
     assert probe._cgroup_location(None) == (Path("/cg"), Path("/cg/job"), "v2")
     assert probe._ancestors(Path("/cg/job"), Path("/cg")) == [Path("/cg/job"), Path("/cg")]
-    assert probe.probe_cpu() == {"groups": [{"units": "2"}]}
+    assert probe.probe_cpu() == {"units": 2.0}
 
 
 @pytest.mark.parametrize("membership", ["/outside/job", "/group/../../outside"])
@@ -458,8 +458,8 @@ def test_uncovered_or_parent_traversing_path_keeps_machine_fallback(monkeypatch,
     _hierarchy(monkeypatch, f"0::{membership}", [("cgroup2", "/group", "/cg", "rw")], {})
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": "8"}]}
-    assert probe.probe_memory(issues=issues) == {"bytes": str(8 * _GIB)}
+    assert probe.probe_cpu(issues=issues) == {"units": 8.0}
+    assert probe.probe_memory(issues=issues) == {"bytes": 8 * _GIB}
     assert issues == {"observation_incomplete"}
 
 
@@ -480,7 +480,7 @@ def test_v1_explicit_unlimited_memory_does_not_add_a_false_limit(monkeypatch):
     )
 
     issues = set()
-    assert probe.probe_memory(issues=issues) == {"bytes": str(8 * _GIB)}
+    assert probe.probe_memory(issues=issues) == {"bytes": 8 * _GIB}
     assert not issues
 
 
@@ -509,8 +509,8 @@ def test_bad_leaf_and_parent_limits_do_not_hide_other_readable_ancestors(monkeyp
     )
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": "1.5"}]}
-    assert probe.probe_memory(issues=issues) == {"bytes": str(2 * _GIB)}
+    assert probe.probe_cpu(issues=issues) == {"units": 1.5}
+    assert probe.probe_memory(issues=issues) == {"bytes": 2 * _GIB}
     assert issues == {"observation_incomplete"}
 
 
@@ -531,7 +531,7 @@ def test_failed_cpu_controller_does_not_hide_other_controller(monkeypatch, files
     )
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": expected}]}
+    assert probe.probe_cpu(issues=issues) == {"units": float(expected)}
     assert issues == {"observation_incomplete"}
 
 
@@ -545,7 +545,7 @@ def test_bad_v1_quota_period_keeps_affinity(monkeypatch, period):
     )
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": "8"}]}
+    assert probe.probe_cpu(issues=issues) == {"units": 8.0}
     assert issues == {"observation_incomplete"}
 
 
@@ -558,7 +558,7 @@ def test_v1_unlimited_quota_needs_no_period(monkeypatch):
     )
 
     issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": "8"}]}
+    assert probe.probe_cpu(issues=issues) == {"units": 8.0}
     assert not issues
 
 
@@ -573,7 +573,7 @@ def test_unknown_physical_memory_keeps_a_readable_cgroup_bound(monkeypatch, unkn
     )
 
     issues = set()
-    assert probe.probe_memory(issues=issues) == {"bytes": str(_GIB)}
+    assert probe.probe_memory(issues=issues) == {"bytes": _GIB}
     assert issues == {"observation_incomplete"}
 
 
@@ -584,82 +584,3 @@ def test_memory_without_any_usable_bound_is_unavailable(monkeypatch):
     issues = set()
     assert probe.probe_memory(issues=issues) is None
     assert issues == {"observation_incomplete"}
-
-
-@pytest.mark.parametrize("helper", ["_cpu_models", "_cpu_identity", "_heterogeneous_cpu_groups"])
-def test_model_lookup_exceptions_never_erase_capacity(monkeypatch, helper):
-    _hierarchy(monkeypatch, "0::/job", [("cgroup2", "/", "/cg", "rw")], {})
-
-    def broken_lookup(*_args):
-        raise OSError("optional model description cannot be read")
-
-    monkeypatch.setattr(probe, helper, broken_lookup)
-    issues = set()
-    assert probe.probe_cpu(issues=issues) == {"groups": [{"units": "8"}]}
-    assert not issues
-
-
-@pytest.mark.parametrize("quota", ["max", "400000"])
-def test_cpu_model_parser_is_shared_by_grouping_and_identity(monkeypatch, quota):
-    text = _hierarchy(
-        monkeypatch,
-        "0::/job",
-        [("cgroup2", "/", "/cg", "rw")],
-        {"/cg/job/cpu.max": f"{quota} 100000"},
-    )
-    text[Path("/proc/cpuinfo")] = "\n\n".join(
-        f"processor : {index}\nmodel name : {'CPU A' if index < 4 else 'CPU B'}" for index in range(8)
-    )
-    monkeypatch.setattr(probe.platform, "machine", lambda: "x86_64")
-    read = probe._read_text
-    cpuinfo_reads = []
-
-    def counted_read(path):
-        if path == Path("/proc/cpuinfo"):
-            cpuinfo_reads.append(path)
-        return read(path)
-
-    monkeypatch.setattr(probe, "_read_text", counted_read)
-    result = probe.probe_cpu()
-
-    if quota == "max":
-        assert result == {
-            "groups": [
-                {"units": "4", "model": "CPU A", "architecture": "x86_64"},
-                {"units": "4", "model": "CPU B", "architecture": "x86_64"},
-            ]
-        }
-    else:
-        # A fractional/binding quota cannot be assigned to specific models.
-        assert result == {"groups": [{"units": "4", "architecture": "x86_64"}]}
-    assert len(cpuinfo_reads) == 1
-
-
-@pytest.mark.parametrize(
-    "cpuinfo",
-    [
-        None,
-        "processor : 0\nmodel name : CPU A",
-        "\n\n".join(f"processor : {index}\nmodel name : CPU A" for index in range(8))
-        + "\n\nprocessor : 0\nmodel name : CPU B",
-    ],
-)
-def test_missing_or_ambiguous_model_never_erases_cpu_count(monkeypatch, cpuinfo):
-    text = _hierarchy(monkeypatch, "0::/job", [("cgroup2", "/", "/cg", "rw")], {})
-    text[Path("/proc/cpuinfo")] = cpuinfo
-
-    assert probe.probe_cpu() == {"groups": [{"units": "8"}]}
-
-
-@pytest.mark.parametrize("quota,expected", [("max", "8"), ("250000", "2.5")])
-def test_homogeneous_model_is_preserved_under_a_quota(monkeypatch, quota, expected):
-    text = _hierarchy(
-        monkeypatch,
-        "0::/job",
-        [("cgroup2", "/", "/cg", "rw")],
-        {"/cg/job/cpu.max": f"{quota} 100000"},
-    )
-    text[Path("/proc/cpuinfo")] = "\n\n".join(f"processor : {index}\nmodel name : CPU A" for index in range(8))
-    monkeypatch.setattr(probe.platform, "machine", lambda: "x86_64")
-
-    assert probe.probe_cpu() == {"groups": [{"units": expected, "model": "CPU A", "architecture": "x86_64"}]}

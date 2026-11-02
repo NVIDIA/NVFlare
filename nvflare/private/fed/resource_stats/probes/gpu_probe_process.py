@@ -30,8 +30,7 @@ from . import gpu_nvidia
 # failure deadline, not a job-startup wait: discovery overlaps application work.
 _TIMEOUT_SECONDS = 30.0
 _FINAL_WAIT_SECONDS = 2.0
-_OUTPUT_TIMEOUT_SECONDS = 1.0
-_MAX_OUTPUT_BYTES = 64 * 1024
+_MAX_OUTPUT_BYTES = 128
 
 
 class GpuProbe:
@@ -64,40 +63,8 @@ class GpuProbe:
         except (OSError, ValueError, subprocess.SubprocessError):
             self.close()
 
-    def _accept_frame(self, encoded, index):
-        frame = json.loads(encoded)
-        if not isinstance(frame, dict) or set(frame) != {"phase", "gpu"}:
-            raise ValueError("invalid GPU discovery frame")
-        phase = frame["phase"]
-        if phase not in ("count", "complete") or (phase == "count" and index != 1):
-            raise ValueError("invalid GPU discovery phase")
-        if frame["gpu"] is None:
-            if phase != "complete" or self._value is not None:
-                raise ValueError("missing GPU discovery count")
-        else:
-            value = frame["gpu"]
-            groups = value.get("groups") if isinstance(value, dict) and set(value) == {"groups"} else None
-            if not isinstance(groups, list) or len(groups) > gpu_nvidia.MAX_CUDA_DEVICES:
-                raise ValueError("invalid GPU discovery groups")
-            total = 0
-            for group in groups:
-                count = group.get("count") if isinstance(group, dict) else None
-                if not isinstance(count, str) or len(count) > 4 or not count.isascii() or not count.isdecimal():
-                    raise ValueError("invalid GPU discovery count")
-                count = int(count)
-                if not 0 < count <= gpu_nvidia.MAX_CUDA_DEVICES:
-                    raise ValueError("invalid GPU discovery count")
-                total += count
-            if total > gpu_nvidia.MAX_CUDA_DEVICES:
-                raise ValueError("GPU discovery total exceeds the device limit")
-            if self._value is not None and total != sum(int(group["count"]) for group in self._value["groups"]):
-                raise ValueError("GPU enrichment changed the verified count")
-            self._value = value
-        self._completed = phase == "complete"
-        return self._completed
-
     def result(self, *, timeout: float = _FINAL_WAIT_SECONDS):
-        """Wait only for a verified count; use enrichment only if already ready."""
+        """Read the bounded final count after the owner freezes CPU accounting."""
 
         if os.getpid() != self._owner_pid:
             return None
@@ -109,37 +76,30 @@ class GpuProbe:
                 return None
             try:
                 encoded = bytearray()
-                received = frames = 0
-                final_deadline = time.monotonic() + timeout
-                deadline = min(self._deadline, final_deadline)
+                deadline = min(self._deadline, time.monotonic() + timeout)
                 with selectors.DefaultSelector() as selector:
                     selector.register(self._process.stdout, selectors.EVENT_READ)
-                    while frames < 2:
-                        if b"\n" in encoded:
-                            line, _, encoded = encoded.partition(b"\n")
-                            if len(line) + 1 > _MAX_OUTPUT_BYTES:
-                                break
-                            frames += 1
-                            if self._accept_frame(line, frames):
-                                break
-                            continue
-                        if len(encoded) >= _MAX_OUTPUT_BYTES or received >= 2 * _MAX_OUTPUT_BYTES:
+                    while len(encoded) <= _MAX_OUTPUT_BYTES:
+                        if not selector.select(max(0.0, deadline - time.monotonic())):
                             break
-                        # Once count is known, optional enrichment never waits.
-                        remaining = 0.0 if self._value is not None else max(0.0, deadline - time.monotonic())
-                        if not selector.select(remaining):
-                            break
-                        chunk = os.read(self._process.stdout.fileno(), min(4096, _MAX_OUTPUT_BYTES + 1 - len(encoded)))
+                        chunk = os.read(self._process.stdout.fileno(), _MAX_OUTPUT_BYTES + 1 - len(encoded))
                         if not chunk:
                             break
-                        if not received:
-                            # A standalone complete frame can exceed pipe capacity.
-                            # Ready output may drain within the caller's budget.
-                            deadline = min(final_deadline, max(deadline, time.monotonic() + _OUTPUT_TIMEOUT_SECONDS))
-                        received += len(chunk)
-                        if received > 2 * _MAX_OUTPUT_BYTES:
-                            break
                         encoded.extend(chunk)
+                        if len(encoded) > _MAX_OUTPUT_BYTES:
+                            break
+                        if b"\n" in encoded:
+                            value = json.loads(encoded.partition(b"\n")[0])
+                            if value is not None and (
+                                not isinstance(value, dict)
+                                or set(value) != {"count"}
+                                or type(value["count"]) is not int
+                                or not 0 <= value["count"] <= gpu_nvidia.MAX_CUDA_DEVICES
+                            ):
+                                raise ValueError("invalid GPU discovery count")
+                            self._value = value
+                            self._completed = True
+                            break
             except (OSError, ValueError, TypeError, RecursionError, subprocess.SubprocessError):
                 pass
             return deepcopy(self._value)

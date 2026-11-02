@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Controlled helper boundaries, without starting a process or CUDA."""
+
+"""Controlled helper pipe/cleanup behavior, without processes or CUDA."""
 
 import io
 import json
@@ -26,8 +27,8 @@ from nvflare.private.fed.resource_stats.probes import gpu_nvidia
 from nvflare.private.fed.resource_stats.probes import gpu_probe_process as probe
 
 
-def _frame(value, *, phase="complete"):
-    return json.dumps({"phase": phase, "gpu": value}).encode() + b"\n"
+def _frame(value):
+    return json.dumps(value).encode() + b"\n"
 
 
 class FakeSelector:
@@ -70,59 +71,6 @@ def _helper(monkeypatch, encoded, *, ready=True):
     return process, commands, waits, lifecycle
 
 
-@pytest.mark.parametrize(
-    "encoded,expected,completed",
-    [
-        (
-            _frame({"groups": [{"kind": "full_gpu", "count": "2"}]}),
-            {"groups": [{"kind": "full_gpu", "count": "2"}]},
-            True,
-        ),
-        (_frame({"groups": []}), {"groups": []}, True),
-        (_frame(None), None, True),
-        (_frame({"groups": {}}), None, False),
-        (_frame({"groups": [{}]}), None, False),
-        (_frame({"groups": [{"count": "0"}]}), None, False),
-        (_frame({"groups": [{"count": "4097"}]}), None, False),
-        (_frame({"groups": [{"count": "1.5"}]}), None, False),
-        (b"not-json\n", None, False),
-        (b'{"groups":[]}\n', None, False),  # Raw diagnostics are not hold-protocol frames.
-        (_frame({"groups": []})[:-1], None, False),
-        (b"x" * (64 * 1024 + 1), None, False),
-        (b"", None, False),  # Native crash or initialization deadline before a result.
-    ],
-)
-def test_helper_output_and_failure_semantics(monkeypatch, encoded, expected, completed):
-    _, commands, waits, lifecycle = _helper(monkeypatch, encoded)
-    session = probe.GpuProbe()
-    try:
-        assert waits == []  # Starting the collector never waits for discovery.
-        assert session.result() == expected
-        assert lifecycle == []  # No reaping or device release while obtaining the result.
-        assert session.result() == expected
-        command, kwargs = commands[0]
-        assert command == [probe.sys.executable, gpu_nvidia.__file__, "--hold", str(probe.os.getpid()), "40.0"]
-        assert "env" not in kwargs
-        assert kwargs["stdin"] == subprocess.PIPE
-        assert kwargs["stderr"] == subprocess.DEVNULL
-    finally:
-        session.close()
-    assert lifecycle == (
-        ["release", "wait", "close-output"] if completed else ["release", "kill", "wait", "close-output"]
-    )
-
-
-def test_completed_result_is_reused_without_mutable_aliases(monkeypatch):
-    _, commands, waits, _ = _helper(monkeypatch, _frame({"groups": [{"kind": "full_gpu", "count": "2"}]}))
-    session = probe.GpuProbe()
-    try:
-        session.result()["groups"][0]["count"] = "99"
-        assert session.result()["groups"][0]["count"] == "2"
-        assert len(commands) == len(waits) == 1
-    finally:
-        session.close()
-
-
 def test_startup_time_counts_against_remaining_deadline(monkeypatch):
     _, _, waits, _ = _helper(monkeypatch, b"", ready=False)
     session = probe.GpuProbe()
@@ -130,17 +78,6 @@ def test_startup_time_counts_against_remaining_deadline(monkeypatch):
         monkeypatch.setattr(probe, "time", SimpleNamespace(monotonic=lambda: 38.0))
         assert session.result() is None
         assert waits == [2.0]
-    finally:
-        session.close()
-
-
-def test_long_job_can_read_already_completed_discovery(monkeypatch):
-    _, _, waits, _ = _helper(monkeypatch, _frame({"groups": []}))
-    session = probe.GpuProbe()
-    try:
-        monkeypatch.setattr(probe, "time", SimpleNamespace(monotonic=lambda: 100.0))
-        assert session.result() == {"groups": []}
-        assert waits == [0.0]
     finally:
         session.close()
 
@@ -165,7 +102,7 @@ def test_unresponsive_helper_is_killed_and_reaped_on_close(monkeypatch):
 
 
 def test_forked_child_cannot_use_or_close_parent_probe(monkeypatch):
-    _, _, waits, lifecycle = _helper(monkeypatch, _frame({"groups": []}))
+    _, _, waits, lifecycle = _helper(monkeypatch, _frame({"count": 0}))
     session = probe.GpuProbe()
     try:
         with monkeypatch.context() as forked:
@@ -183,32 +120,6 @@ def test_helper_launch_failure_is_unavailable(monkeypatch):
 
     monkeypatch.setattr(probe.subprocess, "Popen", fail)
     assert probe.probe_gpu_isolated() is None
-
-
-def test_large_optional_descriptions_do_not_erase_device_count(monkeypatch):
-    monkeypatch.setattr(
-        gpu_nvidia,
-        "probe_gpu",
-        lambda: {"groups": [{"kind": "full_gpu", "count": "1", "model": "x" * 128} for _ in range(1000)]},
-    )
-    output = io.BytesIO()
-    monkeypatch.setattr(gpu_nvidia, "sys", SimpleNamespace(stdout=SimpleNamespace(buffer=output)))
-    gpu_nvidia.main()
-    result = json.loads(output.getvalue())
-    assert result == {"groups": [{"kind": "full_gpu", "count": "1000"}]}
-
-
-def test_large_ready_result_can_drain_after_long_execution(monkeypatch):
-    value = {"groups": [{"kind": "full_gpu", "count": "1", "model": f"A{index:03}" + "A" * 80} for index in range(100)]}
-    _, _, waits, _ = _helper(monkeypatch, _frame(value))
-    session = probe.GpuProbe()
-    try:
-        monkeypatch.setattr(probe, "time", SimpleNamespace(monotonic=lambda: 100.0))
-        assert session.result() == value
-        assert waits[0] == 0.0
-        assert waits[1:] and all(value == 1.0 for value in waits[1:])
-    finally:
-        session.close()
 
 
 def test_finalization_does_not_wait_for_full_background_budget(monkeypatch):
@@ -254,59 +165,60 @@ def test_kernel_delayed_exit_retains_a_reaper_without_blocking_owner(monkeypatch
 
 
 @pytest.mark.parametrize(
-    "suffix",
+    "encoded,expected,completed",
     [
-        b"",  # Optional native discovery is still running or crashed.
-        b'{"phase":"complete",',  # An incomplete frame must not wait.
-        b"not-json\n",
-        _frame(None),
-        _frame({"groups": [{"kind": "full_gpu", "count": "3"}]}),
-        _frame({"groups": [{"kind": "full_gpu", "count": 2}]}),
-        _frame({"groups": [{"kind": "full_gpu", "count": "2"}]}, phase="count"),
-        _frame({"groups": [{"kind": "full_gpu", "count": "2"}]}, phase="unknown"),
-        b"x" * (probe._MAX_OUTPUT_BYTES + 1),
-        b'{"phase":"complete","gpu":' + b"[" * 1500 + b"]" * 1500 + b"}\n",
+        (_frame({"count": 2}), {"count": 2}, True),
+        (_frame({"count": 0}), {"count": 0}, True),
+        (_frame(None), None, True),
+        (_frame({"count": "2"}), None, False),
+        (_frame({"count": True}), None, False),
+        (_frame({"count": -1}), None, False),
+        (_frame({"count": 4097}), None, False),
+        (_frame({"count": 1.5}), None, False),
+        (_frame({"count": 2, "extra": 1}), None, False),
+        (b"not-json\n", None, False),
+        (_frame({"count": 0})[:-1], None, False),
+        (b"x" * 129, None, False),
+        (b"", None, False),
     ],
 )
-def test_verified_count_survives_unfinished_or_invalid_enrichment(monkeypatch, suffix):
-    initial = {"groups": [{"kind": "cuda_device_unclassified", "count": "2"}]}
-    _, _, waits, lifecycle = _helper(monkeypatch, _frame(initial, phase="count") + suffix)
+def test_helper_output_and_failure_semantics(monkeypatch, encoded, expected, completed):
+    _, commands, waits, lifecycle = _helper(monkeypatch, encoded)
     session = probe.GpuProbe()
     try:
-        assert session.result() == initial
-        assert session.result() == initial
-        assert not session._completed
-        assert waits[0] == 2.0
-        assert all(timeout == 0.0 for timeout in waits[1:])
+        assert waits == []
+        assert session.result() == expected
+        assert lifecycle == []  # Never reap the helper within the CPU measurement window.
+        assert session.result() == expected
+        command, kwargs = commands[0]
+        assert command == [probe.sys.executable, gpu_nvidia.__file__, "--hold", str(probe.os.getpid()), "40.0"]
+        assert "env" not in kwargs
+        assert kwargs["stdin"] == subprocess.PIPE
+        assert kwargs["stderr"] == subprocess.DEVNULL
     finally:
         session.close()
-    assert lifecycle == ["release", "kill", "wait", "close-output"]
+    assert lifecycle == (
+        ["release", "wait", "close-output"] if completed else ["release", "kill", "wait", "close-output"]
+    )
 
 
-def test_ready_enrichment_replaces_count_once_without_waiting(monkeypatch):
-    initial = {"groups": [{"kind": "cuda_device_unclassified", "count": "2"}]}
-    final = {"groups": [{"kind": "full_gpu", "count": "2", "model": "NVIDIA H100"}]}
-    _, _, waits, lifecycle = _helper(monkeypatch, b"")
-    chunks = iter((_frame(initial, phase="count"), _frame(final)))
-    monkeypatch.setattr(probe.os, "read", lambda _fd, _size: next(chunks))
+def test_completed_result_is_reused_without_mutable_aliases(monkeypatch):
+    _, commands, waits, _ = _helper(monkeypatch, _frame({"count": 2}))
     session = probe.GpuProbe()
     try:
-        assert session.result() == final
-        assert session._completed
-        assert session.result() == final
-        assert waits == [2.0, 0.0]
+        session.result()["count"] = 99
+        assert session.result() == {"count": 2}
+        assert len(commands) == len(waits) == 1
     finally:
         session.close()
-    assert lifecycle == ["release", "wait", "close-output"]
 
 
-def test_discovery_protocol_does_not_accept_a_third_frame(monkeypatch):
-    initial = {"groups": [{"kind": "cuda_device_unclassified", "count": "2"}]}
-    final = {"groups": [{"kind": "full_gpu", "count": "2"}]}
-    _helper(monkeypatch, _frame(initial, phase="count") + _frame(initial, phase="count") + _frame(final))
+def test_long_job_can_read_a_count_without_waiting(monkeypatch):
+    _, _, waits, _ = _helper(monkeypatch, _frame({"count": 0}))
     session = probe.GpuProbe()
     try:
-        assert session.result() == initial
-        assert not session._completed
+        monkeypatch.setattr(probe, "time", SimpleNamespace(monotonic=lambda: 100.0))
+        assert session.result() == {"count": 0}
+        assert waits == [0.0]
     finally:
         session.close()

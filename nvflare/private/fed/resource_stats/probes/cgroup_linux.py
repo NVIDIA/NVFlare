@@ -21,15 +21,13 @@ incomplete-observation indication without discarding other readable bounds.
 from __future__ import annotations
 
 import ctypes
+import math
 import os
 import platform
 import re
 from collections.abc import Mapping
-from decimal import ROUND_FLOOR, Decimal, localcontext
 from pathlib import Path
 from typing import Any, Optional
-
-from ._shared import _decimal_text, _normalize_architecture, _normalize_model
 
 _CGROUP_FILE_MISSING = object()
 _CGROUP_FILE_UNREADABLE = object()
@@ -233,70 +231,6 @@ def _parse_cpu_list(value: Optional[str]) -> Optional[int]:
     return count if 0 < count <= 2**32 - 1 else None
 
 
-def _cpu_models(affinity: Optional[set[int]]) -> dict[int, str]:
-    """Read model descriptions once, omitting missing or ambiguous identities."""
-
-    if not affinity:
-        return {}
-    text = _read_text(Path("/proc/cpuinfo"))
-    if not text:
-        return {}
-    models_by_cpu: dict[int, set[str]] = {}
-    for block in re.split(r"\n\s*\n", text):
-        processor_id = None
-        model = None
-        for line in block.splitlines():
-            key, separator, raw_value = line.partition(":")
-            if not separator:
-                continue
-            key = key.strip().lower()
-            raw_value = raw_value.strip()
-            if key == "processor" and raw_value.isdigit():
-                processor_id = int(raw_value)
-            elif key in ("model name", "cpu model"):
-                model = _normalize_model(raw_value)
-        if processor_id is not None and model:
-            models_by_cpu.setdefault(processor_id, set()).add(model)
-    selected = {}
-    for cpu_id in affinity:
-        models = models_by_cpu.get(cpu_id)
-        if not models or len(models) != 1:
-            return {}
-        selected[cpu_id] = next(iter(models))
-    return selected
-
-
-def _cpu_identity(affinity: Optional[set[int]], models: dict[int, str]) -> dict[str, str]:
-    result = {}
-    architecture = _normalize_architecture(platform.machine())
-    if architecture:
-        result["architecture"] = architecture
-    selected = set(models.values())
-    if len(selected) == 1:
-        result["model"] = next(iter(selected))
-    return result
-
-
-def _heterogeneous_cpu_groups(affinity: Optional[set[int]], models: dict[int, str]) -> Optional[list[dict[str, Any]]]:
-    """Group affinity-visible logical CPUs only when every model is known."""
-
-    if not affinity or not models:
-        return None
-    architecture = _normalize_architecture(platform.machine())
-    counts: dict[str, int] = {}
-    for cpu_id in affinity:
-        model = models[cpu_id]
-        counts[model] = counts.get(model, 0) + 1
-    return [
-        {
-            "units": str(counts[model]),
-            "model": model,
-            **({"architecture": architecture} if architecture else {}),
-        }
-        for model in sorted(counts)
-    ]
-
-
 def _controller_paths(controller: str, discovery, issues: Optional[set[str]]) -> tuple[list[Path], str]:
     mount, directory, version = _controller_location(controller, discovery)
     if version == "unavailable":
@@ -304,7 +238,7 @@ def _controller_paths(controller: str, discovery, issues: Optional[set[str]]) ->
     return (_ancestors(directory, mount) if directory is not None and mount is not None else []), version
 
 
-def _cpuset_bound(path: Path, version: str, issues: Optional[set[str]]) -> Optional[Decimal]:
+def _cpuset_bound(path: Path, version: str, issues: Optional[set[str]]) -> Optional[int]:
     filename = "cpuset.cpus.effective" if version == "v2" else "cpuset.effective_cpus"
     value = _limit_text(path / filename, issues)
     if value is None and version == "v1":
@@ -315,10 +249,10 @@ def _cpuset_bound(path: Path, version: str, issues: Optional[set[str]]) -> Optio
     if count is None:
         _incomplete(issues)
         return None
-    return Decimal(count)
+    return count
 
 
-def _quota_bound(path: Path, version: str, issues: Optional[set[str]]) -> Optional[Decimal]:
+def _quota_bound(path: Path, version: str, issues: Optional[set[str]]) -> Optional[float]:
     if version == "v2":
         value = _limit_text(path / "cpu.max", issues)
         if value is None:
@@ -342,15 +276,11 @@ def _quota_bound(path: Path, version: str, issues: Optional[set[str]]) -> Option
         if quota_text == "max" and version == "v2":
             return None
         quota = int(quota_text)
-        if not 0 < quota < 2**64 or not period < 2**64:
-            raise ValueError("CPU quota and period must be positive unsigned 64-bit values")
-        with localcontext() as context:
-            context.prec = 100
-            units = (Decimal(quota) / Decimal(period)).quantize(Decimal("0.000000001"), rounding=ROUND_FLOOR)
-        if not 0 < units <= 1048576:
-            raise ValueError("CPU quota is outside visible-unit or precision bounds")
+        units = quota / period
+        if units <= 0 or not math.isfinite(units):
+            raise ValueError("CPU quota must be positive and finite")
         return units
-    except ValueError:
+    except (ValueError, OverflowError):
         _incomplete(issues)
         return None
 
@@ -368,9 +298,9 @@ def probe_cpu(_discovery=None, *, issues: Optional[set[str]] = None) -> Optional
         affinity = None
         affinity_count = None
 
-    candidates: list[Decimal] = []
+    candidates: list[int | float] = []
     if affinity_count:
-        candidates.append(Decimal(affinity_count))
+        candidates.append(affinity_count)
     else:
         _incomplete(issues)
         online = _positive_sysconf("SC_NPROCESSORS_ONLN")
@@ -380,7 +310,7 @@ def probe_cpu(_discovery=None, *, issues: Optional[set[str]] = None) -> Optional
             except (OSError, TypeError, ValueError):
                 online = None
         if type(online) is int and online > 0:
-            candidates.append(Decimal(online))
+            candidates.append(online)
 
     # Affinity already includes effective CPU-set restrictions. Only inspect
     # those files when affinity is unavailable; quota remains an independent
@@ -397,22 +327,10 @@ def probe_cpu(_discovery=None, *, issues: Optional[set[str]] = None) -> Optional
     if not candidates:
         return None
 
-    selected = min(candidates)
-    group: dict[str, Any] = {"units": _decimal_text(selected)}
-    try:
-        models = _cpu_models(affinity)
-        if affinity_count is not None and selected == Decimal(affinity_count):
-            groups = _heterogeneous_cpu_groups(affinity, models)
-            if groups:
-                return {"groups": groups}
-        group.update(_cpu_identity(affinity, models))
-    except Exception:
-        # Optional hardware descriptions must never erase the capacity.
-        pass
-    return {"groups": [group]}
+    return {"units": min(candidates)}
 
 
-def probe_memory(_discovery=None, *, issues: Optional[set[str]] = None) -> Optional[dict[str, str]]:
+def probe_memory(_discovery=None, *, issues: Optional[set[str]] = None) -> Optional[dict[str, int]]:
     """Return the smallest usable physical/cgroup memory bound."""
 
     if platform.system() != "Linux":
@@ -447,4 +365,4 @@ def probe_memory(_discovery=None, *, issues: Optional[set[str]] = None) -> Optio
                 _incomplete(issues)
                 continue
         candidates.append(limit)
-    return {"bytes": str(min(candidates))} if candidates else None
+    return {"bytes": min(candidates)} if candidates else None

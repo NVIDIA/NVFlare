@@ -12,80 +12,43 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Measure CUDA devices available to this process with the system Driver API.
 
-An explicitly empty CUDA_VISIBLE_DEVICES hides every GPU without initializing
-the Driver. Otherwise the Driver count is numeric authority. Driver metadata
-and NVML classification are optional: neither changes the counted ordinals.
-No CUDA Runtime, framework package, command, or device-list parser is used.
-UUIDs remain private to this call and never enter a report. This module is also
-a standalone helper: keep its imports limited to the Python standard library.
+"""Count CUDA devices visible to this process using only the system Driver API.
+
+Keep this standalone helper limited to the standard library. It inherits the
+execution's environment and device access, without importing NVFlare or a
+framework, inspecting UUIDs, or initializing CUDA in the application process.
 """
-
-from __future__ import annotations
 
 import ctypes
 import json
 import os
 import platform
-import re
+import select
 import signal
 import sys
+import threading
 import time
-from collections import Counter
-from typing import Any, Callable, Optional
 
 CUDA_SUCCESS = 0
 CUDA_ERROR_NOT_INITIALIZED = 3
 CUDA_ERROR_NO_DEVICE = 100
 MAX_CUDA_DEVICES = 4096
-_MAX_OUTPUT_BYTES = 64 * 1024
-_MODEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._()+/@-]{0,127}$")
-_PRIVATE_MODEL_PATTERN = re.compile(
-    r"(?:GPU|MIG|MIG-GPU)-[0-9a-f-]{16,}|(?:[0-9a-f]{4}:)?[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]|"
-    r"\b(?:serial|uuid|cuda_visible_devices|pci_bus_id|hostname)\b",
-    re.IGNORECASE,
-)
-
-
-class _CudaUuid(ctypes.Structure):
-    _fields_ = [("bytes", ctypes.c_ubyte * 16)]
-
-
-def _load_library(candidates: tuple[str, ...]):
-    """Load only well-known system library names; never inspect job packages."""
-
-    for candidate in candidates:
-        try:
-            return ctypes.CDLL(candidate)
-        except (AttributeError, OSError, TypeError, ValueError):
-            continue
-    return None
 
 
 def _load_driver():
-    system = platform.system()
-    if system == "Linux":
-        # The versioned Driver SONAME avoids a toolkit's unversioned stub.
-        return _load_library(("libcuda.so.1",))
-    if system == "Darwin":
-        # Legacy macOS drivers only. A missing library remains unavailable.
-        return _load_library(("libcuda.dylib",))
+    name = {"Linux": "libcuda.so.1", "Darwin": "libcuda.dylib"}.get(platform.system())
+    if name is not None:
+        try:
+            return ctypes.CDLL(name)
+        except (AttributeError, OSError, TypeError, ValueError):
+            pass
     return None
 
 
-def _load_nvml():
-    system = platform.system()
-    if system == "Linux":
-        return _load_library(("libnvidia-ml.so.1",))
-    return None
-
-
-def _bind(library: Any, name: str, argtypes: list[Any]):
-    """Bind one optional ctypes symbol without allowing a Python-side error out."""
-
+def _bind(driver, name, argtypes):
     try:
-        function = getattr(library, name)
+        function = getattr(driver, name)
         function.argtypes = argtypes
         function.restype = ctypes.c_int
         return function
@@ -93,232 +56,81 @@ def _bind(library: Any, name: str, argtypes: list[Any]):
         return None
 
 
-def _result(function: Any, *args: Any) -> Optional[int]:
-    if function is None:
-        return None
-    try:
-        return function(*args)
-    except Exception:
-        # Native wrappers and test doubles can raise after a successful count.
-        # An optional metadata/classification call must not lose that count.
-        return None
+def _result(function, *args):
+    if function is not None:
+        try:
+            return function(*args)
+        except Exception:
+            pass
+    return None
 
 
-def _driver_count(driver: Any) -> Optional[int]:
-    cu_init = _bind(driver, "cuInit", [ctypes.c_uint])
-    cu_get_count = _bind(driver, "cuDeviceGetCount", [ctypes.POINTER(ctypes.c_int)])
-    if cu_init is None or cu_get_count is None:
-        return None
-    initialized = _result(cu_init, 0)
-    if initialized == CUDA_ERROR_NO_DEVICE:
-        return 0
-    if initialized != CUDA_SUCCESS:
-        return None
+def _count(driver, *, initialized_only):
+    if not initialized_only:
+        status = _result(_bind(driver, "cuInit", [ctypes.c_uint]), 0)
+        if status == CUDA_ERROR_NO_DEVICE:
+            return {"count": 0}
+        if status != CUDA_SUCCESS:
+            return None
     count = ctypes.c_int(-1)
-    enumerated = _result(cu_get_count, ctypes.byref(count))
-    if enumerated == CUDA_ERROR_NO_DEVICE:
-        return 0
-    if enumerated != CUDA_SUCCESS or count.value < 0 or count.value > MAX_CUDA_DEVICES:
-        return None
-    return count.value
-
-
-def _uuid_text(value: _CudaUuid) -> str:
-    raw = bytes(value.bytes).hex()
-    return f"{raw[:8]}-{raw[8:12]}-{raw[12:16]}-{raw[16:20]}-{raw[20:]}"
-
-
-def _driver_devices(driver: Any, count: int) -> list[dict[str, Any]]:
-    cu_get_device = _bind(driver, "cuDeviceGet", [ctypes.POINTER(ctypes.c_int), ctypes.c_int])
-    cu_get_name = _bind(driver, "cuDeviceGetName", [ctypes.c_char_p, ctypes.c_int, ctypes.c_int])
-    # cuda.h maps size_t* cuDeviceTotalMem to the exported _v2 entry point.
-    cu_total_mem = _bind(driver, "cuDeviceTotalMem_v2", [ctypes.POINTER(ctypes.c_size_t), ctypes.c_int])
-    # The _v2 UUID identifies MIG compute instances correctly where supported.
-    cu_get_uuid = _bind(driver, "cuDeviceGetUuid_v2", [ctypes.POINTER(_CudaUuid), ctypes.c_int])
-
-    devices: list[dict[str, Any]] = []
-    for ordinal in range(count):
-        device_info: dict[str, Any] = {"kind": "cuda_device_unclassified"}
-        devices.append(device_info)
-        device = ctypes.c_int(-1)
-        if _result(cu_get_device, ctypes.byref(device), ordinal) != CUDA_SUCCESS or device.value < 0:
-            continue
-        if cu_get_name is not None:
-            name_buffer = ctypes.create_string_buffer(128)
-            if _result(cu_get_name, name_buffer, len(name_buffer), device.value) == CUDA_SUCCESS:
-                model = " ".join(name_buffer.value.decode("ascii", errors="ignore").split())
-                if _MODEL_PATTERN.fullmatch(model) and not _PRIVATE_MODEL_PATTERN.search(model):
-                    device_info["model"] = model
-        if cu_total_mem is not None:
-            memory = ctypes.c_size_t()
-            if _result(cu_total_mem, ctypes.byref(memory), device.value) == CUDA_SUCCESS and memory.value > 0:
-                device_info["memory_bytes"] = str(memory.value)
-        if cu_get_uuid is not None:
-            uuid = _CudaUuid()
-            if _result(cu_get_uuid, ctypes.byref(uuid), device.value) == CUDA_SUCCESS and any(uuid.bytes):
-                device_info["_uuid"] = _uuid_text(uuid)
-    return devices
-
-
-def _classify_with_nvml(devices: list[dict[str, Any]]) -> None:
-    identities = Counter(device.get("_uuid") for device in devices if device.get("_uuid"))
-    if not identities:
-        return
-    nvml = _load_nvml()
-    if nvml is None:
-        return
-    nvml_init = _bind(nvml, "nvmlInit_v2", [])
-    nvml_shutdown = _bind(nvml, "nvmlShutdown", [])
-    get_handle = _bind(nvml, "nvmlDeviceGetHandleByUUID", [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)])
-    is_mig = _bind(nvml, "nvmlDeviceIsMigDeviceHandle", [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint)])
-    if any(function is None for function in (nvml_init, nvml_shutdown, get_handle, is_mig)):
-        return
-    if _result(nvml_init) != CUDA_SUCCESS:
-        return
-    try:
-        for device in devices:
-            identity = device.get("_uuid")
-            if not identity or identities[identity] != 1:
-                continue
-            # UUID prefixes are lookup encodings only, never a type test.
-            for prefix in ("GPU-", "MIG-"):
-                handle = ctypes.c_void_p()
-                if _result(get_handle, (prefix + identity).encode("ascii"), ctypes.byref(handle)) != 0:
-                    continue
-                if not handle.value:
-                    continue
-                mig = ctypes.c_uint(2)
-                if _result(is_mig, handle, ctypes.byref(mig)) == 0 and mig.value in (0, 1):
-                    device["kind"] = "mig_compute_instance" if mig.value else "full_gpu"
-                break
-    finally:
-        _result(nvml_shutdown)
-
-
-def probe_initialized_gpu() -> Optional[dict[str, list[dict[str, Any]]]]:
-    """Read application-owned CUDA state without initialization or enrichment.
-
-    A successful Driver count takes precedence over later environment changes.
-    An exactly empty mask establishes zero only when CUDA is not initialized.
-    This path never calls cuInit or queries optional metadata/NVML.
-    """
-
-    driver = _load_driver()
-    if driver is None:
-        return None
-    cu_get_count = _bind(driver, "cuDeviceGetCount", [ctypes.POINTER(ctypes.c_int)])
-    count = ctypes.c_int(-1)
-    status = _result(cu_get_count, ctypes.byref(count))
-    if status == CUDA_ERROR_NOT_INITIALIZED and os.environ.get("CUDA_VISIBLE_DEVICES") == "":
-        return {"groups": []}
+    status = _result(_bind(driver, "cuDeviceGetCount", [ctypes.POINTER(ctypes.c_int)]), ctypes.byref(count))
     if status == CUDA_ERROR_NO_DEVICE:
-        return {"groups": []}
-    if status != CUDA_SUCCESS or count.value < 0 or count.value > MAX_CUDA_DEVICES:
-        return None
-    return {"groups": [{"kind": "cuda_device_unclassified", "count": str(count.value)}] if count.value else []}
+        return {"count": 0}
+    if initialized_only and status == CUDA_ERROR_NOT_INITIALIZED and os.environ.get("CUDA_VISIBLE_DEVICES") == "":
+        return {"count": 0}
+    return {"count": count.value} if status == CUDA_SUCCESS and 0 <= count.value <= MAX_CUDA_DEVICES else None
 
 
-def probe_gpu(
-    *, on_count: Optional[Callable[[dict[str, Any]], None]] = None
-) -> Optional[dict[str, list[dict[str, Any]]]]:
-    """Return one capacity group per kind/model/memory set, or unknown.
-
-    With a loadable Driver, an exactly empty CUDA_VISIBLE_DEVICES is observed
-    zero without native initialization. Otherwise a successful Driver count of
-    zero and explicit CUDA_ERROR_NO_DEVICE are observed zero. No loadable Driver,
-    other Driver errors, or a count outside 0..4096 are unavailable.
-    Classification failures never change a known positive count. Each Driver
-    ordinal contributes to one group exactly once.
-    Counts are integer-valued decimal strings, matching the capacity contract.
-    on_count publishes a positive count before optional metadata or NVML work.
-    """
-
+def probe_gpu():
+    """Initialize only the helper's Driver and return its visible device count."""
     driver = _load_driver()
     if driver is None:
         return None
-    # CUDA defines the exact empty mask as no visible devices. Avoid waking
-    # GPUs for an explicitly CPU-only execution; all other masks use the Driver.
     if os.environ.get("CUDA_VISIBLE_DEVICES") == "":
-        return {"groups": []}
-    count = _driver_count(driver)
-    if count is None:
-        return None
-    if count == 0:
-        return {"groups": []}
+        return {"count": 0}
+    return _count(driver, initialized_only=False)
 
-    if on_count is not None:
-        on_count({"groups": [{"kind": "cuda_device_unclassified", "count": str(count)}]})
-    devices = _driver_devices(driver, count)
+
+def probe_initialized_gpu():
+    """Reuse application-owned CUDA state without initialization or metadata calls."""
+    driver = _load_driver()
+    return _count(driver, initialized_only=True) if driver is not None else None
+
+
+def _watch_owner(parent_pid):
+    # getppid observes the owning process, unlike Linux PDEATHSIG, which follows
+    # the particular thread that created the helper. EOF also releases a hold;
+    # checking the process covers descendants that inherited the pipe writer.
     try:
-        _classify_with_nvml(devices)
-    except Exception:
-        # NVML is optional and must never prevent report finalization.
+        while os.getppid() == parent_pid:
+            if select.select([sys.stdin.fileno()], [], [], 0.1)[0]:
+                break
+    except (OSError, ValueError):
         pass
-    groups: dict[tuple[str, Optional[str], Optional[str]], dict[str, Any]] = {}
-    for device in devices:
-        key = (device["kind"], device.get("model"), device.get("memory_bytes"))
-        group = groups.setdefault(
-            key,
-            {
-                "kind": device["kind"],
-                "count": 0,
-                **({"model": device["model"]} if "model" in device else {}),
-                **({"memory_bytes": device["memory_bytes"]} if "memory_bytes" in device else {}),
-            },
-        )
-        group["count"] += 1
-    for group in groups.values():
-        group["count"] = str(group["count"])
-    return {"groups": [groups[key] for key in sorted(groups, key=lambda item: tuple(value or "" for value in item))]}
+    os._exit(0)
 
 
-def _protect_owner(parent_pid: int, deadline: float) -> None:
-    # EOF on stdin releases the hold on every platform. Linux also terminates
-    # a helper whose owner dies while a native discovery call is still running.
-    if platform.system() == "Linux":
-        libc = ctypes.CDLL(None)
-        prctl = _bind(libc, "prctl", [ctypes.c_int] + [ctypes.c_ulong] * 4)
-        if _result(prctl, 1, signal.SIGKILL, 0, 0, 0) != 0:
-            raise OSError("cannot bind GPU discovery to its owner")
-    if os.getppid() != parent_pid:
-        raise SystemExit(1)
+def _protect_owner(parent_pid, deadline):
     remaining = deadline - time.monotonic()
-    if remaining <= 0:
+    if os.getppid() != parent_pid or remaining <= 0:
         raise SystemExit(1)
     signal.signal(signal.SIGALRM, signal.SIG_DFL)
     signal.setitimer(signal.ITIMER_REAL, remaining)
+    monitor = threading.Thread(target=_watch_owner, args=(parent_pid,), daemon=True)
+    monitor.start()
+    return monitor
 
 
-def _write_output(value, *, phase=None):
-    payload = value if phase is None else {"phase": phase, "gpu": value}
-    encoded = json.dumps(payload, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    if len(encoded) + 1 > _MAX_OUTPUT_BYTES:
-        # Optional descriptions cannot erase an already enumerated CUDA count.
-        counts = Counter()
-        for group in value["groups"]:
-            counts[group["kind"]] += int(group["count"])
-        value = {"groups": [{"kind": kind, "count": str(count)} for kind, count in sorted(counts.items())]}
-        payload = value if phase is None else {"phase": phase, "gpu": value}
-        encoded = json.dumps(payload, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    sys.stdout.buffer.write(encoded + b"\n")
+def main(*, parent_pid=None, deadline=None):
+    """Emit one count; hold positive initialization until the execution releases it."""
+    monitor = _protect_owner(parent_pid, deadline) if parent_pid is not None else None
+    value = probe_gpu()
+    if monitor is not None:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+    sys.stdout.buffer.write(json.dumps(value, allow_nan=False).encode("utf-8") + b"\n")
     sys.stdout.buffer.flush()
-
-
-def main(*, parent_pid: Optional[int] = None, deadline: Optional[float] = None):
-    """Run with ordinary Python startup without importing the NVFlare package."""
-
-    if parent_pid is None:
-        _write_output(probe_gpu())
-        return
-    _protect_owner(parent_pid, deadline)
-    # The hold protocol publishes a small verified count before optional work.
-    # The complete frame replaces it only when enrichment is already available.
-    value = probe_gpu(on_count=lambda value: _write_output(value, phase="count"))
-    signal.setitimer(signal.ITIMER_REAL, 0)
-    _write_output(value, phase="complete")
-    # Keeping the CUDA client alive avoids a second cold initialization when
-    # application code first uses its GPU. Parent closure releases it.
-    sys.stdin.buffer.read(1)
+    if monitor is not None and value is not None and value["count"] > 0:
+        monitor.join()
 
 
 if __name__ == "__main__":
