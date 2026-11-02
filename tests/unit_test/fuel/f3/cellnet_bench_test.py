@@ -14,6 +14,7 @@
 
 import json
 import threading
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -22,6 +23,7 @@ from dev_tools.f3 import cellnet_bench
 from nvflare.fuel.f3.streaming.byte_receiver import ACK_INTERVAL
 from nvflare.fuel.f3.streaming.byte_streamer import STREAM_CHUNK_SIZE, STREAM_WINDOW_SIZE
 from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_INTERVAL, STREAM_RETRY_MAX_PENDING_BYTES
+from nvflare.fuel.utils.config_factory import ConfigFactory
 from tests.timing_utils import isolate_time
 
 
@@ -116,6 +118,30 @@ def test_raw_tcp_sender_reports_end_to_end_baseline(capsys):
 )
 def test_parse_byte_size_uses_binary_units(value, expected):
     assert cellnet_bench.parse_byte_size(value) == expected
+
+
+SAMPLE_CONFIG = Path(cellnet_bench.__file__).parent / "comm_config.sample.json"
+
+
+def test_sample_config_is_invisible_to_comm_config_search():
+    fmt, found = ConfigFactory.search_config_format("comm_config.json", [str(SAMPLE_CONFIG.parent)])
+
+    assert (fmt, found) == (None, None)
+
+
+def test_configure_f3_loads_sample_config_ignoring_sibling_comm_config(tmp_path):
+    config_file = tmp_path / "bench.json"
+    config_file.write_text(SAMPLE_CONFIG.read_text(), encoding="utf-8")
+    (tmp_path / "comm_config.json").write_text('{"streaming_chunk_size": "2M"}', encoding="utf-8")
+
+    try:
+        loaded_path, _ = cellnet_bench.configure_f3(str(config_file))
+
+        assert loaded_path == config_file
+        assert cellnet_bench.CommConfigurator().get_streaming_chunk_size(1) == 1024 * 1024
+    finally:
+        cellnet_bench.ConfigService.reset()
+        cellnet_bench.CommConfigurator.reset()
 
 
 def test_configure_f3_loads_chunk_and_window_sizes(tmp_path):

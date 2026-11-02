@@ -7,7 +7,7 @@ two machines, plus a sample tuning config.
 |------|---------|
 | `tensor_download_bench.py` | End-to-end PyTorch tensor transfer through FOBS and the F3 Download Service |
 | `cellnet_bench.py` | Raw F3 cellnet streaming and baseline raw-TCP ceiling |
-| `comm_config.json` | Sample F3 tuning config for high-bandwidth networks |
+| `comm_config.sample.json` | Sample F3 tuning config for high-bandwidth networks |
 
 Start the receiver on the destination machine first; then start the sender.
 Use the same Python environment (`nvflare` must be importable) on both hosts.
@@ -69,18 +69,18 @@ Suffixes are binary: `1K = 1024`, `1M = 1024K`, `1G = 1024M`.
 
 ### With F3 tuning
 
-Pass the same `comm_config.json` to both endpoints:
+Pass the same `comm_config.sample.json` to both endpoints:
 
 ```bash
 python dev_tools/f3/tensor_download_bench.py recv \
     --url tcp://0.0.0.0:8002 \
     --offload-dir /fast/local/nvme \
-    --f3-config dev_tools/f3/comm_config.json
+    --f3-config dev_tools/f3/comm_config.sample.json
 
 python dev_tools/f3/tensor_download_bench.py send \
     --url tcp://<receiver-host>:8002 \
     --checkpoint /path/to/pytorch_model.bin \
-    --f3-config dev_tools/f3/comm_config.json
+    --f3-config dev_tools/f3/comm_config.sample.json
 ```
 
 ---
@@ -113,11 +113,11 @@ runs, so you can A/B `reliable=true` vs `reliable=false` without restarting.
 ```bash
 python dev_tools/f3/cellnet_bench.py recv \
     --url tcp://0.0.0.0:8002 \
-    --f3-config dev_tools/f3/comm_config.json
+    --f3-config dev_tools/f3/comm_config.sample.json
 
 python dev_tools/f3/cellnet_bench.py send \
     --url tcp://<receiver-host>:8002 \
-    --f3-config dev_tools/f3/comm_config.json
+    --f3-config dev_tools/f3/comm_config.sample.json
 ```
 
 ### Raw TCP ceiling
@@ -143,7 +143,7 @@ utilisation reporting with `--target-gbps`.
 
 ---
 
-## `comm_config.json`
+## `comm_config.sample.json`
 
 Benchmark-selected F3 streaming defaults for a nominal 25 Gbit/s network.
 Pass the same file to both endpoints with `--f3-config`. Key defaults:

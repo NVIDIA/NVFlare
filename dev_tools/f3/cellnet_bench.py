@@ -30,9 +30,9 @@ Cellnet sender:
 Optional F3 tuning (use the same JSON on both endpoints):
 
     python dev_tools/f3/cellnet_bench.py recv --url tcp://0.0.0.0:8002 \
-        --f3-config dev_tools/f3/comm_config.json
+        --f3-config dev_tools/f3/comm_config.sample.json
     python dev_tools/f3/cellnet_bench.py send --url tcp://<receiver-host>:8002 \
-        --f3-config dev_tools/f3/comm_config.json
+        --f3-config dev_tools/f3/comm_config.sample.json
 
 Raw TCP receiver and sender (no F3):
 
@@ -47,13 +47,16 @@ for the tested hosts, network, and buffer configuration.
 """
 
 import argparse
+import atexit
 import copy
 import json
 import logging
 import os
 import re
+import shutil
 import socket
 import struct
+import tempfile
 import threading
 import time
 from decimal import Decimal, InvalidOperation
@@ -225,8 +228,8 @@ def configure_f3(config_file: str) -> tuple[Path, dict]:
     path = Path(config_file).expanduser().resolve()
     if not path.is_file():
         raise ValueError(f"F3 configuration file does not exist: {path}")
-    if path.name != "comm_config.json":
-        raise ValueError(f"F3 configuration must be named comm_config.json, got {path.name!r}")
+    if path.suffix.lower() != ".json":
+        raise ValueError(f"F3 configuration must be a .json file: {path}")
 
     with path.open(encoding="utf-8") as config_stream:
         requested_config = json.load(config_stream)
@@ -235,16 +238,19 @@ def configure_f3(config_file: str) -> tuple[Path, dict]:
     normalized_config = normalize_f3_config(requested_config)
     validate_f3_config(normalized_config)
 
-    # CommConfigurator discovers the native comm_config by basename. Initializing
-    # ConfigService with this directory preserves every flat and nested F3 option.
+    # CommConfigurator discovers comm_config.json by basename through a recursive
+    # search. Staging the file alone in a private directory preserves every flat
+    # and nested F3 option without picking up other comm_config files.
+    config_dir = tempfile.mkdtemp(prefix="f3_bench_config_")
+    atexit.register(shutil.rmtree, config_dir, ignore_errors=True)
+    with open(os.path.join(config_dir, "comm_config.json"), "w", encoding="utf-8") as staged:
+        json.dump(requested_config, staged)
     ConfigService.reset()
-    ConfigService.initialize(section_files={}, config_path=[str(path.parent)])
+    ConfigService.initialize(section_files={}, config_path=[config_dir])
     CommConfigurator.reset()
     loaded_config = CommConfigurator().get_config()
     if loaded_config is None:
         raise ValueError(f"F3 could not load {path}")
-    if loaded_config != requested_config:
-        raise ValueError(f"F3 loaded a different comm_config from {path.parent}; remove conflicting config files")
     # F3 exposes its loaded native configuration as a mutable dict. Replace the
     # unit-bearing strings with normalized byte counts before any F3 component
     # reads flat or nested settings.
@@ -654,7 +660,7 @@ def main():
         "--f3-config",
         "--config",
         dest="f3_config",
-        help="optional native F3 comm_config.json file (cellnet transport only)",
+        help="optional native F3 comm_config JSON file (cellnet transport only)",
     )
 
     p_send = sub.add_parser("send", help="run the sender")
@@ -705,7 +711,7 @@ def main():
         "--f3-config",
         "--config",
         dest="f3_config",
-        help="optional native F3 comm_config.json file (cellnet transport only)",
+        help="optional native F3 comm_config JSON file (cellnet transport only)",
     )
 
     args = parser.parse_args()

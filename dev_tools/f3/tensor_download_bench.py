@@ -26,7 +26,7 @@ Run the sender on the host containing the checkpoint:
 
 The sender runs both memory and disk-offload modes by default. The timed result
 includes FOBS decomposition, Download Service transfer, receiver reconstruction,
-and validation. Use the same optional comm_config.json on both hosts to tune F3.
+and validation. Use the same optional comm_config.sample.json on both hosts to tune F3.
 """
 
 import argparse
@@ -615,7 +615,7 @@ def main():
         default=DEFAULT_SAMPLE_INTERVAL,
         help=f"RSS sampling interval in seconds (default {DEFAULT_SAMPLE_INTERVAL})",
     )
-    receiver.add_argument("--f3-config", help="optional native F3 comm_config.json")
+    receiver.add_argument("--f3-config", help="optional native F3 comm_config JSON file")
 
     sender = subparsers.add_parser("send", help="transfer a PyTorch checkpoint to the receiver")
     sender.add_argument("--url", default="tcp://localhost:8002", help="receiver URL")
@@ -649,7 +649,7 @@ def main():
         type=byte_size_arg,
         help="select the smallest tensors up to this binary size for a smoke test, e.g. 128M or 2G",
     )
-    sender.add_argument("--f3-config", help="optional native F3 comm_config.json")
+    sender.add_argument("--f3-config", help="optional native F3 comm_config JSON file")
 
     args = parser.parse_args()
     logging.basicConfig(
