@@ -177,7 +177,8 @@ def run_personalized_eval(
             raise FileNotFoundError(
                 f"no client state for {cid} from round {server_round} or earlier under "
                 f"{run_dir / 'client_states'}: personalized eval needs fl.persist_client_state on the "
-                "training run."
+                "training run. Each site writes client_states under its own fl.output_dir; with a "
+                "relative fl.output_dir, copy every site's client_states folder into the run folder first."
             )
         client_round, client_ckpt = earlier[-1]
         if client_round < server_round:

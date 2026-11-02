@@ -130,8 +130,10 @@ def client_main(config_arg=None, app_dir=None):
             n = cfg.fl.save_every_n_rounds
             if (n and (r + 1) % n == 0) or r + 1 == cfg.fl.num_rounds:
                 save_client_state(Path(cfg.fl.output_dir) / "client_states", state, r, cfg.fl.client_state_keep)
-        # This standard FLARE weight carries DATASET SAMPLES, preserving the
-        # authors' weighting; it is not necessarily the local optimizer-step count.
+        # As in the authors' runs, this standard FLARE weight is the number of samples trained on
+        # this round (one per step for GR00T's nested batches), or the partition's frame count when
+        # the backend reports it (LeRobot explicit_repos). Otherwise clients with equal local steps
+        # and batch sizes get equal weight, whatever their dataset sizes.
         flare.send(
             FLModel(
                 params=delta,
