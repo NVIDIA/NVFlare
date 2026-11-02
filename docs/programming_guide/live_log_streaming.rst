@@ -184,7 +184,9 @@ for the deleted job. Late attempts to start another stream for that job are
 rejected. The receiver checks for interrupted deletion cleanup on server startup;
 logs for existing jobs are preserved, including when the job store is temporarily
 unavailable. A durable deletion intent is written before deleting the stored job.
-Failed deletion cancels that intent. Recovery checks authoritative job presence:
+Failed preparation or deletion cancels that intent. New streams also reconcile
+leftover intent, allowing uploads to resume after storage recovers without
+restarting the server. Recovery checks authoritative job presence:
 an existing job cancels interrupted deletion, a confirmed absent job permits
 cleanup, and an unavailable or unsupported lookup preserves both intent and logs.
 Custom job managers/stores must implement ``job_exists``/``object_exists`` to
