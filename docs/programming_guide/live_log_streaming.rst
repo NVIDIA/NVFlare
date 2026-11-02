@@ -178,6 +178,14 @@ Stored logs can be retrieved with the FLARE Console command
 If the stream ends with a non-OK return code (e.g. idle timeout), the
 **partial** file is retained at the path above and a warning is logged.
 
+Deleting a job also removes its managed staging files. Open streams keep their
+files until EOF or timeout, then discard them without publishing new components
+for the deleted job. Late attempts to start another stream for that job are
+rejected. The receiver checks for interrupted deletion cleanup on server startup;
+logs for existing jobs are preserved, including when the job store is temporarily
+unavailable. This automatic cleanup applies to the default managed staging tree.
+Operators who set ``dest_dir`` own retention and cleanup of that custom directory.
+
 SiteLogStreamer (client, site widget)
 -------------------------------------
 
