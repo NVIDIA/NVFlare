@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import datetime
+import errno
 import gc
 import io
 import shutil
@@ -808,6 +809,8 @@ def test_failed_job_deletion_retains_partial_logs(tmp_path, monkeypatch):
     assert len(conn.errors) == 1
     assert path.read_bytes() == b"retained partial\n"
     assert fl_ctx.get_engine().job_def_manager.get_job("job-1", fl_ctx) is not None
+    assert not (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    assert not (path.parents[1] / ClientLogStaging.DELETED_MARKER).exists()
 
 
 def test_receiver_restart_removes_abandoned_deleted_job_logs(tmp_path, monkeypatch):
@@ -816,13 +819,94 @@ def test_receiver_restart_removes_abandoned_deleted_job_logs(tmp_path, monkeypat
     receiver._on_chunk_received(b"retained partial\n", stream, fl_ctx)
     receiver._on_stream_done(stream, fl_ctx)
     # Simulate a server failure after deletion was recorded but before cleanup.
-    fl_ctx.get_engine().job_def_manager.delete("job-1", fl_ctx)
     with ClientLogStaging(fl_ctx.get_engine().get_workspace()).locked() as staging:
+        staging.prepare_delete("job-1")
+        fl_ctx.get_engine().job_def_manager.delete("job-1", fl_ctx)
         staging.mark_deleted("job-1")
     restarted = JobLogReceiver()
     with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
         restarted._register(EventType.SYSTEM_START, fl_ctx)
     assert not path.parent.parent.exists()
+
+
+@pytest.mark.parametrize("failure", [SystemExit("server stopped"), OSError(errno.ENOSPC, "disk full")])
+def test_delete_intent_recovers_interruption_after_store_deletion(tmp_path, monkeypatch, failure):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"retained partial\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    with patch.object(ClientLogStaging, "mark_deleted", side_effect=failure):
+        if isinstance(failure, SystemExit):
+            with pytest.raises(SystemExit):
+                JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+        else:
+            JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+            assert len(conn.errors) == 1
+    assert not fl_ctx.get_engine().job_def_manager.job_exists("job-1", fl_ctx)
+    assert path.read_bytes() == b"retained partial\n"
+    assert (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+        JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
+    assert not path.parent.parent.exists()
+
+
+def test_intent_write_failure_does_not_delete_job(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"keep log\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    manager = fl_ctx.get_engine().job_def_manager
+    monkeypatch.setattr(manager, "delete", MagicMock(wraps=manager.delete))
+    with patch("nvflare.app_common.logging.log_staging.os.fsync", side_effect=OSError(errno.ENOSPC, "disk full")):
+        JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+    assert len(conn.errors) == 1
+    manager.delete.assert_not_called()
+    assert manager.job_exists("job-1", fl_ctx)
+    assert path.read_bytes() == b"keep log\n"
+    # A partially written intent is canceled after an authoritative positive lookup.
+    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+        JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
+    assert path.read_bytes() == b"keep log\n"
+    assert not (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+
+
+def test_delete_intent_before_store_mutation_preserves_existing_job(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"keep log\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    with patch.object(fl_ctx.get_engine().job_def_manager, "delete", side_effect=SystemExit("server stopped")):
+        with pytest.raises(SystemExit):
+            JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+    assert (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    assert fl_ctx.get_engine().job_def_manager.job_exists("job-1", fl_ctx)
+    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+        JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
+    assert path.read_bytes() == b"keep log\n"
+    assert not (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+
+
+@pytest.mark.parametrize("failure", [PermissionError("store unavailable"), NotImplementedError("unsupported"), None])
+def test_uncertain_deletion_recovery_preserves_logs_and_intent(tmp_path, monkeypatch, failure):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"keep until confirmed\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    with ClientLogStaging(fl_ctx.get_engine().get_workspace()).locked() as staging:
+        staging.prepare_delete("job-1")
+    manager = fl_ctx.get_engine().job_def_manager
+    lookup = MagicMock(side_effect=failure) if failure else MagicMock(return_value=None)
+    with patch.object(manager, "job_exists", lookup):
+        with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+            JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
+    assert path.read_bytes() == b"keep until confirmed\n"
+    assert (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    # Confirmed presence cancels the intent, without relying on get_job(None).
+    with patch.object(manager, "get_job", return_value=None):
+        with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+            JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
+    assert path.read_bytes() == b"keep until confirmed\n"
+    assert not (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
 
 
 def test_missing_job_metadata_does_not_authorize_removing_logs(tmp_path, monkeypatch):

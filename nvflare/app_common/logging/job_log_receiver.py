@@ -130,7 +130,7 @@ class JobLogReceiver(Widget):
 
     @staticmethod
     def _open_log(root, job_id, client, file_name, leased=False):
-        if leased and client == ClientLogStaging.DELETED_MARKER:
+        if leased and client in (ClientLogStaging.DELETED_MARKER, ClientLogStaging.DELETE_INTENT):
             raise ValueError("Reserved client log path component")
         path = client_log_path(root, job_id, client, file_name)
         root = os.path.realpath(root)
@@ -234,6 +234,7 @@ class JobLogReceiver(Widget):
                     job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
                     if staging and (
                         staging.is_deleted(job_id)
+                        or staging.is_deleting(job_id)
                         or (job_manager is not None and job_manager.get_job(job_id, fl_ctx) is None)
                     ):
                         raise ValueError("Cannot stream logs for a deleted or unknown job")
@@ -267,6 +268,14 @@ class JobLogReceiver(Widget):
         with staging.locked() if staging else nullcontext():
             state["file"].close()
             job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+            if staging and staging.is_deleting(state["job_id"]):
+                try:
+                    if job_manager is None:
+                        raise RuntimeError("Job manager unavailable for deletion recovery")
+                    staging.recover_delete(state["job_id"], job_manager, fl_ctx)
+                except Exception:
+                    self.log_exception(fl_ctx, "Cannot confirm interrupted job deletion; partial log retained")
+                    return
             if staging and staging.is_deleted(state["job_id"]):
                 staging.remove_closed_job_logs(state["job_id"])
                 return
@@ -329,8 +338,14 @@ class JobLogReceiver(Widget):
         with staging.locked():
             with os.scandir(staging.root) as entries:
                 for entry in entries:
-                    if entry.is_dir(follow_symlinks=False) and staging.is_deleted(entry.name):
-                        staging.remove_closed_job_logs(entry.name)
+                    if not entry.is_dir(follow_symlinks=False):
+                        continue
+                    try:
+                        staging.recover_delete(entry.name, job_manager, fl_ctx)
+                        if staging.is_deleted(entry.name):
+                            staging.remove_closed_job_logs(entry.name)
+                    except Exception:
+                        self.log_exception(fl_ctx, f"Cannot recover job log deletion for {entry.name}; logs retained")
 
     def _register(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:
