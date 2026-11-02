@@ -7,7 +7,7 @@ This is the research-reproducibility companion to the
 
 `ResearchRecipe` owns fixed arrival replay, logical clients over fewer physical
 workers, assignment seeds and append-only disk checkpoints. Its workflow reuses
-the core numerical engine, Collab calls and lifecycle. These research options
+the core training coordinator, Collab calls and lifecycle. These research options
 are example-level APIs; production `AsyncRecipe` always uses actual arrivals and
 direct base-model references. Both paths share update/aggregation arithmetic.
 
@@ -80,7 +80,7 @@ independently; they are example APIs rather than installed SDK guarantees.
 See the [async recipe guide](../../../../docs/user_guide/data_scientist_guide/async_recipe.rst) for
 numerical contracts, ownership, deployment and failure behavior. The
 [component scope table](../../../../docs/user_guide/data_scientist_guide/async_recipe.rst#component-scope)
-identifies what belongs in the core recipe, core engine, model helpers and this
+identifies what belongs in the recipe, training coordinator, model helpers and this
 research workflow.
 
 ## Replay semantics
@@ -139,9 +139,10 @@ devices/software versions, nor restore optimizer state after restart.
 
 `ReplayScheduler` reserves logical jobs, dispatches `ScheduledCall` records and
 selects ready results in the recorded order. `ResearchWorkflow` accepts them
-through the shared engine. It selects `ResearchEngine` through the protected
-`_engine_class` attribute and reuses core engine construction, Collab calls and
-lifecycle. The research engine adds disk bases; numerical acceptance stays in core.
+through the shared `AsyncTrainingCoordinator` in `nvflare.collab.async_recipe`.
+It selects `ResearchTrainingCoordinator` through the protected
+`_coordinator_class` attribute and reuses `_create_coordinator`, Collab calls and
+lifecycle. The research coordinator adds disk bases; numerical acceptance stays in core.
 
 Sampled download/train/upload phases, virtual clocks and time horizons belong to
 the later FedRevive migration. Implement those policies in this example when

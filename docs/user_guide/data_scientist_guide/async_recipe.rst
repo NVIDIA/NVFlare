@@ -91,9 +91,9 @@ the supplied dtype through the existing weighted helper; core adds no precision
 conversion or overflow-recovery policy and has no mandatory tensor-framework
 dependency.
 
-``AsyncEngine`` owns the current model. Each publication creates a new state;
-active assignments reference their immutable base, shared by version. Removing
-an assignment releases the engine's reference. The result queue and pending
+``AsyncTrainingCoordinator`` owns the current model. Each publication creates a
+new state; active assignments reference their immutable base, shared by version. Removing
+an assignment releases the coordinator's reference. The result queue and pending
 call records are bounded by physical worker count; retained bases by K, plus the
 current model/accumulator. Applications own any evaluation histories. Do not mutate
 borrowed model states, including in client training; create a local model/copy
@@ -136,6 +136,10 @@ serially on the workflow thread and must leave borrowed states unchanged.
 Component Scope
 ---------------
 
+The core implementation lives in ``nvflare.collab.async_recipe``. Separate
+classes keep recipe configuration, Collab execution, and training state accounting
+distinct within that module.
+
 .. list-table::
    :header-rows: 1
    :widths: 20 40 40
@@ -148,10 +152,10 @@ Component Scope
      - Configuration/export; Collab calls; actual-arrival dispatch/result
        delivery through one bounded result queue; timeout/abort cleanup;
        application hooks.
-     - Numerical acceptance/publication belongs to the engine. The application
+     - Numerical acceptance/publication belongs to the coordinator. The application
        supplies data, model operations and artifacts.
-   * - :github_nvflare_link:`async_engine.py <nvflare/collab/async_engine.py>`:
-       ``AsyncEngine`` and server-local records/interfaces
+   * - :github_nvflare_link:`AsyncTrainingCoordinator
+       <nvflare/collab/async_recipe.py>` and server-local records/interfaces
      - Assignment IDs, active bases and versions; K/B/O capacity and contribution
        budget; result/weight validation; exact-base deltas; buffered publication;
        update-transform context.
@@ -172,18 +176,18 @@ Component Scope
      - Core supplies shared acceptance/aggregation math and Collab call/lifecycle
        implementation. Sampled FedRevive phases remain follow-up work.
 
-``AsyncRecipe`` builds ``AsyncWorkflow``, which invokes ``AsyncEngine``. The
-engine is independent of Collab execution and tensor frameworks. Both production
-and research use the same numerical acceptance/publication path. Research may
-choose when to submit or accept work and where to keep bases/results; core never
-imports the examples.
+``AsyncRecipe`` builds ``AsyncWorkflow``, which invokes ``AsyncTrainingCoordinator``.
+The coordinator performs no Collab calls and uses caller-supplied model arithmetic.
+Both production and research use the same numerical acceptance/publication path.
+Research may choose when to submit or accept work and where to keep bases/results;
+core never imports the examples.
 
-The engine module defines ``Assignment``, ``AsyncResult``, ``AcceptedUpdate``,
+The same module defines ``Assignment``, ``AsyncResult``, ``AcceptedUpdate``,
 ``AsyncEvent`` and the ``AsyncModelAdapter`` interface. They describe server-local
 state and hook inputs, and introduce no additional wire format. Normal consumers
 import ``AsyncRecipe`` from ``nvflare.collab``; alternative orchestration can
-import ``AsyncEngine`` from ``nvflare.collab.async_engine``. Protected workflow
-methods are implementation reuse points rather than a public scheduler/storage
+import ``AsyncTrainingCoordinator`` from ``nvflare.collab.async_recipe``. Protected
+workflow methods are implementation reuse points rather than a public scheduler/storage
 plugin API.
 
 Reproducible Research
@@ -194,9 +198,9 @@ reproducible. The
 :github_nvflare_link:`reproducible example <examples/advanced/collab/pt_async_cifar10_reproducible>`
 explains fixed replay, seed helpers and retained experiment files. Its
 ``ResearchRecipe`` and workflow reuse core numerical acceptance and the protected
-``_engine_class``/``_run`` implementation points while sharing engine construction,
-Collab calls and lifecycle. The research API and concrete model helpers remain
-examples, outside the installed SDK.
+``_coordinator_class``/``_run`` implementation points while sharing
+``_create_coordinator``, Collab calls and lifecycle. The research API and concrete
+model helpers remain examples, outside the installed SDK.
 
 Failure and Recovery Limits
 ---------------------------

@@ -12,20 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Numerical and lifecycle contracts for the framework-independent async engine."""
+"""Numerical and lifecycle contracts for the framework-independent async coordinator."""
 
 import numpy as np
 import pytest
 
 from examples.advanced.collab.numpy_async.job import NumpyModelAdapter
-from nvflare.collab.async_engine import AsyncEngine, AsyncResult
+from nvflare.collab.async_recipe import AsyncResult, AsyncTrainingCoordinator
 
 
 def model(value):
     return {"w": np.array([value], dtype=np.float32), "counter": np.array(7, dtype=np.int64)}
 
 
-def engine(**kwargs):
+def coordinator(**kwargs):
     options = dict(
         initial_model=model(10),
         model_adapter=NumpyModelAdapter(),
@@ -35,7 +35,7 @@ def engine(**kwargs):
         min_open_slots=1,
     )
     options.update(kwargs)
-    return AsyncEngine(**options)
+    return AsyncTrainingCoordinator(**options)
 
 
 def result(job, value, steps=1):
@@ -43,7 +43,7 @@ def result(job, value, steps=1):
 
 
 def test_stale_return_uses_assignment_base_and_publication_precedes_refill():
-    run = engine()
+    run = coordinator()
     fast, slow = run.dispatch(["fast", "slow"])
     assert fast.base_model is slow.base_model
     assert run.accept(fast, result(fast, 12))
@@ -59,7 +59,7 @@ def test_stale_return_uses_assignment_base_and_publication_precedes_refill():
 
 
 def test_step_weighted_buffer_matches_cifar_formula_and_does_not_retain_models():
-    run = engine(num_updates=1, buffer_size=2, weight_metric="num_steps", server_lr=0.5)
+    run = coordinator(num_updates=1, buffer_size=2, weight_metric="num_steps", server_lr=0.5)
     a, b = run.dispatch(["a", "b"])
     returned = result(a, 12, steps=1)
     assert not run.accept(a, returned)
@@ -72,7 +72,7 @@ def test_step_weighted_buffer_matches_cifar_formula_and_does_not_retain_models()
 
 
 def test_k_b_o_sync_boundary_and_exact_budget():
-    run = engine(num_updates=2, buffer_size=2, min_open_slots=2)
+    run = coordinator(num_updates=2, buffer_size=2, min_open_slots=2)
     a, b = run.dispatch(["a", "b"])
     assert not run.accept(a, result(a, 11))
     assert run.dispatch(["a"]) == []
@@ -86,7 +86,7 @@ def test_k_b_o_sync_boundary_and_exact_budget():
 
 
 def test_b_can_exceed_k_and_tail_does_not_overdispatch():
-    run = engine(num_updates=1, buffer_size=3)
+    run = coordinator(num_updates=1, buffer_size=3)
     a, b = run.dispatch(["a", "b"])
     run.accept(a, result(a, 11))
     c = run.dispatch(["a"])[0]
@@ -97,7 +97,7 @@ def test_b_can_exceed_k_and_tail_does_not_overdispatch():
 
 
 def test_late_duplicate_cannot_retire_new_assignment():
-    run = engine()
+    run = coordinator()
     a, b = run.dispatch(["a", "b"])
     run.accept(a, result(a, 11))
     current = run.dispatch(["a"])[0]
@@ -115,7 +115,7 @@ def test_transform_observes_staleness_and_can_be_omitted():
         seen.append((update.staleness, float(update.current_model["w"][0]), update.weight))
         return {key: value * 0.5 for key, value in update.delta.items()}
 
-    run = engine(num_updates=2, update_transform=transform)
+    run = coordinator(num_updates=2, update_transform=transform)
     a, b = run.dispatch(["a", "b"])
     run.accept(a, result(a, 12))
     run.accept(b, result(b, 14))
@@ -125,7 +125,7 @@ def test_transform_observes_staleness_and_can_be_omitted():
 
 @pytest.mark.parametrize("case", ["metadata", "nan"])
 def test_invalid_result_is_fail_fast_without_partial_acceptance(case):
-    run = engine()
+    run = coordinator()
     job = run.dispatch(["a"])[0]
     value = result(job, 11)
     if case == "metadata":
@@ -149,7 +149,7 @@ def test_delta_transform_reconstructs_original_full_model_only_on_demand(monkeyp
         return apply(model, delta, scale)
 
     monkeypatch.setattr(adapter, "apply", record_apply)
-    run = engine(
+    run = coordinator(
         model_adapter=adapter,
         num_updates=1,
         num_active_jobs=1,

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Research-owned replay and disk bookkeeping over the shared async engine."""
+"""Research-owned replay and disk bookkeeping over the shared async coordinator."""
 
 import queue
 from copy import deepcopy
@@ -22,14 +22,13 @@ from pathlib import Path
 from pt_async_cifar10_reproducible.disk_storage import DiskStore, load_checkpoint
 
 from nvflare.collab import collab
-from nvflare.collab.async_engine import AsyncEngine
-from nvflare.collab.async_recipe import AsyncWorkflow
+from nvflare.collab.async_recipe import AsyncTrainingCoordinator, AsyncWorkflow
 from nvflare.collab.recipe import CollabRecipe
 
 
 @dataclass(frozen=True)
 class DiskAssignment:
-    """Expose the engine's assignment attributes with an on-demand disk base."""
+    """Expose the coordinator's assignment attributes with an on-demand disk base."""
 
     assignment_id: int
     client_name: str | None
@@ -43,7 +42,7 @@ class DiskAssignment:
         return load_checkpoint(self.base_path)
 
 
-class ResearchEngine(AsyncEngine):
+class ResearchTrainingCoordinator(AsyncTrainingCoordinator):
     """Keep replay reservations on disk; inherit all acceptance/aggregation math."""
 
     def __init__(self, *args, **kwargs):
@@ -115,24 +114,24 @@ class ResearchWorkflow(AsyncWorkflow):
         self.scheduler = scheduler
         self.train_kwargs = train_kwargs
 
-    _engine_class = ResearchEngine
+    _coordinator_class = ResearchTrainingCoordinator
 
-    def _run(self, engine, names, submit, receive):
+    def _run(self, coordinator, names, submit, receive):
         scheduler = self.scheduler
         try:
-            results = DiskStore(engine.run_dir / "assignment_results")
-            scheduler.initialize(engine, names)
+            results = DiskStore(coordinator.run_dir / "assignment_results")
+            scheduler.initialize(coordinator, names)
             inflight, completed, submitted = {}, {}, set()
 
             def dispatch():
-                if engine.finished:
+                if coordinator.finished:
                     return
                 for call in scheduler.dispatch():
                     assignment = call.assignment
                     if call.client_name not in names or call.client_name in inflight:
                         raise ValueError("scheduler selected an unavailable physical worker")
                     identity = assignment.assignment_id
-                    if engine.active.get(identity) is not assignment or identity in submitted:
+                    if coordinator.active.get(identity) is not assignment or identity in submitted:
                         raise ValueError("scheduler selected an unreserved or already submitted assignment")
                     kwargs = self.train_kwargs(call) if self.train_kwargs is not None else {}
                     if not isinstance(kwargs, dict):
@@ -140,9 +139,9 @@ class ResearchWorkflow(AsyncWorkflow):
                     submit(call.client_name, assignment, **kwargs)
                     inflight[call.client_name] = call
                     submitted.add(identity)
-                    self._emit("dispatch", assignment, engine.version, call.client_name)
+                    self._emit("dispatch", assignment, coordinator.version, call.client_name)
 
-            while not engine.finished:
+            while not coordinator.finished:
                 if collab.is_aborted:
                     raise RuntimeError("async workflow aborted")
                 dispatch()
@@ -152,14 +151,14 @@ class ResearchWorkflow(AsyncWorkflow):
                     if call is None:
                         raise ValueError("scheduler selected an incomplete result")
                     result = results.load(identity)
-                    version = engine.version
-                    published = engine.accept(call.assignment, self._normalize(result, call.assignment))
+                    version = coordinator.version
+                    published = coordinator.accept(call.assignment, self._normalize(result, call.assignment))
                     submitted.remove(identity)
                     scheduler.on_accept(call.assignment)
                     self._emit("accept", call.assignment, version, call.client_name)
                     if published:
                         dispatch()
-                        self._hook("on_model", engine.model, engine.version)
+                        self._hook("on_model", coordinator.model, coordinator.version)
                     continue
                 if not inflight:
                     raise RuntimeError("async workflow cannot make progress")

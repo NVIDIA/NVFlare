@@ -49,8 +49,8 @@ class ReplayScheduler:
         self._ready = set()
         self._cursor = 0
 
-    def initialize(self, engine, client_names):
-        total = engine.num_updates * engine.buffer_size
+    def initialize(self, coordinator, client_names):
+        total = coordinator.num_updates * coordinator.buffer_size
         if (
             len(self.arrival_sequence) != total
             or any(type(value) is not int for value in self.arrival_sequence)
@@ -65,7 +65,7 @@ class ReplayScheduler:
             raise ValueError("assignment_metadata must contain a dictionary for every assignment")
         if not client_names:
             raise ValueError("replay requires at least one physical worker")
-        self.engine = engine
+        self.coordinator = coordinator
         self._available = list(client_names)
         self._cursor = 0
         self._reserved = 0
@@ -73,9 +73,9 @@ class ReplayScheduler:
         self._pending.clear()
 
     def dispatch(self):
-        end = self._reserved + self.engine.num_active_jobs
+        end = self._reserved + self.coordinator.num_active_jobs
         metadata = None if self.assignment_metadata is None else self.assignment_metadata[self._reserved : end]
-        assignments = self.engine.reserve(self.logical_sequence[self._reserved : end], metadata)
+        assignments = self.coordinator.reserve(self.logical_sequence[self._reserved : end], metadata)
         self._reserved += len(assignments)
         self._pending.extend(assignments)
         calls = []
@@ -91,7 +91,7 @@ class ReplayScheduler:
         if self._cursor == len(self.arrival_sequence):
             return None
         expected = self.arrival_sequence[self._cursor]
-        if expected not in self.engine.active:
+        if expected not in self.coordinator.active:
             raise ValueError(f"replay assignment {expected} is not dispatched; sequence is incompatible with K/B/O")
         return expected if expected in self._ready else None
 
@@ -103,4 +103,4 @@ class ReplayScheduler:
         self._available.clear()
         self._pending.clear()
         self._ready.clear()
-        self.engine = None
+        self.coordinator = None

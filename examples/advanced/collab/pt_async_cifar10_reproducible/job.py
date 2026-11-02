@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Example-owned reproducible replay using the shared engine and SimEnv."""
+"""Example-owned reproducible replay using the shared coordinator and SimEnv."""
 
 import argparse
 import json

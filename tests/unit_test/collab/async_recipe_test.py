@@ -32,8 +32,7 @@ from nvflare.collab.api.app import ClientApp, ServerApp
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.group_call_context import ResultWaiter
 from nvflare.collab.api.proxy import Proxy
-from nvflare.collab.async_engine import AsyncEngine, AsyncResult
-from nvflare.collab.async_recipe import AsyncWorkflow
+from nvflare.collab.async_recipe import AsyncResult, AsyncTrainingCoordinator, AsyncWorkflow
 
 from ._direct_dispatcher import _DirectDispatcher
 
@@ -234,7 +233,7 @@ class Block:
             raise ImportError('optional dependency blocked')
 sys.meta_path.insert(0, Block())
 from nvflare.collab import AsyncRecipe
-from nvflare.collab.async_engine import AsyncEngine, AsyncResult
+from nvflare.collab.async_recipe import AsyncResult, AsyncTrainingCoordinator
 from examples.advanced.collab.numpy_async.job import NumpyModelAdapter
 """
     subprocess.run([sys.executable, "-c", code], check=True)
@@ -286,18 +285,18 @@ def test_cifar_adapter_owns_cpu_snapshots_and_preserves_nonfloating_buffers():
     from examples.advanced.collab.pt_async_cifar10.model import PTModelAdapter
 
     initial = {"w": torch.tensor([10.0], requires_grad=True), "counter": torch.tensor(5)}
-    engine = AsyncEngine(initial, PTModelAdapter(), 1, 2, buffer_size=2, weight_metric="num_steps")
+    coordinator = AsyncTrainingCoordinator(initial, PTModelAdapter(), 1, 2, buffer_size=2, weight_metric="num_steps")
     initial["w"].detach().fill_(99)
-    a, b = engine.dispatch(["a", "b"])
+    a, b = coordinator.dispatch(["a", "b"])
     first = {"w": torch.tensor([12.0]), "counter": torch.tensor(99)}
     second = {"w": torch.tensor([16.0]), "counter": torch.tensor(100)}
-    assert not engine.accept(a, AsyncResult(a.assignment_id, 0, first, {"num_steps": 1}))
+    assert not coordinator.accept(a, AsyncResult(a.assignment_id, 0, first, {"num_steps": 1}))
     first["w"].fill_(999)
-    assert engine.accept(b, AsyncResult(b.assignment_id, 0, second, {"num_steps": 3}))
-    assert engine.model["w"].item() == 15
-    assert engine.model["counter"].item() == 5
-    assert not engine.model["w"].requires_grad
-    assert engine.model["w"].device.type == "cpu"
+    assert coordinator.accept(b, AsyncResult(b.assignment_id, 0, second, {"num_steps": 3}))
+    assert coordinator.model["w"].item() == 15
+    assert coordinator.model["counter"].item() == 5
+    assert not coordinator.model["w"].requires_grad
+    assert coordinator.model["w"].device.type == "cpu"
 
 
 def test_cifar_training_keeps_optimizer_scheduler_and_num_steps(monkeypatch, tmp_path):
