@@ -961,6 +961,88 @@ class TestFedAvgAggregation:
         assert controller._received_count == 0  # Not counted
 
 
+class TestFedAvgFailedContribution:
+    @pytest.mark.parametrize("failure", ["numpy", "torch", "lazy", "metrics", "custom"])
+    @pytest.mark.parametrize("valid_first", [False, True])
+    def test_callback_failure_cannot_update_or_save_partial_model(self, failure, valid_first):
+        """Exercise the real callback rejection path, which catches aggregation exceptions."""
+        import torch
+
+        class UnreadableRef:
+            def materialize(self):
+                raise OSError("cannot read tensor")
+
+        initial = {"first": np.array([2.0]), "last": np.array([4.0, 6.0])}
+        if failure == "torch":
+            initial = {k: torch.tensor(v) for k, v in initial.items()}
+        aggregator = MockModelAggregator() if failure == "custom" else None
+        controller = FedAvg(num_clients=3, num_rounds=2, model=initial, aggregator=aggregator)
+        controller.fl_ctx = FLContext()
+        controller.abort_signal = Signal()
+        controller.sample_clients = lambda _: ["good", "bad", "later"]
+        controller.get_num_standing_tasks = lambda: 0
+        controller.update_model = MagicMock(side_effect=lambda model, aggregated: model)
+        controller.save_model = MagicMock()
+        accepted = []
+
+        def record_acceptance(event_type):
+            if event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
+                accepted.append(controller.fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED))
+
+        def send_model(**kwargs):
+            def deliver(name, params, metrics):
+                task = Task(
+                    name=AppConstants.TASK_TRAIN,
+                    data=FLModelUtils.to_shareable(kwargs["data"]),
+                    props={
+                        AppConstants.META_DATA: {},
+                        AppConstants.TASK_PROP_CALLBACK: kwargs["callback"],
+                    },
+                )
+                client_task = ClientTask(client=Client(name, "token"), task=task)
+                client_task.result = FLModelUtils.to_shareable(FLModel(params=params, metrics=metrics))
+                controller._process_result(client_task, controller.fl_ctx)
+                assert client_task.result is None
+
+            good_metrics = {"first": 1.0, "last": np.ones(2)}
+            if valid_first:
+                deliver("good", initial, good_metrics)
+            bad = {"first": initial["first"] * 100, "last": "invalid"}
+            bad_metrics = good_metrics
+            if valid_first and failure in {"numpy", "torch"}:
+                bad["last"] = np.ones(3) if failure == "numpy" else torch.ones(3)
+            elif failure == "lazy":
+                bad["last"] = UnreadableRef()
+            elif failure == "metrics":
+                bad = initial
+                bad_metrics = {"first": 100.0, "last": np.ones(3)}
+                # A prior metrics contribution makes the second key incompatible.
+                if not valid_first:
+                    controller._aggr_metrics_helper.add(good_metrics, 1.0, "seed", 0)
+            elif failure == "custom":
+                bad = initial
+
+                def fail_after_mutation(model):
+                    aggregator.models.append(model)
+                    raise ValueError("custom aggregation failed after mutation")
+
+                aggregator.accept_model = fail_after_mutation
+            deliver("bad", bad, bad_metrics)
+            deliver("later", initial, good_metrics)
+
+        controller.send_model = send_model
+        with patch.object(controller, "event", side_effect=record_acceptance):
+            with pytest.raises(RuntimeError, match="refusing to update or save a partial model"):
+                controller.run()
+
+        assert accepted == ([True] if valid_first else []) + [False, False]
+        controller.update_model.assert_not_called()
+        controller.save_model.assert_not_called()
+        assert controller._received_count == int(valid_first)
+        for k, value in initial.items():
+            np.testing.assert_array_equal(value, {"first": [2.0], "last": [4.0, 6.0]}[k])
+
+
 class TestFedAvgLazyCompatibility:
     def test_custom_aggregator_keeps_lazy_payload_in_tensor_disk_offload_mode(self):
         aggregator = MockModelAggregator()
