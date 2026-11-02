@@ -265,9 +265,15 @@ def _add_server_storage(resources_path, snapshot_persistor=None):
     _write_json(resources_path, resources)
 
 
-def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys):
+@pytest.mark.parametrize("num_of_gpus", [0, 2])
+def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys, num_of_gpus):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-docker"
+    resources_path = kit / "local" / "resources.json.default"
+    resources = json.loads(resources_path.read_text())
+    manager = _component(resources, "resource_manager")
+    manager.update(path=GPU_RESOURCE_MANAGER, args={"num_of_gpus": num_of_gpus, "mem_per_gpu_in_GiB": 0})
+    _write_json(resources_path, resources)
 
     _run_prepare(
         kit,
@@ -282,7 +288,9 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
             },
         },
     )
-    capsys.readouterr()
+    captured = capsys.readouterr()
+    if num_of_gpus:
+        assert "replaces component 'resource_manager'" not in captured.out + captured.err
 
     assert not (kit / "startup" / "start_docker.sh").exists()
     assert (kit / "startup" / "start.sh").exists()
@@ -315,14 +323,26 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
     assert not (output / "local" / "resources.json").exists()
     component_ids = [c["id"] for c in resources["components"]]
     assert "process_launcher" not in component_ids
-    assert "resource_consumer" not in component_ids
-    assert _component(resources, "resource_manager")["path"].endswith("PassthroughResourceManager")
+    manager = _component(resources, "resource_manager")
+    if num_of_gpus == 0:
+        assert "resource_consumer" not in component_ids
+        assert manager["path"].endswith("PassthroughResourceManager")
+    else:
+        assert manager["path"] == GPU_RESOURCE_MANAGER
+        assert manager["args"] == {
+            "num_of_gpus": num_of_gpus,
+            "mem_per_gpu_in_GiB": 0,
+            "ignore_host": True,
+            "exclusive": True,
+        }
+        assert _component(resources, "resource_consumer")["path"].endswith("PassthroughResourceConsumer")
     launcher = _component(resources, "docker_launcher")
     assert launcher["path"] == "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher"
     assert launcher["args"]["network"] == "nvflare-test"
     assert launcher["args"]["default_python_path"] == "/usr/bin/python"
     assert launcher["args"]["default_job_env"] == {"NCCL_P2P_DISABLE": "1"}
     assert launcher["args"]["default_job_container_kwargs"] == {"shm_size": "8g"}
+    assert "gpu_ids" not in launcher["args"]
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"]["host"] == "0.0.0.0"

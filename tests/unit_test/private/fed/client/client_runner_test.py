@@ -34,6 +34,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.apis.task_launcher_spec import TaskExecutionInterrupted
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
@@ -205,6 +206,61 @@ def test_sync_failure_requires_parent_confirmation_before_finishing(monkeypatch,
 
 def _task(name="train", task_id="task-1", data=None):
     return TaskAssignment(name=name, task_id=task_id, data=data or Shareable())
+
+
+@pytest.mark.parametrize("failure", ["worker-lost", "application-error", "abort"])
+def test_worker_loss_exits_cj_without_reporting_a_failed_task_or_stopped_status(failure):
+    runner = _runner()
+    context, peer = FLContext(), FLContext()
+    peer.set_prop(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
+    context.set_peer_context(peer)
+    runner.engine.get_task_assignment.return_value = _task()
+    runner.init_run = MagicMock()
+    runner.end_run_events_sequence = MagicMock()
+    runner._send_task_result = MagicMock(return_value=True)
+    runner._try_run = lambda: runner.fetch_and_run_one_task(context)
+
+    def execute(_name, _data, _ctx, abort_signal):
+        if failure == "application-error":
+            raise ValueError("bad input")
+        if failure == "abort":
+            abort_signal.trigger(True)
+        raise TaskExecutionInterrupted("worker timed out")
+
+    executor = MagicMock(execute=MagicMock(side_effect=execute))
+    runner.task_router.add_executor(["train"], executor)
+    app = ClientAppRunner()
+    app.create_client_runner = MagicMock(return_value=runner)
+    app.start_command_agent = MagicMock()
+    app.sync_up_parents_process = MagicMock()
+    app.notify_job_status = MagicMock()
+    with (
+        patch("nvflare.private.fed.client.client_runner.add_job_audit_event"),
+        patch("nvflare.private.fed.client.client_runner.ReliableMessage.shutdown"),
+        patch("nvflare.private.fed.client.client_runner.DownloadService.shutdown"),
+    ):
+        args = (
+            "/app",
+            SimpleNamespace(job_id="job-1", sp_target="server", sp_scheme="grpc"),
+            "config",
+            MagicMock(),
+            True,
+            [],
+        )
+        if failure == "worker-lost":
+            with pytest.raises(TaskExecutionInterrupted, match="worker timed out"):
+                app.start_run(*args)
+            runner._send_task_result.assert_not_called()
+        else:
+            app.start_run(*args)
+            expected = ReturnCode.TASK_ABORTED if failure == "abort" else ReturnCode.EXECUTION_EXCEPTION
+            assert runner._send_task_result.call_args.args[0].get_return_code() == expected
+    statuses = [call.args[2] for call in app.notify_job_status.call_args_list]
+    assert statuses == [ClientStatus.STARTED, ClientStatus.READY] + (
+        [] if failure == "worker-lost" else [ClientStatus.STOPPED]
+    )
+    runner.end_run_events_sequence.assert_called_once()
+    runner.engine.shutdown_streamer.assert_called_once()
 
 
 def test_task_router_prefers_exact_match_then_patterns():

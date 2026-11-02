@@ -27,7 +27,7 @@ import pytest
 
 from nvflare.apis.fl_constant import ReturnCode, TaskResultReceipt
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.task_launcher_spec import TaskLaunchError, TaskSettlementError
+from nvflare.apis.task_launcher_spec import TaskExecutionInterrupted, TaskLaunchError, TaskSettlementError
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
 from tests.task_supervisor_test_utils import RUNNING, SETTLED, UNSETTLED, _attempt, _payload, _records
@@ -76,6 +76,7 @@ def test_worker_failure_reports_original_type_message_and_diagnostics(tmp_path):
         return handle
 
     attempt["launcher"].launch_task.side_effect = fail
+    handle.wait_for_settlement.return_value = replace(SETTLED, exit_code=1, retryable=True)
     with pytest.raises(RuntimeError, match="ValueError: trainer rejected its input.*diagnostics:"):
         supervisor.run(**attempt)
     assert (_payload(attempt).parent / "failure.json").exists()
@@ -681,3 +682,37 @@ def test_saved_result_readers_hold_payloads_without_holding_compute(tmp_path, re
             else:
                 assert replay.result(timeout=5)["value"] == 2
     assert _payload(first).exists() is read_failure
+
+
+@pytest.mark.parametrize("case", ["interrupted", "rejected", "cancelled", "unsettled", "completed"])
+def test_only_settled_worker_loss_without_a_result_requests_cj_recovery(tmp_path, case):
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+    status = replace(
+        SETTLED,
+        exit_code=137,
+        failure_reason="runtime timeout",
+        retryable=case != "rejected",
+        cancel_requested=case == "cancelled",
+        settled=case != "unsettled",
+    )
+    handle.wait_for_settlement.return_value = status
+    if case != "completed":
+
+        def launch(request):
+            handle.request = request
+            return handle
+
+        attempt["launcher"].launch_task.side_effect = launch
+    if case == "completed":
+        assert supervisor.run(**attempt).result["value"] == 2
+    else:
+        error = (
+            TaskExecutionInterrupted
+            if case == "interrupted"
+            else TaskSettlementError if case == "unsettled" else IncompleteTaskArtifactError
+        )
+        with pytest.raises(error):
+            supervisor.run(**attempt)
+    assert attempt["launcher"].launch_task.call_count == 1
+    assert supervisor.settlement_unconfirmed == (case == "unsettled")

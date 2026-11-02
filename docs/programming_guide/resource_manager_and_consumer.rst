@@ -93,12 +93,21 @@ GPUResourceManager (:mod:`nvflare.app_common.resource_managers.gpu_resource_mana
 GPUResourceManager and GPUResourceConsumer
 ==========================================
 
-During initialization, the GPUResourceManager will detect automatically (using nvidia-smi) if the managed GPU count
-and memory are enough. When ``CUDA_VISIBLE_DEVICES`` contains GPU IDs, the startup check is restricted to those GPUs.
+With the default ``ignore_host=False``, GPUResourceManager validates the configured GPU count and memory
+against the host using nvidia-smi at initialization. When ``CUDA_VISIBLE_DEVICES`` contains GPU IDs,
+the startup check is restricted to those GPUs. With ``ignore_host=True``, it skips host discovery and
+trusts the configured capacity. Exclusive host-independent pools can use a nonempty numeric
+``CUDA_VISIBLE_DEVICES`` mask to select GPU IDs.
 
-NOTE that the current implementation of GPUResourceManager will NOT keep updating the GPU count and memory usage. This means that it just checks using nvidia-smi at init time and then virtually assumes it has this much resources on site.
+The manager tracks reservations against that configured capacity; it does not continuously measure
+host GPU usage. Process mode's ``GPUResourceConsumer`` separately checks host GPUs and free memory
+at consumption time, then sets ``CUDA_VISIBLE_DEVICES`` for the subprocess.
 
-If another process outside of NVFlare is occupying the GPU resource (after GPUResourceManger is initialized), GPUResourceManager is not responsible for that.
+Reservations coordinate only jobs tracked by this client's resource manager. Other processes,
+containers, or independent clients can still use the same GPUs. Exclusive allocation does not
+provide a host-wide GPU lock or enforce a physical memory quota. Operators must prevent overlapping
+use or rely on an external scheduler. See the :ref:`Docker GPU policies <docker_gpu_assignment>`
+for the no-op consumer, disjoint client pools, and parent-restart requirements.
 
 
 How to Write Your Own Resource Manager and Consumer

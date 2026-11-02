@@ -35,6 +35,7 @@ from nvflare.private.fed.client import task_execution_policy as policy_module
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TASK_ATTEMPT_IDENTITY, TaskWorkerExecutor
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
+from tests.local_task_launcher import local_policy
 from tests.task_execution_test_utils import _config, _configure, _statistics_config
 from tests.timing_utils import isolate_time
 
@@ -129,12 +130,12 @@ def test_jobs_cannot_select_the_internal_adapter(lifetime):
         prepare_task_execution(config)
 
 
-def test_cpu_validation_only_considers_receiving_site():
-    meta = {"resource_spec": {"site-2": {"num_of_gpus": 1}}}
+def test_gpu_count_validation_only_considers_receiving_site():
+    meta = {"resource_spec": {"site-2": {"num_of_gpus": -1}}}
     validate_task_resources(meta, "site-1")
-    with pytest.raises(ValueError, match="GPUs"):
+    with pytest.raises(ValueError, match="num_of_gpus"):
         validate_task_resources(meta, "site-2")
-    meta = {"launcher_spec": {"default": {"process": {"num_of_gpus": 1}}, "site-1": {"process": {"num_of_gpus": 0}}}}
+    meta = {"launcher_spec": {"default": {"process": {"num_of_gpus": -1}}, "site-1": {"process": {"num_of_gpus": 0}}}}
     validate_task_resources(meta, "site-1")
     with pytest.raises(ValueError, match="GPUs"):
         validate_task_resources(meta, "site-2")
@@ -150,22 +151,55 @@ def test_cpu_validation_only_considers_receiving_site():
         "CLIENT_API_TYPE",
     ],
 )
-def test_site_policy_never_forwards_credential_or_gpu_environment(name):
-    with pytest.raises(ValueError, match="cannot forward"):
+def test_site_policy_rejects_retired_environment_forwarding(name):
+    with pytest.raises(ValueError, match="environment_variables is not supported"):
         TaskExecutionPolicy.from_config({"environment_variables": [name]})
 
 
-def test_site_environment_is_explicit_and_uses_canonical_resource_file(tmp_path, monkeypatch):
-    monkeypatch.setenv("TASK_TEST_SECRET", "local-placeholder")
-    monkeypatch.setenv("UNRELATED_SECRET", "not-forwarded")
+@pytest.mark.parametrize("value", [[], ["APP_DATA"], None, "APP_DATA"])
+def test_site_policy_rejects_environment_forwarding_key_even_when_empty(value):
+    with pytest.raises(ValueError, match="environment_variables is not supported"):
+        TaskExecutionPolicy.from_config({"environment_variables": value})
+
+
+@pytest.mark.parametrize("name", sorted(policy_module.FORBIDDEN_ENVIRONMENT_NAMES))
+def test_test_policy_cannot_forward_forbidden_environment_names(monkeypatch, name):
+    monkeypatch.setenv(name, "must-not-forward")
+    environment = local_policy(environment_variables=(name,)).worker_environment()
+    assert environment.get(name) != "must-not-forward"
+
+
+@pytest.mark.parametrize("config", [{}, {"task_execution": {}}])
+def test_missing_site_launcher_fails_closed(tmp_path, config):
     path = tmp_path / "resources.json"
-    path.write_text(json.dumps({"task_execution": {"environment_variables": ["TASK_TEST_SECRET"]}}))
-    workspace = SimpleNamespace(get_resources_file_path=lambda: str(path))
-    policy = TaskExecutionPolicy.from_workspace(workspace)
-    assert policy.worker_environment()["TASK_TEST_SECRET"] == "local-placeholder"
-    assert "UNRELATED_SECRET" not in policy.worker_environment()
-    assert policy.worker_environment()["CUDA_VISIBLE_DEVICES"] == ""
-    TaskExecutionPolicy.from_workspace(SimpleNamespace(get_resources_file_path=lambda: None))
+    path.write_text(json.dumps(config))
+    for workspace_path in (str(path), None):
+        with pytest.raises(ValueError, match="explicit site Kubernetes or Slurm"):
+            TaskExecutionPolicy.from_workspace(SimpleNamespace(get_resources_file_path=lambda: workspace_path))
+
+
+@pytest.mark.parametrize("field", ["path", "class_path", "name"])
+@pytest.mark.parametrize("launcher", ["ProcessTaskLauncher", "DockerTaskLauncher"])
+@pytest.mark.parametrize("prefix", ["", "nvflare.app_common.task_launcher.process_launcher."])
+def test_local_backend_paths_and_aliases_rejected_before_import(monkeypatch, field, launcher, prefix):
+    build = Mock(side_effect=AssertionError("must reject before component construction"))
+    monkeypatch.setattr(policy_module._SiteBuilder, "build_component", build)
+    with pytest.raises(ValueError, match="deferred"):
+        TaskExecutionPolicy.from_config({"launcher": {field: prefix + launcher}})
+    build.assert_not_called()
+
+
+@pytest.mark.parametrize("mode", ["process", "docker"])
+def test_local_backend_cannot_impersonate_an_admitted_launcher(monkeypatch, mode):
+    class LocalLauncher(TaskLauncherSpec):
+        launch_mode = mode
+
+        def launch_task(self, request):
+            raise AssertionError("no local task should launch")
+
+    monkeypatch.setattr(policy_module._SiteBuilder, "build_component", lambda *_: LocalLauncher())
+    with pytest.raises(ValueError, match="supported Kubernetes or Slurm"):
+        TaskExecutionPolicy.from_config({"launcher": {"path": "custom.LocalLauncher"}})
 
 
 def test_client_config_does_not_import_or_construct_task_executor(tmp_path, monkeypatch):
@@ -224,12 +258,163 @@ def test_result_deadline_pauses_only_during_framework_staging(tmp_path, monkeypa
     assert runner.result_wait_deadline(store, identity, 10, 30) is None
 
 
+@pytest.mark.parametrize("scoped", [False, True])
+def test_cj_replacement_scopes_native_receipts_to_launch_id(tmp_path, monkeypatch, scoped):
+    from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
+    from nvflare.fuel.utils.config_service import ConfigService
+    from nvflare.private.defs import RequestHeader
+
+    launcher = K8sTaskLauncher("test", "worker:latest", "/workspace", "jobs", "worker")
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy(launcher=launcher))
+    context = FLContext()
+    for key, value in (
+        (ReservedKey.RUN_NUM, "job"),
+        (ReservedKey.IDENTITY_NAME, "site"),
+        (FLContextKey.TASK_ID, "task"),
+        (FLContextKey.TASK_NAME, "train"),
+        (FLContextKey.TASK_ATTEMPT_ID, "attempt"),
+    ):
+        context.set_prop(key, value, private=True, sticky=False)
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    identities = []
+    for generation in range(2):
+        monkeypatch.setattr(ConfigService, "_var_values", {})
+        launch_vars = {RequestHeader.CJ_LAUNCH_ID: f"cj-{generation}"} if scoped else {}
+        monkeypatch.setattr(ConfigService, "_var_dict", launch_vars)
+        identities.append(adapter._identity("train", context))
+    store.create_attempt(identities[0])
+    if scoped:
+        assert identities[0].attempt_id != identities[1].attempt_id
+        store.create_attempt(identities[1])
+    else:
+        assert identities[0] == identities[1]
+        assert identities[1].attempt_id == "attempt"
+        with pytest.raises(FileExistsError):
+            store.create_attempt(identities[1])
+    assert all(identity.task_id == "task" for identity in identities)
+    adapter.supervisor = Mock()
+    context.set_prop(TASK_ATTEMPT_IDENTITY, identities[1], private=True, sticky=False)
+    context.set_prop(FLContextKey.TASK_RESULT, Shareable(), private=True, sticky=False)
+    context.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False)
+    adapter._record_receipt(context)
+    adapter.supervisor.record_receipt.assert_called_once_with(identities[1], TaskResultReceipt.RECEIVED)
+
+
+@pytest.mark.parametrize("missing_result", [False, True])
+def test_replacement_cj_resends_result_after_checkpoint_commit_without_retraining(
+    tmp_path, monkeypatch, isolated_fobs, missing_result
+):
+    from pathlib import Path
+
+    from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskExecutionStatus
+    from nvflare.apis.workspace import Workspace
+    from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
+    from nvflare.fuel.utils.config_service import ConfigService
+    from nvflare.private.defs import RequestHeader
+    from nvflare.private.fed.client import task_worker_executor as executor_module
+    from nvflare.private.fed.task_worker.artifacts import IncompleteTaskArtifactError
+    from nvflare.private.fed.task_worker.protocol import read_bootstrap
+    from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
+
+    nvflare_fobs_initialize()
+    (tmp_path / "startup").mkdir()
+    (tmp_path / "local").mkdir()
+    workspace = Workspace(str(tmp_path), site_name="site")
+    Path(workspace.get_run_dir("job")).mkdir()
+    context = FLContext()
+    for key, value in (
+        (ReservedKey.RUN_NUM, "job"),
+        (ReservedKey.IDENTITY_NAME, "site"),
+        (ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: None)),
+        (FLContextKey.WORKSPACE_OBJECT, workspace),
+        (FLContextKey.TASK_ID, "task"),
+        (FLContextKey.TASK_NAME, "train"),
+        (FLContextKey.TASK_ATTEMPT_ID, "attempt"),
+    ):
+        context.set_prop(key, value, private=True, sticky=False)
+    launcher = K8sTaskLauncher("test", "worker:latest", "/workspace", "jobs", "worker")
+    status = TaskExecutionStatus(TaskExecutionPhase.TERMINAL, exit_code=0, settled=True)
+
+    def train(request):
+        bootstrap = read_bootstrap(request.argv[4])
+        store = FileTaskArtifactStore(bootstrap.artifact_root)
+        paths = store.checkpoint_paths(bootstrap.identity)
+        previous = int(Path(paths["input"]).read_text()) if paths["input"] else 0
+        Path(paths["output"]).write_text(str(previous + 1))
+        checkpoint = store.stage_checkpoint(bootstrap.identity)
+        store.commit_result(
+            bootstrap.identity, Shareable({"value": previous + 1}), diagnostics={"checkpoint": checkpoint.to_dict()}
+        )
+        return SimpleNamespace(
+            execution_id="pod",
+            request=request,
+            poll=lambda: status,
+            cancel=lambda: status,
+            wait_for_settlement=lambda **_: status,
+        )
+
+    launcher.launch_task = Mock(side_effect=train)
+    monkeypatch.setattr(
+        executor_module.cell_session,
+        "CellWorkerSession",
+        lambda *args: SimpleNamespace(bootstrap_fields=lambda: None, close=lambda **kwargs: None),
+    )
+
+    class CJCrash(BaseException):
+        pass
+
+    original_commit = FileTaskArtifactStore.commit_checkpoint
+
+    def commit_then_crash(*args, **kwargs):
+        original_commit(*args, **kwargs)
+        raise CJCrash()
+
+    def replacement(generation):
+        monkeypatch.setattr(ConfigService, "_var_values", {})
+        monkeypatch.setattr(ConfigService, "_var_dict", {RequestHeader.CJ_LAUNCH_ID: f"cj-{generation}"})
+        adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy(launcher=launcher))
+        adapter._started = True
+        return adapter
+
+    first = replacement(1)
+    monkeypatch.setattr(FileTaskArtifactStore, "commit_checkpoint", commit_then_crash)
+    with pytest.raises(CJCrash):
+        first.execute("train", Shareable(), context, Signal())
+    checkpoint_file = next(tmp_path.rglob("*.checkpoint"))
+    committed = checkpoint_file.read_bytes()
+    monkeypatch.setattr(FileTaskArtifactStore, "commit_checkpoint", original_commit)
+    if missing_result:
+        next(tmp_path.rglob("result.fobs")).unlink()
+        with pytest.raises(IncompleteTaskArtifactError):
+            replacement(2).execute("train", Shareable(), context, Signal())
+        assert launcher.launch_task.call_count == 1
+        assert checkpoint_file.read_bytes() == committed
+        return
+    for generation in (2, 3):
+        recovered = replacement(generation)
+        result = recovered.execute("train", Shareable(), context, Signal())
+        assert result["value"] == 1
+        assert recovered.execute("train", Shareable(), context, Signal())["value"] == 1
+        assert checkpoint_file.read_bytes() == committed
+    assert launcher.launch_task.call_count == 1
+    identity = context.get_prop(TASK_ATTEMPT_IDENTITY)
+    context.set_prop(FLContextKey.TASK_RESULT, result, private=True, sticky=False)
+    context.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False)
+    recovered._record_receipt(context)
+    assert not list(tmp_path.rglob("result.fobs"))
+    context.set_prop(FLContextKey.TASK_ID, "next-task", private=True, sticky=False)
+    context.set_prop(FLContextKey.TASK_ATTEMPT_ID, "next-attempt", private=True, sticky=False)
+    assert recovered.execute("train", Shareable(), context, Signal())["value"] == 2
+    assert context.get_prop(TASK_ATTEMPT_IDENTITY) != identity
+    assert launcher.launch_task.call_count == 2
+
+
 def test_receipts_ignore_other_identity_and_retain_filtered_failure():
     from nvflare.apis.fl_constant import ReturnCode
     from nvflare.apis.shareable import make_reply
     from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 
-    adapter = TaskWorkerExecutor({"path": "unused.Executor"}, (), TaskExecutionPolicy.from_config({}))
+    adapter = TaskWorkerExecutor({"path": "unused.Executor"}, (), local_policy())
     adapter.supervisor = Mock()
     context = FLContext()
     identity = TaskAttemptIdentity("job", "site", "task", "train", "attempt")
@@ -298,7 +483,7 @@ def test_worker_log_replay_rejects_special_files_without_blocking(tmp_path, kind
         target = tmp_path / "actual.txt"
         target.write_text("must not replay\n")
         path.symlink_to(target)
-    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    adapter = TaskWorkerExecutor({}, (), local_policy())
     adapter.log_warning = Mock()
     adapter.log_info = Mock()
     workspace = SimpleNamespace(get_log_root=lambda _: str(tmp_path))
@@ -321,7 +506,7 @@ def test_worker_log_replay_has_a_finite_size_and_line_bound(tmp_path):
 
     identity = TaskAttemptIdentity("job", "site", "task", "train", "attempt")
     (tmp_path / "task_attempt_log.txt").write_text("log line\n" * 4097 + "x" * (1024 * 1024))
-    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    adapter = TaskWorkerExecutor({}, (), local_policy())
     adapter.log_warning = Mock()
     adapter.log_info = Mock()
     adapter._replay_worker_log(SimpleNamespace(get_log_root=lambda _: str(tmp_path)), identity, FLContext())
@@ -334,7 +519,7 @@ def test_execute_releases_owner_even_if_log_replay_fails(tmp_path, monkeypatch):
     from nvflare.private.fed.task_worker.supervisor import TaskSupervisorOutcome
 
     identity = TaskAttemptIdentity("job", "site", "task", "train", "attempt")
-    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    adapter = TaskWorkerExecutor({}, (), local_policy())
     adapter._started = True
     adapter._identity = Mock(return_value=identity)
     result = Shareable({"done": True})
@@ -365,8 +550,8 @@ def test_gpu_named_application_options_are_not_resource_requests():
     "mode,gpu_field",
     [("process", "num_of_gpus"), ("docker", "num_of_gpus"), ("k8s", "num_of_gpus"), ("slurm", "gpus_per_node")],
 )
-def test_cpu_validation_resolves_launcher_defaults_and_zero_site_overrides(mode, gpu_field):
-    meta = {"launcher_spec": {"default": {mode: {gpu_field: 1}}, "site-1": {mode: {gpu_field: 0}}}}
+def test_gpu_count_validation_resolves_launcher_defaults_and_zero_site_overrides(mode, gpu_field):
+    meta = {"launcher_spec": {"default": {mode: {gpu_field: -1}}, "site-1": {mode: {gpu_field: 0}}}}
     validate_task_resources(meta, "site-1")
     with pytest.raises(ValueError, match="GPUs"):
         validate_task_resources(meta, "site-2")
@@ -375,21 +560,21 @@ def test_cpu_validation_resolves_launcher_defaults_and_zero_site_overrides(mode,
     validate_task_resources({"resource_spec": {"site-2": {mode: {gpu_field: 1}}}}, "site-1")
 
 
-def test_cpu_validation_does_not_drop_nested_gpu_modes_with_portable_defaults():
+def test_gpu_count_validation_does_not_drop_nested_gpu_modes_with_portable_defaults():
     meta = {
         "resource_spec": {
             "@default": {"num_of_gpus": 1},
-            "site-1": {"process": {"num_of_gpus": 0}, "slurm": {"gpus_per_node": 1}},
+            "site-1": {"process": {"num_of_gpus": 0}, "slurm": {"gpus_per_node": -1}},
         }
     }
     with pytest.raises(ValueError, match="GPUs"):
         validate_task_resources(meta, "site-1")
 
 
-def test_cpu_validation_falls_back_to_nested_resources_for_missing_launcher_modes():
+def test_gpu_count_validation_falls_back_to_nested_resources_for_missing_launcher_modes():
     meta = {
         "launcher_spec": {"site-1": {"process": {"num_of_gpus": 0}}},
-        "resource_spec": {"site-1": {"docker": {"num_of_gpus": 1}}},
+        "resource_spec": {"site-1": {"docker": {"num_of_gpus": -1}}},
     }
     with pytest.raises(ValueError, match="GPUs"):
         validate_task_resources(meta, "site-1")
@@ -477,7 +662,7 @@ def test_task_adapter_scopes_pass_through_to_get_task_and_releases_its_route():
     )
     context = FLContext()
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
-    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    adapter = TaskWorkerExecutor({}, (), local_policy())
     adapter.handle_event(EventType.START_RUN, context)
     assert cell.decode_pass_through_topics == {route, unrelated}
     # The site's scheme and security, the Process launcher's host, and no fixed port: never the CP's address.
@@ -493,7 +678,7 @@ def test_task_adapter_scopes_pass_through_to_get_task_and_releases_its_route():
 def test_task_adapter_requires_a_cell_before_starting():
     context = FLContext()
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: None))
-    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    adapter = TaskWorkerExecutor({}, (), local_policy())
     with pytest.raises(RuntimeError, match="task lifetime requires a Cell"):
         adapter.handle_event(EventType.START_RUN, context)
     assert not adapter._started
@@ -532,7 +717,7 @@ def test_disk_resolution_cleans_downloaded_batches_if_a_later_batch_fails(tmp_pa
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=FakeCell))
     context.set_prop(ReservedKey.RUN_NUM, "job")
     context.set_prop(FLContextKey.WORKSPACE_OBJECT, SimpleNamespace(get_run_dir=lambda _: str(tmp_path / "job")))
-    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    adapter = TaskWorkerExecutor({}, (), local_policy())
     with pytest.raises(RuntimeError, match="later batch aborted"):
         adapter.resolve_task_data(value, context, abort_signal=Signal())
     assert calls == ["a", "b"]
@@ -586,8 +771,18 @@ def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
     assert policy.task_resources({"launcher_spec": {"site": {mode: {gpu_field: 1}}}}, "site").gpu_count == 0
     with pytest.raises(ValueError, match="portable GPUs reserve"):
         policy.task_resources({"resource_spec": {"site": {"num_of_gpus": 1}}}, "site")
-    with pytest.raises(ValueError, match="trusted backend"):
+    with pytest.raises(ValueError, match="environment_variables is not supported"):
         TaskExecutionPolicy.from_config({**config, "environment_variables": ["APP_DATA"]})
+
+    job_module, job_class_name = policy_module._NATIVE_JOB_LAUNCHERS[mode]
+
+    class NativeJobLauncher:
+        pass
+
+    monkeypatch.setitem(sys.modules, job_module, SimpleNamespace(**{job_class_name: NativeJobLauncher}))
+    policy.validate_job_launcher(NativeJobLauncher())
+    with pytest.raises(ValueError, match="supported Kubernetes or Slurm client-job launcher"):
+        policy.validate_job_launcher(SimpleNamespace())
 
     class Impersonator(NativeLauncher):
         pass
@@ -597,7 +792,7 @@ def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
         TaskExecutionPolicy.from_config(config)
 
 
-@pytest.mark.parametrize("mode", ["docker", "slurm"])
+@pytest.mark.parametrize("mode", ["k8s", "slurm"])
 @pytest.mark.parametrize("missing", ["backend", "parent", "dependency"])
 def test_native_selection_reports_missing_backend_without_hiding_missing_dependency(monkeypatch, mode, missing):
     class NativeLauncher(TaskLauncherSpec):
@@ -642,7 +837,7 @@ def test_a_receiver_failure_is_logged_as_in_job_lifetime_and_only_unfirable_metr
                 raise RuntimeError("tracking backend is down")
 
     receiver = FailingReceiver()
-    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy.from_config({}))
+    adapter = TaskWorkerExecutor({}, (), local_policy())
     context = FLContext()
     engine = SimpleNamespace(fire_event=lambda event, ctx: fire_event_to_components(event, [receiver], ctx))
     context.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=True)
@@ -659,7 +854,7 @@ def test_start_run_binding_failure_panics_and_preserves_the_actual_error(monkeyp
     context = FLContext()
     cell = SimpleNamespace(decode_pass_through_topics=set())
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
-    policy = TaskExecutionPolicy.from_config({})
+    policy = local_policy()
     failure = Mock(side_effect=ValueError("owning job resource binding differs"))
     if stage == "launcher":
         policy.launcher.handle_event = failure
@@ -679,28 +874,3 @@ def test_start_run_binding_failure_panics_and_preserves_the_actual_error(monkeyp
     )
     with pytest.raises(RuntimeError, match="resource binding differs"):
         adapter.execute("train", Shareable(), context, Signal())
-
-
-@pytest.mark.parametrize("budget", [{"num_of_cpus": 2}, {"memory": "1Gi"}])
-def test_process_task_rejects_explicit_unenforceable_compute_budget(budget):
-    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
-
-    with pytest.raises(UnsupportedTaskResourceError, match="CPU/memory"):
-        TaskExecutionPolicy.from_config({}).task_resources(
-            {"resource_spec": {"site-1": budget}, "cj_resource_spec": {"site-1": {}}}, "site-1"
-        )
-
-
-def test_process_profile_does_not_inherit_kubernetes_cj_defaults():
-    policy = TaskExecutionPolicy.from_config({})
-    assert policy.task_resources({"cj_resource_spec": {"site-1": {}}}, "site-1").is_empty()
-
-
-@pytest.mark.parametrize("compute", [{"license": 1}, {"gpu_cache_enabled": True}, {"mem_per_gpu_in_GiB": 8}])
-def test_process_task_cannot_drop_compute_resource_manager_requirements(compute):
-    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
-
-    with pytest.raises(UnsupportedTaskResourceError, match="custom resource-manager or GPU-memory"):
-        TaskExecutionPolicy.from_config({}).task_resources(
-            {"resource_spec": {"site-1": compute}, "cj_resource_spec": {"site-1": {}}}, "site-1"
-        )

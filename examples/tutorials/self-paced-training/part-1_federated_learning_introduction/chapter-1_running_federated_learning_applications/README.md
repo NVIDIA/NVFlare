@@ -2,7 +2,9 @@
 
 These lessons use the **Recipe API** and require **NVFlare 2.10**. Start with the [introduction](01.0_introduction/introduction.ipynb), then [setup](01.1_running_federated_learning_job/setup.ipynb) and the [first run](01.1_running_federated_learning_job/running_pytorch_fl_job.ipynb).
 
-Other chapters are being migrated separately. The [archived 2.6 course](https://github.com/NVIDIA/NVFlare/tree/2.6.0/examples/tutorials/self-paced-training) preserves the original notebooks and videos.
+> **Video notice:** All [linked videos](video.md) show the earlier Job API workflow and do not match these Recipe API notebooks. Follow the notebooks for setup, commands, and code; see the video page for the matching archived course.
+
+Other chapters are being migrated separately.
 
 ## Environment: development and published editions
 
@@ -96,4 +98,4 @@ Both tracking labs run 20 rounds to provide 20 points per metric per site. Each 
 
 Complete the [recap exercise](01.8_recap/recap.ipynb): configure a site, inspect the exported recipe, run it, and explain the final model's evaluation in the run summary.
 
-The [existing videos](video.md) teach the original Job API edition. They require new recordings to match this Recipe API revision. Updates to other chapters, full-course validation, and learner review proceed separately and do not block review of this chapter.
+Updates to other chapters, full-course validation, and learner review proceed separately and do not block review of this chapter.

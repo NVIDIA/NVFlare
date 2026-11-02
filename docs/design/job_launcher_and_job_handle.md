@@ -538,7 +538,7 @@ JobLauncherSpec (FLComponent, ABC)
 | **Data access** | Direct filesystem | Study host-path binds | Study PVC mounts | Validated study host-path binds in container modes |
 | **PARENT_URL** | Local parent | Docker DNS rewrite | Prepared comm config | Runtime compute-reachable `parent_host:internal_port` rewrite |
 | **GPU config** | `GPUResourceManager` / `CUDA_VISIBLE_DEVICES` | `device_requests` | `nvidia.com/gpu` limit | `--gres=gpu:N` from flat total/topology |
-| **Resource manager** | `GPUResourceManager` | `PassthroughResourceManager` | `PassthroughResourceManager` | `PassthroughResourceManager`; Slurm enforces allocation |
+| **Resource manager** | `GPUResourceManager` | `GPUResourceManager` with NVFlare GPU reservations; `PassthroughResourceManager` without reservations | `PassthroughResourceManager` | `PassthroughResourceManager`; Slurm enforces allocation |
 | **Start verification** | None | Container running timeout | Pod pending/stuck detection | Parsed submission ID plus pending timeout |
 | **Terminate** | Process signals | Stop/remove container | Delete pod | Exact-marker/UID verification then retried `scancel` |
 | **Command format** | Shell-derived process argv | Container argv list | Pod command/args | Structured Slurm CLI argv plus generated batch script |
@@ -549,10 +549,11 @@ JobLauncherSpec (FLComponent, ABC)
 
 ## 7. Resource Management
 
+The [Docker GPU policy table](docker_job_launcher_design.md#resource-management) compares Process, both Docker policies, and Kubernetes/Slurm, including the required consumers and GPU waiting behavior.
+
 ### 7.1 PassthroughResourceManager
 
-`PassthroughResourceManager` always approves resource requests and performs no local tracking. Use with Docker, K8s,
-or Slurm launchers where the runtime or scheduler handles actual resource allocation.
+`PassthroughResourceManager` always approves resource requests and performs no local tracking. Docker without NVFlare GPU reservations forwards GPU requests to Docker without GPU capacity waiting or exclusivity. Kubernetes/Slurm delegate resource acquisition and queuing to their cluster schedulers. Passthrough configurations require no resource consumer because their allocations are empty.
 
 | Method | Behavior |
 |--------|----------|

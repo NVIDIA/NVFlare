@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+from argparse import Namespace
 
 import pytest
 
@@ -19,6 +20,37 @@ from nvflare.fuel.utils.config_service import ConfigService
 
 
 class TestConfigService:
+    def test_refresh_config_path_keeps_registered_state(self, tmp_path, monkeypatch):
+        previous = tmp_path / "previous"
+        site_local = tmp_path / "local"
+        previous.mkdir()
+        site_local.mkdir()
+        for name, value in (
+            ("_sections", {}),
+            ("_config_path", []),
+            ("_cmd_args", None),
+            ("_var_dict", None),
+            ("_var_values", {}),
+        ):
+            monkeypatch.setattr(ConfigService, name, value)
+
+        ConfigService.initialize(
+            section_files={},
+            config_path=[str(previous)],
+            parsed_args=Namespace(command_option="command"),
+            var_dict={"custom_option": "override"},
+        )
+        ConfigService.add_section("existing", {"marker": "kept"})
+        assert ConfigService.get_int_var("max_message_size", default=1024) == 1024
+
+        ConfigService.refresh_config_path([str(site_local), str(previous)])
+
+        assert ConfigService._config_path == [str(site_local), str(previous)]
+        assert ConfigService.get_section("existing") == {"marker": "kept"}
+        assert ConfigService.get_str_var("command_option") == "command"
+        assert ConfigService.get_str_var("custom_option") == "override"
+        assert ConfigService.get_int_var("max_message_size", conf={"max_message_size": 2048}) == 2048
+
     @pytest.mark.parametrize(
         "config, var_name, value",
         [

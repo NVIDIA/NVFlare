@@ -7,6 +7,56 @@ assignment. This document defines the roles, resource contract, execution flow,
 storage, failure handling and current limits. The Kubernetes operator guide gives
 deployment commands and troubleshooting; it is not required to understand this design.
 
+## Compute release versus job lifetime
+
+Task scope separates the lifetime of computation from the lifetime of federation
+coordination. On Kubernetes, a CPU CJ can remain connected while a task Pod owns
+the training GPUs. Once the worker has published durable output and its native
+execution has physically settled, those GPUs can serve another eligible Pod.
+CJ can upload the saved result afterwards; neither job completion nor algorithm
+acceptance is required to release the worker's compute. Any GPUs explicitly
+reserved for CJ remain reserved for CJ's lifetime.
+
+This resource-reuse benefit requires scheduler admission and enforcement, not
+just a fresh process or `CUDA_VISIBLE_DEVICES`. Task scope by itself does not
+provide a local GPU scheduler. It also does not make an interrupted assignment
+resumable: [client-job recovery and native task-resume boundaries](client_job_recovery.md#allocation-wall-time-and-task-lifetime)
+are separate from resource release.
+
+## Backend and recovery boundaries
+
+The matrix distinguishes implemented behavior from release direction. Kubernetes
+task execution is implemented; the [Slurm task adapter](https://github.com/NVIDIA/NVFlare/pull/5513)
+is an experimental draft, not deployed qualification. Local Process/Docker task
+backends are deferred: shared client-parent admission rejects local task lifetime. The
+test-only process harness exercises shared worker contracts. The historical
+Process recovery gap described below explains a boundary of the retired path.
+
+"Release" means returning a per-task scheduler reservation while CJ/job remain
+alive, not merely masking devices or freeing GPU memory. "CP recovery" means
+adopting an existing job and its workers after CP restarts, not starting a new CP.
+
+| Backend | Lifetime | Per-task compute/GPU release | Automatic CJ replacement | CP recovery | Mid-assignment resume |
+| --- | --- | --- | --- | --- | --- |
+| Process | `job` | No per-task scheduler reservation | Conditional on confirmed termination and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Process | `task` (deferred) | No scheduler-backed resource admission | Rejected before local CJ launch | Not provided | Not supported |
+| Docker | `job` | No; resident container retains its device access | Conditional on confirmed container exit and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Docker | `task` (deferred) | No supported native task profile here | Rejected before local CJ launch | Not provided | Not supported |
+| Kubernetes | `job` | No; resident CJ Pod retains its allocation | With persistent jobs PVC and confirmed shutdown | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Kubernetes | `task` | Yes, after worker Pod settlement | After confirmed CJ and worker shutdown | Not provided | Worker loss triggers CJ recovery; application restores its checkpoint |
+| Slurm | `job` | No; resident CJ allocation retains its resources | Conditional on confirmed allocation exit and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
+| Slurm | `task` (draft) | Designed per task allocation; native qualification required | Disabled in the draft; CP retains task cleanup | Not provided | Not implemented |
+
+Resident recovery relies on a live CP/server and a valid client registration.
+Restoring partial progress on the original assignment additionally needs a
+still-valid assignment and a compatible application checkpoint; CP does not check
+those as replacement-launch gates. A replacement may receive a later assignment
+or recompute without a checkpoint. Recovery does not automatically capture model,
+optimizer or data-loader progress. See
+[client-job recovery](client_job_recovery.md#confirmed-failures-only) for the gates,
+the [Process task-mode gap](client_job_recovery.md#process-task-mode-recovery-gap),
+and the [wall-limit ownership timeline](client_job_recovery.md#wall-limit-and-owner-loss-timeline).
+
 ## Roles and assumptions
 
 | Role | Job lifetime | Task lifetime |
@@ -16,8 +66,11 @@ deployment commands and troubleshooting; it is not required to understand this d
 | Task worker | No separate task runtime. | Constructs compute, executes one assignment, finalizes and exits. |
 | Server Job (SJ) | Issues assignments and receives results. | Uses the same assignment and result-receipt protocol. |
 
-The current site profile uses one backend throughout CP, CJ and workers: Process
-uses processes; Kubernetes uses Pods. CPU or GPU is an independent resource choice
+Task mode requires an explicit scheduler-backed site profile: Kubernetes uses
+Pods; Slurm integration is developed separately. Local Process and Docker task
+backends are deferred. Process/Docker **job** mode, including external-process
+Client API scripts, is unchanged. There is no default local task launcher and no
+silent fallback from task to job lifetime. CPU or GPU is an independent resource choice
 within a capable backend. Site configuration selects the backend and its authority;
 a job cannot supply runtime credentials, accounts, namespace or arbitrary mounts.
 Export validates resource shape; the receiving backend must enforce the requested
@@ -26,11 +79,11 @@ resources or reject unsupported requirements before compute.
 Each TaskSupervisor admits one active physical attempt. The Kubernetes CP also
 admits at most one unsettled attempt per job. Worker memory, optimizer state and
 executor instances do not survive an assignment. Application-selected checkpoint
-files can survive. Process CJ recovery can replace a failed CJ only after its job
-handle confirms termination. This Kubernetes profile does not opt into CJ restart:
-its CP still fences unsettled attempts and refuses retained subtree adoption.
-Persistent files alone do not provide CP restart adoption, physical task retry or
-distributed training.
+files can survive. In Kubernetes, confirmed CJ or worker loss can trigger
+[CJ recovery](client_job_recovery.md) after all prior executions stop, using the
+persistent jobs profile.
+Recovery preserves the assignment and checkpoints, with fresh physical worker IDs.
+CP restart adoption and distributed training remain unsupported.
 
 Four separate facts govern the lifecycle:
 
@@ -48,7 +101,7 @@ after server restart.
 ## One assignment from delivery to cleanup
 
 1. SJ issues an assignment with workflow, task and attempt IDs. Retransmission
-   preserves those IDs; a new physical attempt requires a new server-issued attempt ID.
+   preserves those IDs; CJ recovery changes only the physical worker attempt ID.
 2. CJ applies input hooks/filters and stages input plus an inert worker bootstrap.
    Compute definitions are authorized in CJ and again in the worker before custom
    imports, component construction or input decoding.
@@ -145,10 +198,8 @@ Kubernetes enforces each worker's Pod requests/limits. Two CPU CJs at the same s
 can stay resident while their workers successively use one available GPU.
 Kubernetes chooses scheduling and fairness; there is no round-robin guarantee.
 Unsupported licenses, custom resource-manager claims and per-GPU memory quotas
-must be enforced or rejected, never silently discarded. The current Process path
-rejects unenforceable compute CPU/memory and custom claims before launching a
-normalized task CJ and again before execution. It has no implicit CPU/memory
-limiter, Kubernetes coordinator defaults or GPU allocation ledger.
+must be enforced or rejected, never silently discarded. A local Process or Docker
+site rejects task lifetime; GPU visibility alone is not exclusive resource admission.
 
 ## Application and site configuration
 
@@ -194,14 +245,43 @@ resident Collab RPC service use job lifetime. Global-only cross-site evaluation
 is supported. Lightning's in-memory `restore_state=True` cache cannot restore a
 fresh task worker; use explicit native checkpoints or job lifetime.
 
+### Direct computation without a nested trainer
+
+For the supported Client API task path, the task worker is already the isolated
+compute runtime: it runs the script in its main thread through InProcessClientAPI.
+There is no second `external_process` trainer to launch solely for model handoff.
+CJ stages input files, the worker writes immutable output files, and CJ reads and
+submits that output after physical settlement. The native Pod/allocation still
+contains a worker process; removing a redundant trainer hop does not remove
+`task_worker_process.py`, TaskLauncher or the supervisor.
+
+Disk handoff replaces neither all transport nor live communication. CJ still
+owns federation downloads/uploads and filters; the [worker Cell session](task_worker_cellnet_session.md)
+delivers metrics while the worker is alive. Existing job-mode
+[external-process and Attach sessions](client_api_execution_modes.md), including
+their pass-through/download paths, are currently separate mechanisms. Task
+mode currently rejects those session modes rather than silently nesting them.
+This describes current behavior, not a decision to retain job-mode pass-through.
+
+### Site policy
+
 Only canonical site `local/resources.json` (or its default fallback) supplies
 `task_execution`. Jobs cannot select the internal adapter, launcher, environment
-policy or task state. A Process site can configure:
+policy or task state. A Kubernetes site can configure:
 
 ```json
 {
   "task_execution": {
-    "environment_variables": ["TRAINING_SECRET"],
+    "launcher": {
+      "path": "nvflare.app_opt.task_launcher.k8s_launcher.K8sTaskLauncher",
+      "args": {
+        "namespace": "site-1",
+        "image": "registry.example/nvflare-training:2.10",
+        "workspace_root": "/workspace",
+        "workspace_pvc": "site-workspace",
+        "worker_service_account": "task-worker"
+      }
+    },
     "worker_timeout": 600,
     "settlement_timeout": 10,
     "poll_interval": 0.05,
@@ -211,21 +291,25 @@ policy or task state. A Process site can configure:
 }
 ```
 
-Process workers receive the framework allow-list plus approved environment names;
-federation credentials, API bootstrap and arbitrary GPU visibility are excluded.
-Native worker environments come from trusted backend configuration, rather than
-Process-style forwarding. CPU workers mask GPU visibility; GPU-capable backends
+The example above is only the task-policy section; the operator guide supplies
+the matching ClientK8sJobLauncher, PVC and service-account configuration.
+Worker environments come from trusted backend configuration. Forwarding arbitrary
+CJ environment variables is rejected; federation credentials and API bootstrap
+cannot be inherited by workers. CPU workers mask GPU visibility; GPU-capable backends
 arrange devices through their resource binding. `artifact_cleanup: "retain"`
 keeps attempts. Optional positive `max_payload_bytes` applies consistently to
 input, bootstrap policy and output, including all referenced tensor files.
 
 ## Backend ownership and physical settlement
 
-Both backends use `task_worker_process`. Process scope requires an explicit live
-parent PID greater than one and an owned process group; native scope does not
-mistake CJ for the worker's OS parent and supports PID 1. Process supervision
-requires Linux or macOS with Python 3.13+ waitid/WNOWAIT. CJ owns Process group
-cleanup; this profile does not promise independent CP cleanup after abrupt CJ death.
+The shared `task_worker_process` entry point runs a process **inside** a native
+Pod or allocation. Its name does not mean a local Process task backend. Native
+scope has no local CJ parent PID and supports PID 1. Keep this entry point, the
+worker runtime and supervisor when adding scheduler-backed launchers.
+
+Local process-group launch utilities live only under `tests/` for isolated
+worker/supervisor contract tests. They are not installed as an NVFlare backend
+and are not proof of Kubernetes or Slurm deployment qualification.
 
 In Kubernetes, the CJ's K8sTaskLauncher is a tokenless CellNet proxy. Before CJ
 starts, CP installs a backend bound to canonical site policy and admitted job/site
@@ -395,9 +479,10 @@ Additional CJ dataset volumes are not automatically inherited by task workers.
 Persistent job subtrees are retained after success as well as failure. Operators
 budget capacity, archive and remove them only after the job, runtimes, in-flight
 creates and readers/uploads are quiescent. Reusing an existing job/site subtree
-fails instead of adopting or overwriting it. Definitive pre-create/API rejection
+fails instead of adopting or overwriting it, except for CJ recovery authorized by
+the same CP's confirmed previous execution. Definitive pre-create/API rejection
 removes only a freshly reserved, unchanged empty directory; ambiguous outcomes keep
-their storage fence. There is no automatic subtree collector or Kubernetes CJ/CP recovery.
+their storage fence. There is no automatic subtree collector or CP restart adoption.
 
 ## Deadlines and failure handling
 
@@ -418,6 +503,11 @@ Exceeding a deadline does not prove settlement. The supervisor has no reset or
 automatic physical retry after unconfirmed settlement. CP crash/restart, permanent
 node loss or missing finalizer evidence requires operator reconciliation after
 verifying runtime shutdown; clearing a stuck finalizer is not a substitute for proof.
+
+The [recovery design](client_job_recovery.md#allocation-wall-time-and-task-lifetime)
+describes confirmed worker-loss recovery and the remaining backend limits.
+Partial-progress checkpoints remain application-owned; the completion-bound
+checkpoint handoff does not periodically save unfinished work.
 
 ## Qualification and optional references
 

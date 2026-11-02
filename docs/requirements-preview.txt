@@ -1,0 +1,8 @@
+# Sphinx extensions only for the local --skip-api preview.
+# Linux x86_64 / Python 3.10 uses docs/constraints.txt for exact versions.
+sphinx>=5
+sphinx_rtd_theme
+recommonmark
+sphinx-llm>=0.4.1
+sphinx-copybutton
+sphinxcontrib-jquery
