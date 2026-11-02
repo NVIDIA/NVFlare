@@ -1021,10 +1021,19 @@ def test_common_packager_retains_private_stage_when_prod_number_is_reused(tmp_pa
         retained.append({p.relative_to(private): p.read_bytes() for p in private.rglob("*") if p.is_file()})
 
 
-def test_coco_end_to_end_provisioning_uses_declared_source_registry_and_common_manifest(tmp_path):
+@pytest.mark.parametrize(
+    "allow_log_streaming,project_default,expected_streaming",
+    [(True, False, True), (False, True, False), (None, False, False), (None, None, True)],
+)
+def test_coco_end_to_end_provisioning_uses_declared_source_registry_and_common_manifest(
+    tmp_path, allow_log_streaming, project_default, expected_streaming
+):
     from tests.unit_test.lighter.cc_provision.impl.test_coco import coco_pod
 
     project = _coco_project(tmp_path)
+    if project_default is not None:
+        project.set_prop(PropKey.ALLOW_LOG_STREAMING, project_default)
+    project.get_clients()[0].set_prop(PropKey.ALLOW_LOG_STREAMING, allow_log_streaming)
 
     def runner(command, **kwargs):
         request = json.loads(Path(command[1]).read_text())
@@ -1071,3 +1080,16 @@ def test_coco_end_to_end_provisioning_uses_declared_source_registry_and_common_m
     resources = json.loads((private_kit / "local" / ProvFileName.RESOURCES_JSON_DEFAULT).read_text())
     resource_manager = next(component for component in resources["components"] if component["id"] == "resource_manager")
     assert resource_manager["args"]["num_of_gpus"] == 1
+    assert resources["allow_log_streaming"] is expected_streaming
+    streamers = [component for component in resources["components"] if component["path"].endswith(".SiteLogStreamer")]
+    assert {component["args"].get("log_file_name", "log.txt") for component in streamers} == {
+        "log.txt",
+        "error_log.txt",
+    }
+    assert (private_kit / "startup/sub_start.sh").read_text().startswith("#!/usr/bin/env bash\nexec >/dev/null 2>&1\n")
+    assert verify_folder_signature(
+        str(private_kit),
+        str(private_kit / "startup/rootCA.pem"),
+        single_signer=True,
+        signature_file=ProvFileName.SIGNATURE_JSON,
+    )

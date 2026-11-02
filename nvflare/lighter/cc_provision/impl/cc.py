@@ -306,6 +306,26 @@ class CCBuilder(Builder):
         temporary.write_text(json.dumps(resources, indent=2) + "\n")
         os.replace(temporary, resources_file)
 
+    @staticmethod
+    def _configure_job_logs(participant, ctx):
+        """Stream full job logs through FL administration, retaining error-log fallback."""
+        if participant.type != ParticipantType.CLIENT:
+            return
+        resources_file = Path(ctx.get_local_dir(participant)) / ProvFileName.RESOURCES_JSON_DEFAULT
+        resources = json.loads(resources_file.read_text())
+        components = resources.setdefault("components", [])
+        streamer_path = "nvflare.app_common.logging.site_log_streamer.SiteLogStreamer"
+        if any(
+            component.get("path") == streamer_path
+            and component.get("args", {}).get("log_file_name", "log.txt") == "log.txt"
+            for component in components
+        ):
+            return
+        components.append({"id": "cc_job_log_streamer", "path": streamer_path, "args": {"log_file_name": "log.txt"}})
+        # The existing allow_log_streaming setting gates both files at runtime.
+        # Never expose workload logs to Kubernetes stdout or the clear CVM disk.
+        resources_file.write_text(json.dumps(resources, indent=2) + "\n")
+
     def build(self, project, ctx):
         if not self.plans:
             return
@@ -313,6 +333,7 @@ class CCBuilder(Builder):
             plan = self.plans.get(participant.name)
             if not plan:
                 continue
+            self._configure_job_logs(participant, ctx)
             self.deployments[plan.mode].configure_startup_kit(plan, project, ctx)
             self._extend_class_allow_list(participant, plan, ctx)
         self._build_peer_matrix(project, ctx)

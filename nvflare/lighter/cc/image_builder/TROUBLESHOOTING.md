@@ -53,7 +53,13 @@ as not handling secrets; never publish that directory without review.
 
 ## The CVM starts and powers off
 
-Review the private serial log and KBS logs together. Early poweroff is the
+Review `console-<timestamp>.log` beside the materialized delivery and the KBS
+logs together. The launcher prints the current serial-log path and retains the
+three newest files with mode 0600, including failures before `/applog` mounts.
+If capture cannot be created it warns, so retain the attached terminal output.
+Raw guest syslog is not exported. For missing job/client logs, use the
+[authenticated CC log-retrieval workflow](../../../../docs/user_guide/confidential_computing/operations.rst#retrieve-job-logs-and-early-boot-diagnostics).
+Early poweroff is the
 fail-closed result for invalid measurement/TCB references, stale or wrong policy
 selection, missing offline collateral, failed time synchronization, vault
 integrity errors, or unavailable GPU appraisal. Do not turn off the watchdog or
