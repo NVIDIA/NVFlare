@@ -48,6 +48,15 @@ does not ship custom code, `cc_site-1.yml` explicitly grants that exact class in
 the participant's `class_allow_list`. This is a reviewed per-site opt-in; do not
 replace it with a package prefix or add it to the global default allowlist.
 
+The job also declares full and error `JobLogStreamer` components, and both the
+mixed and CPU-only participant allowlists include that exact reviewed class.
+It logs round/batch progress through Python logging for retrieval during a long
+round. Logs leave the guest over the authenticated FLARE connection and are
+disclosed to the trusted server and authorized admin; keep private inputs and
+model content out of those messages. Sites can set `allow_log_streaming: false`
+before signing. See [live CC progress logs](../../../docs/user_guide/confidential_computing/operations.rst#live-progress-logs-from-confidential-participants)
+and the [general streaming guide](../../../docs/programming_guide/live_log_streaming.rst).
+
 See the [unified deployment guide](../../../docs/user_guide/confidential_computing/deployment.rst),
 the [CVM build guide](../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md),
 and the [Trustee guide](../../../nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md).

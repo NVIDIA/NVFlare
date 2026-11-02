@@ -29,7 +29,7 @@ from .artifacts.bundle import approve_bundle
 from .artifacts.packaging import package_bundle
 from .build import config, cvm, vault
 from .common.contracts import PLATFORMS
-from .common.errors import BuildError, ConfigurationError
+from .common.errors import BuildError, ConfigurationError, KBSRequestError
 from .common.io import read_json, write_json
 from .common.linux import enable_diagnostics
 from .host.platforms import host_capabilities
@@ -508,9 +508,10 @@ def main(argv=None):
     except (BuildError, OSError, ValueError, KeyError, tarfile.TarError, subprocess.SubprocessError) as exc:
         if args.command == "vault":
             # Application inputs and key-upload failures can contain secrets.
+            cause = f" ({exc.diagnostic})" if isinstance(exc, KBSRequestError) else ""
             cli.exit(
                 1,
-                "Vault operation failed; retain any build_failure.json and resolve uncertain key uploads before "
+                f"Vault operation failed{cause}; retain any build_failure.json and resolve uncertain key uploads before "
                 "retrying. If staging completed, resume release with cvmctl publish instead of rebuilding\n",
             )
         cli.exit(1, f"CVM operation failed: {exc}\n")

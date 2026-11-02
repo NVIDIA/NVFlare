@@ -7,6 +7,7 @@ attestation:
 # This measured-image executor fixes in-process mode and the measured script
 # path. Keep this as an exact, reviewed per-site grant.
 class_allow_list:
+  - nvflare.app_common.logging.job_log_streamer.JobLogStreamer
   - cvm_client_api_executor.CVMClientAPIExecutor
 workload:
   source:

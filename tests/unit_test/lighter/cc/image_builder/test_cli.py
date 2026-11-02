@@ -23,7 +23,7 @@ from pathlib import Path
 from unittest.mock import call, patch
 
 from cvm import __main__ as cli
-from cvm.common.errors import BuildError
+from cvm.common.errors import BuildError, KBSRequestError
 
 
 class CliTests(unittest.TestCase):
@@ -282,6 +282,28 @@ class CliTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 1)
         self.assertIn("build_failure.json", stderr.getvalue())
         self.assertNotIn("sensitive-upload-token", stderr.getvalue())
+
+    def test_vault_transport_diagnostics_expose_only_safe_category_and_status(self):
+        for category, status, expected in (
+            ("connection", None, "KBS connection failure"),
+            ("tls", None, "KBS TLS verification failure"),
+            ("http", 403, "KBS HTTP 403"),
+            ("http", 503, "KBS HTTP 503"),
+        ):
+            stderr = io.StringIO()
+            failure = KBSRequestError("private-key request-body secret-token https://secret-url", category, status)
+            with (
+                self.subTest(category=category, status=status),
+                patch.object(cli.vault, "build", side_effect=failure),
+                contextlib.redirect_stderr(stderr),
+                self.assertRaises(SystemExit) as error,
+            ):
+                cli.main(["vault", "app.yml"])
+            self.assertEqual(error.exception.code, 1)
+            self.assertIn(expected, stderr.getvalue())
+            self.assertIn("build_failure.json", stderr.getvalue())
+            for secret in ("private-key", "request-body", "secret-token", "secret-url"):
+                self.assertNotIn(secret, stderr.getvalue())
 
     def test_vault_can_publish_all_deliveries_in_the_same_command(self):
         with tempfile.TemporaryDirectory() as directory:

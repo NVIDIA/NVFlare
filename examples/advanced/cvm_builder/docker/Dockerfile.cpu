@@ -1,0 +1,14 @@
+ARG BASE_IMAGE=python:3.12-slim
+FROM ${BASE_IMAGE}
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PIP_NO_CACHE_DIR=1
+ENV PYTHONPATH=/local/custom
+
+COPY requirements_cpu.txt /tmp/requirements_cpu.txt
+RUN python -m pip install torch==2.13.0+cpu torchvision==0.28.0+cpu \
+      --index-url https://download.pytorch.org/whl/cpu && \
+    python -m pip install 'nvflare~=2.9.0' -r /tmp/requirements_cpu.txt
+COPY code/ /local/custom
+
+ENTRYPOINT ["/user_config/nvflare/startup/sub_start.sh", "--once", "--verify"]

@@ -73,6 +73,34 @@ Update failures stop construction. No `trusted=yes` or global `apt-key` trust is
 used. For retained releases, an authenticated immutable apt mirror can replace
 the URL without changing the input schema.
 
+## Review GPU driver and VBIOS references
+
+The platform security administrator supplies `gpu_driver_versions` and
+`gpu_vbios_versions` in the profile's `approved-tcb-references.json`, alongside
+the independently approved CPU TCB fields. The values are **strings**, preserving
+their exact spelling. Inventory the intended device inside a trusted guest with:
+
+```sh
+nvidia-smi --query-gpu=driver_version,vbios_version --format=csv,noheader
+```
+
+Inventory is a discovery aid, not attestation or approval. Obtain a fresh,
+signature- and nonce-verified NVIDIA appraisal through the deployed Trustee.
+For each GPU, the signed EAR's
+`submods.gpuN["ear.veraison.annotated-evidence"].nvidia` contains
+`x-nvidia-gpu-driver-version` and `x-nvidia-gpu-vbios-version`. Validate the EAR
+signature, issuer, lifetime, protocol binding, and affirmative CPU/GPU appraisal
+before using those values. Compare them with the vendor-supported CC hardware,
+driver and firmware/RIM releases and the intended device's reviewed inventory.
+The administrator then explicitly approves the matching string lists; never
+populate them automatically from an untrusted host or a merely decoded JWT.
+
+The generated GPU policy requires the verified claims to match those lists and
+also enforces the report/RIM signature, certificate, measurement, nonce, secure
+boot and debug-state checks. Keep approval evidence outside public deliveries.
+Import the approved lists through the [Trustee reference workflow](TRUSTEE_GUIDE.md#7-install-references-and-policies).
+Changing supported versions requires a new reviewed profile and acceptance.
+
 ## NVAT source and provenance
 
 The reviewed [`kbs-client` selector patch](cvm/build/kbs_client_policy_selector.patch)

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 
 import torch
@@ -26,6 +27,7 @@ import nvflare.client as flare
 from nvflare.client.tracking import SummaryWriter
 
 DATASET_PATH = "/tmp/nvflare/data"
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -55,7 +57,7 @@ def main():
     summary_writer = SummaryWriter()
     while flare.is_running():
         input_model = flare.receive()
-        print(f"current_round={input_model.current_round}")
+        logger.info("current_round=%s", input_model.current_round)
 
         if input_model.params:
             model.load_state_dict(input_model.params)
@@ -75,12 +77,12 @@ def main():
 
                 running_loss += cost.cpu().detach().numpy() / images.size()[0]
                 if i % 3000 == 0:
-                    print(f"Epoch: {epoch}/{epochs}, Iteration: {i}, Loss: {running_loss / 3000}")
+                    logger.info("Epoch: %s/%s, Iteration: %s, Loss: %s", epoch, epochs, i, running_loss / 3000)
                     global_step = input_model.current_round * steps + epoch * len(train_loader) + i
                     summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss, global_step=global_step)
                     running_loss = 0.0
 
-        print("Finished Training")
+        logger.info("Finished Training")
 
         PATH = "./cifar_net.pth"
         torch.save(model.state_dict(), PATH)

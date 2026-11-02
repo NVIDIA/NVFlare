@@ -51,6 +51,16 @@ as not handling secrets; never publish that directory without review.
 - After an uncertain native resource upload, have the Trustee operator reconcile
   or revoke that resource before another build attempt.
 
+The CLI reports a safe KBS cause for native upload failures: ``KBS connection
+failure`` means check endpoint reachability/DNS/listener and firewalls; ``KBS TLS
+verification failure`` means check the CA, hostname, certificate validity and
+local clock; ``KBS HTTP NNN`` means the server returned that status. For 401/403,
+check the scoped administration token and endpoint ACL. No request body, token,
+key, backend response body or raw exception details are printed.
+These uploads run in Python, so ``--diagnostics`` does not create a subprocess
+stderr capture for them. An unacknowledged upload can still have reached KBS;
+retain ``build_failure.json`` and reconcile it before retrying.
+
 ## The CVM starts and powers off
 
 Review the private serial log and KBS logs together. Early poweroff is the
@@ -60,6 +70,13 @@ integrity errors, or unavailable GPU appraisal. Do not turn off the watchdog or
 integrity monitor to keep the workload running. Verify the delivery and generic
 artifact signatures/digests again, then reproduce with the exact manifest's
 acceptance workload if the cause remains unclear.
+
+Root-disk corruption **after** startup is different from the initramfs marker:
+the kernel reports ``dm-verity device corrupted`` and panics/powers off. There
+may be no ``CVM_STARTUP_FAILURE=verity`` or Python ``phase=`` line. Retain the
+serial output, stop the delivery, and re-authenticate/rematerialize the approved
+generic image. Do not disable verity or interpret the absence of a marker as
+an attestation or application fault.
 
 For evaluation without TEE or KBS dependencies, use the
 [30-minute `--dev` walkthrough](README.md#30-minute-dev-mode-walkthrough). Dev

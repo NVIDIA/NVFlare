@@ -1,0 +1,5 @@
+# Install the matching torch/torchvision CPU wheels first, as in Dockerfile.cpu.
+torch==2.13.0+cpu
+torchvision==0.28.0+cpu
+tensorboard==2.20.0
+safetensors==0.8.0

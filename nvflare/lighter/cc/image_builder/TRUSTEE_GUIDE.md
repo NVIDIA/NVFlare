@@ -152,10 +152,17 @@ configuration.
 ## 4. Create certificates and administrative identities
 
 Use your organization's PKI for production. For a first test, this complete
-example creates a local CA, HTTPS server certificate, AS signing certificate,
+example creates separate transport and AS CAs, an HTTPS server certificate, AS signing certificate,
 an Ed25519 KBS administrative signing key, and a separate offline bundle
 approval key.
 The AS key is P-256 because the CVM profile validates ES256 tokens.
+It also creates the `builder`, `admin`, and `untrusted` P-256 key/certificate
+pairs required by the acceptance harness. These have `clientAuth` EKU and are
+issued by the **transport** CA, never the AS signing CA. The negative tests
+prove that those identities cannot sign an accepted EAR. The `admin.key`
+test identity is distinct from the Ed25519 `kbs-admin.key` used for API tokens.
+Run certificate issuance on the protected PKI host; do not copy CA private keys
+or acceptance test private keys into the production KBS runtime directory or any CVM.
 
 ```sh
 umask 077
@@ -171,7 +178,7 @@ for authority in ca as-ca; do
     -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' \
     -addext 'keyUsage=critical,keyCertSign,cRLSign'
 done
-for identity in server as; do
+for identity in server as builder admin untrusted; do
   openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
     -keyout "$identity.key" -out "$identity.csr" -subj "/CN=$identity"
   printf '%s\n' 'basicConstraints=critical,CA:FALSE' \
@@ -187,6 +194,8 @@ for identity in server as; do
   openssl x509 -req -in "$identity.csr" -CA "$issuer.pem" -CAkey "$issuer.key" \
     -CAcreateserial -out "$identity.pem" -days 90 -sha256 -extfile "$identity.ext"
 done
+openssl verify -CAfile ca.pem server.pem builder.pem admin.pem untrusted.pem
+openssl verify -CAfile as-ca.pem as.pem
 cat as.pem as-ca.pem > as-chain.pem
 openssl pkey -in as.key -pubout -out as-public.pem
 openssl genpkey -algorithm Ed25519 -out kbs-admin.key
@@ -276,6 +285,48 @@ sudo env PYTHONPATH="$PWD/nvflare/lighter/cc/image_builder" \
   python3 tests/integration_test/lighter/cc/image_builder/lab_kbs.py \
   /srv/cvm/acceptance
 ```
+
+This is a long-running **foreground** process. Keep this terminal open; use a
+second terminal for reference import and acceptance commands. Ctrl-C or SIGTERM
+to the `lab_kbs.py` process runs its cleanup and stops its KBS child. Wait for
+it to exit before changing references or starting another instance. Restart
+with the same command and lab directory; do not run `prepare_lab.py` again over
+an existing acceptance state.
+
+On every start, `lab_kbs.py` regenerates `lab-kbs/kbs.json`, `admin.json`, the
+resource token, and deployment receipt from `lab-state.json` and the selected
+profiles. It preserves the resource/reference stores and an existing resource
+policy. Put profile selection in `lab-state.json`, not in a manual edit to the
+generated `kbs.json`. After stopping the service, set the absolute paths of the
+reviewed profiles that the lab must serve:
+
+```sh
+python3 - <<'PY'
+import json
+from pathlib import Path
+path = Path('/srv/cvm/acceptance/lab-state.json')
+state = json.loads(path.read_text())
+state['profiles'] = ['/srv/cvm/profiles/production-cpu.yml']
+path.write_text(json.dumps(state, indent=2) + '\n')
+PY
+```
+
+The `profiles` list takes precedence over the singular `profile` created by
+`prepare_lab.py`. Include every CPU/GPU profile under test, then restart KBS
+before candidate installation. Generated `lab-profile.yml` inputs are
+disposable protocol-test candidates; they are not production acceptance
+profiles. For production acceptance, select a newly versioned, reviewed profile
+with `production_ready: true` and the eventual production identity. That flag
+makes the profile eligible for acceptance; it does not approve it. Approval
+still requires the complete exact-manifest report and an offline signature.
+
+For this harness, `acceptance-admin.json` in the build guide means
+`/srv/cvm/acceptance/lab-kbs/admin.json`. It deliberately lacks
+`approval_public_keys` and is suitable for `admin install --candidate` only.
+Create a separate `production-admin.json` using the schema in §8 and add the
+trusted offline approval public keys; do not edit the generated lab admin file
+because restarting the lab replaces it. Promotion to the same KBS must retain
+the tested state, endpoint, CA, AS key and policy mapping.
 
 The acceptance runner deliberately sets `CVM_BACKEND_LOCAL=1`: NRAS fault
 injection and SNP KDS blocking modify only this local staged service and must
@@ -476,7 +527,7 @@ bundle-scoped role whose ACL is printed by `cvmctl admin acl BUILD_ID`:
 ```sh
 build_id=cvm-EXACT_BUILD_ID
 ./cvmctl admin acl "$build_id"
-sudo ./cvmctl admin token \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl admin token \
   --private-key /protected/kbs-admin.key \
   --role "cvm-resources-$build_id" \
   --lifetime 3600 \
@@ -655,7 +706,7 @@ After testing the actual native deployment, generate that clean receipt from
 the exact KBS configuration and installed policy bytes:
 
 ```sh
-sudo ./cvmctl admin deployment-receipt \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl admin deployment-receipt \
   /etc/cvm-trustee/trustee-build.json /etc/cvm-trustee/kbs.json \
   --policy cvm-cpu-2026-09-r5_cpu=/var/lib/cvm-trustee/storage/attestation_service_policy/cvm-cpu-2026-09-r5_cpu.rego \
   --policy-selection-tested \
@@ -704,7 +755,7 @@ The executable check is
 [`test_policy_role_cannot_mutate_resources_or_replace_as`](../../../../tests/integration_test/lighter/cc/image_builder/test_http.py).
 
 ```sh
-sudo ./cvmctl admin install admin.json /path/to/approved/bundle
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl admin install admin.json /path/to/approved/bundle
 ```
 
 `GET /kbs/v0/resource-policy` now returns policy IDs, not encoded policy bytes.

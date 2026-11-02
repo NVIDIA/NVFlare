@@ -51,6 +51,10 @@ Bare-metal CVM checklist
    cross-host measurement. The checked-in candidate cannot be relabeled as
    production.
 #. Build an uncompressed ``application.tar``, size the vault, and provision.
+   The outer Docker-save tar must be uncompressed; compressed image layers
+   inside it are supported. Their expanded size, not just the saved tar size,
+   contributes to the vault's capacity requirements. The CPU-only example
+   supplies a separate CPU-wheel Dockerfile to avoid unused GPU packages.
    Provisioning invokes ``cvmctl vault`` for each protected participant; a
    direct builder workflow can call it with publication options. Launch the
    immutable delivery with ``cvmctl run`` for its first launch. Restart the same
@@ -178,6 +182,11 @@ Troubleshooting by symptom
      - Treat the generic root as corrupt or mismatched. Re-authenticate and
        rematerialize the delivery; do not disable dm-verity.
      - Initramfs output on the attached serial console
+   * - ``dm-verity device corrupted`` / kernel panic after startup
+     - Treat the generic root as corrupt at runtime. A kernel panic need not
+       emit a startup marker or Python phase. Preserve serial output and
+       re-authenticate/rematerialize the approved image; keep verity enabled.
+     - Kernel output on the attached serial console
    * - ``phase=attestation`` or no Trustee token
      - Check DNS/TLS and collateral first, then the selected policy, AS signing
        key, approved TCB/measurements, and RVPS expiry. A non-affirming EAR or
@@ -314,3 +323,39 @@ unattended approval for CI require separate security design. Approval remains an
 explicit offline-authority action and fails closed. Until that probe is
 qualified, ``cvmctl preflight host --quote-probe`` requires a site-approved
 executable that boots a bounded TD and verifies current collateral.
+
+Live progress logs from confidential participants
+--------------------------------------------------
+
+:ref:`live_log_streaming` is supported over the authenticated FLARE connection
+from inside a CVM or CoCo workload. It discloses the selected log content to the
+trusted federation server and authorized administrator. Review the application's
+log policy first: never log keys, raw evidence, proprietary payloads or private
+training data merely to obtain progress. The site can disable streaming with
+``allow_log_streaming: false`` in its participant configuration before signing.
+Keep guest consoles and Kubernetes exec/attach/log access restricted.
+
+For a job that needs INFO-level progress on 2.9, add the documented
+``nvflare.app_common.logging.job_log_streamer.JobLogStreamer`` components to
+``config_fed_client.json`` for ``log.txt`` and ``error_log.txt``. If those streams
+are already supplied by the signed site configuration, use that configuration
+instead of declaring duplicates. Review and include the exact class path in
+the participant's ``class_allow_list`` before provisioning; do not allow a whole
+package. The bundled CVM CIFAR10 job shows the explicit job-level configuration.
+
+Write progress through the configured Python logger at an appropriate level.
+Raw ``print()``, subprocess output and arbitrary application files are not
+automatically part of ``log.txt``. The CIFAR10 example logs the round and
+periodic batch progress without logging model parameters or input samples.
+Retrieve the current tail while a round is still running:
+
+.. code-block:: bash
+
+   nvflare job logs JOB_ID --site site-1 --tail 100
+
+``client log stream not available`` means no stream has arrived; it is not a
+progress indication. Check that the job started, the reviewed streamer is
+enabled, ``allow_log_streaming`` permits it, the server receiver is present,
+and the code writes to the configured Python logger. If the guest dies before
+the first stream, use the deployment's startup diagnostics. See
+:ref:`live_log_streaming` for receiver configuration and heartbeat behavior.

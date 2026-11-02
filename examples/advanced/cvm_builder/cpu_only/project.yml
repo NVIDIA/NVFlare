@@ -4,7 +4,7 @@ description: Minimal AMD SEV-SNP CPU-only CVM federation
 cc_project_config: cc_project.yml
 
 participants:
-  - name: server.example.com
+  - name: server.example.invalid
     type: server
     org: example
     fed_learn_port: 8002

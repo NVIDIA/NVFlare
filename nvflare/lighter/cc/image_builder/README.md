@@ -137,7 +137,7 @@ provenance filenames, and the reusable CVM build verifies whether the binary lin
 Use [config/cvm_profile.yml](config/cvm_profile.yml) and
 [config/vault_build.yml](config/vault_build.yml) as configuration templates.
 They provide concrete Ubuntu 26.04 defaults, conventional locations, and sample
-values. A bare `sudo ./cvmctl build` reads that profile and auto-detects the one
+values. A bare `sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl build` reads that profile and auto-detects the one
 local target platform; no platform argument is required.
 
 ## Optional site-automated flow
@@ -156,7 +156,7 @@ create and launch its candidate vault, run the complete checked-in acceptance
 suite, and write the report only on success:
 
 ```sh
-sudo ./cvmctl build config/cvm_profile.yml \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl build config/cvm_profile.yml \
   --quote-probe /usr/local/sbin/site_tdx_quote_probe \
   --acceptance-runner /usr/local/sbin/site_acceptance_runner \
   --approval-key /secure/acceptance-signing.key \
@@ -183,7 +183,7 @@ artifact. A multi-platform destination must contain `{artifact}`, which expands
 to the generated artifact name without `.oci.tar`:
 
 ```sh
-sudo ./cvmctl vault config/vault_build.yml \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl vault config/vault_build.yml \
   --publish 'registry.example.org/cvm/deliveries/{artifact}:1.0' \
   --cosign-signing-key /secure/release-signing.key
 ```
@@ -192,7 +192,7 @@ Give runtime operators the immutable digest references printed by that command.
 They can authenticate, materialize, and launch a delivery in one operation:
 
 ```sh
-sudo ./cvmctl run \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl run \
   registry.example.org/cvm/deliveries/vault_DEPLOYMENT_intel_tdx@sha256:DIGEST \
   --cosign-verification-key /etc/cvm/release-signing.pub \
   --output /srv/cvm/site-1
@@ -228,11 +228,11 @@ or policy requires a new profile version and fresh acceptance.
 When another host or operator owns measurement, use the split flow:
 
 ```sh
-sudo ./cvmctl build config/cvm_profile.yml \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl build config/cvm_profile.yml \
   -p amd_sev_snp --defer-measurements
 
 # On the authenticated SNP target after materializing the pending artifact:
-sudo ./cvmctl finalize /srv/cvm/cvm_PROFILE/amd_sev_snp
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl finalize /srv/cvm/cvm_PROFILE/amd_sev_snp
 ```
 
 When acceptance, Trustee administration, or signing belongs to another role,
@@ -267,7 +267,7 @@ image=my-application:release
 docker pull --platform linux/amd64 "$image"
 docker image inspect --format '{{.Id}}' "$image"
 docker save --output inputs/application.tar "$image"
-sudo ./cvmctl vault config/vault_build.yml \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl vault config/vault_build.yml \
   --publish 'registry.example.org/cvm/deliveries/{artifact}:1.0' \
   --cosign-signing-key /secure/release-signing.key
 ```
@@ -379,7 +379,7 @@ Copy the `OCI artifact:` path and `Archive SHA-256:` value printed by `vault`,
 then launch it through the same authenticated runtime command used in production:
 
 ```sh
-sudo ./cvmctl run ARTIFACT_PATH --archive-sha256 PRINTED_ARCHIVE_SHA256 \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl run ARTIFACT_PATH --archive-sha256 PRINTED_ARCHIVE_SHA256 \
   --output /srv/cvm/dev-local
 ```
 
@@ -469,6 +469,15 @@ sudo env PYTHONPATH="$PWD/nvflare/lighter/cc/image_builder" \
 The command writes `lab-kbs/kbs.json`, `admin.json`, `resources.json`, and the
 protected KBS log. `--http-only` prepares PKI and policy files without guest
 inputs; it is sufficient only for protocol fixtures, not hardware acceptance.
+
+`lab_kbs.py` runs in the foreground. Keep it in one terminal and run tests from
+another; Ctrl-C or SIGTERM stops its KBS child as well. Restart with the same
+command, without rerunning `prepare_lab.py`. Startup regenerates `kbs.json` and
+admin files, so configure the tested profiles in `lab-state.json`'s `profiles`
+list. Generated lab profiles are disposable and not production-acceptance
+profiles. The [Trustee identity and lifecycle instructions](TRUSTEE_GUIDE.md#keep-acceptance-and-production-on-the-same-trustee-identity)
+cover profile selection, test identities, stopping for reference import, and the
+separate candidate versus production administration files.
 
 Recorded versions, test results, artifact hashes and remaining production gates
 are in [VALIDATION.md](VALIDATION.md). The checked-in profile is a template, not

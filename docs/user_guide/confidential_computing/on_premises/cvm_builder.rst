@@ -43,6 +43,14 @@ or ``python3``. An unprivileged provisioner uses ``sudo -n`` where construction
 or output inspection requires it. Configure that boundary in advance; no
 interactive sudo prompt or remote worker submission is implemented.
 
+The provisioner must itself be able to read the generic ``cvm_image`` directory,
+including ``profile_set.json``, before sudo is invoked. Materialize generic
+inputs as that user, or use an administrator-reviewed shared input location.
+Pulling the input with sudo creates a root-owned directory with mode ``0700``;
+sudo for subsequent build commands does not fix this earlier inspection.
+See :github_nvflare_link:`generic-image permissions
+<nvflare/lighter/cc/image_builder/USER_GUIDE.md#generic-images-used-by-provisioning>`.
+
 Prepare the generic CVM and application
 ---------------------------------------
 
