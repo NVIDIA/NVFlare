@@ -83,6 +83,12 @@ All concrete recipes support the common execution surface:
    the execution environment requires deployment artifacts that job export
    itself does not need.
 
+``nvflare.recipe.is_export_requested()``
+   Return whether Recipe consumed ``--export`` when the package was imported.
+   The recorded decision does not change when ``sys.argv`` changes later. Use
+   this accessor when script validation needs to distinguish export from
+   execution, without redeclaring the reserved export flags.
+
 ``recipe.run(env, server_exec_params=None, client_exec_params=None)``
    Submit directly through the environment and return a ``Run`` handle. Most
    user examples should use ``execute`` so export flags continue to work.

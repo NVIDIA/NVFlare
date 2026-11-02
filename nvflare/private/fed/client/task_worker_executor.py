@@ -48,7 +48,7 @@ from nvflare.private.fed.task_worker.protocol import (
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
 
 from .client_api_task_runner import result_wait_deadline
-from .task_execution_policy import TaskExecutionPolicy, is_native_task_launcher
+from .task_execution_policy import TaskExecutionPolicy
 
 TASK_ATTEMPT_IDENTITY = "__task_worker_attempt_identity__"
 _TASK_ROUTE = (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK)
@@ -120,16 +120,10 @@ class TaskWorkerExecutor(Executor):
                         self.policy.launcher.handle_event(event_type, fl_ctx)
                     finally:
                         self.supervisor.end_run()
-                elif event_type == EventType.END_RUN and is_native_task_launcher(self.policy.launcher):
+                elif event_type == EventType.END_RUN:
                     self._end_native_run(fl_ctx)
                 else:
                     self.supervisor.end_run()
-                    if (
-                        event_type == EventType.END_RUN
-                        and not self._done.wait(self.policy.settlement_timeout)
-                        and self.supervisor.owns_execution
-                    ):
-                        self.system_panic("task worker launch/execution is still owned during job shutdown", fl_ctx)
             elif event_type == EventType.CHECK_END_RUN_READINESS:
                 if not self._done.is_set() or self.supervisor.settlement_unconfirmed:
                     fl_ctx.set_prop(FLContextKey.NOT_READY_TO_END_RUN, True, private=True, sticky=False)
@@ -165,11 +159,9 @@ class TaskWorkerExecutor(Executor):
     def _attempt_id(self, fl_ctx):
         attempt_id = fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)
         launch_id = ConfigService.get_str_var(RequestHeader.CJ_LAUNCH_ID)
-        if is_native_task_launcher(self.policy.launcher) and launch_id and isinstance(attempt_id, str) and attempt_id:
+        if launch_id and isinstance(attempt_id, str) and attempt_id:
             # The server assignment survives CJ recovery; each physical worker
             # needs a fresh identity after CP confirms prior worker shutdown.
-            # Process keeps its existing artifact fence: CJ group exit alone
-            # cannot establish that a separately grouped task worker stopped.
             return hashlib.sha256(json.dumps([launch_id, attempt_id]).encode()).hexdigest()
         return attempt_id
 
@@ -243,15 +235,13 @@ class TaskWorkerExecutor(Executor):
                 json.dumps([self.executor_spec, task_name], sort_keys=True).encode("utf-8")
             ).hexdigest()
             checkpoint_file = os.path.join(runtime_root, "checkpoints", checkpoint_key + ".checkpoint")
-            assignment = None
-            if is_native_task_launcher(self.policy.launcher):
-                assignment = replace(identity, attempt_id=fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID))
-                outcome = self.supervisor.recover_checkpoint_result(assignment, store, checkpoint_file, runtime_root)
-                if outcome is not None:
-                    self._completed_attempts[identity] = outcome.identity
-                    with self._checkpoint_commit_guard(abort_signal):
-                        fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, outcome.identity, private=True, sticky=False)
-                        return outcome.result
+            assignment = replace(identity, attempt_id=fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID))
+            outcome = self.supervisor.recover_checkpoint_result(assignment, store, checkpoint_file, runtime_root)
+            if outcome is not None:
+                self._completed_attempts[identity] = outcome.identity
+                with self._checkpoint_commit_guard(abort_signal):
+                    fl_ctx.set_prop(TASK_ATTEMPT_IDENTITY, outcome.identity, private=True, sticky=False)
+                    return outcome.result
 
             def request_factory(attempt, path):
                 store.prepare_checkpoint(attempt, checkpoint_file)

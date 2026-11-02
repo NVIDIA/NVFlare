@@ -18,6 +18,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
 
 
@@ -654,6 +655,21 @@ class TestFedJobConfig:
         assert expected == job_config._trim_whitespace("site-0, site-1")
         assert expected == job_config._trim_whitespace(" site-0,site-1 ")
         assert expected == job_config._trim_whitespace(" site-0, site-1 ")
+
+    @pytest.mark.parametrize("gpu", [None, "0"])
+    def test_simulator_rejects_task_lifetime_before_export_or_spawn(self, tmp_path, gpu):
+        job_config = FedJobConfig(job_name="task_job", min_clients=1)
+        client_app = ClientAppConfig()
+        client_app.additional_params["execution_lifetime"] = "task"
+        job_config.add_fed_app("app", FedAppConfig(client_app=client_app))
+
+        with patch.object(job_config, "generate_job_config") as export:
+            with patch("nvflare.job_config.fed_job_config.popen_in_new_session") as spawn:
+                with pytest.raises(ValueError, match="simulator requires job lifetime"):
+                    job_config.simulator_run(str(tmp_path), n_clients=1, gpu=gpu)
+
+        export.assert_not_called()
+        spawn.assert_not_called()
 
     def test_simulator_run_returns_process_returncode(self, tmp_path):
         job_config = FedJobConfig(job_name="test_job", min_clients=1)
