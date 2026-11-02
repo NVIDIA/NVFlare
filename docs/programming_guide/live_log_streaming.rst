@@ -135,8 +135,10 @@ In the Job API, you can attach a job-level receiver with:
 **Constructor arguments**
 
 ``dest_dir`` (str, default ``None``)
-    Directory where incoming log staging files are written. Defaults to the
-    system temporary directory.
+    Optional directory where incoming log staging files are written. By default,
+    files use a private staging directory under the workspace's site log root,
+    including any configured external log root. Without a workspace, the receiver
+    creates a private temporary directory.
 
 ``idle_timeout`` (float, default ``30.0``)
     Seconds without any message (data or heartbeat) before the receiver
@@ -144,11 +146,25 @@ In the Job API, you can attach a job-level receiver with:
 
 **File layout**
 
-While the stream is active, each chunk is appended to a staging file at::
+With the default configuration, each chunk is flushed to::
+
+    {workspace.get_log_root()}/.client_log_streams/{job_id}/{client_name}/{log_file_name}
+
+This is the path used by authenticated ``get_job_log JOB_ID CLIENT`` and
+``get_job_log JOB_ID all`` retrieval, so an active stream is readable before
+it closes. This requires the updated receiver on the federation server.
+Staging is outside per-job directories, so server-side abort or failure cleanup
+cannot delete an unfinished client stream. The receiver binds the client name to
+the authenticated transport sender, rejects invalid path components, and keeps
+file handles and paths in receiver-owned state. New directories and files use
+private permissions on POSIX hosts.
+An explicit ``dest_dir`` instead stages files at::
 
     {dest_dir}/{job_id}/{client_name}/{log_file_name}
 
-so an operator can find logs while the job is still running. When the stream
+Custom staging supports operator-side tailing; the admin command does not
+search arbitrary custom directories for active streams. Staging directories
+must not contain symlinks or be writable by other users on POSIX hosts. When the stream
 ends successfully, the file is handed to the job manager (if registered) for
 permanent storage. The storage backend may move the file, so the staging path
 may no longer exist after the stream ends. Without a job manager — for example
@@ -161,6 +177,20 @@ Stored logs can be retrieved with the FLARE Console command
 
 If the stream ends with a non-OK return code (e.g. idle timeout), the
 **partial** file is retained at the path above and a warning is logged.
+
+Deleting a job also removes its managed staging files. Open streams keep their
+files until EOF or timeout, then discard them without publishing new components
+for the deleted job. Late attempts to start another stream for that job are
+rejected. The receiver checks for interrupted deletion cleanup on server startup;
+logs for existing jobs are preserved, including when the job store is temporarily
+unavailable. A durable deletion intent is written before deleting the stored job.
+Failed deletion cancels that intent. Recovery checks authoritative job presence:
+an existing job cancels interrupted deletion, a confirmed absent job permits
+cleanup, and an unavailable or unsupported lookup preserves both intent and logs.
+Custom job managers/stores must implement ``job_exists``/``object_exists`` to
+support this recovery; ordinary metadata lookup failures do not prove absence.
+This automatic cleanup applies to the default managed staging tree.
+Operators who set ``dest_dir`` own retention and cleanup of that custom directory.
 
 SiteLogStreamer (client, site widget)
 -------------------------------------

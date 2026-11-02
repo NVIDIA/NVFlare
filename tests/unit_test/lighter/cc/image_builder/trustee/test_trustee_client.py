@@ -18,10 +18,12 @@ import base64
 import io
 import json
 import re
+import ssl
 import tempfile
 import time
 import unittest
 import urllib.error
+import warnings
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -33,8 +35,10 @@ from cvm.common.io import canonical, write_json
 from cvm.common.policy import compose, merge
 from cvm.trustee.admin import install, retire
 from cvm.trustee.client import (
+    _WARNED_TOKEN_EXPIRATIONS,
     MAX_ADMIN_TOKEN_LIFETIME_SECONDS,
     NoRedirect,
+    admin_token,
     api,
     delete_resource,
     encode,
@@ -117,7 +121,12 @@ class TrusteeClientTests(unittest.TestCase):
         self.token = self.root / "admin.jwt"
         self.token_value = unsigned_token()
         self.token.write_text(self.token_value + "\n")
-        self.config = {"url": "https://trustee.test:8443", "ca": "ca.pem", "admin_token_file": str(self.token)}
+        self.config = {
+            "url": "https://trustee.test:8443",
+            "ca": "ca.pem",
+            "admin_token_file": str(self.token),
+            "expiry_warning_seconds": 0,
+        }
         self.resource = resource_path("bundle-1", "intel_tdx", bytes(32))
 
     def test_expired_or_long_lived_preissued_tokens_are_refused_before_any_request(self):
@@ -142,6 +151,16 @@ class TrusteeClientTests(unittest.TestCase):
                 upload_resource(self.config, self.resource, b"a" * 64)
             opener.assert_not_called()
             self.assertNotIn(token, str(error.exception))
+
+    def test_preissued_token_warns_before_configured_expiry_window(self):
+        now = int(time.time())
+        self.token.write_text(unsigned_token(iat=now, exp=now + 60) + "\n")
+        _WARNED_TOKEN_EXPIRATIONS.clear()
+        with self.assertWarnsRegex(RuntimeWarning, "expires within"):
+            admin_token(dict(self.config, expiry_warning_seconds=120), now=now)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            admin_token(dict(self.config, expiry_warning_seconds=120), now=now)
         # A token issued for exactly the maximum lifetime remains usable.
         self.token.write_text(unsigned_token(iat=now, exp=now + MAX_ADMIN_TOKEN_LIFETIME_SECONDS) + "\n")
         with patch("cvm.trustee.client.api") as request:
@@ -239,6 +258,42 @@ class TrusteeClientTests(unittest.TestCase):
         self.assertNotIn("secret backend response", str(error.exception))
         self.assertNotIn(self.token_value, str(error.exception))
         opener.open.assert_called_once()
+
+    def test_administrative_failures_identify_safe_endpoint_status_and_tls_cause(self):
+        endpoint = "reference-value/missing-profile"
+        cases = (
+            (
+                urllib.error.HTTPError(
+                    "https://trustee.test", 404, "Not Found", {}, io.BytesIO(b"secret-backend-response")
+                ),
+                r"rejected at /kbs/v0/reference-value/missing-profile \(HTTP 404\)",
+            ),
+            (
+                urllib.error.URLError(ssl.SSLCertVerificationError(1, "secret certificate detail")),
+                r"TLS verification failed at /kbs/v0/reference-value/missing-profile",
+            ),
+            (
+                ssl.SSLError("secret TLS detail"),
+                r"TLS verification failed at /kbs/v0/reference-value/missing-profile",
+            ),
+            (
+                urllib.error.URLError("secret connection detail"),
+                r"connection failed at /kbs/v0/reference-value/missing-profile",
+            ),
+        )
+        for failure, diagnostic in cases:
+            opener = Mock()
+            opener.open.side_effect = failure
+            with (
+                self.subTest(diagnostic=diagnostic),
+                patch("cvm.trustee.client.ssl.create_default_context"),
+                patch("cvm.trustee.client.urllib.request.build_opener", return_value=opener),
+                self.assertRaisesRegex(BuildError, diagnostic) as error,
+            ):
+                api(self.config, "GET", endpoint)
+            self.assertNotIn("secret", str(error.exception))
+            self.assertNotIn(self.token_value, str(error.exception))
+            opener.open.assert_called_once()
 
     def test_redirect_does_not_forward_credentials(self):
         with self.assertRaises(BuildError):

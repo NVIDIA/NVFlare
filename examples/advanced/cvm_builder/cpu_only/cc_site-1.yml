@@ -1,0 +1,19 @@
+schema_version: 1
+cc_deployment_mode: bare_metal_cvm
+cpu_tee: amd_sev_snp
+gpu_tee: none
+attestation:
+  service: trustee
+# The parent example job uses this measured-image, in-process executor.
+class_allow_list:
+  - cvm_client_api_executor.CVMClientAPIExecutor
+workload:
+  source:
+    type: docker_archive
+    path: /srv/nvflare/images/application.tar
+bare_metal_cvm:
+  cvm_image: /srv/cvm/images/snp-cpu
+  storage:
+    vault_size_gib: 32
+  network:
+    allowed_out_ports: [8443]

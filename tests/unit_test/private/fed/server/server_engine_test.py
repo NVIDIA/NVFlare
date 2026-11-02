@@ -24,6 +24,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
+    ReservedKey,
     RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
@@ -34,9 +35,11 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
-from nvflare.private.aux_runner import AuxMsgTarget
-from nvflare.private.defs import CellChannel
+from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
+from nvflare.private.defs import CellChannel, CellMessageHeaderKeys
 from nvflare.private.fed.server.server_engine import ServerEngine
 
 
@@ -463,6 +466,27 @@ def test_initialize_comm_links_run_manager_and_registers_handler():
         topic="*",
         cb=engine._handle_aux_message,
     )
+
+
+def test_aux_dispatch_preserves_authenticated_sender_despite_forged_peer_properties():
+    engine = _basic_engine()
+    engine.new_context = FLContext
+    aux_runner = AuxRunner(engine)
+    engine.run_manager = SimpleNamespace(aux_runner=aux_runner)
+    observed = {}
+
+    def handler(topic, request, fl_ctx):
+        observed["sender"] = fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
+        observed["claimed_sender"] = fl_ctx.get_peer_context().get_identity_name()
+        return Shareable()
+
+    aux_runner.register_aux_message_handler("log-test", handler)
+    data = Shareable()
+    data.set_peer_props({ReservedKey.IDENTITY_NAME: "..", FLContextKey.CLIENT_NAME: "forged-client"})
+    request = new_cell_message({CellMessageHeaderKeys.CLIENT_NAME: "site-1", MessageHeaderKey.TOPIC: "log-test"}, data)
+    reply = engine._handle_aux_message(request)
+    assert observed == {"sender": "site-1", "claimed_sender": ".."}
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
 
 
 def test_aux_target_translation_handles_special_clients_and_invalid_input():

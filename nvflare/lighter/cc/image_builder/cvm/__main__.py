@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -31,8 +32,10 @@ from .common.contracts import PLATFORMS
 from .common.errors import BuildError, ConfigurationError
 from .common.io import read_json, write_json
 from .common.linux import enable_diagnostics
+from .host.platforms import host_capabilities
 from .host.preflight import check_host
 from .trustee import admin
+from .trustee.bootstrap import create_deployment_receipt, issue_admin_token
 from .trustee.client import delete_resource, resource_role_acl
 from .trustee.import_references import import_references
 from .trustee.inspect_tcb import inspect_tcb
@@ -52,52 +55,163 @@ def report_bundle(result):
         print("Production approval remains pending; use cvmctl admin approve after acceptance testing.")
 
 
-def build(args):
-    report_bundle(
-        cvm.build(
-            args.config,
-            args.platform,
-            args.output,
-            defer_measurements=args.defer_measurements,
-            gpu=args.gpu,
-            dev=args.dev,
-            acceptance_runner=args.acceptance_runner,
-            approval_key=args.approval_key,
+def publish_generated(root, destination, plain_http, cosign_key, names=None):
+    """Publish every generated artifact, expanding {artifact} for multi-platform output."""
+
+    if not destination:
+        if cosign_key:
+            raise BuildError("--cosign-signing-key requires --publish")
+        return []
+    if not cosign_key:
+        raise BuildError(
+            "Combined publication requires --cosign-signing-key; use cvmctl publish for an unsigned lab copy"
         )
+    root = Path(root).resolve()
+    recorded = read_json(root / "oci_artifacts.json")["artifacts"]
+    artifacts = sorted(recorded if names is None else names)
+    if not artifacts:
+        raise BuildError("No generated OCI artifacts are available to publish")
+    if any(Path(name).name != name or not name.endswith(".oci.tar") or name not in recorded for name in artifacts):
+        raise BuildError("Invalid generated OCI artifact record")
+    if len(artifacts) > 1 and "{artifact}" not in destination:
+        raise BuildError("Multiple artifacts require {artifact} in --publish")
+    published = []
+    for name in artifacts:
+        artifact = name.removesuffix(".oci.tar")
+        target = destination.replace("{artifact}", artifact)
+        reference = oci.publish(root / name, target, plain_http, cosign_key=cosign_key)
+        published.append(reference)
+        print(f"Published: {reference}")
+    return published
+
+
+def build_preflight(args):
+    if args.defer_measurements or args.dev:
+        if args.quote_probe:
+            raise BuildError("--quote-probe requires a local production finalization")
+        return
+    profile = config.profile(args.config)
+    platform = cvm.select_platform(profile, args.platform)
+    settings = profile["platforms"][platform]
+    quote_checked = check_host(
+        settings["firmware"],
+        args.quote_probe,
+        platform=platform,
+        gpu=profile["gpu"] == "nvidia_cc",
+        snp_vcek_store=args.snp_vcek_store,
+        shim=settings.get("shim"),
     )
+    if platform == "intel_tdx" and not quote_checked:
+        print(
+            "Host screening passed, but quote generation was not checked; supply --quote-probe for the complete "
+            "preflight.",
+            file=sys.stderr,
+        )
+
+
+def build(args):
+    if args.publish_plain_http and not args.publish:
+        raise BuildError("--publish-plain-http requires --publish")
+    if args.cosign_key and not args.publish:
+        raise BuildError("--cosign-signing-key requires --publish")
+    if args.publish and not args.cosign_key:
+        raise BuildError("Combined publication requires --cosign-signing-key")
+    build_preflight(args)
+    result = cvm.build(
+        args.config,
+        args.platform,
+        args.output,
+        defer_measurements=args.defer_measurements,
+        gpu=args.gpu,
+        dev=args.dev,
+        acceptance_runner=args.acceptance_runner,
+        approval_key=args.approval_key,
+    )
+    report_bundle(result)
+    if args.install_config:
+        if args.dev or args.defer_measurements or not (result / "approval.json").is_file():
+            raise BuildError("Trustee installation requires a locally finalized and approved production bundle")
+        admin.install(read_json(args.install_config), result, candidate=False)
+        print(f"Trustee enabled bundle: {result.name}")
+    if args.publish:
+        if not args.dev and not (result / "approval.json").is_file():
+            raise BuildError("Combined publication requires an approved production bundle")
+        manifest = read_json(result / "cvm_manifest.json")
+        artifact = f"cvm_{manifest['profile_version']}_{manifest['platform']}.oci.tar"
+        publish_generated(result.parent, args.publish, args.publish_plain_http, args.cosign_key, names=(artifact,))
 
 
 def build_vault(args):
+    if args.cosign_key and not args.publish:
+        raise ConfigurationError("--cosign-signing-key requires --publish")
+    if args.publish and not args.cosign_key:
+        raise ConfigurationError("Combined publication requires --cosign-signing-key")
     result = vault.build(args.config, args.output, args.candidate, args.dev, args.plain_http, args.project_config)
     print(f"Vault staging: {result}")
-    for name in sorted(read_json(result / "oci_artifacts.json")["artifacts"]):
+    artifacts = read_json(result / "oci_artifacts.json")["artifacts"]
+    for name in sorted(artifacts):
         print(f"OCI artifact: {result / name}")
+        print(f"Archive SHA-256: {artifacts[name]['archive_sha256']}")
+    publish_generated(result, args.publish, args.plain_http, args.cosign_key)
 
 
-def pull(args):
+def materialize(args, *, merge=False):
+    allow_unverified = getattr(args, "allow_unverified", False)
     local = Path(args.source).expanduser().is_file()
     if local:
-        if args.archive_sha256 is None and not args.allow_unverified:
+        if args.archive_sha256 is None and not allow_unverified:
             raise BuildError(
                 "Local OCI archives require --archive-sha256 from the publisher's authenticated channel, "
                 "or an explicit --allow-unverified"
             )
-    elif args.cosign_key is None and not args.allow_unverified:
-        raise BuildError("Registry artifacts require --cosign-key for signature verification, or --allow-unverified")
+    elif args.cosign_key is None and not allow_unverified:
+        raise BuildError(
+            "Registry artifacts require --cosign-verification-key for signature verification, or --allow-unverified"
+        )
     output, descriptor, config = oci.materialize(
         args.source,
         args.output,
-        args.merge,
+        merge,
         args.plain_http,
         archive_sha256=args.archive_sha256,
         cosign_key=args.cosign_key,
     )
     print(f"Materialized {descriptor['artifactType']} {descriptor['digest']} at {output}")
-    if args.allow_unverified and (args.archive_sha256 is None and args.cosign_key is None):
+    if allow_unverified and (args.archive_sha256 is None and args.cosign_key is None):
         print("Publisher authentication was skipped; the digest alone does not identify who selected it.")
+    return output, descriptor, config
+
+
+def pull(args):
+    output, _, config = materialize(args, merge=args.merge)
     if config.get("launch_directory"):
         launcher = output / config["launch_directory"] / "launch_cvm.sh"
         print(f"Launch: sudo -- {shlex.quote(str(launcher))}")
+
+
+def run_delivery(args):
+    output, descriptor, config = materialize(args)
+    if descriptor["artifactType"] != oci.DELIVERY_ARTIFACT_TYPE:
+        raise BuildError("Artifact is not a runnable CVM delivery")
+    launch_directory = config.get("launch_directory")
+    if not isinstance(launch_directory, str) or not launch_directory:
+        raise BuildError("Artifact is not a runnable CVM delivery")
+    output = output.resolve()
+    launch_root = (output / launch_directory).resolve()
+    if launch_root.parent != output:
+        raise BuildError("Materialized delivery has an unsafe launch directory")
+    launcher = launch_root / "launch_cvm.sh"
+    if not launcher.is_file():
+        raise BuildError("Materialized delivery does not contain its launcher")
+    command = [str(launcher)]
+    if args.cvm_bundle:
+        command.extend(["--cvm-bundle", str(Path(args.cvm_bundle).resolve())])
+    for gpu in args.gpu or ():
+        command.extend(["--gpu", gpu])
+    command.extend(["--bind-address", args.bind_address])
+    print(f"Launching: {shlex.join(command)}", flush=True)
+    # Replace cvmctl with the launcher so signals reach its QEMU cleanup path.
+    os.execv(command[0], command)
 
 
 def approve(args):
@@ -112,7 +226,20 @@ def acceptance_report(args):
 
 
 def host_preflight(args):
-    if not check_host(args.firmware, args.quote_probe):
+    platform = args.platform
+    if platform is None:
+        capabilities = host_capabilities()
+        if len(capabilities) != 1:
+            raise BuildError("Cannot unambiguously auto-detect an SNP/TDX host; specify --platform")
+        platform = next(iter(capabilities))
+    if not check_host(
+        args.firmware,
+        args.quote_probe,
+        platform=platform,
+        gpu=args.gpu,
+        snp_vcek_store=args.snp_vcek_store,
+        shim=args.shim,
+    ):
         print(
             "Quote generation NOT checked. Run --quote-probe with a site smoke test before building. "
             "Check collateral access and multi-package platform registration if quotes are empty.",
@@ -128,17 +255,45 @@ def parser():
         help="private directory that retains stderr of failed commands which never handle secrets",
     )
     commands = root.add_subparsers(dest="command", required=True)
-    stage1 = commands.add_parser("build", help="construct a generic CVM")
+    stage1 = commands.add_parser(
+        "build", help="screen the host, construct and finalize a CVM, then optionally approve, enable and publish it"
+    )
     stage1.add_argument("config", nargs="?", default=str(config.SOURCE / "config/cvm_profile.yml"))
     stage1.add_argument("-p", "--platform", choices=PLATFORMS)
     stage1.add_argument("--output")
     stage1.add_argument("--defer-measurements", action="store_true", help="collect references on the target host later")
     stage1.add_argument("--dev", action="store_true", help="separate dev- profile without TEE or KBS authorization")
     stage1.add_argument("--gpu", action="append", help="repeat for each explicit NVIDIA GPU PCI address")
+    stage1.add_argument(
+        "--quote-probe", type=Path, help="executable that boots a TD and verifies a nonempty quote during preflight"
+    )
+    stage1.add_argument(
+        "--snp-vcek-store",
+        type=Path,
+        help="upstream Trustee offline-store vcek directory accessible from this SNP host",
+    )
     stage1.add_argument("--acceptance-runner", help="trusted executable called as RUNNER BUNDLE REPORT")
     stage1.add_argument(
         "--approval-key",
         help="Ed25519 private key that signs approval.json after site acceptance (or profile approval_signing_key)",
+    )
+    stage1.add_argument(
+        "--install-config",
+        help="Trustee administration JSON used to enable the approved bundle after acceptance",
+    )
+    stage1.add_argument(
+        "--publish",
+        metavar="REGISTRY_REFERENCE",
+        help="publish the generated platform artifact after approval",
+    )
+    stage1.add_argument(
+        "--publish-plain-http", action="store_true", help="allow an unencrypted test registry for --publish"
+    )
+    stage1.add_argument(
+        "--cosign-signing-key",
+        "--cosign-key",
+        dest="cosign_key",
+        help="Cosign private key required to sign a combined publication",
     )
     stage1.set_defaults(handler=build)
 
@@ -148,13 +303,24 @@ def parser():
     finalize.add_argument("--gpu", action="append", help="repeat for each explicit NVIDIA GPU PCI address")
     finalize.set_defaults(handler=lambda a: report_bundle(cvm.finalize(a.bundle, a.reference_evidence, a.gpu)))
 
-    stage2 = commands.add_parser("vault", help="seal an application vault")
+    stage2 = commands.add_parser("vault", help="seal application vaults and optionally publish the deliveries")
     stage2.add_argument("config")
     stage2.add_argument("--output")
     stage2.add_argument("--project-config", help="default: nearest cvm_project.yml above the build YAML directory")
     stage2.add_argument("--plain-http", action="store_true", help="allow an unencrypted test registry connection")
     stage2.add_argument("--candidate", action="store_true", help="acceptance-only vault for an exact unapproved bundle")
     stage2.add_argument("--dev", action="store_true", help="plain ext4 for a separate dev- profile; no KBS")
+    stage2.add_argument(
+        "--publish",
+        metavar="REGISTRY_REFERENCE",
+        help="publish after sealing; use {artifact} in the reference when more than one platform is built",
+    )
+    stage2.add_argument(
+        "--cosign-signing-key",
+        "--cosign-key",
+        dest="cosign_key",
+        help="Cosign private key required to sign a combined publication",
+    )
     stage2.set_defaults(handler=build_vault)
 
     acceptance = commands.add_parser(
@@ -177,18 +343,47 @@ def parser():
     materialize.add_argument("--merge", action="store_true", help="add a finalized platform to an existing profile")
     materialize.add_argument("--plain-http", action="store_true", help="allow an unencrypted test registry connection")
     materialize.add_argument("--archive-sha256", help="published SHA-256 of a local .oci.tar (authenticated channel)")
-    materialize.add_argument("--cosign-key", help="cosign public key that must have signed the registry digest")
+    materialize.add_argument(
+        "--cosign-verification-key",
+        "--cosign-key",
+        dest="cosign_key",
+        help="Cosign public key that must have signed the registry digest",
+    )
     materialize.add_argument(
         "--allow-unverified",
         action="store_true",
         help="skip publisher authentication (lab use only; digests alone do not identify the publisher)",
     )
     materialize.set_defaults(handler=pull)
+
+    run = commands.add_parser("run", help="authenticate, materialize and launch a CVM delivery")
+    run.add_argument("source")
+    run.add_argument("--output")
+    run.add_argument("--plain-http", action="store_true", help="allow an unencrypted test registry connection")
+    run.add_argument("--archive-sha256", help="published SHA-256 of a local .oci.tar (authenticated channel)")
+    run.add_argument(
+        "--cosign-verification-key",
+        "--cosign-key",
+        dest="cosign_key",
+        help="Cosign public key that must have signed the registry digest",
+    )
+    run.add_argument("--cvm-bundle", help="override the delivery's embedded generic CVM bundle")
+    run.add_argument("--gpu", action="append", help="repeat for each explicit NVIDIA GPU PCI address")
+    run.add_argument(
+        "--bind-address", default="0.0.0.0", help="guest-forwarding bind address (default: all interfaces)"
+    )
+    run.set_defaults(handler=run_delivery)
+
     publish = commands.add_parser("publish", help="copy a local OCI tar to a registry")
     publish.add_argument("source")
     publish.add_argument("destination")
     publish.add_argument("--plain-http", action="store_true", help="allow an unencrypted test registry connection")
-    publish.add_argument("--cosign-key", help="cosign private key used to sign the published immutable digest")
+    publish.add_argument(
+        "--cosign-signing-key",
+        "--cosign-key",
+        dest="cosign_key",
+        help="Cosign private key used to sign the published immutable digest",
+    )
     publish.set_defaults(
         handler=lambda a: print(
             f"Published: {oci.publish(a.source, a.destination, a.plain_http, cosign_key=a.cosign_key)}"
@@ -202,6 +397,48 @@ def parser():
     approval.add_argument("evidence")
     approval.add_argument("--signing-key", required=True, help="Ed25519 private key of the acceptance authority")
     approval.set_defaults(handler=approve)
+    token = actions.add_parser("token", help="mint a short-lived native Trustee administration token")
+    token.add_argument("--private-key", required=True, help="Ed25519 key trusted by the KBS admin identity provider")
+    token.add_argument("--role", required=True, help="cvm-policy, cvm-resources, or a bundle-scoped resource role")
+    token.add_argument("--output", required=True)
+    token.add_argument("--issuer", default="cvm-builder")
+    token.add_argument("--audience", default="coco-trustee")
+    token.add_argument("--lifetime", type=int, default=3600, help="seconds, at most 2592000 (30 days)")
+    token.set_defaults(
+        handler=lambda a: print(
+            f"Trustee token: {issue_admin_token(a.private_key, a.role, a.output, issuer=a.issuer, audience=a.audience, lifetime=a.lifetime)}"
+        )
+    )
+    receipt = actions.add_parser("deployment-receipt", help="record a tested native Trustee deployment")
+    receipt.add_argument("trustee_build", help="JSON emitted by cvmctl provenance for the deployed KBS binary")
+    receipt.add_argument("kbs_config", help="exact JSON configuration used by the deployed KBS")
+    receipt.add_argument("--policy", action="append", required=True, help="installed immutable AS policy as NAME=FILE")
+    receipt.add_argument(
+        "--policy-selection-tested",
+        action="store_true",
+        help="operator attestation that live policy-selection acceptance passed",
+    )
+    receipt.add_argument(
+        "--unauthorized-administration-denied",
+        action="store_true",
+        help="operator attestation that the live unauthorized-administration negative test passed",
+    )
+    receipt.add_argument("--output", required=True)
+    receipt.set_defaults(
+        handler=lambda a: print(
+            "Trustee deployment receipt: "
+            + str(
+                create_deployment_receipt(
+                    a.trustee_build,
+                    a.kbs_config,
+                    a.policy,
+                    a.output,
+                    policy_selection_tested=a.policy_selection_tested,
+                    unauthorized_administration_denied=a.unauthorized_administration_denied,
+                )
+            )
+        )
+    )
     install = actions.add_parser("install")
     install.add_argument("config", help="administration JSON; production requires approval_public_keys")
     install.add_argument("bundle")
@@ -239,8 +476,20 @@ def parser():
     preflight = commands.add_parser("preflight", help="check host or Trustee prerequisites")
     checks = preflight.add_subparsers(required=True)
     host = checks.add_parser("host")
+    host.add_argument("--platform", choices=PLATFORMS, help="default: auto-detect the single enabled host TEE")
     host.add_argument("--firmware", type=Path, required=True)
+    host.add_argument(
+        "--shim",
+        type=Path,
+        help="configured shim path required with TDX Secure Boot .ms.fd (preflight checks existence only)",
+    )
     host.add_argument("--quote-probe", type=Path, help="executable that boots a TD and verifies a nonempty quote")
+    host.add_argument("--gpu", action="store_true", help="also screen an installed NVIDIA confidential-GPU host")
+    host.add_argument(
+        "--snp-vcek-store",
+        type=Path,
+        help="upstream Trustee offline-store vcek directory accessible from this SNP host",
+    )
     host.set_defaults(handler=host_preflight)
     trustee = checks.add_parser("trustee")
     trustee.set_defaults(handler=lambda a: check_trustee())
@@ -261,7 +510,8 @@ def main(argv=None):
             # Application inputs and key-upload failures can contain secrets.
             cli.exit(
                 1,
-                "Vault build failed; retain any build_failure.json and resolve uncertain key uploads before retrying\n",
+                "Vault operation failed; retain any build_failure.json and resolve uncertain key uploads before "
+                "retrying. If staging completed, resume release with cvmctl publish instead of rebuilding\n",
             )
         cli.exit(1, f"CVM operation failed: {exc}\n")
 

@@ -26,7 +26,13 @@ from urllib.parse import urlparse
 import yaml
 
 from ..artifacts.bundle import load_public_keys
-from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE, minimum_proof_lifetime
+from ..common.contracts import (
+    DEFAULT_EXPIRY_WARNING_SECONDS,
+    HEADER_BYTES,
+    PLATFORMS,
+    STORAGE_PROFILE,
+    minimum_proof_lifetime,
+)
 from ..common.errors import BuildError, ConfigurationError, require, require_config
 from ..common.io import canonical, digest_file, read_json
 from ..common.references import validate_references
@@ -153,7 +159,7 @@ PROFILE_DEFAULTS = {
     "required_system_packages": DEFAULT_PACKAGES,
     # Unmodified CoCo v0.23.0 / Trustee v0.22.0.
     "trustee_commit": TRUSTEE_COMMIT,
-    "kbs_url": "https://kbs.example.org:8443",
+    "kbs_url": "https://trustee.example.org:8443",
     "kbs_cert": str(INPUTS / "kbs-ca.pem"),
     "as_public_key": str(INPUTS / "as-public.pem"),
     "token_algorithm": "ES256",
@@ -243,7 +249,9 @@ def _elf_dependencies(path):
     for index in range(program_count):
         entry = struct.unpack_from(endian + program_format, data, program_offset + index * program_size)
         entry_type = entry[0]
-        offset, virtual_address, file_size = (entry[1], entry[2], entry[4]) if elf_class == 1 else (entry[2], entry[3], entry[5])
+        offset, virtual_address, file_size = (
+            (entry[1], entry[2], entry[4]) if elf_class == 1 else (entry[2], entry[3], entry[5])
+        )
         require(offset + file_size <= len(data), "Invalid kbs-client ELF segment")
         if entry_type == 1:
             loads.append((virtual_address, offset, file_size))
@@ -338,12 +346,12 @@ def load_yaml(path):
 
 
 def local_path(config_path, value, directory=False):
-    require(isinstance(value, str) and value, "Expected input path")
+    require_config(isinstance(value, str) and value, "Expected input path")
     path = Path(value)
     if not path.is_absolute():
         path = Path(config_path).resolve().parent / path
     path = path.resolve()
-    require(path.is_dir() if directory else path.is_file(), f"Input does not exist: {path}")
+    require_config(path.is_dir() if directory else path.is_file(), "Input does not exist; check the configured path")
     return str(path)
 
 
@@ -656,9 +664,17 @@ def project(build_config, project_config=None):
         set(value) == {"trustee", "approval"}, "Project configuration must contain only trustee and approval"
     )
     service = value["trustee"]
+    trustee_required = {"url", "ca", "admin_token_file"}
     require_config(
-        isinstance(service, dict) and set(service) == {"url", "ca", "admin_token_file"},
-        "Project trustee requires url, ca and admin_token_file",
+        isinstance(service, dict)
+        and trustee_required <= set(service)
+        and set(service) <= trustee_required | {"expiry_warning_seconds"},
+        "Project trustee requires url, ca and admin_token_file; expiry_warning_seconds is optional",
+    )
+    warning_window = service.setdefault("expiry_warning_seconds", DEFAULT_EXPIRY_WARNING_SECONDS)
+    require_config(
+        type(warning_window) is int and warning_window >= 0,
+        "Project trustee expiry_warning_seconds must be a nonnegative integer",
     )
     endpoint = service["url"]
     require_config(isinstance(endpoint, str) and endpoint, "Trustee requires an HTTPS URL")

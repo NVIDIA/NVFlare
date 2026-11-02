@@ -121,6 +121,14 @@ class JobDefManagerSpec(FLComponent, ABC):
         """
         pass
 
+    def job_exists(self, jid: str, fl_ctx: FLContext) -> bool:
+        """Return authoritative presence; raise on unavailable/unsupported storage.
+
+        A failed get_job lookup can also return None on a storage outage and
+        must not authorize deletion of retained logs.
+        """
+        raise NotImplementedError("authoritative job existence is not supported by this manager")
+
     @abstractmethod
     def get_app(self, job: Job, app_name: str, fl_ctx: FLContext) -> bytes:
         """Get the contents of the specified app in bytes.

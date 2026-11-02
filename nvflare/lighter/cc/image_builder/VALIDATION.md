@@ -6,6 +6,22 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## Kernel/profile qualification clarification — 2026-10-28 UTC
+
+The rc4 and rc5 acceptance runs on guest kernel **`7.0.0-31-generic`** passed
+`test_corruption_after_scan_stops_workload`. That result supersedes the
+September failure of the corresponding post-scan corruption-read case below;
+the historical section is retained to show why the profile was held back. No
+different kernel pin is currently prescribed solely for that resolved case.
+
+This result qualifies one required behavior, not the kernel or profile in
+isolation. The checked-in `cpu-2026.09-r5` remains
+**`production_ready: false`** because a complete acceptance report for the
+current source and exact manifest, followed by signed production approval, is
+not recorded here. A production profile may retain `7.0.0-31-generic` only if a
+new profile version with its complete pins passes every applicable acceptance
+row on each target platform. Do not edit the existing profile flag in place.
+
 ## Terminal GPU quarantine source validation — 2026-10-19 UTC
 
 The runtime now treats GPU Ready-state revocation as terminal for the running
@@ -297,8 +313,10 @@ resource roles, a root-only lock directory, `--diagnostics`, git-ignored
 New operator inputs: `inputs/kbs_client_cpu_build.json` from `cvmctl provenance`,
 an Ed25519 acceptance signing key pair, `approval.public_keys` in
 `cvm_project.yml`, `approval_public_keys` in the administration configuration,
-`--signing-key` for `admin approve`, and `--archive-sha256`/`--cosign-key` (or an
-explicit `--allow-unverified`) for `cvmctl pull`. Existing `approval.json` files
+`--signing-key` for `admin approve`, and
+`--archive-sha256`/`--cosign-verification-key` (or an explicit
+`--allow-unverified`) for `cvmctl pull`. `cvmctl run` never permits the
+unauthenticated override. Existing `approval.json` files
 are unsigned and no longer count as approval.
 
 A follow-up review found and fixed four regressions:

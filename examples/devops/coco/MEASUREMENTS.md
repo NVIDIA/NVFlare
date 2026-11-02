@@ -123,7 +123,7 @@ python3 trusted_system/prepare-collector.py \
   "$PUBLISH_CONFIG" "$HOME/coco-private/new-collector"
 ~~~
 
-Set `CPU_TEE=snp` or `tdx`, the registry repository and CA/bundle, and an existing
+Set `CPU_TEE=amd_sev_snp` or `intel_tdx`, the registry repository and CA/bundle, and an existing
 private Skopeo authfile in `COLLECTOR_REGISTRY_AUTH_FILE`. The helper uses that
 CA/bundle automatically for publication; no separate Skopeo trust setup is needed.
 

@@ -4,7 +4,7 @@ This guide records two attestation failures investigated on 2026-09-18 and the
 recoveries verified on hardware. The tested components were Intel QGS/DCAP
 1.27.101.1 and unmodified CoCo Trustee v0.22.0. Use it alongside the host
 prerequisites in [BUILD_GUIDE.md](BUILD_GUIDE.md#1-prepare-the-build-host) and the
-backend configuration in [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#4-configure-upstream-kbs).
+backend configuration in [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#5-configure-upstream-kbs).
 
 ## Identify the failing stage
 
@@ -165,8 +165,8 @@ allowlist or a recommendation for other hosts. The baselines advance over time.
 ### Configure the intended baseline explicitly
 
 The checked-in [KBS configuration](trustee/kbs.json) selects `standard`. Merge
-this object into the existing CoCo KBS configuration, preserving its other AS
-settings and any `nvidia_verifier` configuration:
+this object into the selected standalone or CoCo KBS configuration, preserving
+its other AS settings and any `nvidia_verifier` configuration:
 
 ```json
 {
@@ -182,7 +182,7 @@ settings and any `nvidia_verifier` configuration:
 }
 ```
 
-Apply the change through the existing CoCo deployment's configuration and rollout
+Apply the change through the selected deployment's configuration and rollout
 process. Verify that the running KBS instance loaded the intended configuration,
 then request a fresh quote through that backend. Record the selected channel
 alongside the deployed policy and reference approvals.

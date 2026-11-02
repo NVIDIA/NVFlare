@@ -25,6 +25,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[5]
 SERVICE = ROOT / "examples/devops/coco/service"
+# The integration flow spawns several shell/Python processes. Leave room for
+# scheduler delay in highly parallel CI while retaining a hard failure bound.
+SCRIPT_TIMEOUT_SECONDS = 60
 POST = r"""
 import json, os, sys
 from pathlib import Path
@@ -149,7 +152,7 @@ def run_stage(kit, mode="normal"):
         env={**environment, "TEST_MODE": mode},
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=SCRIPT_TIMEOUT_SECONDS,
     )
 
 
@@ -207,7 +210,7 @@ def test_verify_only_reads_current_references_without_writes(kit):
         env=environment,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=SCRIPT_TIMEOUT_SECONDS,
     )
     assert result.returncode == 0, result.stderr
     assert (root / "events").read_text().splitlines() == [
@@ -226,7 +229,7 @@ def test_verifier_rejects_service_restart_option(kit):
         env=environment,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=SCRIPT_TIMEOUT_SECONDS,
     )
     assert result.returncode != 0
     assert not (root / "events").exists()

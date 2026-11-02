@@ -511,7 +511,10 @@ def build(path, output=None, candidate=False, dev=False, plain_http=False, proje
             # Reject stale credentials before image retrieval and vault sealing.
             # api() reads the file again at publication, so operators may still
             # rotate a valid short-lived token while a build is running.
-            trustee_client.admin_token(project["trustee"])
+            try:
+                trustee_client.admin_token(project["trustee"])
+            except BuildError as error:
+                raise ConfigurationError(str(error)) from None
             app["trustee"] = project["trustee"]
             app["approval_keys"] = project["approval"]["public_keys"]
     except ConfigurationError:

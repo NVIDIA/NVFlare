@@ -20,6 +20,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import tempfile
 import threading
 import unittest
@@ -28,6 +29,7 @@ from collections import Counter
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import yaml
 from cvm.artifacts.bundle import required_acceptance_checks
 from cvm.build import config
 from cvm.common.errors import BuildError
@@ -118,6 +120,25 @@ class LabProfileTests(unittest.TestCase):
             ):
                 lab_kbs.verifier_config(profiles)
 
+    def test_lab_kbs_uses_measured_endpoint_for_listener_port_and_staged_administration(self):
+        lab_kbs = load_helper("lab_kbs")
+        staged = {"kbs_url": "https://trustee.example.org:8443", "identity": "provided"}
+        self.assertEqual(
+            lab_kbs.endpoint_settings(staged, {}),
+            ("127.0.0.1", 8443, "https://trustee.example.org:8443"),
+        )
+        self.assertEqual(
+            lab_kbs.endpoint_settings(staged, {"CVM_LAB_KBS_HOST": "192.0.2.10"}),
+            ("192.0.2.10", 8443, "https://trustee.example.org:8443"),
+        )
+        disposable = {"kbs_url": "https://10.0.2.2:19199", "identity": "disposable"}
+        self.assertEqual(
+            lab_kbs.endpoint_settings(disposable, {}),
+            ("127.0.0.1", 19199, "https://127.0.0.1:19199"),
+        )
+        with self.assertRaisesRegex(BuildError, "must match the measured KBS URL port"):
+            lab_kbs.endpoint_settings(staged, {"CVM_LAB_KBS_PORT": "19199"})
+
     def test_selected_profiles_require_only_their_own_references(self):
         prepare = load_helper("prepare_lab")
         for selected in (None, ["intel_tdx"], ["amd_sev_snp"]):
@@ -176,7 +197,59 @@ class LabProfileTests(unittest.TestCase):
             ):
                 prepare.prepare(directory, http_only=True)
             apt.assert_not_called()
-            self.assertEqual(set(read_json(Path(directory) / "lab-state.json")), {"pki"})
+            self.assertEqual(
+                set(read_json(Path(directory) / "lab-state.json")),
+                {"pki", "identity", "kbs_url"},
+            )
+            self.assertTrue((Path(directory) / "config/attestation_policy.rego").is_file())
+            self.assertTrue((Path(directory) / "config/gpu_policy.json").is_file())
+
+    def test_prepare_lab_can_stage_the_eventual_production_identity(self):
+        prepare = load_helper("prepare_lab")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "seed"
+            with contextlib.redirect_stdout(io.StringIO()):
+                prepare.prepare(seed, http_only=True)
+            identity = Path(read_json(seed / "lab-state.json")["pki"])
+            for source, name in (
+                (seed / "inputs/test-ca.pem", "ca.pem"),
+                (seed / "inputs/test-as-ca.pem", "as-ca.pem"),
+                (seed / "inputs/test-as-public.pem", "as-public.pem"),
+            ):
+                shutil.copyfile(source, identity / name)
+            lab = root / "lab"
+            with contextlib.redirect_stdout(io.StringIO()):
+                prepare.prepare(
+                    lab,
+                    http_only=True,
+                    identity_directory=identity,
+                    kbs_url="https://10.0.2.2:19199",
+                )
+            state = read_json(lab / "lab-state.json")
+            self.assertEqual(state["pki"], str(identity.resolve()))
+            self.assertEqual(state["identity"], "provided")
+            self.assertEqual((lab / "inputs/test-ca.pem").read_bytes(), (identity / "ca.pem").read_bytes())
+            self.assertEqual(
+                (lab / "inputs/test-as-public.pem").read_bytes(), (identity / "as-public.pem").read_bytes()
+            )
+            hardware_lab = root / "hardware-lab"
+            with contextlib.redirect_stdout(io.StringIO()):
+                prepare.prepare(
+                    hardware_lab,
+                    platforms=["amd_sev_snp"],
+                    identity_directory=identity,
+                    kbs_url="https://10.0.2.2:8443",
+                )
+            profile = yaml.safe_load((hardware_lab / "inputs/lab-profile.yml").read_text())
+            self.assertEqual(profile["kbs_url"], "https://10.0.2.2:8443")
+            self.assertEqual(profile["bootstrap_egress"], [443, 8443])
+
+    def test_custom_kbs_url_requires_matching_staged_identity(self):
+        prepare = load_helper("prepare_lab")
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(SystemExit, "custom --kbs-url requires --identity-directory"):
+                prepare.prepare(directory, http_only=True, kbs_url="https://trustee.example.org:8443")
 
     def test_cli_supports_one_or_repeated_platform_selection(self):
         prepare = load_helper("prepare_lab")
@@ -185,7 +258,13 @@ class LabProfileTests(unittest.TestCase):
             with self.subTest(platforms=selected), patch("sys.argv", argv), patch.object(prepare, "prepare") as call:
                 prepare.main()
             call.assert_called_once_with(
-                "/lab", http_only=False, platforms=selected, package_profile=None, pins_from_host=False
+                "/lab",
+                http_only=False,
+                platforms=selected,
+                package_profile=None,
+                pins_from_host=False,
+                identity_directory=None,
+                kbs_url="https://10.0.2.2:19199",
             )
 
     def test_cli_forwards_package_pin_overrides(self):
@@ -195,7 +274,13 @@ class LabProfileTests(unittest.TestCase):
         with patch("sys.argv", argv), patch.object(prepare, "prepare") as call:
             prepare.main()
         call.assert_called_once_with(
-            "/lab", http_only=False, platforms=None, package_profile="pins.yml", pins_from_host=True
+            "/lab",
+            http_only=False,
+            platforms=None,
+            package_profile="pins.yml",
+            pins_from_host=True,
+            identity_directory=None,
+            kbs_url="https://10.0.2.2:19199",
         )
 
     def test_invalid_platform_selection_is_rejected_before_creating_inputs(self):
