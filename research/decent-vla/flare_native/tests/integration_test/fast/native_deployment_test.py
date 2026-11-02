@@ -31,7 +31,9 @@ pytestmark = pytest.mark.skipif(os.environ.get("RUN_NATIVE_SIMULATOR_TESTS") != 
 
 
 @pytest.mark.parametrize("algorithm,external", [("fedavg", True), ("fedadam", False)])
-def test_exported_native_job_is_portable_and_preserves_warm_clients(tmp_path, algorithm, external):
+def test_exported_native_job_is_portable_and_preserves_warm_clients(tmp_path, monkeypatch, algorithm, external):
+    # Sites set DECENT_VLA_WORKDIR; the clients change directory to it.
+    monkeypatch.setenv("DECENT_VLA_WORKDIR", str(tmp_path))
     source = tmp_path / "source"
     source.mkdir()
     raw = {

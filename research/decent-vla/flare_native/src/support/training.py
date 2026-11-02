@@ -21,7 +21,6 @@ import random
 
 import numpy as np
 import torch
-from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
 
 
 def seed_training(seed: int, deterministic: bool = False) -> None:
@@ -85,6 +84,9 @@ def train_steps(backend, dataloader, optimizer, scheduler, global_state, steps, 
     """
     snapshot = {k: v.detach().clone() for k, v in global_state.items()} if strategy.name == "fedprox" else {}
     if snapshot:
+        # Imported here: GR00T evaluation loads this module in an environment without NVFlare.
+        from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
+
         live = _SharedParameterView(backend.model, snapshot)
         reference = _SharedParameterView(backend.model, snapshot, reference=True)
         count = sum(p.numel() for _, p in live.named_parameters())

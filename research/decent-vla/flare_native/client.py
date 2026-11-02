@@ -71,11 +71,13 @@ def client_main(config_arg=None, app_dir=None):
     from src.support.site import apply_site_paths, load_job_config
     from src.support.training import seed_training, train_steps
 
+    # Before apply_site_paths changes directory: an external-process client
+    # reads its Client API config relative to the cwd.
+    flare.init()
     config_path = resolve_config_path(config_arg, str(Path(app_dir) / "config") if app_dir else None)
     cfg = load_job_config(config_path)
     apply_site_paths(cfg, Path(app_dir).parent if app_dir else Path.cwd())
     seed_training(cfg.seed, bool(cfg.backend.extra.get("deterministic", False)))
-    flare.init()
     cid = cid_from_site(flare.get_site_name(), cfg.fl.nvflare.site_prefix)
     factory, cls = build_backend_factory(cfg, resolve_device(cfg.device))
     chunks, _ = partition_for(cfg, cls)
