@@ -60,6 +60,7 @@ from nvflare.apis.storage import (
     StorageSpec,
 )
 from nvflare.apis.utils.job_submit_token import canonical_job_content_hash, validate_submit_token
+from nvflare.app_common.logging.constants import client_log_path, client_log_staging_root
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -830,12 +831,17 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
     ) -> Optional[str]:
         workspace = engine.get_workspace()
-        log_file = os.path.join(workspace.get_log_root(job_id), client_name, log_file_name)
         try:
-            if os.path.exists(log_file):
-                return "".join(self._collect_job_log_lines(log_file))
-        except FileNotFoundError:
+            staged = client_log_path(client_log_staging_root(workspace), job_id, client_name, log_file_name)
+        except ValueError:
             return None
+        try:
+            if not os.path.isfile(staged):
+                staged = os.path.join(workspace.get_log_root(job_id), client_name, log_file_name)
+            if os.path.isfile(staged):
+                return "".join(self._collect_job_log_lines(staged))
+        except FileNotFoundError:
+            pass
         return None
 
     def _read_stored_client_job_log(

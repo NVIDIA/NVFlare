@@ -15,6 +15,7 @@
 import datetime
 import gc
 import io
+import shutil
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -408,7 +409,7 @@ class _FakeWorkspace:
         self.root_dir = str(root_dir)
 
     def get_log_root(self, job_id=None):
-        path = Path(self.root_dir) / str(job_id)
+        path = Path(self.root_dir) / str(job_id) if job_id else Path(self.root_dir)
         path.mkdir(parents=True, exist_ok=True)
         return str(path)
 
@@ -1341,6 +1342,7 @@ def test_get_job_log_reads_default_receiver_while_stream_is_open(tmp_path, monke
     peer.put(ReservedKey.RUN_NUM, "job-1", private=True, sticky=False)
     fl_ctx = FLContext()
     fl_ctx.put(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    fl_ctx.put(FLContextKey.CLIENT_NAME, "site-1", private=True, sticky=False)
     fl_ctx.set_peer_context(peer)
     receiver = JobLogReceiver()
     stream = {KEY_FILE_NAME: file_name, StreamContextKey.RC: ReturnCode.OK}
@@ -1350,6 +1352,9 @@ def test_get_job_log_reads_default_receiver_while_stream_is_open(tmp_path, monke
         JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", target, file_name])
         payload, _ = conn.dicts.pop()
         assert payload["logs"]["site-1"] == "round started\n"
+        # Abort/failure cleanup removes per-job run and external log directories
+        # before client streams necessarily reach EOF. Active staging must survive.
+        shutil.rmtree(workspace.get_log_root("job-1"))
         receiver._on_chunk_received(b"batch finished\n", stream, fl_ctx)
         JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", target, file_name])
         payload, _ = conn.dicts.pop()
@@ -1358,6 +1363,10 @@ def test_get_job_log_reads_default_receiver_while_stream_is_open(tmp_path, monke
         engine.job_def_manager.get_client_data.assert_not_called()
     finally:
         receiver._on_stream_done(stream, fl_ctx)
+    args = engine.job_def_manager.set_client_data.call_args.args
+    assert args[0] == "job-1"
+    assert args[2] == "site-1"
+    assert Path(args[1]).read_bytes() == b"round started\nbatch finished\n"
 
 
 def test_get_job_log_returns_selected_live_json_log_only(tmp_path, monkeypatch):
