@@ -204,6 +204,34 @@ def test_job_log_receiver_does_not_log_saved_when_storage_fails(tmp_path):
     log_info.assert_not_called()
 
 
+def test_default_receiver_without_job_manager_finalizes_in_place(tmp_path):
+    receiver = JobLogReceiver()
+    fl_ctx = _make_recv_fl_ctx()
+    engine = fl_ctx.get_engine()
+    engine.get_component.return_value = None
+    workspace = engine.get_workspace.return_value
+    run_dir = tmp_path / "trusted_job"
+    workspace.get_log_root.return_value = str(run_dir)
+    workspace.get_run_dir.return_value = str(run_dir)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.OK}
+    receiver._on_chunk_received(b"simulator progress\n", stream, fl_ctx)
+    with patch.object(receiver, "log_exception") as log_exception:
+        receiver._on_stream_done(stream, fl_ctx)
+    assert (run_dir / "trusted_client/log.txt").read_bytes() == b"simulator progress\n"
+    log_exception.assert_not_called()
+
+
+def test_default_receiver_without_workspace_uses_temporary_storage(tmp_path):
+    receiver = JobLogReceiver()
+    fl_ctx = _make_recv_fl_ctx()
+    fl_ctx.get_engine().get_workspace.return_value = None
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.OK}
+    with patch("nvflare.app_common.logging.job_log_receiver.tempfile.gettempdir", return_value=str(tmp_path)):
+        receiver._on_chunk_received(b"progress\n", stream, fl_ctx)
+        receiver._on_stream_done(stream, fl_ctx)
+    assert (tmp_path / "trusted_job/trusted_client/log.txt").read_bytes() == b"progress\n"
+
+
 @pytest.mark.parametrize(
     "event_type",
     [EventType.SYSTEM_START, EventType.ABOUT_TO_START_RUN, EventType.START_RUN],
