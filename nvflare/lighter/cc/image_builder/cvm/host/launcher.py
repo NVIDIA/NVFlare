@@ -27,6 +27,7 @@ import signal
 import socket
 import struct
 import subprocess
+import threading
 import time
 import warnings
 from pathlib import Path
@@ -72,6 +73,7 @@ SHUTDOWN_WAIT_SECONDS = GRACEFUL_SHUTDOWN_SECONDS * 2 + QEMU_TERMINATE_SECONDS +
 # reattaching it or a failed run's only diagnostic record is lost.
 APPLOG_HISTORY_LIMIT = 3
 CONSOLE_HISTORY_LIMIT = 3
+CONSOLE_LOG_MAX_BYTES = 16 * 1024 * 1024
 
 
 def normalize_pci(address):
@@ -632,9 +634,41 @@ def launch(directory, bundle=None, gpu=None, bind_address="0.0.0.0"):
             qmp.unlink(missing_ok=True)
 
 
+def _retain_serial(read_fd, log_fd):
+    """Bound the retained prefix, then keep draining QEMU's best-effort log pipe."""
+    remaining = CONSOLE_LOG_MAX_BYTES
+    recording = True
+    try:
+        while chunk := os.read(read_fd, 64 * 1024):
+            if not recording:
+                continue
+            retained = memoryview(chunk)[:remaining]
+            try:
+                while retained:
+                    count = os.write(log_fd, retained)
+                    if count <= 0:
+                        raise OSError("Console log write made no progress")
+                    remaining -= count
+                    retained = retained[count:]
+            except OSError:
+                recording = False
+                warnings.warn(
+                    "Could not retain CVM serial output; continuing with terminal output only", RuntimeWarning
+                )
+                continue
+            if remaining == 0:
+                recording = False
+                warnings.warn(
+                    "CVM serial log reached its byte limit; continuing with terminal output only", RuntimeWarning
+                )
+    finally:
+        os.close(read_fd)
+        os.close(log_fd)
+
+
 @contextlib.contextmanager
 def serial_capture(command, directory):
-    """Retain the existing output-only guest console, including pre-vault failures."""
+    """Retain a bounded prefix of the output-only console, including pre-vault failures."""
     if "-serial" not in command:
         yield command, ()
         return
@@ -642,14 +676,22 @@ def serial_capture(command, directory):
     require(command[index + 1] == "stdio", "Unexpected CVM serial backend")
     directory = Path(directory)
     log = directory / f"console-{time.time_ns()}.log"
+    opened = []
     try:
         fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    except OSError:
+        opened.append(fd)
+        os.fchmod(fd, 0o600)
+        read_fd, write_fd = os.pipe()
+        opened.extend((read_fd, write_fd))
+        writer = threading.Thread(target=_retain_serial, args=(read_fd, fd), name="cvm-console", daemon=True)
+        writer.start()
+    except (OSError, RuntimeError):
+        for opened_fd in opened:
+            os.close(opened_fd)
         warnings.warn("Could not retain CVM serial output; continuing with terminal output only", RuntimeWarning)
         yield command, ()
         return
     try:
-        os.fchmod(fd, 0o600)
         try:
             logs = sorted(path for path in directory.glob("console-*.log") if not path.is_symlink() and path.is_file())
             for old in logs[:-CONSOLE_HISTORY_LIMIT]:
@@ -657,15 +699,19 @@ def serial_capture(command, directory):
         except OSError:
             warnings.warn("Could not prune old CVM console logs", RuntimeWarning)
         print(f"Guest serial log: {log}", flush=True)
-        # QEMU logs the same bytes that it sends to stdout. Use the already
-        # opened descriptor so filenames cannot inject chardev options. No
-        # shell, monitor, guest stdin, or raw journal access is added.
-        chardev = f"stdio,id=cvm-console,signal=off,logfile=/proc/self/fd/{fd},logappend=on"
+        # QEMU still sends console bytes directly to stdout. Its separate log
+        # channel goes through a pipe so the file cannot grow beyond the cap.
+        # The reader keeps draining after the cap or a disk-write failure; no
+        # guest input, terminal interception, or raw journal access is added.
+        chardev = f"stdio,id=cvm-console,signal=off,logfile=/proc/self/fd/{write_fd},logappend=on"
         captured = list(command)
         captured[index : index + 2] = ["-chardev", chardev, "-serial", "chardev:cvm-console"]
-        yield captured, (fd,)
+        yield captured, (write_fd,)
     finally:
-        os.close(fd)
+        os.close(write_fd)
+        # QEMU has exited before run_vm closes this context. Normally EOF
+        # drains immediately; host-controlled storage must not hang cleanup.
+        writer.join(timeout=1)
 
 
 def run_vm(command, directory, *, qmp=None):

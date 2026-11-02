@@ -19,6 +19,7 @@ import json
 import os
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -328,6 +329,99 @@ class LauncherTests(unittest.TestCase):
                 with serial_capture(["qemu", "-serial", "stdio"], directory) as (command, fds):
                     self.assertEqual(command, ["qemu", "-serial", "stdio"])
                     self.assertEqual(fds, ())
+
+    def test_serial_capture_caps_bytes_and_keeps_terminal_output_after_overflow(self):
+        # A real child writes more than a pipe buffer after the limit. It must
+        # finish and retain all stdout, including bytes sent after capture stops.
+        chunk = b"console output\n" * 1024
+        code = (
+            "import os, sys\n"
+            f"chunk = {chunk!r}\n"
+            "for _ in range(32):\n"
+            "    os.write(int(sys.argv[1]), chunk)\n"
+            "    sys.stdout.buffer.write(chunk)\n"
+            "sys.stdout.buffer.write(b'terminal still works\\n')\n"
+        )
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("cvm.host.launcher.CONSOLE_LOG_MAX_BYTES", 100),
+            self.assertWarnsRegex(RuntimeWarning, "byte limit"),
+        ):
+            with serial_capture(["qemu", "-serial", "stdio"], directory) as (_, fds):
+                result = subprocess.run(
+                    [sys.executable, "-c", code, str(fds[0])],
+                    pass_fds=fds,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    check=True,
+                    timeout=10,
+                )
+            self.assertEqual(result.stdout, chunk * 32 + b"terminal still works\n")
+            log = next(Path(directory).glob("console-*.log"))
+            self.assertEqual(log.read_bytes(), chunk[:100])
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+
+    def test_serial_capture_write_failure_keeps_draining(self):
+        actual_write = os.write
+
+        def write(fd, data):
+            if stat.S_ISREG(os.fstat(fd).st_mode):
+                raise OSError("disk full")
+            return actual_write(fd, data)
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("cvm.host.launcher.os.write", side_effect=write),
+            self.assertWarnsRegex(RuntimeWarning, "terminal output only"),
+        ):
+            with serial_capture(["qemu", "-serial", "stdio"], directory) as (_, fds):
+                # A child keeps writing after the simulated log-disk failure.
+                result = subprocess.run(
+                    [sys.executable, "-c", "import os, sys; os.write(int(sys.argv[1]), b'x' * 262144)", str(fds[0])],
+                    pass_fds=fds,
+                    check=True,
+                    timeout=10,
+                )
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(next(Path(directory).glob("console-*.log")).stat().st_size, 0)
+
+    def test_serial_capture_handles_partial_file_writes_within_byte_limit(self):
+        actual_write = os.write
+
+        def write(fd, data):
+            return actual_write(fd, data[:3] if stat.S_ISREG(os.fstat(fd).st_mode) else data)
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("cvm.host.launcher.os.write", side_effect=write),
+            patch("cvm.host.launcher.CONSOLE_LOG_MAX_BYTES", 10),
+            self.assertWarnsRegex(RuntimeWarning, "byte limit"),
+        ):
+            with serial_capture(["qemu", "-serial", "stdio"], directory) as (_, fds):
+                os.write(fds[0], b"0123456789discarded")
+            self.assertEqual(next(Path(directory).glob("console-*.log")).read_bytes(), b"0123456789")
+
+    def test_serial_capture_worker_failure_falls_back_and_closes_descriptors(self):
+        actual_pipe = os.pipe
+        descriptors = []
+
+        def pipe():
+            pair = actual_pipe()
+            descriptors.extend(pair)
+            return pair
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("cvm.host.launcher.os.pipe", side_effect=pipe),
+            patch("cvm.host.launcher.threading.Thread.start", side_effect=RuntimeError("no threads")),
+            self.assertWarns(RuntimeWarning),
+        ):
+            with serial_capture(["qemu", "-serial", "stdio"], directory) as (command, fds):
+                self.assertEqual(command, ["qemu", "-serial", "stdio"])
+                self.assertEqual(fds, ())
+        for fd in descriptors:
+            with self.assertRaises(OSError):
+                os.fstat(fd)
 
     def test_serial_capture_never_follows_a_preexisting_symlink(self):
         with tempfile.TemporaryDirectory() as directory, patch("cvm.host.launcher.time.time_ns", return_value=123):

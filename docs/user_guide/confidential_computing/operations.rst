@@ -160,9 +160,12 @@ If the application never starts, use the controlled diagnostics for its mode:
   ``console-<timestamp>.log`` beside the materialized delivery. It records the
   same output-only guest serial bytes seen on the terminal, including
   initramfs failures and sanitized ``phase=`` startup errors before ``/applog``
-  exists. The three newest files are retained with mode ``0600``. Copy needed
-  files before another launch or rematerialization; if capture cannot be
-  created, the launcher warns and keeps terminal output. QEMU's own host-side
+  exists. The three newest files are retained with mode ``0600``; each new
+  capture keeps at most the first 16 MiB. At the byte limit or on a write
+  failure, the launcher warns and stops retaining bytes while continuing to
+  drain the logging channel and display terminal output. Copy needed files
+  before another launch or rematerialization; if capture cannot be created,
+  the launcher warns and keeps terminal output. QEMU's own host-side
   errors remain on launcher stderr. These logs are advisory host files, not
   signed attestation or acceptance evidence.
 * **CoCo:** before a workload registers, use Pod status and Events, the assigned
