@@ -239,10 +239,18 @@ or an empty directory is unavailable; a successfully observed empty directory
 is zero. File contents are not opened.
 
 The scan is non-atomic: concurrent writes and renames, as well as ordinary mounted
-subtrees, affect it. A cooperative deadline cannot interrupt a blocked filesystem
-syscall. The result measures logical retained content, not peak storage, physical
-blocks, I/O bytes, or archive size. Separately, `statvfs` on the run directory
-observes visible filesystem capacity without walking mounts or adding capacities.
+subtrees, affect it. The result measures logical retained content, not peak storage,
+physical blocks, I/O bytes, or archive size. Separately, `statvfs` on the run
+directory observes visible filesystem capacity without walking mounts or adding
+capacities.
+
+Filesystem observations run in an isolated process behind a bounded finalization
+wait. The cooperative scan deadline limits ordinary traversal; the outer wait also
+covers startup and filesystem calls that do not return. At expiry, cleanup proceeds
+with any safely captured measurement and marks unfinished observations unavailable.
+A captured scan subtotal retains partial quality. Late results are ignored. The
+runtime owns observer termination and cleanup, and job termination and resource
+release do not wait indefinitely for the observer.
 
 ## Message payload accounting
 

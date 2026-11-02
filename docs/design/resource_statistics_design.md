@@ -150,11 +150,16 @@ accumulate earlier generations. If earlier observations are missing, affected
 capacity-time, CPU and traffic measurements are marked incomplete. The CPU
 average uses the terminal generation's containing duration as its denominator,
 when that duration is valid; it does not use elapsed time across restarts.
-Retained content comes from the final workspace scan.
+Retained content comes from the final workspace scan. The parent accepts only a
+handoff bound to the terminal launch generation; missing terminal observations
+remain gaps even if an earlier generation's file survives.
 
-Filesystem scans and requested archive members are bounded. Scan deadlines are
-cooperative and cannot interrupt a blocked filesystem call. ZIP indexing has a
-separate metadata-read bound. Remote job stores may still transfer the whole
+Filesystem observations run in isolation with a bounded finalization wait, so a
+blocked optional probe does not hold up job cleanup or resource release
+indefinitely. Captured
+measurements are preserved, unfinished observations become unavailable, and late
+results are ignored. Requested archive members and ZIP indexing have separate
+decoded-data and metadata-read bounds. Remote job stores may still transfer the whole
 workspace archive to answer a small query. Query latency and temporary storage
 can therefore depend on the archive size, not just the statistics size.
 

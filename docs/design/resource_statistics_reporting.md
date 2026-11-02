@@ -171,6 +171,12 @@ malformed identity or envelope data is not repaired to produce an accepted
 participant. The private handoff is `resource_stats/staging/terminal_handoff.json`
 with internal version `"4"`. It is consumed and removed before public archival.
 
+The parent binds each handoff to the launch generation it owns, establishing the
+association before launch. It rejects stale or unverifiable handoffs, even when a
+prior file remains in the workspace. If the terminal generation produces no valid
+handoff, its observations are gaps; an earlier generation's report is never used
+as a substitute.
+
 The server derives the client name from the authenticated, registered client,
 not from the payload or an arbitrary message-origin header. It creates per-job
 state with the server and deployed client roster. Reports cannot create jobs,
@@ -351,6 +357,16 @@ rounds only for display; JSON retains the numeric strings and quality markers
 described above.
 
 ## Compatibility and failure boundary
+
+Public records use a strict schema: readers reject unknown fields and unsupported
+versions. Adding a field, including an optional field, or changing permitted enum values,
+units or field meanings requires a new schema version. Populating an optional
+field already defined by the schema does not change the version.
+
+Mixed-version peers exchange statistics only when the reader supports the
+producer's version. There is no implicit conversion or version negotiation. An
+unsupported participant report remains a statistics gap without changing the job
+outcome; an unsupported archived report is unavailable to the query.
 
 The report does not provide a fallback that reinterprets startup capacity as a
 task rollup, and unsupported formats are not silently upgraded. Unsupported or absent
