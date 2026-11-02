@@ -90,3 +90,11 @@ works on the assigned worker. Use the reported reason to choose the next check:
 Keep capture/build records and Trustee/NVFlare logs on trusted machines.
 Do not enable guest exec or print raw AA token responses, keys, or sensitive
 application logs for cluster IT.
+
+Once NVFlare is running, retrieve client job logs through the authenticated
+FL administrator session with `get_job_log JOB_ID all` and
+`download_job_components JOB_ID`. These streams work inside the sealed
+container and respect the site's `allow_log_streaming` opt-out; they do not
+enable `kubectl logs` or guest exec. Follow the
+[shared CC log-retrieval guide](../../../docs/user_guide/confidential_computing/operations.rst#retrieve-job-logs-and-early-boot-diagnostics)
+for live logs, completed components, and early-boot diagnostic sources.
