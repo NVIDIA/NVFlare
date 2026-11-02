@@ -193,6 +193,50 @@ RUN_NATIVE_SIMULATOR_TESTS=1 python -m pytest tests/integration_test/fast -q
 
 See [tests/README.md](tests/README.md).
 
+## Validation performed
+
+Short runs of every policy, tuning mode and algorithm in the NVFlare simulator, from job export to LIBERO
+evaluation, all on the code in this folder.
+
+- **Environment:** Isambard-AI, NVIDIA GH200 120GB nodes (aarch64), driver 580.178.04; two GPUs per training run,
+  one per evaluation.
+  - SmolVLA and π0.5: Python 3.12.13, torch 2.7.1+cu128, lerobot 0.5.2 (commit `8515d456`), NVFlare 2.8.1,
+    transformers 5.5.4, peft 0.21.2.
+  - GR00T training: Python 3.10.20, torch 2.7.1+cu128, Isaac-GR00T `65cc4a19` with `scripts/isaac_gr00t_pyav.patch`,
+    NVFlare 2.8.1, transformers 4.57.3, peft 0.17.1.
+  - GR00T evaluation: Python 3.10.20, torch 2.7.1+cu128, robosuite 1.4.0, MuJoCo 3.8.1.
+- **Commands and results:**
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Unit tests | `python -m pytest tests/unit_test -q` | 41 passed |
+| Real NVFlare simulator | `RUN_NATIVE_SIMULATOR_TESTS=1 python -m pytest tests/integration_test/fast -q` | 2 passed: an exported job moved away from its source runs with external-process FedAvg clients and with in-process FedAdam clients, and the clients keep their optimizer state across rounds |
+| CPU mock | `python job.py` (and `--algorithm fedprox`), then `nvflare simulator jobs/<name> -w <workspace> -c c0,c1 -t 2` | FedAvg and FedProx completed: 2 clients, 2 rounds, final checkpoint written |
+| Federated training | `python job.py --policy <policy> --tuning <tuning> --algorithm <algorithm> --smoke`, then `nvflare simulator jobs/<name> -w <workspace> -c c0,c1 -t 2 -gpu 0,1` | all 8 completed; see below |
+| LIBERO evaluation, SmolVLA and π0.5 | `SUITES=libero_spatial N_EPISODES=1 bash scripts/eval_libero.sh <run.yaml> <checkpoints/server_round_0002.pt>` | ran end to end: 10 episodes each, 0% success (SmolVLA 192 s, π0.5 452 s) |
+| LIBERO evaluation, GR00T | `python evaluate.py --config <run.yaml> --ckpt <checkpoints/server_round_0002.pt>` | ran end to end: 10 episodes, 0% success (228 s) |
+
+Each smoke run federates 2 clients for 2 rounds of 20 local steps. In every run both clients returned an update in
+both rounds, and the server wrote `server_round_0001.pt`, `server_round_0002.pt` and `server_round_final.pt`:
+
+| Policy | Tuning | Algorithm | Wall time (s) | Mean client loss, round 1 | Mean client loss, round 2 |
+| --- | --- | --- | --- | --- | --- |
+| SmolVLA | full | FedAvg | 103 | 3.0374 | 2.7010 |
+| SmolVLA | LoRA | FedAvg | 127 | 3.0561 | 2.8543 |
+| π0.5 | full | FedAvg | 643 | 0.8404 | 0.8053 |
+| π0.5 | LoRA | FedAvg | 469 | 0.8372 | 0.8081 |
+| π0.5 | full | FedProx | 700 | 0.8404 | 0.8055 |
+| π0.5 | full | FedAdam | 688 | 0.8404 | 0.8054 |
+| GR00T action head | full | FedAvg | 698 | 1.2588 | 1.2493 |
+| GR00T action head | LoRA | FedAvg | 987 | 1.2636 | 1.2601 |
+
+The three π0.5 full runs share round 1 because the seeds are fixed. The evaluations ran `libero_spatial` with one
+episode per task on the round-2 LoRA checkpoints; after 40 local steps per client the policies do not yet solve the
+tasks, so these runs check export, policy loading, simulation and scoring, not the success rate.
+
+- **Limitations:** the runs use 2 clients, 2 rounds and 20 local steps, in the NVFlare simulator only. The full
+  recipes have not been run with this example; the success rates under [Evaluate](#evaluate) are from our paper.
+
 ## License
 
 The code in this folder is released under the Apache License 2.0. The third-party code, model weights and data it
