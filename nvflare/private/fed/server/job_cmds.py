@@ -530,9 +530,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 # Coordinate with open/finalize in every receiver process.
                 # Active files keep their leases and drain after deletion.
                 with staging.locked() if staging else nullcontext():
-                    if staging:
-                        staging.prepare_delete(job_id)
                     try:
+                        if staging:
+                            staging.prepare_delete(job_id)
                         job_def_manager.delete(job_id, fl_ctx)
                     except Exception:
                         if staging:
