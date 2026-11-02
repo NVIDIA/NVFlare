@@ -19,6 +19,7 @@ import base64
 import contextlib
 import ipaddress
 import json
+import os
 import signal
 import subprocess
 import time
@@ -700,6 +701,19 @@ def mount_user_data():
     )
 
 
+def _write_bootstrap_failure(message):
+    """Best-effort fixed diagnostic without waiting on the console sink."""
+    try:
+        blocking = os.get_blocking(2)
+        os.set_blocking(2, False)
+        try:
+            os.write(2, (message + "\n").encode("ascii"))
+        finally:
+            os.set_blocking(2, blocking)
+    except OSError:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=("bootstrap", "periodic", "application", "reopen"))
@@ -708,9 +722,13 @@ def main():
     try:
         status = globals()[args.action]()
     except Exception as error:
+        # A traceback could include untrusted app data or token content.
+        phase = f" [phase={error.phase}]" if isinstance(error, StartupPhaseError) else ""
+        message = "CVM " + args.action + " failed" + phase + "; PID 1 will power off"
         if args.action == "bootstrap":
-            # Ask PID 1 to enforce failure before any best-effort diagnostics.
-            # It also retains the independent phase deadline if notification fails.
+            # WATCHDOG=trigger can SIGKILL us immediately. Emit the fixed phase
+            # first, without letting a blocked console postpone shutdown.
+            _write_bootstrap_failure(message)
             try:
                 notify("WATCHDOG=trigger")
             except Exception:
@@ -718,9 +736,8 @@ def main():
         if audited:
 
             emit("deny")
-        # A traceback could include untrusted app data or token content.
-        phase = f" [phase={error.phase}]" if isinstance(error, StartupPhaseError) else ""
-        raise SystemExit("CVM " + args.action + " failed" + phase + "; PID 1 will power off") from None
+        # Do not print a second, potentially blocking message at interpreter exit.
+        raise SystemExit(1 if args.action == "bootstrap" else message) from None
     if args.action == "application" and status:
         raise SystemExit(status)
 

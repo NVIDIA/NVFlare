@@ -71,7 +71,11 @@ the client with `NVAT_USE_SYSTEM_LIB=1` and `nvidia-attester`. The command above
 builds a CPU-only client. Compile guest binaries for the guest's Linux
 environment.
 The provenance command accepts either the clean server checkout or exactly the
-checked-in client patch. The CoCo deployment operator records the service's reviewed
+checked-in client patch. Comparison normalizes Git's index-hash abbreviation;
+acceptance is stable across repository sizes and `core.abbrev` settings. All
+other diff content, including hunks and mode metadata, must still match. The
+provenance record retains the digest of the unchanged checked-in patch.
+The CoCo deployment operator records the service's reviewed
 build recipe, source-patch digest, dependency hashes, image ID and exported
 server-binary digest. Any other source change or recipe is rejected.
 

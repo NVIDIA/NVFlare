@@ -69,6 +69,13 @@ integrity monitor to keep the workload running. Verify the delivery and generic
 artifact signatures/digests again, then reproduce with the exact manifest's
 acceptance workload if the cause remains unclear.
 
+Updated guests write the fixed `CVM bootstrap failed [phase=...]` diagnostic
+to stderr before asking PID 1 to enforce watchdog failure. The small write is
+nonblocking: a full or unavailable console does not postpone shutdown, and raw
+exception details remain private. Deploy this bootstrap change through a newly
+built and approved generic bundle, then regenerate its vault deliveries. Existing
+approved guest images retain their original bootstrap code.
+
 ### Cold boot waits for `time_sync`
 
 A sealed production guest starts without chrony's drift history. Its first

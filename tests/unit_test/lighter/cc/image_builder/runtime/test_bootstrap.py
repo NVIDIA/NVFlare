@@ -45,6 +45,7 @@ class BootstrapTests(unittest.TestCase):
             "configuration",
             "network",
             "time_sync",
+            "verity",
             "attestation",
             "key_release",
             "vault_identity",
@@ -62,10 +63,15 @@ class BootstrapTests(unittest.TestCase):
                     patch.object(bootstrap, "bootstrap", side_effect=error.exception),
                     patch.object(bootstrap, "notify"),
                     patch.object(bootstrap, "emit"),
+                    patch.object(bootstrap.os, "get_blocking", return_value=True),
+                    patch.object(bootstrap.os, "set_blocking"),
+                    patch.object(bootstrap.os, "write") as write,
                     self.assertRaises(SystemExit) as stopped,
                 ):
                     bootstrap.main()
-                message = str(stopped.exception)
+                self.assertEqual(stopped.exception.code, 1)
+                self.assertEqual(write.call_args.args[0], 2)
+                message = write.call_args.args[1].decode("ascii")
                 self.assertIn(f"phase={phase}", message)
                 self.assertNotIn("sensitive", message)
 
