@@ -27,12 +27,12 @@ Cellnet sender:
     python dev_tools/f3/cellnet_bench.py send --url tcp://<receiver-host>:8002 --reliable false
     python dev_tools/f3/cellnet_bench.py send --url tcp://<receiver-host>:8002 --reliable true
 
-Optional F3 tuning (use the same YAML on both endpoints):
+Optional F3 tuning (use the same JSON on both endpoints):
 
     python dev_tools/f3/cellnet_bench.py recv --url tcp://0.0.0.0:8002 \
-        --f3-config dev_tools/f3/comm_config.yml
+        --f3-config dev_tools/f3/comm_config.json
     python dev_tools/f3/cellnet_bench.py send --url tcp://<receiver-host>:8002 \
-        --f3-config dev_tools/f3/comm_config.yml
+        --f3-config dev_tools/f3/comm_config.json
 
 Raw TCP receiver and sender (no F3):
 
@@ -48,6 +48,7 @@ for the tested hosts, network, and buffer configuration.
 
 import argparse
 import copy
+import json
 import logging
 import os
 import re
@@ -59,8 +60,6 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
-
-import yaml
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.comm_config import CommConfigurator
@@ -204,7 +203,7 @@ def _positive_int(config: dict, name: str, default: int) -> int:
 
 def validate_f3_config(config: dict):
     if not isinstance(config, dict):
-        raise ValueError(f"F3 configuration must be a YAML mapping, got {type(config).__name__}")
+        raise ValueError(f"F3 configuration must be a JSON object, got {type(config).__name__}")
 
     chunk_size = _positive_int(config, "streaming_chunk_size", DEFAULT_F3_CHUNK_SIZE)
     window_size = _positive_int(config, "streaming_window_size", DEFAULT_F3_WINDOW_SIZE)
@@ -222,21 +221,17 @@ def validate_f3_config(config: dict):
 
 
 def configure_f3(config_file: str) -> tuple[Path, dict]:
-    """Load a native F3 comm_config YAML before any cells are created."""
+    """Load a native F3 comm_config JSON before any cells are created."""
     path = Path(config_file).expanduser().resolve()
     if not path.is_file():
         raise ValueError(f"F3 configuration file does not exist: {path}")
-    if path.suffix.lower() not in (".yml", ".yaml"):
-        raise ValueError(f"F3 configuration must be a .yml or .yaml file: {path}")
-    if path.stem != "comm_config":
-        raise ValueError(f"F3 configuration must be named comm_config.yml or comm_config.yaml, got {path.name!r}")
+    if path.name != "comm_config.json":
+        raise ValueError(f"F3 configuration must be named comm_config.json, got {path.name!r}")
 
     with path.open(encoding="utf-8") as config_stream:
-        requested_config = yaml.safe_load(config_stream)
-    if requested_config is None:
-        requested_config = {}
+        requested_config = json.load(config_stream)
     if not isinstance(requested_config, dict):
-        raise ValueError(f"F3 configuration must be a YAML mapping, got {type(requested_config).__name__}")
+        raise ValueError(f"F3 configuration must be a JSON object, got {type(requested_config).__name__}")
     normalized_config = normalize_f3_config(requested_config)
     validate_f3_config(normalized_config)
 
@@ -247,9 +242,7 @@ def configure_f3(config_file: str) -> tuple[Path, dict]:
     CommConfigurator.reset()
     loaded_config = CommConfigurator().get_config()
     if loaded_config is None:
-        raise ValueError(
-            f"F3 could not load {path}; install NVFlare's CONFIG extra to enable YAML configuration support"
-        )
+        raise ValueError(f"F3 could not load {path}")
     if loaded_config != requested_config:
         raise ValueError(f"F3 loaded a different comm_config from {path.parent}; remove conflicting config files")
     # F3 exposes its loaded native configuration as a mutable dict. Replace the
@@ -661,7 +654,7 @@ def main():
         "--f3-config",
         "--config",
         dest="f3_config",
-        help="optional native F3 comm_config.yml/comm_config.yaml file (cellnet transport only)",
+        help="optional native F3 comm_config.json file (cellnet transport only)",
     )
 
     p_send = sub.add_parser("send", help="run the sender")
@@ -712,7 +705,7 @@ def main():
         "--f3-config",
         "--config",
         dest="f3_config",
-        help="optional native F3 comm_config.yml/comm_config.yaml file (cellnet transport only)",
+        help="optional native F3 comm_config.json file (cellnet transport only)",
     )
 
     args = parser.parse_args()
@@ -722,7 +715,7 @@ def main():
             parser.error("--f3-config applies only to --transport cellnet")
         try:
             config_path, _ = configure_f3(args.f3_config)
-        except (OSError, ValueError, yaml.YAMLError) as ex:
+        except (OSError, ValueError) as ex:
             parser.error(str(ex))
         print(f"[f3-config] loaded {config_path}: {f3_config_summary()}")
 

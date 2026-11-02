@@ -115,8 +115,14 @@ def load_config(config_file_path) -> Optional[dict]:
     if not os.path.isfile(config_file_path):
         warn_if_legacy_hidden_config(config_file_path)
         return None
-    with open(config_file_path) as f:
-        return json.load(f)
+    try:
+        with open(config_file_path) as f:
+            config = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"cannot parse {config_file_path}: {e}") from e
+    if not isinstance(config, dict):
+        raise ValueError(f"cannot parse {config_file_path}: expected a JSON object")
+    return config
 
 
 def load_hidden_config_state() -> Tuple[str, Optional[dict], bool]:

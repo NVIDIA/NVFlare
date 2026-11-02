@@ -133,20 +133,6 @@ class TestResolveJobFolder:
         captured = self._invoke_submit(parent, capsys, monkeypatch, tmp_path)
         assert "Using job folder" not in captured.out + captured.err
 
-    def test_yaml_meta_is_recognized(self, capsys, monkeypatch, tmp_path):
-        """meta.yaml is also a valid job meta file."""
-        job_dir = str(tmp_path / "myjob")
-        os.makedirs(job_dir)
-        with open(os.path.join(job_dir, "meta.yaml"), "w") as f:
-            f.write("{}")
-        config_dir = os.path.join(job_dir, "app", "config")
-        os.makedirs(config_dir)
-        with open(os.path.join(config_dir, "config_fed_server.yml"), "w") as f:
-            f.write("{}")
-
-        captured = self._invoke_submit(job_dir, capsys, monkeypatch, tmp_path)
-        assert "Using job folder" not in captured.out + captured.err
-
     def test_invalid_job_folder_returns_structured_error_without_help(self, capsys, monkeypatch):
         """Invalid job folder should emit INVALID_ARGS and usage help in human mode."""
         from nvflare.tool import cli_output

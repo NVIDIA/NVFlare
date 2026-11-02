@@ -7,7 +7,7 @@ two machines, plus a sample tuning config.
 |------|---------|
 | `tensor_download_bench.py` | End-to-end PyTorch tensor transfer through FOBS and the F3 Download Service |
 | `cellnet_bench.py` | Raw F3 cellnet streaming and baseline raw-TCP ceiling |
-| `comm_config.yml` | Sample F3 tuning config for high-bandwidth networks |
+| `comm_config.json` | Sample F3 tuning config for high-bandwidth networks |
 
 Start the receiver on the destination machine first; then start the sender.
 Use the same Python environment (`nvflare` must be importable) on both hosts.
@@ -69,18 +69,18 @@ Suffixes are binary: `1K = 1024`, `1M = 1024K`, `1G = 1024M`.
 
 ### With F3 tuning
 
-Pass the same `comm_config.yml` to both endpoints:
+Pass the same `comm_config.json` to both endpoints:
 
 ```bash
 python dev_tools/f3/tensor_download_bench.py recv \
     --url tcp://0.0.0.0:8002 \
     --offload-dir /fast/local/nvme \
-    --f3-config dev_tools/f3/comm_config.yml
+    --f3-config dev_tools/f3/comm_config.json
 
 python dev_tools/f3/tensor_download_bench.py send \
     --url tcp://<receiver-host>:8002 \
     --checkpoint /path/to/pytorch_model.bin \
-    --f3-config dev_tools/f3/comm_config.yml
+    --f3-config dev_tools/f3/comm_config.json
 ```
 
 ---
@@ -113,11 +113,11 @@ runs, so you can A/B `reliable=true` vs `reliable=false` without restarting.
 ```bash
 python dev_tools/f3/cellnet_bench.py recv \
     --url tcp://0.0.0.0:8002 \
-    --f3-config dev_tools/f3/comm_config.yml
+    --f3-config dev_tools/f3/comm_config.json
 
 python dev_tools/f3/cellnet_bench.py send \
     --url tcp://<receiver-host>:8002 \
-    --f3-config dev_tools/f3/comm_config.yml
+    --f3-config dev_tools/f3/comm_config.json
 ```
 
 ### Raw TCP ceiling
@@ -143,11 +143,10 @@ utilisation reporting with `--target-gbps`.
 
 ---
 
-## `comm_config.yml`
+## `comm_config.json`
 
 Benchmark-selected F3 streaming defaults for a nominal 25 Gbit/s network.
-Pass the same file to both endpoints with `--f3-config`. The file is annotated
-with all available options. Key defaults:
+Pass the same file to both endpoints with `--f3-config`. Key defaults:
 
 | Setting | Value |
 |---------|-------|
@@ -161,3 +160,47 @@ the effective window and chunk sizes. For these benchmark defaults, the derived
 limit is 65 chunks.
 
 Byte-size fields accept integer bytes or binary suffixes (`1K`, `1M`, `1G`).
+
+Any native F3 comm_config option can be added. Common flat options:
+
+```json
+{
+  "max_message_size": "1G",
+  "tcp_no_delay": true,
+  "allow_adhoc_conns": true,
+  "adhoc_conn_scheme": "tcp",
+  "internal_conn_scheme": "tcp",
+  "backbone_conn_gen": 2,
+  "subnet_heartbeat_interval": 30,
+  "subnet_trouble_threshold": 90,
+  "comm_driver_path": "/path/to/custom/drivers",
+  "heartbeat_interval": 60,
+  "use_aio_grpc": false,
+  "streaming_max_blob_size": "1G",
+  "streaming_ack_wait": 300,
+  "streaming_read_timeout": 300,
+  "streaming_send_timeout": 30.0,
+  "streaming_ack_progress_timeout": 60.0,
+  "streaming_ack_progress_check_interval": 5.0,
+  "streaming_reliable": false,
+  "streaming_retry_wait": 5.0,
+  "streaming_retry_timeout": 60.0,
+  "sfm_send_stall_timeout": 0.0,
+  "sfm_close_stalled_connection": false,
+  "sfm_send_stall_consecutive_checks": 3
+}
+```
+
+Nested driver and connection settings are passed through unchanged:
+
+```json
+{
+  "internal": {"scheme": "tcp", "resources": {"host": "localhost"}},
+  "adhoc": {"scheme": "tcp", "resources": {"host": "localhost", "secure": false}},
+  "backbone": {"connect_generation": [1, 2]},
+  "grpc": {
+    "max_workers": 100,
+    "options": [["grpc.max_send_message_length", "1G"], ["grpc.max_receive_message_length", "1G"]]
+  }
+}
+```

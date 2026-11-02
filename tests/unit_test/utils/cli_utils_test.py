@@ -62,6 +62,17 @@ class TestCLIUtils:
         assert legacy_path.exists()
         assert not (hidden_dir / "config.json").exists()
 
+    @pytest.mark.parametrize("config_text", ["[1, 2]", '"text"', "{not json"])
+    def test_load_hidden_config_rejects_non_object_or_malformed_json(self, tmp_path, monkeypatch, config_text):
+        hidden_dir = tmp_path / ".nvflare"
+        hidden_dir.mkdir()
+        (hidden_dir / "config.json").write_text(config_text)
+
+        monkeypatch.setattr("nvflare.utils.cli_utils.get_or_create_hidden_nvflare_dir", lambda: hidden_dir)
+
+        with pytest.raises(ValueError, match="cannot parse .*config.json"):
+            load_hidden_config()
+
     def test_save_config_replaces_file_atomically_without_temp_leak(self, tmp_path):
         config_path = tmp_path / "config.json"
         config_path.write_text('{"version": 1}\n')

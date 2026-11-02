@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import threading
 from unittest.mock import MagicMock
 
@@ -118,18 +119,15 @@ def test_parse_byte_size_uses_binary_units(value, expected):
 
 
 def test_configure_f3_loads_chunk_and_window_sizes(tmp_path):
-    config_file = tmp_path / "comm_config.yml"
+    config_file = tmp_path / "comm_config.json"
     config_file.write_text(
-        "\n".join(
-            [
-                "streaming_chunk_size: 4M",
-                "streaming_window_size: 256M",
-                "streaming_ack_interval: 64M",
-                "grpc:",
-                "  max_workers: 32",
-                "  options:",
-                "    - [grpc.max_send_message_length, 2G]",
-            ]
+        json.dumps(
+            {
+                "streaming_chunk_size": "4M",
+                "streaming_window_size": "256M",
+                "streaming_ack_interval": "64M",
+                "grpc": {"max_workers": 32, "options": [["grpc.max_send_message_length", "2G"]]},
+            }
         ),
         encoding="utf-8",
     )
@@ -152,22 +150,23 @@ def test_configure_f3_loads_chunk_and_window_sizes(tmp_path):
 @pytest.mark.parametrize(
     "config_text, error",
     [
-        ("- not-a-mapping\n", "must be a YAML mapping"),
-        ("streaming_chunk_size: 0\n", "streaming_chunk_size must be a positive integer"),
-        ("streaming_chunk_size: 16Mbps\n", "has invalid byte size"),
-        ("streaming_chunk_size: 0.1K\n", "does not resolve to a whole number of bytes"),
+        ('["not-an-object"]', "must be a JSON object"),
+        ('{"streaming_chunk_size": 0}', "streaming_chunk_size must be a positive integer"),
+        ('{"streaming_chunk_size": "16Mbps"}', "has invalid byte size"),
+        ('{"streaming_chunk_size": "0.1K"}', "does not resolve to a whole number of bytes"),
         (
-            "streaming_chunk_size: 4194304\nstreaming_window_size: 1048576\n",
+            '{"streaming_chunk_size": 4194304, "streaming_window_size": 1048576}',
             "streaming_window_size .* must be at least streaming_chunk_size",
         ),
         (
-            "streaming_window_size: 16777216\nstreaming_ack_interval: 33554432\n",
+            '{"streaming_window_size": 16777216, "streaming_ack_interval": 33554432}',
             "streaming_ack_interval .* must not exceed streaming_window_size",
         ),
+        ("streaming_chunk_size: 4M\n", "Expecting value"),
     ],
 )
 def test_configure_f3_rejects_invalid_streaming_settings(tmp_path, config_text, error):
-    config_file = tmp_path / "comm_config.yml"
+    config_file = tmp_path / "comm_config.json"
     config_file.write_text(config_text, encoding="utf-8")
 
     with pytest.raises(ValueError, match=error):

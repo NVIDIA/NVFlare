@@ -491,40 +491,45 @@ _SAG_TRAIN_SCRIPT = textwrap.dedent(
     """
 )
 
-_SAG_SERVER_CONF = textwrap.dedent(
+_SAG_SERVER_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      task_data_filters = []
-      task_result_filters = []
-      workflows = [
+      "format_version": 2,
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "workflows": [
         {
-          id = "scatter_and_gather"
-          path = "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather"
-          args {
-            min_clients = 2
-            num_rounds = 2
-            start_round = 0
-            wait_time_after_min_received = 0
-            aggregator_id = "aggregator"
-            persistor_id = "persistor"
-            shareable_generator_id = "shareable_generator"
-            train_task_name = "train"
-            train_timeout = 0
+          "id": "scatter_and_gather",
+          "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+          "args": {
+            "min_clients": 2,
+            "num_rounds": 2,
+            "start_round": 0,
+            "wait_time_after_min_received": 0,
+            "aggregator_id": "aggregator",
+            "persistor_id": "persistor",
+            "shareable_generator_id": "shareable_generator",
+            "train_task_name": "train",
+            "train_timeout": 0
           }
         }
-      ]
-      components = [
-        { id = "persistor", path = "nvflare.app_common.np.np_model_persistor.NPModelPersistor" }
+      ],
+      "components": [
         {
-          id = "shareable_generator"
-          path = "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator"
-          args {}
-        }
+          "id": "persistor",
+          "path": "nvflare.app_common.np.np_model_persistor.NPModelPersistor"
+        },
         {
-          id = "aggregator"
-          path = "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"
-          args { expected_data_kind = "WEIGHTS" }
+          "id": "shareable_generator",
+          "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+          "args": {}
+        },
+        {
+          "id": "aggregator",
+          "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+          "args": {
+            "expected_data_kind": "WEIGHTS"
+          }
         }
       ]
     }
@@ -532,42 +537,52 @@ _SAG_SERVER_CONF = textwrap.dedent(
 )
 
 # __PYTHON__ is replaced with the interpreter under test so the launched trainer imports this tree.
-_SAG_CLIENT_CONF = textwrap.dedent(
+_SAG_CLIENT_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      app_script = "train_loop.py"
-      app_config = ""
-      executors = [
+      "format_version": 2,
+      "app_script": "train_loop.py",
+      "app_config": "",
+      "executors": [
         {
-          tasks = ["train"]
-          executor {
-            path = "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor"
-            args {
-              execution_mode = "external_process"
-              command = "__PYTHON__ -u custom/train_loop.py"
-              launch_once = true
-              stop_grace_period = 5.0
-              train_with_evaluation = true
+          "tasks": [
+            "train"
+          ],
+          "executor": {
+            "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+            "args": {
+              "execution_mode": "external_process",
+              "command": "__PYTHON__ -u custom/train_loop.py",
+              "launch_once": true,
+              "stop_grace_period": 5.0,
+              "train_with_evaluation": true
             }
           }
         }
-      ]
-      task_data_filters = []
-      task_result_filters = []
-      components = []
+      ],
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "components": []
     }
     """
 )
 
-_SAG_META_CONF = textwrap.dedent(
+_SAG_META_JSON = textwrap.dedent(
     """
     {
-      name = "np_loop_external_process"
-      resource_spec {}
-      deploy_map { app_server = ["server"], app_client = ["site-1", "site-2"] }
-      min_clients = 2
-      mandatory_clients = []
+      "name": "np_loop_external_process",
+      "resource_spec": {},
+      "deploy_map": {
+        "app_server": [
+          "server"
+        ],
+        "app_client": [
+          "site-1",
+          "site-2"
+        ]
+      },
+      "min_clients": 2,
+      "mandatory_clients": []
     }
     """
 )
@@ -578,12 +593,12 @@ def test_external_process_scatter_and_gather_config_job_end_to_end(tmp_path):
     (jobdir / "app_server" / "config").mkdir(parents=True)
     (jobdir / "app_client" / "config").mkdir(parents=True)
     (jobdir / "app_client" / "custom").mkdir(parents=True)
-    (jobdir / "app_server" / "config" / "config_fed_server.conf").write_text(_SAG_SERVER_CONF)
-    (jobdir / "app_client" / "config" / "config_fed_client.conf").write_text(
-        _SAG_CLIENT_CONF.replace("__PYTHON__", sys.executable)
+    (jobdir / "app_server" / "config" / "config_fed_server.json").write_text(_SAG_SERVER_JSON)
+    (jobdir / "app_client" / "config" / "config_fed_client.json").write_text(
+        _SAG_CLIENT_JSON.replace("__PYTHON__", sys.executable)
     )
     (jobdir / "app_client" / "custom" / "train_loop.py").write_text(_SAG_TRAIN_SCRIPT)
-    (jobdir / "meta.conf").write_text(_SAG_META_CONF)
+    (jobdir / "meta.json").write_text(_SAG_META_JSON)
     workdir = tmp_path / "sim"
 
     env = os.environ.copy()
@@ -677,87 +692,102 @@ _METRICS_RECEIVER = textwrap.dedent(
     """
 )
 
-_METRICS_SERVER_CONF = textwrap.dedent(
+_METRICS_SERVER_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      task_data_filters = []
-      task_result_filters = []
-      workflows = [
+      "format_version": 2,
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "workflows": [
         {
-          id = "scatter_and_gather"
-          path = "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather"
-          args {
-            min_clients = 2
-            num_rounds = 2
-            start_round = 0
-            wait_time_after_min_received = 0
-            aggregator_id = "aggregator"
-            persistor_id = "persistor"
-            shareable_generator_id = "shareable_generator"
-            train_task_name = "train"
-            train_timeout = 0
+          "id": "scatter_and_gather",
+          "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+          "args": {
+            "min_clients": 2,
+            "num_rounds": 2,
+            "start_round": 0,
+            "wait_time_after_min_received": 0,
+            "aggregator_id": "aggregator",
+            "persistor_id": "persistor",
+            "shareable_generator_id": "shareable_generator",
+            "train_task_name": "train",
+            "train_timeout": 0
           }
         }
-      ]
-      components = [
-        { id = "persistor", path = "nvflare.app_common.np.np_model_persistor.NPModelPersistor" }
+      ],
+      "components": [
         {
-          id = "shareable_generator"
-          path = "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator"
-          args {}
-        }
+          "id": "persistor",
+          "path": "nvflare.app_common.np.np_model_persistor.NPModelPersistor"
+        },
         {
-          id = "aggregator"
-          path = "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"
-          args { expected_data_kind = "WEIGHTS" }
-        }
+          "id": "shareable_generator",
+          "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+          "args": {}
+        },
         {
-          id = "analytics_receiver"
-          path = "count_receiver.CountingAnalyticsReceiver"
-          args { events = ["fed.analytix_log_stats"] }
+          "id": "aggregator",
+          "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+          "args": {
+            "expected_data_kind": "WEIGHTS"
+          }
+        },
+        {
+          "id": "analytics_receiver",
+          "path": "count_receiver.CountingAnalyticsReceiver",
+          "args": {
+            "events": [
+              "fed.analytix_log_stats"
+            ]
+          }
         }
       ]
     }
     """
 )
 
-_METRICS_CLIENT_CONF = textwrap.dedent(
+_METRICS_CLIENT_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      app_script = "train_metrics.py"
-      app_config = ""
-      executors = [
+      "format_version": 2,
+      "app_script": "train_metrics.py",
+      "app_config": "",
+      "executors": [
         {
-          tasks = ["train"]
-          executor {
-            path = "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor"
-            args {
-              execution_mode = "external_process"
-              command = "__PYTHON__ -u custom/train_metrics.py"
-              launch_once = true
-              stop_grace_period = 5.0
-              train_with_evaluation = true
+          "tasks": [
+            "train"
+          ],
+          "executor": {
+            "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+            "args": {
+              "execution_mode": "external_process",
+              "command": "__PYTHON__ -u custom/train_metrics.py",
+              "launch_once": true,
+              "stop_grace_period": 5.0,
+              "train_with_evaluation": true
             }
           }
         }
-      ]
-      task_data_filters = []
-      task_result_filters = []
-      components = []
+      ],
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "components": []
     }
     """
 )
 
-_METRICS_META_CONF = textwrap.dedent(
+_METRICS_META_JSON = textwrap.dedent(
     """
     {
-      name = "np_metrics_external_process"
-      resource_spec {}
-      deploy_map { app = ["@ALL"] }
-      min_clients = 2
-      mandatory_clients = []
+      "name": "np_metrics_external_process",
+      "resource_spec": {},
+      "deploy_map": {
+        "app": [
+          "@ALL"
+        ]
+      },
+      "min_clients": 2,
+      "mandatory_clients": []
     }
     """
 )
@@ -767,13 +797,13 @@ def test_external_process_metrics_streaming_config_job_end_to_end(tmp_path):
     jobdir = tmp_path / "np_metrics_external_process"
     (jobdir / "app" / "config").mkdir(parents=True)
     (jobdir / "app" / "custom").mkdir(parents=True)
-    (jobdir / "app" / "config" / "config_fed_server.conf").write_text(_METRICS_SERVER_CONF)
-    (jobdir / "app" / "config" / "config_fed_client.conf").write_text(
-        _METRICS_CLIENT_CONF.replace("__PYTHON__", sys.executable)
+    (jobdir / "app" / "config" / "config_fed_server.json").write_text(_METRICS_SERVER_JSON)
+    (jobdir / "app" / "config" / "config_fed_client.json").write_text(
+        _METRICS_CLIENT_JSON.replace("__PYTHON__", sys.executable)
     )
     (jobdir / "app" / "custom" / "train_metrics.py").write_text(_METRICS_TRAIN_SCRIPT)
     (jobdir / "app" / "custom" / "count_receiver.py").write_text(_METRICS_RECEIVER)
-    (jobdir / "meta.conf").write_text(_METRICS_META_CONF)
+    (jobdir / "meta.json").write_text(_METRICS_META_JSON)
     workdir = tmp_path / "sim"
 
     env = os.environ.copy()
@@ -849,94 +879,108 @@ _PT_CONFIG_CLIENT_SCRIPT = textwrap.dedent(
     """
 )
 
-_PT_CONFIG_SERVER_CONF = textwrap.dedent(
+_PT_CONFIG_SERVER_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      task_data_filters = []
-      task_result_filters = []
-      model_class_path = "net.Net"
-      workflows = [
+      "format_version": 2,
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "model_class_path": "net.Net",
+      "workflows": [
         {
-          id = "scatter_and_gather"
-          path = "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather"
-          args {
-            min_clients = 2
-            num_rounds = 2
-            start_round = 0
-            wait_time_after_min_received = 0
-            aggregator_id = "aggregator"
-            persistor_id = "persistor"
-            shareable_generator_id = "shareable_generator"
-            train_task_name = "train"
-            train_timeout = 0
+          "id": "scatter_and_gather",
+          "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+          "args": {
+            "min_clients": 2,
+            "num_rounds": 2,
+            "start_round": 0,
+            "wait_time_after_min_received": 0,
+            "aggregator_id": "aggregator",
+            "persistor_id": "persistor",
+            "shareable_generator_id": "shareable_generator",
+            "train_task_name": "train",
+            "train_timeout": 0
           }
         }
-      ]
-      components = [
+      ],
+      "components": [
         {
-          id = "persistor"
-          path = "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor"
-          args { model { path = "{model_class_path}" } }
-        }
+          "id": "persistor",
+          "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+          "args": {
+            "model": {
+              "path": "{model_class_path}"
+            }
+          }
+        },
         {
-          id = "shareable_generator"
-          path = "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator"
-          args {}
-        }
+          "id": "shareable_generator",
+          "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+          "args": {}
+        },
         {
-          id = "aggregator"
-          path = "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"
-          args { expected_data_kind = "WEIGHTS" }
-        }
+          "id": "aggregator",
+          "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+          "args": {
+            "expected_data_kind": "WEIGHTS"
+          }
+        },
         {
-          id = "model_selector"
-          path = "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector"
-          args { key_metric = "accuracy" }
+          "id": "model_selector",
+          "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+          "args": {
+            "key_metric": "accuracy"
+          }
         }
       ]
     }
     """
 )
 
-_PT_CONFIG_CLIENT_CONF = textwrap.dedent(
+_PT_CONFIG_CLIENT_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      app_script = "poc_client.py"
-      app_config = ""
-      executors = [
+      "format_version": 2,
+      "app_script": "poc_client.py",
+      "app_config": "",
+      "executors": [
         {
-          tasks = ["train"]
-          executor {
-            path = "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor"
-            args {
-              execution_mode = "external_process"
-              command = "__PYTHON__ -u custom/poc_client.py"
-              launch_once = false
-              stop_grace_period = 5.0
-              train_with_evaluation = true
-              params_exchange_format = "raw"
-              server_expected_format = "pytorch"
+          "tasks": [
+            "train"
+          ],
+          "executor": {
+            "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+            "args": {
+              "execution_mode": "external_process",
+              "command": "__PYTHON__ -u custom/poc_client.py",
+              "launch_once": false,
+              "stop_grace_period": 5.0,
+              "train_with_evaluation": true,
+              "params_exchange_format": "raw",
+              "server_expected_format": "pytorch"
             }
           }
         }
-      ]
-      task_data_filters = []
-      task_result_filters = []
-      components = []
+      ],
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "components": []
     }
     """
 )
 
-_PT_CONFIG_META_CONF = textwrap.dedent(
+_PT_CONFIG_META_JSON = textwrap.dedent(
     """
     {
-      name = "pt_client_api_basic_external_process"
-      resource_spec {}
-      deploy_map { app = ["@ALL"] }
-      min_clients = 2
-      mandatory_clients = []
+      "name": "pt_client_api_basic_external_process",
+      "resource_spec": {},
+      "deploy_map": {
+        "app": [
+          "@ALL"
+        ]
+      },
+      "min_clients": 2,
+      "mandatory_clients": []
     }
     """
 )
@@ -947,13 +991,13 @@ def test_external_process_pytorch_config_job_passthrough_end_to_end(tmp_path):
     jobdir = tmp_path / "pt_basic_external_process"
     (jobdir / "app" / "config").mkdir(parents=True)
     (jobdir / "app" / "custom").mkdir(parents=True)
-    (jobdir / "app" / "config" / "config_fed_server.conf").write_text(_PT_CONFIG_SERVER_CONF)
-    (jobdir / "app" / "config" / "config_fed_client.conf").write_text(
-        _PT_CONFIG_CLIENT_CONF.replace("__PYTHON__", sys.executable)
+    (jobdir / "app" / "config" / "config_fed_server.json").write_text(_PT_CONFIG_SERVER_JSON)
+    (jobdir / "app" / "config" / "config_fed_client.json").write_text(
+        _PT_CONFIG_CLIENT_JSON.replace("__PYTHON__", sys.executable)
     )
     (jobdir / "app" / "custom" / "poc_client.py").write_text(_PT_CONFIG_CLIENT_SCRIPT)
     (jobdir / "app" / "custom" / "net.py").write_text(_PT_CONFIG_NET)
-    (jobdir / "meta.conf").write_text(_PT_CONFIG_META_CONF)
+    (jobdir / "meta.json").write_text(_PT_CONFIG_META_JSON)
     workdir = tmp_path / "sim"
 
     env = os.environ.copy()
@@ -1014,20 +1058,20 @@ _DIFF_ASSERTING_AGGREGATOR = textwrap.dedent(
     """
 )
 
-_DIFF_SERVER_CONF = _PT_CONFIG_SERVER_CONF.replace(
+_DIFF_SERVER_JSON = _PT_CONFIG_SERVER_JSON.replace(
     "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
     "diff_aggregator.DiffAssertingAggregator",
-).replace('expected_data_kind = "WEIGHTS"', 'expected_data_kind = "WEIGHT_DIFF"')
+).replace('"expected_data_kind": "WEIGHTS"', '"expected_data_kind": "WEIGHT_DIFF"')
 
-_DIFF_CLIENT_CONF = (
-    _PT_CONFIG_CLIENT_CONF.replace(
-        "train_with_evaluation = true", 'train_with_evaluation = true\n              params_transfer_type = "DIFF"'
+_DIFF_CLIENT_JSON = (
+    _PT_CONFIG_CLIENT_JSON.replace(
+        '"train_with_evaluation": true,', '"train_with_evaluation": true,\n"params_transfer_type": "DIFF",'
     )
-    .replace('params_exchange_format = "raw"', 'params_exchange_format = "pytorch"')
-    .replace('server_expected_format = "pytorch"', 'server_expected_format = "numpy"')
+    .replace('"params_exchange_format": "raw"', '"params_exchange_format": "pytorch"')
+    .replace('"server_expected_format": "pytorch"', '"server_expected_format": "numpy"')
 )
 
-_DIFF_META_CONF = _PT_CONFIG_META_CONF.replace(
+_DIFF_META_JSON = _PT_CONFIG_META_JSON.replace(
     "pt_client_api_basic_external_process", "pt_client_api_diff_external_process"
 )
 
@@ -1037,14 +1081,14 @@ def test_external_process_pytorch_diff_reaches_server_end_to_end(tmp_path):
     jobdir = tmp_path / "pt_diff_external_process"
     (jobdir / "app" / "config").mkdir(parents=True)
     (jobdir / "app" / "custom").mkdir(parents=True)
-    (jobdir / "app" / "config" / "config_fed_server.conf").write_text(_DIFF_SERVER_CONF)
-    (jobdir / "app" / "config" / "config_fed_client.conf").write_text(
-        _DIFF_CLIENT_CONF.replace("__PYTHON__", sys.executable)
+    (jobdir / "app" / "config" / "config_fed_server.json").write_text(_DIFF_SERVER_JSON)
+    (jobdir / "app" / "config" / "config_fed_client.json").write_text(
+        _DIFF_CLIENT_JSON.replace("__PYTHON__", sys.executable)
     )
     (jobdir / "app" / "custom" / "poc_client.py").write_text(_PT_CONFIG_CLIENT_SCRIPT)
     (jobdir / "app" / "custom" / "net.py").write_text(_PT_CONFIG_NET)
     (jobdir / "app" / "custom" / "diff_aggregator.py").write_text(_DIFF_ASSERTING_AGGREGATOR)
-    (jobdir / "meta.conf").write_text(_DIFF_META_CONF)
+    (jobdir / "meta.json").write_text(_DIFF_META_JSON)
     workdir = tmp_path / "sim"
 
     env = os.environ.copy()
@@ -1199,73 +1243,82 @@ _CYCLIC_TRAIN_SCRIPT = textwrap.dedent(
     """
 )
 
-_CYCLIC_SERVER_CONF = textwrap.dedent(
+_CYCLIC_SERVER_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      task_data_filters = []
-      task_result_filters = []
-      workflows = [
+      "format_version": 2,
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "workflows": [
         {
-          id = "cyclic"
-          path = "nvflare.app_common.workflows.cyclic_ctl.CyclicController"
-          args {
-            num_rounds = 2
-            task_assignment_timeout = 10
-            persistor_id = "persistor"
-            shareable_generator_id = "shareable_generator"
-            task_name = "train"
+          "id": "cyclic",
+          "path": "nvflare.app_common.workflows.cyclic_ctl.CyclicController",
+          "args": {
+            "num_rounds": 2,
+            "task_assignment_timeout": 10,
+            "persistor_id": "persistor",
+            "shareable_generator_id": "shareable_generator",
+            "task_name": "train"
           }
         }
-      ]
-      components = [
-        { id = "persistor", path = "nvflare.app_common.np.np_model_persistor.NPModelPersistor" }
+      ],
+      "components": [
         {
-          id = "shareable_generator"
-          path = "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator"
-          args {}
+          "id": "persistor",
+          "path": "nvflare.app_common.np.np_model_persistor.NPModelPersistor"
+        },
+        {
+          "id": "shareable_generator",
+          "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+          "args": {}
         }
       ]
     }
     """
 )
 
-_CYCLIC_CLIENT_CONF = textwrap.dedent(
+_CYCLIC_CLIENT_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      app_script = "train_loop.py"
-      app_config = ""
-      executors = [
+      "format_version": 2,
+      "app_script": "train_loop.py",
+      "app_config": "",
+      "executors": [
         {
-          tasks = ["train"]
-          executor {
-            path = "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor"
-            args {
-              execution_mode = "external_process"
-              command = "__PYTHON__ -u custom/train_loop.py"
-              launch_once = true
-              stop_grace_period = 5.0
-              train_with_evaluation = true
+          "tasks": [
+            "train"
+          ],
+          "executor": {
+            "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+            "args": {
+              "execution_mode": "external_process",
+              "command": "__PYTHON__ -u custom/train_loop.py",
+              "launch_once": true,
+              "stop_grace_period": 5.0,
+              "train_with_evaluation": true
             }
           }
         }
-      ]
-      task_data_filters = []
-      task_result_filters = []
-      components = []
+      ],
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "components": []
     }
     """
 )
 
-_CYCLIC_META_CONF = textwrap.dedent(
+_CYCLIC_META_JSON = textwrap.dedent(
     """
     {
-      name = "np_cyclic_external_process"
-      resource_spec {}
-      deploy_map { app = ["@ALL"] }
-      min_clients = 2
-      mandatory_clients = []
+      "name": "np_cyclic_external_process",
+      "resource_spec": {},
+      "deploy_map": {
+        "app": [
+          "@ALL"
+        ]
+      },
+      "min_clients": 2,
+      "mandatory_clients": []
     }
     """
 )
@@ -1275,12 +1328,12 @@ def test_external_process_cyclic_relay_config_job_end_to_end(tmp_path):
     jobdir = tmp_path / "np_cyclic_external_process"
     (jobdir / "app" / "config").mkdir(parents=True)
     (jobdir / "app" / "custom").mkdir(parents=True)
-    (jobdir / "app" / "config" / "config_fed_server.conf").write_text(_CYCLIC_SERVER_CONF)
-    (jobdir / "app" / "config" / "config_fed_client.conf").write_text(
-        _CYCLIC_CLIENT_CONF.replace("__PYTHON__", sys.executable)
+    (jobdir / "app" / "config" / "config_fed_server.json").write_text(_CYCLIC_SERVER_JSON)
+    (jobdir / "app" / "config" / "config_fed_client.json").write_text(
+        _CYCLIC_CLIENT_JSON.replace("__PYTHON__", sys.executable)
     )
     (jobdir / "app" / "custom" / "train_loop.py").write_text(_CYCLIC_TRAIN_SCRIPT)
-    (jobdir / "meta.conf").write_text(_CYCLIC_META_CONF)
+    (jobdir / "meta.json").write_text(_CYCLIC_META_JSON)
     workdir = tmp_path / "sim"
 
     env = os.environ.copy()
@@ -1354,82 +1407,93 @@ _GRANDCHILD_WRAPPER_SCRIPT = textwrap.dedent(
     """
 )
 
-_GRANDCHILD_SERVER_CONF = textwrap.dedent(
+_GRANDCHILD_SERVER_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      task_data_filters = []
-      task_result_filters = []
-      workflows = [
+      "format_version": 2,
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "workflows": [
         {
-          id = "scatter_and_gather"
-          path = "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather"
-          args {
-            min_clients = 2
-            num_rounds = 1
-            start_round = 0
-            wait_time_after_min_received = 0
-            aggregator_id = "aggregator"
-            persistor_id = "persistor"
-            shareable_generator_id = "shareable_generator"
-            train_task_name = "train"
-            train_timeout = 0
+          "id": "scatter_and_gather",
+          "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+          "args": {
+            "min_clients": 2,
+            "num_rounds": 1,
+            "start_round": 0,
+            "wait_time_after_min_received": 0,
+            "aggregator_id": "aggregator",
+            "persistor_id": "persistor",
+            "shareable_generator_id": "shareable_generator",
+            "train_task_name": "train",
+            "train_timeout": 0
           }
         }
-      ]
-      components = [
-        { id = "persistor", path = "nvflare.app_common.np.np_model_persistor.NPModelPersistor" }
+      ],
+      "components": [
         {
-          id = "shareable_generator"
-          path = "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator"
-          args {}
-        }
+          "id": "persistor",
+          "path": "nvflare.app_common.np.np_model_persistor.NPModelPersistor"
+        },
         {
-          id = "aggregator"
-          path = "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"
-          args { expected_data_kind = "WEIGHTS" }
+          "id": "shareable_generator",
+          "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+          "args": {}
+        },
+        {
+          "id": "aggregator",
+          "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+          "args": {
+            "expected_data_kind": "WEIGHTS"
+          }
         }
       ]
     }
     """
 )
 
-_GRANDCHILD_CLIENT_CONF = textwrap.dedent(
+_GRANDCHILD_CLIENT_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      app_script = "wrapper.py"
-      app_config = ""
-      executors = [
+      "format_version": 2,
+      "app_script": "wrapper.py",
+      "app_config": "",
+      "executors": [
         {
-          tasks = ["train"]
-          executor {
-            path = "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor"
-            args {
-              execution_mode = "external_process"
-              command = "__PYTHON__ -u custom/wrapper.py"
-              launch_once = true
-              stop_grace_period = 5.0
-              train_with_evaluation = true
+          "tasks": [
+            "train"
+          ],
+          "executor": {
+            "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+            "args": {
+              "execution_mode": "external_process",
+              "command": "__PYTHON__ -u custom/wrapper.py",
+              "launch_once": true,
+              "stop_grace_period": 5.0,
+              "train_with_evaluation": true
             }
           }
         }
-      ]
-      task_data_filters = []
-      task_result_filters = []
-      components = []
+      ],
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "components": []
     }
     """
 )
 
-_GRANDCHILD_META_CONF = textwrap.dedent(
+_GRANDCHILD_META_JSON = textwrap.dedent(
     """
     {
-      name = "grandchild_external_process"
-      resource_spec {}
-      deploy_map { app = ["@ALL"] }
-      min_clients = 2
-      mandatory_clients = []
+      "name": "grandchild_external_process",
+      "resource_spec": {},
+      "deploy_map": {
+        "app": [
+          "@ALL"
+        ]
+      },
+      "min_clients": 2,
+      "mandatory_clients": []
     }
     """
 )
@@ -1439,13 +1503,13 @@ def test_external_process_launcher_wrapped_grandchild_trainer_end_to_end(tmp_pat
     jobdir = tmp_path / "grandchild_external_process"
     (jobdir / "app" / "config").mkdir(parents=True)
     (jobdir / "app" / "custom").mkdir(parents=True)
-    (jobdir / "app" / "config" / "config_fed_server.conf").write_text(_GRANDCHILD_SERVER_CONF)
-    (jobdir / "app" / "config" / "config_fed_client.conf").write_text(
-        _GRANDCHILD_CLIENT_CONF.replace("__PYTHON__", sys.executable)
+    (jobdir / "app" / "config" / "config_fed_server.json").write_text(_GRANDCHILD_SERVER_JSON)
+    (jobdir / "app" / "config" / "config_fed_client.json").write_text(
+        _GRANDCHILD_CLIENT_JSON.replace("__PYTHON__", sys.executable)
     )
     (jobdir / "app" / "custom" / "client.py").write_text(_GRANDCHILD_CLIENT_SCRIPT)
     (jobdir / "app" / "custom" / "wrapper.py").write_text(_GRANDCHILD_WRAPPER_SCRIPT)
-    (jobdir / "meta.conf").write_text(_GRANDCHILD_META_CONF)
+    (jobdir / "meta.json").write_text(_GRANDCHILD_META_JSON)
     workdir = tmp_path / "sim"
 
     env = os.environ.copy()
@@ -1681,89 +1745,101 @@ _MRANK_WORKER_SCRIPT = textwrap.dedent(
     """
 )
 
-_MRANK_SERVER_CONF = textwrap.dedent(
+_MRANK_SERVER_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      task_data_filters = []
-      task_result_filters = []
-      model_class_path = "net.Net"
-      workflows = [
+      "format_version": 2,
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "model_class_path": "net.Net",
+      "workflows": [
         {
-          id = "scatter_and_gather"
-          path = "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather"
-          args {
-            min_clients = 2
-            num_rounds = 1
-            start_round = 0
-            wait_time_after_min_received = 0
-            aggregator_id = "aggregator"
-            persistor_id = "persistor"
-            shareable_generator_id = "shareable_generator"
-            train_task_name = "train"
-            train_timeout = 0
+          "id": "scatter_and_gather",
+          "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+          "args": {
+            "min_clients": 2,
+            "num_rounds": 1,
+            "start_round": 0,
+            "wait_time_after_min_received": 0,
+            "aggregator_id": "aggregator",
+            "persistor_id": "persistor",
+            "shareable_generator_id": "shareable_generator",
+            "train_task_name": "train",
+            "train_timeout": 0
           }
         }
-      ]
-      components = [
+      ],
+      "components": [
         {
-          id = "persistor"
-          path = "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor"
-          args { model { path = "{model_class_path}" } }
-        }
+          "id": "persistor",
+          "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+          "args": {
+            "model": {
+              "path": "{model_class_path}"
+            }
+          }
+        },
         {
-          id = "shareable_generator"
-          path = "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator"
-          args {}
-        }
+          "id": "shareable_generator",
+          "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+          "args": {}
+        },
         {
-          id = "aggregator"
-          path = "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"
-          args { expected_data_kind = "WEIGHTS" }
+          "id": "aggregator",
+          "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+          "args": {
+            "expected_data_kind": "WEIGHTS"
+          }
         }
       ]
     }
     """
 )
 
-_MRANK_CLIENT_CONF = textwrap.dedent(
+# launch_once=false mirrors pt_client_api_torchrun_cpu: this trainer handles one task and
+# returns, so the backend launches and owns one process tree per task.
+_MRANK_CLIENT_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      app_script = "dist_launch.py"
-      app_config = ""
-      executors = [
+      "format_version": 2,
+      "app_script": "dist_launch.py",
+      "app_config": "",
+      "executors": [
         {
-          tasks = ["train"]
-          executor {
-            path = "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor"
-            args {
-              execution_mode = "external_process"
-              command = "__PYTHON__ -u custom/dist_launch.py"
-              # Mirrors pt_client_api_torchrun_cpu: this trainer handles one task and
-              # returns, so the backend launches and owns one process tree per task.
-              launch_once = false
-              stop_grace_period = 5.0
-              train_with_evaluation = true
+          "tasks": [
+            "train"
+          ],
+          "executor": {
+            "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+            "args": {
+              "execution_mode": "external_process",
+              "command": "__PYTHON__ -u custom/dist_launch.py",
+              "launch_once": false,
+              "stop_grace_period": 5.0,
+              "train_with_evaluation": true
             }
           }
         }
-      ]
-      task_data_filters = []
-      task_result_filters = []
-      components = []
+      ],
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "components": []
     }
     """
 )
 
-_MRANK_META_CONF = textwrap.dedent(
+_MRANK_META_JSON = textwrap.dedent(
     """
     {
-      name = "mrank_external_process"
-      resource_spec {}
-      deploy_map { app = ["@ALL"] }
-      min_clients = 2
-      mandatory_clients = []
+      "name": "mrank_external_process",
+      "resource_spec": {},
+      "deploy_map": {
+        "app": [
+          "@ALL"
+        ]
+      },
+      "min_clients": 2,
+      "mandatory_clients": []
     }
     """
 )
@@ -1774,14 +1850,14 @@ def test_external_process_multi_rank_distributed_end_to_end(tmp_path):
     jobdir = tmp_path / "mrank_external_process"
     (jobdir / "app" / "config").mkdir(parents=True)
     (jobdir / "app" / "custom").mkdir(parents=True)
-    (jobdir / "app" / "config" / "config_fed_server.conf").write_text(_MRANK_SERVER_CONF)
-    (jobdir / "app" / "config" / "config_fed_client.conf").write_text(
-        _MRANK_CLIENT_CONF.replace("__PYTHON__", sys.executable)
+    (jobdir / "app" / "config" / "config_fed_server.json").write_text(_MRANK_SERVER_JSON)
+    (jobdir / "app" / "config" / "config_fed_client.json").write_text(
+        _MRANK_CLIENT_JSON.replace("__PYTHON__", sys.executable)
     )
     (jobdir / "app" / "custom" / "net.py").write_text(_MRANK_NET)
     (jobdir / "app" / "custom" / "dist_launch.py").write_text(_MRANK_LAUNCH_SCRIPT)
     (jobdir / "app" / "custom" / "worker.py").write_text(_MRANK_WORKER_SCRIPT)
-    (jobdir / "meta.conf").write_text(_MRANK_META_CONF)
+    (jobdir / "meta.json").write_text(_MRANK_META_JSON)
     workdir = tmp_path / "sim"
 
     env = os.environ.copy()
@@ -1917,45 +1993,51 @@ _LIGHTNING_CLIENT = textwrap.dedent(
     """
 )
 
-_LIGHTNING_SERVER_CONF = textwrap.dedent(
+_LIGHTNING_SERVER_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      task_data_filters = []
-      task_result_filters = []
-      model_class_path = "pl_net.PlNet"
-      workflows = [
+      "format_version": 2,
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "model_class_path": "pl_net.PlNet",
+      "workflows": [
         {
-          id = "scatter_and_gather"
-          path = "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather"
-          args {
-            min_clients = 2
-            num_rounds = 2
-            start_round = 0
-            wait_time_after_min_received = 0
-            aggregator_id = "aggregator"
-            persistor_id = "persistor"
-            shareable_generator_id = "shareable_generator"
-            train_task_name = "train"
-            train_timeout = 0
+          "id": "scatter_and_gather",
+          "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+          "args": {
+            "min_clients": 2,
+            "num_rounds": 2,
+            "start_round": 0,
+            "wait_time_after_min_received": 0,
+            "aggregator_id": "aggregator",
+            "persistor_id": "persistor",
+            "shareable_generator_id": "shareable_generator",
+            "train_task_name": "train",
+            "train_timeout": 0
           }
         }
-      ]
-      components = [
+      ],
+      "components": [
         {
-          id = "persistor"
-          path = "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor"
-          args { model { path = "{model_class_path}" } }
-        }
+          "id": "persistor",
+          "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+          "args": {
+            "model": {
+              "path": "{model_class_path}"
+            }
+          }
+        },
         {
-          id = "shareable_generator"
-          path = "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator"
-          args {}
-        }
+          "id": "shareable_generator",
+          "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+          "args": {}
+        },
         {
-          id = "aggregator"
-          path = "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"
-          args { expected_data_kind = "WEIGHTS" }
+          "id": "aggregator",
+          "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+          "args": {
+            "expected_data_kind": "WEIGHTS"
+          }
         }
       ]
     }
@@ -1963,44 +2045,50 @@ _LIGHTNING_SERVER_CONF = textwrap.dedent(
 )
 
 # Match ScriptRunner's trainer/server representation declarations.
-_LIGHTNING_CLIENT_CONF = textwrap.dedent(
+_LIGHTNING_CLIENT_JSON = textwrap.dedent(
     """
     {
-      format_version = 2
-      app_script = "client.py"
-      app_config = ""
-      executors = [
+      "format_version": 2,
+      "app_script": "client.py",
+      "app_config": "",
+      "executors": [
         {
-          tasks = ["train"]
-          executor {
-            path = "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor"
-            args {
-              execution_mode = "external_process"
-              command = "__PYTHON__ -u custom/client.py"
-              launch_once = true
-              stop_grace_period = 5.0
-              train_with_evaluation = true
-              params_exchange_format = "pytorch"
-              server_expected_format = "numpy"
+          "tasks": [
+            "train"
+          ],
+          "executor": {
+            "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+            "args": {
+              "execution_mode": "external_process",
+              "command": "__PYTHON__ -u custom/client.py",
+              "launch_once": true,
+              "stop_grace_period": 5.0,
+              "train_with_evaluation": true,
+              "params_exchange_format": "pytorch",
+              "server_expected_format": "numpy"
             }
           }
         }
-      ]
-      task_data_filters = []
-      task_result_filters = []
-      components = []
+      ],
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "components": []
     }
     """
 )
 
-_LIGHTNING_META_CONF = textwrap.dedent(
+_LIGHTNING_META_JSON = textwrap.dedent(
     """
     {
-      name = "pt_lightning_external_process"
-      resource_spec {}
-      deploy_map { app = ["@ALL"] }
-      min_clients = 2
-      mandatory_clients = []
+      "name": "pt_lightning_external_process",
+      "resource_spec": {},
+      "deploy_map": {
+        "app": [
+          "@ALL"
+        ]
+      },
+      "min_clients": 2,
+      "mandatory_clients": []
     }
     """
 )
@@ -2014,14 +2102,14 @@ def test_external_process_pytorch_lightning_config_job_end_to_end(tmp_path):
     jobdir = tmp_path / "pt_lightning_external_process"
     (jobdir / "app" / "config").mkdir(parents=True)
     (jobdir / "app" / "custom").mkdir(parents=True)
-    (jobdir / "app" / "config" / "config_fed_server.conf").write_text(_LIGHTNING_SERVER_CONF)
-    (jobdir / "app" / "config" / "config_fed_client.conf").write_text(
-        _LIGHTNING_CLIENT_CONF.replace("__PYTHON__", sys.executable)
+    (jobdir / "app" / "config" / "config_fed_server.json").write_text(_LIGHTNING_SERVER_JSON)
+    (jobdir / "app" / "config" / "config_fed_client.json").write_text(
+        _LIGHTNING_CLIENT_JSON.replace("__PYTHON__", sys.executable)
     )
     (jobdir / "app" / "custom" / "net.py").write_text(_LIGHTNING_NET)
     (jobdir / "app" / "custom" / "pl_net.py").write_text(_LIGHTNING_PL_NET)
     (jobdir / "app" / "custom" / "client.py").write_text(_LIGHTNING_CLIENT)
-    (jobdir / "meta.conf").write_text(_LIGHTNING_META_CONF)
+    (jobdir / "meta.json").write_text(_LIGHTNING_META_JSON)
     workdir = tmp_path / "sim"
 
     env = os.environ.copy()
