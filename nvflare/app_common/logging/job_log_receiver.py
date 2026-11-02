@@ -232,7 +232,10 @@ class JobLogReceiver(Widget):
                 staging = ClientLogStaging(workspace) if self._dest_dir is None and workspace is not None else None
                 with staging.locked() if staging else nullcontext():
                     job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
-                    if staging and job_manager is not None and job_manager.get_job(job_id, fl_ctx) is None:
+                    if staging and (
+                        staging.is_deleted(job_id)
+                        or (job_manager is not None and job_manager.get_job(job_id, fl_ctx) is None)
+                    ):
                         raise ValueError("Cannot stream logs for a deleted or unknown job")
                     path, stream = self._open_log(
                         self._staging_root(fl_ctx), job_id, client, file_name, leased=staging is not None

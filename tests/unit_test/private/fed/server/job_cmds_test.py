@@ -760,6 +760,10 @@ def test_delete_job_drains_active_streams_without_recreating_deleted_job(tmp_pat
     JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
     assert conn.errors == []
     assert path.read_bytes() == b"before deletion\n"
+    # A delayed/stale job-store response must not override an explicit deletion.
+    with patch.object(manager, "get_job", return_value=conn.get_prop(JobCommandModule.JOB)):
+        with pytest.raises(ValueError, match="deleted or unknown job"):
+            JobLogReceiver()._on_chunk_received(b"late data", {KEY_FILE_NAME: "late.txt"}, fl_ctx)
     with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
         JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
     assert path.read_bytes() == b"before deletion\n"
