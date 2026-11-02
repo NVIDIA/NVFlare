@@ -17,6 +17,7 @@
 import fcntl
 import json
 import os
+import shutil
 import signal
 import socket
 import stat
@@ -317,6 +318,42 @@ class LauncherTests(unittest.TestCase):
             self.assertFalse((Path(directory) / "applog.qcow2").exists())
         with self.assertRaises(OSError):
             os.fstat(inherited[0])
+
+    @unittest.skipUnless(
+        sys.platform == "linux" and shutil.which("qemu-system-x86_64"),
+        "Console backend smoke check requires Linux QEMU, without a guest image or TEE",
+    )
+    def test_real_qemu_console_backend_retains_output(self):
+        # Exercise the exact generated chardev options with real QEMU. Its
+        # empty machine has no guest or disks; HMP supplies deterministic bytes
+        # through the same backend that serial output uses in the launcher.
+        command = [
+            shutil.which("qemu-system-x86_64"),
+            "-machine",
+            "none",
+            "-nodefaults",
+            "-display",
+            "none",
+            "-serial",
+            "stdio",
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            with serial_capture(command, directory) as (captured, fds):
+                self.assertTrue(fds, "Console capture unexpectedly fell back")
+                index = captured.index("-serial")
+                captured[index] = "-monitor"
+                result = subprocess.run(
+                    captured,
+                    input=b"info version\nquit\n",
+                    capture_output=True,
+                    pass_fds=fds,
+                    timeout=10,
+                )
+            self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
+            self.assertIn(b"QEMU", result.stdout)
+            log = next(Path(directory).glob("console-*.log"))
+            self.assertEqual(log.read_bytes(), result.stdout)
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
 
     def test_serial_capture_retention_and_unwritable_storage(self):
         with tempfile.TemporaryDirectory() as directory:
