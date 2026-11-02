@@ -9,7 +9,7 @@
 # robomimic declares egl_probe as a git URL whose package name (hf-egl-probe) does not match.
 #
 # The two local wheels are cp310 aarch64 builds shipped in the Isaac-GR00T tree; their paths are relative to
-# research/decent-vla, where the setup script runs.
+# this project directory, where the setup script runs.
 absl-py==2.5.0
 accelerate==1.13.0
 aiohappyeyeballs==2.6.1

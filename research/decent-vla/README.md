@@ -1,348 +1,197 @@
-# decent-vla: Federated Fine-Tuning of Vision-Language-Action Robot Policies
+# VLA fine-tuning with NVIDIA FLARE
 
-## Abstract
+Federated fine-tuning of SmolVLA, π0.5 and GR00T N1.7 on LIBERO using native
+FLARE `FedAvg` / PyTorch `FedOpt` workflows and `PTFedProxLoss`. Clients retain
+their local optimizer, scheduler and data iterator across rounds. FLARE owns
+dispatch, aggregation and persistence; there is no internal FL simulator.
 
-Vision-language-action (VLA) policies, such as SmolVLA, π0.5 and GR00T N1.7, map camera images and a language
-instruction to robot actions. Fine-tuning them usually means pooling demonstrations from many robots, labs or
-institutions in one place. decent-vla fine-tunes VLA policies with federated learning instead: each site trains on
-its own tasks and data, and only model updates leave the site. This project hosts decent-vla with its NVFlare
-runtime, and run configs that federate SmolVLA, π0.5 and GR00T N1.7 on the LIBERO benchmark with FedAvg, FedProx
-and FedAdam, using the settings of our paper's experiments. In our paper, federated full fine-tuning of π0.5 across
-8 clients that each hold different tasks reaches 97.50% LIBERO success, against 97.00% for centralized fine-tuning.
+Like the other research examples, `job.py` selects a policy, generates its
+configuration and exports a standard FLARE job. Generated YAML is editable;
+the repository does not store a file for each algorithm/tuning/smoke combination.
 
-## Papers and Links
+## Project structure
 
-- Paper: Zhekai Duan\*, Kevin Ziyang Xie, Xinyu Tan, Shikai Geng, Chengxu Zhou, Ramana Kompella, Gaowen Liu and
-  Chris Xiaoxuan Lu, "An Empirical Study and Open Testbed for Federated Fine-Tuning of Vision-Language-Action
-  Models", [arXiv:2609.22973](https://arxiv.org/abs/2609.22973), 2026. (\* Corresponding author.)
-- Tracking issue: [NVIDIA/NVFlare#5487](https://github.com/NVIDIA/NVFlare/issues/5487)
-- Benchmark: [LIBERO](https://github.com/Lifelong-Robot-Learning/LIBERO)
-- Policies: [lerobot](https://github.com/huggingface/lerobot) (SmolVLA, π0.5) and
-  [Isaac-GR00T](https://github.com/NVIDIA/Isaac-GR00T) (GR00T N1.7)
-
-## Objective
-
-NVFlare has no example of federated fine-tuning for VLA policies. This project provides one on LIBERO, for three
-VLA policies and three aggregation algorithms, with the settings of our paper, so readers can run its federated
-experiments with NVFlare and compare new methods against its results. A later contribution adds a method for
-sites whose robots have different action spaces.
-
-## Method Summary
-
-- **Setting:** horizontal FL with task-heterogeneous clients. LIBERO's 40 tasks, in four suites (Spatial, Object,
-  Goal and Long), are split across 8 clients by a deterministic round-robin, so each client trains on 5 tasks that
-  no other client sees.
-- **Policies:** SmolVLA (0.45B parameters) and π0.5 (3.2B) through lerobot, and GR00T N1.7 (3.1B) through
-  Isaac-GR00T, each behind decent-vla's `Backend` interface.
-- **What is federated:** full fine-tuning or LoRA (rank 64, alpha 128) of the whole model for SmolVLA and π0.5; for
-  GR00T, the action head, trained in full or with LoRA, while the vision-language backbone stays frozen.
-- **Aggregation:** FedAvg, FedProx (mu = 0.01) and FedAdam (server learning rate 1e-3), as decent-vla strategies.
-- **Training budget:** 250 local AdamW steps per round at each policy's published fine-tuning hyperparameters;
-  100 rounds for π0.5, 140 for GR00T and 160 for SmolVLA.
-- **Evaluation:** LIBERO simulation of all 40 tasks, 10 episodes each (400 episodes). SmolVLA and π0.5 replan every
-  10 steps, GR00T every 16. The paper evaluates the global model every 20 rounds and reports the best score.
-- **NVFlare integration:** a custom controller, `DecentVLAController` (a `ModelController`), runs the rounds and
-  applies the aggregation strategy on the server. Each client runs a Client API script under `ScriptRunner`; the
-  script keeps its policy, optimizer state and data loader in memory across rounds, trains for the configured local
-  steps and returns its update. `decent-vla` builds the job with `FedJob` and runs it in the NVFlare simulator, each
-  client on the GPU that the config assigns it.
-
-## Repository Layout
+The FLARE-facing files follow the layout used by the neighboring research examples:
 
 ```text
 decent-vla/
-|-- README.md
-|-- pyproject.toml                 # package, extras (nvflare, lerobot, libero, peft) and plugin entry points
-|-- src/decent_vla/
-|   |-- core/                      # Backend, Strategy and Communicator protocols, LoRA, partitioning, results
-|   |-- strategies/                # FedAvg, FedProx, FedAdam
-|   |-- adapters/
-|   |   |-- lerobot/               # SmolVLA, pi0, pi0.5 and ACT through lerobot; checkpoint export for lerobot-eval
-|   |   |-- groot/                 # NVIDIA GR00T N1.7 through Isaac-GR00T
-|   |   `-- _mock/                 # tiny CPU model for tests and smoke runs
-|   |-- benchmarks/                # LIBERO simulation benchmark, mock benchmark
-|   |-- runtime/                   # shared client and server round loop, checkpoints, local runner
-|   |   `-- nvflare/               # NVFlare runtime: controller, Client API script, FedJob, codec
-|   |-- configs/                   # run-config schema and loader
-|   `-- cli/                       # `decent-vla` command line
-|-- examples/                      # run configs: the paper's runs on NVFlare, their smoke versions, mock runs
-|-- configs/libero_heldout_8.json  # held-out LIBERO task split
-|-- scripts/                       # environment setup, data preparation, LIBERO evaluation, CPU smoke run
-`-- tests/                         # unit tests, run in the SmolVLA and π0.5 environment; NVFlare is faked,
-    `-- nvflare_real/              #   except here: exported jobs run in the real NVFlare simulator
+├── job.py                     # compose and export the FLARE job
+├── client.py                  # FLARE Client API training entry point
+├── evaluate.py
+└── src/
+    ├── workflows.py           # native FedAvg and FedOpt workflow adapters
+    ├── persistor.py           # FLARE LearnablePersistor
+    ├── adapters/              # policy-specific implementations
+    ├── configs/               # run configuration
+    └── support/               # partitioning, training, checkpoints and evaluation support
 ```
 
-- `examples/<policy>_libero_<recipe>[_<algorithm>]_nvflare.yaml` is one run of the paper: policy, what is federated,
-  aggregation algorithm, data partition, budget and NVFlare placement in one file. Each has a `_smoke.yaml`
-  version with 2 clients, 2 rounds and 20 local steps. The `*_train_pipeline*.yaml` files are the lerobot training
-  settings that the SmolVLA and π0.5 configs point to.
-- `decent-vla train --config <config>` runs a config; `scripts/eval_libero.sh` and `decent-vla eval` evaluate its
-  checkpoints (see [Run Instructions](#run-instructions)).
-- `scripts/setup_groot.sh` and `scripts/setup_groot_eval.sh` build the GR00T training and evaluation environments;
-  `scripts/prep_groot_libero.sh` prepares GR00T's LIBERO data; `scripts/smoke_nvflare.sh` runs a 2-round federation
-  of the mock model on CPU.
+## Setup and data
 
-## Setup
-
-**Hardware.** The paper's configs use 8 clients. Two clients share a 96 GB GPU wherever they fit, so most configs
-run on one node with 4 such GPUs. A π0.5 full fine-tuning client needs a GPU of its own, so those three configs need
-8 GPUs. The paper ran each client on its own 96 GB GH200. The smoke configs use 2 clients on 2 GPUs. The CPU smoke run
-needs no GPU.
-
-**SmolVLA and π0.5 environment** (Python 3.12, which lerobot requires), built with [uv](https://docs.astral.sh/uv/).
-Install the PyTorch build that matches the CUDA driver first, so the editable install keeps it:
+Run from the directory containing this README. The package requires FLARE
+2.8.1 and Torch >=2.4,<2.11. For SmolVLA/π0.5, use Python 3.12 and install the
+Torch build appropriate for your CUDA driver before the policy dependencies:
 
 ```bash
-cd research/decent-vla
 uv venv .venv --python 3.12
 source .venv/bin/activate
 uv pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu128
-uv pip install -e ".[nvflare,lerobot,libero,peft,dev]"
-decent-vla doctor                  # prints the torch, CUDA and plugin versions
+uv pip install -e '.[lerobot,libero,peft,dev]'
 ```
 
-π0.5 uses the PaliGemma tokenizer, which is gated: accept its terms at
-[google/paligemma-3b-pt-224](https://huggingface.co/google/paligemma-3b-pt-224), then run `hf auth login`.
+The LeRobot revision is pinned in `pyproject.toml`. Data comes from
+[HuggingFaceVLA/libero](https://huggingface.co/datasets/HuggingFaceVLA/libero).
+For π0.5, accept the gated [PaliGemma tokenizer](https://huggingface.co/google/paligemma-3b-pt-224)
+terms and run `hf auth login`. Each site reconstructs its own disjoint share
+of the cached dataset; the partition is recorded in `partition_manifest.json`.
 
-**GR00T environments** (Python 3.10, which Isaac-GR00T requires). GR00T trains and evaluates in two separate
-environments, because the LIBERO simulator needs package versions that the training stack cannot share:
+GR00T uses a separate Python 3.10 environment and the pinned Isaac-GR00T
+revision, with PyAV support for LIBERO's AV1 videos:
 
 ```bash
-bash scripts/setup_groot.sh        # .venv-groot: Isaac-GR00T at the pinned commit, decent-vla, NVFlare
-bash scripts/setup_groot_eval.sh   # .venv-groot-eval: LIBERO, robosuite and MuJoCo for evaluation
+bash scripts/setup_groot.sh
+bash scripts/setup_groot_eval.sh
+bash scripts/prep_groot_libero.sh
+hf download nvidia/GR00T-N1.7-3B
+hf download nvidia/Cosmos-Reason2-2B
 ```
 
-Both scripts need `git`, `uv` and a CUDA 12.8 driver, and run on a GPU node; on aarch64 they also need `git-lfs`,
-for the flash-attn and torchcodec wheels that Isaac-GR00T stores with Git LFS. `setup_groot.sh` clones Isaac-GR00T
-into `third_party/Isaac-GR00T` and applies `scripts/isaac_gr00t_pyav.patch`, which adds PyAV decoding for the
-AV1-encoded LIBERO videos (torchcodec would need a system FFmpeg). The evaluation environment's package list is for
-aarch64 machines such as GH200 nodes.
+The scripts need `git`, `uv`, a CUDA 12.8 driver, and `git-lfs` on aarch64.
+Accept the gated Cosmos backbone terms before downloading. Evaluation uses
+`.venv-groot-eval`; training uses `.venv-groot`. Download/cache weights and data
+on each site before launching a federation.
 
-**Rendering.** LIBERO renders off-screen: set `export MUJOCO_GL=egl` before any evaluation.
+## Export and run with FLARE
 
-## Data Preparation
-
-- **SmolVLA and π0.5** train on [HuggingFaceVLA/libero](https://huggingface.co/datasets/HuggingFaceVLA/libero), the
-  40 LIBERO tasks in LeRobot format. lerobot downloads it into the Hugging Face cache (`$HF_HOME`) on first use.
-- **GR00T** trains on the four LIBERO suites in GR00T's LeRobot format:
-
-  ```bash
-  bash scripts/prep_groot_libero.sh   # about 2 GB, into data/groot-libero/
-  ```
-
-  The script downloads the `IPEC-COMMUNITY/libero_*_no_noops_1.0.0_lerobot` datasets and prepares them as
-  Isaac-GR00T's LIBERO example describes.
-- **GR00T weights.** The GR00T configs load the model from the Hugging Face cache only (`local_files_only: true`),
-  so download it and its backbone first; the backbone is gated: accept its terms on Hugging Face and log in with
-  `hf auth login`. SmolVLA and π0.5 weights download on first use.
-
-  ```bash
-  hf download nvidia/GR00T-N1.7-3B
-  hf download nvidia/Cosmos-Reason2-2B
-  ```
-- **Client partition.** Each run computes its partition from the config (`task_round_robin`, seed 42) and writes it
-  to `outputs/<run>/partition_manifest.json`. `decent-vla partition --config <config> --output-dir <dir>` writes it
-  without training.
-
-## Run Instructions
-
-**Train.** From `research/decent-vla`, in the environment of the policy:
+`job.py` composes the experiment and exports it; execution uses FLARE commands:
 
 ```bash
-decent-vla train --config examples/pi05_libero_lora_nvflare.yaml
+python job.py
+nvflare simulator jobs/mock_fl_nvflare -w outputs/mock_workspace -c c0,c1 -t 2
+
+# Real policy, two clients, two rounds; cache weights/data first.
+export DECENT_VLA_WORKDIR="$PWD"
+python job.py --policy pi05 --tuning lora --smoke
+nvflare simulator jobs/pi05_libero_lora_nvflare_smoke \
+  -w outputs/pi05_workspace -c c0,c1 -t 2 -gpu 0,1
+
+# Other full recipes; all export without loading the policy.
+python job.py --policy pi05 --algorithm fedadam
+python job.py --policy smolvla --tuning lora --num-clients 8
+python job.py --policy groot --tuning fullft
 ```
 
-`decent-vla` builds the NVFlare job and runs it in the simulator, with client `i` on the GPU at position `i` of
-`fl.nvflare.gpu`; a GPU listed twice holds two clients. A run resumes from its latest checkpoint when started again.
-The configs:
+The script writes `outputs/<name>/run.yaml`, LeRobot's `train_pipeline.yaml`
+where needed, and `jobs/<name>/`. Use `--output-dir` for the run folder,
+`--job-dir` for the export location, and `python job.py --help` for training
+overrides. After editing a generated YAML, re-export it with
+`python job.py --config outputs/<name>/run.yaml`.
 
-| Config | Policy | Federated | Algorithm | Rounds | GPUs |
-|---|---|---|---|---|---|
-| `pi05_libero_fullft_nvflare.yaml` | π0.5 | full model | FedAvg | 100 | 8 |
-| `pi05_libero_lora_nvflare.yaml` | π0.5 | LoRA | FedAvg | 100 | 4 |
-| `pi05_libero_fullft_fedprox_nvflare.yaml` | π0.5 | full model | FedProx | 100 | 8 |
-| `pi05_libero_fullft_fedadam_nvflare.yaml` | π0.5 | full model | FedAdam | 100 | 8 |
-| `groot_libero_fullft_nvflare.yaml` | GR00T N1.7 | action head | FedAvg | 140 | 4 |
-| `groot_libero_lora_nvflare.yaml` | GR00T N1.7 | action head, LoRA | FedAvg | 140 | 4 |
-| `smolvla_libero_fullft_nvflare.yaml` | SmolVLA | full model | FedAvg | 160 | 4 |
-| `smolvla_libero_lora_nvflare.yaml` | SmolVLA | LoRA | FedAvg | 160 | 4 |
+| Policy | Full run | Batch size, full / LoRA | Reference GPU count, full / LoRA |
+| --- | --- | --- | --- |
+| π0.5 | 100 rounds × 250 steps | 32 / 32 | 8 / 4 |
+| SmolVLA | 160 rounds × 250 steps | 32 / 64 | 4 / 4 |
+| GR00T action head | 140 rounds × 250 steps | 16 / 32 | 4 / 4 |
 
-Each config has a `_smoke.yaml` version: 2 clients on 2 GPUs, 2 rounds of 20 local steps. To check the NVFlare
-setup without a GPU, run `bash scripts/smoke_nvflare.sh` (mock model, 2 clients, 2 rounds).
+Full recipes use eight clients. `--smoke` uses two clients, two rounds and
+20 local steps while preserving optimizer/preprocessing settings. The mock
+defaults to a small CPU job. FedProx uses `mu=0.01` (sum for VLA recipes);
+FedAdam uses server LR/epsilon `0.001` and betas `(0.9, 0.999)`.
 
-A run writes to `outputs/<config name>/`:
-
-| Path | Content |
-|---|---|
-| `config.json` | the resolved run config |
-| `partition_manifest.json` | the tasks and episodes of each client |
-| `checkpoints/server_round_NNNN.pt` | the fp32 global model (and FedAdam's moments) every 10 rounds; a restarted run resumes from the latest one |
-| `checkpoints/server_round_final.pt` | the final fp32 global model, written when the run finishes |
-| `checkpoints/round_NNNN.pt` | the final global model in the policy's checkpoint format |
-| `nvflare_workspace/` | the NVFlare simulator workspace, with the server and client logs |
-
-Checkpoints are kept, not pruned. One `server_round_NNNN.pt` takes about 16 GB for π0.5 full fine-tuning (47 GB with
-FedAdam), 0.5 GB for π0.5 LoRA, 1.5 GB for SmolVLA, 6.2 GB for the GR00T action head and 1.5 GB with LoRA, so a
-full π0.5 run needs about 200 GB of disk (about 500 GB with FedAdam).
-
-**Run on a federation.** With `fl.nvflare.env: export` in the config, `decent-vla train` writes an NVFlare job
-folder instead of running the simulator. Submit it to a running federation (POC or provisioned):
+Set simulator workspaces, client names, threads and GPUs through
+`nvflare simulator`. Match the logical client count and keep
+each client resident, so it keeps its optimizer, scheduler and data iterator
+between rounds. Eight clients on two GPUs use:
 
 ```bash
-decent-vla train --config <config with fl.nvflare.env: export>
-nvflare job submit -j outputs/<config name>/nvflare_job/<config name>
+nvflare simulator jobs/smolvla_libero_lora_nvflare \
+  -w outputs/smolvla_workspace -c c0,c1,c2,c3,c4,c5,c6,c7 -t 8 \
+  -gpu 0,1,0,1,0,1,0,1
 ```
 
-- The job carries its run config, the files that it names (the lerobot training config and the held-out task spec,
-  `data.held_out`), and the client script.
-  Every site needs this folder installed (`pip install -e .`, see [Setup](#setup)) and its own copy of the data and
-  model weights. Download them before starting the site, not inside the first run.
-- Name the sites `c0` … `cN-1`, or set `fl.nvflare.site_prefix: site-` for sites `site-1` … `site-N`.
-- A relative `fl.output_dir` is created inside each site's job folder. When the job ends, the FLARE server archives
-  its job folder into its job store: get the checkpoints with `nvflare job download <job id>`, or set an absolute
-  `fl.output_dir` to keep them on the server's disk (better for large models). A resubmitted job gets a new folder,
-  so only a run with an absolute `fl.output_dir` resumes from its checkpoints.
-- Relative data paths, such as the GR00T `dataset_paths`, resolve against the folder that each site sets in the
-  `DECENT_VLA_WORKDIR` environment variable.
-- Set `fl.round_timeout_s`. A round needs `fl.min_clients` updates (default: every selected client), and NVFlare
-  stops the job if fewer sites than that stay connected. Once that many clients have answered, the server waits
-  `fl.nvflare.wait_time_after_min_received` seconds (default 10) for the others. A client whose round fails reports
-  the error and stays in the federation; the server asks the missing clients once more, then stops the run with
-  `RoundFailure` if the round is still short. The failed client drops its training state and rebuilds it for the
-  retry: from its last saved state with `fl.persist_client_state` and `fl.save_every_n_rounds: 1`, otherwise with a
-  fresh optimizer, the learning-rate schedule at that round, and personal (unshared) weights reset. With
-  `fl.round_timeout_s` or `fl.min_clients` set, each client keeps its last update in memory, and a client asked again
-  for a round it has finished sends that update instead of training twice.
-- `fl.nvflare.launch_external_process: true` runs each client's training in a subprocess.
+`-gpu` takes a group map, not a pool of GPUs. With several groups, FLARE 2.8.1
+runs one worker per group and overrides `-t`; with one group, `-t` sets the
+number of workers, so always set it.
 
-**Evaluate SmolVLA and π0.5.** `scripts/eval_libero.sh` exports a checkpoint to a lerobot policy folder and runs
-`lerobot-eval` on LIBERO with the paper's protocol (all four suites, 10 episodes per task, replanning every 10 steps):
+| FLARE 2.8.1 options, eight clients | Effect |
+| --- | --- |
+| `-t 8`, no GPU map | Eight resident workers; set `device: cpu` for CPU execution |
+| `-t 8 -gpu 0` | Eight resident clients on one GPU, if memory fits |
+| `-gpu 0,1,0,1,0,1,0,1` | Eight workers, four per GPU |
+| `-gpu 0,1` | Two workers; clients rotate through them and lose warm state |
+| `-gpu '[0,1]'` | One group exposing two GPUs; no model parallelism |
+
+Each GPU must fit the models, optimizer state and buffers of all its assigned
+clients, and the host needs RAM for aggregation and the final export.
+`fl.min_clients` sets the updates required per round, not concurrency; do not
+lower it to fit GPU memory. For more than 100 clients, use `-m N` with a
+matching `-c` list.
+
+With fewer workers than clients, the simulator swaps client processes out
+between turns. `fl.persist_client_state` saves weights, optimizer and
+scheduler, but not RNG or data-iterator position, so swapped clients do not
+train as resident ones do. Disk-backed client state through FLARE's
+`SWAP_OUT`/`SWAP_IN` events is not implemented. A one-client, one-round job
+with the desired local-step budget provides the centralized baseline through
+the same FLARE workflow.
+
+Exported jobs include the native `src/` tree. Install the policy dependencies
+and NVFlare on every site, then submit the same job:
+
+```bash
+nvflare job submit -j jobs/<name>
+```
+
+Sites are `c0`…`cN-1`, or set `fl.nvflare.site_prefix: site-` for provisioned
+`site-1`…`site-N`. Jobs include their configs and client script. Relative data
+paths resolve against each site's `DECENT_VLA_WORKDIR` when set. Relative output
+paths live under each site's job run folder. For the default CPU simulator run,
+server artifacts are under `outputs/mock_workspace/server/simulate_job/outputs/mock_fl_nvflare/`.
+Use an absolute `fl.output_dir` to choose a fixed site-local output folder.
+Download deployed results with `nvflare job download <job-id>`.
+
+A completed run writes `config.json`, data/scope manifests, `training_curve.json`,
+periodic `checkpoints/server_round_NNNN.pt` and final `server_round_final.pt`.
+Check the final artifact and logs: FLARE
+2.8.1 can return zero after a workflow error. Reusing outputs auto-resumes from
+periodic FLARE checkpoints unless `DECENT_VLA_NO_RESUME=1` is set. Set
+`fl.round_timeout_s` for deployment; an unmet quorum aborts through FLARE.
+
+## Evaluate
 
 ```bash
 export MUJOCO_GL=egl
-bash scripts/eval_libero.sh examples/pi05_libero_lora_nvflare.yaml \
-    outputs/pi05_libero_lora_nvflare/checkpoints/server_round_0100.pt
+bash scripts/eval_libero.sh outputs/pi05_libero_lora_nvflare/run.yaml \
+  /absolute/path/to/run/checkpoints/server_round_0100.pt
+
+# In .venv-groot-eval, with Isaac-GR00T on PYTHONPATH:
+python evaluate.py --config outputs/groot_libero_lora_nvflare/run.yaml \
+  --ckpt /absolute/path/to/run/checkpoints/server_round_0140.pt
 ```
 
-The success rates land in `outputs/<run>/eval/<checkpoint>/`. `SUITES` and `N_EPISODES` select a smaller
-evaluation, for example `SUITES=libero_spatial N_EPISODES=1`.
+LeRobot evaluation uses all four LIBERO suites, ten episodes/task and replanning
+every ten steps; `SUITES` and `N_EPISODES` select smaller checks. Results live
+under the run's `eval/`. GR00T evaluation replaces `eval/results.json`; copy it
+before evaluating another checkpoint.
 
-**Evaluate GR00T.** In the GR00T evaluation environment:
+The paper reports full-tuning FedAvg overall success of 97.50% (π0.5), 75.25%
+(SmolVLA) and 91.00% (GR00T), selecting the best checkpoint evaluated every
+20 rounds. These numbers are from our paper; this example has not been run at
+full length (see [Validation performed](#validation-performed)). See the
+[paper](https://arxiv.org/abs/2609.22973) for the complete result tables.
+
+## Tests
+
+Focused checks cover FLARE adapter numerics, persistence, data separation,
+generated recipes and portable real simulator jobs:
 
 ```bash
-source .venv-groot-eval/bin/activate
-export MUJOCO_GL=egl PYTHONPATH=$PWD/third_party/Isaac-GR00T
-decent-vla eval --config examples/groot_libero_lora_nvflare.yaml \
-    --ckpt outputs/groot_libero_lora_nvflare/checkpoints/server_round_0140.pt
+python -m pip install -e '.[dev]'
+python -m pytest tests/unit_test -q
+RUN_NATIVE_SIMULATOR_TESTS=1 python -m pytest tests/integration_test/fast -q
 ```
 
-The success rates land in `outputs/<run>/eval/results.json`, which the next evaluation of the same config replaces:
-copy it before evaluating another checkpoint.
-
-To reproduce the paper's protocol, evaluate the checkpoints of rounds 20, 40, 60 and so on, and take the best.
-
-## Validation performed
-
-Short runs of every configuration, following this README from environment setup to LIBERO evaluation: federated
-training through the NVFlare simulator, aggregation, checkpointing and evaluation, for each policy, recipe and
-algorithm. Exported jobs also ran outside the simulator: in NVFlare's POC mode and on a federation of two machines.
-
-- **Revision:** the code in this folder. On the final code: the unit tests, the tests against the real NVFlare
-  simulator, the mock federation, and a repeat of the `smolvla_libero_lora_nvflare_smoke` training with the held-out
-  task spec `configs/libero_heldout_8.json` (completed; the 8 held-out tasks were left out of training, mean client
-  loss 2.9835 in round 1, 2.7240 in round 2). The POC and two-machine runs ran on the previous version, before a
-  failed round rebuilt the client's state and the job packaged the held-out spec. The other smoke trainings in the
-  table below, the LIBERO evaluations and the missing-checkpoint check ran on earlier versions. Changes since then: the NVFlare job carries its config files, passes the round's quorum to
-  NVFlare and handles failed and repeated rounds (tested on the final code as above); a missing `--ckpt` raises;
-  unused packages left the GR00T evaluation package list; settings the code did not apply are rejected when the
-  config loads (every example config still loads); and fixes went into paths those runs do not use (personalized
-  evaluation, the evaluation cache, the single-GPU local runner, zero-step rounds).
-- **Environment:** Isambard-AI, NVIDIA GH200 120GB nodes (aarch64), driver 580.178.04, one node per run.
-  - SmolVLA and π0.5 environment: Python 3.12.13, torch 2.7.1+cu128, lerobot 0.5.2 (commit `8515d456`),
-    NVFlare 2.8.1, transformers 5.5.4, peft 0.21.2.
-  - GR00T training environment: Python 3.10.20, torch 2.7.1+cu128, Isaac-GR00T `65cc4a19` with
-    `scripts/isaac_gr00t_pyav.patch`, NVFlare 2.8.1, transformers 4.57.3, peft 0.17.1.
-  - GR00T evaluation environment: Python 3.10.20, torch 2.7.1+cu128, robosuite 1.4.0, MuJoCo 3.8.1.
-
-  The unit tests, the POC and two-machine runs and the smoke repeat ran on two workstations, connected over a VPN:
-  2× NVIDIA RTX PRO 6000 Blackwell (driver 580.173.02) and 2× RTX 4090 (driver 570.172.08), Ubuntu 22.04,
-  Python 3.12.13, torch 2.10.0+cu128, lerobot commit `8515d456`, NVFlare 2.8.1, transformers 5.5.4, peft 0.21.2.
-- **Commands and results:**
-
-| Check | Command | Result |
-|---|---|---|
-| Unit tests | `python -m pytest tests` (SmolVLA and π0.5 environment) | 441 passed, including the 8 below; on Lustre, add `--basetemp=/tmp/dvla-pytest`: one cache test needs sub-second file times |
-| Exported jobs in the real NVFlare simulator | `python -m pytest tests/nvflare_real` | 8 passed: a job moved away from its source configs, among them a held-out task spec, runs; the external-process client runs; a failing client, a silent client and a client whose script died do not stop the rounds when `min_clients` allows; an unreachable quorum stops the run with `RoundFailure`; a late reply is sent again, not trained again; a client that fails after training retries the round from the state it saved before it |
-| POC federation, mock model | `nvflare poc prepare -n 2`, `nvflare poc start`, `nvflare job submit -j <exported job>` | completed with the source configs removed; `nvflare job download` returned the checkpoint. With `min_clients: 1`, killing site-2 during round 3 left rounds 3 to 8 with one update each, and the job completed; with every client required, the same kill stopped the job with `RoundFailure` after one retry |
-| Two-machine federation | provisioned server and site-1 on one workstation, site-2 on the other; `smolvla_libero_lora_nvflare_smoke.yaml` exported with `site_prefix: site-`, a round timeout and `batch_size: 16` | completed in 86 s: both clients returned an update in both rounds (mean client loss 2.8156, then 3.0500); checkpoints fetched with `nvflare job download`. At batch size 64, site-2's 24 GB GPU ran out of memory: site-2 reported the error, the server retried once and stopped the run with `RoundFailure` |
-| Mock federation on CPU | `bash scripts/smoke_nvflare.sh` | passed: 2 clients, 2 rounds, checkpoint written and evaluated |
-| Federated training | `decent-vla train --config examples/<config>_smoke.yaml` | all 8 configs completed; see below |
-| LIBERO evaluation, SmolVLA and π0.5 | `SUITES=libero_spatial N_EPISODES=1 bash scripts/eval_libero.sh <config> <checkpoint>` | ran end to end: 10 episodes each, 0% success (SmolVLA 208 s, π0.5 453 s) |
-| LIBERO evaluation, GR00T | `decent-vla eval --config examples/groot_libero_lora_nvflare_smoke.yaml --ckpt <checkpoint>` | ran end to end: 10 episodes, 0% success (246 s) |
-| Missing checkpoint, GR00T | the same command with a `--ckpt` file that does not exist | refused with `FileNotFoundError`; nothing written |
-
-Each smoke run federates 2 clients (20 LIBERO tasks each) for 2 rounds of 20 local steps. In every run both clients
-returned an update in both rounds, and the server wrote `server_round_0001.pt`, `server_round_0002.pt`,
-`server_round_final.pt` and the exported `round_0002.pt`:
-
-| Config | Wall time (s) | Mean client loss, round 1 | Mean client loss, round 2 |
-|---|---|---|---|
-| `smolvla_libero_fullft_nvflare_smoke` | 131 | 3.1272 | 2.8850 |
-| `smolvla_libero_lora_nvflare_smoke` | 128 | 3.0318 | 2.9020 |
-| `pi05_libero_fullft_nvflare_smoke` | 782 | 0.8291 | 0.8186 |
-| `pi05_libero_lora_nvflare_smoke` | 607 | 0.8104 | 0.7785 |
-| `pi05_libero_fullft_fedprox_nvflare_smoke` | 835 | 0.8350 | 0.8463 |
-| `pi05_libero_fullft_fedadam_nvflare_smoke` | 832 | 0.8237 | 0.8278 |
-| `groot_libero_fullft_nvflare_smoke` | 760 | 1.2556 | 1.2611 |
-| `groot_libero_lora_nvflare_smoke` | 1106 | 1.2583 | 1.2630 |
-
-The evaluations ran `libero_spatial` with one episode per task (10 episodes) on the LoRA smoke checkpoints of
-round 2; after 40 local steps per client the policies do not yet solve the tasks, so these runs check that export,
-policy loading, simulation and scoring work, not the success rate.
-
-- **Limitations:** outside the simulator, jobs ran on one machine (POC, mock model) and on two machines (SmolVLA
-  LoRA); π0.5 and GR00T ran in the simulator only. The runs use 2 clients and 2 rounds; the full-scale numbers in
-  [Expected Results](#expected-results) are from our paper.
-
-## Expected Results
-
-Results from our paper ([arXiv:2609.22973](https://arxiv.org/abs/2609.22973), Tables I, II and IV). LIBERO
-success rate (%) over 400 episodes; each federated result is the best of the evaluations every 20 rounds. The configs
-named below carry the paper's settings; we have not run them at full length on NVFlare.
-
-**Federated versus centralized fine-tuning** (federated: FedAvg, full fine-tuning; GR00T: action head):
-
-| Policy | Training | Config | Spatial | Object | Goal | Long | Overall |
-|---|---|---|---|---|---|---|---|
-| π0.5 | Centralized | | 97.0 | 99.0 | 97.0 | 95.0 | 97.00 |
-| π0.5 | Federated | `pi05_libero_fullft_nvflare` | 92.0 | 100.0 | 99.0 | 99.0 | 97.50 |
-| GR00T N1.7 | Centralized | | 97.0 | 97.0 | 99.0 | 94.0 | 96.75 |
-| GR00T N1.7 | Federated | `groot_libero_fullft_nvflare` | 91.0 | 99.0 | 95.0 | 79.0 | 91.00 |
-| SmolVLA | Centralized | | 89.0 | 97.0 | 95.0 | 79.0 | 90.00 |
-| SmolVLA | Federated | `smolvla_libero_fullft_nvflare` | 75.0 | 70.0 | 81.0 | 75.0 | 75.25 |
-
-The centralized references fine-tune on all 40 tasks pooled: SmolVLA with decent-vla and one client, GR00T with
-Isaac-GR00T's fine-tuning script; for π0.5, the reference is the public LIBERO checkpoint, evaluated with 50
-episodes per task.
-
-**Full fine-tuning versus LoRA** (FedAvg; payload is the update each client sends per round):
-
-| Policy | Federated | Config | Parameters | Payload | Success |
-|---|---|---|---|---|---|
-| π0.5 | full model | `pi05_libero_fullft_nvflare` | 3.62B | 7.24 GB | 97.50 |
-| π0.5 | LoRA | `pi05_libero_lora_nvflare` | 0.12B | 0.24 GB | 97.50 |
-| GR00T N1.7 | action head | `groot_libero_fullft_nvflare` | 1.62B | 3.24 GB | 91.00 |
-| GR00T N1.7 | action head, LoRA | `groot_libero_lora_nvflare` | 0.39B | 0.77 GB | 87.00 |
-| SmolVLA | full model | `smolvla_libero_fullft_nvflare` | 0.40B | 0.81 GB | 75.25 |
-| SmolVLA | LoRA | `smolvla_libero_lora_nvflare` | 0.04B | 0.08 GB | 55.25 |
-
-**Aggregation algorithms** (π0.5, full fine-tuning):
-
-| Algorithm | Config | Spatial | Object | Goal | Long | Overall |
-|---|---|---|---|---|---|---|
-| FedAvg | `pi05_libero_fullft_nvflare` | 92.0 | 100.0 | 99.0 | 99.0 | 97.50 |
-| FedAdam | `pi05_libero_fullft_fedadam_nvflare` | 91.0 | 100.0 | 99.0 | 95.0 | 96.25 |
-| FedProx | `pi05_libero_fullft_fedprox_nvflare` | 89.0 | 99.0 | 95.0 | 94.0 | 94.25 |
+See [tests/README.md](tests/README.md).
 
 ## License
 
@@ -362,13 +211,6 @@ uses carry their own terms:
 | [HuggingFaceVLA/libero](https://huggingface.co/datasets/HuggingFaceVLA/libero) | SmolVLA and π0.5 training data | Apache-2.0 |
 | [IPEC-COMMUNITY LIBERO datasets](https://huggingface.co/IPEC-COMMUNITY) | GR00T training data | not stated on Hugging Face; derived from LIBERO |
 
-## Requirements
-
-- NVFlare 2.8.1 (`nvflare==2.8.1`, pinned in `pyproject.toml`).
-- Python 3.12 for SmolVLA and π0.5; Python 3.10 for GR00T.
-- PyTorch 2.7 to 2.10 with a CUDA 12 build.
-- lerobot at commit `8515d456` and Isaac-GR00T at commit `65cc4a19`, both pinned.
-- NVIDIA GPUs with 96 GB: 4 for most configs, 8 for π0.5 full fine-tuning (see [Setup](#setup)).
 
 ## Citation
 
