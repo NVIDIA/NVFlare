@@ -87,10 +87,7 @@ def build_client_state(
     # fall back to older eligible blobs rather than giving up: silently
     # cold-resetting wipes every personal parameter on personalization arms.
     if client_ckpt_dir is not None:
-        from src.support.client_checkpoint import (
-            client_checkpoints,
-            load_client_state,
-        )
+        from src.support.client_checkpoint import client_checkpoints, load_client_state
 
         for blob_round, path in reversed(client_checkpoints(client_ckpt_dir, client_id)):
             if blob_round >= start_round:

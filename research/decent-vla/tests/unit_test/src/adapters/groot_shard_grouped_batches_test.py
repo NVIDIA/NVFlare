@@ -34,10 +34,7 @@ torch = pytest.importorskip("torch")
 
 from torch.utils.data import ConcatDataset  # noqa: E402
 
-from src.adapters.groot.backend import (  # noqa: E402
-    _shard_groups,
-    _ShardGroupedBatchSampler,
-)
+from src.adapters.groot.backend import _shard_groups, _ShardGroupedBatchSampler  # noqa: E402
 
 
 class _FakeFlat:
