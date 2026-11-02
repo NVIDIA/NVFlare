@@ -145,6 +145,15 @@ class TestSimulatorRunner:
 
         fl_ctx.get_prop.assert_called_once_with(FLContextKey.FATAL_SYSTEM_ERROR, False)
 
+    def test_client_fatal_error_sets_simulator_status(self):
+        runner = SimulatorRunner(job_folder="", workspace="")
+        runner.server = MagicMock()
+        fl_ctx = runner.server.engine.new_context.return_value.__enter__.return_value
+        fl_ctx.get_prop.return_value = False
+        runner.client_fatal_error = True
+
+        assert runner._get_server_run_status() == 2
+
     @pytest.mark.parametrize(
         "gpus, expected_gpus",
         [
@@ -279,7 +288,7 @@ class TestSimulatorRunner:
         process = Mock()
         process.poll.return_value = None
         conn = Mock()
-        conn.recv.side_effect = [True, None]  # stop_run, then end_run_client
+        conn.recv.side_effect = [True, None, False]  # stop_run, end_run_client, fatal_error
 
         with patch("nvflare.private.fed.app.simulator.simulator_runner.sys.executable", executable):
             with patch("nvflare.private.fed.app.simulator.simulator_runner.get_open_ports", return_value=[12345]):
@@ -294,6 +303,31 @@ class TestSimulatorRunner:
         assert launched[launched.index("-o") + 1] == os.path.join(workspace, "site-1")
         assert launched[launched.index("--logging_config") + 1] == log_config
         assert launched[launched.index("--simulator_root") + 1] == workspace
+
+    @pytest.mark.parametrize("fatal_error,expected", [(False, []), (True, ["site-1"])])
+    def test_do_one_task_records_client_fatal_error(self, tmp_path, fatal_error, expected):
+        workspace = str(tmp_path)
+        for folder in ("startup", "local"):
+            (tmp_path / "site-1" / folder).mkdir(parents=True)
+        args = Namespace(workspace=workspace, log_config=None)
+        args.set = []
+        runner = SimulatorClientRunner(str(tmp_path / "custom"), args, [], None, Namespace(workspace=workspace), {})
+        client = Mock()
+        client.client_name = "site-1"
+        client.token = "token"
+        process = Mock()
+        process.poll.return_value = None
+        conn = Mock()
+        conn.recv.side_effect = [True, "site-1", fatal_error]  # stop_run, end_run_client, fatal_error
+
+        with patch("nvflare.private.fed.app.simulator.simulator_runner.get_open_ports", return_value=[12345]):
+            with patch.object(runner, "_create_connection", return_value=conn):
+                with patch(
+                    "nvflare.private.fed.app.simulator.simulator_runner.popen_in_new_session", return_value=process
+                ):
+                    runner.do_one_task(client, num_of_threads=0, gpu=None, lock=threading.Lock())
+
+        assert runner.fatal_clients == expected
 
     def test_worker_create_connection_does_not_require_authkey(self):
         conn = Mock()
