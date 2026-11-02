@@ -24,7 +24,7 @@ import threading
 import time
 from copy import deepcopy
 
-from ..contract import normalize_measurement
+from ..contract import normalize_gpu_capacity
 from . import gpu_nvidia
 
 # Healthy cold initialization can take several seconds per GPU. This is a
@@ -76,9 +76,7 @@ class GpuProbe:
             if phase != "complete" or self._value is not None:
                 raise ValueError("missing GPU discovery count")
         else:
-            value = normalize_measurement(
-                "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": frame["gpu"]}
-            )["gpu"]
+            value = normalize_gpu_capacity(frame["gpu"])
             total = sum(int(group["count"]) for group in value["groups"])
             if self._value is not None and total != sum(int(group["count"]) for group in self._value["groups"]):
                 raise ValueError("GPU enrichment changed the verified count")

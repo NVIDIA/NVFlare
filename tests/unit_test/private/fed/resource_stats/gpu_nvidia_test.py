@@ -22,7 +22,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from nvflare.private.fed.resource_stats.contract import normalize_measurement
+from nvflare.private.fed.resource_stats.contract import normalize_gpu_capacity
 from nvflare.private.fed.resource_stats.probes import gpu_nvidia
 from tests.timing_utils import ThreadGroup
 
@@ -178,12 +178,7 @@ def test_driver_positive_count_needs_no_cuda_runtime_or_nvml(monkeypatch):
     _install(monkeypatch, driver)
 
     result = gpu_nvidia.probe_gpu()
-    assert (
-        normalize_measurement(
-            "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": result}
-        )["gpu"]
-        == result
-    )
+    assert normalize_gpu_capacity(result) == result
     assert result == {
         "groups": [
             {
@@ -204,9 +199,7 @@ def test_zero_and_explicit_no_device_results_are_observed_zero(monkeypatch, init
     _install(monkeypatch, driver)
 
     result = gpu_nvidia.probe_gpu()
-    assert normalize_measurement(
-        "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": result}
-    )["gpu"] == {"groups": []}
+    assert normalize_gpu_capacity(result) == {"groups": []}
     if init_result == 100:
         assert driver.calls == [("cuInit", 0)]
 
@@ -331,12 +324,7 @@ def test_full_mig_and_unclassified_devices_are_exclusive_groups(monkeypatch):
     _install(monkeypatch, driver, nvml)
 
     result = gpu_nvidia.probe_gpu()
-    assert (
-        normalize_measurement(
-            "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": result}
-        )["gpu"]
-        == result
-    )
+    assert normalize_gpu_capacity(result) == result
     groups = result["groups"]
 
     assert {group["kind"] for group in groups} == {
@@ -509,12 +497,7 @@ def test_hold_publishes_count_before_optional_metadata_and_blocked_nvml(monkeypa
     final = frames[1]["gpu"]
     assert final["groups"][0]["kind"] == "full_gpu"
     assert final["groups"][0]["count"] == "2"
-    assert (
-        normalize_measurement(
-            "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": final}
-        )["gpu"]
-        == final
-    )
+    assert normalize_gpu_capacity(final) == final
 
 
 @pytest.mark.parametrize("available", [False, True])
@@ -553,12 +536,7 @@ def test_initialized_probe_queries_only_existing_driver_count(monkeypatch, count
     assert result == expected
     assert driver.calls == [("cuDeviceGetCount",)]
     if result is not None:
-        assert (
-            normalize_measurement(
-                "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": result}
-            )["gpu"]
-            == result
-        )
+        assert normalize_gpu_capacity(result) == result
 
 
 @pytest.mark.parametrize(

@@ -22,7 +22,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from nvflare.private.fed.resource_stats.contract import normalize_measurement
+from nvflare.private.fed.resource_stats.contract import normalize_gpu_capacity
 from nvflare.private.fed.resource_stats.probes import gpu_nvidia
 from nvflare.private.fed.resource_stats.probes import gpu_probe_process as probe
 
@@ -191,12 +191,7 @@ def test_large_optional_descriptions_do_not_erase_device_count(monkeypatch):
     monkeypatch.setattr(gpu_nvidia, "sys", SimpleNamespace(stdout=SimpleNamespace(buffer=output)))
     gpu_nvidia.main()
     result = json.loads(output.getvalue())
-    assert (
-        normalize_measurement(
-            "resource_capacity", {"status": "partial", "issues": ["observation_incomplete"], "gpu": result}
-        )["gpu"]
-        == result
-    )
+    assert normalize_gpu_capacity(result) == result
     assert result == {"groups": [{"kind": "full_gpu", "count": "1000"}]}
 
 
