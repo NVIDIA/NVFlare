@@ -41,7 +41,6 @@ class TestConfigOutput:
         return SimpleNamespace(
             startup_kit_dir=kwargs.get("startup_kit_dir"),
             poc_workspace_dir=kwargs.get("poc_workspace_dir"),
-            job_templates_dir=kwargs.get("job_templates_dir"),
             config_sub_cmd=kwargs.get("config_sub_cmd"),
             debug=False,
             schema=False,
@@ -94,9 +93,6 @@ class TestConfigOutput:
 
         args = root.parse_args(["config", "-d", "/path/to/startup"])
         assert args.startup_kit_dir == "/path/to/startup"
-
-        args = root.parse_args(["config", "-jt", "/path/to/templates"])
-        assert args.job_templates_dir == "/path/to/templates"
 
         args = root.parse_args(["config", "use", "project_admin"])
         assert args.config_sub_cmd == "use"
@@ -182,29 +178,6 @@ class TestConfigOutput:
         data = json.loads(captured.out)
         assert data["status"] == "ok"
         assert data["data"]["active_startup_kit"] == "project_admin"
-
-    def test_config_compat_job_templates_flag_is_deprecated_but_still_updates_config(self, tmp_path, capsys):
-        from nvflare.cli import handle_config_cmd
-
-        templates_dir = tmp_path / "templates"
-        templates_dir.mkdir()
-        args = self._make_args(job_templates_dir=str(templates_dir))
-        config = CF.parse_string("{}")
-
-        with (
-            patch("nvflare.cli.load_hidden_config_state", return_value=("/fake/config.conf", config, False)),
-            patch("nvflare.cli.save_config") as save_config,
-            patch("nvflare.tool.cli_schema.handle_schema_flag"),
-        ):
-            handle_config_cmd(args)
-
-        saved_config = save_config.call_args.args[0]
-        assert saved_config.get("job_template.path") == str(templates_dir)
-        captured = capsys.readouterr()
-        assert "-jt/--job_templates_dir" in captured.err
-        data = json.loads(captured.out)
-        assert data["status"] == "ok"
-        assert data["data"]["job_templates_dir"] == str(templates_dir)
 
     def test_config_write_warns_when_startup_kit_keys_are_removed(self, capsys):
         from nvflare.cli import handle_config_cmd

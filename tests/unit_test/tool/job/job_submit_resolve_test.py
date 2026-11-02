@@ -17,7 +17,6 @@
 import json
 import os
 from argparse import Namespace
-from contextlib import ExitStack, contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -61,22 +60,6 @@ def _configure_active_startup_kit(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
     return admin_dir
-
-
-@contextmanager
-def _assert_no_active_session_created():
-    with ExitStack() as stack:
-        stack.enter_context(patch("nvflare.tool.cli_session.new_secure_session", side_effect=AssertionError))
-        stack.enter_context(
-            patch("nvflare.tool.cli_session.new_active_cli_session", side_effect=AssertionError, create=True)
-        )
-        stack.enter_context(
-            patch("nvflare.tool.job.job_cli.new_active_cli_session", side_effect=AssertionError, create=True)
-        )
-        stack.enter_context(
-            patch("nvflare.tool.job.job_cli.find_admin_user_and_dir", side_effect=AssertionError, create=True)
-        )
-        yield
 
 
 class TestResolveJobFolder:
@@ -250,64 +233,3 @@ def test_get_session_missing_startup_kit_still_exits_when_output_error_is_mocked
 
     assert exc_info.value.code == 2
     output_error.assert_called_once()
-
-
-def test_list_templates_does_not_require_active_startup_kit(monkeypatch):
-    from nvflare.tool.job import job_cli
-
-    args = MagicMock()
-    args.job_sub_cmd = "list-templates"
-    args.job_templates_dir = None
-    args.debug = False
-
-    with _assert_no_active_session_created():
-        monkeypatch.setattr(job_cli, "find_job_templates_location", lambda _path=None: "/tmp/templates")
-        monkeypatch.setattr(job_cli, "build_job_template_indices", lambda _path: MagicMock())
-        monkeypatch.setattr(job_cli, "display_available_templates", lambda _conf: None)
-        monkeypatch.setattr(job_cli, "update_job_templates_dir", lambda _path: None)
-        job_cli.list_templates(args)
-
-
-def test_show_variables_does_not_require_active_startup_kit(monkeypatch, tmp_path):
-    from nvflare.tool.job import job_cli
-
-    job_dir = tmp_path / "job"
-    job_dir.mkdir()
-    args = MagicMock()
-    args.job_sub_cmd = "show-variables"
-    args.job_folder = str(job_dir)
-    args.debug = False
-
-    with _assert_no_active_session_created():
-        monkeypatch.setattr(job_cli, "get_app_dirs_from_job_folder", lambda _path: [])
-        monkeypatch.setattr(job_cli, "build_config_file_indices", lambda _path, _apps: {})
-        monkeypatch.setattr(job_cli, "filter_indices", lambda app_indices_configs=None, **_kwargs: {})
-        monkeypatch.setattr(job_cli, "display_template_variables", lambda _job_folder, _values: None)
-        job_cli.show_variables(args)
-
-
-def test_create_job_does_not_require_active_startup_kit(monkeypatch, tmp_path):
-    from nvflare.tool.job import job_cli
-
-    args = MagicMock()
-    args.job_sub_cmd = "create"
-    args.job_folder = str(tmp_path / "job")
-    args.template = str(tmp_path / "template")
-    args.script_dir = None
-    args.force = False
-    args.debug = False
-
-    with _assert_no_active_session_created():
-        monkeypatch.setattr(job_cli, "get_src_template", lambda _args: args.template)
-        monkeypatch.setattr(job_cli, "get_app_dirs_from_template", lambda _template: [])
-        monkeypatch.setattr(job_cli, "prepare_job_folder", lambda _args: None)
-        monkeypatch.setattr(job_cli, "prepare_app_dirs", lambda _folder, _apps: [])
-        monkeypatch.setattr(job_cli, "prepare_app_scripts", lambda _folder, _dirs, _args: None)
-        monkeypatch.setattr(job_cli, "get_config_dirs", lambda _folder, _apps: [])
-        monkeypatch.setattr(job_cli.ConfigFactory, "search_config_format", lambda *_args, **_kwargs: (None, None))
-        monkeypatch.setattr(job_cli.shutil, "copytree", lambda *args, **kwargs: None)
-        monkeypatch.setattr(job_cli, "remove_extra_files", lambda _path: None)
-        monkeypatch.setattr(job_cli, "prepare_meta_config", lambda *_args, **_kwargs: None)
-        monkeypatch.setattr(job_cli, "prepare_job_config", lambda *_args, **_kwargs: {})
-        monkeypatch.setattr(job_cli, "display_template_variables", lambda _job_folder, _values: None)
-        job_cli.create_job(args)

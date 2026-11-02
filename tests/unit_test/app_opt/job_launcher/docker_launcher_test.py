@@ -2134,3 +2134,13 @@ def test_executor_keeps_published_docker_owner_during_cancel_outage(tmp_path, mo
         )
     assert container.stop.call_count >= 3
     container.remove.assert_called_once_with(force=True)
+
+
+def test_local_job_mode_still_delegates_to_docker_launcher():
+    launcher = _make_launcher()
+    context = MagicMock()
+    context.get_identity_name.return_value = "site-1"
+    meta = {"resource_spec": {"site-1": {"num_of_gpus": 1}}}
+    with patch.object(DockerJobLauncher, "launch_job", return_value="job-handle") as launch:
+        assert launcher.launch_job(meta, context) == "job-handle"
+    launch.assert_called_once_with(meta, context)

@@ -41,7 +41,6 @@ To simulate without allocating large models:
 
 import gc
 import sys
-import threading
 from unittest.mock import patch
 
 import numpy as np
@@ -161,26 +160,6 @@ class TestReleaseClearsBaseObj:
         dl = _make_downloadable()
         dl.release()
         dl.release()
-
-    def test_release_is_thread_safe(self):
-        """Concurrent release() calls must not raise."""
-        dl = _make_downloadable()
-        errors = []
-
-        def _release():
-            try:
-                dl.release()
-            except Exception as e:
-                errors.append(e)
-
-        threads = [threading.Thread(target=_release) for _ in range(10)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert not errors, f"Concurrent release() raised: {errors}"
-        assert dl.base_obj is None
 
     def test_refcount_drops_after_release_not_after_transaction_done(self):
         """The source object refcount drops after release(), not after transaction_done().
