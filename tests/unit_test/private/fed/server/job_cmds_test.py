@@ -16,6 +16,9 @@ import datetime
 import gc
 import io
 import shutil
+import subprocess
+import sys
+import threading
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -34,10 +37,15 @@ from nvflare.apis.fl_constant import (
     WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
 from nvflare.apis.job_def import JobMetaKey, RunStatus, SubmitRecordKey, SubmitRecordState
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import StreamContextKey
+from nvflare.apis.workspace import Workspace
+from nvflare.app_common.logging.constants import client_log_staging_root
 from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
+from nvflare.app_common.logging.log_staging import ClientLogStaging
+from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.app_common.streamers.log_streamer import KEY_FILE_NAME
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
@@ -692,6 +700,208 @@ def test_delete_job_marks_submit_record_job_deleted():
         "role": "project_admin",
     }
     assert conn.successes[0][1]["submit_records_marked_deleted"] == 1
+
+
+def _staged_log_deletion_case(tmp_path, monkeypatch, external_log_root=False):
+    root = tmp_path / "workspace"
+    (root / "startup").mkdir(parents=True)
+    (root / "local").mkdir()
+    workspace = Workspace(str(root), site_name="server")
+    workspace.log_root = str(tmp_path / "external-log-root") if external_log_root else None
+    manager = SimpleJobDefManager(uri_root=str(tmp_path / "jobs"))
+    store = FilesystemStorage()
+    monkeypatch.setattr(manager, "_get_job_store", lambda fl_ctx: store)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager = manager
+    engine.get_component = lambda name: manager
+    engine.get_client_from_name = lambda name: None
+    engine.fire_event = lambda event_type, fl_ctx: None
+    fl_ctx = FLContext()
+    fl_ctx.put(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    fl_ctx.put(FLContextKey.CLIENT_NAME, "site-1", private=True, sticky=False)
+    peer = FLContext()
+    peer.put(ReservedKey.IDENTITY_NAME, "site-1", private=True, sticky=False)
+    peer.put(ReservedKey.RUN_NUM, "job-1", private=True, sticky=False)
+    fl_ctx.set_peer_context(peer)
+    manager.create({JobMetaKey.JOB_ID.value: "job-1"}, b"job content", fl_ctx)
+    manager.set_status("job-1", RunStatus.FINISHED_ABORTED, fl_ctx)
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={JobCommandModule.JOB: manager.get_job("job-1", fl_ctx), JobCommandModule.JOB_ID: "job-1"},
+    )
+    path = Path(client_log_staging_root(workspace)) / "job-1/site-1/log.txt"
+    return JobLogReceiver(), fl_ctx, conn, path
+
+
+@pytest.mark.parametrize("external_log_root", [False, True])
+def test_delete_job_removes_closed_partial_logs(tmp_path, monkeypatch, external_log_root):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch, external_log_root)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"retained partial\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    assert path.read_bytes() == b"retained partial\n"
+    JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+    assert conn.errors == []
+    assert fl_ctx.get_engine().job_def_manager.get_job("job-1", fl_ctx) is None
+    assert not path.parent.parent.exists()
+    assert list(path.parents[2].iterdir()) == [path.parents[2] / ".lock"]
+
+
+@pytest.mark.parametrize("rc", [ReturnCode.OK, ReturnCode.TIMEOUT])
+def test_delete_job_drains_active_streams_without_recreating_deleted_job(tmp_path, monkeypatch, rc):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    other_receiver = JobLogReceiver()
+    first = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: rc}
+    second = {KEY_FILE_NAME: "log.json", StreamContextKey.RC: rc}
+    receiver._on_chunk_received(b"before deletion\n", first, fl_ctx)
+    other_receiver._on_chunk_received(b"other stream\n", second, fl_ctx)
+    manager = fl_ctx.get_engine().job_def_manager
+    monkeypatch.setattr(manager, "set_client_data", MagicMock(wraps=manager.set_client_data))
+    JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+    assert conn.errors == []
+    assert path.read_bytes() == b"before deletion\n"
+    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+        JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
+    assert path.read_bytes() == b"before deletion\n"
+    # A separate process must also recognize the active-file leases.
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys\nfrom types import SimpleNamespace\n"
+            "from nvflare.app_common.logging.log_staging import ClientLogStaging\n"
+            "staging=ClientLogStaging(SimpleNamespace(get_log_root=lambda:sys.argv[1]))\n"
+            "with staging.locked():\n    staging.remove_closed_job_logs('job-1')\n",
+            fl_ctx.get_engine().get_workspace().get_log_root(),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=15,
+    )
+    receiver._on_chunk_received(b"after deletion\n", first, fl_ctx)
+    assert path.read_bytes() == b"before deletion\nafter deletion\n"
+    receiver._on_stream_done(first, fl_ctx)
+    assert not path.exists()
+    assert path.with_name("log.json").exists()
+    other_receiver._on_stream_done(second, fl_ctx)
+    assert not path.parent.parent.exists()
+    manager.set_client_data.assert_not_called()
+    assert manager.get_job("job-1", fl_ctx) is None
+    with pytest.raises(ValueError, match="deleted or unknown job"):
+        receiver._on_chunk_received(b"late data", {KEY_FILE_NAME: "late.txt"}, fl_ctx)
+    assert not path.parent.parent.exists()
+
+
+def test_failed_job_deletion_retains_partial_logs(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"retained partial\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    monkeypatch.setattr(
+        fl_ctx.get_engine().job_def_manager, "delete", MagicMock(side_effect=RuntimeError("store error"))
+    )
+    JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+    assert len(conn.errors) == 1
+    assert path.read_bytes() == b"retained partial\n"
+    assert fl_ctx.get_engine().job_def_manager.get_job("job-1", fl_ctx) is not None
+
+
+def test_receiver_restart_removes_abandoned_deleted_job_logs(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"retained partial\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    # Simulate a server failure after deletion was recorded but before cleanup.
+    fl_ctx.get_engine().job_def_manager.delete("job-1", fl_ctx)
+    with ClientLogStaging(fl_ctx.get_engine().get_workspace()).locked() as staging:
+        staging.mark_deleted("job-1")
+    restarted = JobLogReceiver()
+    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+        restarted._register(EventType.SYSTEM_START, fl_ctx)
+    assert not path.parent.parent.exists()
+
+
+def test_missing_job_metadata_does_not_authorize_removing_logs(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.OK}
+    receiver._on_chunk_received(b"keep on storage outage\n", stream, fl_ctx)
+    monkeypatch.setattr(fl_ctx.get_engine().job_def_manager, "get_job", lambda *args: None)
+    receiver._on_stream_done(stream, fl_ctx)
+    restarted = JobLogReceiver()
+    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+        restarted._register(EventType.SYSTEM_START, fl_ctx)
+    assert path.read_bytes() == b"keep on storage outage\n"
+
+
+def test_duplicate_stream_cannot_truncate_an_active_log(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.OK}
+    receiver._on_chunk_received(b"preserve active log\n", stream, fl_ctx)
+    try:
+        with pytest.raises(ValueError, match="active stream"):
+            JobLogReceiver()._on_chunk_received(b"overwrite", {KEY_FILE_NAME: "log.txt"}, fl_ctx)
+        assert path.read_bytes() == b"preserve active log\n"
+    finally:
+        receiver._on_stream_done(stream, fl_ctx)
+
+
+@pytest.mark.parametrize("first_operation", ["delete", "publish"])
+def test_job_deletion_and_log_publication_are_serialized(tmp_path, monkeypatch, first_operation):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.OK}
+    receiver._on_chunk_received(b"complete log\n", stream, fl_ctx)
+    manager = fl_ctx.get_engine().job_def_manager
+    entered = threading.Event()
+    release = threading.Event()
+    second_entered = threading.Event()
+    second_attempted = threading.Event()
+    errors = []
+    operations = {"delete": manager.delete, "publish": manager.set_client_data}
+
+    def block_first(*args, **kwargs):
+        entered.set()
+        if not release.wait(5):
+            raise TimeoutError("test did not release first operation")
+        return operations[first_operation](*args, **kwargs)
+
+    def observe_second(*args, **kwargs):
+        second_entered.set()
+        return operations["publish" if first_operation == "delete" else "delete"](*args, **kwargs)
+
+    monkeypatch.setattr(manager, "delete", block_first if first_operation == "delete" else observe_second)
+    monkeypatch.setattr(manager, "set_client_data", block_first if first_operation == "publish" else observe_second)
+
+    def run(operation, second=False):
+        try:
+            if second:
+                second_attempted.set()
+            if operation == "delete":
+                JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+            else:
+                receiver._on_stream_done(stream, fl_ctx)
+        except Exception as ex:
+            errors.append(ex)
+
+    first = threading.Thread(target=run, args=(first_operation,))
+    second = threading.Thread(target=run, args=("publish" if first_operation == "delete" else "delete", True))
+    try:
+        first.start()
+        assert entered.wait(5)
+        second.start()
+        assert second_attempted.wait(5)
+        assert not second_entered.wait(0.1)
+    finally:
+        release.set()
+        first.join(timeout=5)
+        if second.ident is not None:
+            second.join(timeout=5)
+    assert not first.is_alive() and not second.is_alive()
+    assert errors == []
+    assert conn.errors == []
+    assert manager.get_job("job-1", fl_ctx) is None
+    assert not path.parent.parent.exists()
+    # When deletion wins, the stream is discarded without entering publication.
+    assert second_entered.is_set() == (first_operation == "publish")
 
 
 def test_same_submit_token_different_study_is_independent(monkeypatch):
