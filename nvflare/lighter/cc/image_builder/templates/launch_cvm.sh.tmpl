@@ -10,4 +10,13 @@ if [ -n "$(find "$vault_directory" \( ! -user root -o -perm /022 \) -print -quit
     echo "Refusing to launch: $vault_directory must be owned by root and not group- or world-writable" >&2
     exit 1
 fi
-PYTHONSAFEPATH=1 PYTHONPATH="$vault_directory" exec python3 -m cvm.host.launcher --vault-directory "$vault_directory" "$@"
+# Isolated mode excludes caller-controlled import paths even on Python 3.10,
+# which does not support PYTHONSAFEPATH. Add only the checked delivery path;
+# keeping the shell's directory preserves relative --cvm-bundle arguments.
+exec python3 -I -c '
+import runpy
+import sys
+
+sys.path.insert(0, sys.argv.pop(1))
+runpy.run_module("cvm.host.launcher", run_name="__main__", alter_sys=True)
+' "$vault_directory" --vault-directory "$vault_directory" "$@"

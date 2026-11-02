@@ -25,7 +25,7 @@ Trustee, authorize the delivery's CVM bundle, and manage its vault key.
 ## 1. Prepare the runtime host
 
 Use an SNP host for an `amd_sev_snp` delivery or a TDX host with an operational
-quote-generation service for an `intel_tdx` delivery. Install Python 3 and QEMU.
+quote-generation service for an `intel_tdx` delivery. Install Python 3.10 or later and QEMU.
 The host needs KVM access, enough memory for the profile, and guest network access
 to the configured KBS.
 
@@ -216,9 +216,14 @@ required; the launcher does not search sibling folders or local build caches:
 An absolute bundle path is preferred in operational commands. A relative
 `--cvm-bundle` path resolves against the caller's current directory, including
 when invoking the delivered wrapper by absolute path.
+New wrappers run Python in isolated mode and explicitly load the checked,
+root-owned delivery, keeping caller files and Python environment overrides out
+of module lookup on every supported Python version, including 3.10.
 This applies to newly built wrappers. For an older approved bundle whose
 wrapper changes directory first, use an absolute override path. Updating a
 source checkout does not rewrite templates inside an approved bundle.
+To pick up launch-security updates, build and approve a new generic bundle,
+then regenerate its vault deliveries; keep approved artifacts immutable.
 
 ```sh
 sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/launch_cvm.sh \
