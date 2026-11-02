@@ -404,6 +404,15 @@ def get_config_file_path(app_name, input_file_path, job_folder):
     return config_file
 
 
+def _is_shadowed_fallback(file_path: str, config_extensions: List[str]) -> bool:
+    """True if a higher-priority sibling (e.g. x.json for x.json.default) exists; runtime loads only that one."""
+    for priority, ext in enumerate(config_extensions):
+        if file_path.endswith(ext):
+            base = file_path[: -len(ext)]
+            return any(os.path.isfile(f"{base}{higher}") for higher in config_extensions[:priority])
+    return False
+
+
 def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str, Dict[str, Tuple]]:
     config_included = APP_CONFIG_FILE_BASE_NAMES
     meta_base = JOB_META_BASE_NAME
@@ -423,7 +432,7 @@ def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str
         for ext in config_extensions:
             for base in config_included:
                 file = os.path.abspath(os.path.join(app_dir, APP_CONFIG_DIR, f"{base}{ext}"))
-                if os.path.isfile(file):
+                if os.path.isfile(file) and not _is_shadowed_fallback(file, config_extensions):
                     config_files = app_config_files.get(app_name, [])
                     config_files.append(file)
                     app_config_files[app_name] = config_files
@@ -433,8 +442,12 @@ def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str
         for root, dirs, files in os.walk(custom_dir):
             for f in files:
                 for ext in config_extensions:
-                    if f.endswith(ext) and not f.startswith(NVFLARE_PREFIX):
-                        file = os.path.join(root, f)
+                    file = os.path.join(root, f)
+                    if (
+                        f.endswith(ext)
+                        and not f.startswith(NVFLARE_PREFIX)
+                        and not _is_shadowed_fallback(file, config_extensions)
+                    ):
                         config_files = app_config_files.get(app_name, [])
                         config_files.append(file)
                         app_config_files[app_name] = config_files

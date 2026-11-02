@@ -183,6 +183,25 @@ class TestConfiger:
         assert executor_args["cuda_empty_cache"] == "true"
         assert key_indices.get("cuda_empty_cache", None) is not None
 
+    def test_build_config_file_indices_skips_shadowed_default_files(self, tmp_path):
+        config_dir = tmp_path / DEFAULT_APP_NAME / "config"
+        custom_dir = tmp_path / DEFAULT_APP_NAME / "custom"
+        config_dir.mkdir(parents=True)
+        custom_dir.mkdir()
+        (config_dir / "config_fed_client.json").write_text('{"format_version": 2}', encoding="utf-8")
+        (config_dir / "config_fed_client.json.default").write_text("{not json", encoding="utf-8")
+        (config_dir / "config_fed_server.json.default").write_text('{"format_version": 2}', encoding="utf-8")
+        (custom_dir / "train.json").write_text('{"lr": 0.1}', encoding="utf-8")
+        (custom_dir / "train.json.default").write_text("{not json", encoding="utf-8")
+
+        indices = build_config_file_indices(str(tmp_path), [DEFAULT_APP_NAME])
+
+        assert sorted(os.path.basename(f) for f in indices[DEFAULT_APP_NAME]) == [
+            "config_fed_client.json",
+            "config_fed_server.json.default",
+            "train.json",
+        ]
+
     def test_split_key(self):
         assert split_array_key("components[1].args.model.path") == ("components", 1, "args.model.path")
         assert split_array_key("args.model.path") == (None, None, "args.model.path")
