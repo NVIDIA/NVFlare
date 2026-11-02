@@ -26,6 +26,15 @@ python -m pytest -v --log-cli-level=INFO --capture=no fast
 python -m pytest -v --log-cli-level=INFO --capture=no slow
 ```
 
+The fast suites also cover real worker/launcher process lifecycles, AutoFL child
+process output and cleanup, live mTLS certificate binding, pass-through streaming,
+and Hugging Face distributed contracts. These tests run serially; deadline policy
+and configuration cases remain in `tests/unit_test/`. Premerge explicitly runs the
+extracted lifecycle suites on the full unit-test OS/Python matrix, including the
+HF/Gloo suite that skips under pytest-xdist. Use a fresh pytest invocation rather
+than appending these cases to an xdist unit run. Run this shared CI selection with
+`python3 ci/run_process_contracts.py` from the repository root.
+
 The slow suite includes XGBoost recipe tests that require the federated XGBoost wheel. CI installs it
 through `ci/run_integration.sh slow`. For direct local pytest runs, install the wheel from
 `examples/advanced/xgboost/requirements.txt` first, or run the suite through `ci/run_integration.sh slow`.

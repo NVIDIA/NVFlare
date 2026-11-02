@@ -17,6 +17,7 @@ import posixpath
 import re
 import threading
 import time
+import uuid
 from abc import abstractmethod
 from urllib.parse import urlsplit, urlunsplit
 
@@ -31,11 +32,19 @@ except ImportError:
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, JobConstants, WorkspaceConstants
+from nvflare.apis.fl_constant import (
+    ConnectionSecurity,
+    FLContextKey,
+    JobConstants,
+    SystemComponents,
+    WorkspaceConstants,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
+from nvflare.app_common.resource_managers.passthrough_resource_manager import PassthroughResourceManager
 from nvflare.app_opt.job_launcher.study_data import (
     load_study_data_file,
     resolve_study_dataset_mounts,
@@ -59,6 +68,7 @@ from nvflare.utils.job_launcher_utils import (
     get_portable_resource_spec,
     get_server_job_args,
     portable_memory_to_bytes,
+    resolve_site_resource_spec,
     validate_docker_job_launcher_spec,
 )
 
@@ -84,6 +94,33 @@ _RESERVED_WORKSPACE_CHILD_NAMES = {
 # Site-level defaults and study docker_kwargs additionally reserve "image": jobs select
 # their image through docker_spec["image"], so it must not trip the job-spec warning.
 _RESERVED_DEFAULT_KWARGS = RESERVED_DOCKER_KWARGS
+
+
+def _is_gpu_request(request):
+    # Docker's NVIDIA driver also accepts these capabilities without the literal "gpu".
+    gpu_capabilities = {"gpu", "nvidia", "compute", "compat32", "graphics", "utility", "video", "display"}
+    return request.get("driver", request.get("Driver")) == "nvidia" or any(
+        gpu_capabilities.intersection(capabilities)
+        for capabilities in request.get("capabilities", request.get("Capabilities")) or []
+    )
+
+
+def _get_gpu_request(docker_spec, resource_spec, container_kwargs):
+    count = docker_spec.get("num_of_gpus", resource_spec.get("num_of_gpus"))
+    if count is not None:
+        return {"Count": count, "Capabilities": [["gpu"]]}
+    requests = [
+        docker.types.DeviceRequest(**request)
+        for request in container_kwargs.get("device_requests") or []
+        if _is_gpu_request(request)
+    ]
+    if len(requests) > 1:
+        raise ValueError("Docker GPU allocation requires a single GPU device request")
+    if requests and requests[0].get("DeviceIDs"):
+        raise ValueError(
+            "Client Docker GPU defaults must use Count; select the site's GPU pool with CUDA_VISIBLE_DEVICES"
+        )
+    return requests[0] if requests else None
 
 
 def _rewrite_parent_url(job_args: dict, site_name: str, secure_mode: bool = False) -> tuple[dict, str | None]:
@@ -212,6 +249,7 @@ class DockerJobHandle(JobHandleSpec):
         self._exit_watch_done = threading.Event()
         self._exit_watcher = None
         self._terminating = False
+        self._exit_confirmed = False
         if watch_exit and container is not None:
             self._start_exit_watcher(container)
 
@@ -258,6 +296,7 @@ class DockerJobHandle(JobHandleSpec):
                 self.logger.warning(f"invalid exit code for container {self.container_name}: {exit_code}")
                 return
             return_code = JobReturnCode.ABORTED if self._is_terminating() else _exit_code_to_return_code(exit_code)
+            self._exit_confirmed = True
             self._set_terminal_state(return_code)
         except docker.errors.NotFound:
             self.logger.info(
@@ -293,11 +332,15 @@ class DockerJobHandle(JobHandleSpec):
 
     def _resolve_terminal_return_code(self, container) -> JobReturnCode:
         """Get the final JobReturnCode from a terminal container using exit code."""
-        if container.status == DockerStatus.DEAD:
+        if container.status == DockerStatus.DEAD or self._is_terminating():
             return JobReturnCode.ABORTED
         # EXITED: read actual exit code from container attrs
+        self._exit_confirmed = True
         exit_code = container.attrs.get("State", {}).get("ExitCode", 1)
         return _exit_code_to_return_code(exit_code)
+
+    def can_restart(self):
+        return self._exit_confirmed and not self._is_terminating()
 
     def _remove_container(self):
         """Remove the container after it has reached a terminal state."""
@@ -336,7 +379,8 @@ class DockerJobHandle(JobHandleSpec):
                 continue
             container = self._get_container()
             if container is None:
-                return
+                time.sleep(1)
+                continue
             if container.status in TERMINAL_STATUSES:
                 self._set_terminal_state(self._resolve_terminal_return_code(container))
                 self._remove_container()
@@ -344,22 +388,21 @@ class DockerJobHandle(JobHandleSpec):
             time.sleep(1)
 
     def terminate(self):
-        """Stop and remove the container. Always sets terminal_state."""
+        """Stop and remove the container; retain ownership until its exit is confirmed."""
         if self._get_terminal_state() is None:
             self._set_terminating()
         try:
             container = self.docker_client.containers.get(self.container_id)
             container.stop(timeout=0)
+            self._set_terminal_state(JobReturnCode.ABORTED)
             container.remove(force=True)
         except docker.errors.NotFound:
             self.logger.info(f"container {self.container_name} not found during termination; assuming terminated")
+            self._set_terminal_state(JobReturnCode.ABORTED)
         except docker.errors.APIError as e:
             self.logger.error(f"error terminating container {self.container_name}: {e}")
         except Exception as e:
             self.logger.error(f"unexpected error terminating container {self.container_name}: {e}")
-        finally:
-            # Always set terminal_state so poll()/wait() return immediately
-            self._set_terminal_state(JobReturnCode.ABORTED)
 
     def enter_states(self, states_to_enter: list) -> bool:
         """Poll until the container enters one of the target states.
@@ -586,7 +629,8 @@ class DockerJobLauncher(JobLauncherSpec):
                 f"job Docker spec for site '{site_name}' contains entrypoint but lacks locally authorized BYOC"
             )
         portable_spec = get_portable_resource_spec(job_meta, site_name)
-        container_name = _sanitize_container_name(f"{site_name}-{job_id}")
+        # A replacement can start before Docker auto-removes the exited container.
+        container_name = _sanitize_container_name(f"{site_name}-{job_id}-{uuid.uuid4().hex}")
         study = job_meta.get(JobMetaKey.STUDY.value)
         study_runtime = self._resolve_study_runtime(study)
         if not job_image and study_runtime is not None:
@@ -674,24 +718,34 @@ class DockerJobLauncher(JobLauncherSpec):
         # launcher_spec[site][docker]. Falls back to nested resource_spec[site][docker] for
         # backward compatibility. Portable resources come from the resolved resource_spec.
         # Site-level defaults (default_job_container_kwargs) are merged in; job-level takes precedence on conflict.
-        num_gpus = docker_spec.get("num_of_gpus", portable_spec.get("num_of_gpus", 0))
-        job_gpus_specified = "num_of_gpus" in portable_spec or "num_of_gpus" in docker_spec
         job_container_kwargs = {k: docker_spec[k] for k in DOCKER_JOB_CONTAINER_KWARGS if k in docker_spec}
         study_docker_kwargs = study_runtime.docker_kwargs if study_runtime is not None else {}
         merged_container_kwargs = {**self.default_job_container_kwargs, **study_docker_kwargs, **job_container_kwargs}
 
-        # GPU precedence:
-        # 1. job-level num_of_gpus translated to device_requests; an explicit 0 declines
-        #    GPUs and drops any study/site-inherited device_requests
-        # 2. study-level device_requests from docker_kwargs in study_runtime.yaml
-        # 3. site-level default device_requests from default_job_container_kwargs
-        #
-        # This preserves the documented rule that job-level resource_spec takes precedence
-        # over study and site-level defaults. Fine-grained device_requests remain site-owned.
-        if num_gpus:
-            merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
-        elif job_gpus_specified:
-            merged_container_kwargs.pop("device_requests", None)
+        # Job counts override study and site GPU defaults. Passthrough clients and
+        # servers retain Docker's device selection; managed clients use reserved IDs.
+        is_client = isinstance(self, ClientDockerJobLauncher)
+        reserve_gpus = is_client and not isinstance(
+            fl_ctx.get_engine().get_component(SystemComponents.RESOURCE_MANAGER), PassthroughResourceManager
+        )
+        gpu_request = _get_gpu_request(
+            docker_spec,
+            resolve_site_resource_spec(job_meta, site_name) if is_client else portable_spec,
+            merged_container_kwargs if reserve_gpus else {},
+        )
+        count = gpu_request.get("Count", 0) if gpu_request is not None else 0
+        if gpu_request is not None:
+            if reserve_gpus and count:
+                allocation = fl_ctx.get_prop(FLContextKey.ALLOCATED_RESOURCES) or {}
+                if not allocation or (count > 0 and len(allocation) != count):
+                    raise RuntimeError("Docker GPU jobs require a matching GPUResourceManager allocation")
+                gpu_request = {**gpu_request, "DeviceIDs": [str(i) for i in allocation]}
+                gpu_request.pop("Count", None)
+            merged_container_kwargs["device_requests"] = [
+                r for r in merged_container_kwargs.get("device_requests") or [] if not _is_gpu_request(r)
+            ] + ([gpu_request] if count else [])
+        if is_client and not any(_is_gpu_request(r) for r in merged_container_kwargs.get("device_requests") or []):
+            environment.setdefault("NVIDIA_VISIBLE_DEVICES", "void")
         if "num_of_cpus" in portable_spec:
             merged_container_kwargs["nano_cpus"] = portable_spec["num_of_cpus"] * 1_000_000_000
         if "memory" in portable_spec:
@@ -821,9 +875,9 @@ class DockerJobLauncher(JobLauncherSpec):
         try:
             if not job_handle.enter_states([DockerStatus.RUNNING]):
                 self.logger.warning(f"container {container_name} did not reach RUNNING state for job {job_id}")
-        except BaseException:
+        except Exception:
+            self.logger.exception(f"error waiting for container {container_name} to start")
             job_handle.terminate()
-            raise
 
         # Always return a handle — caller detects failure via poll()
         return job_handle
@@ -831,6 +885,30 @@ class DockerJobLauncher(JobLauncherSpec):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
             add_launcher(self, fl_ctx)
+        elif event_type == EventType.BEFORE_CHECK_RESOURCE_MANAGER:
+            try:
+                manager = fl_ctx.get_engine().get_component(SystemComponents.RESOURCE_MANAGER)
+                if isinstance(manager, PassthroughResourceManager):
+                    return
+                meta = fl_ctx.get_prop(FLContextKey.JOB_META) or {}
+                site = fl_ctx.get_identity_name()
+                study_runtime = self._resolve_study_runtime(meta.get(JobMetaKey.STUDY.value))
+                kwargs = {**self.default_job_container_kwargs, **(study_runtime.docker_kwargs if study_runtime else {})}
+                request = _get_gpu_request(
+                    get_job_launcher_spec(meta, site, "docker"), resolve_site_resource_spec(meta, site), kwargs
+                )
+                resources = fl_ctx.get_prop(FLContextKey.CLIENT_RESOURCE_SPECS)
+                if request is not None:
+                    count = request.get("Count", 0)
+                    if count and (not isinstance(manager, GPUResourceManager) or not manager.resources):
+                        raise RuntimeError(
+                            "GPU capacity not configured; configure GPUResourceManager with num_of_gpus > 0"
+                        )
+                    resources.setdefault(
+                        getattr(manager, "num_gpu_key", "num_of_gpus"), len(manager.resources) if count < 0 else count
+                    )
+            except Exception as e:
+                fl_ctx.set_prop(FLContextKey.JOB_BLOCK_REASON, str(e), private=True, sticky=False)
 
     @abstractmethod
     def get_module_args(self, job_args: dict) -> dict:

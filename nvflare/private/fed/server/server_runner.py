@@ -323,6 +323,9 @@ class ServerRunner(TBI):
             if not task_name or task_name == SpecialTaskName.TRY_AGAIN:
                 return self._task_try_again()
 
+            # Preserve the issuing workflow if filters replace the payload or cookie jar.
+            workflow_id = task_data.get_cookie(ReservedHeaderKey.WORKFLOW)
+
             # Mark this task as being processed to prevent duplicate assignments
             with self._processing_tasks_lock:
                 self._processing_tasks[client.name] = task_id
@@ -369,6 +372,7 @@ class ServerRunner(TBI):
             with self._processing_tasks_lock:
                 self._processing_tasks.pop(client.name, None)
 
+            task_data.add_cookie(ReservedHeaderKey.WORKFLOW, workflow_id)
             return task_name, task_id, task_data
         except Exception as e:
             self.log_exception(
@@ -415,9 +419,9 @@ class ServerRunner(TBI):
 
                     fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task_name, private=True, sticky=False)
                     fl_ctx.set_prop(FLContextKey.TASK_ID, value=task_id, private=True, sticky=False)
-                    # Keep the issuing workflow independently of the payload:
-                    # OUT filters may replace its entire Shareable/cookie jar.
-                    fl_ctx.set_prop(FLContextKey.WORKFLOW, value=self.current_wf.id, private=True, sticky=False)
+                    # Workflow startup normally supplies this as a sticky property.
+                    if fl_ctx.get_prop(FLContextKey.WORKFLOW) is None:
+                        fl_ctx.set_prop(FLContextKey.WORKFLOW, value=self.current_wf.id, private=True, sticky=False)
                     fl_ctx.set_prop(
                         FLContextKey.TASK_ATTEMPT_ID, value=task_data.get_task_attempt_id(), private=True, sticky=False
                     )

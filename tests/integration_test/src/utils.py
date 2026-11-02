@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shlex
@@ -187,7 +188,16 @@ def stop_site_processes(process, root_dir, kill_timeout=5.0, known_processes=Non
                 except psutil.AccessDenied as error:
                     errors.append(str(error))
             remaining = max(0.0, deadline - time.monotonic())
-            psutil.wait_procs(running, timeout=min(0.1, remaining))
+            try:
+                psutil.wait_procs(running, timeout=min(0.1, remaining))
+            except OSError as error:
+                if error.errno != errno.EINVAL:
+                    raise
+                # Some Linux containers reject psutil's pidfd_open() wait.
+                # Keep polling the captured identities under the same deadline;
+                # exited/zombie jobs are checked below and the launcher is reaped
+                # by its Popen owner in the final cleanup step.
+                time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
             survivors = [child for child in running if _process_running(child)]
             if time.monotonic() >= deadline:
                 owned.update(find_site_processes(root_dir, owned))

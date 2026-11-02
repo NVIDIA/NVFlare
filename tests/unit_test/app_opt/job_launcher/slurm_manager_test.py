@@ -168,6 +168,39 @@ def _runtime_workspace(tmp_path):
     return workspace
 
 
+@pytest.mark.parametrize("state, restartable", [("TIMEOUT", True), ("NODE_FAIL", False), ("CANCELLED", False)])
+def test_restart_requires_settled_allocation_and_known_termination(tmp_path, state, restartable):
+    adapter = Adapter()
+    adapter.accounting_id = _query(LookupStatus.FOUND, _record(state=state, exit_signal=9))
+    handle = _manager(tmp_path, adapter).launch(_plan(tmp_path))
+    handle.wait()
+    assert handle.can_restart() is restartable
+
+
+def test_timeout_does_not_restart_while_allocation_is_still_visible(tmp_path):
+    clock = Clock()
+    adapter = Adapter()
+    adapter.live = _query(LookupStatus.FOUND, _record(state="TIMEOUT"))
+    adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="TIMEOUT", exit_signal=9))
+    handle = _manager(tmp_path, adapter, monotonic=clock).launch(_plan(tmp_path))
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert not handle.can_restart()
+    adapter.live = _query(LookupStatus.NOT_FOUND)
+    clock.value = 7
+    assert handle.poll() == ProcessExitCode.INFRASTRUCTURE_ERROR
+    assert handle.can_restart()
+
+
+def test_missing_accounting_never_proves_restart_safety(tmp_path):
+    clock = Clock()
+    handle = _manager(tmp_path, monotonic=clock).launch(_plan(tmp_path))
+    for i in range(5):
+        clock.value = i * 7
+        handle.poll()
+    assert handle.terminal_result == ProcessExitCode.INFRASTRUCTURE_ERROR
+    assert not handle.can_restart()
+
+
 def _make_slurm_commands(path):
     path.mkdir(parents=True)
     commands = {}

@@ -20,12 +20,27 @@ import pytest
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode, TaskResultReceipt
+from nvflare.apis.fl_constant import (
+    FilterKey,
+    FLContextKey,
+    ReservedKey,
+    ReservedTopic,
+    ReturnCode,
+    ServerCommandKey,
+    ServerCommandNames,
+    TaskResultReceipt,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.apis.task_launcher_spec import TaskExecutionInterrupted
+from nvflare.apis.utils.reliable_message import ReliableMessage
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.private.defs import RequestHeader, SpecialTaskName, TaskConstant
+from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_engine_executor_spec import TaskAssignment
 from nvflare.private.fed.client.client_runner import (
     _TASK_CHECK_RESULT_OK,
@@ -35,6 +50,7 @@ from nvflare.private.fed.client.client_runner import (
     ClientRunnerConfig,
     TaskRouter,
 )
+from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.json_configer import ConfigError
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 from tests.timing_utils import isolate_time
@@ -65,8 +81,186 @@ def _runner():
     return runner
 
 
+@pytest.mark.parametrize("initialization", ["ready", "exception", "aborted", "notification-failed"])
+def test_runner_notifies_readiness_only_after_successful_initialization(initialization):
+    runner = _runner()
+    ready = MagicMock()
+    if initialization == "notification-failed":
+        ready.side_effect = RuntimeError("notification failed")
+    runner.end_run_events_sequence = MagicMock()
+
+    def initialize(*_):
+        ready.assert_not_called()
+        if initialization == "exception":
+            raise RuntimeError("initialization failed")
+        if initialization == "aborted":
+            runner.run_abort_signal.trigger(True)
+
+    runner.init_run = initialize
+    runner._try_run = MagicMock()
+    with (
+        patch("nvflare.private.fed.client.client_runner.ReliableMessage.shutdown") as reliable_shutdown,
+        patch("nvflare.private.fed.client.client_runner.DownloadService.shutdown") as download_shutdown,
+    ):
+        if initialization == "exception":
+            with pytest.raises(RuntimeError, match="initialization failed"):
+                runner.run("/app", SimpleNamespace(), on_ready=ready)
+        else:
+            runner.run("/app", SimpleNamespace(), on_ready=ready)
+    assert ready.call_count == (1 if initialization in ("ready", "notification-failed") else 0)
+    if initialization != "exception":
+        runner.end_run_events_sequence.assert_called_once()
+        reliable_shutdown.assert_called_once()
+        runner.engine.shutdown_streamer.assert_called_once()
+        download_shutdown.assert_called_once()
+    if initialization == "notification-failed":
+        runner._try_run.assert_called_once()
+        runner.log_exception.assert_called_once()
+
+
+def test_cj_status_notifications_preserve_startup_abort_and_retry_without_crashing(monkeypatch):
+    app = ClientAppRunner()
+    runner = MagicMock()
+    app.create_client_runner = MagicMock(return_value=runner)
+    app.start_command_agent = MagicMock()
+    client = MagicMock()
+    client.cell.core_cell.get_fqcn.return_value = "site-1.job-1"
+    clock = isolate_time(monkeypatch, "nvflare.private.fed.client.client_app_runner")
+    now = [0]
+    clock.time = lambda: now[0]
+    clock.sleep = lambda _: None
+    statuses = []
+
+    def send(**kwargs):
+        status = kwargs["request"].payload.get_header(RequestHeader.JOB_STATUS)
+        statuses.append(status)
+        now[0] += 6
+        # Lose every READY acknowledgement and the first STOPPED delivery.
+        rc = CellReturnCode.OK
+        if status == ClientStatus.READY or (status == ClientStatus.STOPPED and statuses.count(status) == 1):
+            rc = CellReturnCode.TIMEOUT
+        return CellMessage({MessageHeaderKey.RETURN_CODE: rc})
+
+    def run(*_, on_ready):
+        assert statuses == [ClientStatus.STARTED]
+        assert client.status == ClientStatus.STARTED  # Commands available during initialization.
+        on_ready()
+
+    client.cell.send_request.side_effect = send
+    runner.run.side_effect = run
+    app.start_run(
+        "/app", SimpleNamespace(job_id="job-1", sp_target="server", sp_scheme="grpc"), "config", client, True, []
+    )
+    assert statuses == [ClientStatus.STARTED] + [ClientStatus.READY] * 3 + [ClientStatus.STOPPED] * 2
+    assert client.status == ClientStatus.STOPPED
+    client.stop_cell.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "return_code,payload,finished",
+    [
+        (CellReturnCode.OK, {ServerCommandKey.JOB_ID: "job-1", ServerCommandKey.CLIENTS: None}, True),
+        (CellReturnCode.OK, {ServerCommandKey.JOB_ID: "job-1", ServerCommandKey.CLIENTS: {"site": "client"}}, False),
+        (CellReturnCode.OK, {ServerCommandKey.JOB_ID: "job-1", ServerCommandKey.CLIENTS: {}}, False),
+        (CellReturnCode.OK, {ServerCommandKey.JOB_ID: "other-job", ServerCommandKey.CLIENTS: None}, False),
+        (CellReturnCode.OK, {ServerCommandKey.JOB_ID: "job-1"}, False),
+        (CellReturnCode.OK, None, False),
+        (CellReturnCode.TIMEOUT, {ServerCommandKey.JOB_ID: "job-1", ServerCommandKey.CLIENTS: None}, False),
+        (CellReturnCode.UNAUTHENTICATED, {ServerCommandKey.JOB_ID: "job-1", ServerCommandKey.CLIENTS: None}, False),
+    ],
+)
+def test_sync_failure_requires_parent_confirmation_before_finishing(monkeypatch, return_code, payload, finished):
+    runner = _runner()
+    ready = MagicMock()
+    runner._try_run = MagicMock()
+    runner.end_run_events_sequence = MagicMock()
+    # A replacement whose server job has ended never enables ReliableMessage.
+    monkeypatch.setattr(ReliableMessage, "_executor", None)
+    monkeypatch.setattr(ReliableMessage, "_shutdown_asked", False)
+    runner.get_positive_float_var = MagicMock(return_value=1)
+    runner.engine.send_aux_request.return_value = {}
+    cell = runner.engine.get_cell.return_value
+    cell.send_request.return_value = CellMessage({MessageHeaderKey.RETURN_CODE: return_code}, payload)
+    clock = isolate_time(monkeypatch, "nvflare.private.fed.client.client_runner")
+    ticks = iter([0, 2])
+    clock.time = lambda: next(ticks)
+    clock.sleep = lambda _: None
+    with (
+        patch("nvflare.private.fed.client.client_runner.DownloadService.initialize"),
+        patch("nvflare.private.fed.client.client_runner.DownloadService.shutdown") as download_shutdown,
+    ):
+        if finished:
+            runner.run("/app", SimpleNamespace(), on_ready=ready)
+            runner.engine.shutdown_streamer.assert_called_once()
+            download_shutdown.assert_called_once()
+        else:
+            with pytest.raises(RuntimeError, match="cannot sync"):
+                runner.init_run("/app", SimpleNamespace())
+    assert runner.run_abort_signal.triggered is finished
+    assert cell.send_request.call_args.kwargs["topic"] == ServerCommandNames.GET_CLIENTS
+    ready.assert_not_called()
+    runner._try_run.assert_not_called()
+    runner.end_run_events_sequence.assert_not_called()
+    runner.fire_event.assert_not_called()
+
+
 def _task(name="train", task_id="task-1", data=None):
     return TaskAssignment(name=name, task_id=task_id, data=data or Shareable())
+
+
+@pytest.mark.parametrize("failure", ["worker-lost", "application-error", "abort"])
+def test_worker_loss_exits_cj_without_reporting_a_failed_task_or_stopped_status(failure):
+    runner = _runner()
+    context, peer = FLContext(), FLContext()
+    peer.set_prop(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
+    context.set_peer_context(peer)
+    runner.engine.get_task_assignment.return_value = _task()
+    runner.init_run = MagicMock()
+    runner.end_run_events_sequence = MagicMock()
+    runner._send_task_result = MagicMock(return_value=True)
+    runner._try_run = lambda: runner.fetch_and_run_one_task(context)
+
+    def execute(_name, _data, _ctx, abort_signal):
+        if failure == "application-error":
+            raise ValueError("bad input")
+        if failure == "abort":
+            abort_signal.trigger(True)
+        raise TaskExecutionInterrupted("worker timed out")
+
+    executor = MagicMock(execute=MagicMock(side_effect=execute))
+    runner.task_router.add_executor(["train"], executor)
+    app = ClientAppRunner()
+    app.create_client_runner = MagicMock(return_value=runner)
+    app.start_command_agent = MagicMock()
+    app.sync_up_parents_process = MagicMock()
+    app.notify_job_status = MagicMock()
+    with (
+        patch("nvflare.private.fed.client.client_runner.add_job_audit_event"),
+        patch("nvflare.private.fed.client.client_runner.ReliableMessage.shutdown"),
+        patch("nvflare.private.fed.client.client_runner.DownloadService.shutdown"),
+    ):
+        args = (
+            "/app",
+            SimpleNamespace(job_id="job-1", sp_target="server", sp_scheme="grpc"),
+            "config",
+            MagicMock(),
+            True,
+            [],
+        )
+        if failure == "worker-lost":
+            with pytest.raises(TaskExecutionInterrupted, match="worker timed out"):
+                app.start_run(*args)
+            runner._send_task_result.assert_not_called()
+        else:
+            app.start_run(*args)
+            expected = ReturnCode.TASK_ABORTED if failure == "abort" else ReturnCode.EXECUTION_EXCEPTION
+            assert runner._send_task_result.call_args.args[0].get_return_code() == expected
+    statuses = [call.args[2] for call in app.notify_job_status.call_args_list]
+    assert statuses == [ClientStatus.STARTED, ClientStatus.READY] + (
+        [] if failure == "worker-lost" else [ClientStatus.STOPPED]
+    )
+    runner.end_run_events_sequence.assert_called_once()
+    runner.engine.shutdown_streamer.assert_called_once()
 
 
 def test_task_router_prefers_exact_match_then_patterns():

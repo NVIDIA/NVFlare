@@ -28,14 +28,18 @@ from nvflare.utils.job_launcher_utils import (
     _validate_launcher_spec,
     generate_client_command,
     generate_server_command,
+    get_cj_resource_spec,
     get_credential_env,
     get_job_launcher_spec,
     get_portable_resource_spec,
     get_resource_manager_spec,
+    has_cj_resource_spec,
+    normalize_cj_resource_spec,
     portable_memory_to_bytes,
     portable_memory_to_mib,
     refresh_custom_dir_import_path,
     resolve_site_resource_spec,
+    validate_cj_resource_spec,
     validate_docker_job_launcher_spec,
     validate_portable_resource_conflicts,
     validate_portable_resource_spec,
@@ -513,3 +517,67 @@ class TestRefreshCustomDirImportPath:
             if custom_path in sys.path:
                 sys.path.remove(custom_path)
             sys.path_importer_cache.pop(custom_path, None)
+
+
+@pytest.mark.parametrize("task_sites", [{"site-1"}, {"@ALL"}])
+def test_task_cj_admission_does_not_reserve_compute_gpu(task_sites):
+    meta = {
+        "resource_spec": {"@default": {"num_of_cpus": 4, "memory": "16Gi", "num_of_gpus": 1}},
+        "cj_resource_spec": {"@default": {"num_of_cpus": 0.5, "memory": "1Gi"}},
+    }
+    normalize_cj_resource_spec(meta, task_sites)
+    assert get_cj_resource_spec(meta, "site-1") == {"num_of_cpus": 0.5, "memory": "1Gi"}
+    assert get_portable_resource_spec(meta, "site-1")["num_of_gpus"] == 1
+    assert get_resource_manager_spec(meta, "site-1") == {}
+    if "@ALL" not in task_sites:
+        assert get_resource_manager_spec(meta, "site-2") == {"num_of_gpus": 1}
+        assert not has_cj_resource_spec(meta, "site-2")
+    manager = GPUResourceManager(num_of_gpus=1, mem_per_gpu_in_GiB=4, ignore_host=True)
+    # Two CJs may be admitted without taking the only GPU away from native tasks.
+    for _ in range(2):
+        enough, token = manager.check_resources(get_resource_manager_spec(meta, "site-1"), FLContext())
+        assert enough
+        assert manager.allocate_resources({}, token, FLContext()) == {}
+    enough, _ = manager.check_resources({"num_of_gpus": 1}, FLContext())
+    assert enough
+
+
+def test_cj_gpu_budget_is_independent_of_compute_and_default_overrides():
+    meta = {
+        "resource_spec": {"site-1": {"num_of_gpus": 2}},
+        "cj_resource_spec": {
+            "@default": {"num_of_cpus": 0.25, "memory": "512Mi"},
+            "site-1": {"num_of_gpus": 1, "memory": "2Gi"},
+        },
+    }
+    original = deepcopy(meta)
+    normalize_cj_resource_spec(meta, {"site-1"})
+    assert get_cj_resource_spec(meta, "site-1") == {"num_of_cpus": 0.25, "memory": "2Gi", "num_of_gpus": 1}
+    assert get_resource_manager_spec(meta, "site-1") == {"num_of_gpus": 1}
+    assert get_portable_resource_spec(meta, "site-1") == {"num_of_gpus": 2}
+    assert meta == original
+
+
+@pytest.mark.parametrize("spec", [{"site-2": {}}, {"@ALL": {}}, {"@default": {"num_of_cpus": 1}}])
+def test_cj_role_cannot_be_supplied_for_resident_job(spec):
+    with pytest.raises(ValueError, match="task-lifetime"):
+        normalize_cj_resource_spec({"cj_resource_spec": spec}, set())
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"num_of_cpus": True},
+        {"num_of_cpus": 0},
+        {"num_of_cpus": float("nan")},
+        {"num_of_gpus": -1},
+        {"num_of_gpus": True},
+        {"memory": "0Gi"},
+        {"memory": "1GB"},
+        {"cpu": "500m"},
+        {"k8s": {"num_of_gpus": 1}},
+    ],
+)
+def test_invalid_cj_budgets_are_rejected(values):
+    with pytest.raises(ValueError):
+        validate_cj_resource_spec({"site-1": values})

@@ -71,6 +71,9 @@ class CheckResourceProcessor(RequestProcessor):
                 fl_ctx.set_prop(key=FLContextKey.CLIENT_RESOURCE_SPECS, value=resource_spec, private=True, sticky=False)
 
                 fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
+                fl_ctx.set_prop(
+                    FLContextKey.JOB_META, req.get_header(RequestHeader.JOB_META, {}), private=True, sticky=False
+                )
                 shared_fl_ctx = req.get_header(ServerCommandKey.PEER_FL_CONTEXT)
                 fl_ctx.set_peer_context(shared_fl_ctx)
 

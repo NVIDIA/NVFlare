@@ -24,6 +24,7 @@ import pytest
 
 from nvflare.recipe.poc_env import PocEnv
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+from tests.timing_utils import WAIT_TIMEOUT, ObservedLock, ThreadGroup
 
 PROJECT_CONFIG = {"name": "poc"}
 SERVICE_CONFIG = {SC.FLARE_SERVER: "server", SC.FLARE_CLIENTS: ["site-1"]}
@@ -78,7 +79,7 @@ def test_deploy_rejects_overlapping_calls_on_same_environment():
 
 def test_stop_waits_for_deployment_to_leave_instance_guard(monkeypatch):
     env = PocEnv()
-    stop_called = threading.Event()
+    env._deployment_lock = ObservedLock(env._deployment_lock)
     stop_completed = threading.Event()
     stop_args = []
 
@@ -86,22 +87,15 @@ def test_stop_waits_for_deployment_to_leave_instance_guard(monkeypatch):
         stop_args.append(clean_up)
 
     def call_stop():
-        stop_called.set()
         env.stop(clean_up=True)
         stop_completed.set()
 
     monkeypatch.setattr(env, "_stop", stop_impl)
-    assert env._deployment_lock.acquire(blocking=False)
-    stop_thread = threading.Thread(target=call_stop)
-    stop_thread.start()
-    try:
-        assert stop_called.wait(timeout=1)
-        assert not stop_completed.wait(timeout=0.05)
-    finally:
-        env._deployment_lock.release()
-    stop_thread.join(timeout=1)
-
-    assert not stop_thread.is_alive()
+    with ThreadGroup() as workers:
+        with env._deployment_lock:
+            workers.start(call_stop)
+            assert env._deployment_lock.blocked.wait(WAIT_TIMEOUT), "stop did not acquire the deployment guard"
+            assert not stop_completed.is_set()
     assert stop_completed.is_set()
     assert stop_args == [True]
 

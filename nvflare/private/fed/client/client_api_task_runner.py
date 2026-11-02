@@ -21,7 +21,6 @@ import os
 import time
 from functools import partial
 
-from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DataKind, from_shareable
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
@@ -186,16 +185,13 @@ class _ClientAPITaskRunner:
             on_finished()
 
 
-def bind_client_task_context(fl_ctx, identity, store, analytics):
+def bind_client_task_context(fl_ctx, identity, store, log):
     fl_ctx.set_prop(FLContextKey.CLIENT_NAME, identity.site_name, private=True, sticky=True)
     fl_ctx.set_prop(FLContextKey.PROCESS_TYPE, "client_task_worker", private=True, sticky=True)
 
     def capture_analytics(dxo):
         with fl_ctx.get_engine().operation():
-            store.write_analytics_record(
-                analytics,
-                {"event_type": ANALYTIC_EVENT_TYPE, "data": dxo.to_shareable(), "federated": False},
-            )
+            log(dxo.to_shareable())
 
     def save_result(shareable):
         with fl_ctx.get_engine().operation():
@@ -207,6 +203,8 @@ def bind_client_task_context(fl_ctx, identity, store, analytics):
     def adapt_executor(executor):
         if type(executor) is not ClientAPIExecutor:
             return executor
+        if log is None:
+            raise RuntimeError("a Client API task worker requires a cell session to its Client Job")
         return _ClientAPITaskRunner(
             executor,
             on_started=partial(_mark_progress, store, identity, "result_wait_started.json"),

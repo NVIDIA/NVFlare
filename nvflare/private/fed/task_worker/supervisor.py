@@ -32,6 +32,7 @@ from nvflare.apis.fl_constant import ReturnCode, TaskResultReceipt
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.task_launcher_spec import (
+    TaskExecutionInterrupted,
     TaskExecutionPhase,
     TaskExecutionStatus,
     TaskHandleSpec,
@@ -72,7 +73,6 @@ class TaskSupervisorOutcome:
     identity: TaskAttemptIdentity
     result: Optional[Shareable] = None
     completion: Optional[TaskCompletion] = None
-    analytics: tuple[dict, ...] = ()
     aborted: bool = False
     execution_status: Optional[TaskExecutionStatus] = None
 
@@ -91,6 +91,7 @@ class _Attempt:
     receipt: Optional[str] = None
     releasing: bool = False
     released: bool = False
+    result_readers: int = 0
 
 
 class TaskSupervisor:
@@ -298,13 +299,18 @@ class TaskSupervisor:
                         f"task worker {identity.attempt_id} failed: {failure['error_type']}: {failure['message']} "
                         f"(diagnostics: {store.attempt_dir(identity)})"
                     ) from e
+                if status.retryable and not status.cancel_requested:
+                    raise TaskExecutionInterrupted(
+                        f"task worker {identity.attempt_id} interrupted: "
+                        f"{status.failure_reason or status.termination_signal or status.exit_code} "
+                        f"(diagnostics: {store.attempt_dir(identity)})"
+                    ) from e
                 raise
             if completion.identity != identity:
                 raise ValueError("task completion identity does not match owned attempt")
             worker_pid = getattr(handle, "process_group_id", None)
             if worker_pid is not None and completion.worker_pid != worker_pid:
                 raise ValueError("task completion worker PID does not match launched process")
-            analytics = tuple(store.read_analytics(identity, completion))
             with self._state_lock:
                 if self._aborted(attempt, abort_signal):
                     attempt.failed = True
@@ -313,7 +319,7 @@ class TaskSupervisor:
                 attempt.completion = completion
                 attempt.failed |= result.get_return_code(default=ReturnCode.OK) != ReturnCode.OK
             self._diagnostic(attempt, "validated", worker_pid=completion.worker_pid, worker_ppid=completion.worker_ppid)
-            return TaskSupervisorOutcome(identity, result, completion, analytics, execution_status=status)
+            return TaskSupervisorOutcome(identity, result, completion, execution_status=status)
         except BaseException as e:
             if attempt is not None:
                 attempt.failed = True
@@ -390,6 +396,22 @@ class TaskSupervisor:
         self.cleanup_job_payloads()
         return True
 
+    def recover_checkpoint_result(self, assignment, store, checkpoint_file, runtime_root):
+        """Restore a committed result after CP has confirmed all old workers stopped."""
+        completion = store.committed_checkpoint_completion(assignment, checkpoint_file)
+        if completion is None:
+            return None
+        identity = completion.identity
+        with self._state_lock:
+            if self._stopping or self._settlement_unconfirmed or self._active is not None:
+                raise RuntimeError("task supervisor cannot adopt a completed result while stopping or executing")
+            self._attempts.setdefault(
+                identity,
+                _Attempt(identity, store, runtime_root, settled=True, validated=True, completion=completion),
+            )
+            self._launch_identities.add((identity.job_id, identity.site_name, identity.task_id, identity.attempt_id))
+        return TaskSupervisorOutcome(identity, self.read_saved_result(identity), completion)
+
     def read_saved_result(self, identity: TaskAttemptIdentity) -> Shareable:
         """Re-read a settled result without launching or replaying worker side effects."""
         with self._state_lock:
@@ -404,10 +426,20 @@ class TaskSupervisor:
                 or attempt.released
             ):
                 raise RuntimeError("task attempt has no retained, settled result to resubmit")
-        result, completion = attempt.store.read_result(identity)
-        if completion != attempt.completion:
-            raise ValueError("saved task completion changed after validation")
-        return result
+            attempt.result_readers += 1
+        try:
+            result, completion = attempt.store.read_result(identity)
+            if completion != attempt.completion:
+                raise ValueError("saved task completion changed after validation")
+            return result
+        except BaseException:
+            with self._state_lock:
+                attempt.failed = True
+            raise
+        finally:
+            with self._state_lock:
+                attempt.result_readers -= 1
+            self.cleanup_job_payloads()
 
     def retain_attempt(self, identity: TaskAttemptIdentity):
         """Keep evidence when caller-owned result processing fails after compute."""
@@ -431,6 +463,7 @@ class TaskSupervisor:
                     or not attempt.settled
                     or not attempt.validated
                     or attempt.failed
+                    or attempt.result_readers
                     or attempt.receipt is None
                     or attempt.releasing
                     or attempt.released
