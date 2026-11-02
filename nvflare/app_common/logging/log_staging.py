@@ -65,6 +65,7 @@ class ClientLogStaging:
     """
 
     DELETED_MARKER = ".deleted"
+    DELETE_INTENT = ".deleting"
 
     def __init__(self, workspace):
         self.root = client_log_staging_root(workspace)
@@ -93,12 +94,21 @@ class ClientLogStaging:
             raise ValueError("Client log directory must not be a symlink")
         return job_dir
 
-    def mark_deleted(self, job_id):
-        """Record successful deletion until every leased file has drained."""
+    @staticmethod
+    def _sync_directory(path):
+        if os.name != "nt":
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+
+    def prepare_delete(self, job_id):
+        """Persist intent before the job store is changed. Caller holds mutex."""
         job_dir = self._job_dir(job_id)
         if not os.path.isdir(job_dir):
             return
-        path = os.path.join(job_dir, self.DELETED_MARKER)
+        path = os.path.join(job_dir, self.DELETE_INTENT)
         if os.path.islink(path):
             raise ValueError("Client log deletion marker must not be a symlink")
         fd = os.open(
@@ -107,24 +117,65 @@ class ClientLogStaging:
         try:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise ValueError("Client log deletion marker must be a regular file")
+            os.fsync(fd)
         finally:
             os.close(fd)
+        self._sync_directory(job_dir)
+        self._sync_directory(self.root)
 
-    def is_deleted(self, job_id):
-        path = os.path.join(self._job_dir(job_id), self.DELETED_MARKER)
+    def cancel_delete(self, job_id):
+        job_dir = self._job_dir(job_id)
+        try:
+            os.unlink(os.path.join(job_dir, self.DELETE_INTENT))
+        except FileNotFoundError:
+            return
+        self._sync_directory(job_dir)
+
+    def _marker_exists(self, job_id, name):
+        path = os.path.join(self._job_dir(job_id), name)
         if os.path.islink(path):
             raise ValueError("Client log deletion marker must not be a symlink")
         return os.path.isfile(path)
 
+    def is_deleted(self, job_id):
+        return self._marker_exists(job_id, self.DELETED_MARKER)
+
+    def is_deleting(self, job_id):
+        return self._marker_exists(job_id, self.DELETE_INTENT)
+
+    def mark_deleted(self, job_id):
+        """Confirm deletion without allocating another marker file."""
+        job_dir = self._job_dir(job_id)
+        if not os.path.isdir(job_dir) or self.is_deleted(job_id):
+            return
+        if not self.is_deleting(job_id):
+            raise ValueError("Client log deletion intent is missing")
+        os.replace(os.path.join(job_dir, self.DELETE_INTENT), os.path.join(job_dir, self.DELETED_MARKER))
+        self._sync_directory(job_dir)
+
+    def recover_delete(self, job_id, job_manager, fl_ctx):
+        """Reconcile interrupted intent; preserve logs on any uncertain result."""
+        if not self.is_deleting(job_id):
+            return
+        exists = job_manager.job_exists(job_id, fl_ctx)
+        if not isinstance(exists, bool):
+            raise ValueError("Job presence must be confirmed as True or False")
+        if exists:
+            self.cancel_delete(job_id)
+        else:
+            self.mark_deleted(job_id)
+
     def remove_closed_job_logs(self, job_id):
         """Remove only unleased logs. Caller must hold the staging mutex."""
+        if not self.is_deleted(job_id):
+            return
         # Validate the job component and confinement before walking its tree.
         job_dir = self._job_dir(job_id)
-        marker = os.path.join(job_dir, self.DELETED_MARKER)
+        markers = {os.path.join(job_dir, name) for name in (self.DELETED_MARKER, self.DELETE_INTENT)}
         for directory, dirs, files in os.walk(job_dir, topdown=False, followlinks=False):
             for name in files:
                 path = os.path.join(directory, name)
-                if path == marker:
+                if path in markers:
                     continue
                 if os.path.islink(path):
                     os.unlink(path)
@@ -145,8 +196,10 @@ class ClientLogStaging:
                 path = os.path.join(directory, name)
                 if os.path.islink(path):
                     os.unlink(path)
-            if directory == job_dir and os.listdir(job_dir) == [self.DELETED_MARKER]:
-                os.unlink(marker)
+            if directory == job_dir and set(os.listdir(job_dir)) <= {self.DELETED_MARKER, self.DELETE_INTENT}:
+                for marker in markers:
+                    if os.path.exists(marker):
+                        os.unlink(marker)
             try:
                 os.rmdir(directory)
             except OSError as ex:

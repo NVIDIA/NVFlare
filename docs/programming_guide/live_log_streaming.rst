@@ -183,7 +183,13 @@ files until EOF or timeout, then discard them without publishing new components
 for the deleted job. Late attempts to start another stream for that job are
 rejected. The receiver checks for interrupted deletion cleanup on server startup;
 logs for existing jobs are preserved, including when the job store is temporarily
-unavailable. This automatic cleanup applies to the default managed staging tree.
+unavailable. A durable deletion intent is written before deleting the stored job.
+Failed deletion cancels that intent. Recovery checks authoritative job presence:
+an existing job cancels interrupted deletion, a confirmed absent job permits
+cleanup, and an unavailable or unsupported lookup preserves both intent and logs.
+Custom job managers/stores must implement ``job_exists``/``object_exists`` to
+support this recovery; ordinary metadata lookup failures do not prove absence.
+This automatic cleanup applies to the default managed staging tree.
 Operators who set ``dest_dir`` own retention and cleanup of that custom directory.
 
 SiteLogStreamer (client, site widget)
