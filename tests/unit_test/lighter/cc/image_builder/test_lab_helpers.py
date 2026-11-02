@@ -48,6 +48,32 @@ def load_helper(name):
 
 
 class LabProfileTests(unittest.TestCase):
+    def test_disabled_snp_does_not_require_a_collateral_store(self):
+        lab_kbs = load_helper("lab_kbs")
+        profile = {"gpu": "none", "platforms": {"intel_tdx": {}, "amd_sev_snp": {"enabled": False}}}
+        with tempfile.TemporaryDirectory() as directory:
+            missing_store = str(Path(directory) / "missing")
+            result = lab_kbs.verifier_config([profile], missing_store)
+        self.assertIn("dcap_verifier", result)
+        self.assertNotIn("snp_verifier", result)
+
+    def test_enabled_snp_in_another_profile_still_requires_collateral(self):
+        lab_kbs = load_helper("lab_kbs")
+        profiles = [
+            {"gpu": "none", "platforms": {"intel_tdx": {}, "amd_sev_snp": {"enabled": False}}},
+            {"gpu": "none", "platforms": {"amd_sev_snp": {"enabled": True}}},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            store = Path(directory).resolve()
+            with self.assertRaisesRegex(BuildError, "Populate the lab SNP VCEK store"):
+                lab_kbs.verifier_config(profiles, str(store))
+            (store / "vcek").mkdir()
+            result = lab_kbs.verifier_config(profiles, str(store))
+        self.assertEqual(
+            result["snp_verifier"]["vcek_sources"],
+            [{"type": "OfflineStore", "path": str(store)}, {"type": "KDS"}],
+        )
+
     def test_snp_lab_uses_a_persistent_offline_store_and_preserves_other_verifiers(self):
         lab_kbs = load_helper("lab_kbs")
         with tempfile.TemporaryDirectory() as directory:

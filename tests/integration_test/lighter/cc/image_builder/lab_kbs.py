@@ -56,7 +56,10 @@ def verifier_config(profiles, snp_vcek_store=None):
     require(len(gpu_urls) <= 1, "Lab GPU profiles must use the same NVIDIA verifier URL")
     if gpu_urls:
         result["nvidia_verifier"] = {"type": "Remote", "verifier_url": gpu_urls.pop()}
-    if any("amd_sev_snp" in profile.get("platforms", {}) for profile in profiles):
+    if any(
+        "amd_sev_snp" in profile.get("platforms", {}) and profile["platforms"]["amd_sev_snp"].get("enabled", True)
+        for profile in profiles
+    ):
         store = snp_vcek_store or "/opt/confidential-containers/attestation-service/kds-store"
         require(isinstance(store, str) and Path(store).is_absolute(), "Lab SNP VCEK store must be an absolute path")
         require((Path(store) / "vcek").is_dir(), "Populate the lab SNP VCEK store before starting Trustee")
