@@ -13,22 +13,25 @@
 # limitations under the License.
 import os
 import shutil
+import stat
 import tempfile
 import threading
 from collections import OrderedDict
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ReturnCode, SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import DataTypes
 from nvflare.apis.streaming import StreamContext
-from nvflare.app_common.logging.constants import ALLOW_LOG_STREAMING_VAR, LIVE_LOG_TOPIC, Channels
+from nvflare.app_common.logging.constants import (
+    ALLOW_LOG_STREAMING_VAR,
+    LIVE_LOG_TOPIC,
+    Channels,
+    client_log_path,
+    client_log_staging_root,
+)
 from nvflare.app_common.streamers.log_streamer import LogStreamer
 from nvflare.widgets.widget import Widget
-
-# Keys for per-stream state stored in StreamContext
-_KEY_RECV_FILE = "JobLogReceiver.recv_file"
-_KEY_RECV_PATH = "JobLogReceiver.recv_path"
 
 # Cap on the number of (client, job_id) pairs we remember for "log once"
 # tracking. The receiver is a long-lived server-side widget; without a cap,
@@ -48,8 +51,8 @@ class JobLogReceiver(Widget):
     manager for storage. The storage backend may consume the staging file.
 
     By default the staging file is written to
-    ``{workspace.get_log_root(job_id)}/{client_name}/{log_file_name}``, the same
-    location the administrator's live-log reader uses. An explicit ``dest_dir``
+    ``{workspace.get_log_root()}/.client_log_streams/{job_id}/{client_name}/{log_file_name}``,
+    outside per-job cleanup. The administrator's live-log reader uses this location. An explicit ``dest_dir``
     instead selects ``{dest_dir}/{job_id}/{client_name}/{log_file_name}``.
 
     This widget can be placed in either of two locations:
@@ -74,8 +77,8 @@ class JobLogReceiver(Widget):
 
     Args:
         dest_dir: directory where incoming log staging files are written.
-            Defaults to the job's workspace log root; uses the system temporary
-            directory only when no workspace is available.
+            Defaults to private staging beside the workspace job log roots; uses
+            a private temporary directory only when no workspace is available.
         idle_timeout: seconds without any message (data or heartbeat) before
             the receiver declares the sender dead and closes the stream
             (default 30.0).  Set to 0 to disable.
@@ -85,6 +88,11 @@ class JobLogReceiver(Widget):
         super().__init__()
         self._dest_dir = dest_dir
         self._idle_timeout = idle_timeout
+        # StreamContext arrives from the sender. File handles, paths, and the
+        # validated owner must remain in receiver-owned state, never in it.
+        self._stream_files = {}
+        self._stream_lock = threading.RLock()
+        self._temporary_dest = None
         # Tracks (client, job_id) pairs we've already logged a "site does not allow
         # streaming" error for, so the warning is emitted at most once per job.
         # Bounded with FIFO eviction (see _UNAUTHORIZED_LOG_CAP) and guarded by a
@@ -107,14 +115,44 @@ class JobLogReceiver(Widget):
             self._register,
         )
 
-    def _effective_dest_dir(self, job_id: str, fl_ctx: FLContext) -> str:
+    def _staging_root(self, fl_ctx):
         if self._dest_dir:
-            return os.path.join(self._dest_dir, job_id)
-        engine = fl_ctx.get_engine()
-        workspace = getattr(engine, "get_workspace", lambda: None)()
+            return self._dest_dir
+        workspace = getattr(fl_ctx.get_engine(), "get_workspace", lambda: None)()
         if workspace is not None:
-            return workspace.get_log_root(job_id)
-        return os.path.join(tempfile.gettempdir(), job_id)
+            return client_log_staging_root(workspace)
+        if self._temporary_dest is None:
+            self._temporary_dest = tempfile.mkdtemp(prefix="nvflare-client-logs-")
+        return self._temporary_dest
+
+    @staticmethod
+    def _open_log(root, job_id, client, file_name):
+        path = client_log_path(root, job_id, client, file_name)
+        root = os.path.realpath(root)
+        for directory in (root, os.path.join(root, job_id), os.path.dirname(path)):
+            if os.path.islink(directory):
+                raise ValueError("Client log directory must not be a symlink")
+            os.makedirs(directory, mode=0o700, exist_ok=True)
+            if os.name == "posix" and os.stat(directory).st_mode & 0o022:
+                raise ValueError("Client log directory must not be writable by other users")
+        # Recheck after creating directories; never follow a final symlink.
+        client_log_path(root, job_id, client, file_name)
+        if os.path.islink(path):
+            raise ValueError("Client log file must not be a symlink")
+        fd = os.open(
+            path,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
+            0o600,
+        )
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise ValueError("Client log must be a regular file")
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, 0o600)
+            return path, os.fdopen(fd, "wb")
+        except BaseException:
+            os.close(fd)
+            raise
 
     @staticmethod
     def _sanitize_path_component(name: str) -> str:
@@ -131,12 +169,10 @@ class JobLogReceiver(Widget):
 
     def _get_trusted_stream_identity(self, fl_ctx: FLContext):
         peer_ctx = fl_ctx.get_peer_context()
-        if peer_ctx is None:
-            return "unknown", "unknown"
-
-        client = self._sanitize_path_component(peer_ctx.get_identity_name(default="unknown"))
-        job_id = self._sanitize_path_component(peer_ctx.get_job_id(default="unknown"))
-        return client, job_id
+        client = fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
+        if peer_ctx is None or not isinstance(client, str) or peer_ctx.get_identity_name() != client:
+            raise ValueError("Log stream identity does not match the authenticated sender")
+        return client, peer_ctx.get_job_id()
 
     def _is_site_allowed_to_stream(self, client_name: str, fl_ctx: FLContext) -> bool:
         """Look up the registered Client and check its site_config (forwarded
@@ -175,55 +211,47 @@ class JobLogReceiver(Widget):
             return True
 
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
-        f = stream_ctx.get(_KEY_RECV_FILE)
-        if f is None:
-            client, job_id = self._get_trusted_stream_identity(fl_ctx)
-            if not self._is_site_allowed_to_stream(client, fl_ctx):
-                # Drop the chunk: the site has explicitly disabled streaming.
-                # Log once per (client, job_id) so the operator can see it
-                # without flooding the server log.
-                if self._record_unauthorized((client, job_id)):
-                    self.log_error(
-                        fl_ctx,
-                        f"Dropping live log chunk from {client} for job {job_id}: site has "
-                        f"'{ALLOW_LOG_STREAMING_VAR}' disabled in its resources.json",
-                    )
-                return
-            log_file_name = self._sanitize_path_component(LogStreamer.get_file_name(stream_ctx) or "log.txt")
-            path = os.path.join(self._effective_dest_dir(job_id, fl_ctx), client, log_file_name)
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            self.log_debug(fl_ctx, f"Opening log file for {client} job {job_id}: {path}")
-            f = open(path, "wb")
-            stream_ctx[_KEY_RECV_FILE] = f
-            stream_ctx[_KEY_RECV_PATH] = path
-        f.write(data)
-        f.flush()
+        client, job_id = self._get_trusted_stream_identity(fl_ctx)
+        with self._stream_lock:
+            state = self._stream_files.get(id(stream_ctx))
+            if state is None:
+                if not self._is_site_allowed_to_stream(client, fl_ctx):
+                    if self._record_unauthorized((client, job_id)):
+                        self.log_error(
+                            fl_ctx,
+                            f"Dropping live log chunk from {client} for job {job_id}: site has "
+                            f"'{ALLOW_LOG_STREAMING_VAR}' disabled in its resources.json",
+                        )
+                    return
+                file_name = LogStreamer.get_file_name(stream_ctx) or WorkspaceConstants.LOG_FILE_NAME
+                path, stream = self._open_log(self._staging_root(fl_ctx), job_id, client, file_name)
+                state = {"file": stream, "path": path, "client": client, "job_id": job_id, "file_name": file_name}
+                self._stream_files[id(stream_ctx)] = state
+            elif (state["client"], state["job_id"]) != (client, job_id):
+                raise ValueError("Log stream owner changed")
+            state["file"].write(data)
+            state["file"].flush()
 
     def _on_stream_done(self, stream_ctx: StreamContext, fl_ctx: FLContext):
-        f = stream_ctx.get(_KEY_RECV_FILE)
-        if f is not None:
-            f.close()
-            stream_ctx[_KEY_RECV_FILE] = None
-
+        with self._stream_lock:
+            state = self._stream_files.pop(id(stream_ctx), None)
+            if state is not None:
+                state["file"].close()
+        if state is None:
+            if LogStreamer.get_file_name(stream_ctx) == WorkspaceConstants.ERROR_LOG_FILE_NAME:
+                return
+            client, job_id = self._get_trusted_stream_identity(fl_ctx)
+            self.log_warning(fl_ctx, f"No log data received from {client} for job {job_id}")
+            return
+        client, job_id, log_type = state["client"], state["job_id"], state["file_name"]
+        file_path = state["path"]
         rc = LogStreamer.get_rc(stream_ctx)
-        client, job_id = self._get_trusted_stream_identity(fl_ctx)
-
         if rc != ReturnCode.OK:
-            file_path = stream_ctx.get(_KEY_RECV_PATH)
             self.log_warning(
                 fl_ctx,
-                f"Live log stream from {client} job {job_id} ended with rc={rc}; partial log retained at {file_path}",
+                f"Live log stream from {client} job {job_id} ended with rc={rc}; "
+                f"partial log retained at {file_path}",
             )
-            return
-
-        file_path = stream_ctx.get(_KEY_RECV_PATH)
-        log_type = self._sanitize_path_component(
-            LogStreamer.get_file_name(stream_ctx) or WorkspaceConstants.LOG_FILE_NAME
-        )
-        if not file_path:
-            if log_type == WorkspaceConstants.ERROR_LOG_FILE_NAME:
-                return
-            self.log_warning(fl_ctx, f"No log data received from {client} for job {job_id}")
             return
 
         engine = fl_ctx.get_engine()
