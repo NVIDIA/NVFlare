@@ -31,6 +31,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.confidential_computing.aci_authorizer import ACI_NAMESPACE, ACIAuthorizer
 from nvflare.app_opt.confidential_computing.az_cvm_authorizer import AZ_CVM_NAMESPACE, AZCVMAuthorizer
 from nvflare.app_opt.confidential_computing.cc_manager import CCManager
+from nvflare.lighter.cc.vault_adapter import VaultAdapter
 from nvflare.lighter.cc_provision.config import _warn_jwt_expiry, load_participant_config, load_project_config
 from nvflare.lighter.cc_provision.deployment import CPUTEE, GPUTEE, CCDeploymentMode, WorkloadSourceType
 from nvflare.lighter.cc_provision.impl.bare_metal_cvm import BareMetalCVMDeployment
@@ -770,7 +771,7 @@ def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
         (tmp_path / name).write_text("fixture")
     project_config = {
         "_config_path": tmp_path / "cc_project.yml",
-        "approval": {"public_key_files": ["approval.pub"]},
+        "approval": {"public_key_files": [str(tmp_path / "approval.pub")]},
         "build_tools": {"bare_metal_cvm": {"cvm_builder_dir": "builder"}},
     }
     mode = {
@@ -799,8 +800,8 @@ def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
                     config_path=tmp_path / "cc_project.yml",
                     values={
                         "kbs_endpoint": endpoint,
-                        "ca_cert_file": "ca.pem",
-                        "admin_token_file": "admin.jwt",
+                        "ca_cert_file": str(tmp_path / "ca.pem"),
+                        "admin_token_file": str(tmp_path / "admin.jwt"),
                         "expiry_warning_seconds": 604800,
                         "token_expiration_seconds": 100,
                     },
@@ -817,6 +818,11 @@ def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
     assert "trustee-one.example" in paths[0].read_text()
     assert "trustee-two.example" in paths[1].read_text()
     assert all(path.stat().st_mode & 0o077 == 0 for path in paths)
+    # The adapter is patched above; validate the generated file with the real project-config check.
+    real_adapter = SimpleNamespace(_path=lambda value: Path(value))
+    for path in paths:
+        assert yaml.safe_load(path.read_text())["trustee"]["expiry_warning_seconds"] == 604800
+        assert VaultAdapter._project_config(real_adapter, str(path)) == path.resolve()
     settings = adapter.call_args.args[0]
     assert settings["attestation_credentials"] is True
     assert settings["max_token_age_seconds"] == 100
