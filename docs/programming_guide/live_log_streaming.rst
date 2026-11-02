@@ -135,8 +135,10 @@ In the Job API, you can attach a job-level receiver with:
 **Constructor arguments**
 
 ``dest_dir`` (str, default ``None``)
-    Directory where incoming log staging files are written. Defaults to the
-    system temporary directory.
+    Optional directory where incoming log staging files are written. By default,
+    files use the workspace's job log root, including any configured external
+    log root. Without a workspace, the receiver falls back to the system
+    temporary directory.
 
 ``idle_timeout`` (float, default ``30.0``)
     Seconds without any message (data or heartbeat) before the receiver
@@ -144,11 +146,19 @@ In the Job API, you can attach a job-level receiver with:
 
 **File layout**
 
-While the stream is active, each chunk is appended to a staging file at::
+With the default configuration, each chunk is flushed to::
+
+    {workspace.get_log_root(job_id)}/{client_name}/{log_file_name}
+
+This is the path used by authenticated ``get_job_log JOB_ID CLIENT`` and
+``get_job_log JOB_ID all`` retrieval, so an active stream is readable before
+it closes. This requires the updated receiver on the federation server.
+An explicit ``dest_dir`` instead stages files at::
 
     {dest_dir}/{job_id}/{client_name}/{log_file_name}
 
-so an operator can find logs while the job is still running. When the stream
+Custom staging supports operator-side tailing; the admin command does not
+search arbitrary custom directories for active streams. When the stream
 ends successfully, the file is handed to the job manager (if registered) for
 permanent storage. The storage backend may move the file, so the staging path
 may no longer exist after the stream ends. Without a job manager — for example

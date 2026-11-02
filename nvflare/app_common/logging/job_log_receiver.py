@@ -47,8 +47,10 @@ class JobLogReceiver(Widget):
     (normal EOF, job abort, or idle timeout) the file is handed to the job
     manager for storage. The storage backend may consume the staging file.
 
-    The staging file is written to ``{dest_dir}/{job_id}/{client_name}/{log_file_name}``,
-    making it easy to locate and tail during a run.
+    By default the staging file is written to
+    ``{workspace.get_log_root(job_id)}/{client_name}/{log_file_name}``, the same
+    location the administrator's live-log reader uses. An explicit ``dest_dir``
+    instead selects ``{dest_dir}/{job_id}/{client_name}/{log_file_name}``.
 
     This widget can be placed in either of two locations:
 
@@ -72,7 +74,8 @@ class JobLogReceiver(Widget):
 
     Args:
         dest_dir: directory where incoming log staging files are written.
-            Defaults to the system temporary directory.
+            Defaults to the job's workspace log root; uses the system temporary
+            directory only when no workspace is available.
         idle_timeout: seconds without any message (data or heartbeat) before
             the receiver declares the sender dead and closes the stream
             (default 30.0).  Set to 0 to disable.
@@ -104,8 +107,14 @@ class JobLogReceiver(Widget):
             self._register,
         )
 
-    def _effective_dest_dir(self) -> str:
-        return self._dest_dir or tempfile.gettempdir()
+    def _effective_dest_dir(self, job_id: str, fl_ctx: FLContext) -> str:
+        if self._dest_dir:
+            return os.path.join(self._dest_dir, job_id)
+        engine = fl_ctx.get_engine()
+        workspace = getattr(engine, "get_workspace", lambda: None)()
+        if workspace is not None:
+            return workspace.get_log_root(job_id)
+        return os.path.join(tempfile.gettempdir(), job_id)
 
     @staticmethod
     def _sanitize_path_component(name: str) -> str:
@@ -181,7 +190,7 @@ class JobLogReceiver(Widget):
                     )
                 return
             log_file_name = self._sanitize_path_component(LogStreamer.get_file_name(stream_ctx) or "log.txt")
-            path = os.path.join(self._effective_dest_dir(), job_id, client, log_file_name)
+            path = os.path.join(self._effective_dest_dir(job_id, fl_ctx), client, log_file_name)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             self.log_debug(fl_ctx, f"Opening log file for {client} job {job_id}: {path}")
             f = open(path, "wb")
@@ -228,7 +237,8 @@ class JobLogReceiver(Widget):
                     dest_path = os.path.join(workspace.get_run_dir(job_id), client, log_type)
                     try:
                         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                        shutil.move(file_path, dest_path)
+                        if os.path.abspath(file_path) != os.path.abspath(dest_path):
+                            shutil.move(file_path, dest_path)
                         self.log_info(fl_ctx, f"Saved live log '{log_type}' from {client} to {dest_path}")
                         return
                     except Exception:
