@@ -19,7 +19,6 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
-from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.class_utils import ModuleScanner, get_class_path_from_config
 from nvflare.fuel.utils.component_builder import ConfigType
@@ -54,12 +53,8 @@ def get_client_execution_lifetime(client_config):
     return ExecutionLifetime.validate(client_config.get("execution_lifetime", ExecutionLifetime.JOB))
 
 
-def validate_task_resources(meta, site_name, *, allow_gpu=False):
-    """Validate counts; require GPU capability only at trusted site admission.
-
-    Export uses allow_gpu=True because it cannot select the receiving site's
-    backend. The default preserves the initial Process runtime's GPU guard.
-    """
+def validate_task_resources(meta, site_name):
+    """Validate GPU counts; the trusted native backend owns admission."""
     specs = [
         get_compute_resource_manager_spec(meta, site_name),
         get_resource_manager_spec(meta, site_name),
@@ -71,27 +66,6 @@ def validate_task_resources(meta, site_name, *, allow_gpu=False):
             value = spec.get(name, 0)
             if type(value) is not int or value < 0:
                 raise ValueError("task GPUs must be nonnegative integer counts")
-        if not allow_gpu and (spec.get("num_of_gpus", 0) or spec.get("gpus_per_node", 0)):
-            raise ValueError("task lifetime currently supports CPU Process execution; this site requests GPUs")
-
-
-def validate_process_task_resources(meta, site_name):
-    """Reject compute claims that the Process backend cannot enforce.
-
-    Called before starting a normalized task CJ and again before compute, so
-    unsupported sites fail once at launch without depending on job authors
-    knowing which backend each receiving site runs.
-    """
-    compute_admission = get_compute_resource_manager_spec(meta, site_name)
-    unsupported = set(compute_admission) - {"num_of_gpus", "mem_per_gpu_in_GiB"}
-    if unsupported or compute_admission.get("mem_per_gpu_in_GiB", 0):
-        raise UnsupportedTaskResourceError(
-            "Process task workers cannot enforce custom resource-manager or GPU-memory requirements"
-        )
-    portable = get_portable_resource_spec(meta, site_name)
-    process = get_job_launcher_spec(meta, site_name, "process")
-    if set(portable) & {"num_of_cpus", "memory"} or set(process) & {"num_of_cpus", "memory"}:
-        raise UnsupportedTaskResourceError("Process task workers cannot enforce CPU/memory limits")
 
 
 def validate_task_workflows(workflows):

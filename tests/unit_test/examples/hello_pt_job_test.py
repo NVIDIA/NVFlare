@@ -21,6 +21,7 @@ import re
 import shlex
 import sys
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -96,6 +97,24 @@ def test_help_includes_recipe_export_options():
 
     assert "--export" in help_text
     assert "--export-dir EXPORT_DIR" in help_text
+    assert "exported task jobs only" in " ".join(help_text.split())
+
+
+@pytest.mark.parametrize("resume_args", [[], ["--resume_training"], ["--no-resume_training"]])
+def test_local_task_run_rejected_before_recipe_or_simulator_creation(monkeypatch, capsys, resume_args):
+    job_module = _load_job_module()
+    monkeypatch.setattr(job_module, "is_export_requested", lambda: False)
+    create = Mock(side_effect=AssertionError("must reject before constructing the recipe"))
+    simulator = Mock(side_effect=AssertionError("must reject before starting the simulator"))
+    monkeypatch.setattr(job_module, "create_recipe", create)
+    monkeypatch.setattr(job_module, "SimEnv", simulator)
+
+    with pytest.raises(SystemExit, match="2"):
+        job_module.main(["--execution_lifetime", "task", *resume_args])
+
+    assert "task lifetime requires --export" in capsys.readouterr().err
+    create.assert_not_called()
+    simulator.assert_not_called()
 
 
 @pytest.mark.xdist_group(name="hello_pt_cli_export")
