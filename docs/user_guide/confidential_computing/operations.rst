@@ -58,9 +58,10 @@ Bare-metal CVM checklist
    directory; rematerializing restores a pristine vault and loses prior guest
    writes.
 #. After a failed launch, inspect the fixed ``phase=`` identifier in the
-   attached launcher/serial output. The applog disk is available only after the
-   vault mounts, and the failed run is copied to ``applog-history`` at the next
-   launch.
+   delivery's ``console-<timestamp>.log`` or attached serial output. Serial
+   capture starts before guest boot. The applog disk is available only after
+   the vault mounts, and the failed run is copied to ``applog-history`` at the
+   next launch.
 
 CoCo checklist
 --------------
@@ -95,6 +96,89 @@ Azure checklist
    ``gpu_tee: none`` in this mode.
 #. Provision and install the signed startup kit using the selected Azure guide,
    then validate MAA evidence and the NVFlare job on the deployed resource.
+
+.. _cc_log_retrieval:
+
+Retrieve job logs and early-boot diagnostics
+---------------------------------------------
+
+Use an authenticated NVFlare administrator session to retrieve application
+logs for both bare-metal CVMs and CoCo. CC provisioning configures protected
+clients to stream ``log.txt`` as well as ``error_log.txt`` to the server's
+``JobLogReceiver``. The latter also retains its post-run error-log upload for
+failures before job startup. No guest shell, Kubernetes log stream, or mount of
+the confidential filesystem is required.
+
+For a running or completed job, use these FLARE Console commands:
+
+.. code-block:: text
+
+   get_job_log JOB_ID all
+   list_job_components JOB_ID
+   download_job_components JOB_ID
+
+The equivalent methods on an authenticated FLARE API ``Session`` are:
+
+.. code-block:: python
+
+   logs = sess.get_job_logs(job_id, target="all")
+   print(logs.get("logs", {}))
+   print(logs.get("unavailable", {}))
+   print(sess.list_job_components(job_id))
+   log_directory = sess.download_job_components(job_id)
+
+``get_job_logs`` returns the available tail, bounded to 5 MiB per file. For
+complete streams after they finish, download the additional components:
+``LOG_log.txt_<site>`` and ``ERRORLOG_<site>``. Use the component names returned
+by ``list_job_components``; do not assume they appear inside the ordinary
+``download_job`` / ``download_job_result`` workspace archive. That archive
+contains the server workspace, not every client's private workspace.
+These are NVFlare/Python logging files; raw ``print()`` output, subprocess
+stderr, and application-specific files are not automatically included. Use the
+configured Python logger for application diagnostics that must be retrieved.
+
+Logs are disclosed to the trusted federation server and authorized FL
+administrator. Before provisioning, a site can set
+``allow_log_streaming: false`` on its client participant in ``project.yml``
+to disable both streams. The opt-out is included in the signed startup kit.
+If disabled, or if the guest dies before sending data, the admin API reports
+unavailable logs; it cannot recover unsent bytes. Retrieve logs before removing
+the server's job storage. Reprovision existing CC deliveries to install the new
+streamer configuration, and use the updated NVFlare package in the workload
+image so both file streamers can coexist.
+
+Confidential NVFlare logs stay inside the CVM vault or CoCo container filesystem
+and travel over the authenticated federation connection. They are not mirrored
+to the clear ``/applog`` disk or Kubernetes stdout. A workload may explicitly
+write non-confidential output to ``/applog``, but that is a separate disclosure
+decision. The clear disk is reformatted at every CVM boot; the launcher retains
+three preceding disk images under ``applog-history`` as a best-effort aid.
+
+If the application never starts, use the controlled diagnostics for its mode:
+
+* **Bare-metal CVM:** the launcher prints the path of
+  ``console-<timestamp>.log`` beside the materialized delivery. It records the
+  same output-only guest serial bytes seen on the terminal, including
+  initramfs failures and sanitized ``phase=`` startup errors before ``/applog``
+  exists. The three newest files are retained with mode ``0600``; each new
+  capture keeps at most the first 16 MiB. At the byte limit or on a write
+  failure, the launcher warns and stops retaining bytes while continuing to
+  drain the logging channel and display terminal output. Copy needed files
+  before another launch or rematerialization; if capture cannot be created,
+  the launcher warns and keeps terminal output. QEMU's own host-side
+  errors remain on launcher stderr. These logs are advisory host files, not
+  signed attestation or acceptance evidence.
+* **CoCo:** before a workload registers, use Pod status and Events, the assigned
+  worker's kubelet/containerd journal, and the trusted KBS/AS/RVPS logs described
+  in the :github_nvflare_link:`CoCo launch troubleshooting guide
+  <examples/devops/coco/LAUNCH.md>`. These identify scheduling, sandbox,
+  image-decryption, and attestation failures. They are not guest syslog.
+  The sealed agent continues to deny exec, attach, and application log access
+  from the cluster host.
+
+Raw guest ``/var/log`` and journals are not exported. They can contain secrets
+and reside in private guest storage. Do not add a clear syslog disk, enable
+guest debug shells, or relax the measured CoCo agent policy to obtain them.
 
 Shared terminology and configuration names
 ------------------------------------------
@@ -253,8 +337,9 @@ After a successful launch, the launcher remains attached, the server and every
 required client appear online in the admin console, and each NVFlare log records
 ``Initialized CCManager`` followed by ``Cross-site validation passed``. A job is
 then accepted without ``CC participant validation failed``. Early startup phases
-run before the applog disk is mounted, so their ``phase=`` lines exist only in
-the attached serial output. ``applog-history`` is created at the next launch and
+run before the applog disk is mounted, so their ``phase=`` lines are in the
+serial output and its ``console-<timestamp>.log`` capture.
+``applog-history`` is created at the next launch and
 contains the preceding run, not the run currently starting.
 
 Credential and reference expiry belongs in the deployment calendar. Trustee

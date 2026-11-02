@@ -53,13 +53,41 @@ as not handling secrets; never publish that directory without review.
 
 ## The CVM starts and powers off
 
-Review the private serial log and KBS logs together. Early poweroff is the
+Review `console-<timestamp>.log` beside the materialized delivery and the KBS
+logs together. The launcher prints the current serial-log path and retains the
+three newest files with mode 0600, including failures before `/applog` mounts.
+Each new capture retains the first 16 MiB. Reaching that cap or encountering a
+write failure stops file capture with a warning; terminal output continues.
+If capture cannot be created it warns, so retain the attached terminal output.
+Raw guest syslog is not exported. For missing job/client logs, use the
+[authenticated CC log-retrieval workflow](../../../../docs/user_guide/confidential_computing/operations.rst#retrieve-job-logs-and-early-boot-diagnostics).
+Early poweroff is the
 fail-closed result for invalid measurement/TCB references, stale or wrong policy
 selection, missing offline collateral, failed time synchronization, vault
 integrity errors, or unavailable GPU appraisal. Do not turn off the watchdog or
 integrity monitor to keep the workload running. Verify the delivery and generic
 artifact signatures/digests again, then reproduce with the exact manifest's
 acceptance workload if the cause remains unclear.
+
+### Cold boot waits for `time_sync`
+
+A sealed production guest starts without chrony's drift history. Its first
+NTS samples can correct the offset before they span enough time to estimate
+frequency uncertainty (skew). The initial `iburst` is therefore not evidence that
+the clock gate should already pass. The normal polling interval can be about
+64 seconds; boot readiness can vary across otherwise identical launches.
+
+The cold-boot gate allows 180 one-second `chronyc waitsync` tries after an
+initial, best-effort 30-second correction wait. It requires correction at most
+0.5 seconds and skew at most 1000 ppm before attestation. Runtime `chronyc burst`
+is not used to force convergence. Periodic checks keep their shorter budget.
+This fix is already part of 2.9 through [PR #5463](https://github.com/NVIDIA/NVFlare/pull/5463).
+
+If the final gate fails, verify the measured NTS server names, DNS resolution,
+outbound UDP 123 and TCP 4460, and time-server TLS reachability. Use the serial
+phase identifier and network-side diagnostics; the production guest has no
+interactive shell. A small offset alone does not establish a synchronized
+clock. Keep both quality limits and the fail-closed startup gate in place.
 
 For evaluation without TEE or KBS dependencies, use the
 [30-minute `--dev` walkthrough](README.md#30-minute-dev-mode-walkthrough). Dev

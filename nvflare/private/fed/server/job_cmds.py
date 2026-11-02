@@ -20,6 +20,7 @@ import shutil
 import threading
 import uuid
 import weakref
+from contextlib import nullcontext
 from typing import Dict, List, Optional, Set
 from zipfile import BadZipFile, ZipFile
 
@@ -60,6 +61,8 @@ from nvflare.apis.storage import (
     StorageSpec,
 )
 from nvflare.apis.utils.job_submit_token import canonical_job_content_hash, validate_submit_token
+from nvflare.app_common.logging.constants import client_log_path, client_log_staging_root
+from nvflare.app_common.logging.log_staging import ClientLogStaging
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -522,12 +525,28 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             job_def_manager = engine.job_def_manager
 
             with engine.new_context() as fl_ctx:
-                job_def_manager.delete(job_id, fl_ctx)
-                mark_deleted = getattr(job_def_manager, "mark_submit_records_job_deleted", None)
-                if callable(mark_deleted):
-                    marked_records = mark_deleted(job_id, self._submitter_from_conn(conn), fl_ctx)
-                else:
-                    marked_records = []
+                workspace = getattr(engine, "get_workspace", lambda: None)()
+                staging = ClientLogStaging(workspace) if workspace is not None else None
+                # Coordinate with open/finalize in every receiver process.
+                # Active files keep their leases and drain after deletion.
+                with staging.locked() if staging else nullcontext():
+                    if staging:
+                        staging.prepare_delete(job_id)
+                    try:
+                        job_def_manager.delete(job_id, fl_ctx)
+                    except Exception:
+                        if staging:
+                            staging.cancel_delete(job_id)
+                        raise
+                    if staging:
+                        staging.mark_deleted(job_id)
+                    mark_deleted = getattr(job_def_manager, "mark_submit_records_job_deleted", None)
+                    if callable(mark_deleted):
+                        marked_records = mark_deleted(job_id, self._submitter_from_conn(conn), fl_ctx)
+                    else:
+                        marked_records = []
+                    if staging:
+                        staging.remove_closed_job_logs(job_id)
                 marked_count = len(marked_records)
                 conn.append_string(f"Job {job_id} deleted. Submit records marked deleted: {marked_count}.")
         except Exception as e:
@@ -830,12 +849,17 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
     ) -> Optional[str]:
         workspace = engine.get_workspace()
-        log_file = os.path.join(workspace.get_log_root(job_id), client_name, log_file_name)
         try:
-            if os.path.exists(log_file):
-                return "".join(self._collect_job_log_lines(log_file))
-        except FileNotFoundError:
+            staged = client_log_path(client_log_staging_root(workspace), job_id, client_name, log_file_name)
+        except ValueError:
             return None
+        try:
+            if not os.path.isfile(staged):
+                staged = os.path.join(workspace.get_log_root(job_id), client_name, log_file_name)
+            if os.path.isfile(staged):
+                return "".join(self._collect_job_log_lines(staged))
+        except FileNotFoundError:
+            pass
         return None
 
     def _read_stored_client_job_log(

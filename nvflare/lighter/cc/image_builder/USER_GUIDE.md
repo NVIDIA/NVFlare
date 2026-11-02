@@ -168,6 +168,15 @@ required `cvm_build_id`, checks the local TEE, verifies every generic artifact,
 checks the vault binding, locks the actual vault inode, records runtime state,
 and starts QEMU with an explicit device set: no default devices, no VGA and no
 terminal monitor. The guest console is output-only on the launch terminal.
+The launcher also records those serial bytes in `console-<timestamp>.log`
+beside the delivery, starting before guest boot or vault unlock. It retains
+the three newest files with mode 0600 and prints the current path. Each new
+capture retains at most the first 16 MiB, preserving early boot diagnostics.
+At the limit or on a file-write failure, it warns and keeps draining the logging
+channel so terminal output continues. If capture cannot be created, it warns
+and continues with terminal output. The capture
+contains the existing sanitized boot diagnostics, not raw guest syslog; it
+does not enable guest input or a debug shell. QEMU host errors remain on stderr.
 
 For a GPU profile, it finds exactly the profile's `gpu_count` NVIDIA display controllers with isolated IOMMU groups, loads `vfio-pci`, binds every function in each GPU slot, and passes all selected slots to the VM. TDX uses one QEMU IOMMUFD backend for these assignments. The guest application
 is started by Docker with `--gpus all`. The
@@ -229,6 +238,13 @@ without a key. `/user_config` and `/user_data` are clear operator inputs enforce
 read-only by QEMU, the guest mount, and the container bind mount. Treat all
 sidecar content as public and untrusted; keep secrets and confidential logs in
 `/vault`.
+
+For NVFlare deliveries made by unified provisioning, job `log.txt` and
+`error_log.txt` are sent to the trusted federation server when the site's
+`allow_log_streaming` setting permits it. Use the authenticated admin API to
+retrieve them; they are not automatically copied to clear `/applog`. Follow the
+[shared CC log-retrieval guide](../../../../docs/user_guide/confidential_computing/operations.rst#retrieve-job-logs-and-early-boot-diagnostics)
+for live logs, complete downloaded components, site opt-out, and failure limits.
 
 ## 6. Shutdown CVM
 
