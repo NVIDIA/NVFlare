@@ -863,11 +863,71 @@ def test_intent_write_failure_does_not_delete_job(tmp_path, monkeypatch):
     manager.delete.assert_not_called()
     assert manager.job_exists("job-1", fl_ctx)
     assert path.read_bytes() == b"keep log\n"
-    # A partially written intent is canceled after an authoritative positive lookup.
-    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
-        JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
+    # Preparation failure cancels immediately; delayed error uploads need no restart.
     assert path.read_bytes() == b"keep log\n"
     assert not (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    late_stream = {KEY_FILE_NAME: "error_log.txt", StreamContextKey.RC: ReturnCode.OK}
+    receiver._on_chunk_received(b"delayed error\n", late_stream, fl_ctx)
+    receiver._on_stream_done(late_stream, fl_ctx)
+    assert manager.get_client_data("job-1", "site-1", "ERRORLOG", fl_ctx) == b"delayed error\n"
+
+
+def test_new_stream_recovers_intent_after_failed_rollback(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"keep log\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    manager = fl_ctx.get_engine().job_def_manager
+    monkeypatch.setattr(manager, "delete", MagicMock(wraps=manager.delete))
+    with patch("nvflare.app_common.logging.log_staging.os.fsync", side_effect=OSError(errno.ENOSPC, "disk full")):
+        with patch.object(ClientLogStaging, "cancel_delete", side_effect=PermissionError("rollback unavailable")):
+            JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+    assert len(conn.errors) == 1
+    manager.delete.assert_not_called()
+    assert (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    late_stream = {KEY_FILE_NAME: "error_log.txt", StreamContextKey.RC: ReturnCode.OK}
+    receiver._on_chunk_received(b"delayed error\n", late_stream, fl_ctx)
+    receiver._on_stream_done(late_stream, fl_ctx)
+    assert manager.get_client_data("job-1", "site-1", "ERRORLOG", fl_ctx) == b"delayed error\n"
+    assert path.read_bytes() == b"keep log\n"
+    assert not (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+
+
+@pytest.mark.parametrize("failure", [PermissionError("store unavailable"), NotImplementedError("unsupported")])
+def test_new_stream_preserves_unresolved_intent_on_lookup_failure(tmp_path, monkeypatch, failure):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"keep log\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    with ClientLogStaging(fl_ctx.get_engine().get_workspace()).locked() as staging:
+        staging.prepare_delete("job-1")
+    manager = fl_ctx.get_engine().job_def_manager
+    late_stream = {KEY_FILE_NAME: "error_log.txt", StreamContextKey.RC: ReturnCode.OK}
+    with patch.object(manager, "job_exists", side_effect=failure):
+        with pytest.raises(type(failure)):
+            receiver._on_chunk_received(b"delayed error\n", late_stream, fl_ctx)
+    assert (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    assert path.read_bytes() == b"keep log\n"
+    assert not path.with_name("error_log.txt").exists()
+    receiver._on_chunk_received(b"delayed error\n", late_stream, fl_ctx)
+    receiver._on_stream_done(late_stream, fl_ctx)
+    assert manager.get_client_data("job-1", "site-1", "ERRORLOG", fl_ctx) == b"delayed error\n"
+
+
+def test_new_stream_recovery_cannot_recreate_deleted_job(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"retained partial\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    manager = fl_ctx.get_engine().job_def_manager
+    with ClientLogStaging(fl_ctx.get_engine().get_workspace()).locked() as staging:
+        staging.prepare_delete("job-1")
+        manager.delete("job-1", fl_ctx)
+    with patch.object(manager, "get_job", return_value=conn.get_prop(JobCommandModule.JOB)):
+        with pytest.raises(ValueError, match="deleted or unknown job"):
+            receiver._on_chunk_received(b"late error", {KEY_FILE_NAME: "error_log.txt"}, fl_ctx)
+    assert manager.job_exists("job-1", fl_ctx) is False
+    assert not path.parent.parent.exists()
 
 
 def test_delete_intent_before_store_mutation_preserves_existing_job(tmp_path, monkeypatch):
