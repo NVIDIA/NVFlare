@@ -51,3 +51,10 @@ replace it with a package prefix or add it to the global default allowlist.
 See the [unified deployment guide](../../../docs/user_guide/confidential_computing/deployment.rst),
 the [CVM build guide](../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md),
 and the [Trustee guide](../../../nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md).
+
+Retrieve client job logs through the authenticated admin session with
+`get_job_log JOB_ID all` and `download_job_components JOB_ID`; they are separate
+from the ordinary job-workspace download. For failures before the workload
+starts, the launcher retains `console-<timestamp>.log` beside the delivery.
+See the [shared CC log-retrieval guide](../../../docs/user_guide/confidential_computing/operations.rst#retrieve-job-logs-and-early-boot-diagnostics)
+for storage locations, retention, and the site's `allow_log_streaming` opt-out.

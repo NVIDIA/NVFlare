@@ -71,6 +71,7 @@ SHUTDOWN_WAIT_SECONDS = GRACEFUL_SHUTDOWN_SECONDS * 2 + QEMU_TERMINATE_SECONDS +
 # reformats the live disk on every boot, so the launcher must snapshot it before
 # reattaching it or a failed run's only diagnostic record is lost.
 APPLOG_HISTORY_LIMIT = 3
+CONSOLE_HISTORY_LIMIT = 3
 
 
 def normalize_pci(address):
@@ -631,6 +632,42 @@ def launch(directory, bundle=None, gpu=None, bind_address="0.0.0.0"):
             qmp.unlink(missing_ok=True)
 
 
+@contextlib.contextmanager
+def serial_capture(command, directory):
+    """Retain the existing output-only guest console, including pre-vault failures."""
+    if "-serial" not in command:
+        yield command, ()
+        return
+    index = command.index("-serial")
+    require(command[index + 1] == "stdio", "Unexpected CVM serial backend")
+    directory = Path(directory)
+    log = directory / f"console-{time.time_ns()}.log"
+    try:
+        fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except OSError:
+        warnings.warn("Could not retain CVM serial output; continuing with terminal output only", RuntimeWarning)
+        yield command, ()
+        return
+    try:
+        os.fchmod(fd, 0o600)
+        try:
+            logs = sorted(path for path in directory.glob("console-*.log") if not path.is_symlink() and path.is_file())
+            for old in logs[:-CONSOLE_HISTORY_LIMIT]:
+                old.unlink()
+        except OSError:
+            warnings.warn("Could not prune old CVM console logs", RuntimeWarning)
+        print(f"Guest serial log: {log}", flush=True)
+        # QEMU logs the same bytes that it sends to stdout. Use the already
+        # opened descriptor so filenames cannot inject chardev options. No
+        # shell, monitor, guest stdin, or raw journal access is added.
+        chardev = f"stdio,id=cvm-console,signal=off,logfile=/proc/self/fd/{fd},logappend=on"
+        captured = list(command)
+        captured[index : index + 2] = ["-chardev", chardev, "-serial", "chardev:cvm-console"]
+        yield captured, (fd,)
+    finally:
+        os.close(fd)
+
+
 def run_vm(command, directory, *, qmp=None):
     """Own QEMU from spawn through exit, even when interrupted during startup."""
     process = None
@@ -638,6 +675,7 @@ def run_vm(command, directory, *, qmp=None):
     previous = {}
     stopping = None
     cleaning = False
+    capture = contextlib.ExitStack()
 
     def terminate(signum, frame):
         nonlocal stopping
@@ -648,6 +686,7 @@ def run_vm(command, directory, *, qmp=None):
             raise KeyboardInterrupt
 
     try:
+        command, pass_fds = capture.enter_context(serial_capture(command, directory))
         for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT, signal.SIGINT):
             previous[sig] = signal.signal(sig, terminate)
         if stopping is not None:
@@ -655,7 +694,7 @@ def run_vm(command, directory, *, qmp=None):
         # QEMU runs in its own session so a terminal Ctrl-C reaches only the
         # launcher, which then requests an orderly guest power-off. The guest
         # console is output-only; login paths on it are masked in the image.
-        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, start_new_session=True)
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, start_new_session=True, pass_fds=pass_fds)
         if stopping is not None:
             return 128 + stopping
         write_runtime_state(directory, process)
@@ -688,6 +727,7 @@ def run_vm(command, directory, *, qmp=None):
         finally:
             for sig, handler in previous.items():
                 signal.signal(sig, handler)
+            capture.close()
 
 
 def main():
