@@ -277,20 +277,17 @@ set the chunk sizes to zero.
 
     job.to_server({"np_download_chunk_size": 0, "tensor_download_chunk_size": 0})
 
-**Using config files directly:**
+**Using config files directly** (set to 0 to disable streaming download and use native serialization):
 
-.. code-block::
+.. code-block:: json
 
-    format_version = 2
-    
-    # Set to 0 to disable streaming download (use native serialization)
-    np_download_chunk_size = 0
-    tensor_download_chunk_size = 0
-    
-    task_data_filters = []
-    task_result_filters = []
-    
-    # ... rest of configuration
+    {
+      "format_version": 2,
+      "np_download_chunk_size": 0,
+      "tensor_download_chunk_size": 0,
+      "task_data_filters": [],
+      "task_result_filters": []
+    }
 
 
 How It Works (Advanced Users)

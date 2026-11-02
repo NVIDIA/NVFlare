@@ -116,18 +116,22 @@ For example, here we add the ``MLflowReceiver`` component to the components conf
     }
   }
 
-Notice the args{} are user defined, such as tracking_uri, experiment_name, tags etc., and will be specific to which receiver is configured.
+Notice the ``args`` are user defined, such as tracking_uri, experiment_name, tags etc., and will be specific to which receiver is configured.
 
 The MLflow tracking URL argument ``tracking_uri`` is None by default, which uses the MLflow default URL, ``http://localhost:5000``.
-To make this accessible from another machine, make sure to change it to the correct URL, or point to to the ``mlruns`` directory in the workspace.
+To make this accessible from another machine, make sure to change it in the receiver ``args`` to the correct URL, or point to to the ``mlruns`` directory in the workspace.
 
-::
+.. code-block:: json
 
-  tracking_uri = <the Mlflow Server endpoint URL>
+  {
+    "tracking_uri": "<the Mlflow Server endpoint URL>"
+  }
 
-::
+.. code-block:: json
 
-  tracking_uri = "file:///{WORKSPACE}/{JOB_ID}/mlruns"
+  {
+    "tracking_uri": "file:///{WORKSPACE}/{JOB_ID}/mlruns"
+  }
 
 You can change other arguments such as experiments, run_name, tags (using Markdown syntax), and artifact location.
 

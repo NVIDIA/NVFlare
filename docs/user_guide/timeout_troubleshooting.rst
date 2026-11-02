@@ -284,16 +284,16 @@ Via Recipe API
 Via Configuration Files
 -----------------------
 
-**application.conf** (job-level):
+**application_config.json** (job-level; the last two keys are server startup/dead-job safety flags):
 
-.. code-block::
+.. code-block:: json
 
-   get_task_timeout = 300.0
-   submit_task_result_timeout = 300.0
-
-   # Server startup/dead-job safety flags
-   strict_start_job_reply_check = false
-   sync_client_jobs_require_previous_report = true
+   {
+     "get_task_timeout": 300.0,
+     "submit_task_result_timeout": 300.0,
+     "strict_start_job_reply_check": false,
+     "sync_client_jobs_require_previous_report": true
+   }
 
 Server-side safety flags guidance (see :ref:`server_startup_dead_job_safety_flags` for full details):
 
