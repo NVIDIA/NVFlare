@@ -170,8 +170,11 @@ and starts QEMU with an explicit device set: no default devices, no VGA and no
 terminal monitor. The guest console is output-only on the launch terminal.
 The launcher also records those serial bytes in `console-<timestamp>.log`
 beside the delivery, starting before guest boot or vault unlock. It retains
-the three newest files with mode 0600 and prints the current path. If capture
-cannot be created, it warns and continues with terminal output. The capture
+the three newest files with mode 0600 and prints the current path. Each new
+capture retains at most the first 16 MiB, preserving early boot diagnostics.
+At the limit or on a file-write failure, it warns and keeps draining the logging
+channel so terminal output continues. If capture cannot be created, it warns
+and continues with terminal output. The capture
 contains the existing sanitized boot diagnostics, not raw guest syslog; it
 does not enable guest input or a debug shell. QEMU host errors remain on stderr.
 
