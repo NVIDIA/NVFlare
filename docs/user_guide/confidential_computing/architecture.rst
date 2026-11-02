@@ -472,6 +472,13 @@ evidence that a particular deployment has passed those tests.
   :github_nvflare_link:`guest bootstrap <nvflare/lighter/cc/image_builder/cvm/runtime/bootstrap.py>`,
   and :github_nvflare_link:`attestation and authorized-key retrieval
   <nvflare/lighter/cc/image_builder/cvm/runtime/attestation.py>`.
+* **NVIDIA reference architecture mapping:**
+  :github_nvflare_link:`conformance assessment
+  <nvflare/lighter/cc/image_builder/CONFORMANCE.md>` maps standalone CVM controls
+  to the self-hosted VM reference architecture and distinguishes the Kubernetes
+  and Azure deployment boundaries. It records implemented controls, operator
+  requirements, and outstanding exact-profile acceptance; it is not a blanket
+  conformance certificate for federated training or every supported mode.
 * **CVM network enforcement:**
   :github_nvflare_link:`guest firewall rules <nvflare/lighter/cc/image_builder/cvm/common/firewall.py>`,
   :github_nvflare_link:`startup-kit network derivation <nvflare/lighter/cc/vault_adapter.py>`,
@@ -501,8 +508,11 @@ acceptance records.
   <https://docs.nvidia.com/confidential-computing/index.html>`_: NVIDIA
   platform trust boundaries, deployment modalities, and attestation resources.
 * `NVIDIA Confidential Containers Reference Architecture
-  <https://docs.nvidia.com/confidential-computing/containers/overview>`_:
-  GPU-enabled CoCo architecture, components, and security considerations.
+  <https://docs.nvidia.com/enterprise-reference-architectures/deploying-proprietary-models-confidential-compute-self-hosted-kubernetes/latest/index.html>`_:
+  GPU-accelerated inference on self-hosted Kubernetes, including fresh CPU/GPU
+  evidence, measured guest and workload policy, and protected key release.
+  Its reference implementation's component versions do not replace NVFlare's
+  tested CoCo/Trustee pins or qualify an untested deployment combination.
 * `NVIDIA Confidential VM Reference Architecture
   <https://docs.nvidia.com/enterprise-reference-architectures/deploying-proprietary-models-confidential-compute-self-hosted-vms/latest/scope.html>`_:
   GPU-accelerated inference on self-hosted CVMs. Its scope excludes training
