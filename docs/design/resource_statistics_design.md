@@ -161,7 +161,11 @@ measurements are preserved, unfinished observations become unavailable, and late
 results are ignored. Requested archive members and ZIP indexing have separate
 decoded-data and metadata-read bounds. Remote job stores may still transfer the whole
 workspace archive to answer a small query. Query latency and temporary storage
-can therefore depend on the archive size, not just the statistics size.
+can therefore depend on the archive size, not just the statistics size. Each server
+admits one archive-backed job or study query at a time and rejects concurrent
+requests with `resource query busy; retry later`. This bounds concurrency only;
+the [reporting design](resource_statistics_reporting.md) describes the remaining
+transfer-size, disk-space, and execution-time limitations.
 
 ## Task lifetime
 

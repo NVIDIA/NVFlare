@@ -309,6 +309,11 @@ applies existing job-ID, study, and submitter authorization before fetching a
 workspace. A study query also checks the resources-read right for each job and
 excludes denied jobs without exposing their IDs or counts.
 
+Each server admits one archive-backed resource query at a time, shared by job and
+study queries. A concurrent request receives `resource query busy; retry later`
+immediately instead of entering a queue. The admission slot is released when the
+server-side query finishes, including failure paths.
+
 Only finalized jobs have archive-backed data. The reader stages the normal
 `WORKSPACE` through `JobDefManagerSpec.get_storage_for_download`; the design adds
 neither a parallel storage database nor a sidecar-storage API. It reads the summary
@@ -318,11 +323,17 @@ rejects encrypted, directory, or oversized members, and bounds actual decoded
 reads. It also cross-checks detail identity and copied values against the summary
 without extracting or scanning unrelated workspace contents.
 
-The ZIP index has its own limit because a small JSON member does not imply small
-archive metadata. Remote job stores may still download the entire workspace before
-the reader opens it. The design reuses existing download cleanup and timeout
-policy; it does not promise low network cost for a small query or cancellation of
-server I/O when the CLI times out.
+Study queries process archives sequentially and remove each archive's temporary
+staging directory before proceeding to the next job. The ZIP index has its own
+limit because a small JSON member does not imply small archive metadata. Remote
+job stores may still download the entire workspace before the reader opens it.
+
+Admission bounds concurrent queries; it does not bound the transfer size, disk
+space, or execution time of one query. Transfer-size, disk-space, and hard
+execution-time limits remain deferred until statistics can be fetched independently
+of the workspace archive. Existing download cleanup and timeout policy still
+apply. A client timeout does not cancel server storage I/O or release the admission
+slot while that query continues on the server.
 
 Job totals are derived from accepted entries independently for each measurement.
 They sum stored `resource_time` and utilization without multiplying startup
