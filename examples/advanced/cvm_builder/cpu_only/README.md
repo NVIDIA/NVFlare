@@ -2,7 +2,9 @@
 
 Start here for a bare-metal CVM deployment. Both the server and client use the
 same approved AMD SEV-SNP CPU-only generic image and the same project Trustee.
-Build the CPU-specific application archive from this directory:
+Follow the [matching-runtime wheel setup](../docker/README.md#prerequisites)
+and export `NVFLARE_WHEEL` to the exact wheel used by your provisioner. Then
+build the CPU-specific application archive from this directory:
 
 ```bash
 ../docker/docker_build.sh Dockerfile.cpu nvflare-site-cpu /srv/nvflare/images/application.tar

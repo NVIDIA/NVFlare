@@ -48,6 +48,41 @@ def load_helper(name):
 
 
 class LabProfileTests(unittest.TestCase):
+    def test_snp_lab_uses_a_persistent_offline_store_and_preserves_other_verifiers(self):
+        lab_kbs = load_helper("lab_kbs")
+        with tempfile.TemporaryDirectory() as directory:
+            store = Path(directory).resolve()
+            (store / "vcek").mkdir()
+            profile = {"gpu": "none", "platforms": {"amd_sev_snp": {}}}
+            result = lab_kbs.verifier_config([profile], str(store))
+            self.assertEqual(
+                result["snp_verifier"]["vcek_sources"],
+                [{"type": "OfflineStore", "path": str(store)}, {"type": "KDS"}],
+            )
+            self.assertIn("dcap_verifier", result)
+            self.assertNotIn("nvidia_verifier", result)
+            for invalid in ("relative/store", str(store / "missing")):
+                with self.subTest(store=invalid), self.assertRaises(BuildError):
+                    lab_kbs.verifier_config([profile], invalid)
+
+    def test_lab_start_does_not_assert_that_administrative_acceptance_passed(self):
+        prepare = load_helper("prepare_lab")
+        lab_kbs = load_helper("lab_kbs")
+        with tempfile.TemporaryDirectory() as directory:
+            with contextlib.redirect_stdout(io.StringIO()):
+                prepare.prepare(directory, http_only=True)
+            process = Mock(pid=1234, **{"poll.return_value": 1})
+            with (
+                patch.object(lab_kbs, "provenance", return_value={"source_clean": True}),
+                patch.object(lab_kbs.subprocess, "Popen", return_value=process),
+                contextlib.redirect_stdout(io.StringIO()),
+                self.assertRaisesRegex(RuntimeError, "Lab service exited"),
+            ):
+                lab_kbs.main(directory)
+            receipt = read_json(Path(directory) / "lab-kbs/deployment-receipt.json")
+            self.assertFalse(receipt["policy_selection_tested"])
+            self.assertFalse(receipt["unauthorized_administration_denied"])
+
     def test_lab_kbs_adds_profile_nvidia_remote_verifier(self):
         lab_kbs = load_helper("lab_kbs")
         base = {"dcap_verifier": {"tcb_update_type": "standard"}}
@@ -373,6 +408,8 @@ class LabStateTests(unittest.TestCase):
                 report = root / "acceptance-report.json"
                 bundle.mkdir()
                 vault.mkdir()
+                (vault / "vault_manifest.json").touch()
+                (vault / "launch_cvm.sh").touch()
                 (lab / "lab-kbs").mkdir(parents=True)
                 (lab / "lab-kbs/admin.json").touch()
                 environment = {

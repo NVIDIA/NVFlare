@@ -27,8 +27,14 @@ The normal lifecycle is: create and approve each reusable generic image once
 with `cvmctl build`; run `nvflare provision` below, which invokes `cvmctl vault`
 for the protected participants; then launch each authenticated delivery on its
 matching TEE host with `cvmctl run`. Use the lower-level finalize, approval,
-publish, and pull commands only when those operations belong to separate roles
-or hosts.
+publish, and pull commands for the documented exact-manifest handoffs, separate
+roles/hosts, and recovery. Combined automation requires a site-supplied adapter;
+it is optional.
+
+Start the client first and let it prepare its vault and workload, then start
+the server. CCManager gives required clients 600 seconds from its initial
+membership check to register. See the [operations checklist](../../../docs/user_guide/confidential_computing/operations.rst#bare-metal-cvm-checklist)
+for cold-start timing and troubleshooting when service logs remain encrypted.
 
 Then run:
 

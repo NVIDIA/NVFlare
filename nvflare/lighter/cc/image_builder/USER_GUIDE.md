@@ -349,8 +349,9 @@ bound and can extend final poweroff beyond that deadline. Bootstrap failures
 still force poweroff after bounded cleanup; an integrity failure or exit of
 either supervisor still invokes PID 1's forced-poweroff policy.
 `cvm_app.service` stops its container itself on SIGTERM, so a requested stop is
-not a workload failure; an unexpected container exit keeps its status and
-triggers the forced power-off. Development images use the same unit files and
+not a workload failure. An unexpected nonzero container exit keeps its status;
+an unexpected zero exit becomes a wrapper failure. Both trigger forced power-off.
+Development images use the same unit files and
 omit TEE/KBS and integrity-monitor work.
 
 Rebuild and reapprove generic CVM bundles after this change. Earlier hardware

@@ -743,6 +743,10 @@ vault encryption, or exact-manifest policy selection. Install the unapproved
 manifest into an isolated acceptance Trustee, then build the acceptance vault
 from that same profile set:
 
+First complete the [live administrative checks and receipt generation](TRUSTEE_GUIDE.md#establish-the-administrative-evidence-first)
+against the running staged Trustee. Starting the lab leaves those flags false;
+candidate installation requires the resulting tested receipt.
+
 `acceptance-admin.json` below is the lab's generated
 `/srv/cvm/acceptance/lab-kbs/admin.json`. It installs candidates only. The separate
 `production-admin.json` used after approval must include trusted
@@ -781,7 +785,7 @@ vault key under this bundle and set `CVM_OTHER_RESOURCE` to its
 Then run:
 
 ```sh
-sudo env \
+sudo --preserve-env=CVM_BUILDER_PYTHON env \
   CVM_ACCEPTANCE_VAULT="$PWD/target/acceptance-vault/intel_tdx" \
   CVM_ACCEPTANCE_RESULT_KEY=/secure/evidence-signing.key \
   CVM_LAB_DIRECTORY=/path/to/isolated-lab \

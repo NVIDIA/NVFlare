@@ -60,7 +60,7 @@ gpu_packages:
   - libnvidia-container-tools=1.20.0-1
   - nvidia-container-toolkit-base=1.20.0-1
   - nvidia-container-toolkit=1.20.0-1
-  - libxml2-16=2.15.2+dfsg-0.1ubuntu0.1
+  - libxml2-16=2.15.2+dfsg-0.1ubuntu0.3
 ```
 
 Choose a new `profile_version` and approve the driver/VBIOS/TCB references for
@@ -72,6 +72,19 @@ deb822 sources with a repository-specific `Signed-By` **before** `apt-get update
 Update failures stop construction. No `trusted=yes` or global `apt-key` trust is
 used. For retained releases, an authenticated immutable apt mirror can replace
 the URL without changing the input schema.
+
+APT pins can disappear from rolling security repositories. The libxml2 example
+above includes the [Ubuntu security update](https://ubuntu.com/security/notices/USN-8910-1);
+the older `0.1ubuntu0.1` pin is no longer a reproducible default. Before using
+this example, inspect `apt-cache policy libxml2-16` and the signed repository's
+available versions in the **guest build environment**, then simulate the exact
+install with `apt-get -s install 'libxml2-16=2.15.2+dfsg-0.1ubuntu0.3'`.
+If the pin is unavailable, either use the authenticated immutable mirror that
+retains it or review the vendor's security notice and select a currently
+available fixed version. Record the signed repository metadata and package
+digests, check the complete pinned dependency set, and use a **new profile
+version** followed by full acceptance and approval. Do not silently substitute
+the host's candidate version, remove version pins, or relabel an old approval.
 
 ## Review GPU driver and VBIOS references
 

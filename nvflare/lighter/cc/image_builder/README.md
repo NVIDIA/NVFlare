@@ -398,21 +398,24 @@ Run the builder contracts on Linux with Python unittest. NVFlare's regular unit
 suite also runs these contracts through
 [`cvm_builder_test.py`](../../../../tests/unit_test/lighter/cvm_builder_test.py).
 Use an isolated Linux test host and upstream Trustee for storage, HTTPS and hardware
-acceptance; these tests are opt-in. Run these commands from the repository root:
+acceptance; these tests are opt-in. Run these commands from the repository root.
+Set `CVM_BUILDER_PYTHON` to the absolute interpreter from the builder environment
+prepared in [BUILD_GUIDE.md](BUILD_GUIDE.md#1-prepare-the-build-host); use it explicitly
+for sudo commands so sudo cannot select a different system Python.
 
 ```sh
 export PYTHONPATH="$PWD/nvflare/lighter/cc/image_builder:$PWD/tests/unit_test/lighter/cc/image_builder${PYTHONPATH:+:$PYTHONPATH}"
 cargo build --locked --release --manifest-path tests/unit_test/lighter/cc/image_builder/policy_engine/Cargo.toml
-python3 -m unittest discover -s tests/unit_test/lighter/cc/image_builder -v
+"$CVM_BUILDER_PYTHON" -m unittest discover -s tests/unit_test/lighter/cc/image_builder -v
 sudo env PYTHONPATH="$PYTHONPATH" CVM_STORAGE_TESTS=1 \
-  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_storage.py -v
+  "$CVM_BUILDER_PYTHON" -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_storage.py -v
 ```
 
 To check release packaging on Linux or macOS, install the build dependencies in
 `pyproject.toml`, then run:
 
 ```sh
-CVM_DISTRIBUTION_TESTS=1 python3 -m unittest discover \
+CVM_DISTRIBUTION_TESTS=1 "$CVM_BUILDER_PYTHON" -m unittest discover \
   -s tests/integration_test/lighter/cc/image_builder -p test_distribution.py -v
 ```
 
@@ -443,7 +446,7 @@ the validated TDVF in the lab's `inputs/OVMF.inteltdx.fd` (or set
 `CVM_TDX_FIRMWARE`), then run from the repository root:
 
 ```sh
-PYTHONPATH=nvflare/lighter/cc/image_builder python3 \
+PYTHONPATH=nvflare/lighter/cc/image_builder "$CVM_BUILDER_PYTHON" \
   tests/integration_test/lighter/cc/image_builder/prepare_lab.py \
   /path/to/isolated-lab --platform intel_tdx
 ```
@@ -462,7 +465,7 @@ under `config/` itself. Build the pinned Trustee checkout and binary under
 
 ```sh
 sudo env PYTHONPATH="$PWD/nvflare/lighter/cc/image_builder" \
-  python3 tests/integration_test/lighter/cc/image_builder/lab_kbs.py \
+  "$CVM_BUILDER_PYTHON" tests/integration_test/lighter/cc/image_builder/lab_kbs.py \
   /path/to/isolated-lab
 ```
 
@@ -474,7 +477,10 @@ inputs; it is sufficient only for protocol fixtures, not hardware acceptance.
 another; Ctrl-C or SIGTERM stops its KBS child as well. Restart with the same
 command, without rerunning `prepare_lab.py`. Startup regenerates `kbs.json` and
 admin files, so configure the tested profiles in `lab-state.json`'s `profiles`
-list. Generated lab profiles are disposable and not production-acceptance
+list. For SNP profiles, also configure the populated `snp_vcek_store`.
+Startup resets the receipt's administrative-test flags to false; run the live
+checks and regenerate the receipt before installing a candidate. Generated lab
+profiles are disposable and not production-acceptance
 profiles. The [Trustee identity and lifecycle instructions](TRUSTEE_GUIDE.md#keep-acceptance-and-production-on-the-same-trustee-identity)
 cover profile selection, test identities, stopping for reference import, and the
 separate candidate versus production administration files.
