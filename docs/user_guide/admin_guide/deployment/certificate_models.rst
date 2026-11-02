@@ -216,6 +216,10 @@ The same tooling schedules replacement. Stop the affected FLARE endpoint, instal
 and key, then restart it, even when reusing the existing key. Plan for interrupted jobs and allow time for
 peers to reconnect and authenticate after the restart.
 
+Replacing a certificate does not revoke the old certificate or terminate other established sessions.
+If a private key is compromised, replacement alone is insufficient: block access and terminate affected
+sessions before installing a new key.
+
 Supply the server job CA separately
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
