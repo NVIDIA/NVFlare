@@ -21,7 +21,7 @@ import os
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -38,6 +38,7 @@ from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
+from tests.local_task_launcher import local_policy
 
 
 def _config(**args):
@@ -75,7 +76,9 @@ def _configure(tmp_path, config, authorizer=None):
     configurator = ClientJsonConfigurator(workspace, str(config_file), args, str(tmp_path))
     if authorizer:
         configurator.set_component_build_authorizer(authorizer)
-    configurator.configure()
+    # Exercise wrapping/authorization separately from trusted backend selection.
+    with patch.object(TaskExecutionPolicy, "from_workspace", return_value=local_policy()):
+        configurator.configure()
     return configurator
 
 
@@ -122,7 +125,7 @@ def native_task(tmp_path, monkeypatch, isolated_fobs):
             (FLContextKey.TASK_ATTEMPT_ID, "attempt-1"),
         ):
             context.set_prop(key, value, private=True, sticky=True)
-        policy = TaskExecutionPolicy.from_config({"worker_timeout": 30, "environment_variables": ["TASK_TEST_SECRET"]})
+        policy = local_policy(worker_timeout=30, environment_variables=("TASK_TEST_SECRET",))
         yield root, custom, context, policy
     finally:
         cell.stop()

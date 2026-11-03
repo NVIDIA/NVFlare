@@ -15,7 +15,6 @@
 import datetime
 import importlib.util
 import os
-import shutil
 
 from setuptools import find_packages, setup
 
@@ -69,25 +68,7 @@ def package_files(
     return paths
 
 
-def copy_package(src_dir, dst_dir):
-    if os.path.isdir(src_dir):
-        shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
-
-    for root, dirs, files in os.walk(dst_dir):
-        for f in files:
-            if f.endswith(".md"):
-                os.remove(os.path.join(root, f))
-
-
-def remove_dir(target_path):
-    if target_path and os.path.isdir(target_path):
-        shutil.rmtree(target_path)
-
-
 extra_files = package_files(root="nvflare/dashboard/application", starting="static")
-tmp_job_template_folder = "./nvflare/tool/job/templates"
-copy_package(src_dir="job_templates", dst_dir=tmp_job_template_folder)
-job_templates = package_files(root="nvflare/tool/job", starting="templates")
 deploy_templates = package_files(root="nvflare/tool/deploy", starting="templates")
 
 cmdclass = versioneer.get_cmdclass()
@@ -108,12 +89,9 @@ setup(
     package_data={
         "": ["*.yml", "*.yaml", "*.tpl", "*.html", "*.js", "poc.zip", "*.config", "*.conf"],
         "nvflare.dashboard.application": extra_files,
-        "nvflare.tool.job": job_templates,
         "nvflare.tool.deploy": deploy_templates,
         "nvflare.tool.examples": ["catalog.json"],
         "nvflare.tool.recipe": ["recipe_catalog.json"],
     },
     include_package_data=True,
 )
-
-remove_dir(target_path=tmp_job_template_folder)

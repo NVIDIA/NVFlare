@@ -29,7 +29,7 @@ from nvflare.fuel.f3.cellnet.core_cell import (
     _validate_url,
 )
 from nvflare.fuel.f3.cellnet.credential_manager import CredentialManager
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessageType, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo
 from nvflare.fuel.f3.cellnet.registry import Registry
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
@@ -63,6 +63,65 @@ def test_target_message_round_trip_adds_routing_headers():
     assert restored.message.get_header(MessageHeaderKey.DESTINATION) == "site-1"
     assert restored.message.get_header(MessageHeaderKey.CHANNEL) == "channel"
     assert restored.message.get_header(MessageHeaderKey.TOPIC) == "topic"
+
+
+@pytest.mark.parametrize(
+    "receiver,peer,origin,allowed",
+    [
+        ("server", "server.job-a", "server.job-a", True),
+        ("server", "site-1.job-a", "site-1.job-a", True),
+        ("site-1", "site-1.job-a", "site-1.job-a", True),
+        ("server", "site-1", "site-1.job-a", True),
+        ("relay", "relay.site-1", "relay.site-1.job-a", True),
+        ("server", "relay", "relay.site-1.job-a", True),
+        ("server", "site-1.job-a", "server.job-a", False),
+        ("server", "site-1.job-b", "site-1.job-a", False),
+        ("site-1", "site-1.job-a", "server.job-a", False),
+        ("site-1", "site-1.job-a", "site-1.job-b", False),
+        ("site-1", "site-1.job-a", "site-1.job-ab", False),
+        ("server", "server.job-a", "server.job-b", False),
+    ],
+)
+def test_parent_listener_checks_sender_before_dispatch_or_forward(receiver, peer, origin, allowed):
+    cell = _cell(receiver)
+    cell.received_msg_counter_pool = MagicMock()
+    cell.received_msg_size_pool = MagicMock()
+    cell.sent_msg_counter_pool = MagicMock()
+    cell.in_filter_reg = Registry()
+    cell.message_interceptor = None
+    cell._forward = MagicMock()
+    cell._process_request = MagicMock(return_value=Message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}))
+    cell._send_reply = MagicMock()
+    cell._add_to_route = MagicMock()
+    request = Message(
+        {
+            MessageHeaderKey.MSG_TYPE: MessageType.REQ,
+            MessageHeaderKey.CHANNEL: CellChannel.SERVER_PARENT_LISTENER,
+            MessageHeaderKey.TOPIC: "get_clients",
+            MessageHeaderKey.ORIGIN: origin,
+            MessageHeaderKey.DESTINATION: "server",
+            MessageHeaderKey.REPLY_EXPECTED: True,
+            MessageHeaderKey.REQ_ID: "request-1",
+            MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
+        }
+    )
+
+    cell._process_received_msg(Endpoint(peer), None, request)
+
+    if allowed:
+        if receiver == "server":
+            cell._process_request.assert_called_once_with(origin, request)
+            assert cell._send_reply.call_args.args[0].get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        else:
+            cell._forward.assert_called_once()
+    else:
+        cell._process_request.assert_not_called()
+        cell._forward.assert_not_called()
+        reply, target = cell._send_reply.call_args.args
+        assert target.name == peer
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+        assert reply.get_header(MessageHeaderKey.DESTINATION) == peer
+        assert reply.get_header(MessageHeaderKey.REQ_ID) == ["request-1"]
 
 
 def test_cell_agent_validates_fqcn():
