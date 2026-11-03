@@ -207,6 +207,9 @@ This creates ``dist/nvflare-<version>-py3-none-any.whl``. Release builds,
 local development wheels, and editable installs all use the distribution name
 ``nvflare``. Versioneer derives the version and source revision from the
 checkout; ``NVFL_RELEASE`` no longer changes the NVFlare package name.
+This applies to the main package built by the repository-root ``setup.py``.
+The separate ``nvflight/setup.py`` packaging still uses ``NVFL_RELEASE`` to
+choose between ``nvflare-light`` and ``nvflare-light-nightly``.
 This does not introduce a nightly publishing service. For unreleased features,
 install from source or build a local wheel.
 

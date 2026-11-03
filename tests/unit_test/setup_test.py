@@ -38,6 +38,7 @@ def setup_metadata(monkeypatch):
     monkeypatch.setattr(setuptools, "setup", setup)
     monkeypatch.setattr(setuptools, "find_packages", lambda **kwargs: ["nvflare"])
     monkeypatch.delenv("NVFL_BASE_VERSION", raising=False)
+    monkeypatch.delenv("NVFL_RELEASE", raising=False)
     return versioneer, setup
 
 
@@ -60,18 +61,24 @@ def test_versioneer_failure_uses_configured_base_version_override(setup_metadata
     assert metadata["name"] == "nvflare"
 
 
-@pytest.mark.parametrize("release", (None, "0", "1"))
 @pytest.mark.parametrize("version", ("2.10.0", "2.10.0rc1", "2.10.0.dev0+125.gd05110ab4"))
-def test_release_and_development_builds_share_package_identity(setup_metadata, monkeypatch, release, version):
+def test_release_and_development_builds_share_package_identity(setup_metadata, version):
     versioneer, setup = setup_metadata
     versioneer.get_versions = lambda: {"version": version, "error": None}
-    if release is None:
-        monkeypatch.delenv("NVFL_RELEASE", raising=False)
-    else:
-        monkeypatch.setenv("NVFL_RELEASE", release)
 
     runpy.run_path(str(ROOT_DIR / "setup.py"))
 
     metadata = setup.call_args.kwargs
     assert metadata["name"] == "nvflare"
     assert metadata["version"] == version
+
+
+@pytest.mark.parametrize("release", ("0", "1"))
+def test_legacy_release_flag_does_not_change_package_identity(setup_metadata, monkeypatch, release):
+    versioneer, setup = setup_metadata
+    versioneer.get_versions = lambda: {"version": "2.10.0.dev0", "error": None}
+    monkeypatch.setenv("NVFL_RELEASE", release)
+
+    runpy.run_path(str(ROOT_DIR / "setup.py"))
+
+    assert setup.call_args.kwargs["name"] == "nvflare"

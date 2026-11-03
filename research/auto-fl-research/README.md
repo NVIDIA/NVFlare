@@ -128,7 +128,7 @@ python3.12 -m venv .venv
 python -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
 
 python -m pip install --upgrade pip
-python -m pip uninstall -y nvflare-nightly
+python -m pip uninstall -y nvflare nvflare-nightly
 python -m pip install -r tasks/cifar10/requirements.txt
 export PYTHON=.venv/bin/python
 "$PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
@@ -137,7 +137,7 @@ make validate
 make smoke
 ```
 
-The default CIFAR-10 harness expects the released PyPI `nvflare` package from `tasks/cifar10/requirements.txt`, not an editable install of the repository checkout. If `pip freeze` shows `nvflare-nightly @ file://...`, remove it with `python -m pip uninstall -y nvflare-nightly` and rerun `python -m pip install -r tasks/cifar10/requirements.txt`.
+The default CIFAR-10 harness expects the released PyPI `nvflare` package from `tasks/cifar10/requirements.txt`, not an editable install of the repository checkout. Source installs now use the name `nvflare`; older checkouts used `nvflare-nightly`. To reset an existing source environment, run `python -m pip uninstall -y nvflare nvflare-nightly` before rerunning `python -m pip install -r tasks/cifar10/requirements.txt`. Otherwise, the minimum-version requirement can keep a compatible development installation in place.
 
 If `apt-get` cannot find the Python 3.12 packages, update the devcontainer image or add an appropriate Python 3.12 package source before continuing; do not fall back to Python 3.13.
 
