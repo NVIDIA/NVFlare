@@ -14,6 +14,7 @@
 
 """Compatibility boundaries for an unmodified CoCo Trustee deployment."""
 
+import hashlib
 import subprocess
 import tempfile
 import unittest
@@ -34,6 +35,71 @@ from cvm.trustee.provenance import provenance
 
 
 class UpstreamTrusteeTests(unittest.TestCase):
+    def test_reviewed_client_patch_is_independent_of_git_abbreviation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            subprocess.run(["git", "init", "-q", str(source)], check=True)
+            tracked = source / "Cargo.toml"
+            tracked.write_text("original content\n")
+            other = source / "README.md"
+            other.write_text("unchanged\n")
+            subprocess.run(["git", "-C", str(source), "add", "."], check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(source),
+                    "-c",
+                    "user.name=Fixture",
+                    "-c",
+                    "user.email=fixture@example.org",
+                    "commit",
+                    "-qm",
+                    "fixture",
+                    "--no-gpg-sign",
+                ],
+                check=True,
+            )
+            commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+            tracked.write_text("reviewed content\n")
+            expected = subprocess.check_output(
+                ["git", "-C", str(source), "diff", "--binary", "--abbrev=7", "--no-ext-diff", "--no-color", "HEAD"]
+            )
+            reviewed = root / "reviewed.patch"
+            reviewed.write_bytes(expected)
+            binary = root / "kbs-client"
+            binary.write_bytes(b"fixture binary")
+            with (
+                patch("cvm.trustee.provenance.TRUSTEE_COMMIT", commit),
+                patch("cvm.trustee.provenance.CLIENT_PATCH", reviewed),
+            ):
+                for width in (4, 7, 8, 12, 40):
+                    with self.subTest(width=width):
+                        subprocess.run(["git", "-C", str(source), "config", "core.abbrev", str(width)], check=True)
+                        result = provenance(source, binary)
+                        self.assertFalse(result["source_clean"])
+                        self.assertEqual(result["kbs_client_patch_sha256"], hashlib.sha256(expected).hexdigest())
+                # Normalizing index rendering must not admit different source, modes or files.
+                for variant in ("content", "other_file", "mode", "untracked", "index_prefix"):
+                    with self.subTest(variant=variant):
+                        tracked.write_text(
+                            "reviewed content\nextra change\n" if variant == "content" else "reviewed content\n"
+                        )
+                        other.write_text("extra change\n" if variant == "other_file" else "unchanged\n")
+                        tracked.chmod(0o755 if variant == "mode" else 0o644)
+                        subprocess.run(["git", "-C", str(source), "config", "core.filemode", "true"], check=True)
+                        untracked = source / "unreviewed.rs"
+                        if variant == "untracked":
+                            untracked.write_text("extra source\n")
+                        reviewed.write_bytes(
+                            expected.replace(b"index ", b"index fffffff", 1) if variant == "index_prefix" else expected
+                        )
+                        with self.assertRaisesRegex(BuildError, "unmodified"):
+                            provenance(source, binary)
+                        untracked.unlink(missing_ok=True)
+
     def test_shared_coco_service_provenance_is_exact(self):
         with tempfile.TemporaryDirectory() as directory:
             binary = Path(directory) / "kbs"

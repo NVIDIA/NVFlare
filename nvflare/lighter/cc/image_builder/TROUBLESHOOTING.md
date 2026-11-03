@@ -79,6 +79,13 @@ integrity monitor to keep the workload running. Verify the delivery and generic
 artifact signatures/digests again, then reproduce with the exact manifest's
 acceptance workload if the cause remains unclear.
 
+Updated guests write the fixed `CVM bootstrap failed [phase=...]` diagnostic
+to stderr before asking PID 1 to enforce watchdog failure. The small write is
+nonblocking: a full or unavailable console does not postpone shutdown, and raw
+exception details remain private. Deploy this bootstrap change through a newly
+built and approved generic bundle, then regenerate its vault deliveries. Existing
+approved guest images retain their original bootstrap code.
+
 Root-disk corruption **after** startup is different from the initramfs marker:
 the kernel reports ``dm-verity device corrupted`` and panics/powers off. There
 may be no ``CVM_STARTUP_FAILURE=verity`` or Python ``phase=`` line. Retain the
