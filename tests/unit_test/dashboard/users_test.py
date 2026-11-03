@@ -53,7 +53,7 @@ class TestUsers:
             "name": USER_NAME,
             "email": "user@test.com",
             "password": "pw123456",
-            "organization": "test.com",
+            "organization": "test_org",
             "role": "org_admin",
             "approval_state": 200,
         }

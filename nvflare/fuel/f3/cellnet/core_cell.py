@@ -2122,10 +2122,19 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 if reply:
                     return reply
 
-        if msg_type == MessageType.REQ and self.message_interceptor is not None:
-            reply = self._try_cb(
-                message, self.message_interceptor, *self.message_interceptor_args, **self.message_interceptor_kwargs
-            )
+        if msg_type == MessageType.REQ:
+            reply = None
+            reply_target = origin
+            if channel == CellChannel.SERVER_PARENT_LISTENER and (
+                FQCN.validate(origin) or (origin != endpoint.name and not FQCN.is_ancestor(endpoint.name, origin))
+            ):
+                # Check each hop before forwarding: a job child must not claim a sibling job or the server.
+                reply = make_reply(ReturnCode.UNAUTHENTICATED, "origin does not belong to sending peer")
+                reply_target = endpoint.name
+            elif self.message_interceptor is not None:
+                reply = self._try_cb(
+                    message, self.message_interceptor, *self.message_interceptor_args, **self.message_interceptor_kwargs
+                )
 
             if reply:
                 self.logger.debug(f"{self.my_info.fqcn}: interceptor stopped message!")
@@ -2140,7 +2149,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                         MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
                         MessageHeaderKey.TO_CELL: endpoint.name,
                         MessageHeaderKey.ORIGIN: self.my_info.fqcn,
-                        MessageHeaderKey.DESTINATION: origin,
+                        MessageHeaderKey.DESTINATION: reply_target,
                         MessageHeaderKey.REQ_ID: [req_id],
                         MessageHeaderKey.MSG_TYPE: MessageType.RETURN,
                         MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
