@@ -22,6 +22,8 @@ from prepare_data import DATA_ROOT, SITE_FRACTIONS
 from nvflare.app_common.np.recipes.lr.fedavg import FedAvgLrRecipe
 from nvflare.recipe import SimEnv
 
+JOB_NAME = "omop_gi_bleed"
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -31,7 +33,7 @@ def main() -> None:
     args = parser.parse_args()
 
     recipe = FedAvgLrRecipe(
-        name="omop_gi_bleed",
+        name=JOB_NAME,
         min_clients=len(SITE_FRACTIONS),
         num_rounds=args.num_rounds,
         num_features=len(FEATURES),
