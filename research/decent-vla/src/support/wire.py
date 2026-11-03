@@ -12,40 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Wire precision — the ONE place that decides on-the-wire dtypes.
+"""Shared wire-precision conversion for FLARE model exchange and payload sizes.
 
-The NVFlare execution plane and the scope manifest resolve
-`fl.wire_dtype` through this module, so the planes are consistent by
-construction: a config that says fp16 means the same thing on both, in both
-directions. Keeping the table and the parser here (rather than duplicated in
-each codec) is what makes "same config => same bytes on the wire" checkable.
-
-`fl.wire_dtype` accepts either
-
-  * a scalar — ``fp16`` | ``fp32`` — applied to BOTH directions, or
-  * a mapping — ``{broadcast: fp32, delta: fp16}`` — per direction, for the
-    numerical-equivalence tests that need a lossless downlink.
-
-Historically the knob was applied ONLY to the client->server delta, while the
-server->client broadcast went out at the fp32 master dtype. That asymmetry was
-an accident of where the cast was inserted (``update_to_flmodel`` had it,
-``round_flmodel`` did not) rather than a decision: it was undocumented, it made
-`wire_dtype` mean half of what its name says, and at 3B scale it made the
-broadcast the single largest host-RAM term in the whole system (13.5 GB per
-live copy for pi0.5's 3.62B params, against 6.7 GB for the delta). Both
-directions now honour the knob.
-
-Precision note: fp16 carries a 10-bit mantissa, so a round-trip perturbs
-weights by at most 2**-11 = 4.9e-4 relative. Measured on the real pi05_base
-checkpoint: max relative error 4.88e-4, zero overflow (max |w| = 283 against
-fp16's 65504 ceiling), 0.013% of weights below fp16's subnormal floor and thus
-flushed to zero. That is ~20x finer than the bf16 autocast arithmetic already
-consuming these weights, and it does not compound: the server master stays
-fp32 (the native controller upcasts replies) and clients diff against the same rounded base
-they trained from, so each round's rounding is bounded, not accumulated.
-
-NOTE numpy cannot carry bfloat16, so bf16 tensors are
-ALWAYS downcast to fp16 regardless of this setting — never widened to fp32.
+`fl.wire_dtype` accepts fp16/fp32 for both directions or a mapping such as
+{broadcast: fp32, delta: fp16}. The server master and aggregation stay fp32.
+NumPy cannot carry bfloat16, so those tensors are always converted to fp16.
 """
 
 from __future__ import annotations
@@ -95,12 +66,7 @@ def nbytes(spec: object) -> tuple[int, int]:
 
 
 def cast(v: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
-    """Detach and cast a tensor for the wire; integers pass through unchanged.
-
-    bf16 is pinned to fp16 (see the module note) even when `dtype` is fp32 —
-    widening it would double the payload for zero information gain, and the
-    two codecs have always promised this downcast.
-    """
+    """Detach and cast floating tensors; convert bfloat16 to NumPy-compatible fp16."""
     v = v.detach()
     if not v.is_floating_point():
         return v

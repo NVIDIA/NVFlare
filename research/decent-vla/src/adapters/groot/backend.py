@@ -110,7 +110,7 @@ _DEFAULT_LORA_TARGETS = (
     "down_proj",
 )
 
-# Where LoRA goes when `backend.lora.attach_to` is not given: the historical
+# Default LoRA attachment when `backend.lora.attach_to` is not given:
 # arm, adapters on the VLM with the action head fully trainable.
 _DEFAULT_LORA_ATTACH_TO = "backbone.model.language_model"
 

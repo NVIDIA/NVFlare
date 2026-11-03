@@ -12,23 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The two orthogonal scope axes of a federated run (pattern-based).
+"""Parameter selection for local training and FLARE model exchange.
 
-Axis 1 — local training scope (`backend.trainable_params`):
-    which parameters are trainable at all. `apply_trainable_patterns` is the
-    generic, backend-agnostic form of the per-policy freeze flags: matching
-    params get ``requires_grad=True``, the complement is frozen. Applied
-    after model build (and after LoRA/native tune flags), so it is the final
-    word on what the optimizer sees.
-
-Axis 2 — federated scope (`backend.shared_params`):
-    which TRAINABLE parameters are federated. `resolve_shared_names` splits
-    the trainable names into the "shared" subset (delta, aggregation,
-    broadcast) and its client-local "personal" complement (personalization).
-
-Patterns are fnmatch globs over parameter names
-(e.g. ``"model.paligemma_with_expert.paligemma.*"``). Either axis ``None``
-preserves historical behavior. Core-safe: stdlib + torch only.
+backend.trainable_params overrides policy freeze flags using fnmatch patterns.
+backend.shared_params selects which trainable parameters are federated;
+the remainder stay personal to each client. None preserves policy defaults
+for training and shares all trainable parameters.
 """
 
 from __future__ import annotations
@@ -92,34 +81,16 @@ def apply_trainable_patterns(model: torch.nn.Module, patterns: Sequence[str] | N
 
 
 def trainable_state_keys(model: torch.nn.Module) -> set[str]:
-    """State-dict keys belonging to trainable parameters — NAMES ONLY.
-
-    The same filter the adapters' ``get_state`` applies, but without
-    materializing anything. ``get_state("all")`` detaches and *clones* every
-    trainable tensor (~12.6 GB at GR00T's 3.14B), which is the right thing when
-    you want the weights and pure waste when you only want the key set — as the
-    partial-load coverage check does. Sub-keys of a trainable module are
-    included (``head.weight`` under a trainable ``head``); buffers are not,
-    since they carry no ``requires_grad``.
-    """
+    """Return trainable state-dict keys without cloning model tensors."""
     names = {n for n, p in model.named_parameters() if p.requires_grad}
     return {k for k in model.state_dict() if k in names or any(k.startswith(n + ".") for n in names)}
 
 
 def partial_load_warning(trainable: Iterable[str], loaded: Iterable[str], source: str) -> str | None:
-    """Message describing an incomplete checkpoint load, or ``None`` if complete.
+    """Describe trainable tensors missing from a checkpoint, or return None.
 
-    A partial load is LEGAL — training resume overlays the client's personal
-    half right afterwards — but it must never be silent. Under axis 2 a server
-    checkpoint holds only the shared subset, so materializing it as a
-    standalone policy leaves every personal parameter at its PRETRAINED value.
-    A backbone-share server checkpoint exported that way scored 0.0% on all
-    four LIBERO suites over 400 episodes with nothing in the log to explain it.
-
-    Coverage is judged against the TRAINABLE set, never the shared scope: under
-    ``backend.shared_params`` the checkpoint matches the shared scope exactly,
-    which would call it complete. Extra keys in ``loaded`` are ignored here —
-    the adapters reject those separately as an arm mismatch.
+    Server checkpoints contain only shared tensors. Standalone evaluation or
+    export also needs client state when training uses personal parameters.
     """
     trainable = set(trainable)
     untouched = sorted(trainable - set(loaded))

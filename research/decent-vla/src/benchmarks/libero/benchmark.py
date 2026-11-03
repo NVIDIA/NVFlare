@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""LIBERO benchmark adapter (spec §7). Fresh sim rollouts; evaluates ALL
+"""LIBERO benchmark adapter. Fresh sim rollouts; evaluates ALL
 tasks of each requested suite regardless of the training pool.
 
 Imports of the `libero` package are lazy (inside methods): `libero` comes
@@ -94,7 +94,7 @@ def _quat2axisangle(quat: np.ndarray) -> np.ndarray:
 
 
 def _canonical_obs(raw: dict, instruction: str) -> dict:
-    """Raw robosuite obs -> the canonical observation (design §6.1).
+    """Raw robosuite obs -> the canonical observation.
 
     Off-screen renders arrive 180°-rotated, so flip both axes; the 8-dim
     state composition mirrors lerobot `envs/libero.py` (the validated

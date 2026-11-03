@@ -60,7 +60,7 @@ class BackendConfig:
     # federated ("shared" scope); the rest are personal
     # (client-local across rounds — pair with
     # fl.persist_client_state for cold runtimes).
-    # None = historical behavior, all trainable shared.
+    # None shares all trainable parameters.
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -73,7 +73,7 @@ class DataConfig:
     num_workers: int = 0
     partitioning: str = "iid"  # "iid" | "task" | "explicit_tasks" | "explicit_repos"
     num_clients: int = 1
-    held_out: str | None = None  # path to held-out task spec (spec §9)
+    held_out: str | None = None  # path to held-out task spec
     seed: int = 42
     client_repo_ids: list[list[str]] | None = None  # explicit_repos: per-client repo lists
     client_task_indices: list[list[int]] | None = None  # explicit_tasks: per-client task indices
@@ -119,21 +119,14 @@ class FLConfig:
     client_state_keep: int | None = None  # retain only the N highest-round client-state files per
     # client (None = keep all; minimum 2). Set to 2 for 3B-scale runs:
     # a personalization client blob is ~35 GB.
-    # Precision on the wire, in BOTH directions, on nvflare —
-    # resolved through runtime/wire.py. Either a
-    # scalar, "fp16" (default; halves every host-side copy of the payload) or
-    # "fp32" (lossless — what the local<->nvflare equivalence test pins), or a
-    # mapping for an asymmetric wire: {broadcast: fp32, delta: fp16}.
-    # Measured fp16 cost on real pi05_base weights: max 4.9e-4 relative error,
-    # zero overflow, ~20x finer than the bf16 autocast arithmetic downstream.
-    # bf16 is ALWAYS downcast to fp16 regardless — numpy cannot carry bfloat16.
+    # Shared wire.py resolves a scalar dtype or {broadcast: fp32, delta: fp16}.
     wire_dtype: str | dict[str, str] = "fp16"
 
 
 @dataclass
 class BenchmarkConfig:
-    name: str = "mock"  # algorithm/benchmark name
-    suites: list[str] = field(default_factory=lambda: ["default"])
+    name: str = "libero"
+    suites: list[str] = field(default_factory=lambda: ["libero_spatial"])
     extra: dict[str, Any] = field(default_factory=dict)
 
 

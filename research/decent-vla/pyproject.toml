@@ -43,18 +43,10 @@ lerobot = [
 # LIBERO simulation for evaluation (robosuite/bddl through lerobot's libero extra).
 libero = ["lerobot[libero] @ git+https://github.com/huggingface/lerobot@8515d456be1dbef8c133f07188c785e683eca899"]
 peft = ["peft>=0.11", "accelerate>=1.0"]
-dev = ["pytest>=7.4"]
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-ra"
-filterwarnings = [
-    "ignore::DeprecationWarning",
-]
 
 [tool.black]
 line-length = 120

@@ -79,12 +79,10 @@ class RunResults:
     seed: int
     suites: dict[str, dict[str, Any]]
     overall: dict[str, Any]
-    # v1.1: seen/held-out aggregates + partition provenance (defaults keep
-    # 1.0 files readable).
+    # Seen/held-out aggregates and partition provenance.
     aggregates: dict[str, Any] = field(default_factory=dict)
     partition_manifest_hash: str | None = None
-    # v1.2: checkpoint/horizon/config identity, so the artifact answers "what
-    # exactly was evaluated" without the job log (2026-08-14 audit gap).
+    # Checkpoint, action horizon and configuration used for evaluation.
     provenance: dict[str, Any] | None = None
 
 
@@ -125,7 +123,7 @@ def write_results(path: str | Path, results: RunResults) -> None:
 
 
 def tag_suites(suites: dict, heldout_eval_ids: dict[str, set[int]]) -> dict:
-    """Attach tags=['seen'|'held_out'] to every per_task entry (spec §8)."""
+    """Attach tags=['seen'|'held_out'] to every per_task entry."""
     for sname, s in suites.items():
         held = heldout_eval_ids.get(sname, set())
         for t in s.get("per_task", []):
@@ -134,7 +132,7 @@ def tag_suites(suites: dict, heldout_eval_ids: dict[str, set[int]]) -> dict:
 
 
 def compute_aggregates(suites: dict) -> dict[str, Any]:
-    """totals/episodes, never average-of-averages (spec §8)."""
+    """totals/episodes, never average-of-averages."""
     buckets = {"overall": [], "seen": [], "held_out": []}
     for s in suites.values():
         for t in s.get("per_task", []):

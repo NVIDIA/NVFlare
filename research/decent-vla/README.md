@@ -36,7 +36,7 @@ Torch build appropriate for your CUDA driver before the policy dependencies:
 uv venv .venv --python 3.12
 source .venv/bin/activate
 uv pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu128
-uv pip install -e '.[lerobot,libero,peft,dev]'
+uv pip install -e '.[lerobot,libero,peft]'
 ```
 
 The LeRobot revision is pinned in `pyproject.toml`. Data comes from
@@ -180,19 +180,6 @@ The paper reports full-tuning FedAvg overall success of 97.50% (π0.5), 75.25%
 full length (see [Validation performed](#validation-performed)). See the
 [paper](https://arxiv.org/abs/2609.22973) for the complete result tables.
 
-## Tests
-
-Focused checks cover FLARE adapter numerics, persistence, data separation,
-generated recipes and portable real simulator jobs:
-
-```bash
-python -m pip install -e '.[dev]'
-python -m pytest tests/unit_test -q
-RUN_NATIVE_SIMULATOR_TESTS=1 python -m pytest tests/integration_test/fast -q
-```
-
-See [tests/README.md](tests/README.md).
-
 ## Validation performed
 
 Short runs of every policy, tuning mode and algorithm in the NVFlare simulator, from job export to LIBERO
@@ -209,8 +196,6 @@ evaluation, all on the code in this folder.
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Unit tests | `python -m pytest tests/unit_test -q` | 41 passed |
-| Real NVFlare simulator | `RUN_NATIVE_SIMULATOR_TESTS=1 python -m pytest tests/integration_test/fast -q` | 2 passed: an exported job moved away from its source runs with external-process FedAvg clients and with in-process FedAdam clients, and the clients keep their optimizer state across rounds |
 | CPU mock | `python job.py` (and `--algorithm fedprox`), then `nvflare simulator jobs/<name> -w <workspace> -c c0,c1 -t 2` | FedAvg and FedProx completed: 2 clients, 2 rounds, final checkpoint written |
 | Federated training | `python job.py --policy <policy> --tuning <tuning> --algorithm <algorithm> --smoke`, then `nvflare simulator jobs/<name> -w <workspace> -c c0,c1 -t 2 -gpu 0,1` | all 8 completed; see below |
 | LIBERO evaluation, SmolVLA and π0.5 | `SUITES=libero_spatial N_EPISODES=1 bash scripts/eval_libero.sh <run.yaml> <checkpoints/server_round_0002.pt>` | ran end to end: 10 episodes each, 0% success (SmolVLA 192 s, π0.5 452 s) |

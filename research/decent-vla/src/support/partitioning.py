@@ -14,7 +14,7 @@
 
 """Partitioning types: episode metadata, held-out spec, audit manifest.
 
-The held-out JSON keeps BOTH index spaces (spec §5): `dataset_task_index`
+The held-out JSON keeps BOTH index spaces: `dataset_task_index`
 filters training; `(suite, eval_task_id)` tags eval results. Example:
 configs/libero_heldout_8.json.
 """
@@ -77,7 +77,7 @@ def load_heldout_json(path: str | Path) -> HeldOutSpec:
 
 @dataclass
 class PartitionManifest:
-    """Audit artifact written before training step 1 (spec §5).
+    """Audit artifact written before training step 1.
 
     Values in ``clients`` (and all nested dicts) must be JSON-native with
     string keys only — non-string keys won't roundtrip through write/read.
@@ -124,7 +124,7 @@ def partition_episodes(
 ) -> tuple[list[list[int]], PartitionManifest]:
     """Partition episodes into per-client episode-index lists + audit manifest.
 
-    Held-out tasks are dropped from the pool BEFORE partitioning (spec §5),
+    Held-out tasks are dropped from the pool BEFORE partitioning,
     so FL (num_clients=N) and centralised (num_clients=1) train on the
     identical reduced pool.
 

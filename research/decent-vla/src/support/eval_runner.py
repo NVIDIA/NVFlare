@@ -12,24 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Benchmark eval driver: per-suite loop, provenance-keyed caching, results.json.
-
-Caching contract (spec §7/§10): each suite's result lands in
-`eval_dir/suites/{suite}.json` as soon as it finishes, stamped with a
-`provenance` key that identifies the *evaluated model*: the checkpoint's
-path plus its `stat()` size and `mtime_ns`, the eval seed and
-`n_episodes_per_task`, and `eval_config_hash` — a hash of the config that
-decides how the checkpoint is turned into rollouts (`backend` + `eval`,
-minus the suite list and bookkeeping fields). A re-run skips a suite ONLY
-when its stored provenance matches the current invocation exactly.
-
-The stat fields are what make the path safe to key on. Eval checkpoints are
-named `round_{num_rounds:04d}.pt`, so retraining into the same `output_dir`
-overwrites the same filename with different weights; keying on the path
-alone silently reused the previous policy's numbers. Identity is stat-based
-rather than a content hash so multi-GB checkpoints are not re-read on every
-eval — an in-place rewrite always moves `mtime_ns`.
-"""
+"""LIBERO evaluation with per-suite caching, checkpoint provenance and results.json."""
 
 from __future__ import annotations
 
@@ -67,22 +50,7 @@ _EVAL_CACHE_IGNORED = frozenset({"output_dir", "personalized"})
 
 
 def _eval_config_hash(cfg: RunConfig) -> str:
-    """Hash of everything *except the weights* that decides a suite's numbers.
-
-    Scope is deliberate. The full run `config_hash` would also cover `fl.*`,
-    `data.*` and `name` — fields that cannot move an eval number
-    (names, output paths, tracking tags) or can only move it *through* the
-    checkpoint, which the size/mtime_ns identity already catches. Keying on
-    them would discard hours of LIBERO rollouts every time someone edits a
-    run label, so the key covers only the two things
-    the checkpoint bytes don't: how the checkpoint becomes a policy
-    (`backend`) and how that policy is rolled out (`eval`).
-
-    Deny-list rather than allow-list inside those two blocks: a field added to
-    EvalConfig/BackendConfig later invalidates by default. Over-invalidating
-    costs GPU hours and says so in the log; under-invalidating prints a
-    plausible number that belongs to a different model.
-    """
+    """Hash policy/evaluation settings and the companion training YAML for per-suite caching."""
     ev = {k: v for k, v in dataclasses.asdict(cfg.eval).items() if k not in _EVAL_CACHE_IGNORED}
     # The cache is per-suite, so the suite LIST is not part of any one suite's
     # identity — extending it must resume the finished suites, not re-run them.
@@ -90,8 +58,7 @@ def _eval_config_hash(cfg: RunConfig) -> str:
     key: dict[str, Any] = {"backend": dataclasses.asdict(cfg.backend), "eval": ev}
     # The lerobot backend builds the policy and its preprocessing from the YAML at
     # backend.extra.train_config_path, read again at eval time. Key on that file's contents,
-    # so an edit at the same path invalidates the cache. Added only when the path is set, so
-    # the keys of configs without one are unchanged.
+    # so an edit at the same path invalidates the cache.
     tp_path = (cfg.backend.extra or {}).get("train_config_path")
     if tp_path:
         tp_file = Path(tp_path)
@@ -101,11 +68,7 @@ def _eval_config_hash(cfg: RunConfig) -> str:
 
 
 def _checkpoint_identity(ckpt_path: str | Path | None) -> tuple[int | None, int | None]:
-    """`(size, mtime_ns)` of the checkpoint, or `(None, None)` if there isn't one.
-
-    One `stat()` — deliberately not a content hash, which would mean re-reading
-    a multi-GB checkpoint on every eval to learn what a rewrite already told us.
-    """
+    """Return checkpoint size and modification time without reading its tensors."""
     if ckpt_path is None:
         return None, None
     p = Path(ckpt_path)
@@ -116,14 +79,7 @@ def _checkpoint_identity(ckpt_path: str | Path | None) -> tuple[int | None, int 
 
 
 def _horizon_config(policy):
-    """The config object carrying an integer `n_action_steps`, or None.
-
-    Benchmarks drive the ADAPTER's wrapper (LeRobotPolicy), not the lerobot
-    policy itself, and the wrapper exposes no `.config` — so looking only at
-    `policy.config` found nothing and raised on every real eval while every
-    unit test, which passed a bare policy, kept passing. Try the wrapper's
-    own config first, then the policy it wraps.
-    """
+    """Find n_action_steps on a policy or its wrapped LeRobot policy."""
     for candidate in (policy, getattr(policy, "_policy", None)):
         c = getattr(candidate, "config", None)
         if isinstance(getattr(c, "n_action_steps", None), int):
@@ -132,35 +88,16 @@ def _horizon_config(policy):
 
 
 def effective_action_horizon(policy):
-    """The action horizon `policy` will ACTUALLY roll out at, or None.
-
-    Recorded into results.json provenance alongside the *requested*
-    `cfg.eval.n_action_steps`. The two have silently diverged twice (the
-    horizon broke at both config hops; eval dirs named `_nact10` ran
-    open-loop at 50), so the artifact records what the policy reports AFTER
-    `apply_action_horizon`, not what the config asked for.
-    """
+    """Return the configured action replanning interval, when exposed by the policy."""
     cfg = _horizon_config(policy)
     return cfg.n_action_steps if cfg is not None else None
 
 
 def apply_action_horizon(policy, n_action_steps):
-    """Set the rollout action horizon on `policy`; return (old, new) or None.
+    """Set the action replanning interval; return (old, new) when changed.
 
-    The horizon is the REPLANNING interval, not a cosmetic setting. A chunked
-    VLA predicts `chunk_size` actions in one forward pass and pops them one per
-    environment step, refilling only when the queue empties — so
-    `config.n_action_steps` is how often the policy actually looks at the world.
-    SmolVLA and pi0.5 both default it to 50, the entire chunk, i.e. fully open
-    loop; `lerobot-eval` passes 10. Measured on one identical checkpoint over
-    400 episodes: 70.0% at 10 versus 37.0% at 50, and the gap was not uniform
-    across suites (-19 to -47 points). An eval that does not pin this is not
-    comparable to one that does.
-
-    `None` is a no-op, so existing configs keep whatever their policy declares.
-    A policy with no `config.n_action_steps` raises rather than ignoring the
-    request: silently running at some other horizon is the bug this exists to
-    prevent.
+    None preserves the policy default. Policies without this setting reject
+    an explicit request; GR00T uses backend.extra.replan_steps instead.
     """
     if n_action_steps is None:
         return None
@@ -193,17 +130,10 @@ def run_eval(
     cfg_dict: dict[str, Any],
     config_path: str | None = None,
 ) -> Path:
-    """Evaluate `backend` on `cfg.eval`, after loading `ckpt_path` into it.
+    """Load a checkpoint, evaluate each requested suite, and write results.json.
 
-    `ckpt_path=None` evaluates the backend as built (the base model). A
-    `ckpt_path` that does not exist raises FileNotFoundError before anything
-    is evaluated or written: skipping the load would evaluate the base model
-    under the checkpoint's name.
-
-    Writes per-suite JSONs under `eval_dir/suites/` and the aggregated
-    `results.json`; returns the results.json path. `config_path` (the YAML
-    the run was launched from) lands in the results provenance block; falls
-    back to `$DECENT_VLA_CONFIG` if set.
+    Reuse cached suites only when checkpoint identity and evaluation settings
+    match. A missing checkpoint raises; None evaluates the pretrained model.
     """
     device = resolve_device(cfg.device)
     if ckpt_path is not None:
@@ -219,18 +149,7 @@ def run_eval(
     apply_action_horizon(policy, cfg.eval.n_action_steps)
     benchmark = build_benchmark(cfg.eval)
 
-    # Idempotent per-suite eval (spec §7/§10): a crashed eval re-runs only the
-    # missing suites. Caching is provenance-keyed, and the key has to identify
-    # the evaluated MODEL, not the file it was read from: eval checkpoints are
-    # named round_{num_rounds:04d}.pt, so a retrain into the same output_dir
-    # lands different weights at the same path. Two halves cover that:
-    #   * checkpoint path + size + mtime_ns — different weights, one stat() call
-    #     (see _checkpoint_identity on why this is not a content hash);
-    #   * eval_config_hash — same weights, different backend/eval config
-    #     (dtype, benchmark, benchmark.extra, …), see _eval_config_hash for why
-    #     it is a narrowed slice and not the run's whole config_hash.
-    # Anything outside those two either cannot change the numbers or changes
-    # them only via the checkpoint, which the stat identity already catches.
+    # Resume completed suites only when their checkpoint and settings match.
     eval_dir = Path(cfg.eval.output_dir or (output_dir / "eval"))
     suites_dir = eval_dir / "suites"
     suites_dir.mkdir(parents=True, exist_ok=True)
@@ -258,7 +177,7 @@ def run_eval(
         suite = canonical(config_suite)
         suite_path = suites_dir / f"{suite}.json"
         # An alias selects tasks by its own name (LIBERO's task_filter is keyed by the config
-        # name), so it is part of the key; keys for canonical names are unchanged.
+        # name), so it is part of the key.
         suite_prov = provenance if config_suite == suite else {**provenance, "config_suite": config_suite}
         if suite_path.exists():
             with suite_path.open() as f:
@@ -292,7 +211,7 @@ def run_eval(
         tmp.rename(suite_path)
         suites[suite] = suite_dict
 
-    # Tag every per-task entry seen/held_out (spec §8). Without a held-out
+    # Tag every per-task entry seen/held_out. Without a held-out
     # spec, everything is "seen".
     if cfg.data.held_out:
         from src.support.partitioning import load_heldout_json
@@ -316,11 +235,7 @@ def run_eval(
     total_succ = sum(s["n_success"] for s in suites.values())
     overall_rate = (total_succ / total_eps) if total_eps else 0.0
     wall = time.time() - t0
-    # v1.2 provenance block (2026-08-14 audit): the artifact itself must
-    # answer "what exactly was evaluated" — checkpoint identity, the horizon
-    # the policy actually ran at, and the config — without the job log.
-    # Distinct from the per-suite cache key above, which must NOT grow new
-    # fields (that would invalidate every finished suite on the clusters).
+    # Record the requested and effective horizon with the evaluated checkpoint.
     results_provenance = {
         "checkpoint": str(ckpt_path) if ckpt_path is not None else None,
         "checkpoint_size": ckpt_size,

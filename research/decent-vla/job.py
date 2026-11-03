@@ -43,8 +43,6 @@ def packaged_refs(raw: dict) -> list[tuple[str, dict, str]]:
     extra = (raw.get("backend") or {}).get("extra") or {}
     data = raw.get("data") or {}
     refs = [("backend.extra.train_config_path", extra, "train_config_path"), ("data.held_out", data, "held_out")]
-    if isinstance(data.get("partitioning"), dict):  # the `data.partitioning: {scheme, held_out, ...}` form
-        refs.append(("data.partitioning.held_out", data["partitioning"], "held_out"))
     return refs
 
 
@@ -239,12 +237,6 @@ def create_config(args):
     }
     backend, data = cfg["backend"], cfg["data"]
     backend["optim"] = {"name": "adamw", "lr": 1e-3, "weight_decay": 0.0}
-    if policy == "mock":
-        cfg["eval"] = {
-            "benchmark": {"name": "mock", "suites": ["default"]},
-            "n_episodes_per_task": 3,
-            "seed": 0,
-        }
     if policy != "mock":
         backend["optim"].update(betas=[0.9, 0.95], scheduler="cosine", warmup_steps=1000, decay_steps=30000)
         backend["extra"] = {"dtype": "bfloat16"}

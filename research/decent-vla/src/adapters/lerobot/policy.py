@@ -49,7 +49,7 @@ class LeRobotPolicy:
             self._policy.reset()
 
     def select_action(self, observation: dict) -> np.ndarray:
-        # Canonical observation (design §6.1) from a benchmark: build the
+        # Canonical observation from a benchmark: build the
         # lerobot batch here. Anything else is treated as a pre-built batch
         # (legacy/advanced use) and passed through unchanged.
         canonical = "images" in observation and "state" in observation

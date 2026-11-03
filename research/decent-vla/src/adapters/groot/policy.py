@@ -26,7 +26,7 @@ interface used by evaluation::
 It mirrors the upstream reference ``gr00t/policy/gr00t_policy.py::Gr00tPolicy``
 (``_get_action``) but drives the **already-loaded, FL-aggregated** in-memory
 model + processor instead of re-loading from a checkpoint dir, and bridges the
-native FLARE *canonical observation* (design §6.1: images HWC uint8, 1-D state,
+canonical observation (images HWC uint8, 1-D state,
 instruction str) into GR00T's nested ``{video, state, language}`` modality
 format (keys/splits from the embodiment modality config + dataset modality.json).
 

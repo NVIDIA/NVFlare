@@ -65,32 +65,6 @@ def _fields_of(cls) -> set[str]:
     return {f.name for f in dataclasses.fields(cls)}
 
 
-def _normalize_raw(raw: dict) -> dict:
-    """Spec-§9 sugar → flat dataclass fields. Mutates and returns `raw`.
-
-    * `data.partitioning: {scheme, num_clients, held_out, seed}` → flat keys.
-    * `fl.rounds` → `fl.num_rounds`.
-    * `fl.batch_size` → `data.batch_size`.
-    """
-    data = raw.get("data") or {}
-    part = data.get("partitioning")
-    if isinstance(part, dict):
-        _reject_unknown(part, {"scheme", "num_clients", "held_out", "seed"}, "data.partitioning")
-        data["partitioning"] = part.get("scheme", "iid")
-        for key in ("num_clients", "held_out", "seed"):
-            if key in part:
-                data[key] = part[key]
-        raw["data"] = data
-    fl = raw.get("fl")
-    if isinstance(fl, dict):
-        if "rounds" in fl:
-            fl["num_rounds"] = fl.pop("rounds")
-        if "batch_size" in fl:
-            data["batch_size"] = fl.pop("batch_size")
-            raw["data"] = data
-    return raw
-
-
 def _build_optim(d: dict | None) -> OptimConfig:
     if not d:
         return OptimConfig()
@@ -111,6 +85,8 @@ def _build_backend(d: dict) -> BackendConfig:
 def _build_data(d: dict | None) -> DataConfig:
     if not d:
         return DataConfig()
+    if not isinstance(d.get("partitioning", "iid"), str):
+        raise ConfigError("data.partitioning must be a scheme name; put its settings directly under data")
     # explicit_repos: one client per repo list. Derive the count when it is not given, so a
     # second list is not silently dropped by the default num_clients of 1.
     if d.get("partitioning") == "explicit_repos" and d.get("client_repo_ids") and "num_clients" not in d:
@@ -136,8 +112,6 @@ def _build_nvflare(d: dict | None) -> NVFlareConfig:
 def _build_fl(d: dict | None) -> FLConfig | None:
     if d is None:
         return None
-    # `_normalize_raw` has already rewritten the `rounds`/`batch_size`
-    # sugar, so what reaches here must be spelled exactly as FLConfig declares it.
     _reject_unknown(d, _fields_of(FLConfig), "fl")
     strategy = _build_strategy(d.get("strategy"))
     if strategy.name not in ("fedavg", "fedprox", "fedadam"):
@@ -160,8 +134,8 @@ def _build_benchmark(d: dict | None) -> BenchmarkConfig:
         return BenchmarkConfig()
     _reject_unknown(d, _fields_of(BenchmarkConfig), "eval.benchmark")
     return BenchmarkConfig(
-        name=d.get("name", "mock"),
-        suites=list(d.get("suites", ["default"])),
+        name=d.get("name", "libero"),
+        suites=list(d.get("suites", ["libero_spatial"])),
         extra=d.get("extra", {}),
     )
 
@@ -222,7 +196,6 @@ def load_run_config(path: str | Path) -> RunConfig:
         raise ConfigError(f"{path}: missing required field `name`.")
     if "backend" not in raw:
         raise ConfigError(f"{path}: missing required field `backend`.")
-    raw = _normalize_raw(raw)
     _reject_unknown(raw, _fields_of(RunConfig), "run")
 
     cfg = RunConfig(

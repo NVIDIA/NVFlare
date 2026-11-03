@@ -44,9 +44,7 @@ def build_backend_factory(cfg: RunConfig, device: torch.device):
 
 
 def build_benchmark(cfg_eval: EvalConfig):
-    if cfg_eval.benchmark.name == "mock":
-        from src.benchmarks._mock import MockBenchmark as BenchmarkClass
-    elif cfg_eval.benchmark.name == "libero":
+    if cfg_eval.benchmark.name == "libero":
         from src.benchmarks.libero.benchmark import LIBEROBenchmark as BenchmarkClass
     else:
         raise ValueError(f"Unknown benchmark: {cfg_eval.benchmark.name}")

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Per-client state that survives FL rounds (spec §6).
+"""Per-client state that survives FL rounds.
 
 Created once per client; the optimizer (with its Adam moments), the
 scheduler (advancing on the cumulative global step), and the cycling dataloader

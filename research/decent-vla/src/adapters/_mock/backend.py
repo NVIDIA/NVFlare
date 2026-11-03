@@ -28,7 +28,7 @@ from torch import nn
 
 from src.configs.schemas import BackendConfig, DataConfig, OptimConfig
 from src.support.optim import build_optimizer as make_optimizer
-from src.support.parameters import load_model_checkpoint, set_model_state, trainable_state
+from src.support.parameters import set_model_state, trainable_state
 from src.support.partitioning import EpisodeMeta
 
 
@@ -160,16 +160,6 @@ class MockBackend:
 
     def set_state(self, state: dict[str, torch.Tensor], scope: str = "shared") -> None:
         set_model_state(self._model, state)
-
-    def load_checkpoint(self, path: str) -> None:
-        load_model_checkpoint(self._model, path, self.device, "mock model")
-
-    # ----- inference -----
-
-    def build_policy(self):
-        from src.adapters._mock.policy import MockPolicy
-
-        return MockPolicy(self._model, in_dim=self.IN_DIM, device=self.device)
 
     # ----- metadata -----
 
