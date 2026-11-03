@@ -26,7 +26,7 @@ from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.apis.job_meta_validator_spec import JobMetaValidatorSpec
 from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
-from nvflare.fuel.utils.config import CONFIG_EXTENSIONS
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
@@ -94,7 +94,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
         logger.debug(f"validate file {base_meta_file}.json exists for job {job_name}")
 
         meta = None
-        for ext in CONFIG_EXTENSIONS:
+        for ext in ConfigService.CONFIG_EXTENSIONS:
             meta_file = f"{base_meta_file}{ext}"
             if meta_file in zf.namelist():
                 meta = json.loads(zf.read(meta_file).decode())
@@ -216,7 +216,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
     @staticmethod
     def _load_config(zip_file: ZipFile, zip_folder: str, init_config_path: str) -> Optional[dict]:
         basename = os.path.basename(init_config_path).split(".", 1)[0]
-        for ext in CONFIG_EXTENSIONS:
+        for ext in ConfigService.CONFIG_EXTENSIONS:
             config_path = f"{zip_folder}{basename}{ext}"
             if config_path in zip_file.namelist():
                 return json.loads(zip_file.read(config_path).decode())
@@ -347,4 +347,4 @@ class JobMetaValidator(JobMetaValidatorSpec):
     def _config_exists(zip_file: ZipFile, zip_folder, init_config_path: str) -> bool:
         basename = os.path.splitext(os.path.basename(init_config_path))[0]
         names = zip_file.namelist()
-        return any(os.path.join(zip_folder, f"{basename}{ext}") in names for ext in CONFIG_EXTENSIONS)
+        return any(os.path.join(zip_folder, f"{basename}{ext}") in names for ext in ConfigService.CONFIG_EXTENSIONS)
