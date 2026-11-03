@@ -35,7 +35,7 @@ _PROJECT_WRITABLE = {
     "cc_mode",
 }
 
-_SELF_ASSIGNABLE_ROLES = {"", "lead", "member"}
+_SELF_ASSIGNABLE_ROLES = {"", "lead", "member", "org_admin"}
 
 
 def check_role(id, claims, requester):
