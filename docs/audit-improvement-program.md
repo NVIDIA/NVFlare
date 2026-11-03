@@ -42,7 +42,7 @@ never inferred from a local branch or approval.
 
 | Stage | Status | Deliverable and compatibility boundary | PR / merge commit |
 | --- | --- | --- | --- |
-| 1 | Active | Characterization tests, current coverage map, and this program document; no production changes. | Pending publication / not merged |
+| 1 | Active | Characterization tests, current coverage map, and this program document; no production changes. | [#5677](https://github.com/NVIDIA/NVFlare/pull/5677) / not merged |
 | 2 | Planned | Safe escaping, bounded fields, secret-safe command metadata, and restrictive permissions for new files; retain legacy record structure. | — |
 | 3 | Planned | Internal typed event contract and compatibility adapters; retain current API signatures, legacy output, and wire headers. | — |
 | 4 | Planned | Optional versioned JSONL, readers for both formats, and site configuration loaded before auditing starts in every process; legacy stays default and formats use separate files. | — |
