@@ -29,6 +29,37 @@ from cvm.common.references import reference_record_name
 
 
 class ProfileTests(unittest.TestCase):
+    def test_kbs_port_must_be_reachable_before_attestation(self):
+        for url, egress, diagnostic in (
+            ("https://kbs.example:9443", [443, 8443], "bootstrap_egress must include"),
+            ("https://kbs.example", [8443], "bootstrap_egress must include"),
+            ("https://kbs.example:0", [443], "invalid port"),
+            ("https://kbs.example:bad", [443], "invalid hostname or port"),
+            ("https://private-user:private-password@kbs.example:9443", [9443], "must not contain credentials"),
+            ("https://[private-invalid", [443], "invalid hostname or port"),
+        ):
+            with (
+                self.subTest(url=url),
+                patch.object(config, "load_yaml", return_value={"kbs_url": url, "bootstrap_egress": egress}),
+                patch.object(config, "local_path") as local,
+                self.assertRaisesRegex(BuildError, diagnostic) as error,
+            ):
+                config.profile("profile.yml")
+            local.assert_not_called()
+            self.assertNotIn("private-", str(error.exception))
+
+    def test_default_and_custom_kbs_ports_are_accepted_when_allowed(self):
+        for url, port in (("https://kbs.example", 443), ("https://kbs.example:9443", 9443)):
+            with (
+                self.subTest(url=url),
+                patch.object(config, "load_yaml", return_value={"kbs_url": url, "bootstrap_egress": [port]}),
+                patch.object(config, "local_path", side_effect=lambda path, value: value),
+                patch.object(config, "read_json", return_value={"snp_single_socket": False}),
+                patch.object(config, "validate_references"),
+                patch.object(config, "validate_kbs_client_linkage"),
+            ):
+                self.assertEqual(config.profile("profile.yml")["bootstrap_egress"], [port])
+
     def test_bare_metal_profile_requires_nondefault_valid_selector_and_policy_id(self):
         for settings, message in (
             ({"attestation_policy_selector": "Bad Selector"}, "Invalid attestation_policy_selector"),

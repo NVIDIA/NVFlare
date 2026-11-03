@@ -205,6 +205,14 @@ image identity is read from the Docker archive. Federation, admin, relay, and
 listener ports are derived from the signed kit and merged with the requested
 network additions.
 
+``bare_metal_cvm.hosts_entries`` optionally maps hostnames to literal IPv4 or
+IPv6 addresses, for example ``server.example.invalid: 192.0.2.10`` (replace the
+documentation address). The builder carries these authenticated mappings into
+both the guest's and the application's ``/etc/hosts``. Use the client-reachable
+server host address when QEMU forwards the server's FL port. This does not alter
+the admin host's resolver, replace TLS certificate-name checks, or change the
+generic profile's measured KBS hostname. Configure those independently.
+
 The vault retains the Docker archive and stores its expanded layers plus
 application data. Size it as ``archive bytes + imported image bytes + application
 files + expected runtime writes + safety margin``. Use at least the larger of 2

@@ -29,7 +29,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from ..common.contracts import DEFAULT_EXPIRY_WARNING_SECONDS, identifier, validate_resource
-from ..common.errors import BuildError, require
+from ..common.errors import BuildError, KBSRequestError, require
 from ..common.io import canonical
 
 POLICY_ROLE = "cvm-policy"
@@ -46,7 +46,7 @@ _WARNED_TOKEN_EXPIRATIONS = set()
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise BuildError("Administrative redirects are forbidden")
+        raise KBSRequestError("Administrative redirects are forbidden", "http", code)
 
 
 def encode(data):
@@ -148,8 +148,6 @@ def api(config, method, endpoint, data=None, *, content_type="application/json")
             )
         )
         token = body + "." + encode(key.sign(body.encode()))
-    context = ssl.create_default_context(cafile=config["ca"])
-    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), NoRedirect())
     request = urllib.request.Request(
         config["url"].rstrip("/") + "/kbs/v0/" + endpoint,
         data=data,
@@ -158,6 +156,13 @@ def api(config, method, endpoint, data=None, *, content_type="application/json")
     )
     endpoint_path = "/kbs/v0/" + urllib.parse.quote(endpoint, safe="/-_.")
     try:
+        context = ssl.create_default_context(cafile=config["ca"])
+    except OSError:
+        raise KBSRequestError(
+            "KBS TLS configuration failed; check the configured CA file; no credentials logged", "tls"
+        ) from None
+    try:
+        opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), NoRedirect())
         with opener.open(request, timeout=30) as response:
             result = response.read(8 * 1024**2 + 1)
             require(len(result) <= 8 * 1024**2, "Administrative response too large")
@@ -165,25 +170,35 @@ def api(config, method, endpoint, data=None, *, content_type="application/json")
     except urllib.error.HTTPError as exc:
         exc.close()
         if exc.code == 403 and endpoint.startswith("resource/"):
-            raise BuildError("KBS resource request forbidden; check the cvm-resources token and endpoint ACL") from None
-        raise BuildError(
+            raise KBSRequestError(
+                "KBS resource request forbidden; check the cvm-resources token and endpoint ACL", "http", 403
+            ) from None
+        raise KBSRequestError(
             f"KBS administrative request rejected at {endpoint_path} (HTTP {exc.code}); "
-            "no response body or credentials logged"
+            "no response body or credentials logged",
+            "http",
+            exc.code,
         ) from None
     except urllib.error.URLError as exc:
         if isinstance(exc.reason, ssl.SSLError):
-            raise BuildError(
+            raise KBSRequestError(
                 f"KBS TLS verification failed at {endpoint_path}; check the configured CA, server certificate, "
-                "hostname, and validity; no credentials logged"
+                "hostname, and validity; no credentials logged",
+                "tls",
             ) from None
-        raise BuildError(f"KBS administrative connection failed at {endpoint_path}; no credentials logged") from None
+        raise KBSRequestError(
+            f"KBS administrative connection failed at {endpoint_path}; no credentials logged", "connection"
+        ) from None
     except ssl.SSLError:
-        raise BuildError(
+        raise KBSRequestError(
             f"KBS TLS verification failed at {endpoint_path}; check the configured CA, server certificate, "
-            "hostname, and validity; no credentials logged"
+            "hostname, and validity; no credentials logged",
+            "tls",
         ) from None
     except OSError:
-        raise BuildError(f"KBS administrative connection failed at {endpoint_path}; no credentials logged") from None
+        raise KBSRequestError(
+            f"KBS administrative connection failed at {endpoint_path}; no credentials logged", "connection"
+        ) from None
 
 
 def upload_resource(config, resource, secret):

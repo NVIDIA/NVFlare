@@ -18,11 +18,36 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
+from cvm.common import linux
 from cvm.common.errors import BuildError
 from cvm.common.linux import run
 
 
 class ProcessTests(unittest.TestCase):
+    def test_failed_acceptance_adapter_explains_private_stderr_diagnostics(self):
+        with (
+            patch.object(linux, "DIAGNOSTICS", None),
+            patch.object(
+                linux.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, b"secret", b"secret")
+            ),
+            self.assertRaises(BuildError) as error,
+        ):
+            run(["site-acceptance", "secret-argument"], operation="acceptance adapter")
+        message = str(error.exception)
+        self.assertIn("--diagnostics PRIVATE_DIRECTORY before the subcommand", message)
+        self.assertNotIn("secret", message)
+
+    def test_secret_commands_never_suggest_retaining_output(self):
+        with (
+            patch.object(linux, "DIAGNOSTICS", None),
+            patch.object(
+                linux.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, b"secret", b"secret")
+            ),
+            self.assertRaises(BuildError) as error,
+        ):
+            run(["sensitive-tool"], secret=True)
+        self.assertNotIn("--diagnostics", str(error.exception))
+
     def test_operation_labels_preserve_output_suppression(self):
         secret = "private-token-or-key"
         command = ["/usr/bin/kbs-client", secret]

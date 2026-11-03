@@ -19,6 +19,7 @@ import base64
 import contextlib
 import ipaddress
 import json
+import os
 import signal
 import subprocess
 import time
@@ -589,7 +590,7 @@ def docker_environment(app):
 
 
 def application():
-    """Run the container; a requested stop exits 0, an unexpected exit keeps its status."""
+    """Run the container; only a requested stop is a successful service exit."""
     app = read_json("/vault/config/application.json")
     for name in ("runtime", "data"):
         directory = Path("/vault/application") / name
@@ -668,6 +669,7 @@ def application():
         status = process.wait()
     if stopping:
         return 0
+    require(status != 0, "Application exited unexpectedly (container status 0)")
     return status if status >= 0 else 128 - status
 
 
@@ -700,6 +702,19 @@ def mount_user_data():
     )
 
 
+def _write_bootstrap_failure(message):
+    """Best-effort fixed diagnostic without waiting on the console sink."""
+    try:
+        blocking = os.get_blocking(2)
+        os.set_blocking(2, False)
+        try:
+            os.write(2, (message + "\n").encode("ascii"))
+        finally:
+            os.set_blocking(2, blocking)
+    except OSError:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=("bootstrap", "periodic", "application", "reopen"))
@@ -708,9 +723,13 @@ def main():
     try:
         status = globals()[args.action]()
     except Exception as error:
+        # A traceback could include untrusted app data or token content.
+        phase = f" [phase={error.phase}]" if isinstance(error, StartupPhaseError) else ""
+        message = "CVM " + args.action + " failed" + phase + "; PID 1 will power off"
         if args.action == "bootstrap":
-            # Ask PID 1 to enforce failure before any best-effort diagnostics.
-            # It also retains the independent phase deadline if notification fails.
+            # WATCHDOG=trigger can SIGKILL us immediately. Emit the fixed phase
+            # first, without letting a blocked console postpone shutdown.
+            _write_bootstrap_failure(message)
             try:
                 notify("WATCHDOG=trigger")
             except Exception:
@@ -718,9 +737,8 @@ def main():
         if audited:
 
             emit("deny")
-        # A traceback could include untrusted app data or token content.
-        phase = f" [phase={error.phase}]" if isinstance(error, StartupPhaseError) else ""
-        raise SystemExit("CVM " + args.action + " failed" + phase + "; PID 1 will power off") from None
+        # Do not print a second, potentially blocking message at interpreter exit.
+        raise SystemExit(1 if args.action == "bootstrap" else message) from None
     if args.action == "application" and status:
         raise SystemExit(status)
 

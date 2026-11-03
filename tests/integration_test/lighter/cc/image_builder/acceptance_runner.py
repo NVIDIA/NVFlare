@@ -236,7 +236,10 @@ def main(argv=None):
     vault = Path(configured["CVM_ACCEPTANCE_VAULT"]).resolve()
     lab = Path(configured["CVM_LAB_DIRECTORY"]).resolve()
     signing_key = Path(configured["CVM_ACCEPTANCE_RESULT_KEY"]).resolve()
-    require(vault.is_dir(), "CVM_ACCEPTANCE_VAULT must be a candidate vault directory")
+    require(
+        vault.is_dir() and (vault / "vault_manifest.json").is_file() and (vault / "launch_cvm.sh").is_file(),
+        "CVM_ACCEPTANCE_VAULT must name the platform subdirectory containing vault_manifest.json and launch_cvm.sh",
+    )
     require((lab / "lab-kbs/admin.json").is_file(), "CVM_LAB_DIRECTORY does not contain a prepared lab Trustee")
     signer = load_signing_key(signing_key).public_key()
 

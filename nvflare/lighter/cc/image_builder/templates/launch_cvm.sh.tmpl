@@ -2,12 +2,21 @@
 # Platform: __platform__; generic bundle: __build_id__.
 # Vault binding: __vault_bind__ (checked against guest hardware at boot).
 set -eu
-cd -- "$(dirname -- "$0")"
+vault_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 # This runs as root and imports Python from the delivery. Refuse paths another
 # local user could have changed: everything here must be root-owned and not
 # group- or world-writable.
-if [ -n "$(find "$PWD" \( ! -user root -o -perm /022 \) -print -quit)" ]; then
-    echo "Refusing to launch: $PWD must be owned by root and not group- or world-writable" >&2
+if [ -n "$(find "$vault_directory" \( ! -user root -o -perm /022 \) -print -quit)" ]; then
+    echo "Refusing to launch: $vault_directory must be owned by root and not group- or world-writable" >&2
     exit 1
 fi
-PYTHONSAFEPATH=1 PYTHONPATH="$PWD" exec python3 -m cvm.host.launcher --vault-directory "$PWD" "$@"
+# Isolated mode excludes caller-controlled import paths even on Python 3.10,
+# which does not support PYTHONSAFEPATH. Add only the checked delivery path;
+# keeping the shell's directory preserves relative --cvm-bundle arguments.
+exec python3 -I -c '
+import runpy
+import sys
+
+sys.path.insert(0, sys.argv.pop(1))
+runpy.run_module("cvm.host.launcher", run_name="__main__", alter_sys=True)
+' "$vault_directory" --vault-directory "$vault_directory" "$@"

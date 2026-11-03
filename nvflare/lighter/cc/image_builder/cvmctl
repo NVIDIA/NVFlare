@@ -21,5 +21,6 @@ elif [ -x "$builder_dir/.venv/bin/python" ]; then
     python=$builder_dir/.venv/bin/python
 else
     python=python3
+    echo 'Warning: no CVM Builder .venv found; using system python3. Set CVM_BUILDER_PYTHON to an absolute interpreter path or create image_builder/.venv.' >&2
 fi
 exec "$python" -m cvm "$@"

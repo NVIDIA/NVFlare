@@ -25,7 +25,7 @@ Trustee, authorize the delivery's CVM bundle, and manage its vault key.
 ## 1. Prepare the runtime host
 
 Use an SNP host for an `amd_sev_snp` delivery or a TDX host with an operational
-quote-generation service for an `intel_tdx` delivery. Install Python 3 and QEMU.
+quote-generation service for an `intel_tdx` delivery. Install Python 3.10 or later and QEMU.
 The host needs KVM access, enough memory for the profile, and guest network access
 to the configured KBS.
 
@@ -48,7 +48,7 @@ registry artifact:
 
 ```sh
 artifact=registry.example.org/cvm/my-app-site1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-sudo ./cvmctl run "$artifact" \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl run "$artifact" \
   --cosign-verification-key /etc/cvm/release-signing.pub \
   --output /srv/cvm/vault_my-app-site1
 ```
@@ -57,7 +57,7 @@ For an offline archive, authenticate the checksum received through the
 publisher's authenticated channel:
 
 ```sh
-sudo ./cvmctl run vault_DEPLOYMENT_intel_tdx.oci.tar \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl run vault_DEPLOYMENT_intel_tdx.oci.tar \
   --archive-sha256 PUBLISHED_ARCHIVE_SHA256 \
   --output /srv/cvm/vault_my-app-site1
 ```
@@ -106,6 +106,28 @@ everything needed to launch:
     └── shutdown_cvm.sh
 ```
 
+### Generic images used by provisioning
+
+The invoking user owns a materialized directory, with mode 0700. A generic
+`cvm_image` used by `nvflare provision` must therefore be readable and traversable
+by the **provisioning user**, including `profile_set.json` and platform files.
+The adapter inspects these inputs before it invokes sudo for vault construction.
+If an administrator previously pulled the generic image as root, rematerialize
+that authenticated generic artifact as the provisioning user in a separate
+private directory, without sudo:
+
+```sh
+./cvmctl pull cvm_PROFILE_PLATFORM.oci.tar \
+  --archive-sha256 PUBLISHED_GENERIC_ARCHIVE_SHA256 \
+  --output "$HOME/cvm-images/cvm_PROFILE"
+```
+
+Point the participant's `cvm_image` at that directory and ensure the privileged
+builder can also traverse it. This applies to generic input images. Continue
+materializing **application deliveries** as root for launch: the launch wrapper
+requires root ownership. Do not make a root-only delivery world-readable or
+recursively change its ownership to work around a generic-input permission error.
+
 ### From an OCI layout tar
 
 `cvmctl vault` generates the archive's deployment ID automatically. Use the filename
@@ -113,7 +135,7 @@ provided by the builder; the ID below is illustrative. The `--output` folder is
 an operator-selected local name and is materialized as a root-only directory.
 
 ```sh
-sudo ./cvmctl pull vault_0123456789ab4def8123456789abcdef_intel_tdx.oci.tar \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl pull vault_0123456789ab4def8123456789abcdef_intel_tdx.oci.tar \
   --archive-sha256 PUBLISHED_ARCHIVE_SHA256 \
   --output /srv/cvm/vault_my-app-site1
 ```
@@ -130,7 +152,7 @@ the pull wrapper refuses a mutable tag.
 
 ```sh
 artifact=registry.example.org/cvm/my-app-site1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-sudo ./cvmctl pull "$artifact" --cosign-verification-key /etc/cvm/release-signing.pub \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl pull "$artifact" --cosign-verification-key /etc/cvm/release-signing.pub \
   --output /srv/cvm/vault_my-app-site1
 ```
 
@@ -139,7 +161,7 @@ any bytes are transferred. For an isolated lab registry that deliberately uses
 HTTP and has no signatures, opt out explicitly:
 
 ```sh
-sudo ./cvmctl pull \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl pull \
   registry.example.org:5000/cvm/my-app-site1@sha256:OCI_MANIFEST_DIGEST \
   --plain-http --allow-unverified --output /srv/cvm/vault_my-app-site1
 ```
@@ -190,6 +212,18 @@ sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/launch_cvm.sh \
 Advanced operators may override the embedded bundle with a separately managed
 shared bundle directory. If the embedded bundle is absent, this explicit path is
 required; the launcher does not search sibling folders or local build caches:
+
+An absolute bundle path is preferred in operational commands. A relative
+`--cvm-bundle` path resolves against the caller's current directory, including
+when invoking the delivered wrapper by absolute path.
+New wrappers run Python in isolated mode and explicitly load the checked,
+root-owned delivery, keeping caller files and Python environment overrides out
+of module lookup on every supported Python version, including 3.10.
+This applies to newly built wrappers. For an older approved bundle whose
+wrapper changes directory first, use an absolute override path. Updating a
+source checkout does not rewrite templates inside an approved bundle.
+To pick up launch-security updates, build and approve a new generic bundle,
+then regenerate its vault deliveries; keep approved artifacts immutable.
 
 ```sh
 sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/launch_cvm.sh \
@@ -336,8 +370,9 @@ bound and can extend final poweroff beyond that deadline. Bootstrap failures
 still force poweroff after bounded cleanup; an integrity failure or exit of
 either supervisor still invokes PID 1's forced-poweroff policy.
 `cvm_app.service` stops its container itself on SIGTERM, so a requested stop is
-not a workload failure; an unexpected container exit keeps its status and
-triggers the forced power-off. Development images use the same unit files and
+not a workload failure. An unexpected nonzero container exit keeps its status;
+an unexpected zero exit becomes a wrapper failure. Both trigger forced power-off.
+Development images use the same unit files and
 omit TEE/KBS and integrity-monitor work.
 
 Rebuild and reapprove generic CVM bundles after this change. Earlier hardware
