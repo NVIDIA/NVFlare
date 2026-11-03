@@ -19,28 +19,34 @@ Set NVFLARE_TEST_BROWSER_CHANNEL=chrome to use an installed Google Chrome.
 Run: pytest tests/integration_test/fast/dashboard_validation_ui_test.py -v
 """
 
+import io
 import json
 import os
+import re
 import threading
 from uuid import uuid4
+from zipfile import ZipFile
 
 import pytest
+from cryptography import x509
+from cryptography.x509.oid import NameOID
 from werkzeug.serving import make_server
 
 from nvflare.dashboard.application import db
 from nvflare.dashboard.application.models import Client, Project, User
 from nvflare.dashboard.application.store import Store
-from tests.unit_test.dashboard import conftest as dashboard_fixtures
-from tests.unit_test.dashboard.conftest import TEST_PW, TEST_USER
-
-# Reuse the app fixture because route modules register on their first import.
-app = dashboard_fixtures.app
+from tests.dashboard_test_utils import TEST_PW, TEST_USER
 
 playwright = pytest.importorskip("playwright.sync_api")
 expect = playwright.expect
 NS = "/nvflare-dashboard"
 API = NS + "/api/v1"
 ORG_ERROR = "Organization must contain only letters, digits, and underscores."
+
+
+@pytest.fixture(scope="session")
+def app(dashboard_app):
+    return dashboard_app
 
 
 @pytest.fixture(scope="module")
@@ -52,22 +58,28 @@ def live_dashboard(app):
     server = make_server("127.0.0.1", 0, app, threaded=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    yield app, f"http://127.0.0.1:{server.server_port}"
-    server.shutdown()
-    thread.join(timeout=5)
-    with app.app_context():
-        project = Project.query.first()
-        for name, value in original.items():
-            setattr(project, name, value)
-        db.session.commit()
+    try:
+        yield app, f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        with app.app_context():
+            project = Project.query.first()
+            for name, value in original.items():
+                setattr(project, name, value)
+            db.session.commit()
+        assert not thread.is_alive(), "Dashboard server did not stop"
 
 
 @pytest.fixture(scope="module")
 def browser():
     with playwright.sync_playwright() as manager:
         browser = manager.chromium.launch(channel=os.environ.get("NVFLARE_TEST_BROWSER_CHANNEL"))
-        yield browser
-        browser.close()
+        try:
+            yield browser
+        finally:
+            browser.close()
 
 
 @pytest.fixture
@@ -77,8 +89,10 @@ def page(browser, live_dashboard):
     page = context.new_page()
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
-    yield page
-    context.close()
+    try:
+        yield page
+    finally:
+        context.close()
     assert failures == [], "Unhandled browser errors: " + str(failures)
 
 
@@ -110,7 +124,7 @@ def test_registration_invalid_organization_can_be_corrected(page, live_dashboard
     page.locator('input[name="password"]').fill("Testing1234!")
     page.locator('input[name="confirm_password"]').fill("Testing1234!")
     page.get_by_role("button", name="Register", exact=True).click()
-    # Step two is rendered before the separate login request stores its token.
+    # Registration does not advance until automatic login has completed.
     page.wait_for_function("JSON.parse(localStorage.getItem('session') || '{}').user?.token")
     organization = page.locator('input[name="org"]')
     expect(organization).to_be_visible()
@@ -233,7 +247,9 @@ def test_invalid_client_name_can_be_corrected(page, live_dashboard, page_name, a
             {"email": email, "password": "test", "organization": "Site_org", "role": "org_admin"},
             created_by_project_admin=True,
         )["user"]
-        Store.patch_user_by_project_admin(user["id"], {"approval_state": 100})
+        Store.patch_user_by_project_admin(
+            user["id"], {"approval_state": 100, "reviewed_role": "org_admin", "reviewed_organization": "Site_org"}
+        )
         site = Store.create_client({"name": name, "organization": "Site_org", "capacity": {"num_of_gpus": 4}}, email)[
             "client"
         ]
@@ -348,6 +364,193 @@ def test_invalid_new_client_can_be_corrected(page, live_dashboard):
         expect(page.get_by_text(name, exact=True)).to_be_visible()
         with app.app_context():
             assert Client.query.filter_by(name=name).one().creator_id == user["id"]
+    finally:
+        with app.app_context():
+            Store.delete_user(user["id"])
+
+
+def register_through_ui(page, email):
+    page.goto(NS + "/registration-form")
+    page.locator('input[name="email"]').fill(email)
+    page.locator('input[name="name"]').fill("Workshop Participant")
+    page.locator('input[name="password"]').fill("Testing1234!")
+    page.locator('input[name="confirm_password"]').fill("Testing1234!")
+    page.get_by_role("button", name="Register", exact=True).click()
+    expect(page.locator('input[name="org"]')).to_be_visible()
+    page.locator('input[name="org"]').fill("Workshop_org")
+    page.get_by_text("Member", exact=True).click()
+    page.get_by_text("Org Admin", exact=True).click()
+
+
+def approve_through_ui(page, identifier, action, resource):
+    row = page.get_by_role("row").filter(has_text=identifier)
+    row.get_by_role("checkbox").check()
+    page.get_by_role("button", name="Bulk Actions", exact=True).click()
+    page.get_by_role("button", name=action, exact=True).click()
+    with page.expect_response(
+        lambda response: response.request.method == "PATCH" and f"/{resource}/" in response.url
+    ) as approved:
+        page.get_by_role("button", name="Apply", exact=True).click()
+    assert approved.value.status == 200, approved.value.text()
+    expect(row).to_contain_text("Approved")
+
+
+@pytest.mark.parametrize("frozen_at_registration", [False, True])
+def test_org_admin_signup_sites_approval_and_encrypted_download(
+    page, browser, live_dashboard, tmp_path, frozen_at_registration
+):
+    app, base_url = live_dashboard
+    email = f"workshop-{uuid4().hex}@test.com"
+    site_name = "workshop-" + uuid4().hex
+    admin_context = browser.new_context(base_url=base_url)
+    admin = admin_context.new_page()
+    try:
+        with app.app_context():
+            project = Project.query.first()
+            project.frozen = False
+            db.session.commit()
+            if frozen_at_registration:
+                Store.set_project({"frozen": True})
+        register_through_ui(page, email)
+        with page.expect_response(
+            lambda response: response.request.method == "PATCH" and "/users/" in response.url
+        ) as saved:
+            page.get_by_role("button", name="Save", exact=True).click()
+        assert saved.value.status == 200
+        expect(
+            page.get_by_text("Org Admin request pending approval: register your own client sites here.", exact=True)
+        ).to_be_visible()
+        page.get_by_role("button", name="Add Site", exact=True).click()
+        editor = page.locator('input[title="name"]')
+        editor.fill(site_name)
+        with page.expect_response(
+            lambda response: response.request.method == "POST" and response.url.endswith("/clients")
+        ) as created:
+            editor.press("Tab")
+        assert created.value.status == 201
+        assert created.value.json()["client"]["approval_state"] == 0
+        page.get_by_role("button", name="Next", exact=True).click()
+        page.get_by_role("button", name="Go to my dashboard", exact=True).click()
+        expect(page.get_by_text(site_name, exact=True)).to_be_visible()
+        expect(page.get_by_text("Requested role: Org Admin", exact=True)).to_be_visible()
+        page.goto(NS + "/downloads")
+        expect(page.get_by_role("button", name="Download Startup Kit", exact=True)).to_be_disabled()
+        expect(page.get_by_role("button", name="Download FLARE Console", exact=True)).to_be_disabled()
+
+        login(admin, TEST_USER, TEST_PW, 4)
+        admin.goto(NS + "/project-admin-dashboard")
+        row = admin.get_by_role("row").filter(has_text=email)
+        expect(row).to_contain_text("Org Admin (requested)")
+        expect(row).to_contain_text("Workshop_org")
+        expect(row).to_contain_text("Pending")
+        approve_through_ui(admin, email, "Approve User", "users")
+        admin.goto(NS + "/site-dashboard")
+        approve_through_ui(admin, site_name, "Approve Client", "clients")
+        if not frozen_at_registration:
+            admin.goto(NS + "/")
+            # Use the actual project UI's freeze action, including its confirmation dialog.
+            admin.get_by_role("button", name="Freeze Project", exact=True).click()
+            with admin.expect_response(
+                lambda response: response.request.method == "PATCH" and response.url.endswith("/project")
+            ) as frozen:
+                admin.get_by_role("button", name="Freeze", exact=True).click()
+            assert frozen.value.status == 200
+        page.reload()
+        expect(page.get_by_role("button", name="Download Startup Kit", exact=True)).to_be_enabled()
+        with page.expect_download() as downloaded:
+            page.get_by_role("button", name="Download Startup Kit", exact=True).click()
+        assert downloaded.value.failure() is None
+        kit_path = tmp_path / "site.zip"
+        downloaded.value.save_as(kit_path)
+        # The modal displays the PIN alongside the download confirmation.
+        body = page.locator("body").inner_text()
+        pin_match = re.search(r"The secure PIN is:\s*([A-Za-z0-9]+)", body)
+        assert pin_match, body
+        with ZipFile(kit_path) as kit:
+            assert kit.getinfo("startup/fed_client.json").flag_bits & 1
+            config = json.loads(kit.read("startup/fed_client.json", pwd=pin_match.group(1).encode()))
+            assert config["client"]["connection_security"] == "mtls"
+            certificate = x509.load_pem_x509_certificate(
+                kit.read("startup/client.crt", pwd=pin_match.group(1).encode())
+            )
+            assert certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == site_name
+        page.get_by_role("button", name="Okay", exact=True).click()
+        with page.expect_download() as downloaded:
+            page.get_by_role("button", name="Download FLARE Console", exact=True).click()
+        console_path = tmp_path / "console.zip"
+        downloaded.value.save_as(console_path)
+        body = page.locator("body").inner_text()
+        pin_match = re.search(r"The secure PIN is:\s*([A-Za-z0-9]+)", body)
+        assert pin_match, body
+        with ZipFile(io.BytesIO(console_path.read_bytes())) as kit:
+            certificate = x509.load_pem_x509_certificate(
+                kit.read("startup/client.crt", pwd=pin_match.group(1).encode())
+            )
+            assert certificate.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)[0].value == "org_admin"
+    finally:
+        admin_context.close()
+        with app.app_context():
+            project = Project.query.first()
+            project.frozen = False
+            db.session.commit()
+            user = User.query.filter_by(email=email).first()
+            if user:
+                Store.delete_user(user.id)
+
+
+@pytest.mark.parametrize("status", [200, 403, 409, 401])
+def test_role_rejection_keeps_registration_editable(page, live_dashboard, status):
+    app, _ = live_dashboard
+    email = f"rejected-{uuid4().hex}@test.com"
+    register_through_ui(page, email)
+    message = "Please review your requested role with the project administrator."
+    page.route(
+        "**/api/v1/users/*", lambda route: route.fulfill(status=status, json={"status": "error", "message": message})
+    )
+    try:
+        page.get_by_role("button", name="Save", exact=True).click()
+        expected = "Your session has expired. Please log in again." if status == 401 else message
+        expect(page.get_by_text(expected, exact=True)).to_be_visible()
+        expect(page.locator('input[name="org"]')).to_have_value("Workshop_org")
+        expect(page.locator('input[name="org"]')).to_be_enabled()
+        if status == 401:
+            # Authentication failures clear the session; retry requires a new login.
+            return
+        page.unroute("**/api/v1/users/*")
+        page.get_by_role("button", name="Save", exact=True).click()
+        expect(page.get_by_role("button", name="Add Site", exact=True)).to_be_visible()
+    finally:
+        with app.app_context():
+            user = User.query.filter_by(email=email).first()
+            if user:
+                Store.delete_user(user.id)
+
+
+def test_site_policy_rejection_preserves_editor_without_session_timeout(page, live_dashboard):
+    app, _ = live_dashboard
+    email = f"stale-site-{uuid4().hex}@test.com"
+    with app.app_context():
+        user = Store.create_user({"email": email, "password": "p", "role": "org_admin", "organization": "Stale_org"})[
+            "user"
+        ]
+        site = Store.create_client({"name": "stale-" + uuid4().hex, "organization": "Stale_org"}, email)["client"]
+    try:
+        login(page, email, "p", 3)
+        page.goto(NS + "/user-dashboard")
+        expect(page.get_by_text(site["name"], exact=True)).to_be_visible()
+        # The administrator approves the site while its owner still has the pending row open.
+        with app.app_context():
+            Store.patch_client_by_project_admin(site["id"], {"approval_state": 100})
+        page.get_by_text(site["name"], exact=True).click()
+        editor = page.locator('input[title="name"]')
+        editor.fill("unapproved-name")
+        validation_dialog(
+            page, lambda: editor.press("Tab"), "Pending applicants can manage only their pending client sites."
+        )
+        expect(editor).to_have_value("unapproved-name")
+        assert page.url.endswith("/user-dashboard")
+        with app.app_context():
+            assert db.session.get(Client, site["id"]).name == site["name"]
     finally:
         with app.app_context():
             Store.delete_user(user["id"])

@@ -17,10 +17,18 @@
 from nvflare.apis.utils.format_check import name_check
 
 
-class NameValidationError(ValueError):
+class DashboardError(ValueError):
+    """An actionable API rejection, distinct from an authentication failure."""
+
+    def __init__(self, message, status_code=403, errors=None):
+        self.status_code = status_code
+        self.errors = errors or {}
+        super().__init__(message)
+
+
+class NameValidationError(DashboardError):
     def __init__(self, errors):
-        self.errors = errors
-        super().__init__(" ".join(errors.values()))
+        super().__init__(" ".join(errors.values()), status_code=400, errors=errors)
 
 
 CLIENT_NAMES = {"name": "client", "organization": "org"}

@@ -51,7 +51,42 @@ The following operations do not require a bearer JWT:
    - ``GET /organizations``
    - ``POST /users``
 
-Users with the project_admin role have full access to all resources.
+Approved users with the ``project_admin`` role have full access to all resources. Authorization reads the current
+account state from the database; role and approval claims in an older JWT do not preserve revoked permissions.
+
+User registration and role approval
+-----------------------------------
+
+Public registration and the organization/role step of registration accept requests for ``member``, ``lead``, or
+``org_admin``. Empty role/organization fields are allowed only while completing staged registration. Every public
+registration starts pending, regardless of a supplied ``approval_state``. Self-service cannot request
+``project_admin`` or custom roles, grant approval, or change an existing or approved role/organization.
+
+The existing ``role`` and ``approval_state`` fields record the requested role and its approval. A pending Org Admin
+applicant can manage only their own pending client-site registrations in their registered organization. Client
+ownership is derived from the authenticated identity. Other users' sites are inaccessible, including within the
+same organization. An approved Org Admin can manage their own sites, but only the Project Admin can approve,
+rename, or delete an approved site. Members and Leads receive an empty client-site list.
+
+To approve a complete registration, the Project Admin submits the values reviewed in the users table:
+
+.. code-block:: json
+
+   {
+     "approval_state": 100,
+     "reviewed_role": "org_admin",
+     "reviewed_organization": "Workshop_org"
+   }
+
+``PATCH /users/{id}`` returns HTTP 409 if the reviewed values no longer match or a concurrent approval/profile
+change wins. Reload and review the current registration before retrying. A blank role or organization cannot be
+approved. A pending participant may register sites before the project is frozen; startup-kit downloads require
+user approval, client-site approval where applicable, and a frozen project with provisioned trust material.
+
+Rejected policies return HTTP 403, stale approvals or incomplete project setup return HTTP 409, and invalid fields
+return HTTP 400. These responses include ``status: error``, an actionable ``message``, and field-specific ``errors``
+where applicable. HTTP 401 indicates an authentication failure. Frontends must handle errors before accessing a
+success response's ``user`` or ``client`` object and retain entered values when a correction is needed.
 
 Project Freezing
 ----------------
