@@ -25,7 +25,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus, RunnerTask, WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.private.fed.app.simulator import simulator_worker
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner, SimulatorRunner
@@ -328,6 +328,26 @@ class TestSimulatorRunner:
                     runner.do_one_task(client, num_of_threads=0, gpu=None, lock=threading.Lock())
 
         assert runner.fatal_clients == expected
+
+    @pytest.mark.parametrize("task_name", [RunnerTask.END_RUN, RunnerTask.TASK_EXEC])
+    def test_worker_reports_client_fatal_error(self, task_name):
+        worker = simulator_worker.ClientTaskWorker()
+        client = MagicMock()
+        client.client_name = "site-1"
+        client_runner = Mock()
+        client_runner.fetch_and_run_one_task.return_value = (1.0, True)
+        client_runner.run_abort_signal.triggered = True
+        fl_ctx = client.run_manager.new_context.return_value.__enter__.return_value
+        fl_ctx.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.RUNNER: client_runner,
+            FLContextKey.FATAL_SYSTEM_ERROR: True,
+        }.get(key, default)
+
+        with patch.object(worker, "fire_event"):
+            _, stop_run, _, fatal_error = worker.do_one_task(client, Namespace(task_name=task_name))
+
+        assert stop_run
+        assert fatal_error
 
     def test_worker_create_connection_does_not_require_authkey(self):
         conn = Mock()

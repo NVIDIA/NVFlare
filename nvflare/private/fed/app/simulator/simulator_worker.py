@@ -107,7 +107,6 @@ class ClientTaskWorker(FLComponent):
 
                         # if any client got the END_RUN event, stop the simulator run.
                         if client_runner.run_abort_signal.triggered:
-                            fatal_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
                             client_runner.end_run_events_sequence()
                             end_run_client = client.client_name
                             stop_run = True
@@ -121,6 +120,9 @@ class ClientTaskWorker(FLComponent):
                                 if run_task_tries >= FETCH_TASK_RUN_RETRY:
                                     break
                                 time.sleep(0.5)
+
+                # check after both the task and the END_RUN paths, START_RUN may have failed in either
+                fatal_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
         except Exception as e:
             self.logger.error(f"do_one_task execute exception: {secure_format_exception(e)}")
             secure_log_traceback()
