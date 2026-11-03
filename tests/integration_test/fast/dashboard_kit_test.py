@@ -163,3 +163,97 @@ def test_unreviewed_authorization_details_cannot_reach_certificate(dashboard_app
             for name, value in original.items():
                 setattr(project, name, value)
             db.session.commit()
+
+
+@pytest.mark.skipif(shutil.which("zip") is None, reason="Encrypted startup kits require the system zip executable")
+@pytest.mark.parametrize("organization_setup", ["duplicate", "corrected"])
+def test_site_owner_organization_identity_allows_approved_kit_download(dashboard_app, organization_setup):
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+
+    from nvflare.dashboard.application.models import Organization, User
+
+    app = dashboard_app
+    client = app.test_client()
+    api = "/nvflare-dashboard/api/v1"
+    response = client.post(api + "/login", json={"email": TEST_USER, "password": TEST_PW})
+    admin_headers = {"Authorization": "Bearer " + response.json["access_token"]}
+    email = f"org-record-{uuid4().hex}@test.com"
+    organization = "Registered_" + uuid4().hex
+    user_id = None
+    with app.app_context():
+        project = Project.query.first()
+        original = {column.name: getattr(project, column.name) for column in Project.__table__.columns}
+    try:
+        response = client.post(
+            api + "/users",
+            json={
+                "email": email,
+                "password": "p",
+                "role": "org_admin",
+                "organization": organization,
+            },
+        )
+        assert response.status_code == 201
+        user_id = response.json["user"]["id"]
+        if organization_setup == "duplicate":
+            with app.app_context():
+                duplicate = Organization(name=organization)
+                db.session.add(duplicate)
+                db.session.flush()
+                db.session.get(User, user_id).organization_id = duplicate.id
+                db.session.commit()
+        token = client.post(api + "/login", json={"email": email, "password": "p"}).json["access_token"]
+        headers = {"Authorization": "Bearer " + token}
+        site_name = "org-record-" + uuid4().hex
+        response = client.post(
+            api + "/clients", headers=headers, json={"name": site_name, "organization": organization}
+        )
+        assert response.status_code == 201
+        site = response.json["client"]
+        site_url = api + f"/clients/{site['id']}"
+        user_url = api + f"/users/{user_id}"
+        if organization_setup == "corrected":
+            organization = "Corrected_" + uuid4().hex
+            assert client.patch(user_url, headers=admin_headers, json={"organization": organization}).status_code == 409
+            assert client.patch(site_url, headers=admin_headers, json={"organization": organization}).status_code == 200
+            assert client.patch(user_url, headers=admin_headers, json={"organization": organization}).status_code == 200
+        with app.app_context():
+            owner = db.session.get(User, user_id)
+            record = db.session.get(Client, site["id"])
+            assert record.organization_id == owner.organization_id
+            assert owner.approval_state == record.approval_state == 0
+        assert client.get(site_url, headers=headers).status_code == 200
+        assert (
+            client.patch(site_url, headers=headers, json={"description": "owner still has access"}).status_code == 200
+        )
+        assert (
+            client.patch(
+                user_url,
+                headers=admin_headers,
+                json={
+                    "approval_state": 100,
+                    "reviewed_role": "org_admin",
+                    "reviewed_organization": organization,
+                },
+            ).status_code
+            == 200
+        )
+        assert client.patch(site_url, headers=admin_headers, json={"approval_state": 100}).status_code == 200
+        with app.app_context():
+            Store.set_project({"short_name": "org_record_kit", "server1": "localhost", "frozen": True})
+        response = client.post(site_url + "/blob", headers=headers, json={"pin": "1234"})
+        assert response.status_code == 200
+        with ZipFile(io.BytesIO(response.data)) as kit:
+            assert kit.getinfo("startup/client.crt").flag_bits & 1
+            certificate = x509.load_pem_x509_certificate(kit.read("startup/client.crt", pwd=b"1234"))
+        assert certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == site_name
+        assert certificate.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)[0].value == organization
+    finally:
+        if user_id is not None:
+            client.delete(api + f"/users/{user_id}", headers=admin_headers)
+        with app.app_context():
+            project = Project.query.first()
+            for name, value in original.items():
+                setattr(project, name, value)
+            db.session.commit()

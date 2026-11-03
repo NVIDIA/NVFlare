@@ -220,7 +220,11 @@ class Store(object):
         name = req.get("name")
         organization = req.get("organization", "")
         description = req.get("description", "")
-        org = get_or_create(db.session, Organization, name=organization)
+        # Names need not be unique in existing databases. Keep the participant's
+        # authenticated organization identity instead of looking it up again.
+        org = (
+            get_or_create(db.session, Organization, name=organization) if is_project_admin(user) else user.organization
+        )
         client = Client(name=name, description=description, creator_id=creator_id)
         client.organization_id = org.id
 
@@ -494,7 +498,11 @@ class Store(object):
                 )
         if "organization" in req:
             org = get_or_create(db.session, Organization, name=req["organization"])
-            if org.id != user.organization_id and Client.query.filter_by(creator_id=user.id).count():
+            if (
+                org.id != user.organization_id
+                and Client.query.filter(Client.creator_id == user.id, Client.organization_id != org.id).first()
+                is not None
+            ):
                 raise DashboardError(
                     "Update or remove this user's client sites before changing their organization.", status_code=409
                 )

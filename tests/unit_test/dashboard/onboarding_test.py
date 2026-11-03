@@ -19,7 +19,7 @@ from uuid import uuid4
 import pytest
 
 from nvflare.dashboard.application import db
-from nvflare.dashboard.application.models import Client, User
+from nvflare.dashboard.application.models import Client, Organization, User
 from nvflare.dashboard.application.store import Store
 from nvflare.dashboard.application.validation import DashboardError
 
@@ -324,3 +324,79 @@ def test_duplicate_site_rename_returns_conflict_and_allows_retry(client, registe
     response = client.patch(url, headers=headers, json={"name": "retry-" + uuid4().hex})
     assert response.status_code == 200
     assert response.json["client"]["name"].startswith("retry-")
+
+
+def test_site_creation_reuses_owner_organization_with_existing_duplicate_names(app, client, register):
+    organization = "Duplicate_" + uuid4().hex
+    first, first_headers = register(organization=organization)
+    owner, headers = register(organization=organization)
+    with app.app_context():
+        first_org_id = db.session.get(User, first["id"]).organization_id
+        duplicate = Organization(name=organization)
+        db.session.add(duplicate)
+        db.session.flush()
+        duplicate_id = duplicate.id
+        db.session.get(User, owner["id"]).organization_id = duplicate_id
+        db.session.commit()
+        assert duplicate_id != first_org_id
+    response = client.post(
+        API + "/clients",
+        headers=headers,
+        json={"name": "duplicate-org-" + uuid4().hex, "organization": organization},
+    )
+    assert response.status_code == 201
+    site = response.json["client"]
+    url = API + f"/clients/{site['id']}"
+    with app.app_context():
+        assert db.session.get(Client, site["id"]).organization_id == duplicate_id
+    assert client.get(url, headers=headers).status_code == 200
+    assert client.patch(url, headers=headers, json={"description": "owner edit"}).status_code == 200
+    assert [row["id"] for row in client.get(API + "/clients", headers=headers).json["client_list"]] == [site["id"]]
+    assert client.get(url, headers=first_headers).status_code == 403
+    assert client.get(API + "/clients", headers=first_headers).json["client_list"] == []
+
+
+def test_admin_can_correct_user_organization_after_all_owned_sites_are_moved(app, client, auth_header, register):
+    user, headers = register(organization="Wrong_" + uuid4().hex)
+    destination = "Correct_" + uuid4().hex
+    sites = []
+    for _ in range(2):
+        response = client.post(
+            API + "/clients",
+            headers=headers,
+            json={
+                "name": "correct-org-" + uuid4().hex,
+                "organization": user["organization"],
+            },
+        )
+        assert response.status_code == 201
+        sites.append(response.json["client"])
+    url = API + f"/users/{user['id']}"
+    assert client.patch(url, headers=auth_header, json={"organization": destination}).status_code == 409
+    assert (
+        client.patch(
+            API + f"/clients/{sites[0]['id']}", headers=auth_header, json={"organization": destination}
+        ).status_code
+        == 200
+    )
+    assert client.patch(url, headers=auth_header, json={"organization": destination}).status_code == 409
+    assert (
+        client.patch(
+            API + f"/clients/{sites[1]['id']}", headers=auth_header, json={"organization": destination}
+        ).status_code
+        == 200
+    )
+    response = client.patch(url, headers=auth_header, json={"organization": destination})
+    assert response.status_code == 200
+    assert response.json["user"]["organization"] == destination
+    assert response.json["user"]["approval_state"] == 0
+    with app.app_context():
+        saved = db.session.get(User, user["id"])
+        for site in sites:
+            record = db.session.get(Client, site["id"])
+            assert record.organization_id == saved.organization_id
+            assert record.approval_state == 0
+    for site in sites:
+        site_url = API + f"/clients/{site['id']}"
+        assert client.get(site_url, headers=headers).status_code == 200
+        assert client.patch(site_url, headers=headers, json={"description": "corrected owner edit"}).status_code == 200

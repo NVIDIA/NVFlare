@@ -68,6 +68,10 @@ ownership is derived from the authenticated identity. Other users' sites are ina
 same organization. An approved Org Admin can manage their own sites, but only the Project Admin can approve,
 rename, or delete an approved site. Members and Leads receive an empty client-site list.
 
+To correct the organization of a user who already owns sites, the Project Admin first moves each owned site to
+the destination organization, then updates the user's organization. The account update is rejected while any
+owned site still belongs to a different organization. This correction does not grant user or site approval.
+
 Approval reviews one user's explicit organization and requested role. Both fields must be nonempty and satisfy
 provisioning's format rules. This is a per-user field check, not a check that an organization contains every role,
 an Org Admin, or any client sites. For example, ``organization: OrgA`` and ``role: member`` are sufficient fields
