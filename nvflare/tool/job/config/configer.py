@@ -405,11 +405,17 @@ def get_config_file_path(app_name, input_file_path, job_folder):
 
 
 def _is_shadowed_fallback(file_path: str, config_extensions: List[str]) -> bool:
-    """True if a higher-priority sibling (e.g. x.json for x.json.default) exists; runtime loads only that one."""
+    """True if runtime lookup (ConfigFactory.search_config_format) picks a higher-priority file instead.
+
+    Runtime walks the file's directory recursively for each extension in priority order, so x.json anywhere
+    under that directory (e.g. nested/x.json) shadows x.json.default.
+    """
+    search_dir, filename = os.path.split(file_path)
     for priority, ext in enumerate(config_extensions):
-        if file_path.endswith(ext):
-            base = file_path[: -len(ext)]
-            return any(os.path.isfile(f"{base}{higher}") for higher in config_extensions[:priority])
+        if filename.endswith(ext):
+            stem = filename[: -len(ext)]
+            higher_names = {f"{stem}{higher}" for higher in config_extensions[:priority]}
+            return bool(higher_names) and any(not higher_names.isdisjoint(files) for _, _, files in os.walk(search_dir))
     return False
 
 

@@ -202,6 +202,24 @@ class TestConfiger:
             "train.json",
         ]
 
+    def test_build_config_file_indices_skips_default_shadowed_by_nested_json(self, tmp_path):
+        custom_dir = tmp_path / DEFAULT_APP_NAME / "custom"
+        (custom_dir / "nested").mkdir(parents=True)
+        (custom_dir / "train.json.default").write_text("{not json", encoding="utf-8")
+        (custom_dir / "nested" / "train.json").write_text('{"learning_rate": 0.1}', encoding="utf-8")
+
+        indices = build_config_file_indices(str(tmp_path), [DEFAULT_APP_NAME])
+
+        assert list(indices[DEFAULT_APP_NAME]) == [str(custom_dir / "nested" / "train.json")]
+
+    def test_build_config_file_indices_rejects_malformed_active_default(self, tmp_path):
+        custom_dir = tmp_path / DEFAULT_APP_NAME / "custom"
+        custom_dir.mkdir(parents=True)
+        (custom_dir / "train.json.default").write_text("{not json", encoding="utf-8")
+
+        with pytest.raises(RuntimeError, match="failed to parse file .*train.json.default"):
+            build_config_file_indices(str(tmp_path), [DEFAULT_APP_NAME])
+
     def test_split_key(self):
         assert split_array_key("components[1].args.model.path") == ("components", 1, "args.model.path")
         assert split_array_key("args.model.path") == (None, None, "args.model.path")
