@@ -23,6 +23,25 @@ class ConfigurationError(BuildError):
     """A configuration diagnostic containing schema names, never input values."""
 
 
+class KBSRequestError(BuildError):
+    """A classified transport failure with a separate secret-free CLI summary."""
+
+    def __init__(self, message, category, status=None):
+        if category not in ("connection", "tls", "http"):
+            raise ValueError("Invalid KBS failure category")
+        if status is not None and (type(status) is not int or not 100 <= status <= 599):
+            raise ValueError("Invalid KBS HTTP status")
+        self.category = category
+        self.status = status
+        super().__init__(message)
+
+    @property
+    def diagnostic(self):
+        if self.category == "http":
+            return f"KBS HTTP {self.status}" if self.status is not None else "KBS HTTP failure"
+        return "KBS TLS verification failure" if self.category == "tls" else "KBS connection failure"
+
+
 STARTUP_PHASES = frozenset(
     (
         "configuration",

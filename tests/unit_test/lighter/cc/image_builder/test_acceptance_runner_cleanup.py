@@ -34,6 +34,31 @@ def load_runner():
     return module
 
 
+def test_acceptance_requires_platform_delivery_before_starting_any_suite(tmp_path):
+    runner = load_runner()
+    vault_parent = tmp_path / "delivery-set"
+    platform = vault_parent / "intel_tdx"
+    platform.mkdir(parents=True)
+    (platform / "vault_manifest.json").touch()
+    (platform / "launch_cvm.sh").touch()
+    configured = {
+        "CVM_ACCEPTANCE_VAULT": str(vault_parent),
+        "CVM_LAB_DIRECTORY": str(tmp_path / "lab"),
+        "CVM_ACCEPTANCE_RESULT_KEY": str(tmp_path / "evidence.key"),
+        "CVM_OTHER_RESOURCE": "keys/build/" + "a" * 64,
+    }
+    with (
+        patch.object(runner, "verify_bundle", return_value={"production_ready": True}),
+        patch.object(runner, "required_environment", return_value=configured),
+        patch.object(runner, "run_suite") as suite,
+        patch.object(runner, "load_signing_key") as key,
+        pytest.raises(BuildError, match="platform subdirectory containing vault_manifest.json and launch_cvm.sh"),
+    ):
+        runner.main([str(tmp_path / "bundle"), str(tmp_path / "report.json")])
+    suite.assert_not_called()
+    key.assert_not_called()
+
+
 @pytest.mark.parametrize("returncode", [1, -signal.SIGKILL])
 def test_failed_hardware_suite_cleans_resources_and_reports_exit_status(tmp_path, returncode):
     runner = load_runner()

@@ -590,7 +590,7 @@ def docker_environment(app):
 
 
 def application():
-    """Run the container; a requested stop exits 0, an unexpected exit keeps its status."""
+    """Run the container; only a requested stop is a successful service exit."""
     app = read_json("/vault/config/application.json")
     for name in ("runtime", "data"):
         directory = Path("/vault/application") / name
@@ -669,6 +669,7 @@ def application():
         status = process.wait()
     if stopping:
         return 0
+    require(status != 0, "Application exited unexpectedly (container status 0)")
     return status if status >= 0 else 128 - status
 
 

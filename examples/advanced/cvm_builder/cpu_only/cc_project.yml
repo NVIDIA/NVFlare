@@ -18,4 +18,5 @@ approval:
     - ../credentials/acceptance-signing.pub
 build_tools:
   bare_metal_cvm:
+    # When copying this example outside the repo, use an absolute installed path.
     cvm_builder_dir: ../../../../nvflare/lighter/cc/image_builder

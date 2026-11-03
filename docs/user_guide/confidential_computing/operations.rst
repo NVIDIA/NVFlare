@@ -45,18 +45,32 @@ Bare-metal CVM checklist
    host --platform amd_sev_snp --firmware PATH``; add ``--gpu`` for an installed
    GPU target and ``--snp-vcek-store PATH`` to verify the exact offline
    collateral entry used by Trustee.
-#. Run the combined ``cvmctl build`` path with the trusted acceptance runner,
-   approval key, and, when the same role owns them, Trustee install and release
-   signing options. Use the split commands only for role separation or
-   cross-host measurement. The checked-in candidate cannot be relabeled as
-   production.
+#. Follow the build guide's split exact-manifest flow: construct/finalize,
+   qualify the isolated Trustee's administration, install the candidate, seal
+   its test vault, run acceptance, approve, and install/publish. The shipped
+   ``acceptance_runner`` needs that candidate vault and Trustee first. Combined
+   ``cvmctl build --acceptance-runner`` automation requires a site-supplied
+   adapter; ``site_acceptance_runner`` is not shipped. The checked-in candidate
+   cannot be relabeled as production.
 #. Build an uncompressed ``application.tar``, size the vault, and provision.
+   The outer Docker-save tar must be uncompressed; compressed image layers
+   inside it are supported. Their expanded size, not just the saved tar size,
+   contributes to the vault's capacity requirements. The CPU-only example
+   supplies a separate CPU-wheel Dockerfile to avoid unused GPU packages.
    Provisioning invokes ``cvmctl vault`` for each protected participant; a
    direct builder workflow can call it with publication options. Launch the
    immutable delivery with ``cvmctl run`` for its first launch. Restart the same
    delivery with the absolute ``launch_cvm.sh`` path inside the materialized
    directory; rematerializing restores a pristine vault and loses prior guest
    writes.
+#. Start clients first so guest prescan, attestation, vault unlock and Docker
+   import finish before starting the server. Clients wait for the server's FL
+   endpoint. Then start the server and confirm every required client registers
+   within CCManager's **600-second** startup window. This window begins at its
+   initial membership check, is fixed in this release, and is independent of
+   ``verify_frequency``. A large archive can take longer than 600 seconds to
+   prepare; measure cold starts and preserve this launch order rather than
+   weakening the required-participant check.
 #. After a failed launch, inspect the fixed ``phase=`` identifier in the
    delivery's ``console-<timestamp>.log`` or attached serial output. Serial
    capture starts before guest boot. The applog disk is available only after
@@ -262,6 +276,11 @@ Troubleshooting by symptom
      - Treat the generic root as corrupt or mismatched. Re-authenticate and
        rematerialize the delivery; do not disable dm-verity.
      - Initramfs output on the attached serial console
+   * - ``dm-verity device corrupted`` / kernel panic after startup
+     - Treat the generic root as corrupt at runtime. A kernel panic need not
+       emit a startup marker or Python phase. Preserve serial output and
+       re-authenticate/rematerialize the approved image; keep verity enabled.
+     - Kernel output on the attached serial console
    * - ``phase=attestation`` or no Trustee token
      - Check DNS/TLS and collateral first, then the selected policy, AS signing
        key, approved TCB/measurements, and RVPS expiry. A non-affirming EAR or
@@ -284,21 +303,25 @@ Troubleshooting by symptom
        diagnostics after successful startup.
      - Mounted applog; CVM audit records
    * - Required CC participant is missing or unreachable
-     - Confirm every protected participant registered before the bounded startup
-       deadline and that federation ports and names match the provisioned kits.
-     - Server/client logs: ``Waiting for required CC participant registration``
-       or ``Missing required CC participants``; admin-console client status
+     - Confirm every protected participant registered within 600 seconds of the
+       server's initial membership check. Start slow clients before the server;
+       check federation ports and provisioned names.
+     - Authenticated admin client status while the server is alive; serial
+       boot milestones and Trustee audit timestamps. Parent-process logs stay
+       encrypted in a sealed CVM; see the diagnostic limits below.
    * - Registration or peer proof is rejected
      - Compare the participant name, issuer, signed EAR claims, proof key, and
        configured workload constraints. Do not resubmit the job until the peer
        identity mismatch is understood.
-     - Server/client logs: ``CC info validation failed`` or
-       ``Cross-site validation failed``
+     - Trustee appraisal/policy audit and authenticated admin status; reviewed
+       streamed job logs when a job has started. Parent-process logs remain
+       encrypted in a sealed CVM.
    * - CCManager shuts down a server or client
      - Find the first validation failure before the shutdown line, correct the
        failed participant or policy, then restart the whole required federation.
-     - ``Shutting down site ... due to`` and
-       ``CC system shutdown initiated`` in the NVFlare logs
+     - Retained admin status, serial output and Trustee audits. The detailed
+       ``Shutting down site ... due to`` message is in encrypted service logs
+       unless an approved guest diagnostic channel was configured.
    * - TDX quote stops after about 168 hours
      - Match the cache-expiry and collateral error sequence, coordinate a
        ``qgsd`` restart, then run a fresh challenge-bound quote test.
@@ -399,3 +422,51 @@ unattended approval for CI require separate security design. Approval remains an
 explicit offline-authority action and fails closed. Until that probe is
 qualified, ``cvmctl preflight host --quote-probe`` requires a site-approved
 executable that boots a bounded TD and verifies current collateral.
+
+Live progress logs from confidential participants
+--------------------------------------------------
+
+In a sealed bare-metal CVM, parent/service NVFlare logs stay inside the encrypted
+vault. Clear applog contains attestation/audit records, not a copy of those logs.
+The job-log API below cannot retrieve parent-process CCManager messages before
+a job starts. While the server is alive, retain authenticated client/job status;
+correlate it with serial boot milestones, network reachability and Trustee
+appraisal/release audits. If shutdown happens before administration is possible,
+the exact service-level reason is unavailable through the default external
+interfaces. Use an approved guest diagnostic facility if your deployment
+provides one, or reproduce the configuration with non-secret test inputs in an
+isolated diagnostic deployment. Do not expose production vault contents or
+enable guest shells to recover a log.
+
+:ref:`live_log_streaming` is supported over the authenticated FLARE connection
+from inside a CVM or CoCo workload. It discloses the selected log content to the
+trusted federation server and authorized administrator. Review the application's
+log policy first: never log keys, raw evidence, proprietary payloads or private
+training data merely to obtain progress. The site can disable streaming with
+``allow_log_streaming: false`` in its participant configuration before signing.
+Keep guest consoles and Kubernetes exec/attach/log access restricted.
+
+For a job that needs INFO-level progress on 2.9, add the documented
+``nvflare.app_common.logging.job_log_streamer.JobLogStreamer`` components to
+``config_fed_client.json`` for ``log.txt`` and ``error_log.txt``. If those streams
+are already supplied by the signed site configuration, use that configuration
+instead of declaring duplicates. Review and include the exact class path in
+the participant's ``class_allow_list`` before provisioning; do not allow a whole
+package. The bundled CVM CIFAR10 job shows the explicit job-level configuration.
+
+Write progress through the configured Python logger at an appropriate level.
+Raw ``print()``, subprocess output and arbitrary application files are not
+automatically part of ``log.txt``. The CIFAR10 example logs the round and
+periodic batch progress without logging model parameters or input samples.
+Retrieve the current tail while a round is still running:
+
+.. code-block:: bash
+
+   nvflare job logs JOB_ID --site site-1 --tail 100
+
+``client log stream not available`` means no stream has arrived; it is not a
+progress indication. Check that the job started, the reviewed streamer is
+enabled, ``allow_log_streaming`` permits it, the server receiver is present,
+and the code writes to the configured Python logger. If the guest dies before
+the first stream, use the deployment's startup diagnostics. See
+:ref:`live_log_streaming` for receiver configuration and heartbeat behavior.

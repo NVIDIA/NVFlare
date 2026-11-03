@@ -156,10 +156,10 @@ class ReviewBoundaryTests(unittest.TestCase):
                 ),
                 patch.object(bootstrap, "run", return_value=image) as run,
                 patch.object(bootstrap, "memory_file", side_effect=memory),
-                patch.object(bootstrap.subprocess, "Popen", return_value=Mock(**{"wait.return_value": 0})) as spawn,
+                patch.object(bootstrap.subprocess, "Popen", return_value=Mock(**{"wait.return_value": 7})) as spawn,
                 patch.dict(os.environ, DOCKER_HOST="tcp://also-untrusted", LD_PRELOAD="bad.so"),
             ):
-                self.assertEqual(bootstrap.application(), 0)
+                self.assertEqual(bootstrap.application(), 7)
                 command = spawn.call_args.args[0]
                 self.assertEqual(command[:3], ["/usr/bin/docker", "--host", "unix:///var/run/docker.sock"])
                 self.assertEqual(spawn.call_args.kwargs["env"], bootstrap.DOCKER_ENVIRONMENT)

@@ -12,6 +12,7 @@ bare_metal_cvm:
   cvm_image: /srv/cvm/images/tdx-cpu
   storage:
     # Example only; size for the archive, expanded image, and runtime writes.
-    vault_size_gib: 32
+    # Budget example only; measure expanded content and writes (see the Docker README).
+    vault_size_gib: 64
   network:
     allowed_out_ports: [8443]

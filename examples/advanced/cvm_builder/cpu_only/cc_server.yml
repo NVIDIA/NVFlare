@@ -9,8 +9,12 @@ workload:
     type: docker_archive
     path: /srv/nvflare/images/application.tar
 bare_metal_cvm:
+  # Replace this TEST-NET address with the server host IP.
+  hosts_entries:
+    server.example.invalid: 192.0.2.10
   cvm_image: /srv/cvm/images/snp-cpu
   storage:
-    vault_size_gib: 32
+    # Budget example only; measure expanded content and writes (see the Docker README).
+    vault_size_gib: 64
   network:
     allowed_out_ports: [8443]
