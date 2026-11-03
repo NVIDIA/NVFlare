@@ -31,9 +31,8 @@ from nvflare.apis.utils.job_submit_token import validate_submit_token
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.tool.cli_arg_utils import get_arg_value
 from nvflare.tool.cli_session import add_startup_kit_selection_args, new_cli_session, new_cli_session_for_args
-from nvflare.tool.job.config.configer import filter_indices, merge_configs_from_cli
 from nvflare.tool.job.job_client_const import CONFIG_FED_SERVER_JSON, DEFAULT_APP_NAME, JOB_META_BASE_NAME
-from nvflare.utils.cli_utils import get_curr_dir, save_config
+from nvflare.utils.cli_utils import get_curr_dir
 
 
 def _submit_token_arg(value: str) -> str:
@@ -104,17 +103,6 @@ def _non_negative_int(value: str) -> int:
     return parsed
 
 
-def get_app_dirs_from_job_folder(job_folder):
-    app_dirs = []
-    for root, _dirs, _files in os.walk(job_folder):
-        if root != job_folder and (root.endswith("config") or root.endswith("custom")):
-            dir_name = os.path.dirname(os.path.relpath(root, job_folder))
-            if dir_name:
-                app_dirs.append(dir_name)
-
-    return app_dirs
-
-
 def submit_job(cmd_args):
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -177,12 +165,6 @@ def submit_job(cmd_args):
 
         temp_job_dir = mkdtemp()
         shutil.copytree(job_folder, temp_job_dir, dirs_exist_ok=True)
-
-        app_dirs = get_app_dirs_from_job_folder(job_folder)
-        app_names = [os.path.basename(f) for f in app_dirs]
-        app_names = app_names if app_names else [DEFAULT_APP_NAME]
-
-        prepare_job_config(cmd_args, app_names, temp_job_dir)
         internal_submit_job(None, None, temp_job_dir, cmd_args)
 
     except ValueError as e:
@@ -352,33 +334,6 @@ def define_submit_job_parser(job_subparser):
     add_startup_kit_selection_args(submit_parser)
     submit_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_SUBMIT_JOB] = submit_parser
-
-
-def prepare_job_config(cmd_args, app_names: List[str], tmp_job_dir: Optional[str] = None):
-    merged_conf, config_modified = merge_configs_from_cli(cmd_args, app_names)
-    need_save_config = config_modified is True or tmp_job_dir is not None
-
-    if tmp_job_dir is None:
-        tmp_job_dir = cmd_args.job_folder
-
-    if need_save_config:
-        save_merged_configs(merged_conf, cmd_args.job_folder, tmp_job_dir)
-    variable_values = filter_indices(merged_conf)
-    return variable_values
-
-
-def save_merged_configs(app_merged_conf, job_folder, tmp_job_dir):
-    for app_name, merged_conf in app_merged_conf.items():
-        for file, (config, excluded_key_List, key_indices) in merged_conf.items():
-            if job_folder == tmp_job_dir:
-                dst_path = file
-            else:
-                rel_file_path = os.path.relpath(file, job_folder)
-                dst_path = os.path.join(tmp_job_dir, rel_file_path)
-
-            # The indexed tuple already owns the full, mutated root. A first
-            # leaf can belong to a nested block (especially in sorted YAML).
-            save_config(config, dst_path)
 
 
 # ---------------------------------------------------------------------------

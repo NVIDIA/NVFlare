@@ -12,18 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-APP_CONFIG_FILE_BASE_NAMES = ["config_fed_client", "config_fed_server"]
 JOB_META_BASE_NAME = "meta"
 
 CONFIG_FED_SERVER_JSON = "config_fed_server.json"
-CONFIG_FED_CLIENT_JSON = "config_fed_client.json"
 
 CONFIG_JSON = "config.json"
 
 DEFAULT_APP_NAME = "app"
-# for consistency, meta config have a dummy app name
-META_APP_NAME = "__meta__app__"
-APP_CONFIG_DIR = "config"
-
-APP_SCRIPT_KEY = "app_script"
-APP_CONFIG_KEY = "app_config"

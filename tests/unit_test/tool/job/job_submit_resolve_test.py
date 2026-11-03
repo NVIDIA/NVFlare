@@ -17,6 +17,7 @@
 import json
 import os
 from argparse import Namespace
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -72,13 +73,11 @@ class TestResolveJobFolder:
 
         args = Namespace(job_folder=job_folder, study="default", debug=False, config_file=None)
 
-        with patch("nvflare.tool.job.job_cli.get_app_dirs_from_job_folder", return_value=[]):
-            with patch("nvflare.tool.job.job_cli.prepare_job_config"):
-                with patch("nvflare.tool.job.job_cli.internal_submit_job") as submit:
-                    with patch("sys.argv", ["nvflare", "job", "submit", "-j", job_folder]):
-                        from nvflare.tool.job.job_cli import submit_job
+        with patch("nvflare.tool.job.job_cli.internal_submit_job") as submit:
+            with patch("sys.argv", ["nvflare", "job", "submit", "-j", job_folder]):
+                from nvflare.tool.job.job_cli import submit_job
 
-                        submit_job(args)
+                submit_job(args)
 
         submit.assert_called_once()
         assert submit.call_args.args[0] is None
@@ -133,6 +132,31 @@ class TestResolveJobFolder:
         captured = self._invoke_submit(parent, capsys, monkeypatch, tmp_path)
         assert "Using job folder" not in captured.out + captured.err
 
+    def test_submit_uploads_job_files_unchanged(self, monkeypatch, tmp_path):
+        """Submit does not parse or rewrite configs; an unused malformed fallback cannot block it."""
+        from nvflare.tool import cli_output
+        from nvflare.tool.job.job_cli import submit_job
+
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        job_dir = tmp_path / "myjob"
+        _make_valid_job(str(job_dir))
+        config_dir = job_dir / "app" / "config"
+        (config_dir / "config_fed_client.json").write_text('{\n  "format_version": 2,  "executors": []\n}')
+        (config_dir / "config_fed_client.json.default").write_text("{not json")
+        source_files = {p.relative_to(job_dir): p.read_bytes() for p in job_dir.rglob("*") if p.is_file()}
+        uploaded = {}
+
+        def capture_upload(admin_user_dir, username, temp_job_dir, cmd_args):
+            root = Path(temp_job_dir)
+            uploaded.update({p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()})
+
+        args = Namespace(job_folder=str(job_dir), study="default", debug=False)
+        with patch("nvflare.tool.job.job_cli.internal_submit_job", side_effect=capture_upload):
+            with patch("sys.argv", ["nvflare", "job", "submit", "-j", str(job_dir)]):
+                submit_job(args)
+
+        assert uploaded == source_files
+
     def test_invalid_job_folder_returns_structured_error_without_help(self, capsys, monkeypatch):
         """Invalid job folder should emit INVALID_ARGS and usage help in human mode."""
         from nvflare.tool import cli_output
@@ -161,13 +185,11 @@ class TestResolveJobFolder:
 
         args = Namespace(job_folder=job_dir, study="default", debug=False, config_file=None)
 
-        with patch("nvflare.tool.job.job_cli.get_app_dirs_from_job_folder", return_value=[]):
-            with patch("nvflare.tool.job.job_cli.prepare_job_config"):
-                fake_session = MagicMock()
-                fake_session.submit_job.return_value = "job-123"
-                with patch("nvflare.tool.cli_session.new_secure_session", return_value=fake_session) as new_secure:
-                    with patch("sys.argv", ["nvflare", "job", "submit", "-j", job_dir]):
-                        submit_job(args)
+        fake_session = MagicMock()
+        fake_session.submit_job.return_value = "job-123"
+        with patch("nvflare.tool.cli_session.new_secure_session", return_value=fake_session) as new_secure:
+            with patch("sys.argv", ["nvflare", "job", "submit", "-j", job_dir]):
+                submit_job(args)
 
         assert new_secure.call_args.kwargs["username"] == "admin@nvidia.com"
         assert new_secure.call_args.kwargs["startup_kit_location"] == str(active_admin_dir)
