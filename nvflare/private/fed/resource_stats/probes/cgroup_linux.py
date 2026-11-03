@@ -346,6 +346,15 @@ def probe_memory(_discovery=None, *, issues: Optional[set[str]] = None) -> Optio
 
     paths, version = _controller_paths("memory", discovery, issues)
     for path in paths:
+        if version == "v1" and path != paths[0]:
+            # A v1 ancestor constrains descendants only with hierarchical
+            # accounting; a disabled ancestor ends that accounting chain.
+            hierarchy = _limit_text(path / "memory.use_hierarchy", issues, required=True)
+            if hierarchy == "0":
+                break
+            if hierarchy != "1":
+                _incomplete(issues)
+                continue
         value = _limit_text(
             path / ("memory.max" if version == "v2" else "memory.limit_in_bytes"), issues, required=version == "v1"
         )

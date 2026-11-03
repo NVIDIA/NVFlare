@@ -147,11 +147,63 @@ def test_v1_capacity_uses_each_controller_and_ancestor(monkeypatch):
             "/cpu/cpu.cfs_period_us": "100000",
             "/memory/job/memory.limit_in_bytes": str(4 * _GIB),
             "/memory/memory.limit_in_bytes": str(_GIB),
+            "/memory/memory.use_hierarchy": "1",
         },
     )
 
     assert probe.probe_cpu() == {"units": 2.0}
     assert probe.probe_memory() == {"bytes": _GIB}
+
+
+@pytest.mark.parametrize(
+    "parent_hierarchy,outer_hierarchy,expected_gib,partial",
+    [
+        ("0", "0", 4, False),
+        ("0", probe._CGROUP_FILE_UNREADABLE, 4, False),
+        ("1", "0", 1, False),
+        (probe._CGROUP_FILE_MISSING, "0", 4, True),
+        (probe._CGROUP_FILE_UNREADABLE, "0", 4, True),
+        ("bad", "0", 4, True),
+        (probe._CGROUP_FILE_MISSING, "1", 2, True),
+        (probe._CGROUP_FILE_UNREADABLE, "1", 2, True),
+    ],
+)
+def test_v1_memory_applies_only_verified_hierarchical_ancestors(
+    monkeypatch, parent_hierarchy, outer_hierarchy, expected_gib, partial
+):
+    _hierarchy(
+        monkeypatch,
+        "4:memory:/outer/parent/job",
+        [("cgroup", "/", "/memory", "rw,memory")],
+        {
+            "/memory/outer/parent/job/memory.limit_in_bytes": str(4 * _GIB),
+            "/memory/outer/parent/memory.limit_in_bytes": str(_GIB),
+            "/memory/outer/parent/memory.use_hierarchy": parent_hierarchy,
+            "/memory/outer/memory.limit_in_bytes": str(2 * _GIB),
+            "/memory/outer/memory.use_hierarchy": outer_hierarchy,
+            "/memory/memory.use_hierarchy": "0",
+        },
+    )
+
+    issues = set()
+    assert probe.probe_memory(issues=issues) == {"bytes": expected_gib * _GIB}
+    assert issues == ({"observation_incomplete"} if partial else set())
+
+
+def test_v1_memory_own_limit_applies_with_hierarchy_disabled_at_bind_mount(monkeypatch):
+    _hierarchy(
+        monkeypatch,
+        "4:memory:/container",
+        [("cgroup", "/container", "/memory", "rw,memory")],
+        {
+            "/memory/memory.limit_in_bytes": str(_GIB),
+            "/memory/memory.use_hierarchy": "0",
+        },
+    )
+
+    issues = set()
+    assert probe.probe_memory(issues=issues) == {"bytes": _GIB}
+    assert not issues
 
 
 def test_hybrid_v2_mount_does_not_hide_v1_cpu_or_memory(monkeypatch):
