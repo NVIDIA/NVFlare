@@ -22,7 +22,8 @@ decent-vla/
     ├── workflows.py           # native FedAvg and FedOpt workflow adapters
     ├── persistor.py           # FLARE LearnablePersistor
     ├── adapters/              # policy-specific implementations
-    ├── configs/               # run configuration
+    ├── config.py              # run configuration and validation
+    ├── libero.py              # LIBERO checkpoint evaluation
     └── support/               # partitioning, training, checkpoints and evaluation support
 ```
 

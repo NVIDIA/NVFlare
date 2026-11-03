@@ -27,8 +27,7 @@ from nvflare.app_common.abstract.model import make_model_learnable
 from nvflare.app_common.app_constant import AppConstants
 
 from src.support.builders import build_backend_factory, partition_for
-from src.support.checkpoints import latest_server_checkpoint
-from src.support.client_checkpoint import resume_disabled
+from src.support.checkpoints import latest_server_checkpoint, resume_disabled
 from src.support.scope_manifest import write_scope_manifest
 from src.support.site import apply_site_paths, load_job_config
 from src.support.training import seed_training

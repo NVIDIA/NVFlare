@@ -50,7 +50,7 @@ from typing import Any
 
 import torch
 
-from src.configs.schemas import BackendConfig, DataConfig, OptimConfig
+from src.config import BackendConfig, DataConfig, OptimConfig
 from src.support.lora import apply_peft
 from src.support.optim import build_optimizer as make_optimizer
 from src.support.parameters import load_model_checkpoint, set_model_state, trainable_state
@@ -240,7 +240,7 @@ class LeRobotBackend:
     def _build_concat_dataloader(self, data_cfg, partition_indices):
         """explicit_repos: client trains on the FULL data of every repo in its
         list, concatenated. `partition_indices == [client_index]` (a sentinel,
-        not episode indices — see runtime.builders.partition_for). Each
+        not episode indices — see support.builders.partition_for). Each
         sub-dataset keeps its own EpisodeAwareSampler (preserving
         drop_n_last_frames); indices are offset into the ConcatDataset and
         shuffled each epoch."""
@@ -276,7 +276,6 @@ class LeRobotBackend:
         if not combined_idx:
             raise ValueError(f"explicit_repos client {client_idx} ({repo_ids}) sampled 0 frames")
 
-        self._explicit_combined_idx = combined_idx
         self._explicit_frame_count = len(combined_idx)
         log.info(
             "lerobot explicit_repos client %d: %d repos -> %d frames", client_idx, len(repo_ids), len(combined_idx)

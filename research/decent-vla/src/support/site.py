@@ -37,7 +37,7 @@ def resolve_packaged_paths(cfg, config_dir) -> None:
 
 def load_job_config(config_path):
     """Load the run config packaged in a job, with its packaged files resolved."""
-    from src.configs.loader import load_run_config
+    from src.config import load_run_config
 
     cfg = load_run_config(str(config_path))
     resolve_packaged_paths(cfg, Path(config_path).parent)

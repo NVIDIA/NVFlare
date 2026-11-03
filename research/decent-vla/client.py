@@ -66,7 +66,7 @@ def client_main(config_arg=None, app_dir=None):
 
     from src.support import wire
     from src.support.builders import build_backend_factory, partition_for, resolve_device
-    from src.support.client_checkpoint import resume_disabled, save_client_state
+    from src.support.checkpoints import resume_disabled, save_client_state
     from src.support.client_state import build_client_state, fast_forward_scheduler
     from src.support.site import apply_site_paths, load_job_config
     from src.support.training import seed_training, train_steps

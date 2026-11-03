@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
-    from src.configs.schemas import EvalConfig, RunConfig
+    from src.config import RunConfig
     from src.support.partitioning import PartitionManifest
 
 
@@ -43,14 +43,6 @@ def build_backend_factory(cfg: RunConfig, device: torch.device):
     return factory, BackendClass
 
 
-def build_benchmark(cfg_eval: EvalConfig):
-    if cfg_eval.benchmark.name == "libero":
-        from src.benchmarks.libero.benchmark import LIBEROBenchmark as BenchmarkClass
-    else:
-        raise ValueError(f"Unknown benchmark: {cfg_eval.benchmark.name}")
-    return BenchmarkClass.from_config(cfg_eval.benchmark)
-
-
 def resolve_device(device_str: str) -> torch.device:
     if device_str == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -58,12 +50,7 @@ def resolve_device(device_str: str) -> torch.device:
 
 
 def partition_for(cfg: RunConfig, backend_cls) -> tuple[list[list[int]], PartitionManifest]:
-    """Generic partitioning for ANY backend: prefers the backend's optional
-    `list_episodes` metadata; falls back to a flat sample universe.
-
-    `list_episodes` is looked up on the class and called with `data_cfg`
-    before a backend instance is created.
-    """
+    """Build deterministic partitions from backend episode metadata or assigned repos."""
     if cfg.data.partitioning == "explicit_repos":
         from src.support.partitioning import PartitionManifest
 
@@ -87,14 +74,9 @@ def partition_for(cfg: RunConfig, backend_cls) -> tuple[list[list[int]], Partiti
         )
         return chunks, manifest
 
-    from src.support.partitioning import EpisodeMeta, load_heldout_json, partition_episodes
+    from src.support.partitioning import load_heldout_json, partition_episodes
 
-    list_eps = getattr(backend_cls, "list_episodes", None)
-    if list_eps is None:
-        n = (cfg.data.extra or {}).get("num_samples", 256)
-        episodes = [EpisodeMeta(i, 0, "samples") for i in range(n)]
-    else:
-        episodes = list_eps(cfg.data)
+    episodes = backend_cls.list_episodes(cfg.data)
     held = load_heldout_json(cfg.data.held_out) if cfg.data.held_out else None
     return partition_episodes(
         episodes,

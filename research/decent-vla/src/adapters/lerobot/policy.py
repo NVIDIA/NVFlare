@@ -98,17 +98,6 @@ class LeRobotPolicy:
         batch["task"] = [observation["instruction"]]
         return batch
 
-    @property
-    def action_horizon(self) -> int:
-        # Most lerobot policies expose either `config.n_action_steps` or
-        # `config.action_horizon`; fall back to 1.
-        cfg = getattr(self._policy, "config", None)
-        for attr in ("n_action_steps", "action_horizon"):
-            v = getattr(cfg, attr, None)
-            if isinstance(v, int) and v > 0:
-                return v
-        return 1
-
 
 def _to_tensor(v: Any, device: torch.device) -> Any:
     if isinstance(v, torch.Tensor):

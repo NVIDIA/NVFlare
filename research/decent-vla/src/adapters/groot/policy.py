@@ -21,7 +21,6 @@ interface used by evaluation::
 
     reset(task_meta)           -> None              # episode start
     select_action(observation) -> np.ndarray        # 1-D, env-ready action
-    action_horizon             -> int
 
 It mirrors the upstream reference ``gr00t/policy/gr00t_policy.py::Gr00tPolicy``
 (``_get_action``) but drives the **already-loaded, FL-aggregated** in-memory
@@ -117,10 +116,6 @@ class GrootPolicy:
             n = min(self._replan_steps, len(chunk))
             self._queue = [np.asarray(chunk[i], dtype=np.float32) for i in range(n)]
         return self._queue.pop(0)
-
-    @property
-    def action_horizon(self) -> int:
-        return self._replan_steps
 
     # -- inference -------------------------------------------------------
 

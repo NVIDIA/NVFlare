@@ -312,7 +312,7 @@ def create_config(args):
 
 
 def write_config(args):
-    from src.configs.loader import load_run_config
+    from src.config import load_run_config
 
     cfg = create_config(args)
     folder = Path(cfg["fl"]["output_dir"]).resolve()
@@ -348,7 +348,7 @@ def define_parser():
 def main():
     parser = define_parser()
     args = parser.parse_args()
-    from src.configs.loader import load_run_config
+    from src.config import load_run_config
 
     try:
         path = Path(args.config) if args.config else write_config(args)

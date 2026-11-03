@@ -27,7 +27,8 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from src.support.builders import build_benchmark, resolve_device
+from src.libero import LIBEROBenchmark
+from src.support.builders import resolve_device
 from src.support.results import (
     SCHEMA_VERSION,
     DeviceInfo,
@@ -41,7 +42,7 @@ from src.support.results import (
 )
 
 if TYPE_CHECKING:
-    from src.configs.schemas import RunConfig
+    from src.config import RunConfig
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +148,7 @@ def run_eval(
         backend.load_checkpoint(ckpt_path)
     policy = backend.build_policy()
     apply_action_horizon(policy, cfg.eval.n_action_steps)
-    benchmark = build_benchmark(cfg.eval)
+    benchmark = LIBEROBenchmark.from_config(cfg.eval.benchmark)
 
     # Resume completed suites only when their checkpoint and settings match.
     eval_dir = Path(cfg.eval.output_dir or (output_dir / "eval"))

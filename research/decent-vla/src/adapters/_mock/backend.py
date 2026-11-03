@@ -26,7 +26,7 @@ from typing import Any
 import torch
 from torch import nn
 
-from src.configs.schemas import BackendConfig, DataConfig, OptimConfig
+from src.config import BackendConfig, DataConfig, OptimConfig
 from src.support.optim import build_optimizer as make_optimizer
 from src.support.parameters import set_model_state, trainable_state
 from src.support.partitioning import EpisodeMeta

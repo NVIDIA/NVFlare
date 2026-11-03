@@ -117,9 +117,8 @@ def run_personalized_eval(
     Per-client results are provenance-cached like the generic eval: a crashed
     eval re-runs only the missing clients.
     """
-    from src.support.builders import build_benchmark
-    from src.support.checkpoints import latest_server_checkpoint
-    from src.support.client_checkpoint import client_checkpoints
+    from src.libero import LIBEROBenchmark
+    from src.support.checkpoints import client_checkpoints, latest_server_checkpoint
     from src.support.eval_runner import _checkpoint_identity, _eval_config_hash, apply_action_horizon
     from src.support.partitioning import PartitionManifest
 
@@ -157,7 +156,7 @@ def run_personalized_eval(
     server_size, server_mtime_ns = _checkpoint_identity(server_ckpt)
     eval_config_hash = _eval_config_hash(cfg)
 
-    base_bench = build_benchmark(cfg.eval)
+    base_bench = LIBEROBenchmark.from_config(cfg.eval.benchmark)
     if not hasattr(base_bench, "task_names"):
         raise TypeError(
             f"benchmark {base_bench.name!r} has no task_names() accessor; "
@@ -223,7 +222,7 @@ def run_personalized_eval(
             cfg.eval.benchmark,
             extra={**(cfg.eval.benchmark.extra or {}), "task_filter": task_filter},
         )
-        bench = build_benchmark(dataclasses.replace(cfg.eval, benchmark=bench_cfg))
+        bench = LIBEROBenchmark.from_config(bench_cfg)
         result = bench.evaluate(
             policy,
             suites=sorted(task_filter),

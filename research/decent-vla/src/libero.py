@@ -58,7 +58,7 @@ def _allow_full_unpickle():
 
 
 if TYPE_CHECKING:
-    from src.configs.schemas import BenchmarkConfig
+    from src.config import BenchmarkConfig
 
 log = logging.getLogger(__name__)
 
@@ -125,6 +125,8 @@ class LIBEROBenchmark:
 
     @classmethod
     def from_config(cls, cfg: BenchmarkConfig) -> LIBEROBenchmark:
+        if cfg.name != "libero":
+            raise ValueError(f"Unknown benchmark: {cfg.name!r}; expected libero")
         for s in cfg.suites:
             if _ALIASES.get(s, s) not in KNOWN_SUITES:
                 raise ValueError(f"Unknown LIBERO suite: {s!r} (known: {KNOWN_SUITES})")

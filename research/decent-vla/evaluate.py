@@ -20,7 +20,7 @@ import logging
 import time
 from pathlib import Path
 
-from src.configs.loader import load_run_config
+from src.config import load_run_config
 from src.support.builders import build_backend_factory, resolve_device
 from src.support.eval_runner import run_eval
 from src.support.personalized_eval import run_personalized_eval

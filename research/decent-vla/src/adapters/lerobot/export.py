@@ -177,7 +177,7 @@ def export_pretrained(backend, ckpt_path: str | Path, output_dir: str | Path) ->
 def main() -> int:
     import argparse
 
-    from src.configs.loader import load_run_config
+    from src.config import load_run_config
     from src.support.builders import build_backend_factory
 
     parser = argparse.ArgumentParser(description=__doc__)

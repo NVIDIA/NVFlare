@@ -86,7 +86,7 @@ from src.support.partitioning import EpisodeMeta
 from src.support.training import cycle_loader, dataloader_kwargs
 
 if TYPE_CHECKING:
-    from src.configs.schemas import BackendConfig, DataConfig, OptimConfig
+    from src.config import BackendConfig, DataConfig, OptimConfig
 
 log = logging.getLogger(__name__)
 
