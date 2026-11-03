@@ -20,10 +20,13 @@ from pathlib import Path
 import numpy as np
 from client import newton_raphson_terms
 from cohort import FEATURES, load_cohort
+from job import JOB_NAME
 from prepare_data import DATA_ROOT
 from sklearn.linear_model import LogisticRegression
 
-MODEL = "/tmp/nvflare/simulation/omop_gi_bleed/server/simulate_job/models/weights.npy"
+from nvflare.recipe.sim_env import WORKSPACE_ROOT
+
+MODEL = f"{WORKSPACE_ROOT}/{JOB_NAME}/server/simulate_job/models/weights.npy"
 
 
 def fit(features: np.ndarray, labels: np.ndarray) -> np.ndarray:
