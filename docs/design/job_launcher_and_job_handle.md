@@ -8,6 +8,9 @@ Slurm batch allocation. Two abstractions govern this:
 - **JobLauncherSpec** — starts a job and returns a handle.
 - **JobHandleSpec** — represents the running job and provides lifecycle control (poll, wait, terminate).
 
+The [backend shutdown contract](backend_shutdown_contract.md) summarizes the
+ownership rule, backend evidence, parent behavior, and known limits of PR #5561.
+
 The upper layers (server engine, client executor) program exclusively against these two interfaces. The concrete backend is determined entirely by **site policy**: whichever launcher is registered in the site's `resources.json` handles all jobs. The engine never inspects job metadata to pick a launcher.
 
 ```
@@ -49,8 +52,8 @@ Abstract base class representing a running job (`class JobHandleSpec(ABC)`).
 | Method | Signature | Semantics |
 |--------|-----------|-----------|
 | `terminate()` | `() -> None` | Request termination; backend settlement may still be pending. |
-| `poll()` | `() -> JobReturnCode` | Non-blocking query for current return code. Returns `UNKNOWN` until shutdown is confirmed. |
-| `wait()` | `() -> None` | Block until the backend confirms shutdown. |
+| `poll()` | `() -> JobReturnCode` | Query the observed return code. Timing is backend-specific: Process can report leader exit before its group settles. A non-`UNKNOWN` result alone is not a release barrier. |
+| `wait()` | `() -> None` | Parent cleanup barrier under the backend's settlement policy. Physical shutdown is the target; see the documented legacy Slurm exceptions. |
 
 ### 2.2 JobLauncherSpec
 
