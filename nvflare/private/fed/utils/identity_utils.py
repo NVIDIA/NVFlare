@@ -16,6 +16,7 @@ from typing import Optional
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 
+from nvflare.fuel.sec.admin_cert import reject_job_credential
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.lighter.utils import (
     load_crt,
@@ -27,7 +28,6 @@ from nvflare.lighter.utils import (
     verify_cert_chain,
     verify_content,
 )
-from nvflare.private.fed.utils.job_cert_utils import get_cert_job_id, has_job_ca_marker
 from nvflare.security.logging import secure_format_exception
 
 
@@ -170,11 +170,7 @@ def _validate_identity_cert_usage(cert, expected_eku, intermediate_certs=None):
     extensions remain unrestricted. When present, they must allow the signing
     operation and the caller-specific authentication purpose.
     """
-    if get_cert_job_id(cert) is not None:
-        raise ValueError("job-scoped certificate cannot be used to assert site identity")
-    for chain_cert in (cert, *(intermediate_certs or ())):
-        if has_job_ca_marker(chain_cert):
-            raise ValueError("certificate issued by the job CA cannot assert site identity")
+    reject_job_credential(cert, intermediate_certs)
 
     try:
         key_usage = cert.extensions.get_extension_for_class(x509.KeyUsage).value
