@@ -346,6 +346,45 @@ class TestStaticFileBuilder:
         assert permissions["project_admin"] == "any"
         assert permissions["lead"]["byoc"] == "any"
 
+    def test_master_template_cc_authz_denies_byoc_to_all_roles(self):
+        import yaml
+
+        from nvflare.apis.fl_constant import AdminCommandNames
+        from nvflare.fuel.sec.authz import AuthzContext, Person
+        from nvflare.security.security import FLAuthorizer
+
+        template = _load_master_template()
+        policy = yaml.safe_load(template["cc_authz"])
+        permissions = policy["permissions"]
+
+        assert permissions["project_admin"]["byoc"] == "none"
+        assert permissions["org_admin"]["byoc"] == "none"
+        assert permissions["lead"]["byoc"] == "none"
+
+        authorizer = FLAuthorizer(for_org="site_org", policy_config=policy)
+        for role in ("project_admin", "org_admin", "lead", "member"):
+            authorized, _ = authorizer.authorize(
+                AuthzContext(
+                    user=Person("user", "user_org", role),
+                    submitter=Person("user", "user_org", role),
+                    right="byoc",
+                )
+            )
+            assert not authorized
+
+        project_admin = Person("project_admin", "project_org", "project_admin")
+        for name, right in vars(AdminCommandNames).items():
+            if name.startswith("_") or not isinstance(right, str):
+                continue
+            authorized, error = authorizer.authorize(
+                AuthzContext(
+                    user=project_admin,
+                    submitter=project_admin,
+                    right=right,
+                )
+            )
+            assert authorized, f"project_admin lost the '{right}' right: {error}"
+
     def test_master_template_allows_non_edge_regression_components(self):
         """Pin the specific paths that regressed in 2.8.0rc4 (PR #4701 fallout).
 

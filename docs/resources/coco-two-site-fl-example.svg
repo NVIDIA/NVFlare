@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="1900" viewBox="0 0 1120 1900" role="img" aria-labelledby="diagram-title diagram-description">
+  <title id="diagram-title">Two data owners train with approved confidential clients</title>
+  <desc id="diagram-description">A worked architecture example, not a supplied or fully tested deployment. Model owner M supplies reviewed code and a model to a trusted provisioning node, which builds, signs and encrypts distinct client releases with site-1 and site-2 startup kits. Shared independent Trustee and registry administration is a jointly trusted delegate with recorded approval from both data owners. CoCo IT A and B receive only their Pod and public runtime inputs and operate hostile compute around an approved SNP plus GPU confidential client. Each data owner controls a separate authenticated dataset gateway and storage outside CoCo IT control. Dashed amber paths are required user-supplied integrations: after application-specific client authorization, each gateway sends its dataset over TLS directly into its confidential guest, without host mounts. Clients exchange model updates with M's ordinary trusted FL server over mutual TLS. Approved outputs can disclose information. Dataset integration, authorization and persistence require implementation and review; peer attestation alone does not establish exact image identity.</desc>
+  <defs>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M1 1 L11 6 L1 11 Z" fill="#3757a6"/></marker>
+    <marker id="arrow-teal" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M1 1 L11 6 L1 11 Z" fill="#087f8c"/></marker>
+    <marker id="arrow-amber" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M1 1 L11 6 L1 11 Z" fill="#996812"/></marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #172b45; font-size: 22px; }
+      .title { font-size: 32px; font-weight: 700; }
+      .heading { font-size: 24px; font-weight: 700; }
+      .small { font-size: 20px; }
+      .muted { fill: #52647a; }
+      .center { text-anchor: middle; }
+      .blue { fill: #3757a6; }
+      .teal { fill: #096674; }
+      .amber { fill: #805916; }
+      .danger { fill: #963f3f; }
+      .service { fill: #e8effc; stroke: #8b9fc6; stroke-width: 2; }
+      .owner { fill: #fff7dd; stroke: #c99c38; stroke-width: 2; }
+      .host { fill: #fff8f6; stroke: #d39a91; stroke-width: 2; stroke-dasharray: 8 6; }
+      .guest { fill: #ddf1eb; stroke: #75ac9c; stroke-width: 2; }
+      .note { fill: #f4f7fd; stroke: #acbbc9; stroke-width: 2; }
+      .service-path { fill: none; stroke: #3757a6; stroke-width: 3; stroke-linejoin: round; marker-end: url(#arrow-blue); }
+      .fl-path { fill: none; stroke: #087f8c; stroke-width: 3; marker-end: url(#arrow-teal); }
+      .dataset-path { fill: none; stroke: #996812; stroke-width: 4; stroke-dasharray: 10 7; stroke-linejoin: round; marker-end: url(#arrow-amber); }
+      .label { paint-order: stroke; stroke: #ffffff; stroke-width: 8px; stroke-linejoin: round; }
+    </style>
+  </defs>
+  <rect width="1120" height="1900" fill="#ffffff"/>
+  <text x="32" y="49" class="title">Two data owners, two confidential FL clients</text>
+  <text x="32" y="86" class="muted">Worked architecture example · Example target: AMD SEV-SNP + NVIDIA GPU</text>
+
+  <rect x="32" y="125" width="315" height="180" rx="12" class="service"/>
+  <text x="189" y="162" class="heading center">Model owner M</text>
+  <text x="189" y="203" class="center">Supplies reviewed</text>
+  <text x="189" y="235" class="center">client code + model</text>
+  <text x="189" y="274" class="small center muted">Agreed with both owners</text>
+  <path d="M347 215 H402" class="service-path"/>
+  <rect x="410" y="125" width="678" height="180" rx="12" class="service"/>
+  <text x="749" y="162" class="heading center">Trusted provisioning node</text>
+  <text x="749" y="203" class="center">Builds, signs and encrypts distinct releases:</text>
+  <text x="749" y="239" class="center">client A + site-1 kit · client B + site-2 kit</text>
+  <text x="749" y="274" class="small center muted">Produces each site's Pod and public runtime inputs</text>
+  <path d="M749 305 V360" class="service-path"/>
+  <text x="720" y="341" class="small blue" text-anchor="end">Publish encrypted releases; submit release handoffs</text>
+
+  <rect x="32" y="370" width="1056" height="215" rx="12" class="service"/>
+  <text x="560" y="408" class="heading center">Shared independent Trustee + private registry</text>
+  <text x="560" y="445" class="center">Jointly trusted delegate, administered separately from CoCo IT A and B</text>
+  <text x="560" y="480" class="center">Both data owners record approval of releases, policy and service administration.</text>
+  <text x="560" y="515" class="small center muted">Explicit organizational approval; Trustee does not supply voting or quorum.</text>
+  <text x="560" y="552" class="small center blue">Blue paths: encrypted images, guest attestation and authorized protected-resource release</text>
+
+  <rect x="32" y="650" width="494" height="180" rx="12" class="owner"/>
+  <rect x="594" y="650" width="494" height="180" rx="12" class="owner"/>
+  <text x="279" y="688" class="heading center">Data owner A</text>
+  <text x="841" y="688" class="heading center">Data owner B</text>
+  <text x="279" y="722" class="center">Authenticated gateway + dataset A</text>
+  <text x="841" y="722" class="center">Authenticated gateway + dataset B</text>
+  <text x="279" y="758" class="small center">Own storage outside CoCo IT A's control</text>
+  <text x="841" y="758" class="small center">Own storage outside CoCo IT B's control</text>
+  <text x="279" y="797" class="small center amber">Authorizes the client before data release</text>
+  <text x="841" y="797" class="small center amber">Authorizes the client before data release</text>
+  <rect x="32" y="970" width="494" height="363" rx="12" class="host"/>
+  <rect x="594" y="970" width="494" height="363" rx="12" class="host"/>
+  <path d="M86 830 V1107 H279 V1130" class="dataset-path"/>
+  <path d="M1034 830 V1107 H841 V1130" class="dataset-path"/>
+  <text x="279" y="869" class="small center amber label">REQUIRED USER-SUPPLIED INTEGRATION</text>
+  <text x="841" y="869" class="small center amber label">REQUIRED USER-SUPPLIED INTEGRATION</text>
+  <text x="279" y="902" class="small center amber label">Application-specific authorization</text>
+  <text x="841" y="902" class="small center amber label">Application-specific authorization</text>
+  <text x="279" y="933" class="small center amber label">Dataset via TLS directly into guest</text>
+  <text x="841" y="933" class="small center amber label">Dataset via TLS directly into guest</text>
+  <text x="279" y="1009" class="heading center danger">Hostile compute boundary A</text>
+  <text x="841" y="1009" class="heading center danger">Hostile compute boundary B</text>
+  <text x="279" y="1049" class="center">CoCo IT A installs and runs</text>
+  <text x="841" y="1049" class="center">CoCo IT B installs and runs</text>
+  <text x="279" y="1080" class="small center">Receives Pod + public runtime inputs only</text>
+  <text x="841" y="1080" class="small center">Receives Pod + public runtime inputs only</text>
+  <rect x="62" y="1135" width="438" height="170" rx="12" class="guest"/>
+  <rect x="620" y="1135" width="438" height="170" rx="12" class="guest"/>
+  <path d="M545 585 V1223 H502" class="service-path"/>
+  <path d="M575 585 V1223 H618" class="service-path"/>
+  <text x="281" y="1172" class="heading center teal">Approved confidential client A</text>
+  <text x="839" y="1172" class="heading center teal">Approved confidential client B</text>
+  <text x="281" y="1208" class="center">site-1 identity · SNP + GPU</text>
+  <text x="839" y="1208" class="center">site-2 identity · SNP + GPU</text>
+  <text x="281" y="1246" class="small center">Dataset plaintext used inside the guest</text>
+  <text x="839" y="1246" class="small center">Dataset plaintext used inside the guest</text>
+  <text x="281" y="1280" class="small center teal">No dataset host mounts</text>
+  <text x="839" y="1280" class="small center teal">No dataset host mounts</text>
+  <path d="M281 1305 V1470" class="fl-path"/>
+  <path d="M839 1305 V1470" class="fl-path"/>
+  <text x="281" y="1382" class="center teal label">Model updates over mTLS</text>
+  <text x="839" y="1382" class="center teal label">Model updates over mTLS</text>
+  <text x="560" y="1434" class="small center muted label">Approved outputs can disclose information; review the model and output policy.</text>
+
+  <rect x="170" y="1480" width="780" height="150" rx="12" class="service"/>
+  <text x="560" y="1520" class="heading center">FL server operated by model owner M</text>
+  <text x="560" y="1558" class="center">Ordinary trusted machine · coordinates training and aggregates updates</text>
+  <text x="560" y="1596" class="small center muted">M is trusted with approved client outputs.</text>
+
+  <rect x="32" y="1680" width="1056" height="184" rx="12" class="note"/>
+  <text x="54" y="1715" class="heading">Implementation and trust limits</text>
+  <text x="54" y="1750" class="small">The dataset gateway / connector is not supplied here; this is not a fully tested deployment.</text>
+  <text x="54" y="1782" class="small">Implement and review dataset integration, application authorization and safe persistence.</text>
+  <text x="54" y="1814" class="small">Peer attestation alone does not prove the approved exact image or authorize dataset access.</text>
+  <text x="54" y="1846" class="small muted">Protecting the server with CoCo is optional and needs separate policy and trust decisions.</text>
+</svg>

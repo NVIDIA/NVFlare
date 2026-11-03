@@ -424,3 +424,37 @@ class TestProvisionOutput:
         captured = capsys.readouterr()
         assert captured.out == ""
         assert captured.err == ""
+
+    def test_vault_failure_reaches_cli_caller(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="project.yml")
+        (tmp_path / "project.yml").write_text("name: proj\n")
+        with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+            with patch(
+                "nvflare.lighter.provision.provision",
+                side_effect=RuntimeError("Vault build failed; preserve output and resolve possible key activation"),
+            ):
+                with pytest.raises(SystemExit) as exc:
+                    handle_provision(args)
+        assert exc.value.code != 0
+        result = json.loads(capsys.readouterr().out)
+        assert result["status"] == "error"
+        assert "possible key activation" in result["message"]
+
+    def test_cc_deployment_metadata_in_json_result(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="project.yml")
+        (tmp_path / "project.yml").write_text("name: proj\n")
+        deployments = [{"participant": "site-1", "cc_deployment_mode": "bare_metal_cvm", "artifacts": []}]
+        with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+            with patch(
+                "nvflare.lighter.provision.provision",
+                return_value={CtxKey.CC_DEPLOYMENT_RESULTS: deployments},
+            ):
+                with patch("nvflare.tool.install_skills.install_skills"):
+                    handle_provision(args)
+        result = json.loads(capsys.readouterr().out)
+        assert result["status"] == "ok"
+        assert result["data"]["cc_deployments"] == deployments

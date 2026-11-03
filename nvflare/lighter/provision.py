@@ -366,14 +366,25 @@ def handle_provision(args):
             if os.path.isdir(item_path):
                 packages.append(item)
 
-    output_ok({"workspace": workspace_full_path, "packages": packages})
+    result = {"workspace": workspace_full_path, "packages": packages}
+    if isinstance(ctx, dict) and CtxKey.CC_DEPLOYMENT_RESULTS in ctx:
+        result["cc_deployments"] = ctx[CtxKey.CC_DEPLOYMENT_RESULTS]
+    output_ok(result)
 
     if not is_json_mode():
         print_human(f"\nProvisioning complete. Packages written to: {workspace_full_path}")
         if packages:
             print_human(f"  Packages: {', '.join(packages)}")
             print_human("  Verify each package with: nvflare preflight-check -p <package_path>")
-        print_human("  Distribute packages to each participant and run their start.sh")
+        if result.get("cc_deployments"):
+            print_human("  Confidential-computing delivery manifests are in the cc_manifests package.")
+        else:
+            print_human("  Distribute packages to each participant and run their start.sh")
+        for deployment in result.get("cc_deployments", []):
+            print_human(
+                f"  {deployment['participant']}: {deployment['cc_deployment_mode']} "
+                f"({len(deployment['artifacts'])} artifact(s))"
+            )
     try:
         install_skills()
     except Exception:
@@ -420,6 +431,11 @@ def provision(
     add_client_full_path: Optional[str] = None,
 ):
     project_dict["gen_scripts"] = args.gen_scripts
+    if "cvm_vault" in project_dict:
+        raise ValueError(
+            "Legacy top-level cvm_vault is not supported; use participant cc_config with "
+            "cc_deployment_mode: bare_metal_cvm"
+        )
     edge_params = project_dict.get("edge")
     if edge_params:
         try:
@@ -431,20 +447,23 @@ def provision(
             raise SystemExit(5)
         return None
 
-    project = prepare_project(project_dict, add_user_full_path, add_client_full_path)
+    project = prepare_project(project_dict, add_user_full_path, add_client_full_path, project_file=project_full_path)
     builders = prepare_builders(project_dict)
     packager = prepare_packager(project_dict)
     provisioner = Provisioner(workspace_full_path, builders, packager)
     return provisioner.provision(project)
 
 
-def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None):
+def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None, project_file=None):
     api_version = project_dict.get(PropKey.API_VERSION)
     if api_version not in [3, 4]:
         raise ValueError(f"API version expected 3 or 4 but found {api_version}")
     project_name = _normalize_project_name(project_dict)
     project_description = project_dict.get(PropKey.DESCRIPTION, "")
     project = Project(name=project_name, description=project_description, props=project_dict)
+    project_file = project_dict.get(PropKey.PROJECT_FILE, project_file)
+    if project_file is not None:
+        project.set_prop(PropKey.PROJECT_FILE, os.path.abspath(project_file))
     participant_defs = project_dict.get("participants")
     if not isinstance(participant_defs, list):
         raise ValueError("missing 'participants' in project config")

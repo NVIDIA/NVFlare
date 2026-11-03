@@ -23,10 +23,15 @@ ACI_NAMESPACE = "x-az-aci"
 
 
 class ACIAuthorizer(CCAuthorizer):
-    def __init__(self, maa_endpoint="sharedeus2.eus2.attest.azure.net", retry_count=5, retry_sleep=2):
+    def __init__(
+        self, maa_endpoint="sharedeus2.eus2.attest.azure.net", retry_count=5, retry_sleep=2, namespace=ACI_NAMESPACE
+    ):
+        if not isinstance(namespace, str) or not namespace:
+            raise ValueError("namespace must be a non-empty string")
         self.maa_endpoint = maa_endpoint
         self.retry_count = retry_count
         self.retry_sleep = retry_sleep
+        self.namespace = namespace
 
     def generate(self):
         count = 0
@@ -62,4 +67,4 @@ class ACIAuthorizer(CCAuthorizer):
         return False
 
     def get_namespace(self) -> str:
-        return ACI_NAMESPACE
+        return self.namespace

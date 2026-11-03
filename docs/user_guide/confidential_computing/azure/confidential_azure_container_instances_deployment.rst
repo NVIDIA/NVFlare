@@ -14,8 +14,8 @@ verifying container images before launching instances, and other confidential co
 .. note::
 
    Launching confidential ACI requires your Azure account to have certain permissions.  Please consult your Azure account and Azure for more information.
-   
-   
+
+
 Steps for Launching The NVFlare Server in Confidential ACI
 ===============================================================
 
@@ -41,7 +41,7 @@ You can choose another name for the resource group and another location.
    location=eastus
 
    az login
-   
+
    az group create --name $resource_group --location $location
 
 
@@ -68,7 +68,7 @@ With the resource group created, we first create one Azure Container Registry (A
 
 .. note::
 
-   As at the later steps, it is required to operate the Azure Container Registry (ACR) with higher permissions, 
+   As at the later steps, it is required to operate the Azure Container Registry (ACR) with higher permissions,
    please check if you have at least "Contributor" role on the ACR.  Roles with lesser permissions may cause the following steps to fail.
 
 Build Docker Container Images
@@ -108,19 +108,23 @@ folder and docker folder under current working folder, respectively, as shown be
    COPY $NVFL_ROOT nvflare
 
 
-The following is a sample cc_server.yml file, which is used with project.yml for cc provision.  A sample project.yml file
-is shown after the cc_server.yml file.  Note this sample project.yml file also includes cc_site-1.yml, as described in
-:ref:`azure_confidential_virtual_machine_deployment` - Creating Azure confidential virtual machines
+The server selects the common Azure CC deployment mode. Its role is derived
+from the participant in ``project.yml``. The MAA endpoint and timing are defined
+once in ``cc_project.yml`` as shown in :ref:`cc_deployment`.
 
 .. code-block:: yaml
 
-  compute_env: azure_confidential_container
-  cc_cpu_mechanism: amd_sev_snp
-  role: server
-  cc_issuers:
-    - id: aci_authorizer
-      path: nvflare.app_opt.confidential_computing.aci_authorizer.ACIAuthorizer
-      token_expiration: 100 # seconds, needs to be less than check_frequency
+  schema_version: 1
+  cc_deployment_mode: azure_cc
+  cpu_tee: amd_sev_snp
+  gpu_tee: none
+  attestation:
+    service: azure_maa
+  workload:
+    source:
+      type: external
+  azure_cc:
+    deployment_target: confidential_container
 
 The following is the sample project.yml file.
 
@@ -129,6 +133,7 @@ The following is the sample project.yml file.
   api_version: 3
   name: example_project
   description: NVIDIA FLARE sample project yaml file
+  cc_project_config: cc_project.yml
   participants:
     # Change the name of the server (server1) to the Fully Qualified Domain Name
     # (FQDN) of the server, for example: server1.example.com.
@@ -167,6 +172,8 @@ The following is the sample project.yml file.
     - path: nvflare.lighter.impl.cert.CertBuilder
     - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
     - path: nvflare.lighter.impl.signature.SignatureBuilder
+  packager:
+    path: nvflare.lighter.cc_provision.impl.cc_packager.CCPackager
 
 Publish Container Images to Azure Container Registry
 ------------------------------------------------------------
@@ -182,7 +189,7 @@ requires you to obtain an access token from ACR and to use it to login to ACR.
    reg_name=ccprepreg
    reg_token_file=reg_token.json
 
-   az acr login --name $reg_name --expose-token > $reg_token_file 
+   az acr login --name $reg_name --expose-token > $reg_token_file
 
    echo "ACR reg token saved to $reg_token_file"
 
@@ -211,7 +218,7 @@ Then you can push your newly built container image to the ACR.
    name=cc_prep
    reg_name=ccprepreg
    registry=${reg_name}.azurecr.io
-   
+
    docker push $registry/$name:$tag
    docker push $registry/skr:2.7
 
@@ -219,8 +226,8 @@ Then you can push your newly built container image to the ACR.
 
    The skr:2.7 is built from Microsoft open source project at https://github.com/microsoft/confidential-sidecar-containers.
    Please check its document on how to build the skr image and rename it with the registry name.
-   
-   
+
+
 Create And Run The Confidential ACI Launch Script
 ------------------------------------------------------------
 
@@ -249,7 +256,7 @@ information of container images into the Azure Resource Manager (ARM) template f
    echo $tmp > tmp.json
 
    az confcom acipolicygen -a tmp.json --print-policy > cce_token.b64
-   
+
    export cce_token=$(cat cce_token.b64)
    cce_done=$(echo $tmp | jq '.resources[0].properties.confidentialComputeProperties.ccePolicy = env.cce_token')
 

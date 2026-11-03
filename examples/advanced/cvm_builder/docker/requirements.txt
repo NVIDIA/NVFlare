@@ -1,0 +1,4 @@
+torch==2.13.0
+torchvision==0.28.0
+tensorboard==2.20.0
+safetensors==0.8.0

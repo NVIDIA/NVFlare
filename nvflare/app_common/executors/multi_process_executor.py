@@ -14,7 +14,6 @@
 
 import os
 import shlex
-import subprocess
 import threading
 import time
 from abc import abstractmethod
@@ -47,6 +46,7 @@ from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
 from nvflare.security.logging import secure_format_exception
+from nvflare.utils.process_utils import popen_in_new_session
 
 
 class WorkerComponentBuilder(ComponentBuilder):
@@ -280,10 +280,8 @@ class MultiProcessExecutor(Executor):
                 + str(decomposer_module)
             )
             self.logger.info(f"multi_process_executor command: {command}")
-            # use os.setsid to create new process group ID
-            self.exe_process = subprocess.Popen(
-                shlex.split(command, " "), shell=False, preexec_fn=os.setsid, env=os.environ.copy()
-            )
+            # start in a new session to create new process group ID
+            self.exe_process = popen_in_new_session(shlex.split(command, " "), shell=False, env=os.environ.copy())
 
             # send the init data to all the child processes
             cell.register_request_cb(

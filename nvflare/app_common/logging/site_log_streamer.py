@@ -37,7 +37,7 @@ _LOG_STREAMER_PATH = "nvflare.app_common.logging.job_log_streamer.JobLogStreamer
 
 class SiteLogStreamer(Widget):
     """Site-level widget that injects a :class:`JobLogStreamer` into every job
-    that does not already declare one.
+    that does not already stream the selected file.
 
     Place this in the client's ``resources.json`` so that live log streaming is
     provided automatically for every job — without requiring each job to include
@@ -45,8 +45,8 @@ class SiteLogStreamer(Widget):
 
     On ``BEFORE_JOB_LAUNCH`` (after the job config is deployed to disk but
     before the job subprocess starts) ``SiteLogStreamer`` reads the deployed
-    ``config_fed_client.json``.  If no ``JobLogStreamer`` component is found, it
-    appends one with the configured parameters and writes the file back.  The
+    ``config_fed_client.json``.  If no ``JobLogStreamer`` for the selected file is
+    found, it appends one with the configured parameters and writes the file back.  The
     job subprocess then picks up the modified config and ``JobLogStreamer`` runs
     inside the job as if the user had declared it explicitly.
 
@@ -140,8 +140,11 @@ class SiteLogStreamer(Widget):
             return
 
         for c in components:
-            if "JobLogStreamer" in c.get("path", ""):
-                self.log_debug(fl_ctx, f"Job {job_id} already has JobLogStreamer; skipping injection")
+            if (
+                "JobLogStreamer" in c.get("path", "")
+                and c.get("args", {}).get("log_file_name", WorkspaceConstants.LOG_FILE_NAME) == self._log_file_name
+            ):
+                self.log_debug(fl_ctx, f"Job {job_id} already streams {self._log_file_name}; skipping injection")
                 return
 
         # Build the component entry.
@@ -158,8 +161,14 @@ class SiteLogStreamer(Widget):
         if self._poll_interval != 0.5:
             args["poll_interval"] = self._poll_interval
 
+        component_id = "auto_log_streamer"
+        existing_ids = {c.get("id") for c in components}
+        suffix = 0
+        while component_id in existing_ids:
+            suffix += 1
+            component_id = f"auto_log_streamer_{suffix}"
         entry = {
-            "id": "auto_log_streamer",
+            "id": component_id,
             "path": _LOG_STREAMER_PATH,
         }
         if args:

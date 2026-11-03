@@ -21,6 +21,9 @@ import pytest
 import yaml
 
 from nvflare.cli_exception import CLIException
+from nvflare.lighter.cc_provision.utils import resolve_cc_config
+from nvflare.lighter.constants import PropKey
+from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.utils import update_project_server_name_config
 from nvflare.tool.poc import poc_commands
 from nvflare.tool.poc.poc_commands import (
@@ -222,7 +225,10 @@ class TestPOCCommands:
                 ],
                 "builders": [
                     {"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder", "args": {}},
-                    {"path": "nvflare.lighter.impl.static_file.StaticFileBuilder", "args": {"config_folder": "config"}},
+                    {
+                        "path": "nvflare.lighter.impl.static_file.StaticFileBuilder",
+                        "args": {"config_folder": "config"},
+                    },
                     {"path": "nvflare.lighter.impl.cert.CertBuilder", "args": {}},
                     {"path": "nvflare.lighter.impl.signature.SignatureBuilder", "args": {}},
                 ],
@@ -364,7 +370,8 @@ class TestPOCCommands:
         monkeypatch.setattr(poc_commands, "prepare_builders", lambda _config: [])
         monkeypatch.setattr(poc_commands, "prepare_packager", lambda _config: object())
 
-        def fake_prepare_project(config):
+        def fake_prepare_project(config, project_file=None):
+            assert project_file == str(tmp_path / "project.yml")
             config["participants"] = [{"__comm_config_args__": {}}]
             return object()
 
@@ -383,6 +390,41 @@ class TestPOCCommands:
         assert result["participants"][0]["name"] == "server"
         assert result["participants"][0]["type"] == "server"
         assert result["poc_runtime"]["runtime"] == "docker"
+
+    def test_local_provision_resolves_cc_config_from_source_not_cwd(self, monkeypatch, tmp_path):
+        from unittest.mock import Mock
+
+        source = tmp_path / "source"
+        source.mkdir()
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        config = {
+            "api_version": 3,
+            "name": "cc_path_test",
+            "participants": [
+                {"name": "server", "type": "server", "org": "example"},
+                {"name": "owner@example.com", "type": "admin", "org": "example", "role": "project_admin"},
+                {"name": "site-1", "type": "client", "org": "example", "cc_config": "cc_site-1.yml"},
+            ],
+        }
+        project_file = source / "project.yaml"
+        project_file.write_text(yaml.safe_dump(config))
+        monkeypatch.chdir(workspace)
+        monkeypatch.setattr(poc_commands, "prepare_builders", lambda _config: [])
+        monkeypatch.setattr(poc_commands, "prepare_packager", lambda _config: None)
+        provisioner = Mock()
+        monkeypatch.setattr(poc_commands, "Provisioner", Mock(return_value=provisioner))
+        result, _ = local_provision([], 1, str(workspace), "", project_conf_path=str(project_file))
+        project = provisioner.provision.call_args.args[0]
+        assert project.get_prop(PropKey.PROJECT_FILE) == str(project_file)
+        expected = str(source / "cc_site-1.yml")
+        assert result["participants"][2]["cc_config"] == "cc_site-1.yml"
+        assert resolve_cc_config(project, "cc_site-1.yml") == expected
+        saved = yaml.safe_load((workspace / "project.yml").read_text())
+        assert saved["participants"][2]["cc_config"] == "cc_site-1.yml"
+        assert saved[PropKey.PROJECT_FILE] == str(project_file)
+        relocated = prepare_project(saved, project_file=workspace / "project.yml")
+        assert resolve_cc_config(relocated, "cc_site-1.yml") == expected
 
     def test_patch_poc_docker_client_target_uses_server_alias(self, tmp_path):
         startup_dir = tmp_path / "startup"

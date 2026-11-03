@@ -27,6 +27,7 @@ from nvflare.app_common.aggregators.weighted_aggregation_helper import (
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fedprox_utils import normalize_fedprox_mu, set_fedprox_metadata
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 from nvflare.fuel.utils import fobs
@@ -52,6 +53,8 @@ class FedAvg(BaseFedAvg):
     Streaming accumulation applies contributions in result-arrival order; floating-point
     addition is non-associative, so identical inputs can produce ulp-level differences
     between runs and bitwise reproducibility is not guaranteed for >=2 clients.
+    An accumulation exception invalidates the entire round: the workflow stops
+    before updating or saving the global model, preserving the previous checkpoint.
 
     Supports custom aggregators via the ModelAggregator interface.
 
@@ -149,6 +152,7 @@ class FedAvg(BaseFedAvg):
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
         self._site_metric_weights: Dict[str, Dict[str, Any]] = {}
+        self._aggregation_failed = False
 
     def run(self) -> None:
         disk_offload_context = None
@@ -210,6 +214,7 @@ class FedAvg(BaseFedAvg):
                 self._expected_count = len(clients)
                 self._params_type = None
                 self._site_metric_weights = {}
+                self._aggregation_failed = False
 
                 # Non-blocking send with callback for streaming aggregation
                 set_fedprox_metadata(model, self.fedprox_mu)
@@ -267,11 +272,25 @@ class FedAvg(BaseFedAvg):
 
     def _aggregate_one_result(self, result: FLModel) -> bool:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""
+        if self._aggregation_failed:
+            return False
         if not result.params:
             client_name = _get_client_name(result)
             self.warning(f"Empty result from client {client_name}, skipping.")
             return False
 
+        try:
+            return self._accumulate_result(result)
+        except Exception:
+            # Streaming accumulation can mutate earlier tensors before a later
+            # tensor, lazy read, metric, or custom aggregator fails. The task
+            # callback catches exceptions and reports rejection, but cannot undo
+            # those mutations. Invalidate the entire round without retaining the
+            # exception/traceback (which could keep large client tensors alive).
+            self._aggregation_failed = True
+            raise
+
+    def _accumulate_result(self, result: FLModel) -> bool:
         # Store only params_type from first result (not the full model)
         if self._params_type is None:
             self._params_type = result.params_type
@@ -331,6 +350,10 @@ class FedAvg(BaseFedAvg):
 
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""
+        if self._aggregation_failed:
+            raise RuntimeError(
+                f"Round {self.current_round} aggregation failed; refusing to update or save a partial model."
+            )
         if self.aggregator:
             # Use custom aggregator
             result: FLModel = self.aggregator.aggregate_model()
@@ -475,7 +498,9 @@ class FedAvg(BaseFedAvg):
             return super().load_model()
         elif self.save_filename:
             # Try to load from file
-            filepath = os.path.join(self.get_run_dir(), self.save_filename)
+            filepath = resolve_path_under_root(
+                self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
+            )
             if os.path.exists(filepath):
                 self.info(f"Loading model from {filepath}")
                 return self.load_model_file(filepath)
@@ -499,7 +524,9 @@ class FedAvg(BaseFedAvg):
             super().save_model(model)
         elif self.save_filename:
             # Use simple file-based saving
-            filepath = os.path.join(self.get_run_dir(), self.save_filename)
+            filepath = resolve_path_under_root(
+                self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
+            )
             self.save_model_file(model, filepath)
             self.info(f"Model saved to {filepath}")
         else:

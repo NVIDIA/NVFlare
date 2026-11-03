@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import os
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -958,6 +959,88 @@ class TestFedAvgAggregation:
         accepted = controller._aggregate_one_result(empty_result)
         assert accepted is False
         assert controller._received_count == 0  # Not counted
+
+
+class TestFedAvgFailedContribution:
+    @pytest.mark.parametrize("failure", ["numpy", "torch", "lazy", "metrics", "custom"])
+    @pytest.mark.parametrize("valid_first", [False, True])
+    def test_callback_failure_cannot_update_or_save_partial_model(self, failure, valid_first):
+        """Exercise the real callback rejection path, which catches aggregation exceptions."""
+        import torch
+
+        class UnreadableRef:
+            def materialize(self):
+                raise OSError("cannot read tensor")
+
+        initial = {"first": np.array([2.0]), "last": np.array([4.0, 6.0])}
+        if failure == "torch":
+            initial = {k: torch.tensor(v) for k, v in initial.items()}
+        aggregator = MockModelAggregator() if failure == "custom" else None
+        controller = FedAvg(num_clients=3, num_rounds=2, model=initial, aggregator=aggregator)
+        controller.fl_ctx = FLContext()
+        controller.abort_signal = Signal()
+        controller.sample_clients = lambda _: ["good", "bad", "later"]
+        controller.get_num_standing_tasks = lambda: 0
+        controller.update_model = MagicMock(side_effect=lambda model, aggregated: model)
+        controller.save_model = MagicMock()
+        accepted = []
+
+        def record_acceptance(event_type):
+            if event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
+                accepted.append(controller.fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED))
+
+        def send_model(**kwargs):
+            def deliver(name, params, metrics):
+                task = Task(
+                    name=AppConstants.TASK_TRAIN,
+                    data=FLModelUtils.to_shareable(kwargs["data"]),
+                    props={
+                        AppConstants.META_DATA: {},
+                        AppConstants.TASK_PROP_CALLBACK: kwargs["callback"],
+                    },
+                )
+                client_task = ClientTask(client=Client(name, "token"), task=task)
+                client_task.result = FLModelUtils.to_shareable(FLModel(params=params, metrics=metrics))
+                controller._process_result(client_task, controller.fl_ctx)
+                assert client_task.result is None
+
+            good_metrics = {"first": 1.0, "last": np.ones(2)}
+            if valid_first:
+                deliver("good", initial, good_metrics)
+            bad = {"first": initial["first"] * 100, "last": "invalid"}
+            bad_metrics = good_metrics
+            if valid_first and failure in {"numpy", "torch"}:
+                bad["last"] = np.ones(3) if failure == "numpy" else torch.ones(3)
+            elif failure == "lazy":
+                bad["last"] = UnreadableRef()
+            elif failure == "metrics":
+                bad = initial
+                bad_metrics = {"first": 100.0, "last": np.ones(3)}
+                # A prior metrics contribution makes the second key incompatible.
+                if not valid_first:
+                    controller._aggr_metrics_helper.add(good_metrics, 1.0, "seed", 0)
+            elif failure == "custom":
+                bad = initial
+
+                def fail_after_mutation(model):
+                    aggregator.models.append(model)
+                    raise ValueError("custom aggregation failed after mutation")
+
+                aggregator.accept_model = fail_after_mutation
+            deliver("bad", bad, bad_metrics)
+            deliver("later", initial, good_metrics)
+
+        controller.send_model = send_model
+        with patch.object(controller, "event", side_effect=record_acceptance):
+            with pytest.raises(RuntimeError, match="refusing to update or save a partial model"):
+                controller.run()
+
+        assert accepted == ([True] if valid_first else []) + [False, False]
+        controller.update_model.assert_not_called()
+        controller.save_model.assert_not_called()
+        assert controller._received_count == int(valid_first)
+        for k, value in initial.items():
+            np.testing.assert_array_equal(value, {"first": [2.0], "last": [4.0, 6.0]}[k])
 
 
 class TestFedAvgLazyCompatibility:
@@ -2054,6 +2137,35 @@ class TestFedAvgLoadSaveModel:
         assert hasattr(controller, "save_model_file")
         assert hasattr(controller, "load_model_file")
 
+    @pytest.mark.parametrize("save_filename", ["{outside}", "../outside.pt"])
+    @pytest.mark.parametrize("operation", ["load", "save"])
+    def test_rejects_model_paths_outside_run_dir(self, tmp_path, save_filename, operation):
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        outside = str(tmp_path / "outside.pt")
+        controller = FedAvg(save_filename=save_filename.format(outside=outside))
+        controller.persistor = None
+        controller.get_run_dir = MagicMock(return_value=str(run_dir))
+
+        with pytest.raises(ValueError, match="save_filename"):
+            if operation == "load":
+                controller.load_model()
+            else:
+                controller.save_model(FLModel(params={}))
+
+    def test_accepts_model_path_under_run_dir(self, tmp_path):
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        controller = FedAvg(save_filename="models/model.pt")
+        controller.persistor = None
+        controller.get_run_dir = MagicMock(return_value=str(run_dir))
+        controller.save_model_file = MagicMock()
+        model = FLModel(params={})
+
+        controller.save_model(model)
+
+        controller.save_model_file.assert_called_once_with(model, str(run_dir / "models" / "model.pt"))
+
 
 class TestPTFedAvgModel:
     """Test PTFedAvg model type handling."""
@@ -2160,6 +2272,7 @@ class TestPTFedAvgModelPersistence:
             metrics={"accuracy": 0.85},
         )
         filepath = str(tmp_path / "test_model.pt")
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
 
         # Save and load
         controller.save_model_file(model, filepath)
@@ -2183,12 +2296,80 @@ class TestPTFedAvgModelPersistence:
         params = {"weight": torch.tensor([1.0, 2.0])}
         filepath = str(tmp_path / "model_no_metadata.pt")
         torch.save(params, filepath)
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
 
         # Load without metadata file
         loaded = controller.load_model_file(filepath)
 
         assert torch.equal(loaded.params["weight"], params["weight"])
         assert loaded.metrics is None  # No metadata
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    @pytest.mark.parametrize("operation", ["load", "save"])
+    def test_rejects_metadata_sidecar_symlink_escape(self, tmp_path, operation):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        filepath = tmp_path / "model.pt"
+        torch.save({"weight": torch.tensor([1.0])}, filepath)
+        outside = tmp_path.parent / f"{tmp_path.name}-outside.metadata"
+        outside.write_bytes(b"outside must remain unchanged")
+        metadata = tmp_path / "model.pt.metadata"
+        metadata.symlink_to(outside)
+        controller = PTFedAvg()
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
+
+        with pytest.raises(ValueError, match="model metadata path"):
+            if operation == "load":
+                controller.load_model_file(str(filepath))
+            else:
+                controller.save_model_file(FLModel(params={"weight": torch.tensor([2.0])}), str(filepath))
+        assert outside.read_bytes() == b"outside must remain unchanged"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_allows_metadata_sidecar_symlink_within_run_directory(self, tmp_path):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        models = tmp_path / "models"
+        metadata = tmp_path / "metadata"
+        models.mkdir()
+        metadata.mkdir()
+        filepath = models / "current.pt"
+        sidecar = models / "current.pt.metadata"
+        sidecar.symlink_to("../metadata/current.metadata")
+        controller = PTFedAvg()
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
+        model = FLModel(params={"weight": torch.tensor([1.0])}, metrics={"accuracy": 0.95})
+
+        controller.save_model_file(model, str(filepath))
+        loaded = controller.load_model_file(str(filepath))
+
+        assert loaded.metrics == {"accuracy": 0.95}
+        assert (metadata / "current.metadata").is_file()
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_checkpoint_alias_preserves_its_metadata_sidecar(self, tmp_path):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        target = tmp_path / "target.pt"
+        alias = tmp_path / "current.pt"
+        alias.symlink_to(target)
+        controller = PTFedAvg(save_filename=alias.name)
+        controller.persistor = None
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
+        model = FLModel(params={"weight": torch.tensor([1.0])}, metrics={"accuracy": 0.95})
+
+        controller.save_model(model)
+        loaded = controller.load_model()
+
+        assert loaded.metrics == {"accuracy": 0.95}
+        assert (tmp_path / "current.pt.metadata").is_file()
+        assert not (tmp_path / "target.pt.metadata").exists()
 
     def test_run_registers_tensor_decomposer(self):
         """Test that run() registers TensorDecomposer."""

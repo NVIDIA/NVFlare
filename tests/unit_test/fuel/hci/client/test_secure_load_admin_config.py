@@ -64,7 +64,7 @@ class TestSecureLoadAdminConfig:
     def test_valid_config_false_no_error(self):
         """No signature.json → NOT_SIGNED → function returns conf without error.
 
-        Simulates a non-CC, non-HE centralized kit after Change 1, or any kit
+        Simulates a standard non-HE centralized kit after Change 1, or any kit
         provisioned without signature.json.
         """
         mgr = _make_mgr(valid_config=False, load_result=LoadResult.NOT_SIGNED)
@@ -85,7 +85,7 @@ class TestSecureLoadAdminConfig:
         assert result is conf
 
     # ------------------------------------------------------------------
-    # valid_config=True scenarios (signature.json present — CC or HE mode)
+    # valid_config=True scenarios (signature.json present — CVM vault or HE mode)
     # ------------------------------------------------------------------
 
     def test_valid_config_true_ok(self):
@@ -126,7 +126,7 @@ class TestSecureLoadAdminConfig:
         """valid_config=True + INVALID_SIGNATURE → ConfigError; the guard must not soften this.
 
         Regression: the new `if mgr.valid_config:` guard must NOT allow an active tamper
-        (INVALID_SIGNATURE) through in CC/HE mode. Explicit check to prevent regression.
+        (INVALID_SIGNATURE) through in CVM vault or HE mode. Explicit check to prevent regression.
         """
         mgr = _make_mgr(valid_config=True, load_result=LoadResult.INVALID_SIGNATURE)
         conf = _make_conf()
@@ -139,9 +139,9 @@ class TestSecureLoadAdminConfig:
         conf.configure.assert_not_called()
 
     def test_security_regression_not_signed_with_valid_config_rejected(self):
-        """valid_config=True + NOT_SIGNED → ConfigError; NOT_SIGNED is not allowed in CC/HE mode.
+        """valid_config=True + NOT_SIGNED → ConfigError for a signed CVM vault or HE kit.
 
-        In CC/HE mode (valid_config=True), every managed file must appear in signature.json.
+        When valid_config=True, every managed file must appear in signature.json.
         NOT_SIGNED means the file is not in the sig dict, which is anomalous and must be rejected.
         """
         mgr = _make_mgr(valid_config=True, load_result=LoadResult.NOT_SIGNED)

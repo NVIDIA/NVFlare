@@ -1,0 +1,11 @@
+schema_version: 1
+cc_deployment_mode: azure_cc
+cpu_tee: amd_sev_snp
+gpu_tee: none
+attestation:
+  service: azure_maa
+workload:
+  source:
+    type: external
+azure_cc:
+  deployment_target: confidential_container

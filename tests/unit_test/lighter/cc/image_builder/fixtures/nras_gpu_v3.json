@@ -1,0 +1,40 @@
+{
+  "ueid": "synthetic-gpu-0",
+  "secboot": true,
+  "dbgstat": "disabled",
+  "measres": "success",
+  "x-nvidia-gpu-driver-version": "575.28",
+  "x-nvidia-gpu-vbios-version": "96.00.AF.00.01",
+  "x-nvidia-gpu-arch-check": true,
+  "x-nvidia-gpu-attestation-report-parsed": true,
+  "x-nvidia-gpu-attestation-report-nonce-match": true,
+  "x-nvidia-gpu-attestation-report-signature-verified": true,
+  "x-nvidia-gpu-attestation-report-cert-chain-fwid-match": true,
+  "x-nvidia-gpu-attestation-report-cert-chain": {
+    "x-nvidia-cert-status": "valid",
+    "x-nvidia-cert-ocsp-status": "good",
+    "x-nvidia-cert-ocsp-nonce-matches": true,
+    "x-nvidia-cert-ocsp-response-valid": true
+  },
+  "x-nvidia-gpu-driver-rim-fetched": true,
+  "x-nvidia-gpu-driver-rim-signature-verified": true,
+  "x-nvidia-gpu-driver-rim-measurements-available": true,
+  "x-nvidia-gpu-driver-rim-version-match": true,
+  "x-nvidia-gpu-driver-rim-cert-chain": {
+    "x-nvidia-cert-status": "valid",
+    "x-nvidia-cert-ocsp-status": "good",
+    "x-nvidia-cert-ocsp-nonce-matches": true,
+    "x-nvidia-cert-ocsp-response-valid": true
+  },
+  "x-nvidia-gpu-vbios-rim-fetched": true,
+  "x-nvidia-gpu-vbios-rim-signature-verified": true,
+  "x-nvidia-gpu-vbios-rim-measurements-available": true,
+  "x-nvidia-gpu-vbios-rim-version-match": true,
+  "x-nvidia-gpu-vbios-index-no-conflict": true,
+  "x-nvidia-gpu-vbios-rim-cert-chain": {
+    "x-nvidia-cert-status": "valid",
+    "x-nvidia-cert-ocsp-status": "good",
+    "x-nvidia-cert-ocsp-nonce-matches": true,
+    "x-nvidia-cert-ocsp-response-valid": true
+  }
+}

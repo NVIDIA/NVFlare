@@ -1,0 +1,20 @@
+schema_version: 1
+attestation_services:
+  trustee:
+    type: trustee
+    kbs_endpoint: https://trustee.example.org:8443
+    ca_cert_file: ./credentials/kbs-ca.pem
+    admin_token_file: ./credentials/kbs-resource-token.jwt
+    attestation_token_endpoint: http://127.0.0.1:8006/aa/token
+    attestation_signing_public_key_file: ./credentials/trustee-as-public.pem
+    token_expiration_seconds: 300
+    check_frequency_seconds: 120
+    registration_token_timeout_seconds: 300
+    refresh_token_timeout_seconds: 30
+    get_token_request_timeout_seconds: 45
+approval:
+  public_key_files:
+    - ./credentials/acceptance-signing.pub
+build_tools:
+  bare_metal_cvm:
+    cvm_builder_dir: ../../../nvflare/lighter/cc/image_builder

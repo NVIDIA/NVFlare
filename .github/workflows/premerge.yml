@@ -180,10 +180,14 @@ jobs:
           version: "0.11.14"
       - name: Install dependencies
         run: |
+          # Exercise the console backend with -machine none: no guest image,
+          # CVM build, confidential-computing hardware, or lab access.
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86
           ./runtest.sh --torch-backend=cpu -p
           uv pip install --system --no-deps "flwr>=1.16,<1.26"
       - name: Run unit test with coverage
-        run: python3 -m pytest --numprocesses=auto -v --cov=nvflare --cov-report xml:cov.xml --dist loadgroup tests/unit_test
+        run: python3 -m pytest -v --timeout=180 --timeout-method=signal --cov=nvflare --cov-report xml:cov.xml tests/unit_test
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         with:

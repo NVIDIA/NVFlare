@@ -376,10 +376,13 @@ def local_provision(
         if docker_image:
             project_config = add_poc_docker_runtime(docker_image, project_config)
     project_config = update_server_default_host(project_config, "localhost")
+    # Preserve the source origin when saving a project in another directory.
+    # Backend-specific path resolution belongs to the provisioning builders.
+    project_config[PropKey.PROJECT_FILE] = os.path.abspath(project_config.get(PropKey.PROJECT_FILE, src_project_file))
     save_project_config(project_config, dst_project_file)
     service_config = get_service_config(project_config)
     provision_config = copy.deepcopy(project_config)
-    project = prepare_project(provision_config)
+    project = prepare_project(provision_config, project_file=src_project_file)
     builders = prepare_builders(provision_config)
     packager = prepare_packager(provision_config)
     provisioner = Provisioner(workspace, builders, packager)
@@ -1065,7 +1068,7 @@ def _provision_poc_participant_only(
     _ensure_dynamic_poc_ca_available(poc_workspace, project_name, target_prod_dir, project_config)
     dynamic_config = _dynamic_poc_project_config(project_config, participant)
 
-    project = prepare_project(dynamic_config)
+    project = prepare_project(dynamic_config, project_file=os.path.join(poc_workspace, "project.yml"))
     builders = prepare_builders(dynamic_config)
     packager = prepare_packager(dynamic_config)
     provisioner = Provisioner(poc_workspace, builders, packager)

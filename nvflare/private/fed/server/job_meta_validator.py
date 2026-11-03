@@ -29,6 +29,7 @@ from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import (
+    has_byoc_launcher_spec,
     validate_docker_job_launcher_spec,
     validate_portable_resource_conflicts,
     validate_portable_resource_spec,
@@ -54,6 +55,8 @@ class JobMetaValidator(JobMetaValidatorSpec):
         self._validate_min_clients(job_name, meta, clients)
         self._validate_resource(job_name, meta)
         self._validate_launcher_spec(job_name, meta)
+        if has_byoc_launcher_spec(meta):
+            meta[AppValidationKey.BYOC] = True
         validate_portable_resource_conflicts(meta)
         self._validate_mandatory_clients(job_name, meta, clients)
         return meta
