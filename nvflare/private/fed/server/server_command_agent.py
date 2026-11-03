@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.fl_constant import ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -145,6 +145,14 @@ class ServerCommandAgent(object):
                 # I'll simply tell it that my service is not available, and it will retry.
                 return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
+            # Preserve the sender validated by the auth filters separately from
+            # the request-supplied peer properties populated during dispatch.
+            fl_ctx.set_prop(
+                FLContextKey.CLIENT_NAME,
+                request.get_header(CellMessageHeaderKeys.CLIENT_NAME),
+                private=True,
+                sticky=False,
+            )
             reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
             if reply:
                 shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
