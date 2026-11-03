@@ -371,6 +371,7 @@ class HierarchicalUpdateGatherer(Executor):
         if self._task_done:
             # force the conditional wait to stop
             return WaiterRC.IS_SET
+        return WaiterRC.OK
 
     def _make_update_report(self, task_info: TaskInfo, fl_ctx: FLContext):
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, task_info.round, private=True, sticky=False)
