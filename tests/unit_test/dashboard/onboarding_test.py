@@ -113,6 +113,21 @@ def test_approved_blank_fields_cannot_be_filled_without_admin(app, client, auth_
     assert client.post(API + "/login", json={"email": user["email"], "password": "p"}).status_code == 200
 
 
+@pytest.mark.parametrize("role", ["member", "lead"])
+def test_approved_user_in_org_cannot_self_promote_to_org_admin(client, auth_header, register, role):
+    user, headers = register(role=role, organization="OrgA")
+    approve(client, auth_header, user)
+    response = client.patch(API + f"/users/{user['id']}", headers=headers, json={"role": "org_admin"})
+    assert response.status_code == 403
+    saved = client.get(API + f"/users/{user['id']}", headers=auth_header).json["user"]
+    assert saved["role"] == role
+    assert saved["organization"] == "OrgA"
+    assert saved["approval_state"] == 100
+    response = client.post(API + "/login", json={"email": user["email"], "password": "p"})
+    assert response.status_code == 200
+    assert response.json["user"]["role"] == role
+
+
 def test_incomplete_or_changed_registration_cannot_be_approved(client, auth_header, register):
     user, headers = register(role="", organization="")
     url = API + f"/users/{user['id']}"

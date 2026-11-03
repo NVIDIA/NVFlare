@@ -225,6 +225,9 @@ role, created time, approval status, and download count for their FLARE Console.
 
 Pending site-owner requests are labeled ``Org Admin (requested)``. Approval authorizes the role and organization
 shown in that row; review both before selecting ``Approve User``. An incomplete registration cannot be approved.
+Here, incomplete means that this user's organization or role field is empty or invalid. An organization does not
+need to contain every role or a client site. The Project Admin decides whether the person should receive the
+requested permissions; approval never authorizes that person to promote themselves later through the API.
 If the registration has changed since the table was loaded, reload it and review the current values before
 approving again. User approval and client-site approval are separate actions. Client kits require both approvals
 and a frozen project; the participant can then download the ZIP and record the PIN shown in the download dialog.

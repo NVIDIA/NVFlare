@@ -68,7 +68,22 @@ ownership is derived from the authenticated identity. Other users' sites are ina
 same organization. An approved Org Admin can manage their own sites, but only the Project Admin can approve,
 rename, or delete an approved site. Members and Leads receive an empty client-site list.
 
-To approve a complete registration, the Project Admin submits the values reviewed in the users table:
+Approval reviews one user's explicit organization and requested role. Both fields must be nonempty and satisfy
+provisioning's format rules. This is a per-user field check, not a check that an organization contains every role,
+an Org Admin, or any client sites. For example, ``organization: OrgA`` and ``role: member`` are sufficient fields
+to review even when OrgA has no other participants. The administrator must decide whether that person should
+receive the requested permissions; field validation cannot establish their real-world organizational affiliation.
+
+Once that Member is approved, a direct API request to change their role to ``org_admin`` returns HTTP 403 and
+leaves the approved role and organization unchanged. The same restriction applies to Leads and to legacy
+approved accounts with blank fields. An authorized Project Admin must review and assign any changed permissions.
+
+This approval lifecycle belongs to Dashboard account registration. It does not add organization-population
+requirements to operator-authored ``project.yml`` provisioning. A project containing a Project Admin and clients
+without separate Member, Lead, or Org Admin entries remains valid. ``client`` is a participant type, not a
+Dashboard user's authorization role.
+
+To approve the individual registration, the Project Admin submits the values reviewed in the users table:
 
 .. code-block:: json
 
