@@ -30,7 +30,7 @@ from unittest.mock import Mock, patch
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cvm.common.contracts import resource_path
-from cvm.common.errors import BuildError
+from cvm.common.errors import BuildError, KBSRequestError
 from cvm.common.io import canonical, write_json
 from cvm.common.policy import compose, merge
 from cvm.trustee.admin import install, retire
@@ -291,9 +291,19 @@ class TrusteeClientTests(unittest.TestCase):
                 self.assertRaisesRegex(BuildError, diagnostic) as error,
             ):
                 api(self.config, "GET", endpoint)
+            self.assertIsInstance(error.exception, KBSRequestError)
             self.assertNotIn("secret", str(error.exception))
             self.assertNotIn(self.token_value, str(error.exception))
             opener.open.assert_called_once()
+
+    def test_invalid_local_tls_configuration_has_a_safe_classification(self):
+        with (
+            patch("cvm.trustee.client.ssl.create_default_context", side_effect=ssl.SSLError("secret certificate")),
+            self.assertRaises(KBSRequestError) as error,
+        ):
+            upload_resource(self.config, self.resource, b"a" * 64)
+        self.assertEqual(error.exception.diagnostic, "KBS TLS verification failure")
+        self.assertNotIn("secret", str(error.exception))
 
     def test_redirect_does_not_forward_credentials(self):
         with self.assertRaises(BuildError):

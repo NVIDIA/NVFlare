@@ -39,7 +39,7 @@ from cvm.trustee.client import encode
 from cvm.trustee.provenance import provenance
 
 
-def verifier_config(profiles):
+def verifier_config(profiles, snp_vcek_store=None):
     """Return the lab verifier configuration required by the selected profiles."""
     result = read_json(SOURCE / "trustee/kbs.json")["attestation_service"]["verifier_config"]
     gpu_urls = set()
@@ -56,6 +56,14 @@ def verifier_config(profiles):
     require(len(gpu_urls) <= 1, "Lab GPU profiles must use the same NVIDIA verifier URL")
     if gpu_urls:
         result["nvidia_verifier"] = {"type": "Remote", "verifier_url": gpu_urls.pop()}
+    if any(
+        "amd_sev_snp" in profile.get("platforms", {}) and profile["platforms"]["amd_sev_snp"].get("enabled", True)
+        for profile in profiles
+    ):
+        store = snp_vcek_store or "/opt/confidential-containers/attestation-service/kds-store"
+        require(isinstance(store, str) and Path(store).is_absolute(), "Lab SNP VCEK store must be an absolute path")
+        require((Path(store) / "vcek").is_dir(), "Populate the lab SNP VCEK store before starting Trustee")
+        result["snp_verifier"] = {"vcek_sources": [{"type": "OfflineStore", "path": store}, {"type": "KDS"}]}
     return result
 
 
@@ -189,7 +197,7 @@ def main(directory):
         "attestation_service": {
             "type": "coco_as_builtin",
             "policy_id_map": policy_id_map,
-            "verifier_config": verifier_config(profiles),
+            "verifier_config": verifier_config(profiles, lab_state.get("snp_vcek_store")),
             "attestation_token_broker": {
                 "duration_min": 5,
                 "issuer_name": "CoCo-Attestation-Service",
@@ -247,8 +255,11 @@ def main(directory):
         {
             "trustee_commit": "512fed65642015b849f38fb13bfdec7806639987",
             "source_clean": True,
-            "policy_selection_tested": True,
-            "unauthorized_administration_denied": True,
+            # Starting a service is not evidence that its authorization works.
+            # Qualify it with the live HTTP suite, then generate a receipt with
+            # cvmctl admin deployment-receipt before installing any candidate.
+            "policy_selection_tested": False,
+            "unauthorized_administration_denied": False,
             "policy_id_map": policy_id_map,
             "immutable_as_policies": immutable_as_policies,
         },

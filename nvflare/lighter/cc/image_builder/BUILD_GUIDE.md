@@ -43,24 +43,24 @@ each trust handoff:
    retained.
 
 ```sh
-sudo ./cvmctl build config/cvm_profile.yml \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl build config/cvm_profile.yml \
   --quote-probe /usr/local/sbin/site_tdx_quote_probe
 
 # Complete §2.1 with this exact finalized bundle, then:
-sudo ./cvmctl admin approve target/cvm_PROFILE/PLATFORM \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl admin approve target/cvm_PROFILE/PLATFORM \
   /srv/cvm/acceptance-report.json \
   --signing-key /secure/acceptance-signing.key
-sudo ./cvmctl admin install /srv/trustee/production-admin.json \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl admin install /srv/trustee/production-admin.json \
   target/cvm_PROFILE/PLATFORM
-sudo ./cvmctl publish target/cvm_PROFILE/cvm_PROFILE_PLATFORM.oci.tar \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl publish target/cvm_PROFILE/cvm_PROFILE_PLATFORM.oci.tar \
   registry.example.org/cvm/profiles:cpu-2026.10-intel_tdx \
   --cosign-signing-key /secure/release-signing.key
 
-sudo ./cvmctl vault config/vault_build.yml \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl vault config/vault_build.yml \
   --publish 'registry.example.org/cvm/deliveries/{artifact}:1.0' \
   --cosign-signing-key /secure/release-signing.key
 
-sudo ./cvmctl run \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl run \
   registry.example.org/cvm/deliveries/vault_DEPLOYMENT_PLATFORM@sha256:DIGEST \
   --cosign-verification-key /etc/cvm/release-signing.pub \
   --output /srv/cvm/site-1
@@ -77,6 +77,16 @@ atomically write `REPORT` only after all checks pass. The checked-in
 candidate vault and isolated Trustee are prepared; it is not that adapter and
 cannot be passed directly to `cvmctl build`.
 
+If an adapter or its acceptance command fails, rerun the combined command as
+`sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl --diagnostics /secure/cvm-diagnostics build ...`.
+The global option goes **before** `build`. The private diagnostics directory
+contains at most the last 64 KiB of a failed non-secret child command's stderr;
+stdout and secret-handling command output are never copied there. Have the
+adapter print a concise failure summary to stderr and retain its detailed
+evidence under its own protected output directory. The official lower-level
+runner writes combined suite output to `test_http.log` and `test_hardware.log`
+under `CVM_ACCEPTANCE_OUTPUT`; inspect those when the failure is in a suite.
+
 The quote probe in the example
 is TDX-only; omit it for SNP, whose host preflight checks SNP devices and kernel
 capabilities directly. Sections 1, 2, 4, and 5 explain this normal path. Section
@@ -86,15 +96,27 @@ offline transfer, and recovery.
 ## 1. Prepare the build host
 
 Run from `nvflare/lighter/cc/image_builder` on an Ubuntu 26.04 SNP or TDX host.
-Python is assumed to be installed. Use a dedicated build environment and install the exact, hash-locked Python requirements (including transitive dependencies) with pip or uv. Only wheels are admitted, so an unchecked source-build dependency cannot bypass the lock. Review and regenerate the lock when updating dependencies; do not replace it with unconstrained installation on a machine that handles vault secrets:
+Install Python and its `venv` module. The automatically discovered environment
+must be `.venv` **inside this `image_builder` directory**. For another location,
+set `CVM_BUILDER_PYTHON` to its absolute interpreter path. Preserve that variable
+when using sudo; sudo normally drops it. Root must be able to traverse and
+execute the selected environment. Create it once and install the exact,
+hash-locked requirements, including transitive dependencies:
 
 ```sh
-python3 -m pip install --require-hashes -r requirements.txt
+python3 -m venv .venv
+export CVM_BUILDER_PYTHON="$PWD/.venv/bin/python"
+"$CVM_BUILDER_PYTHON" -m pip install --require-hashes -r requirements.txt
 ```
 
 ```sh
-uv pip install --require-hashes -r requirements.txt
+uv pip install --python "$CVM_BUILDER_PYTHON" --require-hashes -r requirements.txt
 ```
+
+The second install command is an alternative to pip after creating the same
+environment. `cvmctl` uses the explicit interpreter, its local `.venv`, then
+system `python3`, warning on that final fallback. Review and regenerate the
+lock when updating dependencies; do not replace it with unconstrained installs.
 
 Install the host tools and the Ubuntu OVMF firmware packages:
 
@@ -102,7 +124,7 @@ Install the host tools and the Ubuntu OVMF firmware packages:
 sudo apt-get update
 sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils \
   libguestfs-tools cryptsetup-bin e2fsprogs util-linux openssh-client curl \
-  git cargo docker.io ovmf gpgv ubuntu-cloudimage-keyring
+  git cargo docker.io ovmf gpgv ubuntu-cloudimage-keyring python3-venv
 ```
 
 Registry publication and retrieval use ORAS; an offline `.oci.tar` build and
@@ -153,7 +175,7 @@ dependency until the quote smoke test.
    A successful local TDREPORT is not proof that QGS can generate a signed quote.
 
 ```sh
-sudo ./cvmctl preflight host --firmware inputs/OVMF.inteltdx.fd \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl preflight host --firmware inputs/OVMF.inteltdx.fd \
   --quote-probe /usr/local/sbin/site_tdx_quote_probe
 ```
 
@@ -195,11 +217,28 @@ test -r /usr/share/ovmf/OVMF.fd
 test -r /usr/share/ovmf/OVMF.amdsev.fd
 ```
 
+SNP screening and offline VCEK discovery also require
+[`snphost`](https://github.com/virtee/snphost), which is not installed by the
+Ubuntu package list above. Build the reviewed v0.7.0 source on the host:
+
+```sh
+sudo apt-get install -y build-essential pkg-config libssl-dev
+git clone https://github.com/virtee/snphost.git inputs/snphost-source
+git -C inputs/snphost-source checkout --detach d9a263e1b2c811fb45a4bbfda38de4808687a3e6
+cargo build --locked --release --manifest-path inputs/snphost-source/Cargo.toml
+sudo install -m 0755 inputs/snphost-source/target/release/snphost /usr/local/bin/snphost
+snphost --version
+```
+
+Retain that source revision and binary digest with the host's qualification
+records. This tool inspects the platform; its installation does not approve
+the firmware or TCB.
+
 For an SNP target, enable SEV, SEV-ES, SEV-SNP, and the IOMMU in firmware,
 reboot, and run the host preflight before construction or hardware acceptance:
 
 ```sh
-sudo ./cvmctl preflight host --platform amd_sev_snp \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl preflight host --platform amd_sev_snp \
   --firmware /usr/share/ovmf/OVMF.amdsev.fd
 ```
 
@@ -234,7 +273,7 @@ DER certificate:
 
 ```sh
 sudo snphost show vcek-url
-sudo ./cvmctl preflight host --platform amd_sev_snp \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl preflight host --platform amd_sev_snp \
   --firmware /usr/share/ovmf/OVMF.amdsev.fd \
   --snp-vcek-store /opt/confidential-containers/attestation-service/kds-store/vcek
 ```
@@ -261,7 +300,10 @@ signature, a missing or duplicate image checksum, or an image digest mismatch:
   mkdir -p inputs
   cd inputs
   base_image_name=ubuntu-26.04-server-cloudimg-amd64.img
-  base_image_url=https://cloud-images.ubuntu.com/releases/26.04/release
+  # Select a reviewed dated release directory, not the rolling /release alias.
+  base_image_serial=20261016
+  base_image_url=https://cloud-images.ubuntu.com/releases/26.04/release-$base_image_serial
+  printf '%s\n' "$base_image_url/$base_image_name" > base_image_source.txt
   curl -fL "$base_image_url/SHA256SUMS" -o SHA256SUMS
   curl -fL "$base_image_url/SHA256SUMS.gpg" -o SHA256SUMS.gpg
   gpgv --keyring /usr/share/keyrings/ubuntu-cloudimage-keyring.gpg \
@@ -281,6 +323,14 @@ signing key changes, update the keyring through the trusted package repository o
 an independently authenticated administrator process before retrying. The
 builder's recorded input digest provides traceability; it does not authenticate
 the publisher or replace this verification step.
+
+Keep `base_image_source.txt` (the dated URL/serial), the signed `SHA256SUMS`,
+its signature, and the image together. To recover a lost image, fetch the same
+filename from that `release-<serial>` directory and repeat signature and digest
+verification against the retained checksum. The build manifest records
+`base_image_sha256`, not the archive serial. A dated directory can eventually
+be removed upstream, so retain an authenticated internal mirror for released
+profiles. Never substitute today's rolling image for a missing qualified input.
 
 Build `kbs-client` from the pinned Trustee checkout plus the reviewed CLI patch.
 The patch updates to guest-components' upstream attestation-policy-selector API and exposes
@@ -394,7 +444,7 @@ evidence = {
 verify_reference("intel_tdx", evidence)
 write_json("/var/lib/cvm-tcb-discovery/reference-evidence.json", evidence)
 PY_TCB
-sudo ./cvmctl inspect-tcb /var/lib/cvm-tcb-discovery/reference-evidence.json
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl inspect-tcb /var/lib/cvm-tcb-discovery/reference-evidence.json
 ```
 
 This uses `/dev/tdx_guest` and the guest's CCEL; run it inside the TD, not on the
@@ -429,6 +479,13 @@ Decoding a JWT alone is not verification. See
 strings from that verified appraisal, not a TDREPORT field or an automatically
 accepted list. Use `[]` when no advisories are approved. Adding an advisory does
 not bypass the CPU policy's `UpToDate` and unexpired-collateral requirements.
+Use the exact `tdx.advisory_ids` strings emitted by the deployed **Trustee**
+verifier with its selected `tcb_update_type` (`standard` or `early`). A DCAP/ITA
+smoke test can use different collateral or a different channel; its advisory
+list is not a substitute for that Trustee appraisal. Review any disagreement
+before changing references. The policy requires every reported advisory to be
+in `allowed_advisory_ids`; the allowlist may contain other explicitly approved
+IDs, but unapproved reported IDs always deny.
 Keep KBS resource policy deny-all during discovery; no key release is needed.
 
 After approval, write only `mr_seam`, `tcb_svn`, `xfam` and
@@ -461,7 +518,7 @@ MRTD/RTMR values describe a different guest. On the trusted build host, inspect
 the real bundle's private report with:
 
 ```sh
-sudo ./cvmctl inspect-tcb \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl inspect-tcb \
   target/cvm_cpu-2026.09-r5/intel_tdx/reference-evidence.json
 ```
 
@@ -552,7 +609,7 @@ For example, set a new `profile_version: snp-2026.10-r1` in the reviewed build
 profile and construct the pending bundle on the trusted build host:
 
 ```sh
-sudo ./cvmctl build config/cvm_profile.yml \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl build config/cvm_profile.yml \
   -p amd_sev_snp --defer-measurements
 ```
 
@@ -561,10 +618,10 @@ to the trusted SNP target host. Obtain its archive SHA-256 from the build host's
 `oci_artifacts.json` through an authenticated channel. On the target host, run:
 
 ```sh
-sudo ./cvmctl pull cvm_snp-2026.10-r1_amd_sev_snp.oci.tar \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl pull cvm_snp-2026.10-r1_amd_sev_snp.oci.tar \
   --archive-sha256 ARCHIVE_SHA256_FROM_THE_BUILD_HOST \
   --output /srv/cvm/cvm_snp-2026.10-r1
-sudo ./cvmctl finalize /srv/cvm/cvm_snp-2026.10-r1/amd_sev_snp
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl finalize /srv/cvm/cvm_snp-2026.10-r1/amd_sev_snp
 ```
 
 Finalization boots that exact bundle and writes
@@ -592,11 +649,17 @@ approved inputs requires a new profile version, construction and approval.
 from the normal workflow to construct, finalize, accept, approve, enable, and
 optionally publish the bundle in one operation.
 
+The effective HTTPS port in `kbs_url` must also appear in `bootstrap_egress`.
+For `https://trustee.example.org:9443`, add `9443`; an omitted port means `443`.
+The builder rejects a missing port before construction. Keep this allowlist
+consistent with the application `allowed_out_ports` and the site firewall;
+changing the measured egress list requires a new generic profile and approval.
+
 When acceptance or Trustee administration belongs to another operator, run the
 construction/finalization portion alone and hand off its output:
 
 ```sh
-sudo ./cvmctl build
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl build
 ```
 
 This reduced invocation reads the default profile, auto-detects the local
@@ -634,6 +697,7 @@ memory_gib: 8
 # root_overlay_max_mib is optional and defaults to 4096 here.
 kernel_version: 7.0.0-31-generic
 kbs_url: https://trustee.example.org:8443
+bootstrap_egress: [443, 8443]
 kbs_cert: ../inputs/kbs-ca.pem
 as_public_key: ../inputs/as-public.pem
 attestation_policy: attestation_policy.rego
@@ -679,12 +743,28 @@ vault encryption, or exact-manifest policy selection. Install the unapproved
 manifest into an isolated acceptance Trustee, then build the acceptance vault
 from that same profile set:
 
+First complete the [live administrative checks and receipt generation](TRUSTEE_GUIDE.md#establish-the-administrative-evidence-first)
+against the running staged Trustee. Starting the lab leaves those flags false;
+candidate installation requires the resulting tested receipt.
+
+`acceptance-admin.json` below is the lab's generated
+`/srv/cvm/acceptance/lab-kbs/admin.json`. It installs candidates only. The separate
+`production-admin.json` used after approval must include trusted
+`approval_public_keys`; see [Trustee identity and lab lifecycle setup](TRUSTEE_GUIDE.md#keep-acceptance-and-production-on-the-same-trustee-identity).
+
 ```sh
-sudo ./cvmctl admin install acceptance-admin.json \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl admin install /srv/cvm/acceptance/lab-kbs/admin.json \
   target/cvm_PROFILE/PLATFORM --candidate
-sudo ./cvmctl vault acceptance-vault.yml --candidate \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl vault acceptance-vault.yml --candidate \
   --project-config acceptance-project.yml --output target/acceptance-vault
 ```
+
+The output above is a **set directory**. For TDX the runnable delivery is
+`target/acceptance-vault/intel_tdx/`; for SNP it is
+`target/acceptance-vault/amd_sev_snp/`. Set `CVM_ACCEPTANCE_VAULT` to the absolute
+path of that platform subdirectory, containing `vault_manifest.json` and
+`launch_cvm.sh`, not the parent or the OCI archive. The runner checks this before
+starting either suite.
 
 `acceptance-vault.yml` uses the normal vault schema and an application image that
 runs the test-only `tests/integration_test/lighter/cc/image_builder/lab_guest_agent.py`.
@@ -705,8 +785,8 @@ vault key under this bundle and set `CVM_OTHER_RESOURCE` to its
 Then run:
 
 ```sh
-sudo env \
-  CVM_ACCEPTANCE_VAULT=/path/to/test-delivery \
+sudo --preserve-env=CVM_BUILDER_PYTHON env \
+  CVM_ACCEPTANCE_VAULT="$PWD/target/acceptance-vault/intel_tdx" \
   CVM_ACCEPTANCE_RESULT_KEY=/secure/evidence-signing.key \
   CVM_LAB_DIRECTORY=/path/to/isolated-lab \
   CVM_OTHER_RESOURCE=keys/TESTED_BUILD_ID/OTHER_EXISTING_BINDING \
@@ -773,13 +853,13 @@ evidence or combine it with an additional site-specific result, use
 `acceptance-report`, then approve the exact bundle:
 
 ```sh
-sudo ./cvmctl acceptance-report target/cvm_PROFILE/PLATFORM \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl acceptance-report target/cvm_PROFILE/PLATFORM \
   /srv/cvm/acceptance-evidence \
   --evidence-key /secure/evidence-signing.pub \
   --output /srv/cvm/acceptance-report.json
-sudo ./cvmctl admin approve target/cvm_PROFILE/PLATFORM \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl admin approve target/cvm_PROFILE/PLATFORM \
   /srv/cvm/acceptance-report.json --signing-key /secure/acceptance-signing.key
-sudo ./cvmctl admin install production-admin.json target/cvm_PROFILE/PLATFORM
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl admin install production-admin.json target/cvm_PROFILE/PLATFORM
 ```
 
 The aggregator verifies every result against the configured evidence authority
@@ -825,7 +905,7 @@ construction machine is different from the target TEE host. Select a platform
 and defer its measurements:
 
 ```sh
-sudo ./cvmctl build config/cvm_profile.yml \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl build config/cvm_profile.yml \
   -p amd_sev_snp --defer-measurements
 ```
 
@@ -833,10 +913,10 @@ The deferred call emits a pending CVM OCI artifact. Copy that `.oci.tar` to its
 matching target host, verify and materialize it, then finalize it:
 
 ```sh
-sudo ./cvmctl pull cvm_cpu-2026.09-r5_amd_sev_snp.oci.tar \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl pull cvm_cpu-2026.09-r5_amd_sev_snp.oci.tar \
   --archive-sha256 ARCHIVE_SHA256_FROM_THE_BUILD_HOST \
   --output /srv/cvm/cvm_cpu-2026.09-r5
-sudo ./cvmctl finalize \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl finalize \
   /srv/cvm/cvm_cpu-2026.09-r5/amd_sev_snp
 ```
 
@@ -845,12 +925,12 @@ acceptance key and install the bundle's reference values and reusable resource
 policy; `admin.json` must list the matching public key in `approval_public_keys`:
 
 ```sh
-sudo ./cvmctl admin approve \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl admin approve \
   /srv/cvm/cvm_cpu-2026.09-r5/amd_sev_snp \
   /srv/cvm/acceptance-report.json \
   --signing-key /secure/acceptance-signing.key
 
-sudo ./cvmctl admin install \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl admin install \
   /srv/trustee/admin.json \
   /srv/cvm/cvm_cpu-2026.09-r5/amd_sev_snp
 ```
@@ -879,6 +959,12 @@ Set `cvm_image: ../target/final_cvm_cpu-2026.09-r5` in
 `config/vault_build.yml` to use that aggregated folder.
 
 ## 4. Seal an application delivery
+
+If NVFlare provisioning runs as an unprivileged user, materialize its generic
+`cvm_image` as that user before provisioning. A generic input pulled with sudo
+is root-owned mode 0700 and cannot be inspected by the provisioner. See
+[generic-image permissions](USER_GUIDE.md#generic-images-used-by-provisioning).
+Application deliveries used for runtime launch remain root-owned.
 
 Configure the shared key endpoint once in [cvm_project.yml](cvm_project.yml)
 at your project root. The checked-in file uses paths under the builder's `inputs/`:
@@ -911,7 +997,7 @@ Do not put `trustee` in `vault_build.yml`; per-build overrides are rejected.
 For generated YAML outside the project, select the shared file explicitly:
 
 ```sh
-sudo ./cvmctl vault /tmp/site-inputs/vault_build.yml \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl vault /tmp/site-inputs/vault_build.yml \
   --project-config /srv/project/cvm_project.yml
 ```
 
@@ -1051,7 +1137,7 @@ operator must read without a KBS key. Put secrets and confidential logs in
 Build a fresh vault for this application release and site:
 
 ```sh
-sudo ./cvmctl vault config/vault_build.yml
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl vault config/vault_build.yml
 ```
 
 To publish the completed deliveries in the same operation, add a Cosign private
@@ -1059,7 +1145,7 @@ key and a destination template. `{artifact}` is required when the vault targets
 more than one platform:
 
 ```sh
-sudo ./cvmctl vault config/vault_build.yml \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl vault config/vault_build.yml \
   --publish 'registry.example.org/cvm/deliveries/{artifact}:1.0' \
   --cosign-signing-key /secure/release-signing.key
 ```
@@ -1068,7 +1154,7 @@ For the isolated HTTP lab registry, use a digest reference such as
 `registry.example.org:5000/cvm/cpu@sha256:<manifest-digest>` and explicitly opt in:
 
 ```sh
-sudo ./cvmctl vault config/vault_build.yml --plain-http
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl vault config/vault_build.yml --plain-http
 ```
 
 ### Use a GPU inside the container

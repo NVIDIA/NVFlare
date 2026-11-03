@@ -27,6 +27,7 @@ from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAu
 EXAMPLE = Path(__file__).parents[3] / "examples" / "advanced" / "cvm_builder"
 CLIENT_API_EXECUTOR = "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor"
 SAFE_CVM_EXECUTOR = "cvm_client_api_executor.CVMClientAPIExecutor"
+JOB_LOG_STREAMER = "nvflare.app_common.logging.job_log_streamer.JobLogStreamer"
 
 
 def _component_paths(value):
@@ -59,7 +60,7 @@ def test_bundled_job_components_are_allowed_without_command_capable_classes():
         assert all(_is_allowed(path, allow_list) for path in paths), (participant, paths)
 
     site_config = yaml.safe_load((EXAMPLE / "cc_site-1.yml").read_text())
-    assert site_config["class_allow_list"] == [SAFE_CVM_EXECUTOR]
+    assert site_config["class_allow_list"] == [JOB_LOG_STREAMER, SAFE_CVM_EXECUTOR]
     assert not _is_allowed(CLIENT_API_EXECUTOR, (*DEFAULT_CLASS_ALLOW_LIST, *site_config["class_allow_list"]))
 
 
@@ -77,7 +78,10 @@ def test_measured_cvm_executor_fixes_mode_and_script_path():
     assert executor._task_script_path == "/local/custom/client.py"
 
 
-def test_example_image_installs_compatible_nvflare_release():
-    dockerfile = (EXAMPLE / "docker/Dockerfile").read_text()
-    assert "pip install nvflare~=2.9.0" in dockerfile
-    assert "ENV PYTHONPATH=/local/custom" in dockerfile
+def test_example_images_install_the_provisioner_wheel():
+    for name in ("Dockerfile", "Dockerfile.cpu"):
+        dockerfile = (EXAMPLE / "docker" / name).read_text()
+        assert "COPY nvflare_wheels/*.whl /tmp/nvflare_wheels/" in dockerfile
+        assert "pip install /tmp/nvflare_wheels/*.whl" in dockerfile
+        assert "nvflare~=" not in dockerfile
+        assert "ENV PYTHONPATH=/local/custom" in dockerfile

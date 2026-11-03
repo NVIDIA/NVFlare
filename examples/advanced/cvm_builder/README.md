@@ -27,8 +27,14 @@ The normal lifecycle is: create and approve each reusable generic image once
 with `cvmctl build`; run `nvflare provision` below, which invokes `cvmctl vault`
 for the protected participants; then launch each authenticated delivery on its
 matching TEE host with `cvmctl run`. Use the lower-level finalize, approval,
-publish, and pull commands only when those operations belong to separate roles
-or hosts.
+publish, and pull commands for the documented exact-manifest handoffs, separate
+roles/hosts, and recovery. Combined automation requires a site-supplied adapter;
+it is optional.
+
+Start the client first and let it prepare its vault and workload, then start
+the server. CCManager gives required clients 600 seconds from its initial
+membership check to register. See the [operations checklist](../../../docs/user_guide/confidential_computing/operations.rst#bare-metal-cvm-checklist)
+for cold-start timing and troubleshooting when service logs remain encrypted.
 
 Then run:
 
@@ -47,6 +53,15 @@ The bundled client job uses `CVMClientAPIExecutor` to launch
 does not ship custom code, `cc_site-1.yml` explicitly grants that exact class in
 the participant's `class_allow_list`. This is a reviewed per-site opt-in; do not
 replace it with a package prefix or add it to the global default allowlist.
+
+The job also declares full and error `JobLogStreamer` components, and both the
+mixed and CPU-only participant allowlists include that exact reviewed class.
+It logs round/batch progress through Python logging for retrieval during a long
+round. Logs leave the guest over the authenticated FLARE connection and are
+disclosed to the trusted server and authorized admin; keep private inputs and
+model content out of those messages. Sites can set `allow_log_streaming: false`
+before signing. See [live CC progress logs](../../../docs/user_guide/confidential_computing/operations.rst#live-progress-logs-from-confidential-participants)
+and the [general streaming guide](../../../docs/programming_guide/live_log_streaming.rst).
 
 See the [unified deployment guide](../../../docs/user_guide/confidential_computing/deployment.rst),
 the [CVM build guide](../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md),

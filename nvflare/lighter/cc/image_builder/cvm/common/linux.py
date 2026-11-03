@@ -85,6 +85,8 @@ def run(argv, *, input=None, pass_fds=(), timeout=3600, cwd=None, env=None, oper
     if result.returncode != 0 and not secret:
         _record_diagnostics(label, result.stderr)
     suffix = "; see the diagnostics directory" if DIAGNOSTICS is not None and not secret else "; no output logged"
+    if DIAGNOSTICS is None and not secret:
+        suffix += "; rerun with --diagnostics PRIVATE_DIRECTORY before the subcommand to retain bounded stderr"
     require(result.returncode == 0, f"{label} failed (exit {result.returncode}){suffix}")
     return result.stdout
 

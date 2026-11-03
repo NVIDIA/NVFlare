@@ -244,7 +244,7 @@ initramfs-tools installed. It uses a disposable mount namespace and chroot;
 it does not invoke a power-off command or change the host's `/run` or `/etc`:
 
 ```bash
-sudo env CVM_SHUTDOWN_TESTS=1 python3 -m unittest discover \
+sudo env CVM_SHUTDOWN_TESTS=1 /absolute/path/to/builder/.venv/bin/python -m unittest discover \
   -s tests/integration_test/lighter/cc/image_builder -p test_shutdown.py -v
 ```
 
@@ -679,20 +679,23 @@ Rust policy evaluator has been built or `CVM_POLICY_EVAL` points to that binary.
 
 ## Reproducing tests
 
-Run from the repository root on the Linux test host. Populate the configuration
+Run from the repository root on the Linux test host.
+Set `CVM_BUILDER_PYTHON` to the absolute interpreter from the builder environment
+prepared in [BUILD_GUIDE.md](BUILD_GUIDE.md#1-prepare-the-build-host); use it explicitly
+for sudo commands so sudo cannot select a different system Python. Populate the configuration
 templates and use isolated lab credentials, resources and ports.
 
 ```sh
 export PYTHONPATH="$PWD/nvflare/lighter/cc/image_builder:$PWD/tests/unit_test/lighter/cc/image_builder${PYTHONPATH:+:$PYTHONPATH}"
 cargo build --locked --release --manifest-path tests/unit_test/lighter/cc/image_builder/policy_engine/Cargo.toml
-python3 -m unittest discover -s tests/unit_test/lighter/cc/image_builder -v
+"$CVM_BUILDER_PYTHON" -m unittest discover -s tests/unit_test/lighter/cc/image_builder -v
 sudo env PYTHONPATH="$PYTHONPATH" CVM_STORAGE_TESTS=1 \
-  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_storage.py -v
+  "$CVM_BUILDER_PYTHON" -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_storage.py -v
 sudo env PYTHONPATH="$PYTHONPATH" CVM_NETWORK_TESTS=1 \
-  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_firewall.py -v
+  "$CVM_BUILDER_PYTHON" -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_firewall.py -v
 
-sudo env PYTHONPATH="$PYTHONPATH" \
-  CVM_ACCEPTANCE_VAULT=/path/to/test-delivery \
+sudo --preserve-env=CVM_BUILDER_PYTHON env PYTHONPATH="$PYTHONPATH" \
+  CVM_ACCEPTANCE_VAULT=/path/to/test-delivery/intel_tdx \
   CVM_OTHER_RESOURCE=keys/TESTED_BUILD_ID/OTHER_EXISTING_BINDING \
   CVM_ACCEPTANCE_RESULT_KEY=/secure/evidence-signing.key \
   CVM_LAB_DIRECTORY=/path/to/isolated-lab \

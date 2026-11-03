@@ -528,7 +528,14 @@ def profile(path):
         value["attestation_policy_id"] != "default",
         "Bare-metal CVMs must not replace the default CoCo attestation policy",
     )
-    require(urlparse(value.get("kbs_url", "")).scheme == "https", "KBS requires HTTPS")
+    try:
+        kbs = urlparse(value.get("kbs_url", ""))
+        kbs_port = kbs.port if kbs.port is not None else 443
+    except (ValueError, TypeError):
+        raise BuildError("KBS URL contains an invalid hostname or port") from None
+    require(kbs.scheme == "https" and kbs.hostname, "KBS requires an HTTPS URL with a hostname")
+    require(not kbs.username and not kbs.password, "KBS URL must not contain credentials")
+    require(1 <= kbs_port <= 65535, "KBS URL contains an invalid port")
     require(value.get("token_algorithm") in ("RS256", "ES256", "EdDSA"), "Pin the AS token algorithm")
     require(isinstance(value.get("token_issuer"), str) and value["token_issuer"], "Pin the AS token issuer")
     # Reject unfilled documentation placeholders such as <exact-version>.
@@ -557,6 +564,7 @@ def profile(path):
         require(type(value.get(key)) is int and value[key] > 0, f"Invalid {key}")
     resolve_root_overlay_max_mib(value)
     ports(value.get("bootstrap_egress", []))
+    require(kbs_port in value["bootstrap_egress"], "bootstrap_egress must include the kbs_url HTTPS port")
     require(isinstance(value.get("platforms"), dict) and value["platforms"], "No platforms configured")
     for name, settings in value["platforms"].items():
         require(name in PLATFORMS and isinstance(settings, dict), "Unsupported platform")
