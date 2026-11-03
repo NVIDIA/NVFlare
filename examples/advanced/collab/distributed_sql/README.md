@@ -1,8 +1,9 @@
 # Distributed SQL with NVFlare
 
 A minimal `CollabRecipe` example: each client runs a fixed SQL query on its local
-SQLite database; the server combines the summaries with SQL. All three sites
-must succeed. Source rows stay local; no NVFlare framework changes are needed.
+SQLite database; the server combines the summaries with SQL. All configured sites
+must succeed; this example uses three sites. Source rows stay local; no NVFlare
+framework changes are needed.
 
 With your NVFlare environment active, run from this directory:
 

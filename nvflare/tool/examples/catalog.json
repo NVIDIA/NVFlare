@@ -138,7 +138,7 @@
     "category": "advanced"
   },
   "distributed-sql": {
-    "source_path": "examples/advanced/distributed-sql",
+    "source_path": "examples/advanced/collab/distributed_sql",
     "category": "advanced"
   },
   "advanced-docker": {

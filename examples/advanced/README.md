@@ -10,7 +10,7 @@ provided.
 ## Custom workflows
 * [Collab API](./collab/README.md)
   * Advanced examples for custom server workflows, in-time aggregation, and decentralized client-to-client calls.
-* [Distributed SQL](./distributed-sql/README.md)
+* [Distributed SQL](./collab/distributed_sql/README.md)
   * Query databases with a shared schema and merge local summaries using CollabRecipe.
 
 ## Execution environments
