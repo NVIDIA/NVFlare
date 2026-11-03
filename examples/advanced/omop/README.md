@@ -3,17 +3,18 @@
 This tutorial connects NVFlare to hospitals that already store their records in an OMOP Common Data Model (CDM) database.
 Every site runs the same cohort query against its own tables, turns the result into features, and trains a shared GI bleeding risk model, while patient rows never leave the site.
 
-<img src="./figs/omop_federated.svg" alt="Each site runs cohort.py against its own OMOP CDM, where different local codes resolve to the same standard concept, and client.py shares only gradients and Hessians with the NVFlare server" width="900"/>
+<img src="./figs/omop_federated.svg" alt="Each site maps its local EHR codes to the same standard OMOP concept with its own ETL, runs cohort.py against its OMOP CDM, and client.py shares only gradients and Hessians with the NVFlare server" width="900"/>
 
 ## What is OMOP?
 
-The [OMOP Common Data Model](https://ohdsi.github.io/CommonDataModel/), maintained by [OHDSI](https://www.ohdsi.org/), gives every site the same tables and maps every local code to a standard concept, so an ICD-10-CM `K92.2` and a SNOMED `74474003` diagnosis both become concept `192671` (Gastrointestinal hemorrhage).
-A study written once against the CDM therefore runs unchanged at every site and yields the same features in the same order, which is exactly what federated learning needs.
+The [OMOP Common Data Model](https://ohdsi.github.io/CommonDataModel/), maintained by [OHDSI](https://www.ohdsi.org/), gives every site the same tables and a standard vocabulary.
+Each site converts its own EHR into the CDM with an ETL pipeline that maps local codes to standard concepts, so an ICD-10-CM `K92.2` and a SNOMED `74474003` diagnosis are both stored as concept `192671` (Gastrointestinal hemorrhage).
+That ETL happens once at each hospital, outside this example, and afterwards a study written against the CDM runs unchanged at every site and yields the same features in the same order, which is exactly what federated learning needs.
 
 ## What each site runs
 
-The study is defined once in [cohort.py](./cohort.py): patients starting celecoxib or diclofenac, whether they had a GI hemorrhage within a year, and their age, sex, NSAID, prior GI conditions and painkiller use as covariates.
-Its SQL finds conditions and drugs through the standard vocabulary instead of local codes, which is what lets one query serve every site:
+The study is defined once in [cohort.py](./cohort.py), named after the OHDSI term for the patients a study includes: patients starting celecoxib or diclofenac, whether they had a GI hemorrhage within a year, and their age, sex, NSAID, prior GI conditions and painkiller use as covariates.
+Its SQL selects conditions and drugs through the vocabulary's hierarchy, so one concept also catches every more specific concept a site recorded:
 
 ```sql
 select co.person_id, co.condition_start_date
