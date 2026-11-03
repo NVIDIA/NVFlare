@@ -18,12 +18,35 @@
 
 import json
 import math
+import re
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
 SCHEMA_VERSION = "1.0"
 
+KIND_PARTICIPANT_SUMMARY = "nvflare.resource_stats.participant_summary"
+
+KIND_RESOURCE_SUMMARY = "nvflare.resource_stats.resource_summary"
+
+RECORD_KINDS = {KIND_PARTICIPANT_SUMMARY, KIND_RESOURCE_SUMMARY}
+
 MAX_PARTICIPANT_SUMMARY_BYTES = 1024 * 1024
+
+MAX_RESOURCE_SUMMARY_BYTES = 64 * 1024 * 1024
+
+MAX_RECORD_BYTES = {
+    KIND_PARTICIPANT_SUMMARY: MAX_PARTICIPANT_SUMMARY_BYTES,
+    KIND_RESOURCE_SUMMARY: MAX_RESOURCE_SUMMARY_BYTES,
+}
+
+MAX_PARTICIPANTS = 10_000
+
+MAX_JSON_DEPTH = 32
+
+PARTICIPANT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}$")
+
+JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 ISSUE_CODES = {"observation_incomplete", "attribution_incomplete", "unsupported", "malformed_source"}
 
@@ -38,6 +61,10 @@ _METRICS = _UTILIZATION | {"resource_capacity", "resource_time", "workspace_file
 
 class ContractError(ValueError):
     """An incoming resource record or arithmetic result is invalid."""
+
+
+def utc_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def canonical_json_bytes(value: Mapping[str, Any]) -> bytes:
@@ -70,6 +97,22 @@ def _number(value, path, *, integer=False, positive=False):
     if (isinstance(value, float) and not math.isfinite(value)) or value < 0 or (positive and value == 0):
         _fail(path, "must be finite and positive" if positive else "must be finite and non-negative")
     return value
+
+
+def _identifier(value, pattern, path):
+    if not isinstance(value, str) or not pattern.fullmatch(value):
+        _fail(path, "has invalid syntax")
+
+
+def _timestamp(value, path):
+    if not isinstance(value, str) or not re.fullmatch(
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z", value
+    ):
+        _fail(path, "must be a UTC timestamp")
+    try:
+        datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError:
+        _fail(path, "must be a valid UTC timestamp")
 
 
 def _status(value, path, allowed=("partial", "unavailable")):
@@ -150,6 +193,17 @@ def aggregate_scope_issues(source_issues, measurements):
     return normalize_scope_issues(result, measurements)
 
 
+def _scope_measurements(record):
+    return {
+        **{
+            name: record[name]
+            for name in ("resource_capacity", "resource_time", "workspace_filesystem")
+            if name in record
+        },
+        **record.get("resource_utilization", {}),
+    }
+
+
 def _validate_capacity(value, path, *, elapsed=False):
     value = _mapping(value, path)
     status = _status(value, path)
@@ -189,6 +243,17 @@ def _validate_usage(value, path, fields):
     if status != "unavailable":
         for field in fields:
             _number(value[field], f"{path}.{field}", integer=field != "cpu_seconds")
+
+
+def _validate_utilization(value, path):
+    value = _mapping(value, path)
+    _exact_keys(value, _UTILIZATION, set(), path)
+    for field, fields in (
+        ("cpu_consumed", {"cpu_seconds"}),
+        ("retained_content", {"bytes"}),
+        ("message_traffic", {"sent_bytes", "received_bytes"}),
+    ):
+        _validate_usage(value[field], f"{path}.{field}", fields)
 
 
 def _validate_workspace(value, path):
@@ -331,3 +396,206 @@ def aggregate_cpu_consumed(values, *, complete=True):
 
 def aggregate_message_traffic(values, *, complete=True):
     return _aggregate_execution("message_traffic", values, {"sent_bytes", "received_bytes"}, complete)
+
+
+def _sum_totals(entries, *, complete):
+    totals = {
+        "resource_time": _resource_time_aggregate([entry["resource_time"] for entry in entries], complete=complete),
+        "resource_utilization": {
+            field: _aggregate_usage(
+                [entry["resource_utilization"][field] for entry in entries], fields, complete=complete, path=field
+            )
+            for field, fields in (
+                ("cpu_consumed", {"cpu_seconds"}),
+                ("retained_content", {"bytes"}),
+                ("message_traffic", {"sent_bytes", "received_bytes"}),
+            )
+        },
+    }
+    issues = []
+    if totals["resource_time"].get("status") == "partial":
+        codes = set() if complete else {"observation_incomplete"}
+        for entry in entries:
+            source = entry["resource_time"]
+            causes = {item["code"] for item in entry["issues"] if item["metric"] == "resource_time"}
+            if source.get("status") == "partial":
+                codes.update(causes)
+            elif source.get("status") == "unavailable":
+                codes.add(
+                    "attribution_incomplete" if causes == {"attribution_incomplete"} else "observation_incomplete"
+                )
+        _append_issues(issues, "resource_time", codes or {"observation_incomplete"})
+    elif totals["resource_time"].get("status") == "unavailable":
+        _append_issues(issues, "resource_time", {"observation_incomplete"})
+    for metric, value in totals["resource_utilization"].items():
+        if "status" in value:
+            _append_issues(issues, metric, {"observation_incomplete"})
+    totals["issues"] = normalize_scope_issues(issues)
+    return totals
+
+
+def participant_measurements(record):
+    result = {
+        field: deepcopy(record[field])
+        for field in ("resource_capacity", "resource_time", "resource_utilization", "duration_seconds")
+        if field in record
+    }
+    result["issues"] = [dict(item) for item in record["issues"] if item["metric"] != "workspace_filesystem"]
+    return result
+
+
+def _validate_measurements(record, path):
+    _validate_capacity(record["resource_capacity"], f"{path}.resource_capacity")
+    _validate_capacity(record["resource_time"], f"{path}.resource_time", elapsed=True)
+    _validate_utilization(record["resource_utilization"], f"{path}.resource_utilization")
+    normalize_scope_issues(record["issues"], _scope_measurements(record))
+    if "duration_seconds" in record:
+        _number(record["duration_seconds"], f"{path}.duration_seconds")
+
+
+def _validate_participants(participants, path):
+    if not isinstance(participants, list) or not 1 <= len(participants) <= MAX_PARTICIPANTS:
+        _fail(path, "must contain a bounded nonempty participant list")
+    names = set()
+    for entry in participants:
+        entry = _mapping(entry, path)
+        _identifier(entry.get("participant_name"), PARTICIPANT_NAME_PATTERN, path)
+        if entry["participant_name"] in names:
+            _fail(path, "participant names must be unique")
+        names.add(entry["participant_name"])
+        if entry.get("role") not in ("client", "server"):
+            _fail(path, "has an invalid participant role")
+        base = {"participant_name", "role"}
+        if "status" not in entry:
+            _exact_keys(
+                entry,
+                base | {"received_at", "resource_capacity", "resource_time", "resource_utilization", "issues"},
+                {"duration_seconds"},
+                path,
+            )
+            _timestamp(entry["received_at"], path)
+            _validate_measurements(entry, path)
+        elif entry["status"] in ("missing", "disabled", "invalid"):
+            _exact_keys(
+                entry, base | {"status"} | ({"received_at"} if entry["status"] == "invalid" else set()), set(), path
+            )
+            if entry["status"] == "invalid":
+                _timestamp(entry["received_at"], path)
+        else:
+            _fail(path, "has an invalid participant status")
+
+
+def sum_job_totals(participants):
+    accepted = [entry for entry in participants if "status" not in entry]
+    return _sum_totals(accepted, complete=len(accepted) == len(participants))
+
+
+def derive_job_totals(participants):
+    _validate_participants(participants, "participants")
+    return sum_job_totals(participants)
+
+
+def _json_depth(value):
+    pending = [(value, 1)]
+    while pending:
+        item, depth = pending.pop()
+        if depth > MAX_JSON_DEPTH:
+            return depth
+        if isinstance(item, Mapping):
+            pending.extend((nested, depth + 1) for nested in item.values())
+        elif isinstance(item, list):
+            pending.extend((nested, depth + 1) for nested in item)
+    return 0
+
+
+def _validate_participant_summary(record):
+    common = {"schema_version", "kind"}
+    _exact_keys(
+        record,
+        common
+        | {
+            "job_id",
+            "participant_name",
+            "reported_at",
+            "resource_capacity",
+            "resource_time",
+            "resource_utilization",
+            "workspace_filesystem",
+            "issues",
+        },
+        {"duration_seconds"},
+        "$",
+    )
+    _identifier(record["job_id"], JOB_ID_PATTERN, "job_id")
+    _identifier(record["participant_name"], PARTICIPANT_NAME_PATTERN, "participant_name")
+    _timestamp(record["reported_at"], "reported_at")
+    _validate_measurements(record, "$")
+    _validate_workspace(record["workspace_filesystem"], "workspace_filesystem")
+
+
+def _validate_resource_summary(record):
+    common = {"schema_version", "kind"}
+    _exact_keys(record, common | {"job_id", "participants"}, set(), "$")
+    _identifier(record["job_id"], JOB_ID_PATTERN, "job_id")
+    _validate_participants(record["participants"], "participants")
+    sum_job_totals(record["participants"])
+
+
+def validate_record(record, *, serialized_size=None):
+    record = _mapping(record, "$")
+    kind = record.get("kind")
+    if not isinstance(kind, str) or kind not in RECORD_KINDS or record.get("schema_version") != SCHEMA_VERSION:
+        _fail("$", "has an unsupported kind or schema_version")
+    if serialized_size is not None and (
+        type(serialized_size) is not int or not 0 <= serialized_size <= MAX_RECORD_BYTES[kind]
+    ):
+        _fail("$", "exceeds its serialized size limit")
+    if _json_depth(record) > MAX_JSON_DEPTH:
+        _fail("$", "exceeds maximum JSON depth")
+    validators = {
+        KIND_PARTICIPANT_SUMMARY: _validate_participant_summary,
+        KIND_RESOURCE_SUMMARY: _validate_resource_summary,
+    }
+    validators[kind](record)
+
+
+def normalize_record(record, *, serialized_size=None):
+    """Validate once, then copy/order participant rows and their shared issues."""
+    validate_record(record, serialized_size=serialized_size)
+    result = deepcopy(record)
+    if "participants" in result:
+        result["participants"].sort(key=lambda entry: (entry["role"], entry["participant_name"]))
+    for scope in [result, *result.get("participants", [])]:
+        if "issues" in scope:
+            scope["issues"] = _ordered_issues(scope["issues"])
+    return result
+
+
+def _json_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            _fail("$", "contains duplicate JSON object keys")
+        value[key] = item
+    return value
+
+
+def _reject_nonfinite(value):
+    _fail("$", f"contains a non-finite JSON number: {value}")
+
+
+def load_and_validate(data, expected_kind=None):
+    if not isinstance(data, bytes):
+        _fail("$", "input must be bytes")
+    if expected_kind is not None and expected_kind not in RECORD_KINDS:
+        _fail("$", "unsupported expected kind")
+    if len(data) > MAX_RECORD_BYTES.get(expected_kind, max(MAX_RECORD_BYTES.values())):
+        _fail("$", "exceeds the JSON byte limit")
+    try:
+        record = json.loads(data.decode("utf-8"), object_pairs_hook=_json_object, parse_constant=_reject_nonfinite)
+    except (ValueError, UnicodeDecodeError, RecursionError) as error:
+        raise ContractError(f"invalid resource JSON: {error}") from error
+    record = normalize_record(record, serialized_size=len(data))
+    if expected_kind is not None and record["kind"] != expected_kind:
+        _fail("kind", "does not match the expected record kind")
+    return record

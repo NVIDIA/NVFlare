@@ -19,6 +19,7 @@ import os
 import resource
 import sys
 import time
+from collections.abc import Mapping
 from functools import partial
 
 from nvflare.apis.executor import Executor
@@ -42,6 +43,14 @@ from nvflare.job_config.task_execution import (
     DECOMPOSER_REGISTER_PATH,
     STATISTICS_EXECUTOR_PATH,
     task_constructor_args,
+)
+from nvflare.private.fed.resource_stats.collector import ExecutionResourceCollector
+from nvflare.private.fed.resource_stats.contract import (
+    ContractError,
+    normalize_duration,
+    normalize_measurement,
+    normalize_scope_issues,
+    scoped_measurement,
 )
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
 from nvflare.security.logging import secure_format_exception
@@ -235,6 +244,46 @@ def _execute(
     return result, runtime
 
 
+def _stop_resources(collection):
+    try:
+        snapshot = collection.stop() if collection is not None else None
+    except Exception:
+        snapshot = None
+    fields = ("resource_capacity", "cpu_consumed")
+    checked = {}
+    issues = []
+    by_metric = {name: [] for name in fields}
+    valid_scope = isinstance(snapshot, Mapping) and isinstance(snapshot.get("issues"), list)
+    if valid_scope:
+        for issue in snapshot["issues"]:
+            if (
+                not isinstance(issue, Mapping)
+                or not isinstance(issue.get("metric"), str)
+                or issue["metric"] not in by_metric
+            ):
+                valid_scope = False
+                break
+            by_metric[issue["metric"]].append(issue)
+    for name in fields:
+        try:
+            if not valid_scope:
+                raise ContractError("invalid execution scope")
+            value = normalize_measurement(name, snapshot[name])
+            tags = normalize_scope_issues(by_metric[name], {name: value})
+        except Exception:
+            value = {"status": "unavailable"}
+            tags = [{"metric": name, "code": "observation_incomplete" if snapshot is None else "malformed_source"}]
+        checked[name] = value
+        issues.extend(tags)
+    checked["issues"] = normalize_scope_issues(issues)
+    if isinstance(snapshot, Mapping) and "duration_seconds" in snapshot:
+        try:
+            checked["duration_seconds"] = normalize_duration(snapshot["duration_seconds"])
+        except ContractError:
+            pass
+    return checked
+
+
 def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_keys=()) -> TaskCompletion:
     """Run one bootstrap and commit its result after successful finalization."""
 
@@ -254,6 +303,8 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
     store.claim_worker(identity)
     owns_auditor = False
     transport = None
+    collection = None
+    resource_snapshot = None
     try:
         # Record policy decisions even before application logging or imports.
         if AuditService.get_auditor() is None:
@@ -262,6 +313,12 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
         # Policy preflight precedes logging factories, custom decomposers and payload decoding.
         _runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys)
         _authorize_bootstrap(bootstrap, workspace, fl_ctx)
+        if bootstrap.resource_reporting:
+            try:
+                collection = ExecutionResourceCollector()
+            except Exception:
+                # Resource statistics are optional; execution remains authoritative.
+                pass
         if workspace.get_log_config_file_path():
             configure_logging(workspace, identity.job_id, file_prefix=f"task_{identity.attempt_id}")
         else:
@@ -295,16 +352,24 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
         # Serialization can invoke application decomposers. Fail early here;
         # the publication guard makes the final decision after verification.
         runtime.raise_if_failed()
-        usage = resource.getrusage(resource.RUSAGE_SELF)
-        completed_at = time.time()
-        diagnostics = {
-            "elapsed_seconds": time.monotonic() - started_monotonic,
-            "user_cpu_seconds": usage.ru_utime,
-            "system_cpu_seconds": usage.ru_stime,
-            "max_rss_native_units": usage.ru_maxrss,
-            "max_rss_unit": "bytes" if sys.platform == "darwin" else "kibibytes",
-        }
         checkpoint = store.stage_checkpoint(identity)
+        if bootstrap.resource_reporting:
+            resource_snapshot = _stop_resources(collection)
+            diagnostics = {}
+            if "duration_seconds" in resource_snapshot:
+                diagnostics["elapsed_seconds"] = float(resource_snapshot["duration_seconds"])
+            if "cpu_seconds" in resource_snapshot["cpu_consumed"]:
+                diagnostics["cpu_seconds"] = float(resource_snapshot["cpu_consumed"]["cpu_seconds"])
+        else:
+            usage = resource.getrusage(resource.RUSAGE_SELF)
+            diagnostics = {
+                "elapsed_seconds": time.monotonic() - started_monotonic,
+                "user_cpu_seconds": usage.ru_utime,
+                "system_cpu_seconds": usage.ru_stime,
+                "max_rss_native_units": usage.ru_maxrss,
+                "max_rss_unit": "bytes" if sys.platform == "darwin" else "kibibytes",
+            }
+        completed_at = time.time()
         if checkpoint is not None:
             diagnostics["checkpoint"] = checkpoint.to_dict()
         return store.commit_staged_result(
@@ -332,15 +397,53 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             pass
         raise
     finally:
+        if bootstrap.resource_reporting and resource_snapshot is None:
+            resource_snapshot = _stop_resources(collection)
         sys.path[:] = old_sys_path
         if owns_auditor:
             AuditService.close()
+        close_failed = False
         if transport is not None:
             # The outcome is already on disk; a session that will not close cleanly must not replace it.
             try:
                 transport.close()
             except Exception as e:
+                close_failed = True
                 logging.getLogger(__name__).warning("could not close the cell session: %s", secure_format_exception(e))
+        if bootstrap.resource_reporting:
+            try:
+                traffic = (
+                    transport.traffic_snapshot(incomplete=close_failed)
+                    if transport is not None
+                    else {"sent_bytes": 0, "received_bytes": 0}
+                )
+            except Exception:
+                traffic = {"status": "unavailable", "issues": ["observation_incomplete"]}
+            traffic_issues = []
+            try:
+                traffic = normalize_measurement(
+                    "message_traffic", scoped_measurement("message_traffic", traffic, traffic_issues)
+                )
+                traffic_issues = normalize_scope_issues(traffic_issues, {"message_traffic": traffic})
+            except Exception:
+                traffic = {"status": "unavailable"}
+                traffic_issues = [{"metric": "message_traffic", "code": "malformed_source"}]
+            try:
+                issues = normalize_scope_issues(resource_snapshot["issues"] + traffic_issues)
+                store.write_resource_stats(
+                    identity,
+                    {
+                        "schema_version": "1.0",
+                        "identity": identity.to_dict(),
+                        "scope": "worker",
+                        **resource_snapshot,
+                        "message_traffic": traffic,
+                        "issues": issues,
+                    },
+                )
+            except Exception:
+                # A missing sidecar becomes a gap, never a changed training result.
+                pass
 
 
 def main():
