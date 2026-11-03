@@ -6,6 +6,40 @@ services and operator guides are maintained together with the provisioning adapt
 in this repository. Repository formatting and license headers change source
 fingerprints; build and approve new generic CVMs for this source snapshot.
 
+## Kernel/profile qualification clarification — 2026-10-28 UTC
+
+The rc4 and rc5 acceptance runs on guest kernel **`7.0.0-31-generic`** passed
+`test_corruption_after_scan_stops_workload`. That result supersedes the
+September failure of the corresponding post-scan corruption-read case below;
+the historical section is retained to show why the profile was held back. No
+different kernel pin is currently prescribed solely for that resolved case.
+
+This result qualifies one required behavior, not the kernel or profile in
+isolation. The checked-in `cpu-2026.09-r5` remains
+**`production_ready: false`** because a complete acceptance report for the
+current source and exact manifest, followed by signed production approval, is
+not recorded here. A production profile may retain `7.0.0-31-generic` only if a
+new profile version with its complete pins passes every applicable acceptance
+row on each target platform. Do not edit the existing profile flag in place.
+
+## Terminal GPU quarantine source validation — 2026-10-19 UTC
+
+The runtime now treats GPU Ready-state revocation as terminal for the running
+VM. A periodic GPU appraisal failure stops the workloads and container daemons,
+revokes Ready state, closes the vault, and exits for PID 1 forced poweroff
+without calling `reopen`. CPU-only profiles retain the bounded recovery loop.
+The hardware acceptance contract now requires recovery only for CPU profiles
+and requires bounded terminal poweroff for GPU profiles.
+
+Focused runtime, audit, acceptance-contract, and lab-helper tests passed: **80
+passed, 22 skipped, 70 subtests passed**. The complete standalone builder unit
+suite ran **373 tests** on macOS: 332 passed, 36 skipped, and the five existing
+Linux-platform assumptions remained non-passing (three `memfd_create` errors
+and two `/private/var` canonical-path differences). Project Black, isort, flake8,
+and agent-skill style checks passed. No physical GPU test was run; readiness
+revocation and poweroff timing still require the opt-in GPU hardware acceptance
+case before production approval.
+
 ## AMD portable launch policy — 2026-10-01 UTC
 
 The checked-in `cpu-2026.09-r5` profile defaults `snp_single_socket` to
@@ -210,7 +244,7 @@ initramfs-tools installed. It uses a disposable mount namespace and chroot;
 it does not invoke a power-off command or change the host's `/run` or `/etc`:
 
 ```bash
-sudo env CVM_SHUTDOWN_TESTS=1 python3 -m unittest discover \
+sudo env CVM_SHUTDOWN_TESTS=1 /absolute/path/to/builder/.venv/bin/python -m unittest discover \
   -s tests/integration_test/lighter/cc/image_builder -p test_shutdown.py -v
 ```
 
@@ -276,11 +310,13 @@ identity scrubbing, `kbs-client` provenance, token lifetime and bundle-scoped
 resource roles, a root-only lock directory, `--diagnostics`, git-ignored
 `inputs/`, the `nvflare-cvmctl` entry point and ownership-checked wrappers).
 
-New operator inputs: `inputs/kbs_client_build.json` from `cvmctl provenance`,
+New operator inputs: `inputs/kbs_client_cpu_build.json` from `cvmctl provenance`,
 an Ed25519 acceptance signing key pair, `approval.public_keys` in
 `cvm_project.yml`, `approval_public_keys` in the administration configuration,
-`--signing-key` for `admin approve`, and `--archive-sha256`/`--cosign-key` (or an
-explicit `--allow-unverified`) for `cvmctl pull`. Existing `approval.json` files
+`--signing-key` for `admin approve`, and
+`--archive-sha256`/`--cosign-verification-key` (or an explicit
+`--allow-unverified`) for `cvmctl pull`. `cvmctl run` never permits the
+unauthenticated override. Existing `approval.json` files
 are unsigned and no longer count as approval.
 
 A follow-up review found and fixed four regressions:
@@ -319,8 +355,9 @@ platform-related failures out of 229; all four cases pass on Linux.
 
 The Linux checks above alone do not validate guest boot or QMP power-off; the
 fresh CPU hardware run and its shutdown warnings are recorded above. Real-guest
-quarantine/reopen, lockdown compatibility with the pinned NVIDIA modules, chrony
-NTS startup and finalize hygiene inside a construction VM remain unvalidated.
+CPU quarantine/reopen, terminal GPU quarantine, lockdown compatibility with the
+pinned NVIDIA modules, chrony NTS startup and finalize hygiene inside a
+construction VM remain unvalidated.
 The lab-host block tests do not establish compatibility with every guest kernel.
 Every measured root must be rebuilt, remeasured and reapproved; earlier hardware
 records do not cover these changes.
@@ -642,20 +679,23 @@ Rust policy evaluator has been built or `CVM_POLICY_EVAL` points to that binary.
 
 ## Reproducing tests
 
-Run from the repository root on the Linux test host. Populate the configuration
+Run from the repository root on the Linux test host.
+Set `CVM_BUILDER_PYTHON` to the absolute interpreter from the builder environment
+prepared in [BUILD_GUIDE.md](BUILD_GUIDE.md#1-prepare-the-build-host); use it explicitly
+for sudo commands so sudo cannot select a different system Python. Populate the configuration
 templates and use isolated lab credentials, resources and ports.
 
 ```sh
 export PYTHONPATH="$PWD/nvflare/lighter/cc/image_builder:$PWD/tests/unit_test/lighter/cc/image_builder${PYTHONPATH:+:$PYTHONPATH}"
 cargo build --locked --release --manifest-path tests/unit_test/lighter/cc/image_builder/policy_engine/Cargo.toml
-python3 -m unittest discover -s tests/unit_test/lighter/cc/image_builder -v
+"$CVM_BUILDER_PYTHON" -m unittest discover -s tests/unit_test/lighter/cc/image_builder -v
 sudo env PYTHONPATH="$PYTHONPATH" CVM_STORAGE_TESTS=1 \
-  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_storage.py -v
+  "$CVM_BUILDER_PYTHON" -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_storage.py -v
 sudo env PYTHONPATH="$PYTHONPATH" CVM_NETWORK_TESTS=1 \
-  python3 -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_firewall.py -v
+  "$CVM_BUILDER_PYTHON" -m unittest discover -s tests/integration_test/lighter/cc/image_builder -p test_firewall.py -v
 
-sudo env PYTHONPATH="$PYTHONPATH" \
-  CVM_ACCEPTANCE_VAULT=/path/to/test-delivery \
+sudo --preserve-env=CVM_BUILDER_PYTHON env PYTHONPATH="$PYTHONPATH" \
+  CVM_ACCEPTANCE_VAULT=/path/to/test-delivery/intel_tdx \
   CVM_OTHER_RESOURCE=keys/TESTED_BUILD_ID/OTHER_EXISTING_BINDING \
   CVM_ACCEPTANCE_RESULT_KEY=/secure/evidence-signing.key \
   CVM_LAB_DIRECTORY=/path/to/isolated-lab \

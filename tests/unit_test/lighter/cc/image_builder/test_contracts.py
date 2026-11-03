@@ -16,6 +16,7 @@
 
 import base64
 import contextlib
+import copy
 import fcntl
 import hashlib
 import json
@@ -56,12 +57,20 @@ from cvm.common.contracts import (
     validate_resource,
 )
 from cvm.common.errors import BuildError
-from cvm.common.evidence import require_approved_tdx_tcb, serial_evidence, serial_frames, tdx_tcb
+from cvm.common.evidence import (
+    require_approved_snp_tcb,
+    require_approved_tdx_tcb,
+    serial_evidence,
+    serial_frames,
+    snp_tcb,
+    tdx_tcb,
+)
 from cvm.common.firewall import firewall_rules
 from cvm.common.io import canonical, read_json
 from cvm.common.linux import memory_file, validate_core_policy
 from cvm.common.luks import validate_luks_metadata, validate_mapping
 from cvm.common.measurements import measurements, validate_measurements
+from cvm.common.references import SNP_BOOLS, SNP_INTS, SNP_LISTS, TDX_HEX
 from cvm.common.services import validate_service
 from cvm.common.validation import runtime_config
 from cvm.host import platforms
@@ -73,6 +82,56 @@ from cvm.runtime.attestation import ATTESTATION_BUDGET_SECONDS, authorized_key, 
 from cvm.runtime.integrity import healthy_status
 from cvm.runtime.storage import disk_device
 from cvm.trustee.admin import verify_readback
+
+
+def elf64_with_dependencies(dependencies, extra_strings=()):
+    """Build the minimal ELF image needed to distinguish DT_NEEDED from stray strings."""
+    strings = bytearray(b"\0")
+    offsets = {}
+    for name in (*dependencies, *extra_strings):
+        if name not in offsets:
+            offsets[name] = len(strings)
+            strings.extend(name.encode() + b"\0")
+
+    base = 0x400000
+    program_offset = 64
+    program_size = 56
+    dynamic_offset = program_offset + 2 * program_size
+    dynamic = [(5, 0), (10, len(strings)), *((1, offsets[name]) for name in dependencies), (0, 0)]
+    string_offset = dynamic_offset + len(dynamic) * 16
+    dynamic[0] = (5, base + string_offset)
+    file_size = string_offset + len(strings)
+    ident = b"\x7fELF" + bytes((2, 1, 1)) + bytes(9)
+    header = ident + struct.pack(
+        "<HHIQQQIHHHHHH",
+        3,
+        62,
+        1,
+        0,
+        program_offset,
+        0,
+        0,
+        64,
+        program_size,
+        2,
+        0,
+        0,
+        0,
+    )
+    load = struct.pack("<IIQQQQQQ", 1, 4, 0, base, base, file_size, file_size, 0x1000)
+    dynamic_segment = struct.pack(
+        "<IIQQQQQQ",
+        2,
+        4,
+        dynamic_offset,
+        base + dynamic_offset,
+        base + dynamic_offset,
+        len(dynamic) * 16,
+        len(dynamic) * 16,
+        8,
+    )
+    entries = b"".join(struct.pack("<qQ", tag, value) for tag, value in dynamic)
+    return header + load + dynamic_segment + entries + strings
 
 
 class BindingTests(unittest.TestCase):
@@ -101,6 +160,50 @@ class BindingTests(unittest.TestCase):
         for name in candidate:
             with self.subTest(name=name), self.assertRaisesRegex(BuildError, name):
                 require_approved_tdx_tcb(evidence, dict(references, **{name: ["0" * len(candidate[name])]}))
+
+    @staticmethod
+    def snp_evidence():
+        nonce = b"n" * 64
+        report = bytearray(1184)
+        struct.pack_into("<I", report, 0, 3)
+        policy = (1 << 17) | (1 << 16) | (1 << 20) | (2 << 8) | 1
+        struct.pack_into("<Q", report, 8, policy)
+        struct.pack_into("<Q", report, 64, 3)
+        report[80:144] = nonce
+        reported_tcb = 4 | (5 << 8) | (6 << 48) | (7 << 56)
+        struct.pack_into("<Q", report, 384, reported_tcb)
+        return {
+            "platform": "amd_sev_snp",
+            "report": base64.b64encode(report).decode(),
+            "nonce": base64.b64encode(nonce).decode(),
+            "measurements": measurements("amd_sev_snp", report),
+        }
+
+    def test_snp_reference_boot_requires_approved_tcb_and_policy(self):
+        evidence = self.snp_evidence()
+        candidate = snp_tcb(evidence)
+        references = {name: [value] if name in SNP_LISTS else value for name, value in candidate.items()}
+        require_approved_snp_tcb(evidence, references)
+        for name, value in candidate.items():
+            replacement = [value + 1] if name in SNP_LISTS else (not value if name in SNP_BOOLS else value + 1)
+            with self.subTest(name=name), self.assertRaisesRegex(BuildError, name):
+                require_approved_snp_tcb(evidence, dict(references, **{name: replacement}))
+
+    def test_snp_reference_boot_rejects_forbidden_policy_bits(self):
+        evidence = self.snp_evidence()
+        report = bytearray(base64.b64decode(evidence["report"]))
+        struct.pack_into("<Q", report, 8, struct.unpack_from("<Q", report, 8)[0] | (1 << 19))
+        evidence["report"] = base64.b64encode(report).decode()
+        with self.assertRaisesRegex(BuildError, "debug or migration"):
+            snp_tcb(evidence)
+
+    def test_snp_reference_boot_rejects_turin_until_trustee_exposes_fmc(self):
+        evidence = self.snp_evidence()
+        report = bytearray(base64.b64decode(evidence["report"]))
+        report[0x188] = 0x1A
+        evidence["report"] = base64.b64encode(report).decode()
+        with self.assertRaisesRegex(BuildError, "Turin.*FMC"):
+            snp_tcb(evidence)
 
     def test_piped_core_collectors_are_rejected_for_secret_children(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -280,6 +383,189 @@ class PlatformTests(unittest.TestCase):
 
 
 class ProfileTests(unittest.TestCase):
+    def profile_fixture(self, enabled=platforms.PLATFORMS):
+        root = Path(self.temp_directory()).resolve()
+        value = {}
+        for key in ("base_image", "build_firmware", "kbs_cert", "as_public_key", "attestation_policy"):
+            (root / key).write_bytes(b"fixture")
+            value[key] = key
+        value["platforms"] = {}
+        for name, defaults in config.PROFILE_DEFAULTS["platforms"].items():
+            settings = copy.deepcopy(defaults)
+            settings["enabled"] = name in enabled
+            for key in ("firmware", "kbs_client"):
+                settings[key] = name + "." + key
+                (root / settings[key]).write_bytes(b"fixture " + name.encode())
+            settings["kbs_client_provenance"] = name + ".provenance.json"
+            (root / settings["kbs_client_provenance"]).write_text(
+                json.dumps(
+                    {
+                        "source_clean": False,
+                        "trustee_commit": config.PROFILE_DEFAULTS["trustee_commit"],
+                        "guest_components_commit": config.GUEST_COMPONENTS_SELECTOR_COMMIT,
+                        "kbs_client_patch_sha256": config.digest_file(
+                            config.SOURCE / "cvm/build/kbs_client_policy_selector.patch"
+                        ),
+                        "binary_sha256": config.digest_file(root / settings["kbs_client"]),
+                    }
+                )
+            )
+            value["platforms"][name] = settings
+        references = {}
+        if "amd_sev_snp" in enabled:
+            references.update({key: [1] for key in SNP_LISTS})
+            references.update({key: False for key in SNP_BOOLS})
+            references.update({key: 0 for key in SNP_INTS})
+        if "intel_tdx" in enabled:
+            references.update({key: ["0" * size] for key, size in TDX_HEX.items()})
+            references["allowed_advisory_ids"] = []
+        value["reference_values"] = "references.json"
+        (root / value["reference_values"]).write_text(json.dumps(references))
+        path = root / "profile.yml"
+        path.write_text(yaml.safe_dump(value))
+        return path, value
+
+    def test_kbs_client_nvat_linkage_must_match_profile(self):
+        client = Path(self.temp_directory()) / "kbs-client"
+        client.write_bytes(elf64_with_dependencies(("libc.so.6",), ("libnvat.so.1",)))
+        config.validate_kbs_client_linkage(client, "none")
+        with self.assertRaisesRegex(BuildError, "must link libnvat"):
+            config.validate_kbs_client_linkage(client, "nvidia_cc")
+
+        client.write_bytes(elf64_with_dependencies(("libnvat.so.1", "libc.so.6")))
+        config.validate_kbs_client_linkage(client, "nvidia_cc")
+        with self.assertRaisesRegex(BuildError, "must not link libnvat"):
+            config.validate_kbs_client_linkage(client, "none")
+
+    def test_disabled_platforms_need_no_artifacts_or_references(self):
+        for enabled in platforms.PLATFORMS:
+            with self.subTest(enabled=enabled):
+                path, value = self.profile_fixture([enabled])
+                disabled = next(name for name in platforms.PLATFORMS if name != enabled)
+                settings = value["platforms"][disabled]
+                for key in ("firmware", "kbs_client", "kbs_client_provenance"):
+                    (path.parent / settings[key]).unlink()
+                settings["shim"] = "missing-shim.efi"
+                path.write_text(yaml.safe_dump(value))
+                profile = config.profile(path)
+                self.assertEqual(profile["platforms"][disabled], settings)
+                self.assertEqual(
+                    profile["platforms"][enabled]["firmware"],
+                    str(path.parent / value["platforms"][enabled]["firmware"]),
+                )
+                self.assertEqual(platforms.select_platform(profile, capabilities=set(platforms.PLATFORMS)), enabled)
+                with self.assertRaisesRegex(BuildError, "supported, enabled"):
+                    platforms.select_platform(profile, disabled)
+
+    def test_disabled_platform_provenance_is_never_read_or_hashed(self):
+        path, value = self.profile_fixture(["amd_sev_snp"])
+        disabled = value["platforms"]["intel_tdx"]
+        (path.parent / disabled["kbs_client_provenance"]).write_text("not JSON")
+        with (
+            patch.object(config, "local_path", wraps=config.local_path) as resolve,
+            patch.object(config, "read_json", wraps=config.read_json) as read,
+            patch.object(config, "digest_file", wraps=config.digest_file) as digest,
+        ):
+            config.profile(path)
+        for key in ("firmware", "kbs_client", "kbs_client_provenance"):
+            self.assertNotIn(disabled[key], [call.args[1] for call in resolve.call_args_list])
+        self.assertNotIn(
+            str(path.parent / disabled["kbs_client_provenance"]), [call.args[0] for call in read.call_args_list]
+        )
+        self.assertNotIn(str(path.parent / disabled["kbs_client"]), [call.args[0] for call in digest.call_args_list])
+
+    def test_enabled_platforms_still_validate_artifacts_and_provenance(self):
+        for name in platforms.PLATFORMS:
+            for key in ("firmware", "kbs_client", "kbs_client_provenance"):
+                with self.subTest(platform=name, missing=key):
+                    path, value = self.profile_fixture()
+                    (path.parent / value["platforms"][name][key]).unlink()
+                    with self.assertRaisesRegex(BuildError, "Input does not exist"):
+                        config.profile(path)
+            with self.subTest(platform=name, provenance="wrong digest"):
+                path, value = self.profile_fixture()
+                (path.parent / value["platforms"][name]["kbs_client"]).write_bytes(b"changed binary")
+                with self.assertRaisesRegex(BuildError, "digest differs"):
+                    config.profile(path)
+
+    def test_enabled_platform_provenance_rejects_invalid_json(self):
+        for name in platforms.PLATFORMS:
+            with self.subTest(platform=name):
+                path, value = self.profile_fixture()
+                (path.parent / value["platforms"][name]["kbs_client_provenance"]).write_text("not JSON")
+                with self.assertRaises(json.JSONDecodeError):
+                    config.profile(path)
+
+    def test_disabled_platform_structure_remains_validated(self):
+        for invalid, message in (
+            ({"intel_tdx": []}, "mapping"),
+            ({"unknown": {"enabled": False}}, "Unsupported platform"),
+            ({"intel_tdx": {"enabled": "false"}}, "enabled must be boolean"),
+            ({"intel_tdx": {"enabled": 0}}, "enabled must be boolean"),
+            ({"intel_tdx": {"enabled": False, "attester": "snp"}}, "Attester mismatch"),
+            ({"intel_tdx": {"enabled": False, "cpu_model": "invalid model"}}, "Pin CPU model"),
+        ):
+            path, value = self.profile_fixture(["amd_sev_snp"])
+            value["platforms"].update(invalid)
+            path.write_text(yaml.safe_dump(value))
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(BuildError, message):
+                config.profile(path)
+
+    def test_all_disabled_fails_before_artifact_access(self):
+        path, _ = self.profile_fixture([])
+        with (
+            patch.object(config, "local_path", side_effect=AssertionError("No artifact access")),
+            self.assertRaisesRegex(BuildError, "At least one platform must be enabled"),
+        ):
+            config.profile(path)
+
+    def test_enabled_platform_references_remain_required(self):
+        path, value = self.profile_fixture(["intel_tdx"])
+        (path.parent / value["reference_values"]).write_text("{}")
+        with self.assertRaisesRegex(BuildError, "Missing approved TCB reference keys"):
+            config.profile(path)
+
+    def test_supplied_disabled_platform_references_remain_strict(self):
+        path, value = self.profile_fixture(["intel_tdx"])
+        references = read_json(path.parent / value["reference_values"])
+        references["snp_microcode"] = ["invalid"]
+        (path.parent / value["reference_values"]).write_text(json.dumps(references))
+        with self.assertRaisesRegex(BuildError, "Invalid approved TCB reference: snp_microcode"):
+            config.profile(path)
+
+    def test_omitting_platforms_keeps_both_default_platforms(self):
+        path, value = self.profile_fixture()
+        defaults = value.pop("platforms")
+        for settings in defaults.values():
+            for key in ("firmware", "kbs_client", "kbs_client_provenance"):
+                settings[key] = str(path.parent / settings[key])
+        path.write_text(yaml.safe_dump(value))
+        with patch.dict(config.PROFILE_DEFAULTS["platforms"], defaults, clear=True):
+            profile = config.profile(path)
+        self.assertEqual(set(profile["platforms"]), set(platforms.PLATFORMS))
+        self.assertTrue(all(settings["enabled"] for settings in profile["platforms"].values()))
+
+    def test_omitting_enabled_keeps_platform_enabled(self):
+        path, value = self.profile_fixture()
+        for settings in value["platforms"].values():
+            del settings["enabled"]
+        path.write_text(yaml.safe_dump(value))
+        profile = config.profile(path)
+        self.assertTrue(all(settings["enabled"] for settings in profile["platforms"].values()))
+
+    def test_enabled_tdx_still_requires_reviewed_shim_for_secure_boot(self):
+        path, value = self.profile_fixture(["intel_tdx"])
+        settings = value["platforms"]["intel_tdx"]
+        settings["firmware"] = "tdx.ms.fd"
+        (path.parent / settings["firmware"]).write_bytes(b"fixture")
+        path.write_text(yaml.safe_dump(value))
+        with self.assertRaisesRegex(BuildError, "Secure Boot firmware requires"):
+            config.profile(path)
+        settings["shim"] = "missing-shim.efi"
+        path.write_text(yaml.safe_dump(value))
+        with self.assertRaisesRegex(BuildError, "Input does not exist"):
+            config.profile(path)
+
     def test_profile_rejects_typos_and_removed_options(self):
         path = Path(self.temp_directory()) / "profile.yml"
         for name in ("gpu_cont", "trustee_patch_digest", "gpu_attestation_binary"):
@@ -1317,31 +1603,38 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertEqual(execute.call_args.kwargs["timeout"], 7)
         self.assertEqual(execute.call_args.args[0], ["/usr/bin/chronyc", "waitsync", "5", "0.5", "1000", "1"])
 
-    def test_cold_clock_collects_samples_before_enforcing_final_quality_gate(self):
+    def test_cold_clock_allows_natural_polls_before_enforcing_final_quality_gate(self):
         with patch("cvm.runtime.bootstrap.run") as execute:
-            runtime.time_sync(max_tries=90, initialize=True)
+            runtime.time_sync(max_tries=runtime.CLOCK_INITIAL_SYNC_TRIES, initialize=True)
         self.assertEqual(
             [call.args[0] for call in execute.call_args_list],
             [
                 ["/usr/bin/chronyc", "maxupdateskew", "1000"],
                 ["/usr/bin/chronyc", "waitsync", "30", "0.5", "0", "1"],
-                ["/usr/bin/chronyc", "burst", "8/16"],
-                ["/usr/bin/chronyc", "waitsync", "90", "0.5", "1000", "1"],
+                ["/usr/bin/chronyc", "waitsync", "180", "0.5", "1000", "1"],
             ],
         )
-        self.assertEqual([call.kwargs["timeout"] for call in execute.call_args_list], [2, 32, 2, 92])
+        self.assertEqual([call.kwargs["timeout"] for call in execute.call_args_list], [2, 32, 182])
 
     def test_cold_clock_tolerates_preliminary_wait_failure(self):
-        failure = [None, BuildError("clock not ready"), None, None]
+        failure = [None, BuildError("clock not ready"), None]
         with patch("cvm.runtime.bootstrap.run", side_effect=failure) as execute:
-            runtime.time_sync(max_tries=90, initialize=True)
-        self.assertEqual(execute.call_count, 4)
+            runtime.time_sync(max_tries=runtime.CLOCK_INITIAL_SYNC_TRIES, initialize=True)
+        self.assertEqual(execute.call_count, 3)
 
-    def test_cold_clock_rejects_setup_burst_or_final_gate_failure(self):
-        for failure_at in (0, 2, 3):
+    def test_cold_clock_rejects_setup_or_final_gate_failure(self):
+        for failure_at in (0, 2):
             with patch("cvm.runtime.bootstrap.run", side_effect=[None] * failure_at + [BuildError("clock not ready")]):
                 with self.assertRaises(BuildError):
-                    runtime.time_sync(max_tries=90, initialize=True)
+                    runtime.time_sync(max_tries=runtime.CLOCK_INITIAL_SYNC_TRIES, initialize=True)
+
+    def test_clock_gate_rejects_invalid_budget(self):
+        for max_tries in (0, runtime.CLOCK_INITIAL_SYNC_TRIES + 1, True, 1.5):
+            with (
+                self.subTest(max_tries=max_tries),
+                self.assertRaisesRegex(BuildError, "Invalid clock synchronization budget"),
+            ):
+                runtime.time_sync(max_tries=max_tries)
 
     def test_monitor_status_is_fail_closed(self):
         healthy_status("0 123456 integrity 0 123456 0")

@@ -16,15 +16,17 @@
 
 import argparse
 import base64
+import contextlib
 import ipaddress
 import json
+import os
 import signal
 import subprocess
 import time
 from pathlib import Path
 
 from ..common.contracts import HEADER_BYTES, STORAGE_PROFILE, binding
-from ..common.errors import BuildError, require
+from ..common.errors import BuildError, StartupPhaseError, require
 from ..common.evidence import serial_frames
 from ..common.firewall import firewall_rules
 from ..common.io import read_json, write_json
@@ -44,6 +46,17 @@ from .systemd import notify
 CONFIG = Path("/etc/cvm/runtime.json")
 
 
+@contextlib.contextmanager
+def startup_phase(name):
+    """Map any diagnostic to a fixed, non-secret startup phase."""
+    try:
+        yield
+    except StartupPhaseError:
+        raise
+    except Exception as error:
+        raise StartupPhaseError(name) from error
+
+
 STATE = Path("/run/cvm")
 
 
@@ -55,6 +68,9 @@ CLOCK_MAX_CORRECTION_SECONDS = 0.5
 
 
 CLOCK_MAX_SKEW_PPM = 1000
+
+
+CLOCK_INITIAL_SYNC_TRIES = 180
 
 
 CONTAINER_NAME = "cvm-application"
@@ -190,11 +206,15 @@ def time_sync(max_tries=30, *, initialize=False):
     """Require chronyd synchronization before relying on signed token time claims."""
     if Path("/etc/cvm/dev_mode").exists():
         return
-    require(type(max_tries) is int and 1 <= max_tries <= 90, "Invalid clock synchronization budget")
+    require(
+        type(max_tries) is int and 1 <= max_tries <= CLOCK_INITIAL_SYNC_TRIES,
+        "Invalid clock synchronization budget",
+    )
     if initialize:
         # A sealed image has no saved frequency estimate. Align chrony's update
-        # threshold with our gate, obtain an initial correction, then collect
-        # extra samples. Only the final bounded skew check authorizes startup.
+        # threshold with our gate and obtain an initial correction. Rapid burst
+        # samples do not span enough time to estimate skew, so the final bounded
+        # gate allows natural polls to establish frequency before authorizing startup.
         run(["/usr/bin/chronyc", "maxupdateskew", str(CLOCK_MAX_SKEW_PPM)], timeout=2)
         try:
             run(
@@ -202,10 +222,9 @@ def time_sync(max_tries=30, *, initialize=False):
                 timeout=32,
             )
         except BuildError:
-            # A cold clock may need the following burst before it has enough
+            # A cold clock may need natural poll intervals before it has enough
             # samples. The final bounded gate below still authorizes startup.
             pass
-        run(["/usr/bin/chronyc", "burst", "8/16"], timeout=2)
     run(
         [
             "/usr/bin/chronyc",
@@ -220,20 +239,26 @@ def time_sync(max_tries=30, *, initialize=False):
 
 
 def bootstrap():
-    config = read_json(CONFIG)
-    STATE.mkdir(mode=0o700, exist_ok=True)
-    dev = Path("/etc/cvm/dev_mode").exists()
+    with startup_phase("configuration"):
+        config = read_json(CONFIG)
+        STATE.mkdir(mode=0o700, exist_ok=True)
+        dev = Path("/etc/cvm/dev_mode").exists()
     # Reference launches have no vault disk. Emit their frames before disk waits.
-    reference()
+    with startup_phase("attestation"):
+        reference()
     if not dev:
-        run(["nft", "list", "table", "inet", "cvm"], timeout=5)
-        # Narrow the measured bootstrap rules to the resolvers this boot learned
-        # before the first KBS contact; the measured file cannot know them.
-        firewall([], config["bootstrap_egress"], resolvers=discovered_resolvers())
-        time_sync(max_tries=90, initialize=True)
+        with startup_phase("network"):
+            run(["nft", "list", "table", "inet", "cvm"], timeout=5)
+            # Narrow the measured bootstrap rules to the resolvers this boot learned
+            # before the first KBS contact; the measured file cannot know them.
+            firewall([], config["bootstrap_egress"], resolvers=discovered_resolvers())
+        with startup_phase("time_sync"):
+            time_sync(max_tries=CLOCK_INITIAL_SYNC_TRIES, initialize=True)
     mount_vault(config, dev=dev)
-    units = finish_bootstrap(config, dev=dev)
-    supervise(config, units, STATE)
+    with startup_phase("payload_authentication"):
+        units = finish_bootstrap(config, dev=dev)
+    with startup_phase("supervision"):
+        supervise(config, units, STATE)
 
 
 def open_vault(config, platform, device):
@@ -303,48 +328,51 @@ def check_vault_manifest(config, platform, actual_uuid):
 
 
 def mount_vault(config, dev=False):
-    devices = {role: disk_device(role, wait=True) for role in ("applog", "user-config", "user-data", "vault")}
-    device = devices["vault"]
-    if dev:
-        require(
-            not Path("/dev/sev-guest").exists() and not Path("/dev/tdx_guest").exists(),
-            "Dev root must not run as a TEE",
+    with startup_phase("vault_identity"):
+        devices = {role: disk_device(role, wait=True) for role in ("applog", "user-config", "user-data", "vault")}
+        device = devices["vault"]
+        if dev:
+            require(
+                not Path("/dev/sev-guest").exists() and not Path("/dev/tdx_guest").exists(),
+                "Dev root must not run as a TEE",
+            )
+            mount_roles(devices)
+            manifest = read_json("/vault/vault_manifest.json")
+            require(
+                manifest.get("dev_mode") is True and manifest["cvm_build_id"] == config["build_id"],
+                "Dev vault/bundle mismatch",
+            )
+            return
+        protect_process()
+        platform = guest_platform()
+        require(platform == config["platform"], "Guest TEE does not match its measured root")
+        digest, actual_uuid = open_vault(config, platform, device)
+        # Type=notify, no dependency on bootstrap: wait for READY before scan.
+        run(["systemctl", "start", "cvm_integrity.service"], timeout=30)
+    with startup_phase("payload_authentication"):
+        verify_payload(config)
+        mount_roles({"vault": "/dev/mapper/vault"})
+        check_vault_manifest(config, platform, actual_uuid)
+        mount_roles({role: device for role, device in devices.items() if role != "vault"})
+        write_json(
+            STATE / "binding.json",
+            {
+                "digest": digest.hex(),
+                "luks_uuid": actual_uuid,
+                "measurements": measurements(platform, local_report(platform)[0]),
+            },
         )
-        mount_roles(devices)
-        manifest = read_json("/vault/vault_manifest.json")
-        require(
-            manifest.get("dev_mode") is True and manifest["cvm_build_id"] == config["build_id"],
-            "Dev vault/bundle mismatch",
+        device = "/dev/tdx_guest" if platform == "intel_tdx" else "/dev/sev-guest"
+        (STATE / "platform.env").write_text(
+            f"TEE_PLATFORM={platform}\nTEE_DEVICE={device}\nTEE_DEVICE_ARGS='--device {device}'\n"
         )
-        return
-    protect_process()
-    platform = guest_platform()
-    require(platform == config["platform"], "Guest TEE does not match its measured root")
-    digest, actual_uuid = open_vault(config, platform, device)
-    # Type=notify, no dependency on bootstrap: wait for READY before scan.
-    run(["systemctl", "start", "cvm_integrity.service"], timeout=30)
-    verify_payload(config)
-    mount_roles({"vault": "/dev/mapper/vault"})
-    check_vault_manifest(config, platform, actual_uuid)
-    mount_roles({role: device for role, device in devices.items() if role != "vault"})
-    write_json(
-        STATE / "binding.json",
-        {
-            "digest": digest.hex(),
-            "luks_uuid": actual_uuid,
-            "measurements": measurements(platform, local_report(platform)[0]),
-        },
-    )
-    device = "/dev/tdx_guest" if platform == "intel_tdx" else "/dev/sev-guest"
-    (STATE / "platform.env").write_text(
-        f"TEE_PLATFORM={platform}\nTEE_DEVICE={device}\nTEE_DEVICE_ARGS='--device {device}'\n"
-    )
 
 
 def reopen():
-    """Regain authorization after quarantine: same vault identity, fresh appraisal and key."""
+    """Regain CPU-only authorization: same vault identity, fresh appraisal and key."""
     config = read_json(CONFIG)
     require(not Path("/etc/cvm/dev_mode").exists(), "Development images do not quarantine")
+    require(config.get("gpu") != "nvidia_cc", "GPU quarantine requires a guest restart")
     protect_process()
     time_sync(max_tries=5)
     platform = guest_platform()
@@ -562,7 +590,7 @@ def docker_environment(app):
 
 
 def application():
-    """Run the container; a requested stop exits 0, an unexpected exit keeps its status."""
+    """Run the container; only a requested stop is a successful service exit."""
     app = read_json("/vault/config/application.json")
     for name in ("runtime", "data"):
         directory = Path("/vault/application") / name
@@ -641,6 +669,7 @@ def application():
         status = process.wait()
     if stopping:
         return 0
+    require(status != 0, "Application exited unexpectedly (container status 0)")
     return status if status >= 0 else 128 - status
 
 
@@ -673,6 +702,19 @@ def mount_user_data():
     )
 
 
+def _write_bootstrap_failure(message):
+    """Best-effort fixed diagnostic without waiting on the console sink."""
+    try:
+        blocking = os.get_blocking(2)
+        os.set_blocking(2, False)
+        try:
+            os.write(2, (message + "\n").encode("ascii"))
+        finally:
+            os.set_blocking(2, blocking)
+    except OSError:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=("bootstrap", "periodic", "application", "reopen"))
@@ -680,10 +722,14 @@ def main():
     audited = args.action in ("bootstrap", "periodic", "reopen")
     try:
         status = globals()[args.action]()
-    except Exception:
+    except Exception as error:
+        # A traceback could include untrusted app data or token content.
+        phase = f" [phase={error.phase}]" if isinstance(error, StartupPhaseError) else ""
+        message = "CVM " + args.action + " failed" + phase + "; PID 1 will power off"
         if args.action == "bootstrap":
-            # Ask PID 1 to enforce failure before any best-effort diagnostics.
-            # It also retains the independent phase deadline if notification fails.
+            # WATCHDOG=trigger can SIGKILL us immediately. Emit the fixed phase
+            # first, without letting a blocked console postpone shutdown.
+            _write_bootstrap_failure(message)
             try:
                 notify("WATCHDOG=trigger")
             except Exception:
@@ -691,8 +737,8 @@ def main():
         if audited:
 
             emit("deny")
-        # A traceback could include untrusted app data or token content.
-        raise SystemExit("CVM " + args.action + " failed; PID 1 will power off") from None
+        # Do not print a second, potentially blocking message at interpreter exit.
+        raise SystemExit(1 if args.action == "bootstrap" else message) from None
     if args.action == "application" and status:
         raise SystemExit(status)
 

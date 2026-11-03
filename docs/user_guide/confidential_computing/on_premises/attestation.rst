@@ -80,7 +80,9 @@ NVFlare currently supports the following ``CCAuthorizer`` components:
    * - ``ACIAuthorizer``
      - Azure Confidential Containers Instance
    * - ``CoCoAuthorizer``
-     - Kata/Trustee-backed AMD SEV-SNP or Intel TDX, CPU-only or with NVIDIA GPU. TDX is experimental pending hardware acceptance; see the CoCo architecture.
+     - Kata/Trustee-backed AMD SEV-SNP or Intel TDX, CPU-only or with NVIDIA GPU.
+       See :ref:`coco_security_architecture` for target profiles and
+       :ref:`coco_security_acceptance` for recorded acceptance evidence and limits.
 
 Configuration
 -------------
@@ -92,7 +94,8 @@ the :ref:`NVFlare CC Deployment Guide <cc_deployment_guide>` for that provisioni
 The CoCo provisioning path generates ``CCManager`` and ``CoCoAuthorizer`` resources for protected clients and servers,
 and for the ordinary participants that need verifier-only operation. It also provisions the required participant set
 and identity-binding requirements. See :ref:`coco_security_architecture` and the
-:github_nvflare_link:`CoCo CCManager configuration guide <examples/devops/coco/provision/CCMANAGER.md>`.
+:ref:`CoCo peer-attestation protocol <coco_security_peer_attestation>`, with configuration in
+:doc:`../deployment`.
 
 Runtime Behavior
 ================

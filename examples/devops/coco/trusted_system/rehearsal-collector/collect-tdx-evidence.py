@@ -15,8 +15,8 @@
 
 """Collect a fresh TDX quote and CCEL through the guest-local AA REST API.
 
-This program does NOT approve the evidence. The trusted host must independently
-verify the quote, nonce, InitData, Intel collateral, and complete CCEL replay.
+This program transports evidence. The host verifies the quote, nonce, InitData,
+Intel collateral, and complete CCEL replay before exporting reference values.
 """
 
 import base64

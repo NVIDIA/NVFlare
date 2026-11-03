@@ -17,8 +17,10 @@
 import fcntl
 import json
 import os
+import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -31,16 +33,21 @@ from cvm.common.errors import BuildError
 from cvm.common.io import write_json
 from cvm.host.launcher import (
     GRACEFUL_SHUTDOWN_SECONDS,
+    QEMU_KILL_SECONDS,
+    QEMU_TERMINATE_SECONDS,
+    SHUTDOWN_WAIT_SECONDS,
     find_bundle,
     gpu_devices,
     graceful_stop,
     launch,
+    preserve_applog,
     qemu_command,
     qmp_powerdown,
     qmp_socket_path,
     run_vm,
     runtime_state_path,
     select_gpus,
+    serial_capture,
     shutdown,
     vfio_gpus,
 )
@@ -68,6 +75,84 @@ DISKS = [f"/disk-{i}" for i in range(5)]
 
 
 class LauncherTests(unittest.TestCase):
+    def test_previous_applog_is_preserved_with_bounded_retention(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            applog = directory / "applog.qcow2"
+            outputs = []
+            for index in range(5):
+                applog.write_bytes(f"run-{index}".encode())
+                outputs.append(preserve_applog(directory, applog, limit=3))
+            retained = sorted((directory / "applog-history").glob("*.qcow2"))
+            self.assertEqual(len(retained), 3)
+            self.assertEqual([path.read_bytes() for path in retained], [b"run-2", b"run-3", b"run-4"])
+            self.assertTrue(all(path.stat().st_mode & 0o777 == 0o600 for path in retained))
+            self.assertTrue(all(not path.exists() for path in outputs[:2]))
+
+    def test_applog_copy_failure_does_not_block_launch_or_leave_a_partial_archive(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            applog = directory / "applog.qcow2"
+            applog.write_bytes(b"public log")
+            history = directory / "applog-history"
+            history.mkdir()
+            retained = []
+            for index in range(3):
+                archive = history / f"applog-{index}.qcow2"
+                archive.write_bytes(f"old-{index}".encode())
+                retained.append(archive)
+            with (
+                patch("cvm.host.launcher.subprocess.run", side_effect=subprocess.CalledProcessError(1, "cp")),
+                patch("cvm.host.launcher.shutil.copyfile", side_effect=OSError("disk full")),
+                self.assertWarnsRegex(RuntimeWarning, "continuing launch"),
+            ):
+                self.assertIsNone(preserve_applog(directory, applog))
+            self.assertEqual(sorted(history.iterdir()), retained)
+
+    def test_applog_copy_removes_partial_archive_left_by_a_crash(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            applog = directory / "applog.qcow2"
+            applog.write_bytes(b"public log")
+            history = directory / "applog-history"
+            history.mkdir()
+            stale = history / ".applog-1.qcow2.tmp"
+            stale.write_bytes(b"partial")
+
+            target = preserve_applog(directory, applog)
+
+            self.assertFalse(stale.exists())
+            self.assertEqual(target.read_bytes(), b"public log")
+
+    def test_applog_history_setup_failure_does_not_block_launch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            applog = directory / "applog.qcow2"
+            applog.write_bytes(b"public log")
+            with (
+                patch("cvm.host.launcher.Path.mkdir", side_effect=OSError("no inodes")),
+                self.assertWarnsRegex(RuntimeWarning, "continuing launch"),
+            ):
+                self.assertIsNone(preserve_applog(directory, applog))
+
+    def test_applog_history_symlink_remains_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            applog = directory / "applog.qcow2"
+            applog.write_bytes(b"public log")
+            outside = directory / "outside"
+            outside.mkdir()
+            (directory / "applog-history").symlink_to(outside, target_is_directory=True)
+
+            with self.assertRaisesRegex(BuildError, "Unsafe applog history directory"):
+                preserve_applog(directory, applog)
+
+    def test_shutdown_default_accounts_for_both_grace_periods_and_qemu_cleanup(self):
+        self.assertGreater(
+            SHUTDOWN_WAIT_SECONDS,
+            GRACEFUL_SHUTDOWN_SECONDS * 2 + QEMU_TERMINATE_SECONDS + QEMU_KILL_SECONDS,
+        )
+
     def test_duplicate_launch_preserves_the_live_qmp_socket(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
@@ -200,10 +285,191 @@ class LauncherTests(unittest.TestCase):
             patch("cvm.host.launcher.write_runtime_state"),
         ):
             self.assertEqual(run_vm(["qemu"], directory, qmp="/run/x.qmp"), 0)
-        self.assertEqual(spawn.call_args.kwargs, {"stdin": subprocess.DEVNULL, "start_new_session": True})
+        self.assertEqual(
+            spawn.call_args.kwargs, {"stdin": subprocess.DEVNULL, "start_new_session": True, "pass_fds": ()}
+        )
         with patch.dict("os.environ", {"CVM_RUNTIME_DIRECTORY": "/run/test"}):
             self.assertEqual(qmp_socket_path("/srv/cvm/delivery").suffix, ".qmp")
             self.assertEqual(qmp_socket_path("/srv/cvm/delivery").parent, Path("/run/test"))
+
+    def test_early_serial_failure_is_retained_before_applog_exists(self):
+        process = Mock(**{"poll.return_value": 0, "wait.return_value": 0})
+        inherited = []
+
+        def spawn(command, **kwargs):
+            fd = kwargs["pass_fds"][0]
+            inherited.append(fd)
+            self.assertEqual(command[command.index("-serial") + 1], "chardev:cvm-console")
+            self.assertIn(f"logfile=/proc/self/fd/{fd}", command[command.index("-chardev") + 1])
+            os.write(fd, b"CVM_STARTUP_FAILURE=verity\n")
+            return process
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("cvm.host.launcher.subprocess.Popen", side_effect=spawn),
+            patch("cvm.host.launcher.runtime_state_path", return_value=Path(directory) / "state.json"),
+            patch("cvm.host.launcher.write_runtime_state"),
+        ):
+            self.assertEqual(run_vm(["qemu", "-serial", "stdio", "-monitor", "none"], directory), 0)
+            logs = list(Path(directory).glob("console-*.log"))
+            self.assertEqual(len(logs), 1)
+            self.assertEqual(logs[0].read_bytes(), b"CVM_STARTUP_FAILURE=verity\n")
+            self.assertEqual(logs[0].stat().st_mode & 0o777, 0o600)
+            self.assertFalse((Path(directory) / "applog.qcow2").exists())
+        with self.assertRaises(OSError):
+            os.fstat(inherited[0])
+
+    @unittest.skipUnless(
+        sys.platform == "linux" and shutil.which("qemu-system-x86_64"),
+        "Console backend smoke check requires Linux QEMU, without a guest image or TEE",
+    )
+    def test_real_qemu_console_backend_retains_output(self):
+        # Exercise the exact generated chardev options with real QEMU. Its
+        # empty machine has no guest or disks; HMP supplies deterministic bytes
+        # through the same backend that serial output uses in the launcher.
+        command = [
+            shutil.which("qemu-system-x86_64"),
+            "-machine",
+            "none",
+            "-nodefaults",
+            "-display",
+            "none",
+            "-serial",
+            "stdio",
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            with serial_capture(command, directory) as (captured, fds):
+                self.assertTrue(fds, "Console capture unexpectedly fell back")
+                index = captured.index("-serial")
+                captured[index] = "-monitor"
+                result = subprocess.run(
+                    captured,
+                    input=b"info version\nquit\n",
+                    capture_output=True,
+                    pass_fds=fds,
+                    timeout=10,
+                )
+            self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
+            self.assertIn(b"QEMU", result.stdout)
+            log = next(Path(directory).glob("console-*.log"))
+            self.assertEqual(log.read_bytes(), result.stdout)
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+
+    def test_serial_capture_retention_and_unwritable_storage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for number in range(5):
+                with serial_capture(["qemu", "-serial", "stdio"], directory) as (_, fds):
+                    os.write(fds[0], str(number).encode())
+            logs = sorted(Path(directory).glob("console-*.log"))
+            self.assertEqual([log.read_bytes() for log in logs], [b"2", b"3", b"4"])
+            with patch("cvm.host.launcher.os.open", side_effect=OSError("disk full")), self.assertWarns(RuntimeWarning):
+                with serial_capture(["qemu", "-serial", "stdio"], directory) as (command, fds):
+                    self.assertEqual(command, ["qemu", "-serial", "stdio"])
+                    self.assertEqual(fds, ())
+
+    def test_serial_capture_caps_bytes_and_keeps_terminal_output_after_overflow(self):
+        # A real child writes more than a pipe buffer after the limit. It must
+        # finish and retain all stdout, including bytes sent after capture stops.
+        chunk = b"console output\n" * 1024
+        code = (
+            "import os, sys\n"
+            f"chunk = {chunk!r}\n"
+            "for _ in range(32):\n"
+            "    os.write(int(sys.argv[1]), chunk)\n"
+            "    sys.stdout.buffer.write(chunk)\n"
+            "sys.stdout.buffer.write(b'terminal still works\\n')\n"
+        )
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("cvm.host.launcher.CONSOLE_LOG_MAX_BYTES", 100),
+            self.assertWarnsRegex(RuntimeWarning, "byte limit"),
+        ):
+            with serial_capture(["qemu", "-serial", "stdio"], directory) as (_, fds):
+                result = subprocess.run(
+                    [sys.executable, "-c", code, str(fds[0])],
+                    pass_fds=fds,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    check=True,
+                    timeout=10,
+                )
+            self.assertEqual(result.stdout, chunk * 32 + b"terminal still works\n")
+            log = next(Path(directory).glob("console-*.log"))
+            self.assertEqual(log.read_bytes(), chunk[:100])
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+
+    def test_serial_capture_write_failure_keeps_draining(self):
+        actual_write = os.write
+
+        def write(fd, data):
+            if stat.S_ISREG(os.fstat(fd).st_mode):
+                raise OSError("disk full")
+            return actual_write(fd, data)
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("cvm.host.launcher.os.write", side_effect=write),
+            self.assertWarnsRegex(RuntimeWarning, "terminal output only"),
+        ):
+            with serial_capture(["qemu", "-serial", "stdio"], directory) as (_, fds):
+                # A child keeps writing after the simulated log-disk failure.
+                result = subprocess.run(
+                    [sys.executable, "-c", "import os, sys; os.write(int(sys.argv[1]), b'x' * 262144)", str(fds[0])],
+                    pass_fds=fds,
+                    check=True,
+                    timeout=10,
+                )
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(next(Path(directory).glob("console-*.log")).stat().st_size, 0)
+
+    def test_serial_capture_handles_partial_file_writes_within_byte_limit(self):
+        actual_write = os.write
+
+        def write(fd, data):
+            return actual_write(fd, data[:3] if stat.S_ISREG(os.fstat(fd).st_mode) else data)
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("cvm.host.launcher.os.write", side_effect=write),
+            patch("cvm.host.launcher.CONSOLE_LOG_MAX_BYTES", 10),
+            self.assertWarnsRegex(RuntimeWarning, "byte limit"),
+        ):
+            with serial_capture(["qemu", "-serial", "stdio"], directory) as (_, fds):
+                os.write(fds[0], b"0123456789discarded")
+            self.assertEqual(next(Path(directory).glob("console-*.log")).read_bytes(), b"0123456789")
+
+    def test_serial_capture_worker_failure_falls_back_and_closes_descriptors(self):
+        actual_pipe = os.pipe
+        descriptors = []
+
+        def pipe():
+            pair = actual_pipe()
+            descriptors.extend(pair)
+            return pair
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("cvm.host.launcher.os.pipe", side_effect=pipe),
+            patch("cvm.host.launcher.threading.Thread.start", side_effect=RuntimeError("no threads")),
+            self.assertWarns(RuntimeWarning),
+        ):
+            with serial_capture(["qemu", "-serial", "stdio"], directory) as (command, fds):
+                self.assertEqual(command, ["qemu", "-serial", "stdio"])
+                self.assertEqual(fds, ())
+        for fd in descriptors:
+            with self.assertRaises(OSError):
+                os.fstat(fd)
+
+    def test_serial_capture_never_follows_a_preexisting_symlink(self):
+        with tempfile.TemporaryDirectory() as directory, patch("cvm.host.launcher.time.time_ns", return_value=123):
+            root = Path(directory)
+            outside = root / "private.txt"
+            outside.write_text("private")
+            (root / "console-123.log").symlink_to(outside)
+            with self.assertWarns(RuntimeWarning):
+                with serial_capture(["qemu", "-serial", "stdio"], directory) as (_, fds):
+                    self.assertEqual(fds, ())
+            self.assertEqual(outside.read_text(), "private")
 
     def test_startup_signals_stop_qemu_and_restore_handlers(self):
         for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT, signal.SIGINT):
@@ -501,7 +767,30 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(command.count("pcie-root-port,id=gpu2,bus=pcie.0,chassis=2,slot=2,pref64-reserve=256G"), 1)
         self.assertIn('{"qom-type": "iommufd", "id": "iommufd0"}', command)
 
-    def test_shutdown_signals_only_validated_launcher_state(self):
+    def test_shutdown_requests_powerdown_only_for_validated_launcher_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            delivery = Path(temporary) / "delivery"
+            runtime = Path(temporary) / "run"
+            delivery.mkdir()
+            with patch.dict("os.environ", {"CVM_RUNTIME_DIRECTORY": str(runtime)}):
+                state = runtime_state_path(delivery)
+                state.parent.mkdir()
+                write_json(state, {"launcher_pid": 123, "launcher_start": 456})
+
+                def remove_state(path):
+                    self.assertEqual(path, qmp_socket_path(delivery))
+                    state.unlink()
+
+                with (
+                    patch("cvm.host.launcher._process_start", return_value=456),
+                    patch("cvm.host.launcher.qmp_powerdown", side_effect=remove_state) as powerdown,
+                    patch("cvm.host.launcher.os.kill") as kill,
+                ):
+                    shutdown(delivery)
+                powerdown.assert_called_once_with(qmp_socket_path(delivery))
+                kill.assert_not_called()
+
+    def test_shutdown_signals_validated_launcher_when_qmp_is_unavailable(self):
         with tempfile.TemporaryDirectory() as temporary:
             delivery = Path(temporary) / "delivery"
             runtime = Path(temporary) / "run"
@@ -517,9 +806,35 @@ class LauncherTests(unittest.TestCase):
 
                 with (
                     patch("cvm.host.launcher._process_start", return_value=456),
-                    patch("cvm.host.launcher.os.kill", side_effect=remove_state),
+                    patch("cvm.host.launcher.qmp_powerdown", side_effect=OSError("QMP unavailable")),
+                    patch("cvm.host.launcher.os.kill", side_effect=remove_state) as kill,
                 ):
                     shutdown(delivery)
+                kill.assert_called_once_with(123, signal.SIGTERM)
+
+    def test_shutdown_signals_validated_launcher_when_guest_ignores_qmp(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            delivery = Path(temporary) / "delivery"
+            runtime = Path(temporary) / "run"
+            delivery.mkdir()
+            with patch.dict("os.environ", {"CVM_RUNTIME_DIRECTORY": str(runtime)}):
+                state = runtime_state_path(delivery)
+                state.parent.mkdir()
+                write_json(state, {"launcher_pid": 123, "launcher_start": 456})
+
+                def remove_state(pid, sent_signal):
+                    self.assertEqual((pid, sent_signal), (123, signal.SIGTERM))
+                    state.unlink()
+
+                with (
+                    patch("cvm.host.launcher._process_start", return_value=456),
+                    patch("cvm.host.launcher.qmp_powerdown") as powerdown,
+                    patch("cvm.host.launcher.GRACEFUL_SHUTDOWN_SECONDS", 0),
+                    patch("cvm.host.launcher.os.kill", side_effect=remove_state) as kill,
+                ):
+                    shutdown(delivery, timeout=1)
+                powerdown.assert_called_once_with(qmp_socket_path(delivery))
+                kill.assert_called_once_with(123, signal.SIGTERM)
 
 
 if __name__ == "__main__":

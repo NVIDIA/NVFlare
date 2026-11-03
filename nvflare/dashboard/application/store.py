@@ -31,7 +31,6 @@ _PROJECT_WRITABLE = {
     "server1",
     "frozen",
     "public",
-    "cc_mode",
 }
 
 

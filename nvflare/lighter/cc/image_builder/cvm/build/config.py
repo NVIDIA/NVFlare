@@ -19,13 +19,20 @@ import ipaddress
 import json
 import os
 import re
+import struct
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
 import yaml
 
 from ..artifacts.bundle import load_public_keys
-from ..common.contracts import HEADER_BYTES, PLATFORMS, STORAGE_PROFILE, minimum_proof_lifetime
+from ..common.contracts import (
+    DEFAULT_EXPIRY_WARNING_SECONDS,
+    HEADER_BYTES,
+    PLATFORMS,
+    STORAGE_PROFILE,
+    minimum_proof_lifetime,
+)
 from ..common.errors import BuildError, ConfigurationError, require, require_config
 from ..common.io import canonical, digest_file, read_json
 from ..common.references import validate_references
@@ -42,6 +49,9 @@ PRIVATE_KEY_MARKERS = (
     b"-----BEGIN DSA PRIVATE KEY-----",
     b"-----BEGIN OPENSSH PRIVATE KEY-----",
 )
+
+
+NVAT_SHARED_LIBRARY = b"libnvat.so.1"
 
 
 SOURCE = Path(__file__).resolve().parents[2]
@@ -149,7 +159,7 @@ PROFILE_DEFAULTS = {
     "required_system_packages": DEFAULT_PACKAGES,
     # Unmodified CoCo v0.23.0 / Trustee v0.22.0.
     "trustee_commit": TRUSTEE_COMMIT,
-    "kbs_url": "https://kbs.example.org:8443",
+    "kbs_url": "https://trustee.example.org:8443",
     "kbs_cert": str(INPUTS / "kbs-ca.pem"),
     "as_public_key": str(INPUTS / "as-public.pem"),
     "token_algorithm": "ES256",
@@ -166,14 +176,14 @@ PROFILE_DEFAULTS = {
             "enabled": True,
             "attester": "snp",
             "firmware": "/usr/share/ovmf/OVMF.amdsev.fd",
-            "kbs_client": str(INPUTS / "kbs-client"),
+            "kbs_client": str(INPUTS / "kbs-client-cpu"),
             "cpu_model": "EPYC-v4",
         },
         "intel_tdx": {
             "enabled": True,
             "attester": "tdx",
             "firmware": str(INPUTS / "OVMF.inteltdx.fd"),
-            "kbs_client": str(INPUTS / "kbs-client"),
+            "kbs_client": str(INPUTS / "kbs-client-cpu"),
             "cpu_model": "host",
             "quote_generation": {"type": "vsock", "cid": 2, "port": 4050},
         },
@@ -209,6 +219,100 @@ def contains_private_key(path):
     return False
 
 
+def _elf_dependencies(path):
+    """Read DT_NEEDED names without trusting incidental strings in the ELF."""
+    data = Path(path).read_bytes()
+    if len(data) < 16 or data[:4] != b"\x7fELF":
+        return set()
+    elf_class, encoding = data[4:6]
+    require(elf_class in (1, 2) and encoding in (1, 2), "Invalid kbs-client ELF format")
+    endian = "<" if encoding == 1 else ">"
+    header_format = "HHIIIIIHHHHHH" if elf_class == 1 else "HHIQQQIHHHHHH"
+    program_format = "IIIIIIII" if elf_class == 1 else "IIQQQQQQ"
+    dynamic_format = "iI" if elf_class == 1 else "qQ"
+    try:
+        header = struct.unpack_from(endian + header_format, data, 16)
+    except struct.error:
+        raise BuildError("Invalid kbs-client ELF header") from None
+    program_offset, program_size, program_count = header[4], header[8], header[9]
+    entry_size = struct.calcsize(endian + program_format)
+    require(
+        program_size >= entry_size and program_count < 4096,
+        "Invalid kbs-client ELF program headers",
+    )
+    require(
+        program_offset + program_size * program_count <= len(data),
+        "Invalid kbs-client ELF program headers",
+    )
+    loads = []
+    dynamic = None
+    for index in range(program_count):
+        entry = struct.unpack_from(endian + program_format, data, program_offset + index * program_size)
+        entry_type = entry[0]
+        offset, virtual_address, file_size = (
+            (entry[1], entry[2], entry[4]) if elf_class == 1 else (entry[2], entry[3], entry[5])
+        )
+        require(offset + file_size <= len(data), "Invalid kbs-client ELF segment")
+        if entry_type == 1:
+            loads.append((virtual_address, offset, file_size))
+        elif entry_type == 2:
+            require(dynamic is None, "Invalid kbs-client ELF dynamic segments")
+            dynamic = (offset, file_size)
+    if dynamic is None:
+        return set()
+
+    dynamic_size = struct.calcsize(endian + dynamic_format)
+    dynamic_offset, dynamic_length = dynamic
+    require(dynamic_length % dynamic_size == 0, "Invalid kbs-client ELF dynamic table")
+    needed = []
+    string_address = string_size = None
+    terminated = False
+    for offset in range(dynamic_offset, dynamic_offset + dynamic_length, dynamic_size):
+        tag, value = struct.unpack_from(endian + dynamic_format, data, offset)
+        if tag == 0:
+            terminated = True
+            break
+        if tag == 1:
+            needed.append(value)
+        elif tag == 5:
+            string_address = value
+        elif tag == 10:
+            string_size = value
+    require(terminated, "Invalid kbs-client ELF dynamic table")
+    if not needed:
+        return set()
+    require(string_address is not None and string_size, "Invalid kbs-client ELF string table")
+    candidates = [
+        file_offset + string_address - virtual_address
+        for virtual_address, file_offset, file_size in loads
+        if virtual_address <= string_address and string_address + string_size <= virtual_address + file_size
+    ]
+    require(len(candidates) == 1, "Invalid kbs-client ELF string table")
+    strings = data[candidates[0] : candidates[0] + string_size]
+    dependencies = set()
+    for offset in needed:
+        require(offset < len(strings), "Invalid kbs-client ELF dependency")
+        end = strings.find(b"\0", offset)
+        require(end >= 0, "Invalid kbs-client ELF dependency")
+        dependencies.add(strings[offset:end])
+    return dependencies
+
+
+def validate_kbs_client_linkage(path, gpu):
+    """Reject a selector client whose NVAT linkage disagrees with its profile."""
+    found = NVAT_SHARED_LIBRARY in _elf_dependencies(path)
+    if gpu == "nvidia_cc":
+        require(
+            found,
+            "GPU profile kbs-client must link libnvat.so.1; build it with the nvidia-attester feature",
+        )
+    else:
+        require(
+            not found,
+            "CPU-only profile kbs-client must not link libnvat.so.1; build it without the nvidia-attester feature",
+        )
+
+
 class UniqueLoader(yaml.SafeLoader):
     pass
 
@@ -242,12 +346,12 @@ def load_yaml(path):
 
 
 def local_path(config_path, value, directory=False):
-    require(isinstance(value, str) and value, "Expected input path")
+    require_config(isinstance(value, str) and value, "Expected input path")
     path = Path(value)
     if not path.is_absolute():
         path = Path(config_path).resolve().parent / path
     path = path.resolve()
-    require(path.is_dir() if directory else path.is_file(), f"Input does not exist: {path}")
+    require_config(path.is_dir() if directory else path.is_file(), "Input does not exist; check the configured path")
     return str(path)
 
 
@@ -424,7 +528,14 @@ def profile(path):
         value["attestation_policy_id"] != "default",
         "Bare-metal CVMs must not replace the default CoCo attestation policy",
     )
-    require(urlparse(value.get("kbs_url", "")).scheme == "https", "KBS requires HTTPS")
+    try:
+        kbs = urlparse(value.get("kbs_url", ""))
+        kbs_port = kbs.port if kbs.port is not None else 443
+    except (ValueError, TypeError):
+        raise BuildError("KBS URL contains an invalid hostname or port") from None
+    require(kbs.scheme == "https" and kbs.hostname, "KBS requires an HTTPS URL with a hostname")
+    require(not kbs.username and not kbs.password, "KBS URL must not contain credentials")
+    require(1 <= kbs_port <= 65535, "KBS URL contains an invalid port")
     require(value.get("token_algorithm") in ("RS256", "ES256", "EdDSA"), "Pin the AS token algorithm")
     require(isinstance(value.get("token_issuer"), str) and value["token_issuer"], "Pin the AS token issuer")
     # Reject unfilled documentation placeholders such as <exact-version>.
@@ -453,13 +564,20 @@ def profile(path):
         require(type(value.get(key)) is int and value[key] > 0, f"Invalid {key}")
     resolve_root_overlay_max_mib(value)
     ports(value.get("bootstrap_egress", []))
+    require(kbs_port in value["bootstrap_egress"], "bootstrap_egress must include the kbs_url HTTPS port")
     require(isinstance(value.get("platforms"), dict) and value["platforms"], "No platforms configured")
     for name, settings in value["platforms"].items():
         require(name in PLATFORMS and isinstance(settings, dict), "Unsupported platform")
         require(settings.get("attester") == ("snp" if name == PLATFORMS[0] else "tdx"), "Attester mismatch")
         require(type(settings.get("enabled", True)) is bool, "enabled must be boolean")
+        require(settings.get("cpu_model") and re.fullmatch(r"[A-Za-z0-9_.-]+", settings["cpu_model"]), "Pin CPU model")
+    enabled_platforms = [p for p, v in value["platforms"].items() if v.get("enabled", True)]
+    require(enabled_platforms, "At least one platform must be enabled")
+    for name in enabled_platforms:
+        settings = value["platforms"][name]
         for key in ("firmware", "kbs_client"):
             settings[key] = local_path(path, settings.get(key))
+        validate_kbs_client_linkage(settings["kbs_client"], value["gpu"])
         if settings.get("kbs_client_provenance") is not None:
             settings["kbs_client_provenance"] = local_path(path, settings["kbs_client_provenance"])
             validate_kbs_client_provenance(
@@ -472,13 +590,11 @@ def profile(path):
         if settings.get("shim"):
             require(name == "intel_tdx", "Shim direct boot currently requires the TDX/QEMU 10 profile")
             settings["shim"] = local_path(path, settings["shim"])
-        require(settings.get("cpu_model") and re.fullmatch(r"[A-Za-z0-9_.-]+", settings["cpu_model"]), "Pin CPU model")
     for key in ("base_image", "build_firmware", "kbs_cert", "as_public_key", "attestation_policy", "reference_values"):
         value[key] = local_path(path, value.get(key))
     if value.get("approval_signing_key") is not None:
         value["approval_signing_key"] = local_path(path, value["approval_signing_key"])
 
-    enabled_platforms = [p for p, v in value["platforms"].items() if v.get("enabled", True)]
     references = read_json(value["reference_values"])
     validate_references(references, enabled_platforms, gpu=value["gpu"] == "nvidia_cc")
     if "amd_sev_snp" in enabled_platforms:
@@ -556,9 +672,17 @@ def project(build_config, project_config=None):
         set(value) == {"trustee", "approval"}, "Project configuration must contain only trustee and approval"
     )
     service = value["trustee"]
+    trustee_required = {"url", "ca", "admin_token_file"}
     require_config(
-        isinstance(service, dict) and set(service) == {"url", "ca", "admin_token_file"},
-        "Project trustee requires url, ca and admin_token_file",
+        isinstance(service, dict)
+        and trustee_required <= set(service)
+        and set(service) <= trustee_required | {"expiry_warning_seconds"},
+        "Project trustee requires url, ca and admin_token_file; expiry_warning_seconds is optional",
+    )
+    warning_window = service.setdefault("expiry_warning_seconds", DEFAULT_EXPIRY_WARNING_SECONDS)
+    require_config(
+        type(warning_window) is int and warning_window >= 0,
+        "Project trustee expiry_warning_seconds must be a nonnegative integer",
     )
     endpoint = service["url"]
     require_config(isinstance(endpoint, str) and endpoint, "Trustee requires an HTTPS URL")

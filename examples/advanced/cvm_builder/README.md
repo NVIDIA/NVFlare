@@ -2,6 +2,9 @@
 
 This example uses the unified confidential-computing provisioning interface to
 build a TDX server and an AMD SEV-SNP client with an NVIDIA confidential GPU.
+For the documented starting point, use the
+[single-platform CPU-only example](cpu_only/README.md); return here when the
+federation requires a mixed CPU/GPU topology.
 
 The project-wide [`cc_project.yml`](cc_project.yml) contains the Trustee,
 approval, and trusted CVM Builder settings. Each protected participant selects
@@ -20,6 +23,19 @@ runs the complete Trustee plus hardware matrix and writes the report used by
 [exact-manifest approval procedure](../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md#21-exact-manifest-acceptance-and-approval)
 before using a new generic image here.
 
+The normal lifecycle is: create and approve each reusable generic image once
+with `cvmctl build`; run `nvflare provision` below, which invokes `cvmctl vault`
+for the protected participants; then launch each authenticated delivery on its
+matching TEE host with `cvmctl run`. Use the lower-level finalize, approval,
+publish, and pull commands for the documented exact-manifest handoffs, separate
+roles/hosts, and recovery. Combined automation requires a site-supplied adapter;
+it is optional.
+
+Start the client first and let it prepare its vault and workload, then start
+the server. CCManager gives required clients 600 seconds from its initial
+membership check to register. See the [operations checklist](../../../docs/user_guide/confidential_computing/operations.rst#bare-metal-cvm-checklist)
+for cold-start timing and troubleshooting when service logs remain encrypted.
+
 Then run:
 
 ```bash
@@ -32,12 +48,28 @@ directory unless `build_tools.bare_metal_cvm.output_root` selects an external
 private build location. Common delivery records are written to
 `cc_manifests/<participant>.json`.
 
-The bundled client job uses `ClientAPIExecutor` to launch
+The bundled client job uses `CVMClientAPIExecutor` to launch
 `/local/custom/client.py` from the measured application image. Because the job
 does not ship custom code, `cc_site-1.yml` explicitly grants that exact class in
 the participant's `class_allow_list`. This is a reviewed per-site opt-in; do not
 replace it with a package prefix or add it to the global default allowlist.
 
+The job also declares full and error `JobLogStreamer` components, and both the
+mixed and CPU-only participant allowlists include that exact reviewed class.
+It logs round/batch progress through Python logging for retrieval during a long
+round. Logs leave the guest over the authenticated FLARE connection and are
+disclosed to the trusted server and authorized admin; keep private inputs and
+model content out of those messages. Sites can set `allow_log_streaming: false`
+before signing. See [live CC progress logs](../../../docs/user_guide/confidential_computing/operations.rst#live-progress-logs-from-confidential-participants)
+and the [general streaming guide](../../../docs/programming_guide/live_log_streaming.rst).
+
 See the [unified deployment guide](../../../docs/user_guide/confidential_computing/deployment.rst),
 the [CVM build guide](../../../nvflare/lighter/cc/image_builder/BUILD_GUIDE.md),
 and the [Trustee guide](../../../nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md).
+
+Retrieve client job logs through the authenticated admin session with
+`get_job_log JOB_ID all` and `download_job_components JOB_ID`; they are separate
+from the ordinary job-workspace download. For failures before the workload
+starts, the launcher retains `console-<timestamp>.log` beside the delivery.
+See the [shared CC log-retrieval guide](../../../docs/user_guide/confidential_computing/operations.rst#retrieve-job-logs-and-early-boot-diagnostics)
+for storage locations, retention, and the site's `allow_log_streaming` opt-out.

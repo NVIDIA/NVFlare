@@ -25,6 +25,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[5]
 SERVICE = ROOT / "examples/devops/coco/service"
+# The integration flow spawns several shell/Python processes. Leave room for
+# scheduler delay in highly parallel CI while retaining a hard failure bound.
+SCRIPT_TIMEOUT_SECONDS = 60
 POST = r"""
 import json, os, sys
 from pathlib import Path
@@ -60,20 +63,13 @@ elif stage == "drivers":
         os.kill(os.getppid(), signal.SIGTERM)
 """
 COMMON = r"""
-source "$TEST_ROOT/platform.env"
 SCRIPT_ROOT="$TEST_ROOT"
-KBS_CLIENT="$TEST_ROOT/kbs-client"
-ADMIN_TOKEN="$TEST_ROOT/admin-token"
-TRUSTEE_PUBLIC_CERT="$TEST_ROOT/cert"
-KBS_POLICY_DIR="$TEST_ROOT/kbs-policy"
-AS_STORAGE_DIR="$TEST_ROOT/as"
-TRUSTEE_PROJECT="test"
-TRUSTEE_COMPOSE="$TEST_ROOT/compose.yml"
+STATE_DIR="$TEST_ROOT/private-state"
+mkdir -p "$STATE_DIR"
 KBS_URL="https://service.test:8443"
+TRUSTEE_PUBLIC_CERT="$TEST_ROOT/cert"
+ADMIN_TOKEN="$TEST_ROOT/credential"
 lock_platform_reference_update() { echo LOCK >> "$TEST_ROOT/events"; }
-require_sudo() { :; }
-sleep() { :; }
-need_file() { [[ -f "$1" ]]; }
 die() { echo "$*" >&2; exit 1; }
 python3() {
     if [[ "${2:-}" == post-stage ]]; then
@@ -82,28 +78,25 @@ python3() {
         "$REAL_PYTHON" "$@"
     fi
 }
-sudo() {
-    if [[ "$1" == docker ]]; then
-        echo RESTART >> "$TEST_ROOT/events"
-        echo RESTART >> "$TEST_ROOT/calls"
-        if [[ ${TEST_MODE:-} == lost_on_restart ]]; then
-            rm -f "$TEST_ROOT/state/allowed_driver_versions.json"
-        fi
-        return
-    fi
-    "$@"
-}
 kbs_admin() {
     [[ "$1" == get-reference-value && "$2" == --id ]] || return 2
     echo "GET:$3" >> "$TEST_ROOT/events"
     cat "$TEST_ROOT/state/$3.json"
+}
+verify_gpu_references() {
+    local values=$1 stage reference_id raw
+    for stage in vbios drivers; do
+        reference_id=$(python3 "$SCRIPT_ROOT/lib/gpu-reference-values.py" reference-id "$values" "$stage")
+        raw=$(kbs_admin get-reference-value --id "$reference_id")
+        python3 "$SCRIPT_ROOT/lib/gpu-reference-values.py" compare-stage "$values" "$stage" "$raw"
+    done
 }
 """
 
 
 @pytest.fixture
 def kit(tmp_path):
-    for name in ("02g-install-gpu-reference-values.sh", "10g-verify-gpu-reference-values.sh"):
+    for name in ("02g-install-gpu-reference-values.sh",):
         shutil.copyfile(SERVICE / name, tmp_path / name)
     for name in ("gpu-reference-values.py", "platform-reference-values.py"):
         destination = tmp_path / "lib" / name
@@ -114,18 +107,7 @@ def kit(tmp_path):
     )
     (tmp_path / "lib/common.sh").write_text(COMMON)
     (tmp_path / "fake-post.py").write_text(POST)
-    (tmp_path / "policies").mkdir()
-    shutil.copyfile(SERVICE / "policies/default_gpu.rego", tmp_path / "policies/default_gpu.rego")
-    (tmp_path / "as/attestation_service_policy").mkdir(parents=True)
-    shutil.copyfile(SERVICE / "policies/default_gpu.rego", tmp_path / "as/attestation_service_policy/default_gpu.rego")
-    (tmp_path / "as/attestation_service_policy/default_cpu.rego").write_text("approved cpu policy\n")
-    (tmp_path / "kbs-policy").mkdir()
-    (tmp_path / "kbs-policy/resource-policy.rego").write_text("default deny\n")
-    for name in ("kbs-client", "admin-token", "cert", "compose.yml"):
-        (tmp_path / name).touch()
-    (tmp_path / "platform.env").write_text(
-        'PLATFORM_REFERENCE_VALUES_FILE="/existing/cpu-reference-values.json"\nGPU_REFERENCE_VALUES_FILE=""\n'
-    )
+    (tmp_path / "platform.env").write_text('EXISTING_SERVICE_SETTING="preserved"\n')
     approved = {
         "schema": "coco-gpu-reference-values/v1",
         "allowed_driver_versions": ["550.54.15"],
@@ -135,6 +117,8 @@ def kit(tmp_path):
     (tmp_path / "state").mkdir()
     (tmp_path / "state/allowed_driver_versions.json").write_text('["old-driver"]')
     (tmp_path / "state/allowed_vbios_versions.json").write_text('["old-vbios"]')
+    (tmp_path / "state/snp_launch_measurement.json").write_text('["existing-snp-reference"]')
+    (tmp_path / "state/coco_tdx_profiles_v2.json").write_text('["existing-tdx-reference"]')
     # The production kit runs on Linux, whose realpath supports -e.
     # macOS's realpath lacks that option, so provide its strict-path equivalent.
     bin_dir = tmp_path / "bin"
@@ -164,23 +148,22 @@ def run_stage(kit, mode="normal"):
             "bash",
             str(root / "02g-install-gpu-reference-values.sh"),
             str(root / "approved.json"),
-            "--approve-gpu-reference-values",
         ],
         env={**environment, "TEST_MODE": mode},
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=SCRIPT_TIMEOUT_SECONDS,
     )
 
 
-def test_staged_install_preserves_cpu_and_policies(kit):
+def test_staged_install_preserves_other_references_and_operator_configuration(kit):
     root, _ = kit
     before = {
         name: (root / name).read_bytes()
         for name in (
-            "as/attestation_service_policy/default_cpu.rego",
-            "as/attestation_service_policy/default_gpu.rego",
-            "kbs-policy/resource-policy.rego",
+            "platform.env",
+            "state/snp_launch_measurement.json",
+            "state/coco_tdx_profiles_v2.json",
         )
     }
     result = run_stage(kit)
@@ -188,7 +171,6 @@ def test_staged_install_preserves_cpu_and_policies(kit):
     assert (root / "calls").read_text().splitlines() == ["clear", "vbios", "drivers"]
     assert json.loads((root / "state/allowed_driver_versions.json").read_text()) == ["550.54.15"]
     assert json.loads((root / "state/allowed_vbios_versions.json").read_text()) == ["96.00.5E.00.01"]
-    assert 'PLATFORM_REFERENCE_VALUES_FILE="/existing/cpu-reference-values.json"' in (root / "platform.env").read_text()
     assert all((root / name).read_bytes() == original for name, original in before.items())
 
 
@@ -199,9 +181,7 @@ def test_install_uses_saved_snapshot_after_incoming_file_changes(kit, mode):
     assert result.returncode == 0, result.stderr
     assert (root / "calls").read_text().splitlines() == ["clear", "vbios", "drivers"]
     assert json.loads((root / "state/allowed_driver_versions.json").read_text()) == ["550.54.15"]
-    assert json.loads((root / "approved-gpu-reference-values.json").read_text())["allowed_driver_versions"] == [
-        "550.54.15"
-    ]
+    assert list((root / "private-state").glob("gpu-references.*")) == []
 
 
 @pytest.mark.parametrize(
@@ -221,51 +201,35 @@ def test_ambiguous_or_interrupted_final_write_compensates_or_reports_unknown(kit
         assert "cleared after failure" in result.stderr
 
 
-def test_restart_lock_precedes_first_readback_and_restart(kit):
+def test_verify_only_reads_current_references_without_writes(kit):
     root, environment = kit
     assert run_stage(kit).returncode == 0
     (root / "events").unlink()
     result = subprocess.run(
-        ["bash", str(root / "10g-verify-gpu-reference-values.sh"), str(root / "approved.json"), "--restart-rvps"],
+        ["bash", str(root / "02g-install-gpu-reference-values.sh"), str(root / "approved.json"), "--verify-only"],
         env=environment,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=SCRIPT_TIMEOUT_SECONDS,
     )
     assert result.returncode == 0, result.stderr
-    assert (root / "events").read_text().splitlines()[:4] == [
+    assert (root / "events").read_text().splitlines() == [
         "LOCK",
         "GET:allowed_vbios_versions",
         "GET:allowed_driver_versions",
-        "RESTART",
     ]
 
 
-def test_readback_only_does_not_acquire_a_second_admin_lock(kit):
+def test_verifier_rejects_service_restart_option(kit):
     root, environment = kit
     assert run_stage(kit).returncode == 0
     (root / "events").unlink()
     result = subprocess.run(
-        ["bash", str(root / "10g-verify-gpu-reference-values.sh"), str(root / "approved.json")],
+        ["bash", str(root / "02g-install-gpu-reference-values.sh"), str(root / "approved.json"), "--restart-rvps"],
         env=environment,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=SCRIPT_TIMEOUT_SECONDS,
     )
-    assert result.returncode == 0, result.stderr
-    assert (root / "events").read_text().splitlines() == ["GET:allowed_vbios_versions", "GET:allowed_driver_versions"]
-
-
-@pytest.mark.parametrize("mode", ["normal", "lost_on_restart"])
-def test_restart_readback_requires_persisted_gpu_references(kit, mode):
-    root, environment = kit
-    assert run_stage(kit).returncode == 0
-    result = subprocess.run(
-        ["bash", str(root / "10g-verify-gpu-reference-values.sh"), str(root / "approved.json"), "--restart-rvps"],
-        env={**environment, "TEST_MODE": mode},
-        capture_output=True,
-        text=True,
-        timeout=20,
-    )
-    assert ("persistence verified" in result.stdout) == (mode == "normal")
-    assert (result.returncode == 0) == (mode == "normal")
+    assert result.returncode != 0
+    assert not (root / "events").exists()

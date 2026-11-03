@@ -62,7 +62,7 @@ def confidential_guest(argv, runtime):
                 obj[key] = value
         if obj.get("qom-type") in ("sev-guest", "sev-snp-guest", "tdx-guest"):
             guests.append(obj)
-    expected = "sev-snp-guest" if target["cpu_tee"] == "snp" else "tdx-guest"
+    expected = "sev-snp-guest" if target["cpu_tee"] == "amd_sev_snp" else "tdx-guest"
     if len(guests) != 1 or guests[0].get("qom-type") != expected:
         raise ValueError("Actual QEMU confidential guest does not match approved RuntimeClass")
     guest = guests[0]
@@ -77,7 +77,7 @@ def confidential_guest(argv, runtime):
         machine_fields[key] = value
     if machine_fields.get("confidential-guest-support") != guest["id"]:
         raise ValueError("QEMU machine does not select the approved confidential guest")
-    if target["cpu_tee"] == "tdx":
+    if target["cpu_tee"] == "intel_tdx":
         debug = guest.get("debug", False)
         if not (debug is False or (type(debug) is str and debug in ("off", "false"))):
             raise ValueError("TDX debug is not approved")
@@ -122,9 +122,16 @@ def rootfs_image(argv):
     return images[0] if images else None
 
 
-def capture(namespace, pod, config, kubeconfig="/etc/kubernetes/admin.conf"):
+def capture(namespace, pod, config, kubeconfig="/etc/kubernetes/admin.conf", platform_profile=None):
     kube = ["kubectl", "--kubeconfig", kubeconfig]
     obj = json.loads(subprocess.check_output(kube + ["-n", namespace, "get", "pod", pod, "-o", "json"]))
+    platform_helper = runpy.run_path(str(Path(__file__).resolve().parent / "lib/installed-platform.py"))
+    if platform_profile is None:
+        raise ValueError("An inspected platform profile is required for host-side launch capture")
+    snapshot = platform_helper["verify_snapshot"](platform_profile)
+    platform_helper["check_pod_node"](obj, snapshot)
+    if config != snapshot["installed_config"] or kubeconfig != snapshot["kubeconfig"]:
+        raise ValueError("Launch capture configuration differs from the inspected worker")
     uid = obj["metadata"]["uid"]
     cri = ["crictl", "--runtime-endpoint=unix:///run/containerd/containerd.sock"]
     sandboxes = json.loads(subprocess.check_output(cri + ["pods", "-o", "json"]))
@@ -186,6 +193,9 @@ def capture(namespace, pod, config, kubeconfig="/etc/kubernetes/admin.conf"):
         "cpu_tee": target["cpu_tee"],
         "gpu": target["gpu"],
         "pod_uid": uid,
+        "node_name": snapshot["node"]["name"],
+        "node_uid": snapshot["node"]["uid"],
+        "platform_snapshot_sha256": platform_helper["digest"](Path(platform_profile) / "installed-platform.json"),
         "sandbox_ids": ids,
         "qemu_pid": int(process.name),
         "qemu_argv": argv,
@@ -206,9 +216,10 @@ if __name__ == "__main__":
     parser.add_argument("config")
     parser.add_argument("output")
     parser.add_argument("kubeconfig", nargs="?", default="/etc/kubernetes/admin.conf")
+    parser.add_argument("--platform", required=True)
     args = parser.parse_args()
     os.umask(0o077)
-    result = capture(args.namespace, args.pod, args.config, args.kubeconfig)
+    result = capture(args.namespace, args.pod, args.config, args.kubeconfig, args.platform)
     with Path(args.output).open("x") as stream:
         json.dump(result, stream, indent=2)
         stream.write("\n")

@@ -1,77 +1,164 @@
-# Provision NVFlare confidential containers
+# 3. Build NVFlare images and generate Pod YAML
 
-This directory uses the unified confidential-computing interface. The project
-selects one [`cc_project.yml`](cc_project.yml), every protected server or client
-selects one participant `cc_config`, and the common `CCPackager` owns the
-private/public handoff.
+Use the supplied project files with the existing Trustee and registry. Prepare
+application images with the same NVFlare release used for provisioning.
 
-The shared project file contains the Trustee object once, a named container
-registry, and the trusted CoCo build command. Participant files contain only
-the workload source, TEE selection, release name, repository path, and approved
-platform profile. To protect the server, uncomment its `cc_config` in
-[`project.yaml`](project.yaml).
+The build machine needs Docker, skopeo, Cosign, OpenSSL, jq, Python 3.11+ with
+PyYAML, and compatible Kata genpolicy/rules/settings already available.
+The supported profile uses Kata/genpolicy 3.29.0 with matching rules/settings.
+The runtime is inspected in place; no Kata image or chart is downloaded.
+The build operator needs the existing engine privileges used by Docker/skopeo.
 
-For an ordinary server with a TDX CPU-only client and an SNP plus NVIDIA
-confidential-GPU client, use the complete
-[mixed TDX/SNP project](mixed-tdx-snp/README.md). Its shared Trustee policy
-contains CPU and measurement pins; each participant's `gpu_tee` determines
-whether the generated peer verifier requires a signed GPU appraisal.
+From `examples/devops/coco`, switch to the provisioning directory. The commands
+below remain in that directory:
 
-Before provisioning, prepare the admin and Trustee inputs described by the
-parent CoCo runbooks, replace all placeholder paths and endpoints, and install
-the authenticated Trustee AS signing key as `trustee-as-public.pem`. Then run
-from this directory:
+~~~bash
+cd provision
+~~~
 
-```bash
+## Configure the image builder
+
+Create the image-builder configuration:
+
+~~~bash
+cp ../admin/platform.env.example ../admin/platform.env
+chmod 0600 ../admin/platform.env
+editor ../admin/platform.env
+~~~
+
+Set the existing tool paths, selected runtime, and capture output in that file:
+
+~~~bash
+WORK_ROOT="$HOME/coco-private/build"
+GENPOLICY=/path/to/genpolicy
+RULES=/path/to/rules.rego
+SETTINGS=/path/to/genpolicy-settings.json
+RUNTIME_CLASS=kata-qemu-nvidia-gpu-snp
+WORKLOAD_LAUNCH_PROFILE="$HOME/coco-private/new-capture/approved-workload-launch-profile.json"
+~~~
+
+Keep the compatible generator version and digest-pinned key-provider image
+from the template. The builder fetches that key-provider image automatically
+if it is absent from its Docker daemon. Set the target cluster's Kubernetes
+service host/port values. Publisher
+credentials and Trustee endpoints come from the project CC configuration,
+not this runtime profile. Skopeo publication uses the configured registry
+CA/bundle automatically; it requires no manual global Skopeo trust changes.
+For registries with a private CA, the Docker daemon must already trust that CA
+when pulling application base images from the private registry.
+
+## Prepare the workload and project
+
+Replace the placeholder base in each selected Dockerfile with the
+application image. Include NVFlare, Bash/coreutils, required dependencies,
+and the executor/controller code. Include NVIDIA userspace libraries only when
+the application requires them. The packager adds that participant's signed kit.
+
+Use an in-process executor for the current packaged runtime. Bake its
+code into the image and allow its exact class through `class_allow_list`.
+Application data access and outputs need their normal owner-authorized channels.
+
+Edit the supplied configuration:
+
+| File | Inputs |
+| --- | --- |
+| [project.yaml](project.yaml) | Participant identities, `cc_project_config`, supplied builder order, and `CCPackager`. |
+| [cc_project.yml](cc_project.yml) | Existing Trustee endpoint/CA/AS public key, guest AA token URL, registry/CA/publisher credentials, and build command. |
+| [cc_site-1.yml](cc_site-1.yml) | CPU/GPU selection, application context, release/repository, and admin platform configuration. |
+| [cc_server.yml](cc_server.yml) | Optional protected server configuration. |
+
+Use the CPU/GPU pair from [README](../README.md) and a matching capture profile.
+Set a new release name for each participant/image/key/policy change. Paths in
+each CC file resolve beside that file; its Dockerfile resolves from its context.
+
+A registry endpoint without a port uses HTTPS port 443. Image references retain
+the supplied endpoint spelling; use the same `host[:port]` spelling in project,
+registry authentication, and policy configuration throughout each release.
+
+Prepare these existing files before provisioning. Paths below are examples
+from `cc_project.yml`; change them to your supplied files. Relative paths resolve
+beside that configuration file.
+
+| Input | Example path | Purpose and source |
+| --- | --- | --- |
+| Trustee `ca_cert_file` | `../admin/public/trustee.crt` | KBS TLS CA certificate/bundle from its administrator; embedded for guest HTTPS trust. |
+| `attestation_signing_public_key_file` | `./trustee-as-public.pem` | AS signing public key from its administrator; verifies signed attestation results and differs from the KBS TLS certificate. |
+| Registry `ca_cert_file` | `../admin/public/registry-ca.crt` | Registry TLS CA certificate/bundle from its administrator. This file is required even when the CA is already in system trust; an existing trust bundle can be supplied. |
+| `publisher_username_file` / `publisher_password_file` | `../admin/secrets/registry/username` / `../admin/secrets/registry/password` | Existing publisher credentials from the registry administrator; keep private and outside image contexts. |
+
+CoCo provisioning does not use `admin_token_file`; omit it. Keep the KBS
+administrative token on the Trustee administration machine for subsequent
+[release registration](../TRUSTEE.md#after-provisioning-register-each-workload-release).
+
+The guest-local AA token API stays inside the guest; its raw response contains
+private key material and must not become application output.
+
+The default protects one client. To protect the server too, enable its
+`cc_config` in `project.yaml` and provide its own application image/profile.
+GPU profiles require one pGPU per Pod, including a protected GPU server.
+
+## Start with one CPU-only client
+
+For a CPU-only SNP first run, leave the server's `cc_config` commented out in
+`project.yaml`, set `gpu_tee: none` in `cc_site-1.yml`, and use
+`RUNTIME_CLASS=kata-qemu-snp` in `../admin/platform.env`. Capture with that same
+runtime and use its launch-profile output. The remaining build and handoff
+steps are identical; GPU reference values are unnecessary for this variant.
+
+## Provision
+
+While still in `examples/devops/coco/provision`, run:
+
+~~~bash
 nvflare provision -p project.yaml -w ./workspace
-```
+~~~
 
-The trusted build command receives a generated request. It stages the declared
-Docker context and signed kit, builds and encrypts the image, publishes it by
-digest, and returns a measured Pod. The public production directory contains
-only the Pod handoff and `cc_manifests/<participant>.json`; source, credentials,
-receipts, and plaintext kits remain below private state.
+The runner builds, encrypts, signs, and publishes each image noninteractively.
+It publishes only encrypted layers by immutable digest and generates the guest
+policy, InitData, and final Pod.
 
-## In-process executor workaround
+The CLI prints the production directory containing the Pod and
+`cc_manifests/<participant>.json`. With the supplied project and release, the
+first run writes `workspace/coco_project/prod_00/site-1/site-1-v1-pod.yaml`
+relative to the current `provision/` directory. Later runs increment `prod_NN`;
+use the actual directory printed by the CLI. Plaintext kits/build state remain
+private under `state/cc-private/` and the admin work directory.
 
-For the [external-process executor limitation](../FL-DEPLOYMENT.md#executor-limitation-and-workaround),
-use a reviewed executor that performs training in the NVFlare job process:
+Each release also produces:
 
-1. Install the executor as an importable Python package, together with its
-   reviewed training code and dependencies, in the participant's application
-   image. The executor must perform the work in process rather than launch an
-   external training command.
-2. Add its exact fully qualified class name to the top-level `class_allow_list`
-   in that participant's `cc_site-*.yml`, preserving any other required entries:
+~~~text
+$WORK_ROOT/releases/<release>/handoff/
+  trusted-service/                 # private Trustee image-key/policy inputs
+  coco-it/<release>-pod.yaml       # final cluster manifest
+~~~
 
-   ```yaml
-   class_allow_list:
-     - my_training.executor.InProcessExecutor
-   ```
+The builder's exact Pod path is
+`$WORK_ROOT/releases/<release>/handoff/coco-it/<release>-pod.yaml`, using
+`WORK_ROOT` from `../admin/platform.env` and `coco.release_name` from the
+participant CC file. Give the sibling `trusted-service/` directory confidentially
+to the Trustee administrator and run
+[release registration](../TRUSTEE.md#after-provisioning-register-each-workload-release).
+`nvflare provision` does not configure Trustee automatically. After registration,
+give only the Pod YAML to the cluster operator and follow [launch](../LAUNCH.md).
 
-3. Reference that same class in the job's client configuration:
+## When inputs change
 
-   ```json
-   {
-     "executors": [
-       {
-         "tasks": ["*"],
-         "executor": {
-           "path": "my_training.executor.InProcessExecutor",
-           "args": {}
-         }
-       }
-     ]
-   }
-   ```
+Each provisioning run builds every protected participant. Choose a fresh
+`coco.release_name` for each of them before rerunning; existing releases are
+immutable. Register every new private handoff before launching its new Pod.
 
-   `my_training.executor.InProcessExecutor` is a placeholder for your reviewed,
-   image-installed `Executor` implementation, not a class shipped with NVFlare.
-4. Reprovision and build, sign and encrypt a new application release with a new
-   per-release key, then obtain renewed release approval and deploy it. Submit
-   job configuration and data without job-supplied Python code. Further changes
-   to the baked executor or its dependencies require another reviewed release.
+| Changed input | Steps to repeat |
+| --- | --- |
+| Application image, NVFlare version, dependencies, or startup kit | Provision, register the new releases, then launch. Reuse capture outputs only while the runtime and launch contract remain unchanged. |
+| Guest runtime/firmware artifacts or launch/security configuration | Confirm the runtime is supported, capture again, register/read back platform references, use the new launch profile, then provision/register/launch new releases. |
+| CPU/GPU selection | Select the matching runtime, capture it, register the required CPU/GPU references, then provision/register/launch new releases. |
+| AS signing public key, Trustee endpoint/CA, or registry endpoint/CA | Update the project inputs and any corresponding `service/platform.env` administration access or collector-publication/capture inputs. Reprovision participants so guest and peer-verification configuration changes together; register and launch the new releases. |
+| Publisher or Trustee administration credential only | Replace the private credential input for its next use. This alone requires neither recapture nor rebuilding running images. |
+| Reference allowlist or appraisal policy only, with unchanged runtime/launch inputs | Have the Trustee administrator update and verify the active configuration; check that intended releases still appraise successfully. Already released keys are not recovered by a policy change. |
 
-See `docs/user_guide/confidential_computing/deployment.rst` in the NVFlare source
-tree for the complete schema, CPU/GPU mapping, shared Trustee configuration,
-result format, and migration rules.
+Keep the generated Pod paired with its release. Make workload changes through
+provisioning rather than editing its image, command, or InitData in place.
+
+The [unified deployment schema](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/deployment.html)
+and [security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html)
+provide the full API and peer-proof details.

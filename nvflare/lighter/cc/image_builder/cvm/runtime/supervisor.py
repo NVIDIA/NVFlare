@@ -28,8 +28,8 @@ from ..common.contracts import (
 from ..common.errors import BuildError, require
 from ..common.io import read_json, write_json
 from ..common.linux import run
-from .audit import emit
-from .gpu import readiness
+from .audit import emit, emit_diagnostic, flush
+from .gpu import confirm_not_ready, readiness
 from .storage import close_vault
 from .systemd import notify, watchdog
 
@@ -41,14 +41,16 @@ CPU_PERIODIC_TIMEOUT_SECONDS = CPU_ATTESTATION_TIMEOUT_SECONDS
 GPU_PERIODIC_TIMEOUT_SECONDS = GPU_ATTESTATION_TIMEOUT_SECONDS
 
 
-# A failed periodic check no longer powers the guest off at once. The workload
-# is stopped and the vault closed, which drops its key from the kernel, and
-# authorization is retried for this bounded window before PID 1 powers off.
+# A failed periodic check stops the workload and closes the vault, which drops
+# its key from the kernel. CPU-only guests retry authorization for this bounded
+# window. Revoking GPU Ready state is terminal for the current guest, so GPU
+# guests power off after containment instead of entering this retry window.
 QUARANTINE_WINDOW_SECONDS = 900
 QUARANTINE_RETRY_SECONDS = 60
 REOPEN_TIMEOUT_SECONDS = 900
 WATCHDOG_SECONDS = 360
 REVOCATION_TIMEOUT_SECONDS = 180
+TERMINAL_AUDIT_FLUSH_SECONDS = 1
 
 
 def periodic_timeout(config):
@@ -94,12 +96,20 @@ def run_reopen(timeout, environment):
         raise BuildError(f"Vault reopen could not complete ({type(exc).__name__})") from None
 
 
-def revoke_vault(config):
-    """Revoke readiness and discard any mapping left by a failed reopen."""
+def revoke_vault(config, *, tolerate_readiness_failure=False):
+    """Close the vault; a failed GPU reset requires explicit Not Ready readback."""
+    confirmed_after_error = False
     try:
-        readiness(config, False)
+        try:
+            readiness(config, False)
+        except BuildError:
+            if not tolerate_readiness_failure:
+                raise
+            confirm_not_ready(config)
+            confirmed_after_error = True
     finally:
         close_vault()
+    return confirmed_after_error
 
 
 def best_effort_revoke(config):
@@ -146,12 +156,22 @@ def periodic_tick(config, state, sequence):
 
 
 def quarantine(config, units, state):
-    """Stop the workload, close the vault, then retry authorization for a bounded window.
+    """Stop the workload and close the vault; recover only CPU-only guests.
 
-    No secret remains reachable while quarantined: the container and daemons are
-    stopped, the vault is unmounted and its mapping closed. A successful reopen
-    child re-attests, re-fetches the key and re-mounts before the units restart.
+    The container and daemons are stopped, GPU readiness is revoked, and the
+    vault is unmounted with its mapping closed. Revoking Ready state requires a
+    GPU guest restart, so GPU quarantine returns without attempting reopen. A
+    successful CPU reopen child re-attests, re-fetches the key and re-mounts
+    before the units restart.
     """
+    diagnostic_emitted = False
+
+    def revoke():
+        nonlocal diagnostic_emitted
+        if revoke_vault(config, tolerate_readiness_failure=True) and not diagnostic_emitted:
+            diagnostic_emitted = True
+            emit_diagnostic("gpu_readiness_revoke_failed")
+
     # PID 1 terminates this guest if stop/unmount or a Python operation stalls.
     # Logging has a separate bounded queue and cannot defer revocation.
     try:
@@ -164,8 +184,15 @@ def quarantine(config, units, state):
         # first, while preserving the stop/configuration error as the cause.
         best_effort_revoke(config)
         raise
-    revoke_vault(config)
+    revoke()
     emit("quarantine")
+    if config.get("gpu") == "nvidia_cc":
+        emit_diagnostic("gpu_quarantine_terminal")
+        # The supervisor exits immediately after terminal containment. Give
+        # the daemon writer time to publish the decision and diagnostic, but
+        # never let untrusted audit storage delay fail-closed poweroff.
+        flush(TERMINAL_AUDIT_FLUSH_SECONDS)
+        return
     environment = dict(os.environ)
     environment.pop("NOTIFY_SOCKET", None)
     deadline = time.monotonic() + QUARANTINE_WINDOW_SECONDS
@@ -178,9 +205,11 @@ def quarantine(config, units, state):
             require(time.monotonic() < deadline, "Vault quarantine deadline expired")
             break
         except BuildError:
-            # Cleanup is deliberately outside the retried operation: failure
-            # here propagates to PID 1's fail-closed power-off path.
-            revoke_vault(config)
+            # Give cleanup its own bounded phase, including after a reopen
+            # consumed the entire retry window. Vault closure and an explicit
+            # GPU Not Ready state are required before authorization can retry.
+            watchdog(REVOCATION_TIMEOUT_SECONDS)
+            revoke()
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise
@@ -222,16 +251,27 @@ def supervise(config, units, state):
             try:
                 periodic_tick(config, state, sequence)
                 deadline = next_periodic_deadline(config, state, fallback)
-            except BuildError:
+            except BuildError as failure:
                 try:
                     quarantine(config, units, state)
+                except Exception:
+                    # Containment or CPU recovery may have failed partway
+                    # through. CPU recovery can reopen access, so revoke it
+                    # again before PID 1's forced-poweroff path takes over.
+                    # GPU quarantine already performed its one terminal Ready
+                    # transition and attempted vault closure on every path.
+                    if config.get("gpu") != "nvidia_cc":
+                        best_effort_revoke(config)
+                    raise
+                if config.get("gpu") == "nvidia_cc":
+                    # GPU Ready-state revocation is intentionally terminal.
+                    # Re-raise the appraisal failure so systemd powers off the
+                    # contained guest without an impossible reopen loop or a
+                    # second readiness transition.
+                    raise failure
+                try:
                     deadline = next_periodic_deadline(config, state)
                 except Exception:
-                    # A successful reopen makes the vault and GPU available
-                    # before quarantine removes its flag, emits the decision,
-                    # and restarts the units. Any terminal failure in that
-                    # recovery tail must revoke access again before PID 1's
-                    # forced-poweroff path takes over.
                     best_effort_revoke(config)
                     raise
             except Exception:

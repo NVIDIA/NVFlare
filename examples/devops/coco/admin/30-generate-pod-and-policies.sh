@@ -20,11 +20,7 @@ need_file "${OUTPUT_DIR}/encrypted-image-reference.txt"
 need_file "${OUTPUT_DIR}/cosign.pub"
 need_file "${IMAGE_KEY_PATH}"
 need_file "${REGISTRY_AUTH_FILE}"
-RELEASE_POLICY_TEMPLATE="${SCRIPT_DIR}/templates/workload-resource-policy.rego.template"
-if [[ ! -f "$RELEASE_POLICY_TEMPLATE" ]]; then
-    # Source-checkout path; role assembly vendors the reviewed template above.
-    RELEASE_POLICY_TEMPLATE="${SCRIPT_DIR}/../service/policies/workload-resource-policy.rego.template"
-fi
+RELEASE_POLICY_TEMPLATE="${SCRIPT_DIR}/../service/policies/workload-resource-policy.rego.template"
 need_file "$RELEASE_POLICY_TEMPLATE"
 
 POLICY_FILES=(
@@ -56,10 +52,11 @@ trap cleanup EXIT
 python3 "${WORKLOAD_PROFILE_VALIDATOR}" "${WORKLOAD_LAUNCH_PROFILE}" \
     "$WORKLOAD_LAUNCH_PROFILE_SHA256" "$RUNTIME_CLASS" "$KATA_VERSION" \
     --snapshot "${POLICY_WORK_DIR}/approved-workload-launch-profile.json"
+RELEASE_PROFILE_SHA256="$(sha256sum "${POLICY_WORK_DIR}/approved-workload-launch-profile.json" | awk '{print $1}')"
 check_launch_profile() {
     python3 "${WORKLOAD_PROFILE_VALIDATOR}" \
         "${POLICY_WORK_DIR}/approved-workload-launch-profile.json" \
-        "$WORKLOAD_LAUNCH_PROFILE_SHA256" "$RUNTIME_CLASS" "$KATA_VERSION" \
+        "$RELEASE_PROFILE_SHA256" "$RUNTIME_CLASS" "$KATA_VERSION" \
         --pod "${POLICY_WORK_DIR}/pod.yaml" "$@"
 }
 

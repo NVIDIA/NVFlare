@@ -9,13 +9,30 @@ case "${CHANNEL}" in
 esac
 IMAGE_ID='@VERIFIER_IMAGE_ID@'
 [[ ${IMAGE_ID} =~ ^sha256:[0-9a-f]{64}$ ]] || { printf 'Run build.sh first\n' >&2; exit 1; }
-DOCKER=(docker)
-if ! docker info >/dev/null 2>&1; then DOCKER=(sudo -n docker); fi
+ENGINE_NAME='@VERIFIER_ENGINE@'
+BUILD_UID='@VERIFIER_BUILD_UID@'
+ENGINE=("${ENGINE_NAME}")
+USER_NAMESPACE=()
+case "${ENGINE_NAME}" in
+    docker)
+        if ! docker info >/dev/null 2>&1; then ENGINE=(sudo -n docker); fi
+        ;;
+    podman)
+        [[ "$(id -u)" == "${BUILD_UID}" ]] || {
+            printf 'Run the verifier as the same user that built its rootless Podman image\n' >&2; exit 1;
+        }
+        [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == true ]] || {
+            printf 'Verifier requires rootless Podman in the build user image store\n' >&2; exit 1;
+        }
+        USER_NAMESPACE=(--userns=keep-id)
+        ;;
+    *) printf 'Run build.sh first\n' >&2; exit 1 ;;
+esac
 OPTIONS=(--rm --read-only --cap-drop ALL --security-opt no-new-privileges
     --env "NVFLARE_TDX_TCB_UPDATE_TYPE=${CHANNEL}"
-    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=32m --user "$(id -u):$(id -g)")
+    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=32m --user "$(id -u):$(id -g)" "${USER_NAMESPACE[@]}")
 if [[ $# == 1 && $1 == --version ]]; then
-    exec "${DOCKER[@]}" run "${OPTIONS[@]}" --network none "${IMAGE_ID}" --version
+    exec "${ENGINE[@]}" run "${OPTIONS[@]}" --network none "${IMAGE_ID}" --version
 fi
 [[ $# == 3 ]] || {
     printf 'Usage: %s EVIDENCE.json CHALLENGE.bin INITDATA.toml\n' "$0" >&2; exit 2;
@@ -31,5 +48,5 @@ for i in 0 1 2; do
 done
 # Network is required only for authenticated Intel PCS collateral retrieval.
 # The verifier has no host device access, writes, capabilities or Docker socket.
-exec "${DOCKER[@]}" run "${OPTIONS[@]}" "${IMAGE_ID}" \
+exec "${ENGINE[@]}" run "${OPTIONS[@]}" "${IMAGE_ID}" \
     /input/evidence.json /input/challenge.bin /input/initdata.toml

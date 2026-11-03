@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Validate an authority-pinned launch contract before generation and handoff."""
+"""Validate a launch contract and an optional supplied checksum before generation."""
 
 import argparse
 import base64
@@ -51,9 +51,13 @@ def require(condition, message):
 
 
 def load_profile(path, expected_sha256, runtime, kata_version):
-    require(bool(re.fullmatch(r"[0-9a-f]{64}", expected_sha256)), "missing/invalid authority profile SHA-256 pin")
     raw = Path(path).read_bytes()
-    require(hashlib.sha256(raw).hexdigest() == expected_sha256, "launch profile SHA-256 mismatch")
+    if expected_sha256 not in (None, ""):
+        require(
+            isinstance(expected_sha256, str) and bool(re.fullmatch(r"[0-9a-f]{64}", expected_sha256)),
+            "invalid launch profile SHA-256",
+        )
+        require(hashlib.sha256(raw).hexdigest() == expected_sha256, "launch profile SHA-256 mismatch")
     profile = json.loads(raw, object_pairs_hook=unique_object)
     keys = {
         "schema",
@@ -61,7 +65,6 @@ def load_profile(path, expected_sha256, runtime, kata_version):
         "profile_id",
         "runtime_class",
         "kata_version",
-        "kata_deploy_image",
         "kata_config_sha256",
         "launch_inputs_sha256",
         "vm_defaults",
@@ -74,7 +77,7 @@ def load_profile(path, expected_sha256, runtime, kata_version):
     else:
         require(profile.get("schema") == SECURITY["SCHEMA"], "review, rehearse and export a supported launch profile")
         require(runtime == "kata-qemu-nvidia-gpu-snp", "legacy v3 approval supports SNP+GPU only")
-    require(set(profile) == keys, "unexpected launch-profile schema fields")
+    require(keys <= set(profile) <= keys | {"kata_deploy_image"}, "unexpected launch-profile schema fields")
     target = require_runtime_target(profile, runtime)
     SECURITY["validate_context"](profile["workload_security_context"])
     require(profile["guest_token_api"] == "guest-local-aa-token/v1", "approved profile lacks the guest-local token API")
@@ -88,11 +91,14 @@ def load_profile(path, expected_sha256, runtime, kata_version):
         "runtime class differs from approved profile",
     )
     require(profile["kata_version"] == kata_version == "3.29.0", "Kata version differs from approved profile")
-    require(
-        isinstance(profile["kata_deploy_image"], str)
-        and bool(re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", profile["kata_deploy_image"])),
-        "runtime image is not digest-pinned",
-    )
+    # The installer image is optional provenance metadata. The runtime version,
+    # captured configuration, launch inputs and workload policy remain required.
+    if "kata_deploy_image" in profile:
+        require(
+            isinstance(profile["kata_deploy_image"], str)
+            and bool(re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", profile["kata_deploy_image"])),
+            "runtime image is not digest-pinned",
+        )
     for key in ("kata_config_sha256", "launch_inputs_sha256"):
         require(isinstance(profile[key], str) and bool(re.fullmatch(r"[0-9a-f]{64}", profile[key])), f"invalid {key}")
     defaults = profile["vm_defaults"]
@@ -212,7 +218,7 @@ def read_pod(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("profile")
-    parser.add_argument("sha256")
+    parser.add_argument("sha256", nargs="?", default="", help="optional expected profile checksum")
     parser.add_argument("runtime")
     parser.add_argument("kata_version")
     parser.add_argument("--pod")
@@ -222,15 +228,20 @@ def main():
     parser.add_argument("--snapshot", help="exclusively create an immutable release copy")
     args = parser.parse_args()
     require(not args.require_policy or args.pod, "--require-policy requires --pod")
-    profile = load_profile(args.profile, args.sha256, args.runtime, args.kata_version)
+    raw = Path(args.profile).read_bytes()
+    received_sha256 = hashlib.sha256(raw).hexdigest()
+    if args.sha256:
+        require(bool(re.fullmatch(r"[0-9a-f]{64}", args.sha256)), "invalid launch profile SHA-256")
+        require(received_sha256 == args.sha256, "launch profile SHA-256 mismatch")
+    # The optional expected digest was checked above. This second-read check
+    # detects local file changes during validation; it does not authenticate origin.
+    profile = load_profile(args.profile, received_sha256, args.runtime, args.kata_version)
     if args.pod:
         validate_pod(profile, read_pod(args.pod), require_policy=args.require_policy)
     if args.snapshot:
-        raw = Path(args.profile).read_bytes()
-        require(hashlib.sha256(raw).hexdigest() == args.sha256, "profile changed before snapshot")
         with Path(args.snapshot).open("xb") as output:
             output.write(raw)
-    print("Approved launch profile verified:", profile["profile_id"])
+    print("Launch profile validated:", profile["profile_id"])
 
 
 if __name__ == "__main__":

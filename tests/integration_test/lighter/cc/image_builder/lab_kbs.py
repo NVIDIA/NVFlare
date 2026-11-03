@@ -14,9 +14,9 @@
 
 """Run an isolated, deny-by-default lab upstream Trustee.
 
-Requires unmodified CoCo Trustee v0.22.0 binaries on
-the lab host, and the disposable PKI from prepare_lab.py. Never touches another
-KBS deployment or its credentials.
+Requires unmodified CoCo Trustee v0.22.0 binaries and lab state created by
+prepare_lab.py with either disposable or explicitly staged identity material.
+Never contacts another KBS deployment.
 """
 
 import os
@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives import serialization
 from cvm.build import config as build_config
 from cvm.build.config import SOURCE
 from cvm.build.cvm import contract
-from cvm.common.errors import require
+from cvm.common.errors import BuildError, require
 from cvm.common.gpu_policy import render as render_gpu_policy
 from cvm.common.io import canonical, digest_file, read_json, write_json
 from cvm.common.references import reference_record_name, render_reference_policy
@@ -39,7 +39,7 @@ from cvm.trustee.client import encode
 from cvm.trustee.provenance import provenance
 
 
-def verifier_config(profiles):
+def verifier_config(profiles, snp_vcek_store=None):
     """Return the lab verifier configuration required by the selected profiles."""
     result = read_json(SOURCE / "trustee/kbs.json")["attestation_service"]["verifier_config"]
     gpu_urls = set()
@@ -56,14 +56,50 @@ def verifier_config(profiles):
     require(len(gpu_urls) <= 1, "Lab GPU profiles must use the same NVIDIA verifier URL")
     if gpu_urls:
         result["nvidia_verifier"] = {"type": "Remote", "verifier_url": gpu_urls.pop()}
+    if any(
+        "amd_sev_snp" in profile.get("platforms", {}) and profile["platforms"]["amd_sev_snp"].get("enabled", True)
+        for profile in profiles
+    ):
+        store = snp_vcek_store or "/opt/confidential-containers/attestation-service/kds-store"
+        require(isinstance(store, str) and Path(store).is_absolute(), "Lab SNP VCEK store must be an absolute path")
+        require((Path(store) / "vcek").is_dir(), "Populate the lab SNP VCEK store before starting Trustee")
+        result["snp_verifier"] = {"vcek_sources": [{"type": "OfflineStore", "path": store}, {"type": "KDS"}]}
     return result
+
+
+def endpoint_settings(lab_state, environ=None):
+    """Return the local listener and identity-preserving administration URL."""
+    environ = os.environ if environ is None else environ
+    public_url = lab_state["kbs_url"].rstrip("/")
+    endpoint = urllib.parse.urlsplit(public_url)
+    require(
+        endpoint.scheme == "https"
+        and endpoint.hostname
+        and endpoint.path in ("", "/")
+        and not endpoint.query
+        and not endpoint.fragment,
+        "Lab state contains an invalid KBS URL",
+    )
+    try:
+        endpoint_port = endpoint.port or 443
+        listen_port = int(environ.get("CVM_LAB_KBS_PORT", endpoint_port))
+    except (TypeError, ValueError):
+        raise BuildError("Lab KBS port must be an integer") from None
+    require(listen_port == endpoint_port, "CVM_LAB_KBS_PORT must match the measured KBS URL port")
+    listen_host = environ.get("CVM_LAB_KBS_HOST", "127.0.0.1")
+    require(
+        isinstance(listen_host, str) and listen_host and not any(c.isspace() for c in listen_host),
+        "Invalid lab KBS listener host",
+    )
+    administration_url = public_url if lab_state.get("identity") == "provided" else f"https://127.0.0.1:{endpoint_port}"
+    return listen_host, listen_port, administration_url
 
 
 def main(directory):
     directory = Path(directory).resolve()
-    pki = Path(read_json(directory / "lab-state.json")["pki"])
-    kbs_port = int(os.environ.get("CVM_LAB_KBS_PORT", "19199"))
-    kbs_host = os.environ.get("CVM_LAB_KBS_HOST", "127.0.0.1")
+    lab_state = read_json(directory / "lab-state.json")
+    pki = Path(lab_state["pki"])
+    kbs_host, kbs_port, administration_url = endpoint_settings(lab_state)
     state = directory / "lab-kbs"
     state.mkdir(mode=0o700, exist_ok=True)
     storage = state / "storage"
@@ -84,14 +120,12 @@ def main(directory):
     resource_policy.parent.mkdir(exist_ok=True)
     if not resource_policy.exists():
         resource_policy.write_text("package policy\nimport rego.v1\ndefault allow := false\n")
-    (pki / "as-chain.pem").write_bytes(
-        (pki / "as.pem").read_bytes() + (directory / "inputs/test-as-ca.pem").read_bytes()
-    )
+    as_chain = state / "as-chain.pem"
+    as_chain.write_bytes((pki / "as.pem").read_bytes() + (directory / "inputs/test-as-ca.pem").read_bytes())
     (storage / "repository").mkdir(mode=0o700, exist_ok=True)
     policy_id_map = {}
     immutable_as_policies = {}
     profiles = []
-    lab_state = read_json(directory / "lab-state.json")
     profile_paths = lab_state.get("profiles")
     if profile_paths is None:
         profile_paths = [lab_state["profile"]] if "profile" in lab_state else []
@@ -163,11 +197,11 @@ def main(directory):
         "attestation_service": {
             "type": "coco_as_builtin",
             "policy_id_map": policy_id_map,
-            "verifier_config": verifier_config(profiles),
+            "verifier_config": verifier_config(profiles, lab_state.get("snp_vcek_store")),
             "attestation_token_broker": {
                 "duration_min": 5,
                 "issuer_name": "CoCo-Attestation-Service",
-                "signer": {"key_path": str(pki / "as.key"), "cert_path": str(pki / "as-chain.pem")},
+                "signer": {"key_path": str(pki / "as.key"), "cert_path": str(as_chain)},
             },
         },
         "plugins": [{"name": "resource", "storage_backend_type": "kvstorage"}],
@@ -191,13 +225,13 @@ def main(directory):
     write_json(
         state / "resources.json",
         {
-            "url": f"https://{kbs_host}:{kbs_port}",
+            "url": administration_url,
             "ca": str(directory / "inputs/test-ca.pem"),
             "admin_token_file": str(token_path),
         },
     )
     config_admin = {
-        "url": f"https://{kbs_host}:{kbs_port}",
+        "url": administration_url,
         "ca": str(directory / "inputs/test-ca.pem"),
         "admin_private_key": str(pki / "kbs-admin.key"),
         "storage_directory": str(storage),
@@ -221,8 +255,11 @@ def main(directory):
         {
             "trustee_commit": "512fed65642015b849f38fb13bfdec7806639987",
             "source_clean": True,
-            "policy_selection_tested": True,
-            "unauthorized_administration_denied": True,
+            # Starting a service is not evidence that its authorization works.
+            # Qualify it with the live HTTP suite, then generate a receipt with
+            # cvmctl admin deployment-receipt before installing any candidate.
+            "policy_selection_tested": False,
+            "unauthorized_administration_denied": False,
             "policy_id_map": policy_id_map,
             "immutable_as_policies": immutable_as_policies,
         },

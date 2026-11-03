@@ -232,7 +232,7 @@ class HttpTests(unittest.TestCase):
         with memory_file(pem) as private, memory_file(cpu_token) as token:
             value = run(
                 [
-                    self.directory / "inputs/kbs-client",
+                    self.directory / "inputs/kbs-client-cpu",
                     "--url",
                     self.admin["url"],
                     "--cert-file",
@@ -272,7 +272,7 @@ class HttpTests(unittest.TestCase):
         # This proves the actual AS loaded our policy, not hardware acceptance.
         token = run(
             [
-                self.directory / "inputs/kbs-client",
+                self.directory / "inputs/kbs-client-cpu",
                 "--url",
                 self.admin["url"],
                 "--cert-file",
@@ -303,7 +303,7 @@ class HttpTests(unittest.TestCase):
                 self.assertEqual(len(policy_ids), 1)
                 token = run(
                     [
-                        self.directory / "inputs/kbs-client",
+                        self.directory / "inputs/kbs-client-cpu",
                         "--url",
                         self.admin["url"],
                         "--cert-file",

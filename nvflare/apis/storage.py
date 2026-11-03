@@ -224,6 +224,15 @@ class StorageSpec(ABC):
         """
         pass
 
+    def object_exists(self, uri: str) -> bool:
+        """Return authoritative presence; raise on unavailable or unsupported storage.
+
+        Unlike a failed metadata lookup, False must specifically mean that the
+        object is absent. Cleanup relies on this distinction to preserve data
+        during storage outages. Existing stores can leave this unsupported.
+        """
+        raise NotImplementedError("authoritative object existence is not supported by this store")
+
     @abstractmethod
     def delete_object(self, uri: str):
         """Deletes specified object.

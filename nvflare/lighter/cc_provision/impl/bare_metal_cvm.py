@@ -109,6 +109,7 @@ class BareMetalCVMDeployment(CCDeployment):
                 "url": service.values["kbs_endpoint"],
                 "ca": service.values["ca_cert_file"],
                 "admin_token_file": service.values["admin_token_file"],
+                "expiry_warning_seconds": service.values["expiry_warning_seconds"],
             },
             "approval": {"public_keys": list(approval["public_key_files"])},
         }

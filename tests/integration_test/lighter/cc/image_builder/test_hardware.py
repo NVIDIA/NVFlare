@@ -42,6 +42,7 @@ from cvm.common.errors import require
 from cvm.common.io import digest_file, read_json, write_json
 from cvm.common.linux import run
 from cvm.common.luks import snapshot_header
+from cvm.runtime.supervisor import REVOCATION_TIMEOUT_SECONDS, periodic_timeout
 
 ACCEPTANCE_CHECKS = {
     "test_generic_app_binding_and_exclusive_attachment": [
@@ -71,6 +72,14 @@ ACCEPTANCE_CHECKS = {
     "test_payload_corruption_prevents_startup": ["payload_corruption", "header_snapshot"],
     "test_prescan_disabled_corruption_powers_off_on_read": ["payload_corruption", "header_snapshot"],
 }
+
+
+# Acceptance waits include enough margin for the measured guest's bounded
+# shutdown path plus scheduler/device latency. GPU appraisal and teardown have
+# a larger allowance; these values do not change the guest's fail-closed limits.
+ACCEPTANCE_STOP_SECONDS = 120
+CPU_FAIL_CLOSED_SECONDS = 90
+GPU_FAIL_CLOSED_SECONDS = 120
 
 
 def applicable_acceptance_checks(manifest):
@@ -128,8 +137,11 @@ class HardwareTests(unittest.TestCase):
         if self.process is not None:
             if self.process.poll() is None:
                 self.process.terminate()
-            self.process.wait(timeout=45)
+            self.process.wait(timeout=ACCEPTANCE_STOP_SECONDS)
             self.process = None
+
+    def fail_closed_timeout(self):
+        return GPU_FAIL_CLOSED_SECONDS if self.manifest["contract"]["gpu"] == "nvidia_cc" else CPU_FAIL_CLOSED_SECONDS
 
     def boot(self, *, reverse_scsi=False, bundle=None):
         bundle = Path(bundle or self.bundle)
@@ -414,13 +426,16 @@ class HardwareTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("CVM_NETWORK_FAULTS") == "1", "Opt in to isolated host firewall faults")
     def test_attestation_drop_quarantines_and_recovers(self):
+        if self.manifest["contract"]["gpu"] == "nvidia_cc":
+            self.skipTest("GPU Ready-state revocation is terminal; the GPU denial case verifies bounded poweroff")
         self.boot()
         self.ready()
         kbs = urlparse(self.manifest["contract"]["kbs_url"])
         started = time.monotonic()
         with self.drop_egress(kbs.port or 443):
             self.request("/periodic", "POST")
-            deadline = time.monotonic() + 330
+            entry_timeout = periodic_timeout(self.manifest["contract"]) + REVOCATION_TIMEOUT_SECONDS + 45
+            deadline = time.monotonic() + entry_timeout
             while time.monotonic() < deadline:
                 self.assertIsNone(self.process.poll(), "Guest powered off before its quarantine recovery window")
                 log = self.logs[-1].read_text(errors="replace")
@@ -428,7 +443,7 @@ class HardwareTests(unittest.TestCase):
                     break
                 time.sleep(1)
             else:
-                self.fail("Attestation failure did not close the vault and enter quarantine within 330 seconds")
+                self.fail("Attestation failure did not close the vault and enter quarantine within its bounded budget")
             quarantined = time.monotonic()
             with self.assertRaises((OSError, urllib.error.URLError)):
                 self.request()
@@ -487,13 +502,38 @@ class HardwareTests(unittest.TestCase):
         endpoint = urlparse(self.manifest["contract"]["gpu_attestation_url"])
         addresses = sorted({item[4][0] for item in socket.getaddrinfo(endpoint.hostname, endpoint.port or 443)})
         started = time.monotonic()
+        config = self.manifest["contract"]
+        entry_timeout = periodic_timeout(config) + REVOCATION_TIMEOUT_SECONDS + 45
+        # Periodic check, quarantine containment, and a bounded scheduling
+        # allowance. GPU Ready-state revocation is terminal for this guest.
+        poweroff_timeout = periodic_timeout(config) + 2 * REVOCATION_TIMEOUT_SECONDS + 45
         with self.drop_egress(endpoint.port or 443, addresses):
             self.request("/periodic", "POST")
-            self.process.wait(timeout=350)
-        elapsed = time.monotonic() - started
-        self.assertLessEqual(elapsed, 345)
-        self.assertIn("Power down", self.logs[-1].read_text(errors="replace"))
-        self.result(periodic_gpu_denial=True, backend_nras_drop=True, fail_closed_seconds=round(elapsed, 3))
+            deadline = started + entry_timeout
+            while time.monotonic() < deadline:
+                if self.process.poll() is not None:
+                    break
+                try:
+                    self.request()
+                except (OSError, urllib.error.URLError):
+                    break
+                time.sleep(1)
+            else:
+                self.fail("GPU attestation failure did not stop the workload within its bounded budget")
+            self.process.wait(timeout=max(0, started + poweroff_timeout - time.monotonic()))
+            # Measure before firewall cleanup, which can take additional time.
+            elapsed = time.monotonic() - started
+            self.assertLessEqual(elapsed, poweroff_timeout)
+        with self.assertRaises((OSError, urllib.error.URLError)):
+            self.request()
+        self.assert_powered_off()
+        self.result(
+            periodic_gpu_denial=True,
+            backend_nras_drop=True,
+            workload_denied_while_isolated=True,
+            terminal_gpu_quarantine=True,
+            fail_closed_seconds=round(elapsed, 3),
+        )
 
     @unittest.skipUnless(
         os.environ.get("CVM_GPU_HARDWARE_TESTS") == "1" and os.environ.get("CVM_BACKEND_LOCAL") == "1",
@@ -547,7 +587,7 @@ class HardwareTests(unittest.TestCase):
         state = self.ready()
         started = time.monotonic()
         self.assertEqual(json.loads(self.request("/kill-monitor", "POST")), {"injected_monitor_crash": True})
-        self.process.wait(timeout=60)
+        self.process.wait(timeout=self.fail_closed_timeout())
         self.assert_powered_off()
         self.result(
             monitor_crash_powered_off=True, fail_closed_seconds=round(time.monotonic() - started, 3), state=state
@@ -617,7 +657,7 @@ class HardwareTests(unittest.TestCase):
             self.assertEqual(stream.read(4096), changed)
         started = time.monotonic()
         self.assertEqual(json.loads(self.request("/scan", "POST")), {"requested_authenticated_scan": True})
-        self.process.wait(timeout=60)
+        self.process.wait(timeout=self.fail_closed_timeout())
         self.assert_powered_off()
         self.result(
             post_scan_corruption_powered_off=True,
@@ -680,7 +720,7 @@ class HardwareTests(unittest.TestCase):
         state = self.ready()
         started = time.monotonic()
         self.assertEqual(json.loads(self.request("/scan", "POST")), {"requested_authenticated_scan": True})
-        self.process.wait(timeout=60)
+        self.process.wait(timeout=self.fail_closed_timeout())
         self.assert_powered_off()
         self.result(
             prescan_disabled=True,

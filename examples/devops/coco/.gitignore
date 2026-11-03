@@ -1,13 +1,9 @@
-# Private role configuration and backups (templates remain tracked).
+# Local configuration and generated deployment inputs.
 platform.env
 platform.env.*
 !platform.env.example
-config.env
 *.env
 !*.example.env
-!coco/public/kata-platform.env
-!workload.example.env
-# Credentials, generated public trust, and approved deployment inputs.
 *.key
 *.crt
 *.pem
@@ -21,9 +17,13 @@ password
 admin-token
 approved-workload-launch-profile.json
 platform-reference-values.json
+collector-image.json
+review-summary.json
+capture-summary.json
+installed-platform.json
 *-pod.yaml
-workload-source.yaml
-# Generated runtime artifacts, private evidence, caches and local reports.
+
+# Private evidence, state and build outputs.
 *.tgz
 *.tar*
 *.qcow2
@@ -32,9 +32,6 @@ workload-source.yaml
 *.log
 *.lock
 !trusted_system/tdx-verifier/Cargo.lock
-
-*.pyc
-__pycache__/
 .venv/
 state/
 secrets/
@@ -42,27 +39,21 @@ releases/
 handoff/
 handoffs/
 incoming*/
-platform-reference-work/
-platform-tools/
-operations/
-recovery/
-coco-app
-# Design slides remain Markdown-only; allow the reviewed interactive sequence diagram.
-docs/*.html
-!docs/coco-four-party-sequence.html
-docs/*.pdf
-docs/*.pptx
-# Shared implementations remain reviewable despite repository-wide lib ignores.
+capture/
+measurements/
+profiles/
+
+# Source adapters remain visible despite repository-wide lib ignores.
 !shared/
 !shared/**
-# New thin wrappers must be included in Git-based role-kit assembly.
 !admin/lib/
+!admin/lib/**
 !trusted_system/lib/
+!trusted_system/lib/**
 !coco/lib/
+!coco/lib/**
 !service/lib/
-!coco/bootstrap/lib/
-!trusted_system/bootstrap/lib/
+!service/lib/**
 
-# Keep generated Python import caches excluded after the source allowlists.
 __pycache__/
 *.py[cod]

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Source-checkout adapter; role assembly vendors the reviewed package module."""
+"""Source-checkout adapter for the canonical NVFlare implementation."""
 
 import sys
 from pathlib import Path

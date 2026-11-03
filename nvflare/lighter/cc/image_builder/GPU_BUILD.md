@@ -26,7 +26,8 @@ Fetch the public signing key and verify the reviewed keyring bytes before use:
 The primary key fingerprint is
 `C95B321B61E88C1809C4F759DDCAE044F796ECB0`. A rotated key requires a reviewed
 profile update; do not replace the digest automatically when verification fails.
-Add these fields to a copy of `config/cvm_profile.yml`:
+Set these fields in a copy of `config/cvm_profile.yml`. Update the existing
+`platforms` entries shown below; do not add a second `platforms` mapping:
 
 ```yaml
 gpu: nvidia_cc
@@ -35,6 +36,13 @@ gpu_policy: gpu_policy.json
 gpu_attestation_url: https://nras.attestation.nvidia.com/v4/attest/gpu
 gpu_attestation_library: ../inputs/libnvat.so.1
 gpu_attestation_provenance: ../inputs/nvat_build.json
+platforms:
+  amd_sev_snp:
+    kbs_client: ../inputs/kbs-client-gpu
+    kbs_client_provenance: ../inputs/kbs_client_gpu_build.json
+  intel_tdx:
+    kbs_client: ../inputs/kbs-client-gpu
+    kbs_client_provenance: ../inputs/kbs_client_gpu_build.json
 gpu_apt_repositories:
   - url: https://nvidia.github.io/libnvidia-container/stable/deb/amd64
     suite: /
@@ -52,7 +60,7 @@ gpu_packages:
   - libnvidia-container-tools=1.20.0-1
   - nvidia-container-toolkit-base=1.20.0-1
   - nvidia-container-toolkit=1.20.0-1
-  - libxml2-16=2.15.2+dfsg-0.1ubuntu0.1
+  - libxml2-16=2.15.2+dfsg-0.1ubuntu0.3
 ```
 
 Choose a new `profile_version` and approve the driver/VBIOS/TCB references for
@@ -64,6 +72,47 @@ deb822 sources with a repository-specific `Signed-By` **before** `apt-get update
 Update failures stop construction. No `trusted=yes` or global `apt-key` trust is
 used. For retained releases, an authenticated immutable apt mirror can replace
 the URL without changing the input schema.
+
+APT pins can disappear from rolling security repositories. The libxml2 example
+above includes the [Ubuntu security update](https://ubuntu.com/security/notices/USN-8910-1);
+the older `0.1ubuntu0.1` pin is no longer a reproducible default. Before using
+this example, inspect `apt-cache policy libxml2-16` and the signed repository's
+available versions in the **guest build environment**, then simulate the exact
+install with `apt-get -s install 'libxml2-16=2.15.2+dfsg-0.1ubuntu0.3'`.
+If the pin is unavailable, either use the authenticated immutable mirror that
+retains it or review the vendor's security notice and select a currently
+available fixed version. Record the signed repository metadata and package
+digests, check the complete pinned dependency set, and use a **new profile
+version** followed by full acceptance and approval. Do not silently substitute
+the host's candidate version, remove version pins, or relabel an old approval.
+
+## Review GPU driver and VBIOS references
+
+The platform security administrator supplies `gpu_driver_versions` and
+`gpu_vbios_versions` in the profile's `approved-tcb-references.json`, alongside
+the independently approved CPU TCB fields. The values are **strings**, preserving
+their exact spelling. Inventory the intended device inside a trusted guest with:
+
+```sh
+nvidia-smi --query-gpu=driver_version,vbios_version --format=csv,noheader
+```
+
+Inventory is a discovery aid, not attestation or approval. Obtain a fresh,
+signature- and nonce-verified NVIDIA appraisal through the deployed Trustee.
+For each GPU, the signed EAR's
+`submods.gpuN["ear.veraison.annotated-evidence"].nvidia` contains
+`x-nvidia-gpu-driver-version` and `x-nvidia-gpu-vbios-version`. Validate the EAR
+signature, issuer, lifetime, protocol binding, and affirmative CPU/GPU appraisal
+before using those values. Compare them with the vendor-supported CC hardware,
+driver and firmware/RIM releases and the intended device's reviewed inventory.
+The administrator then explicitly approves the matching string lists; never
+populate them automatically from an untrusted host or a merely decoded JWT.
+
+The generated GPU policy requires the verified claims to match those lists and
+also enforces the report/RIM signature, certificate, measurement, nonce, secure
+boot and debug-state checks. Keep approval evidence outside public deliveries.
+Import the approved lists through the [Trustee reference workflow](TRUSTEE_GUIDE.md#7-install-references-and-policies).
+Changing supported versions requires a new reviewed profile and acceptance.
 
 ## NVAT source and provenance
 
@@ -148,10 +197,12 @@ sudo ln -sfn libnvat.so.1 /usr/lib/x86_64-linux-gnu/libnvat.so
 sudo ldconfig
 NVAT_USE_SYSTEM_LIB=1 cargo build --locked --release --manifest-path /tmp/trustee/Cargo.toml \
   -p kbs-client --bin kbs-client --features tdx-attester,snp-attester,nvidia-attester
-install -m 755 /tmp/trustee/target/release/kbs-client inputs/kbs-client
-./cvmctl provenance /tmp/trustee inputs/kbs-client inputs/kbs_client_build.json
+install -m 755 /tmp/trustee/target/release/kbs-client inputs/kbs-client-gpu
+./cvmctl provenance /tmp/trustee inputs/kbs-client-gpu inputs/kbs_client_gpu_build.json
 ```
 
 The guest receives the pinned library bytes and its runtime dependencies, not the
 SDK source or development packages. Validate GPU evidence collection and encrypted
 key retrieval with these exact artifacts before approving the generic CVM.
+The builder verifies that a GPU profile's client links `libnvat.so.1`; the
+separate filename prevents this binary from replacing the CPU-only client.

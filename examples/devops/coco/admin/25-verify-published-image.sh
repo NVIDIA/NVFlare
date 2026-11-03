@@ -19,7 +19,9 @@ DOCKER_CONFIG="${REGISTRY_SECRET_DIR}" cosign verify \
     --registry-cacert "${REGISTRY_CA_FILE}" \
     --key "${OUTPUT_DIR}/cosign.pub" --insecure-ignore-tlog \
     "${IMAGE_REF}" > "${OUTPUT_DIR}/owner-cosign-verification.json"
-skopeo inspect --raw --authfile "${REGISTRY_AUTH_FILE}" "docker://${IMAGE_REF}" \
+prepare_registry_certificates
+skopeo inspect --raw --authfile "${REGISTRY_AUTH_FILE}" \
+    --cert-dir "${REGISTRY_CERT_DIR}" --tls-verify=true "docker://${IMAGE_REF}" \
     > "${OUTPUT_DIR}/owner-encrypted-manifest.json"
 
 python3 - "${OUTPUT_DIR}/owner-encrypted-manifest.json" "${KBS_KEY_URI}" <<'PY'

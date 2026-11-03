@@ -59,7 +59,7 @@ def test_target_authentication_contract(runtime):
     cpu, gpu = release.RUNTIME_TARGETS[runtime]
     assert auth["cpu_tee"] == cpu
     assert auth["gpu"] == gpu
-    assert auth["init_data_claim"] == DIGEST + ("0" * 32 if cpu == "tdx" else "")
+    assert auth["init_data_claim"] == DIGEST + ("0" * 32 if cpu == "intel_tdx" else "")
     assert auth["required_ear_submods"] == (["cpu0", "gpu0"] if gpu == "nvidia" else ["cpu0"])
     assert auth["required_ear_trust_vectors"]["cpu0"]["configuration"] == 2
     assert release.validate_authorization(auth) == auth
@@ -87,6 +87,16 @@ def test_malformed_authorization_rejected(runtime, field, value):
     auth[field] = value
     with pytest.raises(ValueError):
         release.validate_authorization(auth)
+
+
+@pytest.mark.parametrize(
+    "alias,canonical,runtime",
+    [("tdx", "intel_tdx", "kata-qemu-tdx"), ("snp", "amd_sev_snp", "kata-qemu-nvidia-gpu-snp")],
+)
+def test_legacy_cpu_tee_alias_is_normalized_in_release_authorization(alias, canonical, runtime):
+    auth = authorization(runtime)
+    auth["cpu_tee"] = alias
+    assert release.validate_authorization(auth)["cpu_tee"] == canonical
 
 
 @pytest.mark.parametrize("runtime", RUNTIMES)
@@ -216,18 +226,20 @@ def service_reconstruct(tmp_path, auth, fragment):
     }
     (incoming / "image-security-policy.json").write_text(json.dumps(policy))
     result = tmp_path / "reviewed.rego"
-    block = embedded(COCO / "service/12-install-trusted-service-handoff.sh", "received = json.loads")
+    block = (
+        "import runpy, sys\nfrom pathlib import Path\n"
+        "helper = runpy.run_path(sys.argv[1])\n"
+        "_, _, fragment = helper['release_inputs'](Path(sys.argv[2]))\n"
+        "Path(sys.argv[3]).write_text(fragment)\n"
+    )
     process = subprocess.run(
         [
             sys.executable,
             "-c",
             block,
+            str(COCO / "service/lib/install-workload-release.py"),
             str(incoming),
-            "secure-services.example.com:5000",
-            str(COCO / "service/policies/workload-resource-policy.rego.template"),
             str(result),
-            str(COCO / "service/lib/workload-release.py"),
-            str(COCO / "service/policies/workload-resource-policy-v1.rego.template"),
         ],
         capture_output=True,
         text=True,
@@ -244,7 +256,7 @@ def test_secure_services_reconstructs_only_approved_target_fragment(tmp_path, ru
     assert result.read_text() == fragment
     process, _ = service_reconstruct(tmp_path, auth, fragment + "\nallow := true\n")
     assert process.returncode != 0
-    assert "differs from the secure-services template" in process.stderr
+    assert "differs from the service-owned template" in process.stderr
 
 
 def test_secure_services_upgrades_legacy_fragment_without_installing_it(tmp_path):

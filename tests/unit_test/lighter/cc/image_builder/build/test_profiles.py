@@ -29,6 +29,37 @@ from cvm.common.references import reference_record_name
 
 
 class ProfileTests(unittest.TestCase):
+    def test_kbs_port_must_be_reachable_before_attestation(self):
+        for url, egress, diagnostic in (
+            ("https://kbs.example:9443", [443, 8443], "bootstrap_egress must include"),
+            ("https://kbs.example", [8443], "bootstrap_egress must include"),
+            ("https://kbs.example:0", [443], "invalid port"),
+            ("https://kbs.example:bad", [443], "invalid hostname or port"),
+            ("https://private-user:private-password@kbs.example:9443", [9443], "must not contain credentials"),
+            ("https://[private-invalid", [443], "invalid hostname or port"),
+        ):
+            with (
+                self.subTest(url=url),
+                patch.object(config, "load_yaml", return_value={"kbs_url": url, "bootstrap_egress": egress}),
+                patch.object(config, "local_path") as local,
+                self.assertRaisesRegex(BuildError, diagnostic) as error,
+            ):
+                config.profile("profile.yml")
+            local.assert_not_called()
+            self.assertNotIn("private-", str(error.exception))
+
+    def test_default_and_custom_kbs_ports_are_accepted_when_allowed(self):
+        for url, port in (("https://kbs.example", 443), ("https://kbs.example:9443", 9443)):
+            with (
+                self.subTest(url=url),
+                patch.object(config, "load_yaml", return_value={"kbs_url": url, "bootstrap_egress": [port]}),
+                patch.object(config, "local_path", side_effect=lambda path, value: value),
+                patch.object(config, "read_json", return_value={"snp_single_socket": False}),
+                patch.object(config, "validate_references"),
+                patch.object(config, "validate_kbs_client_linkage"),
+            ):
+                self.assertEqual(config.profile("profile.yml")["bootstrap_egress"], [port])
+
     def test_bare_metal_profile_requires_nondefault_valid_selector_and_policy_id(self):
         for settings, message in (
             ({"attestation_policy_selector": "Bad Selector"}, "Invalid attestation_policy_selector"),
@@ -61,6 +92,7 @@ class ProfileTests(unittest.TestCase):
             patch.object(config, "local_path", side_effect=lambda path, value: value),
             patch.object(config, "read_json", return_value={"snp_single_socket": False}) as read,
             patch.object(config, "validate_references") as validate,
+            patch.object(config, "validate_kbs_client_linkage") as linkage,
             patch.object(config, "gpu_inputs") as gpu_inputs,
             patch.object(config, "validate_gpu_policy"),
         ):
@@ -69,6 +101,7 @@ class ProfileTests(unittest.TestCase):
         read.assert_called_once_with(profile["reference_values"])
         self.assertIs(profile["snp_single_socket"], False)
         validate.assert_called_once_with({"snp_single_socket": False}, ["amd_sev_snp", "intel_tdx"], gpu=True)
+        self.assertEqual(linkage.call_count, 2)
         gpu_inputs.assert_called_once()
 
     def test_snp_profile_and_approved_reference_must_match(self):
@@ -77,6 +110,7 @@ class ProfileTests(unittest.TestCase):
             patch.object(config, "local_path", side_effect=lambda path, value: value),
             patch.object(config, "read_json", return_value={"snp_single_socket": False}),
             patch.object(config, "validate_references"),
+            patch.object(config, "validate_kbs_client_linkage"),
             self.assertRaisesRegex(BuildError, "snp_single_socket reference must match"),
         ):
             config.profile("profile.yml")
@@ -143,6 +177,34 @@ class ProfileTests(unittest.TestCase):
             write_json(path, profiles)
             with self.subTest(platform=platform), self.assertRaisesRegex(BuildError, "Invalid platform"):
                 load_profile_set(path, approved=False)
+
+    def test_snp_finalize_checks_approved_tcb_before_writing_bundle(self):
+        directory = self.candidate("amd_sev_snp")
+        pending = directory / "cvm_manifest.pending.json"
+        manifest = read_json(pending)
+        manifest["dev_mode"] = False
+        references = {"snp_bootloader": [1]}
+        write_json(directory / "reference_values.json", references)
+        manifest["sha256"]["reference_values.json"] = digest_file(directory / "reference_values.json")
+        write_json(pending, manifest)
+        evidence = self.root / "snp-evidence.json"
+        report = {
+            "platform": "amd_sev_snp",
+            "measurements": {"snp.measurement": "0" * 96},
+        }
+        write_json(evidence, report)
+        with (
+            patch.object(builder, "verify_reference"),
+            patch.object(builder, "require_approved_snp_tcb", side_effect=BuildError("unapproved SNP TCB")) as approved,
+            patch.object(builder, "compose", return_value="package policy\n"),
+            patch.object(builder, "verify_bundle"),
+            self.assertRaisesRegex(BuildError, "unapproved SNP TCB"),
+        ):
+            builder.finalize(directory, evidence, package=False)
+        approved.assert_called_once()
+        self.assertEqual(approved.call_args.args[0], report)
+        self.assertEqual(approved.call_args.args[1]["snp_bootloader"], [1])
+        self.assertFalse((directory / "cvm_manifest.json").exists())
 
     def test_different_profile_versions_cannot_be_finalized_or_loaded_together(self):
         builder.finalize(self.candidate("amd_sev_snp"), package=False)

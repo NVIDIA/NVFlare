@@ -1,5 +1,14 @@
 # Run a CVM with an application vault
 
+The launcher preserves the previous clear applog disk before every relaunch in
+`applog-history/applog-<timestamp>.qcow2` beside the delivery. It retains the
+three newest images with mode 0600. Inspect a retained image on a trusted host,
+for example with `guestmount -a applog-history/FILE.qcow2 -m /dev/sda MOUNT_DIR`.
+Copy any required record elsewhere before more than three later launches.
+The launcher creates and atomically renames the new copy before pruning the
+oldest retained image. If the best-effort copy fails, it removes the partial file, warns, and
+continues; clear-log retention never blocks the CVM from starting.
+
 Each platform/application delivery is an OCI artifact containing its complete
 reusable generic CVM bundle plus one application vault. The OCI manifest has a
 reusable CVM layer and a deployment-specific vault/runtime layer. A local OCI
@@ -16,26 +25,68 @@ Trustee, authorize the delivery's CVM bundle, and manage its vault key.
 ## 1. Prepare the runtime host
 
 Use an SNP host for an `amd_sev_snp` delivery or a TDX host with an operational
-quote-generation service for an `intel_tdx` delivery. Install Python 3 and QEMU.
+quote-generation service for an `intel_tdx` delivery. Install Python 3.10 or later and QEMU.
 The host needs KVM access, enough memory for the profile, and guest network access
 to the configured KBS.
 
 The delivery's vault capacity is selected and sealed at build time. It must hold
 both the retained Docker archive and the expanded Docker layers, plus application
 files and runtime writes. If more capacity is needed, rebuild the vault using the
-sizing formula in [BUILD_GUIDE.md](BUILD_GUIDE.md#4-vault-build); do not resize a
+sizing formula in [BUILD_GUIDE.md](BUILD_GUIDE.md#4-seal-an-application-delivery); do not resize a
 sealed delivery in place.
 
-Obtain the platform's `.oci.tar` from Vault Build or its immutable registry
+Obtain the platform's `.oci.tar` from `cvmctl vault` or its immutable registry
 reference. Install [ORAS](https://oras.land/docs/installation/) only when using a
 registry; local OCI tar materialization uses Python alone.
 
-## 2. Materialize the delivery artifact
+## 2. Authenticate, materialize, and launch
+
+Use `cvmctl run` for the normal runtime workflow. It authenticates the
+publisher, validates every OCI descriptor and layer digest, materializes the
+private delivery directory, and invokes its included launcher. For a signed
+registry artifact:
+
+```sh
+artifact=registry.example.org/cvm/my-app-site1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl run "$artifact" \
+  --cosign-verification-key /etc/cvm/release-signing.pub \
+  --output /srv/cvm/vault_my-app-site1
+```
+
+For an offline archive, authenticate the checksum received through the
+publisher's authenticated channel:
+
+```sh
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl run vault_DEPLOYMENT_intel_tdx.oci.tar \
+  --archive-sha256 PUBLISHED_ARCHIVE_SHA256 \
+  --output /srv/cvm/vault_my-app-site1
+```
+
+`run` stays attached to the launcher and returns when QEMU exits. Repeat
+`--gpu PCI_ADDRESS` for explicit GPU placement or use `--cvm-bundle PATH` for
+the advanced shared-bundle override. The launcher still performs every host,
+manifest, vault, and TEE check described below.
+
+`cvmctl run` is the first-launch materialization command. To restart while
+preserving writes under `/vault/application/runtime` and
+`/vault/application/data`, invoke the existing launcher by absolute path:
+
+```sh
+sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/launch_cvm.sh
+```
+
+Repeat the original launcher `--gpu PCI_ADDRESS` and `--bind-address` options
+when they were used. Do not run `cvmctl run` again with the same output: the
+command refuses to overwrite it. Choosing a new output restores the pristine
+published `vault.qcow2`, so it is a new deployment rather than a restart.
+
+## 3. Materialize without launching
 
 Use `./cvmctl pull` to authenticate the publisher, validate every OCI descriptor
 and layer digest, and materialize a private directory. A local tar needs the
 `--archive-sha256` value the publisher sent through an authenticated channel; a
-registry reference needs the `--cosign-key` that signed the digest. Skipping
+registry reference needs the `--cosign-verification-key` matching the key that
+signed the digest. Skipping
 publisher authentication requires an explicit `--allow-unverified` and is for
 isolated labs only. Its platform directory contains both manifests and
 everything needed to launch:
@@ -55,14 +106,36 @@ everything needed to launch:
     └── shutdown_cvm.sh
 ```
 
-### From an OCI layout tar
+### Generic images used by provisioning
 
-Vault Build generates the archive's deployment ID automatically. Use the filename
-provided by the builder; the ID below is illustrative. The `--output` folder is
-an operator-selected local name and can remain readable.
+The invoking user owns a materialized directory, with mode 0700. A generic
+`cvm_image` used by `nvflare provision` must therefore be readable and traversable
+by the **provisioning user**, including `profile_set.json` and platform files.
+The adapter inspects these inputs before it invokes sudo for vault construction.
+If an administrator previously pulled the generic image as root, rematerialize
+that authenticated generic artifact as the provisioning user in a separate
+private directory, without sudo:
 
 ```sh
-sudo ./cvmctl pull vault_0123456789ab4def8123456789abcdef_intel_tdx.oci.tar \
+./cvmctl pull cvm_PROFILE_PLATFORM.oci.tar \
+  --archive-sha256 PUBLISHED_GENERIC_ARCHIVE_SHA256 \
+  --output "$HOME/cvm-images/cvm_PROFILE"
+```
+
+Point the participant's `cvm_image` at that directory and ensure the privileged
+builder can also traverse it. This applies to generic input images. Continue
+materializing **application deliveries** as root for launch: the launch wrapper
+requires root ownership. Do not make a root-only delivery world-readable or
+recursively change its ownership to work around a generic-input permission error.
+
+### From an OCI layout tar
+
+`cvmctl vault` generates the archive's deployment ID automatically. Use the filename
+provided by the builder; the ID below is illustrative. The `--output` folder is
+an operator-selected local name and is materialized as a root-only directory.
+
+```sh
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl pull vault_0123456789ab4def8123456789abcdef_intel_tdx.oci.tar \
   --archive-sha256 PUBLISHED_ARCHIVE_SHA256 \
   --output /srv/cvm/vault_my-app-site1
 ```
@@ -79,7 +152,7 @@ the pull wrapper refuses a mutable tag.
 
 ```sh
 artifact=registry.example.org/cvm/my-app-site1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-sudo ./cvmctl pull "$artifact" --cosign-key /etc/cvm/release-signing.pub \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl pull "$artifact" --cosign-verification-key /etc/cvm/release-signing.pub \
   --output /srv/cvm/vault_my-app-site1
 ```
 
@@ -88,7 +161,7 @@ any bytes are transferred. For an isolated lab registry that deliberately uses
 HTTP and has no signatures, opt out explicitly:
 
 ```sh
-sudo ./cvmctl pull \
+sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl pull \
   registry.example.org:5000/cvm/my-app-site1@sha256:OCI_MANIFEST_DIGEST \
   --plain-http --allow-unverified --output /srv/cvm/vault_my-app-site1
 ```
@@ -97,13 +170,17 @@ OCI digest validation detects corruption and substitution within a selected
 artifact. The signature or the published archive digest establishes who selected
 that digest.
 
-## 3. Launch CVM
+Use this split workflow when transfer and launch belong to different roles,
+when the host should stage content before a maintenance window, or while
+recovering from a completed materialization step.
 
-Change to the delivery's platform directory and run:
+## 4. Launch a materialized CVM
+
+Use the absolute launch command printed by `cvmctl pull`. Do not first `cd` as an
+unprivileged user: the materialized directory is intentionally root-only.
 
 ```sh
-cd /srv/cvm/vault_my-app-site1/intel_tdx
-sudo ./launch_cvm.sh
+sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/launch_cvm.sh
 ```
 
 The wrapper first refuses a delivery directory that is not root-owned or is
@@ -113,21 +190,43 @@ required `cvm_build_id`, checks the local TEE, verifies every generic artifact,
 checks the vault binding, locks the actual vault inode, records runtime state,
 and starts QEMU with an explicit device set: no default devices, no VGA and no
 terminal monitor. The guest console is output-only on the launch terminal.
+The launcher also records those serial bytes in `console-<timestamp>.log`
+beside the delivery, starting before guest boot or vault unlock. It retains
+the three newest files with mode 0600 and prints the current path. Each new
+capture retains at most the first 16 MiB, preserving early boot diagnostics.
+At the limit or on a file-write failure, it warns and keeps draining the logging
+channel so terminal output continues. If capture cannot be created, it warns
+and continues with terminal output. The capture
+contains the existing sanitized boot diagnostics, not raw guest syslog; it
+does not enable guest input or a debug shell. QEMU host errors remain on stderr.
 
 For a GPU profile, it finds exactly the profile's `gpu_count` NVIDIA display controllers with isolated IOMMU groups, loads `vfio-pci`, binds every function in each GPU slot, and passes all selected slots to the VM. TDX uses one QEMU IOMMUFD backend for these assignments. The guest application
 is started by Docker with `--gpus all`. The
 launcher restores the original host drivers when QEMU exits. For explicit placement, repeat `--gpu` exactly `gpu_count` times:
 
 ```sh
-sudo ./launch_cvm.sh --gpu 0000:41:00.0 --gpu 0000:43:00.0
+sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/launch_cvm.sh \
+  --gpu 0000:41:00.0 --gpu 0000:43:00.0
 ```
 
 Advanced operators may override the embedded bundle with a separately managed
 shared bundle directory. If the embedded bundle is absent, this explicit path is
 required; the launcher does not search sibling folders or local build caches:
 
+An absolute bundle path is preferred in operational commands. A relative
+`--cvm-bundle` path resolves against the caller's current directory, including
+when invoking the delivered wrapper by absolute path.
+New wrappers run Python in isolated mode and explicitly load the checked,
+root-owned delivery, keeping caller files and Python environment overrides out
+of module lookup on every supported Python version, including 3.10.
+This applies to newly built wrappers. For an older approved bundle whose
+wrapper changes directory first, use an absolute override path. Updating a
+source checkout does not rewrite templates inside an approved bundle.
+To pick up launch-security updates, build and approve a new generic bundle,
+then regenerate its vault deliveries; keep approved artifacts immutable.
+
 ```sh
-sudo ./launch_cvm.sh \
+sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/launch_cvm.sh \
   --cvm-bundle /opt/cvm-bundles/cvm_cpu-2026.09/intel_tdx
 ```
 
@@ -146,7 +245,7 @@ Writes under `/` use the RAM-backed overlay and count against
 separate `/tmp` tmpfs do not consume that limit. Use `df -h /cow` in the guest to
 inspect it.
 
-## 4. Connect to the application
+## 5. Connect to the application
 
 Only configured ports are forwarded and admitted by the guest firewall. For the
 sample vault:
@@ -158,7 +257,7 @@ curl http://127.0.0.1:8080/
 Forwarded ports listen on all host IPv4 interfaces by default, so other machines
 can reach the application. Pass `--bind-address ADDRESS` to `launch_cvm.sh` to
 listen on one host address only, and use the host firewall for source networks.
-Inside the guest, `allowed_in_cidrs` and `allowed_out_cidrs` from the vault build
+Inside the guest, `allowed_in_cidrs` and `allowed_out_cidrs` from `cvmctl vault`
 confine the allowed ports to address ranges when configured.
 
 The application receives `/vault`, `/applog`, `/user_config` and `/user_data`;
@@ -166,7 +265,7 @@ the measured root's `/usr/bin` and system runtime libraries appear read-only at
 `/host/bin` and `/host/lib` only when the vault was built with
 `container.host_bin: true`. The container starts with a reduced
 capability set, `no-new-privileges` and a process limit; see
-[BUILD_GUIDE.md](BUILD_GUIDE.md#4-vault-build) for the `container` options.
+[BUILD_GUIDE.md](BUILD_GUIDE.md#4-seal-an-application-delivery) for the `container` options.
 Only `/vault` is encrypted and authenticated at rest. `/applog` is
 the CVM's clear output-only channel, intended for logs the operator must read
 without a key. `/user_config` and `/user_data` are clear operator inputs enforced
@@ -174,12 +273,19 @@ read-only by QEMU, the guest mount, and the container bind mount. Treat all
 sidecar content as public and untrusted; keep secrets and confidential logs in
 `/vault`.
 
-## 5. Shutdown CVM
+For NVFlare deliveries made by unified provisioning, job `log.txt` and
+`error_log.txt` are sent to the trusted federation server when the site's
+`allow_log_streaming` setting permits it. Use the authenticated admin API to
+retrieve them; they are not automatically copied to clear `/applog`. Follow the
+[shared CC log-retrieval guide](../../../../docs/user_guide/confidential_computing/operations.rst#retrieve-job-logs-and-early-boot-diagnostics)
+for live logs, complete downloaded components, site opt-out, and failure limits.
+
+## 6. Shutdown CVM
 
 From another shell in the same delivery directory, run:
 
 ```sh
-sudo ./shutdown_cvm.sh
+sudo -- /srv/cvm/vault_my-app-site1/intel_tdx/shutdown_cvm.sh
 ```
 
 The script validates the root-owned runtime record and signals the exact
@@ -202,7 +308,7 @@ holding this delivery's `vault.qcow2` (for example with `sudo lsof /path/to/vaul
 verify its command line and disk paths, stop that process, and confirm its locks
 are released before reusing the delivery.
 
-## 6. Keep vault attachment exclusive
+## 7. Keep vault attachment exclusive
 
 One `vault.qcow2` file may be attached to only one CVM at a time. A second launch
 of the same inode is refused. You may copy a delivery after its CVM is fully
@@ -236,16 +342,37 @@ retains its watchdog.
 
 A failed periodic check no longer powers the guest off at once. The supervisor
 enters quarantine: it stops the application units, Docker and containerd,
-unmounts `/vault` and closes its mapping, which drops the key from the kernel,
-then retries a fresh appraisal and key retrieval once a minute for up to fifteen
-minutes. A successful retry re-verifies the same vault identity, re-mounts the
-vault and restarts the application units; the audit log records `quarantine`
-and then `allow`. If the window expires, or anything in the quarantine sequence
-fails, PID 1 forces power-off as before. A bootstrap failure, an integrity
-failure or exit of either supervisor still forces power-off immediately.
+revokes GPU readiness when configured, and unmounts `/vault` and closes its
+mapping, which drops the key from the kernel. CPU-only guests then retry a fresh
+appraisal and key retrieval once a minute for up to fifteen minutes.
+
+GPU quarantine is terminal for the running guest. After workload stop, Ready
+state revocation, and vault closure, the supervisor exits and PID 1 forces
+poweroff; it never runs `reopen`, restores Ready state, or restarts the workload
+in that VM. If the readiness-reset command fails, bounded readback must confirm
+the configured number of distinct GPUs and their Not Ready state before
+containment can complete. Ready, unknown or malformed output, a query error, or
+failed vault closure remains fatal after vault cleanup is attempted. Not Ready
+prevents new CUDA work; it does not establish GPU-memory erasure. Launch a new
+guest to recover GPU service.
+
+A successful CPU-only retry re-verifies the same vault identity, re-mounts the
+vault and restarts the application units. The supervisor queues `quarantine` and
+recovery `allow` authorization records. GPU containment queues the separate
+console-only `CVM_DIAGNOSTIC` code `gpu_quarantine_terminal`; a readiness command
+error followed by confirmed Not Ready state also queues
+`gpu_readiness_revoke_failed`. These advisory records add no decision value, are
+not written to `attestation.log`, and may be dropped when logging is congested.
+If CPU recovery eligibility expires, or containment or an internal supervisor
+operation fails, PID 1 forces poweroff. The CPU-only 900-second recovery deadline
+never resets; retry cleanup and terminal cleanup each have a separate 180-second
+bound and can extend final poweroff beyond that deadline. Bootstrap failures
+still force poweroff after bounded cleanup; an integrity failure or exit of
+either supervisor still invokes PID 1's forced-poweroff policy.
 `cvm_app.service` stops its container itself on SIGTERM, so a requested stop is
-not a workload failure; an unexpected container exit keeps its status and
-triggers the forced power-off. Development images use the same unit files and
+not a workload failure. An unexpected nonzero container exit keeps its status;
+an unexpected zero exit becomes a wrapper failure. Both trigger forced power-off.
+Development images use the same unit files and
 omit TEE/KBS and integrity-monitor work.
 
 Rebuild and reapprove generic CVM bundles after this change. Earlier hardware

@@ -63,7 +63,7 @@ required_system_packages:
   - linux-modules-7.0.0-31-generic=7.0.0-31.31
 # CoCo v0.23.0 / unmodified Trustee v0.22.0
 trustee_commit: 512fed65642015b849f38fb13bfdec7806639987
-kbs_url: https://kbs.example.org:8443
+kbs_url: https://trustee.example.org:8443
 kbs_cert: ../inputs/kbs-ca.pem
 as_public_key: ../inputs/as-public.pem
 token_algorithm: ES256
@@ -82,16 +82,16 @@ platforms:
     enabled: true
     attester: snp
     firmware: /usr/share/ovmf/OVMF.amdsev.fd
-    kbs_client: ../inputs/kbs-client
+    kbs_client: ../inputs/kbs-client-cpu
     # Produced by `cvmctl provenance` after applying the reviewed standalone
     # client patch. Production builds require it; the digest alone names no source.
-    kbs_client_provenance: ../inputs/kbs_client_build.json
+    kbs_client_provenance: ../inputs/kbs_client_cpu_build.json
     cpu_model: EPYC-v4
   intel_tdx:
     enabled: true
     attester: tdx
     firmware: ../inputs/OVMF.inteltdx.fd
-    kbs_client: ../inputs/kbs-client
-    kbs_client_provenance: ../inputs/kbs_client_build.json
+    kbs_client: ../inputs/kbs-client-cpu
+    kbs_client_provenance: ../inputs/kbs_client_cpu_build.json
     cpu_model: host
     quote_generation: {type: vsock, cid: 2, port: 4050}

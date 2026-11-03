@@ -15,6 +15,7 @@
 """Record an upstream Trustee service or the reviewed selector-capable client."""
 
 import hashlib
+import re
 import subprocess
 from pathlib import Path
 
@@ -23,6 +24,15 @@ from ..common.io import digest_file
 from ..common.versions import GUEST_COMPONENTS_SELECTOR_COMMIT, TRUSTEE_COMMIT
 
 CLIENT_PATCH = Path(__file__).parents[1] / "build/kbs_client_policy_selector.patch"
+
+
+def _canonical_patch(diff):
+    """Match the reviewed index prefixes while retaining every hunk and mode."""
+    return re.sub(
+        rb"(?m)^index ([0-9a-f]{7})[0-9a-f]*\.\.([0-9a-f]{7})[0-9a-f]*( [0-7]{6})?$",
+        rb"index \1..\2\3",
+        diff,
+    )
 
 
 def provenance(source, binary):
@@ -35,11 +45,24 @@ def provenance(source, binary):
     if not status:
         return dict(result, source_clean=True)
     diff = subprocess.check_output(
-        ["git", "-C", str(source), "diff", "--binary", "--no-ext-diff", "--no-color", "HEAD"]
+        [
+            "git",
+            "-C",
+            str(source),
+            "diff",
+            "--binary",
+            "--full-index",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "HEAD",
+        ]
     )
     expected = CLIENT_PATCH.read_bytes()
     require(
-        status.splitlines() and all(not line.startswith("??") for line in status.splitlines()) and diff == expected,
+        status.splitlines()
+        and all(not line.startswith("??") for line in status.splitlines())
+        and _canonical_patch(diff) == _canonical_patch(expected),
         "Trustee source must be unmodified or contain only the reviewed kbs-client selector patch",
     )
     return dict(

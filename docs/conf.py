@@ -119,7 +119,7 @@ if _skip_api:
     # (docs/apidocs/modules.rst) so toctree / :doc: references still resolve.
     exclude_patterns.append("apidocs/nvflare*")
 
-extlinks = {"github_nvflare_link": (f"https://github.com/NVIDIA/NVFlare/tree/{build_version}/%s", "")}
+extlinks = {"github_nvflare_link": (f"https://github.com/NVIDIA/NVFlare/tree/{build_version}/%s", "%s")}
 
 # -- Options for HTML output -------------------------------------------------
 

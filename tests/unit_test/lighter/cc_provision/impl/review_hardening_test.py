@@ -20,7 +20,9 @@ import gzip
 import hashlib
 import json
 import subprocess
+import sys
 import urllib.error
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -51,18 +53,23 @@ def handoff(tmp_path):
     return source, hashlib.sha256(manifest.encode()).hexdigest()
 
 
-def test_handoff_uses_private_authenticated_snapshot(tmp_path, handoff):
+@pytest.mark.parametrize("pin_mode", ["omitted", "empty", "provided"])
+def test_handoff_uses_private_snapshot(tmp_path, handoff, pin_mode):
     source, pin = handoff
     dest = tmp_path / "checked"
-    authenticate_handoff(source, dest, pin)
+    if pin_mode == "omitted":
+        authenticate_handoff(source, dest)
+    else:
+        authenticate_handoff(source, dest, "" if pin_mode == "empty" else pin)
     (source / "cosign.pub").write_bytes(b"replaced later")
     assert (dest / "cosign.pub").read_bytes() == b"reviewed"
     assert dest.stat().st_mode & 0o777 == 0o700
     assert all(p.stat().st_mode & 0o777 == 0o600 for p in dest.iterdir())
 
 
+@pytest.mark.parametrize("pin_mode", ["omitted", "provided"])
 @pytest.mark.parametrize("attack", ["manifest", "payload", "extra", "symlink", "keymode", "missing"])
-def test_handoff_rejects_untrusted_changes(tmp_path, handoff, attack):
+def test_handoff_rejects_invalid_contents(tmp_path, handoff, attack, pin_mode):
     source, pin = handoff
     if attack == "manifest":
         (source / "SHA256SUMS").write_text("self-approved\n")
@@ -78,7 +85,10 @@ def test_handoff_rejects_untrusted_changes(tmp_path, handoff, attack):
     else:
         (source / "image_key").unlink()
     with pytest.raises((ValueError, OSError)):
-        authenticate_handoff(source, tmp_path / "checked", pin)
+        if pin_mode == "omitted":
+            authenticate_handoff(source, tmp_path / "checked")
+        else:
+            authenticate_handoff(source, tmp_path / "checked", pin)
     assert not (tmp_path / "checked").exists()
 
 
@@ -227,3 +237,48 @@ def test_audience_probe_fails_when_kbs_accepts_wrong_audience():
     ):
         with pytest.raises(RuntimeError, match="wrong audience"):
             kbs_audience.probe("https://secure.example", "ca.pem", "key")
+
+
+@pytest.mark.parametrize("pin", ["bad", "0" * 64, False, 0])
+def test_handoff_rejects_invalid_explicit_checksum(tmp_path, handoff, pin):
+    source, _ = handoff
+    with pytest.raises(ValueError, match="pin"):
+        authenticate_handoff(source, tmp_path / "checked", pin)
+    assert not (tmp_path / "checked").exists()
+
+
+@pytest.mark.parametrize("change", [None, "profile", "pod", "duplicate", "traversal", "oversized", "symlink"])
+def test_handoff_generation_checks_local_policy_outputs(tmp_path, change):
+    script_path = Path(__file__).resolve().parents[5] / "examples/devops/coco/admin/40-create-handoffs.sh"
+    marker = "python3 - \"${OUTPUT_DIR}\" <<'PY'\n"
+    check = script_path.read_text().split(marker, 1)[1].split("\nPY", 1)[0]
+    names = {
+        "approved-workload-launch-profile.json",
+        "pod.yaml",
+        "final-initdata.toml",
+        "generated-policy.rego",
+        "image-security-policy.json",
+        "release-authorization.json",
+        "resource-policy-fragment.rego",
+        "kata-policy-security-fix.txt",
+    }
+    for name in names:
+        (tmp_path / name).write_bytes(("generated " + name).encode())
+    manifest = "".join(
+        hashlib.sha256((tmp_path / name).read_bytes()).hexdigest() + "  " + name + "\n" for name in sorted(names)
+    )
+    (tmp_path / "policy-SHA256SUMS").write_text(manifest)
+    if change in {"profile", "pod"}:
+        name = "approved-workload-launch-profile.json" if change == "profile" else "pod.yaml"
+        (tmp_path / name).write_text("changed after generation")
+    elif change == "duplicate":
+        (tmp_path / "policy-SHA256SUMS").write_text(manifest + manifest.splitlines()[0] + "\n")
+    elif change == "traversal":
+        (tmp_path / "policy-SHA256SUMS").write_text("0" * 64 + "  ../outside\n")
+    elif change == "oversized":
+        (tmp_path / "policy-SHA256SUMS").write_text("x" * 8193)
+    elif change == "symlink":
+        (tmp_path / "pod.yaml").unlink()
+        (tmp_path / "pod.yaml").symlink_to(tmp_path / "final-initdata.toml")
+    result = subprocess.run([sys.executable, "-", str(tmp_path)], input=check, capture_output=True, text=True)
+    assert (result.returncode == 0) is (change is None), result.stderr

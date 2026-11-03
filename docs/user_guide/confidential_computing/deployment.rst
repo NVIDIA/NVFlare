@@ -62,7 +62,9 @@ trusted build commands. Paths in this file resolve relative to this file.
        type: trustee
        kbs_endpoint: https://trustee.example.org:8443
        ca_cert_file: ./credentials/kbs-ca.pem
+       # Required only when this service is selected by bare_metal_cvm.
        admin_token_file: ./credentials/kbs-resource-token.jwt
+       expiry_warning_seconds: 604800
        attestation_token_endpoint: http://127.0.0.1:8006/aa/token
        attestation_signing_public_key_file: ./credentials/trustee-as-public.pem
        token_expiration_seconds: 300
@@ -72,12 +74,13 @@ trusted build commands. Paths in this file resolve relative to this file.
        get_token_request_timeout_seconds: 45
        # Optional verifier policy shared by bare-metal CVM and CoCo.
        proof_iat_leeway_seconds: 180
+       # Use the same CPU TEE names as participant cc_config files.
        workload_constraints:
          server:
-           cpu_tee: tdx
+           cpu_tee: intel_tdx
            tdx_mr_td: <approved-96-character-lowercase-hex-value>
          site-1:
-           cpu_tee: snp
+           cpu_tee: amd_sev_snp
            init_data: <approved-64-character-lowercase-hex-value>
        retry:
          max_attempts: 10
@@ -114,6 +117,29 @@ The loopback attestation endpoint is inside a CoCo confidential guest. It is
 not the provisioning host or remote Trustee address. Bare-metal CVM and CoCo
 both select ``attestation.service: trustee`` and therefore consume this same
 object. Trustee settings must not be repeated in participant files.
+``admin_token_file`` is required only for a service selected by a bare-metal
+CVM participant, whose builder registers resources. CoCo provisioning does not
+use this credential: omit it from CoCo-only configurations and keep the KBS
+administrative token with the Trustee administrator for release registration.
+If supplied, the file must exist. The KBS TLS CA/bundle, AS signing public key,
+registry TLS CA/bundle, and registry publisher credential files must also exist;
+the registry CA/bundle file is required even if its root is already in system
+trust. Certificate and public-key files come from the corresponding service
+administrator; publisher credentials stay on trusted provisioning infrastructure.
+
+``expiry_warning_seconds`` defaults to seven days. Provisioning warns when the
+parseable administration JWT enters that window and rejects it after expiry;
+CVM publication applies the
+same window to reviewed RVPS references.
+
+Upgrade the provisioner and every runtime image together before switching an
+existing project to the canonical ``intel_tdx`` and ``amd_sev_snp`` names. New
+kits write those canonical values into ``workload_constraints``. A runtime from
+2.9.0 or 2.9.1 accepts only its earlier ``tdx``/``snp`` spelling and will reject
+a newly generated kit during authorizer initialization. Existing 2.9.0/2.9.1
+kits keep working unchanged, and the new reader accepts legacy aliases during
+upgrade, but re-provisioning always emits canonical names and therefore requires
+the updated runtime image.
 If ``workload_constraints`` is present, it must contain exactly every protected
 participant that selects this service. Use logical name ``server`` for the root
 server and participant names for clients. ``proof_iat_leeway_seconds`` accepts
@@ -126,8 +152,9 @@ GPU evidence and ``none`` requires CPU-only evidence.
 ``token_expiration_seconds`` is the maximum accepted EAR age. For a bare-metal
 CVM, provisioning also places this limit in the measured guest so renewal uses
 the earlier of signed ``exp`` and ``iat + token_expiration_seconds``. It must be
-greater than 75 seconds for a CPU-only CVM or 255 seconds for a GPU CVM, leaving
-one complete bounded appraisal plus the 15-second publication margin.
+at least 90 seconds for a CPU-only CVM or 270 seconds for a GPU CVM, covering
+one complete bounded appraisal, the 15-second expiry margin, and the 15-second
+issuance, retrieval, and publication margin.
 
 Common participant fields
 -------------------------
@@ -144,7 +171,10 @@ Every ``cc_config`` starts with these fields:
      service: trustee
    class_allow_list: []
 
-``cpu_tee`` is ``intel_tdx`` or ``amd_sev_snp``. ``gpu_tee`` is ``none`` or
+``cpu_tee`` is ``intel_tdx`` or ``amd_sev_snp``. The 2.9 reader accepts the
+former ``tdx`` and ``snp`` spellings in existing configurations and v2
+workload-authorization files, normalizes them in memory, and emits only the
+canonical names. ``gpu_tee`` is ``none`` or
 ``nvidia_cc`` and also controls the peer attestation GPU requirement. An empty
 ``class_allow_list`` adds no custom classes; it never
 means unrestricted. Entries must be complete reviewed Python class paths.
@@ -162,36 +192,26 @@ Workload sources form a closed enum:
 Bare-metal CVM
 --------------
 
-.. code-block:: yaml
+Start with the :github_nvflare_link:`single-platform CPU-only example
+<examples/advanced/cvm_builder/cpu_only/README.md>`. The mixed TDX/SNP GPU
+example is an advanced topology.
 
-   schema_version: 1
-   cc_deployment_mode: bare_metal_cvm
-   cpu_tee: intel_tdx
-   gpu_tee: none
-   attestation:
-     service: trustee
-   workload:
-     source:
-       type: docker_archive
-       path: /srv/nvflare/images/application.tar
-   bare_metal_cvm:
-     cvm_image: oci://registry.example.org/cvm/tdx@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-     storage:
-       vault_size_gib: 32  # Example only; calculate for the image and workload.
-       applog_size_gib: 1
-       user_config_size_gib: 1
-       user_data_size_gib: 1
-     network:
-       allowed_in_ports: []
-       allowed_out_ports: [8443]
-       allowed_in_cidrs: []
-       allowed_out_cidrs: []
+.. literalinclude:: ../../../examples/advanced/cvm_builder/cpu_only/cc_server.yml
+   :language: yaml
 
 ``cvm_image`` is an immutable registry reference or a pulled CVM directory.
 Its approved contract must match ``cpu_tee`` and ``gpu_tee``. The application
 image identity is read from the Docker archive. Federation, admin, relay, and
 listener ports are derived from the signed kit and merged with the requested
 network additions.
+
+``bare_metal_cvm.hosts_entries`` optionally maps hostnames to literal IPv4 or
+IPv6 addresses, for example ``server.example.invalid: 192.0.2.10`` (replace the
+documentation address). The builder carries these authenticated mappings into
+both the guest's and the application's ``/etc/hosts``. Use the client-reachable
+server host address when QEMU forwards the server's FL port. This does not alter
+the admin host's resolver, replace TLS certificate-name checks, or change the
+generic profile's measured KBS hostname. Configure those independently.
 
 The vault retains the Docker archive and stores its expanded layers plus
 application data. Size it as ``archive bytes + imported image bytes + application
@@ -209,30 +229,22 @@ key release remains a separate Trustee authorization decision.
 CoCo
 ----
 
-.. code-block:: yaml
-
-   schema_version: 1
-   cc_deployment_mode: coco
-   cpu_tee: amd_sev_snp
-   gpu_tee: nvidia_cc
-   attestation:
-     service: trustee
-   workload:
-     source:
-       type: docker_build
-       context: ./site-1
-       dockerfile: Dockerfile
-   coco:
-     release_name: site-1-v1
-     registry: coco_workloads
-     registry_repository: workloads/site-1
-     platform_config_file: ../admin/platform.env
+.. literalinclude:: ../../../examples/devops/coco/provision/cc_site-1.yml
+   :language: yaml
 
 ``registry`` selects the project-level registry; ``registry_repository`` is
-only its repository path. ``platform_config_file`` pins the approved Kata
-runtime profile and must not own registry credentials. The trusted project
+only its repository path. ``platform_config_file`` supplies the captured
+Kata runtime profile and existing genpolicy/rules/settings paths; it must not
+own registry credentials. The trusted project
 ``build_command`` consumes a generated request containing the participant's
 staged source. It cannot replace or override that source.
+
+The example starts with a CoCo-ready cluster and configured Trustee. Its
+:github_nvflare_link:`four-step workflow <examples/devops/coco/README.md>`
+captures the installed runtime, sets Trustee reference values, provisions the
+images and Pod YAML, then registers the generated release resources before launch.
+It does not install infrastructure or configure Trustee automatically during
+provisioning.
 
 The CPU/GPU pair selects one of ``kata-qemu-snp``,
 ``kata-qemu-nvidia-gpu-snp``, ``kata-qemu-tdx``, or
