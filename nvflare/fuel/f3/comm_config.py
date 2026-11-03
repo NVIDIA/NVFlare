@@ -51,6 +51,7 @@ class VarName:
     SFM_SEND_STALL_TIMEOUT = "sfm_send_stall_timeout"
     SFM_CLOSE_STALLED_CONNECTION = "sfm_close_stalled_connection"
     SFM_SEND_STALL_CONSECUTIVE_CHECKS = "sfm_send_stall_consecutive_checks"
+    SFM_RECEIVE_IDLE_TIMEOUT = "sfm_receive_idle_timeout"
     TCP_NO_DELAY = "tcp_no_delay"
 
 
@@ -167,6 +168,9 @@ class CommConfigurator:
 
     def get_sfm_send_stall_consecutive_checks(self, default=3):
         return ConfigService.get_int_var(VarName.SFM_SEND_STALL_CONSECUTIVE_CHECKS, self.config, default=default)
+
+    def get_sfm_receive_idle_timeout(self, default):
+        return ConfigService.get_float_var(VarName.SFM_RECEIVE_IDLE_TIMEOUT, self.config, default=default)
 
     def get_tcp_no_delay(self, default=True):
         return ConfigService.get_bool_var(VarName.TCP_NO_DELAY, self.config, default=default)

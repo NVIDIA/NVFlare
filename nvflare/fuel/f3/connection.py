@@ -104,6 +104,10 @@ class Connection(ABC):
         """
         pass
 
+    def force_close(self):
+        """Immediately close the transport, discarding pending output if supported."""
+        self.close()
+
     @abstractmethod
     def send_frame(self, frame: BytesAlike):
         """Send a SFM frame through the connection to the remote endpoint.

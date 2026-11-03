@@ -61,6 +61,7 @@ class SfmConnection:
         self.local_endpoint = local_endpoint
         self.sfm_endpoint = None
         self.last_activity = 0
+        self.receive_idle_timeout_triggered = False
         self.sequence = 0
         self.lock = threading.Lock()
         self.send_state_lock = threading.Lock()

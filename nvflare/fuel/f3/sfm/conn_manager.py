@@ -597,7 +597,7 @@ class SfmFrameReceiver(FrameReceiver):
         self.conn = conn
 
     def process_frame(self, frame: BytesAlike):
-        self.conn.last_activity = time.time()
+        self.conn.last_activity = time.monotonic()
 
         try:
             self.conn_manager.process_frame(self.conn, frame)
