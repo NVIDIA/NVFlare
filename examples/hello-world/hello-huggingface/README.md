@@ -14,9 +14,6 @@ Install the PyTorch extra on the same NVFlare distribution that supplied this ex
 # Stable installation
 python -m pip install "nvflare[PT]"
 
-# Nightly installation
-python -m pip install "nvflare-nightly[PT]"
-
 # Editable installation, run from the NVFlare checkout
 python -m pip install -e ".[PT]"
 ```

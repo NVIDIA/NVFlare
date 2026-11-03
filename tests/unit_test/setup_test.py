@@ -13,57 +13,65 @@
 # limitations under the License.
 
 import datetime
-import os
-import shutil
-import subprocess
-import sys
+import importlib.util
+import runpy
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
+import setuptools
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
-FAILING_VERSIONEER = """
-def get_versions():
-    return {"version": "0+unknown", "error": "unable to compute version"}
 
-
-def get_cmdclass():
-    return {}
-"""
-
-
-def _run_setup_version(tmp_path: Path, base_version: str = None) -> subprocess.CompletedProcess:
-    shutil.copy2(ROOT_DIR / "setup.py", tmp_path / "setup.py")
-    (tmp_path / "versioneer.py").write_text(FAILING_VERSIONEER)
-
-    env = os.environ.copy()
-    if base_version is None:
-        env.pop("NVFL_BASE_VERSION", None)
-    else:
-        env["NVFL_BASE_VERSION"] = base_version
-
-    return subprocess.run(
-        [sys.executable, "setup.py", "--version"],
-        cwd=tmp_path,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=30,
+@pytest.fixture
+def setup_metadata(monkeypatch):
+    """Exercise setup's metadata decisions without launching a build or Git process."""
+    versioneer = SimpleNamespace(
+        get_versions=lambda: {"version": "0+unknown", "error": "unable to compute version"},
+        get_cmdclass=lambda: {},
     )
+    monkeypatch.setattr(importlib.util, "spec_from_file_location", Mock())
+    monkeypatch.setattr(importlib.util, "module_from_spec", lambda _: versioneer)
+    setup = Mock()
+    monkeypatch.setattr(setuptools, "setup", setup)
+    monkeypatch.setattr(setuptools, "find_packages", lambda **kwargs: ["nvflare"])
+    monkeypatch.delenv("NVFL_BASE_VERSION", raising=False)
+    return versioneer, setup
 
 
-def test_versioneer_failure_without_base_version_fails_clearly(tmp_path):
-    result = _run_setup_version(tmp_path)
+def test_versioneer_failure_without_base_version_fails_clearly(setup_metadata):
+    with pytest.raises(RuntimeError, match="Versioneer could not determine the NVFlare package version") as error:
+        runpy.run_path(str(ROOT_DIR / "setup.py"))
 
-    assert result.returncode != 0
-    assert "Versioneer could not determine the NVFlare package version" in result.stderr
-    assert "set NVFL_BASE_VERSION explicitly" in result.stderr
+    assert "set NVFL_BASE_VERSION explicitly" in str(error.value)
 
 
-def test_versioneer_failure_uses_configured_base_version_override(tmp_path):
+def test_versioneer_failure_uses_configured_base_version_override(setup_metadata, monkeypatch):
+    monkeypatch.setenv("NVFL_BASE_VERSION", "3.0.0")
     before = datetime.date.today()
-    result = _run_setup_version(tmp_path, base_version="3.0.0")
+    runpy.run_path(str(ROOT_DIR / "setup.py"))
     after = datetime.date.today()
 
-    assert result.returncode == 0, result.stderr
     expected_versions = {f"3.0.0.dev{date:%y%m%d}" for date in (before, after)}
-    assert result.stdout.strip() in expected_versions
+    metadata = setup_metadata[1].call_args.kwargs
+    assert metadata["version"] in expected_versions
+    assert metadata["name"] == "nvflare"
+
+
+@pytest.mark.parametrize("release", (None, "0", "1"))
+@pytest.mark.parametrize("version", ("2.10.0", "2.10.0rc1", "2.10.0.dev0+125.gd05110ab4"))
+def test_release_and_development_builds_share_package_identity(setup_metadata, monkeypatch, release, version):
+    versioneer, setup = setup_metadata
+    versioneer.get_versions = lambda: {"version": version, "error": None}
+    if release is None:
+        monkeypatch.delenv("NVFL_RELEASE", raising=False)
+    else:
+        monkeypatch.setenv("NVFL_RELEASE", release)
+
+    runpy.run_path(str(ROOT_DIR / "setup.py"))
+
+    metadata = setup.call_args.kwargs
+    assert metadata["name"] == "nvflare"
+    assert metadata["version"] == version

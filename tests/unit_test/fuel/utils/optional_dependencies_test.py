@@ -32,11 +32,13 @@ from nvflare.fuel.utils.optional_dependencies import (
 
 @pytest.fixture
 def mock_distributions(monkeypatch):
-    def configure(versions, module_path=optional_dependencies.__file__):
+    def configure(versions, module_path=optional_dependencies.__file__, direct_url=None):
         def lookup(name):
             if name not in versions:
                 raise PackageNotFoundError(name)
-            return SimpleNamespace(version=versions[name], locate_file=lambda _: module_path)
+            return SimpleNamespace(
+                version=versions[name], locate_file=lambda _: module_path, read_text=lambda _: direct_url
+            )
 
         monkeypatch.setattr(optional_dependencies, "distribution", lookup)
 
@@ -77,8 +79,7 @@ def test_require_optional_dependencies_lists_missing_modules(mock_distributions)
     ("name", "version"),
     (
         ("nvflare", "2.10.1"),
-        ("nvflare-nightly", "2.10.0.dev20261029"),
-        ("nvflare-nightly", "2.10.0.dev0+125.gd05110ab4.dirty"),
+        ("nvflare", "2.10.0rc1"),
     ),
 )
 def test_recovery_guidance_preserves_distribution_and_version(mock_distributions, name, version, extra):
@@ -97,10 +98,32 @@ def test_recovery_guidance_preserves_distribution_and_version(mock_distributions
 
 @pytest.mark.parametrize(
     "versions",
-    ({}, {"nvflare": "2.10.0", "nvflare-nightly": "2.10.0.dev20261029"}, {"nvflare": ""}),
+    (
+        {},
+        {"nvflare-nightly": "2.10.0.dev20261029"},
+        {"nvflare": "2.10.0", "nvflare-nightly": "2.10.0.dev20261029"},
+        {"nvflare": ""},
+    ),
 )
 def test_recovery_guidance_does_not_guess_distribution(mock_distributions, versions):
     mock_distributions(versions)
+    with patch.object(optional_dependencies, "find_spec", return_value=None):
+        with pytest.raises(MissingOptionalDependencyError) as error:
+            require_optional_dependencies("feature", "dashboard", ("flask",))
+
+    assert "same NVFlare wheel or source checkout with the 'dashboard' extra" in str(error.value)
+    assert "pip install" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "direct_url",
+    (
+        '{"url": "file:///build/nvflare.whl", "archive_info": {}}',
+        '{"url": "file:///checkout", "dir_info": {"editable": true}}',
+    ),
+)
+def test_recovery_guidance_preserves_local_install(mock_distributions, direct_url):
+    mock_distributions({"nvflare": "2.10.0.dev0+125.gd05110ab4"}, direct_url=direct_url)
     with patch.object(optional_dependencies, "find_spec", return_value=None):
         with pytest.raises(MissingOptionalDependencyError) as error:
             require_optional_dependencies("feature", "dashboard", ("flask",))

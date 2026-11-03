@@ -35,9 +35,12 @@ def _installation_hint(extra: str) -> str:
             continue
         module_path = installed.locate_file("nvflare/fuel/utils/optional_dependencies.py")
         if Path(module_path).resolve() == Path(__file__).resolve() and installed.version:
-            installations.append(f"{name}[{extra}]=={installed.version}")
+            installations.append((name, installed))
     if len(installations) == 1:
-        return f"Install them with: python -m pip install '{installations[0]}'"
+        name, installed = installations[0]
+        # A legacy name or a direct wheel/source install must not be resolved on PyPI.
+        if name == "nvflare" and not installed.read_text("direct_url.json"):
+            return f"Install them with: python -m pip install 'nvflare[{extra}]=={installed.version}'"
     return f"Reinstall the same NVFlare wheel or source checkout with the '{extra}' extra."
 
 
