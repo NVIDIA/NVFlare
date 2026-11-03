@@ -38,9 +38,6 @@ Command Usage
      download        download job result
      clone           clone an existing job
      delete          delete a job
-     list_templates  [DEPRECATED] use 'nvflare recipe list'
-     create          [DEPRECATED] use 'python job.py --export --export-dir <job_folder>' + 'nvflare job submit -j <job_folder>'
-     show_variables  [DEPRECATED] use 'nvflare recipe list' or the Job Recipe API
 
 *****************
 Common Workflow
@@ -626,20 +623,6 @@ To discover built-in recipes, use:
 .. code-block:: shell
 
    nvflare recipe list
-
-Deprecated commands:
-
-- ``nvflare job create``: retained for compatibility. Prefer ``python job.py --export`` followed by ``nvflare job submit``.
-- ``nvflare job list_templates``: use ``nvflare recipe list``.
-- ``nvflare job show_variables``: use the Job Recipe API.
-
-Current deprecation notes:
-
-- ``nvflare job create`` still exposes template- and config-oriented arguments for
-  legacy workflows.
-- ``nvflare job list_templates`` and ``nvflare job show_variables`` remain
-  available for backward compatibility but are not the preferred interfaces for
-  recipe discovery or job-variable inspection.
 
 *********************
 JSON Output and Help

@@ -170,11 +170,8 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 
 | Subcommand | Server? | Agent Readiness Status |
 | --- | --- | --- |
-| `create` | No | Deprecated — retain with stderr warning; use `python job.py --export --export-dir <job_folder>` + `nvflare job submit` instead |
 | `submit` | Yes | Needs JSON output, exit codes, structured errors; returns `job_id` immediately |
 | `wait` | Yes | Single-envelope automation wait; no progress stream |
-| `list-templates` | No | Deprecated — retain with stderr warning; use `nvflare recipe list`. Underscore alias `list_templates` kept. |
-| `show-variables` | No | Deprecated — retain with stderr warning; use Job Recipe API. Underscore alias `show_variables` kept. |
 
 `submit` already uses `new_secure_session()` (`nvflare/fuel/flare_api/flare_api.py`) for server connectivity. The same session infrastructure is used by `ProdEnv` and `PocEnv`.
 
@@ -184,7 +181,7 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 | --- | --- | --- |
 | `nvflare simulator` | — | Deprecated — retain with stderr warning; use Job Recipe SimEnv directly (`python job.py`) |
 | `nvflare poc` | `config`, `prepare`, `start`, `stop`, `clean`, `add-user`, `add-site` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass and to `clean` for stop-before-cleanup; register generated user/admin kits in the shared startup kit registry |
-| `nvflare config` | `add`, `use`, `inspect`, `list`, `remove` | User-facing startup kit registry commands; keeps 2.7.x root flags `-d/--startup_kit_dir`, deprecated `-pw/--poc_workspace_dir`, and deprecated `-jt/--job_templates_dir`; no server connection |
+| `nvflare config` | `add`, `use`, `inspect`, `list`, `remove` | User-facing startup kit registry commands; keeps 2.7.x root flags `-d/--startup_kit_dir` and deprecated `-pw/--poc_workspace_dir`; no server connection |
 | `nvflare poc config` | — | POC-specific local config, including the POC workspace path |
 | `nvflare study` | `register`, `show`, `list`, `remove`, `add-site`, `remove-site`, `add-user`, `remove-user` | Add multi-study lifecycle CLI using the active startup kit |
 | `nvflare provision` | — | Add JSON output, `--schema`, `--force` for Y/N prompts; restore pre-2.7.0 default: no args = generate `project.yml` |
@@ -744,8 +741,6 @@ Root compatibility flags:
   New workflows should use `nvflare config add` and `nvflare config use`.
 - `-pw` / `--poc_workspace_dir`: accepted for compatibility with 2.7.x scripts, but
   deprecated. New workflows should use `nvflare poc config --pw <poc-workspace-dir>`.
-- `-jt` / `--job_templates_dir`: accepted for compatibility with 2.7.x scripts, but job
-  template config is deprecated.
 - Interim development-only spellings such as `--poc.workspace`,
   `--poc.startup_kit`, and `--prod.startup_kit` are not part of the public
   compatibility contract and must be rejected.
@@ -1352,20 +1347,6 @@ updates POC service metadata so `nvflare poc start -p <name>` can manage the new
 
 ### `nvflare job`
 
-#### `nvflare job create` — deprecated
-
-Retain with stderr deprecation warning. Migrate to `python job.py --export --export-dir <job_folder>` + `nvflare job submit -j <job_folder>`.
-
-| Argument | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `-j`, `--job_folder` | str | No | `"./current_job"` | Job folder path |
-| `-w`, `--template` | str | No | `"sag_pt"` | Template name or folder |
-| `-sd`, `--script_dir` | str | No | — | Additional script directory |
-| `-f`, `--config_file` | str (append) | No | — | Config file with optional `key=value` overrides |
-| `-force`, `--force` | flag | No | — | Overwrite existing config |
-| `-debug`, `--debug` | flag | No | — | Debug mode |
-| `--schema` | flag | No | — | Print command schema and exit |
-
 #### `nvflare job submit`
 
 Submits a pre-built job config folder to a running server. Returns `job_id` immediately
@@ -1603,14 +1584,6 @@ Schema contract:
 - `streaming: true`
 - `output_modes: ["json", "jsonl"]`
 
-#### `nvflare job list-templates` — deprecated
-
-Retain with stderr warning; use `nvflare recipe list` instead. Underscore alias `list_templates` accepted for backward compatibility.
-
-#### `nvflare job show-variables` — deprecated
-
-Retain with stderr warning; job variables are defined and inspected via the Job Recipe API. Underscore alias `show_variables` accepted for backward compatibility.
-
 ### `nvflare provision`
 
 | Argument | Type | Required | Default | Description |
@@ -1693,7 +1666,6 @@ Retain with stderr warning. Underscore alias `authz_preview` accepted for backwa
 | `poc stop` | Add | Add | Add | — |
 | `poc clean` | Add | Add | Add | Add `--force` to stop a running local POC system before cleanup |
 | `config add/use/inspect/list/remove` | Add | Add | Add | Manage local startup kit registry; no server connection |
-| `job create` | — | — | — | Deprecated |
 | `job submit` | Add | Add | Add | Returns `job_id` immediately |
 | `job wait` | Add | Add | Add | Single-envelope automation wait/poll |
 | `job monitor` | Add | Add | Add | Interactive progress wait/poll |
@@ -1701,8 +1673,6 @@ Retain with stderr warning. Underscore alias `authz_preview` accepted for backwa
 | `provision` | Add | Add | Add | Restore pre-2.7.0 default; add `--force` |
 | `preflight-check` | Add | Add | Fix | 0=pass, 1=fail; alias `preflight_check` kept |
 | `config` | Add | Add | Add | Local config parent command and startup kit registry; no normal server connection |
-| `job list-templates` | — | — | — | Deprecated; alias `list_templates` kept |
-| `job show-variables` | — | — | — | Deprecated; alias `show_variables` kept |
 | `simulator` | — | — | — | Deprecated |
 | `dashboard` | — | — | — | No changes |
 | `authz-preview` | — | — | — | Deprecated; alias `authz_preview` kept |
