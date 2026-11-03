@@ -427,6 +427,20 @@ def test_submission_rejects_hocon_and_yaml_client_configs(extension):
     assert "client config is missing" in error
 
 
+def test_submission_accepts_json_default_client_config_and_uses_it_for_admission():
+    meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1, "resource_spec": {}}
+    data = _zip_minimal_job(
+        "split",
+        meta,
+        {"format_version": 2, "workflows": []},
+        {"format_version": 3, "execution_lifetime": "task", "executors": []},
+        client_extension="json.default",
+    )
+    valid, error, submitted = JobMetaValidator().validate("split", data)
+    assert valid, error
+    assert submitted["cj_resource_spec"] == {"@ALL": {}}
+
+
 def test_submission_cannot_redirect_resident_gpu_admission_with_cj_marker():
     meta = {
         "name": "split",

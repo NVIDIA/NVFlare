@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import collections
+import json
 import logging
+import os
 from io import BytesIO
 from typing import Optional, Set, Tuple
 from zipfile import ZipFile
@@ -24,8 +26,7 @@ from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.apis.job_meta_validator_spec import JobMetaValidatorSpec
 from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
-from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.config import CONFIG_EXTENSIONS
 from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
@@ -93,12 +94,10 @@ class JobMetaValidator(JobMetaValidatorSpec):
         logger.debug(f"validate file {base_meta_file}.json exists for job {job_name}")
 
         meta = None
-        for ext, fmt in ConfigFormat.config_ext_formats().items():
+        for ext in CONFIG_EXTENSIONS:
             meta_file = f"{base_meta_file}{ext}"
             if meta_file in zf.namelist():
-                config_loader = ConfigFactory.get_config_loader(fmt)
-                meta_data = zf.read(meta_file)
-                meta = config_loader.load_config_from_str(meta_data.decode()).to_dict()
+                meta = json.loads(zf.read(meta_file).decode())
                 break
         if meta:
             job_id = meta.get(JobMetaKey.JOB_ID.value)
@@ -216,12 +215,11 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
     @staticmethod
     def _load_config(zip_file: ZipFile, zip_folder: str, init_config_path: str) -> Optional[dict]:
-        basename = ConfigFactory.get_file_basename(init_config_path)
-        for ext, fmt in ConfigFormat.config_ext_formats().items():
+        basename = os.path.basename(init_config_path).split(".", 1)[0]
+        for ext in CONFIG_EXTENSIONS:
             config_path = f"{zip_folder}{basename}{ext}"
             if config_path in zip_file.namelist():
-                config_loader = ConfigFactory.get_config_loader(fmt)
-                return config_loader.load_config_from_str(zip_file.read(config_path).decode()).to_dict()
+                return json.loads(zip_file.read(config_path).decode())
         return None
 
     @staticmethod
@@ -347,10 +345,6 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
     @staticmethod
     def _config_exists(zip_file: ZipFile, zip_folder, init_config_path: str) -> bool:
-        def match(parent: ZipFile, config_path: str) -> bool:
-            import os
-
-            full_path = os.path.join(zip_folder, config_path)
-            return full_path in parent.namelist()
-
-        return ConfigFactory.match_config(zip_file, init_config_path, match)
+        basename = os.path.splitext(os.path.basename(init_config_path))[0]
+        names = zip_file.namelist()
+        return any(os.path.join(zip_folder, f"{basename}{ext}") in names for ext in CONFIG_EXTENSIONS)

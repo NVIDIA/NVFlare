@@ -16,8 +16,7 @@ import json
 import os
 from typing import Dict, List, Optional, Union
 
-from nvflare.fuel.utils.config import Config, ConfigFormat
-from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.config import CONFIG_EXTENSIONS, load_config
 from nvflare.fuel.utils.log_utils import get_module_logger
 
 ENV_VAR_PREFIX = "NVFLARE_"
@@ -197,9 +196,9 @@ class ConfigService:
             cls._sections[section_name] = data
 
     @classmethod
-    def load_configuration(cls, file_basename: str) -> Optional[Config]:
+    def load_configuration(cls, file_basename: str) -> Optional[Dict]:
         """Load config data from the specified file basename.
-        The full name of the config file will be determined by ConfigFactory.
+        The full name of the config file is determined by nvflare.fuel.utils.config.find_config_file.
 
         Args:
             file_basename: the basename of the config file.
@@ -207,8 +206,7 @@ class ConfigService:
         Returns: config data loaded, or None if the config file is not found.
 
         """
-        result = ConfigFactory.load_config(file_basename, cls._config_path)
-        return result
+        return load_config(file_basename, cls._config_path)
 
     @classmethod
     def load_config_dict(
@@ -229,9 +227,9 @@ class ConfigService:
         Returns: Dictionary from the configuration
                 if not found, exception will be raised.
         """
-        conf = ConfigFactory.load_config(file_basename, search_dirs)
-        if conf:
-            return conf.to_dict()
+        conf = load_config(file_basename, search_dirs)
+        if conf is not None:
+            return conf
         else:
             if raise_exception:
                 raise FileNotFoundError(cls.config_not_found_msg(file_basename, search_dirs))
@@ -240,7 +238,7 @@ class ConfigService:
     @classmethod
     def config_not_found_msg(cls, file_basename, search_dirs):
         basename = os.path.splitext(file_basename)[0]
-        conf_exts = "|".join(ConfigFormat.config_ext_formats().keys())
+        conf_exts = "|".join(CONFIG_EXTENSIONS)
         msg = f"cannot find file '{basename}[{conf_exts}]'"
         msg = f"{msg} from search paths: '{search_dirs}'" if search_dirs else msg
         return msg

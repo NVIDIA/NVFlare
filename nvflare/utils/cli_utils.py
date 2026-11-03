@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
-from nvflare.fuel.utils.config import ConfigFormat
+from nvflare.fuel.utils.config import CONFIG_EXTENSIONS
 from nvflare.tool.job.job_client_const import CONFIG_JSON
 
 CONFIG_VERSION = "version"
@@ -160,8 +160,8 @@ def is_dir_empty(path: str):
 
 
 def save_config(dst_config: dict, dst_path: str):
-    if not dst_path or not dst_path.endswith(tuple(ConfigFormat.extensions())):
-        raise ValueError(f"invalid configuration file path '{dst_path}', expecting one of {ConfigFormat.extensions()}")
+    if not dst_path or not dst_path.endswith(CONFIG_EXTENSIONS):
+        raise ValueError(f"invalid configuration file path '{dst_path}', expecting one of {list(CONFIG_EXTENSIONS)}")
 
     temp_path = None
     try:

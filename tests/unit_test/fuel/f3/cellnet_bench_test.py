@@ -23,7 +23,7 @@ from dev_tools.f3 import cellnet_bench
 from nvflare.fuel.f3.streaming.byte_receiver import ACK_INTERVAL
 from nvflare.fuel.f3.streaming.byte_streamer import STREAM_CHUNK_SIZE, STREAM_WINDOW_SIZE
 from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_INTERVAL, STREAM_RETRY_MAX_PENDING_BYTES
-from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.config import find_config_file
 from tests.timing_utils import isolate_time
 
 
@@ -124,9 +124,7 @@ SAMPLE_CONFIG = Path(cellnet_bench.__file__).parent / "comm_config.sample.json"
 
 
 def test_sample_config_is_invisible_to_comm_config_search():
-    fmt, found = ConfigFactory.search_config_format("comm_config.json", [str(SAMPLE_CONFIG.parent)])
-
-    assert (fmt, found) == (None, None)
+    assert find_config_file("comm_config.json", [str(SAMPLE_CONFIG.parent)]) is None
 
 
 def test_configure_f3_loads_sample_config_ignoring_sibling_comm_config(tmp_path):

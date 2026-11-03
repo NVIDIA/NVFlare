@@ -19,7 +19,7 @@ from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
 from nvflare.fuel.utils.class_loader import load_class
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
-from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.config import find_config_file
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.dict_utils import augment
 from nvflare.fuel.utils.json_scanner import JsonObjectProcessor, JsonScanner, Node
@@ -71,7 +71,7 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
             raise TypeError(f"config_file_names must be str or list of strs but got {type(config_file_name)}")
 
         for f in config_files:
-            if not ConfigFactory.has_config(f):
+            if find_config_file(f) is None:
                 raise FileNotFoundError(f"config_file_names {f} does not exist or not a file")
 
         self.config_file_names = config_files

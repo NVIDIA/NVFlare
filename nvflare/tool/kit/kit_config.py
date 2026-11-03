@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Set, Tuple
 
-from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.config import load_config
 from nvflare.tool.job.job_client_const import CONFIG_JSON
 from nvflare.utils.cli_utils import (
     get_config_value,
@@ -483,9 +483,8 @@ def inspect_startup_kit_metadata(path: str) -> Dict:
     if kind == STARTUP_KIT_KIND_ADMIN:
         has_admin_cert_provider = False
         try:
-            fed_admin_config = ConfigFactory.load_config("fed_admin.json", [startup_dir])
-            if fed_admin_config:
-                config_dict = fed_admin_config.to_dict()
+            config_dict = load_config("fed_admin.json", [startup_dir])
+            if config_dict:
                 admin_config = config_dict.get("admin", {})
                 metadata["identity"] = admin_config.get("username")
                 has_admin_cert_provider = bool(admin_config.get("admin_cert_provider"))
@@ -593,13 +592,12 @@ def resolve_admin_user_and_dir_from_startup_kit(
     """Resolve admin username and normalized admin user dir from a startup kit path."""
     admin_user_dir = validate_admin_startup_kit(startup_kit_dir)
     startup_dir = os.path.join(admin_user_dir, "startup")
-    fed_admin_config = ConfigFactory.load_config("fed_admin.json", [startup_dir])
-    if not fed_admin_config:
+    config_dict = load_config("fed_admin.json", [startup_dir])
+    if not config_dict:
         raise StartupKitConfigError(
             f"Unable to locate fed_admin configuration from startup kit location {startup_kit_dir}"
         )
 
-    config_dict = fed_admin_config.to_dict()
     username = config_dict.get("admin", {}).get("username")
     if not username:
         metadata = inspect_startup_kit_metadata(admin_user_dir)
