@@ -13,8 +13,7 @@
 # limitations under the License.
 
 
-"""Numeric measurements with one metric-tagged diagnostics list per scope."""
-
+"""Resource report input checks and arithmetic for numeric measurements."""
 
 import json
 import math
@@ -24,39 +23,32 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 SCHEMA_VERSION = "1.0"
-
 KIND_PARTICIPANT_SUMMARY = "nvflare.resource_stats.participant_summary"
-
 KIND_RESOURCE_SUMMARY = "nvflare.resource_stats.resource_summary"
-
-RECORD_KINDS = {KIND_PARTICIPANT_SUMMARY, KIND_RESOURCE_SUMMARY}
-
+KIND_STUDY_SUMMARY = "nvflare.resource_stats.study_summary"
+RECORD_KINDS = {KIND_PARTICIPANT_SUMMARY, KIND_RESOURCE_SUMMARY, KIND_STUDY_SUMMARY}
 MAX_PARTICIPANT_SUMMARY_BYTES = 1024 * 1024
-
 MAX_RESOURCE_SUMMARY_BYTES = 64 * 1024 * 1024
-
+MAX_STUDY_SUMMARY_BYTES = 64 * 1024 * 1024
 MAX_RECORD_BYTES = {
     KIND_PARTICIPANT_SUMMARY: MAX_PARTICIPANT_SUMMARY_BYTES,
     KIND_RESOURCE_SUMMARY: MAX_RESOURCE_SUMMARY_BYTES,
+    KIND_STUDY_SUMMARY: MAX_STUDY_SUMMARY_BYTES,
 }
-
 MAX_PARTICIPANTS = 10_000
-
+MAX_STUDY_JOBS = 10_000
 MAX_JSON_DEPTH = 32
-
+MAX_JOB_NAME_LENGTH = 255
 PARTICIPANT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}$")
-
 JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-
+JOB_STATUS_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._:/+-]{0,63}$")
+STUDY_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$")
 ISSUE_CODES = {"observation_incomplete", "attribution_incomplete", "unsupported", "malformed_source"}
-
 _PARTIAL_ISSUES = {"observation_incomplete", "attribution_incomplete"}
-
 _DIMENSIONS = {"cpu", "memory", "gpu"}
-
 _UTILIZATION = {"cpu_consumed", "retained_content", "message_traffic"}
-
 _METRICS = _UTILIZATION | {"resource_capacity", "resource_time", "workspace_filesystem"}
+_LEGACY_TERMINAL_STATES = {"FINISHED_OK", "FINISHED_EXCEPTION", "ABORTED", "ABANDONED", "FAILED"}
 
 
 class ContractError(ValueError):
@@ -495,6 +487,54 @@ def derive_job_totals(participants):
     return sum_job_totals(participants)
 
 
+def _validate_totals(value, path):
+    value = _mapping(value, path)
+    _exact_keys(value, {"resource_time", "resource_utilization", "issues"}, set(), path)
+    _validate_capacity(value["resource_time"], f"{path}.resource_time", elapsed=True)
+    _validate_utilization(value["resource_utilization"], f"{path}.resource_utilization")
+    tags = normalize_scope_issues(value["issues"], _scope_measurements(value))
+    if any(item["code"] not in _PARTIAL_ISSUES for item in tags):
+        _fail(f"{path}.issues", "aggregate issues must describe derived quality")
+
+
+def _validate_study_jobs(jobs, path):
+    if not isinstance(jobs, list) or len(jobs) > MAX_STUDY_JOBS:
+        _fail(path, "must contain a bounded job list")
+    ids = set()
+    for job in jobs:
+        job = _mapping(job, path)
+        state = job.get("resource_data")
+        if state not in ("included", "unavailable", "nonterminal"):
+            _fail(path, "has an invalid resource-data state")
+        _exact_keys(
+            job,
+            {"job_id", "job_name", "job_status", "resource_data"} | ({"totals"} if state == "included" else set()),
+            set(),
+            path,
+        )
+        _identifier(job["job_id"], JOB_ID_PATTERN, path)
+        if job["job_id"] in ids:
+            _fail(path, "job IDs must be unique")
+        ids.add(job["job_id"])
+        if not isinstance(job["job_name"], str) or not 1 <= len(job["job_name"]) <= MAX_JOB_NAME_LENGTH:
+            _fail(path, "has an invalid job display name")
+        _identifier(job["job_status"], JOB_STATUS_PATTERN, path)
+        terminal = job["job_status"].startswith("FINISHED:") or job["job_status"] in _LEGACY_TERMINAL_STATES
+        if terminal == (state == "nonterminal"):
+            _fail(path, "job status and resource-data state disagree")
+        if state == "included":
+            _validate_totals(job["totals"], path)
+
+
+def sum_study_totals(jobs):
+    return _sum_totals([job["totals"] for job in jobs if job["resource_data"] == "included"], complete=True)
+
+
+def derive_study_totals(jobs):
+    _validate_study_jobs(jobs, "jobs")
+    return sum_study_totals(jobs)
+
+
 def _json_depth(value):
     pending = [(value, 1)]
     while pending:
@@ -541,6 +581,37 @@ def _validate_resource_summary(record):
     sum_job_totals(record["participants"])
 
 
+def _validate_study_summary(record):
+    common = {"schema_version", "kind"}
+    _exact_keys(record, common | {"selection", "generated_at", "coverage", "jobs", "totals"}, set(), "$")
+    selection = _mapping(record["selection"], "selection")
+    _exact_keys(selection, {"study_name"}, set(), "selection")
+    _identifier(selection["study_name"], STUDY_NAME_PATTERN, "study_name")
+    _timestamp(record["generated_at"], "generated_at")
+    _validate_study_jobs(record["jobs"], "jobs")
+    actual = {
+        "selected_jobs": len(record["jobs"]),
+        **{
+            name: sum(job["resource_data"] == state for job in record["jobs"])
+            for name, state in (
+                ("included_jobs", "included"),
+                ("unavailable_jobs", "unavailable"),
+                ("nonterminal_jobs", "nonterminal"),
+            )
+        },
+    }
+    coverage = _mapping(record["coverage"], "coverage")
+    _exact_keys(coverage, set(actual), set(), "coverage")
+    for name, count in actual.items():
+        if _number(coverage[name], f"coverage.{name}", integer=True) != count:
+            _fail("coverage", "does not match selected jobs")
+    _validate_totals(record["totals"], "totals")
+    reported = deepcopy(record["totals"])
+    reported["issues"] = _ordered_issues(reported["issues"])
+    if reported != sum_study_totals(record["jobs"]):
+        _fail("totals", "must equal included-job sums")
+
+
 def validate_record(record, *, serialized_size=None):
     record = _mapping(record, "$")
     kind = record.get("kind")
@@ -555,17 +626,27 @@ def validate_record(record, *, serialized_size=None):
     validators = {
         KIND_PARTICIPANT_SUMMARY: _validate_participant_summary,
         KIND_RESOURCE_SUMMARY: _validate_resource_summary,
+        KIND_STUDY_SUMMARY: _validate_study_summary,
     }
     validators[kind](record)
 
 
 def normalize_record(record, *, serialized_size=None):
-    """Validate once, then copy/order participant rows and their shared issues."""
+    """Validate once, then copy/order known rows and their shared issue lists."""
     validate_record(record, serialized_size=serialized_size)
     result = deepcopy(record)
     if "participants" in result:
         result["participants"].sort(key=lambda entry: (entry["role"], entry["participant_name"]))
-    for scope in [result, *result.get("participants", [])]:
+    if "jobs" in result:
+        result["jobs"].sort(key=lambda job: job["job_id"])
+    scopes = [
+        result,
+        *result.get("participants", []),
+        *(job["totals"] for job in result.get("jobs", []) if job["resource_data"] == "included"),
+    ]
+    if "totals" in result:
+        scopes.append(result["totals"])
+    for scope in scopes:
         if "issues" in scope:
             scope["issues"] = _ordered_issues(scope["issues"])
     return result

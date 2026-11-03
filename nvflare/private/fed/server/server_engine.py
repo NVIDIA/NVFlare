@@ -123,6 +123,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
         self.executor = ThreadPoolExecutor(max_workers=workers)
         self.lock = Lock()
+        self.resource_query_lock = Lock()
         self.logger = get_obj_logger(self)
 
         self.asked_to_stop = False

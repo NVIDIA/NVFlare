@@ -31,7 +31,7 @@ def _collect(
 ):
     events = []
     times = iter(ticks)
-    usages = iter(((100.0, 40.0), (102.0, 40.0)))
+    usages = iter(((float(100), float(40)), (float(102), float(40))))
 
     def clock():
         events.append("clock")
@@ -133,7 +133,7 @@ def test_totals_sum_explicit_time_without_requiring_participant_duration(monkeyp
     report, _ = _collect(monkeypatch, tmp_path)
     first, second, third = (_entry(report, name) for name in ("site-1", "site-2", "site-3"))
     second["duration_seconds"] = 20
-    second["resource_time"] = capacity_to_resource_time(second["resource_capacity"], 20)
+    second["resource_time"] = capacity_to_resource_time(second["resource_capacity"], 20, scope_issues=second["issues"])
     second["resource_utilization"]["cpu_consumed"] = {"status": "unavailable"}
     second["issues"] = [issue for issue in second["issues"] if issue["metric"] != "cpu_consumed"] + [
         {"metric": "cpu_consumed", "code": "observation_incomplete"}
