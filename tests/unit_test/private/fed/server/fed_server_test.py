@@ -13,20 +13,24 @@
 # limitations under the License.
 
 from contextlib import nullcontext
+from threading import Lock
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey, SecureTrainConst
+from nvflare.apis.client import Client
+from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey, SecureTrainConst, ServerCommandKey, ServerCommandNames
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobOutcomeMsgKey, new_cell_message
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
@@ -37,6 +41,167 @@ from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, 
 
 def assert_client_outcome_unresolved(job_runner):
     job_runner.resolve_client_outcome.assert_not_called()
+
+
+@pytest.fixture
+def parent_command_server():
+    server = FederatedServer.__new__(FederatedServer)
+    server.logger = MagicMock()
+    server.lock = Lock()
+    client = Client("site-1", "test-token")
+    server.client_manager = SimpleNamespace(clients={client.token: client})
+    server.engine = MagicMock()
+    server.engine.run_processes = {"job-a": {RunProcessKey.PARTICIPANTS: server.client_manager.clients}}
+    server.engine.exception_run_processes = {}
+    server._set_job_aborted = MagicMock()
+    return server
+
+
+def _parent_command(origin, peer, command=ServerCommandNames.GET_CLIENTS, job_id="job-a", execution_error=False):
+    request = new_cell_message(
+        {
+            MessageHeaderKey.ORIGIN: origin,
+            MessageHeaderKey.TOPIC: command,
+            CellMessageHeaderKeys.JOB_ID: job_id,
+            CellMessageHeaderKeys.CLIENT_NAME: "site-1",
+            CellMessageHeaderKeys.TOKEN: "test-token",
+        },
+        {"execution_error": execution_error},
+    )
+    if peer:
+        request.set_prop(MessagePropKey.ENDPOINT, Endpoint(peer))
+    return request
+
+
+@pytest.mark.parametrize("active", [True, False])
+@pytest.mark.parametrize(
+    "site,origin,peer,full_clients",
+    [
+        ("site-1", "server.job-a", "server.job-a", True),
+        ("site-1", "site-1.job-a", "site-1.job-a", False),
+        ("site-1", "site-1.job-a", "site-1", False),
+        ("relay.site-1", "relay.site-1.job-a", "relay.site-1", False),
+        ("relay.site-1", "relay.site-1.job-a", "relay", False),
+    ],
+)
+def test_parent_get_clients_preserves_role_and_job_presence(
+    parent_command_server, site, origin, peer, full_clients, active
+):
+    server = parent_command_server
+    server.client_manager.clients["test-token"].set_fqcn(site)
+    if not active:
+        server.engine.run_processes.clear()
+
+    reply = server._listen_command(_parent_command(origin, peer))
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+    assert reply.payload[ServerCommandKey.JOB_ID] == "job-a"
+    clients = reply.payload[ServerCommandKey.CLIENTS]
+    if not active:
+        assert clients is None
+    elif full_clients:
+        assert clients is server.client_manager.clients
+    else:
+        assert clients == {}
+
+
+@pytest.mark.parametrize(
+    "origin,peer,job_id",
+    [
+        ("site-1.job-b", "site-1.job-b", "job-a"),
+        ("server.job-b", "server.job-b", "job-a"),
+        ("site-1", "site-1", "job-a"),
+        ("server.job-a", "site-1.job-a", "job-a"),
+        ("server.job-a", "server.job-b", "job-a"),
+        ("server", "site-1", "job-a"),
+        ("site-1.job-b.job-a", "site-1.job-b", "job-a"),
+        ("server.job-a", None, "job-a"),  # e.g. a bulk item without transport metadata
+        (None, "server.job-a", "job-a"),
+        (42, "server.job-a", "job-a"),
+        ("server.job-a", "server.job-a", None),
+        ("server.job-a", "server.job-a", ["job-a"]),
+        ("server.job-a.child", "server.job-a.child", "job-a.child"),
+    ],
+)
+@pytest.mark.parametrize(
+    "command", [ServerCommandNames.GET_CLIENTS, ServerCommandNames.UPDATE_RUN_STATUS, ServerCommandNames.HEARTBEAT]
+)
+def test_parent_commands_reject_wrong_job_or_peer_without_side_effects(
+    parent_command_server, origin, peer, job_id, command
+):
+    server = parent_command_server
+
+    reply = server._listen_command(_parent_command(origin, peer, command, job_id, execution_error=True))
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+    assert reply.payload is None
+    assert set(server.engine.run_processes["job-a"]) == {RunProcessKey.PARTICIPANTS}
+    assert server.engine.exception_run_processes == {}
+    server.engine.abort_app_on_server.assert_not_called()
+    server._set_job_aborted.assert_not_called()
+
+
+@pytest.mark.parametrize("command", [ServerCommandNames.UPDATE_RUN_STATUS, ServerCommandNames.HEARTBEAT])
+def test_client_job_cannot_report_server_job_lifecycle(parent_command_server, command):
+    reply = parent_command_server._listen_command(_parent_command("site-1.job-a", "site-1.job-a", command))
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+    assert set(parent_command_server.engine.run_processes["job-a"]) == {RunProcessKey.PARTICIPANTS}
+    parent_command_server.engine.abort_app_on_server.assert_not_called()
+
+
+@pytest.mark.parametrize("header", [CellMessageHeaderKeys.CLIENT_NAME, CellMessageHeaderKeys.TOKEN])
+def test_client_job_lookup_requires_registered_identity(parent_command_server, header):
+    request = _parent_command("site-1.job-a", "site-1.job-a")
+    request.set_header(header, "unknown")
+
+    reply = parent_command_server._listen_command(request)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+    assert reply.payload is None
+
+
+def test_parent_rejects_unknown_command(parent_command_server):
+    request = _parent_command("server.job-a", "server.job-a", command="unknown")
+
+    reply = parent_command_server._listen_command(request)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.INVALID_REQUEST
+    parent_command_server.engine.abort_app_on_server.assert_not_called()
+
+
+@pytest.mark.parametrize("execution_error", [False, True])
+def test_server_job_can_update_its_own_status(parent_command_server, execution_error):
+    server = parent_command_server
+    request = _parent_command(
+        "server.job-a", "server.job-a", ServerCommandNames.UPDATE_RUN_STATUS, execution_error=execution_error
+    )
+
+    reply = server._listen_command(request)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+    info = server.engine.run_processes["job-a"]
+    assert info[RunProcessKey.PROCESS_FINISHED] is True
+    assert info.get(RunProcessKey.PROCESS_EXE_ERROR, False) is execution_error
+    assert ("job-a" in server.engine.exception_run_processes) is execution_error
+
+
+@pytest.mark.parametrize("origin", ["server.job-a", "server"])
+@pytest.mark.parametrize("active", [True, False])
+def test_parent_accepts_server_job_and_simulator_self_heartbeat(parent_command_server, origin, active):
+    server = parent_command_server
+    if not active:
+        server.engine.run_processes.clear()
+
+    reply = server._listen_command(_parent_command(origin, origin, ServerCommandNames.HEARTBEAT))
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+    if active:
+        server.engine.abort_app_on_server.assert_not_called()
+        server._set_job_aborted.assert_not_called()
+    else:
+        server.engine.abort_app_on_server.assert_called_once_with("job-a")
+        server._set_job_aborted.assert_called_once_with("job-a")
 
 
 class _TestServer(BaseServer):
