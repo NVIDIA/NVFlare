@@ -120,6 +120,13 @@ job uses the same list with `--cov-append`. Other integration suites have their
 own CI selections; do not add every fast suite to this specific runner. Keep
 conditional skip reasons visible in CI logs, for example with pytest `-rs`.
 
+The backported concurrency, workspace cleanup, harness failure, and OpenShift
+shell contracts use this same serial selection. `tests.process_test_utils` owns
+their subprocesses through partial startup and failed assertions, including
+detached descendants, bounded termination/reaping, and timeout diagnostics.
+Concurrent result/release scenarios run under a parent-process watchdog so a
+regressed lock cannot strand the pytest process.
+
 The 2.9 CoCo publisher workflow contracts run serially under
 `tests/integration_test/fast/coco/`, with their command watchdog and cleanup in
 `tests.coco_test_utils.process`. The shared runner includes these cases in the

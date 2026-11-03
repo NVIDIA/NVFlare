@@ -26,10 +26,14 @@ from pathlib import Path
 TESTS = (
     "tests/integration_test/fast/autofl_process_lifecycle_test.py",
     "tests/integration_test/fast/coco",
+    "tests/integration_test/fast/concurrent_cleanup_test.py",
     "tests/integration_test/fast/download_parallel_test.py",
     "tests/integration_test/fast/hf_distributed_contract_test.py",
+    "tests/integration_test/fast/harness_process_cleanup_test.py",
+    "tests/integration_test/fast/openshift_scripts_test.py",
     "tests/integration_test/fast/server_transit_e2e_test.py",
     "tests/integration_test/fast/streaming_pass_through_test.py",
+    "tests/integration_test/fast/workspace_cleanup_process_test.py",
 )
 
 
