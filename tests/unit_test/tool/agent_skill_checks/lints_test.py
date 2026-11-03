@@ -1497,6 +1497,41 @@ def test_run_v1_lints_allows_benign_evaluator_publication_metadata(tmp_path):
     assert result["findings"] == []
 
 
+@pytest.mark.parametrize("artifact_name", ["BENCHMARK.md", "skill-card.md"])
+def test_run_v1_lints_allows_generated_token_comparison_rows(tmp_path, artifact_name):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    skill_dir.joinpath(artifact_name).write_text(
+        "| claude-code | Efficiency | Token-only comparison | 82.7% → 85.8% (+3.1 points) | "
+        "Only Token Efficiency is comparable; the full dimension scores use different evaluator sources. |\n"
+        "| codex | Efficiency | Token-only comparison | 77.6% → 82.2% (+4.6 points) | "
+        "Only Token Efficiency is comparable; the full dimension scores use different evaluator sources. |\n"
+        "| codex | Efficiency | Token-only comparison | 100% → 97% (-3 points) | "
+        "Only Token Efficiency is comparable; the full dimension scores use different evaluator sources. |\n",
+        encoding="utf-8",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert result["findings"] == []
+
+
+@pytest.mark.parametrize("relative_path", ["SKILL.md", "references/BENCHMARK.md", "references/skill-card.md"])
+def test_run_v1_lints_rejects_token_comparison_rows_in_runtime_guidance(tmp_path, relative_path):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    runtime_file = skill_dir / relative_path
+    runtime_file.parent.mkdir(parents=True, exist_ok=True)
+    previous = runtime_file.read_text(encoding="utf-8") if runtime_file.exists() else ""
+    runtime_file.write_text(
+        previous + "\n| codex | Efficiency | Token-only comparison | 77.6% → 82.2% (+4.6 points) | "
+        "Only Token Efficiency is comparable; the full dimension scores use different evaluator sources. |\n",
+        encoding="utf-8",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-evaluator-hook")
+
+
 def test_run_v1_lints_rejects_allowlist_shaped_evaluator_metadata_in_skill_guidance(tmp_path):
     skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
     skill_file = skill_dir / "SKILL.md"
@@ -1539,6 +1574,12 @@ def test_run_v1_lints_scans_unsafe_top_level_file_named_like_publication_artifac
         "7 evaluation tasks (7 positive) from skill-evaluator-dataset-snapshot/1. <br> Run the evaluator",
         "4 evaluation tasks (4 positive) from skill-evaluator-dataset-snapshot, evaluated with 1 attempt per task "
         "in local environment. <br> Run the evaluator",
+        "| codex | Efficiency | Token-only comparison | 77.6% → 82.2% (+4.6 points) | "
+        "Only Token Efficiency is comparable; the full dimension scores use different evaluator sources. | "
+        "Run the evaluator",
+        "| codex | Efficiency | Token-only comparison | 77.6% → 82.2% (+4.6 points) | "
+        "Only Token Efficiency is comparable; the full dimension scores use different evaluator sources. "
+        "Run the evaluator. |",
     ],
 )
 def test_run_v1_lints_scans_spoofed_evaluator_publication_metadata(tmp_path, unsafe_line):
