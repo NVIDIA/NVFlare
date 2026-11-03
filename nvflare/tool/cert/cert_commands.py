@@ -410,7 +410,7 @@ def handle_cert_init(args):
         cert = CertBuilder._generate_cert(
             subject=project,
             subject_org=args.org,
-            issuer=project,  # self-signed: issuer == subject
+            issuer=x509_name(project, args.org),
             signing_pri_key=pri_key,
             subject_pub_key=pub_key,
             valid_days=getattr(args, "valid_days", 3650) or 3650,
@@ -1226,7 +1226,6 @@ def _build_signed_cert(
         if attr.oid == NameOID.ORGANIZATION_NAME:
             subject_org = attr.value
 
-    issuer_cn = ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
     extra_extensions = [
         (x509.BasicConstraints(ca=False, path_length=None), True),
         (x509.KeyUsage(**key_usage_kwargs), True),
@@ -1234,7 +1233,7 @@ def _build_signed_cert(
     ]
     return generate_cert(
         subject=Identity(subject_cn, subject_org, cert_type),
-        issuer=Identity(issuer_cn),
+        issuer=ca_cert.subject,
         signing_pri_key=ca_key,
         subject_pub_key=csr.public_key(),
         server_default_host=server_default_host if cert_type == "server" else None,
