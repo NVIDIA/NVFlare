@@ -15,6 +15,7 @@
 import json
 import logging
 
+from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .cert import Entity, make_root_cert
@@ -317,22 +318,27 @@ class Store(object):
             values["props"] = json.dumps(props)
         if not values:
             return add_ok({"client": _dict_or_empty(client)})
-        result = db.session.execute(
-            db.update(Client)
-            .where(
-                Client.id == client.id,
-                Client.creator_id == client.creator_id,
-                Client.organization_id == client.organization_id,
-                Client.approval_state == client.approval_state,
+        try:
+            result = db.session.execute(
+                db.update(Client)
+                .where(
+                    Client.id == client.id,
+                    Client.creator_id == client.creator_id,
+                    Client.organization_id == client.organization_id,
+                    Client.approval_state == client.approval_state,
+                )
+                .values(**values)
+                .execution_options(synchronize_session=False)
             )
-            .values(**values)
-            .execution_options(synchronize_session=False)
-        )
-        if result.rowcount != 1:
-            raise DashboardError(
-                "The client site changed. Reload its current approval and details before editing.", status_code=409
-            )
-        db.session.commit()
+            if result.rowcount != 1:
+                raise DashboardError(
+                    "The client site changed. Reload its current approval and details before editing.", status_code=409
+                )
+            db.session.commit()
+        except IntegrityError as error:
+            db.session.rollback()
+            message = "This site name already exists. Please choose another site name."
+            raise DashboardError(message, status_code=409, errors={"name": message}) from error
         db.session.refresh(client)
         return add_ok({"client": _dict_or_empty(client)})
 

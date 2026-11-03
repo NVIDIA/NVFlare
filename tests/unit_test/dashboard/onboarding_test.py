@@ -284,3 +284,28 @@ def test_site_approval_wins_over_intervening_owner_edit(app, client, auth_header
         saved = db.session.get(Client, site["id"])
         assert saved.name == site["name"]
         assert saved.approval_state == 100
+
+
+def test_duplicate_site_rename_returns_conflict_and_allows_retry(client, register):
+    user, headers = register()
+    sites = []
+    for _ in range(2):
+        response = client.post(
+            API + "/clients",
+            headers=headers,
+            json={"name": "unique-" + uuid4().hex, "organization": user["organization"], "description": "original"},
+        )
+        assert response.status_code == 201
+        sites.append(response.json["client"])
+    url = API + f"/clients/{sites[0]['id']}"
+    response = client.patch(url, headers=headers, json={"name": sites[1]["name"], "description": "must not be saved"})
+    assert response.status_code == 409
+    assert "already exists" in response.json["message"]
+    assert "name" in response.json["errors"]
+    saved = client.get(url, headers=headers)
+    assert saved.status_code == 200
+    assert saved.json["client"]["name"] == sites[0]["name"]
+    assert saved.json["client"]["description"] == "original"
+    response = client.patch(url, headers=headers, json={"name": "retry-" + uuid4().hex})
+    assert response.status_code == 200
+    assert response.json["client"]["name"].startswith("retry-")

@@ -66,3 +66,100 @@ def test_valid_client_names_generate_encrypted_startup_kit(dashboard_app):
             for name, value in original.items():
                 setattr(project, name, value)
             db.session.commit()
+
+
+@pytest.mark.skipif(shutil.which("zip") is None, reason="Encrypted startup kits require the system zip executable")
+@pytest.mark.parametrize("legacy_approved", [False, True])
+def test_unreviewed_authorization_details_cannot_reach_certificate(dashboard_app, legacy_approved):
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+
+    from nvflare.dashboard.application.models import User
+
+    app = dashboard_app
+    client = app.test_client()
+    api = "/nvflare-dashboard/api/v1"
+    response = client.post(api + "/login", json={"email": TEST_USER, "password": TEST_PW})
+    admin_headers = {"Authorization": "Bearer " + response.json["access_token"]}
+    email = f"certificate-review-{uuid4().hex}@test.com"
+    user_id = None
+    with app.app_context():
+        project = Project.query.first()
+        original = {column.name: getattr(project, column.name) for column in Project.__table__.columns}
+    try:
+        with app.app_context():
+            Store.set_project({"short_name": "reviewed_kit", "server1": "localhost", "frozen": True})
+        response = client.post(api + "/users", json={"email": email, "password": "p"})
+        assert response.status_code == 201
+        user_id = response.json["user"]["id"]
+        url = api + f"/users/{user_id}"
+        token = client.post(api + "/login", json={"email": email, "password": "p"}).json["access_token"]
+        headers = {"Authorization": "Bearer " + token}
+        response = client.patch(
+            url,
+            headers=admin_headers,
+            json={
+                "approval_state": 100,
+                "reviewed_role": "",
+                "reviewed_organization": "",
+            },
+        )
+        assert response.status_code == 400
+        assert set(response.json["errors"]) == {"role", "organization"}
+        if legacy_approved:
+            # A pre-existing incomplete approval must not permit the old exploit either.
+            with app.app_context():
+                db.session.get(User, user_id).approval_state = 100
+                db.session.commit()
+        response = client.patch(url, headers=headers, json={"organization": "Unreviewed_org", "role": "org_admin"})
+        assert response.status_code == (403 if legacy_approved else 200)
+        response = client.post(url + "/blob", headers=headers, json={"pin": "1234"})
+        assert response.status_code == (400 if legacy_approved else 403)
+        assert response.is_json and response.json["status"] == "error"
+        with app.app_context():
+            user = db.session.get(User, user_id)
+            assert user.role.name == ("" if legacy_approved else "org_admin")
+            assert user.organization.name == ("" if legacy_approved else "Unreviewed_org")
+            assert user.approval_state == (100 if legacy_approved else 0)
+            assert user.download_count == 0
+        # Complete the details under administrator control, then explicitly approve that tuple.
+        response = client.patch(
+            url,
+            headers=admin_headers,
+            json={
+                "approval_state": 0,
+                "role": "org_admin",
+                "organization": "Reviewed_org",
+            },
+        )
+        assert response.status_code == 200
+        response = client.patch(
+            url,
+            headers=admin_headers,
+            json={
+                "approval_state": 100,
+                "reviewed_role": "org_admin",
+                "reviewed_organization": "Reviewed_org",
+            },
+        )
+        assert response.status_code == 200
+        for edit in [None, {"organization": "Unreviewed_org"}, {"role": "lead"}, {"role": "project_admin"}]:
+            if edit:
+                response = client.patch(url, headers=headers, json=edit)
+                assert response.status_code == 403
+            response = client.post(url + "/blob", headers=headers, json={"pin": "1234"})
+            assert response.status_code == 200
+            with ZipFile(io.BytesIO(response.data)) as kit:
+                assert kit.getinfo("startup/client.crt").flag_bits & 1
+                certificate = x509.load_pem_x509_certificate(kit.read("startup/client.crt", pwd=b"1234"))
+            assert certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == email
+            assert certificate.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)[0].value == "Reviewed_org"
+            assert certificate.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)[0].value == "org_admin"
+    finally:
+        if user_id is not None:
+            client.delete(api + f"/users/{user_id}", headers=admin_headers)
+        with app.app_context():
+            project = Project.query.first()
+            for name, value in original.items():
+                setattr(project, name, value)
+            db.session.commit()

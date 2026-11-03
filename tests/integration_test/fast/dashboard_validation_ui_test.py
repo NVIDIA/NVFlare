@@ -554,3 +554,55 @@ def test_site_policy_rejection_preserves_editor_without_session_timeout(page, li
     finally:
         with app.app_context():
             Store.delete_user(user["id"])
+
+
+def test_bulk_approval_keeps_all_successful_users_approved(page, live_dashboard):
+    from contextlib import ExitStack
+
+    app, _ = live_dashboard
+    users = []
+    try:
+        with app.app_context():
+            for _ in range(2):
+                users.append(
+                    Store.create_user(
+                        {
+                            "email": f"bulk-{uuid4().hex}@test.com",
+                            "password": "p",
+                            "organization": "Bulk_org",
+                            "role": "org_admin",
+                        }
+                    )["user"]
+                )
+        login(page, TEST_USER, TEST_PW, 4)
+        page.goto(NS + "/project-admin-dashboard")
+        for user in users:
+            row = page.get_by_role("row").filter(has_text=user["email"])
+            expect(row).to_contain_text("Org Admin (requested)")
+            row.get_by_role("checkbox").check()
+        page.get_by_role("button", name="Bulk Actions", exact=True).click()
+        page.get_by_role("button", name="Approve User", exact=True).click()
+        with ExitStack() as stack:
+            responses = [
+                stack.enter_context(
+                    page.expect_response(
+                        lambda response, id=user["id"]: response.request.method == "PATCH"
+                        and response.url.endswith(f"/users/{id}")
+                    )
+                )
+                for user in users
+            ]
+            page.get_by_role("button", name="Apply", exact=True).click()
+        for response in responses:
+            assert response.value.status == 200
+        with app.app_context():
+            for user in users:
+                assert db.session.get(User, user["id"]).approval_state == 100
+        for user in users:
+            row = page.get_by_role("row").filter(has_text=user["email"])
+            expect(row).to_contain_text("Approved (D/L:")
+            expect(row).not_to_contain_text("Org Admin (requested)")
+    finally:
+        with app.app_context():
+            for user in users:
+                Store.delete_user(user["id"])
