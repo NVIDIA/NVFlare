@@ -597,17 +597,34 @@ class FederatedServer(BaseServer):
         command = request.get_header(MessageHeaderKey.TOPIC)
         data = request.payload
 
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        peer = request.get_prop(MessagePropKey.ENDPOINT)
+        # CoreCell validates the origin against the transport peer before dispatch.
+        if not peer or FQCN.validate(job_id) or FQCN.SEPARATOR in job_id:
+            return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED)
+
+        is_server_job = peer.name == origin == f"{FQCN.ROOT_SERVER}.{job_id}"
+
         if command == ServerCommandNames.GET_CLIENTS:
+            if not is_server_job:
+                client_fqcn = self._resolve_client_fqcn_for_auth(
+                    request.get_header(CellMessageHeaderKeys.CLIENT_NAME),
+                    request.get_header(CellMessageHeaderKeys.TOKEN),
+                )
+                if not client_fqcn or origin != f"{client_fqcn}.{job_id}":
+                    return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED)
+
             if job_id in self.engine.run_processes:
-                clients = self.engine.run_processes[job_id].get(RunProcessKey.PARTICIPANTS)
+                # CJs only need to know whether their SJ still exists during recovery.
+                clients = self.engine.run_processes[job_id].get(RunProcessKey.PARTICIPANTS) if is_server_job else {}
                 return_data = {ServerCommandKey.CLIENTS: clients, ServerCommandKey.JOB_ID: job_id}
-                for t, c in clients.items():
-                    self.logger.debug(f"sending client {t}: {c.name=} {c.props=}")
             else:
                 return_data = {ServerCommandKey.CLIENTS: None, ServerCommandKey.JOB_ID: job_id}
 
             return make_cellnet_reply(F3ReturnCode.OK, "", return_data)
         elif command == ServerCommandNames.UPDATE_RUN_STATUS:
+            if not is_server_job:
+                return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED)
             execution_error = data.get("execution_error")
             with self.lock:
                 run_process_info = self.engine.run_processes.get(job_id)
@@ -619,6 +636,10 @@ class FederatedServer(BaseServer):
                 reply = make_cellnet_reply(F3ReturnCode.OK, "", None)
                 return reply
         elif command == ServerCommandNames.HEARTBEAT:
+            # The simulator sends its heartbeat locally from the parent cell.
+            is_self_heartbeat = origin == peer.name == FQCN.ROOT_SERVER
+            if not is_server_job and not is_self_heartbeat:
+                return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED)
             if job_id not in self.engine.run_processes:
                 self.engine.abort_app_on_server(job_id)
                 self._set_job_aborted(job_id)

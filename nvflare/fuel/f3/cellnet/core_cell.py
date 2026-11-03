@@ -2097,7 +2097,13 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             from_upstream = endpoint.name == FQCN.ROOT_SERVER or (
                 self.my_info.gen > 1 and endpoint.name == FQCN.get_parent(self.my_info.fqcn)
             )
-            if (
+            if channel == CellChannel.SERVER_PARENT_LISTENER and (
+                FQCN.validate(origin) or (origin != endpoint.name and not FQCN.is_ancestor(endpoint.name, origin))
+            ):
+                # Check each hop before forwarding: a job child must not claim a sibling job or the server.
+                reply = make_reply(ReturnCode.UNAUTHENTICATED, "origin does not belong to sending peer")
+                reply_target = endpoint.name
+            elif (
                 channel == CellChannel.CLIENT_COMMAND
                 and not from_upstream
                 and (FQCN.validate(origin) or (origin != endpoint.name and not FQCN.is_ancestor(endpoint.name, origin)))
