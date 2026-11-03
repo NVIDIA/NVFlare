@@ -157,6 +157,43 @@ Check the final artifact and logs: FLARE
 periodic FLARE checkpoints unless `DECENT_VLA_NO_RESUME=1` is set. Set
 `fl.round_timeout_s` for deployment; an unmet quorum aborts through FLARE.
 
+## Explicit repository assignment
+
+For LeRobot datasets already organized by site, use `explicit_repos` in the
+generated run YAML instead of splitting one dataset into tasks or episodes:
+
+```yaml
+backend:
+  name: lerobot
+  # Keep the generated model, optimizer and train_config_path settings.
+data:
+  partitioning: explicit_repos
+  num_clients: 2
+  client_repo_ids:
+    - [org/client0-task-a, org/client0-task-b]  # c0 trains on both datasets
+    - [org/client1-task-c]                    # c1 trains on this dataset
+eval:
+  personalized: false
+  # Keep the generated LIBERO benchmark settings.
+```
+
+Use actual LeRobot dataset repository IDs in place of the example IDs. Each
+entry in `client_repo_ids` must be a non-empty list of non-empty strings;
+entry `i` belongs to client `ci`. `num_clients` must equal the number of lists,
+or omit it to derive the count. Re-export the edited YAML with `job.py --config`.
+
+Each client trains on all eligible frames from its assigned repositories,
+concatenated locally. Assign non-overlapping data and exclude held-out tasks
+from those repositories yourself: this mode does not split episodes, apply
+the held-out task filter, or detect overlap between repositories. All sites
+need access to the repository metadata used for shared normalization statistics.
+Aggregation weights use each client's eligible frame count.
+
+This mode requires `backend.name: lerobot` and `eval.personalized: false`.
+It supports global checkpoint evaluation. Personalized evaluation requires
+client task names, which the repository-only manifest does not record; use
+`task_round_robin` or `explicit_tasks` partitioning if you need that feature.
+
 ## Evaluate
 
 ```bash

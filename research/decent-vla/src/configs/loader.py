@@ -87,10 +87,8 @@ def _build_data(d: dict | None) -> DataConfig:
         return DataConfig()
     if not isinstance(d.get("partitioning", "iid"), str):
         raise ConfigError("data.partitioning must be a scheme name; put its settings directly under data")
-    # explicit_repos: one client per repo list. Derive the count when it is not given, so a
-    # second list is not silently dropped by the default num_clients of 1.
-    if d.get("partitioning") == "explicit_repos" and d.get("client_repo_ids") and "num_clients" not in d:
-        d["num_clients"] = len(d["client_repo_ids"])
+    if d.get("partitioning") == "explicit_repos" and isinstance(d.get("client_repo_ids"), list):
+        d.setdefault("num_clients", len(d["client_repo_ids"]))
     return DataConfig(**d)
 
 
@@ -166,7 +164,33 @@ def validate_run_config(cfg: RunConfig) -> None:
             "subtree itself; remove it."
         )
 
-    if cfg.data.partitioning == "explicit_repos" and cfg.data.client_repo_ids is not None:
+    if cfg.data.partitioning == "explicit_repos":
+        repos = cfg.data.client_repo_ids
+        if (
+            not isinstance(repos, list)
+            or not repos
+            or any(
+                not isinstance(group, list)
+                or not group
+                or any(not isinstance(repo, str) or not repo.strip() for repo in group)
+                for group in repos
+            )
+        ):
+            raise ConfigError(
+                "data.partitioning=explicit_repos requires data.client_repo_ids as a non-empty list "
+                "of non-empty repository-ID lists, one per client; for example "
+                "[[org/client0-data], [org/client1-data]]. See README.md: Explicit repository assignment."
+            )
+        if cfg.backend.name != "lerobot":
+            raise ConfigError("data.partitioning=explicit_repos requires backend.name=lerobot")
+        if cfg.eval is not None and cfg.eval.personalized:
+            raise ConfigError(
+                "eval.personalized=true is unsupported with data.partitioning=explicit_repos: "
+                "its manifest records repository IDs rather than client task names. Set "
+                "eval.personalized=false to evaluate the global checkpoint, or use task_round_robin "
+                "or explicit_tasks partitioning for personalized evaluation. See README.md: "
+                "Explicit repository assignment."
+            )
         if len(cfg.data.client_repo_ids) != cfg.data.num_clients:
             raise ConfigError(
                 f"data.client_repo_ids has {len(cfg.data.client_repo_ids)} repo lists but "
