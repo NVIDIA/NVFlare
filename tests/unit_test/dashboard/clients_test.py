@@ -26,11 +26,11 @@ from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
 from nvflare.dashboard.application.models import Client, Project
 from nvflare.dashboard.application.store import Store
 
-CLIENT1 = {"name": "site-1", "organization": "test.com", "capacity": {"num_gpus": 16, "mem_per_gpu_in_GiB": 64}}
+CLIENT1 = {"name": "site-1", "organization": "test_org", "capacity": {"num_gpus": 16, "mem_per_gpu_in_GiB": 64}}
 
-CLIENT2 = {"name": "site-2", "organization": "example.com", "capacity": {"num_gpus": 4, "mem_per_gpu_in_GiB": 32}}
+CLIENT2 = {"name": "site-2", "organization": "example_org", "capacity": {"num_gpus": 4, "mem_per_gpu_in_GiB": 32}}
 
-NEW_ORG = "company.com"
+NEW_ORG = "company_org"
 
 
 class TestClients:
@@ -89,7 +89,7 @@ class TestClientPropsRejection:
         email = f"client-creator-{uuid4().hex}@test.com"
         response = client.post(
             FLARE_DASHBOARD_NAMESPACE + "/api/v1/users",
-            json={"email": email, "password": "test-password", "organization": "test.com", "role": "member"},
+            json={"email": email, "password": "test-password", "organization": "test_org", "role": "member"},
         )
         assert response.status_code == 201
         user_id = response.json["user"]["id"]
