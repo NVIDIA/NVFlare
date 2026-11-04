@@ -23,7 +23,9 @@ from nvflare.fuel.f3.cellnet.registry import Callback, Registry
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.f3.streaming.deadline_scheduler import DeadlineScheduler
 from nvflare.fuel.f3.streaming.stream_const import (
     EOS,
     STREAM_ACK_TOPIC,
@@ -104,6 +106,8 @@ class RxTask:
 
     rx_task_map: Dict[Tuple[str, int], "RxTask"] = {}
     map_lock = threading.Lock()
+    cleanup_scheduler = DeadlineScheduler()
+    _shutting_down = False
 
     def __init__(self, sid: int, origin: str, cell: CoreCell, reliable: bool = False):
         self.sid = sid
@@ -141,7 +145,7 @@ class RxTask:
         self.error_type = None
         self.error_notified = False  # protected by ack_lock, like the ack state
         self.stop_lock = threading.RLock()
-        self.cleanup_timer = None
+        self.cleanup_deadline = None
 
         config = CommConfigurator()
         self.timeout = config.get_streaming_read_timeout(READ_TIMEOUT)
@@ -169,6 +173,8 @@ class RxTask:
         task_to_stop = None
 
         with cls.map_lock:
+            if cls._shutting_down:
+                return None
             task = cls.rx_task_map.get((origin, sid), None)
             if not task:
                 if error:
@@ -552,9 +558,9 @@ class RxTask:
 
     def _remove_task(self):
         with self.stop_lock:
-            if self.cleanup_timer:
-                self.cleanup_timer.cancel()
-                self.cleanup_timer = None
+            if self.cleanup_deadline:
+                self.cleanup_deadline.cancel()
+                self.cleanup_deadline = None
 
         with RxTask.map_lock:
             task = RxTask.rx_task_map.get((self.origin, self.sid))
@@ -563,15 +569,33 @@ class RxTask:
 
     def _schedule_remove_task(self, ttl: float = None):
         with self.stop_lock:
-            if self.cleanup_timer:
+            if self.cleanup_deadline:
                 return
-
-            self.cleanup_timer = threading.Timer(
+            self.cleanup_deadline = self.cleanup_scheduler.schedule(
                 self.completed_task_ttl if ttl is None else ttl,
                 self._remove_task,
             )
-            self.cleanup_timer.daemon = True
-            self.cleanup_timer.start()
+            if self.cleanup_deadline is None:
+                self._remove_task()
+
+    @classmethod
+    def get_cleanup_stats(cls):
+        """Snapshot retained tasks and deadline queue/cancellation/expiry counters."""
+        stats = cls.cleanup_scheduler.snapshot()
+        with cls.map_lock:
+            stats["retained_tasks"] = len(cls.rx_task_map)
+        return stats
+
+    @classmethod
+    def shutdown(cls):
+        """Release receive state after the streaming pools have drained at process exit."""
+        with cls.map_lock:
+            cls._shutting_down = True
+            tasks = list(cls.rx_task_map.values())
+            cls.rx_task_map.clear()
+        cls.cleanup_scheduler.shutdown()
+        for task in tasks:
+            task._remove_task()
 
     def _try_to_read(self, size: int) -> Tuple[int, Optional[BytesAlike]]:
 
@@ -692,6 +716,9 @@ class RxTask:
             self.offset_ack = max(self.offset_ack, offset)
             self.seq_ack = max(self.seq_ack, seq)
         return True
+
+
+MainProcessMonitor.add_cleanup_cb(RxTask.shutdown)
 
 
 class RxStream(Stream):

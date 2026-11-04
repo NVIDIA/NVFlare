@@ -28,3 +28,28 @@ and it's a more realistic test
 
      NVFlare/tests/tools/file_streaming
 
+## Receive-task cleanup diagnostics
+
+Completed reliable streams remain available for duplicate ACKs during
+`streaming_retry_timeout + streaming_retry_wait` (65 seconds by default).
+The receiver also honors longer validated sender retry windows. One process-wide
+deadline worker expires these records without allocating a thread per stream.
+Failed non-reliable streams keep their existing five-second tombstones;
+successful non-reliable streams are removed immediately.
+
+For an in-process diagnostic snapshot:
+
+```python
+from nvflare.fuel.f3.streaming.byte_receiver import RxTask
+
+print(RxTask.get_cleanup_stats())
+```
+
+`retained_tasks` counts all entries in the receive-task map, including active
+streams. `pending` counts scheduled cleanups; `queue_depth` also includes cancelled
+entries awaiting pruning. `expired` and `cancelled` are lifetime counters.
+`max_cleanup_lag` is the maximum observed delay in seconds between a deadline and
+the start of its cleanup. `worker_alive` and `stopped` describe scheduler lifecycle.
+Queue gauges can differ briefly while cleanup is running. Process shutdown drains
+the streaming pools, clears the receive map and queue, and joins the deadline worker.
+
