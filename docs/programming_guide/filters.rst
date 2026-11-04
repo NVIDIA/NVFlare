@@ -154,19 +154,19 @@ Mutation, pass-through, and execution
 -------------------------------------
 
 Return an ``FLModel`` to apply callback changes and record filter history. Return
-``None`` only for an unmodified pass-through; it never means suppressing an update.
-Metrics and model metadata are deep-copied before the callback. Parameters and native
-optimizer state are borrowed to avoid copying large models. In-place changes to those
-borrowed objects cannot be rolled back on ``None`` or an exception; callbacks must make
-their own copies when they need isolation. Invalid callback return types or changes to
+``None`` to skip without recording processing; it never means suppressing an update.
+Callbacks returning ``None`` must leave shared data unchanged.
+
+Only the top-level metadata and metrics dictionaries are shallow-copied. Replacing
+entries in those two dictionaries is applied only when a model is returned. Their
+nested values, parameters, and native optimizer state are shared with the input.
+In-place mutations of shared objects are not rolled back on ``None`` or an exception;
+callbacks must copy the specific objects they need to isolate. Transport filter
+history is managed independently. Invalid callback return types or changes to
 encoding/identity raise an error.
 
-Copying metadata can add substantial peak memory even for a read-only callback that
-returns ``None``, because the copy happens before the callback runs. For example,
-SCAFFOLD carries model-sized control tensors in ``model.meta``; copying those tensors
-can allocate another model-sized buffer. Borrowing ``model.params`` does not avoid
-this allocation. Account for metadata and metrics copies when sizing memory for
-``ModelFilter``; they provide the mutation isolation described above.
+For example, SCAFFOLD's model-sized control tensors in ``model.meta`` are borrowed;
+enabling ``ModelFilter`` does not automatically copy those tensors.
 
 Like ``DXOFilter``, this adapter does not call the callback for non-OK task replies,
 non-DXO messages, empty DXO data, or excluded data kinds. An application needing status

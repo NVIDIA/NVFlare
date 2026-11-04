@@ -73,6 +73,8 @@ def test_model_filter_preserves_envelope_and_updates_metrics(kind):
 def test_fresh_model_preserves_transport_filter_history(native):
     class ReplaceModel(ModelFilter):
         def process_model(self, model, fl_ctx):
+            if MetaKey.FILTER_HISTORY in model.meta:
+                model.meta[MetaKey.FILTER_HISTORY].clear()
             return FLModel(params=model.params, start_round=model.start_round, meta={"replacement": True})
 
     model = FLModel(params={"w": 1})
@@ -149,9 +151,10 @@ def test_filter_can_remove_legacy_metadata_metrics():
 
 
 @pytest.mark.parametrize("native", [False, True])
-def test_none_preserves_input_with_borrowed_parameters_and_copied_metadata(native):
+def test_none_discards_top_level_edits_with_shared_nested_values(native):
     model = FLModel(params={"w": [1.0]}, metrics={"loss": [2.0]}, meta={"custom": {"value": 3}})
     dxo = FLModelUtils.to_dxo(model) if native else from_shareable(FLModelUtils.to_shareable(model))
+    dxo.add_filter_history("EarlierFilter")
     shareable = dxo.to_shareable()
     before = deepcopy(shareable)
     filt = EditMetrics()
@@ -159,15 +162,19 @@ def test_none_preserves_input_with_borrowed_parameters_and_copied_metadata(nativ
     def inspect_and_skip(decoded, fl_ctx):
         assert decoded.params is model.params
         assert decoded.metrics is not model.metrics
-        assert decoded.meta["custom"] is not model.meta["custom"]
-        decoded.metrics["loss"].append(4.0)
-        decoded.meta["custom"]["value"] = 5
+        assert decoded.metrics["loss"] is model.metrics["loss"]
+        assert decoded.meta is not model.meta
+        assert decoded.meta["custom"] is model.meta["custom"]
+        decoded.metrics["loss"] = [4.0]
+        decoded.meta["custom"] = {"value": 5}
+        if not native:
+            decoded.meta[MetaKey.FILTER_HISTORY].clear()
         return None
 
     filt.process_model = inspect_and_skip
     assert filt.process(shareable, FLContext()) is shareable
     assert shareable == before
-    assert not from_shareable(shareable).get_filter_history()
+    assert from_shareable(shareable).get_filter_history() == ["EarlierFilter"]
 
 
 @pytest.mark.parametrize(

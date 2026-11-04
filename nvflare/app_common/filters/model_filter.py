@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from abc import abstractmethod
-from copy import deepcopy
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.dxo_filter import DXOFilter
@@ -27,8 +26,10 @@ from nvflare.app_common.utils.fl_model_utils import MODEL_ATTRS, FLModelUtils
 class ModelFilter(DXOFilter):
     """Experimental task filter with the Client API's FLModel interface.
 
-    Parameters are borrowed, not copied. Return a model to record processing, or
-    None to skip without modifying the input. The callback cannot change the wire
+    Metadata and metrics dictionaries are shallow-copied; their nested values,
+    parameters, and optimizer state are borrowed. Return a model to record
+    processing, or None to skip. Callbacks returning None must leave shared data
+    unchanged; mutations are not rolled back. The callback cannot change the wire
     representation or round identity. Existing DXO filters can share the chain.
     """
 
@@ -46,8 +47,11 @@ class ModelFilter(DXOFilter):
         native = dxo.data_kind == DataKind.FL_MODEL
         # Decode this leaf, not an enclosing DXO collection or command envelope.
         model = FLModelUtils.from_dxo(dxo) if native else FLModelUtils.from_shareable(dxo.to_shareable())
-        model.meta = deepcopy(model.meta)
-        model.metrics = deepcopy(model.metrics)
+        model.meta = dict(model.meta)
+        model.metrics = dict(model.metrics) if model.metrics is not None else None
+        # Legacy metadata includes transport history, which remains framework-owned.
+        if not native and isinstance(model.meta.get(MetaKey.FILTER_HISTORY), list):
+            model.meta[MetaKey.FILTER_HISTORY] = list(model.meta[MetaKey.FILTER_HISTORY])
         # Match from_shareable's recognized envelope metadata for each leaf.
         for header, key in (
             (AppConstants.VALIDATE_TYPE, MetaKey.VALIDATE_TYPE),
@@ -56,7 +60,7 @@ class ModelFilter(DXOFilter):
         ):
             value = shareable.get_header(header)
             if value is not None:
-                model.meta[key] = deepcopy(value)
+                model.meta[key] = value
         for attr, header in self.ROUNDS.items():
             envelope_round = shareable.get_header(header)
             # Legacy metadata can describe the preceding aggregation round. Task
@@ -117,4 +121,4 @@ class ModelFilter(DXOFilter):
 
     @abstractmethod
     def process_model(self, model: FLModel, fl_ctx: FLContext) -> FLModel | None:
-        """Process model fields. Returning None means an unmodified pass-through."""
+        """Return a model to record processing, or None to skip without mutating shared data."""
