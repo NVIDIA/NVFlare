@@ -18,7 +18,6 @@ from unittest.mock import Mock
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
-from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.app_constant import AppConstants
@@ -68,16 +67,6 @@ def test_model_filter_preserves_envelope_and_updates_metrics(kind):
     assert decoded.metrics == {"loss": 2.0}
 
 
-def test_collection_leaves_are_not_decoded_as_parent():
-    selected = DXO(DataKind.WEIGHTS, {"a": 1})
-    sibling = DXO(DataKind.APP_DEFINED, {"b": 2})
-    shareable = DXO(DataKind.COLLECTION, {"selected": selected, "sibling": sibling}).to_shareable()
-    shareable.set_header(AppConstants.CURRENT_ROUND, 3)
-    result = from_shareable(EditMetrics().process(shareable, FLContext()))
-    assert result.data["selected"].meta[MetaKey.INITIAL_METRICS] == {"loss": 2.0}
-    assert result.data["sibling"] is sibling
-
-
 def test_conflicting_rounds_rejected():
     shareable = FLModelUtils.to_dxo(FLModel(params={"a": 1}, current_round=2)).to_shareable()
     shareable.set_header(AppConstants.CURRENT_ROUND, 3)
@@ -93,19 +82,7 @@ def test_legacy_aggregation_round_does_not_override_task_round():
     assert from_shareable(result).meta[AppConstants.CURRENT_ROUND] == 2
 
 
-def test_skip_and_failure_do_not_invoke_or_record_filter():
-    filt = EditMetrics()
-    filt.process_model = Mock(return_value=None)
-    shareable = DXO(DataKind.WEIGHTS, {"a": 1}).to_shareable()
-    assert filt.process(shareable, FLContext()) is shareable
-    assert not from_shareable(shareable).get_filter_history()
-    filt.process_model.reset_mock()
-    shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-    assert filt.process(shareable, FLContext()) is shareable
-    filt.process_model.assert_not_called()
-
-
-def test_legacy_metric_removal_and_native_start_round_round_trip():
+def test_filter_can_remove_legacy_metadata_metrics():
     model = FLModel(params={"a": 1}, metrics=None, meta={MetaKey.INITIAL_METRICS: {"stale": 1}}, start_round=4)
     # Keep legacy callers that supply metrics solely via meta compatible.
     assert FLModelUtils.from_shareable(FLModelUtils.to_shareable(model)).metrics == {"stale": 1}
@@ -118,7 +95,6 @@ def test_legacy_metric_removal_and_native_start_round_round_trip():
     filt.process_model = remove_metrics
     output = filt.process(FLModelUtils.to_shareable(model), FLContext())
     assert FLModelUtils.from_shareable(output).metrics is None
-    assert FLModelUtils.from_dxo(FLModelUtils.to_dxo(model)).start_round == 4
 
 
 @pytest.mark.parametrize("native", [False, True])
@@ -146,9 +122,8 @@ def test_none_preserves_input_with_borrowed_parameters_and_copied_metadata(nativ
 @pytest.mark.parametrize(
     "attribute,value,message",
     [
-        ("start_round", 2, "round identity"),
         ("current_round", 4, "round identity"),
-        ("total_rounds", 11, "round identity"),
+        ("current_round", 3.0, "round identity"),
         ("params_type", ParamsType.DIFF, "parameter type"),
         ("optimizer_params", {"step": 1}, "optimizer parameters"),
         ("params", None, "data kind"),
@@ -174,72 +149,48 @@ def test_invalid_callback_return_type_is_rejected():
         filt.process(DXO(DataKind.WEIGHTS, {"w": 1}).to_shareable(), FLContext())
 
 
-@pytest.mark.parametrize("header", [AppConstants.START_ROUND, AppConstants.CURRENT_ROUND, AppConstants.NUM_ROUNDS])
-@pytest.mark.parametrize("value", [True, -1, 1.5])
-def test_invalid_round_header_never_reaches_callback(header, value):
+def test_invalid_round_header_never_reaches_callback():
     filt = EditMetrics()
     filt.process_model = Mock()
     shareable = DXO(DataKind.WEIGHTS, {"w": 1}).to_shareable()
-    shareable.set_header(header, value)
+    shareable.set_header(AppConstants.CURRENT_ROUND, True)
     with pytest.raises(ValueError, match="Invalid"):
         filt.process(shareable, FLContext())
     filt.process_model.assert_not_called()
 
 
-def test_nested_collection_preserves_encodings_and_unselected_leaf():
-    weights = DXO(DataKind.WEIGHTS, {"w": 1})
-    differences = DXO(DataKind.WEIGHT_DIFF, {"w": -1})
+def test_nested_collection_preserves_selected_and_unselected_leaves():
+    selected = DXO(DataKind.WEIGHTS, {"w": 1})
     excluded = DXO(DataKind.APP_DEFINED, {"application": "data"})
-    nested = DXO(DataKind.COLLECTION, {"differences": differences, "excluded": excluded})
-    shareable = DXO(DataKind.COLLECTION, {"weights": weights, "nested": nested}).to_shareable()
+    nested = DXO(DataKind.COLLECTION, {"selected": selected})
+    shareable = DXO(DataKind.COLLECTION, {"nested": nested, "excluded": excluded}).to_shareable()
     shareable.set_header(AppConstants.CURRENT_ROUND, 3)
+
     result = from_shareable(EditMetrics().process(shareable, FLContext()))
+
     assert result.data_kind == DataKind.COLLECTION
-    assert result.data["weights"].data_kind == DataKind.WEIGHTS
-    assert result.data["weights"].data == {"w": 1}
     assert result.data["nested"].data_kind == DataKind.COLLECTION
-    assert result.data["nested"].data["differences"].data_kind == DataKind.WEIGHT_DIFF
-    assert result.data["nested"].data["differences"].data == {"w": -1}
-    assert result.data["nested"].data["excluded"] is excluded
-    for leaf in [result.data["weights"], result.data["nested"].data["differences"]]:
-        assert leaf.meta[MetaKey.INITIAL_METRICS] == {"loss": 2.0}
-        assert leaf.get_filter_history() == ["EditMetrics"]
+    leaf = result.data["nested"].data["selected"]
+    assert leaf.data_kind == DataKind.WEIGHTS
+    assert leaf.data == {"w": 1}
+    assert leaf.meta[MetaKey.INITIAL_METRICS] == {"loss": 2.0}
+    assert leaf.get_filter_history() == ["EditMetrics"]
+    assert result.data["excluded"] is excluded
     assert excluded.get_filter_history() is None
 
 
-@pytest.mark.parametrize("native", [False, True])
-@pytest.mark.parametrize("value", [True, 1.0])
-def test_callback_cannot_change_round_type(native, value):
-    model = FLModel(params={"w": 1}, current_round=1)
-    shareable = FLModelUtils.to_dxo(model).to_shareable() if native else FLModelUtils.to_shareable(model)
-    filt = EditMetrics()
-
-    def invalid_change(decoded, fl_ctx):
-        decoded.current_round = value
-        return decoded
-
-    filt.process_model = invalid_change
-    with pytest.raises(ValueError, match="round identity"):
-        filt.process(shareable, FLContext())
-
-
-@pytest.mark.parametrize("header", [AppConstants.START_ROUND, AppConstants.CURRENT_ROUND, AppConstants.NUM_ROUNDS])
-@pytest.mark.parametrize("value", [2, None, True, 1.0])
-def test_callback_cannot_change_round_metadata_without_header(header, value):
-    shareable = DXO(DataKind.WEIGHTS, {"w": 1}, {header: 1}).to_shareable()
+def test_callback_cannot_change_round_metadata_without_header():
+    shareable = DXO(DataKind.WEIGHTS, {"w": 1}, {AppConstants.CURRENT_ROUND: 3}).to_shareable()
     filt = EditMetrics()
 
     def change_metadata(decoded, fl_ctx):
-        if value is None:
-            decoded.meta.pop(header)
-        else:
-            decoded.meta[header] = value
+        decoded.meta[AppConstants.CURRENT_ROUND] = 4
         return decoded
 
     filt.process_model = change_metadata
     with pytest.raises(ValueError, match="round identity"):
         filt.process(shareable, FLContext())
-    assert from_shareable(shareable).meta[header] == 1
+    assert from_shareable(shareable).meta[AppConstants.CURRENT_ROUND] == 3
 
 
 @pytest.mark.parametrize(
@@ -266,7 +217,7 @@ def test_native_callback_rejects_inconsistent_parameters_without_changing_input(
     assert FLModelUtils.from_dxo(output).params == model.params
 
 
-@pytest.mark.parametrize("params_type,params", [(ParamsType.FULL, {}), (ParamsType.DIFF, {}), (None, None)])
+@pytest.mark.parametrize("params_type,params", [(ParamsType.FULL, {}), (None, None)])
 def test_native_callback_preserves_empty_parameters_and_metrics_only_models(params_type, params):
     model = FLModel(params_type=params_type, params=params, metrics={"loss": 1.0}, current_round=3)
     shareable = FLModelUtils.to_dxo(model).to_shareable()

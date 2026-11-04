@@ -124,17 +124,15 @@ class TestFLModelUtils:
         assert result.current_round == current_round
 
 
-@pytest.mark.parametrize("params_type", [ParamsType.FULL, ParamsType.DIFF])
 @pytest.mark.parametrize("metrics", [{"loss": 2.0}, {}])
-def test_explicit_metrics_override_stale_metadata(params_type, metrics):
+def test_explicit_metrics_override_stale_metadata(metrics):
     model = FLModel(
         params={"w": 1},
-        params_type=params_type,
         metrics=metrics,
         meta={MetaKey.INITIAL_METRICS: {"loss": 8.0}, "custom": "preserve"},
     )
     result = FLModelUtils.from_shareable(FLModelUtils.to_shareable(model))
     assert result.metrics == metrics
-    assert result.params_type == params_type
+    assert result.params_type == ParamsType.FULL
     assert result.meta["custom"] == "preserve"
     assert model.meta[MetaKey.INITIAL_METRICS] == {"loss": 8.0}

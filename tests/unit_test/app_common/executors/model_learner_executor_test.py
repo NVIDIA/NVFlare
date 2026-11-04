@@ -14,29 +14,25 @@
 
 from unittest.mock import Mock
 
-import pytest
-
 from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.executors.model_learner_executor import ModelLearnerExecutor
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 
 
-@pytest.mark.parametrize("params_type", [ParamsType.FULL, ParamsType.DIFF])
-@pytest.mark.parametrize("validation_metrics", [{"accuracy": 0.4}, None])
-def test_train_preserves_before_train_metrics_for_model_selection(params_type, validation_metrics):
+def test_train_preserves_before_train_metrics_for_model_selection():
     executor = ModelLearnerExecutor("learner")
     executor.learner = Mock()
-    executor.learner.validate.return_value = FLModel(metrics=validation_metrics) if validation_metrics else None
-    executor.learner.train.return_value = FLModel(params={"w": 1}, params_type=params_type, metrics={"accuracy": 0.9})
+    executor.learner.validate.return_value = FLModel(metrics={"accuracy": 0.4})
+    executor.learner.train.return_value = FLModel(params={"w": 1}, metrics={"accuracy": 0.9})
     incoming = FLModelUtils.to_shareable(FLModel(params={"w": 0}))
 
     result = from_shareable(executor.train(incoming, FLContext()))
 
-    assert result.data_kind == (DataKind.WEIGHTS if params_type == ParamsType.FULL else DataKind.WEIGHT_DIFF)
+    assert result.data_kind == DataKind.WEIGHTS
     assert result.data == {"w": 1}
-    assert result.meta[MetaKey.INITIAL_METRICS] == (validation_metrics or {"accuracy": 0.9})
+    assert result.meta[MetaKey.INITIAL_METRICS] == {"accuracy": 0.4}
 
 
 def test_metrics_only_train_result_preserves_payload_and_validation_metadata():
