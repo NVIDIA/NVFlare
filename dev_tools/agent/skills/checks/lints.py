@@ -1195,8 +1195,8 @@ _EVALUATOR_HOOK_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
-# Exact evaluator metadata emitted in publication artifacts is descriptive, not runtime guidance. This exemption is
-# scoped to skill-root BENCHMARK.md and skill-card.md files so allowlist-shaped lines elsewhere are still flagged.
+# Exact evaluator metadata and comparison rows emitted in publication artifacts are descriptive, not runtime guidance.
+# This exemption is scoped to skill-root BENCHMARK.md and skill-card.md files; other content remains scanned.
 _BENIGN_EVALUATOR_METADATA_LINE_RE = re.compile(
     r"(?:"
     r"- Evaluator version: `[0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]+)?`"
@@ -1209,6 +1209,9 @@ _BENIGN_EVALUATOR_METADATA_LINE_RE = re.compile(
     r"Evaluator version:? [0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]+)?\. <br>"
     r"|Regenerate this benchmark when the skill, evaluation dataset, target agent/model, evaluator version, "
     r"environment, or scoring policy changes\."
+    r"|\| [A-Za-z0-9._-]+ \| Efficiency \| Token-only comparison \| "
+    r"[0-9]+(?:\.[0-9]+)?% → [0-9]+(?:\.[0-9]+)?% \([+-][0-9]+(?:\.[0-9]+)? points\) \| "
+    r"Only Token Efficiency is comparable; the full dimension scores use different evaluator sources\. \|"
     r")"
 )
 # Names excluded from runtime-guidance scanning. ``evals`` is co-located
