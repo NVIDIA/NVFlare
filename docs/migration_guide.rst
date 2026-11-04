@@ -59,7 +59,7 @@ PyTorch Checkpoint Paths Must Stay Within the Application
 
 ``PTFileModelPersistor`` now confines checkpoint output paths in every deployment,
 including deployments that do not use confidential computing. The checkpoint
-directory (``APP_CKPT_DIR`` in ``environments.json`` or ``AppConstants.LOG_DIR``
+directory (``APP_CKPT_DIR`` in ``config/environment.json`` or ``AppConstants.LOG_DIR``
 in the FL context) must be relative to the application directory and resolve
 within it. ``global_model_file_name`` and ``best_global_model_file_name`` must
 be relative to the checkpoint directory and must not traverse above it.

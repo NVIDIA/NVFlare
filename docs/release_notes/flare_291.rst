@@ -1,5 +1,3 @@
-:orphan:
-
 **************************
 What's New in FLARE v2.9.1
 **************************
@@ -105,9 +103,10 @@ Security and Hardening
   strictly, and the vault capacity is checked before a build.
 - **PyTorch checkpoint paths (all deployments).** ``PTFileModelPersistor``
   requires a checkpoint directory relative to and within the application
-  directory, and checkpoint filenames relative to and within the checkpoint
-  directory. Absolute paths and paths that resolve outside the application
-  directory, including through symlinks, are rejected. See the
+  directory, and checkpoint filenames relative to the checkpoint directory
+  that do not traverse above it. Resolved checkpoint paths must stay within
+  the application directory, including through symlinks. Absolute paths and
+  paths that resolve outside the application directory are rejected. See the
   :ref:`migration_guide` for required configuration changes.
 - **Dashboard.** Client creation and PATCH requests that contain ``props`` are
   rejected with HTTP 400, and client-kit generation ignores previously stored
