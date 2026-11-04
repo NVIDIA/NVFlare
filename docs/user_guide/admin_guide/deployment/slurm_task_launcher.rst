@@ -266,6 +266,11 @@ acknowledges computation to CP, which requests cancellation if the allocation
 is still unsettled and continues cleanup in the background. The next assignment
 can proceed while CP retains the old allocation's identity and replay fence.
 An acknowledgement does not mark native cleanup settled.
+If a completion request or reply is lost, CJ retains the notification and
+retries it before requesting the next allocation. These control requests use
+the configured query timeout; an unavailable CP prevents a new submission
+without changing the already verified result. Closing admission requests
+cancellation for every allocation even if its notification was lost.
 
 Unconfirmed cleanup produces a warning and diagnostic with the execution ID.
 Elapsed time, missing accounting and successful ``scancel`` acknowledgement

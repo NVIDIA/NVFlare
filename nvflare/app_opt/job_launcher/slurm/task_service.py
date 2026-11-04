@@ -366,6 +366,7 @@ class SlurmTaskClient:
             raise RuntimeError("Slurm task control requires CP-provisioned job credentials")
         self.request_timeout, self.poll_interval, self.cleanup_timeout = request_timeout, poll_interval, cleanup_timeout
         self.closed = False
+        self._pending_completions = set()
 
     def call(self, action, **fields):
         payload = json.dumps(dict(job_id=self.job_id, token=self.token, action=action, **fields))
@@ -400,6 +401,14 @@ class SlurmTaskClient:
             or not request.resources.is_empty()
         ):
             raise ValueError("Slurm requires the common staged worker request")
+        # Completion and cancellation remain owned after a lost control reply.
+        # Retry before asking CP to admit another physical execution. Each
+        # request uses the existing bounded control timeout.
+        for task_id, attempt_id in tuple(self._pending_completions):
+            try:
+                self.result_received(task_id, attempt_id)
+            except Exception as error:
+                raise TaskLauncherError("CP completion acknowledgement unavailable; no new task submitted") from error
         handle = SlurmRemoteTaskHandle(self, request)
         try:
             handle.observe(
@@ -416,8 +425,17 @@ class SlurmTaskClient:
             raise TaskLaunchError("CP task launch reply unavailable", handle) from error
         return handle
 
+    def result_received(self, task_id, attempt_id):
+        identity = (task_id, attempt_id)
+        self._pending_completions.add(identity)
+        result = self.call("complete", task_id=task_id, attempt_id=attempt_id)
+        self._pending_completions.discard(identity)
+        return result
+
     def close(self):
         self.closed = True
+        # Closing admission cancels every owned attempt, including a result
+        # whose individual completion notification could not be delivered.
         self.call("close")
 
 
@@ -474,7 +492,7 @@ class SlurmRemoteTaskHandle(TaskHandleSpec):
             time.sleep(self.client.poll_interval)
 
     def result_received(self):
-        self.observe(self.client.call("complete", task_id=self.request.task_id, attempt_id=self.request.attempt_id))
+        self.observe(self.client.result_received(self.request.task_id, self.request.attempt_id))
 
     def cancel(self):
         self._cancel_requested = True

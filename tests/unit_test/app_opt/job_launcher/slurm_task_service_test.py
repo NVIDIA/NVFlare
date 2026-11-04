@@ -154,7 +154,8 @@ def test_cj_completion_is_bounded_while_cp_retains_unconfirmed_cleanup(owned, ca
     _settle(owned)
 
 
-def test_verified_result_allows_next_assignment_while_cleanup_remains_owned(owned):
+@pytest.mark.parametrize("loss", [None, "request", "reply", "retry"])
+def test_verified_result_allows_next_assignment_while_cleanup_remains_owned(owned, loss, monkeypatch):
     owned.adapter.submit.side_effect = [
         SubmissionResult(CommandResult(0, str(job_id), ""), str(job_id)) for job_id in (42, 43)
     ]
@@ -167,16 +168,46 @@ def test_verified_result_allows_next_assignment_while_cleanup_remains_owned(owne
 
     owned.adapter.task_accounting.side_effect = accounting
     first = _launch(owned)
-    first.result_received()
+    send = owned.cell.send_request
+    completions = []
+    launches = []
+    unavailable = bool(loss)
+
+    def transport(**kwargs):
+        action = json.loads(kwargs["request"].payload)["action"]
+        if action == "launch":
+            launches.append(action)
+        if action == "complete":
+            completions.append(action)
+            if unavailable:
+                if loss == "reply":
+                    send(**kwargs)
+                raise TimeoutError("completion request or reply lost")
+        return send(**kwargs)
+
+    monkeypatch.setattr(owned.cell, "send_request", transport)
+    if loss:
+        with pytest.raises(TimeoutError):
+            first.result_received()
+    else:
+        first.result_received()
     assert not first.poll().settled
-    assert owned.owner.attempts[("task-1", "attempt-1")].completed
+    assert owned.owner.attempts[("task-1", "attempt-1")].completed == (loss in (None, "reply"))
     bootstrap = read_bootstrap(owned.request.argv[4])
     next_path = str(Path(owned.request.cwd, "bootstrap-2.json"))
     write_bootstrap(
         next_path, replace(bootstrap, identity=replace(bootstrap.identity, task_id="task-2", attempt_id="attempt-2"))
     )
     argv = (*owned.request.argv[:4], next_path, *owned.request.argv[5:])
-    second = owned.client.launch(replace(owned.request, task_id="task-2", attempt_id="attempt-2", argv=argv))
+    next_request = replace(owned.request, task_id="task-2", attempt_id="attempt-2", argv=argv)
+    if loss == "retry":
+        with pytest.raises(TaskLauncherError):
+            owned.client.launch(next_request)
+        assert not launches, "unconfirmed completion must be retried before another launch request"
+        assert ("task-2", "attempt-2") not in owned.owner.attempts
+        assert owned.adapter.submit.call_count == 1
+    unavailable = False
+    second = owned.client.launch(next_request)
     _eventually(lambda: owned.adapter.submit.call_count == 2)
     assert not second.poll().settled
     assert len(owned.owner.attempts) == 2
@@ -184,6 +215,9 @@ def test_verified_result_allows_next_assignment_while_cleanup_remains_owned(owne
     assert replay.execution_id == first.execution_id
     assert owned.adapter.submit.call_count == 2
     assert owned.owner.attempts[("task-1", "attempt-1")].handle is not None
+    assert owned.owner.attempts[("task-1", "attempt-1")].completed
+    _eventually(lambda: owned.adapter.cancel.called)
+    assert len(completions) == {None: 1, "request": 2, "reply": 2, "retry": 3}[loss]
 
 
 def test_result_acknowledgement_requires_an_existing_owned_attempt(owned):
