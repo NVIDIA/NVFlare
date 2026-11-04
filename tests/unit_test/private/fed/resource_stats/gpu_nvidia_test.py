@@ -32,6 +32,9 @@ from nvflare.private.fed.resource_stats.probes import gpu_nvidia as probe
         ("9,0", 0),
         ("0,-1,4", 1),
         ("0,,4", 1),
+        ("GPU-selected-device", None),
+        ("0,GPU-selected-device", None),
+        ("not-an-index", None),
     ],
 )
 def test_count_matches_shared_gpu_selection(monkeypatch, mask, expected):
@@ -46,7 +49,7 @@ def test_count_matches_shared_gpu_selection(monkeypatch, mask, expected):
         return [0, 2, 4]
 
     monkeypatch.setattr(probe, "get_host_gpu_ids", inventory)
-    assert probe.probe_gpu() == {"count": expected}
+    assert probe.probe_gpu() == (None if expected is None else {"count": expected})
     assert queries == [2.0]
 
 
@@ -56,12 +59,10 @@ def test_count_matches_shared_gpu_selection(monkeypatch, mask, expected):
         ("", {"count": 0}),
         ("  ", {"count": 0}),
         ("-1", {"count": 0}),
-        ("GPU-selected-device", None),
-        ("0,GPU-selected-device", None),
-        ("not-an-index", None),
+        ("-1,unsupported", {"count": 0}),
     ],
 )
-def test_definitive_masks_do_not_query_inventory(monkeypatch, mask, expected):
+def test_empty_selections_do_not_query_inventory(monkeypatch, mask, expected):
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
 
     queries = []
@@ -73,6 +74,27 @@ def test_definitive_masks_do_not_query_inventory(monkeypatch, mask, expected):
     monkeypatch.setattr(probe, "get_host_gpu_ids", unexpected_inventory)
     assert probe.probe_gpu() == expected
     assert not queries
+
+
+@pytest.mark.parametrize(
+    "host_ids,mask,expected",
+    [
+        ([0, 1], "0,99,unsupported", 1),
+        ([0, 1], "99,unsupported", 0),
+        ([0, 1, 99], "0,99,unsupported", None),
+    ],
+)
+def test_inventory_controls_selector_stop_point(monkeypatch, host_ids, mask, expected):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
+    queries = []
+
+    def inventory(*, timeout):
+        queries.append(timeout)
+        return host_ids
+
+    monkeypatch.setattr(probe, "get_host_gpu_ids", inventory)
+    assert probe.probe_gpu() == (None if expected is None else {"count": expected})
+    assert queries == [2.0]
 
 
 @pytest.mark.parametrize(

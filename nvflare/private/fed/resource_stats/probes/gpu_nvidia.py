@@ -15,8 +15,6 @@
 
 """Count selected GPUs from nvidia-smi."""
 
-import os
-
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids, get_visible_gpu_ids
 
 
@@ -25,8 +23,6 @@ def probe_gpu():
     visible = get_visible_gpu_ids()
     if visible == []:
         return {"count": 0}
-    if visible is None and "CUDA_VISIBLE_DEVICES" in os.environ:
-        return None
     try:
         host_ids = get_host_gpu_ids(timeout=2.0)
     except Exception:
