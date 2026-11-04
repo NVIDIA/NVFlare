@@ -79,12 +79,10 @@ integrity monitor to keep the workload running. Verify the delivery and generic
 artifact signatures/digests again, then reproduce with the exact manifest's
 acceptance workload if the cause remains unclear.
 
-Updated guests write the fixed `CVM bootstrap failed [phase=...]` diagnostic
-to stderr before asking PID 1 to enforce watchdog failure. The small write is
-nonblocking: a full or unavailable console does not postpone shutdown, and raw
-exception details remain private. Deploy this bootstrap change through a newly
-built and approved generic bundle, then regenerate its vault deliveries. Existing
-approved guest images retain their original bootstrap code.
+The bootstrap writes `CVM bootstrap failed [phase=...]` to stderr before
+asking PID 1 to enforce watchdog failure. The write is nonblocking: a full
+or unavailable console does not postpone shutdown, and raw exception
+details remain private.
 
 Root-disk corruption **after** startup is different from the initramfs marker:
 the kernel reports ``dm-verity device corrupted`` and panics/powers off. There
@@ -105,7 +103,6 @@ The cold-boot gate allows 180 one-second `chronyc waitsync` tries after an
 initial, best-effort 30-second correction wait. It requires correction at most
 0.5 seconds and skew at most 1000 ppm before attestation. Runtime `chronyc burst`
 is not used to force convergence. Periodic checks keep their shorter budget.
-This fix is already part of 2.9 through [PR #5463](https://github.com/NVIDIA/NVFlare/pull/5463).
 
 If the final gate fails, verify the measured NTS server names, DNS resolution,
 outbound UDP 123 and TCP 4460, and time-server TLS reachability. Use the serial

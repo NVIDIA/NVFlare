@@ -22,14 +22,13 @@ and availability configuration beyond this example.
 
 The [NVIDIA v1.0 supported-platform matrix](https://docs.nvidia.com/confidential-computing/containers/v1.0.0/supported-platforms)
 lists Kata 3.29 with Ubuntu 25.10. The [v1.1 matrix](https://docs.nvidia.com/confidential-computing/containers/v1.1.0/supported-platforms)
-adds Ubuntu 26.04 with Kata 4.0.0. NVFlare 2.9 requires the matching
+adds Ubuntu 26.04 with Kata 4.0.0. The integration requires the matching
 Kata/genpolicy 3.29.0 profile.
 
-> **Warning:** Kata 3.29.0 on Ubuntu 26.04 has been tested and works for this
-> example. This combination is not listed in the NVIDIA qualification matrices
-> linked above; passing the example's setup and diagnostic checks does not
-> establish platform qualification. A later NVFlare release will align Kata and
-> the other components with the updated upstream stack.
+> **Platform qualification:** Kata 3.29.0 on Ubuntu 26.04 is not listed in
+> the NVIDIA qualification matrices linked above. Use a qualified stack
+> for production, or obtain explicit approval for the exact combination.
+> Setup and diagnostic success alone do not establish platform qualification.
 
 | Component | Reference version |
 | --- | --- |
@@ -72,7 +71,7 @@ Obtain these inputs before installing Kubernetes:
   guests need the applicable HTTPS access.
 
 On **each host**, create an input file, replace both address placeholders, and
-select `snp` or `tdx`. Use the same values on both machines; the paths below are
+select `amd_sev_snp` or `intel_tdx`. Use the same values on both machines; the paths below are
 local to each machine and contain no shared credentials.
 
 ~~~bash
@@ -86,7 +85,7 @@ export REGISTRY_HOST='registry.coco.lab'
 export TRUSTEE_HOST='trustee.coco.lab'
 export REGISTRY="$REGISTRY_HOST"
 export KBS_URL="https://$TRUSTEE_HOST:8443"
-export CPU_TEE='snp'
+export CPU_TEE='amd_sev_snp'
 export COCO_DIR="$HOME/coco-prerequisites"
 export COCO_ROOT="$HOME/NVFlare/examples/devops/coco"
 export KATA_VERSION='3.29.0'
@@ -119,7 +118,7 @@ host UFW rules alone do not restrict them.
 . /etc/os-release
 test "$ID:$VERSION_ID" = ubuntu:26.04
 test "$(uname -m)" = x86_64
-case "$CPU_TEE" in snp|tdx) ;; *) exit 1 ;; esac
+case "$CPU_TEE" in amd_sev_snp|intel_tdx) ;; *) exit 1 ;; esac
 case "$SERVICES_IP:$WORKER_IP" in *REPLACE*) exit 1 ;; esac
 test "$SERVICES_IP" != "$WORKER_IP"
 ip -brief address

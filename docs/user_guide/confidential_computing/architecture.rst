@@ -10,7 +10,7 @@ participation. For environment selection and prerequisites, start with
 :ref:`cc_getting_started`; provisioning configuration belongs in
 :ref:`cc_deployment`.
 
-This description follows the **2.9 implementation and its design contracts**.
+This description follows the implementation and its design contracts.
 Implemented checks are distinguished from deployment requirements: administrators
 must supply trusted endpoints, approvals, data-access policy, and output controls.
 The configuration does not create those trust relationships automatically.

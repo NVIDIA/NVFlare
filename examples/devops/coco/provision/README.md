@@ -159,6 +159,6 @@ immutable. Register every new private handoff before launching its new Pod.
 Keep the generated Pod paired with its release. Make workload changes through
 provisioning rather than editing its image, command, or InitData in place.
 
-The [unified deployment schema](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/deployment.html)
-and [security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html)
+The [unified deployment schema](https://nvflare.readthedocs.io/en/latest/user_guide/confidential_computing/deployment.html)
+and [security architecture](https://nvflare.readthedocs.io/en/latest/user_guide/confidential_computing/coco_security_architecture.html)
 provide the full API and peer-proof details.

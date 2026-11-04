@@ -9,7 +9,7 @@ measurement and four minimum reported-TCB fields, or complete TDX profile tuples
 GPU policy uses `allowed_driver_versions` and `allowed_vbios_versions`.
 The signed EAR must contain the required successful CPU/GPU trust vectors.
 Project participants select the single Trustee object in `cc_project.yml`,
-as described in the [common project configuration](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/deployment.html#common-project-configuration).
+as described in the [common project configuration](https://nvflare.readthedocs.io/en/latest/user_guide/confidential_computing/deployment.html#common-project-configuration).
 `service/platform.env` contains separate administration credentials/tool inputs.
 The existing service is managed externally; see [upstream KBS configuration](https://github.com/confidential-containers/trustee/blob/v0.22.0/kbs/docs/config.md).
 The [CVM Trustee guide](../../../nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md)
@@ -95,11 +95,9 @@ configuration before registering another release.
 
 The export must include the full current policy and all unrelated existing rules,
 and must already use Rego v1 syntax with an explicit `import rego.v1` line.
-**Rego v0 is unsupported and must not be used.** The installer rejects a missing
-v1 import before uploading resources; this is not a complete Rego syntax check.
-If the existing service uses Rego v0, migrate and validate that policy externally
-before exporting it and registering a handoff. The installer merges Rego v1
-release rules; it does not translate legacy policy syntax.
+The installer requires the explicit v1 import before uploading resources.
+Validate the complete policy externally before exporting it and registering a
+handoff; checking the import alone is not a complete Rego syntax check.
 
 ~~~bash
 HANDOFF="$HOME/coco-private/releases/site-1/trusted-service"
