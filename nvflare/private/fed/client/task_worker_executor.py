@@ -287,7 +287,12 @@ class TaskWorkerExecutor(Executor):
                 request_factory=request_factory,
                 options=self.options,
                 deadline_provider=partial(
-                    result_wait_deadline, store, identity, self.result_wait_timeout, self.policy.finalization_timeout
+                    result_wait_deadline,
+                    store,
+                    identity,
+                    self.result_wait_timeout,
+                    self.policy.finalization_timeout,
+                    observed_progress={},
                 ),
             )
             # The worker has settled: a record arriving now belongs to no owned attempt.
