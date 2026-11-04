@@ -11,11 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-"""Per-resource capacity probes, one module per technical domain.
-
-Each probe module returns ``None`` when a dimension cannot be established on
-this platform/process, so ``collector.probe_capacity`` can omit that member
-rather than discard the other observations. CPU/RAM probes also flag unchecked
-limits through the collector's shared issue set, retaining usable values.
-"""

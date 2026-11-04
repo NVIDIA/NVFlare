@@ -25,6 +25,10 @@ def has_nvidia_smi() -> bool:
 
 
 def use_nvidia_smi(query: str, report_format: str = "csv", *, timeout: float = _NVIDIA_SMI_TIMEOUT_SECONDS):
+    """Run a query with a command timeout and return its output lines.
+
+    Return None if nvidia-smi is missing; raise RuntimeError for command failures.
+    """
     if has_nvidia_smi():
         try:
             result = subprocess.run(
@@ -65,11 +69,7 @@ def get_host_gpu_memory_free(unit="MiB") -> List:
 
 
 def get_host_gpu_ids(*, timeout: float = _NVIDIA_SMI_TIMEOUT_SECONDS) -> List[int]:
-    """Gets GPU IDs.
-
-    Note:
-        Only supports nvidia-smi now.
-    """
+    """Return GPU indices from nvidia-smi; raise RuntimeError if inventory is unavailable."""
     result = use_nvidia_smi("index", timeout=timeout)
     if not result or len(result) < 2 or result[0].strip() != "index":
         raise RuntimeError("nvidia-smi did not return a GPU inventory")
@@ -83,12 +83,12 @@ def get_host_gpu_ids(*, timeout: float = _NVIDIA_SMI_TIMEOUT_SECONDS) -> List[in
 
 
 def get_visible_gpu_ids(host_gpu_ids: Optional[list[int]] = None) -> Optional[list[int]]:
-    """Select nvidia-smi integer IDs using the process visibility mask.
+    """Apply CUDA_VISIBLE_DEVICES to nvidia-smi GPU indices without querying the host.
 
-    Without a mask, return the supplied inventory. None means an unsupported
-    selector, or an unspecified pool when no inventory was supplied. Negative,
-    missing, or out-of-inventory indices stop the integer prefix; duplicates
-    retain their first position. This function never queries the host.
+    An unset mask returns host_gpu_ids, or None if no inventory was supplied.
+    An empty mask returns []. Keep integer selectors in order without duplicates,
+    stopping at a negative index, an empty item, or an index absent from a supplied inventory.
+    A noninteger selector encountered before stopping returns None.
     """
     value = os.environ.get(CUDA_VISIBLE_DEVICES)
     if value is None:

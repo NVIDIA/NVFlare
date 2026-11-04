@@ -111,6 +111,22 @@ def test_memory_limit_fallback_and_unlimited(monkeypatch, version, limit, partia
     assert issues == ({"observation_incomplete"} if partial else set())
 
 
+@pytest.mark.parametrize("version", ["v1", "v2"])
+@pytest.mark.parametrize("limit,expected,partial", [("0", 0, False), ("-1", 8 * _GIB, True)])
+def test_memory_hard_limits_preserve_zero_and_reject_negative(monkeypatch, version, limit, expected, partial):
+    if version == "v1":
+        membership, mount = "4:memory:/job", ("cgroup", "/", "/cg", "rw,memory")
+        files = {"/cg/job/memory.limit_in_bytes": limit, "/cg/memory.use_hierarchy": "0"}
+    else:
+        membership, mount = "0::/job", ("cgroup2", "/", "/cg", "rw")
+        files = {"/cg/job/memory.max": limit, "/cg/memory.max": "max"}
+    _hierarchy(monkeypatch, membership, [mount], files)
+
+    issues = set()
+    assert probe.probe_memory(issues=issues) == {"bytes": expected}
+    assert issues == ({"observation_incomplete"} if partial else set())
+
+
 def test_v2_capacity_uses_cpu_and_memory_ancestor_limits(monkeypatch):
     _hierarchy(
         monkeypatch,

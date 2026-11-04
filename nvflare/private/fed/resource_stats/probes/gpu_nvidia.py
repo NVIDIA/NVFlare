@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-"""Count the NVIDIA GPU inventory selected by FLARE's integer visibility rules."""
+"""Count selected GPUs from nvidia-smi."""
 
 import os
 
@@ -21,7 +21,7 @@ from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids, get_visible_gpu_ids
 
 
 def probe_gpu():
-    """Return a verified count, or unavailable for unsupported selectors/query failures."""
+    """Return the selected GPU count as {"count": n}, or None if unavailable."""
     visible = get_visible_gpu_ids()
     if visible == []:
         return {"count": 0}

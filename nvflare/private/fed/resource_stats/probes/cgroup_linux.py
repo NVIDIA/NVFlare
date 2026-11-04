@@ -12,11 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Best-effort Linux CPU and memory capacity from readable OS limits.
-
-Use the smallest usable bound. A limit that cannot be checked adds one
-incomplete-observation indication without discarding other readable bounds.
-"""
+"""Read Linux CPU and memory capacity from OS and cgroup limits."""
 
 from __future__ import annotations
 
@@ -42,7 +38,7 @@ def _read_text(path: Path) -> Optional[str]:
 
 
 def _read_cgroup_file(path: Path) -> str | object:
-    """Read a cgroup file without conflating absence and unreadability."""
+    """Read a cgroup file, distinguishing missing files from read errors."""
 
     try:
         return path.read_text(encoding="utf-8").strip()
@@ -58,7 +54,7 @@ def _incomplete(issues: Optional[set[str]]) -> None:
 
 
 def _limit_text(path: Path, issues: Optional[set[str]], *, required: bool = False) -> Optional[str]:
-    """Read one limit; an absent optional controller file is not an error."""
+    """Read a limit, recording read errors and missing required files."""
 
     value = _read_cgroup_file(path)
     if value is _CGROUP_FILE_UNREADABLE or (required and value is _CGROUP_FILE_MISSING):
@@ -75,7 +71,7 @@ def _positive_sysconf(name: str) -> Optional[int]:
 
 
 def _is_v1_memory_unlimited(limit: int, page_size: int) -> bool:
-    """Recognize the page-aligned LONG_MAX sentinel emitted by cgroup v1."""
+    """Recognize the page-aligned LONG_MAX value used for no v1 memory limit."""
 
     if page_size <= 0:
         return False
@@ -130,7 +126,7 @@ def _cgroup_records() -> Optional[list[tuple[list[str], str]]]:
 
 
 def discover_cgroups() -> tuple:
-    """Read membership and mounts once for one observation, never cache them."""
+    """Read this process's cgroup membership and mount information."""
 
     if platform.system() != "Linux":
         return None, None
@@ -159,7 +155,7 @@ def _path_under_mount(mount: Mapping[str, str], cgroup_path: str) -> Optional[Pa
 
 
 def _cgroup_location(controller: Optional[str], discovery=None) -> tuple[Optional[Path], Optional[Path], str]:
-    """Find a covering mount; distinguish absent controllers from unknown limits."""
+    """Locate a controller's cgroup directory and the root of its visible mount."""
 
     records, mounts = discover_cgroups() if discovery is None else discovery
     if records is None or mounts is None:
@@ -187,7 +183,7 @@ def _cgroup_location(controller: Optional[str], discovery=None) -> tuple[Optiona
 
 
 def _controller_location(controller: str, discovery) -> tuple[Optional[Path], Optional[Path], str]:
-    """A controller assigned to v1 must not be inferred from the v2 mount."""
+    """Use v2 only when the controller has no v1 assignment."""
 
     location = _cgroup_location(controller, discovery)
     return _cgroup_location(None, discovery) if location[2] == "none" else location
@@ -286,7 +282,11 @@ def _quota_bound(path: Path, version: str, issues: Optional[set[str]]) -> Option
 
 
 def probe_cpu(_discovery=None, *, issues: Optional[set[str]] = None) -> Optional[dict[str, Any]]:
-    """Return the smallest usable CPU bound, retaining a best-effort fallback."""
+    """Return CPU capacity as {"units": value}, or None if unavailable.
+
+    If issues is supplied, add "observation_incomplete" when a source cannot
+    be checked. Other readable limits still apply.
+    """
 
     if platform.system() != "Linux":
         return None
@@ -331,7 +331,11 @@ def probe_cpu(_discovery=None, *, issues: Optional[set[str]] = None) -> Optional
 
 
 def probe_memory(_discovery=None, *, issues: Optional[set[str]] = None) -> Optional[dict[str, int]]:
-    """Return the smallest usable physical/cgroup memory bound."""
+    """Return memory capacity as {"bytes": value}, or None if unavailable.
+
+    If issues is supplied, add "observation_incomplete" when a source cannot
+    be checked. Other readable limits still apply.
+    """
 
     if platform.system() != "Linux":
         return None
@@ -362,8 +366,8 @@ def probe_memory(_discovery=None, *, issues: Optional[set[str]] = None) -> Optio
             continue
         try:
             limit = int(value)
-            if limit <= 0:
-                raise ValueError("Memory limit must be positive")
+            if limit < 0:
+                raise ValueError("Memory limit must be nonnegative")
         except ValueError:
             _incomplete(issues)
             continue
