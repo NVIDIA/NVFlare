@@ -10,15 +10,12 @@ Get NVFlare and the Example
 ---------------------------
 For the complete installation instructions, see :doc:`../installation`
 
-Install either the stable or nightly NVFlare distribution:
+Install a released NVFlare package:
 
 .. code-block:: text
 
     # Stable
     python -m pip install nvflare
-
-    # Nightly (use instead of the stable command)
-    python -m pip install nvflare-nightly
 
 Then download the matching example revision:
 
@@ -44,7 +41,7 @@ Then install the remaining example dependencies:
     python -m pip install -r requirements.txt
 
 The requirements file intentionally does not install NVFlare. This preserves
-the stable, nightly, or editable distribution that selected the example revision.
+the release, local wheel, or editable installation that selected the example revision.
 
 
 Code Structure

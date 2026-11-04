@@ -46,6 +46,7 @@ from nvflare.fuel.f3.cellnet.identity import (
     get_cert_common_name_from_file,
     get_param,
     is_mtls_config,
+    load_job_ca_cert,
 )
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
 from nvflare.fuel.f3.cellnet.utils import buffer_len, decode_payload, encode_payload, format_log_message, make_reply
@@ -436,6 +437,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             local_fqcn=self.my_info.fqcn,
             prefix_identity_map=prefix_identity_map,
             exact_identity_map=exact_identity_map,
+            job_ca_cert=load_job_ca_cert(get_param(credentials, DriverParams.CA_CERT)),
         )
 
         ep = Endpoint(

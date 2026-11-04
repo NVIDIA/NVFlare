@@ -8,19 +8,7 @@ That means there are dependencies are not required to be installed when user typ
  ```
      pip install nvflare
  ```
-* you will need to install the required python package separately or use
-
-```
-  pip install nvflare[core_opt]
-```
-to install optional dependency for core modules: the core module includes nvflare.fuel etc.  
-
-* If you are interested in CONFIG package only 
-
-```
-  pip install nvflare[CONFIG]
-```
-CONFIG is part of the core, so core_opt will include optional packages for config and other cores.  
+* you will need to install the required python package separately.
 
 * to install optional dependency for application level module, use
 

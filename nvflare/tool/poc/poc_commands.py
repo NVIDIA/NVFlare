@@ -28,7 +28,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, OrderedDict, Tuple
 
 import yaml
-from pyhocon import ConfigFactory as CF
 
 import nvflare.lighter
 from nvflare.apis.utils.format_check import name_check
@@ -61,13 +60,13 @@ from nvflare.tool.kit.kit_config import (
 )
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 from nvflare.utils.cli_utils import (
-    CONFIG_VERSION,
-    CURRENT_CONFIG_VERSION,
     create_poc_workspace_config,
-    get_hidden_nvflare_config_path,
-    get_or_create_hidden_nvflare_dir,
+    get_config_value,
+    load_hidden_config,
     load_hidden_config_state,
+    pop_config_value,
     save_config,
+    set_config_value,
 )
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
@@ -84,7 +83,6 @@ CMD_ADD_SITE = "add-site"
 # POC prepare creates the single Project Admin. Dynamic POC add can only add secondary users.
 POC_USER_CERT_ROLES = ("org_admin", "lead", "member")
 POC_KEY = "poc"
-STARTUP_KIT_KEY = "startup_kit"
 WORKSPACE_KEY = "workspace"
 POC_START_READY_TIMEOUT = 30
 POC_STOP_TIMEOUT = 30
@@ -677,10 +675,7 @@ def _get_generated_poc_startup_kits(project_config: Dict, prod_dir: str) -> Tupl
 
 
 def _get_configured_poc_workspace(config: Dict[str, Any]) -> Optional[str]:
-    try:
-        workspace = config.get(f"{POC_KEY}.{WORKSPACE_KEY}", None)
-    except Exception:
-        return None
+    workspace = get_config_value(config, f"{POC_KEY}.{WORKSPACE_KEY}")
     return workspace.strip() if isinstance(workspace, str) and workspace.strip() else None
 
 
@@ -717,7 +712,7 @@ def _write_poc_startup_kit_registry(workspace: str, project_name: str, project_c
     config, _removed_ids = _register_poc_startup_kits(config, workspace, kit_entries)
 
     if active_id:
-        config.put("startup_kits.active", active_id)
+        set_config_value(config, "startup_kits.active", active_id)
     else:
         from nvflare.tool.cli_output import print_human
 
@@ -726,12 +721,7 @@ def _write_poc_startup_kit_registry(workspace: str, project_name: str, project_c
             "run 'nvflare config use <id>' after registering an admin startup kit."
         )
 
-    config.put(f"{POC_KEY}.{WORKSPACE_KEY}", workspace)
-    try:
-        config.pop(f"{POC_KEY}.{STARTUP_KIT_KEY}", None)
-        config.pop("prod.startup_kit", None)
-    except Exception:
-        pass
+    set_config_value(config, f"{POC_KEY}.{WORKSPACE_KEY}", workspace)
     save_cli_config(config)
 
 
@@ -808,7 +798,7 @@ def _restore_poc_active_kit(previous_active: Optional[str], preferred_active: Op
         active_id = preferred_active
 
     if active_id:
-        config.put("startup_kits.active", active_id)
+        set_config_value(config, "startup_kits.active", active_id)
         save_cli_config(config)
 
 
@@ -2483,11 +2473,7 @@ def clean_poc(cmd_args):
 def _clean_poc_config(poc_workspace: str):
     config = load_cli_config()
     config, _removed_ids = remove_entries_under_workspace(config, poc_workspace)
-    for key in (f"{POC_KEY}.{WORKSPACE_KEY}", f"{POC_KEY}.{STARTUP_KIT_KEY}", "prod.startup_kit"):
-        try:
-            config.pop(key, None)
-        except Exception:
-            pass
+    pop_config_value(config, f"{POC_KEY}.{WORKSPACE_KEY}")
     save_cli_config(config)
 
 
@@ -2575,7 +2561,7 @@ def config_poc(cmd_args):
 
     requested_workspace = getattr(cmd_args, "poc_workspace_dir", None)
     config_file_path, loaded_config, _migration_needed = load_hidden_config_state()
-    nvflare_config = loaded_config or CF.parse_string("{}")
+    nvflare_config = loaded_config or {}
 
     if requested_workspace is None:
         data = {
@@ -2594,13 +2580,12 @@ def config_poc(cmd_args):
 
     try:
         nvflare_config = create_poc_workspace_config(nvflare_config, requested_workspace)
-        nvflare_config.put(CONFIG_VERSION, CURRENT_CONFIG_VERSION)
         save_config(nvflare_config, config_file_path)
     except ValueError as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
 
-    poc_workspace_dir = nvflare_config.get(f"{POC_KEY}.{WORKSPACE_KEY}", None)
+    poc_workspace_dir = get_config_value(nvflare_config, f"{POC_KEY}.{WORKSPACE_KEY}")
     data = {
         "config_file": config_file_path,
         "poc_workspace_dir": poc_workspace_dir,
@@ -2876,14 +2861,7 @@ def get_poc_workspace():
     poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
 
     if not poc_workspace:
-        src_path = get_hidden_nvflare_config_path(str(get_or_create_hidden_nvflare_dir()))
-        if os.path.isfile(src_path):
-            from pyhocon import ConfigFactory as CF
-
-            config = CF.parse_file(src_path)
-            poc_workspace = config.get("poc.workspace", None)
-            if not poc_workspace:
-                poc_workspace = config.get("poc_workspace.path", None)
+        poc_workspace = get_config_value(load_hidden_config() or {}, f"{POC_KEY}.{WORKSPACE_KEY}")
 
     if poc_workspace is None or len(poc_workspace.strip()) == 0:
         poc_workspace = DEFAULT_WORKSPACE

@@ -21,8 +21,7 @@ from zipfile import ZipFile
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
-from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.zip_utils import normpath_for_zip, zip_directory_to_bytes
 
 
@@ -57,14 +56,12 @@ def convert_legacy_zipped_app_to_job(zip_data: bytes) -> bytes:
         meta_file = os.path.join(folder_name, JobConstants.META)
         meta_json = normpath_for_zip(os.path.join(folder_name, JobConstants.META_FILE))
         meta_path = None
-        for ext, fmt in ConfigFormat.config_ext_formats().items():
+        for ext in ConfigService.CONFIG_EXTENSIONS:
             meta_file_path = normpath_for_zip(f"{meta_file}{ext}")
             if next((info for info in info_list if info.filename == meta_file_path), None):
                 # Already in job layout
                 meta_path = meta_file_path
-                config_loader = ConfigFactory.get_config_loader(fmt)
-                meta_data = in_zip.read(meta_path)
-                meta = config_loader.load_config_from_str(meta_data.decode()).to_dict()
+                meta = json.loads(in_zip.read(meta_path).decode())
                 if JobMetaKey.JOB_FOLDER_NAME.value not in meta:
                     meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
                 else:
