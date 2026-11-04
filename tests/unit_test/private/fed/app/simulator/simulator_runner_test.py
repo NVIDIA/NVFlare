@@ -145,14 +145,16 @@ class TestSimulatorRunner:
 
         fl_ctx.get_prop.assert_called_once_with(FLContextKey.FATAL_SYSTEM_ERROR, False)
 
-    def test_client_fatal_error_sets_simulator_status(self):
+    @pytest.mark.parametrize("server_workflow_done,expected_status", [(False, 2), (True, 0)])
+    def test_client_fatal_error_sets_simulator_status(self, server_workflow_done, expected_status):
         runner = SimulatorRunner(job_folder="", workspace="")
         runner.server = MagicMock()
         fl_ctx = runner.server.engine.new_context.return_value.__enter__.return_value
         fl_ctx.get_prop.return_value = False
         runner.client_fatal_error = True
+        runner.server_workflow_done = server_workflow_done
 
-        assert runner._get_server_run_status() == 2
+        assert runner._get_server_run_status() == expected_status
 
     @pytest.mark.parametrize(
         "gpus, expected_gpus",

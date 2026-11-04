@@ -111,6 +111,7 @@ class SimulatorRunner(FLComponent):
         self.simulator_root = None
         self.server = None
         self.client_fatal_error = False
+        self.server_workflow_done = False
         self.deployer = SimulatorDeployer()
         self.client_names = []
         self.federated_clients = []
@@ -532,6 +533,9 @@ class SimulatorRunner(FLComponent):
                     executor.submit(lambda p: self.client_run(*p), [self.server_custom_folder, clients, gpus[index]])
 
                 executor.shutdown()
+                # Before aborting, check if the server workflows already finished on their own
+                server_runner = self.server.server_runner
+                self.server_workflow_done = server_runner is not None and server_runner.status == "done"
                 # Abort the server after all clients finished run
                 self.server.abort_run()
                 server_thread.join()
@@ -549,7 +553,9 @@ class SimulatorRunner(FLComponent):
     def _get_server_run_status(self):
         with self.server.engine.new_context() as fl_ctx:
             execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
-        return 2 if execution_error or self.client_fatal_error else 0
+        # A client fatal error fails the run only if the server workflows could not finish
+        client_failed_run = self.client_fatal_error and not self.server_workflow_done
+        return 2 if execution_error or client_failed_run else 0
 
     def client_run(self, server_custom_folder, clients, gpu):
         client_runner = SimulatorClientRunner(
