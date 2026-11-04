@@ -145,3 +145,43 @@ def test_failed_worker_start_can_be_retried(scheduler, monkeypatch):
     done = threading.Event()
     scheduler.schedule(0, done.set)
     assert done.wait(WAIT_TIMEOUT)
+
+
+@pytest.mark.parametrize("interval", [float("inf"), float("-inf"), float("nan"), -1, 10**400, "bad", None])
+def test_invalid_interval_does_not_admit_work_or_start_worker(scheduler, interval):
+    with pytest.raises(ValueError, match="finite and nonnegative"):
+        scheduler.schedule(interval, lambda: None)
+    assert scheduler.snapshot()["pending"] == scheduler.snapshot()["queue_depth"] == 0
+    assert not scheduler.snapshot()["worker_alive"]
+    # Invalid input must not prevent the next valid cleanup from running.
+    done = threading.Event()
+    scheduler.schedule(0, done.set)
+    assert done.wait(WAIT_TIMEOUT)
+
+
+def test_large_finite_deadline_bounds_wait_and_allows_earlier_cleanup(scheduler, monkeypatch):
+    waited = threading.Event()
+    waits = []
+    called = []
+    original_wait = scheduler._condition.wait
+
+    def observe_wait(timeout=None):
+        if timeout is not None:
+            waits.append(timeout)
+            waited.set()
+            # Bound the regression too: record a bad timeout rather than letting
+            # the old worker raise OverflowError or sleep beyond the test guard.
+            timeout = min(timeout, threading.TIMEOUT_MAX)
+        return original_wait(timeout)
+
+    monkeypatch.setattr(scheduler._condition, "wait", observe_wait)
+    scheduler.schedule(2 * threading.TIMEOUT_MAX, lambda: called.append("long"))
+    assert waited.wait(WAIT_TIMEOUT)
+    assert all(0 < timeout <= threading.TIMEOUT_MAX for timeout in waits)
+    done = threading.Event()
+    scheduler.schedule(0, done.set)
+    assert done.wait(WAIT_TIMEOUT)
+    wait_for(lambda: scheduler.snapshot()["expired"] == 1)
+    assert called == []
+    assert scheduler.snapshot()["pending"] == 1
+    assert scheduler.snapshot()["worker_alive"]

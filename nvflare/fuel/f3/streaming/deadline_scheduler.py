@@ -17,6 +17,7 @@
 import heapq
 import itertools
 import logging
+import math
 import threading
 import time
 
@@ -53,17 +54,28 @@ class DeadlineScheduler:
         self._max_cleanup_lag = 0.0
 
     def schedule(self, interval, callback):
-        """Schedule once after interval seconds, or return None after shutdown."""
+        """Schedule a finite nonnegative interval, or return None after shutdown.
+
+        Invalid intervals/deadlines raise ValueError before work is admitted.
+        """
         with self._condition:
             if self._stopped:
                 return None
+            try:
+                if interval < 0 or not math.isfinite(interval):
+                    raise ValueError
+                deadline = time.monotonic() + interval
+                if not math.isfinite(deadline):
+                    raise ValueError
+            except (TypeError, ValueError, OverflowError):
+                raise ValueError("deadline interval must be finite and nonnegative") from None
             if self._thread is None:
                 worker = threading.Thread(target=self._run, name="f3-rx-cleanup", daemon=True)
                 # Do not leave queued work or a phantom worker if start fails.
                 worker.start()
                 self._thread = worker
             entry = _Deadline(self, interval, callback)
-            heapq.heappush(self._queue, (time.monotonic() + interval, next(self._sequence), entry))
+            heapq.heappush(self._queue, (deadline, next(self._sequence), entry))
             self._pending += 1
             self._condition.notify()
             return entry
@@ -123,7 +135,10 @@ class DeadlineScheduler:
                     deadline, _, entry = self._queue[0]
                     delay = deadline - time.monotonic()
                     if delay > 0:
-                        self._condition.wait(delay)
+                        # Large finite local retry windows can exceed the OS
+                        # wait limit. Wake in bounded steps without shortening
+                        # their actual deadline or stranding unrelated cleanup.
+                        self._condition.wait(min(delay, threading.TIMEOUT_MAX))
                         continue
                     heapq.heappop(self._queue)
                     callback = entry.callback

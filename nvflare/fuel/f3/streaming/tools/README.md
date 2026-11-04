@@ -34,6 +34,9 @@ Completed reliable streams remain available for duplicate ACKs during
 `streaming_retry_timeout + streaming_retry_wait` (65 seconds by default).
 The receiver also honors longer validated sender retry windows. One process-wide
 deadline worker expires these records without allocating a thread per stream.
+Non-finite or negative local retry-window totals produce a warning and fall back
+to the default 65 seconds. Large finite deadlines are preserved; individual waits
+are bounded by the platform's threading timeout limit.
 Failed non-reliable streams keep their existing five-second tombstones;
 successful non-reliable streams are removed immediately.
 

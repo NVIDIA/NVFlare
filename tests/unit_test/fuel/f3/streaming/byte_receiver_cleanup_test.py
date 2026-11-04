@@ -19,6 +19,7 @@ from types import SimpleNamespace
 import pytest
 
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming import deadline_scheduler
 from nvflare.fuel.f3.streaming.byte_receiver import FAILED_NON_RELIABLE_TASK_TTL, RxTask
@@ -164,3 +165,28 @@ def test_process_shutdown_releases_tasks_and_rejects_late_arrivals(cleanup):
     assert RxTask.rx_task_map == {}
     assert RxTask.get_cleanup_stats()["pending"] == 0
     assert not RxTask.get_cleanup_stats()["worker_alive"]
+
+
+@pytest.mark.parametrize(
+    "retry_timeout,retry_wait",
+    [(float("inf"), 5), (60, float("nan")), (float("-inf"), 5), (-10, 5), (1e308, 1e308)],
+)
+def test_invalid_local_retry_window_falls_back_without_stranding_other_tasks(
+    cleanup, monkeypatch, caplog, retry_timeout, retry_wait
+):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: retry_timeout)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: retry_wait)
+    cell = SimpleNamespace(fire_and_forget=lambda *a, **kw: {})
+    message = _final(7)
+    task = RxTask.find_or_create_task(message, cell)
+    assert task.completed_task_ttl == 65
+    assert "invalid local retry window" in caplog.text
+    assert task.process_chunk(message)
+    failed = RxTask.find_or_create_task(_final(8, reliable=False), cell)
+    failed.stop(StreamError("failed"), notify=False)
+    _advance(cleanup, 5)
+    wait_for(lambda: ("peer", 8) not in RxTask.rx_task_map)
+    assert RxTask.rx_task_map[("peer", 7)] is task
+    assert RxTask.get_cleanup_stats()["worker_alive"]
+    _advance(cleanup, 60)
+    wait_for(lambda: not RxTask.rx_task_map)

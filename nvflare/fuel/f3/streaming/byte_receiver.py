@@ -159,6 +159,9 @@ class RxTask:
         self.completed_task_ttl = config.get_streaming_retry_timeout(
             COMPLETED_TASK_TTL
         ) + config.get_streaming_retry_wait(RETRY_WAIT)
+        if not math.isfinite(self.completed_task_ttl) or self.completed_task_ttl < 0:
+            log.warning("Ignoring invalid local retry window; using default receive retention")
+            self.completed_task_ttl = COMPLETED_TASK_TTL + RETRY_WAIT
 
     def __str__(self):
         return f"Rx[SID:{self.sid} from {self.origin} for {self.channel}/{self.topic} Size: {self.size}]"
