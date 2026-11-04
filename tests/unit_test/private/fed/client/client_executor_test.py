@@ -1224,11 +1224,11 @@ def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path):
 
 
 @pytest.mark.parametrize("budget", [{}, {"num_of_cpus": 0.5}, {"memory": "1Gi"}, {"num_of_gpus": 1}])
-@pytest.mark.parametrize("backend", ["process", "docker", "custom", "slurm_resident"])
+@pytest.mark.parametrize("backend", ["process", "docker", "custom", "slurm_server"])
 def test_shared_admission_rejects_unsupported_task_cj_before_launch(tmp_path, budget, backend):
     from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
     from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher
-    from nvflare.app_opt.job_launcher.slurm.launcher import ClientSlurmJobLauncher
+    from nvflare.app_opt.job_launcher.slurm.launcher import ServerSlurmJobLauncher
     from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 
     job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
@@ -1240,13 +1240,13 @@ def test_shared_admission_rejects_unsupported_task_cj_before_launch(tmp_path, bu
     classes = {
         "process": ClientProcessJobLauncher,
         "docker": ClientDockerJobLauncher,
-        "slurm_resident": ClientSlurmJobLauncher,
+        "slurm_server": ServerSlurmJobLauncher,
     }
     launcher = object.__new__(classes[backend]) if backend in classes else Mock()
     launcher.launch_job = Mock(side_effect=AssertionError("unsupported task CJ must not start"))
     # Canonical site-policy validation has its own tests. Exercise the real
     # selected-launcher check at the shared parent admission boundary here.
-    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode="slurm" if backend == "slurm_resident" else "k8s"))
+    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode="slurm" if backend == "slurm_server" else "k8s"))
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
         with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
             with pytest.raises(ValueError, match="supported Kubernetes or Slurm client-job launcher"):
@@ -1279,7 +1279,7 @@ def test_process_resident_compute_admission_keeps_legacy_behavior():
     "mode,module_name,class_name",
     [
         ("k8s", "nvflare.app_opt.job_launcher.k8s_launcher", "ClientK8sJobLauncher"),
-        ("slurm", "nvflare.app_opt.job_launcher.slurm.task_job_launcher", "ClientSlurmTaskJobLauncher"),
+        ("slurm", "nvflare.app_opt.job_launcher.slurm.launcher", "ClientSlurmJobLauncher"),
     ],
 )
 def test_shared_admission_reaches_matching_native_cj_launcher(tmp_path, mode, module_name, class_name, gpus):

@@ -28,7 +28,7 @@ from nvflare.utils.job_launcher_utils import (
 )
 
 TASK_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher"
-CJ_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.task_job_launcher.ClientSlurmTaskJobLauncher"
+CJ_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher"
 
 
 def component_args(config):
@@ -46,24 +46,28 @@ def component_args(config):
 def component_path(config):
     if not isinstance(config, dict):
         raise ValueError("Slurm site component must be a dictionary")
-    return config.get("path", config.get("class_path"))
+    path = config.get("path", config.get("class_path"))
+    # deploy prepare uses the public package re-export of this exact class.
+    if path == "nvflare.app_opt.job_launcher.slurm.ClientSlurmJobLauncher":
+        return CJ_LAUNCHER_PATH
+    return path
 
 
 def validate_slurm_site(launcher, site_config):
-    from nvflare.app_opt.job_launcher.slurm.task_job_launcher import ClientSlurmTaskJobLauncher
+    from nvflare.app_opt.job_launcher.slurm.launcher import ClientSlurmJobLauncher
 
     if not isinstance(site_config, dict) or not isinstance(site_config.get("components", []), list):
         raise ValueError("Slurm canonical site configuration must contain a component list")
     components = site_config.get("components", [])
     matches = [item for item in components if component_path(item) == CJ_LAUNCHER_PATH]
     if len(matches) != 1:
-        raise ValueError("Slurm task profile requires exactly one ClientSlurmTaskJobLauncher")
+        raise ValueError("Slurm task profile requires exactly one ClientSlurmJobLauncher")
     if any(
         component_path(item) != CJ_LAUNCHER_PATH and str(component_path(item)).endswith("JobLauncher")
         for item in components
     ):
         raise ValueError("Slurm task profile cannot combine different CP/CJ job launchers")
-    cj = ClientSlurmTaskJobLauncher(**component_args(matches[0]))
+    cj = ClientSlurmJobLauncher(**component_args(matches[0]))
     if cj.config.workspace_path != launcher.manager.config.workspace_path or cj.config.sandbox != "none":
         raise ValueError("Slurm CP/CJ/task profile requires the same bare shared workspace")
     if cj.config.image:

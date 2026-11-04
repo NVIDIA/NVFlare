@@ -295,7 +295,8 @@ class TaskWorkerExecutor(Executor):
                     observed_progress={},
                 ),
             )
-            # The worker has settled: a record arriving now belongs to no owned attempt.
+            # Application completion is validated. Late worker records no
+            # longer belong to this computation; CP may still own cleanup.
             session.close(timeout=self.policy.settlement_timeout)
             # Finish fallible CJ replay/reporting before promoting application
             # state. The success path's finally block only releases ownership.

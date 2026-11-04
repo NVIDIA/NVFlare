@@ -79,6 +79,7 @@ class _Attempt:
     request: TaskLaunchRequest
     handle: object = None
     cancel: bool = False
+    completed: bool = False
     status: TaskExecutionStatus = field(default_factory=lambda: TaskExecutionStatus(TaskExecutionPhase.QUEUED))
     execution_id: str = "slurm:pending"
 
@@ -173,7 +174,9 @@ class _Job:
                         and not status.settled
                         and status.failure_reason != previous.failure_reason
                     ):
-                        logger.error("CP retains unresolved task %s: %s", attempt.execution_id, status.failure_reason)
+                        logger.warning(
+                            "CP retains unresolved task cleanup %s: %s", attempt.execution_id, status.failure_reason
+                        )
                 except Exception as error:
                     logger.warning("CP task observation failed for %s: %s", self.job_id, type(error).__name__)
             with self.lock:
@@ -240,7 +243,7 @@ class SlurmTaskService:
                         for a in job.attempts.values()
                         if not a.status.settled
                     ]
-                logger.error(
+                logger.warning(
                     "Slurm shutdown deadline: CP retains job %s attempts %s; reconcile before releasing resources",
                     job.job_id,
                     held,
@@ -273,7 +276,7 @@ class SlurmTaskService:
             fields = {"job_id", "token", "action", "task_id", "attempt_id"}
             if action == "launch":
                 fields |= {"bootstrap", "cwd"}
-            if set(data) != fields or action not in {"launch", "poll", "cancel"}:
+            if set(data) != fields or action not in {"launch", "poll", "cancel", "complete"}:
                 raise ValueError("unsupported task control fields or action")
             for key in ("task_id", "attempt_id"):
                 if not isinstance(data[key], str) or not data[key] or len(data[key]) > 256 or "\x00" in data[key]:
@@ -314,8 +317,8 @@ class SlurmTaskService:
                             raise ValueError("attempt identity already bound to another request")
                     elif job.closed:
                         raise ValueError("job task admission is closed")
-                    elif any(not a.status.settled for a in job.attempts.values()):
-                        raise ValueError("job already owns an unsettled task")
+                    elif any(not a.status.settled and not a.completed for a in job.attempts.values()):
+                        raise ValueError("job already owns an unfinished task")
                     else:
                         attempt = _Attempt(request)
                         job.attempts[identity] = attempt
@@ -339,6 +342,12 @@ class SlurmTaskService:
                     job.attempts[identity] = attempt
                 if action == "cancel":
                     attempt.cancel = True
+                elif action == "complete":
+                    # The owning CJ has verified immutable completion and its
+                    # result. Accept the next assignment while retaining this
+                    # allocation for native cleanup; never claim settlement.
+                    attempt.completed = True
+                    attempt.cancel |= not attempt.status.settled
                 result = _status_dict(attempt.status)
                 result["cancel_requested"] = bool(result["cancel_requested"] or attempt.cancel or job.closed)
                 result["execution_id"] = attempt.execution_id
@@ -463,6 +472,9 @@ class SlurmRemoteTaskHandle(TaskHandleSpec):
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError("CP task settlement unconfirmed; cleanup remains owned by CP")
             time.sleep(self.client.poll_interval)
+
+    def result_received(self):
+        self.observe(self.client.call("complete", task_id=self.request.task_id, attempt_id=self.request.attempt_id))
 
     def cancel(self):
         self._cancel_requested = True

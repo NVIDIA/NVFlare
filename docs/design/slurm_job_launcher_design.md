@@ -325,3 +325,122 @@ runs inside a Slurm allocation. A parent outside an allocation therefore require
 additionally require the Slurm NodeName of rank 0 (`SLURMD_NODENAME`) to be DNS-resolvable from the other
 allocated nodes, since it becomes `NVFL_MASTER_ADDR`; clusters whose NodeName differs from a resolvable hostname
 must fix name resolution or use exclusive-node policies compatible with their fabric.
+
+
+## Disposable task allocations
+
+The same `ClientSlurmJobLauncher` selects resident or task-mode CJ launching from
+the deployed application lifetime. Task mode registers a CP owner before starting
+CJ and uses its independent coordinator resource budget. `SlurmTaskLauncher` is
+the CJ proxy for the per-assignment launch interface; its backend runs in CP.
+
+```text
+CP: ClientSlurmJobLauncher -> SlurmJobManager -> coordinator CJ allocation
+CJ: TaskWorkerExecutor -> TaskSupervisor -> SlurmTaskLauncher proxy
+                                              | job-scoped Cell requests
+CP: SlurmTaskService -> native task backend -> Slurm allocation + accounting
+worker: thin Slurm entry point -> common task worker -> application
+```
+
+Application completion and native cleanup are independent. The common supervisor
+requires settlement by default. Slurm's parent-owned profile accepts a verified
+immutable completion first, makes one bounded cleanup wait, and acknowledges the
+result to CP. The acknowledgement permits a new assignment but never marks the
+previous allocation settled. CP retains that allocation and its replay fence and
+requests cancellation when release is still unconfirmed. Missing completion or
+invalid payloads remain failures; cleanup uncertainty is a warning. Task-mode CJ
+recovery remains disabled. The CJ handle preserves CJ outcome and bounds its join
+of background task cleanup; shutdown expiry does not fabricate resource release.
+
+### Backend contract
+
+* **Authority:** CP owns scheduler submission, observation and cancellation.
+  It registers a job-scoped Cell service before starting the CJ and gives
+  that CJ a capability for its own staged worker requests. The service binds
+  resources, executable and environment to trusted site policy. CJ requests
+  cannot supply scheduler commands or a different job's paths. The CJ still
+  requires its Slurm child marker and allocation ID; CP does not.
+  CP cleanup ownership survives CJ abort, allocation loss and an in-flight
+  submission. The default CPU CJ supervises communication; task computation
+  may use CPUs or GPUs in a separate allocation.
+* **Identity:** the complete job/site/task/attempt tuple has an exclusive,
+  persistent control directory under `.nvflare_slurm/tasks`. The scheduler
+  name and comment carry its hash. The handle exposes allocation ID, local
+  cluster identity and attempt hash. There is no requeue, physical retry,
+  restart adoption, job-array, multi-cluster or multi-machine support.
+* **Resources:** `TaskResourceRequest` supplies whole CPU cores, memory MiB
+  and native Slurm GPU count independently of the CJ allocation. CPU-only
+  requests explicitly submit `--gres=none`. The trusted site owns account,
+  partition, QoS, reservation, constraints, time limit and runtime setup.
+  GPU visibility comes from the new allocation, never the CJ environment.
+* **Storage:** the current bare adapter requires code, interpreter, data,
+  bootstrap, inputs, results and opaque checkpoints at identical absolute
+  paths. The same numeric UID owns the site workspace on every host. This
+  does not enforce private-CP or per-job storage isolation.
+  No copying of host-private paths, remote staging or container path mapping
+  is implemented in this revision.
+* **Settlement:** successful `scancel` and batch-leader exit do not settle
+  an attempt. Healthy controller queries must report the allocation absent
+  before and after identity-checked accounting. The allocation and every
+  returned batch/extern/numeric step must be terminal. Batch accounting is
+  required for failed allocations as well as successful ones, except when
+  accounting explicitly reports zero allocated nodes and no earlier controller
+  or accounting observation shows execution. Unknown, completing, requeued and unavailable
+  states retain cleanup ownership. Missing accounting never ages into release
+  proof. Result acceptance is separate: a verified successful application
+  completion remains successful when cleanup confirmation is unavailable.
+* **Retention:** the adapter retains its scripts, identity and scheduler
+  observations. It does not remove application artifacts or promote state.
+  The existing supervisor validates immutable completion, owns receipts and
+  applies payload retention. An unresolved submission retains a cleanup
+  handle and fences its attempt even if sbatch lost its response.
+
+### Shared integration contract
+
+The adapter uses the shared task contracts for site admission, resource
+roles, authorization, immutable completion and checkpoint/receipt retention:
+
+* Export validates resource shape while deferring receiving-site capability.
+  Default-deny validation remains for unsupported backends; Process GPU work
+  is separate.
+* `TaskExecutionPolicy.from_config` lazily selects the exact supported
+  class. `from_workspace` calls `launcher.validate_site_config(site_config)`
+  with the complete canonical site dictionary. Slurm verifies the exact CJ
+  adapter and shared bare workspace; mixed profiles fail closed.
+* Non-Process worker environments come from backend site policy. Slurm's
+  `task_resources` common hook returns an empty request after admission;
+  START_RUN binding preserves its complete native resources. The shared
+  executor forwards that existing event rather than adding a lifecycle API.
+* Slurm's thin worker entry point verifies its allocation marker and delegates
+  to the common worker with `--execution_scope native`. The common path owns
+  authorization, initialize/execute/finalize, Client API context binding,
+  inherited job-credential removal and bounded log flush/exit, without a local
+  CJ PID requirement. TaskHandle/Supervisor/artifact/receipt/checkpoint schemas
+  stay unchanged.
+* The shared saved-result reader fix pins payloads while a replay reads them;
+  receipt cleanup waits for the last reader without holding compute or a
+  state lock across disk IO. Read failure retains evidence. Deterministic
+  regressions cover the previously reproduced replay/receipt deletion race.
+
+### Materializing a staged worker request
+
+Construction performs no scheduler calls. First launch initializes the
+manager and probes local storage and accounting. The runtime provides an
+staged bootstrap command and canonical shared cwd. At START_RUN the launcher
+binds immutable job/site identity, full native resource values and trusted
+runtime policy. It converts that staged command to the configured Slurm Python
+worker module, discarding the CJ's interpreter, parent PID and environment.
+Missing or mismatched binding fails before submission. `--export=NIL` prevents inheriting CJ credentials and scheduler
+resource requests. Trusted setup may amend the explicitly supplied environment;
+the final worker receives those named values and allocation-owned Slurm/GPU
+values. Request values cannot override scheduler identity, GPU visibility or
+federation/Client API bootstrap credentials. Job arguments are shell-quoted.
+Existing trusted study account/partition/QoS, interpreter, setup and plain
+environment overrides are resolved for the task. The bare profile rejects
+study secrets and container/dataset mount mappings rather than silently
+discarding them. Data already accessible under shared paths needs no staging.
+
+Logs use the retained control directory's `scheduler.jsonl` plus the run
+directory's `slurm-<allocation>.out`. Scheduler records correlate with
+`identity.json` and the handle's execution ID. Ordinary worker artifact
+diagnostics remain under the supervisor-owned attempt directory.

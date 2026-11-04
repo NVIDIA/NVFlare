@@ -1,63 +1,21 @@
-Slurm disposable task allocations (experimental adapter)
-========================================================
+Slurm task execution
+====================
 
-The Slurm task adapter supports **both CPU and GPU tasks** through
-``TaskLauncherSpec``, using one bare, single-node allocation per physical
-attempt. It reuses the existing Slurm
-manager's workspace validation, exclusive control directories, submission
-serialization, scheduler command transport and sbatch option construction.
-Resident ``ClientSlurmJobLauncher`` and ``ServerSlurmJobLauncher`` behavior is
-unchanged.
+This guide is for site operators enabling disposable CPU or GPU workers.
+Start with :ref:`slurm_job_launcher` for provisioning, parent placement,
+networking and ordinary job-lifetime execution. Both lifetimes use
+``nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher``.
+The deployed application's ``execution_lifetime`` selects the behavior:
 
-The application uses its normal ``execution_lifetime="task"`` flag. Trusted
-site resources select the matching Slurm CP/CJ/task profile. This branch
-includes shared selection, saved-result reader pins, disk-backed task payloads
-and live worker Cell sessions from the common runtime. Local tests include canonical
-site selection and the ordinary client configurator/executor path, but do not
-qualify a deployed scheduler. The broader acceptance criteria in
-`issue 5434 <https://github.com/NVIDIA/NVFlare/issues/5434>`_ remain open.
+* ``job`` runs computation in the resident Client Job (CJ) allocation.
+* ``task`` keeps CJ for federation coordination and creates a separate Slurm
+  allocation for each task attempt. The persistent Client Parent (CP) submits
+  the workers and retains responsibility for their cleanup.
 
-Backend contract
-----------------
-
-* **Authority:** CP owns scheduler submission, observation and cancellation.
-  It registers a job-scoped Cell service before starting the CJ and gives
-  that CJ a capability for its own staged worker requests. The service binds
-  resources, executable and environment to trusted site policy. CJ requests
-  cannot supply scheduler commands or a different job's paths. The CJ still
-  requires its Slurm child marker and allocation ID; CP does not.
-  CP cleanup ownership survives CJ abort, allocation loss and an in-flight
-  submission. The default CPU CJ supervises communication; task computation
-  may use CPUs or GPUs in a separate allocation.
-* **Identity:** the complete job/site/task/attempt tuple has an exclusive,
-  persistent control directory under ``.nvflare_slurm/tasks``. The scheduler
-  name and comment carry its hash. The handle exposes allocation ID, local
-  cluster identity and attempt hash. There is no requeue, physical retry,
-  restart adoption, job-array, multi-cluster or multi-machine support.
-* **Resources:** ``TaskResourceRequest`` supplies whole CPU cores, memory MiB
-  and native Slurm GPU count independently of the CJ allocation. CPU-only
-  requests explicitly submit ``--gres=none``. The trusted site owns account,
-  partition, QoS, reservation, constraints, time limit and runtime setup.
-  GPU visibility comes from the new allocation, never the CJ environment.
-* **Storage:** the current bare adapter requires code, interpreter, data,
-  bootstrap, inputs, results and opaque checkpoints at identical absolute
-  paths. The same numeric UID owns the site workspace on every host. This
-  does not enforce the private-CP/shared-jobs boundary described below.
-  No copying of host-private paths, remote staging or container path mapping
-  is implemented in this revision.
-* **Settlement:** successful ``scancel`` and batch-leader exit do not settle
-  an attempt. Healthy controller queries must report the allocation absent
-  before and after identity-checked accounting. The allocation and every
-  returned batch/extern/numeric step must be terminal. Batch accounting is
-  required for failed allocations as well as successful ones, except when
-  accounting explicitly reports zero allocated nodes and no earlier controller
-  or accounting observation shows execution. Unknown, completing, requeued and unavailable
-  states retain ownership. Missing accounting never ages into release proof.
-* **Retention:** the adapter retains its scripts, identity and scheduler
-  observations. It does not remove application artifacts or promote state.
-  The existing supervisor validates immutable completion, owns receipts and
-  applies payload retention. An unresolved submission retains a cleanup
-  handle and fences its attempt even if sbatch lost its response.
+Applications must save and load optimizer, RNG and data-position state needed
+across workers. The implementation uses the common task runtime. For design
+and lifecycle details, see the
+`Slurm launcher design <../../../design/slurm_job_launcher_design.md>`_.
 
 CPU and GPU task profiles
 -------------------------
@@ -71,8 +29,9 @@ unchanged: portable zero GPU metadata adds no GRES option, and native
 ``gpus_per_node: 0`` remains invalid. Clusters without a GRES plugin have not
 been qualified for the experimental task profile's ``--gres=none`` option.
 CPU/memory requests, cancellation, immutable result handoff, receipt retention
-and whole-allocation settlement apply to both. The CJ's result upload must not
-hold a task GPU allocation.
+and cleanup observation apply to both. Normal worker teardown releases its
+allocation before result upload; unconfirmed release is reported separately
+from the successful application result.
 
 Native Slurm GPU admission does not depend on the Process backend's GPU
 allocator. The existing CPU-only Process implementation is a base-revision
@@ -124,8 +83,7 @@ before application components start. Resident-job admission remains based
 on its compute requirements.
 
 Only the CJ budget enters long-lived admission. Compute CPU, memory and GPU
-requests belong to each task's native allocation and are held until physical
-settlement. Every task allocation requests CPU and memory, including GPU
+requests belong to each task's native allocation and are allocated by Slurm independently of the long-lived CJ budget. Every task allocation requests CPU and memory, including GPU
 tasks; trusted task defaults are one CPU and 1024 MiB. Slurm allocates whole
 CPU cores, so a fractional CJ CPU share rounds up to the next whole core.
 Task CPU requests must be whole cores. Memory quantities convert to exact
@@ -137,65 +95,26 @@ allocations: ``time`` is preserved for each allocation, and ``pending_timeout``
 is bounded by the respective trusted site limit. Splitting CPU, memory and
 GPU budgets does not discard the job timing policy.
 
-Storage layout, persistence and CJ resume
------------------------------------------
+Storage and recovery
+---------------------
 
-The accepted default site profile has two stores: one private CP workspace
-store and one shared jobs-state store. CP retains access to both. Each CJ and
-its workers receive only that job's directory from the jobs-state store;
-other jobs and CP's private workspace must remain inaccessible. These are
-per-site stores with per-job directories, not a new store per attempt.
-Site launch policy, scheduler credentials and private launch controls belong
-to CP. Sharing job files does not authorize a CJ to submit, inspect or cancel
-native allocations, or to receive broad runtime credentials.
+The current bare profile shares the site workspace under one UID. It requires
+trusted job code and does not enforce CP-private storage, per-job filesystem
+isolation or scheduler-credential isolation. The launcher warns at startup;
+mTLS does not add filesystem isolation.
 
-Both resident and task lifetimes must preserve required checkpoints,
-application recovery metadata and committed task artifacts in the job's
-persistent directory. Applications must explicitly write their required
-recovery state there; allocation-local scratch and files outside that store
-are not preserved by this contract. Checkpoint and completion publication
-continue to use the existing immutable payload and atomic manifest rules.
-Retention must not depend on a CJ completing its shutdown upload. CP still
-needs access to job state for result collection and cleanup after CJ loss.
+Keep required checkpoints and application state in the persistent job directory.
+The common artifact store promotes opaque checkpoint state from verified
+application completion. Unconfirmed native cleanup retains attempt payloads
+and scheduler control records for investigation; it does not invalidate an
+already verified result or checkpoint.
 
-Resident ``job`` lifetime retains the common runtime's automatic CJ recovery
-after its Slurm handle confirms allocation exit. The site's
-``max_cj_restart_failures: 0`` disables that shared recovery path. Its default
-budget counts consecutive failed starts and resets when a CJ reaches READY;
-it is not a lifetime restart cap or a per-job setting. A resident CJ that
-repeatedly reaches READY and then fails with an eligible return code can
-therefore keep restarting. Task-mode CJs report
-``can_restart=False``: independent task allocations can outlive their CJ,
-so CJ allocation exit alone cannot authorize a replacement. Task-mode recovery
-remains disabled even after cleanup. CP retains every accepted submission
-and allocation until controller and accounting observations prove settlement.
-The CP job handle withholds terminal completion and blocks ``wait`` until
-that cleanup finishes, retaining the job resources, certificates and files.
-An unresponsive controller or ambiguous submission keeps ownership pending;
-CJ exit, a timeout and ``scancel`` acknowledgement do not release it.
-Persistent files do not authorize task adoption. Preserve unresolved launch
-evidence and verify physical settlement before operator cleanup; neither a
-surviving directory nor a missing process proves an allocation can safely be
-replaced. Receipt-driven payload cleanup remains separate from retention of
-required checkpoints and recovery metadata.
-
-The current bare adapter and its qualification fixture share the site
-workspace under one UID. They do **not** enforce the accepted storage split,
-per-job filesystem exposure or exclusive access to scheduler credentials.
-Scheduler operations now run in CP, but enforcing that authority boundary
-also requires scheduler credential and filesystem isolation. The layout
-above remains a required deployment contract; local CPU/GPU tests do not
-establish it. The task-capable launcher emits a warning at parent startup
-for the bare profile, including when secure transport is enabled. This
-warning does not enforce isolation; run only trusted job code in that profile.
-Do not expose the CP store to job code as
-a shortcut to making paths visible.
-
-Qualification of that revision must check the actual mounts and permissions
-for CP, CJ and workers, verify that CP-private and other-job paths are
-inaccessible, and confirm that committed checkpoints and metadata survive CJ
-loss in both lifetimes without relying on shutdown upload. Existing normal
-CPU/GPU results do not establish those storage or resume properties.
+Resident ``job`` lifetime retains the common automatic CJ recovery policy.
+``max_cj_restart_failures: 0`` disables it. The budget counts consecutive failed
+starts and resets at READY, rather than being a lifetime or per-job cap.
+Task-mode CJ recovery remains disabled: independent worker allocations can
+outlive CJ. CP continues cleanup while alive; CP crash/restart adoption is not
+implemented. Persistent files alone do not authorize automatic physical retry.
 
 Live worker connections and credentials
 ---------------------------------------
@@ -273,7 +192,7 @@ In the canonical site resources file, select the exact matching pair::
     {
       "components": [{
         "id": "job_launcher",
-        "path": "nvflare.app_opt.job_launcher.slurm.task_job_launcher.ClientSlurmTaskJobLauncher",
+        "path": "nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher",
         "args": {
           "workspace_path": "/shared/private/site-1",
           "sandbox": "none",
@@ -331,278 +250,48 @@ job fails closed and must be resubmitted through updated export/submission.
 Native Slurm GPU metadata remains supported. Task and CJ capability checks
 reject requirements that the selected runtime cannot enforce.
 
-Construction performs no scheduler calls. First launch initializes the
-manager and probes local storage and accounting. The runtime provides an
-staged bootstrap command and canonical shared cwd. At START_RUN the launcher
-binds immutable job/site identity, full native resource values and trusted
-runtime policy. It converts that staged command to the configured Slurm Python
-worker module, discarding the CJ's interpreter, parent PID and environment.
-Missing or mismatched binding fails before submission. ``--export=NIL`` prevents inheriting CJ credentials and scheduler
-resource requests. Trusted setup may amend the explicitly supplied environment;
-the final worker receives those named values and allocation-owned Slurm/GPU
-values. Request values cannot override scheduler identity, GPU visibility or
-federation/Client API bootstrap credentials. Job arguments are shell-quoted.
-Existing trusted study account/partition/QoS, interpreter, setup and plain
-environment overrides are resolved for the task. The bare profile rejects
-study secrets and container/dataset mount mappings rather than silently
-discarding them. Data already accessible under shared paths needs no staging.
+Results, cancellation and cleanup
+----------------------------------
 
-Logs use the retained control directory's ``scheduler.jsonl`` plus the run
-directory's ``slurm-<allocation>.out``. Scheduler records correlate with
-``identity.json`` and the handle's execution ID. Ordinary worker artifact
-diagnostics remain under the supervisor-owned attempt directory.
+The worker publishes immutable completion after successful application
+finalization and checkpoint staging. CJ validates completion identity and the
+result payload before accepting it. A successful result remains successful
+when Slurm cleanup cannot be confirmed. Missing or corrupt completion and
+application failures remain execution failures; explicit user abort is honored.
 
-Cancellation and unresolved execution
--------------------------------------
+After receiving a verified result, CJ uses
+``task_execution.settlement_timeout`` as its cleanup confirmation budget;
+control requests have their own bounded query timeout. It then
+acknowledges computation to CP, which requests cancellation if the allocation
+is still unsettled and continues cleanup in the background. The next assignment
+can proceed while CP retains the old allocation's identity and replay fence.
+An acknowledgement does not mark native cleanup settled.
 
-Queued and running cancellation latch intent and send scancel only after a
-healthy exact-ownership queue observation. A concurrent successful completion
-cannot erase cancellation intent. Acknowledgement is followed by polling for
-allocation/step release. Cancellation timeout raises ``TaskSettlementError``;
-scripts, diagnostics and the handle remain owned. A delayed terminal state
-can subsequently be observed without rerunning compute.
+Unconfirmed cleanup produces a warning and diagnostic with the execution ID.
+Elapsed time, missing accounting and successful ``scancel`` acknowledgement
+never become release proof. Confirmed release uses controller absence and
+matching terminal allocation/step accounting. Report result success and cleanup
+confirmation separately when investigating a run or demonstrating GPU reuse.
 
-The task adapter defaults ``cancel_timeout`` to 120 seconds to allow the
-scheduler's termination grace period and epilog/accounting delay. Sites should
-set it above their configured KillWait plus cleanup delay. A settlement wait
-queries immediately, then backs off from one second by doubling to the
-configured poll interval while accounting catches up;
-ordinary polling retains the configured Slurm poll interval. Neither timeout
-expiry nor a cancellation acknowledgement authorizes resource release.
-After a successful cancellation acknowledgement, the adapter observes release
-without repeatedly issuing ``scancel``. CP continues cleanup after the CJ
-closes its proxy or disappears, independently of the CJ shutdown deadline.
+The client job handle preserves CJ's outcome and limits its task-owner join to
+``ClientSlurmJobLauncher.task_shutdown_timeout`` (default 30 seconds).
+``SYSTEM_END`` uses the same bounded budget. CP logs unresolved identities and
+retains cleanup ownership while alive. Administrative investigation and native
+cancellation use the site's Slurm tools; there is no operator-release file or
+NVFlare override that declares an allocation released.
 
-An ``sbatch`` rejection settles as a failed attempt when the command exits
-nonzero, has no stdout or allocation identity, has not timed out, and every
-stderr line is an explicitly recognized rejection diagnostic. The allowlist
-covers invalid partition, account, QoS, unavailable node configuration,
-invalid GRES and accounting/QoS policy limits. The scheduler error text is
-retained in the failure status and diagnostics; no worker result is expected.
-Unknown/plugin diagnostics, transport failures (including ``Socket timed
-out``), and replies containing a job ID never qualify as definitive rejection.
+Recognized definite ``sbatch`` rejections fail promptly with scheduler text.
+Unknown/plugin diagnostics, lost replies and transport timeouts retain native
+cleanup ownership. CP searches for an exact name, UID and ownership-comment
+match and cancels it when identified. A foreign-cluster response is cleaned up
+in the named cluster and never adopted for execution.
 
-If sbatch throws, times out or returns an invalid response,
-``TaskLaunchError.handle`` retains the unresolved execution. CP periodically
-looks for one live allocation with the exact task name, UID and ownership
-comment. A unique local match is bound only for cleanup and cancelled; no
-compute retry or normal execution adoption occurs. An empty lookup cannot
-prove that a delayed submission will never appear. A returned cluster suffix
-also fails launch, but CP cancels that exact job in the named cluster and
-checks ownership, controller absence and accounting there until settlement.
-It does not adopt the foreign allocation for execution.
+Verification
+-------------
 
-At ``SYSTEM_END``, ``ClientSlurmTaskJobLauncher.task_shutdown_timeout`` bounds
-the total join of CP task owners (default 30 seconds). Expiry logs each held
-job, task, attempt, execution ID and failure reason. Cleanup continues while
-CP remains alive; expiry does not mark work settled or release its resources.
-CP crash/restart recovery is not implemented.
-
-For an otherwise stuck attempt, an operator can record an explicit release
-attestation on the CP host after checking the scheduler/controller and ruling
-out both live and delayed submissions. Use the exact identity from
-``identity.json`` and the current execution ID from ``scheduler.jsonl``::
-
-    python -m nvflare.app_opt.job_launcher.slurm.task_reconcile \
-      --workspace /shared/private/site-1 \
-      --job-id JOB --site-name site-1 --task-id TASK --attempt-id ATTEMPT \
-      --execution-id 'slurm:local:unresolved:ATTEMPT_HASH' \
-      --reason 'Scheduler administrator confirmed no live or delayed allocation' \
-      --confirm-no-active-allocation
-
-This writes an exclusive ``operator-release.json`` record with the identity,
-reason, UID and timestamp. The live CP owner accepts only a matching current
-execution identity, reports failure, and retains scripts and evidence. A stale
-or malformed record cannot release the attempt or prevent normal scheduler
-cleanup. This administrative override is not scheduler proof and must not be
-used merely because a query is unavailable. It is absent from the CJ Cell
-API; the current bare profile still requires trusted same-UID workloads.
-It does not reconstruct an owner after CP restart. No broad-name cancellation,
-automatic evidence deletion or same-attempt retry is performed.
-
-Shared integration contract
----------------------------
-
-The adapter uses the shared task contracts for site admission, resource
-roles, authorization, immutable completion and checkpoint/receipt retention:
-
-* Export validates resource shape while deferring receiving-site capability.
-  Default-deny validation remains for unsupported backends; Process GPU work
-  is separate.
-* ``TaskExecutionPolicy.from_config`` lazily selects the exact supported
-  class. ``from_workspace`` calls ``launcher.validate_site_config(site_config)``
-  with the complete canonical site dictionary. Slurm verifies the exact CJ
-  adapter and shared bare workspace; mixed profiles fail closed.
-* Non-Process worker environments come from backend site policy. Slurm's
-  ``task_resources`` common hook returns an empty request after admission;
-  START_RUN binding preserves its complete native resources. The shared
-  executor forwards that existing event rather than adding a lifecycle API.
-* Slurm's thin worker entry point verifies its allocation marker and delegates
-  to the common worker with ``--execution_scope native``. The common path owns
-  authorization, initialize/execute/finalize, Client API context binding,
-  inherited job-credential removal and bounded log flush/exit, without a local
-  CJ PID requirement. TaskHandle/Supervisor/artifact/receipt/checkpoint schemas
-  stay unchanged.
-* The shared saved-result reader fix pins payloads while a replay reads them;
-  receipt cleanup waits for the last reader without holding compute or a
-  state lock across disk IO. Read failure retains evidence. Deterministic
-  regressions cover the previously reproduced replay/receipt deletion race.
-
-Reproduction and remaining qualification
-----------------------------------------
-
-From this checkout, using an environment with project test dependencies::
-
-    python -m pytest tests/unit_test/app_opt/job_launcher/slurm_task_launcher_test.py tests/unit_test/app_opt/job_launcher/slurm_task_integration_test.py -q
-    python -m pytest tests/unit_test/app_opt/job_launcher/slurm_*_test.py -q
-    python -m pytest tests/integration_test/fast/slurm_task_worker_test.py tests/integration_test/fast/slurm_task_session_test.py -q
-    python -m pytest tests/unit_test/private/fed/task_worker -q
-    ./runtest.sh -s --skip-install
-
-Export the shared qualification application from the exact candidate checkout::
-
-    PYTHONPATH="$PWD" python tests/integration_test/data/slurm_task_execution/export_probe.py --device cpu --clients 2 --lifetime job --output /private/tmp/slurm-probes
-    PYTHONPATH="$PWD" python tests/integration_test/data/slurm_task_execution/export_probe.py --device cpu --clients 2 --lifetime task --output /private/tmp/slurm-probes
-    PYTHONPATH="$PWD" python tests/integration_test/data/slurm_task_execution/export_probe.py --device cuda --gpu-count 1 --clients 2 --lifetime job --output /private/tmp/slurm-probes
-    PYTHONPATH="$PWD" python tests/integration_test/data/slurm_task_execution/export_probe.py --device cuda --gpu-count 1 --clients 2 --lifetime task --output /private/tmp/slurm-probes
-
-These commands only export jobs. Submit them through the normal site job
-workflow on the authorized Slurm CP/CJ/worker deployment. The CPU/CUDA compute
-script is byte-identical to the shared backend probe; only Slurm metadata is
-adapted. CPU asserts zero visible CUDA devices; CUDA requires actual allocation,
-kernels, reduction and synchronization (64 MiB and checksum 33554432 per
-requested GPU by default). Record the script and candidate source hashes.
-The historical ``docker_task_compute`` log-event name remains unchanged across
-backends. Join these computation records with bootstrap/completion identities,
-supervisor execution IDs and Slurm allocation/step/device evidence; PID or an
-environment value alone does not identify an allocation or prove GPU ownership.
-
-Repeat all four exports with ``--resource-format portable`` to exercise
-``resource_spec["@default"]`` and the independent CJ budget through the actual
-submission path. These jobs have a ``-portable`` name suffix. They deliberately
-request different values from the native fixture and trusted task defaults:
-two CPUs and 3 GiB per compute allocation, one CPU and 2 GiB for the server,
-and, in task lifetime, two CPUs, 1536 MiB and zero GPUs for each CJ. Preserve
-native and portable results as separate rows from the same frozen candidate.
-
-Focused tests exercise CPU and GPU requests through native resource/identity
-mapping, queued/running cancel,
-late completion, unknown/duplicate/step accounting, missing manifests,
-retention through receipt, active result reads during shutdown and a real
-NPTrainer worker with a mocked scheduler. These tests submit no Slurm jobs.
-Integration tests also use the normal client JSON configurator, canonical site
-policy and TaskWorkerExecutor, including an explicit zero-GPU override of a
-GPU site default and replay without a second physical launch.
-GPU visibility and scheduler responses are simulated locally; actual GPU
-computation, allocation release and queued-capacity reuse require the deployed
-GPU cases below. CPU successes alone do not qualify GPU execution.
-
-Bounded single-node qualification fixture
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The qualification exporter explicitly requests one CPU and 2048 MiB for the
-server job and each resident CJ or task worker, with a 20-minute limit. The
-server always requests zero GPUs. A previous fixture omitted the server
-memory request; a scheduler default reserved all node memory and prevented
-the clients from starting. A different pair of parent allocations expired
-at their 30-minute limit. These failures must remain in the campaign record;
-a later GPU success does not replace a missing CPU resident control.
-
-``tests/integration_test/data/slurm_task_execution/server.yaml`` and
-``client.yaml`` are supported ``nvflare deploy prepare`` inputs for this
-single-node fixture. Replace their example Python/environment paths with
-the exact candidate environment already on the authorized host. The client
-parent has a one-day limit, while its job launcher gives CPU CJs a one-hour
-limit. Use a distinct client internal port (18111 and 18112), and server
-port 18110, after checking the existing owned services. The fixture keeps
-mTLS and uses loopback only because all allocations share one host. Server
-parent startup remains a stable service, as required by the deployment tool.
-
-Prepare fresh output directories from the existing on-host startup kits,
-using the normal deployment command. Install the exact trusted task launcher
-pair described above in each client's site resources. Set ``cj_cpu_cores=1``
-and ``cj_memory_mb=1024``; task defaults are one CPU, 2048 MiB and zero GPUs.
-The exported metadata selects CPU or GPU compute for each row. Keep the
-original startup kits and prior prepared directories private and intact.
-
-Parent CPU/memory/GPU requests use native ``sbatch`` options; ``mem`` and
-``cpus-per-task`` are not supported keys in ``parent.sbatch_directives``.
-Submit each new client parent once, recording its returned allocation ID::
-
-    sbatch --parsable --no-requeue --nodes=1 --ntasks=1 --cpus-per-task=1 \
-      --mem=2048M --gres=none --time=1-00:00:00 --export=NIL \
-      --job-name=nvflare-site-1-parent \
-      --output=prepared/site-1/parent-slurm-%j.out \
-      prepared/site-1/startup/parent.slurm
-
-Repeat for site-2 with its own output and script. Do not submit replacements
-while previous parents still run. The coordinator must recheck lease
-ownership, scheduler availability and existing workloads before changing an
-owned deployment. Changing YAML does not change an already-running
-allocation's resources or time limit.
-
-At the peak of a task-mode row the two parents request 4 GiB, the server job
-2 GiB, two CPU CJs 2 GiB and two workers 4 GiB: 12 GiB in total, plus headroom
-for the service parent and host. A job-mode row requests 10 GiB in total.
-Verify available CPU slots, actual memory TRES and two free GPUs as well;
-the scheduler can round CPU allocations for the host's topology. Run the
-four rows serially so resident and task GPU requests never overlap.
-
-The portable task-mode profile requests 15 GiB in total, and its job-mode
-profile requests 12 GiB, plus service/host headroom. Check CPU capacity too;
-the portable task CJs and workers each request two CPUs. Keep the native
-profile's resource record separate rather than applying its 12/10 GiB budget
-to these larger portable cases.
-
-Record each row separately as requested, running, blocked, failed or
-verified-passed. Required rows are CPU/job, CPU/task, CUDA/job and CUDA/task,
-all from the same frozen candidate and configuration. All four must pass
-with one server, two sites and both compute rounds. Capture participant
-imports, source/config hashes, job and native allocation identities, numeric
-compute checksums, returned metrics and the persisted server model. CUDA
-rows must demonstrate actual allocation, kernels and synchronization on each
-site. A row is not verified-passed until supported completion/shutdown and
-accounting show no CJ/task allocation, worker process, GPU compute process
-or task reservation remains; retained CPU parent services are expected and
-must be identified separately. Preserve earlier failures instead of replacing
-their statuses. This fixture does not itself submit any product job or
-qualify cancellation, cross-host storage or crash recovery.
-
-Submitted metadata and live resource evidence
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-An exported ``meta.json`` is not proof of submitted resource requirements.
-Run the real ``nvflare job submit`` path, then retrieve the server-stored job
-metadata and retain it with the job ID and source/config hashes. Compare its
-compute and CJ budgets with the intended values before accepting a run.
-Literal ``@default`` keys, and the ``@ALL`` CJ marker for an all-client task
-deployment, must survive CLI staging and server validation. A missing or
-renamed key is a failed qualification even if computation completes.
-
-For each owned CJ and task allocation, retain its submitted scheduler request
-and live Slurm requested/allocated TRES, including CPU, memory and GPU counts.
-Join those records to the job/site/attempt identity and terminal accounting.
-The task-mode CJ must match only its coordinator budget, while every task
-must match the compute budget. In job mode compute belongs to the resident
-CJ. Explain scheduler CPU rounding against the explicit request; an inherited
-default or ambient GPU visibility cannot replace allocation evidence.
-
-The local qualification tests pass exported native and portable jobs through
-the same ``prepare_job_config`` staging call used by the submit CLI, then
-resolve their compute and CJ budgets into real Slurm submission arguments.
-This detects metadata conversion regressions locally. It does not replace
-the required server-stored metadata and live allocation checks above.
-
-Additional deployed qualification requires an authorized test scheduler/account,
-the shared filesystem and matching software environment, a persistent CP
-service (or a CP allocation), CJ allocations, the completed shared runtime
-integration, and an available GPU
-partition for GPU compute and resource-reuse cases. With uniquely owned test allocations,
-record allocation/step identities, scheduler release, retained output and
-server receipts. Queue a second task for the constrained GPU capacity and
-prove it runs while the first CJ is still uploading. Exercise queued/running
-cancellation, leader exit with remaining descendants, compute failure and
-accounting outages. Repeat the required POC/secure production and resident
-compatibility cases. Mock results and local CPU workers do not qualify any
-of these deployed criteria. No shared scheduler submissions or configuration
-changes are part of the local reproduction commands.
+Use the `Slurm qualification fixture <../../../../tests/integration_test/data/slurm_task_execution/README.md>`_
+for CPU/GPU job/task exports, commands and evidence requirements. Local mocks
+and CPU process tests do not qualify deployed scheduler behavior. Record the
+application result, cleanup confirmation and capacity reuse as separate
+observations. A result can pass while cleanup remains unconfirmed; a claim of
+GPU release still needs Slurm evidence or a successful independent CUDA reuse.

@@ -367,24 +367,6 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
                 return replace(self._last_status, cancel_requested=self.cancel_requested)
             self._next_query_at = self.manager._monotonic() + self.poll_interval
             try:
-                from nvflare.app_opt.job_launcher.slurm.task_reconcile import operator_release_reason
-
-                try:
-                    reason = operator_release_reason(self)
-                except (OSError, ValueError, TypeError) as error:
-                    # A stale or malformed attestation never blocks native
-                    # cancellation and scheduler-confirmed settlement.
-                    self._record("operator_release_rejected", error=str(error))
-                    reason = None
-                if reason:
-                    self.cancel_requested = True
-                    self._record("operator_release", reason=reason)
-                    return self._status(
-                        TaskExecutionPhase.TERMINAL,
-                        settled=True,
-                        exit_code=1,
-                        failure=f"Operator reconciled allocation: {reason}",
-                    )
                 if not self.job_id:
                     result = self.manager.adapter.task_by_marker(
                         self.job_name,
@@ -824,6 +806,7 @@ class SlurmTaskLauncher(_SlurmTaskBackend):
     """CJ proxy; CP retains every accepted allocation through CJ loss."""
 
     cleanup_owned_by_parent = True
+    completion_requires_settlement = False
 
     def handle_event(self, event_type, fl_ctx):
         from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskClient
@@ -843,7 +826,10 @@ class SlurmTaskLauncher(_SlurmTaskBackend):
         elif event_type == EventType.END_RUN:
             client = getattr(self, "_client", None)
             if client is not None:
-                client.close()
+                try:
+                    client.close()
+                except TaskLauncherError as error:
+                    self.log_warning(fl_ctx, f"Slurm task cleanup unconfirmed; CP retains cleanup: {error}")
 
     def launch_task(self, request):
         client = getattr(self, "_client", None)

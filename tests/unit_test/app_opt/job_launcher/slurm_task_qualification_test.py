@@ -26,10 +26,9 @@ import pytest
 import yaml
 
 from nvflare.app_opt.job_launcher.slurm.batch import _submission_argv
-from nvflare.app_opt.job_launcher.slurm.launcher import _resolve_resources
-from nvflare.app_opt.job_launcher.slurm.task_job_launcher import ClientSlurmTaskJobLauncher
+from nvflare.app_opt.job_launcher.slurm.launcher import ClientSlurmJobLauncher, _resolve_resources
 from nvflare.tool.deploy import slurm_deploy
-from nvflare.tool.job.job_cli import prepare_job_config
+from nvflare.tool.job import job_cli
 from nvflare.utils.job_launcher_utils import get_cj_resource_spec, get_job_launcher_spec, get_resource_manager_spec
 from tests.unit_test.app_opt.job_launcher.slurm_batch_test import _config, _plan
 from tests.unit_test.tool.deploy.deploy_commands_test import _make_client_kit, _make_server_kit, _run_prepare
@@ -70,16 +69,21 @@ def test_qualification_exports_bound_server_and_compute_allocations(
     assert server["workflows"][0]["args"]["num_rounds"] == 2
     assert client.get("execution_lifetime", "job") == lifetime
     assert (job / "app" / "custom" / "compute_probe.py").read_bytes() == (FIXTURE / "compute_probe.py").read_bytes()
-    # Exercise the same staging path as `nvflare job submit`, even without CLI
-    # overrides. Export-only checks miss literal @default/@ALL key corruption.
+    # Use the real submit staging path, stopping at the session boundary.
+    # Current main uploads JSON files unchanged.
     staged = tmp_path / "submitted"
-    shutil.copytree(job, staged)
-    prepare_job_config(argparse.Namespace(job_folder=str(job), config_file=None), ["app"], str(staged))
+
+    def capture_submission(admin_dir, username, temporary, args):
+        shutil.copytree(temporary, staged)
+
+    monkeypatch.setattr(job_cli, "internal_submit_job", capture_submission)
+    monkeypatch.setattr(sys, "argv", ["nvflare", "job", "submit", "-j", str(job)])
+    job_cli.submit_job(argparse.Namespace(job_folder=str(job), study="default", debug=False))
     submitted = json.loads((staged / "meta.json").read_text())
     for field in ("resource_spec", "cj_resource_spec", "launcher_spec"):
         assert submitted.get(field) == meta.get(field), field
     if lifetime == "task":
-        cj = ClientSlurmTaskJobLauncher(
+        cj = ClientSlurmJobLauncher(
             workspace_path=str(tmp_path), sandbox="none", python_path=sys.executable, executables={}
         )
         for site in ("site-1", "site-2"):

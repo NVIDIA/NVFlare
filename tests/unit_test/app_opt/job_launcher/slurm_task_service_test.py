@@ -15,6 +15,7 @@
 """CP ownership must survive CJ exit, lost replies and in-flight submissions."""
 
 import json
+import os
 import sys
 import threading
 import time
@@ -29,7 +30,7 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.task_launcher_spec import TaskLauncherError, TaskLaunchError, TaskResourceRequest
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.config import CommandResult, LookupStatus, QueryResult, SubmissionResult
-from nvflare.app_opt.job_launcher.slurm.task_job_launcher import _TaskCJHandle
+from nvflare.app_opt.job_launcher.slurm.launcher import _TaskCJHandle
 from nvflare.app_opt.job_launcher.slurm.task_service import (
     ENV_TASK_OWNER,
     ENV_TASK_TOKEN,
@@ -38,7 +39,7 @@ from nvflare.app_opt.job_launcher.slurm.task_service import (
 )
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
-from nvflare.private.fed.task_worker.protocol import write_bootstrap
+from nvflare.private.fed.task_worker.protocol import read_bootstrap, write_bootstrap
 from tests.slurm_test_utils import _accounting, _backend, _query, _supervisor_case
 
 
@@ -134,29 +135,74 @@ def _settle(case):
     case.owner.wake.set()
 
 
-def test_cj_abort_cannot_release_job_until_task_allocation_settles(owned):
+def test_cj_completion_is_bounded_while_cp_retains_unconfirmed_cleanup(owned, caplog):
     remote = _launch(owned)
     native = Mock()
-    native.poll.return_value = 1
-    cj = _TaskCJHandle(native, owned.owner)
+    native.poll.return_value = JobReturnCode.SUCCESS
+    cj = _TaskCJHandle(native, owned.owner, cleanup_timeout=0.01)
     cj.terminate()
     _eventually(lambda: owned.adapter.cancel.called)
     native.terminate.assert_called_once_with()
-    assert cj.poll() == JobReturnCode.UNKNOWN
+    assert cj.poll() == JobReturnCode.SUCCESS
     assert not remote.poll().settled
-    waiter = threading.Thread(target=cj.wait)
-    waiter.start()
-    try:
-        assert waiter.is_alive()
-        assert "job-1" in owned.service.jobs
-        _settle(owned)
-        waiter.join(5)
-        assert not waiter.is_alive()
-        assert cj.poll() == 1
-        assert "job-1" not in owned.service.jobs
-    finally:
-        _settle(owned)
-        waiter.join(5)
+    started = time.monotonic()
+    cj.wait()
+    assert time.monotonic() - started < 1
+    assert owned.owner.thread.is_alive()
+    assert "job-1" in owned.service.jobs
+    assert "cleanup unconfirmed" in caplog.text and "job-1" in caplog.text
+    _settle(owned)
+
+
+def test_verified_result_allows_next_assignment_while_cleanup_remains_owned(owned):
+    owned.adapter.submit.side_effect = [
+        SubmissionResult(CommandResult(0, str(job_id), ""), str(job_id)) for job_id in (42, 43)
+    ]
+
+    def accounting(job_id, *args, **kwargs):
+        result = _accounting("CANCELLED")
+        return replace(
+            result, records=tuple(replace(r, job_id=r.job_id.replace("42", job_id, 1)) for r in result.records)
+        )
+
+    owned.adapter.task_accounting.side_effect = accounting
+    first = _launch(owned)
+    first.result_received()
+    assert not first.poll().settled
+    assert owned.owner.attempts[("task-1", "attempt-1")].completed
+    bootstrap = read_bootstrap(owned.request.argv[4])
+    next_path = str(Path(owned.request.cwd, "bootstrap-2.json"))
+    write_bootstrap(
+        next_path, replace(bootstrap, identity=replace(bootstrap.identity, task_id="task-2", attempt_id="attempt-2"))
+    )
+    argv = (*owned.request.argv[:4], next_path, *owned.request.argv[5:])
+    second = owned.client.launch(replace(owned.request, task_id="task-2", attempt_id="attempt-2", argv=argv))
+    _eventually(lambda: owned.adapter.submit.call_count == 2)
+    assert not second.poll().settled
+    assert len(owned.owner.attempts) == 2
+    replay = owned.client.launch(owned.request)
+    assert replay.execution_id == first.execution_id
+    assert owned.adapter.submit.call_count == 2
+    assert owned.owner.attempts[("task-1", "attempt-1")].handle is not None
+
+
+def test_result_acknowledgement_requires_an_existing_owned_attempt(owned):
+    with pytest.raises(TaskLauncherError):
+        owned.client.call("complete", task_id="unknown", attempt_id="unknown")
+    assert not owned.owner.attempts
+    owned.adapter.submit.assert_not_called()
+
+
+def test_old_operator_release_record_cannot_settle_a_live_allocation(owned):
+    remote = _launch(owned)
+    native = owned.owner.attempts[("task-1", "attempt-1")].handle
+    Path(native.job_dir, "operator-release.json").write_text(
+        json.dumps(
+            dict(identity=list(owned.request.identity), execution_id=remote.execution_id, uid=os.getuid(), reason="old")
+        )
+    )
+    assert not remote.poll().settled
+    assert owned.owner.attempts[("task-1", "attempt-1")].handle is native
 
 
 def test_cp_detects_cj_loss_without_cj_cleanup_rpc(owned):
@@ -460,53 +506,3 @@ def test_definitive_rejection_allows_cj_and_system_shutdown(owned):
     assert cj.poll() == 1
     assert not owned.owner.thread.is_alive()
     assert owned.service.shutdown(timeout=0.05) == ()
-
-
-def test_operator_reconciliation_releases_only_the_attested_attempt(owned):
-    from nvflare.app_opt.job_launcher.slurm.task_reconcile import release_attempt
-
-    owned.adapter.submit.side_effect = TimeoutError("lost reply")
-    owned.adapter.task_by_marker.return_value = _query()
-    remote = owned.client.launch(owned.request)
-    _eventually(lambda: remote.poll().phase.value == "terminal")
-    assert not remote.poll().settled
-    owned.owner.release()
-    with pytest.raises(ValueError, match="confirm"):
-        release_attempt(
-            owned.backend.manager.config.workspace_path,
-            owned.request.identity,
-            remote.execution_id,
-            "checked with scheduler administrator",
-        )
-    path = release_attempt(
-        owned.backend.manager.config.workspace_path,
-        owned.request.identity,
-        remote.execution_id,
-        "scheduler administrator confirmed no delayed or live work",
-        confirm_no_active_allocation=True,
-    )
-    owned.owner.thread.join(5)
-    assert not owned.owner.thread.is_alive()
-    assert Path(path).exists()
-    assert "job-1" not in owned.service.jobs
-    assert Path(path).parent.joinpath("identity.json").exists()
-
-
-def test_operator_record_for_another_allocation_cannot_release_live_work(owned):
-    from nvflare.app_opt.job_launcher.slurm.task_reconcile import release_attempt
-
-    remote = _launch(owned)
-    stale = remote.execution_id.replace(":42:", ":999:")
-    release_attempt(
-        owned.backend.manager.config.workspace_path,
-        owned.request.identity,
-        stale,
-        "stale operator evidence",
-        confirm_no_active_allocation=True,
-    )
-    assert not remote.poll().settled
-    owned.owner.release()
-    _settle(owned)
-    owned.owner.thread.join(5)
-    assert not owned.owner.thread.is_alive()
-    assert Path(owned.backend.manager.jobs_dir).exists()

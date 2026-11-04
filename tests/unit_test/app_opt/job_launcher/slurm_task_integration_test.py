@@ -29,10 +29,11 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.task_launcher_spec import TaskLauncherError
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.batch import _submission_argv
-from nvflare.app_opt.job_launcher.slurm.task_job_launcher import ClientSlurmTaskJobLauncher
+from nvflare.app_opt.job_launcher.slurm.launcher import ClientSlurmJobLauncher
 from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher, _SlurmTaskBackend
 from nvflare.app_opt.job_launcher.slurm.task_policy import CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH, task_resources
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
+from nvflare.tool.deploy.deploy_common import SLURM_CLIENT_LAUNCHER
 from nvflare.utils.job_launcher_utils import get_resource_manager_spec, normalize_cj_resource_spec
 from tests.slurm_test_utils import _backend
 from tests.unit_test.app_opt.job_launcher.slurm_launcher_test import _fl_ctx
@@ -88,7 +89,7 @@ def profile(tmp_path, monkeypatch):
     config = Path(workspace.get_client_app_config_file_path("job-1"))
     config.parent.mkdir(parents=True)
     config.write_text(json.dumps({"execution_lifetime": "task"}))
-    cj = ClientSlurmTaskJobLauncher(**site["components"][0]["args"])
+    cj = ClientSlurmJobLauncher(**site["components"][0]["args"])
     task = _SlurmTaskBackend(**site["task_execution"]["launcher"]["args"])
     return root, workspace, site, cj, task
 
@@ -102,9 +103,17 @@ def _context(workspace, meta, job_id="job-1", site_name="site-1"):
     return context
 
 
-def test_exact_matching_slurm_site_profile(profile):
+@pytest.mark.parametrize("launcher_path", [CJ_LAUNCHER_PATH, SLURM_CLIENT_LAUNCHER])
+def test_exact_matching_slurm_site_profile(profile, launcher_path):
     root, workspace, site, cj, task = profile
+    site["components"][0]["path"] = launcher_path
     task.validate_site_config(site)
+    malformed = copy.deepcopy(site)
+    duplicate = copy.deepcopy(site["components"][0])
+    duplicate["path"] = SLURM_CLIENT_LAUNCHER
+    malformed["components"].append(duplicate)
+    with pytest.raises(ValueError, match="exactly one"):
+        task.validate_site_config(malformed)
     malformed = copy.deepcopy(site)
     malformed["components"] = []
     with pytest.raises(ValueError, match="exactly one"):
@@ -183,18 +192,12 @@ def test_unsupported_task_resource_contract_is_rejected(profile, native):
 
 
 @pytest.mark.parametrize("lifetime", ["job", "task"])
-@pytest.mark.parametrize("extension", ["json", "conf", "yml"])
-def test_cj_reads_all_config_service_formats_before_selecting_lifetime(profile, lifetime, extension):
+@pytest.mark.parametrize("extension", ["json", "json.default"])
+def test_cj_reads_json_config_service_formats_before_selecting_lifetime(profile, lifetime, extension):
     root, workspace, _, cj, _ = profile
     path = Path(workspace.get_client_app_config_file_path("job-1"))
     path.unlink()
-    if extension == "json":
-        path.write_text(json.dumps({"execution_lifetime": lifetime}))
-    elif extension == "conf":
-        path.with_suffix(".conf").write_text('include "lifetime.conf"\n')
-        path.with_name("lifetime.conf").write_text(f'execution_lifetime = "{lifetime}"\n')
-    else:
-        path.with_suffix(".yml").write_text(f"execution_lifetime: {lifetime}\n")
+    path.with_name("config_fed_client." + extension).write_text(json.dumps({"execution_lifetime": lifetime}))
     plan = cj._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(root))
     assert plan.execution_lifetime == lifetime
 
@@ -233,7 +236,7 @@ def test_cpu_cj_separate_allocation_preserves_original_task_metadata(profile):
 @pytest.mark.parametrize("cj_gpu_count", [0, 1])
 def test_cj_site_gpu_default_is_independent_of_compute(profile, cj_gpu_count):
     root, _, site, _, task = profile
-    cj = ClientSlurmTaskJobLauncher(**{**site["components"][0]["args"], "cj_gpu_count": cj_gpu_count})
+    cj = ClientSlurmJobLauncher(**{**site["components"][0]["args"], "cj_gpu_count": cj_gpu_count})
     meta = {
         JobConstants.JOB_ID: "job-1",
         "launcher_spec": {"site-1": {"slurm": {"gpus_per_node": 2, "cpus_per_node": 8, "mem_per_node": 4096}}},
@@ -287,7 +290,7 @@ def test_cj_metadata_overrides_only_cj_resources(profile, cj_spec, expected):
 
 def test_cj_explicit_zero_gpu_overrides_site_default(profile):
     root, _, site, _, _ = profile
-    cj = ClientSlurmTaskJobLauncher(**{**site["components"][0]["args"], "cj_gpu_count": 1})
+    cj = ClientSlurmJobLauncher(**{**site["components"][0]["args"], "cj_gpu_count": 1})
     meta = {
         JobConstants.JOB_ID: "job-1",
         "cj_resource_spec": {"@default": {"num_of_gpus": 0}},
@@ -403,9 +406,15 @@ def test_resident_job_keeps_original_slurm_resource_behavior(profile):
     )
     assert plan.resources.gpus_per_node == 2 and plan.resources.cpus_per_node == 8
     cpu = cj._build_launch_plan(
-        {JobConstants.JOB_ID: "job-1", "launcher_spec": {"site-1": {"slurm": {"gpus_per_node": 0}}}}, _fl_ctx(root)
+        {JobConstants.JOB_ID: "job-1", "resource_spec": {"site-1": {"num_of_gpus": 0}}}, _fl_ctx(root)
     )
-    assert cpu.resources.gpus_per_node == 0 and cpu.study_env["CUDA_VISIBLE_DEVICES"] == ""
+    assert cpu.resources.gpus_per_node is None
+    assert not cpu.clear_gres and "CUDA_VISIBLE_DEVICES" not in cpu.study_env
+    with pytest.raises(RuntimeError, match="gpus_per_node"):
+        cj._build_launch_plan(
+            {JobConstants.JOB_ID: "job-1", "launcher_spec": {"site-1": {"slurm": {"gpus_per_node": 0}}}},
+            _fl_ctx(root),
+        )
 
 
 @pytest.mark.parametrize("lifetime", ["job", "task"])
@@ -503,12 +512,16 @@ def test_cp_placement_and_job_timing_are_independent_of_compute_budget(profile, 
             }
         },
     }
+    if lifetime == "job" and gpus == 0:
+        del meta["launcher_spec"]["site-1"]["slurm"]["gpus_per_node"]
+        meta["resource_spec"] = {"site-1": {"num_of_gpus": 0}}
     plan, backend = cj._prepare_launch(meta, _fl_ctx(root))
     assert plan.resources.time_limit == "48:00:00"
     assert plan.resources.pending_timeout == 60
     argv = _submission_argv(plan, str(root / "out"), "name", "comment", cj.config)
     assert "--time=48:00:00" in argv
-    assert plan.resources.gpus_per_node == (gpus if lifetime == "job" else 0)
+    expected_gpus = (gpus or None) if lifetime == "job" else 0
+    assert plan.resources.gpus_per_node == expected_gpus
     if backend:
         assert backend._binding.resources.time_limit == "48:00:00"
         assert backend._binding.resources.pending_timeout == 60
