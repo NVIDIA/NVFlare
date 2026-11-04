@@ -175,6 +175,12 @@ configuration check is not hardware acceptance.
   :github_nvflare_link:`CoCo GPU reference-value procedure
   <examples/devops/coco/TRUSTEE.md#set-gpu-references-when-required>` before deploying or
   changing a GPU baseline.
+* For CVM/CoCo peer verification, keep normal FL authentication enabled and
+  protect FL and proof private keys inside the intended trusted boundary.
+  Record which servers or relays may terminate application traffic. A signed
+  site proof is not bound to a particular TLS session, and periodic checks can
+  use cached appraisal. Review :ref:`cc_peer_attestation_limits` before relying
+  on those proofs for admission or data access.
 
 5. Provision, launch, and validate
 ----------------------------------
@@ -193,6 +199,14 @@ approval, distribution, and launch. Validate the selected platform and workload,
 including the required attestation and denial behavior, before approving the
 deployment for use. Keep configuration support, successful functional runs, and
 security acceptance as separate claims.
+
+For CVM/CoCo qualification, record both registration directions when a protected
+server is required, periodic failure handling, reconnect, and verifier-restart
+behavior for the selected topology. Rejection during initial admission and
+shutdown or exit after a periodic failure are different checks; do not infer
+per-operation appraisal. Passing a token-verification helper alone does not
+establish end-to-end admission, resource release, or protection from proof
+forwarding. See :ref:`coco_security_acceptance` for the CoCo acceptance matrix.
 
 Follow :ref:`cc_operations` for the linear checklist, shared terminology,
 failure table, and Day-2 rebuild decisions across all three modes.
