@@ -18,13 +18,14 @@ decent-vla/
 ├── job.py                     # compose and export the FLARE job
 ├── client.py                  # FLARE Client API training entry point
 ├── evaluate.py
-└── src/
-    ├── workflows.py           # native FedAvg and FedOpt workflow adapters
-    ├── persistor.py           # FLARE LearnablePersistor
-    ├── adapters/              # policy-specific implementations
-    ├── config.py              # run configuration and validation
-    ├── libero.py              # LIBERO checkpoint evaluation
-    └── support/               # partitioning, training, checkpoints and evaluation support
+├── src/
+│   ├── workflows.py           # native FedAvg and FedOpt workflow adapters
+│   ├── persistor.py           # FLARE LearnablePersistor
+│   ├── adapters/              # policy-specific implementations
+│   ├── config.py              # run configuration and validation
+│   ├── libero.py              # LIBERO checkpoint evaluation
+│   └── support/               # partitioning, training, checkpoints and evaluation support
+└── tests/                     # CPU unit tests
 ```
 
 ## Setup and data
@@ -218,6 +219,20 @@ The paper reports full-tuning FedAvg overall success of 97.50% (π0.5), 75.25%
 full length (see [Validation performed](#validation-performed)). See the
 [paper](https://arxiv.org/abs/2609.22973) for the complete result tables.
 
+## Tests
+
+The unit tests cover the normalization statistics GR00T clients and evaluation share, the checks against a training
+loader with no batches, the LeRobot dataset-identity check and the evaluation cache key. They run on CPU and load no
+policy or dataset, using stand-ins for LeRobot and Isaac-GR00T, so any environment with this package's base
+dependencies works:
+
+```bash
+uv pip install pytest
+python -m pytest tests/unit_test -q
+```
+
+The repository's unit CI does not collect this folder.
+
 ## Validation performed
 
 Short runs of every policy, tuning mode and algorithm in the NVFlare simulator, from job export to LIBERO
@@ -238,6 +253,7 @@ evaluation, all on the code in this folder.
 | Federated training | `python job.py --policy <policy> --tuning <tuning> --algorithm <algorithm> --smoke`, then `nvflare simulator jobs/<name> -w <workspace> -c c0,c1 -t 2 -gpu 0,1` | all 8 completed; see below |
 | LIBERO evaluation, SmolVLA and π0.5 | `SUITES=libero_spatial N_EPISODES=1 bash scripts/eval_libero.sh <run.yaml> <checkpoints/server_round_0002.pt>` | ran end to end: 10 episodes each, 0% success (SmolVLA 192 s, π0.5 452 s) |
 | LIBERO evaluation, GR00T | `python evaluate.py --config <run.yaml> --ckpt <checkpoints/server_round_0002.pt>` | ran end to end: 10 episodes, 0% success (228 s) |
+| Unit tests | `python -m pytest tests/unit_test -q` | 19 passed on CPU, in both training environments and in one with only the base dependencies |
 
 Each smoke run federates 2 clients for 2 rounds of 20 local steps. In every run both clients returned an update in
 both rounds, and the server wrote `server_round_0001.pt`, `server_round_0002.pt` and `server_round_final.pt`:
