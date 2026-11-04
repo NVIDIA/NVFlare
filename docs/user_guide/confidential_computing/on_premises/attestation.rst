@@ -35,12 +35,12 @@ token API. The authorizer checks Trustee's signed appraisal and creates a proof
 signed with the corresponding guest-held key. Verification uses the configured
 Attestation Service public key and can run at an ordinary, verifier-only site.
 
-The direct ``SNPAuthorizer`` and ``GPUAuthorizer`` classes are available for
-deployments that explicitly configure them; they are not the authorizers
-selected by the unified CVM/CoCo path. Their prover-generated nonce histories
-are replay checks, not the Trustee signed-site proof or a verifier-issued CC
-challenge. Do not assume every authorizer has the same identity-binding
-guarantees.
+The standalone ``SNPAuthorizer``, ``GPUAuthorizer``, and ``TDXAuthorizer``
+classes are :ref:`legacy implementations <cc_legacy_authorizers>` and are not
+selected by the unified CVM/CoCo path. The SNP/GPU authorizers' prover-generated
+nonce histories are replay checks, not the Trustee signed-site proof or a
+verifier-issued CC challenge. Do not assume every authorizer has the same
+identity-binding guarantees.
 
 CC Token Verification
 ----------------------
@@ -82,34 +82,57 @@ provider. Verifier-only instances need no local TEE, and a token can include a
 still-valid cached appraisal. NVFlare provides multiple authorizers with
 different evidence and identity-binding contracts.
 
-Supported Platforms
-===================
+Available Authorizers
+=====================
 
 NVFlare provides the following ``CCAuthorizer`` components. Availability does
 not imply identical proof guarantees or hardware qualification for every target:
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 70
+   :widths: 25 45 30
 
    * - Authorizer
-     - Platform
+     - Platform or role
+     - Status
    * - ``TrusteeAuthorizer``
-     - Selected by unified bare-metal CVM and CoCo provisioning. Uses the shared
-       Trustee peer-proof format with deployment-specific guest providers.
+     - Shared Trustee peer-proof format with deployment-specific guest providers.
+     - Selected by unified bare-metal CVM and CoCo provisioning.
    * - ``SNPAuthorizer``
      - AMD SEV-SNP (Secure Encrypted Virtualization - Secure Nested Paging)
+     - :ref:`Legacy <cc_legacy_authorizers>`; candidate for deprecation or removal.
    * - ``GPUAuthorizer``
      - NVIDIA GPU Confidential Computing (H100, Blackwell)
+     - :ref:`Legacy <cc_legacy_authorizers>`; candidate for deprecation or removal.
    * - ``TDXAuthorizer``
      - Intel TDX (Trust Domain Extensions)
+     - :ref:`Legacy <cc_legacy_authorizers>`; candidate for deprecation or removal.
    * - ``ACIAuthorizer``
      - Azure Confidential Containers Instance
+     - Azure integration; separate token semantics.
    * - ``CoCoAuthorizer``
-     - Shared proof implementation used by ``TrusteeAuthorizer``; direct guest
-       token generation uses Kata/Trustee-backed SNP or TDX, CPU-only or with NVIDIA GPU.
+     - Kata/Trustee-backed SNP or TDX, CPU-only or with NVIDIA GPU.
        See :ref:`coco_security_architecture` for target profiles and
        :ref:`coco_security_acceptance` for recorded acceptance evidence and limits.
+     - Shared proof implementation used by ``TrusteeAuthorizer``.
+
+.. _cc_legacy_authorizers:
+
+Legacy standalone authorizers
+------------------------------
+
+``GPUAuthorizer``, ``TDXAuthorizer``, and ``SNPAuthorizer`` are legacy standalone
+implementations retained in 2.9.1. They are candidates for deprecation or
+removal; a release for that change has not been selected. They are not
+recommended for new deployments. Use the unified CVM/CoCo provisioning path
+with ``TrusteeAuthorizer`` for the supported target profiles described in
+:ref:`cc_deployment_guide`.
+
+Existing deployments that explicitly configure these classes should plan a
+migration to the appropriate unified profile and validate its evidence,
+workload policy, and qualification requirements. The legacy classes do not
+provide the same proof contract as ``TrusteeAuthorizer``; changing a class
+name alone is not a migration.
 
 Configuration
 -------------

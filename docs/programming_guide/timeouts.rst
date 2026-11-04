@@ -1462,6 +1462,11 @@ SNP Authorizer Timeouts
 
 AMD SEV-SNP attestation timeouts (snp_authorizer.py):
 
+These settings apply to the :ref:`legacy standalone SNPAuthorizer
+<cc_legacy_authorizers>`, which is a candidate for deprecation or removal.
+Unified CVM/CoCo provisioning uses ``TrusteeAuthorizer`` instead; the settings
+below do not configure that integration.
+
 .. list-table::
    :header-rows: 1
    :widths: 25 12 63
