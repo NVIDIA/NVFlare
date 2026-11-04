@@ -3873,7 +3873,7 @@ def _exited_cj(handle, sandbox_down=True, exit_code=137):
 
 
 @pytest.mark.parametrize("lifetime", ["job", "task"])
-@pytest.mark.parametrize("extension", ["json", "conf", "yml"])
+@pytest.mark.parametrize("extension", ["json", "json.default"])
 @pytest.mark.parametrize("budgets", ["defaults", "native_compute", "portable_compute", "cj_gpu"])
 @pytest.mark.parametrize("create_status, cleanup_status", [(None, None), (403, None), (500, None), (None, 503)])
 def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
@@ -3885,10 +3885,7 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
     (tmp_path / "local").mkdir()
     config = tmp_path / _TASK_JOB_ID / f"app_{_TASK_SITE}" / "config"
     config.mkdir(parents=True)
-    content = (
-        json.dumps({"execution_lifetime": lifetime}) if extension == "json" else f"execution_lifetime: {lifetime}\n"
-    )
-    (config / f"config_fed_client.{extension}").write_text(content)
+    (config / f"config_fed_client.{extension}").write_text(json.dumps({"execution_lifetime": lifetime}))
     workspace = Workspace(str(tmp_path), site_name=_TASK_SITE)
     fl_ctx = FLContext()
     fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, _TASK_SITE, private=False, sticky=True)

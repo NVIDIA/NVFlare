@@ -129,12 +129,6 @@ NVFlare provides several optional dependency groups that you can install based o
 
      $ pip install nvflare[MONITORING]
 
-* **CONFIG** - OmegaConf configuration support:
-
-  .. code-block:: shell
-
-     $ pip install nvflare[CONFIG]
-
 * **DASHBOARD** - Dashboard web interface:
 
   .. code-block:: shell
