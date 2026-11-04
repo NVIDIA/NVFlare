@@ -33,7 +33,7 @@ from nvflare.lighter.provisioner import Provisioner
 from .cert import deserialize_ca_key
 from .models import Client, Project, User
 from .store import Store, inc_dl
-from .validation import CLIENT_NAMES, SERVER_NAMES, USER_NAMES, validate_names
+from .validation import CLIENT_NAMES, SERVER_NAMES, USER_NAMES, DashboardError, validate_names
 
 
 class DummyLogger:
@@ -89,6 +89,11 @@ def _gen_kit(download_key, prepare_target_cb=None, **cb_kwargs):
     project = Project.query.first()
     validate_names({"server1": project.server1}, SERVER_NAMES)
     validate_names({"organization": User.query.get(1).organization.name}, {"organization": "org"})
+    if not project.frozen or not project.root_key or not project.root_cert:
+        raise DashboardError(
+            "The project administrator must finish project setup and freeze the project before download.",
+            status_code=409,
+        )
     prop_mgr = PropertyManager()
 
     u = Store.get_user(1)
