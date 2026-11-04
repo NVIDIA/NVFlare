@@ -76,15 +76,14 @@ def test_missing_or_malformed_inventory_never_fabricates_an_empty_pool(monkeypat
         gpu_utils.get_host_gpu_ids()
 
 
-def test_missing_binary_preserves_memory_fallback_but_does_not_claim_zero_gpus(monkeypatch):
+def test_missing_binary_preserves_legacy_empty_inventory_and_memory_fallback(monkeypatch):
     monkeypatch.setattr(gpu_utils, "has_nvidia_smi", lambda: False)
     run = Mock(side_effect=AssertionError("missing binary must not be executed"))
     monkeypatch.setattr(gpu_utils.subprocess, "run", run)
 
     assert gpu_utils.get_host_gpu_memory_total() == []
     assert gpu_utils.get_host_gpu_memory_free() == []
-    with pytest.raises(RuntimeError, match="inventory"):
-        gpu_utils.get_host_gpu_ids()
+    assert gpu_utils.get_host_gpu_ids() == []
     run.assert_not_called()
 
 

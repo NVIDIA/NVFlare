@@ -69,8 +69,13 @@ def get_host_gpu_memory_free(unit="MiB") -> List:
 
 
 def get_host_gpu_ids(*, timeout: float = _NVIDIA_SMI_TIMEOUT_SECONDS) -> List[int]:
-    """Return GPU indices from nvidia-smi; raise RuntimeError if inventory is unavailable."""
+    """Return GPU indices from nvidia-smi, or [] if the command is missing.
+
+    Raise RuntimeError for command failures or invalid inventory output.
+    """
     result = use_nvidia_smi("index", timeout=timeout)
+    if result is None:
+        return []
     if not result or len(result) < 2 or result[0].strip() != "index":
         raise RuntimeError("nvidia-smi did not return a GPU inventory")
     try:

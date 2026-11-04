@@ -16,9 +16,11 @@
 """GPU count policy with controlled inventory, without a GPU or subprocess."""
 
 import subprocess
+from unittest.mock import Mock
 
 import pytest
 
+from nvflare.fuel.utils import gpu_utils
 from nvflare.private.fed.resource_stats.probes import gpu_nvidia as probe
 
 
@@ -120,3 +122,13 @@ def test_empty_unverified_inventory_is_unavailable(monkeypatch):
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
     monkeypatch.setattr(probe, "get_host_gpu_ids", lambda **_kwargs: [])
     assert probe.probe_gpu() is None
+
+
+def test_missing_nvidia_smi_is_unavailable_not_zero(monkeypatch):
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.setattr(gpu_utils, "has_nvidia_smi", lambda: False)
+    run = Mock()
+    monkeypatch.setattr(gpu_utils.subprocess, "run", run)
+
+    assert probe.probe_gpu() is None
+    run.assert_not_called()
