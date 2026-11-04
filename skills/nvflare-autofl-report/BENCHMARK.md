@@ -9,17 +9,32 @@ Recommended for publication based on the completed evaluation evidence in this r
 ## Evaluation Metadata
 
 - Skill: `nvflare-autofl-report`
-- Evaluation date: 2026-09-15
-- Evaluator version: `1.5.6`
-- Agents: Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`), Codex (`openai/openai/gpt-5.5`)
+- Validation status: `passed`
+- Evaluation date: 2026-11-04
+- Evaluator version: `1.6.6`
+- Agents: Claude Code (`aws/anthropic/bedrock-claude-opus-5-5`), Codex (`openai/openai/gpt-6.1-sol`)
 - Tasks: 4 evaluation tasks (4 positive)
 - Dataset digest: `sha256:c671db2ce45dc278f5a5da89828e94521cd5fc52f73156f263302bb4d43c6e43` (skill-evaluator-dataset-snapshot/1)
-- Attempts per task: 3
+- Attempts per task: 1
 - Environment: `k8s-sandbox`
 - Tier 2 evidence: required for publication
 - Tier 3 evidence: required for publication
 
 Each task attempt ran in its own isolated sandbox pod.
+
+## Tier 1 LLM Provenance
+
+SkillSpector provider, model, analyzer revision, and determinism evidence retained for this scan.
+
+| Skill | Provider | Adapter | Analyzer | Model | Revision | Determinism |
+| --- | --- | --- | --- | --- | --- | --- |
+| nvflare-autofl-report | nv_inference | openai | mcp_tool_poisoning | `aws/anthropic/bedrock-claude-opus-5-5` | `2.13.3` | nondeterministic / provider_defaults |
+| nvflare-autofl-report | nv_inference | openai | semantic_developer_intent | `aws/anthropic/bedrock-claude-opus-5-5` | `2.13.3` | nondeterministic / provider_defaults |
+| nvflare-autofl-report | nv_inference | openai | semantic_quality_policy | `aws/anthropic/bedrock-claude-opus-5-5` | `2.13.3` | nondeterministic / provider_defaults |
+| nvflare-autofl-report | nv_inference | openai | semantic_security_discovery | `aws/anthropic/bedrock-claude-opus-5-5` | `2.13.3` | nondeterministic / provider_defaults |
+| nvflare-autofl-report | nv_inference | openai | meta_analyzer | `aws/anthropic/bedrock-claude-opus-5-5` | `2.13.3` | nondeterministic / provider_defaults |
+
+- Controls for `nvflare-autofl-report`: temperature=not set (source=provider_default, forwarded=no); seed=not set (source=unset, forwarded=no); reasoning_effort=not set (source=provider_default, forwarded=no)
 
 ## What This Report Answers
 
@@ -35,16 +50,27 @@ The three-tier evaluation checks whether the skill:
 
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 88.2% — baseline ran, but no comparable score was available; uplift unavailable | 62.3% — baseline ran, but no comparable score was available; uplift unavailable |
-| Security | 88.9% → 100.0% (+11.1 points) | 70.0% → 85.7% (+15.7 points) |
-| Correctness | 22.2% → 100.0% (+77.8 points) | 20.0% → 45.7% (+25.7 points) |
-| Discoverability | 83.3% — baseline ran, but no comparable score was available; uplift unavailable | 56.4% — baseline ran, but no comparable score was available; uplift unavailable |
-| Effectiveness | 31.1% → 66.3% (+35.2 points) | 34.0% → 28.6% (-5.4 points) |
-| Efficiency | 91.2% — baseline ran, but no comparable score was available; uplift unavailable | 94.9% — baseline ran, but no comparable score was available; uplift unavailable |
+| Overall | 83.7% — baseline ran, but no comparable score was available; uplift unavailable | 70.3% — baseline ran, but no comparable score was available; uplift unavailable |
+| Security | 75.0% → 75.0% (±0.0 points) | 75.0% → 75.0% (±0.0 points) |
+| Correctness | 55.0% → 100.0% (+45.0 points) | 45.0% → 80.0% (+35.0 points) |
+| Discoverability | 73.8% — baseline ran, but no comparable score was available; uplift unavailable | 61.3% — baseline ran, but no comparable score was available; uplift unavailable |
+| Effectiveness | 50.0% → 75.0% (+25.0 points) | 41.9% → 47.5% (+5.6 points) |
+| Efficiency | 94.9% — baseline ran, but no comparable score was available; uplift unavailable | 87.7% — baseline ran, but no comparable score was available; uplift unavailable |
 
 **How to read this table:** baseline is the same task attempted without the target skill. Scores are rounded to one decimal; threshold-adjacent values use additional precision so their displayed band matches the verdict. Uplift is derived from those displayed scores and shown in percentage points.
 
 Example: `47.0% → 92.0% (+45.0 points)` means the skill-assisted run scored 92.0%, 45.0 percentage points above its 47.0% no-skill baseline.
+
+### Comparison details
+
+Shared-source comparisons use the same signals and weights on both conditions. They do not replace the full dimension scores above or change the publication verdict.
+
+| Agent | Dimension | Basis | Baseline → With skill (uplift) | Explanation |
+| --- | --- | --- | --- | --- |
+| claude-code | Discoverability | Dimension comparison | N/A | Discoverability is not applicable to the no-skill baseline; there is no installed skill to discover. |
+| claude-code | Efficiency | Token-only comparison | 97.4% → 89.9% (-7.5 points) | Only Token Efficiency is comparable; the full dimension scores use different evaluator sources. |
+| codex | Discoverability | Dimension comparison | N/A | Discoverability is not applicable to the no-skill baseline; there is no installed skill to discover. |
+| codex | Efficiency | Token-only comparison | 92.6% → 92.0% (-0.6 points) | Only Token Efficiency is comparable; the full dimension scores use different evaluator sources. |
 
 ## Token Usage
 
@@ -52,26 +78,26 @@ Actual Tier 3 execution usage is reported for every observed agent/case pair and
 
 | Agent | Dataset case | With skill | Without skill | Delta | Change | Coverage |
 |---|---|---:|---:|---:|---:|---|
-| claude-code | All cases | 983,436 | 1,816,856 | N/A | N/A | skill 4/4; base 9/9 |
-| claude-code | autofl-report-active-negative | 271,228 | 381,644 | N/A | N/A | skill 1/1; base 2/2 |
-| claude-code | autofl-report-global-negative | 119,491 | 119,024 | +467 | +0.39% | skill 1/1; base 1/1 |
-| claude-code | autofl-report-optimize-negative | 323,592 | 638,690 | N/A | N/A | skill 1/1; base 3/3 |
-| claude-code | autofl-report-stopped-campaign | 269,125 | 677,498 | N/A | N/A | skill 1/1; base 3/3 |
-| codex | All cases | 662,338 | 1,814,050 | N/A | N/A | skill 7/7; base 10/10 |
-| codex | autofl-report-active-negative | 205,649 | 372,043 | N/A | N/A | skill 1/1; base 3/3 |
-| codex | autofl-report-global-negative | 40,809 | 40,769 | +40 | +0.10% | skill 1/1; base 1/1 |
-| codex | autofl-report-optimize-negative | 254,585 | 1,156,474 | -901,889 | -77.99% | skill 3/3; base 3/3 |
-| codex | autofl-report-stopped-campaign | 161,295 | 244,764 | N/A | N/A | skill 2/2; base 3/3 |
-| ALL AGENTS | Dataset aggregate | 1,645,774 | 3,630,906 | N/A | N/A | skill 11/11; base 19/19 |
+| claude-code | All cases | 646,050 | 625,191 | +20,859 | +3.34% | skill 4/4; base 4/4 |
+| claude-code | autofl-report-active-negative | 201,000 | 231,001 | -30,001 | -12.99% | skill 1/1; base 1/1 |
+| claude-code | autofl-report-global-negative | 107,305 | 107,128 | +177 | +0.17% | skill 1/1; base 1/1 |
+| claude-code | autofl-report-optimize-negative | 145,614 | 106,863 | +38,751 | +36.26% | skill 1/1; base 1/1 |
+| claude-code | autofl-report-stopped-campaign | 192,131 | 180,199 | +11,932 | +6.62% | skill 1/1; base 1/1 |
+| codex | All cases | 284,423 | 199,600 | +84,823 | +42.50% | skill 4/4; base 4/4 |
+| codex | autofl-report-active-negative | 80,262 | 62,280 | +17,982 | +28.87% | skill 1/1; base 1/1 |
+| codex | autofl-report-global-negative | 27,026 | 26,901 | +125 | +0.46% | skill 1/1; base 1/1 |
+| codex | autofl-report-optimize-negative | 55,647 | 54,972 | +675 | +1.23% | skill 1/1; base 1/1 |
+| codex | autofl-report-stopped-campaign | 121,488 | 55,447 | +66,041 | +119.11% | skill 1/1; base 1/1 |
+| ALL AGENTS | Dataset aggregate | 930,473 | 824,791 | +105,682 | +12.81% | skill 8/8; base 8/8 |
 
-Prompt tokens include cached reads, so total tokens are `prompt + completion` (cached is not added twice). The Efficiency score uses `(prompt - cached) + completion`. N/A means the relevant trajectory counters were not available; coverage is never estimated.
+Prompt tokens include cached reads, so total tokens are `prompt + completion` (cached is not added twice). The Efficiency score uses `(prompt - cached) + completion`. Change is `100 * (with - without) / without`; negative means fewer tokens. N/A comparisons include their reason in the coverage column; coverage is never estimated.
 
 ## Tier Status
 
 | Tier | Purpose | Status | Evidence |
 |---|---|---|---|
-| Tier 1 | Static validation | **PASSED WITH OBSERVATIONS** | 11 validator(s); 11 finding(s) |
-| Tier 2 | Semantic deduplication | **PASSED** | 2 validator(s); 0 finding(s) |
+| Tier 1 | Static validation | **PASSED WITH OBSERVATIONS** | 11 validator(s); 8 finding(s) |
+| Tier 2 | Semantic deduplication | **PASSED WITH OBSERVATIONS** | 2 validator(s); 1 finding(s) |
 | Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 4 task(s) |
 
 ## Findings and Observations
@@ -79,12 +105,14 @@ Prompt tokens include cached reads, so total tokens are `prompt + completion` (c
 <details>
 <summary>Show detailed findings and successful checks</summary>
 
+- **HIGH** DUPLICATE/duplicate: Duplicate content found across SKILL.md and references/report-contract.md:
+  "## Interrupted Campaigns" in SKILL.md (lines 78-95)
+  vs "## Termination" in references/report-contract.md (lines 21-43) (`SKILL.md:78`)
 - **MEDIUM** SCHEMA/body_recommended_section: Missing recommended section: '## Instructions' (`skills/nvflare-autofl-report/SKILL.md`)
 - **MEDIUM** SCHEMA/body_recommended_section: Missing recommended section: '## Examples' (`skills/nvflare-autofl-report/SKILL.md`)
-- **MEDIUM** SECURITY/Skill Enumeration (AS3): Agent Snooping: skills/nvflare-autofl-report/SKILL.md (`BENCHMARK.md:72`)
-- **MEDIUM** SECURITY/Skill Enumeration (AS3): Agent Snooping: skills/nvflare-autofl-report/SKILL.md (`BENCHMARK.md:73`)
-- **MEDIUM** SECURITY/Unknown (LP3): MCP Least Privilege: The skill declares no explicit tool scope (no 'permissions' or 'allowed-tools' field in its metadata), yet the skill's w (`SKILL.md:1`)
-- 6 additional finding(s) are available in the full evaluation artifacts.
+- **MEDIUM** SECURITY/MCP Least Privilege (LP3): MCP Least Privilege: Without declared permissions the skill's intent is opaque and cannot be validated. (`SKILL.md:1`)
+- **LOW** QUALITY/quality_reliability: Inputs are used but no dedicated Inputs section is documented (`skills/nvflare-autofl-report/SKILL.md`)
+- 4 additional finding(s) are available in the full evaluation artifacts.
 
 </details>
 
