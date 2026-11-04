@@ -281,6 +281,12 @@ class SlurmTaskService:
             identity = (data["task_id"], data["attempt_id"])
             with job.lock:
                 attempt = job.attempts.get(identity)
+                if attempt is None and action == "cancel" and job.closed:
+                    # Closed admission already fences every delayed launch. An
+                    # absent identity never acquired an allocation to observe.
+                    result = _status_dict(_terminal("task cancelled before launch"))
+                    result.update(cancel_requested=True, execution_id="slurm:pending")
+                    return make_reply(ReturnCode.OK, body=json.dumps(result))
                 if attempt is None and action in {"launch", "cancel"} and len(job.attempts) >= job.backend.max_attempts:
                     # Retain every old identity to fence delayed/replayed launches.
                     # This includes cheap launches rejected before any allocation exists.

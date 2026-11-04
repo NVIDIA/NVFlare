@@ -359,6 +359,40 @@ def test_closed_job_rejects_a_new_attempt_at_the_cp_service(owned):
     assert owned.adapter.submit.call_count == 1
 
 
+@pytest.mark.parametrize("full_history", [False, True])
+def test_closed_admission_settles_cancellation_of_a_rejected_launch(owned, full_history):
+    if full_history:
+        owned.backend.max_attempts = 1
+        owned.client.call("cancel", task_id="earlier-task", attempt_id="earlier-attempt")
+    owned.client.call("close")
+    with pytest.raises(TaskLaunchError) as failure:
+        owned.client.launch(owned.request)
+
+    # A failed regression must report unconfirmed cleanup immediately, rather
+    # than spending the normal cleanup deadline waiting for a nonexistent job.
+    owned.client.cleanup_timeout = 0
+    status = failure.value.handle.cancel()
+    assert status.settled and status.cancel_requested
+    assert status.phase.value == "terminal"
+    assert failure.value.handle.execution_id == "slurm:pending"
+    assert len(owned.owner.attempts) == int(full_history)
+    assert ("task-1", "attempt-1") not in owned.owner.attempts
+    assert not owned.adapter.submit.called
+    assert not owned.adapter.cancel.called
+
+
+def test_closed_admission_still_observes_an_existing_live_allocation(owned):
+    remote = _launch(owned)
+    owned.client.call("close")
+    status = owned.client.call("cancel", task_id=remote.request.task_id, attempt_id=remote.request.attempt_id)
+    assert not status["settled"]
+    assert not remote.poll().settled
+    _eventually(lambda: owned.adapter.cancel.called)
+    assert owned.owner.thread.is_alive()
+    _settle(owned)
+    assert remote.wait_for_settlement(timeout=1).settled
+
+
 def test_single_unsettled_attempt_is_enforced_by_the_cp_service(owned):
     _launch(owned)
     with pytest.raises(TaskLauncherError, match="rejected"):

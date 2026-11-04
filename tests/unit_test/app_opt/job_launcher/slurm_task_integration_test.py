@@ -119,6 +119,21 @@ def test_exact_matching_slurm_site_profile(profile):
         task.validate_site_config(malformed)
 
 
+@pytest.mark.parametrize("sandbox,child", [("none", False), ("apptainer", False), ("none", True)])
+def test_bare_task_profile_warns_at_parent_startup(profile, caplog, sandbox, child):
+    _, _, _, cj, _ = profile
+    cj.config = replace(cj.config, sandbox=sandbox)
+    cj.manager = None if child else Mock()
+    cj.handle_event(EventType.SYSTEM_BOOTSTRAP, FLContext())
+    warnings = [record.message for record in caplog.records if "requires trusted job code" in record.message]
+    assert len(warnings) == int(sandbox == "none" and not child)
+    if warnings:
+        assert "site private keys and scheduler credentials" in warnings[0]
+        assert "does not provide filesystem or credential isolation" in warnings[0]
+    if not child:
+        cj.manager.initialize.assert_called_once_with()
+
+
 @pytest.mark.parametrize("gpus", [0, 1, 2])
 def test_native_site_default_override_and_cpu_memory_mapping(profile, gpus):
     _, _, _, _, task = profile

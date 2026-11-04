@@ -204,6 +204,13 @@ class ClientSlurmTaskJobLauncher(ClientSlurmJobLauncher):
         return result
 
     def handle_event(self, event_type, fl_ctx):
+        if event_type == EventType.SYSTEM_BOOTSTRAP and self.manager is not None and self.config.sandbox == "none":
+            self.log_warning(
+                fl_ctx,
+                "Slurm bare task-capable profile requires trusted job code: jobs share the site's UID and "
+                "workspace and can access site private keys and scheduler credentials. Secure transport "
+                "does not provide filesystem or credential isolation.",
+            )
         super().handle_event(event_type, fl_ctx)
         if event_type == EventType.SYSTEM_END:
             service = getattr(self, "_task_service", None)

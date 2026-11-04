@@ -157,7 +157,12 @@ Retention must not depend on a CJ completing its shutdown upload. CP still
 needs access to job state for result collection and cleanup after CJ loss.
 
 Resident ``job`` lifetime retains the common runtime's automatic CJ recovery
-after its Slurm handle confirms allocation exit. Task-mode CJs report
+after its Slurm handle confirms allocation exit. The site's
+``max_cj_restart_failures: 0`` disables that shared recovery path. Its default
+budget counts consecutive failed starts and resets when a CJ reaches READY;
+it is not a lifetime restart cap or a per-job setting. A resident CJ that
+repeatedly reaches READY and then fails with an eligible return code can
+therefore keep restarting. Task-mode CJs report
 ``can_restart=False``: independent task allocations can outlive their CJ,
 so CJ allocation exit alone cannot authorize a replacement. Task-mode recovery
 remains disabled even after cleanup. CP retains every accepted submission
@@ -178,7 +183,10 @@ per-job filesystem exposure or exclusive access to scheduler credentials.
 Scheduler operations now run in CP, but enforcing that authority boundary
 also requires scheduler credential and filesystem isolation. The layout
 above remains a required deployment contract; local CPU/GPU tests do not
-establish it. Do not expose the CP store to job code as
+establish it. The task-capable launcher emits a warning at parent startup
+for the bare profile, including when secure transport is enabled. This
+warning does not enforce isolation; run only trusted job code in that profile.
+Do not expose the CP store to job code as
 a shortcut to making paths visible.
 
 Qualification of that revision must check the actual mounts and permissions
