@@ -13,7 +13,8 @@
 # limitations under the License.
 
 from .exclude_vars import ExcludeVars
+from .int4_quant_filter import Int4QuantFilter
 from .percentile_privacy import PercentilePrivacy
 from .svt_privacy import SVTPrivacy
 
-__all__ = ["PercentilePrivacy", "SVTPrivacy", "ExcludeVars"]
+__all__ = ["PercentilePrivacy", "SVTPrivacy", "ExcludeVars", "Int4QuantFilter"]
