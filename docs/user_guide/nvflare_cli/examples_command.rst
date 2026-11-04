@@ -5,7 +5,7 @@ Examples Command
 The ``nvflare examples`` command downloads example source from the public
 NVIDIA/NVFlare GitHub repository. It selects the source revision recorded in
 the installed NVFlare distribution, so the example matches the version in use.
-A nightly package built from ``main`` retrieves examples from that exact build
+A local wheel built from ``main`` retrieves examples from that exact build
 commit. A release package such as NVFlare 2.10.0 retrieves examples from the
 commit recorded in the 2.10.0 package.
 
@@ -43,9 +43,6 @@ PyTorch support:
    # Stable installation
    python -m pip install "nvflare[PT]"
 
-   # Nightly installation
-   python -m pip install "nvflare-nightly[PT]"
-
    # Editable source installation, run from the NVFlare checkout
    python -m pip install -e ".[PT]"
 
@@ -57,11 +54,14 @@ experiment tracking with PyTorch requires both groups:
    # Stable installation
    python -m pip install "nvflare[PT,TRACKING]"
 
-   # Nightly installation
-   python -m pip install "nvflare-nightly[PT,TRACKING]"
-
    # Editable source installation, run from the NVFlare checkout
    python -m pip install -e ".[PT,TRACKING]"
+
+For a local wheel installation, add extras using the same wheel file, for
+example ``python -m pip install "/path/to/nvflare-<version>-py3-none-any.whl[PT]"``.
+Local builds use the name ``nvflare`` too, but their versions may not exist on
+PyPI. See :doc:`/installation` for build and migration instructions. Use the
+installation method that matches your environment; do not run every alternative.
 
 Other examples may use groups such as ``HE`` or ``SKLEARN``. Download the
 example, then follow its README for remaining dependencies, data download,
@@ -165,7 +165,7 @@ path.
 
 Every successful download includes the same dependency notice in human and JSON
 output: keep the NVFlare distribution already installed, add required extras to
-that same stable, nightly, or editable distribution as shown above, and skip
+that same release, local wheel, or editable installation as shown above, and skip
 any README or dependency-file instruction that installs ``nvflare`` or
 ``nvflare-nightly``. Install only the remaining example dependencies. The
 command does not try to interpret each example's dependency files.

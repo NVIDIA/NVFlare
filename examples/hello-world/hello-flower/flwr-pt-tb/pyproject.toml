@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 # Tested with:
 #   flwr==1.27.0
-#   NVFlare supplied by the parent stable, nightly, or editable environment
+#   NVFlare supplied by the parent environment (release, local wheel, or editable install)
 #   torch==2.11.0
 #   torchvision==0.26.0
 #   tensorboard==2.20.0
