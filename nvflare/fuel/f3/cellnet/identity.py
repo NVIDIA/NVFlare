@@ -12,18 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from typing import List, Optional
 
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import ConnectionSecurity
+from nvflare.apis.job_def import is_valid_job_id
 from nvflare.fuel.f3.cellnet.fqcn import CLIENT_API_ATTACH_LEAF_PREFIX, FQCN
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import SECURE_SCHEMES
-from nvflare.fuel.sec.cert_uri import CELL_URI_KIND, cert_uri_values
+from nvflare.fuel.sec.cert_uri import CELL_URI_KIND, JOB_URI_KIND, cert_uri_values
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.argument_utils import str2bool
+from nvflare.lighter.constants import ProvFileName
+from nvflare.lighter.utils import load_crt_chain
+from nvflare.private.fed.utils.job_cert_utils import job_cell_scopes
 
 ADMIN_LISTENER_KEY = "admin_listener"
 
@@ -41,6 +46,56 @@ def get_param(params: dict, key: DriverParams, default=None):
 def cell_scopes(cert: x509.Certificate) -> List[str]:
     """FQCNs a certificate is restricted to, each with its descendants; empty means unrestricted."""
     return cert_uri_values(cert, CELL_URI_KIND)
+
+
+def _ca_name(name: x509.Name):
+    """Conservative issuer-role comparison for TLS-validated certificates, not a trust check."""
+    result = []
+    for rdn in name.rdns:
+        attributes = []
+        for attr in rdn:
+            value = attr.value
+            if isinstance(value, str):
+                # OpenSSL interprets these legacy ASN.1 strings as Latin-1; PyCA exposes UTF-8.
+                if attr._type.name in ("T61String", "IA5String", "VisibleString"):
+                    value = value.encode("utf-8").decode("latin1")
+                value = b" ".join(value.encode("utf-8").lower().split())
+            attributes.append((attr.oid.dotted_string, value))
+        result.append(tuple(sorted(attributes)))
+    return tuple(result)
+
+
+def is_job_scoped_cert(cert: x509.Certificate, scopes: List[str]) -> bool:
+    """True if the cert names exactly one valid job and every scope is one of that job's cells."""
+    job_ids = cert_uri_values(cert, JOB_URI_KIND)
+    if len(job_ids) != 1 or not is_valid_job_id(job_ids[0]) or not scopes:
+        return False
+
+    for scope in scopes:
+        scope = FQCN.normalize(scope)
+        parts = FQCN.split(scope)
+        if len(parts) < 2 or scope not in job_cell_scopes(FQCN.join(parts[:-1]), job_ids[0]):
+            return False
+    return True
+
+
+def load_job_ca_cert(root_cert_path: str) -> Optional[x509.Certificate]:
+    """The job CA certificate provisioned next to the root CA, if this site has one (the server does)."""
+    if not root_cert_path:
+        return None
+
+    path = os.path.join(os.path.dirname(root_cert_path), ProvFileName.JOB_CA_CERT)
+    if not os.path.isfile(path):
+        return None
+
+    try:
+        cert = load_crt_chain(path)[0]
+        basic_constraints = cert.extensions.get_extension_for_class(x509.BasicConstraints)
+        if not basic_constraints.critical or not basic_constraints.value.ca or basic_constraints.value.path_length != 0:
+            raise ValueError("job CA requires critical CA:TRUE/pathlen:0")
+        return cert
+    except (ValueError, x509.ExtensionNotFound) as ex:
+        raise ValueError(f"invalid job CA certificate {path}: {ex}") from ex
 
 
 def fqcn_in_scopes(fqcn: str, scopes: List[str]) -> bool:
@@ -98,10 +153,17 @@ def get_cert_common_name_from_file(cert_path: str) -> Optional[str]:
 
 
 class CellIdentityResolver:
-    def __init__(self, local_fqcn: str = "", prefix_identity_map: dict = None, exact_identity_map: dict = None):
+    def __init__(
+        self,
+        local_fqcn: str = "",
+        prefix_identity_map: dict = None,
+        exact_identity_map: dict = None,
+        job_ca_cert: Optional[x509.Certificate] = None,
+    ):
         self.local_fqcn = FQCN.normalize(local_fqcn) if local_fqcn else ""
         self.prefix_identity_map = self._normalize_map(prefix_identity_map)
         self.exact_identity_map = self._normalize_map(exact_identity_map)
+        self.job_ca_cert = job_ca_cert
 
     @staticmethod
     def _normalize_map(identity_map: dict = None):
@@ -178,6 +240,17 @@ class CellIdentityResolver:
         # A certificate may restrict which cells it can claim (see cell_scopes).
         if peer_cert is not None:
             scopes = cell_scopes(peer_cert)
+            # pathlen:0 permits only self-issued intermediates, which retain the job CA's name.
+            # Match the issuer role rather than the signing key so key rollover cannot bypass it.
+            if (
+                self.job_ca_cert is not None
+                and _ca_name(peer_cert.issuer) == _ca_name(self.job_ca_cert.subject)
+                and (
+                    not is_job_scoped_cert(peer_cert, scopes)
+                    or any(self.resolve(FQCN.get_parent(scope)) != peer_cn for scope in scopes)
+                )
+            ):
+                raise ValueError(f"{peer_desc} authenticated with a job-CA-issued certificate without job cell scopes")
             if scopes and not fqcn_in_scopes(fqcn, scopes):
                 raise ValueError(
                     f"{peer_desc} authenticated with a certificate restricted to cells {scopes} "
