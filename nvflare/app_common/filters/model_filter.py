@@ -48,6 +48,15 @@ class ModelFilter(DXOFilter):
         model = FLModelUtils.from_dxo(dxo) if native else FLModelUtils.from_shareable(dxo.to_shareable())
         model.meta = deepcopy(model.meta)
         model.metrics = deepcopy(model.metrics)
+        # Match from_shareable's recognized envelope metadata for each leaf.
+        for header, key in (
+            (AppConstants.VALIDATE_TYPE, MetaKey.VALIDATE_TYPE),
+            (MetaKey.JOB_ID, MetaKey.JOB_ID),
+            (MetaKey.SITE_NAME, MetaKey.SITE_NAME),
+        ):
+            value = shareable.get_header(header)
+            if value is not None:
+                model.meta[key] = deepcopy(value)
         for attr, header in self.ROUNDS.items():
             envelope_round = shareable.get_header(header)
             # Legacy metadata can describe the preceding aggregation round. Task
@@ -100,6 +109,9 @@ class ModelFilter(DXOFilter):
             converted = from_shareable(FLModelUtils.to_shareable(result))
             if converted.data_kind != dxo.data_kind:
                 raise ValueError("ModelFilter cannot change DXO data kind")
+            # History belongs to the transport, even when callback metadata is replaced.
+            converted.remove_meta_props([MetaKey.FILTER_HISTORY])
+            converted.add_filter_history(dxo.get_filter_history())
             dxo.data, dxo.meta = converted.data, converted.meta
         return dxo
 

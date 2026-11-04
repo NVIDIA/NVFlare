@@ -133,6 +133,11 @@ collection structure are preserved. The adapter preserves the input data kind,
 unrelated headers/cookies and transport metadata, and unknown native model fields.
 Optimizer state can be carried only by native ``FL_MODEL`` encoding.
 
+Recognized envelope headers populate each callback model's ``meta``: ``validate_type``,
+``job_id``, and ``site_name``. When present, they take precedence over leaf metadata.
+Filter history is preserved independently of callback metadata, including when the
+callback returns a fresh ``FLModel``.
+
 The callback cannot change the parameter type or any round identity (``start_round``,
 ``current_round``, ``total_rounds``). Specified rounds must be nonnegative integers;
 booleans are not accepted. For legacy encodings, task headers are authoritative and

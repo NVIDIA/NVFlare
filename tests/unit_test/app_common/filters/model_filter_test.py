@@ -45,6 +45,7 @@ def test_model_filter_preserves_envelope_and_updates_metrics(kind):
         model.params_type = ParamsType.DIFF if kind == DataKind.WEIGHT_DIFF else ParamsType.FULL
         dxo = from_shareable(FLModelUtils.to_shareable(model))
     dxo.meta.update(unknown={"x": 1}, NUM_STEPS_CURRENT_ROUND=13)
+    dxo.add_filter_history("EarlierFilter")
     shareable = dxo.to_shareable()
     shareable.set_header(AppConstants.CURRENT_ROUND, 3)
     shareable.set_header("unrelated", "keep")
@@ -57,6 +58,7 @@ def test_model_filter_preserves_envelope_and_updates_metrics(kind):
     assert out.data_kind == kind
     assert out.meta["unknown"] == {"x": 1}
     assert out.meta["NUM_STEPS_CURRENT_ROUND"] == 13
+    assert out.get_filter_history() == ["EarlierFilter", "EditMetrics"]
     if kind == DataKind.FL_MODEL:
         decoded = FLModelUtils.from_dxo(out)
         assert decoded.start_round == 1
@@ -65,6 +67,55 @@ def test_model_filter_preserves_envelope_and_updates_metrics(kind):
     else:
         decoded = FLModelUtils.from_shareable(result)
     assert decoded.metrics == {"loss": 2.0}
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_fresh_model_preserves_transport_filter_history(native):
+    class ReplaceModel(ModelFilter):
+        def process_model(self, model, fl_ctx):
+            return FLModel(params=model.params, start_round=model.start_round, meta={"replacement": True})
+
+    model = FLModel(params={"w": 1})
+    dxo = FLModelUtils.to_dxo(model) if native else from_shareable(FLModelUtils.to_shareable(model))
+    dxo.add_filter_history("EarlierFilter")
+
+    output = from_shareable(ReplaceModel().process(dxo.to_shareable(), FLContext()))
+
+    assert output.get_filter_history() == ["EarlierFilter", "ReplaceModel"]
+    decoded = FLModelUtils.from_dxo(output) if native else FLModelUtils.from_shareable(output.to_shareable())
+    assert decoded.params == {"w": 1}
+    assert decoded.meta["replacement"] is True
+
+
+def test_model_metadata_headers_reach_collection_leaves():
+    stale_meta = {MetaKey.VALIDATE_TYPE: "stale", MetaKey.JOB_ID: "old-job", MetaKey.SITE_NAME: "old-site"}
+    legacy = DXO(DataKind.WEIGHTS, {"w": 1}, dict(stale_meta))
+    native = FLModelUtils.to_dxo(FLModel(params={"w": 2}, meta=dict(stale_meta)))
+    shareable = DXO(DataKind.COLLECTION, {"legacy": legacy, "native": native}).to_shareable()
+    shareable.set_header(AppConstants.VALIDATE_TYPE, "before_train_validate")
+    shareable.set_header(MetaKey.JOB_ID, "job-1")
+    shareable.set_header(MetaKey.SITE_NAME, "site-1")
+    shareable.set_header("unrelated", "keep")
+    before = deepcopy(shareable)
+    seen = []
+
+    def inspect_and_skip(model, fl_ctx):
+        assert model.meta[MetaKey.VALIDATE_TYPE] == "before_train_validate"
+        assert model.meta[MetaKey.JOB_ID] == "job-1"
+        assert model.meta[MetaKey.SITE_NAME] == "site-1"
+        assert "unrelated" not in model.meta
+        seen.append(model.params)
+        model.meta[MetaKey.JOB_ID] = "callback-local"
+        return None
+
+    filt = EditMetrics()
+    filt.process_model = inspect_and_skip
+    assert filt.process(shareable, FLContext()) is shareable
+    assert seen == [{"w": 1}, {"w": 2}]
+    output = from_shareable(shareable)
+    for name, leaf in output.data.items():
+        assert leaf.to_dict() == from_shareable(before).data[name].to_dict()
+    assert shareable.get_header(MetaKey.JOB_ID) == "job-1"
 
 
 def test_conflicting_rounds_rejected():
