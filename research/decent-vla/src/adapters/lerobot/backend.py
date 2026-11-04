@@ -93,6 +93,8 @@ class LeRobotBackend:
         """Build policy + dataset metadata. Heavy lifting deferred to lerobot factories."""
         self = cls(cfg, device, data_cfg=data_cfg)
         self._train_pipeline_cfg = _load_train_pipeline_config(cfg)
+        if data_cfg is not None and getattr(data_cfg, "partitioning", None) != "explicit_repos":
+            _check_dataset_identity(data_cfg, self._train_pipeline_cfg)
         self._dataset_meta = _get_dataset_meta(self._train_pipeline_cfg)
         # explicit_repos FL: both clients must normalize with the SAME stats
         # (aggregated over the union of all client repos), so FedAvg never
@@ -496,6 +498,34 @@ def _apply_dataset_tolerance(ds, data_cfg) -> None:
     tol = extra.get("tolerance_s") if isinstance(extra, dict) else None
     if tol is not None:
         ds.tolerance_s = float(tol)
+
+
+def _check_dataset_identity(data_cfg, tp_cfg) -> None:
+    """Reject a run whose partitioned dataset differs from the one training loads.
+
+    Episodes are listed and partitioned from `data.repo_id` (and `data.extra.root`),
+    while training loads `dataset.repo_id` from the train pipeline YAML. A mismatch
+    would apply one dataset's episode indices to another dataset.
+    """
+    extra = data_cfg.extra or {}
+    repo_id = data_cfg.repo_id or extra.get("repo_id")
+    if not repo_id:
+        return  # nothing is partitioned: list_episodes refuses to run without a repo id
+    train_repo_id = getattr(tp_cfg.dataset, "repo_id", None)
+    if repo_id != train_repo_id:
+        raise ValueError(
+            f"data.repo_id={repo_id!r} differs from dataset.repo_id={train_repo_id!r} in the train pipeline "
+            "YAML (backend.extra.train_config_path): episodes are partitioned from the first and trained "
+            "from the second. Set both to the same dataset."
+        )
+    root = _resolve_local_root(repo_id, extra.get("root"))
+    train_root = getattr(tp_cfg.dataset, "root", None)
+    if root and train_root and Path(root).resolve() != Path(train_root).resolve():
+        raise ValueError(
+            f"{repo_id!r} is partitioned from {root!r} (data.extra.root, or the local HF_LEROBOT_HOME copy) "
+            f"but trained from {train_root!r} "
+            "(dataset.root in the train pipeline YAML). Set both to the same dataset root."
+        )
 
 
 def _get_dataset_meta(tp_cfg):
