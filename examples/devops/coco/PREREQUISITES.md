@@ -118,7 +118,7 @@ host UFW rules alone do not restrict them.
 . /etc/os-release
 test "$ID:$VERSION_ID" = ubuntu:26.04
 test "$(uname -m)" = x86_64
-case "$CPU_TEE" in snp|tdx) ;; *) exit 1 ;; esac
+case "$CPU_TEE" in amd_sev_snp|intel_tdx) ;; *) exit 1 ;; esac
 case "$SERVICES_IP:$WORKER_IP" in *REPLACE*) exit 1 ;; esac
 test "$SERVICES_IP" != "$WORKER_IP"
 ip -brief address

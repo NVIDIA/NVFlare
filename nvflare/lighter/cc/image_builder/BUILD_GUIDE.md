@@ -744,6 +744,10 @@ candidate installation requires the resulting tested receipt.
 `production-admin.json` used after approval must include trusted
 `approval_public_keys`; see [Trustee identity and lab lifecycle setup](TRUSTEE_GUIDE.md#keep-acceptance-and-production-on-the-same-trustee-identity).
 
+Prepare `acceptance-vault.yml` and its payload using
+[Prepare the acceptance workload](VALIDATION.md#prepare-the-acceptance-workload)
+before sealing the candidate below.
+
 ```sh
 sudo --preserve-env=CVM_BUILDER_PYTHON ./cvmctl admin install /srv/cvm/acceptance/lab-kbs/admin.json \
   target/cvm_PROFILE/PLATFORM --candidate
@@ -758,8 +762,8 @@ path of that platform subdirectory, containing `vault_manifest.json` and
 `launch_cvm.sh`, not the parent or the OCI archive. The runner checks this before
 starting either suite.
 
-`acceptance-vault.yml` uses the normal vault schema and an application image that
-runs the test-only `tests/integration_test/lighter/cc/image_builder/lab_guest_agent.py`.
+The acceptance container serves the generic HTTP fixture on port 18080; a separate guest
+service runs the fault agent on port 18081 from executable application payload.
 The checked-in `acceptance_runner.py` is the official lower-level evidence
 generator. It runs
 the isolated Trustee administration tests and the hardware tests, signs every

@@ -120,6 +120,84 @@ QGS cache recovery and the `standard`/`early` collateral selection used by the
 verifier. Neither channel selection nor successful quote generation supplies
 missing platform firmware mitigations.
 
+## Prepare the acceptance workload
+
+The shipped hardware suite needs two endpoints: a generic container application
+on port **18080** returning exactly `CVM_GENERIC_APPLICATION_OK` followed by a
+newline, and the guest fault agent on port **18081**. The agent runs as a guest
+systemd service, not inside the application container: it imports measured
+`cvm` modules from `/usr/lib/cvm` and inspects guest services and storage.
+
+Run the following preparation from `nvflare/lighter/cc/image_builder` in the
+reviewed source checkout. Set `ACCEPTANCE_BASE_IMAGE` to an immutable digest
+reference for a reviewed Linux amd64 image containing Python 3:
+
+```bash
+NVFLARE_SOURCE_ROOT=$(git rev-parse --show-toplevel)
+: "${ACCEPTANCE_BASE_IMAGE:?Set the reviewed Python base image digest}"
+mkdir -p acceptance-http acceptance-payload
+cat > acceptance-http/Dockerfile <<'EOF'
+ARG ACCEPTANCE_BASE_IMAGE
+FROM ${ACCEPTANCE_BASE_IMAGE}
+USER 0
+WORKDIR /srv/acceptance
+RUN printf 'CVM_GENERIC_APPLICATION_OK\n' > index.html
+ENTRYPOINT ["python3", "-m", "http.server", "18080", "--bind", "0.0.0.0"]
+CMD []
+EOF
+docker build --platform linux/amd64 \
+  --build-arg ACCEPTANCE_BASE_IMAGE="$ACCEPTANCE_BASE_IMAGE" \
+  -t cvm-acceptance-http ./acceptance-http
+docker image inspect --format '{{.Id}}' cvm-acceptance-http
+docker save cvm-acceptance-http -o acceptance-http.tar
+install -m 0755 \
+  "$NVFLARE_SOURCE_ROOT/tests/integration_test/lighter/cc/image_builder/lab_guest_agent.py" \
+  acceptance-payload/lab_guest_agent.py
+install -m 0644 \
+  "$NVFLARE_SOURCE_ROOT/tests/integration_test/lighter/cc/image_builder/app_acceptance.service" \
+  app_acceptance.service
+```
+
+Create `acceptance-vault.yml` beside those files. Set `cvm_image` to the exact
+finalized candidate profile set and replace `image_id` with the complete
+`sha256:...` value printed above. The example selects a CPU-only profile; for a
+GPU profile, set `requires_gpu: true` to match the selected generic bundle.
+Calculate the vault capacity using the [build guide's sizing procedure](BUILD_GUIDE.md#4-seal-an-application-delivery).
+
+```yaml
+cvm_image: ./target/cvm_PROFILE
+docker_archive: ./acceptance-http.tar
+image_id: REPLACE_WITH_DOCKER_IMAGE_ID
+requires_gpu: false
+vault_drive_size: 32
+applog_drive_size: 1
+user_config_drive_size: 1
+user_data_drive_size: 1
+application_files: ./acceptance-payload
+services: [./app_acceptance.service]
+allowed_ports: [18080, 18081]
+allowed_out_ports: [443, 8443]
+container:
+  ports: [{host: 18080, container: 18080}]
+```
+
+The payload mapping places the executable at
+`/vault/application/lab_guest_agent.py`, matching the shipped service's
+`ExecStart`. The builder installs the service with its normal bootstrap
+dependencies and sandboxing. Only port 18080 is a Docker port mapping; port
+18081 belongs to the guest service. Both ports must be in `allowed_ports` so
+the guest firewall and host launcher admit the hardware runner's requests.
+Keep those host ports free and restrict access to the isolated acceptance host.
+Adjust outbound ports for the reviewed Trustee and collateral services.
+
+Use this payload only in a disposable candidate acceptance vault. Stage 1 does
+not install the fault agent, and production application vaults must not include
+it or `app_acceptance.service`. Continue with the [candidate installation,
+sealing and runner commands](BUILD_GUIDE.md#21-exact-manifest-acceptance-and-approval),
+using the same project Trustee configuration and exact manifest throughout.
+The runner checks both endpoints; a standalone generic HTTP boot check does
+not replace the full acceptance suite.
+
 ## Reproduce acceptance
 
 Follow the [exact-manifest acceptance flow](BUILD_GUIDE.md) and select the
