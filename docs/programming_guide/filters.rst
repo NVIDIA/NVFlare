@@ -161,6 +161,13 @@ borrowed objects cannot be rolled back on ``None`` or an exception; callbacks mu
 their own copies when they need isolation. Invalid callback return types or changes to
 encoding/identity raise an error.
 
+Copying metadata can add substantial peak memory even for a read-only callback that
+returns ``None``, because the copy happens before the callback runs. For example,
+SCAFFOLD carries model-sized control tensors in ``model.meta``; copying those tensors
+can allocate another model-sized buffer. Borrowing ``model.params`` does not avoid
+this allocation. Account for metadata and metrics copies when sizing memory for
+``ModelFilter``; they provide the mutation isolation described above.
+
 Like ``DXOFilter``, this adapter does not call the callback for non-OK task replies,
 non-DXO messages, empty DXO data, or excluded data kinds. An application needing status
 reporting or cleanup for those paths must implement it at its filter entry point.
