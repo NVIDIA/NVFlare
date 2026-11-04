@@ -64,6 +64,10 @@ def _eval_config_hash(cfg: RunConfig) -> str:
     if tp_path:
         tp_file = Path(tp_path)
         key["train_config_sha256"] = hashlib.sha256(tp_file.read_bytes()).hexdigest() if tp_file.is_file() else None
+    # With data.client_repo_ids (explicit_repos), the lerobot backend rebuilds its normalization
+    # statistics from those repositories, so the assignment is part of the evaluated policy.
+    if cfg.data.client_repo_ids:
+        key["client_repo_ids"] = cfg.data.client_repo_ids
     payload = json.dumps(key, sort_keys=True, separators=(",", ":"), default=str)
     return config_hash(payload)
 
