@@ -83,6 +83,88 @@ Your subclass of DXOFilter benefits from the features of DXOFilter:
     - Filtering history recording. If a DXO node is processed by your filter, your filter's class name will be appended to the DXO's "filter_history"
     - Auditing. If your filter is applied, a job audit event will be created to record the fact that the filter is applied to data.
 
+.. _model_filter:
+
+Model Filters (Experimental)
+============================
+
+``nvflare.app_common.filters.model_filter.ModelFilter`` provides an ``FLModel`` callback
+for task filters used with Client API jobs. It extends ``DXOFilter`` and retains its
+registration, collection traversal, filter history, and audit events. Client scripts
+keep their existing ``flare.receive()`` and ``flare.send()`` calls.
+
+For example, this filter records the number of parameter entries in model metadata:
+
+.. code-block:: python
+
+    from nvflare.app_common.filters.model_filter import ModelFilter
+
+    class ParameterCountFilter(ModelFilter):
+        def process_model(self, model, fl_ctx):
+            if model.params is None:
+                return None
+            model.meta["parameter_entries"] = len(model.params)
+            return model
+
+Register it on an existing Recipe without changing its training script:
+
+.. code-block:: python
+
+    recipe.add_client_output_filter(ParameterCountFilter(), tasks=["train"])
+
+The same callback can be exercised directly with a small DXO:
+
+.. code-block:: python
+
+    from nvflare.apis.dxo import DXO, DataKind, from_shareable
+    from nvflare.apis.fl_context import FLContext
+
+    update = DXO(DataKind.WEIGHTS, {"weight": 2.0, "bias": 0.0}).to_shareable()
+    result = ParameterCountFilter().process(update, FLContext())
+    assert from_shareable(result).meta["parameter_entries"] == 2
+
+Supported encodings and identity
+--------------------------------
+
+The callback receives parameters, parameter type, metrics, round fields, and metadata.
+``WEIGHTS``, ``WEIGHT_DIFF``, ``METRICS``, and native ``FL_MODEL`` DXO leaves are supported.
+Each selected leaf of a collection is decoded independently; unselected siblings and
+collection structure are preserved. The adapter preserves the input data kind,
+unrelated headers/cookies and transport metadata, and unknown native model fields.
+Optimizer state can be carried only by native ``FL_MODEL`` encoding.
+
+The callback cannot change the parameter type or any round identity (``start_round``,
+``current_round``, ``total_rounds``). Specified rounds must be nonnegative integers;
+booleans are not accepted. For legacy encodings, task headers are authoritative and
+metadata supplies a fallback, which the callback must preserve when no task header
+is present. Aggregation metadata may describe an earlier round.
+Conflicting native model fields and task headers raise an error.
+
+When serializing legacy weights or differences, explicit ``FLModel.metrics`` takes
+precedence over a stale ``INITIAL_METRICS`` metadata entry, including when the explicit
+metrics dict is empty. Metadata-only callers retain their existing behavior. A filter
+can remove metrics by returning a model whose ``metrics`` field is ``None``.
+
+Mutation, pass-through, and execution
+-------------------------------------
+
+Return an ``FLModel`` to apply callback changes and record filter history. Return
+``None`` only for an unmodified pass-through; it never means suppressing an update.
+Metrics and model metadata are deep-copied before the callback. Parameters and native
+optimizer state are borrowed to avoid copying large models. In-place changes to those
+borrowed objects cannot be rolled back on ``None`` or an exception; callbacks must make
+their own copies when they need isolation. Invalid callback return types or changes to
+encoding/identity raise an error.
+
+Like ``DXOFilter``, this adapter does not call the callback for non-OK task replies,
+non-DXO messages, empty DXO data, or excluded data kinds. An application needing status
+reporting or cleanup for those paths must implement it at its filter entry point.
+
+The callback runs in the NVFlare runtime process, which can be separate from the Client
+API training process. Existing Client API and client-runner paths materialize lazy
+parameters when their active filter chains need them, increasing runtime memory and
+transfer cost. No additional transport setting is required for ``ModelFilter``.
+
 Filter Behavior in 1-N Communication
 ====================================
 

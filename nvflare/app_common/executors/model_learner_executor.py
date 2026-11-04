@@ -201,6 +201,10 @@ class ModelLearnerExecutor(Executor):
         # if the learner returned the valid BEFORE_TRAIN_VALIDATE result, set the INITIAL_METRICS in
         # the train result, which can be used for best model selection.
         if val_result:
+            if train_result.params is not None:
+                # Weight/difference serialization uses explicit metrics for
+                # INITIAL_METRICS. Keep the pre-training validation authoritative.
+                train_result.metrics = val_result.metrics
             FLModelUtils.set_meta_prop(
                 model=train_result,
                 key=MetaKey.INITIAL_METRICS,

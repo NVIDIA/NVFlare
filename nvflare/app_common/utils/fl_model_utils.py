@@ -73,6 +73,9 @@ class FLModelUtils:
 
         meta = fl_model.meta if fl_model.meta is not None else {}
         dxo.meta.update(meta)
+        # Explicit metrics take precedence over a stale copy in legacy metadata.
+        if fl_model.params is not None and fl_model.metrics is not None:
+            dxo.meta[MetaKey.INITIAL_METRICS] = fl_model.metrics
 
         shareable = dxo.to_shareable()
         if fl_model.start_round is not None:
