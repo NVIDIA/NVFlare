@@ -177,7 +177,7 @@ class GrootBackend:
         self.cfg = cfg
         self.device = device
         self._model = None  # Gr00tN1d7
-        self._processor = None  # Gr00tN1d7Processor (statistics set per dataset)
+        self._processor = None  # Gr00tN1d7Processor (statistics set once, from every suite)
         self._embodiment_value: str = "libero_sim"
         self._modality_configs: dict[str, Any] | None = None  # MODALITY_CONFIGS[emb]
         self._autocast_dtype: torch.dtype | None = None
