@@ -518,13 +518,15 @@ def _check_dataset_identity(data_cfg, tp_cfg) -> None:
             "YAML (backend.extra.train_config_path): episodes are partitioned from the first and trained "
             "from the second. Set both to the same dataset."
         )
+    # A root on only one side is a mismatch too: the other side then reads the Hugging Face Hub copy.
     root = _resolve_local_root(repo_id, extra.get("root"))
-    train_root = getattr(tp_cfg.dataset, "root", None)
-    if root and train_root and Path(root).resolve() != Path(train_root).resolve():
+    train_root = _resolve_local_root(repo_id, getattr(tp_cfg.dataset, "root", None))
+    same_root = Path(root).resolve() == Path(train_root).resolve() if root and train_root else root == train_root
+    if not same_root:
         raise ValueError(
-            f"{repo_id!r} is partitioned from {root!r} (data.extra.root, or the local HF_LEROBOT_HOME copy) "
-            f"but trained from {train_root!r} "
-            "(dataset.root in the train pipeline YAML). Set both to the same dataset root."
+            f"{repo_id!r} is partitioned from {root or 'the Hugging Face Hub'} (data.extra.root, or the local "
+            f"HF_LEROBOT_HOME copy) but trained from {train_root or 'the Hugging Face Hub'} (dataset.root in the "
+            "train pipeline YAML, or the local HF_LEROBOT_HOME copy). Set both to the same dataset root."
         )
 
 
