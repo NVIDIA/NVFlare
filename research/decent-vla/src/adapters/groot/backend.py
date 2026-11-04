@@ -341,9 +341,9 @@ class GrootBackend:
         ``libero_sim`` stats (LIBERO is a posttrain embodiment). The processor
         therefore cannot normalize LIBERO state/action until
         ``set_statistics`` is called with stats computed from the actual
-        dataset. ``build_dataloader`` does that on first call (via the upstream
-        ``ShardedMixtureDataset.merge_statistics`` path) — see
-        ``_ensure_statistics``.
+        dataset. ``build_dataloader`` and ``build_policy`` do that on first call
+        (via the upstream ``ShardedMixtureDataset.merge_statistics`` path) — see
+        ``_wire_statistics``.
         """
         from transformers import AutoProcessor
 
@@ -371,15 +371,12 @@ class GrootBackend:
         its constituent timesteps are only processed once a ``processor`` with
         dataset statistics is attached. We:
 
-          1. Build a per-client ``ShardedSingleStepDataset`` restricted to the
-             partition's episodes (``build_partitioned_dataset``).
-          2. Wire statistics + processor into it exactly the way upstream does
-             — by constructing a single-dataset ``ShardedMixtureDataset``,
-             which runs ``merge_statistics`` (sets ``processor.set_statistics``)
-             and ``ds.set_processor`` (so ``get_shard`` works). We reuse this
-             only for its setup side effects; we do NOT iterate the streaming
-             mixture (its IterableDataset semantics are awkward for
-             deterministic per-round FL batches).
+          1. Wire normalization statistics into the processor from every
+             episode of every suite (``_wire_statistics``), independently of
+             the partition, so all clients and evaluation share one scale.
+          2. Build a per-client ``ShardedSingleStepDataset`` restricted to the
+             partition's episodes (``build_partitioned_dataset``) and attach
+             the processor to it (so ``get_shard`` works).
           3. Flatten the sharded dataset into a torch **map-style** dataset
              (``_FlattenedShardDataset``) of individual processed timesteps and
              drive it with a plain ``torch.utils.data.DataLoader`` whose
@@ -415,9 +412,16 @@ class GrootBackend:
         if not per_suite:
             raise ValueError(f"GR00T partition {partition_indices!r} matched no episodes across {paths}")
 
-        # Build one filtered ShardedSingleStepDataset per suite, wire stats across
-        # ALL of them in a single mixture (merges statistics), then flatten + concat.
-        sharded_list = self._build_and_wire_datasets(
+        # Statistics from every suite, not only the ones in this client's partition: the
+        # shared model must see the same state/action scale on every client and at eval.
+        self._wire_statistics(
+            paths,
+            video_backend=video_backend,
+            video_backend_kwargs=extra.get("video_backend_kwargs"),
+            shard_size=int(extra.get("shard_size", 2**10)),
+        )
+        # Build one filtered ShardedSingleStepDataset per suite, then flatten + concat.
+        sharded_list = self._build_datasets(
             per_suite,
             video_backend=video_backend,
             video_backend_kwargs=extra.get("video_backend_kwargs"),
@@ -426,6 +430,8 @@ class GrootBackend:
             seed=data_cfg.seed,
             allow_padding=bool(extra.get("allow_padding", False)),
         )
+        for s in sharded_list:
+            s.set_processor(self._processor)
         lazy_dp = bool(extra.get("lazy_episode_datapoints", False))
         flats = [
             _FlattenedShardDataset(
@@ -481,7 +487,48 @@ class GrootBackend:
             kwargs["drop_last"] = False
         return cycle_loader(DataLoader(combined, **kwargs))
 
-    def _build_and_wire_datasets(
+    def _wire_statistics(
+        self,
+        paths: list[str],
+        *,
+        video_backend: str,
+        video_backend_kwargs: dict | None,
+        shard_size: int,
+    ) -> None:
+        """Set the processor's normalization statistics from every suite, once.
+
+        Passing every suite's full dataset to a single ``ShardedMixtureDataset``
+        runs upstream's ``merge_statistics`` across them and sets the result on
+        the processor. The statistics depend only on ``paths``, never on a
+        client's episode partition, so every client trains, and evaluation runs,
+        on the same scale. We discard the mixture and its datasets.
+        ``override_pretraining_statistics`` because the base processor has no
+        ``libero_sim`` stats to begin with.
+        """
+        if self._stats_initialized:
+            return
+        from gr00t.data.dataset.sharded_mixture_dataset import ShardedMixtureDataset
+
+        datasets = self._build_datasets(
+            [(p, None) for p in paths],
+            video_backend=video_backend,
+            video_backend_kwargs=video_backend_kwargs,
+            shard_size=shard_size,
+            episode_sampling_rate=1.0,
+            seed=0,
+            allow_padding=False,
+        )
+        ShardedMixtureDataset(
+            datasets=datasets,
+            weights=[1.0] * len(datasets),
+            processor=self._processor,
+            seed=0,
+            training=True,
+            override_pretraining_statistics=True,
+        )
+        self._stats_initialized = True
+
+    def _build_datasets(
         self,
         per_suite: list[tuple[str, list[int] | None]],
         *,
@@ -492,20 +539,10 @@ class GrootBackend:
         seed: int,
         allow_padding: bool,
     ) -> list:
-        """Build one filtered ShardedSingleStepDataset per suite, wire stats once.
-
-        Passing ALL suites' datasets to a single ``ShardedMixtureDataset`` runs
-        upstream's ``merge_statistics`` across them (so normalization stats are
-        computed over the client's full cross-suite data) and calls
-        ``set_processor`` on each. We discard the mixture and drive our own
-        flatteners (one per suite, concatenated). ``override_pretraining_statistics``
-        because the base processor has no ``libero_sim`` stats to begin with.
-        """
-        from gr00t.data.dataset.sharded_mixture_dataset import ShardedMixtureDataset
-
+        """Build one ShardedSingleStepDataset per suite, filtered to its episodes."""
         from src.adapters.groot._dataset import build_partitioned_dataset
 
-        sharded_list = [
+        return [
             build_partitioned_dataset(
                 dataset_path=path,
                 embodiment_tag_value=self._embodiment_value,
@@ -520,19 +557,6 @@ class GrootBackend:
             )
             for path, local_eps in per_suite
         ]
-        ShardedMixtureDataset(
-            datasets=sharded_list,
-            weights=[1.0] * len(sharded_list),
-            processor=self._processor,
-            seed=seed,
-            training=True,
-            override_pretraining_statistics=True,
-        )
-        self._stats_initialized = True
-        for s in sharded_list:
-            if getattr(s, "processor", None) is None:
-                s.set_processor(self._processor)
-        return sharded_list
 
     def compute_loss(self, batch: Any) -> dict[str, torch.Tensor]:
         """Forward pass. ``Gr00tN1d7.forward(inputs_dict)`` returns a dict-like
@@ -613,17 +637,14 @@ class GrootBackend:
             paths = [paths]
 
         # 1) wire LIBERO normalization stats into the processor (idempotent),
-        #    reusing the training stats-merge path over every episode per suite.
+        #    through the same all-suite path that training uses.
         if not self._stats_initialized:
             log.info("eval: wiring GR00T normalization statistics from %d suite(s)", len(paths))
-            self._build_and_wire_datasets(
-                [(p, None) for p in paths],
+            self._wire_statistics(
+                paths,
                 video_backend=extra.get("eval_video_backend", extra.get("video_backend", "pyav")),
                 video_backend_kwargs=extra.get("video_backend_kwargs"),
                 shard_size=int(extra.get("shard_size", 2**10)),
-                episode_sampling_rate=1.0,
-                seed=0,
-                allow_padding=False,
             )
 
         # 2) per-key index ranges from the dataset modality.json
