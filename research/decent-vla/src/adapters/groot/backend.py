@@ -473,6 +473,13 @@ class GrootBackend:
                 seed=data_cfg.seed,
                 drop_last=bool(extra.get("drop_last", False)),
             )
+            if len(sampler) == 0:
+                # cycle_loader would restart the empty loader forever.
+                raise ValueError(
+                    f"GR00T shard-grouped sampler yields no batches: every one of the {len(groups)} shard "
+                    f"groups ({len(combined)} timesteps) is smaller than batch_size={data_cfg.batch_size} "
+                    "with drop_last; lower data.batch_size or set data.extra.drop_last: false."
+                )
             kwargs["batch_sampler"] = sampler
             log.info(
                 "GR00T client dataloader: shard-grouped batches ON "

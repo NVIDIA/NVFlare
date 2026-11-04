@@ -52,9 +52,14 @@ def dataloader_kwargs(data_cfg, device, **kwargs) -> dict:
 
 
 def cycle_loader(loader):
-    """Re-create a DataLoader iterator at every epoch."""
+    """Re-create a DataLoader iterator at every epoch; raise if an epoch yields no batch."""
     while True:
-        yield from loader
+        empty = True
+        for batch in loader:
+            empty = False
+            yield batch
+        if empty:
+            raise ValueError("the training DataLoader yielded no batches; check the partition and batch settings")
 
 
 class _SharedParameterView(torch.nn.Module):
