@@ -28,17 +28,21 @@ CC Token Generation
 A protected participant uses a ``CCAuthorizer`` to generate a CC token for peer verification. A verifier-only participant
 can verify protected peers without generating evidence for its own environment.
 
-Unified CVM and CoCo provisioning selects ``TrusteeAuthorizer``, which uses the
-``CoCoAuthorizer`` proof implementation. Its CVM provider reads credentials from
-the protected guest runtime; its CoCo provider uses the Kata guest-local AA
-token API. The authorizer checks Trustee's signed appraisal and creates a proof
-signed with the corresponding guest-held key. Verification uses the configured
-Attestation Service public key and can run at an ordinary, verifier-only site.
+Standalone CVM and CoCo deployments use ``TrusteeAuthorizer``. It obtains Trustee's signed attestation appraisal
+through the configured guest integration and creates an NVFlare identity-bound proof signed by the key bound to that
+appraisal. The peer token contains the appraisal and proof; it never contains the private key. Trustee appraises CPU
+evidence and, when required by the participant's configuration, GPU evidence together.
+
+For CoCo, the token provider calls the guest-local Attestation Agent. For standalone CVMs, provisioning configures the
+provider to read the credentials published by the measured guest supervisor. Verifier-only participants check proofs
+using the configured Attestation Service public key and policy without accessing either protected guest integration.
+See :ref:`coco_security_peer_attestation` for the shared peer-proof protocol and :ref:`cc_architecture` for the CVM
+supervisor's separate vault-authorization role.
 
 The standalone ``SNPAuthorizer``, ``GPUAuthorizer``, and ``TDXAuthorizer``
 classes are :ref:`legacy implementations <cc_legacy_authorizers>` and are not
-selected by the unified CVM/CoCo path. The SNP/GPU authorizers' prover-generated
-nonce histories are replay checks, not the Trustee signed-site proof or a
+selected by the unified CVM/CoCo path. ``SNPAuthorizer`` and ``GPUAuthorizer``
+use prover-generated nonce histories for replay checks, not the Trustee signed-site proof or a
 verifier-issued CC challenge. Do not assume every authorizer has the same
 identity-binding guarantees.
 
@@ -77,44 +81,42 @@ The ``CCManager`` component orchestrates the attestation process across the NVFl
 CCAuthorizer
 ------------
 
-Each ``CCAuthorizer`` implements token generation and verification for its
-provider. Verifier-only instances need no local TEE, and a token can include a
-still-valid cached appraisal. NVFlare provides multiple authorizers with
-different evidence and identity-binding contracts.
+``CCAuthorizer`` defines the interface for generating and verifying participant tokens. A concrete authorizer obtains
+attestation results through its configured provider and enforces the corresponding verification policy; it need not
+collect hardware reports directly.
 
-Available Authorizers
-=====================
+Verifier-only instances need no local TEE, and a token can include a still-valid
+cached appraisal. Different authorizers have different evidence and
+identity-binding contracts.
 
-NVFlare provides the following ``CCAuthorizer`` components. Availability does
-not imply identical proof guarantees or hardware qualification for every target:
+Provisioned Authorizers
+=======================
+
+Unified CC provisioning selects the following ``CCAuthorizer`` components.
+Availability does not imply identical proof guarantees or hardware qualification
+for every target:
 
 .. list-table::
    :header-rows: 1
    :widths: 25 45 30
 
    * - Authorizer
-     - Platform or role
+     - Deployment integration
      - Status
    * - ``TrusteeAuthorizer``
-     - Shared Trustee peer-proof format with deployment-specific guest providers.
+     - Standalone CVM and CoCo, with CPU-only or composite CPU/GPU appraisal
+       according to the selected participant profile.
      - Selected by unified bare-metal CVM and CoCo provisioning.
-   * - ``SNPAuthorizer``
-     - AMD SEV-SNP (Secure Encrypted Virtualization - Secure Nested Paging)
-     - :ref:`Legacy <cc_legacy_authorizers>`; candidate for deprecation or removal.
-   * - ``GPUAuthorizer``
-     - NVIDIA GPU Confidential Computing (H100, Blackwell)
-     - :ref:`Legacy <cc_legacy_authorizers>`; candidate for deprecation or removal.
-   * - ``TDXAuthorizer``
-     - Intel TDX (Trust Domain Extensions)
-     - :ref:`Legacy <cc_legacy_authorizers>`; candidate for deprecation or removal.
-   * - ``ACIAuthorizer``
-     - Azure Confidential Containers Instance
+   * - ``AZCVMAuthorizer``
+     - Azure confidential VMs using Microsoft Azure Attestation (MAA).
      - Azure integration; separate token semantics.
-   * - ``CoCoAuthorizer``
-     - Kata/Trustee-backed SNP or TDX, CPU-only or with NVIDIA GPU.
-       See :ref:`coco_security_architecture` for target profiles and
-       :ref:`coco_security_acceptance` for recorded acceptance evidence and limits.
-     - Shared proof implementation used by ``TrusteeAuthorizer``.
+   * - ``ACIAuthorizer``
+     - Azure confidential container instances using MAA.
+     - Azure integration; separate token semantics.
+
+``CoCoAuthorizer`` supplies the shared peer-proof implementation used by
+``TrusteeAuthorizer``; unified provisioning selects ``TrusteeAuthorizer`` with
+the guest provider appropriate to the deployment mode.
 
 .. _cc_legacy_authorizers:
 
@@ -122,8 +124,8 @@ Legacy standalone authorizers
 ------------------------------
 
 ``GPUAuthorizer``, ``TDXAuthorizer``, and ``SNPAuthorizer`` are legacy standalone
-implementations retained in 2.9.1. They are candidates for deprecation or
-removal; a release for that change has not been selected. They are not
+implementations retained in the source tree. They are candidates for deprecation
+or removal; a release for that change has not been selected. They are not
 recommended for new deployments. Use the unified CVM/CoCo provisioning path
 with ``TrusteeAuthorizer`` for the supported target profiles described in
 :ref:`cc_deployment_guide`.
@@ -137,15 +139,14 @@ name alone is not a migration.
 Configuration
 -------------
 
-CVM boot and periodic vault reauthorization are configured through the CVM
-Builder profile and Trustee deployment. See :ref:`cc_deployment_guide` for that
-workflow.
+Unified CC provisioning generates ``CCManager`` and the selected authorizer resources for protected clients and
+servers, and verifier resources for ordinary participants that need to check protected peers. It also configures the
+required participant set, required proof namespaces, and the selected integration's verification requirements.
+See :doc:`../deployment` for project and participant configuration.
 
-Unified provisioning generates ``CCManager`` and ``TrusteeAuthorizer`` resources
-for protected CVM/CoCo participants and for ordinary participants that need
-verifier-only operation. It also configures the required participant set and
-each site's required proof namespaces. See :ref:`coco_security_peer_attestation`
-for the shared proof format and :doc:`../deployment` for configuration.
+CVM boot and periodic vault reauthorization remain configured through the CVM Builder profile and Trustee deployment.
+See :ref:`cc_architecture` for that separate enforcement layer and :ref:`coco_security_architecture` for the CoCo
+deployment's trust model and peer-verification requirements.
 
 Runtime Behavior
 ================

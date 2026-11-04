@@ -132,14 +132,9 @@ parseable administration JWT enters that window and rejects it after expiry;
 CVM publication applies the
 same window to reviewed RVPS references.
 
-Upgrade the provisioner and every runtime image together before switching an
-existing project to the canonical ``intel_tdx`` and ``amd_sev_snp`` names. New
-kits write those canonical values into ``workload_constraints``. A runtime from
-2.9.0 or 2.9.1 accepts only its earlier ``tdx``/``snp`` spelling and will reject
-a newly generated kit during authorizer initialization. Existing 2.9.0/2.9.1
-kits keep working unchanged, and the new reader accepts legacy aliases during
-upgrade, but re-provisioning always emits canonical names and therefore requires
-the updated runtime image.
+Use the same reviewed NVFlare package in the provisioner and every workload
+image. Provisioning writes canonical ``intel_tdx`` and ``amd_sev_snp``
+values into the signed workload constraints.
 If ``workload_constraints`` is present, it must contain exactly every protected
 participant that selects this service. Use logical name ``server`` for the root
 server and participant names for clients. ``proof_iat_leeway_seconds`` accepts
@@ -171,10 +166,8 @@ Every ``cc_config`` starts with these fields:
      service: trustee
    class_allow_list: []
 
-``cpu_tee`` is ``intel_tdx`` or ``amd_sev_snp``. The 2.9 reader accepts the
-former ``tdx`` and ``snp`` spellings in existing configurations and v2
-workload-authorization files, normalizes them in memory, and emits only the
-canonical names. ``gpu_tee`` is ``none`` or
+``cpu_tee`` is ``intel_tdx`` or ``amd_sev_snp``.
+``gpu_tee`` is ``none`` or
 ``nvidia_cc`` and also controls the peer attestation GPU requirement. An empty
 ``class_allow_list`` adds no custom classes; it never
 means unrestricted. Entries must be complete reviewed Python class paths.
@@ -270,13 +263,13 @@ Azure CC
      deployment_target: confidential_vm
 
 ``deployment_target`` is ``confidential_vm`` or
-``confidential_container``. The NVFlare 2.9 integration accepts only AMD
+``confidential_container``. The Azure integration accepts only AMD
 SEV-SNP with ``gpu_tee: none``. Intel TDX and NVIDIA confidential GPU targets
 fail validation until the authorizer, claim policy, deployment workflow, and
 end-to-end tests support them together.
 
-Results and migration
----------------------
+Delivery manifests
+------------------
 
 ``CCPackager`` verifies every signed kit, moves all confidential plaintext
 kits to private state, and publishes ``cc_manifests/<participant>.json``.
@@ -284,8 +277,7 @@ Each manifest uses schema ``nvflare-cc-delivery/v1`` and records the mode, TEE
 selection, attestation service, artifact checksum, and mode-specific immutable
 identities. Private paths, credentials, and receipts never enter a manifest.
 
-This interface is intentionally incompatible with the earlier CC provisioning
-syntax. Top-level ``cvm_vault``, ``compute_env``, ``cc_cpu_mechanism``,
-``cc_gpu``, participant ``role``, raw authorizer class paths, and the separate
-``CoCoPackager`` entry point are rejected. Convert the whole project and its
-examples together; there is no runtime compatibility mode.
+Use the project and participant schemas documented above. The provisioner
+rejects unknown fields and mode-specific fields placed in another mode.
+Participant roles come from ``project.yml``; attestation implementation
+classes are selected by the deployment mode.

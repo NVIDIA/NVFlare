@@ -1,17 +1,12 @@
 # Build a CVM bundle and application vault
 
-> **Candidate profile only (checked 2026-10-28).** The checked-in
-> `cpu-2026.09-r5` profile remains `production_ready: false`: its pinned kernel
-> `7.0.0-31-generic` now passes the formerly failing post-scan corruption case
-> in the rc4 and rc5 runs, but the full current-source production matrix and a
-> signed approval are still incomplete, so production approval rejects this
-> exact profile. Kernel qualification is part of an exact profile and cannot be
-> inferred from one passing test. For a
-> non-TEE evaluation, start with the
-> [30-minute dev-mode walkthrough](README.md#30-minute-dev-mode-walkthrough).
-> Production use requires a newly versioned exact manifest and complete hardware
-> acceptance; no alternate kernel pin is prescribed by this repository. Do not
-> change this profile's flag in place.
+> **Candidate profile only.** The checked-in `cpu-2026.09-r5` profile
+> has `production_ready: false`, so production approval rejects it.
+> Start with the [dev-mode walkthrough](README.md#30-minute-dev-mode-walkthrough)
+> for evaluation. Production requires a separately versioned profile with
+> reviewed pins, complete hardware acceptance for its exact finalized
+> manifest, and signed approval. Do not change a finalized candidate
+> in place. See [production acceptance requirements](VALIDATION.md).
 
 The generic CVM contains Ubuntu, the container runtime, attestation code, and the
 vault unlock path. Build it once for each platform and profile version, then reuse
@@ -133,7 +128,7 @@ materialization do not require it. Installation packages and instructions are at
 use Cosign; installation instructions are at
 <https://docs.sigstore.dev/cosign/system_config/installation/>.
 
-The tested host baseline is Ubuntu 26.04 with kernel 7.0.0-31 and QEMU 10.2.1.
+The host baseline is Ubuntu 26.04 with kernel 7.0.0-31 and QEMU 10.2.1.
 Use Intel's repository for a published, supported distribution; do not substitute
 an arbitrary Ubuntu codename (for example, `questing`/`plucky`) in the DCAP URL.
 Follow the [Intel host setup guide](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/05/host_os_setup/)
@@ -162,8 +157,9 @@ dependency until the quote smoke test.
    `pckcerts` needs investigation before blaming the CVM policy.
 4. Supply a reviewed direct-boot TDVF as `inputs/OVMF.inteltdx.fd`. The packaged
    `OVMF.inteltdx.ms.fd` enables Secure Boot and is not the default for an unsigned
-   direct-boot kernel. The tested TDVF build uses `SECURE_BOOT_ENABLE=FALSE`; its
-   source, build flags and digest are recorded in
+   direct-boot kernel. Build the reviewed direct-boot TDVF with
+   `SECURE_BOOT_ENABLE=FALSE` and record its source, build flags and digest as
+   required by
    [VALIDATION.md](VALIDATION.md#recorded-tdx-firmware-input). TDX measurements
    authenticate this firmware and kernel through the approved launch profile.
    A Secure Boot deployment must separately validate its signed kernel/shim chain;
@@ -577,7 +573,7 @@ a separately qualified profile requires otherwise. The exact reference schema is
 The following worked mapping uses the public, signature-verified upstream
 Trustee v0.22 SNP test report pinned by this repository. It demonstrates field
 translation only; these values and that guest measurement do **not** approve a
-deployment host. From the authenticated ``snp`` evidence object:
+deployment host. From the authenticated AMD CPU evidence:
 
 | Verified report claim | Reviewed reference entry |
 |---|---|
@@ -726,14 +722,10 @@ a GPU profile whose client does not. Keep the CPU and GPU binaries and provenanc
 records at distinct paths so preparing one profile cannot silently change the
 other profile's attestation dependencies.
 
-`production_ready: false` is deliberate. Kernel `7.0.0-31-generic` passed the
-post-scan corruption test in the rc4 and rc5 runs, superseding the failure of
-that case recorded in September. The complete current-source acceptance matrix
-has not been recorded for `cpu-2026.09-r5`, so `admin approve` still rejects it.
-There is no corrected kernel pin to substitute solely for that resolved test.
-Create a new profile version, run the complete matrix for its exact manifest,
-and set `production_ready: true` only for the reviewed profile intended to be
-eligible for approval. The signed, complete report remains a separate gate.
+`production_ready: false` is deliberate: the supplied profile is not eligible
+for production approval. Define a separately versioned profile with reviewed
+pins and complete acceptance for its exact finalized manifest. The
+`production_ready` declaration and a signed, complete report are separate gates.
 
 ### 2.1 Exact-manifest acceptance and approval
 
@@ -871,19 +863,12 @@ vaults must be built without `--candidate` from the newly approved artifact.
 
 The reusable CVM staging tree and OCI deliverable are:
 
-```text
-target/cvm_<profile_version>/
-├── cvm_<profile_version>_<platform>.oci.tar
-├── oci_artifacts.json
-├── profile_set.json
-└── <platform>/                       # build workspace
-    ├── approval.json                 # present only after acceptance and approval
-    ├── cvm_manifest.json
-    ├── verity_root.qcow2
-    ├── OVMF.fd
-    ├── vmlinuz
-    └── initrd.img
-```
+![Generic CVM output: OCI artifact, digest record, profile set, and per-platform build workspace.](images/cvm_generic_bundle_layout.png)
+
+`PROFILE` denotes `profile_version`; `PLATFORM` is `amd_sev_snp` or
+`intel_tdx`. The platform workspace contains `cvm_manifest.json`,
+`verity_root.qcow2`, `OVMF.fd`, `vmlinuz`, and `initrd.img`;
+`approval.json` is added after approval.
 
 The `.oci.tar` is the generic CVM deliverable. It is a standard OCI image layout
 with artifact type `application/vnd.nvidia.cvm.bundle.v1`; it contains the platform
@@ -1323,20 +1308,19 @@ Continue with [USER_GUIDE.md](USER_GUIDE.md).
 ### Trusted NFS configuration and application write access
 
 The NFS input is experimental. The guest mounts it with Kerberos `krb5p`, but the
-builder does not yet provision `krb5.conf`, a keytab or `rpc.gssd`, and no
-hardware validation of the mount is recorded; a deployment must supply and test
-those pieces itself before relying on it. Configure the input in the encrypted
+builder does not provision `krb5.conf`, a keytab or `rpc.gssd`; a deployment must
+supply and qualify those pieces before relying on the mount. Configure the input in the encrypted
 `application.json`, not a clear sidecar:
 
 ```json
 "nfs_mount": {"server": "files.example.org", "export": "/datasets", "security": "krb5p"}
 ```
 
-The guest mounts the export at `/nfs_data` with `ro,nosuid,nodev,noexec,sec=krb5p` and exposes `/nfs_data` read-only to the container. Update workloads that previously used `/user_data/mnt`. The new mountpoint is created on the measured root, outside host-replaceable sidecars; a host-supplied `mnt` symlink is never used as a mount target.
+The guest mounts the export at `/nfs_data` with `ro,nosuid,nodev,noexec,sec=krb5p` and exposes `/nfs_data` read-only to the container. The mountpoint is created on the measured root, outside host-replaceable sidecars; a host-supplied `mnt` symlink is never used as a mount target.
 Provision the site's Kerberos configuration and credentials through protected
 vault inputs and reviewed guest services; permit the required KDC/NFS egress.
-There is no unauthenticated fallback. Legacy `/user_data/ext_mount.conf` is
-rejected because host-controlled bytes must not select a root kernel NFS peer.
+There is no unauthenticated fallback. Host-controlled sidecar files cannot select
+the root kernel's NFS peer.
 
 Containers receive `/vault/application` read-only; only its `runtime/` and `data/`
 subdirectories are writable. Place application state and confidential logs there.

@@ -79,12 +79,15 @@ obtain that set of files and copy the startup kit to one folder inside the curre
 example, the server's startup kit and the Dockerfile are stored in nvflserver.eastus.azurecontainer.io
 folder and docker folder under current working folder, respectively, as shown below.
 
-.. code-block ::
+Use an approved base image containing the same reviewed NVFlare package as the
+provisioner. Set ``NVFLARE_BASE_IMAGE`` to that image's immutable digest reference.
 
-   $ tree -d -L 1
-   .
-   ├── docker
-   └── nvflserver.eastus.azurecontainer.io
+.. figure:: ../../../resources/azure_container_build_layout.png
+   :width: 100%
+   :align: center
+   :alt: The Docker build context contains docker/Dockerfile and the signed server startup kit under nvflserver.eastus.azurecontainer.io.
+
+   Docker build context and signed server startup kit.
 
 
 .. code-block:: bash
@@ -97,14 +100,16 @@ folder and docker folder under current working folder, respectively, as shown be
    registry=${reg_name}.azurecr.io
    nvfl_root=nvflserver.eastus.azurecontainer.io
 
-   docker build --build-arg NVFL_ROOT=$nvfl_root -t $registry/$name:$tag -f docker/Dockerfile .
+   : "${NVFLARE_BASE_IMAGE:?Set the approved base image digest with the matching NVFlare runtime}"
+   docker build --build-arg NVFLARE_BASE_IMAGE="$NVFLARE_BASE_IMAGE" \
+      --build-arg NVFL_ROOT="$nvfl_root" -t "$registry/$name:$tag" -f docker/Dockerfile .
 
 .. code-block:: dockerfile
 
-   FROM python:3.10
+   ARG NVFLARE_BASE_IMAGE
+   FROM ${NVFLARE_BASE_IMAGE}
    ARG NVFL_ROOT=nvflserver.eastus.azurecontainer.io
    WORKDIR /workspace
-   RUN python3 -m pip install --no-cache nvflare
    COPY $NVFL_ROOT nvflare
 
 

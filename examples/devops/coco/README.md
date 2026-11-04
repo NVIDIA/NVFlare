@@ -63,9 +63,8 @@ These public trust inputs serve different purposes:
 | TDX | None | `intel_tdx` | `none` | `kata-qemu-tdx` | None |
 | TDX | NVIDIA | `intel_tdx` | `nvidia_cc` | `kata-qemu-nvidia-gpu-tdx` | 1 `nvidia.com/pgpu` |
 
-The table uses participant configuration values. For constraints on signed EAR
-evidence, Trustee's signed wire format still uses `snp` or `tdx`; operator
-configuration uses `amd_sev_snp` or `intel_tdx` throughout.
+Use `amd_sev_snp` or `intel_tdx` consistently in participant configuration,
+workload constraints and collector inputs.
 
 The guest must provide its local AA token API at
 `http://127.0.0.1:8006/aa/token`. GPU profiles allocate one `nvidia.com/pgpu`
@@ -161,10 +160,10 @@ consistency, not sender identity. See the [Trustee handoff checks](TRUSTEE.md#op
 and [Pod digest check](LAUNCH.md#optional-pod-digest-check) for optional inputs.
 
 For the security model and peer-proof protocol, see the
-[CoCo security architecture](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/coco_security_architecture.html).
+[CoCo security architecture](https://nvflare.readthedocs.io/en/latest/user_guide/confidential_computing/coco_security_architecture.html).
 
 For upstream platform, service, and tool documentation, see the CC user guide's
-[official component references](https://nvflare.readthedocs.io/en/2.9/user_guide/confidential_computing/getting_started.html#cc-official-references).
+[official component references](https://nvflare.readthedocs.io/en/latest/user_guide/confidential_computing/getting_started.html#cc-official-references).
 
 ## Developer package check
 

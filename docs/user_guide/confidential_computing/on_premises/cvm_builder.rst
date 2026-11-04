@@ -17,11 +17,18 @@ each protected participant; then authenticate and launch each delivery with
 ``cvmctl run``. Lower-level finalize, approval, publish, and pull commands are
 for split roles, cross-host measurement, offline transfer, and recovery.
 
+.. figure:: ../../../../nvflare/lighter/cc/image_builder/images/cvm_two_stage_build.png
+   :width: 100%
+   :align: center
+   :alt: Build and approve a reusable generic CVM for each platform, then populate application content and seal independent per-platform vaults with keys held by Trustee.
+
+   Reusable generic CVM and application-specific vault construction.
+
 Prepare the worker
 ------------------
 
 Run provisioning and vault construction on a trusted Linux worker configured
-for CVM Builder. The tested builder environment is Ubuntu 26.04. Follow the
+for CVM Builder. The builder requires Ubuntu 26.04. Follow the
 :github_nvflare_link:`build guide
 <nvflare/lighter/cc/image_builder/BUILD_GUIDE.md>` and
 :github_nvflare_link:`Trustee guide
@@ -79,6 +86,14 @@ The generic CVM contract must match the participant's ``cpu_tee`` and
 measurement contracts. The configuration has no independent platform list:
 the requested TEE pair selects the matching profile from ``cvm_image``.
 
+.. figure:: ../../../../nvflare/lighter/cc/image_builder/images/cvm_generic_bundle_layout.png
+   :width: 100%
+   :align: center
+   :alt: A generic CVM output contains an OCI archive, artifact digests, profile_set.json and a platform workspace with the manifest and measured boot files. Approval adds approval.json.
+
+   Generic CVM output. ``PROFILE`` is the profile version; ``PLATFORM`` is
+   ``amd_sev_snp`` or ``intel_tdx``. Approval applies to the exact platform bundle.
+
 Provision and distribute
 ------------------------
 
@@ -112,6 +127,14 @@ and starts the NVFlare participant. Stop it with
 ``sudo ./shutdown_cvm.sh``. See the :github_nvflare_link:`CVM Builder user guide
 <nvflare/lighter/cc/image_builder/USER_GUIDE.md>` for delivery and launch
 commands.
+
+.. figure:: ../../../../nvflare/lighter/cc/image_builder/images/cvm_delivery_layout.png
+   :width: 100%
+   :align: center
+   :alt: A platform delivery contains the encrypted vault, vault manifest, launch and shutdown wrappers, and a cvm_bundle directory containing the measured boot artifacts.
+
+   Operator-facing delivery files. Runtime helpers and clear sidecar inputs
+   accompany these files; the illustration is not an exhaustive archive listing.
 
 Network, data, and recovery behavior
 ------------------------------------

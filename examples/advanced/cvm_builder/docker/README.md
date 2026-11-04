@@ -7,9 +7,7 @@ This is a simple example to show how to build an application Docker image for NV
 Before proceeding, ensure you have Docker installed and running on your machine. Additionally, make sure you have access to the required NVFlare code and resources.
 
 Use the **same reviewed NVFlare wheel for the provisioner and both workload
-images**. An older PyPI runtime may reject newly generated kits (including the
-canonical TEE names). A matching version string alone does not prove matching
-branch patches. Build a wheel from the reviewed provisioning checkout, or use
+images**. Build a wheel from the reviewed provisioning checkout, or use
 the exact release wheel that supplied the provisioner:
 
 ```bash
@@ -21,7 +19,7 @@ python -m pip install --force-reinstall "$NVFLARE_WHEEL"
 Replace the paths and `VERSION` with the produced wheel. Run provisioning from
 that Python environment. `docker_build.sh` requires `NVFLARE_WHEEL`, copies only
 that wheel into a temporary build context, and both Dockerfiles install it
-instead of resolving an older `nvflare~=2.9.0` from PyPI. The temporary context
+as the runtime package. The temporary context
 is removed on success or failure. Keep the wheel's digest with the application
 release and rebuild/reseal the delivery when changing its runtime.
 
@@ -64,8 +62,7 @@ docker image inspect nvflare-site-cpu --format '{{.Size}} bytes in installed ima
 ```
 
 The example YAMLs allocate **64 GiB** as a starting budget, not a measured
-minimum or a guarantee. The earlier 32 GiB setting could not fit the GPU image
-on some Docker stores. Measure CPU and GPU archives independently.
+minimum or a guarantee. Measure CPU and GPU archives independently.
 Budget for the retained archive, unpacked archive/layers, Docker's imported
 image, application files, expected writes and safety margin. The GPU image is
 larger because it includes CUDA-capable libraries. The builder's capacity check

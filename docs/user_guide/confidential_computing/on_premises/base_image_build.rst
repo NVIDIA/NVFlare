@@ -13,7 +13,7 @@ Prepare the generic image
 =========================
 
 Follow the :github_nvflare_link:`CVM Builder build guide
-<nvflare/lighter/cc/image_builder/BUILD_GUIDE.md>` for the tested Ubuntu 26.04
+<nvflare/lighter/cc/image_builder/BUILD_GUIDE.md>` for the required Ubuntu 26.04
 construction environment, exact package pins and input preparation. The
 profile in ``config/cvm_profile.yml`` selects the cloud image, platform firmware,
 upstream CoCo KBS client, attestation trust roots and approved TCB references.
