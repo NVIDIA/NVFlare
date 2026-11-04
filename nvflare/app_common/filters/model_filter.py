@@ -77,6 +77,8 @@ class ModelFilter(DXOFilter):
         if result.params_type != params_type:
             raise ValueError("ModelFilter cannot change parameter type")
         if native:
+            if (result.params_type is None) != (result.params is None):
+                raise ValueError("ModelFilter requires params and params_type to be both set or both None")
             data = dict(dxo.data)
             for attr in MODEL_ATTRS:
                 data.pop(attr, None)

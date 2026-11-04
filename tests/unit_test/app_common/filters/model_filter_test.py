@@ -240,3 +240,42 @@ def test_callback_cannot_change_round_metadata_without_header(header, value):
     with pytest.raises(ValueError, match="round identity"):
         filt.process(shareable, FLContext())
     assert from_shareable(shareable).meta[header] == 1
+
+
+@pytest.mark.parametrize(
+    "params_type,updated_params",
+    [(ParamsType.FULL, None), (ParamsType.DIFF, None), (None, {"w": 2})],
+)
+def test_native_callback_rejects_inconsistent_parameters_without_changing_input(params_type, updated_params):
+    model = FLModel(params_type=params_type, params={"w": 1} if params_type else None, metrics={"loss": 1.0})
+    shareable = FLModelUtils.to_dxo(model).to_shareable()
+    before = deepcopy(shareable)
+    filt = EditMetrics()
+
+    def change_parameters(decoded, fl_ctx):
+        decoded.params = updated_params
+        return decoded
+
+    filt.process_model = change_parameters
+    with pytest.raises(ValueError, match="params and params_type"):
+        filt.process(shareable, FLContext())
+
+    assert shareable == before
+    output = from_shareable(shareable)
+    assert not output.get_filter_history()
+    assert FLModelUtils.from_dxo(output).params == model.params
+
+
+@pytest.mark.parametrize("params_type,params", [(ParamsType.FULL, {}), (ParamsType.DIFF, {}), (None, None)])
+def test_native_callback_preserves_empty_parameters_and_metrics_only_models(params_type, params):
+    model = FLModel(params_type=params_type, params=params, metrics={"loss": 1.0}, current_round=3)
+    shareable = FLModelUtils.to_dxo(model).to_shareable()
+
+    output = from_shareable(EditMetrics().process(shareable, FLContext()))
+    decoded = FLModelUtils.from_dxo(output)
+
+    assert output.data_kind == DataKind.FL_MODEL
+    assert decoded.params_type == params_type
+    assert decoded.params == params
+    assert decoded.metrics == {"loss": 2.0}
+    assert output.get_filter_history() == ["EditMetrics"]
