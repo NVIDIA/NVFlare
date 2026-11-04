@@ -528,7 +528,12 @@ def test_definitive_rejection_allows_cj_and_system_shutdown(owned):
     reason = "Invalid partition name specified"
     owned.adapter.submit.side_effect = None
     owned.adapter.submit.return_value = SubmissionResult(
-        CommandResult(1, "", "sbatch: error: Batch job submission failed: " + reason)
+        CommandResult(
+            1,
+            "",
+            "sbatch: error: job_submit.lua: applying site policy\n"
+            "sbatch: error: Batch job submission failed: " + reason,
+        )
     )
     remote = owned.client.launch(owned.request)
     _eventually(lambda: remote.poll().settled)

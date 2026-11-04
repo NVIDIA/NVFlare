@@ -18,6 +18,7 @@ from copy import copy
 from dataclasses import dataclass
 
 from nvflare.app_opt.job_launcher.slurm.config import (
+    _SUBMIT_ID_RE,
     SQUEUE_FORMAT,
     LookupStatus,
     QueryResult,
@@ -36,8 +37,9 @@ class TaskSlurmRecord(SlurmRecord):
 
 
 # Exact controller rejection diagnostics from SchedMD's slurm_errno.c.
-# Transport errors, unknown/plugin messages and any returned allocation ID
-# remain ambiguous, even when sbatch exits nonzero.
+# Transport errors, unknown rejection reasons and any returned allocation ID
+# remain ambiguous, even when sbatch exits nonzero. Controller-supplied Lua
+# messages may also be printed at ERROR level before the actual rejection.
 _REJECTION_REASONS = frozenset(
     {
         "Invalid partition name specified",
@@ -46,7 +48,22 @@ _REJECTION_REASONS = frozenset(
         "Requested node configuration is not available",
         "Invalid generic resource (gres) specification",
         "Job violates accounting/QOS policy (job submit limit, user's size and/or time limits)",
+        "Invalid Trackable RESource (TRES) specification",
+        "Requested time limit is invalid (missing or exceeds some limit)",
+        "Invalid time specified",
+        "Invalid time-min specification (exceeds job's time or other limits)",
+        "More processors requested than permitted",
+        "Memory required by task is not available",
+        "Invalid feature specification",
+        "Invalid preferred feature specification",
     }
+)
+_AMBIGUOUS_SUBMISSION_DIAGNOSTIC = re.compile(
+    r"\b(?:timeout|timed? out|zero bytes|unexpected message|broken pipe|submitted batch job|"
+    r"(?:unable|failed) to (?:connect|contact|send|receive)|"
+    r"(?:socket|connect(?:ion)?|communications?|transport|protocol)[^\r\n]*"
+    r"(?:error|fail(?:ed|ure)?|refused|reset|closed|mismatch|unreachable))\b",
+    re.IGNORECASE,
 )
 
 
@@ -61,18 +78,25 @@ def submission_was_rejected(submission):
         or command.returncode <= 0
     ):
         return False
-    reasons = []
+    rejected = False
+    prefix = "sbatch: error: Batch job submission failed:"
     for line in command.stderr.splitlines():
         if not line.strip():
             continue
-        prefix = "sbatch: error: Batch job submission failed: "
-        if line.startswith(prefix) and line[len(prefix) :] in _REJECTION_REASONS:
-            reasons.append(line[len(prefix) :])
-        elif re.fullmatch(r"sbatch: error: invalid partition specified: [^\r\n]+", line):
-            reasons.append("Invalid partition name specified")
-        else:
+        if "batch job submission failed" in line.lower():
+            if not line.startswith(prefix) or line[len(prefix) :].strip() not in _REJECTION_REASONS:
+                return False
+            rejected = True
+        elif line.startswith(("sbatch: error: invalid partition specified", "sbatch: error: Unable to open file")):
+            # These errors occur in sbatch before it submits the script.
+            if not re.fullmatch(r"sbatch: error: (?:invalid partition specified:|Unable to open file) [^\r\n]+", line):
+                return False
+            rejected = True
+        elif _AMBIGUOUS_SUBMISSION_DIAGNOSTIC.search(line) or _SUBMIT_ID_RE.fullmatch(line.strip()):
             return False
-    return bool(reasons)
+        # Other lines may be site/Lua explanations, not another submission's
+        # outcome. They cannot establish rejection without a known diagnostic.
+    return rejected
 
 
 class SlurmTaskCliAdapter(_SlurmCliAdapter):

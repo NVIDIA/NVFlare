@@ -544,12 +544,21 @@ def test_ambiguous_or_malformed_marker_lookup_cannot_select_an_allocation(rows):
         "Requested node configuration is not available",
         "Invalid generic resource (gres) specification",
         "Job violates accounting/QOS policy (job submit limit, user's size and/or time limits)",
+        "Invalid Trackable RESource (TRES) specification",
+        "Requested time limit is invalid (missing or exceeds some limit)",
+        "Invalid time specified",
+        "Invalid time-min specification (exceeds job's time or other limits)",
+        "More processors requested than permitted",
+        "Memory required by task is not available",
+        "Invalid feature specification",
+        "Invalid preferred feature specification",
     ],
 )
-def test_definitive_sbatch_rejection_settles_with_scheduler_diagnostic(backend, reason):
+@pytest.mark.parametrize("plugin_message", ["", "sbatch: error: job_submit.lua: checking site policy\n"])
+def test_definitive_sbatch_rejection_settles_with_scheduler_diagnostic(backend, reason, plugin_message):
     launcher, adapter, request = backend
     adapter.submit.return_value = SubmissionResult(
-        CommandResult(1, "", f"sbatch: error: Batch job submission failed: {reason}\n")
+        CommandResult(1, "", f"{plugin_message}sbatch: error: Batch job submission failed: {reason}\n")
     )
     with pytest.raises(TaskLaunchError) as failure:
         launcher.launch_task(request)
@@ -558,8 +567,84 @@ def test_definitive_sbatch_rejection_settles_with_scheduler_diagnostic(backend, 
     assert status.settled
     assert not status.succeeded
     assert reason in status.failure_reason and reason in str(failure.value)
+    assert plugin_message.strip() in status.failure_reason
     assert not launcher.manager._handles
     assert Path(handle.job_dir, "identity.json").exists()
+    adapter.task_by_marker.assert_not_called()
+    adapter.cancel.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "diagnostic",
+    [
+        "sbatch: error: Unable to open file /shared/workspace/batch script.sh",
+        "sbatch: error: invalid partition specified: unavailable",
+    ],
+)
+def test_local_presubmission_rejection_settles(backend, diagnostic):
+    launcher, adapter, request = backend
+    adapter.submit.return_value = SubmissionResult(CommandResult(1, "", diagnostic))
+    with pytest.raises(TaskLaunchError) as failure:
+        launcher.launch_task(request)
+    assert failure.value.handle.poll().settled
+    assert all(line in str(failure.value) for line in diagnostic.splitlines())
+    adapter.task_by_marker.assert_not_called()
+    adapter.cancel.assert_not_called()
+
+
+def test_known_rejections_allow_site_explanations_before_between_and_after(backend):
+    launcher, adapter, request = backend
+    diagnostic = (
+        "sbatch: error: job_submit.lua: checking CPU socket geometry\n"
+        "sbatch: error: Batch job submission failed: Invalid partition name specified\n"
+        "sbatch: site policy uses the requested connection profile\n"
+        "sbatch: error: Batch job submission failed: Invalid feature specification\n"
+        "sbatch: error: see site documentation for supported features"
+    )
+    adapter.submit.return_value = SubmissionResult(CommandResult(1, "", diagnostic))
+    with pytest.raises(TaskLaunchError) as failure:
+        launcher.launch_task(request)
+    assert failure.value.handle.poll().settled
+    assert all(line in str(failure.value) for line in diagnostic.splitlines())
+    adapter.task_by_marker.assert_not_called()
+
+
+@pytest.mark.parametrize("job_id,cluster", [("42", None), ("42", "other"), (None, "other")])
+def test_known_rejection_cannot_discard_returned_allocation_identity(backend, job_id, cluster):
+    launcher, adapter, request = backend
+    adapter.submit.return_value = SubmissionResult(
+        CommandResult(1, "", "sbatch: error: Batch job submission failed: Invalid partition name specified"),
+        job_id,
+        cluster,
+    )
+    adapter.for_cluster.return_value = adapter
+    adapter.cancel_suffix.return_value = QueryResult(LookupStatus.FOUND)
+    adapter.active_by_id.return_value = _query("RUNNING")
+    adapter.task_by_marker.return_value = _query()
+    with pytest.raises(TaskLaunchError) as failure:
+        launcher.launch_task(request)
+    assert launcher.manager._handles
+    assert not failure.value.handle.poll().settled
+
+
+@pytest.mark.usefixtures("isolated_fobs")
+def test_plugin_message_before_rejection_does_not_fence_supervisor(backend):
+    launcher, adapter, request = backend
+    identity, store, arguments = _supervisor_case(backend, write_result=False)
+    diagnostic = (
+        "sbatch: error: job_submit.lua: using site defaults\n"
+        "sbatch: error: Batch job submission failed: Memory required by task is not available"
+    )
+    adapter.submit.side_effect = None
+    adapter.submit.return_value = SubmissionResult(CommandResult(1, "", diagnostic))
+    adapter.task_by_marker.return_value = _query()
+    supervisor = TaskSupervisor()
+    with pytest.raises(TaskLaunchError, match="Memory required by task"):
+        supervisor.run(**arguments)
+    assert not supervisor.owns_execution
+    assert not supervisor.settlement_unconfirmed
+    assert not launcher.manager._handles
+    assert Path(store.attempt_dir(identity), "input.fobs").exists()
     adapter.task_by_marker.assert_not_called()
     adapter.cancel.assert_not_called()
 
@@ -593,6 +678,50 @@ def test_cluster_suffix_cancels_and_waits_for_target_cluster_settlement(backend)
         CommandResult(1, "", "unknown plugin error"),
         CommandResult(
             1, "unparseable output", "sbatch: error: Batch job submission failed: Invalid partition name specified"
+        ),
+        CommandResult(1, "", "sbatch: error: job_submit.lua: custom policy rejection"),
+        CommandResult(1, "", "sbatch: error: Unable to open file"),
+        CommandResult(
+            1,
+            "",
+            "sbatch: error: Batch job submission failed: Invalid partition name specified\n"
+            "sbatch: error: Batch job submission failed: Unknown controller error",
+        ),
+        CommandResult(
+            1,
+            "",
+            "sbatch: error: Batch job submission failed: Unknown controller error\n"
+            "sbatch: error: Batch job submission failed: Invalid partition name specified",
+        ),
+        CommandResult(
+            1,
+            "",
+            "sbatch: error: Batch job submission failed: Invalid partition name specified\n"
+            "sbatch: error: Socket timed out on send/recv operation",
+        ),
+        CommandResult(
+            1,
+            "",
+            "sbatch: error: Socket timed out on send/recv operation\n"
+            "sbatch: error: Batch job submission failed: Invalid partition name specified",
+        ),
+        CommandResult(
+            1,
+            "",
+            "sbatch: error: Batch job submission failed: Invalid partition name specified\nSubmitted batch job 42",
+        ),
+        CommandResult(1, "", "sbatch: error: Batch job submission failed: Invalid partition name specified\n42;other"),
+        CommandResult(
+            1,
+            "",
+            "sbatch: error: Batch job submission failed: Invalid partition name specified\n"
+            "sbatch: error: Batch job submission failed",
+        ),
+        CommandResult(
+            1,
+            "",
+            "sbatch: error: Batch job submission failed: Invalid partition name specified\n"
+            "sbatch: error: batch job submission failed: Unknown controller error",
         ),
     ],
 )

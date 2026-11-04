@@ -286,10 +286,14 @@ cancellation use the site's Slurm tools; there is no operator-release file or
 NVFlare override that declares an allocation released.
 
 Recognized definite ``sbatch`` rejections fail promptly with scheduler text.
-Unknown/plugin diagnostics, lost replies and transport timeouts retain native
-cleanup ownership. CP searches for an exact name, UID and ownership-comment
-match and cancels it when identified. A foreign-cluster response is cleaned up
-in the named cluster and never adopted for execution.
+Site/Lua explanations may accompany a known rejection, including messages
+printed at error level. Known resource validation errors and local errors such
+as an unreadable batch script settle without an allocation. Unknown rejection
+reasons, conflicting diagnostics, returned allocation IDs, lost replies and
+transport timeouts retain native cleanup ownership. CP searches for an exact
+name, UID and ownership-comment match and cancels it when identified. A
+foreign-cluster response is cleaned up in the named cluster and never adopted
+for execution.
 
 Verification
 -------------

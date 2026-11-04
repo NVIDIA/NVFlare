@@ -771,7 +771,7 @@ class ClientSlurmJobLauncher(SlurmJobLauncher):
         if event_type == EventType.SYSTEM_BOOTSTRAP and self.manager is not None and self.config.sandbox == "none":
             self.log_warning(
                 fl_ctx,
-                "Slurm bare task-capable profile requires trusted job code: jobs share the site's UID and "
+                "Slurm bare profile requires trusted job code: jobs share the site's UID and "
                 "workspace and can access site private keys and scheduler credentials. Secure transport "
                 "does not provide filesystem or credential isolation.",
             )

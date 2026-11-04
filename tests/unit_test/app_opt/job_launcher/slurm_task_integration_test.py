@@ -129,7 +129,7 @@ def test_exact_matching_slurm_site_profile(profile, launcher_path):
 
 
 @pytest.mark.parametrize("sandbox,child", [("none", False), ("apptainer", False), ("none", True)])
-def test_bare_task_profile_warns_at_parent_startup(profile, caplog, sandbox, child):
+def test_bare_profile_warns_at_parent_startup(profile, caplog, sandbox, child):
     _, _, _, cj, _ = profile
     cj.config = replace(cj.config, sandbox=sandbox)
     cj.manager = None if child else Mock()
@@ -137,6 +137,7 @@ def test_bare_task_profile_warns_at_parent_startup(profile, caplog, sandbox, chi
     warnings = [record.message for record in caplog.records if "requires trusted job code" in record.message]
     assert len(warnings) == int(sandbox == "none" and not child)
     if warnings:
+        assert "Slurm bare profile" in warnings[0]
         assert "site private keys and scheduler credentials" in warnings[0]
         assert "does not provide filesystem or credential isolation" in warnings[0]
     if not child:
