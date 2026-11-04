@@ -57,7 +57,7 @@ from nvflare.fuel.f3.streaming import shutdown as streaming_shutdown
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 from nvflare.fuel.utils.fobs import FOBSContextKey
-from tests.timing_utils import ManualClock, isolate_time, join_thread, wait_for
+from tests.timing_utils import WAIT_TIMEOUT, ManualClock, ThreadGroup, isolate_time, join_thread, wait_for
 
 # Keep a broken policy wait bounded independently of its controlled clock.
 pytestmark = pytest.mark.timeout(60)
@@ -2396,16 +2396,26 @@ class TestSessionEnd:
         assert env.stop_calls == 1
         assert env.shutdown_f3_streaming.call_count == 2
 
-    def test_abort_raises_from_blocked_receive(self, bootstrap_path, env):
+    def test_abort_raises_from_blocked_receive(self, bootstrap_path, env, monkeypatch):
         api = _init_api(bootstrap_path, env)
+        receive_entered = threading.Event()
+        get_task = api._task_queue.get
+
+        def observe_receive(*args, **kwargs):
+            receive_entered.set()
+            return get_task(*args, **kwargs)
+
+        monkeypatch.setattr(api._task_queue, "get", observe_receive)
         try:
-            # abort arrives while receive() is blocked waiting for a task
-            def deliver_abort_soon():
+
+            def deliver_abort():
+                assert receive_entered.wait(WAIT_TIMEOUT), "receive did not enter the task wait"
                 env.deliver(Topic.ABORT, CJ_FQCN, {MsgKey.SESSION_ID: SESSION_ID, MsgKey.REASON: "controller abort"})
 
-            threading.Timer(0.2, deliver_abort_soon).start()
-            with pytest.raises(TrainerSessionError, match="aborted"):
-                api.receive(timeout=5.0)
+            with ThreadGroup(receive_entered) as workers:
+                workers.start(deliver_abort)
+                with pytest.raises(TrainerSessionError, match="aborted"):
+                    api.receive(timeout=WAIT_TIMEOUT)
             assert env.stopped is True
             # is_running() returns False on abort (loop exits) rather than raising
             assert api.is_running() is False

@@ -69,30 +69,46 @@ License information: all source code files should start with this paragraph:
 ```
 
 #### Unit testing
-NVIDIA FLARE tests are located under test/.
+NVIDIA FLARE tests are located under tests/.
 The unit test file names follow the `[module_name]_test.py` pattern.
 
 The bash script `runtest.sh` will run unit tests also.
 
 #### Building the documentation
-To build the docs, first make sure you have all requirements
+
+Use a dedicated documentation environment to preserve training dependencies.
+From the repository root, create and activate a new environment, then build:
 
 ```bash
-python3 -m pip install -U pip
-python3 -m pip install nvflare[dev]
-```
-
-To build the docs, please run. 
-
-```bash
+python3.10 -m venv .venv-docs
+source .venv-docs/bin/activate
 ./build_doc.sh --html
 ```
 
-Once built, you can view the docs in `docs/_build folder`. To clean the docs, please run
+The script installs the documentation dependencies. Linux x86_64 with Python 3.10
+uses the same pinned CPU framework environment as Read the Docs; other supported
+environments use the documentation extra. Keep this environment separate from
+the development or training environment.
+
+For a quick preview of narrative pages, omit the generated Python API reference:
+
+```bash
+./build_doc.sh --html --skip-api
+```
+
+This mode installs only Sphinx and its documentation extensions. The API landing
+page and Python cross-references are incomplete, so use the full build before
+publishing or reviewing API documentation.
+
+Open `docs/_build/index.html` to read the generated HTML. To clean generated files:
 
 ```bash
 ./build_doc.sh --clean
 ```
+
+The production dependency pins are in `docs/constraints.txt`. Update them in a
+fresh documentation environment and verify the full HTML and Markdown build
+before committing new versions.
 
 #### Signing your work
 NVIDIA FLARE enforces the [Developer Certificate of Origin](https://developercertificate.org/) (DCO) on all pull requests.
@@ -151,22 +167,20 @@ The issue must exist before the pull request is submitted, and the proposed chan
 Pull requests without a qualifying issue will not be accepted.
 
 1. Create a new ticket or take a known ticket from [the issue list][NVIDIA FLARE issue list].
-2. Check if there's already a branch dedicated to the task.
-3. If the task has not been taken, [create a new branch in your fork](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork)
+2. If the task has not been taken, [create a new branch in your fork](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork)
 of the codebase.
 Ideally, the new branch should be based on the latest `main` branch.
-4. Make changes to the branch ([use detailed commit messages if possible](https://chris.beams.io/posts/git-commit/)).
-5. Make sure that new tests cover the changes and the changed codebase [passes all tests locally](#unit-testing).
-6. [Create a new pull request](https://help.github.com/en/desktop/contributing-to-projects/creating-a-pull-request) from the task branch to the main branch, with detailed descriptions of the purpose of this pull request.
-7. Check [the CI/CD status of the pull request][github ci], make sure all CI/CD tests passed.
+3. Make changes to the branch ([use detailed commit messages if possible](https://chris.beams.io/posts/git-commit/)).
+4. Make sure that new tests cover the changes and the changed codebase [passes all tests locally](#unit-testing).
+5. [Create a new pull request](https://help.github.com/en/desktop/contributing-to-projects/creating-a-pull-request) from the task branch to the main branch, with detailed descriptions of the purpose of this pull request.
+6. Check [the CI/CD status of the pull request][github ci], make sure all CI/CD tests passed.
    Do not add GitHub-native skip markers such as `[skip ci]` to pull-request commits: GitHub suppresses the
    required check contexts and leaves the pull request blocked. Documentation-only changes are detected
    automatically and use lightweight required checks instead of the full Python test suite.
-8. Assign 2 reviewers. One of the reviewers must be a code owner for this section of code.
-9. Wait for reviews; if there are reviews, make point-to-point responses, make further code changes if needed.
-10. If there are conflicts between the pull request branch and the main branch, pull the changes from the main and resolve the conflicts locally.
-11. Reviewer and contributor may have discussions back and forth until all comments addressed. All conversations must be resolved for PR to pass.
-12. Wait for the pull request to be merged.
+7. Wait for reviews; if there are reviews, make point-to-point responses, make further code changes if needed.
+8. If there are conflicts between the pull request branch and the main branch, pull the changes from the main and resolve the conflicts locally.
+9. Reviewer and contributor may have discussions back and forth until all comments addressed. All conversations must be resolved for PR to pass.
+10. Wait for the pull request to be merged.
 
 ## The code reviewing process
 

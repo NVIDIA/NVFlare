@@ -73,7 +73,7 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def notify_job_status(self, job_id: str, job_status):
+    def notify_job_status(self, job_id: str, job_status, launch_id=None):
         """Notify the engine what's the client job's new status.
 
         Args:

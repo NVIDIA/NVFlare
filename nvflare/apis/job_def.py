@@ -56,6 +56,7 @@ class JobMetaKey(str, Enum):
     DATA_STORAGE_FORMAT = "data_storage_format"
     DEPLOY_MAP = "deploy_map"
     RESOURCE_SPEC = "resource_spec"
+    CJ_RESOURCE_SPEC = "cj_resource_spec"
     CONTENT_LOCATION = "content_location"
     RESULT_LOCATION = "result_location"
     APPROVALS = "approvals"
@@ -96,6 +97,7 @@ class JobMetaKey(str, Enum):
 USER_SETTABLE_JOB_META_KEYS = frozenset(
     {
         JobMetaKey.RESOURCE_SPEC,
+        JobMetaKey.CJ_RESOURCE_SPEC,
         JobMetaKey.JOB_LAUNCHER_SPEC,
         JobMetaKey.SCOPE,
         JobMetaKey.CUSTOM_PROPS,

@@ -808,7 +808,13 @@ class ExternalProcessBackend(CellBackendBase):
             self.logger.error(secure_format_traceback())
         trainer.token = ""
         try:
-            if trainer.bootstrap_path and os.path.exists(trainer.bootstrap_path):
+            # CP uses an uncleared bootstrap to decline Process recovery when a
+            # detached trainer may still be running after its CJ exits.
+            if (
+                trainer.bootstrap_path
+                and not self._process_group_alive(trainer)
+                and os.path.exists(trainer.bootstrap_path)
+            ):
                 os.remove(trainer.bootstrap_path)
         except Exception as e:
             self.logger.debug(f"failed to remove {trainer.bootstrap_path}: {e}")

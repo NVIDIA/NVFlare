@@ -350,6 +350,14 @@ class SimulatorRunner(FLComponent):
         valid, error, meta = job_validator.validate(job_name, data_bytes)
         if not valid:
             raise RuntimeError(error)
+        # Validation derives these site markers from the submitted client apps.
+        # Reject task apps before creating simulator servers or clients, including
+        # jobs exported separately and passed directly to the simulator CLI.
+        if meta.get(JobMetaKey.CJ_RESOURCE_SPEC.value):
+            raise ValueError(
+                "local Process task execution is deferred; simulator requires job lifetime. "
+                "Run task-lifetime apps on configured Kubernetes/Slurm sites"
+            )
         return data_bytes, job_name, meta
 
     def _extract_client_names_from_meta(self, meta):

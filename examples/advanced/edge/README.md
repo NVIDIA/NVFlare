@@ -20,7 +20,14 @@ This guide supports two distinct workflows:
 ### Install prerequisites
 Install NVFlare and the required packages for this example:
 ```commandline
+python -m pip install nvflare
 pip install -r requirements.txt
+```
+
+On the HTTP routing-proxy host only, also install:
+
+```commandline
+python -m pip install "nvflare[edge-http]"
 ```
 
 To run the ExecuTorch simulated devices, you need to install the executorch pybindings with training extension (please refer to [ExecuTorch GitHub](https://github.com/pytorch/executorch/issues/8990))

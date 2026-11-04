@@ -112,6 +112,7 @@ class ReplyKeyword:
     INVALID_CLIENT = "invalid client"
     UNKNOWN_SITE = "unknown site"
     NOT_AUTHORIZED = "not authorized"
+    JOB_STARTING_RETRY_ABORT = "is starting; retry abort."
 
 
 class InternalCommands(object):

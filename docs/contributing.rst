@@ -78,33 +78,49 @@ paragraph:
 Unit testing
 ^^^^^^^^^^^^
 
-NVIDIA FLARE tests are located under test/. The unit test file names
-follow the ``test_[module_name].py`` pattern.
+NVIDIA FLARE tests are located under tests/. The unit test file names
+follow the ``[module_name]_test.py`` pattern.
 
 The bash script ``runtest.sh`` will run unit tests also.
 
-Building docs
-^^^^^^^^^^^^^
+.. _building-docs:
 
-To build the docs, first make sure you have all requirements
+Building the documentation
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. code:: bash
-
-   python -m pip upgrade
-   python -m pip install -e .[doc]
-
-To build the docs, please run.
+Use a dedicated documentation environment to preserve training dependencies.
+From the repository root, create and activate a new environment, then build:
 
 .. code:: bash
 
+   python3.10 -m venv .venv-docs
+   source .venv-docs/bin/activate
    ./build_doc.sh --html
 
-Once built, you can view the docs in ``docs/_build folder``. To clean
-the docs, please run
+The script installs the documentation dependencies. Linux x86_64 with Python 3.10
+uses the same pinned CPU framework environment as Read the Docs; other supported
+environments use the documentation extra. Keep this environment separate from
+the development or training environment.
+
+For a quick preview of narrative pages, omit the generated Python API reference:
+
+.. code:: bash
+
+   ./build_doc.sh --html --skip-api
+
+This mode installs only Sphinx and its documentation extensions. The API landing
+page and Python cross-references are incomplete, so use the full build before
+publishing or reviewing API documentation.
+
+Open ``docs/_build/index.html`` to read the generated HTML. To clean generated files:
 
 .. code:: bash
 
    ./build_doc.sh --clean
+
+The production dependency pins are in ``docs/constraints.txt``. Update them in a
+fresh documentation environment and verify the full HTML and Markdown build
+before committing new versions.
 
 Signing your work
 ^^^^^^^^^^^^^^^^^
@@ -181,27 +197,25 @@ changes must directly address it.
 Pull requests without a qualifying issue will not be accepted.
 
 1. Create a new ticket or take a known ticket from `the issue
-list <https://github.com/NVIDIA/NVFlare/issues>`__. 2. Check if there is
-already a branch dedicated to the task. 3. If the task has not been
+list <https://github.com/NVIDIA/NVFlare/issues>`__. 2. If the task has not been
 taken, `create a new branch in your
 fork <https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork>`__
 of the codebase. Ideally, the new branch should be based on the latest
-``main`` branch. 4. Make changes to the branch (`use detailed commit
-messages if possible <https://chris.beams.io/posts/git-commit/>`__). 5.
+``main`` branch. 3. Make changes to the branch (`use detailed commit
+messages if possible <https://chris.beams.io/posts/git-commit/>`__). 4.
 Make sure that new tests cover the changes and the changed codebase
-`passes all tests locally <#unit-testing>`__. 6. `Create a new pull
+`passes all tests locally <#unit-testing>`__. 5. `Create a new pull
 request <https://help.github.com/en/desktop/contributing-to-projects/creating-a-pull-request>`__
 from the task branch to the ``main`` branch, with detailed descriptions of
-the purpose of this pull request. 7. Check `the CI/CD status of the pull
+the purpose of this pull request. 6. Check `the CI/CD status of the pull
 request <https://github.com/NVIDIA/NVFlare/actions>`__, make sure all
-CI/CD tests passed. 8. Assign 2 reviewers. One of the reviewers must be
-a code owner for this section of code. 9. Wait for reviews; if there are
+CI/CD tests passed. 7. Wait for reviews; if there are
 reviews, make point-to-point responses, make further code changes if
-needed. 10. If there are conflicts between the pull request branch and
+needed. 8. If there are conflicts between the pull request branch and
 the ``main`` branch, pull the changes from ``main`` and resolve the
-conflicts locally. 11. Reviewer and contributor may have discussions
+conflicts locally. 9. Reviewer and contributor may have discussions
 back and forth until all comments addressed. All conversations must be
-resolved for PR to pass. 12. Wait for the pull request to be merged.
+resolved for PR to pass. 10. Wait for the pull request to be merged.
 
 Reviewing pull requests
 -----------------------

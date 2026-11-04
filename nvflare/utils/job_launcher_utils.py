@@ -14,12 +14,13 @@
 import copy
 import importlib
 import logging
+import math
 import os
 import re
 import sys
 
 from nvflare.apis.fl_constant import FLContextKey, SystemVarName
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv
 
 # Bootstrap credentials are delivered via the job process environment (JobProcessEnv),
@@ -308,8 +309,94 @@ def resolve_site_resource_spec(job_meta: dict, site_name: str) -> dict:
     return {**default_spec, **site_spec}
 
 
+def validate_cj_resource_spec(spec):
+    """CJ budgets use portable quantities; CPU shares may be fractional."""
+    if not isinstance(spec, dict):
+        raise ValueError("cj_resource_spec must be a dictionary keyed by site or @default")
+    allowed = set(PORTABLE_RESOURCE_KEYS) | {"mem_per_gpu_in_GiB"}
+    for site, values in spec.items():
+        if not isinstance(site, str) or not site or site == SERVER_SITE_NAME or not isinstance(values, dict):
+            raise ValueError("cj_resource_spec requires client-site dictionaries")
+        if set(values) - allowed:
+            raise ValueError(f"cj_resource_spec['{site}'] contains unsupported fields: {sorted(set(values) - allowed)}")
+        _validate_portable_values(
+            {key: value for key, value in values.items() if key != "num_of_cpus"}, f"cj_resource_spec['{site}']"
+        )
+        for key in ("num_of_cpus", "mem_per_gpu_in_GiB"):
+            if key not in values:
+                continue
+            value = values[key]
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or (isinstance(value, float) and not math.isfinite(value))
+            ):
+                raise ValueError(f"cj_resource_spec['{site}'].{key} must be finite")
+            if value < 0 or (key == "num_of_cpus" and value == 0):
+                raise ValueError(f"cj_resource_spec['{site}'].{key} must be positive (GPU memory may be zero)")
+
+
+def normalize_cj_resource_spec(meta, task_sites):
+    """Bind CJ budgets to task sites derived from actual client app configs.
+
+    Empty site entries are meaningful: they select site-owned CJ defaults and
+    prevent the compute resource_spec from becoming a whole-job reservation.
+    Neither a default block nor an unrelated site can opt a resident CJ out of
+    its compute admission requirements.
+    """
+    task_sites = set(task_sites) - {SERVER_SITE_NAME}
+    spec = copy.deepcopy(meta.get(JobMetaKey.CJ_RESOURCE_SPEC.value, {}))
+    validate_cj_resource_spec(spec)
+    for site in spec:
+        if site != PORTABLE_RESOURCE_DEFAULT_KEY and site not in task_sites and ALL_SITES not in task_sites:
+            raise ValueError(f"cj_resource_spec['{site}'] requires a task-lifetime client app")
+    if not task_sites:
+        if spec:
+            raise ValueError("cj_resource_spec requires a task-lifetime client app")
+        meta.pop(JobMetaKey.CJ_RESOURCE_SPEC.value, None)
+        return
+    for site in task_sites:
+        spec.setdefault(site, {})
+    meta[JobMetaKey.CJ_RESOURCE_SPEC.value] = spec
+
+
+def has_cj_resource_spec(meta, site_name):
+    spec = meta.get(JobMetaKey.CJ_RESOURCE_SPEC.value) or {}
+    return site_name != SERVER_SITE_NAME and (site_name in spec or ALL_SITES in spec)
+
+
+def validate_cj_execution_lifetime(meta, site_name, execution_lifetime):
+    """Bind CJ-only admission to the locally resolved client execution mode."""
+    if has_cj_resource_spec(meta, site_name) and execution_lifetime != "task":
+        raise ValueError("cj_resource_spec requires resolved client execution_lifetime='task'")
+
+
+def get_cj_resource_spec(meta, site_name):
+    """Resolve the independent CJ budget, without inheriting compute fields."""
+    spec = meta.get(JobMetaKey.CJ_RESOURCE_SPEC.value) or {}
+    validate_cj_resource_spec(spec)
+    if not has_cj_resource_spec(meta, site_name):
+        return {}
+    return {**spec.get(PORTABLE_RESOURCE_DEFAULT_KEY, {}), **spec.get(ALL_SITES, {}), **spec.get(site_name, {})}
+
+
 def get_resource_manager_spec(job_meta: dict, site_name: str) -> dict:
     """Return resources enforced by the site's NVIDIA FLARE resource manager."""
+    if has_cj_resource_spec(job_meta, site_name):
+        result = {
+            key: value
+            for key, value in get_cj_resource_spec(job_meta, site_name).items()
+            if key not in ("num_of_cpus", "memory")
+        }
+        if not result.get("num_of_gpus"):
+            result.pop("num_of_gpus", None)
+            result.pop("mem_per_gpu_in_GiB", None)
+        return result
+    return get_compute_resource_manager_spec(job_meta, site_name)
+
+
+def get_compute_resource_manager_spec(job_meta: dict, site_name: str) -> dict:
+    """Resolve workload RM fields independently of the CJ reservation budget."""
     resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
     site_spec = resource_spec.get(site_name) or {}
     if PORTABLE_RESOURCE_DEFAULT_KEY not in resource_spec and any(key in site_spec for key in _LAUNCHER_MODE_KEYS):

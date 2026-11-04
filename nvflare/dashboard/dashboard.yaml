@@ -73,6 +73,8 @@ paths:
             schema:
               $ref: '#/components/schemas/Project'
       responses:
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "200":
           description: Project patched
           content:
@@ -131,6 +133,8 @@ paths:
                 pin:
                   type: string
       responses:
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "200":
           description: API accepted
           content:
@@ -190,6 +194,8 @@ paths:
             schema:
               $ref: '#/components/schemas/BaseClient'
       responses:
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "201":
           description: Resource created
           content:
@@ -249,6 +255,8 @@ paths:
             schema:
               $ref: "#/components/schemas/BaseClient"
       responses:
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "200":
           description: API accepted
           content:
@@ -347,6 +355,8 @@ paths:
                 pin:
                   type: string
       responses:
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "200":
           description: API accepted
           content:
@@ -376,6 +386,8 @@ paths:
             schema:
               $ref: '#/components/schemas/RqsUser'
       responses:
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "201":
           description: Resource created
           content:
@@ -468,6 +480,8 @@ paths:
             schema:
               $ref: "#/components/schemas/RqsUser"
       responses:
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "200":
           description: API accepted
           content:
@@ -534,6 +548,8 @@ paths:
                 pin:
                   type: string
       responses:
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "200":
           description: API accepted
           content:
@@ -552,12 +568,37 @@ paths:
                     type: "string"
 
 components:
+  responses:
+    InvalidName:
+      description: A supplied or stored name does not satisfy provisioning rules. Correct the indicated field before saving or downloading a startup kit.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/NameValidationError'
+          example:
+            status: error
+            message: Organization must contain only letters, digits, and underscores.
+            errors:
+              organization: Organization must contain only letters, digits, and underscores.
   securitySchemes:
     bearerAuth:            # arbitrary name for the security scheme
       type: http
       scheme: bearer
       bearerFormat: JWT    # optional, arbitrary value for documentation purposes
   schemas:
+    NameValidationError:
+      type: object
+      required: [status, message, errors]
+      properties:
+        status:
+          type: string
+          enum: [error]
+        message:
+          type: string
+        errors:
+          type: object
+          additionalProperties:
+            type: string
     Project:
       type: "object"
       properties:
@@ -577,6 +618,7 @@ components:
           type: string
         server1:
           type: "string"
+          description: A hostname or IPv4 address without a scheme or port. May be empty while configuring the project, but is required before freezing.
         starting_date:
           type: "string"
         end_date:
@@ -591,6 +633,7 @@ components:
           type: "string"
         organization:
           type: "string"
+          description: Letters, digits, and underscores only. May be empty during initial user registration; a valid organization is required for startup kit download.
         email:
           type: "string"
         role:
@@ -626,9 +669,11 @@ components:
       properties:
         name:
           type: "string"
+          pattern: '^[A-Za-z0-9_-]+$'
           example: "site-1"
         organization:
           type: "string"
+          pattern: '^[A-Za-z0-9_]+$'
           example: "nvidia"
         capacity:
           type: "object"

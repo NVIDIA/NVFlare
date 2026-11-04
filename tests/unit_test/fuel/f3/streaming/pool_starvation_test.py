@@ -28,46 +28,65 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock
 
+import pytest
+
+from nvflare.fuel.f3.streaming import blob_streamer
 from nvflare.fuel.f3.streaming.blob_streamer import BlobHandler
-from nvflare.fuel.f3.streaming.stream_types import StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
+from tests.timing_utils import WAIT_TIMEOUT
+
+pytestmark = pytest.mark.timeout(30)
 
 
 class TestBlobHandlerPoolBlocking:
 
-    def test_blob_handler_should_not_block_pool_worker(self):
-        """Pool worker should be free to handle other tasks while blob_cb executes."""
+    @pytest.mark.parametrize("stream_size", [0, -1], ids=["completed-read", "rejected-blob"])
+    def test_blob_handler_should_not_block_pool_worker(self, monkeypatch, stream_size):
+        """An admitted application callback must not occupy the streaming pool."""
         callback_started = threading.Event()
         callback_release = threading.Event()
+        callback_completed = threading.Event()
+        callback_errors = []
 
         def slow_blob_cb(future, *args, **kwargs):
-            callback_started.set()
-            callback_release.wait()  # simulates expensive produce + send_blob
+            try:
+                callback_started.set()
+                # Only the test may release this gate. A timeout here could
+                # free an incorrectly occupied stream worker before the probe.
+                callback_release.wait()
+            except BaseException as error:
+                callback_errors.append(error)
+                raise
+            finally:
+                callback_completed.set()
 
         handler = BlobHandler(slow_blob_cb)
-        mock_future = MagicMock(spec=StreamFuture)
-        mock_future.headers = {}
-        mock_stream = MagicMock()
-        mock_stream.get_size.return_value = 0
+        future = StreamFuture(stream_id=1, headers={})
+        mock_stream = MagicMock(spec=Stream)
+        mock_stream.headers = {}
+        mock_stream.get_size.return_value = stream_size
         mock_stream.read.return_value = b""
 
-        pool = ThreadPoolExecutor(max_workers=1)
-
-        def wrapper():
-            handler.handle_blob_cb(mock_future, mock_stream, False)
-
-        pool.submit(wrapper)
-        assert callback_started.wait(timeout=2.0)
-
-        # With correct behavior, the pool worker should be free to run other tasks
-        # even while blob_cb is still executing.
-        second_ran = threading.Event()
-        pool.submit(lambda: second_ran.set())
-        ran = second_ran.wait(timeout=0.5)
-
-        callback_release.set()
-        pool.shutdown(wait=True)
-
-        assert ran, (
-            "BUG: pool worker is blocked by synchronous blob_cb execution. "
-            "handle_blob_cb should not hold the worker while the callback runs."
-        )
+        with ThreadPoolExecutor(max_workers=1) as pool, ThreadPoolExecutor(max_workers=1) as callback_pool:
+            # Use the handler's actual configured pools, so dispatching an
+            # asynchronous callback onto the stream pool also fails this test.
+            monkeypatch.setattr(blob_streamer, "stream_thread_pool", pool)
+            monkeypatch.setattr(blob_streamer, "callback_thread_pool", callback_pool)
+            first = pool.submit(handler.handle_blob_cb, future, mock_stream, False)
+            try:
+                assert callback_started.wait(WAIT_TIMEOUT)
+                second = pool.submit(lambda: "stream worker available")
+                assert second.result(timeout=WAIT_TIMEOUT) == "stream worker available"
+                assert not callback_completed.is_set(), "callback completed before the test released it"
+                assert first.result(timeout=WAIT_TIMEOUT) == 0
+                if stream_size < 0:
+                    with pytest.raises(StreamError, match="cannot be negative"):
+                        future.result(timeout=WAIT_TIMEOUT)
+                else:
+                    assert future.result(timeout=WAIT_TIMEOUT) == b""
+            finally:
+                callback_release.set()
+                first.result(timeout=WAIT_TIMEOUT)
+                assert callback_completed.wait(WAIT_TIMEOUT), "application callback survived test teardown"
+                if callback_errors:
+                    raise callback_errors[0]

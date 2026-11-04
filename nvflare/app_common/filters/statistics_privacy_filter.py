@@ -60,13 +60,20 @@ class StatisticsPrivacyFilter(DXOFilter):
         statistics_task = client_result[StC.STATISTICS_TASK_KEY]
         statistics = fobs.loads(client_result[statistics_task])
         statistics_modified = False
+        withheld = {}
         for f in filters:
+            for ds_name, features in f.withheld_features(statistics, client_name).items():
+                for feature in features:
+                    if feature not in withheld.setdefault(ds_name, []):
+                        withheld[ds_name].append(feature)
             (statistics, modified) = f.apply(statistics, client_name)
             statistics_modified = statistics_modified or modified
 
         dxo1 = dxo
-        if statistics_modified:
+        if statistics_modified or withheld:
             client_result[statistics_task] = fobs.dumps(statistics)
+            if withheld:
+                client_result[StC.STATS_WITHHELD_FEATURES] = fobs.dumps(withheld)
             dxo1 = DXO(data_kind=DataKind.STATISTICS, data=client_result)
 
         return dxo1

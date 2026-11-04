@@ -79,7 +79,7 @@ PyTorch FedAvg
 
 For large PyTorch model updates, ``FedAvgRecipe`` also supports
 ``enable_tensor_disk_offload=True`` to reduce server memory use by materializing
-incoming streamed tensors to temporary files. See
+incoming streamed tensors to temporary files. Aggregation and the global model remain in memory. See
 :ref:`Starting Federated Learning Servers <starting_fl_servers>` for deployment
 notes about configuring the server temporary directory.
 
@@ -87,6 +87,27 @@ notes about configuring the server temporary directory.
 
 - `examples/hello-world/hello-pt <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-pt>`_
 - `examples/advanced/cifar10/pt/cifar10-sim/cifar10_fedavg <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/pt/cifar10-sim/cifar10_fedavg>`_
+
+.. _disk_backed_fedavg:
+
+Disk-backed aggregation
+~~~~~~~~~~~~~~~~~~~~~~~
+
+To also keep aggregation and global model weights on disk, start from a safetensors checkpoint:
+
+.. code-block:: python
+
+    from nvflare.app_opt.pt.recipes import FedAvgRecipe
+
+    recipe = FedAvgRecipe(
+        min_clients=2,
+        train_script="client.py",
+        initial_ckpt="/models/initial.safetensors",
+        enable_disk_aggregation=True,
+    )
+
+The recipe enables incoming tensor offload and PyTorch exchange automatically. Omit ``model`` and custom
+server model components. Checkpoints contain model weights only. For storage setup, see :ref:`starting_fl_servers`.
 
 TensorFlow FedAvg
 -----------------
@@ -323,6 +344,7 @@ FedProx
 FedProx is FedAvg with a proximal term added to client optimization to handle data heterogeneity.
 PyTorch provides a concrete ``FedProxRecipe`` with a finite positive ``fedprox_mu`` (default ``0.01``).
 It inherits the aggregation, persistence, transfer, and memory options of PyTorch ``FedAvgRecipe``.
+See :ref:`disk_backed_fedavg` for the same option in ``FedProxRecipe``.
 
 .. warning::
 

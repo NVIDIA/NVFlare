@@ -33,7 +33,9 @@ _print_redirect_count = 0
 
 
 def _thread_aware_print(*args, **kwargs):
-    if getattr(_print_redirect_state, "depth", 0):
+    # A print issued while logging (e.g. logging.Handler.handleError printing a traceback) goes to the
+    # real print: routing it back into logging would recurse until the stack overflows.
+    if getattr(_print_redirect_state, "depth", 0) and not getattr(_print_redirect_state, "logging", False):
         log_print(*args, **kwargs)
     else:
         print_fn(*args, **kwargs)
@@ -209,4 +211,8 @@ class TaskScriptRunner:
 def log_print(*args, logger=TaskScriptRunner.logger, **kwargs):
     # Create a message from print arguments
     message = " ".join(str(arg) for arg in args)
-    logger.info(message)
+    _print_redirect_state.logging = True
+    try:
+        logger.info(message)
+    finally:
+        _print_redirect_state.logging = False
