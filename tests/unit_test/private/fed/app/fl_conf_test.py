@@ -15,23 +15,26 @@
 import json
 import logging
 import os
+from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, SecureTrainConst, SiteType
+from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, SecureTrainConst, SiteType, SystemConfigs
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.constants import CtxKey
 from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, FLServerStarterConfiger
+from nvflare.private.fed.client.client_executor import JobExecutor
 from nvflare.private.fed.utils.job_cert_utils import job_cert_paths, write_job_cert
 
 
@@ -83,6 +86,65 @@ def _workspace_with_kit(tmp_path, site_name):
     (tmp_path / "startup").mkdir()
     (tmp_path / "local").mkdir()
     return Workspace(str(tmp_path), site_name=site_name)
+
+
+@pytest.mark.parametrize(
+    "file_limit,env_limit,cli_limit,job_id,expected",
+    [
+        (0, None, None, None, 0),
+        (2, None, None, None, 2),
+        (None, None, None, None, 3),
+        (None, 0, None, None, 0),
+        (0, 2, None, None, 0),
+        (2, 0, None, None, 2),
+        (0, 2, 1, None, 1),
+        (0, None, None, "job-1", None),
+    ],
+    ids=["disabled", "nonzero", "default", "env-fallback", "file-zero-wins", "file-wins", "cli-wins", "cj"],
+)
+def test_client_starter_application_config(tmp_path, monkeypatch, file_limit, env_limit, cli_limit, job_id, expected):
+    for name, value in (
+        ("_sections", {}),
+        ("_config_path", []),
+        ("_cmd_args", None),
+        ("_var_dict", None),
+        ("_var_values", {}),
+    ):
+        monkeypatch.setattr(ConfigService, name, value)
+    monkeypatch.delenv("NVFLARE_MAX_CJ_RESTART_FAILURES", raising=False)
+    if env_limit is not None:
+        monkeypatch.setenv("NVFLARE_MAX_CJ_RESTART_FAILURES", str(env_limit))
+
+    workspace = _workspace_with_kit(tmp_path, "site-1")
+    Path(workspace.get_client_startup_file_path()).write_text(json.dumps({"client": {}, "servers": []}))
+    (tmp_path / "local/resources.json").write_text("{}")
+    if file_limit is not None:
+        (tmp_path / "local/application_config.json").write_text(json.dumps({"max_cj_restart_failures": file_limit}))
+    # A deployed job must not supply CP's site policy, including when the site file is absent.
+    job_config = tmp_path / "old-job/app_site-1/config/application_config.json"
+    job_config.parent.mkdir(parents=True)
+    job_config.write_text(json.dumps({"max_cj_restart_failures": 7}))
+
+    options = ["uid=site-1"]
+    if cli_limit is not None:
+        options.append(f"max_cj_restart_failures={cli_limit}")
+    args = Namespace(
+        workspace=str(tmp_path),
+        job_id=job_id,
+        set=options,
+        sp_scheme="grpc",
+        sp_target="server.example.com:8002",
+        parent_url="tcp://parent:8002",
+        parent_conn_sec=ConnectionSecurity.CLEAR,
+    )
+    FLClientStarterConfiger(workspace, args, options).configure()
+
+    if job_id:
+        # CJ registers its own job application configuration later.
+        assert ConfigService.get_section(SystemConfigs.APPLICATION_CONF) is None
+    else:
+        executor = JobExecutor(MagicMock(), workspace.get_startup_kit_dir())
+        assert executor.max_cj_restart_failures == expected
 
 
 @pytest.mark.parametrize(
