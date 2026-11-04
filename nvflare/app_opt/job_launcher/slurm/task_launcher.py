@@ -312,6 +312,7 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
         self._cancel_sent_at = float("-inf")
         self._cancel_acknowledged = False
         self._next_query_at = float("-inf")
+        self._observed_execution = False
 
     @property
     def request(self):
@@ -425,6 +426,8 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
             return self._status(self._last_status.phase, failure="Slurm queue is unavailable")
         if active.status == LookupStatus.FOUND:
             record = active.records[0]
+            if record.state not in _QUEUED:
+                self._observed_execution = True
             phase = TaskExecutionPhase.QUEUED if record.state in _QUEUED else TaskExecutionPhase.RUNNING
             if _is_terminal(record.state):
                 phase = TaskExecutionPhase.TERMINAL
@@ -451,18 +454,31 @@ class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
             return self._status(self._last_status.phase, failure="Slurm task accounting is missing or unavailable")
         records = accounting.records
         evidence = tuple(
-            (r.job_id, r.state, r.exit_status, r.exit_signal, r.derived_exit_status, r.derived_exit_signal)
+            (
+                r.job_id,
+                r.state,
+                r.exit_status,
+                r.exit_signal,
+                r.derived_exit_status,
+                r.derived_exit_signal,
+                r.allocated_nodes,
+            )
             for r in records
         )
         if evidence != self._last_evidence:
             self._record("accounting", records=evidence)
             self._last_evidence = evidence
         allocation = next(r for r in records if r.job_id == self.job_id)
+        if allocation.allocated_nodes:
+            self._observed_execution = True
         if not _is_terminal(allocation.state) or any(not _is_terminal(r.state) for r in records):
             return self._status(TaskExecutionPhase.TERMINAL, failure="Slurm allocation/steps have not settled")
-        # A completed allocation must include its batch step. A queued cancel
-        # or launch failure can legitimately have no steps at all.
-        if allocation.state == "COMPLETED" and not any(r.job_id == f"{self.job_id}.batch" for r in records):
+        # Failed allocations can also retain descendants. Only explicit zero
+        # allocated nodes, with no contrary observation, proves no step ran.
+        never_allocated = allocation.allocated_nodes == 0 and not self._observed_execution
+        if (allocation.state == "COMPLETED" or not never_allocated) and not any(
+            r.job_id == f"{self.job_id}.batch" for r in records
+        ):
             return self._status(TaskExecutionPhase.TERMINAL, failure="Slurm batch accounting is incomplete")
         # Recheck the live controller after accounting to reject completion
         # races (COMPLETING, epilog cleanup, requeue, or a still-active step).

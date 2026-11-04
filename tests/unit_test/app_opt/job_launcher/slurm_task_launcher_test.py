@@ -163,6 +163,27 @@ def test_missing_accounting_never_becomes_release_evidence(backend, accounting):
     assert Path(handle.job_dir, "batch.sh").exists()
 
 
+@pytest.mark.parametrize("state", ["NODE_FAIL", "CANCELLED"])
+@pytest.mark.parametrize(
+    "initial,nodes", [("RUNNING", None), (None, None), (None, 1), ("PENDING", None), ("RUNNING", 0)]
+)
+def test_started_failed_allocation_waits_for_terminal_batch_evidence(backend, state, initial, nodes):
+    launcher, adapter, request = backend
+    adapter.active_by_id.return_value = _query(initial)
+    adapter.task_accounting.return_value = QueryResult(LookupStatus.NOT_FOUND)
+    handle = launcher.launch_task(request)
+    assert not handle.poll().settled
+    adapter.active_by_id.return_value = _query()
+    adapter.task_accounting.return_value = _accounting(state=state, step=None, allocated_nodes=nodes)
+    assert not handle.poll().settled
+    assert handle.nvflare_job_id in launcher.manager._handles
+    adapter.task_accounting.return_value = _accounting(state=state, step="RUNNING")
+    assert not handle.poll().settled
+    adapter.task_accounting.return_value = _accounting(state=state, step="COMPLETED")
+    status = handle.poll()
+    assert status.settled and not status.succeeded
+
+
 @pytest.mark.parametrize(
     "kwargs", [{"exit_status": 3}, {"derived_exit_status": 2}, {"exit_signal": 9}, {"derived_exit_signal": 15}]
 )
@@ -179,7 +200,7 @@ def test_allocation_and_step_failures_are_attributable(backend, kwargs):
 @pytest.mark.parametrize("step", [None, "COMPLETED"])
 def test_infrastructure_terminal_states_settle_as_failures(backend, state, step):
     launcher, adapter, request = backend
-    adapter.task_accounting.return_value = _accounting(state=state, step=step)
+    adapter.task_accounting.return_value = _accounting(state=state, step=step, allocated_nodes=0 if step is None else 1)
     status = launcher.launch_task(request).poll()
     assert status.settled and not status.succeeded
     assert state in status.failure_reason
@@ -236,7 +257,7 @@ def test_cancel_requires_scheduler_release(backend, initial):
     def cancelled(*args, **kwargs):
         assert not handle._last_status.settled
         adapter.active_by_id.return_value = _query()
-        adapter.task_accounting.return_value = _accounting(state="CANCELLED", step=None)
+        adapter.task_accounting.return_value = _accounting(state="CANCELLED")
         return QueryResult(LookupStatus.FOUND)
 
     adapter.cancel.side_effect = cancelled
@@ -394,11 +415,13 @@ def _cli(response):
 
 def test_accounting_checks_identity_and_every_step():
     rows = (
-        f"42|name|{os.getuid()}|marker|COMPLETED|0:0|0:0\n42.batch|batch|||COMPLETED|0:0|\n42.0|step|||RUNNING|0:0|\n"
+        f"42|name|{os.getuid()}|marker|COMPLETED|0:0|0:0|1\n"
+        "42.batch|batch|||COMPLETED|0:0||1\n42.0|step|||RUNNING|0:0||\n"
     )
     adapter, runner = _cli(rows)
     records = adapter.task_accounting("42", "name", "marker", 1).records
     assert len(records) == 3 and records[2].state == "RUNNING"
+    assert records[0].allocated_nodes == 1 and records[2].allocated_nodes is None
     argv = runner.call_args.args[0]
     assert "-X" not in argv and "--duplicates" in argv and "--local" in argv
 
@@ -420,16 +443,28 @@ def test_accounting_checks_identity_and_every_step():
     ],
 )
 def test_invalid_accounting_cannot_authorize_settlement(row):
-    adapter, _ = _cli(row.format(uid=os.getuid()) + "\n")
+    adapter, _ = _cli(row.format(uid=os.getuid()) + "|1\n")
     with pytest.raises(SlurmProtocolError):
         adapter.task_accounting("42", "name", "marker", 1)
 
 
 def test_duplicate_accounting_rejects_requeue_or_job_id_recycling():
-    row = f"42|name|{os.getuid()}|marker|COMPLETED|0:0|0:0\n"
+    row = f"42|name|{os.getuid()}|marker|COMPLETED|0:0|0:0|1\n"
     adapter, _ = _cli(row * 2)
     with pytest.raises(SlurmProtocolError, match="duplicate"):
         adapter.task_accounting("42", "name", "marker", 1)
+
+
+@pytest.mark.parametrize("nodes", ["", "-1", "unknown"])
+def test_missing_or_invalid_allocated_node_count_cannot_prove_no_execution(nodes):
+    adapter, _ = _cli(f"42|name|{os.getuid()}|marker|CANCELLED|0:0|0:0|{nodes}\n")
+    with pytest.raises(SlurmProtocolError):
+        adapter.task_accounting("42", "name", "marker", 1)
+
+
+def test_accounting_explicitly_identifies_unallocated_cancellation():
+    adapter, _ = _cli(f"42|name|{os.getuid()}|marker|CANCELLED|0:0|0:0|0\n")
+    assert adapter.task_accounting("42", "name", "marker", 1).records[0].allocated_nodes == 0
 
 
 @pytest.mark.usefixtures("isolated_fobs")
@@ -540,7 +575,7 @@ def test_cluster_suffix_cancels_and_waits_for_target_cluster_settlement(backend)
     adapter.cancel_suffix.assert_called_once_with("42", "other", timeout=launcher.manager.config.cancel_timeout)
     assert not failure.value.handle.poll().settled
     adapter.active_by_id.return_value = _query()
-    adapter.task_accounting.return_value = _accounting("CANCELLED", step=None)
+    adapter.task_accounting.return_value = _accounting("CANCELLED")
     assert failure.value.handle.poll().settled
     adapter.for_cluster.assert_called_with("other")
 

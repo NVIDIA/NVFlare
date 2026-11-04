@@ -114,7 +114,7 @@ def owned(tmp_path, monkeypatch, request):
         yield case
     finally:
         adapter.active_by_id.return_value = _query()
-        adapter.task_accounting.return_value = _accounting("CANCELLED", step=None)
+        adapter.task_accounting.return_value = _accounting("CANCELLED")
         owner.release()
         owner.thread.join(5)
         assert not owner.thread.is_alive()
@@ -130,7 +130,7 @@ def _launch(case):
 
 def _settle(case):
     case.adapter.active_by_id.return_value = _query()
-    case.adapter.task_accounting.return_value = _accounting("CANCELLED", step=None)
+    case.adapter.task_accounting.return_value = _accounting("CANCELLED")
     case.owner.wake.set()
 
 
@@ -391,6 +391,35 @@ def test_closed_admission_still_observes_an_existing_live_allocation(owned):
     assert owned.owner.thread.is_alive()
     _settle(owned)
     assert remote.wait_for_settlement(timeout=1).settled
+
+
+@pytest.mark.parametrize("during_poll", [False, True])
+def test_cancel_intent_survives_successful_settlement_cache(owned, during_poll):
+    owned.client.cleanup_timeout = 1
+    remote = _launch(owned)
+    entered, release = threading.Event(), threading.Event()
+
+    def final_accounting(*args, **kwargs):
+        entered.set()
+        release.wait()
+        return _accounting()
+
+    if during_poll:
+        owned.adapter.task_accounting.side_effect = final_accounting
+    owned.adapter.active_by_id.return_value = _query()
+    owned.owner.wake.set()
+    try:
+        if during_poll:
+            assert entered.wait(5), "owner did not enter final native poll"
+            owned.client.call("cancel", task_id=remote.request.task_id, attempt_id=remote.request.attempt_id)
+            release.set()
+        else:
+            _eventually(lambda: remote.poll().succeeded)
+        status = remote.cancel()
+        assert status.settled and status.cancel_requested and not status.succeeded
+        assert remote.poll().cancel_requested
+    finally:
+        release.set()
 
 
 def test_single_unsettled_attempt_is_enforced_by_the_cp_service(owned):

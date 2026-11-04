@@ -58,7 +58,7 @@ _NATIVE_TASK_LAUNCHERS = {
 }
 _NATIVE_JOB_LAUNCHERS = {
     "k8s": ("nvflare.app_opt.job_launcher.k8s_launcher", "ClientK8sJobLauncher"),
-    "slurm": ("nvflare.app_opt.job_launcher.slurm.launcher", "ClientSlurmJobLauncher"),
+    "slurm": ("nvflare.app_opt.job_launcher.slurm.task_job_launcher", "ClientSlurmTaskJobLauncher"),
 }
 
 

@@ -26,12 +26,13 @@ from nvflare.app_opt.job_launcher.slurm.config import (
 )
 from nvflare.app_opt.job_launcher.slurm.scheduler_client import _parse_state, _SlurmCliAdapter
 
-_TASK_FORMAT = "JobIDRaw%64,JobName%128,UID%32,Comment%128,State%64,ExitCode%32,DerivedExitCode%32"
+_TASK_FORMAT = "JobIDRaw%64,JobName%128,UID%32,Comment%128,State%64,ExitCode%32,DerivedExitCode%32,AllocNodes%32"
 
 
 @dataclass(frozen=True)
 class TaskSlurmRecord(SlurmRecord):
     derived_exit_signal: int = 0
+    allocated_nodes: int | None = None
 
 
 # Exact controller rejection diagnostics from SchedMD's slurm_errno.c.
@@ -135,7 +136,7 @@ class SlurmTaskCliAdapter(_SlurmCliAdapter):
         if not command.available:
             return QueryResult(LookupStatus.UNAVAILABLE)
         records = {}
-        for raw_id, name, uid, comment, state, exit_code, derived_code in self._rows(command, "sacct task", 7):
+        for raw_id, name, uid, comment, state, exit_code, derived_code, nodes in self._rows(command, "sacct task", 8):
             returned_id = raw_id.strip()
             allocation = returned_id == job_id
             if not allocation and not re.fullmatch(re.escape(job_id) + r"\.(?:batch|extern|[0-9]+)", returned_id):
@@ -153,12 +154,17 @@ class SlurmTaskCliAdapter(_SlurmCliAdapter):
             try:
                 status, sig = (int(value) for value in exit_code.strip().split(":", 1))
                 derived, derived_sig = (int(value) for value in (derived_code.strip() or "0:0").split(":", 1))
+                allocated_nodes = int(nodes.strip()) if nodes.strip() else None
             except ValueError as e:
                 raise SlurmProtocolError("malformed Slurm task exit code") from e
+            if (allocation and allocated_nodes is None) or (allocated_nodes is not None and allocated_nodes < 0):
+                raise SlurmProtocolError("malformed Slurm task allocated node count")
             state = _parse_state(state)
             if not state or min(status, sig, derived, derived_sig) < 0:
                 raise SlurmProtocolError("malformed Slurm task state/exit code")
-            records[returned_id] = TaskSlurmRecord(returned_id, state, status, sig, derived, derived_sig)
+            records[returned_id] = TaskSlurmRecord(
+                returned_id, state, status, sig, derived, derived_sig, allocated_nodes
+            )
         if not records:
             return QueryResult(LookupStatus.NOT_FOUND)
         if job_id not in records:

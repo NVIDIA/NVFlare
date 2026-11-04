@@ -340,6 +340,7 @@ class SlurmTaskService:
                 if action == "cancel":
                     attempt.cancel = True
                 result = _status_dict(attempt.status)
+                result["cancel_requested"] = bool(result["cancel_requested"] or attempt.cancel or job.closed)
                 result["execution_id"] = attempt.execution_id
             job.wake.set()
             return make_reply(ReturnCode.OK, body=json.dumps(result))

@@ -48,8 +48,10 @@ Backend contract
 * **Settlement:** successful ``scancel`` and batch-leader exit do not settle
   an attempt. Healthy controller queries must report the allocation absent
   before and after identity-checked accounting. The allocation and every
-  returned batch/extern/numeric step must be terminal; successful allocations
-  require batch accounting. Unknown, completing, requeued and unavailable
+  returned batch/extern/numeric step must be terminal. Batch accounting is
+  required for failed allocations as well as successful ones, except when
+  accounting explicitly reports zero allocated nodes and no earlier controller
+  or accounting observation shows execution. Unknown, completing, requeued and unavailable
   states retain ownership. Missing accounting never ages into release proof.
 * **Retention:** the adapter retains its scripts, identity and scheduler
   observations. It does not remove application artifacts or promote state.
