@@ -8,6 +8,7 @@ Overview
 ========
 
 This document introduces the shared Confidential Computing (CC) participant-attestation components in NVFlare.
+For the shared CVM/CoCo peer-proof boundaries, read :ref:`cc_peer_attestation_limits`.
 For the complete CoCo-specific trust model, protocol, failure behavior, and limitations, read
 :ref:`coco_security_architecture`. CVM Builder's boot and vault reauthorization are separate mechanisms described in
 :ref:`cc_architecture`.
@@ -27,16 +28,34 @@ CC Token Generation
 A protected participant uses a ``CCAuthorizer`` to generate a CC token for peer verification. A verifier-only participant
 can verify protected peers without generating evidence for its own environment.
 
-For example, the ``SNPAuthorizer`` utilizes AMD's ``snpguest`` utility to generate an attestation report and package it into a CC token.
+Unified CVM and CoCo provisioning selects ``TrusteeAuthorizer``, which uses the
+``CoCoAuthorizer`` proof implementation. Its CVM provider reads credentials from
+the protected guest runtime; its CoCo provider uses the Kata guest-local AA
+token API. The authorizer checks Trustee's signed appraisal and creates a proof
+signed with the corresponding guest-held key. Verification uses the configured
+Attestation Service public key and can run at an ordinary, verifier-only site.
 
-``CoCoAuthorizer`` instead uses the Kata guest-local attestation service to obtain Trustee's signed appraisal and creates
-a guest-key proof for its NVFlare identity. Verification can run outside CoCo using the configured Attestation Service
-public key; generation requires the protected guest services. See :ref:`coco_security_architecture` for that protocol.
+The standalone ``SNPAuthorizer``, ``GPUAuthorizer``, and ``TDXAuthorizer``
+classes are :ref:`legacy implementations <cc_legacy_authorizers>` and are not
+selected by the unified CVM/CoCo path. The SNP/GPU authorizers' prover-generated
+nonce histories are replay checks, not the Trustee signed-site proof or a
+verifier-issued CC challenge. Do not assume every authorizer has the same
+identity-binding guarantees.
 
 CC Token Verification
 ----------------------
 
-When a participant receives a CC token from another participant, it verifies the token's claims against its own security policy. This check ensures that the token owner is using the required hardware, software, and configurations to meet the security standards.
+Verification evaluates the claims and checks implemented by the configured
+authorizer and policy. For Trustee proofs, ``CCManager`` uses
+``verify_for_site()`` to compare the signed site name with the independently
+authenticated FL identity, and the authorizer checks the project audience,
+signatures, freshness, and configured workload constraints. Proof validity alone
+does not establish an exact running application or its behavior.
+
+Trustee peer proofs are not bound to a particular TLS session and contain no
+verifier-issued CC challenge. They do not replace normal FL PKI authentication
+or protection of endpoint credentials. The trusted guest services' key-release
+protocol is separate from this federation peer-proof protocol.
 
 Failure handling is enforced by ``CCManager``, not an optional per-job choice. An invalid client registration is rejected.
 A required-peer failure during cross-site validation invokes server-wide shutdown on the server or exits the detecting
@@ -58,44 +77,75 @@ The ``CCManager`` component orchestrates the attestation process across the NVFl
 CCAuthorizer
 ------------
 
-Each ``CCAuthorizer`` is responsible for generating attestation reports for a specific hardware platform. NVFlare provides multiple authorizers to support different confidential computing technologies.
+Each ``CCAuthorizer`` implements token generation and verification for its
+provider. Verifier-only instances need no local TEE, and a token can include a
+still-valid cached appraisal. NVFlare provides multiple authorizers with
+different evidence and identity-binding contracts.
 
-Supported Platforms
-===================
+Available Authorizers
+=====================
 
-NVFlare currently supports the following ``CCAuthorizer`` components:
+NVFlare provides the following ``CCAuthorizer`` components. Availability does
+not imply identical proof guarantees or hardware qualification for every target:
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 70
+   :widths: 25 45 30
 
    * - Authorizer
-     - Platform
+     - Platform or role
+     - Status
+   * - ``TrusteeAuthorizer``
+     - Shared Trustee peer-proof format with deployment-specific guest providers.
+     - Selected by unified bare-metal CVM and CoCo provisioning.
    * - ``SNPAuthorizer``
      - AMD SEV-SNP (Secure Encrypted Virtualization - Secure Nested Paging)
+     - :ref:`Legacy <cc_legacy_authorizers>`; candidate for deprecation or removal.
    * - ``GPUAuthorizer``
      - NVIDIA GPU Confidential Computing (H100, Blackwell)
+     - :ref:`Legacy <cc_legacy_authorizers>`; candidate for deprecation or removal.
    * - ``TDXAuthorizer``
      - Intel TDX (Trust Domain Extensions)
+     - :ref:`Legacy <cc_legacy_authorizers>`; candidate for deprecation or removal.
    * - ``ACIAuthorizer``
      - Azure Confidential Containers Instance
+     - Azure integration; separate token semantics.
    * - ``CoCoAuthorizer``
-     - Kata/Trustee-backed AMD SEV-SNP or Intel TDX, CPU-only or with NVIDIA GPU.
+     - Kata/Trustee-backed SNP or TDX, CPU-only or with NVIDIA GPU.
        See :ref:`coco_security_architecture` for target profiles and
        :ref:`coco_security_acceptance` for recorded acceptance evidence and limits.
+     - Shared proof implementation used by ``TrusteeAuthorizer``.
+
+.. _cc_legacy_authorizers:
+
+Legacy standalone authorizers
+------------------------------
+
+``GPUAuthorizer``, ``TDXAuthorizer``, and ``SNPAuthorizer`` are legacy standalone
+implementations retained in 2.9.1. They are candidates for deprecation or
+removal; a release for that change has not been selected. They are not
+recommended for new deployments. Use the unified CVM/CoCo provisioning path
+with ``TrusteeAuthorizer`` for the supported target profiles described in
+:ref:`cc_deployment_guide`.
+
+Existing deployments that explicitly configure these classes should plan a
+migration to the appropriate unified profile and validate its evidence,
+workload policy, and qualification requirements. The legacy classes do not
+provide the same proof contract as ``TrusteeAuthorizer``; changing a class
+name alone is not a migration.
 
 Configuration
 -------------
 
-CVM boot and periodic vault reauthorization are configured through the CVM Builder profile and Trustee deployment. See
-the :ref:`NVFlare CC Deployment Guide <cc_deployment_guide>` for that provisioning workflow. Application-level
-``CCManager`` components in this CVM Builder path are configured separately in runtime resources.
+CVM boot and periodic vault reauthorization are configured through the CVM
+Builder profile and Trustee deployment. See :ref:`cc_deployment_guide` for that
+workflow.
 
-The CoCo provisioning path generates ``CCManager`` and ``CoCoAuthorizer`` resources for protected clients and servers,
-and for the ordinary participants that need verifier-only operation. It also provisions the required participant set
-and identity-binding requirements. See :ref:`coco_security_architecture` and the
-:ref:`CoCo peer-attestation protocol <coco_security_peer_attestation>`, with configuration in
-:doc:`../deployment`.
+Unified provisioning generates ``CCManager`` and ``TrusteeAuthorizer`` resources
+for protected CVM/CoCo participants and for ordinary participants that need
+verifier-only operation. It also configures the required participant set and
+each site's required proof namespaces. See :ref:`coco_security_peer_attestation`
+for the shared proof format and :doc:`../deployment` for configuration.
 
 Runtime Behavior
 ================
@@ -123,11 +173,15 @@ During client registration:
 
     - The client validates the server's token when the server is in its locally configured required participant set.
 
+The server rejects an invalid protected-client proof during registration. A
+client checks a required protected server's proof after registration and exits
+on failure before starting protected work.
+
 Mutual attestation requires both participants to be configured as protected. An ordinary server can verify CoCo clients
 without attesting itself, and ordinary clients can verify a protected server without claiming their own TEE protection.
 
 
-3. Continuous Cross-Site Validation
+3. Periodic Cross-Site Validation
 -----------------------------------
 
 After startup, sites with ``CCManager`` periodically perform cross-site token validation:

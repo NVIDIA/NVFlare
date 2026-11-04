@@ -238,6 +238,8 @@ controls do not prove that every YAML field or exact application image digest
 is enforced. See :ref:`coco_security_attack_surface` for the remaining identity
 and guest-integrity limitations.
 
+.. _cc_peer_attestation_limits:
+
 Attestation and workload authorization
 --------------------------------------
 
@@ -252,13 +254,32 @@ Boot-time secret release and federation participation are separate decisions:
   CoCo provisioning generates ``TrusteeAuthorizer`` components that use the same
   identity-bound peer-proof format through different guest integrations.
 
+Trustee peer proofs bind a signed logical site name and project audience to an
+attested proof key. The verifier matches that site name to the independently
+authenticated FL participant. This is logical identity binding: the proof is
+not bound to a particular TLS session and does not contain a verifier-issued
+CC challenge. An already signed proof remains subject to its time, audience,
+site, workload-policy, and local replay checks; those checks do not make it a
+fresh response for each receiving verifier or connection.
+
+Keep normal FL authentication enabled and protect its private keys. FL's
+provisioned-PKI challenge exchange can authenticate a logical participant
+through bridges or proxies; the immediate TLS peer may be an intermediary.
+The intermediary's TLS certificate is not a substitute for authenticating the
+logical participant. Protect application traffic to the intended trusted
+endpoint as described below.
+
 Identity binding here describes the Trustee-backed CVM and CoCo proofs.
 Azure authorizers retain their `Microsoft Azure Attestation`_ token semantics;
 do not assume the same signed site-identity binding for Azure or an equivalent
 binding requirement in a mixed federation that includes Azure.
 
 Peer checks are point-in-time and periodic, not continuous hardware monitoring
-or a fresh appraisal before every operation. A valid peer proof is not a dataset
+or a fresh appraisal before every operation. A newly signed proof can contain
+a cached, still-acceptable appraisal. Replay tracking is local to each verifier
+process, resets on restart, and is not shared with other verifiers. See
+:ref:`the peer-proof freshness limits <coco_peer_proof_freshness>` for details.
+A valid peer proof is not a dataset
 access-control policy or, by itself, proof of an exact running application image.
 A server rejects a client registration whose CC evidence fails validation.
 If a client rejects the server's CC evidence after registration, the client

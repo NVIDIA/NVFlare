@@ -1314,7 +1314,9 @@ NVFlare peer attestation and its limits
 Generation and verification protocol
 ------------------------------------
 
-Inside a protected client or server, CoCoAuthorizer calls the guest-local AA
+Unified CoCo provisioning selects ``TrusteeAuthorizer`` with the CoCo guest
+provider. It uses the ``CoCoAuthorizer`` proof implementation described here.
+Inside a protected client or server, that provider calls the guest-local AA
 token API. For a new attestation token, AA interacts with Trustee; it may also
 return a cached token. The authorizer disables environment proxies and
 redirects for this sensitive local request and bounds its response size.
@@ -1342,8 +1344,19 @@ The recipient validates the inner EAR with the pinned AS key, extracts the
 attested public key, and validates the outer proof with that key. It checks the
 project audience and, through ``verify_for_site()``, the signed subject against
 the **independently authenticated FL peer**. Incoming JWT key URLs/certificates
-are not accepted as new trust roots. Proof possession prevents merely forwarding
-an EAR without its associated key from satisfying these checks.
+are not accepted as new trust roots. Creating an outer proof requires the
+private key corresponding to the attested public key; copying an EAR alone
+does not create that signature. A complete, already signed proof can still be
+presented wherever its site, audience, time, workload-policy, and local replay
+checks permit it.
+
+The proof contains no verifier-specific recipient or CC challenge and is not
+bound to a particular TLS session. Signed site identity and proof-key possession
+must therefore not be described as connection-specific attestation. Normal FL
+authentication and protection of FL/proof private keys remain required. Routed
+Cell traffic may cross a server or relay, so the immediate TLS peer need not be
+the logical participant named in the proof. See
+:ref:`cc_peer_attestation_limits` for the shared CVM/CoCo boundaries.
 
 Verification is local: it does not contact Trustee, query RVPS, need a GPU,
 or require a Kata guest. The ordinary server can therefore verify a CoCo
@@ -1395,12 +1408,20 @@ unlisted sites or missing/mismatched required claims fail. The legacy
 SHA-256, with strict TDX padding normalization. These restrictions narrow
 accepted peers but do not replace AS appraisal or KBS resource authorization.
 
+Unified provisioning derives each site's ``gpu_required`` constraint from its
+selected profile. It does not derive InitData or measurement pins automatically.
+Supply those additional pins from the trusted approval workflow when the
+deployment's policy requires them; do not learn expected values from a peer's
+presented proof.
+
 The outer audience is project-specific (generated as ``nvflare-trustee:<project>``).
 It is different from the optional inner ``ear_audience`` constraint. By default
 there is no independent expected EAR audience or AS policy identifier. A
 successful proof is not by itself proof that one particular application is
 authorized for that project; protect FL credentials, service policy and, when
 required, site-specific workload constraints accordingly.
+
+.. _coco_peer_proof_freshness:
 
 Freshness, clocks, and replay
 -----------------------------
