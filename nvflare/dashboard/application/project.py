@@ -15,14 +15,14 @@
 
 from flask import current_app as app
 from flask import jsonify, make_response, redirect, request
-from flask_jwt_extended import create_access_token, get_jwt, jwt_required
+from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 from werkzeug.exceptions import NotFound
 
 from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
 
 from . import jwt
 from .blob import gen_server_blob
-from .store import Store
+from .store import Store, is_project_admin
 
 
 @jwt.expired_token_loader
@@ -115,8 +115,7 @@ def login():
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/servers/<int:id>/blob", methods=["POST"])
 @jwt_required()
 def server_blob(id):
-    claims = get_jwt()
-    if claims.get("role") == "project_admin":
+    if is_project_admin(Store.get_requester(get_jwt_identity())):
         pin = request.json.get("pin")
         fileobj, filename = gen_server_blob(pin)
         response = make_response(fileobj.read())
@@ -130,8 +129,7 @@ def server_blob(id):
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/project", methods=["PATCH"])
 @jwt_required()
 def set_project():
-    claims = get_jwt()
-    if claims.get("role") == "project_admin":
+    if is_project_admin(Store.get_requester(get_jwt_identity())):
         req = request.json
         return jsonify(Store.set_project(req))
     else:

@@ -222,47 +222,38 @@ acceptance, so configure it for the complete delivery path.
 uses the shared transfer idle policy. See :ref:`timeout_troubleshooting` and
 :doc:`/programming_guide/timeouts`.
 
-**Example config_fed_server.conf with chunk size tuning:**
+**Example config_fed_server.json with chunk size tuning** (chunk sizes default to 2MB; the
+swarm timeouts are increased to accommodate large LLM payload init/broadcast):
 
-.. code-block::
+.. code-block:: json
 
-    format_version = 2
-    
-    # Chunk sizes for streaming large models (2MB default)
-    np_download_chunk_size = 2097152
-    tensor_download_chunk_size = 2097152
-    streaming_per_request_timeout = 600
-    
-    task_data_filters = []
-    task_result_filters = []
-    
-    components = [
-      {
-        id = "json_generator"
-        path = "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator"
-        args {}
-      }
-    ]
-    
-    workflows = [
-      {
-        id = "swarm_controller"
-        path = "nvflare.app_common.ccwf.SwarmServerController"
-        args {
-          num_rounds = 3
-          # Increased timeouts to accommodate large LLM payload init/broadcast
-          start_task_timeout = 300
-          progress_timeout = 7200
+    {
+      "format_version": 2,
+      "np_download_chunk_size": 2097152,
+      "tensor_download_chunk_size": 2097152,
+      "streaming_per_request_timeout": 600,
+      "task_data_filters": [],
+      "task_result_filters": [],
+      "components": [
+        {
+          "id": "json_generator",
+          "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
+          "args": {}
         }
-      }
-      {
-        id = "cross_site_eval"
-        path = "nvflare.app_common.ccwf.CrossSiteEvalServerController"
-        args {
-          eval_task_timeout = 1200
+      ],
+      "workflows": [
+        {
+          "id": "swarm_controller",
+          "path": "nvflare.app_common.ccwf.SwarmServerController",
+          "args": {"num_rounds": 3, "start_task_timeout": 300, "progress_timeout": 7200}
+        },
+        {
+          "id": "cross_site_eval",
+          "path": "nvflare.app_common.ccwf.CrossSiteEvalServerController",
+          "args": {"eval_task_timeout": 1200}
         }
-      }
-    ]
+      ]
+    }
 
 Disabling the Tensor Downloader
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -286,20 +277,17 @@ set the chunk sizes to zero.
 
     job.to_server({"np_download_chunk_size": 0, "tensor_download_chunk_size": 0})
 
-**Using config files directly:**
+**Using config files directly** (set to 0 to disable streaming download and use native serialization):
 
-.. code-block::
+.. code-block:: json
 
-    format_version = 2
-    
-    # Set to 0 to disable streaming download (use native serialization)
-    np_download_chunk_size = 0
-    tensor_download_chunk_size = 0
-    
-    task_data_filters = []
-    task_result_filters = []
-    
-    # ... rest of configuration
+    {
+      "format_version": 2,
+      "np_download_chunk_size": 0,
+      "tensor_download_chunk_size": 0,
+      "task_data_filters": [],
+      "task_result_filters": []
+    }
 
 
 How It Works (Advanced Users)

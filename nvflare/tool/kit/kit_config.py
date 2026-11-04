@@ -16,17 +16,19 @@
 
 import json
 import os
-import re
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Set, Tuple
 
-from pyhocon import ConfigFactory as CF
-from pyhocon import ConfigTree, HOCONConverter
-
-from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.tool.job.job_client_const import CONFIG_CONF
+from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.tool.job.job_client_const import CONFIG_JSON
+from nvflare.utils.cli_utils import (
+    get_config_value,
+    pop_config_value,
+    save_config,
+    set_config_value,
+    warn_if_legacy_hidden_config,
+)
 
 try:
     from cryptography import x509
@@ -54,7 +56,6 @@ STARTUP_KIT_KIND_ADMIN = "admin"
 STARTUP_KIT_KIND_SITE = "site"
 STARTUP_KIT_KIND_SERVER = "server"
 STARTUP_KIT_CERT_EXPIRING_SOON_DAYS = 30
-_HOCON_SIMPLE_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class StartupKitConfigError(ValueError):
@@ -66,106 +67,52 @@ class StartupKitConfigError(ValueError):
 
 
 def get_cli_config_path() -> Path:
-    return Path.home() / ".nvflare" / CONFIG_CONF
+    return Path.home() / ".nvflare" / CONFIG_JSON
 
 
-def _empty_v2_config() -> ConfigTree:
-    config = CF.parse_string("{}")
-    config.put(CONFIG_VERSION, CURRENT_CONFIG_VERSION)
-    config.put(STARTUP_KITS_ENTRIES_KEY, ConfigTree())
+def _empty_v2_config() -> dict:
+    return _ensure_v2_config({})
+
+
+def _ensure_v2_config(config: dict) -> dict:
+    config[CONFIG_VERSION] = CURRENT_CONFIG_VERSION
+    if not isinstance(get_config_value(config, STARTUP_KITS_ENTRIES_KEY), dict):
+        set_config_value(config, STARTUP_KITS_ENTRIES_KEY, {})
     return config
 
 
-def _ensure_v2_config(config: ConfigTree) -> ConfigTree:
-    config.put(CONFIG_VERSION, CURRENT_CONFIG_VERSION)
-    if not isinstance(config.get(STARTUP_KITS_ENTRIES_KEY, None), ConfigTree):
-        config.put(STARTUP_KITS_ENTRIES_KEY, ConfigTree())
-    return config
-
-
-def _remove_legacy_startup_kit_keys(config: ConfigTree) -> ConfigTree:
-    for key in (
-        "startup_kit.path",
-        "startup_kit",
-        "poc.startup_kit",
-        "prod.startup_kit",
-    ):
-        try:
-            config.pop(key, None)
-        except Exception:
-            pass
-    return config
-
-
-def load_cli_config() -> ConfigTree:
-    """Load ~/.nvflare/config.conf or return an empty version-2 config."""
+def load_cli_config() -> dict:
+    """Load ~/.nvflare/config.json or return an empty version-2 config."""
     config_path = get_cli_config_path()
     if not config_path.is_file():
+        warn_if_legacy_hidden_config(str(config_path))
         return _empty_v2_config()
 
     try:
-        config = CF.parse_file(str(config_path))
+        config = json.loads(config_path.read_text())
     except Exception as e:
         raise StartupKitConfigError(
             f"cannot parse {config_path}",
             hint="Fix the config file, or move it aside and run nvflare poc prepare.",
         ) from e
+    if not isinstance(config, dict):
+        raise StartupKitConfigError(
+            f"cannot parse {config_path}: expected a JSON object",
+            hint="Fix the config file, or move it aside and run nvflare poc prepare.",
+        )
 
     return _ensure_v2_config(config)
 
 
-def save_cli_config(config: ConfigTree) -> None:
-    """Atomically write ~/.nvflare/config.conf as config schema version 2."""
+def save_cli_config(config: dict) -> None:
+    """Atomically write ~/.nvflare/config.json as config schema version 2."""
     config_path = get_cli_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config = _remove_legacy_startup_kit_keys(_ensure_v2_config(config))
-
-    config_text = HOCONConverter.to_hocon(config=config, level=1)
-    temp_path = None
-    try:
-        with tempfile.NamedTemporaryFile("w", dir=str(config_path.parent), delete=False) as outfile:
-            temp_path = outfile.name
-            outfile.write(f"{config_text}\n")
-            outfile.flush()
-            os.fsync(outfile.fileno())
-        os.replace(temp_path, config_path)
-    finally:
-        if temp_path and os.path.exists(temp_path):
-            os.remove(temp_path)
+    save_config(_ensure_v2_config(config), str(config_path))
 
 
-def _hocon_path_key(key: str) -> str:
-    """Return a ConfigTree.put path segment that preserves the registry ID literally."""
-    if _HOCON_SIMPLE_KEY_PATTERN.match(key):
-        return key
-    # ConfigTree.put treats dots as path separators. Quote emails and other complex IDs so
-    # values like lead@nvidia.com remain one registry key instead of nested HOCON paths.
-    return json.dumps(key)
-
-
-def _decode_hocon_key(key: str) -> str:
-    if len(key) >= 2 and key[0] == '"' and key[-1] == '"':
-        try:
-            return json.loads(key)
-        except Exception:
-            return key[1:-1]
-    return key
-
-
-def _find_raw_entry_key(entries: ConfigTree, kit_id: str) -> Optional[str]:
-    for raw_key in entries.keys():
-        if _decode_hocon_key(raw_key) == kit_id:
-            return raw_key
-    return None
-
-
-def _get_entries_tree(config: ConfigTree) -> ConfigTree:
-    _ensure_v2_config(config)
-    entries = config.get(STARTUP_KITS_ENTRIES_KEY, None)
-    if isinstance(entries, ConfigTree):
-        return entries
-    config.put(STARTUP_KITS_ENTRIES_KEY, ConfigTree())
-    return config.get(STARTUP_KITS_ENTRIES_KEY)
+def _get_entries(config: dict) -> dict:
+    return get_config_value(_ensure_v2_config(config), STARTUP_KITS_ENTRIES_KEY)
 
 
 def _normalize_kit_id(kit_id: str) -> str:
@@ -175,22 +122,17 @@ def _normalize_kit_id(kit_id: str) -> str:
     return kit_id
 
 
-def get_startup_kit_entries(config: ConfigTree) -> Dict[str, str]:
+def get_startup_kit_entries(config: dict) -> Dict[str, str]:
     """Return the startup kit registry as an ID-to-path mapping."""
-    entries = config.get(STARTUP_KITS_ENTRIES_KEY, None)
-    if not isinstance(entries, ConfigTree):
+    entries = get_config_value(config, STARTUP_KITS_ENTRIES_KEY)
+    if not isinstance(entries, dict):
         return {}
-
-    result = {}
-    for raw_key, value in entries.items():
-        if isinstance(value, str):
-            result[_decode_hocon_key(raw_key)] = value
-    return result
+    return {kit_id: path for kit_id, path in entries.items() if isinstance(path, str)}
 
 
-def get_active_startup_kit_id(config: ConfigTree) -> Optional[str]:
-    active = config.get_string(STARTUP_KITS_ACTIVE_KEY, None) if config else None
-    return active.strip() if active and active.strip() else None
+def get_active_startup_kit_id(config: dict) -> Optional[str]:
+    active = get_config_value(config, STARTUP_KITS_ACTIVE_KEY) if config else None
+    return active.strip() if isinstance(active, str) and active.strip() else None
 
 
 def resolve_startup_kit_dir_by_id(kit_id: str) -> str:
@@ -300,26 +242,23 @@ def _validate_registered_path(kit_id: str, path: str) -> str:
         ) from e
 
 
-def add_startup_kit_entry(config: ConfigTree, kit_id: str, path: str, force: bool = False) -> ConfigTree:
+def add_startup_kit_entry(config: dict, kit_id: str, path: str, force: bool = False) -> dict:
     """Register ID -> path for an admin/user startup kit. Never changes active."""
     kit_id = _normalize_kit_id(kit_id)
     normalized_path = validate_admin_startup_kit(path)
-    entries = _get_entries_tree(config)
+    entries = _get_entries(config)
 
-    raw_existing_key = _find_raw_entry_key(entries, kit_id)
-    if raw_existing_key is not None and not force:
+    if kit_id in entries and not force:
         raise StartupKitConfigError(
             f"startup kit id '{kit_id}' already exists",
             hint="Use --force to replace this local registration.",
         )
-    if raw_existing_key is not None:
-        entries.pop(raw_existing_key, None)
 
-    config.put(f"{STARTUP_KITS_ENTRIES_KEY}.{_hocon_path_key(kit_id)}", normalized_path)
-    return _ensure_v2_config(config)
+    entries[kit_id] = normalized_path
+    return config
 
 
-def set_active_startup_kit(config: ConfigTree, kit_id: str) -> ConfigTree:
+def set_active_startup_kit(config: dict, kit_id: str) -> dict:
     """Validate ID and path, then set startup_kits.active."""
     kit_id = _normalize_kit_id(kit_id)
     entries = get_startup_kit_entries(config)
@@ -330,29 +269,24 @@ def set_active_startup_kit(config: ConfigTree, kit_id: str) -> ConfigTree:
         )
 
     _validate_registered_path(kit_id, entries[kit_id])
-    config.put(STARTUP_KITS_ACTIVE_KEY, kit_id)
+    set_config_value(config, STARTUP_KITS_ACTIVE_KEY, kit_id)
     return _ensure_v2_config(config)
 
 
-def remove_startup_kit_entry(config: ConfigTree, kit_id: str) -> ConfigTree:
+def remove_startup_kit_entry(config: dict, kit_id: str) -> dict:
     kit_id = _normalize_kit_id(kit_id)
-    entries = _get_entries_tree(config)
-    raw_key = _find_raw_entry_key(entries, kit_id)
-    if raw_key is None:
+    entries = _get_entries(config)
+    if kit_id not in entries:
         raise StartupKitConfigError(f"startup kit id '{kit_id}' is not registered")
 
-    entries.pop(raw_key, None)
+    del entries[kit_id]
     return clear_active_if(config, {kit_id})
 
 
-def clear_active_if(config: ConfigTree, removed_ids: Set[str]) -> ConfigTree:
+def clear_active_if(config: dict, removed_ids: Set[str]) -> dict:
     """Clear startup_kits.active when it points to a removed ID."""
-    active = get_active_startup_kit_id(config)
-    if active in removed_ids:
-        try:
-            config.pop(STARTUP_KITS_ACTIVE_KEY, None)
-        except Exception:
-            pass
+    if get_active_startup_kit_id(config) in removed_ids:
+        pop_config_value(config, STARTUP_KITS_ACTIVE_KEY)
     return _ensure_v2_config(config)
 
 
@@ -377,13 +311,13 @@ def _is_relative_to(path: Path, base: Path) -> bool:
     return path == base or path.is_relative_to(base)
 
 
-def remove_entries_under_workspace(config: ConfigTree, workspace: str) -> Tuple[ConfigTree, Set[str]]:
+def remove_entries_under_workspace(config: dict, workspace: str) -> Tuple[dict, Set[str]]:
     """Remove entries whose canonical or lexical paths are under the workspace path."""
     workspace_paths = _path_match_candidates(workspace)
-    entries = _get_entries_tree(config)
+    entries = _get_entries(config)
     removed = set()
 
-    for raw_key, path in list(entries.items()):
+    for kit_id, path in list(entries.items()):
         if not isinstance(path, str):
             continue
         path_candidates = _path_match_candidates(path)
@@ -392,8 +326,8 @@ def remove_entries_under_workspace(config: ConfigTree, workspace: str) -> Tuple[
             for path_candidate in path_candidates
             for workspace_path in workspace_paths
         ):
-            removed.add(_decode_hocon_key(raw_key))
-            entries.pop(raw_key, None)
+            removed.add(kit_id)
+            del entries[kit_id]
 
     clear_active_if(config, removed)
     return config, removed
@@ -549,9 +483,8 @@ def inspect_startup_kit_metadata(path: str) -> Dict:
     if kind == STARTUP_KIT_KIND_ADMIN:
         has_admin_cert_provider = False
         try:
-            fed_admin_config = ConfigFactory.load_config("fed_admin.json", [startup_dir])
-            if fed_admin_config:
-                config_dict = fed_admin_config.to_dict()
+            config_dict = ConfigService.load_config_dict("fed_admin.json", [startup_dir], raise_exception=False)
+            if config_dict:
                 admin_config = config_dict.get("admin", {})
                 metadata["identity"] = admin_config.get("username")
                 has_admin_cert_provider = bool(admin_config.get("admin_cert_provider"))
@@ -659,13 +592,12 @@ def resolve_admin_user_and_dir_from_startup_kit(
     """Resolve admin username and normalized admin user dir from a startup kit path."""
     admin_user_dir = validate_admin_startup_kit(startup_kit_dir)
     startup_dir = os.path.join(admin_user_dir, "startup")
-    fed_admin_config = ConfigFactory.load_config("fed_admin.json", [startup_dir])
-    if not fed_admin_config:
+    config_dict = ConfigService.load_config_dict("fed_admin.json", [startup_dir], raise_exception=False)
+    if not config_dict:
         raise StartupKitConfigError(
             f"Unable to locate fed_admin configuration from startup kit location {startup_kit_dir}"
         )
 
-    config_dict = fed_admin_config.to_dict()
     username = config_dict.get("admin", {}).get("username")
     if not username:
         metadata = inspect_startup_kit_metadata(admin_user_dir)

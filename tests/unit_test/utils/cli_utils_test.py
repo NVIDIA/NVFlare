@@ -15,16 +15,12 @@ import json
 from pathlib import Path
 
 import pytest
-from pyhocon import ConfigFactory as CF
 
 from nvflare.utils.cli_utils import (
     append_if_not_in_list,
-    backup_hidden_config_file,
-    find_startup_kit_config_keys,
     get_hidden_nvflare_config_path,
     get_hidden_nvflare_dir,
     load_hidden_config,
-    remove_startup_kit_config_keys,
     save_config,
 )
 
@@ -36,157 +32,79 @@ class TestCLIUtils:
 
     def test_get_hidden_nvflare_config_path(self):
         assert get_hidden_nvflare_config_path(str(get_hidden_nvflare_dir())) == str(
-            Path.home() / ".nvflare/config.conf"
+            Path.home() / ".nvflare/config.json"
         )
 
-    def test_remove_startup_kit_config_keys_preserves_registry(self):
-        config = CF.parse_string(
-            """
-                version = 2
-                startup_kits {
-                    active = "admin"
-                    entries {
-                        admin = "/tmp/admin"
-                    }
-                }
-                poc {
-                    startup_kit = "/tmp/old-poc"
-                    workspace = "/tmp/nvflare/poc"
-                }
-                prod {
-                    startup_kit = "/tmp/old-prod"
-                }
-            """
-        )
-
-        updated = remove_startup_kit_config_keys(config)
-
-        assert updated.get("startup_kits.active") == "admin"
-        assert updated.get("startup_kits.entries.admin") == "/tmp/admin"
-        assert updated.get("poc.workspace") == "/tmp/nvflare/poc"
-        assert updated.get("poc.startup_kit", None) is None
-        assert updated.get("prod.startup_kit", None) is None
-
-    def test_find_startup_kit_config_keys_reports_removed_keys(self):
-        config = CF.parse_string(
-            """
-                startup_kits {
-                    active = "admin"
-                }
-                poc {
-                    startup_kit = "/tmp/old-poc"
-                    workspace = "/tmp/nvflare/poc"
-                }
-                prod {
-                    startup_kit = "/tmp/old-prod"
-                }
-            """
-        )
-
-        assert find_startup_kit_config_keys(config) == ["poc.startup_kit", "prod.startup_kit"]
-
-    def test_load_hidden_config_reads_without_migration_or_persistence(self, tmp_path, monkeypatch):
+    def test_load_hidden_config_reads_without_persistence(self, tmp_path, monkeypatch):
         hidden_dir = tmp_path / ".nvflare"
         hidden_dir.mkdir()
-        config_path = hidden_dir / "config.conf"
-        legacy_text = """
-startup_kit {
-  path = "/tmp/nvflare/legacy/prod_00"
-}
-poc_workspace {
-  path = "/tmp/nvflare/poc"
-}
-""".strip()
-        config_path.write_text(legacy_text)
+        config_path = hidden_dir / "config.json"
+        config_text = json.dumps({"poc": {"workspace": "/tmp/nvflare/poc"}})
+        config_path.write_text(config_text)
 
         monkeypatch.setattr("nvflare.utils.cli_utils.get_or_create_hidden_nvflare_dir", lambda: hidden_dir)
 
         loaded = load_hidden_config()
 
-        assert loaded.get("startup_kit.path") == "/tmp/nvflare/legacy/prod_00"
-        assert loaded.get("poc_workspace.path") == "/tmp/nvflare/poc"
-        persisted = config_path.read_text()
-        assert persisted.strip() == legacy_text
-        assert not (hidden_dir / "config.conf.bak").exists()
+        assert loaded == {"poc": {"workspace": "/tmp/nvflare/poc"}}
+        assert config_path.read_text() == config_text
 
-    def test_backup_hidden_config_file_returns_none_when_source_missing(self, tmp_path):
+    def test_load_hidden_config_warns_about_legacy_hocon_file(self, tmp_path, monkeypatch, capsys):
         hidden_dir = tmp_path / ".nvflare"
         hidden_dir.mkdir()
-        config_path = hidden_dir / "config.conf"
+        legacy_path = hidden_dir / "config.conf"
+        legacy_path.write_text('poc { workspace = "/tmp/nvflare/poc" }')
 
-        backup_path = backup_hidden_config_file(str(config_path))
+        monkeypatch.setattr("nvflare.utils.cli_utils.get_or_create_hidden_nvflare_dir", lambda: hidden_dir)
 
-        assert backup_path is None
-        assert not (hidden_dir / "config.conf.bak").exists()
+        assert load_hidden_config() is None
+        assert f"{legacy_path} is no longer read" in capsys.readouterr().err
+        assert legacy_path.exists()
+        assert not (hidden_dir / "config.json").exists()
 
-    def test_backup_hidden_config_file_uses_non_overwriting_suffixes(self, tmp_path):
-        config_path = tmp_path / "config.conf"
-        config_path.write_text("current\n")
-        backup_path = tmp_path / "config.conf.bak"
-        backup1_path = tmp_path / "config.conf.bak1"
-        backup_path.write_text("older\n")
-        backup1_path.write_text("older1\n")
+    @pytest.mark.parametrize("config_text", ["[1, 2]", '"text"', "{not json"])
+    def test_load_hidden_config_rejects_non_object_or_malformed_json(self, tmp_path, monkeypatch, config_text):
+        hidden_dir = tmp_path / ".nvflare"
+        hidden_dir.mkdir()
+        (hidden_dir / "config.json").write_text(config_text)
 
-        new_backup_path = backup_hidden_config_file(str(config_path))
+        monkeypatch.setattr("nvflare.utils.cli_utils.get_or_create_hidden_nvflare_dir", lambda: hidden_dir)
 
-        assert new_backup_path == str(tmp_path / "config.conf.bak2")
-        assert Path(new_backup_path).read_text() == "current\n"
-        assert backup_path.read_text() == "older\n"
-        assert backup1_path.read_text() == "older1\n"
+        with pytest.raises(ValueError, match="cannot parse .*config.json"):
+            load_hidden_config()
 
     def test_save_config_replaces_file_atomically_without_temp_leak(self, tmp_path):
-        config_path = tmp_path / "config.conf"
-        config_path.write_text("version = 1\n")
-        config = CF.parse_string(
-            """
-                version = 2
-                poc {
-                    workspace = "/tmp/nvflare/poc"
-                }
-            """
-        )
+        config_path = tmp_path / "config.json"
+        config_path.write_text('{"version": 1}\n')
+        config = {"version": 2, "poc": {"workspace": "/tmp/nvflare/poc"}}
 
         save_config(config, str(config_path))
 
-        persisted = config_path.read_text()
-        assert "version = 2" in persisted
-        assert 'workspace = "/tmp/nvflare/poc"' in persisted
+        assert json.loads(config_path.read_text()) == config
         assert list(tmp_path.glob("tmp*")) == []
 
     def test_save_config_uses_final_filename_extension(self, tmp_path):
         config_path = tmp_path / "client.backup.json"
-        config = CF.parse_string("version = 2")
 
-        save_config(config, str(config_path))
+        save_config({"version": 2}, str(config_path))
 
         assert json.loads(config_path.read_text())["version"] == 2
 
     def test_save_config_supports_compound_default_extension(self, tmp_path):
         config_path = tmp_path / "client.json.default"
-        config = CF.parse_string("version = 2")
 
-        save_config(config, str(config_path))
+        save_config({"version": 2}, str(config_path))
 
         assert json.loads(config_path.read_text())["version"] == 2
 
-    def test_save_config_rejects_unsupported_trailing_suffix(self, tmp_path):
-        config_path = tmp_path / "client.json.backup"
-        config = CF.parse_string("version = 2")
+    @pytest.mark.parametrize("name", ["client.json.backup", "config_fed_client.conf", "config_fed_client.yml"])
+    def test_save_config_rejects_non_json_extension(self, tmp_path, name):
+        config_path = tmp_path / name
 
-        with pytest.raises(ValueError, match="invalid file extension"):
-            save_config(config, str(config_path))
+        with pytest.raises(ValueError, match="invalid configuration file path"):
+            save_config({"version": 2}, str(config_path))
 
         assert not config_path.exists()
-
-    @pytest.mark.parametrize("ext", [".yml", ".yaml"])
-    def test_save_config_writes_yaml(self, tmp_path, ext):
-        pytest.importorskip("omegaconf")
-        config_path = tmp_path / f"config_fed_client{ext}"
-        config = CF.parse_string("version = 2")
-
-        save_config(config, str(config_path))
-
-        assert "version: 2" in config_path.read_text()
 
     @pytest.mark.parametrize(
         "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]
