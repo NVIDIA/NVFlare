@@ -208,3 +208,71 @@ def test_assess_stops_at_max_model_version(assessor_cls, state_cls, module):
     assert assessor.assess(FLContext()) == Assessment.CONTINUE
     assessor.current_model_version = 2
     assert assessor.assess(FLContext()) == Assessment.WORKFLOW_DONE
+
+
+def test_async_reuse_waits_for_new_model_before_reselecting_contributors():
+    assessor = _assessor(async_num.AsyncNumAssessor, num_updates_for_model=2, device_selection_size=2)
+    fl_ctx = FLContext()
+    devices = {name: device for name, device in _devices().items() if name in {"device-1", "device-2"}}
+    _, reply_data = assessor.process_child_update(StateUpdateReport(0, 0, None, devices).to_shareable(), fl_ctx)
+    reply = StateUpdateReply.from_shareable(reply_data)
+    initial_ids = dict(reply.device_selection)
+    assert set(initial_ids) == set(devices)
+
+    def report(device_id, reply):
+        version = reply.model_version
+        update = ModelUpdate(version, DXO("number", {"value": 1.0, "count": 1}).to_shareable(), {device_id: 1.0})
+        accepted, reply_data = assessor.process_child_update(
+            StateUpdateReport(version, reply.device_selection_version, {version: update}, None).to_shareable(), fl_ctx
+        )
+        assert accepted
+        return StateUpdateReply.from_shareable(reply_data)
+
+    # The first contributor must not occupy a slot with an already-used ID.
+    reply = report("device-1", reply)
+    assert reply.model_version == 1
+    assert set(reply.device_selection) == {"device-2"}
+    assert reply.device_selection["device-2"] == initial_ids["device-2"]
+
+    # Once the second distinct contribution advances the model, both may run again.
+    reply = report("device-2", reply)
+    assert reply.model_version == 2
+    assert set(reply.device_selection) == set(devices)
+    state = BaseState(
+        reply.model_version, assessor.current_model, reply.device_selection_version, reply.device_selection
+    )
+    for device_id, initial_id in initial_ids.items():
+        assert state.is_device_selected(device_id, initial_id) == (True, 2)
+
+
+def test_async_refills_when_a_new_device_reports_after_contributors_finish():
+    assessor = _assessor(async_num.AsyncNumAssessor, num_updates_for_model=3, device_selection_size=2)
+    fl_ctx = FLContext()
+    devices = _devices()
+    first_devices = {name: devices[name] for name in ("device-1", "device-2")}
+    _, reply_data = assessor.process_child_update(StateUpdateReport(0, 0, None, first_devices).to_shareable(), fl_ctx)
+    reply = StateUpdateReply.from_shareable(reply_data)
+
+    def report(device_id, reply):
+        version = reply.model_version
+        update = ModelUpdate(version, DXO("number", {"value": 1.0, "count": 1}).to_shareable(), {device_id: 1.0})
+        accepted, reply_data = assessor.process_child_update(
+            StateUpdateReport(version, reply.device_selection_version, {version: update}, None).to_shareable(), fl_ctx
+        )
+        assert accepted
+        return StateUpdateReply.from_shareable(reply_data)
+
+    reply = report("device-1", reply)
+    reply = report("device-2", reply)
+    assert reply.model_version == 1
+    assert not reply.device_selection
+
+    # A report containing only a new device must refill the empty slot.
+    report_data = StateUpdateReport(1, reply.device_selection_version, None, {"device-3": devices["device-3"]})
+    accepted, reply_data = assessor.process_child_update(report_data.to_shareable(), fl_ctx)
+    assert accepted
+    reply = StateUpdateReply.from_shareable(reply_data)
+    assert reply.device_selection == {"device-3": 1}
+
+    reply = report("device-3", reply)
+    assert reply.model_version == 2

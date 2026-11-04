@@ -75,7 +75,7 @@ class BaseState:
         if model_version == 0 and model:
             raise ValueError(f"invalid model_version {model_version} when model is provided")
 
-        if device_selection_version > 0 and not device_selection:
+        if device_selection_version > 0 and device_selection is None:
             raise ValueError(
                 f"invalid device_selection_version {device_selection_version} when device_selection is not provided"
             )
@@ -431,7 +431,7 @@ class StateUpdateReply:
             result[PropKey.MODEL] = self.model
 
         result.set_header(PropKey.DEVICE_SELECTION_VERSION, self.device_selection_version)
-        if self.device_selection:
+        if self.device_selection is not None:
             result[PropKey.DEVICE_SELECTION] = self.device_selection
 
         return result

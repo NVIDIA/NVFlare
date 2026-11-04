@@ -79,3 +79,18 @@ def test_parent_reply_prunes_only_empty_retired_states(history, version, retaine
     updater.process_parent_update_reply(_reply(version, {"A": 1}), ctx)
 
     assert (1 in updater.aggr_states) is retained
+
+
+@pytest.mark.parametrize("selection", [None, {}])
+def test_parent_reply_can_clear_device_selection(selection):
+    updater, ctx = _updater()
+    reply = StateUpdateReply(1, None, 2, selection).to_shareable()
+
+    updater.process_parent_update_reply(reply, ctx)
+
+    state = updater.current_state
+    assert state.device_selection_version == 2
+    assert state.device_selection == {}
+    assert state.is_device_selected("A", 1) == (False, 0)
+    restored = BaseState.from_shareable(state.to_shareable())
+    assert restored.device_selection == {}
