@@ -207,6 +207,14 @@ class FLServerStarterConfiger(JsonConfigurator):
             parsed_args=self.args,
             var_dict=self.cmd_vars,
         )
+        if not self.args.job_id:
+            app_config = ConfigService.load_config_dict(
+                "application_config.json",
+                search_dirs=[self.workspace.get_site_config_dir()],
+                raise_exception=False,
+            )
+            if app_config is not None:
+                ConfigService.add_section(SystemConfigs.APPLICATION_CONF, app_config)
 
 
 class FLClientStarterConfiger(JsonConfigurator):

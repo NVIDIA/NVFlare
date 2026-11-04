@@ -35,6 +35,7 @@ from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, FLServerStarterConfiger
 from nvflare.private.fed.client.client_executor import JobExecutor
+from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.utils.job_cert_utils import job_cert_paths, write_job_cert
 
 
@@ -89,20 +90,30 @@ def _workspace_with_kit(tmp_path, site_name):
 
 
 @pytest.mark.parametrize(
+    "site_type,config_key,default",
+    [
+        (SiteType.CLIENT, "max_cj_restart_failures", 3),
+        (SiteType.SERVER, "client_outcome_wait_timeout", 900.0),
+    ],
+    ids=["client", "server"],
+)
+@pytest.mark.parametrize(
     "file_limit,env_limit,cli_limit,job_id,expected",
     [
         (0, None, None, None, 0),
         (2, None, None, None, 2),
-        (None, None, None, None, 3),
+        (None, None, None, None, None),
         (None, 0, None, None, 0),
         (0, 2, None, None, 0),
         (2, 0, None, None, 2),
         (0, 2, 1, None, 1),
         (0, None, None, "job-1", None),
     ],
-    ids=["disabled", "nonzero", "default", "env-fallback", "file-zero-wins", "file-wins", "cli-wins", "cj"],
+    ids=["zero", "nonzero", "default", "env-fallback", "file-zero-wins", "file-wins", "cli-wins", "job-process"],
 )
-def test_client_starter_application_config(tmp_path, monkeypatch, file_limit, env_limit, cli_limit, job_id, expected):
+def test_parent_starter_application_config(
+    tmp_path, monkeypatch, site_type, config_key, default, file_limit, env_limit, cli_limit, job_id, expected
+):
     for name, value in (
         ("_sections", {}),
         ("_config_path", []),
@@ -111,23 +122,31 @@ def test_client_starter_application_config(tmp_path, monkeypatch, file_limit, en
         ("_var_values", {}),
     ):
         monkeypatch.setattr(ConfigService, name, value)
-    monkeypatch.delenv("NVFLARE_MAX_CJ_RESTART_FAILURES", raising=False)
+    env_key = f"NVFLARE_{config_key.upper()}"
+    monkeypatch.delenv(env_key, raising=False)
     if env_limit is not None:
-        monkeypatch.setenv("NVFLARE_MAX_CJ_RESTART_FAILURES", str(env_limit))
+        monkeypatch.setenv(env_key, str(env_limit))
 
-    workspace = _workspace_with_kit(tmp_path, "site-1")
-    Path(workspace.get_client_startup_file_path()).write_text(json.dumps({"client": {}, "servers": []}))
+    is_server = site_type == SiteType.SERVER
+    site_name = "server" if is_server else "site-1"
+    workspace = _workspace_with_kit(tmp_path, site_name)
+    if is_server:
+        Path(workspace.get_server_startup_file_path()).write_text(json.dumps({"servers": []}))
+        configer = FLServerStarterConfiger
+    else:
+        Path(workspace.get_client_startup_file_path()).write_text(json.dumps({"client": {}, "servers": []}))
+        configer = FLClientStarterConfiger
     (tmp_path / "local/resources.json").write_text("{}")
     if file_limit is not None:
-        (tmp_path / "local/application_config.json").write_text(json.dumps({"max_cj_restart_failures": file_limit}))
-    # A deployed job must not supply CP's site policy, including when the site file is absent.
-    job_config = tmp_path / "old-job/app_site-1/config/application_config.json"
+        (tmp_path / "local/application_config.json").write_text(json.dumps({config_key: file_limit}))
+    # A deployed job must not supply parent site policy, including when the site file is absent.
+    job_config = tmp_path / f"old-job/app_{site_name}/config/application_config.json"
     job_config.parent.mkdir(parents=True)
-    job_config.write_text(json.dumps({"max_cj_restart_failures": 7}))
+    job_config.write_text(json.dumps({config_key: 7}))
 
-    options = ["uid=site-1"]
+    options = [f"uid={site_name}"]
     if cli_limit is not None:
-        options.append(f"max_cj_restart_failures={cli_limit}")
+        options.append(f"{config_key}={cli_limit}")
     args = Namespace(
         workspace=str(tmp_path),
         job_id=job_id,
@@ -137,14 +156,14 @@ def test_client_starter_application_config(tmp_path, monkeypatch, file_limit, en
         parent_url="tcp://parent:8002",
         parent_conn_sec=ConnectionSecurity.CLEAR,
     )
-    FLClientStarterConfiger(workspace, args, options).configure()
+    configer(workspace, args, options).configure()
 
     if job_id:
-        # CJ registers its own job application configuration later.
+        # Job processes register their own application configuration later.
         assert ConfigService.get_section(SystemConfigs.APPLICATION_CONF) is None
     else:
-        executor = JobExecutor(MagicMock(), workspace.get_startup_kit_dir())
-        assert executor.max_cj_restart_failures == expected
+        consumer = JobRunner(str(tmp_path)) if is_server else JobExecutor(MagicMock(), workspace.get_startup_kit_dir())
+        assert getattr(consumer, config_key) == (default if expected is None else expected)
 
 
 @pytest.mark.parametrize(
