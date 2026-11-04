@@ -13,119 +13,88 @@
 # limitations under the License.
 
 
-"""Controlled CUDA Driver count calls, without a GPU or process launch."""
+"""GPU count policy with controlled inventory, without a GPU or subprocess."""
 
-import ctypes
-from types import SimpleNamespace
+import subprocess
 
 import pytest
 
 from nvflare.private.fed.resource_stats.probes import gpu_nvidia as probe
 
 
-@pytest.fixture(autouse=True)
-def no_visibility_override(monkeypatch):
-    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+@pytest.mark.parametrize(
+    "mask,expected",
+    [
+        (None, 3),
+        ("4,0", 2),
+        ("4,4,0", 2),
+        ("2,9,0", 1),
+        ("9,0", 0),
+        ("0,-1,4", 1),
+        ("0,,4", 1),
+    ],
+)
+def test_count_matches_shared_gpu_selection(monkeypatch, mask, expected):
+    if mask is None:
+        monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    else:
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
+    queries = []
 
+    def inventory(*, timeout):
+        queries.append(timeout)
+        return [0, 2, 4]
 
-class _Function:
-    def __init__(self, function):
-        self.function = function
-
-    def __call__(self, *args):
-        return self.function(*args)
-
-
-def _driver(monkeypatch, *, count=2, init_result=0, count_result=0, initialized_only=False):
-    calls = []
-
-    def initialize(flags):
-        calls.append(("cuInit", flags))
-        return init_result
-
-    def get_count(pointer):
-        calls.append(("cuDeviceGetCount",))
-        ctypes.cast(pointer, ctypes.POINTER(ctypes.c_int))[0] = count
-        return count_result
-
-    driver = SimpleNamespace(cuDeviceGetCount=_Function(get_count))
-    if not initialized_only:
-        driver.cuInit = _Function(initialize)
-    monkeypatch.setattr(probe, "_load_driver", lambda: driver)
-    return calls
-
-
-def test_probe_queries_only_driver_count(monkeypatch):
-    calls = _driver(monkeypatch)
-    assert probe.probe_gpu() == {"count": 2}
-    assert calls == [("cuInit", 0), ("cuDeviceGetCount",)]
-
-
-@pytest.mark.parametrize("count,init_result,count_result", [(0, 0, 0), (2, 100, 0), (2, 0, 100)])
-def test_explicit_no_device_is_observed_zero(monkeypatch, count, init_result, count_result):
-    _driver(monkeypatch, count=count, init_result=init_result, count_result=count_result)
-    assert probe.probe_gpu() == {"count": 0}
-
-
-@pytest.mark.parametrize("count,init_result,count_result", [(-1, 0, 0), (4097, 0, 0), (2, 34, 0), (2, 0, 999)])
-def test_failed_or_out_of_range_discovery_is_unavailable(monkeypatch, count, init_result, count_result):
-    _driver(monkeypatch, count=count, init_result=init_result, count_result=count_result)
-    assert probe.probe_gpu() is None
-
-
-def test_empty_mask_avoids_initialization_with_a_loadable_driver(monkeypatch):
-    calls = _driver(monkeypatch)
-    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
-    assert probe.probe_gpu() == {"count": 0}
-    assert calls == []
-    monkeypatch.setattr(probe, "_load_driver", lambda: None)
-    assert probe.probe_gpu() is None
-
-
-@pytest.mark.parametrize("mask", ["0,2", "GPU-private-identity", "MIG-private-identity", "not-a-mask"])
-def test_nonempty_visibility_uses_driver_authority_without_rewriting_environment(monkeypatch, mask):
-    calls = _driver(monkeypatch)
-    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
-    assert probe.probe_gpu() == {"count": 2}
-    assert probe.os.environ["CUDA_VISIBLE_DEVICES"] == mask
-    assert calls == [("cuInit", 0), ("cuDeviceGetCount",)]
+    monkeypatch.setattr(probe, "get_host_gpu_ids", inventory)
+    assert probe.probe_gpu() == {"count": expected}
+    assert queries == [2.0]
 
 
 @pytest.mark.parametrize(
-    "count,status,mask,expected",
+    "mask,expected",
     [
-        (2, 0, "", {"count": 2}),
-        (0, 0, None, {"count": 0}),
-        (2, 100, None, {"count": 0}),
-        (2, 3, "", {"count": 0}),
-        (2, 3, "0", None),
-        (2, 999, None, None),
-        (-1, 0, None, None),
-        (4097, 0, None, None),
+        ("", {"count": 0}),
+        ("  ", {"count": 0}),
+        ("-1", {"count": 0}),
+        ("GPU-selected-device", None),
+        ("0,GPU-selected-device", None),
+        ("not-an-index", None),
     ],
 )
-def test_initialized_probe_never_initializes_and_prefers_live_state(monkeypatch, count, status, mask, expected):
-    calls = _driver(monkeypatch, count=count, count_result=status, initialized_only=True)
-    if mask is not None:
-        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
-    assert probe.probe_initialized_gpu() == expected
-    assert calls == [("cuDeviceGetCount",)]
+def test_definitive_masks_do_not_query_inventory(monkeypatch, mask, expected):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
+
+    queries = []
+
+    def unexpected_inventory(**_kwargs):
+        queries.append(True)
+        return [0, 2, 4]
+
+    monkeypatch.setattr(probe, "get_host_gpu_ids", unexpected_inventory)
+    assert probe.probe_gpu() == expected
+    assert not queries
 
 
-def test_missing_driver_or_required_symbol_is_unavailable(monkeypatch):
-    monkeypatch.setattr(probe, "_load_driver", lambda: None)
+@pytest.mark.parametrize(
+    "error",
+    [
+        RuntimeError("query failed"),
+        FileNotFoundError(),
+        subprocess.TimeoutExpired("nvidia-smi", 2.0),
+        ValueError("bad inventory"),
+    ],
+)
+def test_inventory_failures_are_unavailable(monkeypatch, error):
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+
+    def failed_inventory(**_kwargs):
+        raise error
+
+    monkeypatch.setattr(probe, "get_host_gpu_ids", failed_inventory)
     assert probe.probe_gpu() is None
-    assert probe.probe_initialized_gpu() is None
-    monkeypatch.setattr(probe, "_load_driver", lambda: SimpleNamespace())
-    assert probe.probe_gpu() is None
-    assert probe.probe_initialized_gpu() is None
 
 
-def test_driver_library_load_failure_is_unavailable(monkeypatch):
-    def unavailable(name):
-        assert name == "libcuda.so.1"
-        raise OSError("driver unavailable")
-
-    monkeypatch.setattr(probe.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(probe.ctypes, "CDLL", unavailable)
+def test_empty_unverified_inventory_is_unavailable(monkeypatch):
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.setattr(probe, "get_host_gpu_ids", lambda **_kwargs: [])
     assert probe.probe_gpu() is None
