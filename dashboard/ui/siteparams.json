@@ -1,0 +1,35 @@
+{
+  "projectname": "New FL Project",
+  "demo": false,
+  "url_root": "/nvflare-dashboard",
+  "arraydata": [
+    {
+      "name": "itemone"
+    },
+    {
+      "name": "itemtwo"
+    },
+    {
+      "name": "itemthree"
+    }
+  ],
+  "default_project_data": {
+    "app_location": "",
+    "description": "Warning: cannot connect to Dashboard API. Please contact your administrator and make sure the site settings are configured properly.",
+    "end_date": "",
+    "frozen": false,
+    "num_clients": 0,
+    "num_orgs": 1,
+    "num_users": 1,
+    "public": false,
+    "server1": "",
+    "short_name": "",
+    "starting_date": "",
+    "title": "",
+    "server_props": {
+      "cc_enabled": false,
+      "deployment_environment": "bare_metal_cvm",
+      "cpu_family": "amd"
+    }
+  }
+}
