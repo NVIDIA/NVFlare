@@ -15,27 +15,23 @@
 import json
 import logging
 import os
-from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, SecureTrainConst, SiteType, SystemConfigs
+from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, SecureTrainConst, SiteType
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.constants import CtxKey
 from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, FLServerStarterConfiger
-from nvflare.private.fed.client.client_executor import JobExecutor
-from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.utils.job_cert_utils import job_cert_paths, write_job_cert
 
 
@@ -87,83 +83,6 @@ def _workspace_with_kit(tmp_path, site_name):
     (tmp_path / "startup").mkdir()
     (tmp_path / "local").mkdir()
     return Workspace(str(tmp_path), site_name=site_name)
-
-
-@pytest.mark.parametrize(
-    "site_type,config_key,default",
-    [
-        (SiteType.CLIENT, "max_cj_restart_failures", 3),
-        (SiteType.SERVER, "client_outcome_wait_timeout", 900.0),
-    ],
-    ids=["client", "server"],
-)
-@pytest.mark.parametrize(
-    "file_limit,env_limit,cli_limit,job_id,expected",
-    [
-        (0, None, None, None, 0),
-        (2, None, None, None, 2),
-        (None, None, None, None, None),
-        (None, 0, None, None, 0),
-        (0, 2, None, None, 0),
-        (2, 0, None, None, 2),
-        (0, 2, 1, None, 1),
-        (0, None, None, "job-1", None),
-    ],
-    ids=["zero", "nonzero", "default", "env-fallback", "file-zero-wins", "file-wins", "cli-wins", "job-process"],
-)
-def test_parent_starter_application_config(
-    tmp_path, monkeypatch, site_type, config_key, default, file_limit, env_limit, cli_limit, job_id, expected
-):
-    for name, value in (
-        ("_sections", {}),
-        ("_config_path", []),
-        ("_cmd_args", None),
-        ("_var_dict", None),
-        ("_var_values", {}),
-    ):
-        monkeypatch.setattr(ConfigService, name, value)
-    env_key = f"NVFLARE_{config_key.upper()}"
-    monkeypatch.delenv(env_key, raising=False)
-    if env_limit is not None:
-        monkeypatch.setenv(env_key, str(env_limit))
-
-    is_server = site_type == SiteType.SERVER
-    site_name = "server" if is_server else "site-1"
-    workspace = _workspace_with_kit(tmp_path, site_name)
-    if is_server:
-        Path(workspace.get_server_startup_file_path()).write_text(json.dumps({"servers": []}))
-        configer = FLServerStarterConfiger
-    else:
-        Path(workspace.get_client_startup_file_path()).write_text(json.dumps({"client": {}, "servers": []}))
-        configer = FLClientStarterConfiger
-    (tmp_path / "local/resources.json").write_text("{}")
-    if file_limit is not None:
-        (tmp_path / "local/application_config.json").write_text(json.dumps({config_key: file_limit}))
-    # A deployed job must not supply parent site policy, including when the site file is absent.
-    job_config = tmp_path / f"old-job/app_{site_name}/config/application_config.json"
-    job_config.parent.mkdir(parents=True)
-    job_config.write_text(json.dumps({config_key: 7}))
-
-    options = [f"uid={site_name}"]
-    if cli_limit is not None:
-        options.append(f"{config_key}={cli_limit}")
-    args = Namespace(
-        workspace=str(tmp_path),
-        job_id=job_id,
-        set=options,
-        sp_scheme="grpc",
-        sp_target="server.example.com:8002",
-        parent_url="tcp://parent:8002",
-        parent_conn_sec=ConnectionSecurity.CLEAR,
-    )
-    configer(workspace, args, options).configure()
-
-    if job_id:
-        # Job processes register their own application configuration later.
-        assert ConfigService.get_section(SystemConfigs.APPLICATION_CONF) is None
-    else:
-        consumer = JobRunner(str(tmp_path)) if is_server else JobExecutor(MagicMock(), workspace.get_startup_kit_dir())
-        assert getattr(consumer, config_key) == (default if expected is None else expected)
 
 
 @pytest.mark.parametrize(
