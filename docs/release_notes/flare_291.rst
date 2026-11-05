@@ -7,7 +7,8 @@ the NVIDIA confidential computing reference architecture. The first version
 was a technical preview in 2.7.0, and the stack remains a technical preview and
 entirely optional: nothing changes for deployments that do not use it. The
 other changes that can affect existing deployments are checkpoint path
-restrictions, a Dashboard restriction, and a few bug fixes.
+restrictions, a Dashboard restriction, configuration-format deprecations, and
+a few bug fixes.
 
 Highlights:
 
@@ -17,6 +18,9 @@ Highlights:
 - **Security hardening** — launcher-defined bring-your-own-code (BYOC) jobs
   blocked in confidential computing, checkpoint path confinement, and Dashboard
   client ``props`` rejected
+- **Configuration formats** — HOCON/PyHOCON and OmegaConf-based configuration
+  are deprecated in 2.9.1 and will be removed in 2.10.0. Use JSON for runtime
+  and job configuration.
 
 Confidential Computing
 ======================
@@ -112,6 +116,20 @@ Security and Hardening
   rejected with HTTP 400, and client-kit generation ignores previously stored
   ``props``, so client properties can no longer supply provisioning paths that
   include server-local files in downloadable kits.
+
+Deprecations
+============
+
+HOCON configuration through PyHOCON (``.conf``) and YAML configuration through
+OmegaConf (``.yml`` and ``.yaml``), including their ``.default`` variants, are
+deprecated in 2.9.1. They remain supported in 2.9.1 and will be removed in
+2.10.0. Use JSON for new runtime and job configurations, and migrate existing
+files before upgrading to 2.10.0. See
+:ref:`configuration_format_migration_291` for the migration steps.
+
+This deprecation concerns the runtime and job configuration loaders. It does
+not cover provisioning YAML files such as ``project.yml`` and
+``cc_project.yml``, which use separate provisioning loaders.
 
 Bug Fixes
 =========

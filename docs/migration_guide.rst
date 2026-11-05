@@ -9,8 +9,36 @@ This guide covers API and configuration changes when upgrading between FLARE rel
 Upgrading from 2.9.0 to 2.9.1
 =============================
 
-Deployments that do not use confidential computing should review the checkpoint
-path restrictions and Dashboard change below.
+All deployments should review the configuration-format deprecations,
+checkpoint path restrictions, and Dashboard change below.
+
+.. _configuration_format_migration_291:
+
+HOCON and OmegaConf Configuration Deprecation
+---------------------------------------------
+
+HOCON/PyHOCON and OmegaConf-based runtime and job configurations are deprecated
+in 2.9.1. They remain supported in 2.9.1 and will be removed in 2.10.0. Use JSON
+for new configurations and migrate existing files before upgrading to 2.10.0.
+This applies to ``.conf``, ``.yml``, and ``.yaml`` files loaded by these
+configuration loaders, including their ``.default`` variants.
+
+Action:
+
+- Convert runtime and job configuration contents to valid JSON. For example,
+  migrate ``meta.conf`` to ``meta.json`` and ``config_fed_client.yaml`` to
+  ``config_fed_client.json``.
+- Replace HOCON includes/substitutions and OmegaConf interpolations/resolvers
+  with explicit, reviewed JSON values. Renaming the extension alone does not
+  convert the contents or these format-specific features.
+- Update references to the migrated files, validate the resulting configuration,
+  and remove obsolete copies so configuration lookup selects the intended file.
+  For ``.default`` templates, use the corresponding ``.json.default`` name.
+
+Provisioning YAML files, including ``project.yml``, ``cc_project.yml``, and
+participant ``cc_config`` files, use separate provisioning loaders and are
+outside this deprecation. See :ref:`configurations` for the configuration
+formats and search order.
 
 Confidential Computing Provisioning (Technical Preview)
 -------------------------------------------------------
