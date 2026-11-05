@@ -111,7 +111,7 @@ def load_model_params(model: nn.Module, params: dict[str, torch.Tensor], target_
     return model
 
 
-class PTModelAdapter:
+class PTModelOps:
     """Keep detached CPU snapshots; average floating entries only.
 
     Non-floating buffers (e.g. BatchNorm counters) stay at the current global

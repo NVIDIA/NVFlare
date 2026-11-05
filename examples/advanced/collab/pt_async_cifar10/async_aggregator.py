@@ -48,8 +48,22 @@ def seed_everything(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-class Cifar10AsyncApplication:
-    """Own CIFAR concerns while FedBuffRecipe owns scheduling and aggregation."""
+class Cifar10ModelLoader:
+    """Construct the initial server model with the example's seed policy."""
+
+    def __init__(self, setup_seed: int = 10, run_seed: int = 10):
+        self.setup_seed = setup_seed
+        self.run_seed = run_seed
+
+    def load_model(self):
+        seed_everything(self.setup_seed)
+        initial = get_model_params(ModerateCNN(seed=self.setup_seed), target_device="cpu")
+        seed_everything(self.run_seed)
+        return initial
+
+
+class Cifar10Observer:
+    """Own CIFAR evaluation and artifacts while FedBuffRecipe owns training."""
 
     def __init__(
         self,
@@ -58,7 +72,6 @@ class Cifar10AsyncApplication:
         device: str | None = None,
         eval_batch_size: int = 300,
         setup_seed: int = 10,
-        run_seed: int = 10,
         checkpoint_interval: int = 0,
         num_rounds: int = 100,
     ):
@@ -71,7 +84,6 @@ class Cifar10AsyncApplication:
         self.device = device
         self.eval_batch_size = eval_batch_size
         self.setup_seed = setup_seed
-        self.run_seed = run_seed
         self.checkpoint_interval = checkpoint_interval
         self.num_rounds = num_rounds
         self.logger = get_obj_logger(self)
@@ -151,11 +163,7 @@ class Cifar10AsyncApplication:
             self._evaluate_model(snapshot, round_index=model_version - 1)
 
     def initialize(self):
-        seed_everything(self.setup_seed)
         self._init_outputs()
-        initial = get_model_params(self._new_model(), target_device="cpu")
-        seed_everything(self.run_seed)
-        return initial
 
     def on_model(self, model, version):
         torch.save(model, os.path.join(self._eval_snapshot_dir, f"model_version_{version}.pt"))

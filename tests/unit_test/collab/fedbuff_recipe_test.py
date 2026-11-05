@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from examples.advanced.collab.numpy_async.job import NumpyModelAdapter
+from examples.advanced.collab.numpy_async.job import NumpyModelOps
 from nvflare.apis.signal import Signal
 from nvflare.collab import FedBuffRecipe, collab
 from nvflare.collab.api.app import ClientApp, ServerApp
@@ -37,15 +37,17 @@ from nvflare.collab.fedbuff_recipe import FedBuffResult, FedBuffTrainingCoordina
 from ._direct_dispatcher import _DirectDispatcher
 
 
-class _Application:
+class _ModelLoader:
+    def load_model(self):
+        return {"w": np.zeros(1, dtype=np.float32)}
+
+
+class _Observer:
     def __init__(self, release=None):
         self.release = release
         self.versions = []
         self.closed = False
         self.finished = False
-
-    def initialize(self):
-        return {"w": np.zeros(1, dtype=np.float32)}
 
     def on_model(self, model, version):
         self.versions.append((version, model["w"].copy()))
@@ -95,11 +97,11 @@ class _ScaleUpdate:
         return {name: value * self.scale for name, value in update.delta.items()}
 
 
-def _execute(application, clients, *, abort=None, **options):
+def _execute(observer, clients, *, abort=None, **options):
     signal = abort or Signal()
     settings = dict(num_updates=2, concurrency=len(clients), call_timeout=0.5)
     settings.update(options)
-    workflow = FedBuffWorkflow(application, NumpyModelAdapter(), **settings)
+    workflow = FedBuffWorkflow(_ModelLoader(), NumpyModelOps(), observer=observer, **settings)
     server = ServerApp(workflow)
     server._abort_signal = signal
     previous = get_call_context()
@@ -123,7 +125,7 @@ def _execute(application, clients, *, abort=None, **options):
 
 def test_real_nonblocking_groups_publish_while_slow_assignment_is_active():
     release = threading.Event()
-    app = _Application(release)
+    app = _Observer(release)
     fast, slow = _Client(), _Client(release)
     output = _execute(app, [fast, slow])
     assert [v for v, _ in app.versions] == [0, 1, 2]
@@ -150,7 +152,7 @@ def test_callback_receipt_order_survives_delayed_per_call_completion(monkeypatch
         return {name: value / (1 + update.staleness) for name, value in update.delta.items()}
 
     output = _execute(
-        _Application(release_a),
+        _Observer(release_a),
         [_Client(increment=2), _Client(release=delivered_a, increment=4)],
         update_transform=transform,
     )
@@ -159,7 +161,7 @@ def test_callback_receipt_order_survives_delayed_per_call_completion(monkeypatch
 
 
 def test_real_groups_sync_boundary():
-    app = _Application()
+    app = _Observer()
     clients = [_Client(), _Client()]
     output = _execute(app, clients, buffer_size=2, min_open_slots=2)
     assert output["w"].item() == 2
@@ -168,23 +170,23 @@ def test_real_groups_sync_boundary():
 
 
 def test_optional_transform_runs_through_collab_recipe_workflow():
-    output = _execute(_Application(), [_Client(), _Client()], update_transform=_ScaleUpdate())
+    output = _execute(_Observer(), [_Client(), _Client()], update_transform=_ScaleUpdate())
     assert output["w"].item() == 1
 
 
 @pytest.mark.parametrize("failure,malformed", [(True, False), (False, True)])
-def test_group_errors_close_application_and_never_publish(failure, malformed):
-    app = _Application()
+def test_group_errors_close_observer_and_never_publish(failure, malformed):
+    app = _Observer()
     with pytest.raises((RuntimeError, ValueError)):
         _execute(app, [_Client(failure=failure, malformed=malformed)])
     assert app.closed and not app.finished
     assert len(app.versions) == 1
 
 
-def test_abort_stops_admission_and_closes_application():
+def test_abort_stops_admission_and_closes_observer():
     signal = Signal()
     signal.trigger(True)
-    app = _Application()
+    app = _Observer()
     client = _Client()
     with pytest.raises(RuntimeError, match="aborted"):
         _execute(app, [client], abort=signal)
@@ -196,7 +198,7 @@ def _numpy_module(monkeypatch):
     return importlib.import_module("collab.numpy_async.job")
 
 
-def test_recipe_export_round_trip_loads_application_and_adapter(tmp_path, monkeypatch):
+def test_recipe_export_round_trip_loads_model_components(tmp_path, monkeypatch):
     module = _numpy_module(monkeypatch)
     recipe = module.make_recipe(num_clients=2, num_updates=3, buffer_size=2)
     recipe.server.update_transform = _ScaleUpdate(0.25)
@@ -206,9 +208,10 @@ def test_recipe_export_round_trip_loads_application_and_adapter(tmp_path, monkey
     config = json.loads(configs[0].read_text())
     server = next(item for item in config["components"] if item["id"] == "_server")
     assert server["path"] == "nvflare.collab.fedbuff_recipe.FedBuffWorkflow"
-    assert server["args"]["application"]["path"].endswith("ArrayApplication")
+    assert server["args"]["model_loader"]["path"].endswith("ArrayModelLoader")
+    assert server["args"]["observer"]["path"].endswith("ArrayObserver")
     assert server["args"]["num_updates"] == 3
-    assert server["args"]["model_adapter"]["path"].endswith("NumpyModelAdapter")
+    assert server["args"]["model_ops"]["path"].endswith("NumpyModelOps")
     from nvflare.fuel.utils.component_builder import ComponentBuilder
 
     class Builder(ComponentBuilder):
@@ -217,7 +220,8 @@ def test_recipe_export_round_trip_loads_application_and_adapter(tmp_path, monkey
 
     builder = Builder()
     restored = builder.build_component(server)
-    np.testing.assert_array_equal(restored.application.initialize()["weights"], np.zeros(3))
+    np.testing.assert_array_equal(restored.model_loader.load_model()["weights"], np.zeros(3))
+    assert restored.observer is not None
     assert restored.buffer_size == 2
     assert isinstance(restored.update_transform, _ScaleUpdate)
     assert restored.update_transform.scale == 0.25
@@ -234,7 +238,7 @@ class Block:
 sys.meta_path.insert(0, Block())
 from nvflare.collab import FedBuffRecipe
 from nvflare.collab.fedbuff_recipe import FedBuffResult, FedBuffTrainingCoordinator
-from examples.advanced.collab.numpy_async.job import NumpyModelAdapter
+from examples.advanced.collab.numpy_async.job import NumpyModelOps
 """
     subprocess.run([sys.executable, "-c", code], check=True)
 
@@ -261,7 +265,7 @@ def test_cifar_recipe_uses_library_scheduler_and_step_weights(monkeypatch, tmp_p
         assert recipe.server.buffer_size == 4
         assert recipe.server.min_open_slots == 1
         assert recipe.client._optimizer is None
-        assert recipe.server.application._eval_model is None
+        assert recipe.server.observer._eval_model is None
         recipe.finalize()
         recipe.export(str(tmp_path))
         assert list(tmp_path.rglob("async_aggregator.py"))
@@ -271,7 +275,7 @@ def test_cifar_recipe_uses_library_scheduler_and_step_weights(monkeypatch, tmp_p
         client_config = json.loads(next(tmp_path.rglob("config_fed_client.json")).read_text())
         server = next(item for item in server_config["components"] if item["id"] == "_server")
         client = next(item for item in client_config["components"] if item["id"] == "_client")
-        assert server["args"]["application"]["args"]["device"] == "cpu"
+        assert server["args"]["observer"]["args"]["device"] == "cpu"
         assert client["args"]["device"] == "cpu"
     finally:
         for name, previous in saved.items():
@@ -280,12 +284,12 @@ def test_cifar_recipe_uses_library_scheduler_and_step_weights(monkeypatch, tmp_p
                 sys.modules[name] = previous
 
 
-def test_cifar_adapter_owns_cpu_snapshots_and_preserves_nonfloating_buffers():
+def test_cifar_model_ops_own_cpu_snapshots_and_preserve_nonfloating_buffers():
     torch = pytest.importorskip("torch")
-    from examples.advanced.collab.pt_async_cifar10.model import PTModelAdapter
+    from examples.advanced.collab.pt_async_cifar10.model import PTModelOps
 
     initial = {"w": torch.tensor([10.0], requires_grad=True), "counter": torch.tensor(5)}
-    coordinator = FedBuffTrainingCoordinator(initial, PTModelAdapter(), 1, 2, buffer_size=2, weight_metric="num_steps")
+    coordinator = FedBuffTrainingCoordinator(initial, PTModelOps(), 1, 2, buffer_size=2, weight_metric="num_steps")
     initial["w"].detach().fill_(99)
     a, b = coordinator.dispatch(["a", "b"])
     first = {"w": torch.tensor([12.0]), "counter": torch.tensor(99)}
@@ -342,9 +346,9 @@ def test_cifar_training_keeps_optimizer_scheduler_and_num_steps(monkeypatch, tmp
                 sys.modules[name] = module
 
 
-def test_call_timeout_closes_application_without_retrying():
+def test_call_timeout_closes_observer_without_retrying():
     release = threading.Event()
-    app = _Application(release)
+    app = _Observer(release)
     with pytest.raises(RuntimeError, match="timed out"):
         _execute(app, [_Client(release)])
     assert app.closed and not app.finished

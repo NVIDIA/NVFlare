@@ -25,7 +25,7 @@ from nvflare.collab import FedBuffRecipe, collab
 from nvflare.recipe import SimEnv
 
 
-class NumpyModelAdapter:
+class NumpyModelOps:
     """Average floating arrays; preserve non-floating buffers from the current model.
 
     Full states must have identical keys, shapes and dtypes. Deltas contain only
@@ -60,13 +60,17 @@ class NumpyModelAdapter:
         return result
 
 
-class ArrayApplication:
+class ArrayModelLoader:
+    def load_model(self):
+        return {"weights": np.zeros(3, dtype=np.float32)}
+
+
+class ArrayObserver:
     def __init__(self):
         self._events = []
 
     def initialize(self):
         self._events = []
-        return {"weights": np.zeros(3, dtype=np.float32)}
 
     def on_event(self, event):
         self._events.append(asdict(event))
@@ -92,9 +96,10 @@ class ArrayClient:
 def make_recipe(num_clients=2, num_updates=4, buffer_size=2, min_open_slots=1):
     return FedBuffRecipe(
         job_name="numpy_async",
-        application=ArrayApplication(),
+        model_loader=ArrayModelLoader(),
+        observer=ArrayObserver(),
         client=ArrayClient(),
-        model_adapter=NumpyModelAdapter(),
+        model_ops=NumpyModelOps(),
         num_updates=num_updates,
         concurrency=num_clients,
         buffer_size=buffer_size,

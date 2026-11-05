@@ -84,8 +84,8 @@ class ResearchWorkflow(FedBuffWorkflow):
 
     def __init__(
         self,
-        application,
-        model_adapter,
+        model_loader,
+        model_ops,
         num_updates: int,
         concurrency: int,
         scheduler,
@@ -96,10 +96,11 @@ class ResearchWorkflow(FedBuffWorkflow):
         weight_metric: str | None = None,
         update_transform=None,
         call_timeout: float = 3600.0,
+        observer=None,
     ):
         super().__init__(
-            application,
-            model_adapter,
+            model_loader,
+            model_ops,
             num_updates,
             concurrency,
             buffer_size,
@@ -108,6 +109,7 @@ class ResearchWorkflow(FedBuffWorkflow):
             weight_metric,
             update_transform,
             call_timeout,
+            observer,
         )
         if train_kwargs is not None and not callable(train_kwargs):
             raise TypeError("train_kwargs must be callable")
@@ -158,7 +160,7 @@ class ResearchWorkflow(FedBuffWorkflow):
                     self._emit("accept", call.assignment, version, call.client_name)
                     if published:
                         dispatch()
-                        self._hook("on_model", coordinator.model, coordinator.version)
+                        self._notify("on_model", coordinator.model, coordinator.version)
                     continue
                 if not inflight:
                     raise RuntimeError("async workflow cannot make progress")
@@ -186,8 +188,8 @@ class ResearchRecipe(CollabRecipe):
         self,
         job_name: str,
         client,
-        application,
-        model_adapter,
+        model_loader,
+        model_ops,
         num_updates: int,
         concurrency: int,
         scheduler,
@@ -198,11 +200,12 @@ class ResearchRecipe(CollabRecipe):
         weight_metric: str | None = None,
         update_transform=None,
         call_timeout: float = 3600.0,
+        observer=None,
         **collab_options,
     ):
         workflow = ResearchWorkflow(
-            application,
-            model_adapter,
+            model_loader,
+            model_ops,
             num_updates,
             concurrency,
             scheduler,
@@ -213,6 +216,7 @@ class ResearchRecipe(CollabRecipe):
             weight_metric,
             update_transform,
             call_timeout,
+            observer,
         )
         collab_options.setdefault("min_clients", 1)
         super().__init__(job_name=job_name, server=workflow, client=client, **collab_options)

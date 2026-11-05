@@ -17,7 +17,7 @@
 import numpy as np
 import pytest
 
-from examples.advanced.collab.numpy_async.job import NumpyModelAdapter
+from examples.advanced.collab.numpy_async.job import NumpyModelOps
 from nvflare.collab.fedbuff_recipe import FedBuffResult, FedBuffTrainingCoordinator
 
 
@@ -28,7 +28,7 @@ def model(value):
 def coordinator(**kwargs):
     options = dict(
         initial_model=model(10),
-        model_adapter=NumpyModelAdapter(),
+        model_ops=NumpyModelOps(),
         num_updates=3,
         concurrency=2,
         buffer_size=1,
@@ -141,16 +141,16 @@ def test_invalid_result_is_fail_fast_without_partial_acceptance(case):
 
 def test_delta_transform_reconstructs_original_full_model_only_on_demand(monkeypatch):
     seen, calls = [], []
-    adapter = NumpyModelAdapter()
-    apply = adapter.apply
+    model_ops = NumpyModelOps()
+    apply = model_ops.apply
 
     def record_apply(model, delta, scale):
         calls.append(scale)
         return apply(model, delta, scale)
 
-    monkeypatch.setattr(adapter, "apply", record_apply)
+    monkeypatch.setattr(model_ops, "apply", record_apply)
     run = coordinator(
-        model_adapter=adapter,
+        model_ops=model_ops,
         num_updates=1,
         concurrency=1,
         server_lr=0.5,

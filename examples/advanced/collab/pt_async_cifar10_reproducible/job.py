@@ -20,7 +20,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
-from pt_async_cifar10_reproducible.model import NumpyModelAdapter
+from pt_async_cifar10_reproducible.model import NumpyModelOps
 from pt_async_cifar10_reproducible.replay import ReplayScheduler
 from pt_async_cifar10_reproducible.seed_policy import SeededTrainArgs, SeedPolicy
 from pt_async_cifar10_reproducible.workflow import ResearchRecipe
@@ -29,7 +29,12 @@ from nvflare.collab import collab
 from nvflare.recipe import SimEnv
 
 
-class ResearchApplication:
+class ResearchModelLoader:
+    def load_model(self):
+        return {"weights": np.zeros(3, dtype=np.float32)}
+
+
+class ResearchObserver:
     def __init__(self, run_config: dict):
         self.run_config = run_config
         self._run_dir = None
@@ -42,7 +47,6 @@ class ResearchApplication:
         config_file.write_text(json.dumps(self.run_config, indent=2))
         (self._run_dir / "schedule.jsonl").write_text("")
         (self._run_dir / "published_models").mkdir(exist_ok=True)
-        return {"weights": np.zeros(3, dtype=np.float32)}
 
     def on_model(self, model, version):
         np.savez(self._run_dir / "published_models" / f"{version:08d}.npz", **model)
@@ -83,7 +87,8 @@ def make_recipe(run_seed=10):
     recipe = ResearchRecipe(
         job_name="collab_pt_async_cifar10_reproducible",
         client=ResearchClient(),
-        application=ResearchApplication(
+        model_loader=ResearchModelLoader(),
+        observer=ResearchObserver(
             {
                 "run_seed": run_seed,
                 "concurrency": 3,
@@ -93,7 +98,7 @@ def make_recipe(run_seed=10):
                 "logical_sequence": logical,
             }
         ),
-        model_adapter=NumpyModelAdapter(),
+        model_ops=NumpyModelOps(),
         num_updates=4,
         concurrency=3,
         scheduler=ReplayScheduler(order, logical),

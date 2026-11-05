@@ -322,7 +322,8 @@ FedBuff Training
 ----------------
 
 Use ``FedBuffRecipe`` for reusable buffered training in actual client arrival
-order. Supply a client, application hooks and model operations; the recipe owns
+order. Supply a client, model loader and model operations, with an optional
+observer for evaluation and artifacts; the recipe owns
 assignment tracking, client dispatch and buffered weighted aggregation. Replies
 enter one shared server queue directly from Collab callbacks; the workflow
 consumes that queue to fill the aggregation buffer.

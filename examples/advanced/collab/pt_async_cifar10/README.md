@@ -118,8 +118,8 @@ model version.
 ## Server-Side Workflow
 
 `FedBuffRecipe` runs the shared `FedBuffWorkflow.execute()` entry point, marked
-with `@collab.main`. `Cifar10AsyncApplication` supplies model/evaluation/artifact
-hooks. The shared workflow:
+with `@collab.main`. `Cifar10ModelLoader` supplies the initial model, and
+`Cifar10Observer` supplies evaluation and artifact hooks. The shared workflow:
 
 1. fills the configured active-client slots;
 2. invokes selected clients with a nonblocking Collab group call;
@@ -133,14 +133,14 @@ model, weights updates by local training steps, and applies the FedBuff average
 with `--server-lr` to match the existing FedAvg example.
 
 See the [FedBuff recipe guide](../../../../docs/user_guide/data_scientist_guide/fedbuff_recipe.rst)
-for configuration, client contracts, application hooks, and component scope.
+for configuration, client contracts, observer hooks, and component scope.
 
 ## Job Recipe Code
 
-`job.py` constructs an `FedBuffRecipe` with a published client trainer,
-`PTModelAdapter`, and CIFAR evaluation/artifact hooks. The recipe owns
+`job.py` constructs a `FedBuffRecipe` with a published client trainer,
+`Cifar10ModelLoader`, `PTModelOps`, and a CIFAR evaluation/artifact observer. The recipe owns
 assignment tracking, client concurrency, buffering and refill, and step-weighted buffered aggregation.
-`async_aggregator.py` contains only the model/evaluation hooks. `recipe.execute(SimEnv(...))` starts the requested physical
+`async_aggregator.py` contains the model loader and observer. `recipe.execute(SimEnv(...))` starts the requested physical
 simulator clients. Each physical client retains its optimizer, learning-rate
 scheduler, data loader, and corresponding `site-<N>` shard across assignments.
 The cosine schedule reaches its minimum after `--total-client-rounds`

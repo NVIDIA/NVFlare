@@ -18,10 +18,12 @@ from .api.facade import Facade as collab
 if TYPE_CHECKING:
     from .api.exceptions import CollabCallError
     from .fedbuff_recipe import FedBuffRecipe
+    from .model_ops import ModelOps
     from .recipe import CollabRecipe
 
 __all__ = [
     "FedBuffRecipe",
+    "ModelOps",
     "collab",
     "CollabCallError",
     "CollabRecipe",
@@ -34,6 +36,7 @@ __all__ = [
 # training scripts that only need the `collab` facade should not pay for.
 _EXPORTS = {
     "FedBuffRecipe": ".fedbuff_recipe",
+    "ModelOps": ".model_ops",
     "CollabCallError": ".api.exceptions",
     "CollabRecipe": ".recipe",
 }

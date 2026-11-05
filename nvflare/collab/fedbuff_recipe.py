@@ -21,35 +21,20 @@ from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Any, Callable, Protocol
+from typing import Any, Callable
 
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.collab import collab
 from nvflare.collab.api import ContextKey
+from nvflare.collab.model_ops import ModelOps
 from nvflare.collab.recipe import CollabRecipe
-
-
-class FedBuffModelAdapter(Protocol):
-    """Model states are dictionaries. Methods must not mutate supplied states."""
-
-    def snapshot(self, model: dict) -> dict:
-        """Return an independent model state suitable for storage and transfer."""
-
-    def validate(self, model: dict, reference: dict) -> None:
-        """Check keys, shapes, dtypes, and finite values against reference."""
-
-    def difference(self, model: dict, base: dict) -> dict:
-        """Return an owned delta for entries participating in aggregation."""
-
-    def apply(self, model: dict, delta: dict, scale: float) -> dict:
-        """Return the updated model, preserving other entries per adapter policy."""
 
 
 @dataclass(frozen=True)
 class Assignment:
     """Server-local identity and an immutable model reference until acceptance.
 
-    The adapter returns a new state for each publication, so assignments from
+    Model operations return a new state for each publication, so assignments from
     the same version safely share a base without copying or reference counts.
     """
 
@@ -63,7 +48,7 @@ class Assignment:
 
 @dataclass(frozen=True)
 class FedBuffEvent:
-    """Lightweight application trace; no model states are retained."""
+    """Lightweight observer trace; no model states are retained."""
 
     phase: str
     assignment_id: int
@@ -123,7 +108,7 @@ class AcceptedUpdate:
         """Borrow the full upload, reconstructing a delta payload only on demand.
 
         Delta-only consumers need no full model. An explicit reconstruction
-        uses the adapter's original dtype/buffer rules and can fail if the
+        uses the model operations' original dtype/buffer rules and can fail if the
         unscaled full model is unrepresentable, even when a scaled update is
         valid. This does not affect acceptance unless a consumer requests it.
         """
@@ -169,7 +154,7 @@ class FedBuffTrainingCoordinator:
     def __init__(
         self,
         initial_model: dict,
-        model_adapter: FedBuffModelAdapter,
+        model_ops: ModelOps,
         num_updates: int,
         concurrency: int,
         buffer_size: int = 1,
@@ -182,9 +167,9 @@ class FedBuffTrainingCoordinator:
         _validate_options(
             num_updates, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
         )
-        self.adapter = model_adapter
-        self.model = model_adapter.snapshot(initial_model)
-        model_adapter.validate(self.model, self.model)
+        self.model_ops = model_ops
+        self.model = model_ops.snapshot(initial_model)
+        model_ops.validate(self.model, self.model)
         self.num_updates = num_updates
         self.concurrency = concurrency
         self.buffer_size = buffer_size
@@ -251,10 +236,10 @@ class FedBuffTrainingCoordinator:
         if result.assignment_id != assignment.assignment_id or result.base_version != assignment.base_version:
             raise ValueError("assignment metadata mismatch")
         base_model = assignment.base_model
-        zero_delta = self.adapter.difference(base_model, base_model)
+        zero_delta = self.model_ops.difference(base_model, base_model)
         reference = zero_delta if result.is_delta else base_model
-        self.adapter.validate(result.model, reference)
-        delta = result.model if result.is_delta else self.adapter.difference(result.model, base_model)
+        self.model_ops.validate(result.model, reference)
+        delta = result.model if result.is_delta else self.model_ops.difference(result.model, base_model)
         weight = 1.0 if self.weight_metric is None else float(result.metrics[self.weight_metric])
         if not math.isfinite(weight) or weight <= 0:
             raise ValueError("aggregation weight must be finite and positive")
@@ -264,7 +249,7 @@ class FedBuffTrainingCoordinator:
             # transformed/scaled without first constructing its full model.
             # Bind the original delta before the transform replaces it below.
             returned_model = (
-                (lambda base=base_model, client_delta=delta: self.adapter.apply(base, client_delta, 1.0))
+                (lambda base=base_model, client_delta=delta: self.model_ops.apply(base, client_delta, 1.0))
                 if result.is_delta
                 else result.model
             )
@@ -273,7 +258,7 @@ class FedBuffTrainingCoordinator:
             )
         if self.update_transform is not None:
             delta = self.update_transform(update)
-        self.adapter.validate(delta, zero_delta)
+        self.model_ops.validate(delta, zero_delta)
         if self.update_observer is not None:
             self.update_observer(update)
         self._buffer.add(delta, weight, str(assignment.assignment_id), assignment.base_version)
@@ -281,7 +266,7 @@ class FedBuffTrainingCoordinator:
         self.accepted_count += 1
         if self.buffered_count < self.buffer_size:
             return False
-        self.model = self.adapter.apply(self.model, self._buffer.get_result(), self.server_lr)
+        self.model = self.model_ops.apply(self.model, self._buffer.get_result(), self.server_lr)
         self.version += 1
         return True
 
@@ -295,9 +280,9 @@ class FedBuffTrainingCoordinator:
 class FedBuffWorkflow:
     """Accept actual arrivals, retaining assignment bases until acceptance.
 
-    application.initialize() returns the initial model. Optional on_model,
-    on_update, on_event, on_finish and close hooks own application artifacts.
-    Hooks and update_transform run on the workflow thread; borrowed model
+    model_loader.load_model() returns the initial state. The optional observer may implement
+    initialize, on_model, on_update, on_event, on_finish and close for artifacts.
+    Observer hooks and update_transform run on the workflow thread; borrowed model
     states must not be mutated. The published client protocol is
     train(assignment_ids, model_version, global_model, logical_assignments),
     returning (model, metrics, metadata). No retry or remote cancellation is
@@ -308,8 +293,8 @@ class FedBuffWorkflow:
 
     def __init__(
         self,
-        application,
-        model_adapter,
+        model_loader,
+        model_ops,
         num_updates: int,
         concurrency: int,
         buffer_size: int = 1,
@@ -318,16 +303,18 @@ class FedBuffWorkflow:
         weight_metric: str | None = None,
         update_transform=None,
         call_timeout: float = 3600.0,
+        observer=None,
     ):
         _validate_options(
             num_updates, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
         )
         if not math.isfinite(call_timeout) or call_timeout <= 0:
             raise ValueError("call_timeout must be finite and positive")
-        if not callable(getattr(application, "initialize", None)):
-            raise TypeError("application must provide initialize()")
-        self.application = application
-        self.model_adapter = model_adapter
+        if not callable(getattr(model_loader, "load_model", None)):
+            raise TypeError("model_loader must provide load_model()")
+        self.model_loader = model_loader
+        self.model_ops = model_ops
+        self.observer = observer
         self.num_updates = num_updates
         self.concurrency = concurrency
         self.buffer_size = buffer_size
@@ -337,8 +324,8 @@ class FedBuffWorkflow:
         self.update_transform = update_transform
         self.call_timeout = call_timeout
 
-    def _hook(self, name, *args):
-        hook = getattr(self.application, name, None)
+    def _notify(self, name, *args):
+        hook = getattr(self.observer, name, None)
         if hook is not None:
             hook(*args)
 
@@ -361,7 +348,7 @@ class FedBuffWorkflow:
     def _create_coordinator(self, initial):
         return self._coordinator_class(
             initial,
-            self.model_adapter,
+            self.model_ops,
             self.num_updates,
             self.concurrency,
             self.buffer_size,
@@ -369,11 +356,11 @@ class FedBuffWorkflow:
             self.server_lr,
             self.weight_metric,
             self.update_transform,
-            update_observer=getattr(self.application, "on_update", None),
+            update_observer=getattr(self.observer, "on_update", None),
         )
 
     def _emit(self, phase, assignment, version, client_name=None):
-        self._hook(
+        self._notify(
             "on_event",
             FedBuffEvent(
                 phase,
@@ -482,28 +469,36 @@ class FedBuffWorkflow:
             available.append(client_name)
             self._emit("accept", assignment, version)
             if published:
-                dispatch()  # Refill before application evaluation/artifact work.
-                self._hook("on_model", coordinator.model, coordinator.version)
+                dispatch()  # Refill before observer evaluation/artifact work.
+                self._notify("on_model", coordinator.model, coordinator.version)
 
     @collab.main
     def execute(self):
         names = sorted(client.name for client in collab.clients)
         with ExitStack() as cleanup:
-            cleanup.callback(self._hook, "close")
+            observer_close = getattr(self.observer, "close", None)
+            if observer_close is not None:
+                cleanup.callback(observer_close)
+            observer_init = getattr(self.observer, "initialize", None)
+            if observer_init is not None:
+                observer_init()
+            loader_close = getattr(self.model_loader, "close", None)
+            if loader_close is not None:
+                cleanup.callback(loader_close)
             transform_close = getattr(self.update_transform, "close", None)
             if transform_close is not None:
                 cleanup.callback(transform_close)
-            initial = self.application.initialize()
+            initial = self.model_loader.load_model()
             initial = collab.get_prop(ContextKey.RESULT, initial)
             transform_init = getattr(self.update_transform, "initialize", None)
             if transform_init is not None:
                 transform_init()
             coordinator = self._create_coordinator(initial)
             cleanup.callback(coordinator.close)
-            self._hook("on_model", coordinator.model, coordinator.version)
+            self._notify("on_model", coordinator.model, coordinator.version)
             with self._calls(names) as (submit, receive):
                 self._run(coordinator, names, submit, receive)
-            self._hook("on_finish", coordinator.model, coordinator.version)
+            self._notify("on_finish", coordinator.model, coordinator.version)
             return coordinator.model
 
 
@@ -515,7 +510,8 @@ class FedBuffRecipe(CollabRecipe):
     threshold. A threshold of one refills each completed slot immediately.
     Setting all three counts equal gives a synchronous training boundary.
 
-    application supplies model/artifact hooks; model_adapter supplies arithmetic.
+    model_loader supplies the initial model; model_ops supplies arithmetic.
+    An optional observer owns evaluation and artifacts.
     An optional update_transform modifies accepted deltas. Replay, seed policies
     and storage are research concerns. Other options pass to CollabRecipe;
     min_clients defaults to concurrency. Components must be reconstructible.
@@ -525,8 +521,8 @@ class FedBuffRecipe(CollabRecipe):
         self,
         job_name: str,
         client,
-        application,
-        model_adapter,
+        model_loader,
+        model_ops,
         num_updates: int,
         concurrency: int,
         buffer_size: int = 1,
@@ -535,11 +531,12 @@ class FedBuffRecipe(CollabRecipe):
         weight_metric: str | None = None,
         update_transform=None,
         call_timeout: float = 3600.0,
+        observer=None,
         **collab_options,
     ):
         workflow = FedBuffWorkflow(
-            application,
-            model_adapter,
+            model_loader,
+            model_ops,
             num_updates,
             concurrency,
             buffer_size,
@@ -548,6 +545,7 @@ class FedBuffRecipe(CollabRecipe):
             weight_metric,
             update_transform,
             call_timeout,
+            observer,
         )
         collab_options.setdefault("min_clients", concurrency)
         super().__init__(job_name=job_name, server=workflow, client=client, **collab_options)

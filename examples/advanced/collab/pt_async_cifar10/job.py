@@ -23,8 +23,8 @@ From the ``examples/advanced/collab/pt_async_cifar10`` directory:
 import argparse
 from pathlib import Path
 
-from async_aggregator import Cifar10AsyncApplication
-from model import PTModelAdapter
+from async_aggregator import Cifar10ModelLoader, Cifar10Observer
+from model import PTModelOps
 from trainer import Cifar10Trainer
 
 from nvflare.collab import FedBuffRecipe
@@ -114,14 +114,13 @@ def make_recipe(args) -> FedBuffRecipe:
 
     device = None if args.device == "auto" else args.device
 
-    application = Cifar10AsyncApplication(
+    observer = Cifar10Observer(
         data_root=args.data_root,
         num_rounds=args.num_rounds,
         buffer_size=args.buffer_size,
         device=device,
         eval_batch_size=args.eval_batch_size,
         setup_seed=args.setup_seed,
-        run_seed=args.run_seed,
         checkpoint_interval=args.checkpoint_interval,
     )
     client = Cifar10Trainer(
@@ -136,8 +135,9 @@ def make_recipe(args) -> FedBuffRecipe:
     )
     recipe = FedBuffRecipe(
         job_name=JOB_NAME,
-        application=application,
-        model_adapter=PTModelAdapter(),
+        model_loader=Cifar10ModelLoader(setup_seed=args.setup_seed, run_seed=args.run_seed),
+        observer=observer,
+        model_ops=PTModelOps(),
         num_updates=args.num_rounds,
         concurrency=concurrency,
         buffer_size=args.buffer_size,

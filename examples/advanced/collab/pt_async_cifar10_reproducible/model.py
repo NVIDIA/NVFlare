@@ -17,7 +17,7 @@
 import numpy as np
 
 
-class NumpyModelAdapter:
+class NumpyModelOps:
     """Average floating arrays; preserve non-floating buffers from the current model.
 
     Full states must have identical keys, shapes and dtypes. Deltas contain only

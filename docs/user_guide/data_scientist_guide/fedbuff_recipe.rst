@@ -10,15 +10,15 @@ serialization and execution environments. The
 :github_nvflare_link:`CIFAR-10 example <examples/advanced/collab/pt_async_cifar10>`
 demonstrate the same workflow with example-owned model helpers.
 
-Both ``application`` and ``model_adapter`` run on the server. The application
-supplies model initialization and evaluation/artifact callbacks; the adapter
-supplies model arithmetic. The separate ``client`` object runs local training
-on each participating client. Neither server object is the client-side trainer.
+``model_loader``, ``model_ops`` and the optional ``observer`` run on the server.
+The loader creates the initial model; model operations supply arithmetic;
+the observer handles evaluation and artifacts. The separate ``client`` object
+runs local training on each participating client.
 
 Use and Deployment
 ------------------
 
-Supply your application, client and model adapter classes:
+Supply a client, model loader and model operations. An observer is optional:
 
 .. code-block:: python
 
@@ -28,8 +28,9 @@ Supply your application, client and model adapter classes:
    recipe = FedBuffRecipe(
        job_name="buffered_training",
        client=MyClient(),
-       application=MyApplication(),
-       model_adapter=MyModelAdapter(),
+       model_loader=MyModelLoader(),
+       model_ops=MyModelOps(),
+       observer=MyObserver(),
        num_updates=100,
        concurrency=8,
        buffer_size=4,
@@ -42,8 +43,13 @@ Use ``SimEnv``, ``PocEnv`` or ``ProdEnv`` from ``nvflare.recipe`` after preparin
 the target environment and site data. Runtime options pass to ``CollabRecipe``;
 ``min_clients`` defaults to ``concurrency``. Export with
 ``recipe.export(path)``. Components must be importable and reconstructible from
-constructor arguments. Bundle supporting code with the existing source
-packaging and ``add_server_file``/``add_client_file`` methods.
+constructor arguments. ``CollabRecipe`` reconstructs these direct component
+arguments in exported jobs. Bundle supporting code with the existing source
+packaging and ``add_server_file``/``add_client_file`` methods. The optional
+``observer`` is one object; a list of objects is not a reconstructible direct
+component argument. It can delegate to other local components when needed.
+``server_objects`` are named Collab objects for addressable methods, rather
+than a local observer list.
 
 Client Contract
 ---------------
@@ -94,7 +100,7 @@ running sums.
 Model Operations and Ownership
 ------------------------------
 
-Supply a model adapter with four methods: ``snapshot``, ``validate``,
+Supply ``ModelOps`` with four methods: ``snapshot``, ``validate``,
 ``difference`` and ``apply``. Operations leave inputs unchanged; ``apply`` must
 return a new state. The concrete helpers live in the
 :github_nvflare_link:`NumPy example <examples/advanced/collab/numpy_async/job.py>`
@@ -110,12 +116,18 @@ dependency.
 new state; active assignments reference their immutable base, shared by version. Removing
 an assignment releases the coordinator's reference. The result queue and pending
 call records are bounded by physical worker count; retained bases by active-client count, plus the
-current model/accumulator. Applications own any evaluation histories. Do not mutate
+current model/accumulator. Observers own any evaluation histories. Do not mutate
 borrowed model states, including in client training; create a local model/copy
 before in-place updates.
 
-Application and Update Hooks
-----------------------------
+Model Loader, Observer and Update Hooks
+---------------------------------------
+
+``model_loader.load_model()`` is required and returns the initial model state.
+The observer is optional. Its methods are invoked locally by the workflow;
+``@collab.init``/``@collab.final`` apply only to the primary Collab object and
+registered named objects, not to a nested observer. The workflow registers
+``close()`` before ``initialize()`` so controlled failures still release resources.
 
 .. list-table::
    :header-rows: 1
@@ -124,7 +136,7 @@ Application and Update Hooks
    * - Hook
      - Contract
    * - ``initialize()``
-     - Required: return initial model.
+     - Optional observer setup, before loading the initial model.
    * - ``on_model(model, version)``
      - Initial and each published model.
    * - ``on_update(update)``
@@ -136,7 +148,7 @@ Application and Update Hooks
    * - ``close()``
      - Always called, including partial initialization/failure.
 
-An optional ``update_transform(AcceptedUpdate)`` returns an adapter-compatible
+An optional ``update_transform(AcceptedUpdate)`` returns a model-operations-compatible
 replacement delta. Optional ``initialize()``/``close()`` manage its resources.
 The context distinguishes the assignment base, current model/version, original
 client delta, weight, metrics and metadata. ``staleness`` is current minus base
@@ -166,9 +178,9 @@ distinct within that module.
        ``FedBuffRecipe`` and ``FedBuffWorkflow``
      - Configuration/export; Collab calls; actual-arrival dispatch/result
        delivery through one bounded result queue; timeout/abort cleanup;
-       application hooks.
-     - Numerical acceptance/publication belongs to the coordinator. The application
-       supplies model initialization and artifacts; the model adapter supplies arithmetic.
+       observer hooks.
+     - Numerical acceptance/publication belongs to the coordinator. The loader
+       supplies the initial model; the observer supplies artifacts; model operations supply arithmetic.
    * - :github_nvflare_link:`FedBuffTrainingCoordinator
        <nvflare/collab/fedbuff_recipe.py>` and server-local records/interfaces
      - Assignment IDs, active bases and versions; client concurrency, refill and contribution
@@ -180,9 +192,9 @@ distinct within that module.
      - Snapshots, shape/dtype/finite checks, differences, update application and
        non-floating buffer rules.
      - Assignment scheduling, transport, training and experiment storage.
-   * - Application and client
-     - Dataset/shards, model construction, training and optimizer state;
-       evaluation, metrics and artifacts through application hooks.
+   * - Model loader, observer and client
+     - Initial model construction, dataset/shards, training and optimizer state;
+       evaluation, metrics and artifacts through observer hooks.
      - Core assignment/version accounting and buffered aggregation.
    * - :github_nvflare_link:`Research workflow
        <examples/advanced/collab/pt_async_cifar10_reproducible/workflow.py>`
@@ -198,8 +210,9 @@ Research may choose when to submit or accept work and where to keep bases/result
 core never imports the examples.
 
 The same module defines ``Assignment``, ``FedBuffResult``, ``AcceptedUpdate``,
-``FedBuffEvent`` and the ``FedBuffModelAdapter`` interface. They describe server-local
-state and hook inputs, and introduce no additional wire format. Normal consumers
+``FedBuffEvent``. They describe server-local state and hook inputs, and introduce
+no additional wire format. The generic ``ModelOps`` interface is in
+``nvflare.collab.model_ops`` for use by other recipes. Normal consumers
 import ``FedBuffRecipe`` from ``nvflare.collab``; alternative orchestration can
 import ``FedBuffTrainingCoordinator`` from ``nvflare.collab.fedbuff_recipe``. Protected
 workflow methods are implementation reuse points rather than a public scheduler/storage

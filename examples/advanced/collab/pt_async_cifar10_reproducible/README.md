@@ -67,8 +67,8 @@ from pt_async_cifar10_reproducible.seed_policy import SeedPolicy, SeededTrainArg
 from pt_async_cifar10_reproducible.workflow import ResearchRecipe
 
 recipe = ResearchRecipe(
-    job_name="experiment", application=MyApplication(), client=SeededClient(),
-    model_adapter=MyAdapter(), num_updates=4, concurrency=3,
+    job_name="experiment", model_loader=MyModelLoader(), client=SeededClient(),
+    model_ops=MyModelOps(), observer=MyObserver(), num_updates=4, concurrency=3,
     scheduler=ReplayScheduler([2, 0, 1, 3], ["alice", "bob", "alice", "carol"]),
     train_kwargs=SeededTrainArgs(SeedPolicy(10)),
 )
