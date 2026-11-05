@@ -31,6 +31,7 @@ from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobOutcomeMsgKey, new_cell_message
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
@@ -41,6 +42,13 @@ from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, 
 
 def assert_client_outcome_unresolved(job_runner):
     job_runner.resolve_client_outcome.assert_not_called()
+
+
+@pytest.fixture(scope="module")
+def signed_job_auth():
+    private_key, public_key = generate_keys()
+    cert = generate_cert(Identity("server"), Identity("server"), private_key, public_key)
+    return SimpleNamespace(cert=cert), sign_content("server_jobjob-a", private_key)
 
 
 @pytest.fixture
@@ -536,12 +544,42 @@ class TestFederatedServer:
 
         assert server._resolve_client_fqcn_for_auth("site-a", "token-a") == MISSING_CLIENT_FQCN
 
-    def test_resolve_server_job_token_to_its_own_cell(self):
+    @pytest.mark.parametrize(
+        "origin,accepted",
+        [
+            ("server.job-a", True),
+            ("server.job-a.child", True),
+            ("server.ws_transfer_job-a", True),
+            ("server", False),
+            ("server.job-b", False),
+            ("server.ws_transfer_job-b", False),
+            ("server.ws_transfer_job-a_suffix", False),
+        ],
+    )
+    def test_server_job_token_only_authenticates_its_own_cells(self, signed_job_auth, origin, accepted):
+        identity, signature = signed_job_auth
         server = object.__new__(FederatedServer)
-        server.client_manager = MagicMock()
-        server.client_manager.clients = {}
+        server.logger = MagicMock()
+        server.cell = SimpleNamespace(get_fqcn=lambda: "server")
+        server.client_manager = SimpleNamespace(clients={})
+        server._get_id_asserter = lambda: identity
+        request = new_cell_message(
+            {
+                MessageHeaderKey.ORIGIN: origin,
+                MessageHeaderKey.DESTINATION: "server",
+                CellMessageHeaderKeys.CLIENT_NAME: "server_job",
+                CellMessageHeaderKeys.TOKEN: "job-a",
+                CellMessageHeaderKeys.TOKEN_SIGNATURE: signature,
+            },
+            None,
+        )
 
-        assert server._resolve_client_fqcn_for_auth("server_job", "job-a") == "server.job-a"
+        reply = server._validate_auth_headers(request)
+
+        if accepted:
+            assert reply is None
+        else:
+            assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
 
     def test_non_secure_server_registers_transit_header_sanitizer(self):
         server = object.__new__(FederatedServer)
