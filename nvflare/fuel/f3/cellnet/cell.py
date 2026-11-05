@@ -95,6 +95,7 @@ class Adapter:
         result = future.result()
         self.logger.debug(f"{stream_req_id=}: {headers=}, incoming data={result}")
         request = Message(headers, result)
+        request.set_prop(MessagePropKey.ENDPOINT, future.receiving_endpoint)
 
         # PASS_THROUGH can be requested per-message, per-channel, or for one
         # exact (channel, topic) route. Any source activates LazyDownloadRef
