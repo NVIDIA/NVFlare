@@ -145,10 +145,11 @@ metadata supplies a fallback, which the callback must preserve when no task head
 is present. Aggregation metadata may describe an earlier round.
 Conflicting native model fields and task headers raise an error.
 
-When serializing legacy weights or differences, explicit ``FLModel.metrics`` takes
-precedence over a stale ``INITIAL_METRICS`` metadata entry, including when the explicit
-metrics dict is empty. Metadata-only callers retain their existing behavior. A filter
-can remove metrics by returning a model whose ``metrics`` field is ``None``.
+For legacy weights or differences, ``ModelFilter`` writes the returned model's
+``metrics`` to the outgoing ``INITIAL_METRICS`` metadata entry, including an empty
+dict, and removes that entry when ``metrics`` is ``None``. This handling is local to
+the adapter. ``METRICS`` leaves keep their payload metrics and any separate
+``INITIAL_METRICS`` metadata entry distinct.
 
 Mutation, pass-through, and execution
 -------------------------------------

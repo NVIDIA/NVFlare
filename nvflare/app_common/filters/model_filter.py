@@ -108,11 +108,15 @@ class ModelFilter(DXOFilter):
                         raise ValueError("ModelFilter cannot change round identity in metadata")
             if result.optimizer_params is not None:
                 raise ValueError("Legacy DXO encoding cannot carry optimizer parameters")
-            if result.metrics is None:
-                result.meta.pop(MetaKey.INITIAL_METRICS, None)
             converted = from_shareable(FLModelUtils.to_shareable(result))
             if converted.data_kind != dxo.data_kind:
                 raise ValueError("ModelFilter cannot change DXO data kind")
+            # Apply callback metrics locally; keep shared serializer precedence unchanged.
+            if dxo.data_kind in (DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
+                if result.metrics is None:
+                    converted.remove_meta_props([MetaKey.INITIAL_METRICS])
+                else:
+                    converted.set_meta_prop(MetaKey.INITIAL_METRICS, result.metrics)
             # History belongs to the transport, even when callback metadata is replaced.
             converted.remove_meta_props([MetaKey.FILTER_HISTORY])
             converted.add_filter_history(dxo.get_filter_history())

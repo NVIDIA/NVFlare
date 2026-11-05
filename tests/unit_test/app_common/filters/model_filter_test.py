@@ -40,7 +40,7 @@ def test_model_filter_preserves_envelope_and_updates_metrics(kind):
         dxo = FLModelUtils.to_dxo(model)
         dxo.data["future_field"] = "preserve"
     elif kind == DataKind.METRICS:
-        dxo = DXO(kind, {"loss": 8.0})
+        dxo = DXO(kind, {"loss": 8.0}, {MetaKey.INITIAL_METRICS: {"loss": 5.0}})
     else:
         model.params_type = ParamsType.DIFF if kind == DataKind.WEIGHT_DIFF else ParamsType.FULL
         dxo = from_shareable(FLModelUtils.to_shareable(model))
@@ -59,6 +59,8 @@ def test_model_filter_preserves_envelope_and_updates_metrics(kind):
     assert out.meta["unknown"] == {"x": 1}
     assert out.meta["NUM_STEPS_CURRENT_ROUND"] == 13
     assert out.get_filter_history() == ["EarlierFilter", "EditMetrics"]
+    if kind == DataKind.METRICS:
+        assert out.meta[MetaKey.INITIAL_METRICS] == {"loss": 5.0}
     if kind == DataKind.FL_MODEL:
         decoded = FLModelUtils.from_dxo(out)
         assert decoded.start_round == 1
@@ -133,6 +135,27 @@ def test_legacy_aggregation_round_does_not_override_task_round():
     result = EditMetrics().process(shareable, FLContext())
     assert FLModelUtils.from_shareable(result).current_round == 3
     assert from_shareable(result).meta[AppConstants.CURRENT_ROUND] == 2
+
+
+@pytest.mark.parametrize("metrics", [{"loss": 2.0}, {}])
+def test_callback_metrics_override_stale_legacy_metadata(metrics):
+    model = FLModel(
+        params={"w": 1},
+        metrics=metrics,
+        meta={MetaKey.INITIAL_METRICS: {"loss": 8.0}, "custom": "preserve"},
+    )
+    filt = EditMetrics()
+
+    def update_metrics(decoded, fl_ctx):
+        decoded.metrics = metrics
+        return decoded
+
+    filt.process_model = update_metrics
+    result = FLModelUtils.from_shareable(filt.process(FLModelUtils.to_shareable(model), FLContext()))
+    assert result.metrics == metrics
+    assert result.params_type == ParamsType.FULL
+    assert result.meta["custom"] == "preserve"
+    assert model.meta[MetaKey.INITIAL_METRICS] == {"loss": 8.0}
 
 
 def test_filter_can_remove_legacy_metadata_metrics():
