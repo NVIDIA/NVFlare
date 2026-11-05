@@ -84,6 +84,12 @@ def test_export_validation_requires_backend_routes_and_local_assets(exported):
         build_ui.validate_export(exported)
 
 
+def test_export_validation_rejects_private_source_maps(exported):
+    (exported / "private.js.map").write_text('{"version": 3}')
+    with pytest.raises(build_ui.BuildError, match="Private browser source map"):
+        build_ui.validate_export(exported)
+
+
 def test_export_validation_rejects_missing_assets(exported):
     (exported / "images" / "logo.svg").unlink()
     with pytest.raises(build_ui.BuildError, match="Missing exported asset"):

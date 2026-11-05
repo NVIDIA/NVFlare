@@ -136,8 +136,13 @@ versions. Run the validation commands above and both ``npm audit`` and
 ``npm audit --omit=dev``. The baseline and known development-tool findings are
 recorded in ``dashboard/ui/DEPENDENCIES.md``.
 
-The static build generates ``THIRD_PARTY_NOTICES.txt`` from installed dependency
-licenses without importing their code. Required packages missing supplied or
-reviewed license text fail notice generation. Keep the notices with the exported
-assets. Native compiler and image-processing binaries are build dependencies and
+The static build generates ``THIRD_PARTY_NOTICES.txt`` from the installed
+packages and vendored components identified in its production browser source
+maps. Identical license text is shared while preserving copyright statements,
+NOTICE text, and additional conditions. Unknown licenses or missing attribution
+fail the build and require review. Browser source maps and their URL comments
+are removed before publishing; maps remain private build artifacts in ``.next/``.
+Keep the notices with the exported assets. See ``dashboard/ui/DEPENDENCIES.md``
+for the reviewed license scope, including build-only dependencies with additional
+obligations. Native compiler and image-processing binaries and ``node_modules``
 are not included in the static UI or Python distribution.

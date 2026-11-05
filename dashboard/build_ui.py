@@ -154,6 +154,8 @@ def validate_export(export_directory):
             raise BuildError(f"Dashboard export must not contain symbolic links: {document}")
         if not document.is_file():
             continue
+        if document.suffix == ".map":
+            raise BuildError(f"Private browser source map must not be published: {document}")
         if document.suffix == ".html":
             parser = AssetReferences()
             parser.feed(document.read_text(encoding="utf-8"))

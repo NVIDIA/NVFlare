@@ -23,6 +23,7 @@ module.exports = phase => {
     basePath: '/nvflare-dashboard',
     agentRules: false, // Keep this repository's agent instructions under contributor control.
     images: { unoptimized: true },
+    productionBrowserSourceMaps: true,
     reactStrictMode: true,
     generateBuildId: async () => process.env.NVFLARE_DASHBOARD_BUILD_ID || null,
     ...(development && backend ? {

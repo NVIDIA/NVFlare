@@ -34,8 +34,47 @@ There were no high or critical findings after the transitive patch refresh. Thes
 
 ## Distribution and notices
 
-`node scripts/third-party-notices.mjs` reads package metadata and license/NOTICE files from installed production dependencies without importing dependency code. It also retains notices for vendored code inside those packages. The static build writes the result to `out/THIRD_PARTY_NOTICES.txt`; the repository build helper publishes it with the UI assets.
+The production build generates browser source maps for license inventory. The notice generator reads the source maps for every exported JavaScript/CSS asset and selects the actual installed packages and used vendored components. Missing maps or unknown source formats fail the build; generated Next.js page-loader and manifest data are handled explicitly. Native/server/build-only packages are not selected merely because npm installed them.
 
-The inventory is conservative: it includes some build-time members of the production dependency tree that are not present in browser JavaScript. Native `@next/swc-*` compiler and `@img/*` image-processing binaries are excluded because they are not exported or shipped with NVFlare's static Dashboard. In particular, the optional libvips binaries in the npm installation have their own LGPL notices; `node_modules` and those binaries must not be copied into the Python package.
+The generator preserves complete license and NOTICE content, sharing identical text and the standard MIT and Apache-2.0 bodies between explicitly mapped packages. Only whitespace may change during text matching; distinct copyrights, exceptions, appendices, and additional conditions remain intact. Reconstruction checks verify that each original notice can be recovered without losing words or punctuation. Version-specific fallbacks are documented in `scripts/licenses/README.md`.
 
-Some published packages omit separate license files. Version-specific, reviewed fallbacks and their provenance are documented in `scripts/licenses/README.md`. Notice generation fails if a new required package lacks supplied or reviewed license text. Dependency updates must review any such failure rather than silently dropping attribution.
+The final export contains `THIRD_PARTY_NOTICES.txt`, with no browser source maps or source-map URL comments. Maps stay under the ignored `.next/` build directory. The publishing helper and wheel smoke check reject accidentally exported maps. Node dependencies and native image-processing binaries are not included in the Python distribution.
+
+## License scope of the distributed Dashboard
+
+The 2026-11-05 production browser source maps identify 51 installed package roots
+(50 distinct package names, because two `react-is` versions are used) and two
+Next.js vendored components. Their declared licenses and supplied license texts
+are MIT, Apache-2.0, or BSD-3-Clause. The exported inventory contains no identified
+GPL, AGPL, LGPL, MPL, noncommercial, or proprietary component. MUI Material,
+System, Data Grid, and Date Pickers are the MIT-licensed community packages; no
+MUI Pro/Premium package or commercial license key is used.
+
+| Distributed components | License |
+| --- | --- |
+| MUI Community, React, Next.js, Emotion, Axios, Day.js, Yup, and the other MIT-listed browser dependencies | MIT |
+| Formik and `@swc/helpers` | Apache-2.0 |
+| `hoist-non-react-statics` and `react-transition-group` | BSD-3-Clause |
+| Next.js vendored `path-to-regexp` and `process` | MIT |
+
+The larger npm installation contains packages with additional obligations that
+are absent from this exported browser inventory:
+
+| Build or server dependency | License and scope |
+| --- | --- |
+| Optional native libvips/Sharp platform bundles | LGPL-3.0-or-later, sometimes combined with Apache-2.0/MIT; native image-processing binaries are not included in the static UI or Python distributions. |
+| Next.js vendored `@vercel/og` 1.0.1 and its Satori license files | MPL-2.0; the unused Open Graph renderer is not exported. Distributing it later would require reviewing the MPL source-availability obligations. |
+| `caniuse-lite` browser-support data | CC-BY-4.0; used by build tooling and absent from the exported browser inventory. |
+| BlueOak-1.0.0 tools | Permissive development/build tools; absent from the exported browser inventory. |
+
+`type-fest` is dual-licensed MIT OR CC0-1.0; the MIT option is available. It is a
+typing/build dependency rather than part of this browser inventory.
+
+The generator accepts only reviewed permissive license expressions for exported
+components and fails on unreviewed expressions, including vendored package
+metadata. This check is specific to the locked dependencies and the actual build;
+a dependency or feature update must repeat the inventory and license review.
+Required copyright, license, and NOTICE text remains in the generated notices,
+with identical text shared between components. These findings describe the
+observed distribution and do not constitute blanket approval of future packages
+or of redistributing the complete npm installation.

@@ -2,7 +2,7 @@
 
 This directory contains the open-source MUI Dashboard frontend. It uses Next.js Pages Router and exports static HTML, CSS, and JavaScript for the Flask Dashboard at `/nvflare-dashboard`. Running the installed NVFlare Dashboard does not require Node.js.
 
-The frontend source follows NVFlare's Apache-2.0 license. Its MUI Material, Data Grid, and Date Picker packages are the MIT-licensed community editions and require no commercial MUI license key. Third-party notices are generated with the exported assets.
+The frontend source follows NVFlare's Apache-2.0 license. Its MUI Material, Data Grid, and Date Picker packages are the MIT-licensed community editions and require no commercial MUI license key. Third-party notices are generated from production browser source maps, with shared license text and preserved package attribution. Maps are removed from the export before publication.
 
 ## Prerequisites
 

@@ -61,7 +61,7 @@ def check_wheel(wheel):
             assert not PurePosixPath(name).is_absolute() and ".." not in PurePosixPath(name).parts
             assert hashlib.sha256(archive.read(PREFIX + name)).hexdigest() == expected, name
         assert not any(
-            name.startswith(PREFIX) and ("node_modules/" in name or name.endswith((".node", ".dylib", ".so")))
+            name.startswith(PREFIX) and ("node_modules/" in name or name.endswith((".node", ".dylib", ".so", ".map")))
             for name in names
         )
 

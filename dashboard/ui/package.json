@@ -14,7 +14,7 @@
     "typecheck": "next typegen && tsc --noEmit --incremental false",
     "test:browser": "playwright test",
     "test:backend": "playwright test --config playwright.backend.config.ts",
-    "test:notices": "node --test scripts/third-party-notices.test.mjs"
+    "test:notices": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
