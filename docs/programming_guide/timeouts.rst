@@ -1003,10 +1003,6 @@ For PSI operations, timeouts are controlled at lower levels:
 - **Task-level timeouts**: Use controller's general ``timeout`` parameter
 - **Communication timeouts**: Inherited from system ``heartbeat_timeout`` and ``peer_read_timeout``
 
-**Note**: For large-scale PSI operations, ensure adequate system-level timeouts in 
-``application_config.json`` to handle the iterative Diffie-Hellman protocol exchanges.
-
-
 Aggregator Timeouts
 -------------------
 
@@ -2334,9 +2330,6 @@ These files are located in the job's ``app/config/`` directory.
    * - File
      - Location
      - Timeouts Controlled
-   * - application_config.json
-     - app/config/
-     - Task timeouts, streaming timeouts, runner sync timeouts
    * - config_fed_client.json
      - app/config/
      - Executor timeouts, Client API task exchange, pipe handler settings
@@ -2431,11 +2424,10 @@ Client API Configuration (config_fed_client.json)
    }
 
 
-application_config.json Settings
---------------------------------
+Job Configuration Settings
+--------------------------
 
-Task communication, cell messaging, streaming, runner sync, shutdown, and server
-startup/dead-job safety settings:
+Set these as top-level entries in the job's ``config_fed_client.json``:
 
 .. code-block:: json
 
@@ -2444,14 +2436,11 @@ startup/dead-job safety settings:
      "submit_task_result_timeout": 120.0,
      "task_check_timeout": 5.0,
      "cell_wait_timeout": 5.0,
-     "streaming_per_request_timeout": 600.0,
      "np_download_chunk_size": 4194304,
      "tensor_download_chunk_size": 4194304,
      "runner_sync_timeout": 10.0,
      "max_runner_sync_timeout": 60.0,
-     "end_run_readiness_timeout": 10.0,
-     "strict_start_job_reply_check": false,
-     "sync_client_jobs_require_previous_report": true
+     "end_run_readiness_timeout": 10.0
    }
 
 
@@ -2460,8 +2449,10 @@ startup/dead-job safety settings:
 Server Startup and Dead-Job Safety Flags
 ----------------------------------------
 
-These ``application_config.json`` flags are server-side safety controls used during job startup
-and client heartbeat synchronization:
+These flags are read by the server parent (SP). Set them before SP startup using
+``NVFLARE_STRICT_START_JOB_REPLY_CHECK`` and
+``NVFLARE_SYNC_CLIENT_JOBS_REQUIRE_PREVIOUS_REPORT``, or the corresponding
+``--set`` arguments on SP's Python launch command:
 
 .. list-table::
    :header-rows: 1
