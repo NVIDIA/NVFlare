@@ -1755,7 +1755,7 @@ class _FakeFlare:
         if not self._receive_called:
             raise RuntimeError('"receive" needs to be called before sending model!')
         self.sent.append(model)
-        self.sent_snapshots.append({k: v.clone() for k, v in (model.params or {}).items()})
+        self.sent_snapshots.append({k: v.clone() if torch.is_tensor(v) else v for k, v in (model.params or {}).items()})
         self.events.append("send")
         if clear_cache:
             self.clear()
@@ -2123,6 +2123,55 @@ def test_hook_edits_change_what_is_loaded_and_sent():
     assert torch.equal(module.seen[2].weight, torch.full((2, 2), 7.0))
     assert [ema.item() for ema in hooks.received_ema] == [0.0, 1.0]
     assert all(torch.equal(model.meta["ema"], torch.ones(1)) for model in fake.sent)
+
+
+def test_hook_edits_do_not_change_the_received_model():
+    fake = _FakeFlare([("train", _round_model(r, meta={"ema": torch.full((1,), float(r))})) for r in range(10)])
+
+    _fit_with_step_sync(
+        fake, RecordingNet(), _loader(4), sync_every_n_steps=2, max_epochs=1, callbacks=[EditingHooks()]
+    )
+
+    for round_idx, received in enumerate(fake.received):
+        assert torch.equal(received.params["fc.weight"], torch.full((2, 2), float(round_idx)))
+        assert "ema" in received.meta
+
+
+def test_validate_before_step_sync_fit_runs_receive_hooks_once():
+    events = []
+    module = RecordingNet()
+    hooks = EditingHooks()
+    fake = _FakeFlare([("train", _round_model(r, meta={"ema": torch.full((1,), float(r))})) for r in range(10)])
+
+    with _flare(fake):
+        trainer = _pl_trainer(max_epochs=1, callbacks=[hooks, RecordingHooks("a", events)])
+        lightning_patch(trainer, sync_every_n_steps=2)
+        trainer.validate(module, dataloaders=_loader(2))
+        trainer.fit(module, train_dataloaders=_loader(4))
+
+    assert [event[2] for event in events if event[1] == "on_fl_receive"] == [0, 1]
+    assert [ema.item() for ema in hooks.received_ema] == [0.0, 1.0]
+    assert torch.equal(module.seen[0].weight, torch.full((2, 2), 7.0))
+
+
+class ExtraStateNet(RecordingNet):
+    def get_extra_state(self):
+        return {"version": 1}
+
+    def set_extra_state(self, state):
+        self.extra_state = state
+
+
+def test_step_sync_sends_non_tensor_extra_state():
+    tasks = _train_tasks(10)
+    for _, model in tasks:
+        model.params["_extra_state"] = {"version": 1}
+    fake = _FakeFlare(tasks)
+
+    _fit_with_step_sync(fake, ExtraStateNet(), _loader(4), sync_every_n_steps=2, max_epochs=1)
+
+    assert fake.steps() == [2, 2]
+    assert all(model.params["_extra_state"] == {"version": 1} for model in fake.sent)
 
 
 def _ddp_step_sync_worker(local_rank, port, out_dir):

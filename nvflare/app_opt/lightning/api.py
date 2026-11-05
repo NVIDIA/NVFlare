@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import logging
 from typing import Dict, Optional
 
@@ -279,11 +280,16 @@ class FLCallback(Callback):
     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
         if self._sync_every_n_steps is None or self._training_round_started:
             return
-        input_model = self._receive_model(trainer)
-        if not input_model or not self._is_training:
-            trainer.should_stop = True
-            raise StopIteration
-        self._load_received_model(trainer, pl_module, input_model)
+        input_model = self._pending_train_model
+        self._pending_train_model = None
+        if input_model is not None:
+            self._update_model(pl_module, input_model)
+        else:
+            input_model = self._receive_model(trainer)
+            if not input_model or not self._is_training:
+                trainer.should_stop = True
+                raise StopIteration
+            input_model = self._load_received_model(trainer, pl_module, input_model)
         self._start_round(trainer, pl_module, input_model)
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
@@ -338,7 +344,10 @@ class FLCallback(Callback):
             return pl_module.cpu().state_dict()
         if trainer.global_rank != 0:
             return None
-        return {key: value.detach().to("cpu", copy=True) for key, value in pl_module.state_dict().items()}
+        return {
+            key: value.detach().to("cpu", copy=True) if isinstance(value, Tensor) else copy.deepcopy(value)
+            for key, value in pl_module.state_dict().items()
+        }
 
     def on_validation_start(self, trainer, pl_module):
         # Only an explicit validation before fit evaluates the received global model for model selection.
@@ -396,13 +405,17 @@ class FLCallback(Callback):
 
         model = self._receive_model(trainer)
         if model:
-            self._load_received_model(trainer, pl_module, model)
+            return self._load_received_model(trainer, pl_module, model)
         return model
 
     def _load_received_model(self, trainer, pl_module, model: FLModel):
-        _call_fl_hooks(trainer, pl_module, "on_fl_receive", model)
-        self._update_model(pl_module, model)
-        _call_fl_hooks(trainer, pl_module, "on_fl_model_loaded", model)
+        editable = copy.copy(model)
+        editable.params = dict(model.params) if model.params is not None else None
+        editable.meta = dict(model.meta) if model.meta is not None else None
+        _call_fl_hooks(trainer, pl_module, "on_fl_receive", editable)
+        self._update_model(pl_module, editable)
+        _call_fl_hooks(trainer, pl_module, "on_fl_model_loaded", editable)
+        return editable
 
     def _send(self, trainer, pl_module, model: FLModel):
         outgoing = model if trainer.global_rank == 0 else None

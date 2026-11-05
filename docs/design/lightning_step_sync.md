@@ -169,6 +169,9 @@ Three hooks, defined as methods on any `pl.Callback` in `trainer.callbacks`, cal
   evaluate task, where `fl_model.params` is `None`.
 - Not called for an empty receive or for a non-train task left pending in step mode.
 - Called in `trainer.callbacks` order.
+- Hooks get a shallow copy of the received model: edits change what is loaded, not the model the Client API keeps
+  as the baseline for DIFF transfers.
+- A model received by `trainer.validate()` before `fit()` runs the receive hooks once; `fit()` reuses it.
 
 ```python
 class EMASync(pl.Callback):
