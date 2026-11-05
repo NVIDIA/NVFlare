@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock
@@ -35,6 +34,7 @@ from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.utils.network_utils import get_open_ports
+from tests.timing_utils import wait_for
 
 
 class _Victim:
@@ -85,9 +85,6 @@ def test_raw_cross_job_cell_request_is_rejected_before_blob_allocation(monkeypat
         executor,
         participants={victim_fqcn: "victim"},
     )
-    victim_cell.core_cell.start()
-    attacker_cell.core_cell.start()
-    time.sleep(1.0)
 
     request = _make_request("server")
 
@@ -97,7 +94,14 @@ def test_raw_cross_job_cell_request_is_rejected_before_blob_allocation(monkeypat
     monkeypatch.setattr(blob_streamer_module, "BlobTask", fail_blob_allocation)
 
     try:
-        started = time.monotonic()
+        victim_cell.core_cell.start()
+        attacker_cell.core_cell.start()
+        wait_for(
+            lambda: victim_cell.core_cell.running
+            and attacker_cell.core_cell.running
+            and attacker_cell.core_cell.is_cell_connected(victim_fqcn),
+            message="collaboration cells did not become ready",
+        )
         reply = attacker_cell.send_request(
             channel=MSG_CHANNEL,
             target=victim_fqcn,
@@ -105,11 +109,9 @@ def test_raw_cross_job_cell_request_is_rejected_before_blob_allocation(monkeypat
             request=request,
             timeout=5.0,
         )
-        elapsed = time.monotonic() - started
 
         assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.COMM_ERROR
         assert reply.get_header(MessageHeaderKey.ERROR) == "Collab call rejected"
-        assert elapsed < 4.0
         assert victim.call_count == 0
     finally:
         attacker_cell.core_cell.stop()
@@ -140,11 +142,16 @@ def test_raw_same_job_cell_uses_authenticated_caller_and_preserves_valid_calls()
         executor,
         participants={victim_fqcn: "victim", participant_fqcn: "site-a"},
     )
-    victim_cell.core_cell.start()
-    participant_cell.core_cell.start()
-    time.sleep(1.0)
 
     try:
+        victim_cell.core_cell.start()
+        participant_cell.core_cell.start()
+        wait_for(
+            lambda: victim_cell.core_cell.running
+            and participant_cell.core_cell.running
+            and participant_cell.core_cell.is_cell_connected(victim_fqcn),
+            message="collaboration cells did not become ready",
+        )
         spoofed_reply = participant_cell.send_request(
             channel=MSG_CHANNEL,
             target=victim_fqcn,

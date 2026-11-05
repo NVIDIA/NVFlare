@@ -117,26 +117,24 @@ Key Features
   communication backends without changing application code
 - **Rich Examples** -- Extensive library of FL algorithms, workflows, and application examples to build from
 
-What is New in 2.9.0
+What is New in 2.9.1
 ====================
 
-NVIDIA FLARE 2.9.0's headline changes are Agent Skills for agent-assisted
-federated development, a Python-first Collaboration API, a Slurm job
-launcher, and more reliable large-model training, alongside a broad
-security-hardening pass across the internal transport and admin access.
+NVIDIA FLARE 2.9.1 updates the optional confidential computing technical
+preview with unified provisioning for bare-metal confidential VMs,
+Confidential Containers on Kubernetes, and Azure. It also includes checkpoint
+path restrictions, a Dashboard API restriction, and bug fixes.
 
 **Highlights:**
 
-- **Agent Skills**: agent-assisted federated development
-- **Collaboration API**: a Python-first API for research workflows
-- **Slurm job launcher**: a new HPC execution target alongside process,
-  Docker, and Kubernetes
-- **Large-model training**: a hardened model-transfer streaming transport
-  and FedAvg validated to 72 billion parameters
-- **Security hardening**: authenticated CellNet messages, internal mTLS by
-  default, and hardened admin and job-signing paths
+- **Confidential computing (technical preview)**: CVM Builder for Intel TDX
+  and AMD SEV-SNP, Confidential Containers, and refreshed Azure guides
+- **Security hardening**: checkpoint outputs confined to the application
+  directory, Dashboard client ``props`` rejected, and launcher-defined
+  bring-your-own-code (BYOC) jobs blocked in confidential computing
 
-See :doc:`release_notes/flare_290` for full release notes.
+See :doc:`release_notes/flare_291` for full release notes and
+:ref:`migration_guide` for required configuration changes.
 See :doc:`release_notes/previous` for previous releases.
 
 Real-World Use Cases & FLARE Day

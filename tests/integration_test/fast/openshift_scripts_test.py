@@ -13,8 +13,13 @@
 # limitations under the License.
 
 import os
-import subprocess
 from pathlib import Path
+
+import pytest
+
+from tests.process_test_utils import run_owned_process
+
+pytestmark = pytest.mark.timeout(60)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _K8S_COMMON = _REPO_ROOT / "examples" / "devops" / "openshift" / "scripts" / "k8s_common.sh"
@@ -32,7 +37,7 @@ def _write_prepare_config(tmp_path: Path, **resources: str) -> str:
             **resources,
         }
     )
-    result = subprocess.run(
+    result = run_owned_process(
         [
             "bash",
             "-c",
@@ -40,11 +45,10 @@ def _write_prepare_config(tmp_path: Path, **resources: str) -> str:
             "--",
             str(_K8S_COMMON),
         ],
-        check=True,
-        capture_output=True,
         env=env,
-        text=True,
+        timeout=30,
     )
+    assert result.returncode == 0, result.stdout + result.stderr
     return Path(result.stdout.strip()).read_text()
 
 

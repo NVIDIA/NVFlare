@@ -330,7 +330,10 @@ class TestAdapterPassThroughHeader:
         cell.get_fobs_context.assert_called_once_with(props={FOBSContextKey.PASS_THROUGH: True})
 
     @pytest.mark.parametrize("fqcn", ["server.job-1", "server.job-1.worker"])
-    def test_submit_update_decode_failure_exits_server_job_process(self, fqcn):
+    @pytest.mark.parametrize(
+        "error", [OSError("No space left on device"), RuntimeError("failed to download from site-3")]
+    )
+    def test_submit_update_decode_failure_exits_server_job_process(self, fqcn, error):
         captured = {}
         cell = _make_mock_cell(captured)
         cb = MagicMock()
@@ -339,7 +342,7 @@ class TestAdapterPassThroughHeader:
         headers = _stream_headers(CellChannel.SERVER_COMMAND, ServerCommandNames.SUBMIT_UPDATE)
         future = _make_future(headers, payload=b"encoded-result")
 
-        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload", side_effect=OSError("No space left on device")):
+        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload", side_effect=error):
             with patch("nvflare.fuel.f3.cellnet.cell.os._exit", side_effect=SystemExit(1)) as mock_exit:
                 with pytest.raises(SystemExit) as ex_info:
                     adapter.call(future)

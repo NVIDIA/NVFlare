@@ -26,6 +26,7 @@ from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import In
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
 from nvflare.private.fed.client.client_runner import ClientRunner
+from tests.timing_utils import isolate_time
 
 
 class _MockCell:
@@ -281,3 +282,11 @@ def test_cleanup_drains_threads_when_active_download_cancellation_fails(tmp_path
     assert len(controller._aggr_thread.join_calls) == 1
     assert not root_dir.exists()
     assert "failed to cancel tensor disk offload" in controller.log_warning.call_args.args[1]
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.app_common.ccwf.swarm_client_ctl",
+    )
