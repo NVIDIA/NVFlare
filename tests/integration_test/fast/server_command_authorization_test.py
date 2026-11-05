@@ -207,7 +207,12 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     assert attack["target"] == f"server.{victim}"
     assert victim != attacker
     wait_for(lambda: status(attacker_session, attacker) == "FINISHED:COMPLETED", "attacker task/update completion")
-    if attack["rc"] == ReturnCode.AUTHENTICATION_ERROR:
+    attacker_result = Path(attacker_session.download_job_result(attacker))
+    evidence["forged_origin"] = json.loads(next(attacker_result.rglob("forged_origin.json")).read_text())
+    assert evidence["forged_origin"]["sender"] == f"server.{attacker}"
+    rejection = f"auth token for client server_job is bound to origin server.{attacker}, not message origin server"
+    evidence["forged_origin_rejected"] = rejection in (kits / "localhost/log.txt").read_text()
+    if attack["rc"] == ReturnCode.AUTHENTICATION_ERROR and evidence["forged_origin_rejected"]:
         assert status(victim_session, victim) == "RUNNING"
         (run / "release").touch()
     evidence["after"] = wait_for(
@@ -233,6 +238,7 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     assert evidence["authorized_abort"] == "FINISHED:ABORTED"
     assert evidence["authorized_runner_aborted"] is True
     assert attack["rc"] == ReturnCode.AUTHENTICATION_ERROR
+    assert evidence["forged_origin_rejected"] is True
     assert evidence["runner_aborted"] is False
     assert evidence["after"] == "FINISHED:COMPLETED"
     received = json.loads(next(result_dir.rglob("received.json")).read_text())
