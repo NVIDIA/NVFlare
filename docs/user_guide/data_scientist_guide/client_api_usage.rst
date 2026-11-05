@@ -154,6 +154,37 @@ Below is a table overview of key Client APIs.
      - Patches the PyTorch Lightning Trainer for usage with FLARE.
      - :func:`patch<nvflare.app_opt.lightning.api.patch>`
 
+Lightning step-level sync
+-------------------------
+
+By default, ``flare.patch(trainer)`` runs one FL round per ``trainer.fit()`` call, so the shortest
+round is one epoch. For models where an epoch takes hours, set ``sync_every_n_steps`` to exchange
+the model with the server every N optimizer steps within a single ``fit()``:
+
+.. code-block:: python
+
+    import nvflare.client.lightning as flare
+
+    flare.patch(trainer, sync_every_n_steps=10)
+    trainer.fit(model, datamodule=dm)
+
+Each received global model is loaded in place, so the optimizer, LR scheduler, AMP scaler and
+data position carry over between rounds. Rank 0 sends, and every rank loads the next global model
+at the start of the next batch. ``fit()`` ends when the server stops sending training tasks.
+
+Set the server's ``num_rounds`` to ``ceil(total optimizer steps / N)``. If the server finishes first,
+training stops at the next sync; if the trainer finishes first, the last round is shorter than N steps.
+
+In this mode, ``restore_state`` and ``update_fit_loop`` have no effect, and ``train_with_evaluation``
+is not supported.
+
+Any callback in ``trainer.callbacks`` can define these hooks, in both modes:
+
+* ``on_fl_receive(trainer, pl_module, fl_model)``: before the received model is loaded.
+* ``on_fl_model_loaded(trainer, pl_module, fl_model)``: after it is loaded.
+* ``on_fl_before_send(trainer, pl_module, fl_model)``: before the model is sent; ``fl_model`` is
+  ``None`` on ranks other than 0.
+
 .. list-table:: HuggingFace APIs
    :widths: 25 25 50
    :header-rows: 1
