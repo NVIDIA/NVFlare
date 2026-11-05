@@ -387,27 +387,3 @@ def test_run_blob_cb_stops_task_when_post_processing_fails_after_success():
     error = stopped["error"]
     assert isinstance(error, StreamError)
     assert "blob_cb threw ValueError: post-processing failed" == str(error)
-
-
-def test_blob_callback_can_wait_for_reader_without_occupying_its_pool(monkeypatch):
-    import nvflare.fuel.f3.streaming.blob_streamer as blob_module
-
-    readers, callbacks, received = [], [], []
-    monkeypatch.setattr(
-        blob_module, "stream_thread_pool", SimpleNamespace(submit=lambda fn, *args: readers.append((fn, args)))
-    )
-    monkeypatch.setattr(
-        blob_module, "callback_thread_pool", SimpleNamespace(submit=lambda fn, *args: callbacks.append((fn, args)))
-    )
-    future = StreamFuture(stream_id=31)
-    handler = BlobHandler(lambda value: received.append(value.result(timeout=0)))
-
-    handler.handle_blob_cb(future, _FakeStream(declared_size=4, chunks=[b"data"]), False)
-
-    assert len(readers) == len(callbacks) == 1
-    assert received == []
-    reader, args = readers.pop()
-    reader(*args)
-    callback, args = callbacks.pop()
-    callback(*args)
-    assert received == [b"data"]

@@ -16,6 +16,7 @@ import logging
 import multiprocessing
 import time
 import traceback
+from threading import Event
 
 import pytest
 
@@ -26,6 +27,7 @@ from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamTargetUnreachable
 from nvflare.fuel.utils.network_utils import get_open_ports
+from tests.timing_utils import ManualClock
 
 _CONNECT_TIMEOUT = 10.0
 _CHANNEL = "routed_stream_error_test"
@@ -43,8 +45,8 @@ class _ErrorCapture(logging.Handler):
 
 
 def _wait_for_connection(cell, peer_fqcn):
-    deadline = time.time() + _CONNECT_TIMEOUT
-    while time.time() < deadline:
+    deadline = time.monotonic() + _CONNECT_TIMEOUT
+    while time.monotonic() < deadline:
         if cell.is_cell_connected(peer_fqcn):
             return
         time.sleep(0.05)
@@ -52,8 +54,8 @@ def _wait_for_connection(cell, peer_fqcn):
 
 
 def _wait_for_peer_state(cell, peer_fqcn, connected):
-    deadline = time.time() + _CONNECT_TIMEOUT
-    while time.time() < deadline:
+    deadline = time.monotonic() + _CONNECT_TIMEOUT
+    while time.monotonic() < deadline:
         if cell.is_cell_connected(peer_fqcn) is connected:
             return
         time.sleep(0.05)
@@ -155,6 +157,7 @@ def _run_sender(root_url, result_queue):
 
 def _run_recovery_server(root_url, status_queue, stop_event):
     cell = None
+    route_failed = Event()
     try:
         cell = CoreCell("server", root_url, secure=False, credentials={})
         stream_cell = StreamCell(cell)
@@ -163,10 +166,15 @@ def _run_recovery_server(root_url, status_queue, stop_event):
         def report_route_failure(message, error):
             status_queue.put({"route_error": error})
             original_handler(message, error)
+            route_failed.set()
 
         cell.add_error_handler(STREAM_CHANNEL, STREAM_DATA_TOPIC, report_route_failure)
         cell.start()
         status_queue.put({"ready": True})
+        if not route_failed.wait(30):
+            raise RuntimeError("sender never exercised the missing downstream route")
+        _wait_for_peer_state(cell, _MISSING_RECEIVER, connected=True)
+        status_queue.put({"route_recovered": True})
         stop_event.wait(30)
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
@@ -176,13 +184,17 @@ def _run_recovery_server(root_url, status_queue, stop_event):
             cell.stop()
 
 
-def _run_recovering_sender(root_url, result_queue):
+def _run_recovering_sender(root_url, result_queue, receiver_ready):
     cell = None
     try:
         import nvflare.fuel.f3.streaming.byte_streamer as byte_streamer_module
 
         byte_streamer_module.STREAM_RETRY_WAIT = 0.2
         byte_streamer_module.STREAM_RETRY_TIMEOUT = 3.0
+        clock = ManualClock()
+        # Receiver process startup must not consume the sender's retry policy.
+        # Replace this module's reference, keeping the real transport clocks intact.
+        byte_streamer_module.time = clock
         cell = CoreCell("site-1", root_url, secure=False, credentials={})
         stream_cell = StreamCell(cell)
         cell.start()
@@ -196,6 +208,9 @@ def _run_recovering_sender(root_url, result_queue):
             optional=False,
             reliable=True,
         )
+        if not receiver_ready.wait(30):
+            raise RuntimeError("downstream route was not restored")
+        clock.advance(byte_streamer_module.STREAM_RETRY_WAIT + 0.01)
         result_queue.put({"bytes_sent": future.result(timeout=10), "payload": payload})
     except Exception:
         result_queue.put({"error": traceback.format_exc()})
@@ -263,10 +278,10 @@ def test_routed_optional_stream_reports_downstream_route_removal_without_error_l
     finally:
         receiver_stop.set()
         server_stop.set()
-        receiver.join(timeout=10)
-        sender.join(timeout=10)
-        server.join(timeout=10)
         for process in (receiver, sender, server):
+            if process.pid is None:
+                continue
+            process.join(timeout=10)
             if process.is_alive():
                 process.terminate()
                 process.join(timeout=5)
@@ -295,8 +310,9 @@ def test_non_optional_reliable_stream_recovers_after_transient_downstream_route_
     receiver_result = context.Queue()
     server_stop = context.Event()
     receiver_stop = context.Event()
+    receiver_ready = context.Event()
     server = context.Process(target=_run_recovery_server, args=(root_url, server_status, server_stop))
-    sender = context.Process(target=_run_recovering_sender, args=(root_url, sender_result))
+    sender = context.Process(target=_run_recovering_sender, args=(root_url, sender_result, receiver_ready))
     receiver = context.Process(
         target=_run_recovery_receiver,
         args=(root_url, receiver_status, receiver_result, receiver_stop),
@@ -309,20 +325,22 @@ def test_non_optional_reliable_stream_recovers_after_transient_downstream_route_
         route_failure = _queue_result(server_status)
         assert route_failure["route_error"]
 
-        # Heal the downstream route while the non-optional sender is still within
-        # retry_timeout. The next reliable retry must reach the new receiver.
+        # Observe both ends of the restored route before advancing retry policy.
         receiver.start()
         _queue_result(receiver_status)
+        assert _queue_result(server_status)["route_recovered"] is True
+        receiver_ready.set()
         send_result = _queue_result(sender_result)
         receive_result = _queue_result(receiver_result)
         sender.join(timeout=15)
     finally:
         receiver_stop.set()
         server_stop.set()
-        receiver.join(timeout=10)
-        sender.join(timeout=10)
-        server.join(timeout=10)
+        receiver_ready.set()
         for process in (receiver, sender, server):
+            if process.pid is None:
+                continue
+            process.join(timeout=10)
             if process.is_alive():
                 process.terminate()
                 process.join(timeout=5)

@@ -17,6 +17,7 @@
 import errno
 import os
 import subprocess
+import tempfile
 import time
 import uuid
 
@@ -163,3 +164,39 @@ class OwnedProcesses:
             attempt(lambda process=process: process.wait(timeout=max(0.0, deadline - time.monotonic())))
         if survivors or errors:
             raise RuntimeError(f"Process cleanup failed; survivors={survivors}; errors={[str(e) for e in errors]}")
+
+
+def run_owned_process(args, *, cwd=None, env=None, timeout=300.0, cleanup_grace=5.0):
+    """Capture output without inherited pipe hangs and clean every owned child on every exit."""
+    with (
+        tempfile.TemporaryFile(mode="w+t", encoding="utf-8", errors="replace") as stdout,
+        tempfile.TemporaryFile(mode="w+t", encoding="utf-8", errors="replace") as stderr,
+    ):
+        process = None
+        try:
+            with OwnedProcesses(grace=cleanup_grace) as owner:
+                process = owner.start(args, cwd=cwd, env=env, stdout=stdout, stderr=stderr)
+                deadline = time.monotonic() + timeout
+                while process.poll() is None:
+                    owner.capture()
+                    remaining = max(0.0, deadline - time.monotonic())
+                    if not remaining:
+                        raise subprocess.TimeoutExpired(args, timeout)
+                    try:
+                        process.wait(timeout=min(0.1, remaining))
+                    except subprocess.TimeoutExpired:
+                        pass
+        except BaseException as error:
+            stdout.seek(0)
+            stderr.seek(0)
+            error.output, error.stderr = stdout.read(), stderr.read()
+            error.returncode = process.returncode if process is not None else None
+            if isinstance(error, RuntimeError):
+                error.args = (
+                    f"{error}\ncommand={args!r}; returncode={error.returncode}"
+                    f"\nstdout (tail):\n{error.output[-20000:]}\nstderr (tail):\n{error.stderr[-20000:]}",
+                )
+            raise
+        stdout.seek(0)
+        stderr.seek(0)
+        return subprocess.CompletedProcess(args, process.returncode, stdout.read(), stderr.read())

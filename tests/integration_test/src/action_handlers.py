@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import typing
 
-from nvflare.fuel.flare_api.api_spec import AuthorizationError, InvalidJobDefinition
+from nvflare.fuel.flare_api.api_spec import AuthorizationError, InternalError, InvalidJobDefinition
 from nvflare.fuel.flare_api.flare_api import Session
 
 if typing.TYPE_CHECKING:
@@ -33,6 +33,9 @@ from tests.integration_test.src.utils import (
     normalize_invalid_job_definition_message,
     run_admin_api_tests,
 )
+
+_ABORT_STARTUP_RETRY_TIMEOUT = 10.0
+_ABORT_STARTUP_RETRY_INTERVAL = 0.5
 
 
 class _CmdHandler(ABC):
@@ -136,10 +139,32 @@ class _CloneJobHandler(_CmdHandler):
 class _AbortJobHandler(_CmdHandler):
     def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
         admin_controller.admin_api_response = None
-        try:
-            admin_api.abort_job(admin_controller.job_id)
-        except AuthorizationError:
-            admin_controller.admin_api_response = build_authorization_error_details(admin_api, "abort_job")
+        job_id = admin_controller.job_id
+        deadline = time.monotonic() + _ABORT_STARTUP_RETRY_TIMEOUT
+        while True:
+            try:
+                admin_api.abort_job(job_id)
+                return
+            except AuthorizationError:
+                admin_controller.admin_api_response = build_authorization_error_details(admin_api, "abort_job")
+                return
+            except InternalError as ex:
+                # RUNNING metadata can be visible before the startup guard is cleared.
+                # Retry only that specific response for this job, preserving other errors.
+                remaining = deadline - time.monotonic()
+                if str(ex) != f"error: Job {job_id} is starting; retry abort." or remaining <= 0:
+                    raise
+                time.sleep(min(_ABORT_STARTUP_RETRY_INTERVAL, remaining))
+                if time.monotonic() >= deadline:
+                    raise
+
+
+class _AppCommandHandler(_CmdHandler):
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
+        admin_controller.admin_api_response = None
+        admin_controller.admin_api_response = admin_api.do_app_command(
+            admin_controller.job_id, command_args[0], cmd_data=None
+        )
 
 
 class _ListJobHandler(_CmdHandler):

@@ -24,7 +24,9 @@ routing through the executor-owned fire_log_analytics().
 
 import builtins
 import sys
+import threading
 import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
 import msgpack
@@ -209,29 +211,35 @@ class TestInitializeAndFinalize:
         execute() returns while the thread still runs, so finalize() must join with a bound
         and abandon (daemon thread) instead of hanging CJ/simulator teardown forever. Abandoning
         the runner must restore the process globals that TaskScriptRunner owns."""
+        ready_key = "test.stuck_in_process_trainer_ready"
         release_key = "test.release_stuck_in_process_trainer"
+        ready = threading.Event()
+        release = threading.Event()
+        DataBus().put_data(ready_key, ready)
+        DataBus().put_data(release_key, release)
         (tmp_path / "train.py").write_text(
-            "import time\n"
             "from nvflare.fuel.data_event.data_bus import DataBus\n"
-            f"while not DataBus().get_data('{release_key}'):\n"
-            "    time.sleep(0.5)\n"
+            f"DataBus().get_data('{ready_key}').set()\n"
+            f"DataBus().get_data('{release_key}').wait()\n"
         )
         original_print = builtins.print
         original_argv = sys.argv
         original_argv_values = list(sys.argv)
         backend, fl_ctx = _initialized_backend(str(tmp_path), result_wait_timeout=0.05)
         try:
+            assert ready.wait(timeout=10.0), "trainer did not enter the blocked application code"
             try:
-                result = backend.execute("train", Shareable(), fl_ctx, Signal())
+                result = backend.execute("train", _result_shareable(), fl_ctx, Signal())
                 assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
                 assert backend._task_fn_thread.is_alive()  # the reachable-hang precondition
                 assert backend._task_fn_thread.daemon  # a wedged trainer cannot block process exit
             finally:
-                with patch.object(ipb_module, "_TRAINER_STOP_JOIN_TIMEOUT", 0.5):
-                    start = time.monotonic()
+                with (
+                    patch.object(ipb_module, "_TRAINER_STOP_JOIN_TIMEOUT", 0.5),
+                    patch.object(backend._task_fn_thread, "join") as join,
+                ):
                     backend.finalize(FLContext())
-                    elapsed = time.monotonic() - start
-            assert elapsed < 5.0, "finalize must not hang on a stuck trainer"
+                    join.assert_called_once_with(timeout=0.5)
             assert backend._task_fn_thread.is_alive()
             assert builtins.print is original_print
             assert sys.argv is original_argv
@@ -241,8 +249,9 @@ class TestInitializeAndFinalize:
             assert capsys.readouterr().out == "unrelated output\n"
             assert "did not stop within" in caplog.text
         finally:
-            DataBus().put_data(release_key, True)
-            backend._task_fn_thread.join(timeout=2.0)
+            release.set()
+            backend.finalize(FLContext())
+            backend._task_fn_thread.join(timeout=10.0)
         assert not backend._task_fn_thread.is_alive()
 
     def test_initialize_configures_memory_management(self, custom_dir):
@@ -389,11 +398,12 @@ class TestExecute:
 
             clean_databus.subscribe([TOPIC_GLOBAL_RESULT], fake_trainer)
 
-            task = Shareable()
+            task = _result_shareable()
             task.set_header(AppConstants.CURRENT_ROUND, 3)
             result = backend.execute("train", task, fl_ctx, Signal())
 
             assert isinstance(result, Shareable)
+            assert backend._client_api._receive_error is None
             assert result.get_return_code() == ReturnCode.OK
             # the round travels back on the result for workflow bookkeeping
             assert result.get_header(AppConstants.CURRENT_ROUND) == 3
@@ -422,27 +432,38 @@ class TestExecute:
         monkeypatch.setattr("nvflare.app_common.executors.client_api.in_process_backend._RESULT_POLL_INTERVAL", 1.0)
         backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=0.05)
         try:
-            start = time.monotonic()
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.monotonic() - start
+            now = [0.0]
+
+            def advance_sleep(delay):
+                if now[0]:
+                    pytest.fail("result wait continued after its deadline")
+                now[0] += delay
+
+            sleep = Mock(side_effect=advance_sleep)
+            with monkeypatch.context() as clock_patch:
+                clock_patch.setattr(ipb_module, "time", SimpleNamespace(monotonic=lambda: now[0], sleep=sleep))
+                # A valid task keeps trainer liveness independent of the timeout.
+                result = backend.execute("train", _result_shareable(), fl_ctx, Signal())
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 0.5, "timeout must not be rounded up to the polling interval"
+            sleep.assert_called_once_with(pytest.approx(0.05))
+            assert backend._client_api._receive_error is None
+            assert "timed out after 0.05s waiting for result" in backend._abort_reason
         finally:
             backend.finalize(FLContext())
 
     def test_execute_fails_fast_when_trainer_thread_exits(self, clean_databus, exited_custom_dir):
         backend, fl_ctx = _initialized_backend(exited_custom_dir, result_wait_timeout=2.0)
         try:
-            backend._task_fn_thread.join(timeout=1.0)
+            backend._task_fn_thread.join(timeout=5.0)
             assert not backend._task_fn_thread.is_alive()
 
-            start = time.monotonic()
+            deliver = Mock()
+            clean_databus.subscribe([TOPIC_GLOBAL_RESULT], deliver)
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.monotonic() - start
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 0.5, "a dead trainer must be detected before waiting for a result"
+            deliver.assert_not_called()
             assert "trainer thread exited" in backend._abort_reason
         finally:
             backend.finalize(FLContext())
@@ -451,7 +472,7 @@ class TestExecute:
         backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=2.0)
         monkeypatch.setattr(backend, "_trainer_thread_is_alive", Mock(side_effect=[True, False]))
         try:
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+            result = backend.execute("train", _result_shareable(), fl_ctx, Signal())
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
             assert backend._abort_reason == "trainer thread exited before producing a result"
@@ -480,22 +501,24 @@ class TestExecute:
         TASK_ABORTED would be misleading (task never delivered, abort_signal never triggered)."""
         backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=0.05)
         try:
-            first = backend.execute("train", Shareable(), fl_ctx, Signal())
+            first = backend.execute("train", _result_shareable(), fl_ctx, Signal())
             assert first.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert "timed out after 0.05s waiting for result" in backend._abort_reason
 
-            start = time.monotonic()
+            deliver = Mock()
+            clean_databus.subscribe([TOPIC_GLOBAL_RESULT], deliver)
             second = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.monotonic() - start
             assert second.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 1.0, "post-abort tasks must fail at entry, not wait the poll loop"
+            deliver.assert_not_called()
         finally:
             backend.finalize(FLContext())
 
     def test_late_result_after_timeout_cannot_satisfy_next_task(self, clean_databus, custom_dir):
         backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=0.05)
         try:
-            first = backend.execute("train", Shareable(), fl_ctx, Signal())
+            first = backend.execute("train", _result_shareable(), fl_ctx, Signal())
             assert first.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert "timed out after 0.05s waiting for result" in backend._abort_reason
 
             clean_databus.publish([TOPIC_LOCAL_RESULT], _result_shareable())
             second = backend.execute("evaluate", Shareable(), fl_ctx, Signal())
@@ -504,21 +527,54 @@ class TestExecute:
         finally:
             backend.finalize(FLContext())
 
-    def test_trainer_abort_mid_task_returns_task_aborted(self, clean_databus, custom_dir):
-        """TOPIC_ABORT arriving mid-wait (what TaskScriptRunner fires when the script raises)
-        aborts the current task well before the result-wait bound -- legacy parity."""
+    def test_trainer_abort_mid_task_returns_task_aborted(self, clean_databus, custom_dir, monkeypatch):
+        """A trainer abort during task delivery returns before the first result poll."""
         backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=30.0)
         try:
             # deterministic: the abort fires synchronously right after the task is delivered
             clean_databus.subscribe(
                 [TOPIC_GLOBAL_RESULT], lambda t, d, b: clean_databus.publish([TOPIC_ABORT], "script failure")
             )
-            start = time.monotonic()
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.monotonic() - start
+            sleep = Mock(side_effect=AssertionError("an aborted task must not continue polling"))
+            monkeypatch.setattr(ipb_module, "time", SimpleNamespace(monotonic=time.monotonic, sleep=sleep))
+            result = backend.execute("train", _result_shareable(), fl_ctx, Signal())
 
             assert result.get_return_code() == ReturnCode.TASK_ABORTED
-            assert elapsed < 10.0, "abort must not wait out the result bound"
+            assert backend._abort_reason == "ABORT: script failure"
+            sleep.assert_not_called()
+        finally:
+            backend.finalize(FLContext())
+
+    @pytest.mark.parametrize("abort_source", ["trainer", "signal"])
+    def test_abort_during_result_poll_returns_task_aborted(self, clean_databus, custom_dir, monkeypatch, abort_source):
+        """An abort arriving after polling starts is observed on the next iteration."""
+        backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=30.0)
+        abort_signal = Signal()
+        now = [0.0]
+
+        def abort_during_poll(delay):
+            if sleep.call_count > 1:
+                pytest.fail("result polling continued after abort")
+            now[0] += delay
+            if abort_source == "trainer":
+                clean_databus.publish([TOPIC_ABORT], "script failure")
+            else:
+                abort_signal.trigger("task cancelled")
+
+        sleep = Mock(side_effect=abort_during_poll)
+        try:
+            with monkeypatch.context() as clock_patch:
+                clock_patch.setattr(ipb_module, "time", SimpleNamespace(monotonic=lambda: now[0], sleep=sleep))
+                result = backend.execute("train", _result_shareable(), fl_ctx, abort_signal)
+
+            assert result.get_return_code() == ReturnCode.TASK_ABORTED
+            expected_reason = (
+                "ABORT: script failure"
+                if abort_source == "trainer"
+                else "ABORT: 'train' is aborted, abort_signal_triggered"
+            )
+            assert backend._abort_reason == expected_reason
+            sleep.assert_called_once()
         finally:
             backend.finalize(FLContext())
 
@@ -534,19 +590,22 @@ class TestExecute:
         finally:
             backend.finalize(FLContext())
 
-    def test_none_result_returns_execution_exception_without_waiting_for_timeout(self, clean_databus, custom_dir):
+    def test_none_result_returns_execution_exception_without_waiting_for_timeout(
+        self, clean_databus, custom_dir, monkeypatch
+    ):
         backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=1.0)
         try:
             clean_databus.subscribe(
                 [TOPIC_GLOBAL_RESULT],
                 lambda t, d, b: clean_databus.publish([TOPIC_LOCAL_RESULT], None),
             )
-            start = time.monotonic()
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.monotonic() - start
+            sleep = Mock(side_effect=AssertionError("an invalid result must not enter the wait loop"))
+            monkeypatch.setattr(ipb_module, "time", SimpleNamespace(monotonic=time.monotonic, sleep=sleep))
+            result = backend.execute("train", _result_shareable(), fl_ctx, Signal())
 
+            assert backend._client_api._receive_error is None
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 0.5, "an invalid None result must fail fast"
+            sleep.assert_not_called()
         finally:
             backend.finalize(FLContext())
 
@@ -564,8 +623,9 @@ class TestExecute:
         try:
             monkeypatch.setattr(backend, "_prepare_task_meta", Mock(side_effect=RuntimeError("boom")))
 
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+            result = backend.execute("train", _result_shareable(), fl_ctx, Signal())
 
+            assert backend._client_api._receive_error is None
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
             assert backend._abort_reason is not None
         finally:
@@ -640,14 +700,15 @@ class TestClosedApiOutgoingGate:
 
         assert published == []
 
-    def test_closed_receive_returns_none_fast(self, clean_databus, custom_dir):
+    def test_closed_receive_returns_none_fast(self, clean_databus, custom_dir, monkeypatch):
         backend, _ = _initialized_backend(custom_dir)
         api = backend._client_api
         backend.finalize(FLContext())
 
-        start = time.monotonic()
+        receive = Mock(side_effect=AssertionError("a closed API must bypass the receive loop"))
+        monkeypatch.setattr(api, "_InProcessClientAPI__receive", receive)
         assert api.receive(timeout=10.0) is None
-        assert time.monotonic() - start < 1.0, "closed receive must not wait out its timeout"
+        receive.assert_not_called()
 
     def test_open_api_still_publishes(self, clean_databus, custom_dir):
         # the gate must not over-drop: an open API's log still lands on the bus

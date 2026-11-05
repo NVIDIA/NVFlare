@@ -64,13 +64,13 @@ class PTFileModelPersistor(ModelPersistor):
 
         Method 2 - Load from a location from the app folder
 
-        It is assumed that the app folder must contain the environments.json file. Among other things, this
+        It is assumed that the app folder must contain the config/environment.json file. Among other things, this
         JSON file must specify where to find the checkpoint file. It does so with two JSON elements:
 
             - APP_CKPT_DIR: specifies the folder (within the app) where the checkpoint file resides.
             - APP_CKPT: specifies the base file name of the checkpoint
 
-        Here is an example of the environments.json content::
+        Here is an example of the config/environment.json content::
 
             {
                 "APP_CKPT_DIR": "model",

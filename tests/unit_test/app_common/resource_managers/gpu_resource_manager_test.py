@@ -18,6 +18,7 @@ import pytest
 
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
+from tests.timing_utils import isolate_time
 
 NUM_GPU_KEY = "num_of_gpus"
 GPU_MEM_KEY = "mem_per_gpu_in_GiB"
@@ -344,3 +345,11 @@ class TestGPUResourceManager:
         assert gpu_resource_manager.reserved_resources == {}
         for r, v in gpu_resource_manager.resources.items():
             assert v.memory == 16
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.app_common.resource_managers.auto_clean_resource_manager",
+    )
