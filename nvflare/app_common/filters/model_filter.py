@@ -24,7 +24,7 @@ from nvflare.app_common.utils.fl_model_utils import MODEL_ATTRS, FLModelUtils
 
 
 class ModelFilter(DXOFilter):
-    """Experimental task filter with the Client API's FLModel interface.
+    """Task filter with the Client API's FLModel interface.
 
     Metadata and metrics dictionaries are shallow-copied; their nested values,
     parameters, and optimizer state are borrowed. Return a model to record

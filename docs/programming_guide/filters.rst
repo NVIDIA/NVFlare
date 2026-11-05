@@ -85,8 +85,8 @@ Your subclass of DXOFilter benefits from the features of DXOFilter:
 
 .. _model_filter:
 
-Model Filters (Experimental)
-============================
+Model Filters
+=============
 
 ``nvflare.app_common.filters.model_filter.ModelFilter`` provides an ``FLModel`` callback
 for task filters used with Client API jobs. It extends ``DXOFilter`` and retains its
