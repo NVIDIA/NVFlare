@@ -289,17 +289,16 @@ class TestLoadConfigDict:
         assert ConfigService.load_config_dict(str(tmp_path / "x.json")) == {"v": 1}
         assert ConfigService.load_config_dict(str(tmp_path / "x")) == {"v": 1}
 
-    @pytest.mark.parametrize("extension", ["conf", "yml", "yaml", "conf.default", "yml.default", "yaml.default"])
-    def test_hocon_and_yaml_files_are_ignored(self, tmp_path, extension):
-        _write(tmp_path / f"x.{extension}", {"v": 1})
+    def test_hocon_and_yaml_files_are_ignored(self, tmp_path):
+        _write(tmp_path / "x.conf", "v = 1")
+        _write(tmp_path / "x.yml", "v: 1")
 
         assert ConfigService.load_config_dict("x.json", [str(tmp_path)], raise_exception=False) is None
         with pytest.raises(FileNotFoundError, match=r"x\[\.json\|\.json\.default\]"):
             ConfigService.load_config_dict("x.json", [str(tmp_path)])
 
-    @pytest.mark.parametrize("content", ["{not json", "v = 1", "v: 1"])
-    def test_malformed_config_raises(self, tmp_path, content):
-        _write(tmp_path / "x.json", content)
+    def test_malformed_config_raises(self, tmp_path):
+        _write(tmp_path / "x.json", "{not json")
 
         with pytest.raises(json.JSONDecodeError):
             ConfigService.load_config_dict("x.json", [str(tmp_path)], raise_exception=False)

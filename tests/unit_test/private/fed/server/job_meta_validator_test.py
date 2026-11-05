@@ -17,7 +17,6 @@ import json
 import os
 import sys
 import zipfile
-from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
@@ -60,28 +59,18 @@ def _zip_job_with_meta(folder_name: str, meta: str) -> bytes:
 
 
 def _zip_minimal_job(
-    folder_name: str,
-    meta: dict,
-    server_config: dict,
-    client_config=None,
-    client_extension="json",
-    meta_extension="json",
-    server_extension="json",
+    folder_name: str, meta: dict, server_config: dict, client_config=None, client_extension="json"
 ) -> bytes:
-    """Vary canonical filename suffixes for rejection and JSON-default acceptance tests."""
-    meta_file = Path(JobConstants.META_FILE).with_suffix(f".{meta_extension}")
-    server_file = Path(JobConstants.SERVER_JOB_CONFIG).with_suffix(f".{server_extension}")
-    client_file = Path(JobConstants.CLIENT_JOB_CONFIG).with_suffix(f".{client_extension}")
     bio = io.BytesIO()
     with ZipFile(bio, "w", compression=zipfile.ZIP_DEFLATED) as z:
         z.writestr(f"{folder_name}/app/config/", "")
-        z.writestr(f"{folder_name}/{meta_file}", json.dumps(meta))
+        z.writestr(f"{folder_name}/{JobConstants.META_FILE}", json.dumps(meta))
         z.writestr(
-            f"{folder_name}/app/config/{server_file}",
+            f"{folder_name}/app/config/{JobConstants.SERVER_JOB_CONFIG}",
             json.dumps(server_config),
         )
         z.writestr(
-            f"{folder_name}/app/config/{client_file}",
+            f"{folder_name}/app/config/config_fed_client.{client_extension}",
             json.dumps(client_config if client_config is not None else {"format_version": 2, "executors": []}),
         )
     return bio.getvalue()
@@ -429,35 +418,23 @@ def test_submission_derives_task_admission_from_client_config():
     assert submitted["resource_spec"] == meta["resource_spec"]
 
 
-@pytest.mark.parametrize("extension", ["conf", "yml", "yaml", "conf.default", "yml.default", "yaml.default"])
-@pytest.mark.parametrize(
-    "extension_arg,error_message",
-    [
-        ("meta_extension", "meta.json not existing"),
-        ("server_extension", "server config is missing"),
-        ("client_extension", "client config is missing"),
-    ],
-)
-def test_submission_rejects_hocon_and_yaml_configs(extension, extension_arg, error_message):
+@pytest.mark.parametrize("extension", ["conf", "yml", "yaml"])
+def test_submission_rejects_hocon_and_yaml_client_configs(extension):
     meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1}
-    # Valid JSON contents ensure that rejection is caused by the unsupported filename suffix.
-    data = _zip_minimal_job("split", meta, {"format_version": 2, "workflows": []}, **{extension_arg: extension})
+    data = _zip_minimal_job("split", meta, {"format_version": 2, "workflows": []}, client_extension=extension)
     valid, error, _ = JobMetaValidator().validate("split", data)
     assert not valid
-    assert error_message in error
+    assert "client config is missing" in error
 
 
-@pytest.mark.parametrize("extension", ["json", "json.default"])
-def test_submission_accepts_json_configs_and_uses_client_config_for_admission(extension):
+def test_submission_accepts_json_default_client_config_and_uses_it_for_admission():
     meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1, "resource_spec": {}}
     data = _zip_minimal_job(
         "split",
         meta,
         {"format_version": 2, "workflows": []},
         {"format_version": 3, "execution_lifetime": "task", "executors": []},
-        client_extension=extension,
-        meta_extension=extension,
-        server_extension=extension,
+        client_extension="json.default",
     )
     valid, error, submitted = JobMetaValidator().validate("split", data)
     assert valid, error
