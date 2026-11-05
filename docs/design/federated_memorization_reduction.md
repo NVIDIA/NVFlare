@@ -1,6 +1,6 @@
 # Experimental memorization mitigation and auditing
 
-Status: draft for API and design review, November 3, 2026.
+Status: draft for API and design review, updated November 5, 2026.
 
 Issue: [NVIDIA/NVFlare#5680](https://github.com/NVIDIA/NVFlare/issues/5680).
 
@@ -111,19 +111,21 @@ access, retention and deletion policies.
 
 ## Dependency on the ModelFilter foundation
 
-The general `ModelFilter` interface, its conversion and representation tests, the
-`FLModelUtils` metrics-precedence fix, and generic documentation are reviewed and
-merged separately in [PR #5683](https://github.com/NVIDIA/NVFlare/pull/5683)
-([issue #5682](https://github.com/NVIDIA/NVFlare/issues/5682)).
-Merge that foundation first, then rebase this proposal onto `main`.
+The general `ModelFilter` interface, its focused tests, and generic documentation
+were merged into `main` in [PR #5683](https://github.com/NVIDIA/NVFlare/pull/5683)
+([issue #5682](https://github.com/NVIDIA/NVFlare/issues/5682)). This proposal builds
+on that merged implementation. Callback metrics handling is local to `ModelFilter`;
+`FLModelUtils` and `ModelLearnerExecutor` retain their upstream behavior.
 
 Auditing subclasses use the callback contract documented in
-[Model Filters](../programming_guide/filters.rst#model-filters-experimental).
-That contract owns supported encodings, borrowed parameters, copied metadata and
-metrics, `None` pass-through semantics, and immutable round identity. This proposal
-adds application-specific baseline ownership, audit scheduling, measurement and
-reporting. `Recipe.add_client_component` stays here because those components need
-registration; the generic filter example uses existing filter registration.
+[Model Filters](../programming_guide/filters.rst#model-filters).
+That contract owns supported encodings, borrowed parameters and nested values,
+shallow copies of metadata and metrics dictionaries, `None` pass-through semantics,
+and immutable round identity. A callback returning `None` must leave shared data
+unchanged. This proposal adds application-specific baseline ownership, audit
+scheduling, measurement and reporting. `Recipe.add_client_component` stays here
+because those components need registration; the generic filter example uses existing
+filter registration.
 
 On current main, `ClientRunner` materializes lazy input references for active input
 filters, and `ClientAPIExecutor` materializes external/attached-process results for
