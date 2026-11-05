@@ -13,7 +13,7 @@
 # limitations under the License.
 import threading
 
-from nvflare.apis.dxo import MetaKey
+from nvflare.apis.dxo import MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
@@ -198,20 +198,15 @@ class ModelLearnerExecutor(Executor):
             )
             return make_reply(ReturnCode.EMPTY_RESULT)
 
-        # if the learner returned the valid BEFORE_TRAIN_VALIDATE result, set the INITIAL_METRICS in
-        # the train result, which can be used for best model selection.
+        result = FLModelUtils.to_shareable(train_result)
+        # Pre-training validation describes the incoming global model. Set its
+        # selection metrics on the outgoing DXO without changing the learner's result.
         if val_result:
-            if train_result.params is not None:
-                # Weight/difference serialization uses explicit metrics for
-                # INITIAL_METRICS. Keep the pre-training validation authoritative.
-                train_result.metrics = val_result.metrics
-            FLModelUtils.set_meta_prop(
-                model=train_result,
-                key=MetaKey.INITIAL_METRICS,
-                value=val_result.metrics,
-            )
+            dxo = from_shareable(result)
+            dxo.set_meta_prop(MetaKey.INITIAL_METRICS, val_result.metrics)
+            dxo.update_shareable(result)
 
-        return FLModelUtils.to_shareable(train_result)
+        return result
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)

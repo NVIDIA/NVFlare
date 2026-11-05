@@ -25,7 +25,8 @@ def test_train_preserves_before_train_metrics_for_model_selection():
     executor = ModelLearnerExecutor("learner")
     executor.learner = Mock()
     executor.learner.validate.return_value = FLModel(metrics={"accuracy": 0.4})
-    executor.learner.train.return_value = FLModel(params={"w": 1}, metrics={"accuracy": 0.9})
+    train_result = FLModel(params={"w": 1}, metrics={"accuracy": 0.9}, meta={"custom": "keep"})
+    executor.learner.train.return_value = train_result
     incoming = FLModelUtils.to_shareable(FLModel(params={"w": 0}))
 
     result = from_shareable(executor.train(incoming, FLContext()))
@@ -33,13 +34,17 @@ def test_train_preserves_before_train_metrics_for_model_selection():
     assert result.data_kind == DataKind.WEIGHTS
     assert result.data == {"w": 1}
     assert result.meta[MetaKey.INITIAL_METRICS] == {"accuracy": 0.4}
+    assert result.meta["custom"] == "keep"
+    assert train_result.metrics == {"accuracy": 0.9}
+    assert train_result.meta == {"custom": "keep"}
 
 
 def test_metrics_only_train_result_preserves_payload_and_validation_metadata():
     executor = ModelLearnerExecutor("learner")
     executor.learner = Mock()
     executor.learner.validate.return_value = FLModel(metrics={"accuracy": 0.4})
-    executor.learner.train.return_value = FLModel(metrics={"accuracy": 0.9})
+    train_result = FLModel(metrics={"accuracy": 0.9})
+    executor.learner.train.return_value = train_result
     incoming = FLModelUtils.to_shareable(FLModel(params={"w": 0}))
 
     result = from_shareable(executor.train(incoming, FLContext()))
@@ -47,3 +52,5 @@ def test_metrics_only_train_result_preserves_payload_and_validation_metadata():
     assert result.data_kind == DataKind.METRICS
     assert result.data == {"accuracy": 0.9}
     assert result.meta[MetaKey.INITIAL_METRICS] == {"accuracy": 0.4}
+    assert train_result.metrics == {"accuracy": 0.9}
+    assert train_result.meta == {}
