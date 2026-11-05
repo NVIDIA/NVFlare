@@ -84,6 +84,7 @@ Advanced Topics
 - :doc:`Global Model Initialization <programming_guide/global_model_initialization>`
 - :doc:`Timeouts Reference <programming_guide/timeouts>`
 - :doc:`Dashboard API <programming_guide/dashboard_api>`
+- :doc:`Building the Dashboard Frontend <programming_guide/dashboard_frontend>`
 - :doc:`Unsafe Component Detection <user_guide/admin_guide/security/unsafe_component_detection>`
 
 .. toctree::
@@ -96,6 +97,7 @@ Advanced Topics
    programming_guide/global_model_initialization
    programming_guide/timeouts
    programming_guide/dashboard_api
+   programming_guide/dashboard_frontend
    user_guide/admin_guide/security/unsafe_component_detection
 
 Large Models & LLM
