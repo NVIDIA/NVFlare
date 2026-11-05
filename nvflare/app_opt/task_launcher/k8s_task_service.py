@@ -15,8 +15,8 @@
 """Kubernetes-specific CP ownership and workspace policy for task control."""
 
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
-from nvflare.app_opt.task_launcher.task_service import CPRemoteTaskHandle, CPTaskClient, CPTaskService
-from nvflare.app_opt.task_launcher.task_service import _Job as _BaseJob
+from nvflare.private.fed.task_worker.task_service import CPRemoteTaskHandle, CPTaskClient, CPTaskService
+from nvflare.private.fed.task_worker.task_service import _Job as _BaseJob
 
 _MAX_CANCEL_FENCES = 128
 

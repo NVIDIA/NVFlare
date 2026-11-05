@@ -18,8 +18,8 @@ import os
 
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.task_launcher_spec import TaskLauncherError
-from nvflare.app_opt.task_launcher.task_service import CPRemoteTaskHandle, CPTaskClient, CPTaskService
-from nvflare.app_opt.task_launcher.task_service import _Job as _BaseJob
+from nvflare.private.fed.task_worker.task_service import CPRemoteTaskHandle, CPTaskClient, CPTaskService
+from nvflare.private.fed.task_worker.task_service import _Job as _BaseJob
 
 ENV_TASK_OWNER = "NVFLARE_SLURM_TASK_OWNER"
 ENV_TASK_TOKEN = "NVFLARE_SLURM_TASK_TOKEN"

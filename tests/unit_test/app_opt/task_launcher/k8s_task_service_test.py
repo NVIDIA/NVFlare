@@ -365,7 +365,7 @@ def test_unknown_cancel_flood_seals_admission_without_evicting_fences(control, m
 
 def test_cj_observer_is_a_slow_backstop_not_the_task_poll_loop():
     from nvflare.app_opt.task_launcher.k8s_task_service import _Job
-    from nvflare.app_opt.task_launcher.task_service import _CJ_OBSERVATION_INTERVAL
+    from nvflare.private.fed.task_worker.task_service import _CJ_OBSERVATION_INTERVAL
 
     backend = SimpleNamespace(core_v1=Mock(), namespace="site", request_timeout=1)
     backend.core_v1.read_namespaced_pod.return_value = SimpleNamespace(

@@ -20,7 +20,8 @@ and lifecycle details, see the
 CPU and GPU task profiles
 -------------------------
 
-Both profiles are required. The task request selects resources independently
+Configure the resources each application needs; a site can run CPU-only tasks
+without a GPU task profile. The task request selects resources independently
 of the CJ: ``gpu_count=0`` submits ``--gres=none``; a positive count submits
 ``--gres=gpu:<count>`` and receives device visibility from that allocation.
 Explicitly clearing GRES is limited to this task-capable profile. Existing

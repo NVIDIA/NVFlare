@@ -342,6 +342,9 @@ CP: SlurmTaskService -> shared CP task control -> native task backend -> Slurm a
 worker: common task_worker_process (native scope) -> application
 ```
 
+The shared CP control lives in `nvflare/private/fed/task_worker/task_service.py`;
+only the scheduler-specific service and backend live under `app_opt`.
+
 Application completion and native cleanup are independent. The common supervisor
 requires settlement by default. Slurm's parent-owned profile accepts a verified
 immutable completion first, makes one bounded cleanup wait, and acknowledges the
