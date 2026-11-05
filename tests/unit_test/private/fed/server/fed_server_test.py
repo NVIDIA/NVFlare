@@ -18,15 +18,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY, CellIdentityResolver
+from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
 from nvflare.private.defs import (
@@ -403,7 +405,9 @@ class TestFederatedServer:
         identity, private_key = auth_identity
         server = object.__new__(FederatedServer)
         server.logger = MagicMock()
-        server.cell = SimpleNamespace(get_fqcn=lambda: "server")
+        server.cell = SimpleNamespace(
+            get_fqcn=lambda: "server", core_cell=SimpleNamespace(identity_resolver=CellIdentityResolver())
+        )
         server.client_manager = SimpleNamespace(clients={})
         server._get_id_asserter = lambda: identity
         request = new_cell_message(
@@ -432,7 +436,6 @@ class TestFederatedServer:
             ("server", "server", "server", "relay-1", False),
             ("server", "server", "server", None, False),
             ("server", "server", "server.job-a", "server", False),
-            ("site-a", "unknown", "site-a", "site-a", False),
             ("site-a", "unknown", "server", "relay-1", False),
             ("site-a", "registered", "server", "site-a", False),
         ],
@@ -443,7 +446,9 @@ class TestFederatedServer:
         identity, private_key = auth_identity
         server = object.__new__(FederatedServer)
         server.logger = MagicMock()
-        server.cell = SimpleNamespace(get_fqcn=lambda: "server")
+        server.cell = SimpleNamespace(
+            get_fqcn=lambda: "server", core_cell=SimpleNamespace(identity_resolver=CellIdentityResolver())
+        )
         server.client_manager = SimpleNamespace(clients={})
         if token == "registered":
             client = Client(name, token)
@@ -462,6 +467,7 @@ class TestFederatedServer:
         )
         if peer:
             request.set_prop(MessagePropKey.ENDPOINT, Endpoint(peer))
+        request.set_prop(MessagePropKey.COMMON_NAME, peer)
 
         reply = server._validate_auth_headers(request)
 
@@ -471,16 +477,18 @@ class TestFederatedServer:
             assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
 
     @pytest.mark.parametrize(
-        "origin,peer,identity_map,accepted",
+        "name,origin,peer,identity_map,accepted",
         [
-            ("site-a", "site-a", {}, True),
-            ("relay-1.site-a", "relay-1", {"relay-1.site-a": "site-a"}, True),
-            ("server", "site-a", {}, False),
-            ("relay-2.site-a", "relay-1", {"relay-2.site-a": "site-a"}, False),
+            ("site-a", "site-a", "site-a", {}, True),
+            ("site-a", "relay-1.site-a", "relay-1", {"relay-1.site-a": "site-a"}, True),
+            ("relay-1", "relay-1", "relay-1", {}, True),
+            ("custom-cn", "relay-1.site-a", "relay-1", {"relay-1.site-a": "custom-cn"}, True),
+            ("site-a", "server", "site-a", {}, False),
+            ("site-a", "relay-2.site-a", "relay-1", {"relay-2.site-a": "site-a"}, False),
         ],
     )
-    def test_heartbeat_recovery_requires_provisioned_identity_and_transport_scope(
-        self, auth_identity, origin, peer, identity_map, accepted
+    def test_recovery_requires_provisioned_identity_and_transport_scope(
+        self, auth_identity, name, origin, peer, identity_map, accepted
     ):
         identity, private_key = auth_identity
         server = object.__new__(FederatedServer)
@@ -497,13 +505,14 @@ class TestFederatedServer:
                 MessageHeaderKey.DESTINATION: "server",
                 MessageHeaderKey.CHANNEL: CellChannel.SERVER_MAIN,
                 MessageHeaderKey.TOPIC: CellChannelTopic.HEART_BEAT,
-                CellMessageHeaderKeys.CLIENT_NAME: "site-a",
+                CellMessageHeaderKeys.CLIENT_NAME: name,
                 CellMessageHeaderKeys.TOKEN: "unknown",
-                CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content("site-aunknown", private_key),
+                CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content(name + "unknown", private_key),
             },
             None,
         )
         request.set_prop(MessagePropKey.ENDPOINT, Endpoint(peer))
+        request.set_prop(MessagePropKey.COMMON_NAME, peer)
 
         reply = server._validate_auth_headers(request)
 
@@ -523,7 +532,9 @@ class TestFederatedServer:
         origin = new_admin_client_name()
         server = object.__new__(FederatedServer)
         server.logger = MagicMock()
-        server.cell = SimpleNamespace(get_fqcn=lambda: "server")
+        server.cell = SimpleNamespace(
+            get_fqcn=lambda: "server", core_cell=SimpleNamespace(identity_resolver=CellIdentityResolver())
+        )
         server.client_manager = SimpleNamespace(clients={})
         server._get_id_asserter = lambda: identity
         request = new_cell_message(

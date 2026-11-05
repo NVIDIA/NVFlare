@@ -17,17 +17,23 @@
 import subprocess
 import sys
 
-child = subprocess.Popen(
-    [
-        sys.executable,
-        "-c",
-        "import os,sys,time; from pathlib import Path; "
-        "Path(sys.argv[1]).write_text(str(os.getpid())); print('ready', flush=True); time.sleep(60)",
-        sys.argv[1],
-    ],
-    start_new_session=True,
-    stdout=subprocess.PIPE,
-    text=True,
-)
-assert child.stdout.readline().strip() == "ready"
-child.stdout.close()
+
+def main():
+    child = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import os,sys,time; from pathlib import Path; "
+            "Path(sys.argv[1]).write_text(str(os.getpid())); print('ready', flush=True); time.sleep(60)",
+            sys.argv[1],
+        ],
+        start_new_session=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert child.stdout.readline().strip() == "ready"
+    child.stdout.close()
+
+
+if __name__ == "__main__":
+    main()

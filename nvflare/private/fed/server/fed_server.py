@@ -542,6 +542,7 @@ class FederatedServer(BaseServer):
                 and peer
                 and origin == peer.name
                 and is_valid_admin_client_name(origin)
+                and name not in (FQCN.ROOT_SERVER, private_defs.AUTH_CLIENT_NAME_FOR_SJ)
                 and message.get_prop(MessagePropKey.COMMON_NAME) == name
             ):
                 return origin
@@ -549,17 +550,17 @@ class FederatedServer(BaseServer):
                 fqcn == MISSING_CLIENT_FQCN
                 and token not in self.client_manager.clients
                 and name not in (FQCN.ROOT_SERVER, private_defs.AUTH_CLIENT_NAME_FOR_SJ)
-                and message.get_header(MessageHeaderKey.CHANNEL) == CellChannel.SERVER_MAIN
-                and message.get_header(MessageHeaderKey.TOPIC) == CellChannelTopic.HEART_BEAT
-                and message.get_header(MessageHeaderKey.DESTINATION) == FQCN.ROOT_SERVER
                 and origin
                 and not FQCN.validate(origin)
                 and peer
                 and (origin == peer.name or FQCN.is_ancestor(peer.name, origin))
+                and message.get_prop(MessagePropKey.COMMON_NAME)
+                and self.cell.core_cell.identity_resolver.resolve(peer.name)
+                == message.get_prop(MessagePropKey.COMMON_NAME)
                 and self.cell.core_cell.identity_resolver.resolve(origin) == name
             ):
-                # A same-key restart may lose registrations. Resolve heartbeat recovery against
-                # provisioned transport identities before the heartbeat restores the client table.
+                # Resolve lost client/relay registrations against the configured mTLS identities
+                # and the authenticated forwarding peer, rather than skipping origin binding.
                 return origin
             return fqcn
 

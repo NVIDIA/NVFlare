@@ -36,7 +36,7 @@ from nvflare.lighter.prov_utils import prepare_builders
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.utils import update_storage_locations
-from tests.process_test_utils import OwnedProcesses, process_running
+from tests.process_test_utils import OwnedProcesses, process_running, wait_for_processes
 
 
 def wait_for(check, description, timeout=60):
@@ -200,7 +200,7 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     attacker_result = Path(attacker_session.download_job_result(attacker))
     evidence["forged_origin"] = json.loads(next(attacker_result.rglob("forged_origin.json")).read_text())
     assert evidence["forged_origin"]["sender"] == f"server.{attacker}"
-    rejection = f"auth token for client server_job is bound to origin server.{attacker}, not message origin server"
+    rejection = "auth token for client server_job is bound to origin <missing>, not message origin server"
     evidence["forged_origin_rejected"] = rejection in (kits / "localhost/log.txt").read_text()
     rejection = "auth token for client server is bound to origin <missing>, not message origin server"
     evidence["server_credential_replay_rejected"] = rejection in (kits / "localhost/log.txt").read_text()
@@ -261,3 +261,5 @@ def test_process_ownership_survives_early_parent_exit(tmp_path):
     finally:
         if child is not None and process_running(child):
             child.kill()
+            _, alive = wait_for_processes([child], timeout=5)
+            assert not alive
