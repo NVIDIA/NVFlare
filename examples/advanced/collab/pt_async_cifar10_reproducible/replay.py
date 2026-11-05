@@ -29,7 +29,7 @@ class ReplayScheduler:
     """Accept a predefined assignment-ID sequence regardless of RPC completion.
 
     Supply logical_sequence to reserve logical jobs independently of worker
-    count (K may exceed physical workers). Its entries name each assignment in
+    count (logical active clients may exceed physical workers). Its entries name each assignment in
     dispatch order, including repeated logical clients. Per-assignment metadata
     can carry training seeds or experimental controls to a train_kwargs builder.
     Replay fixes acceptance and assignment bases; it does not simulate time.
@@ -73,7 +73,7 @@ class ReplayScheduler:
         self._pending.clear()
 
     def dispatch(self):
-        end = self._reserved + self.coordinator.num_active_jobs
+        end = self._reserved + self.coordinator.concurrency
         metadata = None if self.assignment_metadata is None else self.assignment_metadata[self._reserved : end]
         assignments = self.coordinator.reserve(self.logical_sequence[self._reserved : end], metadata)
         self._reserved += len(assignments)
@@ -92,7 +92,9 @@ class ReplayScheduler:
             return None
         expected = self.arrival_sequence[self._cursor]
         if expected not in self.coordinator.active:
-            raise ValueError(f"replay assignment {expected} is not dispatched; sequence is incompatible with K/B/O")
+            raise ValueError(
+                f"replay assignment {expected} is not dispatched; sequence is incompatible with active-client, buffer or refill limits"
+            )
         return expected if expected in self._ready else None
 
     def on_accept(self, assignment):

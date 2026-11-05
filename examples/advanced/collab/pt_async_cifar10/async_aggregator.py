@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""CIFAR-10 model, evaluation, and artifact hooks for AsyncRecipe."""
+"""CIFAR-10 model, evaluation, and artifact hooks for FedBuffRecipe."""
 
 import gc
 import json
@@ -49,7 +49,7 @@ def seed_everything(seed: int) -> None:
 
 
 class Cifar10AsyncApplication:
-    """Own CIFAR concerns while AsyncRecipe owns scheduling and aggregation."""
+    """Own CIFAR concerns while FedBuffRecipe owns scheduling and aggregation."""
 
     def __init__(
         self,

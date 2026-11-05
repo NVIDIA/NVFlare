@@ -59,7 +59,7 @@ These use small NumPy arrays to focus on communication and control flow.
 
 | Example | What you'll learn |
 |---|---|
-| [Async recipe](numpy_async/README.md) | Reusable K/B/O scheduling with model adapters and optional update transformations |
+| [FedBuff recipe](numpy_async/README.md) | Configurable client concurrency, buffered aggregation and refill with model adapters and optional update transformations |
 | [Async research extensions](pt_async_cifar10_reproducible/README.md) | Optional fixed replay, logical workers and isolated seed streams |
 | [Response callbacks](response_callbacks/job.py) | Processing results with response callbacks within each round |
 | [Swarm learning](swarm/swarm.py) | Decentralized training with client-to-client calls |

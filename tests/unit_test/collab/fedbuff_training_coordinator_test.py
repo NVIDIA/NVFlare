@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 
 from examples.advanced.collab.numpy_async.job import NumpyModelAdapter
-from nvflare.collab.async_recipe import AsyncResult, AsyncTrainingCoordinator
+from nvflare.collab.fedbuff_recipe import FedBuffResult, FedBuffTrainingCoordinator
 
 
 def model(value):
@@ -30,16 +30,16 @@ def coordinator(**kwargs):
         initial_model=model(10),
         model_adapter=NumpyModelAdapter(),
         num_updates=3,
-        num_active_jobs=2,
+        concurrency=2,
         buffer_size=1,
         min_open_slots=1,
     )
     options.update(kwargs)
-    return AsyncTrainingCoordinator(**options)
+    return FedBuffTrainingCoordinator(**options)
 
 
 def result(job, value, steps=1):
-    return AsyncResult(job.assignment_id, job.base_version, model(value), {"num_steps": steps})
+    return FedBuffResult(job.assignment_id, job.base_version, model(value), {"num_steps": steps})
 
 
 def test_stale_return_uses_assignment_base_and_publication_precedes_refill():
@@ -71,7 +71,7 @@ def test_step_weighted_buffer_matches_cifar_formula_and_does_not_retain_models()
     assert run.accepted_count == 2
 
 
-def test_k_b_o_sync_boundary_and_exact_budget():
+def test_synchronous_boundary_and_exact_budget():
     run = coordinator(num_updates=2, buffer_size=2, min_open_slots=2)
     a, b = run.dispatch(["a", "b"])
     assert not run.accept(a, result(a, 11))
@@ -85,7 +85,7 @@ def test_k_b_o_sync_boundary_and_exact_budget():
     assert run.dispatch(["a", "b"]) == []
 
 
-def test_b_can_exceed_k_and_tail_does_not_overdispatch():
+def test_buffer_can_exceed_active_clients_and_tail_does_not_overdispatch():
     run = coordinator(num_updates=1, buffer_size=3)
     a, b = run.dispatch(["a", "b"])
     run.accept(a, result(a, 11))
@@ -129,7 +129,7 @@ def test_invalid_result_is_fail_fast_without_partial_acceptance(case):
     job = run.dispatch(["a"])[0]
     value = result(job, 11)
     if case == "metadata":
-        value = AsyncResult(99, 0, model(11))
+        value = FedBuffResult(99, 0, model(11))
     elif case == "nan":
         value.model["w"][:] = np.nan
     with pytest.raises((ValueError, RuntimeError)):
@@ -152,12 +152,12 @@ def test_delta_transform_reconstructs_original_full_model_only_on_demand(monkeyp
     run = coordinator(
         model_adapter=adapter,
         num_updates=1,
-        num_active_jobs=1,
+        concurrency=1,
         server_lr=0.5,
         update_transform=lambda update: seen.append(update) or {"w": update.delta["w"] * 0.5},
     )
     job = run.dispatch(["a"])[0]
-    assert run.accept(job, AsyncResult(0, 0, {"w": np.array([4], dtype=np.float32)}, is_delta=True))
+    assert run.accept(job, FedBuffResult(0, 0, {"w": np.array([4], dtype=np.float32)}, is_delta=True))
     assert run.model["w"].item() == 11
     assert calls == [0.5]  # publication only; the transform needs no full model
     np.testing.assert_array_equal(seen[0].returned_model["w"], [14])

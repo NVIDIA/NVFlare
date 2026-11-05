@@ -27,12 +27,12 @@ import pytest
 
 from examples.advanced.collab.numpy_async.job import NumpyModelAdapter
 from nvflare.apis.signal import Signal
-from nvflare.collab import AsyncRecipe, collab
+from nvflare.collab import FedBuffRecipe, collab
 from nvflare.collab.api.app import ClientApp, ServerApp
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.group_call_context import ResultWaiter
 from nvflare.collab.api.proxy import Proxy
-from nvflare.collab.async_recipe import AsyncResult, AsyncTrainingCoordinator, AsyncWorkflow
+from nvflare.collab.fedbuff_recipe import FedBuffResult, FedBuffTrainingCoordinator, FedBuffWorkflow
 
 from ._direct_dispatcher import _DirectDispatcher
 
@@ -97,9 +97,9 @@ class _ScaleUpdate:
 
 def _execute(application, clients, *, abort=None, **options):
     signal = abort or Signal()
-    settings = dict(num_updates=2, num_active_jobs=len(clients), call_timeout=0.5)
+    settings = dict(num_updates=2, concurrency=len(clients), call_timeout=0.5)
     settings.update(options)
-    workflow = AsyncWorkflow(application, NumpyModelAdapter(), **settings)
+    workflow = FedBuffWorkflow(application, NumpyModelAdapter(), **settings)
     server = ServerApp(workflow)
     server._abort_signal = signal
     previous = get_call_context()
@@ -205,7 +205,7 @@ def test_recipe_export_round_trip_loads_application_and_adapter(tmp_path, monkey
     assert len(configs) == 1
     config = json.loads(configs[0].read_text())
     server = next(item for item in config["components"] if item["id"] == "_server")
-    assert server["path"] == "nvflare.collab.async_recipe.AsyncWorkflow"
+    assert server["path"] == "nvflare.collab.fedbuff_recipe.FedBuffWorkflow"
     assert server["args"]["application"]["path"].endswith("ArrayApplication")
     assert server["args"]["num_updates"] == 3
     assert server["args"]["model_adapter"]["path"].endswith("NumpyModelAdapter")
@@ -232,8 +232,8 @@ class Block:
         if name.split('.')[0] in ('torch', 'torchvision', 'kornia'):
             raise ImportError('optional dependency blocked')
 sys.meta_path.insert(0, Block())
-from nvflare.collab import AsyncRecipe
-from nvflare.collab.async_recipe import AsyncResult, AsyncTrainingCoordinator
+from nvflare.collab import FedBuffRecipe
+from nvflare.collab.fedbuff_recipe import FedBuffResult, FedBuffTrainingCoordinator
 from examples.advanced.collab.numpy_async.job import NumpyModelAdapter
 """
     subprocess.run([sys.executable, "-c", code], check=True)
@@ -255,9 +255,9 @@ def test_cifar_recipe_uses_library_scheduler_and_step_weights(monkeypatch, tmp_p
         args.data_root = "/tmp/cifar10"
         args.train_idx_root = "/tmp/prepared-cifar"
         recipe = job.make_recipe(args)
-        assert isinstance(recipe, AsyncRecipe)
+        assert isinstance(recipe, FedBuffRecipe)
         assert recipe.server.weight_metric == "num_steps"
-        assert recipe.server.num_active_jobs == 8
+        assert recipe.server.concurrency == 8
         assert recipe.server.buffer_size == 4
         assert recipe.server.min_open_slots == 1
         assert recipe.client._optimizer is None
@@ -285,14 +285,14 @@ def test_cifar_adapter_owns_cpu_snapshots_and_preserves_nonfloating_buffers():
     from examples.advanced.collab.pt_async_cifar10.model import PTModelAdapter
 
     initial = {"w": torch.tensor([10.0], requires_grad=True), "counter": torch.tensor(5)}
-    coordinator = AsyncTrainingCoordinator(initial, PTModelAdapter(), 1, 2, buffer_size=2, weight_metric="num_steps")
+    coordinator = FedBuffTrainingCoordinator(initial, PTModelAdapter(), 1, 2, buffer_size=2, weight_metric="num_steps")
     initial["w"].detach().fill_(99)
     a, b = coordinator.dispatch(["a", "b"])
     first = {"w": torch.tensor([12.0]), "counter": torch.tensor(99)}
     second = {"w": torch.tensor([16.0]), "counter": torch.tensor(100)}
-    assert not coordinator.accept(a, AsyncResult(a.assignment_id, 0, first, {"num_steps": 1}))
+    assert not coordinator.accept(a, FedBuffResult(a.assignment_id, 0, first, {"num_steps": 1}))
     first["w"].fill_(999)
-    assert coordinator.accept(b, AsyncResult(b.assignment_id, 0, second, {"num_steps": 3}))
+    assert coordinator.accept(b, FedBuffResult(b.assignment_id, 0, second, {"num_steps": 3}))
     assert coordinator.model["w"].item() == 15
     assert coordinator.model["counter"].item() == 5
     assert not coordinator.model["w"].requires_grad

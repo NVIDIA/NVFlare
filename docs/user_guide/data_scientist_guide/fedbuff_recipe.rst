@@ -1,14 +1,19 @@
-.. _async_recipe:
+.. _fedbuff_recipe:
 
-Async Training Recipe
-=====================
+FedBuff Training Recipe
+=======================
 
-``AsyncRecipe`` runs buffered, actual-arrival training over the
+``FedBuffRecipe`` runs buffered, actual-arrival training over the
 :ref:`Collaboration API <collab_api>`. It uses the existing controller, executor,
 serialization and execution environments. The
 :github_nvflare_link:`NumPy example <examples/advanced/collab/numpy_async>` and
 :github_nvflare_link:`CIFAR-10 example <examples/advanced/collab/pt_async_cifar10>`
 demonstrate the same workflow with example-owned model helpers.
+
+Both ``application`` and ``model_adapter`` run on the server. The application
+supplies model initialization and evaluation/artifact callbacks; the adapter
+supplies model arithmetic. The separate ``client`` object runs local training
+on each participating client. Neither server object is the client-side trainer.
 
 Use and Deployment
 ------------------
@@ -17,16 +22,16 @@ Supply your application, client and model adapter classes:
 
 .. code-block:: python
 
-   from nvflare.collab import AsyncRecipe
+   from nvflare.collab import FedBuffRecipe
    from nvflare.recipe import SimEnv
 
-   recipe = AsyncRecipe(
+   recipe = FedBuffRecipe(
        job_name="buffered_training",
        client=MyClient(),
        application=MyApplication(),
        model_adapter=MyModelAdapter(),
        num_updates=100,
-       num_active_jobs=8,
+       concurrency=8,
        buffer_size=4,
        min_open_slots=1,
        weight_metric="num_steps",
@@ -35,7 +40,7 @@ Supply your application, client and model adapter classes:
 
 Use ``SimEnv``, ``PocEnv`` or ``ProdEnv`` from ``nvflare.recipe`` after preparing
 the target environment and site data. Runtime options pass to ``CollabRecipe``;
-``min_clients`` defaults to ``num_active_jobs``. Export with
+``min_clients`` defaults to ``concurrency``. Export with
 ``recipe.export(path)``. Components must be importable and reconstructible from
 constructor arguments. Bundle supporting code with the existing source
 packaging and ``add_server_file``/``add_client_file`` methods.
@@ -54,19 +59,29 @@ server-local; the wire uses the normal Collab tuple.
 Scheduling and Aggregation
 --------------------------
 
-* K = ``num_active_jobs``: outstanding physical client capacity.
-* B = ``buffer_size``: contributions per publication.
-* O = ``min_open_slots``: free slots before refill.
+* ``concurrency``: maximum number of outstanding physical client assignments.
+* ``buffer_size``: accepted client contributions per global-model publication.
+* ``min_open_slots``: free client slots required before dispatching replacement work.
+
+These names keep client concurrency separate from aggregation frequency. The
+`FedBuff paper <https://proceedings.mlr.press/v151/nguyen22b/nguyen22b.pdf>`_
+uses the symbol K for **buffer size**, not active-client count. This API uses
+full parameter names. The configurable refill threshold is an implementation
+extension; the immediate-refill FedBuff setting is ``min_open_slots=1``.
 
 Version zero is initial. The workflow stops after ``num_updates`` global
 publications, issuing exactly the remaining contribution budget
-``num_updates * B``. It accepts results in actual arrival order, with one
-outstanding call per client. Successful Collab callbacks enqueue replies directly
-into one shared server queue; admission to that queue defines receipt order.
-Per-call handles track completion/errors without retaining model payloads or
-using result-reader threads. K must fit the available physical clients; O must
-be between one and K. B may exceed K. K = B = O gives a synchronous boundary;
-B = O = 1 gives per-arrival updates.
+``num_updates * buffer_size``. It accepts results in actual arrival order, with
+one outstanding call per client. Successful Collab callbacks enqueue replies
+directly into one shared server queue; admission to that queue defines receipt
+order. Per-call handles track completion/errors without retaining model payloads
+or using result-reader threads.
+
+``concurrency`` must fit the available physical clients, and
+``min_open_slots`` must be between one and ``concurrency``.
+``buffer_size`` may exceed ``concurrency``. Setting
+``concurrency=buffer_size=min_open_slots`` gives a synchronous boundary;
+``buffer_size=min_open_slots=1`` gives per-arrival updates.
 
 The workflow publishes before refill when both boundaries are reached, and
 refills before invoking the publication hook so evaluation/artifact work does
@@ -91,10 +106,10 @@ the supplied dtype through the existing weighted helper; core adds no precision
 conversion or overflow-recovery policy and has no mandatory tensor-framework
 dependency.
 
-``AsyncTrainingCoordinator`` owns the current model. Each publication creates a
+``FedBuffTrainingCoordinator`` owns the current model. Each publication creates a
 new state; active assignments reference their immutable base, shared by version. Removing
 an assignment releases the coordinator's reference. The result queue and pending
-call records are bounded by physical worker count; retained bases by K, plus the
+call records are bounded by physical worker count; retained bases by active-client count, plus the
 current model/accumulator. Applications own any evaluation histories. Do not mutate
 borrowed model states, including in client training; create a local model/copy
 before in-place updates.
@@ -131,12 +146,12 @@ full-state access can fail if the unscaled state is unrepresentable, even when
 a scaled delta is valid. Copy any state retained beyond a hook. Hooks run
 serially on the workflow thread and must leave borrowed states unchanged.
 
-.. _async_recipe_component_scope:
+.. _fedbuff_recipe_component_scope:
 
 Component Scope
 ---------------
 
-The core implementation lives in ``nvflare.collab.async_recipe``. Separate
+The core implementation lives in ``nvflare.collab.fedbuff_recipe``. Separate
 classes keep recipe configuration, Collab execution, and training state accounting
 distinct within that module.
 
@@ -147,16 +162,16 @@ distinct within that module.
    * - Component
      - Owns
      - Responsibilities supplied elsewhere
-   * - :github_nvflare_link:`async_recipe.py <nvflare/collab/async_recipe.py>`:
-       ``AsyncRecipe`` and ``AsyncWorkflow``
+   * - :github_nvflare_link:`fedbuff_recipe.py <nvflare/collab/fedbuff_recipe.py>`:
+       ``FedBuffRecipe`` and ``FedBuffWorkflow``
      - Configuration/export; Collab calls; actual-arrival dispatch/result
        delivery through one bounded result queue; timeout/abort cleanup;
        application hooks.
      - Numerical acceptance/publication belongs to the coordinator. The application
-       supplies data, model operations and artifacts.
-   * - :github_nvflare_link:`AsyncTrainingCoordinator
-       <nvflare/collab/async_recipe.py>` and server-local records/interfaces
-     - Assignment IDs, active bases and versions; K/B/O capacity and contribution
+       supplies model initialization and artifacts; the model adapter supplies arithmetic.
+   * - :github_nvflare_link:`FedBuffTrainingCoordinator
+       <nvflare/collab/fedbuff_recipe.py>` and server-local records/interfaces
+     - Assignment IDs, active bases and versions; client concurrency, refill and contribution
        budget; result/weight validation; exact-base deltas; buffered publication;
        update-transform context.
      - Collab RPCs, execution environments, result arrival timing,
@@ -176,17 +191,17 @@ distinct within that module.
      - Core supplies shared acceptance/aggregation math and Collab call/lifecycle
        implementation. Sampled FedRevive phases remain follow-up work.
 
-``AsyncRecipe`` builds ``AsyncWorkflow``, which invokes ``AsyncTrainingCoordinator``.
+``FedBuffRecipe`` builds ``FedBuffWorkflow``, which invokes ``FedBuffTrainingCoordinator``.
 The coordinator performs no Collab calls and uses caller-supplied model arithmetic.
 Both production and research use the same numerical acceptance/publication path.
 Research may choose when to submit or accept work and where to keep bases/results;
 core never imports the examples.
 
-The same module defines ``Assignment``, ``AsyncResult``, ``AcceptedUpdate``,
-``AsyncEvent`` and the ``AsyncModelAdapter`` interface. They describe server-local
+The same module defines ``Assignment``, ``FedBuffResult``, ``AcceptedUpdate``,
+``FedBuffEvent`` and the ``FedBuffModelAdapter`` interface. They describe server-local
 state and hook inputs, and introduce no additional wire format. Normal consumers
-import ``AsyncRecipe`` from ``nvflare.collab``; alternative orchestration can
-import ``AsyncTrainingCoordinator`` from ``nvflare.collab.async_recipe``. Protected
+import ``FedBuffRecipe`` from ``nvflare.collab``; alternative orchestration can
+import ``FedBuffTrainingCoordinator`` from ``nvflare.collab.fedbuff_recipe``. Protected
 workflow methods are implementation reuse points rather than a public scheduler/storage
 plugin API.
 
@@ -213,5 +228,5 @@ not restore assignments, buffers or client optimizer state. Existing Collab
 result context can supply starting weights but starts a fresh version-zero run.
 
 Export/simulator checks do not qualify a particular production deployment.
-Edge's selection capacity/publication buffer/refill threshold align conceptually
-with K/B/O; edge retains its separate runtime and hierarchy.
+Edge's selection capacity, publication buffer and refill threshold align
+conceptually with these settings; edge retains its separate runtime and hierarchy.

@@ -8,7 +8,7 @@ This is the research-reproducibility companion to the
 `ResearchRecipe` owns fixed arrival replay, logical clients over fewer physical
 workers, assignment seeds and append-only disk checkpoints. Its workflow reuses
 the core training coordinator, Collab calls and lifecycle. These research options
-are example-level APIs; production `AsyncRecipe` always uses actual arrivals and
+are example-level APIs; production `FedBuffRecipe` always uses actual arrivals and
 direct base-model references. Both paths share update/aggregation arithmetic.
 
 ## Run
@@ -28,13 +28,13 @@ cd examples/advanced/collab
 python -m pt_async_cifar10_reproducible.job --num-clients 2 --run-seed 10
 ```
 
-The dataset-free smoke job reserves K=3 logical assignments over two physical workers. It accepts
+The dataset-free smoke job reserves three logical client assignments over two physical workers. It accepts
 IDs `[2, 0, 1, 3]` with exact bases `[0, 0, 0, 1]` and applies seeded random
 NumPy deltas. The run directory keeps every artifact on disk. No dataset or PyTorch is needed.
 
 | Artifact | Contents |
 | --- | --- |
-| `run_config.json` | K/B/O, seed, arrival and logical assignment sequences. |
+| `run_config.json` | Active-client count, buffer size, refill threshold, seed, arrival and logical assignment sequences. |
 | `assignment_bases/<version>.pkl` | Immutable assignment base models. |
 | `assignment_results/<id>.pkl` | Raw model/metrics/metadata results, retained after acceptance. |
 | `published_models/<version>.npz` | Initial model and every global publication. |
@@ -68,7 +68,7 @@ from pt_async_cifar10_reproducible.workflow import ResearchRecipe
 
 recipe = ResearchRecipe(
     job_name="experiment", application=MyApplication(), client=SeededClient(),
-    model_adapter=MyAdapter(), num_updates=4, num_active_jobs=3,
+    model_adapter=MyAdapter(), num_updates=4, concurrency=3,
     scheduler=ReplayScheduler([2, 0, 1, 3], ["alice", "bob", "alice", "carol"]),
     train_kwargs=SeededTrainArgs(SeedPolicy(10)),
 )
@@ -77,25 +77,25 @@ recipe = ResearchRecipe(
 `job.py` explicitly bundles this package for server and client export. Do the
 same when using these helpers in another job. They can be copied or adapted
 independently; they are example APIs rather than installed SDK guarantees.
-See the [async recipe guide](../../../../docs/user_guide/data_scientist_guide/async_recipe.rst) for
+See the [FedBuff recipe guide](../../../../docs/user_guide/data_scientist_guide/fedbuff_recipe.rst) for
 numerical contracts, ownership, deployment and failure behavior. The
-[component scope table](../../../../docs/user_guide/data_scientist_guide/async_recipe.rst#component-scope)
+[component scope table](../../../../docs/user_guide/data_scientist_guide/fedbuff_recipe.rst#component-scope)
 identifies what belongs in the recipe, training coordinator, model helpers and this
 research workflow.
 
 ## Replay semantics
 
 `arrival_sequence` must permute the complete `num_updates * buffer_size` ID
-budget and be compatible with K/O. Early results wait for their acceptance turn;
+budget and be compatible with active-client and refill limits. Early results wait for their acceptance turn;
 errors still stop the workflow immediately. Impossible orders raise an error.
 `logical_sequence` names every assignment. Jobs receive their base at reservation
 time, before a worker is available; physical workers can be reused while results
-wait. K may exceed the physical pool.
+wait. The logical active-client count may exceed the physical pool.
 Clients must keep persistent optimizer/data state by logical identity, or reset
 it per assignment. The demonstration uses stateless local updates.
 
 Record acceptance IDs in trace order, logical names/assignment metadata in ID
-order, and K/B/O with the run configuration. Acceptance events report the current
+order, and the active-client, buffer and refill settings with the run configuration. Acceptance events report the current
 version before the update. `assignment_metadata` can supply recorded training
 seeds. This is fixed-order replay, not FedRevive's sampled phase simulator.
 
@@ -139,7 +139,7 @@ devices/software versions, nor restore optimizer state after restart.
 
 `ReplayScheduler` reserves logical jobs, dispatches `ScheduledCall` records and
 selects ready results in the recorded order. `ResearchWorkflow` accepts them
-through the shared `AsyncTrainingCoordinator` in `nvflare.collab.async_recipe`.
+through the shared `FedBuffTrainingCoordinator` in `nvflare.collab.fedbuff_recipe`.
 It selects `ResearchTrainingCoordinator` through the protected
 `_coordinator_class` attribute and reuses `_create_coordinator`, Collab calls and
 lifecycle. The research coordinator adds disk bases; numerical acceptance stays in core.

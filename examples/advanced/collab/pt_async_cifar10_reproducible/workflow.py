@@ -22,7 +22,7 @@ from pathlib import Path
 from pt_async_cifar10_reproducible.disk_storage import DiskStore, load_checkpoint
 
 from nvflare.collab import collab
-from nvflare.collab.async_recipe import AsyncTrainingCoordinator, AsyncWorkflow
+from nvflare.collab.fedbuff_recipe import FedBuffTrainingCoordinator, FedBuffWorkflow
 from nvflare.collab.recipe import CollabRecipe
 
 
@@ -42,7 +42,7 @@ class DiskAssignment:
         return load_checkpoint(self.base_path)
 
 
-class ResearchTrainingCoordinator(AsyncTrainingCoordinator):
+class ResearchTrainingCoordinator(FedBuffTrainingCoordinator):
     """Keep replay reservations on disk; inherit all acceptance/aggregation math."""
 
     def __init__(self, *args, **kwargs):
@@ -75,7 +75,7 @@ class ResearchTrainingCoordinator(AsyncTrainingCoordinator):
         return assignments
 
 
-class ResearchWorkflow(AsyncWorkflow):
+class ResearchWorkflow(FedBuffWorkflow):
     """Own fixed replay, optional train arguments, and retained disk results.
 
     Core supplies Collab calls, lifecycle and numerical acceptance. This example
@@ -87,7 +87,7 @@ class ResearchWorkflow(AsyncWorkflow):
         application,
         model_adapter,
         num_updates: int,
-        num_active_jobs: int,
+        concurrency: int,
         scheduler,
         train_kwargs=None,
         buffer_size: int = 1,
@@ -101,7 +101,7 @@ class ResearchWorkflow(AsyncWorkflow):
             application,
             model_adapter,
             num_updates,
-            num_active_jobs,
+            concurrency,
             buffer_size,
             min_open_slots,
             server_lr,
@@ -180,7 +180,7 @@ class ResearchWorkflow(AsyncWorkflow):
 
 
 class ResearchRecipe(CollabRecipe):
-    """Example-level composition; reproducibility options never enter AsyncRecipe."""
+    """Example-level composition; reproducibility options never enter FedBuffRecipe."""
 
     def __init__(
         self,
@@ -189,7 +189,7 @@ class ResearchRecipe(CollabRecipe):
         application,
         model_adapter,
         num_updates: int,
-        num_active_jobs: int,
+        concurrency: int,
         scheduler,
         train_kwargs=None,
         buffer_size: int = 1,
@@ -204,7 +204,7 @@ class ResearchRecipe(CollabRecipe):
             application,
             model_adapter,
             num_updates,
-            num_active_jobs,
+            concurrency,
             scheduler,
             train_kwargs,
             buffer_size,

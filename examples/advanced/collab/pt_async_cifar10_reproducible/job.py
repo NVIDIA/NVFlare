@@ -86,16 +86,16 @@ def make_recipe(run_seed=10):
         application=ResearchApplication(
             {
                 "run_seed": run_seed,
-                "K": 3,
-                "B": 1,
-                "O": 1,
+                "concurrency": 3,
+                "buffer_size": 1,
+                "min_open_slots": 1,
                 "arrival_sequence": order,
                 "logical_sequence": logical,
             }
         ),
         model_adapter=NumpyModelAdapter(),
         num_updates=4,
-        num_active_jobs=3,
+        concurrency=3,
         scheduler=ReplayScheduler(order, logical),
         train_kwargs=SeededTrainArgs(SeedPolicy(run_seed)),
         call_timeout=30,

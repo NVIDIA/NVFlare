@@ -1,4 +1,4 @@
-# Small AsyncRecipe example
+# Small FedBuffRecipe example
 
 This NumPy example adds a constant local delta using buffered asynchronous
 training. It requires no dataset, PyTorch, or KD components.
@@ -10,11 +10,11 @@ python job.py --num-clients 2 --num-updates 4 --buffer-size 2
 ```
 
 `ArrayClient` returns the standard `(model, metrics, metadata)` tuple. `ArrayApplication`
-supplies initial weights. `AsyncRecipe` handles assignments, versions, buffering,
+supplies initial weights. `FedBuffRecipe` handles assignments, versions, buffering,
 and lifecycle; `NumpyModelAdapter` handles arithmetic. `--num-updates` counts
 global publications. Results use the normal Collab run result mechanism.
 
-See [the async recipe guide](../../../../docs/user_guide/data_scientist_guide/async_recipe.rst) for independent
+See [the FedBuff recipe guide](../../../../docs/user_guide/data_scientist_guide/fedbuff_recipe.rst) for independent
 imports, application hooks, weighting, transformations, and failure behavior.
 
 Each successful run saves `schedule.json` and `final_weights.npy`. Actual arrival

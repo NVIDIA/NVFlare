@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Small NumPy consumer of AsyncRecipe. Run from this directory: python job.py."""
+"""Small NumPy consumer of FedBuffRecipe. Run from this directory: python job.py."""
 
 import argparse
 import json
@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-from nvflare.collab import AsyncRecipe, collab
+from nvflare.collab import FedBuffRecipe, collab
 from nvflare.recipe import SimEnv
 
 
@@ -90,13 +90,13 @@ class ArrayClient:
 
 
 def make_recipe(num_clients=2, num_updates=4, buffer_size=2, min_open_slots=1):
-    return AsyncRecipe(
+    return FedBuffRecipe(
         job_name="numpy_async",
         application=ArrayApplication(),
         client=ArrayClient(),
         model_adapter=NumpyModelAdapter(),
         num_updates=num_updates,
-        num_active_jobs=num_clients,
+        concurrency=num_clients,
         buffer_size=buffer_size,
         min_open_slots=min_open_slots,
         call_timeout=30,

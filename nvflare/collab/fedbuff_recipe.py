@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Buffered async training: recipe, Collab workflow, and training coordinator."""
+"""FedBuff training: recipe, Collab workflow, and training coordinator."""
 
 import math
 import queue
@@ -29,7 +29,7 @@ from nvflare.collab.api import ContextKey
 from nvflare.collab.recipe import CollabRecipe
 
 
-class AsyncModelAdapter(Protocol):
+class FedBuffModelAdapter(Protocol):
     """Model states are dictionaries. Methods must not mutate supplied states."""
 
     def snapshot(self, model: dict) -> dict:
@@ -62,7 +62,7 @@ class Assignment:
 
 
 @dataclass(frozen=True)
-class AsyncEvent:
+class FedBuffEvent:
     """Lightweight application trace; no model states are retained."""
 
     phase: str
@@ -75,7 +75,7 @@ class AsyncEvent:
 
 
 @dataclass(frozen=True)
-class AsyncResult:
+class FedBuffResult:
     """One terminal client result, with an explicit full-model/delta convention.
 
     Delta payloads are relative to base_version. Metrics determine weight only
@@ -135,19 +135,19 @@ class AcceptedUpdate:
 
 
 def _validate_options(
-    num_updates, num_active_jobs, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
+    num_updates, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
 ):
     """Share early recipe validation with standalone coordinator construction."""
     for name, value in (
         ("num_updates", num_updates),
-        ("num_active_jobs", num_active_jobs),
+        ("concurrency", concurrency),
         ("buffer_size", buffer_size),
         ("min_open_slots", min_open_slots),
     ):
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise ValueError(f"{name} must be a positive integer")
-    if min_open_slots > num_active_jobs:
-        raise ValueError("min_open_slots cannot exceed num_active_jobs")
+    if min_open_slots > concurrency:
+        raise ValueError("min_open_slots cannot exceed concurrency")
     if not math.isfinite(server_lr) or server_lr <= 0:
         raise ValueError("server_lr must be finite and positive")
     if weight_metric is not None and (not isinstance(weight_metric, str) or not weight_metric):
@@ -156,8 +156,8 @@ def _validate_options(
         raise TypeError("update_transform must be callable")
 
 
-class AsyncTrainingCoordinator:
-    """K active assignments, B accepted updates/version, O slots before refill.
+class FedBuffTrainingCoordinator:
+    """Track active clients, buffered contributions and the refill threshold.
 
     Single-owner: invoke dispatch/accept on the workflow thread.
     Stops after num_updates global publications, issuing no speculative work
@@ -169,9 +169,9 @@ class AsyncTrainingCoordinator:
     def __init__(
         self,
         initial_model: dict,
-        model_adapter: AsyncModelAdapter,
+        model_adapter: FedBuffModelAdapter,
         num_updates: int,
-        num_active_jobs: int,
+        concurrency: int,
         buffer_size: int = 1,
         min_open_slots: int = 1,
         server_lr: float = 1.0,
@@ -180,13 +180,13 @@ class AsyncTrainingCoordinator:
         update_observer=None,
     ):
         _validate_options(
-            num_updates, num_active_jobs, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
+            num_updates, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
         )
         self.adapter = model_adapter
         self.model = model_adapter.snapshot(initial_model)
         model_adapter.validate(self.model, self.model)
         self.num_updates = num_updates
-        self.num_active_jobs = num_active_jobs
+        self.concurrency = concurrency
         self.buffer_size = buffer_size
         self.min_open_slots = min_open_slots
         self.server_lr = server_lr
@@ -210,8 +210,8 @@ class AsyncTrainingCoordinator:
 
     @property
     def available_slots(self):
-        """Capacity allowed by K/O and the exact remaining contribution budget."""
-        slots = self.num_active_jobs - len(self.active)
+        """Capacity allowed by active-client/refill limits and the remaining contribution budget."""
+        slots = self.concurrency - len(self.active)
         if self._closed or self.finished or slots < self.min_open_slots:
             return 0
         remaining = self.num_updates * self.buffer_size - self.accepted_count - len(self.active)
@@ -231,11 +231,11 @@ class AsyncTrainingCoordinator:
             assignments.append(assignment)
         return assignments
 
-    def accept(self, assignment: Assignment, result: AsyncResult | None, error: Any = None) -> bool:
+    def accept(self, assignment: Assignment, result: FedBuffResult | None, error: Any = None) -> bool:
         """Accept exactly once; return True only when a global version is published.
 
         Validate before changing state. Rejected input raises and ends the run;
-        it never contributes to B. Equal weights are default; configured metric
+        it never contributes to the aggregation buffer. Equal weights are default; configured metric
         weights must be finite and strictly positive.
         """
         current = self.active.get(assignment.assignment_id)
@@ -246,8 +246,8 @@ class AsyncTrainingCoordinator:
             raise RuntimeError(f"assignment {assignment.assignment_id} failed: {error}")
         if result is None:
             raise RuntimeError(f"assignment {assignment.assignment_id} returned no result")
-        if not isinstance(result, AsyncResult):
-            raise TypeError("result must be AsyncResult")
+        if not isinstance(result, FedBuffResult):
+            raise TypeError("result must be FedBuffResult")
         if result.assignment_id != assignment.assignment_id or result.base_version != assignment.base_version:
             raise ValueError("assignment metadata mismatch")
         base_model = assignment.base_model
@@ -292,7 +292,7 @@ class AsyncTrainingCoordinator:
         self._buffer.reset_stats()
 
 
-class AsyncWorkflow:
+class FedBuffWorkflow:
     """Accept actual arrivals, retaining assignment bases until acceptance.
 
     application.initialize() returns the initial model. Optional on_model,
@@ -301,17 +301,17 @@ class AsyncWorkflow:
     states must not be mutated. The published client protocol is
     train(assignment_ids, model_version, global_model, logical_assignments),
     returning (model, metrics, metadata). No retry or remote cancellation is
-    provided. See docs/user_guide/data_scientist_guide/async_recipe.rst for deployment and ownership.
+    provided. See docs/user_guide/data_scientist_guide/fedbuff_recipe.rst for deployment and ownership.
     """
 
-    _coordinator_class = AsyncTrainingCoordinator
+    _coordinator_class = FedBuffTrainingCoordinator
 
     def __init__(
         self,
         application,
         model_adapter,
         num_updates: int,
-        num_active_jobs: int,
+        concurrency: int,
         buffer_size: int = 1,
         min_open_slots: int = 1,
         server_lr: float = 1.0,
@@ -320,7 +320,7 @@ class AsyncWorkflow:
         call_timeout: float = 3600.0,
     ):
         _validate_options(
-            num_updates, num_active_jobs, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
+            num_updates, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
         )
         if not math.isfinite(call_timeout) or call_timeout <= 0:
             raise ValueError("call_timeout must be finite and positive")
@@ -329,7 +329,7 @@ class AsyncWorkflow:
         self.application = application
         self.model_adapter = model_adapter
         self.num_updates = num_updates
-        self.num_active_jobs = num_active_jobs
+        self.concurrency = concurrency
         self.buffer_size = buffer_size
         self.min_open_slots = min_open_slots
         self.server_lr = server_lr
@@ -349,7 +349,7 @@ class AsyncWorkflow:
         model, metrics, metadata = result
         if metadata["logical_name"] != assignment.logical_name:
             raise ValueError("logical client metadata mismatch")
-        return AsyncResult(
+        return FedBuffResult(
             metadata["assignment_id"],
             metadata["model_version"],
             model,
@@ -363,7 +363,7 @@ class AsyncWorkflow:
             initial,
             self.model_adapter,
             self.num_updates,
-            self.num_active_jobs,
+            self.concurrency,
             self.buffer_size,
             self.min_open_slots,
             self.server_lr,
@@ -375,7 +375,7 @@ class AsyncWorkflow:
     def _emit(self, phase, assignment, version, client_name=None):
         self._hook(
             "on_event",
-            AsyncEvent(
+            FedBuffEvent(
                 phase,
                 assignment.assignment_id,
                 assignment.logical_name,
@@ -458,8 +458,8 @@ class AsyncWorkflow:
             # Existing Collab calls finish or time out; late replies are ignored.
 
     def _run(self, coordinator, names, submit, receive):
-        if len(names) < self.num_active_jobs:
-            raise ValueError("num_active_jobs exceeds available clients")
+        if len(names) < self.concurrency:
+            raise ValueError("concurrency exceeds available clients")
         available = list(names)
 
         def dispatch():
@@ -507,14 +507,18 @@ class AsyncWorkflow:
             return coordinator.model
 
 
-class AsyncRecipe(CollabRecipe):
-    """Actual-arrival Collab training: K active jobs, B updates, O refill slots.
+class FedBuffRecipe(CollabRecipe):
+    """FedBuff-style buffered aggregation in actual client arrival order.
 
-    K=B=O gives a synchronous boundary. application supplies model/artifact
-    hooks; model_adapter supplies framework-specific arithmetic. An optional
-    update_transform modifies accepted deltas. No replay, seed policy or storage
-    configuration is part of this recipe. Other options pass to CollabRecipe;
-    min_clients defaults to K. Components must be reconstructible for export.
+    concurrency limits concurrent client assignments; buffer_size counts
+    accepted contributions per publication; min_open_slots sets the refill
+    threshold. A threshold of one refills each completed slot immediately.
+    Setting all three counts equal gives a synchronous training boundary.
+
+    application supplies model/artifact hooks; model_adapter supplies arithmetic.
+    An optional update_transform modifies accepted deltas. Replay, seed policies
+    and storage are research concerns. Other options pass to CollabRecipe;
+    min_clients defaults to concurrency. Components must be reconstructible.
     """
 
     def __init__(
@@ -524,7 +528,7 @@ class AsyncRecipe(CollabRecipe):
         application,
         model_adapter,
         num_updates: int,
-        num_active_jobs: int,
+        concurrency: int,
         buffer_size: int = 1,
         min_open_slots: int = 1,
         server_lr: float = 1.0,
@@ -533,11 +537,11 @@ class AsyncRecipe(CollabRecipe):
         call_timeout: float = 3600.0,
         **collab_options,
     ):
-        workflow = AsyncWorkflow(
+        workflow = FedBuffWorkflow(
             application,
             model_adapter,
             num_updates,
-            num_active_jobs,
+            concurrency,
             buffer_size,
             min_open_slots,
             server_lr,
@@ -545,5 +549,5 @@ class AsyncRecipe(CollabRecipe):
             update_transform,
             call_timeout,
         )
-        collab_options.setdefault("min_clients", num_active_jobs)
+        collab_options.setdefault("min_clients", concurrency)
         super().__init__(job_name=job_name, server=workflow, client=client, **collab_options)

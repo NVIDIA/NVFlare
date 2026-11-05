@@ -318,36 +318,39 @@ Client API / Job Recipe API path:
   site's Cell configured with certificates; without that, the call raises
   rather than falling back to a non-secure transport.
 
-Buffered Async Training
------------------------
+FedBuff Training
+----------------
 
-Use ``AsyncRecipe`` for reusable buffered training in actual client arrival
+Use ``FedBuffRecipe`` for reusable buffered training in actual client arrival
 order. Supply a client, application hooks and model operations; the recipe owns
 assignment tracking, client dispatch and buffered weighted aggregation. Replies
 enter one shared server queue directly from Collab callbacks; the workflow
 consumes that queue to fill the aggregation buffer.
 
-The async guide uses **K**, **B** and **O** as shorthand for three independent
-scheduling settings:
+Three independent settings control scheduling:
 
-* **K -- active assignments** (``num_active_jobs``): the maximum number of
-  outstanding client training assignments. Each client has at most one.
-* **B -- aggregation buffer** (``buffer_size``): the number of accepted client
-  updates combined before publishing the next global model.
-* **O -- open slots before refill** (``min_open_slots``): how many assignment
-  slots must become free before the server dispatches replacement work.
+* **Active clients** (``concurrency``): the maximum number of outstanding
+  client training assignments. Each client has at most one.
+* **Buffer size** (``buffer_size``): accepted client updates combined before
+  publishing the next global model.
+* **Minimum open slots** (``min_open_slots``): free assignment slots required
+  before the server dispatches replacement work.
 
-For example, K = 8, B = 4 and O = 1 keeps up to eight assignments outstanding.
-Each accepted result frees a slot, which is immediately refilled using the latest
-published model. Every four accepted updates produce a new global model, while
-other clients can continue training on earlier versions. Raising O makes the
-server wait for more free slots before refilling. Setting K = B = O gives a
-synchronous boundary: collect all K results, publish, then dispatch the next batch.
+For example, ``concurrency=8``, ``buffer_size=4`` and ``min_open_slots=1``
+keep up to eight assignments outstanding. Each accepted result frees a slot,
+which is immediately refilled using the latest published model. Every four
+accepted updates produce a new global model, while other clients can continue
+training on earlier versions. Raising ``min_open_slots`` waits for more free
+slots before refilling. Setting all three counts equal gives a synchronous
+boundary: collect all client results, publish, then dispatch the next batch.
+
+The FedBuff guide explains the relationship to the paper's terminology and
+the configurable refill extension.
 
 .. toctree::
    :maxdepth: 1
 
-   async_recipe
+   fedbuff_recipe
 
 Examples
 --------
