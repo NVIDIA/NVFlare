@@ -108,5 +108,5 @@ processes to use.
             }
           }
         }
-      ],
+      ]
     }

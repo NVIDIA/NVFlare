@@ -694,22 +694,22 @@ Activation is local config mutation only. It does not contact the server.
 
 ### Startup Kit Registry Storage
 
-`~/.nvflare/config.conf` is the local storage file for the startup kit registry. The
+`~/.nvflare/config.json` is the local storage file for the startup kit registry. The
 user-facing command is `nvflare config`; the stored `startup_kits` data is an
 implementation detail, not a separate customer-facing concept.
 
-```hocon
-version = 2
-
-startup_kits {
-  active = "admin@nvidia.com"
-
-  entries {
-    "admin@nvidia.com" = "/tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com"
-    "lead@nvidia.com" = "/tmp/nvflare/poc/example_project/prod_00/lead@nvidia.com"
-    "org-admin@nvidia.com" = "/tmp/nvflare/poc/example_project/prod_00/org-admin@nvidia.com"
-    cancer_lead = "/secure/startup_kits/cancer/lead@nvidia.com"
-    fraud_org_admin = "/secure/startup_kits/fraud/org_admin@nvidia.com"
+```json
+{
+  "version": 2,
+  "startup_kits": {
+    "active": "admin@nvidia.com",
+    "entries": {
+      "admin@nvidia.com": "/tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com",
+      "lead@nvidia.com": "/tmp/nvflare/poc/example_project/prod_00/lead@nvidia.com",
+      "org-admin@nvidia.com": "/tmp/nvflare/poc/example_project/prod_00/org-admin@nvidia.com",
+      "cancer_lead": "/secure/startup_kits/cancer/lead@nvidia.com",
+      "fraud_org_admin": "/secure/startup_kits/fraud/org_admin@nvidia.com"
+    }
   }
 }
 ```
@@ -722,10 +722,10 @@ choose meaningful local IDs such as `cancer_lead`.
 
 The entry value is only the startup kit path. Metadata such as identity and certificate
 role is inspected from the startup kit when needed by commands such as `nvflare config inspect`;
-it is not duplicated in `config.conf`. Fields that are not reliably derivable from the
+it is not duplicated in `config.json`. Fields that are not reliably derivable from the
 startup kit are omitted from normal output.
 
-Other CLI state may also be stored in `~/.nvflare/config.conf`, but it is outside the
+Other CLI state may also be stored in `~/.nvflare/config.json`, but it is outside the
 startup kit registry and should not be part of the normal user workflow.
 
 ### `nvflare config`
@@ -751,7 +751,7 @@ Registers a startup kit location under a local ID.
 
 Behavior:
 
-1. Read `~/.nvflare/config.conf`.
+1. Read `~/.nvflare/config.json`.
 2. Validate that `<path>` is a valid admin/user startup kit directory. A valid admin/user
    startup kit must contain all three of:
    - `startup/fed_admin.json`
@@ -778,7 +778,7 @@ Makes a registered startup kit active.
 
 Behavior:
 
-1. Read `~/.nvflare/config.conf`.
+1. Read `~/.nvflare/config.json`.
 2. Resolve `<id>` to a path from `startup_kits.entries`.
 3. Validate that the path still passes the admin/user startup kit check.
 4. Set `startup_kits.active = "<id>"`.
@@ -838,7 +838,7 @@ active  id           status  identity         cert_role  path
 ------------------------------------------------------------------------
 *       cancer_lead  ok      lead@nvidia.com  lead       /secure/startup_kits/cancer/lead@nvidia.com
 
-config_file: /home/user/.nvflare/config.conf
+config_file: /home/user/.nvflare/config.json
 ```
 
 The JSON payload preserves the existing fields and adds best-effort local
@@ -902,7 +902,7 @@ and `nvflare network`, resolve the startup kit using this ordered lookup:
    kit for this command only by validating that explicit admin startup-kit path.
 3. If `NVFLARE_STARTUP_KIT_DIR` is set, validate it with the same three-file admin
    startup kit check and use it.
-4. Otherwise, use `startup_kits.active` from `~/.nvflare/config.conf`.
+4. Otherwise, use `startup_kits.active` from `~/.nvflare/config.json`.
 5. If no source resolves to a valid admin/user startup kit, fail before any server
    connection attempt.
 
@@ -1069,7 +1069,7 @@ Behavior:
 2. Remove the POC workspace.
 3. Remove startup kit entries whose canonical paths are under the canonical POC workspace
    path.
-4. Remove local POC workspace state from `~/.nvflare/config.conf`.
+4. Remove local POC workspace state from `~/.nvflare/config.json`.
 5. If the active startup kit was removed, clear `startup_kits.active`.
 6. Leave manually registered production startup kits untouched.
 
@@ -1081,7 +1081,7 @@ raw string prefix check because `/tmp/nvflare/poc-backup` is not under `/tmp/nvf
 
 General rules:
 
-- Validate before mutating `~/.nvflare/config.conf`.
+- Validate before mutating `~/.nvflare/config.json`.
 - Write config atomically so a failed command does not leave a partially written config.
 - Do not contact the server for `nvflare config` registration, activation, listing, or
   removal errors.
@@ -1089,7 +1089,7 @@ General rules:
   metadata should not break `config add` or `config use` when the startup kit path itself is
   valid.
 
-If `~/.nvflare/config.conf` does not exist:
+If `~/.nvflare/config.json` does not exist:
 
 - `nvflare config list` prints an empty list.
 - `nvflare config inspect` reports that no active startup kit is configured.
@@ -1103,7 +1103,7 @@ Hint: Run nvflare poc prepare, or run nvflare config add <id> <startup-kit-dir> 
 If config parsing fails, commands stop without modifying the file:
 
 ```text
-Error: cannot parse ~/.nvflare/config.conf
+Error: cannot parse ~/.nvflare/config.json
 Hint: Fix the config file, or move it aside and run nvflare poc prepare.
 ```
 
@@ -1232,7 +1232,7 @@ All commands need `--schema` and always emit a JSON envelope unless marked other
 | `--schema` | flag | No | — | Print command schema and exit |
 
 `nvflare poc config --pw <path>` is the preferred command for setting the local
-POC workspace. It writes `poc.workspace` in `~/.nvflare/config.conf`, the same
+POC workspace. It writes `poc.workspace` in `~/.nvflare/config.json`, the same
 storage key used by `poc prepare`, `poc start`, `poc stop`, and `poc clean`.
 Running `nvflare poc config` without `--pw` reports the effective POC workspace
 and any `NVFLARE_POC_WORKSPACE` environment override.
@@ -1635,8 +1635,7 @@ Admin startup kit directories and startup kit IDs are often email addresses such
 2. **Startup kit IDs and paths with `@`** — When an ID or path containing `@` is passed
    on the command line, most shells pass it through unchanged. Some shell configurations
    may attempt expansion on `@`. NVFlare cannot control shell parsing; if a shell expands
-   `@`, the user must quote the argument. The config writer must quote IDs when HOCON
-   requires quoting.
+   `@`, the user must quote the argument.
 
 **Implementation requirement:** update `_SAFE_CERT_NAME_PATTERN` in `nvflare/tool/cert/cert_commands.py` from `[A-Za-z0-9][A-Za-z0-9._-]*` to `[A-Za-z0-9][A-Za-z0-9._@-]*`. No change is needed in argparse or path resolution — `@` is valid at the filesystem level and passes through argparse unchanged.
 
@@ -1929,12 +1928,12 @@ All server-connected commands (`nvflare job`, `nvflare study`, `nvflare system`,
 `nvflare network`) resolve the startup kit using the same ordered lookup:
 
 1. Optional `--kit-id <id>` — override the active startup kit for this command
-   only by resolving a registered startup-kit ID from `~/.nvflare/config.conf`
+   only by resolving a registered startup-kit ID from `~/.nvflare/config.json`
    without changing `startup_kits.active`.
 2. Optional `--startup-kit <path>` — override the active startup kit for this
    command only by validating the explicit path as an admin/user startup kit.
 3. `NVFLARE_STARTUP_KIT_DIR` — validate the environment path as an admin/user startup kit.
-4. `startup_kits.active` — resolve the active ID from `~/.nvflare/config.conf`, then
+4. `startup_kits.active` — resolve the active ID from `~/.nvflare/config.json`, then
    validate the registered path.
 5. If no source resolves to a valid admin/user startup kit, fail before any server
    connection attempt.

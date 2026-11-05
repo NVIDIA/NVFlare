@@ -16,15 +16,12 @@ From an NVFlare source checkout, use
 
 ## NVIDIA FLARE Installation
 
-Add the PT extra to the same stable or nightly NVFlare distribution that
+Add the PT extra to the same released NVFlare package that
 provided the example, then install its remaining dependencies:
 
 ```bash
 # Stable installation
 python -m pip install "nvflare[PT]"
-
-# Nightly installation
-python -m pip install "nvflare-nightly[PT]"
 
 python -m pip install -r requirements.txt
 ```

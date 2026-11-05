@@ -22,7 +22,7 @@ is outside this client-only recovery feature.
 
 ## One setting
 
-`max_cj_restart_failures` in the client's `local/application.conf`, default `3`.
+`max_cj_restart_failures` in the client's `local/application_config.json`, default `3`.
 `0` disables recovery. No application opt-in is required.
 
 The limit counts consecutive attempts to get a replacement initialized. There is

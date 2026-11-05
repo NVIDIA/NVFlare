@@ -129,12 +129,6 @@ NVFlare provides several optional dependency groups that you can install based o
 
      $ pip install nvflare[MONITORING]
 
-* **CONFIG** - OmegaConf configuration support:
-
-  .. code-block:: shell
-
-     $ pip install nvflare[CONFIG]
-
 * **DASHBOARD** - Dashboard web interface:
 
   .. code-block:: shell
@@ -160,7 +154,7 @@ For development, you can install all dependencies (except HE and PSI on macOS):
 Install from Source
 -------------------
 
-Clone NVFlare repo and install from source (useful for accessing latest nightly features or testing custom builds):
+Clone NVFlare repo and install from source (useful for accessing unreleased features or testing custom builds):
 
 .. code-block:: shell
 
@@ -197,27 +191,63 @@ You can build wheel packages for NVFlare using the following steps:
 
   $ python -m pip install build
 
-2. Build the wheel using the default distribution name:
+2. Build the wheel:
 
 .. code-block:: shell
 
   $ python -m build --wheel
 
-This creates ``dist/nvflare_nightly-<version>-py3-none-any.whl``. To use the
-``nvflare`` distribution name instead, set ``NVFL_RELEASE=1``. This changes the
-distribution name, not the version derived from the checkout:
+This creates ``dist/nvflare-<version>-py3-none-any.whl``. Release builds,
+local development wheels, and editable installs all use the distribution name
+``nvflare``. Versioneer derives the version and source revision from the
+checkout; ``NVFL_RELEASE`` no longer changes the NVFlare package name.
+This applies to the main package built by the repository-root ``setup.py``.
+The separate ``nvflight/setup.py`` packaging still uses ``NVFL_RELEASE`` to
+choose between ``nvflare-light`` and ``nvflare-light-nightly``.
+This does not introduce a nightly publishing service. For unreleased features,
+install from source or build a local wheel.
+
+Install the wheel you built with pip, for example (replace the filename with
+the actual wheel path):
 
 .. code-block:: shell
 
-  $ NVFL_RELEASE=1 python -m build --wheel
+  $ python -m pip install "dist/nvflare-<version>-py3-none-any.whl"
 
-This creates ``dist/nvflare-<version>-py3-none-any.whl``. Install the wheel you
-built with pip, for example:
+To add optional dependencies to a local wheel installation, use that same wheel
+with the desired extras. This avoids asking an index for a local build that
+has never been published:
 
 .. code-block:: shell
 
-  $ python -m pip install dist/nvflare_nightly-*.whl  # Default name
-  $ python -m pip install dist/nvflare-*.whl          # With NVFL_RELEASE=1
+  $ python -m pip install "dist/nvflare-<version>-py3-none-any.whl[PT]"
+
+For an editable install, run ``python -m pip install -e ".[PT]"`` from the
+same checkout instead. Keep the checkout unchanged when using
+``nvflare examples get`` so the catalog can select its matching revision.
+
+Migrating an existing nvflare-nightly installation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Older source builds used the distribution name ``nvflare-nightly``. That name
+is retired for new builds; public nightly publishing is not being resumed.
+Pip treats the two names as separate distributions even though both install
+``nvflare`` modules, so installing the new package does not remove the old one.
+
+Use a new virtual environment, or remove both distributions before reinstalling
+the desired wheel or source checkout. Removing both first also repairs an
+environment where the distributions shared files:
+
+.. code-block:: shell
+
+  $ python -m pip uninstall nvflare-nightly nvflare
+  $ python -m pip install -e ".[PT]"  # Run from the desired NVFlare checkout
+
+Build scripts should look for ``nvflare-*.whl`` rather than
+``nvflare_nightly-*.whl``. Dependencies on ``nvflare-nightly`` must be changed
+to ``nvflare`` with an appropriate version constraint. A development version
+still needs to satisfy that constraint; using one name does not make an
+incompatible version acceptable to pip.
 
 Running the Build with a Specific Python Version
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

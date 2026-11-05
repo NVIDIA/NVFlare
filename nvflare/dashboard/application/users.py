@@ -21,7 +21,9 @@ from jwt import PyJWTError
 from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
 
 from .blob import gen_user_blob
-from .store import Store, check_role
+from .models import User
+from .store import Store, check_role, is_project_admin
+from .validation import DashboardError
 
 
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users", methods=["POST"])
@@ -29,10 +31,10 @@ def create_one_user():
     req = request.json
     try:
         verify_jwt_in_request(optional=True)
-        claims = get_jwt()
+        requester = get_jwt_identity()
     except (JWTExtendedException, PyJWTError):
-        claims = {}
-    created_by_project_admin = claims.get("role") == "project_admin" and claims.get("approved")
+        requester = None
+    created_by_project_admin = is_project_admin(User.query.filter_by(email=requester).first()) if requester else False
     result = Store.create_user(req, created_by_project_admin=created_by_project_admin)
     if result is not None:
         return jsonify(result), 201
@@ -43,13 +45,13 @@ def create_one_user():
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users", methods=["GET"])
 @jwt_required()
 def get_all_users():
-    claims = get_jwt()
-    if not claims.get("approved"):
+    user = Store.get_requester(get_jwt_identity())
+    if user.approval_state < 100:
         return jsonify({"status": "not approved yet"}), 403
-    if claims.get("role") == "project_admin":
+    if is_project_admin(user):
         result = Store.get_users()
     else:
-        org_name = claims.get("organization", "")
+        org_name = user.organization.name
         result = Store.get_users(org_name=org_name)
     return jsonify(result)
 
@@ -88,8 +90,9 @@ def update_user(id):
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users/<int:id>/blob", methods=["POST"])
 @jwt_required()
 def user_blob(id):
+    Store.get_requester(get_jwt_identity())
     if not Store._is_approved_by_user_id(id):
-        return jsonify({"status": "not approved yet"}), 200
+        raise DashboardError("The project administrator must approve this user before downloading a startup kit.")
     c, p = check_role(id, get_jwt(), get_jwt_identity())
     if not c and not p:
         return jsonify({"status": "unauthorized"}), 403
