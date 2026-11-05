@@ -96,8 +96,9 @@ establishes zero without running `nvidia-smi`. Integer selectors keep their orde
 remove duplicates, and stop at the first negative index, empty item, or index
 absent from the inventory.
 A noninteger selector reached before selection stops leaves the statistics
-observation unavailable; resource-manager pools validated against local GPUs
-reject those selectors. Externally managed pools retain their `ignore_host` behavior.
+observation unavailable. The host-backed resource manager retains its fallback
+to host inventory for unsupported masks. Externally managed pools retain their
+`ignore_host` behavior.
 
 The statistics probe calls `get_host_gpu_ids(timeout=2.0)`. A missing command,
 command failure, timeout, malformed output, or empty inventory is unavailable,

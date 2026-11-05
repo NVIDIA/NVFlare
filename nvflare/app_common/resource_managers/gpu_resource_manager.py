@@ -95,7 +95,7 @@ class GPUResourceManager(AutoCleanResourceManager):
                 host_gpu_ids = get_host_gpu_ids()
                 managed_host_gpu_ids = get_visible_gpu_ids(host_gpu_ids)
                 if managed_host_gpu_ids is None:
-                    raise ValueError("CUDA_VISIBLE_DEVICES must contain integer GPU indices")
+                    managed_host_gpu_ids = host_gpu_ids
                 num_host_gpus = len(managed_host_gpu_ids)
                 if num_of_gpus > num_host_gpus:
                     raise ValueError(f"num_of_gpus specified ({num_of_gpus}) exceeds available GPUs: {num_host_gpus}.")
