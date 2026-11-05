@@ -536,6 +536,13 @@ class TestFederatedServer:
 
         assert server._resolve_client_fqcn_for_auth("site-a", "token-a") == MISSING_CLIENT_FQCN
 
+    def test_resolve_server_job_token_to_its_own_cell(self):
+        server = object.__new__(FederatedServer)
+        server.client_manager = MagicMock()
+        server.client_manager.clients = {}
+
+        assert server._resolve_client_fqcn_for_auth("server_job", "job-a") == "server.job-a"
+
     def test_non_secure_server_registers_transit_header_sanitizer(self):
         server = object.__new__(FederatedServer)
         server.lock = MagicMock()

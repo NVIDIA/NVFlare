@@ -548,6 +548,9 @@ class FederatedServer(BaseServer):
         client = self.client_manager.clients.get(token)
         if client and client.name == client_name:
             return client.get_fqcn() or MISSING_CLIENT_FQCN
+        if client_name == private_defs.AUTH_CLIENT_NAME_FOR_SJ:
+            # Server jobs authenticate with their signed job ID rather than a registered site token.
+            return f"{FQCN.ROOT_SERVER}.{token}"
         return None
 
     def sign_auth_token(self, client_name: str, token: str):
