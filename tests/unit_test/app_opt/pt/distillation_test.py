@@ -399,7 +399,7 @@ def test_cpu_sampling_and_synthesis_ignore_the_process_default_device():
             [nn.Linear(16, 2)],
             generator=nn.Linear(2, 16),
             objective=ClassificationObjective(confidence_weight=1, diversity_weight=1),
-            optimizer_factory=partial(torch.optim.Adam, lr=3e-3),
+            optimizer_factory=partial(torch.optim.SGD, lr=3e-3),
             latent_size=2,
             rng=rng,
         )

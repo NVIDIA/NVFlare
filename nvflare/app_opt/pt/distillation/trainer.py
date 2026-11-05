@@ -32,7 +32,7 @@ def _model(value):
 
 
 class DistillationTrainer:
-    """Train a student against the mean per-teacher loss.
+    """Native implementation of Distiller, using the mean per-teacher loss.
 
     student and teachers accept modules or zero-argument factories. The student
     is moved to device and updated in place, retaining its supplied weights;
@@ -60,7 +60,11 @@ class DistillationTrainer:
             teachers=[nn.Sequential(nn.Linear(4, 8), nn.ReLU(), nn.Linear(8, 3))],
             optimizer_factory=partial(torch.optim.SGD, lr=0.1),
         )
-        metrics = trainer.fit([torch.randn(8, 4)], max_steps=1)
+        try:
+            metrics = trainer.fit([torch.randn(8, 4)], max_steps=1)
+            student_state = trainer.export_student_state()
+        finally:
+            trainer.close()
     """
 
     def __init__(
@@ -90,6 +94,7 @@ class DistillationTrainer:
         self.teacher_output_adapter = teacher_output_adapter
         self.loss_fn = loss_fn
         self.num_steps = 0
+        self._closed = False
 
     def fit(self, batches, max_steps: int | None = None) -> dict:
         """Consume one pass, optionally capped, returning loss/steps/samples.
@@ -100,6 +105,7 @@ class DistillationTrainer:
         An empty input or non-finite/non-scalar loss raises. Completed optimizer
         steps remain applied if a later batch fails; there is no rollback.
         """
+        self._check_open()
         if max_steps is not None and (isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps < 1):
             raise ValueError("max_steps must be a positive integer or None")
         self.student.train()
@@ -136,6 +142,22 @@ class DistillationTrainer:
             raise ValueError("no batches were supplied")
         return {"loss": total_loss / samples, "steps": steps, "samples": samples}
 
+    def _check_open(self):
+        if self._closed:
+            raise RuntimeError("Distiller is closed")
+
+    def export_student_state(self) -> dict:
+        """Return independent student-only CPU state, retaining the live session."""
+        self._check_open()
+        return _snapshot_state(self.student.state_dict())
+
+    def close(self) -> None:
+        """Release owned model/optimizer references; caller models remain owned by callers."""
+        if not self._closed:
+            self._closed = True
+            self.teachers = []
+            self.student = self.optimizer = None
+
     def state_dict(self) -> dict:
         """Copy model/optimizer states and step count for explicit checkpointing.
 
@@ -144,8 +166,9 @@ class DistillationTrainer:
         Architecture/factories, adapters, loss configuration and RNG/data-loader
         state are caller-owned and are not serialized.
         """
+        self._check_open()
         return {
-            "student": _snapshot_state(self.student.state_dict()),
+            "student": self.export_student_state(),
             "teachers": [_snapshot_state(model.state_dict()) for model in self.teachers],
             "optimizer": deepcopy(self.optimizer.state_dict()),
             "num_steps": self.num_steps,
@@ -157,6 +180,7 @@ class DistillationTrainer:
         Construct models/optimizer first, then restore caller-owned RNG and data
         state after loading. This is component restoration, not workflow recovery.
         """
+        self._check_open()
         if len(state["teachers"]) != len(self.teachers):
             raise ValueError("checkpoint teacher count does not match this trainer")
         count = state["num_steps"]
