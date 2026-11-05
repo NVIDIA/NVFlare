@@ -8,3 +8,22 @@ global-exclude *.py[co]
 global-exclude __pycache__
 recursive-include nvflare/lighter/templates *
 recursive-include nvflare/tool/deploy/templates *
+
+# Dashboard contributors can rebuild the shipped frontend from the source archive.
+include dashboard/build_ui.py
+include dashboard/smoke_wheel.py
+include dashboard/ui/.npmrc
+include dashboard/ui/.nvmrc
+include dashboard/ui/.gitignore
+recursive-include dashboard/ui *.json *.js *.mjs *.cjs *.ts *.tsx *.css *.md *.py *.txt
+recursive-include dashboard/ui *.svg *.png *.jpg *.jpeg *.gif *.webp *.avif *.ico *.woff *.woff2 *.ttf
+recursive-include dashboard/ui LICENSE* NOTICE*
+recursive-include dashboard/ui/public *
+prune dashboard/ui/node_modules
+prune dashboard/ui/.next
+prune dashboard/ui/out
+prune dashboard/ui/coverage
+prune dashboard/ui/test-results
+prune dashboard/ui/playwright-report
+prune dashboard/ui/.git
+global-exclude *.tsbuildinfo .DS_Store .env*.local
