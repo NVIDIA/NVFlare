@@ -101,7 +101,11 @@ class DistillationTrainer:
 
         Input tensors are detached and moved to device. Labels are unused.
         The student runs in train mode and remains there; teacher copies stay
-        frozen in eval mode. max_steps never cycles or consumes an extra batch.
+        frozen in eval mode. Teachers run first, retaining their targets before
+        building the student's autograd graph. Shared RNG, input mutation or
+        stateful forwards/adapters can make ordering observable; equivalence to
+        student-first is only expected for independent deterministic forwards.
+        max_steps never cycles or consumes an extra batch.
         An empty input or non-finite/non-scalar loss raises. Completed optimizer
         steps remain applied if a later batch fails; there is no rollback.
         """
@@ -116,15 +120,20 @@ class DistillationTrainer:
             if not isinstance(inputs, torch.Tensor) or inputs.ndim < 1 or inputs.shape[0] == 0:
                 raise ValueError("batch_adapter must return a nonempty batched input tensor")
             inputs = inputs.detach().to(self.device)
-            student_output = self.student(inputs)
-            if self.student_output_adapter:
-                student_output = self.student_output_adapter(student_output)
-            loss = None
+            # Finish teacher inference before retaining the student's autograd
+            # activations. Keep only the teacher targets for the loss reduction.
+            targets = []
             for teacher in self.teachers:
                 with torch.no_grad():
                     target = teacher(inputs)
                     if self.teacher_output_adapter:
                         target = self.teacher_output_adapter(target)
+                targets.append(target)
+            student_output = self.student(inputs)
+            if self.student_output_adapter:
+                student_output = self.student_output_adapter(student_output)
+            loss = None
+            for target in targets:
                 term = self.loss_fn(student_output, target)
                 loss = term if loss is None else loss + term
             loss = loss / len(self.teachers)

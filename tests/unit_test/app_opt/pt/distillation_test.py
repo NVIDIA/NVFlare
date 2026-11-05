@@ -414,3 +414,64 @@ def test_cpu_sampling_and_synthesis_ignore_the_process_default_device():
         assert generated.device.type == "cpu" and generated.shape == (2, 16)
         assert torch.isfinite(generated).all()
         assert metrics["steps"] == synthesis.num_steps == 1
+
+
+def test_teacher_first_preserves_updates_and_avoids_live_student_graph_during_inference():
+    events = []
+
+    class Recorded(nn.Module):
+        def __init__(self, name):
+            super().__init__()
+            self.name = name
+            self.layers = nn.Sequential(nn.Linear(3, 5), nn.BatchNorm1d(5), nn.Tanh(), nn.Linear(5, 2))
+
+        def forward(self, inputs):
+            events.append((self.name, torch.is_grad_enabled(), self.training))
+            return self.layers(inputs)
+
+    student = Recorded("student")
+    teachers = [Recorded("teacher-1"), Recorded("teacher-2")]
+    expected_student = deepcopy(student)
+    expected_teachers = [deepcopy(teacher).eval().requires_grad_(False) for teacher in teachers]
+    optimizer_factory = partial(torch.optim.SGD, lr=0.05, momentum=0.9)
+    expected_optimizer = optimizer_factory(expected_student.parameters())
+    batches = [torch.randn(8, 3), torch.randn(5, 3)]
+    expected_total = 0.0
+    # Preserve the former student-first execution as an independent reference,
+    # including BatchNorm state and momentum across unequal batches.
+    for inputs in batches:
+        output = expected_student(inputs)
+        terms = []
+        for teacher in expected_teachers:
+            with torch.no_grad():
+                target = teacher(inputs)
+            terms.append(kl_divergence(output, target, temperature=2.0))
+        loss = sum(terms) / len(terms)
+        expected_optimizer.zero_grad()
+        loss.backward()
+        expected_optimizer.step()
+        expected_total += loss.item() * len(inputs)
+    events.clear()
+    originals = [deepcopy(teacher.state_dict()) for teacher in teachers]
+    session = DistillationTrainer(
+        student,
+        teachers,
+        optimizer_factory,
+        loss_fn=partial(kl_divergence, temperature=2.0),
+    )
+    try:
+        metrics = session.fit(batches)
+        assert events == [
+            ("teacher-1", False, False),
+            ("teacher-2", False, False),
+            ("student", True, True),
+        ] * len(batches)
+        assert metrics == pytest.approx({"loss": expected_total / 13, "steps": 2, "samples": 13})
+        for name, value in session.export_student_state().items():
+            torch.testing.assert_close(value, expected_student.state_dict()[name], rtol=0, atol=0)
+        for original, teacher in zip(originals, teachers):
+            assert teacher.training
+            for name, value in teacher.state_dict().items():
+                torch.testing.assert_close(value, original[name], rtol=0, atol=0)
+    finally:
+        session.close()
