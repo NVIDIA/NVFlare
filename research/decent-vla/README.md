@@ -1,4 +1,20 @@
-# VLA fine-tuning with NVIDIA FLARE
+# decent-vla: Federated Fine-Tuning of Vision-Language-Action Models
+
+**Paper:** [An Empirical Study and Open Testbed for Federated Fine-Tuning of Vision-Language-Action Models](https://arxiv.org/abs/2609.22973)
+
+A vision-language-action (VLA) policy is usually released as a checkpoint, and the demonstrations each site collects
+afterwards go unused. In federated fine-tuning, each site trains a shared policy on its own demonstrations and exchanges
+only model updates, so the policy keeps improving while the data stays local.
+
+This folder is the NVIDIA FLARE implementation of the paper's testbed, for its LIBERO simulation setting. The paper's
+LIBERO-PRO evaluation and real-robot experiments are not included.
+
+![Two panels with robot arms at a home, an office and a lab. Left, Release & Forget: one pretrained VLA goes out to all three sites and their experience is discarded. Right, decent-vla: all three sites exchange updates with a shared policy, giving shared improvement with privacy.](figs/figure_1.png)
+
+*Figure 1 from the [paper](https://arxiv.org/abs/2609.22973): a released checkpoint (left) versus federated fine-tuning
+with decent-vla (right).*
+
+## Implementation
 
 Federated fine-tuning of SmolVLA, π0.5 and GR00T N1.7 on LIBERO using native
 FLARE `FedAvg` / PyTorch `FedOpt` workflows and `PTFedProxLoss`. Clients retain
@@ -25,6 +41,7 @@ decent-vla/
 │   ├── config.py              # run configuration and validation
 │   ├── libero.py              # LIBERO checkpoint evaluation
 │   └── support/               # partitioning, training, checkpoints and evaluation support
+├── figs/                      # figure for this README
 └── tests/                     # CPU unit tests
 ```
 
