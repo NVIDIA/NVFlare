@@ -22,10 +22,16 @@ from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.utils.decomposers.flare_decomposers import ContextDecomposer
+from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ComponentNotAuthorized
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData as Meta
+from nvflare.fuel.f3.cellnet.core_cell import make_reply
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs import fobs as fobs_registry
+from nvflare.fuel.utils.tree_utils import Forest, Node
 from nvflare.private.fed.app.client.sub_worker_process import SubWorkerExecutor
 
 
@@ -68,6 +74,7 @@ def test_sub_worker_initialization_preserves_runtime_services_and_authorization(
     worker.local_rank = 0
     worker.num_of_processes = 2
     worker.cell = Mock()
+    worker.cell.send_request.return_value = make_reply(ReturnCode.OK)
     parent_context = FLContext()
     parent_context.set_prop(
         FLContextKey.EXCEPTIONS, {"earlier_parent_event": RuntimeError("earlier error")}, sticky=False
@@ -88,6 +95,29 @@ def test_sub_worker_initialization_preserves_runtime_services_and_authorization(
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
     assert worker.executor.started  # Event dispatch catches handler exceptions.
     assert worker.run_manager.get_cell() is worker.cell
+    worker.cell.send_request.assert_called_once()
     assert parent_context.get_prop(FLContextKey.EXCEPTIONS)
     with pytest.raises(ComponentNotAuthorized):
         worker.run_manager.build_component({"path": "socket.socket"})
+
+
+def test_rank_context_decodes_without_parent_hierarchy_decomposers(monkeypatch):
+    # Isolate sender registrations, then decode as a fresh rank would.
+    monkeypatch.setattr(fobs_registry, "_decomposers", {})
+    monkeypatch.setattr(fobs_registry, "_dot_handlers", {})
+    fobs.register(ContextDecomposer)
+    hierarchy = Forest()
+    hierarchy.roots = ["site-1"]
+    hierarchy.nodes["site-1"] = Node("site-1", None)
+    parent_context = FLContext()
+    parent_context.set_prop(FLContextKey.CLIENT_HIERARCHY, hierarchy, private=True, sticky=True)
+    parent_context.set_prop(FLContextKey.CURRENT_JOB_ID, "job", private=False, sticky=True)
+    encoded = fobs.dumps(get_serializable_data(parent_context))
+
+    monkeypatch.setattr(fobs_registry, "_decomposers", {})
+    fobs.register(ContextDecomposer)
+    rank_context = fobs.loads(encoded)
+
+    assert rank_context.get_prop(FLContextKey.CLIENT_HIERARCHY) is None
+    assert rank_context.get_prop(FLContextKey.CURRENT_JOB_ID) == "job"
+    assert parent_context.get_prop(FLContextKey.CLIENT_HIERARCHY) is hierarchy
