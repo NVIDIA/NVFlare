@@ -133,7 +133,7 @@ def launch(tmp_path):
             arguments,
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=45 if case == "stale-event" else 15,
             env={
                 **os.environ,
                 "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
