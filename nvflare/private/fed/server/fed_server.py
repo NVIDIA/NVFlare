@@ -58,7 +58,6 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import add_authentication_headers
-from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private import defs as private_defs
@@ -532,43 +531,14 @@ class FederatedServer(BaseServer):
             return None
 
         token_verifier = TokenVerifier(id_asserter.cert)
-        origin = message.get_header(MessageHeaderKey.ORIGIN)
-        peer = message.get_prop(MessagePropKey.ENDPOINT)
-
-        def resolve_client_fqcn(name, token):
-            fqcn = self._resolve_client_fqcn_for_auth(name, token, origin, peer)
-            if (
-                fqcn == MISSING_CLIENT_FQCN
-                and peer
-                and origin == peer.name
-                and is_valid_admin_client_name(origin)
-                and name not in (FQCN.ROOT_SERVER, private_defs.AUTH_CLIENT_NAME_FOR_SJ)
-                and message.get_prop(MessagePropKey.COMMON_NAME) == name
-            ):
-                return origin
-            if (
-                fqcn == MISSING_CLIENT_FQCN
-                and token not in self.client_manager.clients
-                and name not in (FQCN.ROOT_SERVER, private_defs.AUTH_CLIENT_NAME_FOR_SJ)
-                and origin
-                and not FQCN.validate(origin)
-                and peer
-                and (origin == peer.name or FQCN.is_ancestor(peer.name, origin))
-                and message.get_prop(MessagePropKey.COMMON_NAME)
-                and self.cell.core_cell.identity_resolver.resolve(peer.name)
-                == message.get_prop(MessagePropKey.COMMON_NAME)
-                and self.cell.core_cell.identity_resolver.resolve(origin) == name
-            ):
-                # Resolve lost client/relay registrations against the configured mTLS identities
-                # and the authenticated forwarding peer, rather than skipping origin binding.
-                return origin
-            return fqcn
 
         reply = validate_auth_headers(
             message=message,
             token_verifier=token_verifier,
             logger=self.logger,
-            client_fqcn_resolver=resolve_client_fqcn,
+            client_fqcn_resolver=lambda name, token: self._resolve_client_fqcn_for_auth(
+                name, token, message.get_header(MessageHeaderKey.ORIGIN), message.get_prop(MessagePropKey.ENDPOINT)
+            ),
             local_cell_fqcn=self.cell.get_fqcn() if getattr(self, "cell", None) else None,
         )
         if not reply:
@@ -576,7 +546,11 @@ class FederatedServer(BaseServer):
         return reply
 
     def _resolve_client_fqcn_for_auth(self, client_name: str, token: str, origin: str = "", peer=None):
-        if origin == FQCN.ROOT_SERVER and (not peer or peer.name != FQCN.ROOT_SERVER):
+        if origin == FQCN.ROOT_SERVER or client_name == FQCN.ROOT_SERVER:
+            # Only this server's in-process endpoint may originate parent-server messages.
+            local_peer = self.cell.core_cell.communicator.local_endpoint
+            if client_name == token == origin == FQCN.ROOT_SERVER and peer is local_peer:
+                return FQCN.ROOT_SERVER
             return MISSING_CLIENT_FQCN
         client = self.client_manager.clients.get(token)
         if client and client.name == client_name:
@@ -587,10 +561,9 @@ class FederatedServer(BaseServer):
             if origin == bootstrap:
                 return bootstrap
             return f"{FQCN.ROOT_SERVER}.{token}"
-        # Server reply headers can be copied by clients; only the server's own endpoint may use them here.
-        if client_name == token == FQCN.ROOT_SERVER and peer and peer.name == origin == FQCN.ROOT_SERVER:
-            return FQCN.ROOT_SERVER
-        return MISSING_CLIENT_FQCN
+        # Delegated admin sessions and lost client registrations are authenticated by their
+        # signed tokens and existing handlers; they cannot claim the parent identity above.
+        return None
 
     def sign_auth_token(self, client_name: str, token: str):
         id_asserter = self._get_id_asserter()

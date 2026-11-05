@@ -49,8 +49,12 @@ def wait_for(check, description, timeout=60):
     raise AssertionError(f"timed out waiting for {description}")
 
 
-@pytest.fixture(params=[False, True], ids=["direct", "relay"])
+@pytest.fixture(
+    params=[(False, "mtls"), (True, "mtls"), (False, "tls"), (True, "tls")],
+    ids=["direct-mtls", "relay-mtls", "direct-tls", "relay-tls"],
+)
 def federation(tmp_path, monkeypatch, request):
+    via_relay, connection_security = request.param
     repo = Path(__file__).resolve().parents[3]
     monkeypatch.syspath_prepend(str(repo / "tests/integration_test/data/server_command"))
     module = importlib.import_module("control_job")
@@ -60,6 +64,7 @@ def federation(tmp_path, monkeypatch, request):
     )
     project = yaml.safe_load((repo / "tests/integration_test/data/projects/client_api.yml").read_text())
     project["name"] = "server_command_authorization"
+    project["connection_security"] = connection_security
     project["participants"].extend(
         {"name": name, "type": "admin", "org": "nvidia", "role": "lead"}
         for name in ["victim@test.org", "attacker@test.org"]
@@ -71,9 +76,9 @@ def federation(tmp_path, monkeypatch, request):
             participant["listening_host"] = {
                 "scheme": "stcp",
                 "default_host": "localhost",
-                "connection_security": "mtls",
+                "connection_security": connection_security,
             }
-    if request.param:
+    if via_relay:
         project["participants"].append(
             {
                 "name": "relay-1",
@@ -83,22 +88,22 @@ def federation(tmp_path, monkeypatch, request):
                     "scheme": "stcp",
                     "default_host": "localhost",
                     "port": get_open_ports(1)[0],
-                    "connection_security": "mtls",
+                    "connection_security": connection_security,
                 },
             }
         )
-        project["participants"][1]["connect_to"] = {"name": "relay-1", "connection_security": "mtls"}
+        project["participants"][1]["connect_to"] = {"name": "relay-1", "connection_security": connection_security}
     Provisioner(str(tmp_path), prepare_builders(project)).provision(prepare_project(project))
     kits = tmp_path / project["name"] / "prod_00"
     for name in ["localhost", "site-1", "site-2"]:
         internal = json.loads((kits / name / "local/comm_config.json").read_text())["internal"]
         assert internal["scheme"] == "stcp"
-        assert internal["resources"]["connection_security"] == "mtls"
+        assert internal["resources"]["connection_security"] == connection_security
     update_storage_locations(str(kits / "localhost/local"), str(tmp_path))
     processes, streams, sessions = OwnedProcesses(), [], []
     try:
         sites = [("localhost", "server")]
-        if request.param:
+        if via_relay:
             sites.append(("relay-1", "relay"))
         sites.extend([("site-1", "client"), ("site-2", "client")])
         for name, kind in sites:
@@ -129,7 +134,7 @@ def federation(tmp_path, monkeypatch, request):
             processes.callbacks.append(sessions[-1].close)
         victim, attacker = sessions
         wait_for(lambda: len(victim.get_system_info().client_info) == 2, "two enrolled clients")
-        yield kits, module, victim, attacker, request.param
+        yield kits, module, victim, attacker, via_relay
     finally:
         try:
             processes.close()
