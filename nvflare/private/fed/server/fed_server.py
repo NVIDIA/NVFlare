@@ -536,19 +536,24 @@ class FederatedServer(BaseServer):
             message=message,
             token_verifier=token_verifier,
             logger=self.logger,
-            client_fqcn_resolver=self._resolve_client_fqcn_for_auth,
+            client_fqcn_resolver=lambda name, token: self._resolve_client_fqcn_for_auth(
+                name, token, message.get_header(MessageHeaderKey.ORIGIN)
+            ),
             local_cell_fqcn=self.cell.get_fqcn() if getattr(self, "cell", None) else None,
         )
         if not reply:
             self._strip_peer_transit_headers(message)
         return reply
 
-    def _resolve_client_fqcn_for_auth(self, client_name: str, token: str):
+    def _resolve_client_fqcn_for_auth(self, client_name: str, token: str, origin: str = ""):
         client = self.client_manager.clients.get(token)
         if client and client.name == client_name:
             return client.get_fqcn() or MISSING_CLIENT_FQCN
         if client_name == private_defs.AUTH_CLIENT_NAME_FOR_SJ:
-            # Server jobs authenticate with their signed job ID rather than a registered site token.
+            # Bind both the job runner and its workspace bootstrap to the signed job ID.
+            bootstrap = f"{FQCN.ROOT_SERVER}.ws_transfer_{token}"
+            if origin == bootstrap:
+                return bootstrap
             return f"{FQCN.ROOT_SERVER}.{token}"
         return None
 

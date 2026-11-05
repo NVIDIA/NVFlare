@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from contextlib import nullcontext
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -26,6 +27,7 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
@@ -309,6 +311,13 @@ def test_ipv4_mapped_ipv6_loopback_admin_host_is_normalized_consistently():
     assert cell_cls.call_args.kwargs["root_url"][-1] == "tcp://127.0.0.2:8003?admin_listener=true"
 
 
+@pytest.fixture(scope="module")
+def signed_job_auth():
+    private_key, public_key = generate_keys()
+    cert = generate_cert(Identity("server"), Identity("server"), private_key, public_key)
+    return SimpleNamespace(cert=cert), sign_content("server_jobjob-a", private_key)
+
+
 class TestFederatedServer:
     def test_production_listener_bindings_remain_wildcard_by_default(self):
         server = object.__new__(FederatedServer)
@@ -370,12 +379,42 @@ class TestFederatedServer:
 
         assert server._resolve_client_fqcn_for_auth("site-a", "token-a") == MISSING_CLIENT_FQCN
 
-    def test_resolve_server_job_token_to_its_own_cell(self):
+    @pytest.mark.parametrize(
+        "origin,accepted",
+        [
+            ("server.job-a", True),
+            ("server.job-a.child", True),
+            ("server.ws_transfer_job-a", True),
+            ("server", False),
+            ("server.job-b", False),
+            ("server.ws_transfer_job-b", False),
+            ("server.ws_transfer_job-a_suffix", False),
+        ],
+    )
+    def test_server_job_token_only_authenticates_its_own_cells(self, signed_job_auth, origin, accepted):
+        identity, signature = signed_job_auth
         server = object.__new__(FederatedServer)
-        server.client_manager = MagicMock()
-        server.client_manager.clients = {}
+        server.logger = MagicMock()
+        server.cell = SimpleNamespace(get_fqcn=lambda: "server")
+        server.client_manager = SimpleNamespace(clients={})
+        server._get_id_asserter = lambda: identity
+        request = new_cell_message(
+            {
+                MessageHeaderKey.ORIGIN: origin,
+                MessageHeaderKey.DESTINATION: "server",
+                CellMessageHeaderKeys.CLIENT_NAME: "server_job",
+                CellMessageHeaderKeys.TOKEN: "job-a",
+                CellMessageHeaderKeys.TOKEN_SIGNATURE: signature,
+            },
+            None,
+        )
 
-        assert server._resolve_client_fqcn_for_auth("server_job", "job-a") == "server.job-a"
+        reply = server._validate_auth_headers(request)
+
+        if accepted:
+            assert reply is None
+        else:
+            assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
 
     def test_non_secure_server_registers_transit_header_sanitizer(self):
         server = object.__new__(FederatedServer)
