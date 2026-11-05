@@ -36,7 +36,7 @@ from nvflare.client.api import (
     send,
     system_info,
 )
-from nvflare.client.config import ConfigKey
+from nvflare.client.config import ConfigKey, TransferType
 from nvflare.fuel.utils import fobs
 
 from .algorithm import _AlgorithmHandlerManager
@@ -192,7 +192,9 @@ class FLCallback(Callback):
         """
         super(FLCallback, self).__init__()
         init(rank=str(rank))
-        self.train_with_evaluation = get_config().get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.TRAIN_WITH_EVAL, False)
+        task_exchange = get_config().get(ConfigKey.TASK_EXCHANGE, {})
+        self.train_with_evaluation = task_exchange.get(ConfigKey.TRAIN_WITH_EVAL, False)
+        self._diff_transfer = task_exchange.get(ConfigKey.TRANSFER_TYPE) == TransferType.DIFF
         if sync_every_n_steps is not None and self.train_with_evaluation:
             raise ValueError(
                 "sync_every_n_steps does not support train_with_evaluation: no global-model validation runs "
@@ -411,6 +413,13 @@ class FLCallback(Callback):
     def _load_received_model(self, trainer, pl_module, model: FLModel):
         editable = copy.copy(model)
         editable.params = dict(model.params) if model.params is not None else None
+        if (
+            editable.params
+            and self._diff_transfer
+            and trainer.global_rank == 0
+            and _has_fl_hooks(trainer, "on_fl_receive", "on_fl_model_loaded")
+        ):
+            editable.params = {k: v.clone() if isinstance(v, Tensor) else v for k, v in editable.params.items()}
         editable.meta = dict(model.meta) if model.meta is not None else None
         _call_fl_hooks(trainer, pl_module, "on_fl_receive", editable)
         self._update_model(pl_module, editable)
@@ -482,6 +491,10 @@ class FLCallback(Callback):
             send(output_model, clear_cache=False)
         except Exception as e:
             raise RuntimeError(f"failed to send FL model: {e}")
+
+
+def _has_fl_hooks(trainer, *names: str) -> bool:
+    return any(callable(getattr(cb, name, None)) for cb in getattr(trainer, "callbacks", []) for name in names)
 
 
 def _call_fl_hooks(trainer, pl_module, name: str, fl_model: Optional[FLModel]):

@@ -180,9 +180,8 @@ is not supported.
 
 Any callback in ``trainer.callbacks`` can define these hooks, in both modes:
 
-* ``on_fl_receive(trainer, pl_module, fl_model)``: before the received model is loaded. Replacing
-  entries in ``fl_model.params`` or ``fl_model.meta`` changes what is loaded, not the copy the Client API
-  keeps for ``DIFF`` transfers. Replace tensors instead of editing them in place.
+* ``on_fl_receive(trainer, pl_module, fl_model)``: before the received model is loaded. Edits to
+  ``fl_model`` change what is loaded, not the copy the Client API keeps for ``DIFF`` transfers.
 * ``on_fl_model_loaded(trainer, pl_module, fl_model)``: after it is loaded.
 * ``on_fl_before_send(trainer, pl_module, fl_model)``: before the model is sent; ``fl_model`` is
   ``None`` on ranks other than 0.

@@ -2154,6 +2154,28 @@ def test_validate_before_step_sync_fit_runs_receive_hooks_once():
     assert torch.equal(module.seen[0].weight, torch.full((2, 2), 7.0))
 
 
+class InPlaceHooks(pl.Callback):
+    def on_fl_receive(self, trainer, pl_module, fl_model):
+        fl_model.params["fc.weight"].add_(5.0)
+
+
+@pytest.mark.parametrize("transfer_type", ["DIFF", "FULL"])
+def test_in_place_hook_edits_change_the_received_model_only_without_diff(transfer_type):
+    module = RecordingNet()
+    fake = _FakeFlare(_train_tasks(10))
+    config = {ConfigKey.TASK_EXCHANGE: {ConfigKey.TRANSFER_TYPE: transfer_type}}
+
+    with _flare(fake, config=config):
+        trainer = _pl_trainer(max_epochs=1, callbacks=[InPlaceHooks()])
+        lightning_patch(trainer, sync_every_n_steps=2)
+        trainer.fit(module, train_dataloaders=_loader(4))
+
+    shift = 0.0 if transfer_type == "DIFF" else 5.0
+    for round_idx, received in enumerate(fake.received):
+        assert torch.equal(received.params["fc.weight"], torch.full((2, 2), round_idx + shift))
+    assert torch.equal(module.seen[0].weight, torch.full((2, 2), 5.0))
+
+
 class ExtraStateNet(RecordingNet):
     def get_extra_state(self):
         return {"version": 1}
