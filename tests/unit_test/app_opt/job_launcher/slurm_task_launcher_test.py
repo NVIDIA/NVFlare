@@ -30,7 +30,6 @@ from nvflare.apis.task_launcher_spec import (
     TaskLaunchError,
     TaskResourceRequest,
     TaskSettlementError,
-    UnsupportedTaskResourceError,
 )
 from nvflare.app_opt.job_launcher.slurm.config import (
     CommandResult,
@@ -365,25 +364,34 @@ def test_bad_query_is_unconfirmed_and_retained(backend):
         "BASH_FUNC_bad%%",
     ],
 )
-def test_reject_request_environment_authority(backend, name):
-    launcher, adapter, request = backend
+def test_reject_request_environment_authority(tmp_path, monkeypatch, name):
+    launcher, adapter, request = _backend(tmp_path, monkeypatch, 0, cp_backend=True)
     with pytest.raises((TaskLauncherError, SlurmLauncherError)):
         launcher.launch_task(replace(request, environment={name: "value"}))
     adapter.submit.assert_not_called()
 
 
-def test_reject_mixed_mode_paths_and_fractional_cpu(backend, monkeypatch, tmp_path):
-    launcher, adapter, request = backend
-    with pytest.raises(TaskLauncherError, match="inside the site workspace"):
-        launcher.launch_task(replace(request, cwd=str(tmp_path)))
-    with pytest.raises(TaskLauncherError, match="absolute executable"):
-        launcher.launch_task(replace(request, argv=("python", "-V")))
-    with pytest.raises(UnsupportedTaskResourceError):
-        launcher.launch_task(replace(request, resources=TaskResourceRequest(cpu_cores=1.5)))
-    with pytest.raises(TaskLauncherError, match="Process parent-PID"):
-        launcher.launch_task(
-            replace(request, argv=(sys.executable, "-m", "nvflare.private.fed.app.client.task_worker_process"))
-        )
+@pytest.mark.parametrize(
+    "argv",
+    [
+        (sys.executable, "-V"),
+        ("python", "-V"),
+        (sys.executable, "-m", "nvflare.private.fed.app.client.task_worker_process"),
+        (
+            sys.executable,
+            "-m",
+            "nvflare.private.fed.app.client.task_worker_process",
+            "--bootstrap",
+            "/workspace/bootstrap.json",
+            "--execution_scope",
+            "native",
+        ),
+    ],
+)
+def test_cp_backend_rejects_arbitrary_or_prematerialized_commands(tmp_path, monkeypatch, argv):
+    launcher, adapter, request = _backend(tmp_path, monkeypatch, 0, cp_backend=True)
+    with pytest.raises(TaskLauncherError, match="common staged worker request"):
+        launcher.launch_task(replace(request, argv=argv))
     adapter.submit.assert_not_called()
 
 

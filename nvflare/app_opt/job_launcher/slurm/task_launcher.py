@@ -74,7 +74,7 @@ from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
 from nvflare.private.fed.task_worker.protocol import CELL_SESSION_CREDENTIALS, _open_regular, read_bootstrap
 from nvflare.private.fed.utils.job_cert_utils import job_cert_paths
 
-WORKER_MODULE = "nvflare.app_opt.job_launcher.slurm.task_worker"
+WORKER_MODULE = "nvflare.private.fed.app.client.task_worker_process"
 
 
 @dataclass(frozen=True)
@@ -167,6 +167,7 @@ def _batch_script(request, setup):
         "#!/bin/bash",
         "set -euo pipefail",
         '[[ "${SLURM_RESTART_COUNT:-0}" == 0 ]] || exit 101',
+        '[[ "${SLURM_JOB_ID:-}" =~ ^[0-9]+$ ]] || { echo "Slurm task requires an allocation identity" >&2; exit 103; }',
     ]
     lines.extend(f"export {name}={shlex.quote(request.environment[name])}" for name in names)
     lines.extend([setup, "set +x", "_nvfl_env=()"])
@@ -747,7 +748,7 @@ class _SlurmTaskBackend(TaskLauncherSpec):
             raise TaskLauncherError("Slurm staged resources differ from the owning START_RUN binding")
         return replace(
             request,
-            argv=(binding.python_path, "-m", WORKER_MODULE, "--bootstrap", path),
+            argv=(binding.python_path, "-m", WORKER_MODULE, "--bootstrap", path, "--execution_scope", "native"),
             environment=dict(binding.environment),
             resources=resource_request(binding.resources),
             cwd=os.path.realpath(request.cwd) if request.cwd else None,
@@ -756,23 +757,15 @@ class _SlurmTaskBackend(TaskLauncherSpec):
     def launch_task(self, request: TaskLaunchRequest):
         if not isinstance(request, TaskLaunchRequest):
             raise TypeError("request must be TaskLaunchRequest")
-        staged = (
-            len(request.argv) == 7
-            and request.argv[1:4] == ("-m", "nvflare.private.fed.app.client.task_worker_process", "--bootstrap")
-            and request.argv[5] == "--parent_pid"
-            and request.argv[6].isdigit()
-        )
-        if staged:
-            request = self._materialize_staged(request)
-        else:
-            request = replace(
-                request,
-                resources=TaskResourceRequest(
-                    request.resources.cpu_cores or self.resources.cpu_cores,
-                    request.resources.memory_mb or self.resources.memory_mb,
-                    request.resources.gpu_count,
-                ),
-            )
+        if (
+            len(request.argv) != 7
+            or request.argv[1:4] != ("-m", WORKER_MODULE, "--bootstrap")
+            or request.argv[5] != "--parent_pid"
+            or not request.argv[6].isdigit()
+            or request.environment
+        ):
+            raise TaskLauncherError("Slurm requires the common staged worker request")
+        request = self._materialize_staged(request)
         # Native allocation ownership is required. A process launcher fallback
         # or a visible GPU on the CJ would not satisfy this contract.
         if request.cwd is None or os.path.realpath(request.cwd) != request.cwd or not os.path.isdir(request.cwd):
@@ -781,10 +774,6 @@ class _SlurmTaskBackend(TaskLauncherSpec):
             raise TaskLauncherError("Slurm task cwd must be inside the site workspace")
         if not os.path.isabs(request.argv[0]):
             raise TaskLauncherError("Slurm task command must use an absolute executable shared with compute hosts")
-        if "nvflare.private.fed.app.client.task_worker_process" in request.argv:
-            raise TaskLauncherError(
-                "Slurm tasks require a backend worker command without the Process parent-PID contract"
-            )
         if request.resources.cpu_cores is not None and not float(request.resources.cpu_cores).is_integer():
             raise UnsupportedTaskResourceError("Slurm task CPU requests must be whole cores")
         self._check_environment(request.environment)
@@ -793,7 +782,7 @@ class _SlurmTaskBackend(TaskLauncherSpec):
                 self.manager.initialize()
                 # Keep command implementation shared; only task accounting differs.
                 self.manager.adapter = SlurmTaskCliAdapter(self.manager.config.executables, os.getuid(), self.logger)
-        return self.manager.launch_task(request, self._binding.resources if staged else None)
+        return self.manager.launch_task(request, self._binding.resources)
 
     @property
     def poll_interval(self):

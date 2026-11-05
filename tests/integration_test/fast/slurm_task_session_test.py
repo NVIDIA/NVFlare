@@ -102,6 +102,7 @@ def test_native_worker_hello_and_analytics_use_cj_session(tmp_path, monkeypatch,
         monkeypatch,
         gpu_count,
         job_id=_JOB_B,
+        cp_backend=True,
         python_path=sys.executable,
         worker_listener_host="127.0.0.1",
     )

@@ -52,7 +52,7 @@ def _eventually(predicate):
 
 @pytest.fixture(params=(0, 1), ids=("cpu", "gpu"))
 def owned(tmp_path, monkeypatch, request):
-    backend, adapter, staged = _backend(tmp_path, monkeypatch, request.param)
+    backend, adapter, staged = _backend(tmp_path, monkeypatch, request.param, cp_backend=True)
     backend.manager._monotonic = time.monotonic
     identity, store, arguments = _supervisor_case((backend, adapter, staged), write_result=False)
     Path(store.root_dir).mkdir()
@@ -119,6 +119,14 @@ def owned(tmp_path, monkeypatch, request):
         owner.release()
         owner.thread.join(5)
         assert not owner.thread.is_alive()
+
+
+def test_cp_backend_rejects_unowned_cwd_and_resource_claims(owned, tmp_path):
+    with pytest.raises(TaskLauncherError, match="cwd must be inside the site workspace"):
+        owned.backend.launch_task(replace(owned.request, cwd=str(tmp_path)))
+    with pytest.raises(TaskLauncherError, match="resources differ"):
+        owned.backend.launch_task(replace(owned.request, resources=TaskResourceRequest(cpu_cores=1.5)))
+    owned.adapter.submit.assert_not_called()
 
 
 def _launch(case):

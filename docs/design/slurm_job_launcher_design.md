@@ -338,8 +338,8 @@ the CJ proxy for the per-assignment launch interface; its backend runs in CP.
 CP: ClientSlurmJobLauncher -> SlurmJobManager -> coordinator CJ allocation
 CJ: TaskWorkerExecutor -> TaskSupervisor -> SlurmTaskLauncher proxy
                                               | job-scoped Cell requests
-CP: SlurmTaskService -> native task backend -> Slurm allocation + accounting
-worker: thin Slurm entry point -> common task worker -> application
+CP: SlurmTaskService -> shared CP task control -> native task backend -> Slurm allocation + accounting
+worker: common task_worker_process (native scope) -> application
 ```
 
 Application completion and native cleanup are independent. The common supervisor
@@ -357,7 +357,9 @@ of background task cleanup; shutdown expiry does not fabricate resource release.
 * **Authority:** CP owns scheduler submission, observation and cancellation.
   It registers a job-scoped Cell service before starting the CJ and gives
   that CJ a capability for its own staged worker requests. The service binds
-  resources, executable and environment to trusted site policy. CJ requests
+  resources, executable and environment to trusted site policy. The CP backend
+  accepts only staged common-worker requests; the batch script checks its
+  allocation identity before starting the common worker. CJ requests
   cannot supply scheduler commands or a different job's paths. The CJ still
   requires its Slurm child marker and allocation ID; CP does not.
   CP cleanup ownership survives CJ abort, allocation loss and an in-flight

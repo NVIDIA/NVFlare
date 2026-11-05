@@ -467,7 +467,7 @@ def test_start_run_binding_is_immutable_and_preserves_study_policy(profile):
 
 
 def test_staged_request_requires_start_run_before_submission(tmp_path, monkeypatch):
-    launcher, adapter, request = _backend(tmp_path, monkeypatch, 0)
+    launcher, adapter, request = _backend(tmp_path, monkeypatch, 0, cp_backend=True)
     staged = replace(
         request,
         argv=(

@@ -49,7 +49,7 @@ def test_invalid_advertised_host_fails_closed(tmp_path, monkeypatch, host):
     "problem", ["missing_pair", "other_job", "outside_ca", "traversal_ca", "site_cert", "symlink_key"]
 )
 def test_unreachable_or_non_job_credentials_fail_before_native_submission(tmp_path, monkeypatch, problem):
-    backend = _backend(tmp_path, monkeypatch, 0)
+    backend = _backend(tmp_path, monkeypatch, 0, cp_backend=True)
     launcher, adapter, request = backend
     identity, store, arguments = _supervisor_case(backend, write_result=False)
     root = Path(launcher.manager.config.workspace_path)

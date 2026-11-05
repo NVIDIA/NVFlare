@@ -235,9 +235,7 @@ def test_cj_death_cancels_workers_without_cj_rpc(control):
         return read_worker(name=name, **kwargs)
 
     api.read_namespaced_pod = read
-    with owner.lock:
-        owner.cj_name, owner.cj_uid = "cj", "cj-uid"
-    owner.wake.set()
+    owner.attach_cj("cj", "cj-uid")
     eventually(lambda: "delete" in api.calls)
     assert owner.released
     assert not owner.attempts[(request.task_id, request.attempt_id)].status.settled
@@ -366,7 +364,8 @@ def test_unknown_cancel_flood_seals_admission_without_evicting_fences(control, m
 
 
 def test_cj_observer_is_a_slow_backstop_not_the_task_poll_loop():
-    from nvflare.app_opt.task_launcher.k8s_task_service import _CJ_OBSERVATION_INTERVAL, _Job
+    from nvflare.app_opt.task_launcher.k8s_task_service import _Job
+    from nvflare.app_opt.task_launcher.task_service import _CJ_OBSERVATION_INTERVAL
 
     backend = SimpleNamespace(core_v1=Mock(), namespace="site", request_timeout=1)
     backend.core_v1.read_namespaced_pod.return_value = SimpleNamespace(

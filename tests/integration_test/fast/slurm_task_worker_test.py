@@ -102,6 +102,15 @@ def test_gpu_worker_requires_allocation_visibility(backend, visibility, returnco
         assert not output.exists()
 
 
+def test_batch_rejects_worker_without_slurm_allocation(backend):
+    _, _, request = backend
+    script = Path(request.cwd, "no-allocation.sh")
+    script.write_text(_batch_script(request, ""))
+    completed = subprocess.run(["/bin/bash", str(script)], env={}, capture_output=True, timeout=20)
+    assert completed.returncode == 103
+    assert b"allocation identity" in completed.stderr
+
+
 @pytest.mark.usefixtures("isolated_fobs")
 def test_real_worker_result_survives_mock_scheduler_settlement_and_receipt(backend):
     launcher, adapter, _ = backend
@@ -172,7 +181,7 @@ def cj_cell():
 def test_staged_cj_request_runs_authorized_worker_with_bound_native_resources(
     tmp_path, monkeypatch, gpu_count, cj_cell, workspace_alias
 ):
-    backend = _backend(tmp_path, monkeypatch, gpu_count, worker_listener_host="127.0.0.1")
+    backend = _backend(tmp_path, monkeypatch, gpu_count, cp_backend=True, worker_listener_host="127.0.0.1")
     launcher, adapter, request = backend
     launcher.python_path = sys.executable
     launcher.environment["PYTHONPATH"] = os.getcwd()
@@ -205,7 +214,7 @@ def test_staged_cj_request_runs_authorized_worker_with_bound_native_resources(
                 "--parent_pid",
                 "1234",
             ),
-            environment={"CJ_PRIVATE": "not forwarded"},
+            environment={},
             resources=TaskResourceRequest(),
             cwd=workspace.get_run_dir(attempt.job_id),
         )

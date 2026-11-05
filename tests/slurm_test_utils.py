@@ -54,7 +54,7 @@ def _accounting(state="COMPLETED", step="COMPLETED", **kwargs):
     return QueryResult(LookupStatus.FOUND, tuple(records))
 
 
-def _backend(tmp_path, monkeypatch, gpu_count, *, job_id="job-1", **launcher_args):
+def _backend(tmp_path, monkeypatch, gpu_count, *, job_id="job-1", cp_backend=False, **launcher_args):
     root = tmp_path / "workspace"
     root.mkdir(mode=0o700)
     (root / "startup").mkdir()
@@ -91,6 +91,18 @@ def _backend(tmp_path, monkeypatch, gpu_count, *, job_id="job-1", **launcher_arg
         cwd=str(root / job_id),
         resources=TaskResourceRequest(gpu_count=gpu_count),
     )
+    if not cp_backend:
+        # Scheduler/handle tests use a trusted test command through the manager
+        # directly. The production CP backend only accepts staged workers.
+        def launch_manager_request(request):
+            resources = TaskResourceRequest(
+                request.resources.cpu_cores or launcher.resources.cpu_cores,
+                request.resources.memory_mb or launcher.resources.memory_mb,
+                request.resources.gpu_count,
+            )
+            return launcher.manager.launch_task(replace(request, resources=resources))
+
+        launcher.launch_task = launch_manager_request
     return launcher, adapter, launch_request
 
 
