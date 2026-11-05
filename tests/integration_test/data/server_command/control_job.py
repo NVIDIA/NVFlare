@@ -26,7 +26,7 @@ from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
-from nvflare.private.defs import new_cell_message
+from nvflare.private.defs import CellMessageHeaderKeys, new_cell_message
 
 
 def record(fl_ctx, name, data):
@@ -51,7 +51,47 @@ class ControlExecutor(Executor):
                 request=new_cell_message({}, Shareable()),
                 timeout=10,
             )
+            # Obtain the headers from an ordinary authenticated parent reply, without accessing its key.
+            parent_reply = cell.send_request(
+                channel=CellChannel.SERVER_PARENT_LISTENER,
+                topic="get_clients",
+                target="server",
+                request=new_cell_message({CellMessageHeaderKeys.JOB_ID: fl_ctx.get_job_id()}, None),
+                timeout=10,
+            )
+            assert parent_reply.get_header(MessageHeaderKey.RETURN_CODE) == "ok"
+            credentials = {
+                key: parent_reply.get_header(key)
+                for key in (
+                    CellMessageHeaderKeys.CLIENT_NAME,
+                    CellMessageHeaderKeys.TOKEN,
+                    CellMessageHeaderKeys.TOKEN_SIGNATURE,
+                )
+            }
+            assert (
+                credentials[CellMessageHeaderKeys.CLIENT_NAME] == credentials[CellMessageHeaderKeys.TOKEN] == "server"
+            )
+            assert credentials[CellMessageHeaderKeys.TOKEN_SIGNATURE]
+
+            def replay_parent(request):
+                if (
+                    request.get_header(StreamHeaderKey.CHANNEL) == CellChannel.SERVER_COMMAND
+                    and request.get_header(StreamHeaderKey.TOPIC) == "abort"
+                ):
+                    request.add_headers(credentials)
+                    request.set_header(MessageHeaderKey.ORIGIN, "server")
+
+            cell.core_cell.add_outgoing_request_filter("*", "*", replay_parent)
+            replay = cell.send_request(
+                channel=CellChannel.SERVER_COMMAND,
+                topic="abort",
+                target=target,
+                request=new_cell_message({}, Shareable()),
+                timeout=3,
+            )
             result = {
+                "parent_reply_route": [entry[0] for entry in parent_reply.get_header(MessageHeaderKey.ROUTE)],
+                "replay_rc": replay.get_header(MessageHeaderKey.RETURN_CODE),
                 "origin": cell.get_fqcn(),
                 "target": target,
                 "attacker_job": fl_ctx.get_job_id(),
