@@ -62,6 +62,7 @@ class WorkerComponentBuilder(ComponentBuilder):
         self.workspace = workspace
         self.enforce_authorization = enforce_authorization
         self.component_path_authorizer = ComponentPathAuthorizer()
+        self.component_build_authorizer = None
 
     def get_module_scanner(self):
         return self.module_scanner
@@ -134,6 +135,8 @@ class WorkerComponentBuilder(ComponentBuilder):
         if node is None:
             node = self.make_component_node(config_dict)
         self._authorize_component_config_tree(config_dict, node, force_current=True)
+        if self.enforce_authorization and self.component_build_authorizer:
+            self.component_build_authorizer(config_dict)
         return super().build_component(config_dict)
 
 
@@ -307,6 +310,11 @@ class MultiProcessExecutor(Executor):
                 topic=CellChannelTopic.FIRE_EVENT,
                 cb=self._relay_fire_event,
             )
+            cell.register_request_cb(
+                channel=CellChannel.MULTI_PROCESS_EXECUTOR,
+                topic=EventType.BEFORE_BUILD_COMPONENT,
+                cb=self._authorize_rank_component,
+            )
 
             self.targets = []
             for i in range(self.num_of_processes):
@@ -338,6 +346,21 @@ class MultiProcessExecutor(Executor):
         except Exception as e:
             self.log_exception(fl_ctx, f"error initializing multi_process executor: {secure_format_exception(e)}")
             raise
+
+    def _authorize_rank_component(self, request: CellMessage) -> CellMessage:
+        try:
+            conf = self.engine.conf
+            if not conf or not conf.has_component_build_authorizer():
+                raise RuntimeError("No component build authorizer set up.")
+            config_dict = request.payload
+            # Use the parent's existing site handlers and configuration context,
+            # without constructing the requested component in the parent.
+            conf._authorize_component_config_tree(
+                config_dict, conf._get_config_ctx(), conf._make_runtime_component_node(config_dict), force_current=True
+            )
+        except Exception as ex:
+            return F3make_reply(F3ReturnCode.INVALID_REQUEST, secure_format_exception(ex))
+        return F3make_reply(F3ReturnCode.OK)
 
     def receive_execute_result(self, request: CellMessage) -> CellMessage:
         return_data = request.payload
