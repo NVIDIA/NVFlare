@@ -32,22 +32,14 @@ release_package = find_packages(
     exclude=["tests", "tests.*"],
 )
 
-package_data = {"": ["*.yml", "*.config"], }
+package_data = {"": ["*.yml", "*.config"]}
 
-release = os.environ.get("NVFL_RELEASE")
 version = os.environ.get("NVFL_VERSION")
 
-if release == "1":
-    package_dir = {"nvflare": "nvflare"}
-    package_name = "nvflare-light"
-else:
-    package_dir = {"nvflare": "nvflare"}
-    package_name = "nvflare-light-nightly"
-
 setup(
-    name=package_name,
+    name="nvflare-light",
     version=version,
-    package_dir=package_dir,
+    package_dir={"nvflare": "nvflare"},
     packages=release_package,
     package_data=package_data,
     include_package_data=True,
