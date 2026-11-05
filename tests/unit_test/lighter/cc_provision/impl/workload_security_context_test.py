@@ -141,6 +141,19 @@ def test_generated_policy_matches_context(readonly):
     API["validate_policy"](policy(policy_data(readonly)), IMAGE, context(readonly))
 
 
+def test_custom_workload_fixture_image_does_not_change_other_calls():
+    custom_image = "registry.example.invalid/custom@sha256:" + "b" * 64
+    custom = final_workload_pod(image=custom_image)
+    assert custom["spec"]["containers"][0]["image"] == custom_image
+    # Both the Pod and its embedded policy must use the requested image.
+    workload_security.validate_workload_pod(custom, context(), ["python3"])
+
+    default = final_workload_pod()
+    assert default["spec"]["containers"][0]["image"] == IMAGE
+    assert policy_data()["containers"][0]["OCI"]["Annotations"]["io.kubernetes.cri.image-name"] == IMAGE
+    workload_security.validate_workload_pod(default, context(), ["python3"])
+
+
 def test_pinned_genpolicy_pause_profile():
     data = policy_data()
     pause = data["containers"][1]["OCI"]

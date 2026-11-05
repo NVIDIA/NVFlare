@@ -69,7 +69,7 @@ def context(readonly=False):
     }
 
 
-def pod(readonly=False):
+def pod(readonly=False, *, image=IMAGE):
     return {
         "apiVersion": "v1",
         "kind": "Pod",
@@ -78,7 +78,7 @@ def pod(readonly=False):
             "containers": [
                 {
                     "name": "app",
-                    "image": IMAGE,
+                    "image": image,
                     "securityContext": context(readonly),
                     "resources": {"limits": {"nvidia.com/pgpu": "1"}},
                 }
@@ -87,7 +87,7 @@ def pod(readonly=False):
     }
 
 
-def policy_data(readonly=False):
+def policy_data(readonly=False, *, image=IMAGE):
     pause = json.loads((FIXTURES / "kata-3.29-pause-policy.json").read_text())
     return {
         "common": pause["common"],
@@ -101,7 +101,7 @@ def policy_data(readonly=False):
             {
                 "exec_commands": [],
                 "OCI": {
-                    "Annotations": {"io.kubernetes.cri.image-name": IMAGE},
+                    "Annotations": {"io.kubernetes.cri.image-name": image},
                     "Process": {
                         "User": {"UID": 65532, "GID": 65532},
                         "NoNewPrivileges": True,
@@ -120,13 +120,13 @@ def policy(data):
     return rules + "\npolicy_data := " + json.dumps(data)
 
 
-def final_workload_pod(runtime_class="kata-qemu-nvidia-gpu-snp", stream_enabled=False):
-    data = policy_data()
+def final_workload_pod(runtime_class="kata-qemu-nvidia-gpu-snp", stream_enabled=False, *, image=IMAGE):
+    data = policy_data(image=image)
     data["request_defaults"]["ReadStreamRequest"] = stream_enabled
     data["containers"][0]["OCI"]["Process"]["Args"] = ["python3"]
     # Structural fixtures only; no claim of executing Rego in a guest.
     raw = '[data]\n"policy.rego" = ' + "'''\n" + policy(data) + "\n'''\n"
-    value = pod()
+    value = pod(image=image)
     value["spec"]["runtimeClassName"] = runtime_class
     if runtime_class in ("kata-qemu-snp", "kata-qemu-tdx"):
         value["spec"]["containers"][0]["resources"] = {}

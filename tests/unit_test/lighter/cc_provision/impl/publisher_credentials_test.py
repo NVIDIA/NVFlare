@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.unit_test.lighter.cc_provision.impl.deployment_guards_test import require_coco_bash
+from tests.coco_test_utils import final_workload_pod, require_coco_bash
 
 ROOT = Path(__file__).resolve().parents[5] / "examples/devops/coco"
 PASSWORD = "fixture-password-not-for-production"
@@ -150,10 +150,7 @@ def test_release_authority_matches_launcher_and_trustee(credential_bash, credent
     runtime = "kata-qemu-snp"
 
     # Exercise the launcher's real static checker with the real release identity.
-    fixture = runpy.run_path(str(Path(__file__).with_name("workload_security_context_test.py")))
-    fixture["final_workload_pod"].__globals__["IMAGE"] = image
-    pod = fixture["final_workload_pod"](runtime)
-    pod["spec"]["containers"][0]["image"] = image
+    pod = final_workload_pod(runtime, image=image)
     pod_file = tmp_path / "pod.json"
     pod_file.write_text(json.dumps(pod))
     launcher = ROOT / "coco/50-launch-handoff.sh"
