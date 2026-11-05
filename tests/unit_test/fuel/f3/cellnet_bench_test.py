@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import threading
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -21,6 +23,7 @@ from dev_tools.f3 import cellnet_bench
 from nvflare.fuel.f3.streaming.byte_receiver import ACK_INTERVAL
 from nvflare.fuel.f3.streaming.byte_streamer import STREAM_CHUNK_SIZE, STREAM_WINDOW_SIZE
 from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_INTERVAL, STREAM_RETRY_MAX_PENDING_BYTES
+from nvflare.fuel.utils.config_service import ConfigService
 from tests.timing_utils import isolate_time
 
 
@@ -117,19 +120,40 @@ def test_parse_byte_size_uses_binary_units(value, expected):
     assert cellnet_bench.parse_byte_size(value) == expected
 
 
+SAMPLE_CONFIG = Path(cellnet_bench.__file__).parent / "comm_config.sample.json"
+
+
+def test_sample_config_is_invisible_to_comm_config_search():
+    assert (
+        ConfigService.load_config_dict("comm_config.json", [str(SAMPLE_CONFIG.parent)], raise_exception=False) is None
+    )
+
+
+def test_configure_f3_loads_sample_config_ignoring_sibling_comm_config(tmp_path):
+    config_file = tmp_path / "bench.json"
+    config_file.write_text(SAMPLE_CONFIG.read_text(), encoding="utf-8")
+    (tmp_path / "comm_config.json").write_text('{"streaming_chunk_size": "2M"}', encoding="utf-8")
+
+    try:
+        loaded_path, _ = cellnet_bench.configure_f3(str(config_file))
+
+        assert loaded_path == config_file
+        assert cellnet_bench.CommConfigurator().get_streaming_chunk_size(1) == 1024 * 1024
+    finally:
+        cellnet_bench.ConfigService.reset()
+        cellnet_bench.CommConfigurator.reset()
+
+
 def test_configure_f3_loads_chunk_and_window_sizes(tmp_path):
-    config_file = tmp_path / "comm_config.yml"
+    config_file = tmp_path / "comm_config.json"
     config_file.write_text(
-        "\n".join(
-            [
-                "streaming_chunk_size: 4M",
-                "streaming_window_size: 256M",
-                "streaming_ack_interval: 64M",
-                "grpc:",
-                "  max_workers: 32",
-                "  options:",
-                "    - [grpc.max_send_message_length, 2G]",
-            ]
+        json.dumps(
+            {
+                "streaming_chunk_size": "4M",
+                "streaming_window_size": "256M",
+                "streaming_ack_interval": "64M",
+                "grpc": {"max_workers": 32, "options": [["grpc.max_send_message_length", "2G"]]},
+            }
         ),
         encoding="utf-8",
     )
@@ -152,22 +176,23 @@ def test_configure_f3_loads_chunk_and_window_sizes(tmp_path):
 @pytest.mark.parametrize(
     "config_text, error",
     [
-        ("- not-a-mapping\n", "must be a YAML mapping"),
-        ("streaming_chunk_size: 0\n", "streaming_chunk_size must be a positive integer"),
-        ("streaming_chunk_size: 16Mbps\n", "has invalid byte size"),
-        ("streaming_chunk_size: 0.1K\n", "does not resolve to a whole number of bytes"),
+        ('["not-an-object"]', "must be a JSON object"),
+        ('{"streaming_chunk_size": 0}', "streaming_chunk_size must be a positive integer"),
+        ('{"streaming_chunk_size": "16Mbps"}', "has invalid byte size"),
+        ('{"streaming_chunk_size": "0.1K"}', "does not resolve to a whole number of bytes"),
         (
-            "streaming_chunk_size: 4194304\nstreaming_window_size: 1048576\n",
+            '{"streaming_chunk_size": 4194304, "streaming_window_size": 1048576}',
             "streaming_window_size .* must be at least streaming_chunk_size",
         ),
         (
-            "streaming_window_size: 16777216\nstreaming_ack_interval: 33554432\n",
+            '{"streaming_window_size": 16777216, "streaming_ack_interval": 33554432}',
             "streaming_ack_interval .* must not exceed streaming_window_size",
         ),
+        ("streaming_chunk_size: 4M\n", "Expecting value"),
     ],
 )
 def test_configure_f3_rejects_invalid_streaming_settings(tmp_path, config_text, error):
-    config_file = tmp_path / "comm_config.yml"
+    config_file = tmp_path / "comm_config.json"
     config_file.write_text(config_text, encoding="utf-8")
 
     with pytest.raises(ValueError, match=error):

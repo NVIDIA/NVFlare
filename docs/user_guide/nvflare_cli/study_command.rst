@@ -39,12 +39,12 @@ is identical to all other server-connected ``nvflare`` commands (``job``, ``syst
 2. Optional ``--startup-kit <path>``: override the active startup kit for this
    command only by using an explicit admin startup-kit directory.
 3. ``NVFLARE_STARTUP_KIT_DIR`` environment variable.
-4. ``startup_kits.active`` from ``~/.nvflare/config.conf``.
+4. ``startup_kits.active`` from ``~/.nvflare/config.json``.
 5. If no source resolves to a valid admin startup kit, the command fails before connecting.
 
 The command-line selectors are not required. When provided, they take precedence
 over the active startup kit for the current command only and do not change
-``startup_kits.active`` in ``~/.nvflare/config.conf``.
+``startup_kits.active`` in ``~/.nvflare/config.json``.
 
 A user can register and activate a startup kit once with :ref:`config_command`:
 

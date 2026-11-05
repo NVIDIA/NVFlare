@@ -22,7 +22,7 @@ with optional_dependency_import("NVFlare Dashboard", "dashboard", DASHBOARD_OPTI
     from flask_jwt_extended import JWTManager
     from flask_sqlalchemy import SQLAlchemy
 
-from .validation import NameValidationError
+from .validation import DashboardError
 
 db = SQLAlchemy()
 jwt = JWTManager()
@@ -35,9 +35,10 @@ def init_app():
     app = Flask(__name__, static_url_path="", static_folder=static_folder)
     app.config.from_object("nvflare.dashboard.config.Config")
 
-    @app.errorhandler(NameValidationError)
-    def invalid_name(error):
-        return jsonify(status="error", message=str(error), errors=error.errors), 400
+    @app.errorhandler(DashboardError)
+    def invalid_request(error):
+        db.session.rollback()
+        return jsonify(status="error", message=str(error), errors=error.errors), error.status_code
 
     db.init_app(app)
     jwt.init_app(app)
