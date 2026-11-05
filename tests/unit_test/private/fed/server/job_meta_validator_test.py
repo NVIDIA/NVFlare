@@ -17,6 +17,7 @@ import json
 import os
 import sys
 import zipfile
+from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
@@ -67,16 +68,20 @@ def _zip_minimal_job(
     meta_extension="json",
     server_extension="json",
 ) -> bytes:
+    """Vary canonical filename suffixes for rejection and JSON-default acceptance tests."""
+    meta_file = Path(JobConstants.META_FILE).with_suffix(f".{meta_extension}")
+    server_file = Path(JobConstants.SERVER_JOB_CONFIG).with_suffix(f".{server_extension}")
+    client_file = Path(JobConstants.CLIENT_JOB_CONFIG).with_suffix(f".{client_extension}")
     bio = io.BytesIO()
     with ZipFile(bio, "w", compression=zipfile.ZIP_DEFLATED) as z:
         z.writestr(f"{folder_name}/app/config/", "")
-        z.writestr(f"{folder_name}/meta.{meta_extension}", json.dumps(meta))
+        z.writestr(f"{folder_name}/{meta_file}", json.dumps(meta))
         z.writestr(
-            f"{folder_name}/app/config/config_fed_server.{server_extension}",
+            f"{folder_name}/app/config/{server_file}",
             json.dumps(server_config),
         )
         z.writestr(
-            f"{folder_name}/app/config/config_fed_client.{client_extension}",
+            f"{folder_name}/app/config/{client_file}",
             json.dumps(client_config if client_config is not None else {"format_version": 2, "executors": []}),
         )
     return bio.getvalue()
@@ -435,6 +440,7 @@ def test_submission_derives_task_admission_from_client_config():
 )
 def test_submission_rejects_hocon_and_yaml_configs(extension, extension_arg, error_message):
     meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1}
+    # Valid JSON contents ensure that rejection is caused by the unsupported filename suffix.
     data = _zip_minimal_job("split", meta, {"format_version": 2, "workflows": []}, **{extension_arg: extension})
     valid, error, _ = JobMetaValidator().validate("split", data)
     assert not valid

@@ -100,6 +100,7 @@ class TestCLIUtils:
     @pytest.mark.parametrize(
         "name",
         [
+            # Negative cases: reject a trailing backup suffix and removed HOCON/YAML formats.
             "client.json.backup",
             "config_fed_client.conf",
             "config_fed_client.yml",
