@@ -36,6 +36,7 @@ from nvflare.lighter.prov_utils import prepare_builders
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.utils import update_storage_locations
+from tests.process_test_utils import OwnedProcesses, process_running
 
 
 def wait_for(check, description, timeout=60):
@@ -48,8 +49,8 @@ def wait_for(check, description, timeout=60):
     raise AssertionError(f"timed out waiting for {description}")
 
 
-@pytest.fixture
-def federation(tmp_path, monkeypatch):
+@pytest.fixture(params=[False, True], ids=["direct", "relay"])
+def federation(tmp_path, monkeypatch, request):
     repo = Path(__file__).resolve().parents[3]
     monkeypatch.syspath_prepend(str(repo / "tests/integration_test/data/server_command"))
     module = importlib.import_module("control_job")
@@ -72,6 +73,21 @@ def federation(tmp_path, monkeypatch):
                 "default_host": "localhost",
                 "connection_security": "mtls",
             }
+    if request.param:
+        project["participants"].append(
+            {
+                "name": "relay-1",
+                "type": "relay",
+                "org": "nvidia",
+                "listening_host": {
+                    "scheme": "stcp",
+                    "default_host": "localhost",
+                    "port": get_open_ports(1)[0],
+                    "connection_security": "mtls",
+                },
+            }
+        )
+        project["participants"][1]["connect_to"] = {"name": "relay-1", "connection_security": "mtls"}
     Provisioner(str(tmp_path), prepare_builders(project)).provision(prepare_project(project))
     kits = tmp_path / project["name"] / "prod_00"
     for name in ["localhost", "site-1", "site-2"]:
@@ -79,9 +95,13 @@ def federation(tmp_path, monkeypatch):
         assert internal["scheme"] == "stcp"
         assert internal["resources"]["connection_security"] == "mtls"
     update_storage_locations(str(kits / "localhost/local"), str(tmp_path))
-    processes, streams, sessions = [], [], []
+    processes, streams, sessions = OwnedProcesses(), [], []
     try:
-        for name, kind in [("localhost", "server"), ("site-1", "client"), ("site-2", "client")]:
+        sites = [("localhost", "server")]
+        if request.param:
+            sites.append(("relay-1", "relay"))
+        sites.extend([("site-1", "client"), ("site-2", "client")])
+        for name, kind in sites:
             workspace = kits / name
             stream = (tmp_path / f"{name}.stdout").open("w")
             streams.append(stream)
@@ -89,7 +109,7 @@ def federation(tmp_path, monkeypatch):
                 sys.executable,
                 "-u",
                 "-m",
-                f"nvflare.private.fed.app.{kind}.{kind}_train",
+                f"nvflare.private.fed.app.{kind}.{kind if kind == 'relay' else kind + '_train'}",
                 "-m",
                 str(workspace),
                 "-s",
@@ -101,52 +121,21 @@ def federation(tmp_path, monkeypatch):
             ]
             if kind == "client":
                 command.append(f"uid={name}")
-            processes.append(
-                subprocess.Popen(
-                    command, cwd=workspace, env=env, stdout=stream, stderr=subprocess.STDOUT, start_new_session=True
-                )
-            )
+            processes.start(command, cwd=workspace, env=env, stdout=stream, stderr=subprocess.STDOUT)
         for name in ["victim@test.org", "attacker@test.org"]:
             sessions.append(
                 new_secure_session(name, str(kits / name), timeout=45, command_timeout=15, auto_login_max_tries=1)
             )
+            processes.callbacks.append(sessions[-1].close)
         victim, attacker = sessions
         wait_for(lambda: len(victim.get_system_info().client_info) == 2, "two enrolled clients")
-        yield kits, module, victim, attacker
+        yield kits, module, victim, attacker, request.param
     finally:
-        # Capture descendants before stopping parents: job launchers create their own process groups.
-        owned = []
-        for process in processes:
-            try:
-                parent = psutil.Process(process.pid)
-                owned.extend(parent.children(recursive=True))
-                owned.append(parent)
-            except psutil.NoSuchProcess:
-                pass
-        close_errors = []
-        for session in sessions:
-            try:
-                session.close()
-            except Exception as error:
-                close_errors.append(str(error))
-        for process in owned:
-            try:
-                process.terminate()
-            except psutil.NoSuchProcess:
-                pass
-        _, alive = psutil.wait_procs(owned, timeout=10)
-        for process in alive:
-            try:
-                process.kill()
-            except psutil.NoSuchProcess:
-                pass
-        _, alive = psutil.wait_procs(alive, timeout=5)
-        for process in processes:
-            process.wait(timeout=5)
-        for stream in streams:
-            stream.close()
-        assert not alive, f"owned processes survived cleanup: {[p.pid for p in alive]}"
-        assert not close_errors, close_errors
+        try:
+            processes.close()
+        finally:
+            for stream in streams:
+                stream.close()
 
 
 def submit(kits, module, session, name, site, victim=""):
@@ -162,8 +151,8 @@ def status(session, job):
     return session.get_job_meta(job)["status"]
 
 
-def holding(kits, job, session):
-    run = kits / "site-2" / job
+def holding(kits, job, session, site="site-2"):
+    run = kits / site / job
     wait_for(lambda: (run / "holding.json").exists(), f"victim task running: {job}")
     assert status(session, job) == "RUNNING"
     assert (kits / "localhost" / job / "running.json").exists()
@@ -176,7 +165,7 @@ def runner_aborted(result_dir):
 
 @pytest.mark.timeout(300)
 def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
-    kits, module, victim_session, attacker_session = federation
+    kits, module, victim_session, attacker_session, via_relay = federation
     victim = submit(kits, module, victim_session, "victim", "site-2")
     run = holding(kits, victim, victim_session)
     evidence = {
@@ -203,7 +192,8 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     attack = json.loads(attack_file.read_text())
     evidence["attack"] = attack
     assert str(Path(attack["source"]).resolve()) == evidence["source"]
-    assert attack["origin"] == f"site-1.{attacker}"
+    assert attack["origin"] == f"{'relay-1.' if via_relay else ''}site-1.{attacker}"
+    assert ("relay-1" in attack["parent_reply_route"]) is via_relay
     assert attack["target"] == f"server.{victim}"
     assert victim != attacker
     wait_for(lambda: status(attacker_session, attacker) == "FINISHED:COMPLETED", "attacker task/update completion")
@@ -212,7 +202,13 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     assert evidence["forged_origin"]["sender"] == f"server.{attacker}"
     rejection = f"auth token for client server_job is bound to origin server.{attacker}, not message origin server"
     evidence["forged_origin_rejected"] = rejection in (kits / "localhost/log.txt").read_text()
-    if attack["rc"] == ReturnCode.AUTHENTICATION_ERROR and evidence["forged_origin_rejected"]:
+    rejection = "auth token for client server is bound to origin <missing>, not message origin server"
+    evidence["server_credential_replay_rejected"] = rejection in (kits / "localhost/log.txt").read_text()
+    if (
+        attack["rc"] == ReturnCode.AUTHENTICATION_ERROR
+        and evidence["forged_origin_rejected"]
+        and evidence["server_credential_replay_rejected"]
+    ):
         assert status(victim_session, victim) == "RUNNING"
         (run / "release").touch()
     evidence["after"] = wait_for(
@@ -224,8 +220,8 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     evidence["victim_result_received"] = bool(list(result_dir.rglob("received.json")))
     evidence["runner_aborted"] = runner_aborted(result_dir)
     # Authorized owner -> admin server -> parent server -> server-job abort must still work.
-    authorized = submit(kits, module, victim_session, "authorized-abort", "site-2")
-    holding(kits, authorized, victim_session)
+    authorized = submit(kits, module, victim_session, "authorized-abort", "site-1")
+    holding(kits, authorized, victim_session, "site-1")
     evidence["authorized_job"] = authorized
     victim_session.abort_job(authorized)
     evidence["authorized_abort"] = wait_for(
@@ -239,7 +235,29 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     assert evidence["authorized_runner_aborted"] is True
     assert attack["rc"] == ReturnCode.AUTHENTICATION_ERROR
     assert evidence["forged_origin_rejected"] is True
+    assert evidence["server_credential_replay_rejected"] is True
     assert evidence["runner_aborted"] is False
     assert evidence["after"] == "FINISHED:COMPLETED"
     received = json.loads(next(result_dir.rglob("received.json")).read_text())
     assert received["job"] == victim and received["aborted"] is False
+
+
+@pytest.mark.timeout(40)
+def test_process_ownership_survives_early_parent_exit(tmp_path):
+    ready = tmp_path / "child.pid"
+    child = None
+    try:
+        with OwnedProcesses(grace=0.2) as owner:
+            parent = owner.start(
+                [sys.executable, str(Path(__file__).parents[1] / "data/server_command/orphan_parent.py"), str(ready)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            assert parent.wait(timeout=15) == 0
+            child = psutil.Process(int(ready.read_text()))
+            assert process_running(child)
+            assert child.ppid() != parent.pid
+        assert not process_running(child), "orphaned job survived federation cleanup"
+    finally:
+        if child is not None and process_running(child):
+            child.kill()

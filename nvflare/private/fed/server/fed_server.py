@@ -50,7 +50,7 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
-from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
@@ -58,6 +58,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import add_authentication_headers
+from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private import defs as private_defs
@@ -531,21 +532,51 @@ class FederatedServer(BaseServer):
             return None
 
         token_verifier = TokenVerifier(id_asserter.cert)
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        peer = message.get_prop(MessagePropKey.ENDPOINT)
+
+        def resolve_client_fqcn(name, token):
+            fqcn = self._resolve_client_fqcn_for_auth(name, token, origin, peer)
+            if (
+                fqcn == MISSING_CLIENT_FQCN
+                and peer
+                and origin == peer.name
+                and is_valid_admin_client_name(origin)
+                and message.get_prop(MessagePropKey.COMMON_NAME) == name
+            ):
+                return origin
+            if (
+                fqcn == MISSING_CLIENT_FQCN
+                and token not in self.client_manager.clients
+                and name not in (FQCN.ROOT_SERVER, private_defs.AUTH_CLIENT_NAME_FOR_SJ)
+                and message.get_header(MessageHeaderKey.CHANNEL) == CellChannel.SERVER_MAIN
+                and message.get_header(MessageHeaderKey.TOPIC) == CellChannelTopic.HEART_BEAT
+                and message.get_header(MessageHeaderKey.DESTINATION) == FQCN.ROOT_SERVER
+                and origin
+                and not FQCN.validate(origin)
+                and peer
+                and (origin == peer.name or FQCN.is_ancestor(peer.name, origin))
+                and self.cell.core_cell.identity_resolver.resolve(origin) == name
+            ):
+                # A same-key restart may lose registrations. Resolve heartbeat recovery against
+                # provisioned transport identities before the heartbeat restores the client table.
+                return origin
+            return fqcn
 
         reply = validate_auth_headers(
             message=message,
             token_verifier=token_verifier,
             logger=self.logger,
-            client_fqcn_resolver=lambda name, token: self._resolve_client_fqcn_for_auth(
-                name, token, message.get_header(MessageHeaderKey.ORIGIN)
-            ),
+            client_fqcn_resolver=resolve_client_fqcn,
             local_cell_fqcn=self.cell.get_fqcn() if getattr(self, "cell", None) else None,
         )
         if not reply:
             self._strip_peer_transit_headers(message)
         return reply
 
-    def _resolve_client_fqcn_for_auth(self, client_name: str, token: str, origin: str = ""):
+    def _resolve_client_fqcn_for_auth(self, client_name: str, token: str, origin: str = "", peer=None):
+        if origin == FQCN.ROOT_SERVER and (not peer or peer.name != FQCN.ROOT_SERVER):
+            return MISSING_CLIENT_FQCN
         client = self.client_manager.clients.get(token)
         if client and client.name == client_name:
             return client.get_fqcn() or MISSING_CLIENT_FQCN
@@ -555,7 +586,10 @@ class FederatedServer(BaseServer):
             if origin == bootstrap:
                 return bootstrap
             return f"{FQCN.ROOT_SERVER}.{token}"
-        return None
+        # Server reply headers can be copied by clients; only the server's own endpoint may use them here.
+        if client_name == token == FQCN.ROOT_SERVER and peer and peer.name == origin == FQCN.ROOT_SERVER:
+            return FQCN.ROOT_SERVER
+        return MISSING_CLIENT_FQCN
 
     def sign_auth_token(self, client_name: str, token: str):
         id_asserter = self._get_id_asserter()

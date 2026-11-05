@@ -26,9 +26,17 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
+from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY, CellIdentityResolver
+from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
-from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
+from nvflare.private.defs import (
+    CellChannel,
+    CellChannelTopic,
+    CellMessageHeaderKeys,
+    ClientRegMsgKey,
+    JobFailureMsgKey,
+    new_cell_message,
+)
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
@@ -312,10 +320,10 @@ def test_ipv4_mapped_ipv6_loopback_admin_host_is_normalized_consistently():
 
 
 @pytest.fixture(scope="module")
-def signed_job_auth():
+def auth_identity():
     private_key, public_key = generate_keys()
     cert = generate_cert(Identity("server"), Identity("server"), private_key, public_key)
-    return SimpleNamespace(cert=cert), sign_content("server_jobjob-a", private_key)
+    return SimpleNamespace(cert=cert), private_key
 
 
 class TestFederatedServer:
@@ -391,8 +399,8 @@ class TestFederatedServer:
             ("server.ws_transfer_job-a_suffix", False),
         ],
     )
-    def test_server_job_token_only_authenticates_its_own_cells(self, signed_job_auth, origin, accepted):
-        identity, signature = signed_job_auth
+    def test_server_job_token_only_authenticates_its_own_cells(self, auth_identity, origin, accepted):
+        identity, private_key = auth_identity
         server = object.__new__(FederatedServer)
         server.logger = MagicMock()
         server.cell = SimpleNamespace(get_fqcn=lambda: "server")
@@ -404,13 +412,133 @@ class TestFederatedServer:
                 MessageHeaderKey.DESTINATION: "server",
                 CellMessageHeaderKeys.CLIENT_NAME: "server_job",
                 CellMessageHeaderKeys.TOKEN: "job-a",
-                CellMessageHeaderKeys.TOKEN_SIGNATURE: signature,
+                CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content("server_jobjob-a", private_key),
             },
             None,
         )
 
         reply = server._validate_auth_headers(request)
 
+        if accepted:
+            assert reply is None
+        else:
+            assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+
+    @pytest.mark.parametrize(
+        "name,token,origin,peer,accepted",
+        [
+            ("server", "server", "server", "server", True),
+            ("server", "server", "server", "site-a", False),
+            ("server", "server", "server", "relay-1", False),
+            ("server", "server", "server", None, False),
+            ("server", "server", "server.job-a", "server", False),
+            ("site-a", "unknown", "site-a", "site-a", False),
+            ("site-a", "unknown", "server", "relay-1", False),
+            ("site-a", "registered", "server", "site-a", False),
+        ],
+    )
+    def test_server_self_and_unresolved_tokens_require_trusted_origin(
+        self, auth_identity, name, token, origin, peer, accepted
+    ):
+        identity, private_key = auth_identity
+        server = object.__new__(FederatedServer)
+        server.logger = MagicMock()
+        server.cell = SimpleNamespace(get_fqcn=lambda: "server")
+        server.client_manager = SimpleNamespace(clients={})
+        if token == "registered":
+            client = Client(name, token)
+            client.set_fqcn("server")
+            server.client_manager.clients[token] = client
+        server._get_id_asserter = lambda: identity
+        request = new_cell_message(
+            {
+                MessageHeaderKey.ORIGIN: origin,
+                MessageHeaderKey.DESTINATION: "server.job-a",
+                CellMessageHeaderKeys.CLIENT_NAME: name,
+                CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content(name + token, private_key),
+            },
+            None,
+        )
+        if peer:
+            request.set_prop(MessagePropKey.ENDPOINT, Endpoint(peer))
+
+        reply = server._validate_auth_headers(request)
+
+        if accepted:
+            assert reply is None
+        else:
+            assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+
+    @pytest.mark.parametrize(
+        "origin,peer,identity_map,accepted",
+        [
+            ("site-a", "site-a", {}, True),
+            ("relay-1.site-a", "relay-1", {"relay-1.site-a": "site-a"}, True),
+            ("server", "site-a", {}, False),
+            ("relay-2.site-a", "relay-1", {"relay-2.site-a": "site-a"}, False),
+        ],
+    )
+    def test_heartbeat_recovery_requires_provisioned_identity_and_transport_scope(
+        self, auth_identity, origin, peer, identity_map, accepted
+    ):
+        identity, private_key = auth_identity
+        server = object.__new__(FederatedServer)
+        server.logger = MagicMock()
+        server.cell = SimpleNamespace(
+            get_fqcn=lambda: "server",
+            core_cell=SimpleNamespace(identity_resolver=CellIdentityResolver(prefix_identity_map=identity_map)),
+        )
+        server.client_manager = SimpleNamespace(clients={})
+        server._get_id_asserter = lambda: identity
+        request = new_cell_message(
+            {
+                MessageHeaderKey.ORIGIN: origin,
+                MessageHeaderKey.DESTINATION: "server",
+                MessageHeaderKey.CHANNEL: CellChannel.SERVER_MAIN,
+                MessageHeaderKey.TOPIC: CellChannelTopic.HEART_BEAT,
+                CellMessageHeaderKeys.CLIENT_NAME: "site-a",
+                CellMessageHeaderKeys.TOKEN: "unknown",
+                CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content("site-aunknown", private_key),
+            },
+            None,
+        )
+        request.set_prop(MessagePropKey.ENDPOINT, Endpoint(peer))
+
+        reply = server._validate_auth_headers(request)
+
+        if accepted:
+            assert reply is None
+        else:
+            assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+
+    @pytest.mark.parametrize(
+        "same_peer,common_name,accepted",
+        [(True, "lead@test.org", True), (True, "site-a", False), (False, "lead@test.org", False)],
+    )
+    def test_admin_token_is_bound_to_its_authenticated_transport_identity(
+        self, auth_identity, same_peer, common_name, accepted
+    ):
+        identity, private_key = auth_identity
+        origin = new_admin_client_name()
+        server = object.__new__(FederatedServer)
+        server.logger = MagicMock()
+        server.cell = SimpleNamespace(get_fqcn=lambda: "server")
+        server.client_manager = SimpleNamespace(clients={})
+        server._get_id_asserter = lambda: identity
+        request = new_cell_message(
+            {
+                MessageHeaderKey.ORIGIN: origin,
+                MessageHeaderKey.DESTINATION: "server",
+                CellMessageHeaderKeys.CLIENT_NAME: "lead@test.org",
+                CellMessageHeaderKeys.TOKEN: "admin-token",
+                CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content("lead@test.orgadmin-token", private_key),
+            },
+            None,
+        )
+        request.set_prop(MessagePropKey.ENDPOINT, Endpoint(origin if same_peer else "site-a"))
+        request.set_prop(MessagePropKey.COMMON_NAME, common_name)
+        reply = server._validate_auth_headers(request)
         if accepted:
             assert reply is None
         else:

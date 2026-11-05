@@ -80,7 +80,7 @@ def _make_server_auth_filter(monkeypatch, client_fqcn_resolver=None):
     server_auth.logger = logging.getLogger(__name__)
     server_auth._get_id_asserter = lambda: SimpleNamespace(cert=_Cert())
     server_auth._resolve_client_fqcn_for_auth = client_fqcn_resolver or (
-        lambda client_name, _token, _origin="": client_name
+        lambda client_name, _token, _origin="", _peer=None: client_name
     )
     monkeypatch.setattr("nvflare.private.fed.server.fed_server.TokenVerifier", lambda _cert: _TokenVerifier())
     return server_auth._validate_auth_headers
@@ -173,7 +173,7 @@ def test_cross_client_auth_under_same_relay_transits_server_and_strips_credentia
         topic="*",
         cb=_make_server_auth_filter(
             monkeypatch,
-            client_fqcn_resolver=lambda client_name, _token, _origin="": f"{relay_name}.{client_name}",
+            client_fqcn_resolver=lambda client_name, _token, _origin="", _peer=None: f"{relay_name}.{client_name}",
         ),
     )
     set_add_auth_headers_filters(site_a_job, site_a_name, "tok-a", "sig-a")
@@ -271,7 +271,7 @@ def test_server_auth_filter_strips_transit_auth_between_sites_under_same_relay(m
     destination = f"{relay}.{site_b}.job"
     auth_filter = _make_server_auth_filter(
         monkeypatch,
-        client_fqcn_resolver=lambda client_name, _token, _origin="": f"{relay}.{client_name}",
+        client_fqcn_resolver=lambda client_name, _token, _origin="", _peer=None: f"{relay}.{client_name}",
     )
     request_msg = _make_routed_message(destination, MessageType.REQ, origin=origin)
     request_msg.add_headers(
