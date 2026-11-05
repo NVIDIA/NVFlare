@@ -20,6 +20,7 @@ import pytest
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
@@ -27,7 +28,11 @@ from nvflare.app_common.executors.multi_process_executor import MultiProcessExec
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST, ComponentPathAuthorizer
 from nvflare.fuel.common.excepts import ComponentNotAuthorized
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
-from nvflare.fuel.utils import class_utils
+from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cell_reply
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.utils import class_utils, fobs
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.fed.app.client.sub_worker_process import SubWorkerExecutor
@@ -923,3 +928,74 @@ def test_multi_process_initialization_failure_signals_fatal_error(monkeypatch, f
 
     fatal_events = [call for call in engine.fire_event.call_args_list if call.args[0] == EventType.FATAL_SYSTEM_ERROR]
     assert len(fatal_events) == 1
+
+
+@pytest.mark.parametrize("site_policy", ["allow", "error", "exception"])
+def test_rank_runtime_build_enforces_parent_site_checks(tmp_path, site_policy):
+    config_file = tmp_path / "config.json"
+    config_file.write_text("{}")
+    (tmp_path / "meta.json").write_text(json.dumps({"site_policy": "present"}))
+    resources_file = tmp_path / "resources.json"
+    resources_file.write_text(json.dumps({CLASS_ALLOW_LIST: _test_component_allow_list()}))
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, FakeWorkspace(str(tmp_path / "meta.json"), str(resources_file)))
+    fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "job1")
+    conf = _NestedComponentConfigurator(str(config_file))
+    checked_paths = []
+
+    class SiteChecker(FLComponent):
+        def handle_event(self, event_type, ctx):
+            assert event_type == EventType.BEFORE_BUILD_COMPONENT
+            assert ctx.get_prop(FLContextKey.JOB_META) == {"site_policy": "present"}
+            assert ctx.get_prop(FLContextKey.CONFIG_CTX) is conf.config_ctx
+            checked_paths.append(ctx.get_prop(FLContextKey.COMPONENT_NODE).path())
+            if ctx.get_prop(FLContextKey.COMPONENT_CONFIG)["path"] == _component_path(NestedComponent):
+                if site_policy == "error":
+                    ctx.set_prop(FLContextKey.COMPONENT_BUILD_ERROR, "site veto", sticky=False)
+                elif site_policy == "exception":
+                    raise UnsafeComponentError("site veto")
+
+    conf.set_component_build_authorizer(authorize_build_component, fl_ctx=fl_ctx, event_handlers=[SiteChecker()])
+    parent = _TestMultiProcessExecutor.__new__(_TestMultiProcessExecutor)
+    parent.engine = Mock(conf=conf)
+    rank = SubWorkerExecutor.__new__(SubWorkerExecutor)
+    rank.args = Mock(client_name="site-1", job_id="job1")
+    rank.cell = Mock()
+
+    def authorize_in_parent(**kwargs):
+        assert kwargs["topic"] == EventType.BEFORE_BUILD_COMPONENT
+        # The authorization request contains config data, not handler or Node objects.
+        request = CellMessage({}, fobs.loads(fobs.dumps(kwargs["request"].payload)))
+        return parent._authorize_rank_component(request)
+
+    rank.cell.send_request.side_effect = authorize_in_parent
+    builder = WorkerComponentBuilder(fl_ctx=fl_ctx, workspace=fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT))
+    builder.component_build_authorizer = rank._authorize_component_build
+    component_config = {
+        "path": _component_path(ContainerComponent),
+        "args": {"child": {"path": _component_path(NestedComponent)}},
+    }
+    ContainerComponent.instantiated = NestedComponent.instantiated = False
+    if site_policy == "allow":
+        result = builder.build_component(component_config)
+        assert isinstance(result.child, NestedComponent)
+    else:
+        with pytest.raises(ComponentNotAuthorized, match="site veto"):
+            builder.build_component(component_config)
+        assert not ContainerComponent.instantiated
+        assert not NestedComponent.instantiated
+    assert checked_paths[:2] == ["runtime_component", "runtime_component.args.child"]
+
+
+def test_rank_runtime_build_rejects_unavailable_parent_authorization():
+    rank = SubWorkerExecutor.__new__(SubWorkerExecutor)
+    rank.args = Mock(client_name="site-1", job_id="job1")
+    rank.cell = Mock()
+    rank.cell.send_request.return_value = make_cell_reply(CellReturnCode.TIMEOUT, "site checker unavailable")
+    with pytest.raises(ComponentNotAuthorized, match="site checker unavailable"):
+        rank._authorize_component_build({"path": _component_path(NestedComponent)})
+
+    parent = _TestMultiProcessExecutor.__new__(_TestMultiProcessExecutor)
+    parent.engine = Mock(conf=None)
+    reply = parent._authorize_rank_component(CellMessage({}, {"path": _component_path(NestedComponent)}))
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.INVALID_REQUEST

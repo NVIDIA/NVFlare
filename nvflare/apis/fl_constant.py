@@ -347,6 +347,7 @@ class NonSerializableKeys(object):
         ReservedKey.RUNNER,
         FLContextKey.SCOPE_PROPERTIES,
         FLContextKey.SCOPE_OBJECT,
+        FLContextKey.CLIENT_HIERARCHY,
         FLContextKey.WORKSPACE_OBJECT,
         FLContextKey.TASK_DATA,
         FLContextKey.SHAREABLE,
