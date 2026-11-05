@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import os
 import shlex
 import threading
@@ -21,7 +22,7 @@ from abc import abstractmethod
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReturnCode, SystemConfigs
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReservedKey, ReturnCode, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.shareable import Shareable, make_reply
@@ -352,6 +353,17 @@ class MultiProcessExecutor(Executor):
             conf = self.engine.conf
             if not conf or not conf.has_component_build_authorizer():
                 raise RuntimeError("No component build authorizer set up.")
+            # Reuse config traversal with request-local callback state. Never
+            # replace the original configurator's bound context or kwargs.
+            conf = copy.copy(conf)
+            conf._build_auth_state = threading.local()
+            conf.build_auth_kwargs = dict(conf.build_auth_kwargs)
+            auth_ctx = conf.build_auth_kwargs.get("fl_ctx")
+            if isinstance(auth_ctx, FLContext):
+                auth_ctx = auth_ctx.clone()
+                for key in (ReservedKey.MANAGER, FLContextKey.COMPONENT_BUILD_ERROR, FLContextKey.EXCEPTIONS):
+                    auth_ctx.remove_prop(key, force_removal=True)
+                conf.build_auth_kwargs["fl_ctx"] = auth_ctx
             config_dict = request.payload
             # Use the parent's existing site handlers and configuration context,
             # without constructing the requested component in the parent.

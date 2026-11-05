@@ -1093,3 +1093,60 @@ def test_rank_runtime_build_rejects_unavailable_parent_authorization():
     parent.engine = Mock(conf=None)
     reply = parent._authorize_rank_component(CellMessage({}, {"path": _component_path(NestedComponent)}))
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.INVALID_REQUEST
+
+
+def test_concurrent_rank_authorizations_keep_separate_contexts(tmp_path):
+    config_file = tmp_path / "config.json"
+    config_file.write_text("{}")
+    (tmp_path / "meta.json").write_text("{}")
+    resources_file = tmp_path / "resources.json"
+    resources_file.write_text(json.dumps({CLASS_ALLOW_LIST: _test_component_allow_list()}))
+    base_ctx = FLContext()
+    base_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, FakeWorkspace(str(tmp_path / "meta.json"), str(resources_file)))
+    base_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "job1")
+    first_entered = threading.Event()
+    release_first = threading.Event()
+
+    class SiteChecker(FLComponent):
+        def handle_event(self, event_type, ctx):
+            if ctx.get_prop(FLContextKey.COMPONENT_CONFIG)["id"] == "denied":
+                first_entered.set()
+                release_first.wait()
+            # Read after the other rank has finished its authorization.
+            if ctx.get_prop(FLContextKey.COMPONENT_CONFIG)["id"] == "denied":
+                ctx.set_prop(FLContextKey.COMPONENT_BUILD_ERROR, "site veto", sticky=False)
+
+    conf = _NestedComponentConfigurator(str(config_file))
+    conf.set_component_build_authorizer(authorize_build_component, fl_ctx=base_ctx, event_handlers=[SiteChecker()])
+    parent = _TestMultiProcessExecutor.__new__(_TestMultiProcessExecutor)
+    parent.engine = Mock(conf=conf)
+    replies = []
+    errors = []
+
+    def authorize_denied_component():
+        try:
+            replies.append(
+                parent._authorize_rank_component(
+                    CellMessage({}, {"id": "denied", "path": _component_path(NestedComponent)})
+                )
+            )
+        except BaseException as ex:
+            errors.append(ex)
+
+    thread = threading.Thread(target=authorize_denied_component)
+    thread.start()
+    try:
+        assert first_entered.wait(5), "first rank did not enter the site checker"
+        allowed = parent._authorize_rank_component(
+            CellMessage({}, {"id": "allowed", "path": _component_path(NestedComponent)})
+        )
+        assert allowed.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
+    finally:
+        release_first.set()
+        thread.join(5)
+    assert not thread.is_alive()
+    assert not errors
+    assert replies[0].get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.INVALID_REQUEST
+    assert "site veto" in replies[0].get_header(MessageHeaderKey.ERROR)
+    assert base_ctx.get_prop(FLContextKey.COMPONENT_CONFIG) is None
+    assert base_ctx.get_prop(FLContextKey.COMPONENT_BUILD_ERROR) is None
