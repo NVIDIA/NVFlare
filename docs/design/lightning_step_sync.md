@@ -169,8 +169,9 @@ Three hooks, defined as methods on any `pl.Callback` in `trainer.callbacks`, cal
   evaluate task, where `fl_model.params` is `None`.
 - Not called for an empty receive or for a non-train task left pending in step mode.
 - Called in `trainer.callbacks` order.
-- Hooks get a shallow copy of the received model: edits change what is loaded, not the model the Client API keeps
-  as the baseline for DIFF transfers.
+- Hooks get a shallow copy of the received model: replacing entries changes what is loaded, not the model the
+  Client API keeps as the baseline for DIFF transfers. The tensors are shared, so hooks replace them rather than
+  edit them in place; cloning every tensor would add M host memory per sync.
 - A model received by `trainer.validate()` before `fit()` runs the receive hooks once; `fit()` reuses it.
 
 ```python
@@ -309,7 +310,7 @@ enforces NVFlare's exchange order: a send without a preceding receive fails.
 | Hooks are called in order, once per received model, in both modes; edits take effect | recording callback; a hook that adds to `meta` and one that edits the received params |
 | Invalid `sync_every_n_steps` and `train_with_evaluation` in step mode are rejected | `ValueError` from `patch()` |
 | Fit-per-round mode is unchanged | the existing tests |
-| Under DDP, all ranks pause at the same step, hold identical weights after each sync, only rank 0 sends, no hang | 2-rank CPU `ddp_spawn` (gloo) test |
+| Under DDP, all ranks pause at the same step, hold identical weights after each sync, only rank 0 sends, no hang | 2-rank CPU gloo test in `tests/integration_test/fast/lightning_step_sync_ddp_test.py`, run serially by `ci/run_process_contracts.py` |
 
 ## Follow-ups
 
