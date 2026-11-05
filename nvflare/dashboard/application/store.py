@@ -15,11 +15,12 @@
 import json
 import logging
 
+from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .cert import Entity, make_root_cert
 from .models import Client, Organization, Project, Role, User, db
-from .validation import CLIENT_NAMES, SERVER_NAMES, USER_NAMES, validate_names
+from .validation import CLIENT_NAMES, SERVER_NAMES, USER_NAMES, DashboardError, validate_names
 
 log = logging.getLogger(__name__)
 
@@ -35,13 +36,18 @@ _PROJECT_WRITABLE = {
     "cc_mode",
 }
 
-_SELF_ASSIGNABLE_ROLES = {"", "lead", "member"}
+_REQUESTABLE_ROLES = {"", "lead", "member", "org_admin"}
+
+
+def is_project_admin(user):
+    return user is not None and user.approval_state >= 100 and user.role.name == "project_admin"
 
 
 def check_role(id, claims, requester):
     is_creator = requester == Store._get_email_by_id(id)
-    is_project_admin = claims.get("role") == "project_admin"
-    return is_creator, is_project_admin
+    # JWT roles/approval can be stale after an administrator edits an account.
+    user = User.query.filter_by(email=requester).first()
+    return is_creator and user is not None and user.approval_state >= 0, is_project_admin(user)
 
 
 def _dict_or_empty(item):
@@ -55,7 +61,8 @@ def get_or_create(session, model, **kwargs):
     else:
         instance = model(**kwargs)
         session.add(instance)
-        session.commit()
+        # The caller commits the complete operation, including any approval checks.
+        session.flush()
         return instance
 
 
@@ -150,10 +157,11 @@ class Store(object):
                 setattr(project, k, v)
 
         db.session.add(project)
-        db.session.commit()
-
         if project.frozen:
+            # Publish the frozen state and its CA material in the same commit.
             cls.build_project(project)
+        else:
+            db.session.commit()
 
         project_dict = _dict_or_empty(project)
         project_dict = cls._add_registered_info(project_dict)
@@ -179,16 +187,44 @@ class Store(object):
     @classmethod
     def _is_approved_by_user_id(cls, id):
         user = User.query.get(id)
-        return user.approval_state >= 100
+        return user is not None and user.approval_state >= 100
+
+    @classmethod
+    def get_requester(cls, email):
+        user = User.query.filter_by(email=email).first()
+        if user is None or user.approval_state < 0:
+            raise DashboardError("This account is unavailable or has been denied.")
+        return user
+
+    @classmethod
+    def require_site_owner(cls, user, client=None):
+        """Pending applicants may manage only their own pending site registrations."""
+        if is_project_admin(user):
+            return
+        if user.approval_state < 0 or user.role.name != "org_admin" or not user.organization.name:
+            raise DashboardError("Request the Org Admin role and an organization before registering client sites.")
+        if client is not None:
+            if client.creator_id != user.id or client.organization_id != user.organization_id:
+                raise DashboardError("You can access only your own client sites in your organization.")
+            if user.approval_state < 100 and client.approval_state != 0:
+                raise DashboardError("Pending applicants can manage only their pending client sites.")
 
     @classmethod
     def create_client(cls, req, creator):
         validate_names(req, CLIENT_NAMES, required=CLIENT_NAMES)
-        creator_id = User.query.filter_by(email=creator).first().id
+        user = cls.get_requester(creator)
+        cls.require_site_owner(user)
+        if not is_project_admin(user) and req["organization"] != user.organization.name:
+            raise DashboardError("Client sites must use your registered organization.")
+        creator_id = user.id
         name = req.get("name")
         organization = req.get("organization", "")
         description = req.get("description", "")
-        org = get_or_create(db.session, Organization, name=organization)
+        # Names need not be unique in existing databases. Keep the participant's
+        # authenticated organization identity instead of looking it up again.
+        org = (
+            get_or_create(db.session, Organization, name=organization) if is_project_admin(user) else user.organization
+        )
         client = Client(name=name, description=description, creator_id=creator_id)
         client.organization_id = org.id
 
@@ -210,8 +246,15 @@ class Store(object):
         return add_ok({"client": _dict_or_empty(client)})
 
     @classmethod
-    def get_clients(cls, org=None):
-        if org is None:
+    def get_clients(cls, org=None, creator_id=None, pending_only=False):
+        if creator_id is not None:
+            query = Client.query.filter_by(creator_id=creator_id)
+            if org is not None:
+                query = query.filter(Client.organization.has(name=org))
+            if pending_only:
+                query = query.filter_by(approval_state=0)
+            all_clients = query.all()
+        elif org is None:
             all_clients = Client.query.all()
         else:
             all_clients = Organization.query.filter_by(name=org).first().clients
@@ -269,30 +312,61 @@ class Store(object):
         _ = req.pop("approval_state", None)
         _ = req.pop("organization", None)
 
+        values = {k: v for k, v in req.items() if k in {"name", "description"}}
         capacity = req.pop("capacity", None)
         if capacity:
-            client.capacity = json.dumps(capacity)
+            values["capacity"] = json.dumps(capacity)
 
         props = req.pop("props", None)
         if props:
-            client.props = json.dumps(props)
-
-        for k, v in req.items():
-            if k in {"name", "description"}:
-                setattr(client, k, v)
-
+            values["props"] = json.dumps(props)
+        if not values:
+            return add_ok({"client": _dict_or_empty(client)})
         try:
-            db.session.add(client)
+            result = db.session.execute(
+                db.update(Client)
+                .where(
+                    Client.id == client.id,
+                    Client.creator_id == client.creator_id,
+                    Client.organization_id == client.organization_id,
+                    Client.approval_state == client.approval_state,
+                )
+                .values(**values)
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount != 1:
+                raise DashboardError(
+                    "The client site changed. Reload its current approval and details before editing.", status_code=409
+                )
             db.session.commit()
-        except Exception as e:
-            log.error(f"Error while patching client: {e}")
-            return None
+        except IntegrityError as error:
+            db.session.rollback()
+            message = "This site name already exists. Please choose another site name."
+            raise DashboardError(message, status_code=409, errors={"name": message}) from error
+        db.session.refresh(client)
         return add_ok({"client": _dict_or_empty(client)})
 
     @classmethod
-    def delete_client(cls, id):
+    def delete_client(cls, id, creator_id=None):
         client = Client.query.get(id)
-        db.session.delete(client)
+        if creator_id is None:
+            db.session.delete(client)
+        else:
+            result = db.session.execute(
+                db.delete(Client)
+                .where(
+                    Client.id == client.id,
+                    Client.creator_id == creator_id,
+                    Client.organization_id == client.organization_id,
+                    Client.approval_state == client.approval_state,
+                    Client.approval_state < 100,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount != 1:
+                raise DashboardError(
+                    "The client site changed. Reload its current approval before deleting.", status_code=409
+                )
         db.session.commit()
         return add_ok({})
 
@@ -306,14 +380,17 @@ class Store(object):
         role_name = req.get("role", "")
         description = req.get("description", "")
         if not isinstance(role_name, str):
-            log.error(f"create_user cannot create role with type: {type(role_name).__name__}")
-            return None
+            raise DashboardError(
+                "Role must be a string.", status_code=400, errors={"role": "Select Member, Lead, or Org Admin."}
+            )
         if seeding:
             approval_state = 200
         else:
-            if not created_by_project_admin and role_name not in _SELF_ASSIGNABLE_ROLES:
-                log.error("Non-seeding create_user cannot create requested role")
-                return None
+            if not created_by_project_admin and role_name not in _REQUESTABLE_ROLES:
+                raise DashboardError(
+                    "That role cannot be requested during registration.",
+                    errors={"role": "Select Member, Lead, or Org Admin."},
+                )
             approval_state = 0
         validate_names(
             req,
@@ -373,55 +450,97 @@ class Store(object):
         return add_ok({"user": _dict_or_empty(user)})
 
     @classmethod
+    def _commit_user_patch(cls, user, values):
+        # Compare-and-swap works on SQLite too: role/organization changes cannot
+        # race an approval and retain approval of a different registration.
+        result = db.session.execute(
+            db.update(User)
+            .where(
+                User.id == user.id,
+                User.role_id == user.role_id,
+                User.organization_id == user.organization_id,
+                User.approval_state == user.approval_state,
+            )
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            raise DashboardError("The registration changed. Reload it and review it again.", status_code=409)
+        db.session.commit()
+        db.session.refresh(user)
+        return add_ok({"user": _dict_or_empty(user)})
+
+    @classmethod
     def patch_user_by_project_admin(cls, id, req):
         validate_names(req, {"organization": "org", "role": "simple_name"})
-        user = User.query.get(id)
-        org_name = req.pop("organization", None)
-        if org_name is not None:
-            org = get_or_create(db.session, Organization, name=org_name)
-            user.organization_id = org.id
-        role_name = req.pop("role", None)
-        if role_name is not None:
-            role = get_or_create(db.session, Role, name=role_name)
-            user.role_id = role.id
-        password = req.pop("password", None)
-        if password is not None:
-            password_hash = generate_password_hash(password)
-            user.password_hash = password_hash
-        for k, v in req.items():
-            if k in {"name", "description", "approval_state"}:
-                setattr(user, k, v)
-        db.session.add(user)
-        db.session.commit()
-        return add_ok({"user": _dict_or_empty(user)})
+        user = db.session.get(User, id)
+        if user is None:
+            raise DashboardError("User not found.", status_code=404)
+        values = {k: v for k, v in req.items() if k in {"name", "description", "approval_state"}}
+        approval = values.get("approval_state", user.approval_state)
+        if not isinstance(approval, int) or isinstance(approval, bool):
+            raise DashboardError("Approval state must be an integer.", status_code=400)
+        if "approval_state" in req and approval >= 100:
+            validate_names(
+                {
+                    "email": user.email,
+                    "role": req.get("role", user.role.name),
+                    "organization": req.get("organization", user.organization.name),
+                },
+                USER_NAMES,
+                required=USER_NAMES,
+            )
+            if user.approval_state < 100 and (
+                req.get("reviewed_role") != user.role.name or req.get("reviewed_organization") != user.organization.name
+            ):
+                raise DashboardError(
+                    "Review the current role and organization before approving this user.", status_code=409
+                )
+        if "organization" in req:
+            org = get_or_create(db.session, Organization, name=req["organization"])
+            if (
+                org.id != user.organization_id
+                and Client.query.filter(Client.creator_id == user.id, Client.organization_id != org.id).first()
+                is not None
+            ):
+                raise DashboardError(
+                    "Update or remove this user's client sites before changing their organization.", status_code=409
+                )
+            values["organization_id"] = org.id
+        if "role" in req:
+            values["role_id"] = get_or_create(db.session, Role, name=req["role"]).id
+        if "password" in req:
+            values["password_hash"] = generate_password_hash(req["password"])
+        return cls._commit_user_patch(user, values)
 
     @classmethod
     def patch_user_by_creator(cls, id, req):
         user = User.query.get(id)
-        _ = req.pop("approval_state", None)
-        role = req.pop("role", None)
-        if role is not None and (not isinstance(role, str) or role not in _SELF_ASSIGNABLE_ROLES):
-            return {"status": "error"}
-        # Validate before get_or_create, which commits the session.
-        if "organization" in req and user.organization.name == "":
-            validate_names(req, {"organization": "org"})
-        if role is not None and user.role.name == "":
-            role = get_or_create(db.session, Role, name=role)
-            user.role_id = role.id
-        organization = req.pop("organization", None)
-        if organization is not None and user.organization.name == "":
-            org = get_or_create(db.session, Organization, name=organization)
-            user.organization_id = org.id
-        password = req.pop("password", None)
-        if password is not None:
-            password_hash = generate_password_hash(password)
-            user.password_hash = password_hash
-        for k, v in req.items():
-            if k in {"name", "description"}:
-                setattr(user, k, v)
-        db.session.add(user)
-        db.session.commit()
-        return add_ok({"user": _dict_or_empty(user)})
+        if user.approval_state < 0:
+            raise DashboardError("This registration has been denied. Contact your project administrator.")
+        role = req.get("role")
+        if "role" in req and (not isinstance(role, str) or role not in _REQUESTABLE_ROLES):
+            raise DashboardError(
+                "That role cannot be requested during registration.",
+                errors={"role": "Select Member, Lead, or Org Admin."},
+            )
+        validate_names(req, {"organization": "org"})
+        values = {k: v for k, v in req.items() if k in {"name", "description"}}
+        for field, current in (("role", user.role.name), ("organization", user.organization.name)):
+            if field in req and req[field] != current:
+                if user.approval_state >= 100 or current:
+                    raise DashboardError(
+                        "Only the project administrator can change an existing or approved role or organization."
+                    )
+                if field == "role":
+                    values["role_id"] = get_or_create(db.session, Role, name=role).id
+                else:
+                    values["organization_id"] = get_or_create(db.session, Organization, name=req[field]).id
+        if "password" in req:
+            values["password_hash"] = generate_password_hash(req["password"])
+        if not values:
+            return add_ok({"user": _dict_or_empty(user)})
+        return cls._commit_user_patch(user, values)
 
     @classmethod
     def delete_user(cls, id):
