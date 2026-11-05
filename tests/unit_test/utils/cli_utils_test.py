@@ -97,7 +97,18 @@ class TestCLIUtils:
 
         assert json.loads(config_path.read_text())["version"] == 2
 
-    @pytest.mark.parametrize("name", ["client.json.backup", "config_fed_client.conf", "config_fed_client.yml"])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "client.json.backup",
+            "config_fed_client.conf",
+            "config_fed_client.yml",
+            "config_fed_client.yaml",
+            "config_fed_client.conf.default",
+            "config_fed_client.yml.default",
+            "config_fed_client.yaml.default",
+        ],
+    )
     def test_save_config_rejects_non_json_extension(self, tmp_path, name):
         config_path = tmp_path / name
 

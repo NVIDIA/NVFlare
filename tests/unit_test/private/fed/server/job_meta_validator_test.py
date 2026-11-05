@@ -59,14 +59,20 @@ def _zip_job_with_meta(folder_name: str, meta: str) -> bytes:
 
 
 def _zip_minimal_job(
-    folder_name: str, meta: dict, server_config: dict, client_config=None, client_extension="json"
+    folder_name: str,
+    meta: dict,
+    server_config: dict,
+    client_config=None,
+    client_extension="json",
+    meta_extension="json",
+    server_extension="json",
 ) -> bytes:
     bio = io.BytesIO()
     with ZipFile(bio, "w", compression=zipfile.ZIP_DEFLATED) as z:
         z.writestr(f"{folder_name}/app/config/", "")
-        z.writestr(f"{folder_name}/{JobConstants.META_FILE}", json.dumps(meta))
+        z.writestr(f"{folder_name}/meta.{meta_extension}", json.dumps(meta))
         z.writestr(
-            f"{folder_name}/app/config/{JobConstants.SERVER_JOB_CONFIG}",
+            f"{folder_name}/app/config/config_fed_server.{server_extension}",
             json.dumps(server_config),
         )
         z.writestr(
@@ -418,23 +424,34 @@ def test_submission_derives_task_admission_from_client_config():
     assert submitted["resource_spec"] == meta["resource_spec"]
 
 
-@pytest.mark.parametrize("extension", ["conf", "yml", "yaml"])
-def test_submission_rejects_hocon_and_yaml_client_configs(extension):
+@pytest.mark.parametrize("extension", ["conf", "yml", "yaml", "conf.default", "yml.default", "yaml.default"])
+@pytest.mark.parametrize(
+    "extension_arg,error_message",
+    [
+        ("meta_extension", "meta.json not existing"),
+        ("server_extension", "server config is missing"),
+        ("client_extension", "client config is missing"),
+    ],
+)
+def test_submission_rejects_hocon_and_yaml_configs(extension, extension_arg, error_message):
     meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1}
-    data = _zip_minimal_job("split", meta, {"format_version": 2, "workflows": []}, client_extension=extension)
+    data = _zip_minimal_job("split", meta, {"format_version": 2, "workflows": []}, **{extension_arg: extension})
     valid, error, _ = JobMetaValidator().validate("split", data)
     assert not valid
-    assert "client config is missing" in error
+    assert error_message in error
 
 
-def test_submission_accepts_json_default_client_config_and_uses_it_for_admission():
+@pytest.mark.parametrize("extension", ["json", "json.default"])
+def test_submission_accepts_json_configs_and_uses_client_config_for_admission(extension):
     meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1, "resource_spec": {}}
     data = _zip_minimal_job(
         "split",
         meta,
         {"format_version": 2, "workflows": []},
         {"format_version": 3, "execution_lifetime": "task", "executors": []},
-        client_extension="json.default",
+        client_extension=extension,
+        meta_extension=extension,
+        server_extension=extension,
     )
     valid, error, submitted = JobMetaValidator().validate("split", data)
     assert valid, error
