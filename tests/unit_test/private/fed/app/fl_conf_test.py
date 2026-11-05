@@ -271,3 +271,36 @@ def test_provisioned_async_grpc_client_conn_props(tmp_path, security, relay_sche
         assert relay[ConnPropKey.CONNECTION_SECURITY] == security
         assert relay[ConnPropKey.IDENTITY] == "relay-1"
         assert relay[ConnPropKey.AUTH_IDENTITY] == "relay-1"
+
+
+def test_job_folder_cannot_shadow_site_config(tmp_path):
+    """Site config lookup must not pick a job-deployed resources.json over local defaults."""
+    from nvflare.fuel.utils.config_service import ConfigService
+
+    workspace = _workspace_with_kit(tmp_path, "site-1")
+    local = Path(workspace.get_site_config_dir())
+    (local / "resources.json.default").write_text('{"from": "site"}')
+
+    job_custom = tmp_path / "job-abc" / "app_server" / "custom"
+    job_custom.mkdir(parents=True)
+    (job_custom / "resources.json").write_text('{"from": "job"}')
+
+    # Document the historical bug: walking the whole workspace finds the job file.
+    shadowed = ConfigService._find_config_file("resources.json", [str(tmp_path)])
+    assert shadowed is not None and "job-abc" in shadowed
+
+    # Scoped site paths keep the provisioned default.
+    found = ConfigService._find_config_file(
+        "resources.json",
+        [workspace.get_startup_kit_dir(), workspace.get_site_config_dir()],
+    )
+    assert found == str(local / "resources.json.default")
+
+
+def test_site_config_path_helper_matches_starter_expectation(tmp_path):
+    """startup + local is the site-owned search path used by FL starters after #5634/#5591."""
+    workspace = _workspace_with_kit(tmp_path, SiteType.SERVER)
+    site_path = [workspace.get_startup_kit_dir(), workspace.get_site_config_dir()]
+    assert site_path[0].endswith("startup") or site_path[0].endswith("startup/")
+    assert site_path[1].endswith("local") or site_path[1].endswith("local/")
+    assert str(tmp_path) not in site_path

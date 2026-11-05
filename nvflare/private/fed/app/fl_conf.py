@@ -203,7 +203,10 @@ class FLServerStarterConfiger(JsonConfigurator):
                 SystemConfigs.STARTUP_CONF: os.path.basename(self.server_config_file_names[0]),
                 SystemConfigs.RESOURCES_CONF: os.path.basename(self.server_config_file_names[1]),
             },
-            config_path=[self.args.workspace],
+            config_path=[
+                self.workspace.get_startup_kit_dir(),
+                self.workspace.get_site_config_dir(),
+            ],
             parsed_args=self.args,
             var_dict=self.cmd_vars,
         )
@@ -455,7 +458,10 @@ class FLClientStarterConfiger(JsonConfigurator):
                 SystemConfigs.STARTUP_CONF: os.path.basename(self.client_config_file_names[0]),
                 SystemConfigs.RESOURCES_CONF: os.path.basename(self.client_config_file_names[1]),
             },
-            config_path=[self.args.workspace],
+            config_path=[
+                self.workspace.get_startup_kit_dir(),
+                self.workspace.get_site_config_dir(),
+            ],
             parsed_args=self.args,
             var_dict=self.cmd_vars,
         )
