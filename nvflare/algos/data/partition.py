@@ -189,9 +189,14 @@ def dirichlet_label_partition(
             has_room = np.array([len(part) < num_samples / num_sites for part in parts])
             masked = proportions * has_room
             if masked.sum() <= 0:
-                masked = proportions
-            masked = masked / masked.sum()
-            cut_points = (np.cumsum(masked) * len(idx_k)).astype(int)[:-1]
+                # with a small alpha the whole draw can land on full sites, so draw again among the sites with room,
+                # which follows the same distribution as the masked draw
+                masked = np.zeros(num_sites)
+                masked[has_room] = rng.dirichlet(np.repeat(alpha, has_room.sum()))
+            # dividing by the last running total makes it end at exactly 1, so rounding cannot hand the last sample of
+            # the class to a trailing site that has no weight
+            cumulative = np.cumsum(masked)
+            cut_points = (cumulative / cumulative[-1] * len(idx_k)).astype(int)[:-1]
             for part, chunk in zip(parts, np.split(idx_k, cut_points)):
                 part.extend(chunk.tolist())
         if min(len(part) for part in parts) >= min_size:

@@ -48,6 +48,19 @@ def _assert_same(a, b):
     assert a.class_counts == b.class_counts
 
 
+def _assert_full_sites_get_no_more_samples(result, labels, num_sites):
+    # classes are handed out in sorted order, and a site that already holds len(labels) / num_sites samples must not
+    # receive any sample of a later class
+    capacity = len(labels) / num_sites
+    for site, counts in result.class_counts.items():
+        held = 0
+        for label in np.unique(labels):
+            count = counts.get(int(label), 0)
+            if held >= capacity:
+                assert count == 0, f"site {site} already held {held} samples but got {count} of class {label}"
+            held += count
+
+
 class TestDirichletLabelPartition:
     def test_covers_all_samples_once(self, labels):
         result = dirichlet_label_partition(labels, num_sites=8, alpha=0.5, seed=0)
@@ -95,6 +108,22 @@ class TestDirichletLabelPartition:
             dirichlet_label_partition(
                 labels, num_sites=10, alpha=0.01, seed=0, min_size=NUM_SAMPLES // 10, max_attempts=3
             )
+
+    def test_zero_weight_fallback_skips_full_sites(self):
+        # the reproduction from #5686: the class 6 draw puts all its weight on site 0, which is already full, so the
+        # fallback has to run; min_size=0 keeps that first attempt
+        labels = np.repeat(np.arange(NUM_CLASSES), 1000)
+        result = dirichlet_label_partition(labels, num_sites=10, alpha=0.01, seed=118, min_size=0)
+        _assert_valid_partition(result, len(labels), 10)
+        _assert_full_sites_get_no_more_samples(result, labels, 10)
+
+    def test_rounding_does_not_give_full_last_site_a_sample(self):
+        # with this seed the running total of a class used to end just below 1, which handed one sample to site 4
+        # after it was already full
+        labels = np.repeat(np.arange(NUM_CLASSES), 100)
+        result = dirichlet_label_partition(labels, num_sites=5, alpha=0.5, seed=14)
+        _assert_valid_partition(result, len(labels), 5)
+        _assert_full_sites_get_no_more_samples(result, labels, 5)
 
     def test_non_contiguous_labels(self):
         labels = np.array([3, 7, 42] * 100)
