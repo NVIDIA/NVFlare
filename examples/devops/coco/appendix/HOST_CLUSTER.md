@@ -57,7 +57,7 @@ hardware guidance, and `NTPSynchronized=yes`. Confirm firmware and GPU VBIOS
 versions against that platform's requirements. Installing a newer kernel cannot
 make an unsupported CPU or GPU confidential-computing capable.
 
-### AMD SEV-SNP branch (`CPU_TEE=snp`)
+### AMD SEV-SNP branch (`CPU_TEE=amd_sev_snp`)
 
 In the server BIOS, enable AMD virtualization/SVM, IOMMU, SEV, SEV-ES, and
 SEV-SNP as required by the server's firmware. Apply the vendor's current
@@ -96,7 +96,7 @@ resolve the BIOS/kernel/firmware mismatch before installing Kubernetes. See the
 [Linux SEV documentation](https://docs.kernel.org/virt/kvm/x86/amd-memory-encryption.html)
 for the kernel interface.
 
-### Intel TDX branch (`CPU_TEE=tdx`)
+### Intel TDX branch (`CPU_TEE=intel_tdx`)
 
 In the server BIOS, enable VT-x, VT-d, total memory encryption, and TDX, with
 private TDX KeyIDs and the compatible TDX module configured according to the
@@ -440,12 +440,12 @@ Select and inspect the actual installed configuration:
 ~~~bash
 source "$HOME/coco-private/inputs.env"
 case "$CPU_TEE" in
-  snp) export RUNTIME_CLASS=kata-qemu-nvidia-gpu-snp ;;
-  tdx) export RUNTIME_CLASS=kata-qemu-nvidia-gpu-tdx ;;
-  *) printf 'CPU_TEE must be snp or tdx\n' >&2; exit 1 ;;
+  amd_sev_snp) export RUNTIME_CLASS=kata-qemu-nvidia-gpu-snp; KATA_CONFIG=configuration-qemu-nvidia-gpu-snp.toml ;;
+  intel_tdx) export RUNTIME_CLASS=kata-qemu-nvidia-gpu-tdx; KATA_CONFIG=configuration-qemu-nvidia-gpu-tdx.toml ;;
+  *) printf 'CPU_TEE must be amd_sev_snp or intel_tdx\n' >&2; exit 1 ;;
 esac
 sudo containerd config dump | grep -A12 "$RUNTIME_CLASS"
-sudo find /opt/kata -name "configuration-qemu-nvidia-gpu-$CPU_TEE.toml"
+sudo find /opt/kata -name "$KATA_CONFIG"
 ~~~
 
 Use the configuration path actually referenced by that handler. Set
@@ -535,9 +535,9 @@ kubectl wait --for=condition=Established \
 kubectl apply -f \
   https://raw.githubusercontent.com/kata-containers/kata-containers/8dccf4cf37aeea4b6c2caacf3e61510d6eef2f71/tools/packaging/kata-deploy/node-feature-rules/x86_64-tee-keys.yaml
 case "$CPU_TEE" in
-  snp) TEE_FEATURE_PATH='{.metadata.labels.amd\.feature\.node\.kubernetes\.io/snp}' ;;
-  tdx) TEE_FEATURE_PATH='{.metadata.labels.intel\.feature\.node\.kubernetes\.io/tdx}' ;;
-  *) printf 'CPU_TEE must be snp or tdx\n' >&2; exit 1 ;;
+  amd_sev_snp) TEE_FEATURE_PATH='{.metadata.labels.amd\.feature\.node\.kubernetes\.io/snp}' ;;
+  intel_tdx) TEE_FEATURE_PATH='{.metadata.labels.intel\.feature\.node\.kubernetes\.io/tdx}' ;;
+  *) printf 'CPU_TEE must be amd_sev_snp or intel_tdx\n' >&2; exit 1 ;;
 esac
 kubectl wait --for="jsonpath=${TEE_FEATURE_PATH}=true" \
   "node/$NODE_NAME" --timeout=5m

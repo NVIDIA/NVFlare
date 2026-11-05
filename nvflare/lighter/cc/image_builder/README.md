@@ -1,16 +1,12 @@
 # CVM Builder
 
-> **Candidate profile only (checked 2026-10-28).** The checked-in
-> `cpu-2026.09-r5` profile has `production_ready: false`. Its pinned
-> kernel `7.0.0-31-generic` passed the previously failing
-> `test_corruption_after_scan_stops_workload` case in the rc4 and rc5 runs. That
-> removes the recorded kernel/storage blocker, but the complete current-source
-> acceptance matrix and signed production approval have not been recorded for
-> this profile. Production approval therefore still deliberately refuses it; a
-> kernel version alone is not a qualified security profile. Use the
-> [dev-mode walkthrough](#30-minute-dev-mode-walkthrough) for evaluation. A
-> production deployment requires a new `profile_version` whose exact manifest
-> passes the complete hardware acceptance matrix; do not relabel this profile.
+> **Candidate profile only.** The checked-in `cpu-2026.09-r5` profile
+> has `production_ready: false` and cannot receive production approval.
+> Use the [dev-mode walkthrough](#30-minute-dev-mode-walkthrough) for
+> evaluation. Production requires a separately versioned profile with
+> reviewed pins, complete acceptance for its exact finalized manifest,
+> and signed approval. A kernel version alone is not an approved profile;
+> do not relabel the supplied candidate. See [acceptance requirements](VALIDATION.md).
 
 All builder and administration commands use `./cvmctl <command>` (or
 `python3 -m cvm` from this directory). Run `./cvmctl --help` for the command list
@@ -321,13 +317,11 @@ Guest images receive only `cvm.runtime` and the shared modules listed in
 `cvm/build/payload.py`. Deliveries receive `cvm.host`, bundle verification and
 their shared dependencies. Neither includes build or Trustee administration
 code. The construction provisioner runs separately and is not installed in the
-finished guest. Public shell commands and YAML fields are unchanged.
+finished guest. Public shell commands and YAML fields form the operator interface.
 
-The package migration changes installed guest bytes and launcher templates.
-Rebuild generic bundles with a new profile version, collect fresh measurements
-and obtain new approval before creating deliveries with the reorganized tools.
-Existing deliveries remain self-contained. The source fingerprint still covers
-all construction sources, provisioning logic, payload lists and launch assets.
+The source fingerprint covers construction sources, provisioning logic,
+payload lists and launch assets. Changes to those inputs require a new
+profile version, fresh measurements and approval before sealing deliveries.
 
 ## Development and validation
 
@@ -485,6 +479,6 @@ profiles. The [Trustee identity and lifecycle instructions](TRUSTEE_GUIDE.md#kee
 cover profile selection, test identities, stopping for reference import, and the
 separate candidate versus production administration files.
 
-Recorded versions, test results, artifact hashes and remaining production gates
-are in [VALIDATION.md](VALIDATION.md). The checked-in profile is a template, not
+Exact-manifest acceptance and approval requirements are in
+[VALIDATION.md](VALIDATION.md). The checked-in profile is a template, not
 an already approved production configuration.

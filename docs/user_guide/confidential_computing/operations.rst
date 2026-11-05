@@ -106,7 +106,7 @@ Azure checklist
 #. Use Azure tooling to prepare the confidential VM or container resource and
    image, then configure ``workload.source.type: external``.
 #. Configure the project-level Azure MAA service and participant
-   ``cc_deployment_mode: azure_cc``. NVFlare 2.9 supports AMD SEV-SNP with
+   ``cc_deployment_mode: azure_cc``. The Azure integration supports AMD SEV-SNP with
    ``gpu_tee: none`` in this mode.
 #. Provision and install the signed startup kit using the selected Azure guide,
    then validate MAA evidence and the NVFlare job on the deployed resource.
@@ -220,10 +220,9 @@ Shared terminology and configuration names
 
 Both on-premises modes resolve their endpoint names to the same upstream
 Trustee service. The host in ``KBS_URL`` must resolve from inside the confidential
-guest, not only on the host. The different 2.9 keys are retained for
-compatibility. Trustee still signs the upstream ``tdx`` or ``snp`` evidence
-object key on the wire; NVFlare translates that internal protocol detail and
-does not accept it as a configuration value.
+guest, not only on the host. Each layer has its own endpoint field, as shown
+above. Use ``intel_tdx`` and ``amd_sev_snp`` consistently in participant
+configuration and workload constraints.
 
 Short glossary
 --------------
@@ -446,7 +445,7 @@ training data merely to obtain progress. The site can disable streaming with
 ``allow_log_streaming: false`` in its participant configuration before signing.
 Keep guest consoles and Kubernetes exec/attach/log access restricted.
 
-For a job that needs INFO-level progress on 2.9, add the documented
+For a job that needs INFO-level progress, add the documented
 ``nvflare.app_common.logging.job_log_streamer.JobLogStreamer`` components to
 ``config_fed_client.json`` for ``log.txt`` and ``error_log.txt``. If those streams
 are already supplied by the signed site configuration, use that configuration

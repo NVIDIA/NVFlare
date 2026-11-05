@@ -716,13 +716,16 @@ sudo -u cvm-trustee /opt/cvm-builder/cvmctl references \
   /var/lib/cvm-trustee/imports/profile/amd_sev_snp \
   --store /var/lib/cvm-trustee/storage/reference_value \
   --state /var/lib/cvm-trustee/admin \
-  --expires 2026-12-01T00:00:00Z
+  --expires "$REFERENCE_EXPIRES_UTC"
 ```
 
 Install the reviewed builder and its Python environment under
 `/opt/cvm-builder` (or another path traversable by `cvm-trustee`) before using
 this command. Do not point the service user at a root-only source checkout or
 virtual environment.
+
+Set `REFERENCE_EXPIRES_UTC` to the future UTC expiry approved by the
+reference authority before running the command.
 
 The import writes one upstream RVPS record named `cvm_profile_<digest>` per
 security profile. Its value contains the profile's references and per-value
@@ -739,11 +742,6 @@ Apply configuration through the selected deployment's rollout mechanism. Run
 `./cvmctl preflight trustee` on the trusted deployment host and confirm the
 initial deny-all resource policy exists before accepting traffic. The repository
 contains no Trustee systemd services to install or enable.
-
-Use a fresh profile version and rebuild/reapprove bundles when migrating from
-the earlier backend. Its files, policies, receipts, and guest binaries are not
-wire- or storage-compatible with v0.22. Existing hardware acceptance does not
-approve the new profile.
 
 ## 8. Verify the deployment and enable a bundle
 
@@ -964,17 +962,6 @@ permits release. Preserve the current policy and retirement state during restore
 verify denials before reopening traffic. An unsuccessful policy update is not a
 completed retirement: retry the command and verify readback. Deletion and policy
 changes cannot retract secrets already released to a running guest.
-
-If an earlier deployment supplies `key_service_state`, both `admin install` and
-`admin retire` reject the configuration, even when the value is empty or null.
-Before removing that field, fence builds, policy publication and key release;
-apply outstanding legacy revocations through upstream Trustee and preserve them in
-the operator's recovery records. Merge every legacy `retired/` marker into the
-publisher's configured `state/retired/`, preserving existing markers, bundle IDs
-and the current resource policy. Do not discard markers for bundles that are
-currently absent. Verify the migrated state before removing `key_service_state`,
-then verify retired bundles and revoked resources remain denied before reopening
-traffic. Updating the builder does not migrate this state automatically.
 
 ## Upstream contracts
 

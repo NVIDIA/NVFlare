@@ -15,23 +15,13 @@ Production normally separates the credentials held by these roles. One person
 or organization may perform more than one role only when the deployment's trust
 policy permits it.
 
-.. code-block:: text
+.. figure:: ../../resources/cc_roles_and_handoffs.png
+   :width: 100%
+   :align: center
+   :alt: A trusted worker delivers a candidate to an acceptance authority and a signed sealed delivery to the runtime host. The Trustee administrator installs references and policies. Trustee releases an authorized key only into the confidential guest.
 
-   reviewed sources and workload
-              |
-              v
-   [trusted build/provisioning worker]
-        | candidate bundle + test vault
-        v
-   [acceptance operator/authority] -- signed approval --> [Trustee administrator]
-        | acceptance report                                  | approved references,
-        +---------------------> build worker                  | policy, and scoped key
-                                                              v
-   [build worker] -- signed sealed delivery ------------> [runtime host]
-        | scoped vault key upload                              | launches untrusted host/VMM
-        +-----------------------------> [Trustee] <--- evidence/resource request ---+
-                                                                           |
-                                                                   [confidential guest]
+   Standalone CVM roles and trust handoffs. CoCo uses its image-release
+   workflow; Azure uses its provider-specific deployment and attestation.
 
 The build worker hands off an exact candidate and later a signed sealed
 delivery. The acceptance authority signs the report for that exact candidate.
@@ -58,7 +48,7 @@ See :ref:`cc_architecture_overview` for the responsibilities and trust boundarie
 2. Choose a deployment approach
 -------------------------------
 
-.. list-table:: Deployment choices in NVFlare 2.9
+.. list-table:: Deployment choices
    :header-rows: 1
    :widths: 26 44 30
 
@@ -86,13 +76,13 @@ its ability to start a VM or container.
 3. Check platform and operational prerequisites
 -----------------------------------------------
 
-The 2.9 configuration supports AMD SEV-SNP and Intel TDX targets for standalone
+The configuration supports AMD SEV-SNP and Intel TDX targets for standalone
 CVM and CoCo deployments, with CPU-only or NVIDIA confidential-GPU profiles.
-For CoCo, **full security qualification is incomplete**; the historical mixed
-run recorded below does not qualify **TDX+GPU or a protected-server topology**.
+For CoCo, configuration support alone does not establish security acceptance
+for a particular CPU/GPU target or protected-server topology.
 The Azure integration currently accepts AMD SEV-SNP with ``gpu_tee: none``.
 
-.. list-table:: Documented 2.9 component baselines
+.. list-table:: Component prerequisites
    :header-rows: 1
    :widths: 25 35 40
 
@@ -119,16 +109,14 @@ The Azure integration currently accepts AMD SEV-SNP with ``gpu_tee: none``.
      - NVFlare does not impose one common guest-image baseline across those
        externally created resources.
 
-* For standalone CVMs, review the :github_nvflare_link:`revision-specific
-  validation record <nvflare/lighter/cc/image_builder/VALIDATION.md>` and
+* For standalone CVMs, review the :github_nvflare_link:`production
+  acceptance requirements <nvflare/lighter/cc/image_builder/VALIDATION.md>` and
   :github_nvflare_link:`conformance requirements
   <nvflare/lighter/cc/image_builder/CONFORMANCE.md>`. Prepare the trusted build
   worker, approved generic CVM, and Trustee service described in
   :ref:`cvm_builder`.
-* For CoCo, the :ref:`implementation scope and hardware evidence limits
-  <coco_security_architecture>` describe one historical mixed TDX CPU-only and
-  SNP+NVIDIA GPU functional run on **2026-10-04**, with an ordinary trusted server.
-  The workload performed CPU arithmetic, not GPU training. **Before the four-step workflow,
+* For CoCo, review the :ref:`security architecture <coco_security_architecture>`
+  for the selected target and topology. **Before the four-step workflow,
   deploy and verify both Trustee and the CoCo-ready Kubernetes cluster.** Follow
   the `official Trustee installation guide
   <https://confidentialcontainers.org/docs/attestation/installation/>`_ and, for
@@ -175,6 +163,12 @@ configuration check is not hardware acceptance.
   :github_nvflare_link:`CoCo GPU reference-value procedure
   <examples/devops/coco/TRUSTEE.md#set-gpu-references-when-required>` before deploying or
   changing a GPU baseline.
+* For CVM/CoCo peer verification, keep normal FL authentication enabled and
+  protect FL and proof private keys inside the intended trusted boundary.
+  Record which servers or relays may terminate application traffic. A signed
+  site proof is not bound to a particular TLS session, and periodic checks can
+  use cached appraisal. Review :ref:`cc_peer_attestation_limits` before relying
+  on those proofs for admission or data access.
 
 5. Provision, launch, and validate
 ----------------------------------
@@ -185,7 +179,7 @@ follow :ref:`cc_deployment` for the shared provisioning configuration. Select
 ``cc_config``, and define shared services in ``cc_project_config``.
 
 Create confidential-computing projects with CLI provisioning. The Dashboard's
-legacy project record does not generate ``cc_config``, Trustee policy, or a
+project record does not generate ``cc_config``, Trustee policy, or a
 protected deployment artifact and therefore does not expose a CC control.
 
 Use the chosen mode's guide for building or creating the protected artifacts,
@@ -193,6 +187,14 @@ approval, distribution, and launch. Validate the selected platform and workload,
 including the required attestation and denial behavior, before approving the
 deployment for use. Keep configuration support, successful functional runs, and
 security acceptance as separate claims.
+
+For CVM/CoCo qualification, record both registration directions when a protected
+server is required, periodic failure handling, reconnect, and verifier-restart
+behavior for the selected topology. Rejection during initial admission and
+shutdown or exit after a periodic failure are different checks; do not infer
+per-operation appraisal. Passing a token-verification helper alone does not
+establish end-to-end admission, resource release, or protection from proof
+forwarding. See :ref:`coco_security_acceptance` for the CoCo acceptance matrix.
 
 Follow :ref:`cc_operations` for the linear checklist, shared terminology,
 failure table, and Day-2 rebuild decisions across all three modes.

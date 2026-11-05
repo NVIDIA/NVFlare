@@ -1457,10 +1457,26 @@ Example configuration for large datasets:
 Confidential Computing Timeouts
 ===============================
 
-SNP Authorizer Timeouts
------------------------
+Trustee Authorizer Timeouts
+---------------------------
 
-AMD SEV-SNP attestation timeouts (snp_authorizer.py):
+Standalone CVM and CoCo provisioning use ``TrusteeAuthorizer`` for participant
+proofs. Configure the shared Trustee service's token age, registration,
+refresh, retrieval and retry settings in ``cc_project_config`` as described in
+:ref:`cc_deployment`. The authorizer obtains an appraisal through the protected
+guest integration; its peer-proof generation does not use a separately
+configured platform-specific authorizer.
+
+CVM boot and periodic vault appraisal have separate measured-profile budgets;
+see :ref:`cc_architecture` for that enforcement layer.
+
+Legacy Standalone Authorizer Timeouts
+-------------------------------------
+
+These settings apply to the :ref:`legacy standalone SNPAuthorizer
+<cc_legacy_authorizers>`, which is a candidate for deprecation or removal.
+Unified CVM/CoCo provisioning uses ``TrusteeAuthorizer`` instead; the settings
+below do not configure that integration.
 
 .. list-table::
    :header-rows: 1

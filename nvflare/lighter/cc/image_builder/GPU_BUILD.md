@@ -75,8 +75,7 @@ the URL without changing the input schema.
 
 APT pins can disappear from rolling security repositories. The libxml2 example
 above includes the [Ubuntu security update](https://ubuntu.com/security/notices/USN-8910-1);
-the older `0.1ubuntu0.1` pin is no longer a reproducible default. Before using
-this example, inspect `apt-cache policy libxml2-16` and the signed repository's
+before using this example, inspect `apt-cache policy libxml2-16` and the signed repository's
 available versions in the **guest build environment**, then simulate the exact
 install with `apt-get -s install 'libxml2-16=2.15.2+dfsg-0.1ubuntu0.3'`.
 If the pin is unavailable, either use the authenticated immutable mirror that

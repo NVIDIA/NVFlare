@@ -91,20 +91,13 @@ publisher authentication requires an explicit `--allow-unverified` and is for
 isolated labs only. Its platform directory contains both manifests and
 everything needed to launch:
 
-```text
-/srv/cvm/vault_my-app-site1/
-└── intel_tdx/
-    ├── cvm_bundle/
-    │   ├── cvm_manifest.json
-    │   ├── OVMF.fd
-    │   ├── vmlinuz
-    │   ├── initrd.img
-    │   └── verity_root.qcow2
-    ├── vault_manifest.json
-    ├── vault.qcow2
-    ├── launch_cvm.sh
-    └── shutdown_cvm.sh
-```
+![Materialized per-platform delivery with generic CVM boot artifacts, encrypted vault, manifest, and launch and shutdown wrappers.](images/cvm_delivery_layout.png)
+
+Launch from the selected platform directory. It contains `vault_manifest.json`,
+`vault.qcow2`, `launch_cvm.sh`, and `shutdown_cvm.sh`. The nested `cvm_bundle/`
+contains `cvm_manifest.json`, `OVMF.fd`, `vmlinuz`, `initrd.img`, and
+`verity_root.qcow2`. The illustration highlights these operator-facing files;
+the delivery also carries its verified runtime helpers and sidecar inputs.
 
 ### Generic images used by provisioning
 
@@ -216,12 +209,9 @@ required; the launcher does not search sibling folders or local build caches:
 An absolute bundle path is preferred in operational commands. A relative
 `--cvm-bundle` path resolves against the caller's current directory, including
 when invoking the delivered wrapper by absolute path.
-New wrappers run Python in isolated mode and explicitly load the checked,
+The wrappers run Python in isolated mode and explicitly load the checked,
 root-owned delivery, keeping caller files and Python environment overrides out
 of module lookup on every supported Python version, including 3.10.
-This applies to newly built wrappers. For an older approved bundle whose
-wrapper changes directory first, use an absolute override path. Updating a
-source checkout does not rewrite templates inside an approved bundle.
 To pick up launch-security updates, build and approve a new generic bundle,
 then regenerate its vault deliveries; keep approved artifacts immutable.
 

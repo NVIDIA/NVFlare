@@ -49,7 +49,7 @@ evidence signatures/collateral and the configured platform constraints.
 The installed runtime's kernel parameters must already contain exactly one
 `agent.guest_components_rest_api=all` option so the guest exposes its AA token API.
 The platform owner configures this externally; capture checks it without changing
-the runtime. The former runtime-configuration CLI is no longer supported.
+the runtime.
 
 The selected worker needs Python 3.11+ with PyYAML, Bash, kubectl, skopeo,
 OpenSSL, iproute2's `ip`, containerd's `ctr`, and the separate CRI client `crictl`.
