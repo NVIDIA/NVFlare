@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from nvflare.fuel.f3.cellnet.cell import Adapter
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.utils import encode_payload
 from nvflare.fuel.f3.endpoint import Endpoint
@@ -51,3 +52,13 @@ def test_stream_dispatch_preserves_receiver_owned_peer_and_ignores_wire_imitatio
     assert len(received) == 1
     assert received[0].get_prop(MessagePropKey.ENDPOINT) is peer
     assert received[0].payload == {"data": "harmless"}
+
+
+def test_local_delivery_retains_the_actual_sending_endpoint():
+    sender = object.__new__(CoreCell)
+    peer = Endpoint("server")
+    sender.communicator = SimpleNamespace(local_endpoint=peer)
+    receiver = MagicMock()
+    message = Message()
+    sender._send_direct_message(receiver, message)
+    assert receiver.process_message.call_args.kwargs["endpoint"] is peer
