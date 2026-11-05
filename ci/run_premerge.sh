@@ -85,6 +85,11 @@ integration_test() {
 unit_test() {
     echo "Run unit test..."
     pipenv run ./runtest.sh
+    # Keep the real shell workflow out of the unit xdist pool, including when
+    # Jenkins selects only unit_test. Retain coverage from both invocations.
+    pipenv run python -m pytest -q -rs --cov=nvflare --cov-append \
+        --cov-report html:cov_html --cov-report xml:cov.xml \
+        tests/integration_test/fast/coco_existing_cluster_launch_test.py
 }
 
 wheel_build() {

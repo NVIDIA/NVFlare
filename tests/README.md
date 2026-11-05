@@ -35,6 +35,15 @@ So please follow pytest test case style.
 
 Please refer to [integration tests README](./integration_test/README.md).
 
+The offline CoCo manifest launcher workflow runs in
+`integration_test/fast/coco_existing_cluster_launch_test.py`. It starts real
+Bash/Python processes with fake `kubectl` commands and requires Bash 4.4+ and
+Python 3.11+, but no cluster, CVM build, or lab hardware. Premerge runs it serially
+outside the unit-test xdist pool on the same OS/Python matrix; the coverage and
+Jenkins premerge jobs also collect it. Product readiness/API deadline decisions
+remain deterministic unit tests. The shell workflow has a separate 60-second
+completion watchdog with process-group cleanup and command-progress diagnostics.
+
 ## CVM Builder Tests
 
 `unit_test/lighter/cc/image_builder/` contains the standalone CVM Builder contracts,
