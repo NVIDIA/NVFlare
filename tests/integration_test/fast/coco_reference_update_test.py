@@ -17,13 +17,16 @@
 import json
 import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-COCO = Path(__file__).resolve().parents[5] / "examples/devops/coco"
+from tests.coco_test_utils import ROOT as COCO
+from tests.coco_test_utils import require_coco_bash
+from tests.integration_test.fast.coco_launch_utils import run_coco_command
+
+pytestmark = pytest.mark.skipif(os.name != "posix", reason="CoCo service scripts require POSIX shell/process groups")
 STAGE = "02-install-platform-reference-values.sh"
 FIELDS = ("mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3", "xfam", "tdvfkernel", "tdvfkernelparams")
 STUB_COMMON = r"""
@@ -75,7 +78,10 @@ def service(tmp_path):
     tools.mkdir()
     client = tools / "kbs-client"
     client.write_text(
-        f"#!{sys.executable}\nimport json,os,sys\nfrom pathlib import Path\n"
+        f"#!{sys.executable}\nimport json,os,sys,time\nfrom pathlib import Path\n"
+        "with Path(os.environ['TEST_CALLS']).open('a') as stream:\n"
+        "    stream.write(json.dumps(['kbs-client', *sys.argv[1:]]) + '\\n')\n"
+        "time.sleep(float(os.environ.get('TEST_COMMAND_DELAY', '0')))\n"
         "state=json.loads(Path(os.environ['TEST_REFERENCE_STATE']).read_text())\n"
         "print(json.dumps(state[sys.argv[sys.argv.index('--id')+1]]))\n"
     )
@@ -84,8 +90,11 @@ def service(tmp_path):
     proxy.write_text(
         f"#!{sys.executable}\n"
         + r"""
-import base64, importlib.util, json, os, sys
+import base64, importlib.util, json, os, sys, time
 from pathlib import Path
+with Path(os.environ["TEST_CALLS"]).open("a") as stream:
+    stream.write(json.dumps(["python3", *sys.argv[1:]]) + "\n")
+time.sleep(float(os.environ.get("TEST_COMMAND_DELAY", "0")))
 if len(sys.argv) > 2 and sys.argv[2] == "install-references":
     spec = importlib.util.spec_from_file_location("live_reference_installer", sys.argv[1])
     module = importlib.util.module_from_spec(spec)
@@ -117,15 +126,16 @@ else:
         "TEST_CALLS": str(calls),
         "TEST_REFERENCE_STATE": str(state),
         "TEST_REFERENCE_UPDATES": str(updates),
+        "TEST_COMMAND_DELAY": "0",
     }
     return role, env, state, updates
 
 
 def run_update(role, env, values, mode=None):
-    arguments = ["bash", str(role / STAGE), str(values)]
+    arguments = [require_coco_bash(), str(role / STAGE), str(values)]
     if mode is not None:
         arguments.append(mode)
-    return subprocess.run(arguments, env=env, capture_output=True, text=True, timeout=10)
+    return run_coco_command(arguments, env=env, progress=Path(env["TEST_CALLS"]))
 
 
 def test_reference_update_preserves_other_tee_and_local_installation_configuration(tmp_path, service):
@@ -159,7 +169,8 @@ def test_reference_update_rejects_incomplete_new_values_before_api_writes(tmp_pa
     assert state.read_bytes() == before
 
 
-def test_verify_only_reads_existing_references_without_api_writes(tmp_path, service):
+@pytest.mark.parametrize("command_delay", [0, 3])
+def test_verify_only_reads_existing_references_without_api_writes(tmp_path, service, command_delay):
     role, env, state, updates = service
     current = json.loads(state.read_text())
     current["coco_tdx_profiles_v2"] = reference_values()["profiles"]
@@ -167,7 +178,8 @@ def test_verify_only_reads_existing_references_without_api_writes(tmp_path, serv
     before = state.read_bytes()
     values = tmp_path / "reviewed-values.json"
     values.write_text(json.dumps(reference_values()))
-    result = run_update(role, env, values, "--verify-only")
+    # Four fake command startups at 3s each exceed the old 10s CLI watchdog.
+    result = run_update(role, {**env, "TEST_COMMAND_DELAY": str(command_delay)}, values, "--verify-only")
     assert result.returncode == 0, result.stderr
     assert state.read_bytes() == before
     assert not updates.exists()
@@ -184,11 +196,10 @@ def test_removed_approval_flags_fail_before_reading_values_or_service_configurat
     role = tmp_path / "service"
     role.mkdir()
     shutil.copyfile(COCO / "service" / script, role / script)
-    result = subprocess.run(
-        ["bash", str(role / script), str(tmp_path / "missing-values.json"), option],
-        capture_output=True,
-        text=True,
-        timeout=10,
+    result = run_coco_command(
+        [require_coco_bash(), str(role / script), str(tmp_path / "missing-values.json"), option],
+        env=os.environ,
+        progress=tmp_path / "calls",
     )
     assert result.returncode == 2
     assert "Usage:" in result.stderr

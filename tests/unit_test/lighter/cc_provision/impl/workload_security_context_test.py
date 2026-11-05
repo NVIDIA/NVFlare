@@ -142,6 +142,7 @@ def test_generated_policy_matches_context(readonly):
 
 
 def test_custom_workload_fixture_image_does_not_change_other_calls():
+    pytest.importorskip("tomllib", reason="embedded init-data validation requires Python 3.11+")
     custom_image = "registry.example.invalid/custom@sha256:" + "b" * 64
     custom = final_workload_pod(image=custom_image)
     assert custom["spec"]["containers"][0]["image"] == custom_image

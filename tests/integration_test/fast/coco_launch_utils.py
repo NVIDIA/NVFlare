@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Bound offline launcher workflows independently of product API deadlines."""
+"""Bound offline CoCo workflows independently of product API deadlines."""
 
 import os
 import signal
@@ -22,7 +22,7 @@ import tempfile
 import pytest
 
 
-def run_launch(arguments, *, env, calls, timeout=60):
+def run_coco_command(arguments, *, env, progress, timeout=60, description="CoCo workflow"):
     # This is a completion watchdog, not a launcher latency assertion. Allow for
     # interpreter startup and CI scheduling while retaining a hard failure bound.
     # Files avoid blocking output collection if a descendant retains a pipe.
@@ -45,10 +45,14 @@ def run_launch(arguments, *, env, calls, timeout=60):
         stderr.seek(0)
         output, errors = stdout.read(), stderr.read()
     if timed_out:
-        progress = "\n".join(calls.read_text().splitlines()[-10:]) if calls.exists() else "(no kubectl calls)"
+        recent = "\n".join(progress.read_text().splitlines()[-10:]) if progress.exists() else "(no command progress)"
         pytest.fail(
-            f"Launcher did not finish within {timeout}s: {arguments!r}\n"
-            f"stdout:\n{output}\nstderr:\n{errors}\nRecent kubectl calls:\n{progress}",
+            f"{description} did not finish within {timeout}s: {arguments!r}\n"
+            f"stdout:\n{output}\nstderr:\n{errors}\nRecent command progress:\n{recent}",
             pytrace=False,
         )
     return subprocess.CompletedProcess(arguments, process.returncode, output, errors)
+
+
+def run_launch(arguments, *, env, calls, timeout=60):
+    return run_coco_command(arguments, env=env, progress=calls, timeout=timeout, description="Launcher")
