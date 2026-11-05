@@ -26,6 +26,7 @@ import nvflare.app_opt.pt.tensor_downloader as tensor_downloader
 from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict
 from nvflare.app_opt.pt.tensor_downloader import DiskTensorConsumer, _extract_safetensors_keys
+from tests.timing_utils import WAIT_TIMEOUT, ObservedLock, ThreadGroup
 
 
 @pytest.fixture
@@ -157,6 +158,7 @@ class TestDiskTensorConsumer:
 
     def test_cleanup_waits_for_inflight_write_and_removes_completed_chunk(self, temp_dir, monkeypatch):
         consumer = DiskTensorConsumer(temp_dir)
+        consumer._io_lock = ObservedLock(consumer._io_lock)
         item = save_tensors({"x": torch.randn(2)})
         write_entered = threading.Event()
         release_write = threading.Event()
@@ -165,7 +167,7 @@ class TestDiskTensorConsumer:
 
         def blocking_extract(data):
             write_entered.set()
-            if not release_write.wait(timeout=1.0):
+            if not release_write.wait(WAIT_TIMEOUT):
                 raise RuntimeError("test did not release in-flight tensor write")
             return original_extract(data)
 
@@ -176,21 +178,11 @@ class TestDiskTensorConsumer:
                 consume_errors.append(e)
 
         monkeypatch.setattr(tensor_downloader, "_extract_safetensors_keys", blocking_extract)
-        consume_thread = threading.Thread(target=consume)
-        consume_thread.start()
-        assert write_entered.wait(timeout=1.0)
-
-        cleanup_thread = threading.Thread(target=consumer.cleanup)
-        cleanup_thread.start()
-        cleanup_thread.join(timeout=0.02)
-        assert cleanup_thread.is_alive(), "cleanup must serialize with the active chunk writer"
-
-        release_write.set()
-        consume_thread.join(timeout=1.0)
-        cleanup_thread.join(timeout=1.0)
-
-        assert not consume_thread.is_alive()
-        assert not cleanup_thread.is_alive()
+        with ThreadGroup(release_write) as workers:
+            workers.start(consume)
+            assert write_entered.wait(WAIT_TIMEOUT)
+            workers.start(consumer.cleanup)
+            assert consumer._io_lock.blocked.wait(WAIT_TIMEOUT), "cleanup never contended with the chunk write"
         assert consume_errors == []
         assert not os.path.exists(temp_dir)
 

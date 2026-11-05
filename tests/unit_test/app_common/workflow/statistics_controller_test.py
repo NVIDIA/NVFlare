@@ -15,10 +15,13 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from nvflare.app_common.abstract.statistics_spec import StatisticConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
 from nvflare.app_common.workflows.statistics_controller import StatisticsController
 from nvflare.fuel.utils import fobs
+from tests.timing_utils import isolate_time
 
 from .mock_statistics_controller import MockStatisticsController
 
@@ -144,3 +147,8 @@ class TestStatisticsController:
         # empty too, and must not vacuously pass as "ok to proceed" either.
         client_statistics = {"count": {"site-1": {}}}
         assert not self.stats_controller._validate_min_clients(1, client_statistics)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.app_common.workflows.statistics_controller")

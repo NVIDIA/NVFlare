@@ -1,0 +1,8 @@
+{
+  "name": "abort_test_job",
+  "resource_spec": {},
+  "min_sites": 1,
+  "deploy_map": {
+    "app": ["@ALL"]
+  }
+}

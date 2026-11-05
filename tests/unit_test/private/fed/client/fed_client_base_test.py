@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from nvflare.private.fed.client.fed_client_base import FederatedClientBase
+from tests.timing_utils import WAIT_TIMEOUT, ObservedLock, ThreadGroup
 
 
 def _make_client():
@@ -49,32 +50,25 @@ def test_send_request_before_shutdown_skips_after_close():
 
 def test_close_waits_for_terminal_request_before_logout():
     client = _make_client()
+    client._shutdown_lock = ObservedLock(client._shutdown_lock)
     request_started = threading.Event()
     release_request = threading.Event()
     close_entered = threading.Event()
 
     def send_request(**_kwargs):
         request_started.set()
-        assert release_request.wait(timeout=1.0)
+        assert release_request.wait(WAIT_TIMEOUT)
         return MagicMock()
 
     client.cell.send_request.side_effect = send_request
     client.terminate.side_effect = close_entered.set
 
-    request_thread = threading.Thread(target=client.send_request_before_shutdown, kwargs={"topic": "outcome"})
-    request_thread.start()
-    assert request_started.wait(timeout=1.0)
-
-    close_thread = threading.Thread(target=client.close)
-    close_thread.start()
-    assert not close_entered.wait(timeout=0.1)
-    client.logout_client.assert_not_called()
-
-    release_request.set()
-    request_thread.join(timeout=1.0)
-    close_thread.join(timeout=1.0)
-
-    assert not request_thread.is_alive()
-    assert not close_thread.is_alive()
+    with ThreadGroup(release_request) as workers:
+        workers.start(client.send_request_before_shutdown, topic="outcome")
+        assert request_started.wait(WAIT_TIMEOUT)
+        workers.start(client.close)
+        assert client._shutdown_lock.blocked.wait(WAIT_TIMEOUT), "close did not wait for the terminal request"
+        assert not close_entered.is_set()
+        client.logout_client.assert_not_called()
     assert client.communicator.heartbeat_done is True
     client.logout_client.assert_called_once()

@@ -30,6 +30,7 @@ from nvflare.fuel.hci.proto import MetaKey, ProtoKey
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.sess import SessionManager
+from tests.timing_utils import isolate_time
 from tests.unit_test.fuel.f3.streaming.download_test_utils import (
     make_service_no_monitor,
     pull_request,
@@ -496,3 +497,8 @@ def test_logout_after_expiry_does_not_use_stopped_messenger():
 
     assert api.logout() is None
     api.server_execute.assert_not_called()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.fuel.hci.server.sess")
