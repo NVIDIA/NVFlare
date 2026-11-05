@@ -17,11 +17,12 @@ from unittest.mock import MagicMock, Mock
 import pytest
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell, TargetMessage
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message, ok_reply
-from nvflare.private.defs import RequestHeader, SysCommandTopic, TrainingTopic, new_cell_message
+from nvflare.private.defs import CellChannel, RequestHeader, SysCommandTopic, TrainingTopic, new_cell_message
 from nvflare.private.fed.client.admin import FedAdminAgent, RequestProcessor
 
 
@@ -71,3 +72,26 @@ def test_only_server_commands_and_own_child_status_are_dispatched(agent, origin,
         assert reply.payload.body == "request must originate from server"
         processor.process.assert_not_called()
         agent.app_ctx.new_context.assert_not_called()
+
+
+@pytest.mark.parametrize("origin,wire_endpoint", [("relay.site-1", None), ("server", None), ("server", "server")])
+def test_bulk_admin_headers_cannot_supply_trusted_endpoint(agent, origin, wire_endpoint):
+    agent, processor = agent
+    payload = new_cell_message({}, Message(SysCommandTopic.SHELL, "command"))
+    item = TargetMessage("relay.site-2", CellChannel.CLIENT_MAIN, SysCommandTopic.SHELL, payload)
+    headers = {MessageHeaderKey.ORIGIN: origin, MessageHeaderKey.FROM_CELL: "server"}
+    if wire_endpoint:
+        headers[MessagePropKey.ENDPOINT] = wire_endpoint
+    bulk = new_cell_message(headers, [item.to_dict()])
+    bulk.set_prop(MessagePropKey.ENDPOINT, Endpoint("relay"))
+    cell = Mock()
+
+    CoreCell._process_one_bulk(cell, bulk)
+
+    cell._process_request.assert_called_once()
+    request = cell._process_request.call_args.kwargs["message"]
+    assert request.get_prop(MessagePropKey.ENDPOINT) is None
+    reply = agent._dispatch_request(request)
+    assert reply.payload.body == "request must originate from server"
+    processor.process.assert_not_called()
+    agent.app_ctx.new_context.assert_not_called()
