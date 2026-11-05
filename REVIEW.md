@@ -19,7 +19,8 @@ and [AGENTS.md](AGENTS.md) for agent rules. PR requirements and human approvals 
   belongs in integration even when its external tools are fake. Check release-only
   tests on the actual target branch and distinguish completion watchdogs from
   product policy deadlines; a green main-branch scan is not sufficient evidence.
-- Check the linked GitHub issue and CI status per `CONTRIBUTING.md`; disclose unavailable context.
+- Apply the GitHub issue requirement for external contributors and check CI status per
+  `CONTRIBUTING.md`; disclose unavailable context.
 - Scale validation to impact: documentation/link checks for prose, targeted behavior tests for
   code, and deeper failure-path and security checks for distributed execution or sensitive changes.
   Auth, provisioning, wire/persisted formats, and CI/release changes warrant human code-owner scrutiny.

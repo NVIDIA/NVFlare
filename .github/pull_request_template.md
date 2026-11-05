@@ -1,3 +1,5 @@
+<!-- External contributors must link an existing NVIDIA/NVFlare GitHub issue below.
+Repository collaborators with write, maintain, or admin access may remove the issue reference when it does not apply. -->
 Fixes # .
 
 ### Description

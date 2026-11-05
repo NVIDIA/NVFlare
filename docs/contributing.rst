@@ -189,15 +189,23 @@ Submitting pull requests
 All code changes to the ``main`` branch must be done via `pull
 requests <https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/proposing-changes-to-your-work-with-pull-requests>`__.
 
-Every pull request must reference an existing GitHub issue in NVIDIA/NVFlare
-that describes the problem or proposed improvement, explains why the change
-is needed, and provides supporting evidence where applicable.
+Pull requests from external contributors (contributors without write,
+maintain, or admin access to NVIDIA/NVFlare) must reference an existing
+GitHub issue in NVIDIA/NVFlare that describes the problem or proposed
+improvement, explains why the change is needed, and provides supporting
+evidence where applicable.
 The issue must exist before the pull request is submitted, and the proposed
 changes must directly address it.
-Pull requests without a qualifying issue will not be accepted.
+Pull requests from external contributors without a qualifying issue will
+not be accepted.
 
-1. Create a new ticket or take a known ticket from `the issue
-list <https://github.com/NVIDIA/NVFlare/issues>`__. 2. If the task has not been
+Repository collaborators with write, maintain, or admin access may submit
+pull requests without a GitHub issue. Every pull request must describe the
+problem or proposed improvement and explain why the change is needed.
+
+1. For external contributions, create a new ticket or take a known ticket
+from `the issue list <https://github.com/NVIDIA/NVFlare/issues>`__.
+2. If the task has not been
 taken, `create a new branch in your
 fork <https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork>`__
 of the codebase. Ideally, the new branch should be based on the latest
@@ -220,10 +228,11 @@ resolved for PR to pass. 10. Wait for the pull request to be merged.
 Reviewing pull requests
 -----------------------
 
-Before reviewing the code, verify that the linked GitHub issue exists,
-predates the pull request, and is directly addressed by the proposed changes.
-Maintainers must confirm that the issue identifies a valid problem or an
-improvement appropriate for the project before approving the pull request.
+For pull requests from external contributors, verify that the linked GitHub
+issue exists, predates the pull request, and is directly addressed by the
+proposed changes before reviewing the code. For every pull request,
+maintainers must confirm that the proposed changes address a valid problem
+or an improvement appropriate for the project before approving it.
 
 All code review comments should be specific, constructive, and
 actionable. 1. Check `the CI/CD status of the pull
@@ -236,4 +245,4 @@ changes <https://help.github.com/en/github/collaborating-with-issues-and-pull-re
 if needed. 1. Review any further code changes until all comments
 addressed by the contributors. 1. Merge the pull request to the main
 branch. 1. Close the corresponding task ticket on `the issue
-list <https://github.com/NVIDIA/NVFlare/issues>`__.
+list <https://github.com/NVIDIA/NVFlare/issues>`__, if applicable.
