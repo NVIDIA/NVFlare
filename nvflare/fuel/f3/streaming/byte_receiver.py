@@ -574,10 +574,16 @@ class RxTask:
         with self.stop_lock:
             if self.cleanup_deadline:
                 return
-            self.cleanup_deadline = self.cleanup_scheduler.schedule(
-                self.completed_task_ttl if ttl is None else ttl,
-                self._remove_task,
-            )
+            try:
+                self.cleanup_deadline = self.cleanup_scheduler.schedule(
+                    self.completed_task_ttl if ttl is None else ttl,
+                    self._remove_task,
+                )
+            except RuntimeError:
+                # A PID/thread limit can prevent the first worker from starting.
+                # Do not lose an already-ACKed stream's application callback or
+                # leave its retained task without any eventual cleanup.
+                log.warning("Receive-task cleanup worker unavailable; removing task immediately")
             if self.cleanup_deadline is None:
                 self._remove_task()
 
@@ -591,7 +597,7 @@ class RxTask:
 
     @classmethod
     def shutdown(cls):
-        """Release receive state after the streaming pools have drained at process exit."""
+        """Release receive state after the streaming pools drain at teardown or exit."""
         with cls.map_lock:
             cls._shutting_down = True
             tasks = list(cls.rx_task_map.values())

@@ -21,6 +21,9 @@ from nvflare.fuel.f3.streaming import deadline_scheduler
 from nvflare.fuel.f3.streaming.deadline_scheduler import DeadlineScheduler
 from tests.timing_utils import WAIT_TIMEOUT, ManualClock, ThreadGroup, wait_for
 
+# Bound regressions that hold the queue lock while a callback waits on a gate.
+pytestmark = pytest.mark.timeout(60)
+
 
 @pytest.fixture
 def scheduler(monkeypatch):
@@ -145,6 +148,18 @@ def test_failed_worker_start_can_be_retried(scheduler, monkeypatch):
     done = threading.Event()
     scheduler.schedule(0, done.set)
     assert done.wait(WAIT_TIMEOUT)
+
+
+def test_dead_worker_is_replaced(scheduler):
+    old_worker = threading.Thread(target=lambda: None)
+    old_worker.start()
+    old_worker.join(WAIT_TIMEOUT)
+    assert not old_worker.is_alive()
+    scheduler._thread = old_worker
+    done = threading.Event()
+    scheduler.schedule(0, done.set)
+    assert done.wait(WAIT_TIMEOUT)
+    assert scheduler._thread is not old_worker
 
 
 @pytest.mark.parametrize("interval", [float("inf"), float("-inf"), float("nan"), -1, 10**400, "bad", None])

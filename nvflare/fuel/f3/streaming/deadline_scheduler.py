@@ -18,10 +18,25 @@ import heapq
 import itertools
 import logging
 import math
+import os
 import threading
 import time
+import weakref
 
 log = logging.getLogger(__name__)
+_schedulers = weakref.WeakSet()
+
+
+def _after_fork():
+    # Only the forking thread survives. Never acquire a queue lock that may
+    # have belonged to a vanished worker; keep the child's copy of its queue.
+    for scheduler in list(_schedulers):
+        scheduler._condition = threading.Condition()
+        scheduler._thread = None
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_after_fork)
 
 
 class _Deadline:
@@ -52,6 +67,7 @@ class DeadlineScheduler:
         self._expired = 0
         self._cancelled = 0
         self._max_cleanup_lag = 0.0
+        _schedulers.add(self)
 
     def schedule(self, interval, callback):
         """Schedule a finite nonnegative interval, or return None after shutdown.
@@ -69,7 +85,7 @@ class DeadlineScheduler:
                     raise ValueError
             except (TypeError, ValueError, OverflowError):
                 raise ValueError("deadline interval must be finite and nonnegative") from None
-            if self._thread is None:
+            if self._thread is None or not self._thread.is_alive():
                 worker = threading.Thread(target=self._run, name="f3-rx-cleanup", daemon=True)
                 # Do not leave queued work or a phantom worker if start fails.
                 worker.start()

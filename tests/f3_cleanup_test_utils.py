@@ -15,6 +15,7 @@
 """Fresh-process TCP and shutdown probe for receive cleanup."""
 
 import json
+import multiprocessing
 import threading
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
@@ -22,6 +23,8 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.byte_receiver import RxTask
+from nvflare.fuel.f3.streaming.deadline_scheduler import DeadlineScheduler
+from nvflare.fuel.f3.streaming.shutdown import shutdown_f3_streaming
 from nvflare.fuel.f3.streaming.stream_const import (
     STREAM_ACK_TOPIC,
     STREAM_CHANNEL,
@@ -30,10 +33,10 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamHeaderKey,
 )
 from nvflare.fuel.utils.network_utils import get_open_ports
-from tests.timing_utils import WAIT_TIMEOUT, wait_for
+from tests.timing_utils import WAIT_TIMEOUT, ThreadGroup, stop_processes, wait_for
 
 
-def reliable_cleanup_flow():
+def reliable_cleanup_flow(mode="mpm"):
     url = f"tcp://localhost:{get_open_ports(1)[0]}"
     receiver = CoreCell("cleanup_rx", url, secure=False, credentials={})
     sender = CoreCell("cleanup_tx", url, secure=False, credentials={})
@@ -90,15 +93,77 @@ def reliable_cleanup_flow():
         print(json.dumps({"streams": 128, "retry_ack": True, "before_shutdown": RxTask.get_cleanup_stats()}))
     finally:
         try:
-            sender.stop()
+            if mode == "explicit":
+                shutdown_f3_streaming()
+                assert RxTask.rx_task_map == {}
+                assert RxTask.get_cleanup_stats()["pending"] == 0
+                assert not RxTask.get_cleanup_stats()["worker_alive"]
+                shutdown_f3_streaming()
+                print("Explicit F3 shutdown released receive cleanup", flush=True)
         finally:
-            receiver.stop()
-            # Exercise the registered MPM cleanup sequence, including draining
-            # stream pools before discarding receive tasks and joining the worker.
-            done = threading.Event()
-            MainProcessMonitor._do_cleanup(done)
-            assert done.is_set()
+            try:
+                sender.stop()
+            finally:
+                receiver.stop()
+                # Exercise registered exit cleanup even after explicit teardown.
+                done = threading.Event()
+                MainProcessMonitor._do_cleanup(done)
+                assert done.is_set()
     assert RxTask.rx_task_map == {}
     assert not any(thread.name == "f3-rx-cleanup" for thread in threading.enumerate())
     assert RxTask.get_cleanup_stats()["queue_depth"] == 0
     print("MPM cleanup released all receive tasks and scheduler threads", flush=True)
+
+
+def _forked_scheduler_child(scheduler, connection):
+    try:
+        done = threading.Event()
+        scheduler.schedule(0, done.set)
+        assert done.wait(WAIT_TIMEOUT)
+        scheduler.shutdown()
+        connection.send(scheduler.snapshot())
+    finally:
+        connection.close()
+
+
+def fork_cleanup_flow():
+    scheduler = DeadlineScheduler()
+    release = threading.Event()
+    held = threading.Event()
+    context = multiprocessing.get_context("fork")
+    receiving, sending = context.Pipe(duplex=False)
+    child = context.Process(target=_forked_scheduler_child, args=(scheduler, sending))
+
+    def hold_condition():
+        with scheduler._condition:
+            held.set()
+            release.wait()
+
+    try:
+        scheduler.schedule(3600, lambda: None)
+        done = threading.Event()
+        scheduler.schedule(0, done.set)
+        assert done.wait(WAIT_TIMEOUT)
+        wait_for(lambda: scheduler.snapshot()["expired"] == 1)
+        with ThreadGroup(release) as workers:
+            workers.start(hold_condition)
+            assert held.wait(WAIT_TIMEOUT)
+            try:
+                child.start()
+                sending.close()
+                assert receiving.poll(WAIT_TIMEOUT), "Forked scheduler did not service its new deadline"
+                stats = receiving.recv()
+                assert stats["pending"] == stats["queue_depth"] == 0
+                assert not stats["worker_alive"]
+                child.join(WAIT_TIMEOUT)
+                assert child.exitcode == 0
+            finally:
+                if child.pid is not None:
+                    stop_processes(child)
+        assert scheduler.snapshot()["pending"] == 1
+        assert scheduler.snapshot()["worker_alive"]
+        print("Forked child serviced deadlines without changing parent cleanup", flush=True)
+    finally:
+        receiving.close()
+        sending.close()
+        scheduler.shutdown()

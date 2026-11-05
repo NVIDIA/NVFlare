@@ -22,13 +22,14 @@ from tests.process_test_utils import run_owned_process
 
 
 @pytest.mark.timeout(90)
-def test_reliable_tcp_retry_and_mpm_shutdown():
+@pytest.mark.parametrize("mode", ["mpm", "explicit"])
+def test_reliable_tcp_retry_and_shutdown(mode):
     root = str(Path(__file__).resolve().parents[3])
     result = run_owned_process(
         [
             sys.executable,
             "-c",
-            "from tests.f3_cleanup_test_utils import reliable_cleanup_flow; reliable_cleanup_flow()",
+            f"from tests.f3_cleanup_test_utils import reliable_cleanup_flow; reliable_cleanup_flow({mode!r})",
         ],
         cwd=root,
         env={**os.environ, "PYTHONPATH": root},
@@ -37,3 +38,19 @@ def test_reliable_tcp_retry_and_mpm_shutdown():
     assert result.returncode == 0, result.stdout + result.stderr
     assert '"retry_ack": true' in result.stdout
     assert "MPM cleanup released all receive tasks and scheduler threads" in result.stdout
+    if mode == "explicit":
+        assert "Explicit F3 shutdown released receive cleanup" in result.stdout
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="Requires POSIX fork")
+@pytest.mark.timeout(90)
+def test_forked_child_restarts_cleanup_with_parent_condition_locked():
+    root = str(Path(__file__).resolve().parents[3])
+    result = run_owned_process(
+        [sys.executable, "-c", "from tests.f3_cleanup_test_utils import fork_cleanup_flow; fork_cleanup_flow()"],
+        cwd=root,
+        env={**os.environ, "PYTHONPATH": root},
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Forked child serviced deadlines without changing parent cleanup" in result.stdout

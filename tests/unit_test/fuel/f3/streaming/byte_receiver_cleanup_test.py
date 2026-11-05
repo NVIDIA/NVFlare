@@ -28,6 +28,9 @@ from nvflare.fuel.f3.streaming.stream_const import StreamDataType, StreamHeaderK
 from nvflare.fuel.f3.streaming.stream_types import StreamError
 from tests.timing_utils import WAIT_TIMEOUT, ManualClock, ObservedLock, wait_for
 
+# A broken lock order must fail even if it prevents test cleanup from starting.
+pytestmark = pytest.mark.timeout(60)
+
 
 @pytest.fixture
 def cleanup(monkeypatch):
@@ -132,6 +135,35 @@ def test_non_reliable_success_needs_no_deadline_or_worker(cleanup):
     assert RxTask.rx_task_map == {}
     assert not RxTask.get_cleanup_stats()["worker_alive"]
     assert RxTask.get_cleanup_stats()["pending"] == 0
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_worker_start_failure_releases_task_without_interrupting_delivery(cleanup, monkeypatch, caplog, failed):
+    message = _final(9, reliable=not failed)
+    task = RxTask.find_or_create_task(message, SimpleNamespace(fire_and_forget=lambda *a, **kw: {}))
+    start = threading.Thread.start
+
+    def fail_cleanup_worker(thread):
+        if thread.name == "f3-rx-cleanup":
+            raise RuntimeError("can't start new thread")
+        return start(thread)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(threading.Thread, "start", fail_cleanup_worker)
+        if failed:
+            task.stop(StreamError("failed"), notify=False)
+        else:
+            # A single-chunk completion must still reach the caller's new-stream
+            # callback path, even after its final ACK has already been sent.
+            assert task.process_chunk(message)
+            assert task.read(4) == b"data"
+    assert RxTask.rx_task_map == {}
+    assert task.cleanup_deadline is None
+    assert "cleanup worker unavailable" in caplog.text
+    assert RxTask.get_cleanup_stats()["pending"] == 0
+    done = threading.Event()
+    cleanup[0].schedule(0, done.set)
+    assert done.wait(WAIT_TIMEOUT)
 
 
 def test_expiry_racing_removal_cannot_remove_replacement(cleanup):

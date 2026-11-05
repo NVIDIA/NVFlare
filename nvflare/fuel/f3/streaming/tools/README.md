@@ -40,6 +40,13 @@ are bounded by the platform's threading timeout limit.
 Failed non-reliable streams keep their existing five-second tombstones;
 successful non-reliable streams are removed immediately.
 
+If the process cannot start its cleanup worker, the receiver warns and removes
+the affected task immediately so completed-stream delivery can continue. That
+stream loses its retry-retention window, so a later duplicate may be treated as
+a new stream. A subsequent cleanup retries worker startup. After a fork, the
+scheduler replaces inherited synchronization and starts a child-local worker
+when new cleanup is scheduled; the parent's queue is unchanged.
+
 For an in-process diagnostic snapshot:
 
 ```python
@@ -53,6 +60,7 @@ streams. `pending` counts scheduled cleanups; `queue_depth` also includes cancel
 entries awaiting pruning. `expired` and `cancelled` are lifetime counters.
 `max_cleanup_lag` is the maximum observed delay in seconds between a deadline and
 the start of its cleanup. `worker_alive` and `stopped` describe scheduler lifecycle.
-Queue gauges can differ briefly while cleanup is running. Process shutdown drains
-the streaming pools, clears the receive map and queue, and joins the deadline worker.
+Queue gauges can differ briefly while cleanup is running. Explicit F3 shutdown
+and process-exit cleanup drain the streaming pools, clear the receive map and
+queue, and join the deadline worker.
 
