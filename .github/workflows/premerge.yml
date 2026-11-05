@@ -125,6 +125,25 @@ jobs:
           python3 -m pytest -q
           tests/integration_test/fast/client_api_external_process_lifecycle_test.py
 
+  client-control-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.14"
+      - name: Install dependencies
+        run: uv pip install --system -e '.[test_support]'
+      - name: Run client control integration
+        env:
+          GRPC_POLL_STRATEGY: poll
+          GRPC_ENABLE_FORK_SUPPORT: "False"
+        run: python3 -m pytest -q -rs tests/integration_test/fast/peer_admin_authorization_test.py
+
   hf-client-api-tests:
     runs-on: ubuntu-24.04
     permissions:

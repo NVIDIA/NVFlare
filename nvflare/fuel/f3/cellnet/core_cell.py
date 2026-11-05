@@ -2091,10 +2091,24 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 if reply:
                     return reply
 
-        if msg_type == MessageType.REQ and self.message_interceptor is not None:
-            reply = self._try_cb(
-                message, self.message_interceptor, *self.message_interceptor_args, **self.message_interceptor_kwargs
-            )
+        if msg_type == MessageType.REQ:
+            reply = None
+            reply_target = origin
+            if (
+                channel == CellChannel.CLIENT_MAIN
+                and origin == FQCN.ROOT_SERVER
+                and endpoint.name != FQCN.ROOT_SERVER
+                and (self.my_info.gen <= 1 or endpoint.name != FQCN.get_parent(self.my_info.fqcn))
+            ):
+                # Check every hop, including relays: a downstream client must not
+                # impersonate the server on the client administration channel.
+                # mTLS binds the actual endpoint to the provisioned topology identity.
+                reply = make_reply(ReturnCode.UNAUTHENTICATED, "server command did not arrive from upstream")
+                reply_target = endpoint.name
+            elif self.message_interceptor is not None:
+                reply = self._try_cb(
+                    message, self.message_interceptor, *self.message_interceptor_args, **self.message_interceptor_kwargs
+                )
 
             if reply:
                 self.logger.debug(f"{self.my_info.fqcn}: interceptor stopped message!")
@@ -2109,7 +2123,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                         MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
                         MessageHeaderKey.TO_CELL: endpoint.name,
                         MessageHeaderKey.ORIGIN: self.my_info.fqcn,
-                        MessageHeaderKey.DESTINATION: origin,
+                        MessageHeaderKey.DESTINATION: reply_target,
                         MessageHeaderKey.REQ_ID: [req_id],
                         MessageHeaderKey.MSG_TYPE: MessageType.RETURN,
                         MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
