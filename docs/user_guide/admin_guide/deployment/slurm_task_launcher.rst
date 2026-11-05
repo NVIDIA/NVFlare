@@ -185,27 +185,26 @@ adapter waits for disappearance and terminal accounting. See Slurm's
 `accounting fields <https://slurm.schedmd.com/sacct.html>`_ and
 `cgroup tracking <https://slurm.schedmd.com/cgroup_v2.html>`_.
 
-Trusted adapter configuration
------------------------------
+Configure each client site
+--------------------------
 
-In the canonical site resources file, select the exact matching pair::
+The site operator configures task execution in that client's prepared
+workspace, not in the application job. After ``nvflare deploy prepare``, copy
+``<client-workspace>/local/resources.json.default`` to
+``<client-workspace>/local/resources.json`` and edit the copy. NVFlare reads
+``resources.json`` when present, otherwise the ``.default`` file. Repeat for
+each participating client site; paths, partitions and accounts can differ.
+Running ``deploy prepare`` again regenerates the default and removes the
+active copy, so reapply these site settings after redeployment.
+
+Keep the generated ``ClientSlurmJobLauncher`` component; do not add another job
+launcher. Its ``args`` control CJ placement and the default coordinator budget
+(``cj_cpu_cores``, ``cj_memory_mb``, ``cj_gpu_count``). Add this top-level
+``task_execution`` entry to the same file for task workers:
+
+.. code-block:: json
 
     {
-      "components": [{
-        "id": "job_launcher",
-        "path": "nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher",
-        "args": {
-          "workspace_path": "/shared/private/site-1",
-          "sandbox": "none",
-          "python_path": "/shared/env/bin/python",
-          "executables": {},
-          "cj_cpu_cores": 1,
-          "cj_memory_mb": 1024,
-          "cj_gpu_count": 0,
-          "task_shutdown_timeout": 30,
-          "sbatch_directives": {"account": "site-account", "partition": "cpu"}
-        }
-      }],
       "task_execution": {
         "settlement_timeout": 60,
         "launcher": {
@@ -225,6 +224,19 @@ In the canonical site resources file, select the exact matching pair::
         }
       }
     }
+
+Keep the rest of the generated ``resources.json`` content. The task launcher
+must use the same ``workspace_path`` as the generated client job launcher;
+its ``sbatch_directives`` can route workers to a different partition.
+
+The CP reads these trusted site settings, submits the CJ allocation, and owns
+submission and cleanup of each task allocation. CJ uses a job-scoped proxy to
+request tasks from CP; it does not need ``sbatch`` permission. The same site
+file is visible to CJ so it can validate the job's resource binding. The
+application job selects ``execution_lifetime="task"`` and requests compute
+resources with ``resource_spec`` or ``launcher_spec``; it may set
+``cj_resource_spec`` for the coordinator. The job cannot select a launcher
+class, scheduler executable or site account.
 
 The existing Slurm parent-listener/network configuration still applies.
 Scheduler executable paths, when configured, must be available on CP.
