@@ -2133,6 +2133,17 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 # Check each hop before forwarding: a job child must not claim a sibling job or the server.
                 reply = make_reply(ReturnCode.UNAUTHENTICATED, "origin does not belong to sending peer")
                 reply_target = endpoint.name
+            elif (
+                channel == CellChannel.CLIENT_MAIN
+                and origin == FQCN.ROOT_SERVER
+                and endpoint.name != FQCN.ROOT_SERVER
+                and (self.my_info.gen <= 1 or endpoint.name != FQCN.get_parent(self.my_info.fqcn))
+            ):
+                # Check every hop, including relays: a downstream client must not
+                # impersonate the server on the client administration channel.
+                # mTLS binds the actual endpoint to the provisioned topology identity.
+                reply = make_reply(ReturnCode.UNAUTHENTICATED, "server command did not arrive from upstream")
+                reply_target = endpoint.name
             elif self.message_interceptor is not None:
                 reply = self._try_cb(
                     message, self.message_interceptor, *self.message_interceptor_args, **self.message_interceptor_kwargs

@@ -33,6 +33,7 @@ TESTS = (
     "tests/integration_test/fast/multicloud_source_test.py",
     "tests/integration_test/fast/openshift_scripts_test.py",
     "tests/integration_test/fast/harness_process_cleanup_test.py",
+    "tests/integration_test/fast/peer_admin_authorization_test.py",
     "tests/integration_test/fast/process_launcher_lifecycle_test.py",
     "tests/integration_test/fast/server_transit_e2e_test.py",
     "tests/integration_test/fast/step_ca_admin_cert_process_test.py",

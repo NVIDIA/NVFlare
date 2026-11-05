@@ -132,6 +132,52 @@ def test_cell_agent_validates_fqcn():
         CellAgent("bad name", Endpoint("bad"))
 
 
+@pytest.mark.parametrize(
+    "receiver,peer,allowed",
+    [
+        ("site-2", "server", True),
+        ("relay-1.relay-2", "relay-1", True),
+        ("relay", "relay.site-1", False),
+        ("relay.site-2", "relay.site-1", False),
+    ],
+)
+def test_server_admin_origin_is_checked_at_every_hop(receiver, peer, allowed):
+    cell = _cell(receiver)
+    cell.received_msg_counter_pool = MagicMock()
+    cell.sent_msg_counter_pool = MagicMock()
+    cell.in_filter_reg = Registry()
+    cell.message_interceptor = None
+    cell._forward = MagicMock()
+    cell._send_reply = MagicMock()
+    request = Message(
+        {
+            MessageHeaderKey.MSG_TYPE: MessageType.REQ,
+            MessageHeaderKey.CHANNEL: CellChannel.CLIENT_MAIN,
+            MessageHeaderKey.TOPIC: "admin",
+            MessageHeaderKey.ORIGIN: "server",
+            MessageHeaderKey.DESTINATION: "relay.site-2.child",
+            MessageHeaderKey.REPLY_EXPECTED: True,
+            MessageHeaderKey.REQ_ID: "request-1",
+            # A forged route/marker cannot substitute for the actual transport endpoint.
+            MessageHeaderKey.ROUTE: [("server", 0)],
+            MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
+        }
+    )
+    cell.msg_travel_stats_pool = MagicMock()
+
+    cell._process_received_msg(Endpoint(peer), None, request)
+
+    if allowed:
+        cell._forward.assert_called_once()
+        cell._send_reply.assert_not_called()
+    else:
+        cell._forward.assert_not_called()
+        reply, target = cell._send_reply.call_args.args
+        assert target.name == peer
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+        assert reply.get_header(MessageHeaderKey.DESTINATION) == peer
+
+
 @pytest.fixture
 def clean_core_cells():
     original_cells = dict(CoreCell.ALL_CELLS)
