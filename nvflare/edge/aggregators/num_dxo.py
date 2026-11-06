@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,14 +24,18 @@ class NumDXOAggregator(Aggregator):
         self.value = 0
         self.count = 0
 
+    def reset(self, fl_ctx: FLContext):
+        self.value = 0
+        self.count = 0
+
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         dxo = from_shareable(shareable)
         if dxo.data_kind != "number":
             raise ValueError(f"data_kind must be 'number' but got {dxo.data_kind}")
         value = dxo.data.get("value", 0)
         count = dxo.data.get("count", 1)
-        self.value += value
-        self.count += count
+        # Compute both before mutating state so an invalid payload can be retried.
+        self.value, self.count = self.value + value, self.count + count
         return True
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
