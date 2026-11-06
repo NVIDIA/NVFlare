@@ -22,7 +22,10 @@ is outside this client-only recovery feature.
 
 ## One setting
 
-`max_cj_restart_failures` in the client's `local/application_config.json`, default `3`.
+`max_cj_restart_failures` is configured on CP, with default `3`.
+Set `NVFLARE_MAX_CJ_RESTART_FAILURES` in CP's environment before startup, or add
+`max_cj_restart_failures=<value>` to the `--set` arguments of CP's Python launch
+command. `--set` takes precedence over the environment variable.
 `0` disables recovery. No application opt-in is required.
 
 The limit counts consecutive attempts to get a replacement initialized. There is
