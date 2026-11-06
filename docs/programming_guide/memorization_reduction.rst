@@ -16,6 +16,13 @@ integrate the preprint's reference-based penalty into NVFlare.
 The TRAP and auditing components emit NVFlare's experimental API warning when
 constructed. Their interfaces may change.
 
+The loss, reference forward passes and audit model evaluation support CPU and CUDA.
+Keep the target/reference models and their input tensors on the intended device.
+For GPU audits, configure ``PTMemorizationAuditor(device="cuda:0")`` (or the same
+argument on its application subclass); its default is CPU. The current SDK has
+been validated with Pythia-70M on H100, including numerical parity and a complete
+federated workflow.
+
 Loss and diagnostics
 --------------------
 
@@ -119,9 +126,8 @@ memory and transfer cost relative to forwarding lazy references.
 
 The `TRAP research entry point
 <https://github.com/NVIDIA/NVFlare/tree/main/research/memorization-reduction>`_
-uses a tiny CPU model, local synthetic records, and two-client FedAvg. It exercises
-loss integration and periodic audits without downloading a model or dataset.
-It is a functional example and supplies no evidence of privacy or utility benefit.
+provides the representative GPU workflow below and an optional download-free tiny
+model smoke example for checking API wiring.
 
 Hugging Face adoption and operating limits
 ------------------------------------------
@@ -131,6 +137,8 @@ The runnable `Hugging Face workflow
 prepares a pinned Pythia-70M reference on disjoint synthetic records, trains two
 clients with the SDK loss/scorer, performs paired likelihood/TRA audits, and
 separately evaluates the saved final global checkpoint on fixed final cohorts.
+On H100, 42 focused tests passed, including both CUDA tests, and the two-client,
+two-round workflow completed all four client audits and final global evaluation.
 It includes independent numerical parity checks and phase memory/runtime
 measurements. This is a bounded implementation/adoption example, not production
 certification or a replacement for the historical efficacy benchmark.
@@ -181,7 +189,8 @@ includes every strength and seed, zero-noise controls, CE results, unattainable
 leakage targets, scalar tables, costs, reference provenance, and PNG/PDF figures.
 TRAP has no formal DP guarantee, and this search does not establish optimal DP
 performance. The measurements used the frozen research implementation before the
-SDK refactor, rather than the small CPU example or a rerun of this PR revision.
+SDK refactor. The separate H100 workflow validates the current SDK; it does not
+rerun that efficacy study.
 
 The :doc:`design document <../design/federated_memorization_reduction>` describes the
 API boundaries, reference assumptions, resource costs and remaining review gates.

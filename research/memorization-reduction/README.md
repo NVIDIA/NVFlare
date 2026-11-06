@@ -1,15 +1,39 @@
 # TRAP: experimental memorization reduction
 
-This research entry point composes `PTTRAPLoss`, `FrozenReferenceScorer` and the
-report-only memorization filters with a standard two-client `FedAvgRecipe`.
-It uses a tiny synthetic token model for two rounds and needs no downloaded data
-or checkpoints. It demonstrates API wiring; its scores are **not a benchmark or
-proof of reduced leakage**. TRAP provides no differential privacy guarantee.
+The TRAP components support **CPU and CUDA**. This research project composes
+`PTTRAPLoss`, `FrozenReferenceScorer` and report-only memorization filters with
+standard federated training. The [Hugging Face workflow](huggingface/README.md)
+is the representative GPU example; the current SDK has been validated on **H100**.
+TRAP provides no differential privacy guarantee.
 
 The TRAP method is introduced by Muhammed Ustaomeroglu et al. (2026) in
 [TRAP: Understanding and Mitigating Privacy Memorization in Language Models](https://arxiv.org/abs/2609.32293),
-arXiv:2609.32293. This example integrates the preprint's reference-based penalty
+arXiv:2609.32293. This project integrates the preprint's reference-based penalty
 into federated fine-tuning with NVFlare.
+
+## GPU workflow and SDK validation
+
+The [Pythia Hugging Face workflow](huggingface/README.md) provides a larger runnable
+integration: pinned model/tokenizer download, public-reference preparation,
+completion-masked TRAP training, paired likelihood/TRA audits on task-specific
+cohorts, expected-coverage checks, and separate final global-checkpoint evaluation.
+On H100, **42 focused tests passed**, including both CUDA tests, and the actual
+SDK completed two-client/two-round Pythia training, four paired client audits and
+separate final global-checkpoint evaluation. Reference scores, loss and all 76
+parameter-gradient tensors matched independent calculations with zero measured
+error. The [SDK validation report](huggingface/SDK_VALIDATION.md) records numerical
+checks, memory/runtime measurements and the bounded workload scope.
+
+The audit adapter requires complete model state, including persistent buffers.
+Adapter-only/LoRA updates need application-specific reconstruction and auditing.
+The adoption guide explains memory budgeting, cooperative deadlines, missing audit
+visibility, and the need for separate enforcement when release approval is required.
+
+## Minimal smoke example
+
+The root `job.py` uses a tiny model on CPU for two rounds without downloaded data
+or checkpoints. It is an optional wiring check; its scores are not benchmark
+results or evidence of reduced leakage.
 
 From a clean virtual environment at the repository root:
 
@@ -39,6 +63,11 @@ overlap. Real deployments must establish reference provenance, use representativ
 cohorts, choose attack scores and budget memory/compute. The example's random-token
 data and short training are intentionally unsuitable for scientific conclusions.
 
+The minimal smoke example was also checked on CPU on November 3, 2026
+([original revision](https://github.com/holgerroth/NVFlare/commit/70f1d4acddece1c4a0e2e7ca807c8e23f83a0c3e)):
+four completed reports and successful export. The H100 validation above is the
+representative SDK execution evidence.
+
 ## Project layout and shared components
 
 `job.py`, `client.py`, and `model.py` contain the experiment-specific workflow under
@@ -58,23 +87,9 @@ No summary analytics are relayed by this example.
 See the [programming guide](../../docs/programming_guide/memorization_reduction.rst)
 and [design](../../docs/design/federated_memorization_reduction.md).
 
-## Hugging Face adoption and SDK validation
-
-The [Pythia Hugging Face workflow](huggingface/README.md) provides a larger runnable
-integration: pinned model/tokenizer download, public-reference preparation,
-completion-masked TRAP training, paired likelihood/TRA audits on task-specific
-cohorts, expected-coverage checks, and separate final global-checkpoint evaluation.
-Its [SDK validation report](huggingface/SDK_VALIDATION.md) separates implementation
-parity and resource measurements from the historical efficacy benchmark below.
-
-The audit adapter requires complete model state, including persistent buffers.
-Adapter-only/LoRA updates need application-specific reconstruction and auditing.
-The adoption guide explains memory budgeting, cooperative deadlines, missing audit
-visibility, and the need for separate enforcement when release approval is required.
-
 ## Benchmark results
 
-The separate [Pythia-70M TRAP–DP benchmark](TRAP_DP_RESULTS.md) includes all **525 fits
+The separate [GB300 Pythia-70M TRAP–DP benchmark](TRAP_DP_RESULTS.md) includes all **525 fits
 and 210 final evaluations** across seven client counts, four strengths per defense,
 and three seeds (13 is tuning). TRAP passed the paired accuracy-and-leakage screen
 in **60/84** comparisons; **24/84** also passed the separate cross-entropy screen.
@@ -93,21 +108,5 @@ diamonds are medians, and lines are full ranges, not confidence intervals. Zero-
 controls and CE outcomes are retained in the full report. The benchmark used the
 frozen research implementation before this SDK refactor. The small `job.py` example
 above demonstrates integration and does not reproduce these measurements.
-
-## Functional validation
-
-On November 3, 2026, the workflow was run from this research directory on macOS
-arm64 using CPU, Python 3.12.9, PyTorch 2.11.0, and NVFlare 2.10.0dev0. The SDK
-revision was [`70f1d4acd`](https://github.com/holgerroth/NVFlare/commit/70f1d4acddece1c4a0e2e7ca807c8e23f83a0c3e);
-`job.py`, `client.py`, `model.py`, and `requirements.txt` were byte-identical to
-that revision's implementation, relocated into `research/memorization-reduction/`.
-
-Running `python job.py` completed two FedAvg rounds on both clients. All four
-local audit reports had `completed` status, matching site/round identities,
-baseline fingerprints, and 32 member plus 32 nonmember records. Job export with
-`python job.py --export --export-dir <output-directory>` also succeeded. These
-checks validate packaging and functional integration on CPU. The separate benchmark
-above reports research measurements. CUDA validation of the current SDK is recorded
-separately in the [Hugging Face validation report](huggingface/SDK_VALIDATION.md).
 
 This research integration is distributed under the repository's [Apache 2.0 license](../../LICENSE).

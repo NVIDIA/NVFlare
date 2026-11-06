@@ -30,8 +30,8 @@ arXiv:2609.32293. This design covers the NVFlare integration of the preprint's
 reference-based penalty and the supporting audit interfaces.
 
 The [benchmark report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/TRAP_DP_RESULTS.md)
-now includes the completed frozen research study. Unit tests, the synthetic CPU example and
-representative SDK GPU validation check this integration's behavior; the separate benchmark
+includes the completed GB300 research study. Representative SDK validation on H100
+and focused unit tests check this integration's behavior; the separate benchmark
 evidence and its limits are summarized below. TRAP is not differential privacy,
 and this proposal adds neither a DP mechanism nor a privacy accountant.
 
@@ -256,9 +256,14 @@ The draft tests loss values/gradients/masking/accumulation, cache identity and
 mutation rejection, audit scheduling, stale baselines, RNG isolation, unsupported
 inputs and local report behavior. The separate foundation owns model-filter
 representation and round-trip tests.
-The synthetic two-client example exercises the supported Recipe path on CPU.
-CUDA-specific tests are skipped when CUDA is unavailable and must be reported as
-such. Current-main Client API materialization tests cover the reused runtime paths.
+The current SDK passed 42 focused tests on H100, including both CUDA tests, and a
+two-client/two-round Pythia workflow with four completed client audits and separate
+final global-checkpoint evaluation. Reference scores, loss and all 76 parameter
+gradients matched independent calculations with zero measured error. The
+[validation report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/huggingface/SDK_VALIDATION.md)
+records the measured memory/runtime scope. A download-free tiny model example is
+also available as a wiring smoke check. Current-main Client API materialization
+tests cover the reused runtime paths.
 
 Before removing experimental status, review the API and security contracts and
 publish paired utility/leakage measurements, all defense strengths and individual
@@ -277,8 +282,8 @@ future isolated audit worker is needed for hard time/memory bounds.
 The [Pythia-70M benchmark report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/TRAP_DP_RESULTS.md)
 provides all 525 fits and 210 final evaluations, complete strength/seed tables,
 negative outcomes, privacy and compute accounting, and eight PNG/PDF figure pairs.
-It uses the frozen research implementation preceding this SDK refactor; the CPU
-example, unit tests and separate SDK GPU workflow validate the current integration.
+It uses the frozen research implementation preceding this SDK refactor; the
+separate H100 workflow and unit tests validate the current integration.
 
 TRAP passed 60/84 paired accuracy-and-leakage screens, falling to 24/84 when the
 separate CE criterion was also required. The tested DP settings passed 0/84 in this
