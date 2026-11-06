@@ -1,24 +1,19 @@
-# Federated Catalog: heterogeneous OMOP sources
+# Federated Catalog: two tables at two sites
 
-Discover clinical dataset metadata across two simulated sites using `CatalogRecipe`
-and `SimEnv`. The example follows the federated statistics/Hello PyTorch structure:
-prepare data, run a short `job.py`, then inspect the saved JSON results.
-It runs on CPU and downloads no datasets.
+This CPU-only example uses `CatalogRecipe` and `SimEnv` to discover metadata
+from two sites. Each site has one `omop` dataset containing exactly two tables:
+`person` and `condition_occurrence`.
 
-The example data is a deterministic, **synthetic OMOP CDM 5.4-shaped subset** based on
-[OHDSI's CDM specification](https://ohdsi.github.io/CommonDataModel/cdm54.html).
-It contains selected columns and tables, not a complete CDM database. Concept IDs
-are 0 (unmapped), no vocabulary release is installed, and no clinical or vocabulary
-validation is claimed. The catalog reports site declarations and observed schemas.
+| Site | Storage | Tables | Synthetic persons |
+| --- | --- | --- | ---: |
+| site-1 | Parquet | `person`, `condition_occurrence` | 8 |
+| site-2 | SQLite | `person`, `condition_occurrence` | 12 |
 
-The steps have separate responsibilities:
+There are two condition rows per person. The data is a small synthetic subset
+shaped after [OMOP CDM 5.4](https://ohdsi.github.io/CommonDataModel/cdm54.html).
+Concept IDs are 0 (unmapped); this is not a complete or clinically validated CDM.
 
-- `prepare_data.py`: create and populate the local Parquet files/SQL tables and write site bindings and policies before the federated job.
-- `job.py`: configure and run `CatalogRecipe`, then print the published catalog.
-
-The job imports no preparation module and does not create or populate source tables.
-
-## Install and run
+## Install, prepare and run
 
 From this directory in an activated Python environment:
 
@@ -28,275 +23,126 @@ python prepare_data.py
 python job.py
 ```
 
-The checked-in configurations create Parquet sources at site-1 and SQLite sources at site-2 under
-`/tmp/nvflare/federated-catalog/data`. Site-1 has 64 synthetic persons and site-2
-has 96 in the main `omop` extract, with two visits and associated clinical events
-per person. Each site also has smaller, independent department/registry datasets.
-These dataset sizes are known from preparation; the catalog does not calculate
-population sizes or clinical cohort membership.
+`prepare_data.py` creates/populates the source tables, installs the checked-in
+site configurations and writes runtime bindings for their generated paths.
+Preparation regenerates this example's source files, including removing tables
+left by earlier versions. `job.py` only configures/runs the catalog recipe and
+prints the resulting metadata.
 
-Each site has **three published datasets plus one withheld internal dataset**:
+## Site configurations
 
-| Site | Dataset | Published tables | Main difference |
-| --- | --- | ---: | --- |
-| site-1 | `omop` | 6 | General clinical extract |
-| site-1 | `cardiology` | 6 | Separate, smaller synthetic extract |
-| site-1 | `oncology` | 5 | Site-specific dataset; no measurement table |
-| site-2 | `omop` | 4 | Measurement table withheld by policy |
-| site-2 | `cardiology` | 5 | Measurement table shared; no drug exposure table |
-| site-2 | `registry` | 4 | Site-specific dataset; no measurement or drug exposure tables |
+Both sites explicitly declare their reader in separate checked-in files.
 
-Dataset names label illustrative extracts, not validated disease cohorts. Each
-has its own source binding, metadata, schema versions and publication rule.
-Table names such as `person` belong to their containing dataset; they are not
-merged across datasets or sites. Each dataset has a separate local ID range.
-
-## Per-site sources: Parquet and an RDBMS
-
-Preparation reads each site's checked-in `catalog_site.json` to choose its data
-format. Site-1 declares Parquet and site-2 declares SQLite. There are no separate
-format flags or alternative configuration files.
-
-The example includes the actual site configurations as readable files:
-
-| File | Purpose |
-| --- | --- |
-| [config/site-1/catalog_site.json](config/site-1/catalog_site.json) | Explicit site-1 Parquet configuration |
-| [config/site-2/catalog_site.json](config/site-2/catalog_site.json) | Explicit site-2 SQLite configuration |
-| [config/site-1/catalog_policy.json](config/site-1/catalog_policy.json), [config/site-2/catalog_policy.json](config/site-2/catalog_policy.json) | Site-owned publication policies |
-
-Site-1's complete `catalog_site.json`:
+[config/site-1/catalog_site.json](config/site-1/catalog_site.json):
 
 ```json
 {"format_version": 1, "default_connector": "parquet"}
 ```
 
-Site-2's complete mixed-source `catalog_site.json`:
+[config/site-2/catalog_site.json](config/site-2/catalog_site.json):
 
 ```json
 {"format_version": 1, "default_connector": "sqlite"}
 ```
 
-Both sites have their own explicit configuration; neither site supplies defaults for the other. `default_connector` is a reader default within that site only.
+Each site also has its own checked-in `catalog_policy.json`:
+[site-1](config/site-1/catalog_policy.json), [site-2](config/site-2/catalog_policy.json).
+The policies share `omop` and exclude `person_source_value` and
+`condition_source_value` from published schemas. Source rows stay local.
 
-Preparation **copies these checked-in files** into each site's `local/fdn/`;
-it does not construct catalog configuration or policy JSON dynamically. It
-creates/populates the source tables and writes `study_runtime.yaml` with the
-absolute paths appropriate for `--data-root`. Those existing runtime bindings
-already name each dataset, so catalog configuration need not repeat them when
-they use the site's default connector.
+Preparation copies the JSON configurations unchanged. Source paths go in the
+site's `study_runtime.yaml`. Optional OMOP and Parquet key/relationship annotations
+are included with the example's preparation assets under `data/` and copied
+beside the generated sources.
 
-A site with different formats within one Study can add only its exceptions:
+The [design](../../../docs/design/federated_data_cataloging_design.md#catalog_sitejson-contract-v1)
+defines the reader configuration and
+[policy contract](../../../docs/design/federated_data_cataloging_design.md#catalog_policyjson-contract-v1).
 
-```json
-{
-  "format_version": 1,
-  "studies": {
-    "default": {
-      "registry": {"connector": "sqlite"}
-    }
-  }
-}
-```
+## What schemas are published?
 
-For a different source combination, edit `default_connector` in the relevant
-site's existing file and rerun preparation. For example, setting site-2 to
-`"parquet"` prepares both sites as Parquet without adding another JSON file.
+Both sites publish these `person` columns:
 
-The executor maps source names to built-in readers; no `catalog_reader=` argument
-is needed. Built-in connectors accept no `options`, repeated `storage_format`,
-class paths, or inline metadata. Optional declarations live beside the source:
-`catalog.json` inside a Parquet dataset or `<database>.catalog.json` beside a
-SQLite file (`omop.sqlite` uses `omop.catalog.json`). Preparation copies the
-checked-in metadata file to those locations. SQLite observes keys/relationships
-from the database; Parquet uses the site's optional annotations. Metadata fields
-and an installed-operations list are not required for a basic catalog read. The
-example advertises no execution operations.
+| Column | site-1: Parquet | site-2: SQLite |
+| --- | --- | --- |
+| `person_id` (primary key) | `int64` | `INTEGER` |
+| `gender_concept_id` | `int64` | `INTEGER` |
+| `year_of_birth` | `int64` | `INTEGER` |
 
-The normative input contract is in the
-[catalog design](../../../docs/design/federated_data_cataloging_design.md#catalog_sitejson-contract-v1).
+The `condition_occurrence` schemas overlap but have one different column:
 
-The SQLite connector opens the database [read-only](https://www.sqlite.org/uri.html)
-and inspects `sqlite_schema`, `PRAGMA table_info`, and `PRAGMA foreign_key_list`.
-It does not select clinical rows. Parquet schema reads use file footers; keys and
-relationships come from the site's sidecar declarations. SQLite keys and
-relationships come from database constraints. Both produce `CatalogInfo` and pass
-through the same site policy and validation. This example inspects ordinary tables;
-remote PostgreSQL/MySQL credentials and database services are not required.
+| Column | site-1: Parquet | site-2: SQLite |
+| --- | --- | --- |
+| `condition_occurrence_id` (primary key) | `int64` | `INTEGER` |
+| `person_id` (references `person.person_id`) | `int64` | `INTEGER` |
+| `condition_concept_id` | `int64` | `INTEGER` |
+| `condition_start_date` | `date32[day]` | `TEXT` |
+| `condition_type_concept_id` | `int64` | `INTEGER` |
+| `condition_end_date` | `date32[day]` | absent |
+| `condition_status_concept_id` | absent | `INTEGER` |
 
-## Overlapping and different schemas
+The Parquet reader observes schemas from footers; optional annotations declare
+keys and relationships. The SQLite reader opens the database read-only and
+inspects schema metadata and declared constraints. It does not select source
+rows. Published physical types retain their source representation; the catalog
+does not infer clinical equivalence or perform conversions.
 
-The main `omop` dataset illustrates the following table coverage. Other datasets
-have their own coverage, as listed above.
+## Inspect results
 
-| Table | Site-1 source | Site-2 source | Published view |
-| --- | --- | --- | --- |
-| `person` | Present | Present | Source identifiers and birth month/day fields excluded |
-| `observation_period` | Present | Present | Published at both sites |
-| `visit_occurrence` | Present | Present | Source-value column excluded |
-| `condition_occurrence` | Present | Present | Common core plus site-specific columns |
-| `drug_exposure` | Present | Absent | Published only by site-1 |
-| `measurement` | Present | Present | Withheld by site-2's policy |
-
-The common `condition_occurrence` columns are `condition_occurrence_id`,
-`person_id`, `condition_concept_id`, `condition_start_date`, and
-`condition_type_concept_id`. Site-1 additionally has `condition_end_date` and
-`visit_occurrence_id`; site-2 has `condition_status_concept_id` instead. The
-catalog preserves these differences rather than filling missing columns or
-assuming equivalent schemas.
-
-In mixed storage, physical types also differ: Parquet dates are `date32[day]`,
-while the SQLite example stores dates as ISO text. The catalog preserves these
-observed source types; it does not assert semantic equivalence or convert them.
-
-Each site also has an `internal` identity-crosswalk dataset which is never shared.
-All `*_source_value` columns and owner metadata are excluded from the published
-OMOP view. Schema column names such as `person_id` remain to describe joins;
-actual identifier values and clinical rows remain local.
-
-## Inspect the collected catalog
-
-`job.py` prints the catalog and saves it to
-`/tmp/nvflare/federated-catalog/store/discovery.json`. Open that file in a JSON
-viewer, or use Python's standard JSON formatter:
+A fresh run returns two catalog entries, each containing two tables. The JSON is
+printed and saved to `/tmp/nvflare/federated-catalog/store/discovery.json`.
+Use a JSON viewer or standard tools:
 
 ```bash
 python -m json.tool /tmp/nvflare/federated-catalog/store/discovery.json
 ```
 
-If you use `jq`, display the `omop` dataset's table schemas at both sites:
+With `jq`, display the table schemas at both sites:
 
 ```bash
-jq '.entries[] | select(.dataset == "omop") | {site: .client, dataset, tables: .metadata.tables}' \
+jq '.entries[] | {site: .client, dataset, tables: .metadata.tables}' \
   /tmp/nvflare/federated-catalog/store/discovery.json
 ```
 
-A fresh run contains six dataset entries with the table counts listed above.
-Catalog/schema versions start at 1; unchanged reads retain their versions.
-Simulator logs and intermediate manifests are under
+Catalog/schema versions start at 1 in a fresh store. Unchanged reads retain
+their versions. Simulator logs are under
 `/tmp/nvflare/federated-catalog/simulation/catalog_read/`.
 
-## Withdraw one site's metadata
+## Change a publication policy
 
-The only publication-policy files are [site-1's policy](config/site-1/catalog_policy.json)
-and [site-2's policy](config/site-2/catalog_policy.json). Each Study has its own
-runtime `<study>/catalog_policy.json`, while reader configuration is separate in
-each site's `catalog_site.json`; there are no duplicate policy snapshots.
-
-Edit `/tmp/nvflare/federated-catalog/data/site-2/local/fdn/default/catalog_policy.json` and change
-`datasets.omop.share` to `false`. The updated policy is shown below; the other
-site and dataset rules stay as they are:
+Edit the installed site-2 policy at
+`/tmp/nvflare/federated-catalog/data/site-2/local/fdn/default/catalog_policy.json`.
+To withhold its whole dataset, the complete policy can simply be:
 
 ```json
 {
   "format_version": 1,
   "datasets": {
-    "omop": {
-      "share": false,
-      "exclude_columns": {
-        "person": [
-          "person_source_value",
-          "month_of_birth",
-          "day_of_birth"
-        ],
-        "visit_occurrence": [
-          "visit_source_value"
-        ],
-        "condition_occurrence": [
-          "condition_source_value"
-        ],
-        "measurement": [
-          "measurement_source_value"
-        ]
-      },
-      "exclude_metadata": [
-        "owner"
-      ],
-      "exclude_tables": [
-        "measurement"
-      ]
-    },
-    "cardiology": {
-      "share": true,
-      "exclude_columns": {
-        "person": [
-          "person_source_value",
-          "month_of_birth",
-          "day_of_birth"
-        ],
-        "visit_occurrence": [
-          "visit_source_value"
-        ],
-        "condition_occurrence": [
-          "condition_source_value"
-        ],
-        "measurement": [
-          "measurement_source_value"
-        ]
-      },
-      "exclude_metadata": [
-        "owner"
-      ]
-    },
-    "registry": {
-      "share": true,
-      "exclude_columns": {
-        "person": [
-          "person_source_value",
-          "month_of_birth",
-          "day_of_birth"
-        ],
-        "visit_occurrence": [
-          "visit_source_value"
-        ],
-        "condition_occurrence": [
-          "condition_source_value"
-        ]
-      },
-      "exclude_metadata": [
-        "owner"
-      ]
-    },
-    "internal": {
-      "share": false
-    }
+    "omop": {"share": false}
   }
 }
 ```
 
-Save the updated JSON at the site policy path, then rerun:
+Run `python job.py` again. Discovery now contains only site-1's dataset.
+Previous published names come from the persistent catalog, so withdrawing
+site-2 works across simulation runs. Running preparation again restores the
+checked-in policies.
 
-```bash
-python job.py
-```
-
-Discovery now contains five dataset entries: only site-2/omop is withdrawn,
-while site-2/cardiology and site-2/registry remain visible. Previous names are
-recovered from persistent state so a site can withdraw an individual dataset. Re-run preparation and the
-job to restore initial policies and sharing.
-
-## Customize paths
+## Custom paths and deployment
 
 ```bash
 python prepare_data.py --data-root /tmp/my-catalog/data
 python job.py --data-root /tmp/my-catalog/data \
   --workspace /tmp/my-catalog/simulation --store-root /tmp/my-catalog/store
-python -m json.tool /tmp/my-catalog/store/discovery.json
 ```
 
-Use a dedicated simulation workspace: `SimEnv` replaces the job workspace on each
-run. Data and persistent state live outside it. `NVFLARE_SIMULATOR_WORKSPACE_ROOT`,
-when set, overrides `--workspace`.
+Use a dedicated simulation workspace; `SimEnv` replaces its job contents.
+Data and catalog state live outside that workspace. The environment variable
+`NVFLARE_SIMULATOR_WORKSPACE_ROOT`, when set, overrides `--workspace`.
 
-## Recipe and deployment
-
-`job.py` only configures `CatalogRecipe`, executes it with `SimEnv`, and prints
-results. The recipe owns dispatch, collection, reconciliation and persistence.
-`site_config_root` locates the site-owned directories on this shared host and is
-allowed only for simulation. There are no example controllers or executors.
-
-In a provisioned federation, omit `site_config_root` and configure the server's
-`CatalogManager` and each site's policies/runtime bindings. The parent manager
-provides authenticated private handoff and archive/download redaction. Simulation
-keeps unsigned manifests in its local workspace; it does not exercise admin login,
-scheduling or those production artifact protections.
+For a different source combination, edit the relevant site's existing
+`default_connector` and rerun preparation; no alternative configuration file is
+needed. In production, omit `site_config_root` and configure `CatalogManager`
+and the site-owned runtime bindings and policies. Simulation keeps unsigned
+manifests locally and does not exercise production admin login, scheduling or
+archive/download protections.
