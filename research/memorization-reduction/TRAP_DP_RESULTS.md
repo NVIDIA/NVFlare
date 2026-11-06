@@ -12,6 +12,8 @@ TRAP often reduced measured membership leakage while preserving field accuracy i
 
 The headline view shows all **21 baseline, 84 TRAP and 84 DP final evaluations**. Median field accuracy is **97.4% / 97.3% / 26.1%**, respectively; median strongest measured leakage is **0.7970 / 0.3360 / 0.2735 nAUC**. Dots retain every run and lines show full ranges. These are descriptive medians pooled across K, strengths and seeds, not matched privacy budgets or uncertainty intervals. The paired comparisons establish the headline: **60/84** TRAP results preserve accuracy within one percentage point while reducing nAUC by at least 0.05; every tested DP result loses accuracy, by **18.8–98.5 percentage points**. The 21 zero-noise controls and CE results remain in the full comparison below.
 
+The [separate SDK GPU validation](huggingface/SDK_VALIDATION.md) exercises the current classes in a bounded Pythia workflow, with numerical parity and resource measurements. It is not a rerun of this efficacy study.
+
 ## Complete comparison
 
 Field accuracy measures exact extraction of five visible dossier fields on 198 ordinary test records. It is distinct from teacher-forced token accuracy and from whole-record accuracy; CE uses the full 200-record test mixture.

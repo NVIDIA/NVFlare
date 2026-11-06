@@ -103,6 +103,14 @@ before/after scores, and RNG isolation. Task-specific data and extraction probes
 are supplied by the application. ``MemorizationAuditReporter`` persists local
 aggregate reports and optionally emits explicitly selected scalar metrics.
 
+The adapter requires the complete evaluation module ``state_dict()``, including
+persistent buffers, with matching names and shapes. Full updates load strictly;
+differences require every key and the matching full baseline for that task round.
+Adapter-only/LoRA updates are unsupported. Applications using adapter-only exchange
+must reconstruct the exact base, adapters and buffers in an independent evaluation
+model and implement a task-specific ``MemorizationAuditor``. Missing keys must not
+be silently filled from an unrelated model.
+
 Client-model audits measure the transmitted update at the configured filter stage.
 They do not replace evaluation of the selected global checkpoint or of exchanged
 reference models. Incomplete audits must not be interpreted as low leakage.
@@ -114,6 +122,41 @@ The `TRAP research entry point
 uses a tiny CPU model, local synthetic records, and two-client FedAvg. It exercises
 loss integration and periodic audits without downloading a model or dataset.
 It is a functional example and supplies no evidence of privacy or utility benefit.
+
+Hugging Face adoption and operating limits
+------------------------------------------
+
+The runnable `Hugging Face workflow
+<https://github.com/NVIDIA/NVFlare/tree/main/research/memorization-reduction/huggingface>`_
+prepares a pinned Pythia-70M reference on disjoint synthetic records, trains two
+clients with the SDK loss/scorer, performs paired likelihood/TRA audits, and
+separately evaluates the saved final global checkpoint on fixed final cohorts.
+It includes independent numerical parity checks and phase memory/runtime
+measurements. This is a bounded implementation/adoption example, not production
+certification or a replacement for the historical efficacy benchmark.
+
+Budget for live trainer/reference models, the full baseline snapshot, materialized
+updates, reconstruction/evaluation models, activations, logits, gradients, optimizer
+state and temporary loading/hashing copies. Measure the actual model, sequence
+length, precision, concurrency and cadence; tensor state size alone is insufficient.
+The `SDK validation report
+<https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/huggingface/SDK_VALIDATION.md>`_
+records the measured workload and explicitly limits extrapolation.
+
+Audit deadlines are cooperative. Initialization, hashing and blocked CUDA calls can
+outlive them. Hard resource/deadline limits require a separate supervised worker and
+explicit cleanup. The audit filter remains report-only: failure does not prevent
+transmission, and this example adds no release-approval mechanism.
+
+The example's ``check_coverage.py`` checks expected site/round identities, completed
+status, model/baseline fingerprints and both attack cohort counts. It exits nonzero
+on missing, duplicate, skipped, failed, unsupported or incomplete reports. Adapt
+expected identities to the task schedule and run it after the observation window
+closes. Intentionally unscheduled rounds remain unobserved, not zero leakage.
+Monitor report/log write failures as well as metrics: configured scalar analytics
+emit only for completed audits and cannot expose missing reports by themselves.
+Deployments requiring release approval must enforce coverage/provenance/policy in a
+separate fail-closed release step. The checker is an operator signal after execution.
 
 Benchmark evidence
 ------------------

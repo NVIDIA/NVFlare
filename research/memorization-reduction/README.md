@@ -58,6 +58,20 @@ No summary analytics are relayed by this example.
 See the [programming guide](../../docs/programming_guide/memorization_reduction.rst)
 and [design](../../docs/design/federated_memorization_reduction.md).
 
+## Hugging Face adoption and SDK validation
+
+The [Pythia Hugging Face workflow](huggingface/README.md) provides a larger runnable
+integration: pinned model/tokenizer download, public-reference preparation,
+completion-masked TRAP training, paired likelihood/TRA audits on task-specific
+cohorts, expected-coverage checks, and separate final global-checkpoint evaluation.
+Its [SDK validation report](huggingface/SDK_VALIDATION.md) separates implementation
+parity and resource measurements from the historical efficacy benchmark below.
+
+The audit adapter requires complete model state, including persistent buffers.
+Adapter-only/LoRA updates need application-specific reconstruction and auditing.
+The adoption guide explains memory budgeting, cooperative deadlines, missing audit
+visibility, and the need for separate enforcement when release approval is required.
+
 ## Benchmark results
 
 The separate [Pythia-70M TRAP–DP benchmark](TRAP_DP_RESULTS.md) includes all **525 fits
@@ -93,7 +107,7 @@ local audit reports had `completed` status, matching site/round identities,
 baseline fingerprints, and 32 member plus 32 nonmember records. Job export with
 `python job.py --export --export-dir <output-directory>` also succeeded. These
 checks validate packaging and functional integration on CPU. The separate benchmark
-above reports research measurements; it does not establish CUDA validation of this
-PR revision.
+above reports research measurements. CUDA validation of the current SDK is recorded
+separately in the [Hugging Face validation report](huggingface/SDK_VALIDATION.md).
 
 This research integration is distributed under the repository's [Apache 2.0 license](../../LICENSE).

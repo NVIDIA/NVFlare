@@ -30,8 +30,8 @@ arXiv:2609.32293. This design covers the NVFlare integration of the preprint's
 reference-based penalty and the supporting audit interfaces.
 
 The [benchmark report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/TRAP_DP_RESULTS.md)
-now includes the completed frozen research study. Unit tests and the small synthetic
-CPU example establish this SDK integration's behavior; the separate benchmark
+now includes the completed frozen research study. Unit tests, the synthetic CPU example and
+representative SDK GPU validation check this integration's behavior; the separate benchmark
 evidence and its limits are summarized below. TRAP is not differential privacy,
 and this proposal adds neither a DP mechanism nor a privacy accountant.
 
@@ -167,6 +167,10 @@ conversions must preserve parameter values and names; applications that alter th
 training baseline need a matching adapter. Register filters for `tasks=["train"]`.
 
 `PTMemorizationAuditor` builds an independent module and strictly loads its state.
+Complete state means **all `state_dict()` entries, including persistent buffers**,
+not only trainable parameters. Adapter-only/LoRA updates are unsupported by this
+adapter; an application must reconstruct the exact base/adapters/buffers in an
+independent task-specific auditor. Missing entries are never inferred.
 For differences it reconstructs the candidate from the matching full baseline. It
 preserves Python, NumPy and PyTorch CPU/selected-CUDA-device RNG state, including on
 failure. Arbitrary application RNGs, other CUDA devices and concurrent training
@@ -223,6 +227,22 @@ model hashing and potentially before/after inference. Lazy-reference
 materialization increases client-runtime memory/transfer use. Sample counts,
 frequency, device and cooperative deadlines must be set for the deployment.
 
+The [Hugging Face adoption example](https://github.com/NVIDIA/NVFlare/tree/main/research/memorization-reduction/huggingface)
+provides reference preparation, completion cohorts, likelihood/TRA attacks, final
+global-checkpoint evaluation, and an expected site/round coverage checker. Its
+[SDK validation report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/huggingface/SDK_VALIDATION.md)
+records numerical parity and memory/runtime scope for the actual SDK. These bounded
+measurements do not establish capacity for arbitrary models or client concurrency.
+Operators must budget live trainer/reference/evaluation models, snapshots,
+materialized updates, activations/logits, optimizer state and temporary copies.
+
+Expected audit identities must come from the task schedule, rather than from the
+reports that happened to arrive. Missing/duplicate reports and incomplete cohorts
+need alerts alongside explicit failed/unsupported/skipped statuses. Completed-only
+analytics cannot demonstrate full coverage. Cooperative deadlines need an external
+supervisor for hard bounds; release approval needs a separate fail-closed gate.
+The example's post-run coverage checker supplies neither of those mechanisms.
+
 Keeping everything in research scripts would avoid a new SDK surface but duplicate
 alignment, state reconstruction and failure handling. A TRAP-specific aggregation
 controller would couple a local objective to an unrelated transport/aggregation
@@ -258,7 +278,7 @@ The [Pythia-70M benchmark report](https://github.com/NVIDIA/NVFlare/blob/main/re
 provides all 525 fits and 210 final evaluations, complete strength/seed tables,
 negative outcomes, privacy and compute accounting, and eight PNG/PDF figure pairs.
 It uses the frozen research implementation preceding this SDK refactor; the CPU
-example and unit tests separately validate the current integration.
+example, unit tests and separate SDK GPU workflow validate the current integration.
 
 TRAP passed 60/84 paired accuracy-and-leakage screens, falling to 24/84 when the
 separate CE criterion was also required. The tested DP settings passed 0/84 in this

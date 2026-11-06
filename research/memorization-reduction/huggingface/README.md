@@ -23,10 +23,10 @@ python prepare.py --assets "$RUN/assets"
 python validate.py --assets "$RUN/assets" --output "$RUN/parity"
 python job.py --assets "$RUN/assets" --output "$RUN/federation"
 python check_coverage.py "$RUN/federation/simulation"
-# Locate the unique last global checkpoint; do not select it using final audit scores.
-find "$RUN/federation" -name FL_global_model.pt
+# Use the last global checkpoint, not a model selected using final audit scores.
+CHECKPOINT="$RUN/federation/simulation/memorization-hf/server/simulate_job/app_server/FL_global_model.pt"
 python evaluate.py --assets "$RUN/assets" \
-  --checkpoint <absolute-path-to-FL_global_model.pt> --output "$RUN/final"
+  --checkpoint "$CHECKPOINT" --output "$RUN/final"
 ```
 
 The model and tokenizer are pinned to
@@ -89,6 +89,8 @@ Full updates load strictly. Differences require every key and a matching full
 baseline for the same task round. This example exchanges full Pythia state.
 
 LoRA/PEFT adapter-only updates do not satisfy that contract and report `unsupported`.
+The [PEFT checkpoint format](https://huggingface.co/docs/peft/developer_guides/checkpoint)
+stores adapter parameters separately from the original base model.
 They are not automatically merged. An application supporting adapter-only exchange
 must reconstruct a separate evaluation model from the exact immutable base,
 architecture, adapters and buffers, with matching baseline/candidate identities,
