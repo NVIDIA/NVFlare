@@ -38,6 +38,7 @@ Command groups
   runtimes such as Docker or Kubernetes
 - ``job``: submit and manage jobs
 - ``study``: manage multi-study lifecycle (register, enroll sites, manage users)
+- ``catalog``: read and inspect the federated data catalog of a study
 - ``system``: inspect and operate a running FL system
 - ``config``: manage local CLI settings, including startup-kit registration
   and active-kit selection
@@ -62,6 +63,7 @@ workflows unless you are maintaining an older setup.
    deploy_command
    job_cli
    study_command
+   catalog_command
    system_command
    cert_command
    package_command

@@ -1,0 +1,430 @@
+# Federated Data Cataloging Design
+
+**Status:** Proposed implementation design
+**Date:** November 1, 2026
+**Parent:** Federated Data Network Engineering Design
+**Requirements:** Federated Data Network Feature Requirements, CAT-01 through CAT-07
+
+## 1. Purpose and assumptions
+
+Discover and describe datasets within an existing FLARE Study. The pilot reads datasets already mounted by the site's launcher. When preparation is enabled, committed datasets in the existing site service also enter the same catalog (Section 3.1). Cataloging creates no additional source registration or access boundary.
+
+Use FLARE's existing concepts:
+
+| Existing concept | Use in this design |
+| --- | --- |
+| Study | The existing study name, membership and dataset bindings |
+| Participating users | Existing users of the Study; permissions come from FLARE authorization and the site's Study policy |
+| Client | The participating site running the job; identity comes from FLARE |
+| Dataset | A dataset mounted for the Study, or a committed derived dataset resolved by the existing site service |
+| Job, Task, Shareable | Execution, request/result correlation, transport and serialization |
+
+The first release publishes one site-approved metadata view for the participating users of a Study. It does not introduce a separate audience identity or membership registry. The site's Study policy may withhold fields or the entire dataset from that shared view. Metadata requiring different user-specific views is withheld from the shared index until a separately qualified use of existing user authorization supports it. Catalog visibility never grants access to source records.
+
+## 2. Read flow
+
+```mermaid
+sequenceDiagram
+    participant U as Participating user
+    participant M as FLARE server and catalog index
+    participant C as Controller
+    participant E as Client Job
+    participant D as Mounted Study datasets
+    U->>M: Run the catalog recipe in the Study (or the server schedules it)
+    M->>C: Submit the catalog job with existing Study metadata
+    C->>E: Task with optional bound dataset names
+    E->>D: Resolve existing mounts and read metadata
+    Note over E: Apply site publication policy
+    E-->>C: Shareable with approved catalogs or failure
+    C-->>M: Terminal job manifest
+    Note over M: Apply withholding and reconcile accepted metadata and availability
+```
+
+The same job is the catalog recipe a user runs with `python job.py`, and a generic server component submits it periodically for every Study. Search reads the index and never triggers source reads. The job obtains its Study from existing FLARE job metadata and the client identity from FLARE execution context. The optional dataset selection contains existing Study dataset names; derived references are also accepted once preparation is qualified. No request supplies a filesystem path, database endpoint, credential, namespace or Python import path.
+
+The pilot uses bounded full metadata reads per dataset. There is no incremental checkpoint protocol, progress object, or client-side comparison with previous catalog versions. The server already stores previous versions and owns comparison. Incremental reads are deferred until measured cost justifies a provider-qualified extension.
+
+## 3. Components and data
+
+### 3.1 Existing Study dataset bindings
+
+Reuse [study runtime configuration](../../nvflare/app_opt/job_launcher/study_runtime.py) and [StudyDatasetMount](../../nvflare/app_opt/job_launcher/study_data.py). The mounted path for a dataset is derived from the existing binding, such as `/data/oncology-study/clinical-research`. The mount, read/write mode and source belong to site configuration. FDN adds no second source-registration file. The strict study-runtime parser accepts the existing `datasets` key in process mode too; only the catalog executor reads it there, and the process launcher mounts nothing.
+
+The site binds each dataset to a reader appropriate for its source: Parquet metadata, a local DuckDB catalog, or an approved catalog export. A Study may mix source types, so the reader is chosen per dataset (see `catalog_site.json` below). An export may describe a database-backed dataset, but importing its metadata does not make a new database connection or grant execution access. Databricks, Snowflake and other remote source integrations require separate qualification of the site's existing bindings and credentials; they are later extensions, not assumptions of the mounted-data pilot.
+
+The operator selects installed readers in approved site configuration. Installing another `CatalogConnector` requires no controller/server change or dynamic registry. Requests cannot select executable code.
+
+**One policy source.** One site-owned Study publication policy is authoritative. Its protected file is one JSON file per Study, `<policy_root>/<study>.json`, under the site's Study configuration directory, outside user-editable job packages. `<policy_root>` is `/fdn/policy`, a read-only mount the site declares as a `secret_mounts` entry of the Study runtime, when that directory exists (Docker, Kubernetes and Slurm container modes), and otherwise `<workspace>/local/fdn/` (process mode). The handler reads it through that binding, which exposes atomic replacements, not a stale packaged/default file, and applies it before releasing metadata on every read. Next to it the site keeps `catalog_site.json`, which defines named connectors (`connectors.<name>`: a class and non-secret `args`), binds each dataset that is not mounted Parquet to one of them per Study (`studies.<study>.<dataset>`: a connector name and non-secret `options`), and sets the limits and installed operations. A mounted dataset with no binding is read by the default connector, the built-in `parquet` unless `default_connector` says otherwise. A job cannot supply or change any of it. The site service uses no copy of it: catalog entries for derived datasets are produced by the same handler. Docker binds the whole `local/` folder read-only, so the `local/fdn/` fallback also works there without the mount. The launchers need no catalog-specific code; `local/fdn/` is excluded from Kubernetes workspace bundles so a pod without the mount fails closed. Slurm sandbox `none` has no Study mounts, so catalog reads are not supported there yet.
+
+**Policy-load failure is closed.** If that source is missing, unreadable or invalid, release no source metadata. Return a safe application `FAILED` with `reason_code: POLICY_UNAVAILABLE`, no catalogs, no availability claims, and `withheld` containing the selected previously indexed names from `previous_datasets`. This hides cached metadata without disclosing newly discovered names. Preserve protected history and record a configuration diagnostic. Never fall back to no restrictions, packaged defaults or a cached permissive policy. A later result evaluated under the valid policy may restore entries.
+
+**Policy format v1.** The file is JSON, one per Study, and decides what the shared view may show. A dataset that is not listed is withheld, so a site must opt each dataset in.
+
+```json
+{
+  "format_version": 1,
+  "datasets": {
+    "clinical-research": {
+      "share": true,
+      "exclude_tables": ["clinical_notes"],
+      "exclude_columns": {"person": ["birth_datetime"]},
+      "exclude_resources": ["DocumentReference"],
+      "exclude_metadata": ["description"],
+      "operations": ["cohort.count"]
+    },
+    "imaging": {"share": false}
+  },
+  "derived": {"share": true, "operations": ["cohort.count"]}
+}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `format_version` | Required, `1`. Any other value is invalid policy |
+| `datasets` | Map from an existing Study dataset name to a rule. A name that is not listed is withheld |
+| `derived` | Later, with the derived-dataset reader (not accepted by the pilot): one rule applied to every committed output of the Study, whose opaque IDs cannot be listed in advance. Absent means derived datasets are withheld |
+| `share` | Required boolean. `false` withholds the dataset |
+| `exclude_tables` | Table names removed from the shared view |
+| `exclude_columns` | Map from table name to column names removed from that table |
+| `exclude_resources` | FHIR resource types removed from `resources` |
+| `exclude_metadata` | Any of `description`, `owner`, `modalities`, `semantic_profile`, `source_version`, `lineage`, `provenance`; the field is published as `null` or an empty list |
+| `operations` | Allow-list of operation names (free-form strings the site chooses) the entry may advertise; the published list is its intersection with the installed and configured operations. Absent means none |
+
+Names match exactly and are case-sensitive. A name that matches nothing in the source is ignored, not an error. Unknown keys, wrong types and a rule with `share` missing make the whole file invalid and trigger the policy-load failure above. The policy never names paths, credentials or users, and it has no per-user rules: every participating user of the Study sees the same view. The same file serves every launcher; only how it is mounted varies.
+
+**Derived datasets, when preparation is enabled.** The site service already journals immutable committed outputs with their Study and authorized users. `catalog.read` adds a reader over that journal through the existing job-bound service RPC (no raw manifest paths, no new endpoint). At commit, the preparation step stores the output's candidate v1 metadata (tables, columns, lineage, `validation_ref`, `mapping_version`), unfiltered and local to the site, in the committed manifest. The reader enumerates only committed outputs authorized for the job's Study, one entry per dataset ID: the service's current committed version. Older versions stay in the site store for explicitly pinned operations and are not listed, so a result never repeats a dataset name. It hands that metadata to the handler, which applies the policy and returns it with the mounted datasets in the same result. Staging and failed outputs are never enumerated. After `DATASET_COMMITTED` a read naming that dataset can be run with the recipe; if none is run, the next periodic read lists it.
+
+Use the committed manifest's existing opaque dataset ID as `dataset` and its immutable output version, as a string, as `metadata.source_version`. An expiring capability/token is not a catalog identity. The original mounted source remains a separate entry, linked through `metadata.lineage`. No operator mount or second catalog registration is needed. Subsequent operations resolve derived references through the existing site service, and mounted names through existing Study bindings. Qualifying this reader and its job authorization is a prerequisite for preparation/conversion delivery, not for the mounted-data pilot.
+
+### 3.2 Connector interface
+
+A connector declares its `source` label and reads one dataset at a time, from the existing mounts resolved by the handler or, for a remote source, through the dataset's binding `options` and the Study's credentials. Its dictionary keys are existing dataset names; paths come from site-owned bindings, never a request. Construction retains these paths without opening every source. Open/read only the dataset named by each call; a bad mount must not fail a shared constructor before independent reads begin.
+
+```python
+class CatalogConnector(ABC):
+    source: str                          # what this connector connects to, e.g. "parquet"; copied to provenance.source
+    def __init__(self, datasets: dict[str, Path]): ...
+    def read_catalog(self, dataset: str, limits: ReadLimits, options: dict | None = None) -> CatalogInfo: ...   # options: the dataset's non-secret settings from catalog_site.json
+    def close(self) -> None: ...
+```
+
+The handler iterates selected datasets, catches a safe `ConnectorError` per call, and continues with the others. Each successful call returns one complete dataset catalog. A corrupt footer, missing mount, denied source access or invalid metadata affects only that dataset and produces an explicit `unavailable` name. No incomplete table/column inventory is returned for that dataset. A budget/cancellation error without source-validity evidence changes read health only. Enforce each dataset deadline before the job's response deadline, leaving time to return completed results; qualify cancellation of blocking provider calls under the actual launcher. Keep the reader's failure state isolated: discard/reopen a failed connection when needed before reading the next dataset.
+
+The handler returns the completed catalogs alongside explicit `withheld` and `unavailable` names in the ordinary result dictionary. It can return healthy A and C even when B is unavailable. This needs no per-dataset outcome class: a catalog is success, the unavailable list names checked failures, and omitted names establish no source-state change. Policy suppression is handled separately under Section 3.1. Removed previously indexed bindings are explicitly reported unavailable after policy evaluation; omission itself is never evidence of absence.
+
+Enforce both per-dataset read limits and the enclosing job's aggregate budgets. If a dataset exceeds its budget, discard only that dataset's incomplete metadata. If the overall budget is reached, stop further reads and report safe scheduling health; completed, validated catalogs are still returned. A selected, previously indexed dataset skipped for budget or cancellation gets no permitted projection, so the handler lists it in `withheld`; its availability and check time are unchanged. A hard framework timeout/abort that prevents a result from arriving changes health only. Read success describes completion of that dataset's metadata read, not scientific correctness or source deletion.
+
+The pilot Parquet adapter accepts file mounts and nested partition files beneath each top-level table directory. It verifies all footers within read budgets and fails a dataset on corrupt or inconsistent parts. It does not infer partition-value types or replace existing local catalog engines.
+
+### 3.3 Data structures
+
+The read path uses these structures. Class names follow the Unity Catalog SDK (`CatalogInfo`, with nested `TableInfo` and `ColumnInfo`), so users who know it find the same names; one dataset is one `CatalogInfo`.
+
+| Structure | Meaning | Producer and consumer |
+| --- | --- | --- |
+| `CatalogInfo` | The catalog of one existing Study dataset | Connector returns it; handler filters it and puts completed ones in the result |
+| `ReadLimits` | Resource budgets for the metadata read | The site's `catalog_site.json`; the connector enforces `max_calls` and the time per dataset, and the executor enforces records across the whole read |
+
+```python
+@dataclass
+class ReadLimits:
+    max_duration_s: int
+    max_calls: int
+    max_records: int
+
+@dataclass(frozen=True)
+class CatalogInfo:
+    dataset: str                         # existing dataset name within the Study
+    # typed fields of the normative metadata format v1 below (display_name, tables, resources, ...),
+    # built and validated through from_wire; metadata_wire() returns the v1 dict
+    observed_at: str | None              # actual source observation, RFC 3339 UTC; None means unknown
+```
+
+The server's federated catalog (Section 4.1) is the stored set of these entries per `(study, client, dataset)`; it is not a separate type.
+
+`CatalogInfo.metadata` describes tables/columns with the types the source reports, semantic profile, supported operations, source-provided versions and approved lineage. Its schema enumerates allowed fields and bounds; it is not an unrestricted dictionary that may be serialized without validation. Physical source paths, credentials, raw rows and private annotations remain local. `CatalogInfo.observed_at` is a source observation supplied by the dataset or metadata provider; the time the handler reads a mount is not a substitute.
+
+The handler applies the one protected Study policy before constructing the returned `Shareable`. The same structures can be convenient local models; they are not custom wire objects and do not require a new serializer. The server additionally stores catalog/schema versions, publication time, `available`, `last_checked_at` and a `withheld` search-suppression flag. These are managed state. Withholding changes permission to show an entry; availability records a dataset check. Neither establishes scientific correctness.
+
+#### Metadata format v1 (normative)
+
+The task's `format_version: 1` selects this schema. Every metadata object has the following fields; nullable fields use JSON `null` when unknown and lists may be empty. Unknown fields are rejected rather than silently indexed. Fields excluded by the Study policy use `null` or an empty list; if the dataset name or required display name cannot be shared, withhold the entire entry. Identity is the enclosing `dataset` plus authenticated Study/client, not a second `dataset_id` supplied by a connector.
+
+| Field | Type and meaning | Comparison class |
+| --- | --- | --- |
+| `display_name` | Nonempty string | Descriptive |
+| `description`, `owner` | String or null; approved description and public steward alias | Descriptive |
+| `tables` | List of table objects defined below | Structural |
+| `resources` | List of FHIR resource objects defined below | Structural |
+| `semantic_profile` | Profile object defined below; declarations, not inferred validation | Semantic |
+| `modalities` | Unique strings, e.g. `clinical_tabular` | Descriptive |
+| `operations` | Unique installed operation names, free-form strings the site chooses, e.g. `cohort.count`; intersection of configured implementations and site permissions | Operational |
+| `source_version` | Opaque source revision/snapshot string or null; do not synthesize from read time | Provenance |
+| `lineage` | List of `{dataset: string, source_version: string or null, relation: "derived_from"}` within this Study/client | Provenance |
+| `provenance` | `{source: string, declaration_ref: string or null, validation_ref: string or null}`; `source` is the connector's own `source` label (the kind of source it reads, never a path, endpoint or credential); the references are approved and opaque | Provenance |
+
+Nested objects have exactly these fields:
+
+- Table: `name: string`, `columns: list`, `primary_key: list[string]`, `relationships: list`. A relationship is `{columns: list[string], target_table: string, target_columns: list[string]}` with equal, nonzero column-list lengths. These are declared structural relationships, not sampled values.
+- Column: `name: string`, `type: string`, `nullable: bool or null`. `type` is the type exactly as the source reports it (for example `int64` or `VARCHAR(20)`). The catalog does not map types to another vocabulary; the operation's own mapping decides whether a type is usable.
+- Resource: `type: string`, `supported_search: list[string]`. Preserve declared capabilities only; actual requests still validate required support. Detailed profile information belongs in the semantic declaration reference.
+- Profile: `standard`, `version`, `vocabulary_version`, `mapping_version`, `declaration_ref`, `validation_ref`, all strings or null. `mapping_version` identifies the site's pinned mapping package; the reader copies it from configuration/metadata. It is not inferred or incremented by cataloging. Missing declarations remain null.
+
+Every string except `description` is nonempty and at most 256 characters where present (names, operation names, public owner aliases, opaque references, types, modalities and profile fields); `description` is at most 4096 characters and may be empty. Lineage entries are unique by `dataset`. The only list the service orders is `operations`, which policy publishes as the sorted intersection of the catalog, the rule and the installed operations. When policy excludes `provenance`, `source` stays (it is required and names no path) and the two references become null. A dataset name appearing in more than one catalog entry of one result rejects every copy. Identifiers are unique within their containing list. Report what the site has, as given: the catalog does not sort, rename, retype or otherwise rewrite lists, names, types or case, and never infers semantic equivalence by case folding. Nested table/column references must resolve within the entry; lineage may name another catalog entry of the same Study/client. `max_records` counts dataset, table, column, relationship, resource and lineage objects. Wrong value types, unresolved references, duplicates, unsupported keys or exceeded bounds fail validation; do not publish a truncated schema.
+
+Policy filtering precedes schema validation. Remove excluded tables, columns and resources, then remove relationships whose source columns, target table or target columns are no longer visible. Track which objects policy excluded; remove relationships affected by those exclusions, not unrelated broken source references. If any component of a primary key is excluded, set `primary_key` to an empty list rather than publishing a smaller, misleading key. Apply the same rule to other references to excluded fields. Validate the remaining permitted view; do not fail an otherwise usable dataset merely because policy hid a relationship target. A genuine invalid source reference that policy did not remove is still a dataset validation failure.
+
+The manager produces `catalog_version` (starts at 1, increments for any metadata change) and `schema_version` (starts at 1, increments only when `tables` or `resources` changes). They are stored/search fields, not connector fields. `mapping_version` in an operation binding is the exact string from `semantic_profile.mapping_version`, or null; a mapping-dependent operation rejects null. Structural, semantic, operational, descriptive and provenance changes are classified by this table. Structural, semantic and operational changes flag affected pinned requests for live revalidation; additive structure is compatible only when existing required fields/types are preserved. Neither version number alone certifies compatibility. Search v1 supports dataset/client, display-name text, modality, declared standard/version, operation, availability and schema/mapping version filters, using these exact fields. Undeclared extensions are not filterable.
+
+### 3.4 FLARE task payloads
+
+Use existing `Task`, `Shareable`, framework return codes, authenticated cell/client identity and FOBS serialization. Retain one application schema version in the `catalog_read` payload. Do not add another transport envelope or duplicate task IDs, attempt IDs, site identity or Study identity inside the payload. When persisted, the controller's manifest binds each result to its existing job, task assignment and authenticated client; user-supplied fields never establish that identity.
+
+The optional dataset list is the operation's only source selector:
+
+```json
+{
+  "catalog_read": {
+    "format_version": 1,
+    "datasets": ["clinical-research", "imaging"],
+    "previous_datasets": ["clinical-research", "imaging"]
+  }
+}
+```
+
+An omitted `datasets` list selects all current Study bindings (and authorized committed outputs when preparation is enabled). The controller supplies `previous_datasets`, the names it already indexes in this selection, so the handler can evaluate policy for an earlier entry even after its mount is removed. These names provide reconciliation context only: they cannot add a path, binding or execution authority. An explicitly selected name that is neither current nor previously indexed is skipped and never named in the result (or reported unavailable if policy shares it); a previously indexed name with no current binding is checked as absent. The controller never trusts a user-provided replacement: `CatalogManager` writes this context, with the job's key, to `catalog_context.json` in the job's run directory on `BEFORE_JOB_LAUNCH`, and the controller reads it from there. For the pilot, one bound dataset is one catalog entry; tables are nested metadata.
+
+A successful application result is a primitive dictionary inside `Shareable`:
+
+```json
+{
+  "catalog_read": {
+    "format_version": 1,
+    "status": "OK",
+    "catalogs": [
+      {
+        "dataset": "clinical-research",
+        "metadata": {
+          "display_name": "Clinical research", "description": null, "owner": null,
+          "tables": [], "resources": [],
+          "semantic_profile": {
+            "standard": null, "version": null, "vocabulary_version": null,
+            "mapping_version": null, "declaration_ref": null, "validation_ref": null
+          },
+          "modalities": ["clinical_tabular"], "operations": ["cohort.count"],
+          "source_version": null, "lineage": [],
+          "provenance": {
+            "source": "parquet", "declaration_ref": null, "validation_ref": null
+          }
+        },
+        "observed_at": null
+      }
+    ],
+    "withheld": [],
+    "unavailable": ["imaging"]
+  }
+}
+```
+
+The handler evaluates configured publication policy before reading sources. `withheld` lists selected dataset names whose metadata must not be shown, including previously published names even if their mounts are gone. Evaluate `previous_datasets` and selected current names before resolving mounts. `unavailable` lists selected datasets actually checked and found absent, inaccessible or invalid. Names in these lists and `catalogs` must be unique and disjoint. If another payload portion conflicts with a valid withheld name, withholding wins and the conflicting publication is rejected; do not discard the restriction. The controller's recorded selection bounds these reports; refreshing all supplies previously indexed names for explicit policy/absence checks. Unknown request names never select a new source.
+
+A completed policy-only read with no shareable datasets is also `OK`, including on first publication. Only connectors needed for selected, policy-shared datasets are opened. An `OK` application result carries completed dataset reads; it may contain healthy catalogs and unavailable names together, even when other selected datasets could not be checked. Returned catalogs become available. Each selected, previously indexed name appears in exactly one of `catalogs`, `unavailable` or `withheld`: a name skipped for budget or cancellation is withheld, keeping its availability and check time, until a later read returns a permitted catalog. Unselected entries are unchanged. A safe `reason_code` can report skipped work, such as an aggregate budget limit; job health records that gap rather than inventing dataset outcomes.
+
+Withholding is an independent restriction. After verifying authenticated job/task/client identity, current assignment, supported format, bounded list types and names within the recorded selection, apply valid `withheld` names even when other parts of the payload are invalid or fail. A bad catalog elsewhere in the payload cannot discard a valid restriction. Ignore/reject invalid restriction names; never derive authority from payload identity. Suppress entry content, facets, totals, shared history and cached projections. Omission/unavailability never clears suppression. Only a later permitted catalog for that dataset restores it.
+
+Handled application outcomes use framework `ReturnCode.OK`. `FAILED` reports a read failure rather than an empty permitted catalog; it may still carry valid restrictions and explicit checked unavailability. For example:
+
+```json
+{
+  "catalog_read": {
+    "format_version": 1,
+    "status": "FAILED",
+    "reason_code": "INTERNAL",
+    "withheld": [],
+    "unavailable": ["clinical-research"]
+  }
+}
+```
+
+Only explicit checked `unavailable` names update availability on failure. The pilot defines two statuses, `OK` and `FAILED`; a result with any other status is read as `FAILED`. Non-OK framework codes, launch errors, cancellation, disconnects and task timeouts update client/job health only. They cannot establish that a dataset was checked. A valid restriction extracted from a handled result is still applied if its metadata portion is malformed. A named replacement rejected by server parsing or validation also hides that dataset's previous cached entry: it cannot confirm that old fields remain permitted. Preserve its versions, availability and check time, report `INTERNAL`, and require a later accepted catalog to restore it. Healthy independent datasets still apply; a wholly rejected read does not advance the last successful read time. Never expose source exceptions, paths or credentials in shared errors.
+
+The server sets `last_checked_at` to the time it accepts the result, only for accepted catalogs or explicitly checked `unavailable` names, never from omission. The site supplies no check time. A source `observed_at` later than that time plus 300 seconds, or not valid RFC 3339 UTC, is stored as null (unknown). The catalog's permitted metadata is still accepted, so a bad timestamp never keeps older metadata searchable.
+
+### 3.5 Resource limits and failure
+
+The approved handler combines task deadlines with site-configured call and record limits. Connector code enforces provider calls and read volume; the launcher/process boundary enforces available runtime limits. Validate each completed dataset catalog before release. Exceeding a dataset limit discards that dataset's incomplete metadata, while completed independent dataset catalogs can still be returned. A framework timeout or abort that prevents a result from arriving changes job health only. Catalog responses use the existing FLARE transport without a separate catalog-specific byte cap.
+
+Source traversal progress and exception detail belong in protected local diagnostics. The shared result reports complete individual catalogs, explicit restrictions/unavailability and safe scheduling diagnostics. A `complete` flag cannot establish a source guarantee and is not part of the contract.
+
+### 3.6 Declared format and version
+
+Read the actual tables, columns and types, and preserve any site-declared standard, format, version, vocabulary release and mapping information from approved metadata. Record the declaration's provenance. Missing declarations remain unknown; the catalog does not guess a standard or version from table names.
+
+A declaration describes the dataset; it is not a validation result or a grant to execute an operation. Optional standards validation is a separate concrete check (Section 4.4). The catalog reader performs no extra data-row reads to identify a standard or retrieve version hints.
+
+### 3.7 Users, permissions and credentials
+
+The participating users are the existing Study users. Commands use the authenticated FLARE session and current Study authorization. The site's approved policy determines which metadata may be published to those users. No separate group identifier or user-membership service is introduced.
+
+The initial path reads mounted data or mounted approved exports and needs no separate remote catalog credential. Existing Study secrets, if needed for later qualified connectors, retain their existing semantics: all jobs of that Study receiving a secret can read it. Do not claim per-operation secret isolation from a purpose field or a Python wrapper. Such a connector is supported only if existing site authorization and approved job configuration meet its actual credential trust requirements.
+
+Process mode shares an OS user and is for development/POC. Production qualification uses the chosen launcher and its real mount, execution and cleanup behavior. FDN does not create an additional dataset isolation boundary beyond the Study's existing bindings.
+
+## 4. Published metadata and semantics
+
+### 4.1 Stored catalog
+
+A stored catalog is identified by the existing Study, authenticated client and dataset name. It contains the permitted metadata, catalog version, publication time, source observation and the following availability/permission state:
+
+| Field | Meaning |
+| --- | --- |
+| `available` | The latest completed check found the dataset accessible and its catalog usable for discovery; this is not an execution guarantee |
+| `last_checked_at` | Server time at which the latest completed dataset check was accepted; scheduling/transport failure does not advance it |
+| `withheld` | Server search suppression from an explicit site decision; never inferred from unavailability |
+
+While `available` is false, the entry exposes only its client, dataset name, availability and `last_checked_at`. The server retains the last metadata but does not show it until a successful read replaces it, because a failed read cannot confirm that the old fields are still permitted by current policy. An optional safe diagnostic reason explains the failure without defining additional lifecycle states. Existing Study authorization and suppression control who can see the entry.
+
+**Federated catalog.** The server's combined view for one Study is the set of its stored catalogs, each identified by `(study, client, dataset)`. `site-a` and `site-b` may both hold a dataset named `clinical-research`; they remain distinct entries. Aggregation collects metadata with its site identity; it does not merge schemas, infer scientific equivalence or combine patient populations.
+
+The manager updates this view as each client's result is reconciled under Section 6.2. Updating one client's datasets never replaces another client's entries, and sites need not finish a read together. Authorization and withholding are applied before exposing the view. The stored rows are the only copy: search returns ordinary dictionaries with the client, dataset, metadata and stored state described in Section 7, and a site never supplies a combined view or asserts another client's identity.
+
+### 4.2 Comparison and versions
+
+Each successful read returns permitted complete metadata per dataset. The latest accepted result replaces the stored entry, and the manager compares it with the previous one to detect changes. No client fingerprint, ordering counter or sparse update protocol is needed: one catalog job per Study runs at a time, so results are applied in the order the reads ran (Section 6.3).
+
+| Dimension | Rule |
+| --- | --- |
+| Metadata | Changed metadata creates a new catalog version; a change to `tables` or `resources` also creates a new schema version |
+| Availability | Update `available` and `last_checked_at` independently; a flag or timestamp change does not create a metadata version |
+| Observation | Store the latest reported `observed_at`; null means unknown, no longer shareable or invalid. A failed check leaves it unchanged |
+
+Compare the reported metadata exactly as given, before inserting server fields, so unchanged reads and a server restart create no false versions. Apply the dimensions as one atomic update. A failed dataset check retains metadata and observation, hidden from search while the entry is unavailable, and updates availability. Infrastructure failures update health only. Withholding suppresses the entry independently of all three. If policy narrows the allowed fields, the next read replaces the searchable metadata with the narrower view; never merge disallowed old fields back in. The pilot keeps only the current accepted metadata per dataset. A superseded version is not retained, and the metadata of an unavailable or withheld dataset is kept but shown to no one. Version history and point-in-time views of the catalog are a later extension. The pilot has no change feed or change records: a client sees that a dataset changed from its `catalog_version` and `schema_version`. Shared views return version identifiers, never old field values.
+
+For service-owned derived datasets, `metadata.source_version` is the opaque version of the committed output. It is an equality value like a mounted-source revision; the latest accepted read decides the current entry.
+
+
+### 4.3 Semantic boundaries
+
+Names and types are structural evidence, not proof of scientific equivalence. An execution mapping still defines units, terminology, observation windows, subject linkage and unsupported criteria. Cataloging may advertise an operation only when its structural requirements, qualified implementation and existing Study/site permissions all allow it. Catalog visibility does not authorize execution or result release.
+
+Source/derived lineage stays within the same Study policy. Do not count two representations of the same population independently by default. Detailed identity crosswalks remain local.
+
+### 4.4 Optional standards validation
+
+OMOP and FHIR metadata retain the site's declared standard/profile, release, vocabulary and mapping versions, together with provenance. Cataloging publishes those declarations and the observed structure without automatically confirming scientific meaning or synthesizing a reviewed status.
+
+When a Study needs standards validation, run a concrete check through an explicitly approved quality operation or preparation-validation step. For example, an OMOP 5.4 schema check can compare tables, columns and compatible types with that pinned specification and report missing or incompatible fields. It must identify the specification it checked and its limits; a passing structural check does not establish clinical equivalence, vocabulary correctness or permission to run an analysis. There is no generic matcher interface, candidate-version scoring or catalog hint-query protocol.
+
+Each requested operation validates its own inputs at admission and execution:
+
+- Resolve the mounted binding or committed service reference and verify current Study/site permission.
+- Check that a qualified implementation supports the declared format/version and execution backend. If the required version is unknown or unsupported, return an explicit incompatibility outcome.
+- Validate the tables, columns, types, units, terminology mappings and temporal/subject-linkage rules that the operation actually uses.
+- Reject missing or incompatible inputs; never substitute a guessed interpretation based on similar names.
+
+Catalog entries may list operations enabled by the site's approved configuration. Their detailed input requirements belong to the installed operation/mapping specification, not another untyped catalog field. That list is discovery metadata, not evidence that every request is executable. A schema or semantic change can require request revalidation even when the configured operation list is unchanged.
+
+FHIR-to-OMOP conversion remains the separate preparation workflow in the parent design. It pins the source release/profile, target CDM, vocabulary and mapping package, validates the output and publishes approved lineage. The resulting OMOP catalog entry preserves those declared versions and validation-report references. Source and derived representations are not counted as independent populations by default; detailed identity crosswalks stay local.
+
+## 5. Availability and metadata permission
+
+Keep availability separate from permission to show metadata:
+
+| Report | Manager action |
+| --- | --- |
+| Permitted, complete dataset catalog | Replace its searchable metadata; set available/check time and clear withholding |
+| Valid explicit `withheld` name | Suppress that shared entry regardless of failures in other datasets; retain its last metadata, hidden |
+| Explicit checked `unavailable` name | Mark that entry unavailable and hide its metadata from search until a successful read; retain suppression |
+| Selected, previously indexed name skipped for budget or cancellation | Appears in `withheld`: hide its metadata until a later permitted catalog; keep availability and check time |
+| Unselected entry, deferral or transport/framework failure | Update health as appropriate; preserve source/availability/check state |
+| Policy cannot be loaded | Publish nothing; return `POLICY_UNAVAILABLE` and withhold selected previously indexed names; diagnose configuration failure |
+| Site configuration, connector or dataset listing fails before any dataset is read | Publish nothing; return `FAILED` (`POLICY_UNAVAILABLE` for the site configuration, `INTERNAL` otherwise) and withhold every selected previously indexed name, because the permitted view cannot be rebuilt and a narrowed policy cannot be applied to what the server holds |
+| A connector returns a catalog for a different dataset than the one asked for | That dataset is `unavailable`; the catalog is discarded |
+
+The handler evaluates installed policy; no person reviews each read. It returns no incomplete metadata for a failed dataset, while healthy datasets remain independent. Before releasing metadata, apply the common current policy and remove dangling references created by its exclusions. A failed/absent dataset does not prove source deletion; a reused binding name still requires live operation validation.
+
+Search may show unavailable entries by name and availability only, never their metadata, and never withheld entries. Existing Study permissions apply in both availability states. Operations revalidate live bindings, structure and rights; a cached flag grants no authority.
+
+A job that returns no result (timeout, disconnect, deferral) cannot report a policy change either: stored metadata stays visible until the next successful read. This is an accepted limitation of the pilot, and the manager reports the affected clients as stale through health (Section 6.4). Where it is not acceptable, a site or administrator restricts the Study's access through existing administrative controls until the next successful read. An offline site cannot report a new policy decision. Without expiry or live confirmation there is no offline detection bound. Deployments requiring one must use existing administrative Study access restriction until the site can report, or qualify a separate live-confirmation/expiry design. An explicit restriction cannot solve an undelivered change.
+
+## 6. Job execution and reconciliation
+
+### 6.1 Catalog read job
+
+A catalog read is a standard Job Recipe, `CatalogRecipe`, run through any execution environment (the Study comes from the environment) or submitted on a schedule by a generic server component (Section 6.4). One job covers every site of the Study. `CatalogController` sends the optional dataset selection, and the names the server already holds for each site, in a normal FLARE task. The job carries a meta property, `fdn_catalog_read`, that tells the server to apply its result. `CatalogExecutor` resolves existing mounts, reads metadata, preserves approved declarations, applies the Study policy and returns a `Shareable`.
+
+A catalog read uses the execute task only. No service socket, prepare/commit protocol or separate catalog Study is required by the mounted-data pilot. Cancellation uses normal job/task lifecycle handling and must stop the reader; an interrupted result supplies no metadata, and the manager updates job health without claiming a dataset check.
+
+Site results are checked for JSON serialization independently before the shared manifest is signed. A malformed site result cannot block healthy sites or valid policy restrictions. The private controller context is removed in both the job and the parent server before workspace archiving, including container runs and jobs that fail before controller startup. Before archiving, the parent captures the signed result in a private inbox under `fdn/catalog-results/` and removes result/context files and their temporary copies from the job workspace. Ingestion verifies and consumes that private copy after completion. Older stored catalog workspaces are redacted before job downloads; if capture, cleanup or redaction fails, the archive or download is blocked. Raw publications never serve as downloadable catalog history.
+
+### 6.2 Reconciliation
+
+For each client's terminal result:
+
+1. Verify the authenticated job/task/client binding as recorded in the controller's manifest, and a supported bounded payload format. Only the job that holds its Study's read is applied, once (Section 6.3). Reject unsolicited messages. Validate `withheld` names against the manifest's selection.
+2. In one atomic update, apply valid restrictions first. They need no check time and survive failures elsewhere in the payload. Suppress the shared search projection.
+3. Process complete catalogs and checked `unavailable` names independently per dataset. A bad dataset or observation does not block healthy entries. Unselected names are unchanged, and infrastructure failures establish no dataset outcome.
+4. Compare accepted metadata under Section 3.3, assign catalog/schema versions, store the reported observation, and commit all accepted changes atomically. Replaying the same result changes nothing.
+5. Invalidate affected search caches/cursors; check suppression in the authoritative store until convergence. Report last attempt, last source-check time and health separately. One client's failure does not block another's results.
+
+The server stores catalog publications and read health under `(study, client, dataset)`. Existing `StudyRegistryService` remains the authority for Study membership; these rows do not define membership. There are no source checkpoints, catalog-scope rows, absence counters or duplicate identity registries in the pilot.
+
+### 6.3 Recovery
+
+One catalog job per Study runs at a time. The server hands a job the key that signs its result, and the names it holds for the Study, only when no other catalog job of that Study holds the read; a second job, however it was created, runs without a key and its result is never applied, and a second submission is refused while the read is running or being applied. Each read therefore starts from the state every earlier read left, a site reports a withdrawal for every name the server holds, and results need no ordering by time. The holder is released once its result is applied, or recorded as missing for its sites, including missing workspace/storage failures. Restart restores holders only for launched jobs; pending jobs block through their stored status and take a holder at launch. Terminal or deleted holders without lifecycle events are recovered by the manager's idle poll. The server applies a result only from a manifest the job's controller signed with a key held in the server's workspace, so a job's own files cannot pose as a result. The server applies a result when the job completes; a result that completes while the server is down is not applied, and the next run replaces it. Source reads can be repeated and never mutate the original dataset. Replaying the same result is a no-op: unchanged metadata creates no version. An offline site retains its last known permitted metadata. A failed scheduling/transport attempt changes health only; the stored flag and check time continue to describe the previous dataset check.
+
+### 6.4 Scheduling
+
+Periodic and manual reads are the same job. A manual read is `CatalogRecipe` run with `python job.py`; there is no special refresh command. A generic server component, `PeriodicJobSubmitter`, submits the recipe's job for each Study every interval, with a default of 24 hours (schema changes are rare, and an analyst runs the recipe ad hoc). By default it covers every registered Study; a configured `studies` list narrows it, and with no registry it uses the default Study. It signs the job with an admin-role service identity, so servers that require signed jobs accept it. Signing credentials stay under the parent server workspace's owner-only `private/scheduled_jobs/` directory, outside every job mount and bundle; configured paths and symlinks escaping that directory are refused. A Study whose previous job has not finished is skipped, and a scheduled job refused because a manual read is running is retried an interval later; a job that never started (for example no site connected) is aborted through the job runner after a timeout so the next one can be submitted; every scheduled job passes the same `SUBMIT_JOB` event as a user submission, so components that block submissions also block it; a failed submission is retried an interval later. A site that enrolls later is read at the next run. The server never deletes a finished catalog job, so the job store grows by one job per Study per interval. Benchmark the interval against actual inventory sizes and training workload.
+
+The site may enforce execution time windows in its approved handler. Minimum intervals are scheduling policy enforced by the coordinator; the site has no persistent read state in this design. Dataset reuse across Studies may require an operator-configured shared resource limit; FDN does not invent another source identity to infer it. A site's hard quota must be enforced by its existing launcher/storage/resource controls.
+
+Show the latest check time and report clients whose checks fail or are deferred. Report any entries hidden because a read skipped them for budget (`reason_code: BUDGET_EXCEEDED`), per client, so operators raise the budget instead of living with hidden entries. Measure scheduling and read delay; the nominal interval is not a guarantee of current availability. There is no catalog validity lifetime to renew.
+
+### 6.5 Catalog CLI contract
+
+`nvflare catalog read` is for ad hoc updates and testing; scheduled reads retain the 24-hour default. It exports the same recipe and submits through the shared CLI Session. It waits for terminal job status by default without downloading a workspace; `--no-wait` returns the job id immediately after submission. When waiting, completed jobs exit 0 and failed, aborted or unschedulable jobs exit 1. Both `read` and `show` provide human-readable output by default and one versioned envelope on stdout with `--format json`; diagnostics and progress go to stderr. `show` reports FAILED, DEGRADED and stale site health even when no entries are visible. `--schema` works without a connection.
+
+## 7. Search and execution handoff
+
+Catalog search queries the stored catalogs of the active FLARE Study across its authorized clients. It checks the current user's existing Study authorization on every call and page. Filter before ranking, facets, totals and pagination. Search caches and cursors bind the Study and relevant existing user permissions; never merge metadata across Studies into a broader view.
+
+Results expose the existing client and dataset name, permitted metadata, version, source observation, publication time, `available` and `last_checked_at`. An unavailable entry shows only client, dataset name, `available` and `last_checked_at`, not its metadata, and metadata filters do not match it; an available-only filter is optional. Withheld entries and their history are excluded regardless of availability. Apply Study authorization and suppression before all filters and projections. Shared lineage projections also omit references to currently withheld entries. Detailed failures remain in authorized diagnostics.
+
+Selecting a dataset passes its existing name or committed service reference and pinned catalog/schema/mapping versions to a separately admitted operation in that Study. The site revalidates against its actual binding and live data before execution and release. The catalog is a discovery view, not a new data-access grant.
+
+## 8. Delivery and validation
+
+Build one complete path first: an existing Study with mounted synthetic datasets at three clients; one approved job; full metadata reads; publication; authorized search; and cohort-count handoff. Add connectors and optimizations only after that path works.
+
+Required checks:
+
+- Resolve dataset names from existing Study bindings and the site's `catalog_site.json`; an unknown selected name is never read or named, and request-supplied paths/imports are ignored. Verify actual mounts under the supported launcher.
+- Corrupt dataset B among A/B/C: A and C still update; B is explicitly unavailable and contains no partial schema. Exhaust a dataset budget and the aggregate budget separately: skipped entries are withheld with availability and check time unchanged, and reappear after a later successful read. Launch failure or hard framework timeout changes health only.
+- Aggregate three clients into one Study's federated catalog, including identical dataset names at two sites: both entries retain their client identity. Refresh one site and verify that the other sites' entries remain unchanged.
+- Publish different metadata for the same underlying data in two existing Studies; each participating user sees only their permitted Study view.
+- Change metadata, availability and observation together and separately; flags and check times create no false metadata versions. Unselected datasets remain unchanged; an explicitly checked missing binding becomes unavailable, not deleted.
+- Replay a result and restart the manager: unchanged metadata creates no false version; a job reported twice (aborted, then completed) is applied once.
+- Run the recipe while a scheduled job is running: the second submission is refused; a second catalog job that reaches launch another way (a cloned job) runs without a key and changes nothing. A job that survives a server restart keeps its Study's read.
+- Exercise explicit unavailability, missing mounts, removed bindings, recovery, offline clients and late results. Verify distinct source/check times and that a deferred read does not advance them.
+- Withhold a previously indexed dataset, including alongside a future observation or another dataset's read failure: it disappears from search, facets, counts and cached pages; its last metadata is retained, hidden. Omission/unavailability cannot restore it; a later permitted catalog can. Test field restriction by full replacement.
+- Validate every metadata example against Section 3.3. Test unknown keys, duplicate/unresolved columns, source types reported unchanged, independent catalog/schema/mapping versions, and future-dated or malformed observations (stored as null with the permitted metadata accepted, replacing a previously published field that policy now excludes).
+- Change metadata, availability and metadata permission in one read: each dimension updates independently; replay/restart creates no false versions.
+- Make a client's catalog job time out after the site narrows its policy: the manager reports the client as stale, stored metadata stays until the next successful read, and the documented mitigation (administrative Study access restriction) hides it.
+- Make the aggregate budget skip an entry in normal operation: the manager reports the skipped entry per client so the budget can be raised.
+- With preparation enabled, commit a derived dataset without adding a mount: a recipe run naming it lists it and lineage links source and derived. Run none: the next periodic read lists it. Resolve it through the service. Staging/failed outputs never appear.
+- Policy format: an unlisted dataset is withheld; an unlisted derived output is withheld (a `derived` rule is accepted only once the derived-dataset reader exists); an unknown key, wrong type, bad `format_version` or missing `share` makes the file invalid; a name that matches nothing is ignored; `exclude_metadata` publishes the field as null or empty; `operations` absent advertises none.
+- Remove/corrupt the protected policy source or make it inaccessible: no metadata is published, selected cached entries are withheld, and health reports configuration failure. Update the source atomically: the next read uses the new revision; no job-packaged/default policy can take over.
+- Exclude a referenced table/column: remove dependent relationships and partial primary-key declarations, validate and publish the remaining permitted metadata without leaking excluded names.
+- Preserve declared formats/versions and provenance without inferring a standard from structure. Verify that an operation rejects required unknown/unsupported versions, missing columns and incompatible types. If a concrete standards validator is enabled, test it against its pinned specification as a separate approved quality/preparation check (Section 4.4).
+- Benchmark calls, bytes, scan time, job startup, spill/memory, queue delay, jobs per Study/day and competition with representative training jobs before setting latency claims.
+
+## 9. Pilot decisions
+
+1. Select existing Study datasets and the initial mounted formats/readers.
+2. Select site-configured shared fields within the normative v1 schema (Section 3.3); schema extension requires a new format version.
+3. Verify runtime access to existing bindings and protected policy under the actual launcher.
+4. Pin the declared standards/versions and operation mappings required by the pilot. Select concrete standards checks only when the Study needs them, and qualify the relevant operation implementations.
+5. Set full-read budgets and refresh frequency from measured workload costs, and confirm that no budget skips entries in normal operation.
+6. Decide whether the no-result exposure window (Section 5) is acceptable for the pilot Study; if not, plan the administrative Study access restriction as its mitigation.
+7. Defer incremental checkpoints, absence inference and per-user metadata projections until requirements and measurements justify their contracts.

@@ -375,6 +375,7 @@ class _FakeListJobDefManager:
 class _FakeListEngine:
     def __init__(self, jobs):
         self.job_def_manager = _FakeListJobDefManager(jobs)
+        self.fire_event = MagicMock()
 
     def new_context(self):
         from nvflare.apis.fl_context import FLContext
@@ -2142,6 +2143,37 @@ def test_download_job_packages_all_default_components_for_finished_job(monkeypat
     assert conn.errors == []
     assert engine.job_def_manager.get_storage_for_download.call_count == 3
     module.download_folder.assert_called_once()
+
+
+@pytest.mark.parametrize("blocked", [False, True])
+def test_artifact_policy_runs_before_any_download_is_prepared(monkeypatch, tmp_path, blocked):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine(
+        [
+            _FakeListedJob(
+                {JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED.value}
+            )
+        ]
+    )
+    actions = []
+
+    def authorize_download(event_type, fl_ctx):
+        assert event_type == EventType.BEFORE_JOB_DOWNLOAD
+        assert fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID) == "job-1"
+        actions.append("policy")
+        if blocked:
+            fl_ctx.set_prop(FLContextKey.JOB_BLOCK_REASON, "private artifacts could not be secured", sticky=False)
+
+    engine.fire_event = authorize_download
+    engine.job_def_manager.get_storage_for_download = lambda *args: actions.append("package")
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.DOWNLOAD_DIR: str(tmp_path)})
+    module = JobCommandModule()
+    module.download_folder = MagicMock()
+    module.download_job(conn, ["download_job", "job-1"])
+
+    assert actions == (["policy"] if blocked else ["policy", "package", "package", "package"])
+    assert bool(conn.errors) is blocked
+    assert module.download_folder.called is not blocked
 
 
 def test_get_job_log_returns_server_log(monkeypatch, tmp_path):

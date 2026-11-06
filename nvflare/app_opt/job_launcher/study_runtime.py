@@ -279,6 +279,9 @@ def _parse_dataset(study: str, dataset: str, entry, file_path: str, launcher_mod
         source = _require_slurm_absolute_path(source, f"{label}.source", file_path, mount_operand=True)
     else:
         source = _require_str(source, f"{label}.source", file_path)
+        if launcher_mode == "process" and not posixpath.isabs(source):
+            # nothing is mounted in process mode: the job reads the source in place, from any working directory
+            raise _error(file_path, f"{label}.source must be an absolute path.")
     mode = entry.get("mode")
     if mode not in (MODE_RO, MODE_RW):
         raise _error(file_path, f"{label}.mode must be '{MODE_RO}' or '{MODE_RW}'.")
@@ -428,7 +431,7 @@ def _parse_study(
     if "slurm" in entry and launcher_mode != "slurm":
         raise _error(file_path, "slurm is Slurm-only and is not supported by this launcher.")
     if launcher_mode == "process":
-        unsupported = set(entry) - {"env", "secret_env"}
+        unsupported = set(entry) - {"datasets", "env", "secret_env"}
         if unsupported:
             raise _error(file_path, f"studies.{study}: process mode does not support {sorted(unsupported)}.")
 

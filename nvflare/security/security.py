@@ -58,6 +58,9 @@ COMMAND_CATEGORIES = {
     AC.SHELL_PWD: CommandCategory.SHELL_COMMANDS,
     AC.SHELL_TAIL: CommandCategory.SHELL_COMMANDS,
     AC.DOWNLOAD_JOB: CommandCategory.DOWNLOAD_JOB,
+    # federated data catalog commands (nvflare/app_common/fdn/catalog/server/commands.py)
+    "fdn_catalog_search": CommandCategory.VIEW,
+    "fdn_catalog_status": CommandCategory.VIEW,
 }
 
 

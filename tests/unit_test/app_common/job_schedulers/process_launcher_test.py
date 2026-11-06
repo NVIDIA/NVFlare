@@ -217,7 +217,7 @@ def test_runtime_errors_prevent_spawn(tmp_path, monkeypatch, failure, caplog):
     if failure == "malformed":
         path.write_text("studies: [")
     elif failure == "unsupported":
-        _write_runtime(tmp_path, {"other-study": {"datasets": {}}})
+        _write_runtime(tmp_path, {"other-study": {"mounts": {}}})
     elif failure == "read-error":
         path.unlink()
         path.mkdir()

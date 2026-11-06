@@ -635,6 +635,18 @@ class JobRunner(FLComponent):
             self.abort_client_run(job.job_id, active_client_sites_names, fl_ctx)
         return self._classify_finished_job_status(run_process)
 
+    @staticmethod
+    def _before_archive(fl_ctx: FLContext, job_id: str):
+        """Let components remove private files they put in the run dir; a job's own copy may be uploaded over the
+        parent's, so only the parent can be sure they are gone. A component that cannot remove one blocks the
+        archive, which is retried like any failed archive."""
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.JOB_BLOCK_REASON, None, private=True, sticky=False)
+        fl_ctx.get_engine().fire_event(EventType.BEFORE_JOB_WORKSPACE_ARCHIVE, fl_ctx)
+        reason = fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
+        if reason:
+            raise RuntimeError(f"workspace archive blocked: {reason}")
+
     def _save_workspace(
         self, fl_ctx: FLContext, finished_state: _FinishedJobState | None = None, job_id: str | None = None
     ):
@@ -648,6 +660,7 @@ class JobRunner(FLComponent):
             # the archive is served by download_job; the job credential is dead and must not be in it
             if os.path.isdir(run_dir):
                 remove_job_cert(run_dir)
+                self._before_archive(fl_ctx, job_id)
             result_root = workspace.get_result_root(job_id)
             log_root = workspace.get_log_root(job_id)
             audit_root = workspace.get_audit_root(job_id)
