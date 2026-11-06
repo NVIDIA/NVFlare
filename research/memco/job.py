@@ -280,6 +280,7 @@ def _load_config(path: Path, data_root: Path | None, alfworld_game_root: Path | 
     ):
         raise ValueError(f"domains must be a nonempty, unique subset of {CANONICAL_DOMAINS[family]}")
     config["domains"] = list(domains)
+    config["model"] = os.environ.get("MEMCO_LLM_MODEL") or config.get("model", "gpt-4o-mini")
     policy = str(config.get("promotion_policy", "wilson")).strip().lower()
     if policy not in {"legacy", "shadow", "wilson"}:
         raise ValueError("promotion_policy must be legacy, shadow, or wilson")

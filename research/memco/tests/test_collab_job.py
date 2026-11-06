@@ -14,6 +14,7 @@
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -66,6 +67,13 @@ class CollabJobTest(unittest.TestCase):
         self.assertEqual(["gripper", "blockworld"], config["domains"])
         self.assertEqual(2, config["max_train_tasks"])
         self.assertEqual(1, config["max_evaluate_tasks"])
+
+    def test_model_environment_override_reaches_exported_worker_command(self):
+        with patch.dict(os.environ, {"MEMCO_LLM_MODEL": "qwen32b-api"}):
+            config = COLLAB_JOB._load_config(PROJECT_ROOT / "configs" / "pddl-smoke.json", None, None)
+        self.assertEqual("qwen32b-api", config["model"])
+        command = COLLAB_JOB._worker_command(config, "gripper", "train", PROJECT_ROOT)
+        self.assertEqual("qwen32b-api", command[command.index("--model") + 1])
 
     def test_invalid_domain_subsets_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -131,6 +139,7 @@ class CollabJobTest(unittest.TestCase):
                 self.assertEqual(worker, Path(command[1]))
                 self.assertTrue(Path(command[1]).is_file())
                 self.assertTrue((worker.parent / "mas").is_dir())
+                self.assertTrue((worker.parent / "mas" / "llm_config.py").is_file())
                 self.assertTrue((worker.parent / "tasks").is_dir())
                 self.assertTrue((worker.parent / "memco").is_dir())
 

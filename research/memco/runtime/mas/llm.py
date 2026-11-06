@@ -19,8 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Literal, Optional, Protocol
 
-from openai import OpenAI
-
+from .llm_config import create_llm_client
 from .llm_replay import LLMReplayTape
 from .utils import load_config
 
@@ -30,11 +29,6 @@ LLM_CONFIG: dict = CONFIG.get("llm_config", {})
 MAX_TOKEN = LLM_CONFIG.get("max_token", 512)
 TEMPERATURE = LLM_CONFIG.get("temperature", 0.1)
 NUM_COMPS = LLM_CONFIG.get("num_comps", 1)
-
-URL = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
-KEY = os.environ.get("OPENAI_API_KEY", "")
-print("# api url: ", URL)
-
 
 completion_tokens, prompt_tokens = 0, 0
 
@@ -84,9 +78,7 @@ class GPTChat(LLM):
         if bool(replay_mode) != bool(replay_path):
             raise ValueError("MEMCO_LLM_REPLAY_MODE and MEMCO_LLM_REPLAY_PATH must be set together")
         self.replay_tape = LLMReplayTape(Path(replay_path), replay_mode) if replay_mode else None
-        if replay_mode != "replay" and not KEY:
-            raise ValueError("OPENAI_API_KEY is required for live or record mode")
-        self.client = None if replay_mode == "replay" else OpenAI(base_url=URL, api_key=KEY)
+        self.client = None if replay_mode == "replay" else create_llm_client()
         self._is_qwen = "qwen" in (model_name or "").lower()
         self._is_qwen4b = "qwen4b" in (model_name or "").lower()
         self._is_qwen32b = "qwen32b" in (model_name or "").lower()

@@ -358,7 +358,7 @@ def main() -> None:
     parser.add_argument("--promotion-policy", choices=["legacy", "shadow", "wilson"], default="wilson")
     parser.add_argument("--wilson-alpha", type=float, default=0.05)
     parser.add_argument("--wilson-threshold", type=float, default=0.35)
-    parser.add_argument("--model", default="gpt-4o-mini")
+    parser.add_argument("--model", default=os.environ.get("MEMCO_LLM_MODEL") or "gpt-4o-mini")
     parser.add_argument("--max-tasks", type=int, default=1)
     parser.add_argument("--max-trials", type=int, default=7)
     parser.add_argument("--alfworld-game-root", type=Path)

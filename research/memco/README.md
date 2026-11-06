@@ -152,16 +152,35 @@ python -m pip install -r research/memco/requirements.txt
 python -m nltk.downloader punkt punkt_tab
 ```
 
-Never place API credentials in source files. Export the endpoint and key in the
-shell:
+MemCo supports OpenAI and local GPU model servers exposing an OpenAI-compatible
+chat-completions API, such as vLLM. Configure the endpoint, key, and model using the
+same provider-neutral environment variables.
+
+For OpenAI:
 
 ```bash
-export OPENAI_API_BASE="https://your-openai-compatible-endpoint/v1"
-export OPENAI_API_KEY="your-key"
+export MEMCO_LLM_BASE_URL="https://api.openai.com/v1"
+export MEMCO_LLM_API_KEY="your-openai-key"
+export MEMCO_LLM_MODEL="gpt-4o-mini"
 ```
 
-The default model is `gpt-4o-mini`. Override `model` in the selected JSON
-configuration when using another OpenAI-compatible model endpoint. The first live run
+For a local GPU server serving Qwen through vLLM:
+
+```bash
+export MEMCO_LLM_BASE_URL="http://gpu-host:8000/v1"
+export MEMCO_LLM_API_KEY="unused"
+export MEMCO_LLM_MODEL="qwen32b-api"
+```
+
+Use the server's actual served model name and API key; `unused` is a placeholder for
+servers without authentication. The server address must be reachable from every
+NVFlare client. Use `127.0.0.1` only when the model server runs on the same machine
+as the clients.
+
+`MEMCO_LLM_MODEL` overrides `model` in the selected JSON configuration. Without it,
+the configured model is used (default `gpt-4o-mini`). Existing `OPENAI_*` connection
+variables remain supported when the corresponding `MEMCO_LLM_*` values are unset.
+Keep credentials in the environment, outside job configurations. The first live run
 also downloads the `sentence-transformers/all-MiniLM-L6-v2` embedding model.
 
 ## Benchmark Setup
@@ -266,11 +285,6 @@ Starting from an empty snapshot also removes records that no longer meet the low
 bound. `shadow` keeps legacy promotion active while writing the corresponding Wilson
 result for comparison.
 
-The paper-parameter controls
-`NV_MEMCO_PAPER_EQ22_27_ALL_ONES=1` and
-`NV_MEMCO_PAPER_A3_2_ACTIVATION_ALL_ONES=1` affect retrieval and routing weights, not
-the Wilson acceptance rule.
-
 ## Outputs
 
 The Collab simulator creates separate server and client work directories below the
@@ -302,7 +316,7 @@ python -m flake8 research/memco
 python ci/check_license_header.py research/memco
 ```
 
-All 33 unit tests pass without a model endpoint, including export/path regressions,
+The unit tests run without a model endpoint, including export/path regressions,
 Workspace compatibility, success metrics, Wilson promotion, aggregation, and replay.
 
 Run style checks explicitly on `research/memco`; the repository's default style-check
@@ -310,8 +324,9 @@ targets do not include `research/`.
 
 ### Representative NVFlare Run
 
-The two-client PDDL smoke configuration uses live model calls. Set `OPENAI_API_KEY`
-and `OPENAI_API_BASE` as described above, prepare the PDDL partitions, and run:
+The two-client PDDL smoke configuration uses live model calls. Set
+`MEMCO_LLM_API_KEY`, `MEMCO_LLM_BASE_URL`, and `MEMCO_LLM_MODEL` as described above,
+prepare the PDDL partitions, and run:
 
 ```bash
 PYTHONHASHSEED=41 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
