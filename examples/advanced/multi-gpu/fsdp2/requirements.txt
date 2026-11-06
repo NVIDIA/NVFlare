@@ -1,0 +1,4 @@
+nvflare>=2.10.0rc0,<2.11
+torch>=2.6
+transformers>=4.56,<5
+datasets>=3.6,<5
