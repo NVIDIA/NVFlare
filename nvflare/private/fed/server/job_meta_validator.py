@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import collections
+import json
 import logging
+import os
 from io import BytesIO
 from typing import Optional, Set, Tuple
 from zipfile import ZipFile
@@ -24,8 +26,7 @@ from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.apis.job_meta_validator_spec import JobMetaValidatorSpec
 from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
-from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
@@ -90,15 +91,13 @@ class JobMetaValidator(JobMetaValidatorSpec):
     @staticmethod
     def _validate_meta(job_name: str, zf: ZipFile) -> Optional[dict]:
         base_meta_file = f"{job_name}/{JobConstants.META}"
-        logger.debug(f"validate file {base_meta_file}.[json|conf|yml] exists for job {job_name}")
+        logger.debug(f"validate file {base_meta_file}.json exists for job {job_name}")
 
         meta = None
-        for ext, fmt in ConfigFormat.config_ext_formats().items():
+        for ext in ConfigService.CONFIG_EXTENSIONS:
             meta_file = f"{base_meta_file}{ext}"
             if meta_file in zf.namelist():
-                config_loader = ConfigFactory.get_config_loader(fmt)
-                meta_data = zf.read(meta_file)
-                meta = config_loader.load_config_from_str(meta_data.decode()).to_dict()
+                meta = json.loads(zf.read(meta_file).decode())
                 break
         if meta:
             job_id = meta.get(JobMetaKey.JOB_ID.value)
@@ -111,7 +110,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
         if not meta:
             raise ValueError(
-                f"{JobConstants.META}.[json|conf|yml] not existing for job {job_name}, possible in legacy job format.  Please upgrade the job structure."
+                f"{JobConstants.META}.json not existing for job {job_name}, possible in legacy job format.  Please upgrade the job structure."
             )
 
         deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value)
@@ -188,9 +187,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
             client_sites = [site for site in deployments if site != SERVER_SITE_NAME]
             if client_sites:
-                client_config = (
-                    self._load_config(zip_file, config_folder, JobConstants.CLIENT_JOB_CONFIG, resolve=False) or {}
-                )
+                client_config = self._load_config(zip_file, config_folder, JobConstants.CLIENT_JOB_CONFIG) or {}
                 if not isinstance(client_config, dict):
                     raise ValueError("client app config must be a dictionary")
                 lifetime = get_client_execution_lifetime(client_config)
@@ -217,45 +214,12 @@ class JobMetaValidator(JobMetaValidatorSpec):
             meta.pop(FlowerConstant.FLOWER_PREDEPLOYED, None)
 
     @staticmethod
-    def _load_config(zip_file: ZipFile, zip_folder: str, init_config_path: str, *, resolve=True) -> Optional[dict]:
-        basename = ConfigFactory.get_file_basename(init_config_path)
-        for ext, fmt in ConfigFormat.config_ext_formats().items():
+    def _load_config(zip_file: ZipFile, zip_folder: str, init_config_path: str) -> Optional[dict]:
+        basename = os.path.basename(init_config_path).split(".", 1)[0]
+        for ext in ConfigService.CONFIG_EXTENSIONS:
             config_path = f"{zip_folder}{basename}{ext}"
             if config_path in zip_file.namelist():
-                config_loader = ConfigFactory.get_config_loader(fmt)
-                config_data = zip_file.read(config_path)
-                text = config_data.decode()
-                if not resolve and fmt == ConfigFormat.PYHOCON:
-                    from pyhocon import ConfigFactory as HoconFactory
-
-                    # Client includes and substitutions belong to the client.
-                    # Strip include directives without interpreting their targets;
-                    # otherwise submission could open client paths or URLs on SJ.
-                    from pyparsing import CaselessKeyword, Literal, Regex, Suppress
-
-                    from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
-
-                    quoted = Regex(r'"(?:[^"\\\n]|\\.)*"[ \t]*')
-                    target = quoted | (
-                        (CaselessKeyword("url") | CaselessKeyword("file") | CaselessKeyword("package"))
-                        + Literal("(")
-                        + quoted
-                        + Literal(")")
-                    )
-                    include = CaselessKeyword("include") + (
-                        target | (CaselessKeyword("required") + Literal("(") + target + Literal(")"))
-                    )
-                    # Match pyhocon's complete opaque-token grammar, including
-                    # extra closing quotes in multiline strings.
-                    opaque = Regex(r'"""[\s\S]*?"*"""') | quoted | Regex(r"(?://|#)[^\r\n]*")
-                    text = (opaque | Suppress(include)).transform_string(text)
-                    # Never delegate a surviving directive to the include-capable
-                    # parser. Keep unrelated keys named "include" valid.
-                    remaining = (Suppress(opaque) | include).search_string(text)
-                    if any(tokens for tokens in remaining):
-                        raise ValueError("client config includes cannot be opened during submission")
-                    return PyhoconConfig(HoconFactory.parse_string(text, resolve=False)).to_dict()
-                return config_loader.load_config_from_str(text).to_dict(resolve=resolve)
+                return json.loads(zip_file.read(config_path).decode())
         return None
 
     @staticmethod
@@ -381,10 +345,6 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
     @staticmethod
     def _config_exists(zip_file: ZipFile, zip_folder, init_config_path: str) -> bool:
-        def match(parent: ZipFile, config_path: str) -> bool:
-            import os
-
-            full_path = os.path.join(zip_folder, config_path)
-            return full_path in parent.namelist()
-
-        return ConfigFactory.match_config(zip_file, init_config_path, match)
+        basename = os.path.splitext(os.path.basename(init_config_path))[0]
+        names = zip_file.namelist()
+        return any(os.path.join(zip_folder, f"{basename}{ext}") in names for ext in ConfigService.CONFIG_EXTENSIONS)

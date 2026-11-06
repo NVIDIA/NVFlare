@@ -124,6 +124,50 @@ submit that folder with current credentials. Downloading currently requires the
 job to have finished, so this recovery path does not cover every case supported
 by cloning.
 
+Job Templates Removed
+---------------------
+
+Job templates are removed. The ``job_templates`` directory is no longer part of
+the repository or the installed package, and the following are removed with it:
+
+- ``nvflare job create``
+- ``nvflare job list-templates`` (alias ``list_templates``)
+- ``nvflare job show-variables`` (alias ``show_variables``)
+- ``nvflare config -jt/--job_templates_dir``
+
+Impact:
+
+- Scripts that call these commands now fail with an invalid-command or
+  invalid-argument error. ``nvflare job submit`` is unchanged.
+
+Define jobs with the Job Recipe API instead. Use ``nvflare recipe list`` and
+``nvflare recipe show <recipe>`` to discover recipes, export the job with
+``python job.py --export --export-dir <job_folder>``, and submit it with
+``nvflare job submit -j <job_folder>``.
+
+HOCON and OmegaConf Config Support Removed
+------------------------------------------
+
+FLARE reads configuration files only as JSON (``.json``, with ``.json.default``
+as the fallback). HOCON (``.conf``) and OmegaConf (``.yml``/``.yaml``) job and
+site configs are no longer recognized, and ``pyhocon`` is no longer a
+dependency. The ``CONFIG`` and ``core_opt`` install extras are removed.
+Provisioning and Kubernetes YAML files are not affected.
+
+Impact:
+
+- Jobs with HOCON or YAML configs, including stored jobs and jobs submitted by
+  older clients, are rejected. Rewrite their ``meta``, ``config_fed_server`` and
+  ``config_fed_client`` files as JSON, or re-export them with the Job Recipe API.
+- Hand-written ``.conf`` or ``.yml`` site configs are ignored. Provisioned site
+  configs are already JSON.
+- CLI settings move from ``~/.nvflare/config.conf`` to ``~/.nvflare/config.json``.
+  The old file is no longer read; the CLI prints a warning while it exists.
+  Re-register startup kits with ``nvflare config add <id> <startup-kit-dir>`` and
+  ``nvflare config use <id>``, and set the POC workspace with
+  ``nvflare poc config --pw <dir>``.
+- ``nvflare job submit`` looks only for ``meta.json`` and ``config_fed_*.json``.
+
 Legacy Client API Stack Removal
 -------------------------------
 
@@ -197,7 +241,7 @@ CLI Startup Kit Resolution Change
 ---------------------------------
 
 On the current ``main`` branch, server-connected CLI commands use a shared
-active startup kit registry in ``~/.nvflare/config.conf``.
+active startup kit registry in ``~/.nvflare/config.json``.
 
 Impact:
 
@@ -207,8 +251,6 @@ Impact:
   with 2.7.x scripts, but is deprecated.
 - ``NVFLARE_STARTUP_KIT_DIR`` remains an automation override and takes
   precedence over the active registry entry when set.
-- ``nvflare config -jt/--job_templates_dir`` remains accepted for compatibility
-  with 2.7.x scripts, but job template config is deprecated.
 - Root ``nvflare config`` continues to manage local settings such as the POC
   workspace. Startup kit paths are managed by the ``nvflare config``
   subcommands.

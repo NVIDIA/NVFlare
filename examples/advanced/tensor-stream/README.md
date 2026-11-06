@@ -270,13 +270,12 @@ Tensor streaming automatically handles timeout configuration! The server calcula
 
 **Optional Manual Override (Advanced)**
 
-If you need explicit control (e.g., testing, very slow networks), you can manually set `get_task_timeout` in `config_fed_client.json`:
+If you need explicit control (e.g., testing, very slow networks), you can manually set `get_task_timeout` in `config_fed_client.json` as an explicit override (optional - auto-configured if not set; `executors` and `components` elided):
 
 ```json
-// config_fed_client.json (optional - auto-configured if not set)
 {
   "format_version": 2,
-  "get_task_timeout": 400.0,  // Explicit override
+  "get_task_timeout": 400.0,
   "executors": [...],
   "components": [...]
 }

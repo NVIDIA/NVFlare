@@ -1,0 +1,32 @@
+{
+  "format_version": 2,
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [],
+  "workflows": [
+    {
+      "id": "swarm_controller",
+      "path": "nvflare.app_common.ccwf.SwarmServerController",
+      "args": {
+        "num_rounds": 1,
+        "participating_clients": [
+          "site-1",
+          "site-2"
+        ],
+        "starting_client": "site-1",
+        "train_clients": [
+          "site-1",
+          "site-2"
+        ],
+        "aggr_clients": [
+          "site-2"
+        ],
+        "result_clients": [
+          "site-1",
+          "site-2"
+        ],
+        "private_p2p": true
+      }
+    }
+  ]
+}

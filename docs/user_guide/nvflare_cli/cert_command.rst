@@ -82,6 +82,16 @@ Common ``init`` options:
   ``prod_<NN>`` directory, for example ``00`` maps to ``prod_00``.
 - ``--schema``: print JSON schema for this command.
 
+NVFlare 2.8.0 introduced a bug in ``cert init --org`` that omitted the
+organization from the root's issuer name.
+If an existing root created with this command has different subject and
+issuer names, recreate the CA in a fresh directory with a new deploy version,
+then reissue and repackage all participant kits using the new root fingerprint.
+A valid externally supplied root can be retained; reissue certificates whose
+issuer does not match its full subject. Centralized provisioning reuses cached
+certificates, so use a fresh provisioning workspace with the retained valid root
+and key to regenerate affected kits.
+
 ********************
 Create a Request Zip
 ********************

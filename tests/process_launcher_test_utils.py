@@ -25,7 +25,7 @@ import psutil
 import pytest
 
 from nvflare.apis.task_launcher_spec import TaskLaunchRequest
-from nvflare.app_common.task_launcher.process_launcher import ProcessTaskHandle, ProcessTaskLauncher
+from tests.local_task_launcher import ProcessTaskHandle, ProcessTaskLauncher
 
 requires_waitid = pytest.mark.skipif(
     not all(hasattr(os, name) for name in ("waitid", "WNOWAIT", "P_PID", "WEXITED", "WNOHANG", "CLD_EXITED")),
@@ -63,9 +63,14 @@ def _request(tmp_path, attempt_id, code, *args, environment=None):
 
 def _wait_for_file(path, timeout=5.0):
     deadline = time.monotonic() + timeout
-    while not path.exists():
+    while True:
+        try:
+            if path.stat().st_size > 0:
+                return
+        except FileNotFoundError:
+            pass
         if time.monotonic() >= deadline:
-            pytest.fail(f"timed out waiting for {path}")
+            pytest.fail(f"timed out waiting for contents of {path}")
         time.sleep(0.01)
 
 
