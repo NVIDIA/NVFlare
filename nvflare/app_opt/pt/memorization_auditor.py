@@ -46,6 +46,12 @@ class PTMemorizationAuditor(MemorizationAuditor):
     "metrics": {...}}. Only aggregates enter the report. Record ordering must be
     identical for baseline and candidate scoring. Check the cooperative deadline
     between batches; this budget cannot preempt a blocked CUDA operation.
+
+    Supply the complete evaluation module state_dict, including persistent buffers,
+    not only trainable parameters. Adapter-only/partial updates are unsupported.
+    Applications exchanging adapters must reconstruct their exact base and adapter
+    state in a separate task-specific auditor. Differences require a complete,
+    matching full baseline and every state key for the same round.
     """
 
     @experimental("PTMemorizationAuditor API may change")
