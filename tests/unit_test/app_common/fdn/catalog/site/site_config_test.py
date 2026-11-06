@@ -36,7 +36,8 @@ def load(tmp_path, config):
 class TestDefaults:
     def test_the_smallest_file_means_mounted_parquet_data_with_default_limits(self, tmp_path):
         site = load(tmp_path, {"format_version": 1})
-        assert site.connectors == {PARQUET_CONNECTOR: ConnectorSpec(DEFAULT_CONNECTOR_CLASS)}
+        assert site.connectors[PARQUET_CONNECTOR] == ConnectorSpec(DEFAULT_CONNECTOR_CLASS)
+        assert site.connectors["sqlite"].path == "nvflare.app_opt.fdn.catalog.sqlite_connector.SQLiteConnector"
         assert site.default_connector == PARQUET_CONNECTOR and site.bindings("any") == {}
         assert site.limits == ReadLimits(60, 1000, 10000) and site.installed_operations == frozenset()
 
@@ -60,7 +61,7 @@ class TestConnectorsAndBindings:
 
     def test_the_built_in_parquet_connector_is_always_there_next_to_the_named_ones(self, tmp_path):
         site = load(tmp_path, self.CONFIG)
-        assert set(site.connectors) == {"parquet", "claims-db", "lake"}
+        assert set(site.connectors) == {"parquet", "sqlite", "claims-db", "lake"}
         assert site.connectors["claims-db"] == ConnectorSpec("a.Sql", {"host": "h"})
 
     def test_each_study_binds_its_own_datasets_to_connectors_of_different_source_types(self, tmp_path):
