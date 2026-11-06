@@ -89,6 +89,10 @@ does not infer clinical equivalence or perform conversions.
 
 ## Inspect results
 
+For workflow progress on the console, run `python job.py --log_config progressive`
+(`progress` is also supported). Invalid logging selectors are rejected before
+the simulator starts, with a usage error listing supported modes.
+
 A fresh run returns two catalog entries, each containing two tables. The JSON is
 printed and saved to `/tmp/nvflare/federated-catalog/store/discovery.json`.
 Use a JSON viewer or standard tools:
