@@ -32,14 +32,14 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n")
 
 
-def make_tables(site_index, people):
+def make_tables(site_index, people, id_offset=0):
     """Small schema subsets, not a complete or vocabulary-validated OMOP database.
 
     Concept IDs are deliberately 0 (unmapped); no licensed vocabularies are bundled.
     Local person/visit IDs are coherent across the generated clinical tables.
     """
-    persons = [site_index * 10000 + i + 1 for i in range(people)]
-    visits = [site_index * 100000 + i + 1 for i in range(people * 2)]
+    persons = [id_offset + site_index * 10000 + i + 1 for i in range(people)]
+    visits = [id_offset + site_index * 100000 + i + 1 for i in range(people * 2)]
     visit_people = [p for p in persons for _ in range(2)]
     dates = [date(2024, 1, 1) + timedelta(days=i % 180) for i in range(people * 2)]
     zeros = [0] * people
@@ -174,95 +174,73 @@ def prepare_data(data_root, site_2_format="parquet"):
     root = Path(data_root).resolve()
     for index, site in enumerate(SITES, start=1):
         people = 64 if index == 1 else 96
-        omop = root / site / "datasets/omop"
-        internal = root / site / "datasets/internal"
-        omop.mkdir(parents=True, exist_ok=True)
-        internal.mkdir(parents=True, exist_ok=True)
-        tables = make_tables(index, people)
         storage_format = site_2_format if site == "site-2" else "parquet"
-        if storage_format == "parquet":
-            for name, columns in tables.items():
-                pq.write_table(pa.table(columns), omop / f"{name}.parquet")
+        site_only = "oncology" if index == 1 else "registry"
+        dataset_sizes = {"omop": people, "cardiology": people // 2, site_only: people // 4}
+        sources, bindings, policies = {}, {}, {}
+        for number, (dataset, size) in enumerate(dataset_sizes.items()):
+            directory = root / site / "datasets" / dataset
+            directory.mkdir(parents=True, exist_ok=True)
+            tables = make_tables(index, size, id_offset=number * 1000000)
+            if dataset in ("oncology", "registry"):
+                tables.pop("measurement")
+            metadata = {
+                "display_name": f"Synthetic {dataset} extract at {site}",
+                "description": "OMOP 5.4-shaped subset for metadata discovery; not a validated clinical cohort",
+                "owner": "private-site-contact",
+                "modalities": ["tabular"],
+                "operations": ["statistics"],
+                "source_version": "synthetic-2024-v1",
+                "semantic_profile": {
+                    "standard": "OMOP",
+                    "version": "5.4",
+                    "mapping_version": f"demo-etl-{site}-v1",
+                    "declaration_ref": f"synthetic-omop-subset:{site}:{dataset}",
+                },
+                "tables": table_declarations(tables),
+            }
+            source = directory
+            if storage_format == "parquet":
+                for name, columns in tables.items():
+                    pq.write_table(pa.table(columns), directory / f"{name}.parquet")
+                write_json(directory / "catalog.json", metadata)
+            else:
+                source = directory.with_suffix(".sqlite")
+                write_sqlite(source, tables)
+            sources[dataset] = {"source": str(source), "mode": "ro"}
+            bindings[dataset] = {
+                "connector": storage_format,
+                "options": {
+                    "storage_format": storage_format,
+                    "metadata": {k: v for k, v in metadata.items() if k != "tables"},
+                },
+            }
+            exclusions = {name: [c for c in columns if c.endswith("_source_value")] for name, columns in tables.items()}
+            exclusions["person"] += ["month_of_birth", "day_of_birth"]
+            policies[dataset] = {
+                "share": True,
+                "exclude_columns": exclusions,
+                "exclude_metadata": ["owner"],
+                "exclude_tables": ["measurement"] if index == 2 and dataset == "omop" else [],
+                "operations": ["statistics"],
+            }
+            print(f"{site}/{dataset}: {storage_format}, {size} synthetic persons, {len(tables)} local tables")
+        internal = root / site / "datasets/internal"
+        internal.mkdir(parents=True, exist_ok=True)
         pq.write_table(
             pa.table({"source_person_id": ["synthetic-private-id"], "person_id": [index * 10000 + 1]}),
             internal / "identity_crosswalk.parquet",
         )
-        metadata = {
-            "display_name": f"Synthetic OMOP clinical extract at {site}",
-            "description": "OMOP 5.4-shaped subset for metadata discovery; not a validated CDM database",
-            "owner": "private-site-contact",
-            "modalities": ["tabular"],
-            "operations": ["statistics"],
-            "source_version": "synthetic-2024-v1",
-            "semantic_profile": {
-                "standard": "OMOP",
-                "version": "5.4",
-                "mapping_version": f"demo-etl-{site}-v1",
-                "declaration_ref": f"synthetic-omop-subset:{site}",
-            },
-            "tables": table_declarations(tables),
-        }
-        if storage_format == "parquet":
-            write_json(omop / "catalog.json", metadata)
-        source = omop
-        if storage_format == "sqlite":
-            source = root / site / "datasets/omop.sqlite"
-            write_sqlite(source, tables)
-        exclusions = {name: [c for c in columns if c.endswith("_source_value")] for name, columns in tables.items()}
-        exclusions["person"] += ["month_of_birth", "day_of_birth"]
+        sources["internal"] = {"source": str(internal), "mode": "ro"}
+        policies["internal"] = {"share": False}
         local = root / site / "local"
-        write_json(
-            local / "study_runtime.yaml",
-            {
-                "format_version": 2,
-                "studies": {
-                    "default": {
-                        "datasets": {
-                            "omop": {"source": str(source), "mode": "ro"},
-                            "internal": {"source": str(internal), "mode": "ro"},
-                        }
-                    }
-                },
-            },
-        )
+        write_json(local / "study_runtime.yaml", {"format_version": 2, "studies": {"default": {"datasets": sources}}})
         write_json(
             local / "fdn/catalog_site.json",
-            {
-                "format_version": 1,
-                "installed_operations": ["statistics"],
-                "studies": {
-                    "default": {
-                        "omop": {
-                            "connector": storage_format,
-                            "options": {
-                                "storage_format": storage_format,
-                                "metadata": {k: v for k, v in metadata.items() if k != "tables"},
-                            },
-                        }
-                    }
-                },
-            },
+            {"format_version": 1, "installed_operations": ["statistics"], "studies": {"default": bindings}},
         )
-        write_json(
-            local / "fdn/default.json",
-            {
-                "format_version": 1,
-                "datasets": {
-                    "omop": {
-                        "share": True,
-                        "exclude_columns": exclusions,
-                        "exclude_metadata": ["owner"],
-                        "exclude_tables": ["measurement"] if index == 2 else [],
-                        "operations": ["statistics"],
-                    },
-                    "internal": {"share": False},
-                },
-            },
-        )
-        print(
-            f"{site}: {storage_format}, {people} synthetic persons, {len(tables)} local tables; policy at {local / 'fdn/default.json'}"
-        )
-    print(f"Prepared OMOP-shaped data in {root}")
+        write_json(local / "fdn/default.json", {"format_version": 1, "datasets": policies})
+    print(f"Prepared multiple OMOP-shaped datasets per site in {root}")
 
 
 if __name__ == "__main__":

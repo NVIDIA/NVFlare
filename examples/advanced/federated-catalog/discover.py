@@ -24,11 +24,17 @@ if __name__ == "__main__":
     parser.add_argument("--store-root", default="/tmp/nvflare/federated-catalog/store")
     parser.add_argument("--require-tables", nargs="+", default=["person", "condition_occurrence", "measurement"])
     parser.add_argument("--table", default="condition_occurrence", help="Compare column coverage for this table")
+    parser.add_argument("--dataset", help="Limit discovery and comparison to this dataset name")
+    parser.add_argument("--show-schema", action="store_true", help="Print all published table schemas")
     args = parser.parse_args()
     required = set(args.require_tables)
     store = CatalogStore(args.store_root)
-    page = store.search("default", SearchQuery(standard="OMOP", standard_version="5.4", page_size=100))
-    print("Site     Published tables                                              Metadata candidate")
+    page = store.search(
+        "default", SearchQuery(standard="OMOP", standard_version="5.4", dataset=args.dataset, page_size=100)
+    )
+    print(
+        "Site/dataset                  Published tables                                              Metadata candidate"
+    )
     schemas = {}
     for entry in page.entries:
         if not entry.available or entry.catalog is None:
@@ -36,10 +42,26 @@ if __name__ == "__main__":
         tables = {t.name for t in entry.catalog.tables}
         for table in entry.catalog.tables:
             if table.name == args.table:
-                schemas[entry.client] = {column.name: column.type for column in table.columns}
+                schemas[f"{entry.client}/{entry.dataset}"] = {column.name: column.type for column in table.columns}
         missing = required - tables
         status = "yes" if not missing else "missing: " + ", ".join(sorted(missing))
-        print(f"{entry.client:8} {', '.join(sorted(tables)):65} {status}")
+        print(f"{entry.client}/{entry.dataset:20} {', '.join(sorted(tables)):65} {status}")
+    if args.show_schema:
+        for entry in page.entries:
+            if not entry.available or entry.catalog is None:
+                continue
+            print(f"\n{entry.client}/{entry.dataset} ({entry.catalog.provenance.source})")
+            for table in entry.catalog.tables:
+                print(f"  TABLE {table.name}")
+                for column in table.columns:
+                    nullable = "NULL" if column.nullable else "NOT NULL" if column.nullable is False else "UNKNOWN"
+                    print(f"    {column.name}: {column.type} {nullable}")
+                print(f"    PRIMARY KEY: {', '.join(table.primary_key) or '(undeclared)'}")
+                for relation in table.relationships:
+                    print(
+                        f"    FOREIGN KEY ({', '.join(relation.columns)}) -> "
+                        f"{relation.target_table}({', '.join(relation.target_columns)})"
+                    )
     if schemas:
         common = set.intersection(*(set(columns) for columns in schemas.values()))
         print(f"\n{args.table}: common columns: {', '.join(sorted(common))}")
