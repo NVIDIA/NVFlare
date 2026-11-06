@@ -1,0 +1,17 @@
+{
+  "job_name": "memco-pddl",
+  "dataset_family": "pddl",
+  "data_root": "/path/to/nvdamasgm",
+  "output_root": "artifacts/pddl",
+  "server_output_directory": "artifacts/pddl/server",
+  "model": "gpt-4o-mini",
+  "promotion_threshold": 0.35,
+  "promotion_policy": "wilson",
+  "wilson_alpha": 0.05,
+  "wilson_threshold": 0.35,
+  "max_train_tasks": 0,
+  "max_evaluate_tasks": 0,
+  "max_trials": 30,
+  "batch_size": 10,
+  "call_timeout": 86400
+}
