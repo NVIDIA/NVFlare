@@ -15,7 +15,6 @@ The steps have separate responsibilities:
 
 - `prepare_data.py`: create and populate the local Parquet files/SQL tables and write site bindings and policies before the federated job.
 - `job.py`: configure and run `CatalogRecipe`, then print the published catalog.
-- `discover.py`: inspect metadata and compare published table schemas.
 - `verify_result.py`: optionally verify a completed run.
 
 The job imports no preparation module and does not create or populate source tables.
@@ -28,7 +27,6 @@ From this directory in an activated Python environment:
 python -m pip install -r requirements.txt
 python prepare_data.py
 python job.py
-python discover.py
 ```
 
 The checked-in configurations create Parquet sources at site-1 and SQLite sources at site-2 under
@@ -149,44 +147,34 @@ catalog preserves these differences rather than filling missing columns or
 assuming equivalent schemas.
 
 In mixed storage, physical types also differ: Parquet dates are `date32[day]`,
-while the SQLite example stores dates as ISO text. `discover.py` reports observed
-types without asserting semantic equivalence or performing conversions.
+while the SQLite example stores dates as ISO text. The catalog preserves these
+observed source types; it does not assert semantic equivalence or convert them.
 
 Each site also has an `internal` identity-crosswalk dataset which is never shared.
 All `*_source_value` columns and owner metadata are excluded from the published
 OMOP view. Schema column names such as `person_id` remain to describe joins;
 actual identifier values and clinical rows remain local.
 
-## Discover candidate sites
+## Inspect the collected catalog
+
+`job.py` prints the catalog and saves it to
+`/tmp/nvflare/federated-catalog/store/discovery.json`. Open that file in a JSON
+viewer, or use Python's standard JSON formatter:
 
 ```bash
-# Default: require person, condition_occurrence and measurement tables.
-python discover.py
-
-# Require only the common clinical tables.
-python discover.py --require-tables person condition_occurrence
-
-# Compare overlapping and site-specific columns of another table.
-python discover.py --dataset omop --table person
-
-# Show every table, column/type/nullability, primary key and relationship.
-python discover.py --dataset omop --show-schema
+python -m json.tool /tmp/nvflare/federated-catalog/store/discovery.json
 ```
 
-The default query reports a candidate per **site/dataset**, not just per site.
-For example, site-2/omop lacks published `measurement`, but site-2/cardiology
-has it. Requiring only the common clinical tables includes all six datasets. The script
-also prints common columns, site-specific additions, and differing storage types.
-A missing catalog table may reflect source coverage or publication policy; the
-consumer cannot infer which from its absence. A metadata candidate is not proof
-of patient eligibility, join correctness, clinical equivalence, or analysis access.
-This example does not advertise or execute analysis operations.
+If you use `jq`, display the `omop` dataset's table schemas at both sites:
 
-The full result is printed by `job.py` and saved to
-`/tmp/nvflare/federated-catalog/store/discovery.json`. A fresh store has six dataset
-entries across the two sites, with the table counts listed above. Catalog/schema
-versions start at 1; unchanged reads retain their versions. Simulator logs and
-intermediate manifests are under
+```bash
+jq '.entries[] | select(.dataset == "omop") | {site: .client, dataset, tables: .metadata.tables}' \
+  /tmp/nvflare/federated-catalog/store/discovery.json
+```
+
+A fresh run contains six dataset entries with the table counts listed above.
+Catalog/schema versions start at 1; unchanged reads retain their versions.
+Simulator logs and intermediate manifests are under
 `/tmp/nvflare/federated-catalog/simulation/catalog_read/`.
 
 ## Optional verification
@@ -305,7 +293,7 @@ job to restore initial policies and sharing.
 python prepare_data.py --data-root /tmp/my-catalog/data
 python job.py --data-root /tmp/my-catalog/data \
   --workspace /tmp/my-catalog/simulation --store-root /tmp/my-catalog/store
-python discover.py --store-root /tmp/my-catalog/store
+python -m json.tool /tmp/my-catalog/store/discovery.json
 python verify_result.py --data-root /tmp/my-catalog/data --store-root /tmp/my-catalog/store
 ```
 
