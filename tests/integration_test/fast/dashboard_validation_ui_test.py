@@ -190,6 +190,36 @@ def test_server_name_error_keeps_form_editable(page):
     expect(server).to_be_enabled()
 
 
+def test_hostname_save_preserves_operator_server_properties(page, live_dashboard):
+    app, _ = live_dashboard
+    server_props = {"cc_enabled": True, "fed_learn_port": 9002, "admin_port": 9003, "custom": {"enabled": True}}
+    with app.app_context():
+        project = Project.query.first()
+        original_props, original_server = project.server_props, project.server1
+        assert Store.set_project({"server_props": server_props})["status"] == "ok"
+    try:
+        login(page, TEST_USER, TEST_PW, 4)
+        page.goto(NS + "/server-config")
+        expect(page.get_by_role("checkbox")).to_have_count(0)
+        page.locator('input[name="server1"]').fill("preserved.test")
+        with page.expect_response(
+            lambda response: response.request.method == "PATCH" and response.url.endswith("/project")
+        ) as saved:
+            page.get_by_role("button", name="Save", exact=True).click()
+        assert saved.value.status == 200
+        assert saved.value.request.post_data_json == {"server1": "preserved.test"}
+        expect(page.get_by_text("Server settings saved.", exact=True)).to_be_visible()
+        with app.app_context():
+            project = Project.query.first()
+            assert project.server1 == "preserved.test"
+            assert json.loads(project.server_props) == server_props
+    finally:
+        with app.app_context():
+            project = Project.query.first()
+            project.server_props, project.server1 = original_props, original_server
+            db.session.commit()
+
+
 @pytest.mark.parametrize("resource", ["users", "clients", "servers"])
 def test_invalid_legacy_download_shows_error_and_allows_retry(page, live_dashboard, resource):
     app, _ = live_dashboard

@@ -154,11 +154,7 @@ export type Project = {
   project_props?: {
     cc_enabled?: boolean
   }
-  server_props?: {
-    cc_enabled?: boolean
-    cpu_family?: string
-    deployment_environment?: string
-  }
+  server_props?: Record<string, unknown>
 }
 
 export type ProjectView = {
@@ -178,11 +174,7 @@ export type ProjectView = {
   project_props?: {
     cc_enabled?: boolean
   }
-  server_props: {
-    cc_enabled: boolean
-    deployment_environment?: string | SelectOption
-    cpu_family?: string | SelectOption
-  }
+  server_props?: Record<string, unknown>
 }
 
 export interface Siteparams {

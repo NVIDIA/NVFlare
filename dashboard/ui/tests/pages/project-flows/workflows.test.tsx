@@ -120,6 +120,22 @@ test('server validation retains the typed hostname and can be corrected', async 
 })
 
 
+test('hostname saves leave operator server properties untouched and expose no CC controls', async () => {
+  const serverProps = { cc_enabled: true, fed_learn_port: 9002, admin_port: 9003, custom: { enabled: true } }
+  api.getProject.mockResolvedValue({ status: 'ok', project: { ...project, server_props: serverProps } })
+  api.patchProject.mockResolvedValue({ status: 'ok', project: { ...project, server1: 'new.test', server_props: serverProps } })
+  render(<ServerConfiguration />)
+  const input = await screen.findByLabelText(/^Server hostname or IP address/)
+  expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('Target Deployment Environment')).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('CPU Family')).not.toBeInTheDocument()
+  fireEvent.change(input, { target: { value: 'new.test' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(await screen.findByText('Server settings saved.')).toBeVisible()
+  expect(api.patchProject).toHaveBeenCalledWith({ server1: 'new.test' })
+})
+
+
 test('publishing the project retains unsaved configuration fields', async () => {
   api.getProject.mockResolvedValue({ status: 'ok', project: { ...project, public: false } })
   api.patchProject.mockResolvedValue({ status: 'ok', project: { ...project, public: true } })

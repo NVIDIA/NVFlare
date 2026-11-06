@@ -25,11 +25,6 @@
     "server1": "",
     "short_name": "",
     "starting_date": "",
-    "title": "",
-    "server_props": {
-      "cc_enabled": false,
-      "deployment_environment": "bare_metal_cvm",
-      "cpu_family": "amd"
-    }
+    "title": ""
   }
 }
