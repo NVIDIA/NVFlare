@@ -1,4 +1,14 @@
 {
   "format_version": 1,
-  "default_connector": "parquet"
+  "default_connector": "parquet",
+  "studies": {
+    "default": {
+      "lab_results": {
+        "connector": "csv"
+      },
+      "visits": {
+        "connector": "csv"
+      }
+    }
+  }
 }
