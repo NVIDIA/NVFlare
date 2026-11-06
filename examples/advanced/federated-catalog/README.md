@@ -26,12 +26,12 @@ From this directory in an activated Python environment:
 
 ```bash
 python -m pip install -r requirements.txt
-python prepare_data.py --site-1-format parquet --site-2-format parquet
+python prepare_data.py
 python job.py
 python discover.py
 ```
 
-The default creates Parquet sources at both sites under
+The checked-in configurations create Parquet sources at site-1 and SQLite sources at site-2 under
 `/tmp/nvflare/federated-catalog/data`. Site-1 has 64 synthetic persons and site-2
 has 96 in the main `omop` extract, with two visits and associated clinical events
 per person. Each site also has smaller, independent department/registry fixtures.
@@ -54,27 +54,20 @@ has its own source binding, metadata, schema versions and publication rule.
 Table names such as `person` belong to their containing dataset; they are not
 merged across datasets or sites. Each fixture has a separate local ID range.
 
-## Variation: Parquet and an RDBMS
+## Per-site sources: Parquet and an RDBMS
 
-Use SQLite for site-2 to demonstrate an actual relational database without an
-external database service. `job.py` stays the same:
-
-```bash
-python prepare_data.py --site-1-format parquet --site-2-format sqlite
-python job.py
-python discover.py
-```
+Preparation reads each site's checked-in `catalog_site.json` to choose its data
+format. Site-1 declares Parquet and site-2 declares SQLite. There are no separate
+format flags or alternative configuration files.
 
 The example includes the actual site configurations as readable files:
 
 | File | Purpose |
 | --- | --- |
 | [config/site-1/catalog_site.json](config/site-1/catalog_site.json) | Explicit site-1 Parquet configuration |
-| [config/site-2/catalog_site.json](config/site-2/catalog_site.json) | SQLite configuration for the mixed variation |
-| [config/site-1/catalog_site.sqlite.json](config/site-1/catalog_site.sqlite.json) | Optional site-1 SQLite variation |
-| [config/site-2/catalog_site.parquet.json](config/site-2/catalog_site.parquet.json) | Site-2 configuration for the Parquet-only variation |
+| [config/site-2/catalog_site.json](config/site-2/catalog_site.json) | Explicit site-2 SQLite configuration |
 | [config/site-1/default.json](config/site-1/default.json), [config/site-2/default.json](config/site-2/default.json) | Site-owned publication policies |
-| [config/site-1/catalog_metadata.json](config/site-1/catalog_metadata.json), [config/site-2/catalog_metadata.json](config/site-2/catalog_metadata.json) | Optional OMOP declarations and Parquet key/relationship annotations |
+| [fixtures/site-1/catalog.json](fixtures/site-1/catalog.json), [fixtures/site-2/catalog.json](fixtures/site-2/catalog.json) | Optional data-fixture OMOP declarations and Parquet key/relationship annotations |
 
 Site-1's complete `catalog_site.json`:
 
@@ -109,6 +102,10 @@ A site with different formats within one Study can add only its exceptions:
   }
 }
 ```
+
+For a different source combination, edit `default_connector` in the relevant
+site's existing file and rerun preparation. For example, setting site-2 to
+`"parquet"` prepares both sites as Parquet without adding another JSON file.
 
 The executor maps source names to built-in readers; no `catalog_reader=` argument
 is needed. Built-in connectors accept no `options`, repeated `storage_format`,
@@ -205,20 +202,13 @@ from `job.py`. Run it after rerunning the job whenever a policy changes.
 
 ## Withdraw one site's metadata
 
-Both sites have a complete publication-policy example for this run:
+The only publication-policy files are [site-1's policy](config/site-1/default.json)
+and [site-2's policy](config/site-2/default.json). Reader configuration is separate
+in each site's `catalog_site.json`; there are no duplicate policy snapshots.
 
-| Example policy file | Install at the site | Behavior |
-| --- | --- | --- |
-| [config/catalog_site-1.json](config/catalog_site-1.json) | `site-1/local/fdn/default.json` | Keep site-1's datasets published |
-| [config/catalog_site-2.json](config/catalog_site-2.json) | `site-2/local/fdn/default.json` | Withdraw only site-2's `omop` dataset |
-
-These are publication-policy snapshots. The reader configurations are the
-separate `config/site-1/catalog_site.json` and `config/site-2/catalog_site.json`
-files shown above; the installed filenames keep the two contracts distinct.
-
-Edit `/tmp/nvflare/federated-catalog/data/site-2/local/fdn/default.json` as
-site-2's local owner. Set `datasets.omop.share` to `false` and keep the other
-publication rules. The complete [withdrawal policy](config/catalog_site-2.json) is:
+Edit `/tmp/nvflare/federated-catalog/data/site-2/local/fdn/default.json` and change
+`datasets.omop.share` to `false`. The updated policy is shown below; the other
+site and dataset rules stay as they are:
 
 ```json
 {
@@ -312,7 +302,7 @@ job to restore initial policies and sharing.
 ## Customize paths
 
 ```bash
-python prepare_data.py --data-root /tmp/my-catalog/data --site-1-format parquet --site-2-format sqlite
+python prepare_data.py --data-root /tmp/my-catalog/data
 python job.py --data-root /tmp/my-catalog/data \
   --workspace /tmp/my-catalog/simulation --store-root /tmp/my-catalog/store
 python discover.py --store-root /tmp/my-catalog/store
