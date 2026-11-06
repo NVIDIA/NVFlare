@@ -14,12 +14,15 @@
 
 import concurrent.futures
 
+from nvflare.private.fed.resource_stats.cpu_consumed import mark_unwaited_managed_children
+
 
 class Decrypter:
     def __init__(self, private_key, max_workers=10):
         self.max_workers = max_workers
         self.private_key = private_key
         self.exe = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
+        mark_unwaited_managed_children()
 
     def decrypt(self, encrypted_number_groups):
         """
