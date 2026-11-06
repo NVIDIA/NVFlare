@@ -123,8 +123,9 @@ Rules:
    batch that ran the optimizer step.
 2. **Send before validation.** The send happens at batch end and the receive at the next batch start. Lightning runs
    in-fit validation in between, so it overlaps the server's aggregation instead of delaying the upload.
-3. **The server's horizon.** `on_train_start` sets `fit_loop.max_epochs` and `epoch_loop.max_steps` to `-1`, so only
-   the server ends a normal run. Optimizers and schedulers are configured before `on_train_start`, so a schedule
+3. **The server's horizon.** `on_train_start` sets `fit_loop.max_epochs` and `epoch_loop.max_steps` to `-1`, and
+   clears `min_epochs` and `min_steps`, which would otherwise keep Lightning from honouring the stop, so only the
+   server ends a normal run. Optimizers and schedulers are configured before `on_train_start`, so a schedule
    sized from the trainer's original limits keeps that shape. Step-counting schedulers (warmup and decay,
    `StepLR`) are unaffected; a scheduler sized from the run length (`OneCycleLR`, cosine with `T_max` from
    `estimated_stepping_batches`) must be sized for `num_rounds * sync_every_n_steps`. The callback cannot fix
@@ -331,6 +332,7 @@ enforces NVFlare's exchange order: a send without a preceding receive fails.
 | Optimizer, LR scheduler and data order carry over across syncs | same optimizer object and momentum buffers, `lr_scheduler.last_epoch`, uninterrupted sample sequence |
 | The server decides how many rounds run, past the trainer's `max_epochs` and `max_steps` | rounds crossing epochs, epochs shorter than N, `max_steps` below the run |
 | A trainer that stops itself sends its open round | `should_stop` mid-round |
+| The server's end stops `fit()` even when the trainer sets `min_steps` or `min_epochs` | server finishing below both minimums |
 | Passing the trainer's own step budget logs one scheduler warning | warning count past `max_epochs` |
 | In-fit validation runs between send and receive | call order of send, validation and receive |
 | The server finishing first stops training cleanly | `receive()` returns `None` |

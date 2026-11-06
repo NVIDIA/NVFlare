@@ -72,7 +72,8 @@ def patch(
         sync_every_n_steps: when set, one ``trainer.fit()`` exchanges the model with the server every
             ``sync_every_n_steps`` optimizer steps instead of once per ``fit()``. The received model is loaded
             in place, so the optimizer, LR scheduler and data position carry over. The server's ``num_rounds``
-            decides how long training runs: the trainer's ``max_epochs`` and ``max_steps`` are lifted, and ``fit()``
+            decides how long training runs: the trainer's ``max_epochs``, ``max_steps``, ``min_epochs`` and
+            ``min_steps`` are lifted, and ``fit()``
             ends when the server stops sending training tasks. An LR scheduler sized from the trainer's limits
             (``OneCycleLR``, cosine with ``T_max`` from ``estimated_stepping_batches``) must be sized for
             ``num_rounds * sync_every_n_steps`` instead; step-counting schedulers work unchanged. ``restore_state``
@@ -493,6 +494,8 @@ class _StepSyncFLCallback(_FLCallbackBase):
         self._trainer_step_budget = int(budget) if budget != float("inf") else None
         trainer.fit_loop.max_epochs = -1
         trainer.fit_loop.epoch_loop.max_steps = -1
+        trainer.fit_loop.min_epochs = 0
+        trainer.fit_loop.epoch_loop.min_steps = None
 
     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
         if self._training_round_started:

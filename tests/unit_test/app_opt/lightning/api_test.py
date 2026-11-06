@@ -1964,6 +1964,17 @@ def test_step_sync_sends_the_open_round_when_the_trainer_stops_itself():
     assert trainer.global_step == 6
 
 
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize("trainer_kwargs", [{"min_steps": 100}, {"min_epochs": 5}], ids=["min-steps", "min-epochs"])
+def test_step_sync_stops_when_the_server_finishes_before_the_trainer_minimum(trainer_kwargs):
+    fake = _FakeFlare(_train_tasks(2))
+
+    trainer = _fit_with_step_sync(fake, RecordingNet(), _loader(4), sync_every_n_steps=2, **trainer_kwargs)
+
+    assert fake.steps() == [2, 2]
+    assert trainer.global_step == 4
+
+
 def test_step_sync_warns_once_when_training_passes_the_trainer_limit(caplog):
     fake = _FakeFlare(_train_tasks(4))
 
