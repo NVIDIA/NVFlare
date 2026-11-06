@@ -211,7 +211,9 @@ def prepare_data(data_root):
         policy_root = local / "fdn"
         policy_root.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(config / "catalog_site.json", policy_root / "catalog_site.json")
-        shutil.copyfile(config / "default.json", policy_root / "default.json")
+        study_policy = policy_root / "default"
+        study_policy.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(config / "catalog_policy.json", study_policy / "catalog_policy.json")
     print(f"Prepared multiple OMOP-shaped datasets per site in {root}")
 
 

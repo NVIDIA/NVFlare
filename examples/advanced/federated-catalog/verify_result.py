@@ -27,7 +27,9 @@ def verify_result(data_root, store_root):
     expected = {
         (site, dataset)
         for site in SITES
-        for dataset, rule in json.loads((data_root / site / "local/fdn/default.json").read_text())["datasets"].items()
+        for dataset, rule in json.loads((data_root / site / "local/fdn/default/catalog_policy.json").read_text())[
+            "datasets"
+        ].items()
         if rule["share"]
     }
     if {(e["client"], e["dataset"]) for e in output["entries"]} != expected:

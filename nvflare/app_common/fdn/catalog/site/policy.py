@@ -18,6 +18,7 @@ This module has no FLARE imports.
 """
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -25,6 +26,7 @@ from pathlib import Path
 from nvflare.app_common.fdn.catalog.common.schema import CatalogInfo, Provenance, SemanticProfile, TableInfo
 
 POLICY_FORMAT_VERSION = 1
+POLICY_FILE = "catalog_policy.json"
 _TOP_LEVEL_KEYS = frozenset({"format_version", "datasets"})
 _RULE_KEYS = frozenset(
     {"share", "exclude_tables", "exclude_columns", "exclude_resources", "exclude_metadata", "operations"}
@@ -86,6 +88,13 @@ def _parse_rule(value, label: str, path: Path) -> DatasetRule:
         exclude_metadata=metadata,
         operations=_name_set(value.get("operations", []), f"{label}.operations", path),
     )
+
+
+def policy_file_path(policy_root: Path, study: str) -> Path:
+    """One explicitly named policy per Study, without cross-Study fallback."""
+    if not isinstance(study, str) or not re.fullmatch(r"[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?", study):
+        raise PolicyError("invalid Study name for catalog policy")
+    return Path(policy_root) / study / POLICY_FILE
 
 
 def load_policy(path: Path) -> StudyPolicy:

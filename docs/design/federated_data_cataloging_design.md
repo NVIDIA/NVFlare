@@ -112,49 +112,63 @@ For mixed formats within a site, override only the relevant existing dataset:
 }
 ```
 
-**Separate inputs by responsibility.** Existing `study_runtime.yaml` bindings own source paths and mounts; `<study>.json` owns publication rules. Optional source declarations own descriptive and semantic metadata: a Parquet directory's `catalog.json`, or `<database>.catalog.json` beside a SQLite file (`registry.sqlite` uses `registry.catalog.json`). If declarations are absent, readers still discover structure, use the dataset name as display name, and leave optional semantic/descriptive fields unknown. Parquet keys/relationships require declarations; SQLite obtains them from database constraints. Sidecars are bounded to 1 MiB and reject unsupported declaration keys. Source observations take precedence over annotations for structural metadata. No user must enter observed columns, inferred keys, output timestamps, version counters or provenance into `catalog_site.json`.
+**Separate inputs by responsibility.** Existing `study_runtime.yaml` bindings own source paths and mounts; `<study>/catalog_policy.json` owns publication rules. Optional source declarations own descriptive and semantic metadata: a Parquet directory's `catalog.json`, or `<database>.catalog.json` beside a SQLite file (`registry.sqlite` uses `registry.catalog.json`). If declarations are absent, readers still discover structure, use the dataset name as display name, and leave optional semantic/descriptive fields unknown. Parquet keys/relationships require declarations; SQLite obtains them from database constraints. Sidecars are bounded to 1 MiB and reject unsupported declaration keys. Source observations take precedence over annotations for structural metadata. No user must enter observed columns, inferred keys, output timestamps, version counters or provenance into `catalog_site.json`.
 
 **Explicit site examples.** Each site has its own `catalog_site.json` and declares its reader, including `"default_connector": "parquet"` at a Parquet site and `"default_connector": "sqlite"` at a SQLite site. Protocol defaults remain available for compatibility, but example sites do not rely on another site or leave their intended source format implicit.
 
 **Examples are source artifacts.** Check the complete `catalog_site.json`, publication policy and optional declaration examples into the example directory. Data preparation creates the synthetic source tables/files, copies those versioned configurations, and resolves runtime paths; it does not synthesize the catalog input specification. `job.py` only configures/runs the recipe and prints its result.
 
-**One policy source.** One site-owned Study publication policy is authoritative. Its protected file is one JSON file per Study, `<policy_root>/<study>.json`, under the site's Study configuration directory, outside user-editable job packages. `<policy_root>` is `/fdn/policy`, a read-only mount the site declares as a `secret_mounts` entry of the Study runtime, when that directory exists (Docker, Kubernetes and Slurm container modes), and otherwise `<workspace>/local/fdn/` (process mode). The handler reads it through that binding, which exposes atomic replacements, not a stale packaged/default file, and applies it before releasing metadata on every read. Next to it the site keeps `catalog_site.json`, which defines named connectors (`connectors.<name>`: a class and non-secret `args`), binds each dataset that is not mounted Parquet to one of them per Study (`studies.<study>.<dataset>`: a connector name and non-secret `options`), and sets the limits and installed operations. A mounted dataset with no binding is read by the default connector, the built-in `parquet` unless `default_connector` says otherwise. A job cannot supply or change any of it. The site service uses no copy of it: catalog entries for derived datasets are produced by the same handler. Docker binds the whole `local/` folder read-only, so the `local/fdn/` fallback also works there without the mount. The launchers need no catalog-specific code; `local/fdn/` is excluded from Kubernetes workspace bundles so a pod without the mount fails closed. Slurm sandbox `none` has no Study mounts, so catalog reads are not supported there yet.
+**One policy source.** One site-owned Study publication policy is authoritative. Its protected file is one JSON file per Study, `<policy_root>/<study>/catalog_policy.json`, under the site's Study configuration directory, outside user-editable job packages. `<policy_root>` is `/fdn/policy`, a read-only mount the site declares as a `secret_mounts` entry of the Study runtime, when that directory exists (Docker, Kubernetes and Slurm container modes), and otherwise `<workspace>/local/fdn/` (process mode). The handler reads it through that binding, which exposes atomic replacements, not a stale packaged/default file, and applies it before releasing metadata on every read. At `<policy_root>/catalog_site.json` the site keeps the reader configuration, which defines named connectors (`connectors.<name>`: a class and non-secret `args`), binds each dataset that is not mounted Parquet to one of them per Study (`studies.<study>.<dataset>`: a connector name and non-secret `options`), and sets the limits and installed operations. A mounted dataset with no binding is read by the default connector, the built-in `parquet` unless `default_connector` says otherwise. A job cannot supply or change any of it. The site service uses no copy of it: catalog entries for derived datasets are produced by the same handler. Docker binds the whole `local/` folder read-only, so the `local/fdn/` fallback also works there without the mount. The launchers need no catalog-specific code; `local/fdn/` is excluded from Kubernetes workspace bundles so a pod without the mount fails closed. Slurm sandbox `none` has no Study mounts, so catalog reads are not supported there yet.
 
 **Policy-load failure is closed.** If that source is missing, unreadable or invalid, release no source metadata. Return a safe application `FAILED` with `reason_code: POLICY_UNAVAILABLE`, no catalogs, no availability claims, and `withheld` containing the selected previously indexed names from `previous_datasets`. This hides cached metadata without disclosing newly discovered names. Preserve protected history and record a configuration diagnostic. Never fall back to no restrictions, packaged defaults or a cached permissive policy. A later result evaluated under the valid policy may restore entries.
 
-**Policy format v1.** The file is JSON, one per Study, and decides what the shared view may show. A dataset that is not listed is withheld, so a site must opt each dataset in.
+#### `catalog_policy.json` contract v1
+
+One JSON file defines the publication policy for one Study at one site. The source examples are `config/site-1/catalog_policy.json` and `config/site-2/catalog_policy.json`; preparation copies each into its site's `<policy_root>/default/catalog_policy.json` for the example's `default` Study. A named Study such as `oncology` uses `<policy_root>/oncology/catalog_policy.json`. `catalog_site.json` stays at the site policy root. The Study comes from trusted job context, not a field supplied by the catalog task or repeated in this file.
+
+The smallest useful policy explicitly shares one dataset:
 
 ```json
 {
   "format_version": 1,
   "datasets": {
-    "clinical-research": {
-      "share": true,
-      "exclude_tables": ["clinical_notes"],
-      "exclude_columns": {"person": ["birth_datetime"]},
-      "exclude_resources": ["DocumentReference"],
-      "exclude_metadata": ["description"],
-      "operations": ["cohort.count"]
-    },
-    "imaging": {"share": false}
-  },
-  "derived": {"share": true, "operations": ["cohort.count"]}
+    "omop": {"share": true},
+    "internal": {"share": false}
+  }
 }
 ```
 
-| Key | Meaning |
-| --- | --- |
-| `format_version` | Required, `1`. Any other value is invalid policy |
-| `datasets` | Map from an existing Study dataset name to a rule. A name that is not listed is withheld |
-| `derived` | Later, with the derived-dataset reader (not accepted by the pilot): one rule applied to every committed output of the Study, whose opaque IDs cannot be listed in advance. Absent means derived datasets are withheld |
-| `share` | Required boolean. `false` withholds the dataset |
-| `exclude_tables` | Table names removed from the shared view |
-| `exclude_columns` | Map from table name to column names removed from that table |
-| `exclude_resources` | FHIR resource types removed from `resources` |
-| `exclude_metadata` | Any of `description`, `owner`, `modalities`, `semantic_profile`, `source_version`, `lineage`, `provenance`; the field is published as `null` or an empty list |
-| `operations` | Allow-list of operation names (free-form strings the site chooses) the entry may advertise; the published list is its intersection with the installed and configured operations. Absent means none |
+| Field | Type / default | Meaning and validation |
+| --- | --- | --- |
+| `format_version` | Required integer `1` | Booleans, floats and unsupported versions are invalid. |
+| `datasets` | Object; default `{}` | Existing dataset names map to publication rules. Keys must be nonempty strings. An omitted dataset is withheld; an empty or omitted object shares nothing. |
+| `datasets.<name>.share` | Required boolean | `true` permits only the policy-filtered metadata view. `false` withholds the whole entry. It does not grant access to source records or execution. |
+| `exclude_tables` | Array of nonempty strings; default `[]` | Remove these tables from the published metadata. |
+| `exclude_columns` | Object mapping table names to arrays of nonempty column names; default `{}` | Remove only those columns from those tables. |
+| `exclude_resources` | Array of nonempty strings; default `[]` | Remove these resource types from the metadata. |
+| `exclude_metadata` | Array; default `[]` | Allowed names are exactly `description`, `owner`, `modalities`, `semantic_profile`, `source_version`, `lineage`, `provenance`. Removed fields become null or empty collections in the output. Dataset identity, display name and structural fields are not accepted here; withhold the entire entry if those cannot be shared. |
+| `operations` | Array of nonempty strings; default `[]` | Only these operations may be advertised. The published list is the intersection of the reader's declarations, this list and `catalog_site.json.installed_operations`. It enables no execution capability. Catalog-only examples omit this field. |
 
-Names match exactly and are case-sensitive. A name that matches nothing in the source is ignored, not an error. Unknown keys, wrong types and a rule with `share` missing make the whole file invalid and trigger the policy-load failure above. The policy never names paths, credentials or users, and it has no per-user rules: every participating user of the Study sees the same view. The same file serves every launcher; only how it is mounted varies.
+An optional filtering rule can be added without changing any source configuration:
+
+```json
+{
+  "format_version": 1,
+  "datasets": {
+    "omop": {
+      "share": true,
+      "exclude_columns": {"person": ["person_source_value"]},
+      "exclude_tables": ["measurement"]
+    }
+  }
+}
+```
+
+**Matching and structural consistency.** Names match exactly and case-sensitively; there are no wildcard rules or automatic schema harmonization. A name that matches nothing is ignored. Lists represent sets, so duplicate entries add no effect. Excluding a table/column also removes relationships that reference the excluded structure. A primary key involving an excluded column is removed; the executor validates the resulting view before publication.
+
+**Strict validation and failure behavior.** Unknown fields at either the root or rule level, wrong types, an invalid excluded-metadata name, or missing `share` invalidate the entire file. `derived`, per-user rules, paths, connector settings and credentials are not accepted by v1. Missing, unreadable or invalid policy releases no metadata and reports `POLICY_UNAVAILABLE`; selected previously indexed datasets are withheld. No other Study's file, cached permissive policy, old `<study>.json` filename or site-global fallback is used. A replaced policy is reread on the next catalog read. Restoring a valid policy and running another read may restore publication.
+
+A valid `share: false` is a normal policy decision, not a source-read failure. Previously published metadata for that selected dataset becomes hidden on reconciliation, while other datasets remain governed by their own rules. Policy visibility is one shared view per Study; the file defines no per-user authorization scheme.
 
 **Derived datasets, when preparation is enabled.** The site service already journals immutable committed outputs with their Study and authorized users. `catalog.read` adds a reader over that journal through the existing job-bound service RPC (no raw manifest paths, no new endpoint). At commit, the preparation step stores the output's candidate v1 metadata (tables, columns, lineage, `validation_ref`, `mapping_version`), unfiltered and local to the site, in the committed manifest. The reader enumerates only committed outputs authorized for the job's Study, one entry per dataset ID: the service's current committed version. Older versions stay in the site store for explicitly pinned operations and are not listed, so a result never repeats a dataset name. It hands that metadata to the handler, which applies the policy and returns it with the mounted datasets in the same result. Staging and failed outputs are never enumerated. After `DATASET_COMMITTED` a read naming that dataset can be run with the recipe; if none is run, the next periodic read lists it.
 

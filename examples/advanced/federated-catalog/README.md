@@ -66,7 +66,7 @@ The example includes the actual site configurations as readable files:
 | --- | --- |
 | [config/site-1/catalog_site.json](config/site-1/catalog_site.json) | Explicit site-1 Parquet configuration |
 | [config/site-2/catalog_site.json](config/site-2/catalog_site.json) | Explicit site-2 SQLite configuration |
-| [config/site-1/default.json](config/site-1/default.json), [config/site-2/default.json](config/site-2/default.json) | Site-owned publication policies |
+| [config/site-1/catalog_policy.json](config/site-1/catalog_policy.json), [config/site-2/catalog_policy.json](config/site-2/catalog_policy.json) | Site-owned publication policies |
 | [fixtures/site-1/catalog.json](fixtures/site-1/catalog.json), [fixtures/site-2/catalog.json](fixtures/site-2/catalog.json) | Optional data-fixture OMOP declarations and Parquet key/relationship annotations |
 
 Site-1's complete `catalog_site.json`:
@@ -202,11 +202,12 @@ from `job.py`. Run it after rerunning the job whenever a policy changes.
 
 ## Withdraw one site's metadata
 
-The only publication-policy files are [site-1's policy](config/site-1/default.json)
-and [site-2's policy](config/site-2/default.json). Reader configuration is separate
-in each site's `catalog_site.json`; there are no duplicate policy snapshots.
+The only publication-policy files are [site-1's policy](config/site-1/catalog_policy.json)
+and [site-2's policy](config/site-2/catalog_policy.json). Each Study has its own
+runtime `<study>/catalog_policy.json`, while reader configuration is separate in
+each site's `catalog_site.json`; there are no duplicate policy snapshots.
 
-Edit `/tmp/nvflare/federated-catalog/data/site-2/local/fdn/default.json` and change
+Edit `/tmp/nvflare/federated-catalog/data/site-2/local/fdn/default/catalog_policy.json` and change
 `datasets.omop.share` to `false`. The updated policy is shown below; the other
 site and dataset rules stay as they are:
 

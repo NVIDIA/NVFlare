@@ -17,12 +17,18 @@ import json
 import pytest
 
 from nvflare.app_common.fdn.catalog.common.schema import ColumnInfo, Provenance, Relationship, TableInfo, validate
-from nvflare.app_common.fdn.catalog.site.policy import DatasetRule, PolicyError, apply_policy, load_policy
+from nvflare.app_common.fdn.catalog.site.policy import (
+    DatasetRule,
+    PolicyError,
+    apply_policy,
+    load_policy,
+    policy_file_path,
+)
 from tests.unit_test.app_common.fdn.catalog.helpers import LIMITS, make_catalog
 
 
 def write_policy(tmp_path, data) -> str:
-    path = tmp_path / "study.json"
+    path = tmp_path / "catalog_policy.json"
     path.write_text(data if isinstance(data, str) else json.dumps(data))
     return path
 
@@ -148,3 +154,14 @@ class TestApplyPolicy:
         assert view.operations == ("cohort.count", "cohort.sum")
         assert apply_policy(RULE, catalog, {"cohort.count"}).operations == ("cohort.count",)
         assert apply_policy(DatasetRule(share=True), catalog, {"cohort.count"}).operations == ()
+
+
+@pytest.mark.parametrize("study", ["../other", "", "/tmp/other", "..", "x/y", "x\\y"])
+def test_policy_path_rejects_unsafe_study_names(tmp_path, study):
+    with pytest.raises(PolicyError):
+        policy_file_path(tmp_path, study)
+
+
+def test_studies_resolve_distinct_explicit_policy_files(tmp_path):
+    assert policy_file_path(tmp_path, "default") == tmp_path / "default/catalog_policy.json"
+    assert policy_file_path(tmp_path, "oncology") == tmp_path / "oncology/catalog_policy.json"
