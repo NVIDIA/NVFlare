@@ -1964,6 +1964,26 @@ def test_step_sync_sends_the_open_round_when_the_trainer_stops_itself():
     assert trainer.global_step == 6
 
 
+def test_step_sync_warns_once_when_training_passes_the_trainer_limit(caplog):
+    fake = _FakeFlare(_train_tasks(4))
+
+    with caplog.at_level(logging.WARNING, logger="_StepSyncFLCallback"):
+        _fit_with_step_sync(fake, RecordingNet(), _loader(4), sync_every_n_steps=2, max_epochs=1)
+
+    warnings = [r for r in caplog.records if "passed the trainer's own limit of 4" in r.getMessage()]
+    assert len(warnings) == 1
+    assert fake.steps() == [2, 2, 2, 2]
+
+
+def test_step_sync_does_not_warn_within_the_trainer_limit(caplog):
+    fake = _FakeFlare(_train_tasks(2))
+
+    with caplog.at_level(logging.WARNING, logger="_StepSyncFLCallback"):
+        _fit_with_step_sync(fake, RecordingNet(), _loader(4), sync_every_n_steps=2, max_epochs=1)
+
+    assert not [r for r in caplog.records if "passed the trainer's own limit" in r.getMessage()]
+
+
 def test_step_sync_validates_between_send_and_receive():
     events = []
     fake = _FakeFlare(_train_tasks(2), events=events)

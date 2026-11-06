@@ -125,7 +125,12 @@ Rules:
    in-fit validation in between, so it overlaps the server's aggregation instead of delaying the upload.
 3. **The server's horizon.** `on_train_start` sets `fit_loop.max_epochs` and `epoch_loop.max_steps` to `-1`, so only
    the server ends a normal run. Optimizers and schedulers are configured before `on_train_start`, so a schedule
-   sized from the trainer's original limits keeps that shape; size it for the run the server will drive. When the
+   sized from the trainer's original limits keeps that shape. Step-counting schedulers (warmup and decay,
+   `StepLR`) are unaffected; a scheduler sized from the run length (`OneCycleLR`, cosine with `T_max` from
+   `estimated_stepping_batches`) must be sized for `num_rounds * sync_every_n_steps`. The callback cannot fix
+   this, since the scheduler exists before the first receive, so it records the trainer's step budget at
+   `on_train_start` and logs one warning when training passes it. A parameter that keeps the trainer's limits
+   was considered and rejected: it brings back sites that leave before the server's last round. When the
    trainer stops for its own reason (`EarlyStopping`, `max_time`), `on_train_end` sends the open round.
 4. **No send without a receive.** NVFlare rejects a send that no receive preceded. A round is open only between a
    receive that returned a train task and the next send; `on_train_end` sends only an open round.
@@ -326,6 +331,7 @@ enforces NVFlare's exchange order: a send without a preceding receive fails.
 | Optimizer, LR scheduler and data order carry over across syncs | same optimizer object and momentum buffers, `lr_scheduler.last_epoch`, uninterrupted sample sequence |
 | The server decides how many rounds run, past the trainer's `max_epochs` and `max_steps` | rounds crossing epochs, epochs shorter than N, `max_steps` below the run |
 | A trainer that stops itself sends its open round | `should_stop` mid-round |
+| Passing the trainer's own step budget logs one scheduler warning | warning count past `max_epochs` |
 | In-fit validation runs between send and receive | call order of send, validation and receive |
 | The server finishing first stops training cleanly | `receive()` returns `None` |
 | A non-train task mid-fit stops training and is handled by a later `trainer.validate()` | evaluate task after a sync |

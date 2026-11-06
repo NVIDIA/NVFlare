@@ -177,6 +177,13 @@ and ``max_steps``, so epochs keep cycling the data until the server stops sendin
 that stops on its own (``EarlyStopping``, ``max_time``) sends its open round and leaves. Each site reports
 N steps per round, so FedAvg weights sites equally.
 
+LR schedulers that count optimizer steps (warmup and decay, ``StepLR``, ``ExponentialLR``) work unchanged.
+A scheduler sized from the trainer's run length, such as ``OneCycleLR`` or ``CosineAnnealingLR`` with
+``T_max`` from ``trainer.estimated_stepping_batches``, must be sized for the run the server drives:
+``num_rounds * sync_every_n_steps`` optimizer steps. Pass ``num_rounds`` to the training script, for
+example as a script argument. ``OneCycleLR`` raises once it is stepped past ``total_steps``, and the
+callback logs a warning when training passes the trainer's own limit.
+
 In this mode, ``restore_state`` and ``update_fit_loop`` have no effect, and ``train_with_evaluation``
 is not supported.
 

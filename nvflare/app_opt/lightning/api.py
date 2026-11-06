@@ -73,8 +73,10 @@ def patch(
             ``sync_every_n_steps`` optimizer steps instead of once per ``fit()``. The received model is loaded
             in place, so the optimizer, LR scheduler and data position carry over. The server's ``num_rounds``
             decides how long training runs: the trainer's ``max_epochs`` and ``max_steps`` are lifted, and ``fit()``
-            ends when the server stops sending training tasks. ``restore_state`` and ``update_fit_loop`` have no
-            effect in this mode, and ``train_with_evaluation`` is not supported.
+            ends when the server stops sending training tasks. An LR scheduler sized from the trainer's limits
+            (``OneCycleLR``, cosine with ``T_max`` from ``estimated_stepping_batches``) must be sized for
+            ``num_rounds * sync_every_n_steps`` instead; step-counting schedulers work unchanged. ``restore_state``
+            and ``update_fit_loop`` have no effect in this mode, and ``train_with_evaluation`` is not supported.
             Defaults to `None` (one FL round per ``fit()``).
 
     Hooks:
@@ -484,8 +486,11 @@ class _StepSyncFLCallback(_FLCallbackBase):
                 "between syncs. Disable train_with_evaluation or sync once per fit()."
             )
         self.sync_every_n_steps = sync_every_n_steps
+        self._trainer_step_budget = None
 
     def on_train_start(self, trainer, pl_module):
+        budget = trainer.estimated_stepping_batches
+        self._trainer_step_budget = int(budget) if budget != float("inf") else None
         trainer.fit_loop.max_epochs = -1
         trainer.fit_loop.epoch_loop.max_steps = -1
 
@@ -506,6 +511,14 @@ class _StepSyncFLCallback(_FLCallbackBase):
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         super().on_train_batch_end(trainer, pl_module, outputs, batch, batch_idx)
+        if self._trainer_step_budget is not None and trainer.global_step > self._trainer_step_budget:
+            self.logger.warning(
+                f"Training passed the trainer's own limit of {self._trainer_step_budget} optimizer steps "
+                "(max_epochs / max_steps) because the server's num_rounds decides how long step sync runs. "
+                "An LR scheduler sized from that limit (e.g. OneCycleLR, or CosineAnnealingLR with T_max from "
+                "estimated_stepping_batches) is now past its end; size it for num_rounds * sync_every_n_steps."
+            )
+            self._trainer_step_budget = None
         if self._training_round_started and self._get_round_num_steps(trainer) >= self.sync_every_n_steps:
             self._finish_round_and_send(trainer, pl_module)
 
