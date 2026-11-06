@@ -54,6 +54,9 @@ def _worker_runtime(workspace_root, runner, mock_upload=True):
             "security_init_for_job",
             "register_ext_decomposers",
             "configure_logging",
+            "JobResourceCollector",
+            "snapshot_message_traffic",
+            "write_terminal_handoff",
         ):
             stack.enter_context(patch.object(worker_process, name))
         if mock_upload:
