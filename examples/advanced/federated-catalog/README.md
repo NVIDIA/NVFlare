@@ -2,7 +2,7 @@
 
 Discover clinical dataset metadata across two simulated sites using `CatalogRecipe`
 and `SimEnv`. The example follows the federated statistics/Hello PyTorch structure:
-prepare data, run a short `job.py`, then inspect or verify results separately.
+prepare data, run a short `job.py`, then inspect the saved JSON results.
 It runs on CPU and downloads no datasets.
 
 The example data is a deterministic, **synthetic OMOP CDM 5.4-shaped subset** based on
@@ -15,7 +15,6 @@ The steps have separate responsibilities:
 
 - `prepare_data.py`: create and populate the local Parquet files/SQL tables and write site bindings and policies before the federated job.
 - `job.py`: configure and run `CatalogRecipe`, then print the published catalog.
-- `verify_result.py`: optionally verify a completed run.
 
 The job imports no preparation module and does not create or populate source tables.
 
@@ -177,16 +176,6 @@ Catalog/schema versions start at 1; unchanged reads retain their versions.
 Simulator logs and intermediate manifests are under
 `/tmp/nvflare/federated-catalog/simulation/catalog_read/`.
 
-## Optional verification
-
-```bash
-python verify_result.py
-```
-
-This checks the saved output's table/column differences, declared profile,
-relationships, backend provenance and policy exclusions. Verification is separate
-from `job.py`. Run it after rerunning the job whenever a policy changes.
-
 ## Withdraw one site's metadata
 
 The only publication-policy files are [site-1's policy](config/site-1/catalog_policy.json)
@@ -279,7 +268,6 @@ Save the updated JSON at the site policy path, then rerun:
 
 ```bash
 python job.py
-python verify_result.py
 ```
 
 Discovery now contains five dataset entries: only site-2/omop is withdrawn,
@@ -294,7 +282,6 @@ python prepare_data.py --data-root /tmp/my-catalog/data
 python job.py --data-root /tmp/my-catalog/data \
   --workspace /tmp/my-catalog/simulation --store-root /tmp/my-catalog/store
 python -m json.tool /tmp/my-catalog/store/discovery.json
-python verify_result.py --data-root /tmp/my-catalog/data --store-root /tmp/my-catalog/store
 ```
 
 Use a dedicated simulation workspace: `SimEnv` replaces the job workspace on each
