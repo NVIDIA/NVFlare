@@ -22,10 +22,27 @@ from pathlib import Path
 def coverage(reports, expected):
     """Require one complete measurement per expected (site, round), not just a report count."""
     groups = {}
-    for report in reports:
-        if report.get("stage") == "client_task_result":
-            groups.setdefault((report.get("site"), report.get("round")), []).append(report)
     problems = []
+    report_count = 0
+    for report in reports:
+        if report.get("stage") != "client_task_result":
+            continue
+        report_count += 1
+        site, round_ = report.get("site"), report.get("round")
+        # Early SDK failure reports can lack an identity. Keep their diagnostics
+        # without assigning them to an expected round or sorting None with ints.
+        if site is None or round_ is None:
+            problems.append(
+                {
+                    "site": site,
+                    "round": round_,
+                    "reason": "unknown site or round",
+                    "status": report.get("status", "unknown"),
+                    "report_reason": report.get("reason"),
+                }
+            )
+            continue
+        groups.setdefault((site, round_), []).append(report)
     for key in sorted(set(expected) | set(groups)):
         values = groups.get(key, [])
         if key not in expected or len(values) != 1:
@@ -44,7 +61,7 @@ def coverage(reports, expected):
     return {
         "complete": not problems,
         "expected": len(expected),
-        "reports": sum(map(len, groups.values())),
+        "reports": report_count,
         "problems": problems,
     }
 

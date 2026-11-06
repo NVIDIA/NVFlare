@@ -18,8 +18,14 @@ import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
+
+from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_context import FLContextManager
+from nvflare.apis.shareable import Shareable
+from nvflare.app_common.filters.memorization_audit_filter import MemorizationAuditFilter
 
 ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE = ROOT / "research/memorization-reduction/huggingface"
@@ -85,6 +91,42 @@ def test_coverage_detects_missing_failed_duplicate_and_partial_audits():
     assert not check([{**report, "sample_counts": {}}], expected)["complete"]
     for status in ("failed", "unsupported", "skipped"):
         assert not check([{**report, "status": status}], expected)["complete"]
+
+
+def test_coverage_reports_sdk_failure_with_unknown_round(tmp_path, monkeypatch, capsys):
+    engine = Mock()
+    engine.get_workspace.return_value.get_run_dir.return_value = str(tmp_path)
+    context = FLContextManager(engine=engine, identity_name="site-1", job_id="test-job").new_context()
+    result = Shareable()
+    result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
+    MemorizationAuditFilter("auditor").process(result, context)
+    report = json.loads(next(tmp_path.rglob("memorization_audits/*.json")).read_text())
+    assert report["round"] is None
+    assert (report["status"], report["reason"]) == ("skipped", "task_result_not_ok")
+
+    monkeypatch.setattr(sys, "argv", ["check_coverage.py", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc:
+        load("check_coverage").main()
+
+    assert exc.value.code == 1
+    summary = json.loads(capsys.readouterr().out)
+    assert not summary["complete"]
+    assert summary["reports"] == 1 and summary["expected"] == 4
+    unknown = [problem for problem in summary["problems"] if problem["round"] is None]
+    assert unknown == [
+        {
+            "site": "site-1",
+            "round": None,
+            "reason": "unknown site or round",
+            "status": report["status"],
+            "report_reason": report["reason"],
+        }
+    ]
+    missing = [problem for problem in summary["problems"] if problem["round"] is not None]
+    assert {(problem["site"], problem["round"]) for problem in missing} == {
+        (site, round_) for site in ("site-1", "site-2") for round_ in (0, 1)
+    }
+    assert all(problem["reason"] == "unexpected, missing or duplicate report" for problem in missing)
 
 
 def test_offline_global_report_has_valid_workspace(tmp_path, monkeypatch):

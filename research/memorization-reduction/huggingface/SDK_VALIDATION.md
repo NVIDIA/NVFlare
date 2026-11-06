@@ -3,10 +3,14 @@
 Validated November 6, 2026 at
 [`778d632e35bd46c8b40a928837d43a55d0931373`](https://github.com/holgerroth/NVFlare/commit/778d632e35bd46c8b40a928837d43a55d0931373).
 [Machine-readable results, source hashes and artifact hashes](validation-h100.json)
-accompany this report. Later documentation commits do not change the validated
-Python implementation. The historical [525-fit benchmark](../TRAP_DP_RESULTS.md)
-used the earlier research implementation; this run separately exercises the SDK
-classes shipped in the PR. Neither establishes general production readiness.
+accompany this report and bind the Python sources at that commit. A subsequent
+coverage-checker fix handles SDK failure reports with unknown site/round identities;
+an in-process regression generates an actual filter report and checks JSON diagnostics
+and exit status 1. That fix was validated locally, without rerunning the H100 workflow.
+The SDK classes and numerical/runtime code are unchanged. The historical
+[525-fit benchmark](../TRAP_DP_RESULTS.md) used the earlier research implementation;
+this run separately exercises the SDK classes shipped in the PR. Neither establishes
+general production readiness.
 
 ## Workload and runtime
 
@@ -77,7 +81,7 @@ The real Recipe run exercised incoming snapshots and outgoing
   the report; it differs from the initial checkpoint. Final cohorts did not select
   a checkpoint or training configuration.
 - Prepared asset hashes, exported auditor/filter configuration and terminal exit
-  code were checked. Source hashes in the receipt match the shipped implementation.
+  code were checked. Source hashes in the receipt identify the validated commit.
   No SDK numerical/runtime behavior was changed to obtain the pass.
 
 These tiny synthetic cohorts validate execution and arithmetic. Their attack
