@@ -229,6 +229,9 @@ jobs:
         if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         timeout-minutes: 15
         run: python3 ci/run_process_contracts.py
+      - name: Run numeric edge replay integration
+        if: needs.full-ci-selection.outputs.run-full-ci == 'true'
+        run: python3 -m pytest -q -rs tests/integration_test/fast/edge_num_replay_test.py
       - name: Run Dashboard onboarding in Chromium
         if: ${{ needs.full-ci-selection.outputs.run-full-ci == 'true' && matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
         timeout-minutes: 6
@@ -327,6 +330,10 @@ jobs:
       - name: Include process and transport contract coverage
         timeout-minutes: 15
         run: python3 ci/run_process_contracts.py --cov=nvflare --cov-append --cov-report xml:cov.xml
+      - name: Include numeric edge replay coverage
+        run: >-
+          python3 -m pytest -q -rs tests/integration_test/fast/edge_num_replay_test.py
+          --cov=nvflare --cov-append --cov-report xml:cov.xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         with:
