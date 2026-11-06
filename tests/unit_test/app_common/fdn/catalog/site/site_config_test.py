@@ -164,4 +164,4 @@ def test_example_publication_policies_are_separate_from_reader_configuration():
     for site in ("site-1", "site-2"):
         policy = load_policy(root / site / "catalog_policy.json")
         assert policy.datasets["omop"].share
-        assert not policy.datasets["internal"].share
+        assert set(policy.datasets) == {"omop"}
