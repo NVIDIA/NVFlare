@@ -409,15 +409,22 @@ def test_encrypt_rejects_unsupported_payload(payload):
 
 
 @pytest.mark.parametrize(
-    "receiver,peer,allowed",
+    "channel,receiver,peer,origin,allowed",
     [
-        ("site-2", "server", True),
-        ("relay-1.relay-2", "relay-1", True),
-        ("relay", "relay.site-1", False),
-        ("relay.site-2", "relay.site-1", False),
+        (CellChannel.CLIENT_MAIN, "site-2", "server", "server", True),
+        (CellChannel.CLIENT_MAIN, "relay-1.relay-2", "relay-1", "server", True),
+        (CellChannel.CLIENT_MAIN, "relay", "relay.site-1", "server", False),
+        (CellChannel.CLIENT_MAIN, "relay.site-2", "relay.site-1", "server", False),
+        (CellChannel.CLIENT_COMMAND, "site-2", "server", "server", True),
+        (CellChannel.CLIENT_COMMAND, "relay-1.relay-2", "relay-1", "server", True),
+        (CellChannel.CLIENT_COMMAND, "relay", "relay.site-1", "server", False),
+        (CellChannel.CLIENT_COMMAND, "relay.site-2", "relay.site-1", "server", False),
+        (CellChannel.CLIENT_COMMAND, "relay", "relay.site-1", "relay.site-2", False),
+        (CellChannel.CLIENT_COMMAND, "relay", "relay.site-1", "relay.site-1", True),
+        (CellChannel.CLIENT_COMMAND, "relay", "relay.site-1", "relay.site-1.job", True),
     ],
 )
-def test_server_admin_origin_is_checked_at_every_hop(receiver, peer, allowed):
+def test_admin_origin_is_checked_at_every_hop(channel, receiver, peer, origin, allowed):
     cell = _cell(receiver)
     cell.received_msg_counter_pool = MagicMock()
     cell.sent_msg_counter_pool = MagicMock()
@@ -428,9 +435,9 @@ def test_server_admin_origin_is_checked_at_every_hop(receiver, peer, allowed):
     request = Message(
         {
             MessageHeaderKey.MSG_TYPE: MessageType.REQ,
-            MessageHeaderKey.CHANNEL: CellChannel.CLIENT_MAIN,
+            MessageHeaderKey.CHANNEL: channel,
             MessageHeaderKey.TOPIC: "admin",
-            MessageHeaderKey.ORIGIN: "server",
+            MessageHeaderKey.ORIGIN: origin,
             MessageHeaderKey.DESTINATION: "relay.site-2.child",
             MessageHeaderKey.REPLY_EXPECTED: True,
             MessageHeaderKey.REQ_ID: "request-1",

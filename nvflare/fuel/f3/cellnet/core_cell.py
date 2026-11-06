@@ -2094,12 +2094,18 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         if msg_type == MessageType.REQ:
             reply = None
             reply_target = origin
+            from_upstream = endpoint.name == FQCN.ROOT_SERVER or (
+                self.my_info.gen > 1 and endpoint.name == FQCN.get_parent(self.my_info.fqcn)
+            )
             if (
-                channel == CellChannel.CLIENT_MAIN
-                and origin == FQCN.ROOT_SERVER
-                and endpoint.name != FQCN.ROOT_SERVER
-                and (self.my_info.gen <= 1 or endpoint.name != FQCN.get_parent(self.my_info.fqcn))
+                channel == CellChannel.CLIENT_COMMAND
+                and not from_upstream
+                and (FQCN.validate(origin) or (origin != endpoint.name and not FQCN.is_ancestor(endpoint.name, origin)))
             ):
+                # Downstream peers may forward commands only for their own subtree.
+                reply = make_reply(ReturnCode.UNAUTHENTICATED, "origin does not belong to sending peer")
+                reply_target = endpoint.name
+            elif channel == CellChannel.CLIENT_MAIN and origin == FQCN.ROOT_SERVER and not from_upstream:
                 # Check every hop, including relays: a downstream client must not
                 # impersonate the server on the client administration channel.
                 # mTLS binds the actual endpoint to the provisioned topology identity.
