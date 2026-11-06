@@ -115,34 +115,36 @@ def update_and_sign_one_folder(folder, pri_key, cert):
 
 
 def prepare_folders():
+    """Create a signed folder; the certs live in a private temp dir so parallel workers don't share files."""
     root_cert, client_pri_key, client_cert, server_pri_key, server_cert = get_test_certs()
     folder = create_folder()
-    with open("client.crt", "wb") as f:
+    cert_dir = tempfile.mkdtemp()
+    client_crt = os.path.join(cert_dir, "client.crt")
+    root_crt = os.path.join(cert_dir, "root.crt")
+    with open(client_crt, "wb") as f:
         f.write(serialize_cert(client_cert))
-    with open("root.crt", "wb") as f:
+    with open(root_crt, "wb") as f:
         f.write(serialize_cert(root_cert))
-    sign_folders(folder, client_pri_key, "client.crt")
-    return folder, server_pri_key, server_cert
+    sign_folders(folder, client_pri_key, client_crt)
+    return folder, server_pri_key, server_cert, root_crt
 
 
 @pytest.mark.xdist_group(name="lighter_utils_group")
 class TestSignFolder:
     def test_verify_folder(self):
-        folder, server_pri_key, server_cert = prepare_folders()
-        assert verify_folder_signature(folder, "root.crt") is True
+        folder, server_pri_key, server_cert, root_crt = prepare_folders()
+        assert verify_folder_signature(folder, root_crt) is True
         tamper_one_file(folder)
-        assert verify_folder_signature(folder, "root.crt") is False
-        os.unlink("client.crt")
-        os.unlink("root.crt")
+        assert verify_folder_signature(folder, root_crt) is False
+        shutil.rmtree(os.path.dirname(root_crt))
         shutil.rmtree(folder)
 
     def test_verify_updated_folder(self):
-        folder, server_pri_key, server_cert = prepare_folders()
-        assert verify_folder_signature(folder, "root.crt") is True
+        folder, server_pri_key, server_cert, root_crt = prepare_folders()
+        assert verify_folder_signature(folder, root_crt) is True
         folder = update_and_sign_one_folder(folder, server_pri_key, server_cert)
-        assert verify_folder_signature(folder, "root.crt") is True
-        os.unlink("client.crt")
-        os.unlink("root.crt")
+        assert verify_folder_signature(folder, root_crt) is True
+        shutil.rmtree(os.path.dirname(root_crt))
         shutil.rmtree(folder)
 
     def _get_participant(self, name, participants):

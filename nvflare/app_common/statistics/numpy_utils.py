@@ -16,6 +16,7 @@ import json
 from typing import List, Optional
 
 import numpy as np
+from pandas.api.types import is_bool_dtype, is_datetime64_any_dtype, is_float_dtype, is_integer_dtype
 
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType
 
@@ -32,11 +33,19 @@ class NpEncoder(json.JSONEncoder):
 
 
 def dtype_to_data_type(dtype) -> DataType:
-    if dtype.char in np.typecodes["AllFloat"]:
+    # Use pandas type-checking functions so that both numpy dtypes and pandas
+    # nullable ExtensionDtypes (Int64Dtype, Float64Dtype, BooleanDtype, StringDtype, …)
+    # are classified correctly.
+    if is_float_dtype(dtype):
         return DataType.FLOAT
-    elif dtype.char in np.typecodes["AllInteger"] or dtype == bool:
+    elif is_bool_dtype(dtype):
+        # is_bool must be checked before is_integer because BooleanDtype satisfies both
         return DataType.INT
-    elif np.issubdtype(dtype, np.datetime64) or np.issubdtype(dtype, np.timedelta64):
+    elif is_integer_dtype(dtype):
+        return DataType.INT
+    elif is_datetime64_any_dtype(dtype) or (
+        hasattr(dtype, "kind") and dtype.kind == "m"  # np.timedelta64 has kind "m"
+    ):
         return DataType.DATETIME
     else:
         return DataType.STRING
