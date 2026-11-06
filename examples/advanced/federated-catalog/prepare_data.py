@@ -169,11 +169,12 @@ def write_sqlite(path, tables):
         connection.close()
 
 
-def prepare_data(data_root, site_2_format="parquet"):
+def prepare_data(data_root, site_2_format="parquet", site_1_format="parquet"):
     root = Path(data_root).resolve()
+    site_formats = {"site-1": site_1_format, "site-2": site_2_format}
     for index, site in enumerate(SITES, start=1):
         people = 64 if index == 1 else 96
-        storage_format = site_2_format if site == "site-2" else "parquet"
+        storage_format = site_formats[site]
         site_only = "oncology" if index == 1 else "registry"
         dataset_sizes = {"omop": people, "cardiology": people // 2, site_only: people // 4}
         sources = {}
@@ -206,9 +207,10 @@ def prepare_data(data_root, site_2_format="parquet"):
         write_json(local / "study_runtime.yaml", {"format_version": 2, "studies": {"default": {"datasets": sources}}})
         policy_root = local / "fdn"
         policy_root.mkdir(parents=True, exist_ok=True)
-        filename = (
-            "catalog_site.parquet.json" if site == "site-2" and storage_format == "parquet" else "catalog_site.json"
-        )
+        filename = "catalog_site.json"
+        configured_format = json.loads((config / filename).read_text())["default_connector"]
+        if configured_format != storage_format:
+            filename = f"catalog_site.{storage_format}.json"
         shutil.copyfile(config / filename, policy_root / "catalog_site.json")
         shutil.copyfile(config / "default.json", policy_root / "default.json")
     print(f"Prepared multiple OMOP-shaped datasets per site in {root}")
@@ -217,6 +219,7 @@ def prepare_data(data_root, site_2_format="parquet"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", default=DEFAULT_DATA)
+    parser.add_argument("--site-1-format", choices=["parquet", "sqlite"], default="parquet")
     parser.add_argument("--site-2-format", choices=["parquet", "sqlite"], default="parquet")
     args = parser.parse_args()
-    prepare_data(args.data_root, args.site_2_format)
+    prepare_data(args.data_root, site_1_format=args.site_1_format, site_2_format=args.site_2_format)

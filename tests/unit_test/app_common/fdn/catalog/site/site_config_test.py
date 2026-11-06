@@ -143,9 +143,15 @@ def test_builtin_bindings_reject_redundant_or_inline_metadata(tmp_path, connecto
 def test_checked_in_example_catalog_inputs_are_valid_and_minimal():
     root = Path(__file__).resolve().parents[6] / "examples/advanced/federated-catalog/config"
     paths = list(root.rglob("catalog_site*.json"))
-    assert len(paths) == 3
+    assert len(paths) == 4
     for path in paths:
         raw = json.loads(path.read_text())
-        assert set(raw) <= {"format_version", "default_connector"}
+        assert set(raw) == {"format_version", "default_connector"}
         site = load_site_config(path)
         assert site.default_connector in {"parquet", "sqlite"}
+
+
+def test_example_sites_each_declare_their_own_reader():
+    root = Path(__file__).resolve().parents[6] / "examples/advanced/federated-catalog/config"
+    assert load_site_config(root / "site-1/catalog_site.json").default_connector == "parquet"
+    assert load_site_config(root / "site-2/catalog_site.json").default_connector == "sqlite"
