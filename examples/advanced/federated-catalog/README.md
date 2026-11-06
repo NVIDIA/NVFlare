@@ -74,7 +74,7 @@ Both sites explicitly declare their reader in separate checked-in files.
 [config/site-2/catalog_site.json](config/site-2/catalog_site.json):
 
 ```json
-{"format_version": 1, "default_connector": "sqlite"}
+{"format_version": 1, "default_connector": "sql"}
 ```
 
 Each site also has its own checked-in `catalog_policy.json`:
@@ -114,7 +114,7 @@ The `condition_occurrence` schemas overlap but have one different column:
 | `condition_status_concept_id` | absent | `INTEGER` |
 
 The Parquet reader observes schemas from footers; optional annotations declare
-keys and relationships. The SQLite reader opens the database read-only and
+keys and relationships. The SQLAlchemy-based SQL reader opens this SQLite database read-only and
 inspects schema metadata and declared constraints. It does not select source
 rows. Published physical types retain their source representation; the catalog
 does not infer clinical equivalence or perform conversions.

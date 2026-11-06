@@ -38,7 +38,7 @@ class TestDefaults:
     def test_the_smallest_file_means_mounted_parquet_data_with_default_limits(self, tmp_path):
         site = load(tmp_path, {"format_version": 1})
         assert site.connectors[PARQUET_CONNECTOR] == ConnectorSpec(DEFAULT_CONNECTOR_CLASS)
-        assert site.connectors["sqlite"].path == "nvflare.app_opt.fdn.catalog.sqlite_connector.SQLiteConnector"
+        assert site.connectors["sql"].path == "nvflare.app_opt.fdn.catalog.sql_connector.SQLConnector"
         assert site.default_connector == PARQUET_CONNECTOR and site.bindings("any") == {}
         assert site.limits == ReadLimits(60, 1000, 10000) and site.installed_operations == frozenset()
 
@@ -62,7 +62,7 @@ class TestConnectorsAndBindings:
 
     def test_the_built_in_parquet_connector_is_always_there_next_to_the_named_ones(self, tmp_path):
         site = load(tmp_path, self.CONFIG)
-        assert set(site.connectors) == {"parquet", "csv", "sqlite", "claims-db", "lake"}
+        assert set(site.connectors) == {"parquet", "csv", "sql", "unity-catalog", "claims-db", "lake"}
         assert site.connectors["claims-db"] == ConnectorSpec("a.Sql", {"host": "h"})
 
     def test_each_study_binds_its_own_datasets_to_connectors_of_different_source_types(self, tmp_path):
@@ -124,16 +124,16 @@ class TestConnectorsAndBindings:
             load(tmp_path, config)
 
 
-def test_minimal_sqlite_site_needs_no_dataset_or_metadata_repetition(tmp_path):
-    site = load(tmp_path, {"format_version": 1, "default_connector": "sqlite"})
-    assert site.default_connector == "sqlite" and site.bindings("default") == {}
+def test_minimal_sql_site_needs_no_dataset_or_metadata_repetition(tmp_path):
+    site = load(tmp_path, {"format_version": 1, "default_connector": "sql"})
+    assert site.default_connector == "sql" and site.bindings("default") == {}
     assert site.installed_operations == frozenset()
 
 
-@pytest.mark.parametrize("connector", ["parquet", "sqlite"])
+@pytest.mark.parametrize("connector", ["parquet", "sql"])
 @pytest.mark.parametrize("options", [{"storage_format": "parquet"}, {"metadata": {"owner": "private"}}])
 def test_builtin_bindings_reject_redundant_or_inline_metadata(tmp_path, connector, options):
-    with pytest.raises(SiteConfigError, match="accept no options"):
+    with pytest.raises(SiteConfigError, match="accept no options|unsupported connector options"):
         load(
             tmp_path,
             {"format_version": 1, "studies": {"default": {"omop": {"connector": connector, "options": options}}}},
@@ -152,7 +152,7 @@ def test_checked_in_example_catalog_inputs_are_valid_and_minimal():
             else {"format_version", "default_connector"}
         )
         site = load_site_config(path)
-        assert site.default_connector in {"parquet", "sqlite"}
+        assert site.default_connector in {"parquet", "sql"}
 
 
 def test_example_sites_each_declare_their_own_reader():
@@ -160,7 +160,7 @@ def test_example_sites_each_declare_their_own_reader():
     site = load_site_config(root / "site-1/catalog_site.json")
     assert site.default_connector == "parquet"
     assert site.bindings("default") == {"lab_results": DatasetBinding("csv"), "visits": DatasetBinding("csv")}
-    assert load_site_config(root / "site-2/catalog_site.json").default_connector == "sqlite"
+    assert load_site_config(root / "site-2/catalog_site.json").default_connector == "sql"
 
 
 def test_example_publication_policies_are_separate_from_reader_configuration():
