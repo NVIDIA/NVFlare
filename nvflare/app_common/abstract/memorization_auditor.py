@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.fuel.utils.experimental import experimental
 
 
 class UnsupportedAudit(ValueError):
@@ -31,6 +32,10 @@ class MemorizationAuditor(FLComponent, ABC):
     Raise UnsupportedAudit for unsupported representations, not a zero score.
     Raw examples, prompts, and record scores must not be included in summaries.
     """
+
+    @experimental("MemorizationAuditor API may change")
+    def __init__(self):
+        super().__init__()
 
     @abstractmethod
     def audit(self, model: FLModel, baseline: FLModel | None, fl_ctx: FLContext) -> dict:

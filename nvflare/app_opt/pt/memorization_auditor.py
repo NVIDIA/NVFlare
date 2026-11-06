@@ -22,6 +22,7 @@ import torch
 from nvflare.app_common.abstract.fl_model import ParamsType
 from nvflare.app_common.abstract.memorization_auditor import MemorizationAuditor, UnsupportedAudit
 from nvflare.app_opt.pt.reference_scorer import tensor_digest
+from nvflare.fuel.utils.experimental import experimental
 
 
 def membership_auc(members, nonmembers):
@@ -47,6 +48,7 @@ class PTMemorizationAuditor(MemorizationAuditor):
     between batches; this budget cannot preempt a blocked CUDA operation.
     """
 
+    @experimental("PTMemorizationAuditor API may change")
     def __init__(self, device="cpu", max_seconds=120.0):
         super().__init__()
         if not np.isfinite(max_seconds) or max_seconds <= 0:

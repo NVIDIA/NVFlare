@@ -12,11 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 from unittest.mock import Mock
 
 import pytest
 
-from nvflare.app_common.filters.memorization_audit_filter import AuditModelSnapshot
+from nvflare.app_common.filters.memorization_audit_filter import (
+    AuditModelSnapshot,
+    AuditSnapshotFilter,
+    MemorizationAuditFilter,
+)
+from nvflare.app_common.widgets.memorization_audit_reporter import MemorizationAuditReporter
+from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.job_config.api import FedApp, FedJob
 from nvflare.job_config.fed_app_config import ClientAppConfig
 from nvflare.recipe.spec import Recipe
@@ -57,3 +64,43 @@ def test_invalid_component_rejected_before_topology_changes(component, component
     with pytest.raises(error):
         recipe.add_client_component(component, component_id)
     recipe._add_to_client_apps.assert_not_called()
+
+
+def test_experimental_audit_components_preserve_exported_paths_and_arguments(tmp_path):
+    job = FedJob(name="audit-components", min_clients=1)
+    job._deploy_map["site-1"] = FedApp(ClientAppConfig())
+    recipe = Recipe(job)
+    with pytest.warns(Warning) as caught:
+        snapshot = AuditModelSnapshot()
+        reporter = MemorizationAuditReporter(report_dir="audit_results")
+        incoming = AuditSnapshotFilter("snapshot")
+        outgoing = MemorizationAuditFilter("auditor", "snapshot", frequency=3)
+    for cls in (AuditModelSnapshot, MemorizationAuditReporter, AuditSnapshotFilter, MemorizationAuditFilter):
+        assert any(f"{cls.__name__} API may change" in str(w.message) for w in caught)
+    recipe.add_client_component(snapshot, "snapshot")
+    recipe.add_client_component(reporter, "reporter")
+    recipe.add_client_input_filter(incoming, tasks=["train"])
+    recipe.add_client_output_filter(outgoing, tasks=["train"])
+    job.export_job(str(tmp_path))
+    configs = list(tmp_path.rglob("config_fed_client.json"))
+    assert len(configs) == 1
+    config = json.loads(configs[0].read_text())
+    components = {c["id"]: c for c in config["components"]}
+    entries = [
+        (components["snapshot"], AuditModelSnapshot, {}),
+        (components["reporter"], MemorizationAuditReporter, {"report_dir": "audit_results", "summary_metrics": []}),
+        (config["task_data_filters"][0]["filters"][0], AuditSnapshotFilter, {"snapshot_id": "snapshot"}),
+        (
+            config["task_result_filters"][0]["filters"][0],
+            MemorizationAuditFilter,
+            {"auditor_id": "auditor", "snapshot_id": "snapshot", "frequency": 3, "summary_metrics": []},
+        ),
+    ]
+    for entry, cls, args in entries:
+        assert entry["path"] == f"{cls.__module__}.{cls.__name__}"
+        assert entry["args"] == args
+        with pytest.warns(Warning):
+            restored = instantiate_class(entry["path"], entry["args"])
+        assert type(restored) is cls
+        for key, value in args.items():
+            assert getattr(restored, key) == value

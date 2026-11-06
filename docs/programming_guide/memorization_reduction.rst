@@ -13,6 +13,9 @@ The method is introduced by Muhammed Ustaomeroglu et al. (2026) in
 <https://arxiv.org/abs/2609.32293>`_, arXiv:2609.32293. The components below
 integrate the preprint's reference-based penalty into NVFlare.
 
+The TRAP and auditing components emit NVFlare's experimental API warning when
+constructed. Their interfaces may change.
+
 Loss and diagnostics
 --------------------
 

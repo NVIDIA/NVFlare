@@ -21,7 +21,9 @@ from nvflare.app_opt.pt.trap_loss import PTTRAPLoss, causal_token_log_probs
 def test_values_gradients_and_masked_nonfinite_padding():
     target = torch.tensor([-1.0, -3.0, float("nan")], requires_grad=True)
     reference = torch.tensor([-3.0, -2.0, float("nan")], requires_grad=True)
-    penalty = PTTRAPLoss(0.5, 0.5)(target, reference, torch.tensor([True, True, False]))
+    with pytest.warns(Warning, match="PTTRAPLoss API may change"):
+        loss = PTTRAPLoss(0.5, 0.5)
+    penalty = loss(target, reference, torch.tensor([True, True, False]))
     assert penalty.item() == pytest.approx(0.375)
     penalty.backward()
     torch.testing.assert_close(target.grad, torch.tensor([0.25, 0.0, 0.0]))

@@ -5,6 +5,9 @@ Status: draft for API and design review, updated November 5, 2026.
 Issue: [NVIDIA/NVFlare#5680](https://github.com/NVIDIA/NVFlare/issues/5680).
 
 Target: the next NVFlare release; all new components are experimental.
+Constructing the TRAP and auditing components emits NVFlare's `@experimental` warning;
+their APIs may change. The decorator is applied to constructors to preserve class
+identity and signatures for job configuration export and loading.
 
 ## Problem and scope
 

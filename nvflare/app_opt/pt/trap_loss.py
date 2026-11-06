@@ -17,6 +17,8 @@ import math
 import torch
 from torch import nn
 
+from nvflare.fuel.utils.experimental import experimental
+
 
 def causal_token_log_probs(logits: torch.Tensor, labels: torch.Tensor, ignore_index: int = -100):
     """Return shifted observed-token log probabilities and the valid loss mask.
@@ -44,6 +46,7 @@ class PTTRAPLoss(nn.Module):
     sum microbatch losses (use the same normalization for ordinary CE).
     """
 
+    @experimental("PTTRAPLoss API may change")
     def __init__(self, weight: float = 1.0, threshold: float = 0.0):
         super().__init__()
         if not math.isfinite(weight) or weight < 0 or not math.isfinite(threshold) or threshold < 0:

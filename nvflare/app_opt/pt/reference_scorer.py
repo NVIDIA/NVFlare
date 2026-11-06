@@ -22,6 +22,7 @@ from pathlib import Path
 import torch
 
 from nvflare.app_opt.pt.trap_loss import causal_token_log_probs
+from nvflare.fuel.utils.experimental import experimental
 
 
 def tensor_digest(tensors):
@@ -44,6 +45,7 @@ class FrozenReferenceScorer:
     the reference. Cached scores are potentially sensitive local artifacts.
     """
 
+    @experimental("FrozenReferenceScorer API may change")
     def __init__(self, model, tokenizer_fingerprint: str, scoring_identity: str, cache_dir=None):
         if not tokenizer_fingerprint or not scoring_identity:
             raise ValueError("Tokenizer and scoring identities are required")

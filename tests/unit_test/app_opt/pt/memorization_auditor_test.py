@@ -39,7 +39,10 @@ class TinyAuditor(PTMemorizationAuditor):
 
 
 def test_diff_reconstruction_and_rng_isolation():
-    auditor = TinyAuditor()
+    with pytest.warns(Warning) as caught:
+        auditor = TinyAuditor()
+    for name in ("PTMemorizationAuditor", "MemorizationAuditor"):
+        assert any(f"{name} API may change" in str(w.message) for w in caught)
     baseline = FLModel(params={"weight": torch.tensor([[2.0]])}, current_round=0)
     delta = FLModel(params={"weight": torch.tensor([[1.0]])}, params_type=ParamsType.DIFF, current_round=0)
     python_state, numpy_state, torch_state = random.getstate(), np.random.get_state(), torch.get_rng_state()

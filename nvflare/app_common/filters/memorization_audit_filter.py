@@ -25,6 +25,7 @@ from nvflare.app_common.abstract.fl_model import ParamsType
 from nvflare.app_common.abstract.memorization_auditor import MemorizationAuditor, UnsupportedAudit
 from nvflare.app_common.filters.model_filter import ModelFilter
 from nvflare.app_common.widgets.memorization_audit_reporter import MemorizationAuditReporter
+from nvflare.fuel.utils.experimental import experimental
 
 
 def _task_key(fl_ctx, round_number):
@@ -34,6 +35,7 @@ def _task_key(fl_ctx, round_number):
 class AuditModelSnapshot(FLComponent):
     """Private baseline store for sequential client training tasks; never transmitted."""
 
+    @experimental("AuditModelSnapshot API may change")
     def __init__(self):
         super().__init__()
         self._key = None
@@ -61,6 +63,7 @@ class AuditModelSnapshot(FLComponent):
 class AuditSnapshotFilter(ModelFilter):
     """Capture the incoming baseline after input transformations for a paired audit."""
 
+    @experimental("AuditSnapshotFilter API may change")
     def __init__(self, snapshot_id: str):
         super().__init__([DataKind.WEIGHTS, DataKind.FL_MODEL])
         self.snapshot_id = snapshot_id
@@ -94,6 +97,7 @@ class MemorizationAuditFilter(ModelFilter):
     storage. Runtime failures log a failed report and leave training unaffected.
     """
 
+    @experimental("MemorizationAuditFilter API may change")
     def __init__(
         self,
         auditor_id: str,

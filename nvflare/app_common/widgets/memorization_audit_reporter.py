@@ -23,6 +23,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo, send_analytic_dxo
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
+from nvflare.fuel.utils.experimental import experimental
 
 
 class MemorizationAuditReporter(FLComponent):
@@ -32,6 +33,7 @@ class MemorizationAuditReporter(FLComponent):
     Detailed record scores and raw text must be stored separately by the auditor.
     """
 
+    @experimental("MemorizationAuditReporter API may change")
     def __init__(self, report_dir="memorization_audits", summary_metrics=None):
         super().__init__()
         if Path(report_dir).is_absolute() or ".." in Path(report_dir).parts:

@@ -36,7 +36,8 @@ class TinyLM(torch.nn.Module):
 def test_cache_equivalence_and_input_tokenizer_context_invalidation(tmp_path):
     model = TinyLM()
     inputs = torch.tensor([[1, 2, 3]])
-    scorer = FrozenReferenceScorer(model, "tokenizer1", "context1", tmp_path)
+    with pytest.warns(Warning, match="FrozenReferenceScorer API may change"):
+        scorer = FrozenReferenceScorer(model, "tokenizer1", "context1", tmp_path)
     first, mask = scorer.score(inputs, inputs)
     again, again_mask = scorer.score(inputs, inputs)
     torch.testing.assert_close(first, again)
