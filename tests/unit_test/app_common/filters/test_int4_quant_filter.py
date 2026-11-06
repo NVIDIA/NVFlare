@@ -140,3 +140,66 @@ class TestInt4QuantFilter:
 
         assert np.array_equal(res_dxo.data["steps"], int_arr)
         assert res_dxo.data["steps"].dtype == np.int64
+
+    def test_reject_untrusted_orig_dtype(self):
+        dequant_filter = Int4DequantFilter(block_size=64, min_elements=64)
+        packed = np.zeros(32, dtype=np.uint8)
+
+        # Malicious string dtype intended to trigger massive memory allocation
+        malicious_meta = {
+            "shape": (64,),
+            "pad_len": 0,
+            "orig_dtype": "U100000000",
+            "scales": np.array([1.0], dtype=np.float32),
+        }
+        dxo = DXO(
+            data_kind=DataKind.WEIGHTS,
+            data={"w": packed},
+            meta={"int4_meta": {"w": malicious_meta}},
+        )
+        with pytest.raises(ValueError, match="Unsupported or untrusted target dtype"):
+            dequant_filter.process_dxo(dxo, Shareable(), FLContext())
+
+        # Non-floating integer type
+        int_meta = {
+            "shape": (64,),
+            "pad_len": 0,
+            "orig_dtype": "int32",
+            "scales": np.array([1.0], dtype=np.float32),
+        }
+        dxo_int = DXO(
+            data_kind=DataKind.WEIGHTS,
+            data={"w": packed},
+            meta={"int4_meta": {"w": int_meta}},
+        )
+        with pytest.raises(ValueError, match="Unsupported or untrusted target dtype"):
+            dequant_filter.process_dxo(dxo_int, Shareable(), FLContext())
+
+    def test_broadcast_concurrency_isolation(self):
+        quant_filter = Int4QuantFilter(direction=Int4QuantFilter.QUANTIZE, block_size=64, min_elements=64)
+        rng = np.random.default_rng(123)
+        orig_arr = rng.standard_normal((10, 20)).astype(np.float32)
+
+        orig_dxo = DXO(data_kind=DataKind.WEIGHTS, data={"w": orig_arr.copy()}, meta={"custom_prop": 42})
+        orig_data_id = id(orig_dxo.data)
+        orig_meta_id = id(orig_dxo.meta)
+
+        # Simulate two concurrent broadcast consumers processing the same DXO
+        out_dxo_1 = quant_filter.process_dxo(orig_dxo, Shareable(), FLContext())
+        out_dxo_2 = quant_filter.process_dxo(orig_dxo, Shareable(), FLContext())
+
+        # Verify the shared input DXO was never mutated in-place
+        assert orig_dxo.data["w"].dtype == np.float32
+        assert "int4_meta" not in orig_dxo.meta
+        assert id(orig_dxo.data) == orig_data_id
+        assert id(orig_dxo.meta) == orig_meta_id
+
+        # Verify independent output dictionaries
+        assert out_dxo_1.data["w"].dtype == np.uint8
+        assert out_dxo_2.data["w"].dtype == np.uint8
+        assert out_dxo_1.data is not orig_dxo.data
+        assert out_dxo_2.data is not orig_dxo.data
+        assert out_dxo_1.data is not out_dxo_2.data
+        assert out_dxo_1.meta is not orig_dxo.meta
+        assert out_dxo_2.meta is not orig_dxo.meta
+        assert out_dxo_1.meta is not out_dxo_2.meta

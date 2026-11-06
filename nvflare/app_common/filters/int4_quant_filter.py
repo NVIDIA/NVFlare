@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -96,9 +97,33 @@ class Int4QuantFilter(DXOFilter):
 
     def _unpack_array(self, packed: np.ndarray, meta: Dict[str, Any]) -> np.ndarray:
         scales = meta["scales"]
-        pad_len = meta["pad_len"]
-        orig_shape = meta["shape"]
-        orig_dtype = np.dtype(meta["orig_dtype"])
+        pad_len = int(meta["pad_len"])
+        orig_shape = tuple(meta["shape"])
+        raw_dtype = meta.get("orig_dtype", "float32")
+
+        try:
+            target_dtype = np.dtype(raw_dtype)
+        except Exception as e:
+            raise ValueError(f"Invalid orig_dtype '{raw_dtype}': {e}") from e
+
+        # Restrict to supported floating-point types to prevent arbitrary memory allocation exploits
+        if not np.issubdtype(target_dtype, np.floating) or target_dtype.itemsize > 8:
+            raise ValueError(
+                f"Unsupported or untrusted target dtype '{raw_dtype}'. "
+                "Only standard floating-point types (float16, float32, float64) are permitted."
+            )
+
+        if pad_len < 0 or pad_len >= self.block_size:
+            raise ValueError(f"Invalid pad_len {pad_len} for block_size {self.block_size}")
+
+        total_elements = np.prod(orig_shape)
+        if total_elements < 0:
+            raise ValueError(f"Invalid negative shape {orig_shape}")
+
+        if (total_elements + pad_len) != (packed.size * 2):
+            raise ValueError(
+                f"Packed buffer size {packed.size} does not match reconstructed size for shape {orig_shape} with pad {pad_len}"
+            )
 
         uq0 = (packed >> 4) & 0x0F
         uq1 = packed & 0x0F
@@ -111,7 +136,7 @@ class Int4QuantFilter(DXOFilter):
         rec_flat = rec_blocks.flatten()
         if pad_len > 0:
             rec_flat = rec_flat[:-pad_len]
-        return rec_flat.reshape(orig_shape).astype(orig_dtype)
+        return rec_flat.reshape(orig_shape).astype(target_dtype)
 
     def _simulate_array(self, arr: np.ndarray) -> np.ndarray:
         orig_shape = arr.shape
@@ -138,29 +163,34 @@ class Int4QuantFilter(DXOFilter):
         if not isinstance(dxo.data, dict):
             return dxo
 
+        # Build separate data and metadata dictionaries to isolate concurrent broadcast requests
+        new_data = dict(dxo.data)
+        new_meta = copy.deepcopy(dxo.meta) if dxo.meta else {}
+
         if self.direction == self.QUANTIZE:
             int4_meta = {}
-            for name, value in list(dxo.data.items()):
+            for name, value in dxo.data.items():
                 if (
                     isinstance(value, np.ndarray)
                     and np.issubdtype(value.dtype, np.floating)
                     and value.size >= self.min_elements
                 ):
                     packed, meta = self._pack_array(value)
-                    dxo.data[name] = packed
+                    new_data[name] = packed
                     int4_meta[name] = meta
 
             if int4_meta:
-                dxo.set_meta_prop("int4_meta", int4_meta)
-                dxo.set_meta_prop("int4_quantized", True)
+                new_meta["int4_meta"] = int4_meta
+                new_meta["int4_quantized"] = True
 
         elif self.direction == self.DEQUANTIZE:
-            int4_meta = dxo.get_meta_prop("int4_meta", {})
+            int4_meta = new_meta.get("int4_meta", {})
             if int4_meta:
                 for name, meta in int4_meta.items():
-                    if name in dxo.data and isinstance(dxo.data[name], np.ndarray):
-                        dxo.data[name] = self._unpack_array(dxo.data[name], meta)
-                dxo.remove_meta_props(["int4_meta", "int4_quantized"])
+                    if name in new_data and isinstance(new_data[name], np.ndarray):
+                        new_data[name] = self._unpack_array(new_data[name], meta)
+                new_meta.pop("int4_meta", None)
+                new_meta.pop("int4_quantized", None)
 
         elif self.direction == self.SIMULATE:
             for name, value in dxo.data.items():
@@ -169,10 +199,10 @@ class Int4QuantFilter(DXOFilter):
                     and np.issubdtype(value.dtype, np.floating)
                     and value.size >= self.min_elements
                 ):
-                    dxo.data[name] = self._simulate_array(value)
-            dxo.set_meta_prop("int4_quantized", True)
+                    new_data[name] = self._simulate_array(value)
+            new_meta["int4_quantized"] = True
 
-        return dxo
+        return DXO(data_kind=dxo.data_kind, data=new_data, meta=new_meta)
 
 
 class Int4DequantFilter(Int4QuantFilter):
