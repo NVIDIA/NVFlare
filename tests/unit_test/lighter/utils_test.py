@@ -15,7 +15,6 @@
 import datetime
 import os
 import shutil
-import tempfile
 
 import pytest
 from cryptography import x509
@@ -86,8 +85,8 @@ def get_test_certs():
     return root_cert, client_pri_key, client_cert, server_pri_key, server_cert
 
 
-def create_folder():
-    tmp_dir = tempfile.TemporaryDirectory().name
+def create_folder(tmp_dir):
+    tmp_dir = str(tmp_dir)
     for folder in folders:
         os.makedirs(os.path.join(tmp_dir, folder))
         for file in files:
@@ -102,8 +101,9 @@ def tamper_one_file(folder):
         f.write("fail case")
 
 
-def update_and_sign_one_folder(folder, pri_key, cert):
-    tmp_dir = tempfile.TemporaryDirectory().name
+def update_and_sign_one_folder(folder, pri_key, cert, tmp_dir):
+    tmp_dir = str(tmp_dir)
+    os.makedirs(tmp_dir)
     new_folder = os.path.join(tmp_dir, "new_folder")
     shutil.move(folder, new_folder)
     with open(os.path.join(tmp_dir, "test_file"), "wt") as f:
@@ -114,11 +114,15 @@ def update_and_sign_one_folder(folder, pri_key, cert):
     return tmp_dir
 
 
-def prepare_folders():
-    """Create a signed folder; the certs live in a private temp dir so parallel workers don't share files."""
+def prepare_folders(tmp_path):
+    """Create a signed folder; the certs live under tmp_path so parallel workers don't share files.
+
+    tmp_path is a pytest fixture, so everything is removed even when an assertion fails.
+    """
     root_cert, client_pri_key, client_cert, server_pri_key, server_cert = get_test_certs()
-    folder = create_folder()
-    cert_dir = tempfile.mkdtemp()
+    folder = create_folder(tmp_path / "folder")
+    cert_dir = str(tmp_path / "certs")
+    os.makedirs(cert_dir)
     client_crt = os.path.join(cert_dir, "client.crt")
     root_crt = os.path.join(cert_dir, "root.crt")
     with open(client_crt, "wb") as f:
@@ -131,21 +135,17 @@ def prepare_folders():
 
 @pytest.mark.xdist_group(name="lighter_utils_group")
 class TestSignFolder:
-    def test_verify_folder(self):
-        folder, server_pri_key, server_cert, root_crt = prepare_folders()
+    def test_verify_folder(self, tmp_path):
+        folder, server_pri_key, server_cert, root_crt = prepare_folders(tmp_path)
         assert verify_folder_signature(folder, root_crt) is True
         tamper_one_file(folder)
         assert verify_folder_signature(folder, root_crt) is False
-        shutil.rmtree(os.path.dirname(root_crt))
-        shutil.rmtree(folder)
 
-    def test_verify_updated_folder(self):
-        folder, server_pri_key, server_cert, root_crt = prepare_folders()
+    def test_verify_updated_folder(self, tmp_path):
+        folder, server_pri_key, server_cert, root_crt = prepare_folders(tmp_path)
         assert verify_folder_signature(folder, root_crt) is True
-        folder = update_and_sign_one_folder(folder, server_pri_key, server_cert)
+        folder = update_and_sign_one_folder(folder, server_pri_key, server_cert, tmp_path / "updated")
         assert verify_folder_signature(folder, root_crt) is True
-        shutil.rmtree(os.path.dirname(root_crt))
-        shutil.rmtree(folder)
 
     def _get_participant(self, name, participants):
         for p in participants:
