@@ -568,6 +568,11 @@ statistics, PSI, and survival analysis. Warnings and errors remain visible:
 are reported as command-line usage errors before job startup. Named logging
 levels and custom JSON configuration files are also accepted.
 
+SimEnv installs the SDK's canonical component allowlist in workspace resources,
+including built-in catalog components. It tracks the generated list so unchanged
+defaults can follow SDK updates when a workspace is reused. Explicit user-owned
+lists and edited generated lists are preserved.
+
 Detailed diagnostic records remain in ``log.txt`` and ``log.json``. To show full
 diagnostics on the console, run:
 
