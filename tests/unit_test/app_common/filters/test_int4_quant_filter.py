@@ -15,7 +15,7 @@
 import numpy as np
 import pytest
 
-from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.filters.int4_quant_filter import Int4DequantFilter, Int4QuantFilter
@@ -203,3 +203,19 @@ class TestInt4QuantFilter:
         assert out_dxo_1.meta is not orig_dxo.meta
         assert out_dxo_2.meta is not orig_dxo.meta
         assert out_dxo_1.meta is not out_dxo_2.meta
+
+    def test_filter_history_not_duplicated(self):
+        quant_filter = Int4QuantFilter(direction=Int4QuantFilter.QUANTIZE, block_size=64, min_elements=64)
+        rng = np.random.default_rng(0)
+        orig_arr = rng.standard_normal((8, 16)).astype(np.float32)
+
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data={"w": orig_arr})
+        dxo.add_filter_history("PreviousFilter")
+        shareable = dxo.to_shareable()
+        fl_ctx = FLContext()
+
+        result_shareable = quant_filter.process(shareable, fl_ctx)
+        result_dxo = from_shareable(result_shareable)
+
+        history = result_dxo.get_filter_history()
+        assert history == ["PreviousFilter", "Int4QuantFilter"]

@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -166,6 +166,8 @@ class Int4QuantFilter(DXOFilter):
         # Build separate data and metadata dictionaries to isolate concurrent broadcast requests
         new_data = dict(dxo.data)
         new_meta = copy.deepcopy(dxo.meta) if dxo.meta else {}
+        # Remove filter history so DXOFilter._apply_filter does not duplicate existing history entries
+        new_meta.pop(MetaKey.FILTER_HISTORY, None)
 
         if self.direction == self.QUANTIZE:
             int4_meta = {}
