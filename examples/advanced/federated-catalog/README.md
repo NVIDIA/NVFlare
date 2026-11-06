@@ -26,7 +26,7 @@ From this directory in an activated Python environment:
 
 ```bash
 python -m pip install -r requirements.txt
-python prepare_data.py
+python prepare_data.py --site-1-format parquet --site-2-format parquet
 python job.py
 python discover.py
 ```
@@ -60,7 +60,7 @@ Use SQLite for site-2 to demonstrate an actual relational database without an
 external database service. `job.py` stays the same:
 
 ```bash
-python prepare_data.py --site-2-format sqlite
+python prepare_data.py --site-1-format parquet --site-2-format sqlite
 python job.py
 python discover.py
 ```
@@ -69,8 +69,9 @@ The example includes the actual site configurations as readable files:
 
 | File | Purpose |
 | --- | --- |
-| [config/site-1/catalog_site.json](config/site-1/catalog_site.json) | Minimal Parquet configuration |
+| [config/site-1/catalog_site.json](config/site-1/catalog_site.json) | Explicit site-1 Parquet configuration |
 | [config/site-2/catalog_site.json](config/site-2/catalog_site.json) | SQLite configuration for the mixed variation |
+| [config/site-1/catalog_site.sqlite.json](config/site-1/catalog_site.sqlite.json) | Optional site-1 SQLite variation |
 | [config/site-2/catalog_site.parquet.json](config/site-2/catalog_site.parquet.json) | Site-2 configuration for the Parquet-only variation |
 | [config/site-1/default.json](config/site-1/default.json), [config/site-2/default.json](config/site-2/default.json) | Site-owned publication policies |
 | [config/site-1/catalog_metadata.json](config/site-1/catalog_metadata.json), [config/site-2/catalog_metadata.json](config/site-2/catalog_metadata.json) | Optional OMOP declarations and Parquet key/relationship annotations |
@@ -78,7 +79,7 @@ The example includes the actual site configurations as readable files:
 Site-1's complete `catalog_site.json`:
 
 ```json
-{"format_version": 1}
+{"format_version": 1, "default_connector": "parquet"}
 ```
 
 Site-2's complete mixed-source `catalog_site.json`:
@@ -86,6 +87,8 @@ Site-2's complete mixed-source `catalog_site.json`:
 ```json
 {"format_version": 1, "default_connector": "sqlite"}
 ```
+
+Both sites have their own explicit configuration; neither site supplies defaults for the other. `default_connector` is a reader default within that site only.
 
 Preparation **copies these checked-in files** into each site's `local/fdn/`;
 it does not construct catalog configuration or policy JSON dynamically. It
@@ -298,7 +301,7 @@ job to restore initial policies and sharing.
 ## Customize paths
 
 ```bash
-python prepare_data.py --data-root /tmp/my-catalog/data --site-2-format sqlite
+python prepare_data.py --data-root /tmp/my-catalog/data --site-1-format parquet --site-2-format sqlite
 python job.py --data-root /tmp/my-catalog/data \
   --workspace /tmp/my-catalog/simulation --store-root /tmp/my-catalog/store
 python discover.py --store-root /tmp/my-catalog/store
