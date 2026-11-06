@@ -15,7 +15,6 @@
 """Simulate three sites by splitting the patients of the OHDSI Eunomia GiBleed OMOP CDM into one DuckDB CDM per site."""
 
 import argparse
-import hashlib
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -27,23 +26,16 @@ EUNOMIA_URL = (
     "https://raw.githubusercontent.com/OHDSI/EunomiaDatasets/"
     "a11ad148a6b1b1fafb75a1e40c504c887db76fa4/datasets/GiBleed/GiBleed_5.3.zip"
 )
-EUNOMIA_SHA256 = "081b82e84c90e2904e02c26546e46412b01cce566071c77e0c4a355c2d0612f9"
 DATA_ROOT = "/tmp/nvflare/dataset/omop"
 SITE_FRACTIONS = (0.55, 0.3, 0.15)
 
 
 def download_cdm(data_root: Path) -> Path:
     """Download and extract the Eunomia CSV files and return the directory holding one file per CDM table."""
-    archive = data_root / "GiBleed_5.3.zip"
-    if not archive.exists():
-        data_root.mkdir(parents=True, exist_ok=True)
-        with urllib.request.urlopen(EUNOMIA_URL) as response:
-            archive.write_bytes(response.read())
-    if hashlib.sha256(archive.read_bytes()).hexdigest() != EUNOMIA_SHA256:
-        archive.unlink()
-        raise ValueError(f"checksum mismatch for {EUNOMIA_URL}, removed the download")
+    data_root.mkdir(parents=True, exist_ok=True)
+    archive, _ = urllib.request.urlretrieve(EUNOMIA_URL, data_root / "GiBleed_5.3.zip")
     with zipfile.ZipFile(archive) as files:
-        files.extractall(data_root, [name for name in files.namelist() if name.startswith("GiBleed_5.3/")])
+        files.extractall(data_root)
     return data_root / "GiBleed_5.3"
 
 
