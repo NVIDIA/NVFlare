@@ -20,17 +20,23 @@ export interface Session {
 
 const anonymous = (): Session => ({ user: { email: '', token: '', id: -1, role: 0 }, status: 'unauthenticated' })
 let session = anonymous()
+let sessionWriteFailed = false
 
 export function setSession(email: string, token: string, id: number, role: number, org?: string, expired = false): Session {
   session = { user: { email, token, id, role, org }, expired, status: role === 0 ? 'unauthenticated' : 'authenticated' }
   try {
-    if (typeof window !== 'undefined') window.localStorage.setItem('session', JSON.stringify(session))
-  } catch { /* Keep the session in memory when browser storage is unavailable. */ }
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('session', JSON.stringify(session))
+      sessionWriteFailed = false
+    }
+  } catch {
+    sessionWriteFailed = true
+  }
   return session
 }
 
 export function getSession(): Session {
-  if (typeof window === 'undefined') return session
+  if (typeof window === 'undefined' || sessionWriteFailed) return session
   try {
     const stored = window.localStorage.getItem('session')
     if (!stored) return session = anonymous()

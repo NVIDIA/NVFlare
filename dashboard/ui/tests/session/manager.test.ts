@@ -15,6 +15,7 @@
 import { getSession, setSession, updateSessionRole } from '../../src/sess/session-manager'
 
 beforeEach(() => { localStorage.clear(); setSession('', '', -1, 0) })
+afterEach(() => { jest.restoreAllMocks() })
 
 test('malformed saved data recovers to an unauthenticated session', () => {
   localStorage.setItem('session', '{broken')
@@ -44,4 +45,54 @@ test('session remains usable when browser storage is blocked', () => {
   } finally {
     Object.defineProperty(window, 'localStorage', descriptor)
   }
+})
+
+test('login remains available when session writes fail with empty storage', () => {
+  localStorage.removeItem('session')
+  jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError') })
+
+  setSession('owner@example.test', 'new-token', 3, 3, 'OrgA')
+
+  expect(localStorage.getItem('session')).toBeNull()
+  expect(getSession().user.token).toBe('new-token')
+  expect(getSession().status).toBe('authenticated')
+  expect(getSession().user.id).toBe(3)
+})
+
+test('failed session writes cannot restore a stale identity during reads or role updates', () => {
+  setSession('old@example.test', 'old-token', 1, 1, 'OldOrg')
+  jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError') })
+
+  setSession('owner@example.test', 'new-token', 3, 3, 'OrgA', true)
+
+  expect(JSON.parse(localStorage.getItem('session')!).user.token).toBe('old-token')
+  expect(getSession().user.email).toBe('owner@example.test')
+  updateSessionRole(2)
+  expect(getSession().user).toEqual({ email: 'owner@example.test', token: 'new-token', id: 3, role: 2, org: 'OrgA' })
+  expect(getSession().expired).toBe(true)
+})
+
+test('failed logout persistence cannot restore the authenticated session', () => {
+  setSession('owner@example.test', 'old-token', 3, 3, 'OrgA')
+  jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError') })
+
+  setSession('', '', -1, 0)
+
+  expect(JSON.parse(localStorage.getItem('session')!).user.token).toBe('old-token')
+  expect(getSession().status).toBe('unauthenticated')
+  expect(getSession().user.token).toBe('')
+  expect(getSession().user.id).toBe(-1)
+})
+
+test('a successful session write restores reads of cross-tab changes', () => {
+  const write = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError') })
+  setSession('owner@example.test', 'memory-token', 3, 3, 'OrgA')
+  expect(getSession().user.token).toBe('memory-token')
+
+  write.mockRestore()
+  setSession('owner@example.test', 'saved-token', 3, 3, 'OrgA')
+  localStorage.setItem('session', JSON.stringify({ user: { email: 'other@example.test', token: 'other-token', id: 5, role: 1 } }))
+
+  expect(getSession().user.token).toBe('other-token')
+  expect(getSession().user.id).toBe(5)
 })
