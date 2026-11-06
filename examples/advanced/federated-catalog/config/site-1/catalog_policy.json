@@ -11,6 +11,12 @@
           "condition_source_value"
         ]
       }
+    },
+    "lab_results": {
+      "share": true
+    },
+    "visits": {
+      "share": true
     }
   }
 }

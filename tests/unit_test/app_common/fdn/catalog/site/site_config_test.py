@@ -62,7 +62,7 @@ class TestConnectorsAndBindings:
 
     def test_the_built_in_parquet_connector_is_always_there_next_to_the_named_ones(self, tmp_path):
         site = load(tmp_path, self.CONFIG)
-        assert set(site.connectors) == {"parquet", "sqlite", "claims-db", "lake"}
+        assert set(site.connectors) == {"parquet", "csv", "sqlite", "claims-db", "lake"}
         assert site.connectors["claims-db"] == ConnectorSpec("a.Sql", {"host": "h"})
 
     def test_each_study_binds_its_own_datasets_to_connectors_of_different_source_types(self, tmp_path):
@@ -146,14 +146,20 @@ def test_checked_in_example_catalog_inputs_are_valid_and_minimal():
     assert len(paths) == 2
     for path in paths:
         raw = json.loads(path.read_text())
-        assert set(raw) == {"format_version", "default_connector"}
+        assert set(raw) == (
+            {"format_version", "default_connector", "studies"}
+            if path.parent.name == "site-1"
+            else {"format_version", "default_connector"}
+        )
         site = load_site_config(path)
         assert site.default_connector in {"parquet", "sqlite"}
 
 
 def test_example_sites_each_declare_their_own_reader():
     root = Path(__file__).resolve().parents[6] / "examples/advanced/federated-catalog/config"
-    assert load_site_config(root / "site-1/catalog_site.json").default_connector == "parquet"
+    site = load_site_config(root / "site-1/catalog_site.json")
+    assert site.default_connector == "parquet"
+    assert site.bindings("default") == {"lab_results": DatasetBinding("csv"), "visits": DatasetBinding("csv")}
     assert load_site_config(root / "site-2/catalog_site.json").default_connector == "sqlite"
 
 
@@ -164,4 +170,4 @@ def test_example_publication_policies_are_separate_from_reader_configuration():
     for site in ("site-1", "site-2"):
         policy = load_policy(root / site / "catalog_policy.json")
         assert policy.datasets["omop"].share
-        assert set(policy.datasets) == {"omop"}
+        assert set(policy.datasets) == ({"omop", "lab_results", "visits"} if site == "site-1" else {"omop"})

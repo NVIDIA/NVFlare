@@ -1,7 +1,7 @@
 # Federated Catalog: two tables at two sites
 
 This CPU-only example uses `CatalogRecipe` and `SimEnv` to discover metadata
-from two sites. Each site has one `omop` dataset containing exactly two tables:
+from two sites. Both sites have an `omop` dataset containing exactly two tables:
 `person` and `condition_occurrence`.
 
 | Site | Storage | Tables | Synthetic persons |
@@ -12,6 +12,23 @@ from two sites. Each site has one `omop` dataset containing exactly two tables:
 There are two condition rows per person. The data is a small synthetic subset
 shaped after [OMOP CDM 5.4](https://ohdsi.github.io/CommonDataModel/cdm54.html).
 Concept IDs are 0 (unmapped); this is not a complete or clinically validated CDM.
+
+Site-1 additionally shares two header-bearing CSV datasets, checked into
+`data/site-1/`: `lab_results` and `visits`, each containing one table.
+Site-1 therefore publishes three dataset catalogs; site-2 publishes one.
+
+| CSV dataset | Columns and inferred types |
+| --- | --- |
+| `lab_results` | `person_id`: int64, `test_name`: string, `result_value`: float64, `collected_date`: date, `abnormal`: bool |
+| `visits` | `visit_id`: int64, `person_id`: int64, `visit_date`: date, `visit_type`: string, `duration_minutes`: int64 |
+
+The CSV connector infers types from up to 100 local data rows, with a 1 MiB
+sample limit and the site's call/time/schema budgets. Only schema metadata is
+published. Empty cells are null; all-empty columns have type `unknown`.
+Mixed integers/floats become float64; other conflicting types become string.
+Nullability remains unknown, and keys/relationships are not inferred.
+Unsampled rows may contain different types; this is schema discovery, not
+full-file validation. Preparation copies the checked-in CSV files.
 
 ## Install, prepare and run
 
@@ -36,7 +53,20 @@ Both sites explicitly declare their reader in separate checked-in files.
 [config/site-1/catalog_site.json](config/site-1/catalog_site.json):
 
 ```json
-{"format_version": 1, "default_connector": "parquet"}
+{
+  "format_version": 1,
+  "default_connector": "parquet",
+  "studies": {
+    "default": {
+      "lab_results": {
+        "connector": "csv"
+      },
+      "visits": {
+        "connector": "csv"
+      }
+    }
+  }
+}
 ```
 
 [config/site-2/catalog_site.json](config/site-2/catalog_site.json):
@@ -93,7 +123,8 @@ For workflow progress on the console, run `python job.py --log_config progressiv
 (`progress` is also supported). Invalid logging selectors are rejected before
 the simulator starts, with a usage error listing supported modes.
 
-A fresh run returns two catalog entries, each containing two tables. The JSON is
+A fresh run returns four catalog entries: three at site-1 and one at site-2.
+The OMOP datasets each contain two tables; each CSV dataset contains one. The JSON is
 printed and saved to `/tmp/nvflare/federated-catalog/store/discovery.json`.
 Use a JSON viewer or standard tools:
 

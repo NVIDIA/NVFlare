@@ -133,11 +133,17 @@ def prepare_data(data_root):
         else:
             raise ValueError(f"Synthetic data preparation does not support {storage_format!r}")
         local = root / site / "local"
+        datasets = {"omop": {"source": str(source), "mode": "ro"}}
+        if site == "site-1":
+            for name in ("lab_results", "visits"):
+                csv_path = root / site / "datasets" / f"{name}.csv"
+                shutil.copyfile(example_root / "data" / site / f"{name}.csv", csv_path)
+                datasets[name] = {"source": str(csv_path), "mode": "ro"}
         write_json(
             local / "study_runtime.yaml",
             {
                 "format_version": 2,
-                "studies": {"default": {"datasets": {"omop": {"source": str(source), "mode": "ro"}}}},
+                "studies": {"default": {"datasets": datasets}},
             },
         )
         policy_root = local / "fdn"
@@ -147,6 +153,8 @@ def prepare_data(data_root):
         study_policy.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(config / "catalog_policy.json", study_policy / "catalog_policy.json")
         print(f"{site}: {storage_format}, omop dataset with person and condition_occurrence")
+        if site == "site-1":
+            print("site-1: csv, lab_results and visits datasets (headers with inferred types)")
 
 
 if __name__ == "__main__":
