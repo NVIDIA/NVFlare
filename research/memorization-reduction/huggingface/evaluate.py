@@ -20,7 +20,7 @@ from pathlib import Path
 import torch
 from hf_model import DossierAuditor, configure, sha256
 
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -31,6 +31,8 @@ class EvaluationWorkspace:
     """Minimal workspace provider for the reporter outside a running federated job."""
 
     def __init__(self, root):
+        for folder in (WorkspaceConstants.STARTUP_FOLDER_NAME, WorkspaceConstants.SITE_FOLDER_NAME):
+            (Path(root) / folder).mkdir(parents=True, exist_ok=True)
         self.workspace = Workspace(root_dir=root, site_name="global-evaluation")
 
     def get_workspace(self):

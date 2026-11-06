@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -76,3 +77,21 @@ def test_coverage_detects_missing_failed_duplicate_and_partial_audits():
     assert not check([{**report, "sample_counts": {}}], expected)["complete"]
     for status in ("failed", "unsupported", "skipped"):
         assert not check([{**report, "status": status}], expected)["complete"]
+
+
+def test_offline_global_report_has_valid_workspace(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(EXAMPLE))
+    subject = load("evaluate")
+    context = subject.FLContextManager(
+        engine=subject.EvaluationWorkspace(str(tmp_path)), identity_name="global-evaluation", job_id="final-evaluation"
+    ).new_context()
+    path = subject.MemorizationAuditReporter().report(
+        {"status": "completed", "round": 1, "model_fingerprint": "checkpoint"}, context, stage="global_model"
+    )
+    assert path is not None and path.is_relative_to(tmp_path)
+    report = json.loads(path.read_text())
+    assert (report["stage"], report["job_id"], report["site"]) == (
+        "global_model",
+        "final-evaluation",
+        "global-evaluation",
+    )

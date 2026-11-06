@@ -34,7 +34,7 @@ The model and tokenizer are pinned to
 Only preparation downloads from Hugging Face. Subsequent steps load local assets.
 `manifest.json` records file hashes and reference training resources. The example
 uses fp32, eager attention, no KV cache, no TF32, batch size 2, a 128-token limit,
-SGD at 0.001, and TRAP weight 0.5/threshold 0. Reference training uses 16 steps;
+AdamW at 5e-5 with gradient-norm clipping at 1.0, and TRAP weight 0.5/threshold 0. Reference training uses 16 steps;
 each client uses eight steps per round. These fixed choices demonstrate the API;
 they are not tuned recommendations. Validation uses predeclared numerical tolerances.
 

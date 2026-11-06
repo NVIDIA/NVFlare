@@ -58,12 +58,13 @@ def main():
     resources = {}
     with measurement(resources, args.device):
         module.to(args.device).train()
-        optimizer = torch.optim.SGD(module.parameters(), lr=0.001)
+        optimizer = torch.optim.AdamW(module.parameters(), lr=5e-5)
         for step in range(16):
             tokens = batch(tokenizer, data["reference"][2 * step : 2 * step + 2], args.device)
             optimizer.zero_grad(set_to_none=True)
             scores, mask = causal_token_log_probs(logits(module, tokens), tokens["labels"])
             (-scores[mask].mean()).backward()
+            torch.nn.utils.clip_grad_norm_(module.parameters(), 1.0)
             optimizer.step()
         torch.save({k: v.detach().cpu() for k, v in module.state_dict().items()}, assets / "reference.pt")
     files = {str(p.relative_to(assets)): sha256(p) for p in sorted(assets.rglob("*")) if p.is_file()}

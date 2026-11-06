@@ -63,7 +63,7 @@ def main():
         resources = {}
         with measurement(resources, args.device):
             module.train()
-            optimizer = torch.optim.SGD(module.parameters(), lr=0.001)
+            optimizer = torch.optim.AdamW(module.parameters(), lr=5e-5)
             for step in range(LOCAL_STEPS):
                 rows = data[site]["train"][step * BATCH_SIZE : (step + 1) * BATCH_SIZE]
                 tokens = batch(tokenizer, rows, args.device)
@@ -76,6 +76,7 @@ def main():
                     raise ValueError("Target and reference masking differ")
                 loss = -target[mask].mean() + trap(target, ref, mask)
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(module.parameters(), 1.0)
                 optimizer.step()
             state = {k: v.detach().cpu().clone() for k, v in module.state_dict().items()}
         write_json(Path(args.measurements) / f"{site}-round-{incoming.current_round}.json", resources)
