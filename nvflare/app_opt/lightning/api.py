@@ -71,8 +71,10 @@ def patch(
             Defaults to `True` which is suitable for most PyTorch Lightning applications.
         sync_every_n_steps: when set, one ``trainer.fit()`` exchanges the model with the server every
             ``sync_every_n_steps`` optimizer steps instead of once per ``fit()``. The received model is loaded
-            in place, so the optimizer, LR scheduler and data position carry over. ``restore_state`` and
-            ``update_fit_loop`` have no effect in this mode, and ``train_with_evaluation`` is not supported.
+            in place, so the optimizer, LR scheduler and data position carry over. The server's ``num_rounds``
+            decides how long training runs: the trainer's ``max_epochs`` and ``max_steps`` are lifted, and ``fit()``
+            ends when the server stops sending training tasks. ``restore_state`` and ``update_fit_loop`` have no
+            effect in this mode, and ``train_with_evaluation`` is not supported.
             Defaults to `None` (one FL round per ``fit()``).
 
     Hooks:
@@ -139,14 +141,23 @@ def patch(
     else:
         callbacks = []
 
-    if not any(isinstance(cb, FLCallback) for cb in callbacks):
-        fl_callback = FLCallback(
-            rank=trainer.global_rank,
-            load_state_dict_strict=load_state_dict_strict,
-            update_fit_loop=update_fit_loop,
-            sync_every_n_steps=sync_every_n_steps,
-        )
+    fl_callback = next((cb for cb in callbacks if isinstance(cb, _FLCallbackBase)), None)
+    if fl_callback is None:
+        if sync_every_n_steps is None:
+            fl_callback = FLCallback(
+                rank=trainer.global_rank, load_state_dict_strict=load_state_dict_strict, update_fit_loop=update_fit_loop
+            )
+        else:
+            fl_callback = _StepSyncFLCallback(
+                sync_every_n_steps, rank=trainer.global_rank, load_state_dict_strict=load_state_dict_strict
+            )
         callbacks.append(fl_callback)
+    elif sync_every_n_steps is not None and getattr(fl_callback, "sync_every_n_steps", None) != sync_every_n_steps:
+        raise ValueError(
+            f"sync_every_n_steps={sync_every_n_steps} conflicts with the {type(fl_callback).__name__} already on the "
+            "trainer; remove it or let patch() create the callback."
+        )
+    step_mode = isinstance(fl_callback, _StepSyncFLCallback)
 
     # A caller can supply an existing callback without an active API context.
     # Patching remains valid before initialization; inspect only a live context.
@@ -161,58 +172,28 @@ def patch(
             "native checkpoint restoration explicitly."
         )
 
-    if restore_state and sync_every_n_steps is None and not any(isinstance(cb, RestoreState) for cb in callbacks):
+    if restore_state and not step_mode and not any(isinstance(cb, RestoreState) for cb in callbacks):
         callbacks.append(RestoreState())
 
     trainer.callbacks = callbacks
 
 
-class FLCallback(Callback):
-    def __init__(
-        self,
-        rank: int = 0,
-        load_state_dict_strict: bool = True,
-        update_fit_loop: bool = True,
-        sync_every_n_steps: Optional[int] = None,
-    ):
-        """FL callback for lightning API.
+class _FLCallbackBase(Callback):
+    """Receive, load and send logic shared by the fit-per-round and step-sync callbacks."""
 
-        Args:
-            rank: global rank of the PyTorch Lightning trainer.
-            load_state_dict_strict: exposes `strict` argument of `torch.nn.Module.load_state_dict()`
-                used to load the received model. Defaults to `True`.
-                See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
-                NVFlare still validates incoming keys and shapes before calling ``load_state_dict()``.
-                With ``True``, unexpected incoming keys are treated as contract
-                drift and fail fast. With ``False``, unexpected keys are logged
-                and ignored, while compatible keys are still loaded.
-            update_fit_loop: whether to increase `trainer.fit_loop.max_epochs` and `trainer.fit_loop.epoch_loop.max_steps` each FL round.
-                Defaults to `True` which is suitable for most PyTorch Lightning applications.
-            sync_every_n_steps: exchange the model every N optimizer steps within one ``fit()``; see ``patch``.
-        """
-        super(FLCallback, self).__init__()
+    def __init__(self, rank: int = 0, load_state_dict_strict: bool = True):
+        super().__init__()
         init(rank=str(rank))
         task_exchange = get_config().get(ConfigKey.TASK_EXCHANGE, {})
         self.train_with_evaluation = task_exchange.get(ConfigKey.TRAIN_WITH_EVAL, False)
         self._diff_transfer = task_exchange.get(ConfigKey.TRANSFER_TYPE) == TransferType.DIFF
-        if sync_every_n_steps is not None and self.train_with_evaluation:
-            raise ValueError(
-                "sync_every_n_steps does not support train_with_evaluation: no global-model validation runs "
-                "between syncs. Disable train_with_evaluation or sync once per fit()."
-            )
-        self._sync_every_n_steps = sync_every_n_steps
         self.current_round = None
         self.metrics = None
-        self.total_local_epochs = 0
-        self.total_local_steps = 0
-        self.max_epochs_per_round = None
-        self.max_steps_per_round = None
         self.rank = rank
         self._is_training = False
         self._is_evaluation = False
         self._is_submit_model = False
         self._load_state_dict_strict = load_state_dict_strict
-        self._update_fit_loop = update_fit_loop
         self._algorithm_handler_manager = _AlgorithmHandlerManager()
         self._pending_train_model = None
         self._training_round_started = False
@@ -221,36 +202,8 @@ class FLCallback(Callback):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def reset_state(self, trainer):
-        """Resets the state.
-
-        If the next round of federated training needs to reuse the same callback
-        instance, the reset_state() needs to be called first
-        Not only resets the states, also sets states for next round
-        """
-        # set states for next round
-        if self.current_round is not None and self._sync_every_n_steps is None:
-            self._set_next_round_budget(trainer)
+        """Resets the state after a round has been sent."""
         self._clear_round_state()
-
-    def _set_next_round_budget(self, trainer):
-        """Record the per-round budget and extend the fit loop by one round past the trained progress."""
-        if self.max_epochs_per_round is None and trainer.max_epochs and trainer.max_epochs > 0:
-            self.max_epochs_per_round = trainer.max_epochs
-        if self.max_steps_per_round is None and trainer.max_steps and trainer.max_steps > 0:
-            self.max_steps_per_round = trainer.max_steps
-
-        # record total local epochs/steps
-        self.total_local_epochs = trainer.current_epoch
-        self.total_local_steps = trainer.estimated_stepping_batches
-
-        # for next round
-        trainer.num_sanity_val_steps = 0  # Turn off sanity validation steps in following rounds of FL
-
-        if self._update_fit_loop:
-            if self.total_local_epochs and self.max_epochs_per_round is not None:
-                trainer.fit_loop.max_epochs = self.max_epochs_per_round + self.total_local_epochs
-            if self.total_local_steps and self.max_steps_per_round is not None:
-                trainer.fit_loop.epoch_loop.max_steps = self.max_steps_per_round + self.total_local_steps
 
     def _clear_round_state(self):
         self.metrics = None
@@ -258,18 +211,6 @@ class FLCallback(Callback):
         self._training_round_started = False
         self._round_start_global_step = None
         clear()
-
-    def on_train_start(self, trainer, pl_module):
-        if self._sync_every_n_steps is not None:
-            return
-        input_model = self._pending_train_model
-        self._pending_train_model = None
-        if input_model is None:
-            input_model = self._receive_and_update_model(trainer, pl_module)
-        else:
-            self._update_model(pl_module, input_model)
-        if input_model and self._is_training:
-            self._start_round(trainer, pl_module, input_model)
 
     def _start_round(self, trainer, pl_module, input_model):
         self._round_start_global_step = trainer.global_step
@@ -279,34 +220,8 @@ class FLCallback(Callback):
     def on_before_optimizer_step(self, trainer, pl_module, optimizer, *args):
         self._algorithm_handler_manager.before_optimizer_step(optimizer)
 
-    def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
-        if self._sync_every_n_steps is None or self._training_round_started:
-            return
-        input_model = self._pending_train_model
-        self._pending_train_model = None
-        if input_model is not None:
-            self._update_model(pl_module, input_model)
-        else:
-            input_model = self._receive_model(trainer)
-            if not input_model or not self._is_training:
-                trainer.should_stop = True
-                raise StopIteration
-            input_model = self._load_received_model(trainer, pl_module, input_model)
-        self._start_round(trainer, pl_module, input_model)
-
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         self._algorithm_handler_manager.after_train_batch(pl_module)
-        if (
-            self._sync_every_n_steps is not None
-            and self._training_round_started
-            and self._get_round_num_steps(trainer) >= self._sync_every_n_steps
-            and not _is_last_train_batch(trainer, batch_idx)
-        ):
-            self._finish_round_and_send(trainer, pl_module)
-
-    def on_train_end(self, trainer, pl_module):
-        if self._sync_every_n_steps is None or self._training_round_started:
-            self._finish_round_and_send(trainer, pl_module)
 
     def _finish_round_and_send(self, trainer, pl_module):
         if hasattr(pl_module, FL_META_KEY):
@@ -342,14 +257,7 @@ class FLCallback(Callback):
             self.reset_state(trainer)
 
     def _params_to_send(self, trainer, pl_module):
-        if self._sync_every_n_steps is None:
-            return pl_module.cpu().state_dict()
-        if trainer.global_rank != 0:
-            return None
-        return {
-            key: value.detach().to("cpu", copy=True) if isinstance(value, Tensor) else copy.deepcopy(value)
-            for key, value in pl_module.state_dict().items()
-        }
+        raise NotImplementedError
 
     def on_validation_start(self, trainer, pl_module):
         # Only an explicit validation before fit evaluates the received global model for model selection.
@@ -493,6 +401,127 @@ class FLCallback(Callback):
             raise RuntimeError(f"failed to send FL model: {e}")
 
 
+class FLCallback(_FLCallbackBase):
+    def __init__(self, rank: int = 0, load_state_dict_strict: bool = True, update_fit_loop: bool = True):
+        """FL callback for lightning API: one FL round per ``trainer.fit()`` call.
+
+        Args:
+            rank: global rank of the PyTorch Lightning trainer.
+            load_state_dict_strict: exposes `strict` argument of `torch.nn.Module.load_state_dict()`
+                used to load the received model. Defaults to `True`.
+                See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
+                NVFlare still validates incoming keys and shapes before calling ``load_state_dict()``.
+                With ``True``, unexpected incoming keys are treated as contract
+                drift and fail fast. With ``False``, unexpected keys are logged
+                and ignored, while compatible keys are still loaded.
+            update_fit_loop: whether to increase `trainer.fit_loop.max_epochs` and `trainer.fit_loop.epoch_loop.max_steps` each FL round.
+                Defaults to `True` which is suitable for most PyTorch Lightning applications.
+        """
+        super().__init__(rank=rank, load_state_dict_strict=load_state_dict_strict)
+        self.total_local_epochs = 0
+        self.total_local_steps = 0
+        self.max_epochs_per_round = None
+        self.max_steps_per_round = None
+        self._update_fit_loop = update_fit_loop
+
+    def reset_state(self, trainer):
+        """Resets the state.
+
+        If the next round of federated training needs to reuse the same callback
+        instance, the reset_state() needs to be called first
+        Not only resets the states, also sets states for next round
+        """
+        # set states for next round
+        if self.current_round is not None:
+            self._set_next_round_budget(trainer)
+        self._clear_round_state()
+
+    def _set_next_round_budget(self, trainer):
+        """Record the per-round budget and extend the fit loop by one round past the trained progress."""
+        if self.max_epochs_per_round is None and trainer.max_epochs and trainer.max_epochs > 0:
+            self.max_epochs_per_round = trainer.max_epochs
+        if self.max_steps_per_round is None and trainer.max_steps and trainer.max_steps > 0:
+            self.max_steps_per_round = trainer.max_steps
+
+        # record total local epochs/steps
+        self.total_local_epochs = trainer.current_epoch
+        self.total_local_steps = trainer.estimated_stepping_batches
+
+        # for next round
+        trainer.num_sanity_val_steps = 0  # Turn off sanity validation steps in following rounds of FL
+
+        if self._update_fit_loop:
+            if self.total_local_epochs and self.max_epochs_per_round is not None:
+                trainer.fit_loop.max_epochs = self.max_epochs_per_round + self.total_local_epochs
+            if self.total_local_steps and self.max_steps_per_round is not None:
+                trainer.fit_loop.epoch_loop.max_steps = self.max_steps_per_round + self.total_local_steps
+
+    def on_train_start(self, trainer, pl_module):
+        input_model = self._pending_train_model
+        self._pending_train_model = None
+        if input_model is None:
+            input_model = self._receive_and_update_model(trainer, pl_module)
+        else:
+            self._update_model(pl_module, input_model)
+        if input_model and self._is_training:
+            self._start_round(trainer, pl_module, input_model)
+
+    def on_train_end(self, trainer, pl_module):
+        self._finish_round_and_send(trainer, pl_module)
+
+    def _params_to_send(self, trainer, pl_module):
+        return pl_module.cpu().state_dict()
+
+
+class _StepSyncFLCallback(_FLCallbackBase):
+    """FL callback that exchanges the model every N optimizer steps within one ``trainer.fit()``."""
+
+    def __init__(self, sync_every_n_steps: int, rank: int = 0, load_state_dict_strict: bool = True):
+        super().__init__(rank=rank, load_state_dict_strict=load_state_dict_strict)
+        if self.train_with_evaluation:
+            raise ValueError(
+                "sync_every_n_steps does not support train_with_evaluation: no global-model validation runs "
+                "between syncs. Disable train_with_evaluation or sync once per fit()."
+            )
+        self.sync_every_n_steps = sync_every_n_steps
+
+    def on_train_start(self, trainer, pl_module):
+        trainer.fit_loop.max_epochs = -1
+        trainer.fit_loop.epoch_loop.max_steps = -1
+
+    def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
+        if self._training_round_started:
+            return
+        input_model = self._pending_train_model
+        self._pending_train_model = None
+        if input_model is not None:
+            self._update_model(pl_module, input_model)
+        else:
+            input_model = self._receive_model(trainer)
+            if not input_model or not self._is_training:
+                trainer.should_stop = True
+                raise StopIteration
+            input_model = self._load_received_model(trainer, pl_module, input_model)
+        self._start_round(trainer, pl_module, input_model)
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        super().on_train_batch_end(trainer, pl_module, outputs, batch, batch_idx)
+        if self._training_round_started and self._get_round_num_steps(trainer) >= self.sync_every_n_steps:
+            self._finish_round_and_send(trainer, pl_module)
+
+    def on_train_end(self, trainer, pl_module):
+        if self._training_round_started:
+            self._finish_round_and_send(trainer, pl_module)
+
+    def _params_to_send(self, trainer, pl_module):
+        if trainer.global_rank != 0:
+            return None
+        return {
+            key: value.detach().to("cpu", copy=True) if isinstance(value, Tensor) else copy.deepcopy(value)
+            for key, value in pl_module.state_dict().items()
+        }
+
+
 def _has_fl_hooks(trainer, *names: str) -> bool:
     return any(callable(getattr(cb, name, None)) for cb in getattr(trainer, "callbacks", []) for name in names)
 
@@ -502,16 +531,6 @@ def _call_fl_hooks(trainer, pl_module, name: str, fl_model: Optional[FLModel]):
         hook = getattr(callback, name, None)
         if callable(hook):
             hook(trainer, pl_module, fl_model)
-
-
-def _is_last_train_batch(trainer, batch_idx: int) -> bool:
-    if 0 < trainer.max_steps <= trainer.global_step:
-        return True
-    return (
-        trainer.max_epochs is not None
-        and 0 < trainer.max_epochs <= trainer.current_epoch + 1
-        and batch_idx + 1 >= trainer.num_training_batches
-    )
 
 
 def _extract_metrics(metrics: Dict[str, Tensor]):

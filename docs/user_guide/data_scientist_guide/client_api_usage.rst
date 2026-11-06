@@ -172,8 +172,10 @@ Each received global model is loaded in place, so the optimizer, LR scheduler, A
 data position carry over between rounds. Rank 0 sends, and every rank loads the next global model
 at the start of the next batch. ``fit()`` ends when the server stops sending training tasks.
 
-Set the server's ``num_rounds`` to ``ceil(total optimizer steps / N)``. If the server finishes first,
-training stops at the next sync; if the trainer finishes first, the last round is shorter than N steps.
+The server's ``num_rounds`` decides how long training runs: step mode lifts the trainer's ``max_epochs``
+and ``max_steps``, so epochs keep cycling the data until the server stops sending training tasks. A site
+that stops on its own (``EarlyStopping``, ``max_time``) sends its open round and leaves. Each site reports
+N steps per round, so FedAvg weights sites equally.
 
 In this mode, ``restore_state`` and ``update_fit_loop`` have no effect, and ``train_with_evaluation``
 is not supported.

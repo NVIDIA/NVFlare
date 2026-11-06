@@ -11,10 +11,19 @@ Let one long `trainer.fit()` exchange the model with the server every N optimize
 ```python
 import nvflare.client.lightning as flare
 
-trainer = Trainer(strategy="ddp", devices=4, max_epochs=3, val_check_interval=10)
+trainer = Trainer(strategy="ddp", devices=4, val_check_interval=10)
 flare.patch(trainer, sync_every_n_steps=10)
 trainer.fit(model, datamodule=dm)
 ```
+
+| | Fit-per-round | N-steps-per-round |
+| --- | --- | --- |
+| One round is | One `trainer.fit()` call | N optimizer steps |
+| Round starts | When `fit()` starts | After the new global model is loaded |
+| Result sent | When `fit()` ends | After the Nth step |
+| Next round | The script calls `fit()` again | Training keeps running; the callback loads the next global model |
+| Round length | As many steps as the epochs need | N steps at every site |
+| Training ends | When the script stops calling `fit()` | When the server stops sending training tasks |
 
 At each sync, training pauses, sends the local model, loads the next global model in place and resumes with the
 same optimizer, LR scheduler, AMP scaler and data position. Three hooks at the sync point let user code extend the
@@ -82,11 +91,16 @@ def patch(
 In step mode:
 
 - The client script calls `fit()` once.
-- `update_fit_loop` has no effect: the trainer's `max_epochs`/`max_steps` bound the whole training, not a round.
+- The server's `num_rounds` decides how long training runs, as in fit-per-round mode. The trainer's `max_epochs`
+  and `max_steps` do not bound it: step mode lifts both at `on_train_start`, epochs keep cycling the data, and `fit()`
+  ends when a receive returns no training task. `update_fit_loop` has no effect.
 - `restore_state` has no effect and `RestoreState` is not installed: the optimizer lives through the single `fit()`.
 - `train_with_evaluation=True` in the job config raises `ValueError` when `patch()` runs.
-- The server's `num_rounds` should be `ceil(total optimizer steps / N)`. If the server finishes first, training stops
-  at the next sync; if the trainer finishes first, the last round is shorter than N steps.
+- A site that stops on its own (`EarlyStopping`, `max_time`, `trainer.should_stop`) sends its open round, which may be
+  shorter than N steps, and leaves. The server then handles the missing site as it handles any client that stops
+  responding.
+- Every site reports `NUM_STEPS_CURRENT_ROUND = N`, so FedAvg weights sites equally per round, whatever their dataset
+  size. Use `aggregation_weight` on the server for unequal weights.
 
 ## Sync Lifecycle
 
@@ -98,7 +112,8 @@ fit() ─ on_train_batch_start (first batch): receive round 1, load, start round
         ├─ on_train_batch_start: rank 0 receives → broadcast → every rank loads in place → start round
         │      (no model → trainer.should_stop = True; a non-train task → stop, leave it pending)
         ├─ …
-        └─ on_train_end: send the open round, if any, after the final validation
+        ├─ on_train_batch_start: no training task → stop before the batch trains
+        └─ on_train_end: send the open round, if the trainer stopped itself
 ```
 
 Rules:
@@ -108,10 +123,10 @@ Rules:
    batch that ran the optimizer step.
 2. **Send before validation.** The send happens at batch end and the receive at the next batch start. Lightning runs
    in-fit validation in between, so it overlaps the server's aggregation instead of delaying the upload.
-3. **Last batch.** If the batch is the last of training (`global_step` reached `max_steps`, or last batch of the last
-   epoch), the sync is skipped and `on_train_end` sends the round after the final validation and checkpointing. The
-   client is then not stopped mid-validation when the server finishes. When training stops for another reason
-   (`EarlyStopping`, `max_time`), the round is sent at its last sync or at `on_train_end`, whichever comes first.
+3. **The server's horizon.** `on_train_start` sets `fit_loop.max_epochs` and `epoch_loop.max_steps` to `-1`, so only
+   the server ends a normal run. Optimizers and schedulers are configured before `on_train_start`, so a schedule
+   sized from the trainer's original limits keeps that shape; size it for the run the server will drive. When the
+   trainer stops for its own reason (`EarlyStopping`, `max_time`), `on_train_end` sends the open round.
 4. **No send without a receive.** NVFlare rejects a send that no receive preceded. A round is open only between a
    receive that returned a train task and the next send; `on_train_end` sends only an open round.
 5. **Receive results.**
@@ -189,7 +204,7 @@ class EMASync(pl.Callback):
             pl_module.ema.load_state_dict(self._global_ema)
 
 
-trainer = Trainer(strategy="ddp", devices=4, max_epochs=3, val_check_interval=10, callbacks=[EMASync()])
+trainer = Trainer(strategy="ddp", devices=4, val_check_interval=10, callbacks=[EMASync()])
 flare.patch(trainer, sync_every_n_steps=10)
 trainer.fit(model, datamodule=dm)
 ```
@@ -202,7 +217,7 @@ The hooks expose the same points that `_AlgorithmHandlerManager` already uses in
 | --- | --- | --- |
 | **A. Methods on trainer callbacks (chosen)** | The Lightning way to add behaviour; several callbacks compose; no new `patch()` arguments; same duck typing as `__fl_meta__` | A misspelled hook name is silently ignored |
 | B. Callables passed to `patch(...)` | Explicit in the signature | One function per hook; several consumers must be combined by hand |
-| C. Subclass `FLCallback` | No new mechanism | `patch()` builds the callback, so it would need a way to inject the subclass; users depend on internals |
+| C. A separate callback class per mode | Each mode keeps only its own hooks; no mode checks; `patch()` picks the class, so a conflicting existing callback can be rejected | `isinstance(cb, FLCallback)` is False for the step callback; no known external use |
 | Two hooks (merge `on_fl_receive` into `on_fl_model_loaded`) | Smaller surface | No way to log drift or take entries out of the payload before the load |
 
 ## `train_with_evaluation`
@@ -217,23 +232,29 @@ validation per sync can follow if there is demand.
 
 ## Code Structure
 
-The change stays in `FLCallback`; there is no subclass. The hooks run in both modes, step mode reuses the receive
-checks, the algorithm handlers, the metadata handling and the step counting, and code that finds the callback with
-`isinstance(cb, FLCallback)` keeps working.
+One class per mode, on a shared base:
 
-1. Extract `_start_round` from `on_train_start` and `_finish_round_and_send` from `on_train_end`, with no behaviour
-   change.
-2. Step mode: `on_train_start` does nothing; `on_train_batch_start` receives, loads and calls `_start_round` when no
-   round is open, including the first one; `on_train_batch_end` checks the sync condition and calls
-   `_finish_round_and_send`; `on_train_end` sends an open round. `reset_state` skips `_set_next_round_budget` in
-   step mode, so `max_epochs`/`max_steps` keep bounding the whole training.
-3. `_params_to_send` picks the payload: `pl_module.cpu().state_dict()` in fit-per-round mode, a rank-0 CPU copy in
-   step mode, `None` on other ranks.
-4. `_send` calls `on_fl_before_send` on every rank and sends from rank 0; the training send and the metrics-only send
+```text
+_FLCallbackBase      receive, load and send; algorithm handlers; metadata; step counting;
+                     validation hooks; on_fl_* hooks
+FLCallback           fit-per-round: on_train_start, on_train_end, _set_next_round_budget;
+                     pre-existing constructor and behaviour
+_StepSyncFLCallback  N steps: on_train_start lifts the trainer's limits, on_train_batch_start,
+                     on_train_batch_end, on_train_end; rank-0 CPU copy
+```
+
+1. `FLCallback` keeps its name, export, constructor (`rank`, `load_state_dict_strict`, `update_fit_loop`) and
+   fit-per-round behaviour; the shared code moved to the base unchanged. A test pins its constructor and methods.
+2. `_StepSyncFLCallback` takes `sync_every_n_steps` and rejects `train_with_evaluation` in its constructor.
+3. `patch()` picks the class from `sync_every_n_steps`, finds an existing callback through the base class, and raises
+   when `sync_every_n_steps` is given and the existing callback is not a step callback with the same N. It installs
+   `RestoreState` only for `FLCallback`.
+4. `_params_to_send` picks the payload per class: `pl_module.cpu().state_dict()` for `FLCallback`, a rank-0 CPU copy
+   for step mode, `None` on other ranks.
+5. `_send` calls `on_fl_before_send` on every rank and sends from rank 0; the training send and the metrics-only send
    of an evaluate task both go through it. `_load_received_model` wraps `_update_model` with `on_fl_receive` and
    `on_fl_model_loaded`.
-5. `_call_fl_hooks` calls a hook on each callback in `trainer.callbacks` that defines it.
-6. `patch()` validates `sync_every_n_steps`, passes it to `FLCallback`, and skips `RestoreState` in step mode.
+6. `_call_fl_hooks` calls a hook on each callback in `trainer.callbacks` that defines it.
 
 ## Memory
 
@@ -284,7 +305,7 @@ It stays the documented fallback if the broadcast's GPU memory causes out-of-mem
 ## Example
 
 ```python
-trainer = Trainer(max_epochs=3, strategy="ddp", devices=2, val_check_interval=50)
+trainer = Trainer(strategy="ddp", devices=2, val_check_interval=50)
 flare.patch(trainer, sync_every_n_steps=50)
 trainer.fit(model, datamodule=dm)
 ```
@@ -303,14 +324,15 @@ enforces NVFlare's exchange order: a send without a preceding receive fails.
 | One `fit()` sends every N optimizer steps with `NUM_STEPS_CURRENT_ROUND == N`, including with gradient accumulation | count sends and step metadata |
 | Each received model is what trains next | distinct weights per round, checked at the next batch |
 | Optimizer, LR scheduler and data order carry over across syncs | same optimizer object and momentum buffers, `lr_scheduler.last_epoch`, uninterrupted sample sequence |
-| No send without a receive at epoch boundaries or at the end of training | epoch ending on a sync, epoch ending mid-round, epochs shorter than N, a sync on the last batch |
-| In-fit validation runs between send and receive; the last round is sent after the last validation | call order of send, validation and receive |
+| The server decides how many rounds run, past the trainer's `max_epochs` and `max_steps` | rounds crossing epochs, epochs shorter than N, `max_steps` below the run |
+| A trainer that stops itself sends its open round | `should_stop` mid-round |
+| In-fit validation runs between send and receive | call order of send, validation and receive |
 | The server finishing first stops training cleanly | `receive()` returns `None` |
 | A non-train task mid-fit stops training and is handled by a later `trainer.validate()` | evaluate task after a sync |
 | SCAFFOLD and FedProx produce per-sync metadata | existing algorithm fixtures in step mode |
 | Hooks are called in order, once per received model, in both modes; edits take effect | recording callback; a hook that adds to `meta` and one that edits the received params |
-| Invalid `sync_every_n_steps` and `train_with_evaluation` in step mode are rejected | `ValueError` from `patch()` |
-| Fit-per-round mode is unchanged | the existing tests |
+| Invalid `sync_every_n_steps`, `train_with_evaluation` in step mode, and a conflicting existing callback are rejected | `ValueError` from `patch()` |
+| Fit-per-round mode is unchanged | the existing tests; a test pins `FLCallback`'s constructor and methods |
 | Under DDP, all ranks pause at the same step, hold identical weights after each sync, only rank 0 sends, no hang | 2-rank CPU gloo test in `tests/integration_test/fast/lightning_step_sync_ddp_test.py`, run serially by `ci/run_process_contracts.py` |
 
 ## Follow-ups
