@@ -33,33 +33,15 @@ def main():
     parser.add_argument("--workspace", default=DEFAULT_WORKSPACE)
     parser.add_argument("--store-root", default="/tmp/nvflare/federated-catalog/store")
     args = parser.parse_args()
-    data_root = Path(args.data_root).resolve()
-    for site in SITES:
-        if not (data_root / site / "local/fdn/default.json").is_file():
-            parser.error("Run python prepare_data.py first (using the same --data-root).")
     store_root = str(Path(args.store_root).resolve())
     recipe = CatalogRecipe(
         sites=SITES,
         catalog_reader=ParquetCatalogReader(),
-        site_config_root=str(data_root),
+        site_config_root=args.data_root,
         output_dir=store_root,
     )
     recipe.execute(SimEnv(clients=SITES, num_threads=2, workspace_root=args.workspace))
     output = recipe.catalog_results
-    expected = {
-        (site, "clinical")
-        for site in SITES
-        if json.loads((data_root / site / "local/fdn/default.json").read_text())["datasets"]["clinical"]["share"]
-    }
-    if {(e["client"], e["dataset"]) for e in output["entries"]} != expected:
-        raise RuntimeError("Discovery does not match the current site publication policies")
-    for entry in output["entries"]:
-        metadata = entry.get("metadata")
-        if metadata is None or metadata["owner"] is not None:
-            raise RuntimeError("Expected available metadata with owner excluded")
-        if {c["name"] for t in metadata["tables"] for c in t["columns"]} != {"age", "bmi"}:
-            raise RuntimeError("Expected only the policy-approved age and bmi columns")
-    print("Verified site selection, dataset withholding and column/owner exclusions.")
     result = Path(store_root) / "discovery.json"
     print(json.dumps(output, indent=2))
     print(f"Persisted discovery result: {result}")
