@@ -46,7 +46,7 @@ python job.py
 The recipe sends `catalog.read` tasks to `site-1` and `site-2` through the simulator.
 The Parquet connector reads schemas from file footers. Each executor applies its
 site's policy before returning metadata; data rows stay in the site's dataset.
-The driver reconciles results into `CatalogStore`, reopens the store, and searches
+The recipe reconciles results into `CatalogStore`, reopens the store, and searches
 it to demonstrate persistent discovery.
 
 The run checks the expected site/dataset set and column/owner exclusions. The
@@ -93,16 +93,35 @@ workspace on each run. The data and persistent store live outside that workspace
 
 ## How simulation maps to deployment
 
-`sim_components.py` contains two small simulation adapters around the production
-`CatalogController` and `CatalogExecutor`. They locate external site directories
-on one host and load previous dataset names from the demo store. `job.py` applies
-the simulator's local result manifest after the run.
+`client.py` defines `ParquetCatalogReader`, the site-local counterpart of a
+federated statistics generator. Implement `CatalogReader.read_catalog()` to
+supply another source. The reader returns metadata; the executor applies the
+site-owned publication policy and validates it before transmission.
+
+`job.py` uses the public recipe directly:
+
+```python
+recipe = CatalogRecipe(
+    sites=["site-1", "site-2"],
+    catalog_reader=ParquetCatalogReader(),
+    site_config_root=data_root,
+    output_dir=store_root,
+)
+recipe.execute(SimEnv(clients=["site-1", "site-2"]))
+print(recipe.catalog_results)
+```
+
+`CatalogRecipe` owns component wiring, task dispatch, simulation result
+collection, reconciliation and persistent output. `site_config_root` is a
+SimEnv-only setting locating site-owned configuration on this shared host.
+Simulation support is provided by the framework, without custom example
+controllers or executors.
 
 This demonstrates connector reads, site policy enforcement, federated task/result
 exchange, reconciliation, versioning and persistent search. It does not exercise
 admin login, the `nvflare catalog` commands, scheduling, or production artifact
-protection. Its intermediate manifest is unsigned and remains in the local
-simulation workspace. In a provisioned federation, use `CatalogRecipe` with
-`CatalogManager`, site-owned policies and runtime bindings: the parent manager
-handles authenticated private result handoff, persistence and archive/download
-redaction. The simulation adapters are for this local example only.
+protection. Intermediate manifests remain unsigned in the local simulation
+workspace. In a provisioned federation omit `site_config_root` and use
+`CatalogRecipe` with the server's `CatalogManager` and site-owned policies and
+runtime bindings. The parent manager handles authenticated private result
+handoff, persistence and archive/download redaction.

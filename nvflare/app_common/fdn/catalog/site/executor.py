@@ -94,11 +94,12 @@ class MountResolver:
 
 
 class CatalogExecutor(Executor):
-    def __init__(self):
-        """No arguments, so a job cannot configure it. The connector, its limits and the policy come from the
-        site's own files under the policy root, and the data mounts from the fixed mount root.
+    def __init__(self, reader_id: str | None = None):
+        """Optionally delegate metadata reads to a CatalogReader component.
+        Dataset bindings, budgets and publication policy remain site-owned.
         """
         super().__init__()
+        self.reader_id = reader_id
         self.policy_root: Path | None = None  # tests set it; otherwise it is resolved per read
         self.resolver = MountResolver(DEFAULT_MOUNT_ROOT)
 
@@ -142,6 +143,13 @@ class CatalogExecutor(Executor):
     def _open_connectors(self, names, site, mounts: dict[str, Path], fl_ctx: FLContext) -> dict:
         """One instance per connector this Study's datasets use; None for one that cannot be built, so it affects
         only its own datasets."""
+        if self.reader_id is not None:
+            from nvflare.app_common.fdn.catalog.site.reader import CatalogReader, ReaderConnector
+
+            reader = fl_ctx.get_engine().get_component(self.reader_id)
+            if not isinstance(reader, CatalogReader):
+                raise TypeError("reader_id must identify a CatalogReader component")
+            return {name: ReaderConnector(reader, mounts) for name in names}
         opened = {}
         for name in sorted(names):
             spec = site.connectors[name]

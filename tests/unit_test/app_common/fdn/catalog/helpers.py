@@ -23,6 +23,7 @@ from nvflare.app_common.fdn.catalog.common.schema import (
     SemanticProfile,
     TableInfo,
 )
+from nvflare.app_common.fdn.catalog.site.reader import CatalogReader
 
 LIMITS = ReadLimits(max_duration_s=60, max_calls=100, max_records=1000)
 
@@ -58,3 +59,8 @@ def make_large_catalog(dataset="wide-catalog") -> CatalogInfo:
     """Valid metadata over the former 1 MB response cap, within the record and field limits."""
     columns = tuple(ColumnInfo(f"column-{i:04d}-" + "x" * 160, "string") for i in range(6000))
     return make_catalog(dataset=dataset, tables=(TableInfo("records", columns),), resources=(), lineage=())
+
+
+class StubCatalogReader(CatalogReader):
+    def read_catalog(self, dataset, mounts, limits, options=None):
+        return make_catalog(dataset=dataset)

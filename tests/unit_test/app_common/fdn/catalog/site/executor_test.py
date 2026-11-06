@@ -33,6 +33,7 @@ from nvflare.app_common.fdn.catalog.common.schema import ColumnInfo, TableInfo
 from nvflare.app_common.fdn.catalog.site import executor as executor_module
 from nvflare.app_common.fdn.catalog.site.connector import CatalogConnector, ConnectorError
 from nvflare.app_common.fdn.catalog.site.executor import CatalogExecutor, MountResolver
+from nvflare.app_common.fdn.catalog.site.reader import CatalogReader
 from tests.unit_test.app_common.fdn.catalog.helpers import make_catalog, make_large_catalog
 
 
@@ -110,6 +111,7 @@ def run(
     abort=None,
     task_name="catalog.read",
     site_config=None,
+    reader=None,
 ):
     config = {
         "format_version": 1,
@@ -121,10 +123,17 @@ def run(
     if site_config is not None:
         config = site_config
     (env / "policy" / "catalog_site.json").write_text(json.dumps(config))
-    executor = CatalogExecutor()
+    executor = CatalogExecutor(reader_id="reader" if reader is not None else None)
     executor.policy_root = env / "policy"
     executor.resolver = MountResolver(str(env / "data"))
     ctx = FLContext()
+    if reader is not None:
+        ctx.set_prop(
+            ReservedKey.ENGINE,
+            SimpleNamespace(get_component=lambda _: reader, get_workspace=lambda: None),
+            private=True,
+            sticky=False,
+        )
     ctx.set_prop(FLContextKey.JOB_META, {"study": "study1"}, private=False, sticky=False)
     shareable = Shareable()
     shareable[CATALOG_READ_KEY] = build_task_payload(datasets, list(previous))
@@ -482,3 +491,30 @@ class TestSiteLocations:
         # the mount exists but holds no site file, so nothing is shared even though local/fdn has one
         parsed = self._run(executor, ctx, ["good"], previous=["good"])
         assert parsed.reason_code == ReasonCode.POLICY_UNAVAILABLE and parsed.withheld == ("good",)
+
+
+class RecordingReader(CatalogReader):
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+
+    def read_catalog(self, dataset, mounts, limits, options=None):
+        self.calls.append((dataset, mounts, limits))
+        return make_catalog(dataset=dataset, owner="private owner")
+
+
+def test_reader_component_is_called_only_for_shared_datasets_and_policy_still_applies(env):
+    reader = RecordingReader()
+    write_policy(env, {"good": {"share": True, "exclude_metadata": ["owner"]}, "hidden": {"share": False}})
+    parsed = result(run(env, datasets=["good", "hidden"], reader=reader), datasets=["good", "hidden"])
+    assert parsed.status == ResultStatus.OK
+    assert [c.dataset for c in parsed.catalogs] == ["good"]
+    assert parsed.catalogs[0].owner is None
+    assert len(reader.calls) == 1 and reader.calls[0][0] == "good"
+    assert reader.calls[0][1]["good"] == env / "data/study1/good"
+
+
+def test_missing_policy_prevents_reader_invocation(env):
+    reader = RecordingReader()
+    parsed = result(run(env, datasets=["good"], reader=reader), datasets=["good"])
+    assert parsed.status == ResultStatus.FAILED and reader.calls == []

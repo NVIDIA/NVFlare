@@ -68,3 +68,38 @@ class TestCatalogRecipe:
     def test_bad_arguments_are_refused_when_the_recipe_is_built(self, kw):
         with pytest.raises(ValueError):
             CatalogRecipe(**kw)
+
+
+def test_reader_component_is_deployed_and_executor_references_it(tmp_path):
+    from tests.unit_test.app_common.fdn.catalog.helpers import StubCatalogReader
+
+    _, _, client = export(tmp_path, catalog_reader=StubCatalogReader())
+    component = next(c for c in client["components"] if c["id"] == "catalog_reader")
+    assert component["path"].endswith("StubCatalogReader")
+    assert client["executors"][0]["executor"]["args"] == {"reader_id": "catalog_reader"}
+
+
+def test_non_reader_is_rejected():
+    with pytest.raises(TypeError, match="CatalogReader"):
+        CatalogRecipe(catalog_reader=object())
+
+
+def test_simulation_site_paths_are_rejected_in_production_environment(tmp_path):
+    from nvflare.recipe import ProdEnv
+
+    recipe = CatalogRecipe(site_config_root=str(tmp_path))
+    with pytest.raises(ValueError, match="SimEnv only"):
+        recipe.process_env(ProdEnv(startup_kit_location=str(tmp_path)))
+
+
+def test_simulation_components_refuse_deployed_runtime_contexts(tmp_path):
+    from types import SimpleNamespace
+
+    from nvflare.app_common.fdn.catalog.simulation import SimulationCatalogController, SimulationCatalogExecutor
+
+    client = SimulationCatalogExecutor(str(tmp_path))
+    with pytest.raises(RuntimeError, match="only be used in SimEnv"):
+        client._workspace_root(SimpleNamespace(get_prop=lambda _: False))
+    controller = SimulationCatalogController(str(tmp_path))
+    with pytest.raises(RuntimeError, match="only be used in SimEnv"):
+        controller._load_context(None, SimpleNamespace(get_engine=lambda: object()))
