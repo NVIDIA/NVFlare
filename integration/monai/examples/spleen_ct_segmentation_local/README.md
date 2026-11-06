@@ -9,7 +9,7 @@ real-world deployment.
 
 In this example, we use an already prepared [provisioning](https://nvflare.readthedocs.io/en/2.6/programming_guide/provisioning_system.html) file (*project.yml*) to run experiments on a single machine.
 For real-world deployment, additional considerations must be taken into account.
-See [here](https://nvflare.readthedocs.io/en/latest/real_world_fl.html) for more information.
+See [here](https://nvflare.readthedocs.io/en/2.6/real_world_fl.html) for more information.
 
 For an example to get started with FL simulator, see [here](../spleen_ct_segmentation_sim/README.md).
 
@@ -150,7 +150,7 @@ For starting the FL system with 2 clients in the secure workspace, run
 ## 5. Run experiments
 
 Here, we assume jobs are submitted and run one at a time.
-For details about resource management and consumption, please refer to the [documentation](https://nvflare.readthedocs.io/en/latest/programming_guide/resource_manager_and_consumer.html).
+For details about resource management and consumption, please refer to the [documentation](https://nvflare.readthedocs.io/en/2.6/programming_guide/resource_manager_and_consumer.html).
 
 > **Note:** Full FL training could take several hours for this task.
 > To speed up your experimentation, you can reduce the `num_rounds` value in `config_fed_server.json`, e.g. to 5 rounds.

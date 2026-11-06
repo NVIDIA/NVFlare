@@ -28,3 +28,15 @@ http://localhost:9090/metrics
 
 # Ignore http://localhost:3000 in examples/advanced/monitoring/jobs/README.md
 http://localhost:3000
+
+# docs.monai.io fails the TLS handshake ("UnrecognisedName") from CI runners and from other networks
+https://docs.monai.io/.*
+
+# sciencedirect.com answers automated requests with 400
+https://www.sciencedirect.com/.*
+
+# youtu.be/v-EKZC4yvY4 (Flywheel demo, docs/publications_and_talks.rst) returns 404 to automated requests only
+https://youtu.be/v-EKZC4yvY4.*
+
+# ieeexplore.ieee.org answers automated requests with 202/502 depending on the run
+https://ieeexplore.ieee.org/.*

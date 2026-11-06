@@ -32,11 +32,15 @@ class NpEncoder(json.JSONEncoder):
 
 
 def dtype_to_data_type(dtype) -> DataType:
-    if dtype.char in np.typecodes["AllFloat"]:
+    # numpy dtypes and pandas extension dtypes (Int64Dtype, Float64Dtype, BooleanDtype, StringDtype, ...)
+    # all expose a one-letter ``kind``, so this needs neither pandas nor ``dtype.char`` (which
+    # extension dtypes such as StringDtype do not have).
+    kind = getattr(dtype, "kind", None)
+    if kind in ("f", "c"):
         return DataType.FLOAT
-    elif dtype.char in np.typecodes["AllInteger"] or dtype == bool:
+    elif kind in ("i", "u", "b"):
         return DataType.INT
-    elif np.issubdtype(dtype, np.datetime64) or np.issubdtype(dtype, np.timedelta64):
+    elif kind in ("M", "m"):  # datetime64 / timedelta64
         return DataType.DATETIME
     else:
         return DataType.STRING

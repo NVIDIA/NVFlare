@@ -16,7 +16,7 @@ pip install -r ./requirements.txt
 ```
 
 > **_NOTE:_**  We recommend either using a containerized deployment or virtual environment, 
-> please refer to [getting started](https://nvflare.readthedocs.io/en/latest/getting_started.html).
+> please refer to [getting started](https://nvflare.readthedocs.io/en/2.6/getting_started.html).
 
 Set `PYTHONPATH` to include custom files of this example:
 ```
@@ -35,7 +35,7 @@ To speed up the following experiments, first download the [CIFAR-10](https://www
 
 ## 3. Run simulated FL experiments
 
-We are using NVFlare's [FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html) to run the following experiments. 
+We are using NVFlare's [FL simulator](https://nvflare.readthedocs.io/en/2.6/user_guide/nvflare_cli/fl_simulator.html) to run the following experiments. 
 
 The output root of where to save the results is set in [./run_simulator.sh](./run_simulator.sh) as `RESULT_ROOT=/tmp/nvflare/sim_cifar10`.
 

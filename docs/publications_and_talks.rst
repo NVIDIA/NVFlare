@@ -109,7 +109,7 @@ Talks: 2024
 Talks: 2023
 -----------
 * **2023-07** `Federated Learning <https://youtu.be/4ezr1MfpEWs?si=ZSaNteIxEuYjXlgi>`__ (`MONAI MIDL Meetup 2023 <https://2023.midl.io/monai-workshop>`__)
-* **2023-01** `MONAI Federated Learning APIs (and their use with NVIDIA FLARE) <https://youtu.be/18Fmmyx-QXE>`__ (`MONAI Bootcamp 2023 <https://events.nvidia.com/janmonaibootcamp>`__)
+* **2023-01** `MONAI Federated Learning APIs (and their use with NVIDIA FLARE) <https://youtu.be/18Fmmyx-QXE>`__ (MONAI Bootcamp 2023)
 
 Talks: 2022
 -----------

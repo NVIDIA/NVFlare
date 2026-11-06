@@ -9,7 +9,7 @@ It uses [Scikit-learn](https://scikit-learn.org/), a widely used open-source mac
 Follow along in this [notebook](./sklearn_svm_cancer.ipynb) for an interactive experience.
 ### cuML
 You can also use [cuML](https://docs.rapids.ai/api/cuml/stable/) as backend instead of Scikit-learn.
-Please install cuml following instructions: https://rapids.ai/start.html
+Please install cuml following instructions: https://docs.rapids.ai/install
 
 ### Tabular data
 The data used in this example is tabular in a format that can be handled by [pandas](https://pandas.pydata.org/), such that:
@@ -116,7 +116,7 @@ Below is a sample config for site-1, saved to `./jobs/sklearn_svm_3_uniform/app_
 ```
 
 ## Run experiment with FL simulator
-[FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html) is used to simulate FL experiments or debug codes, not for real FL deployment.
+[FL simulator](https://nvflare.readthedocs.io/en/2.6/user_guide/nvflare_cli/fl_simulator.html) is used to simulate FL experiments or debug codes, not for real FL deployment.
 We can run the FL simulator with three clients under the uniform data split with
 ```commandline
 bash run_experiment_simulator.sh
