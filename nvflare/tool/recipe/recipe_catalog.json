@@ -69,6 +69,27 @@
             "required": false,
             "default": 300,
             "kind": "positional_or_keyword"
+          },
+          {
+            "name": "catalog_reader",
+            "type": "CatalogReader | None",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "site_config_root",
+            "type": "str | None",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "output_dir",
+            "type": "str",
+            "required": false,
+            "default": "/tmp/nvflare/catalog",
+            "kind": "positional_or_keyword"
           }
         ],
         "optional_dependencies": [],
