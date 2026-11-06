@@ -18,7 +18,7 @@ import argparse
 import json
 from pathlib import Path
 
-from prepare_data import DEFAULT_DATA, SITES
+from constants import DEFAULT_DATA, SITES
 
 from nvflare.recipe import SimEnv
 from nvflare.recipe.catalog import CatalogRecipe

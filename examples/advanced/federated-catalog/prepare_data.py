@@ -22,9 +22,7 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-
-DEFAULT_DATA = "/tmp/nvflare/federated-catalog/data"
-SITES = ["site-1", "site-2"]
+from constants import DEFAULT_DATA, SITES
 
 
 def write_json(path, value):

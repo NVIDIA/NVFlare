@@ -11,6 +11,15 @@ It contains selected columns and tables, not a complete CDM database. Concept ID
 are 0 (unmapped), no vocabulary release is installed, and no clinical or vocabulary
 validation is claimed. The catalog reports site declarations and observed schemas.
 
+The steps have separate responsibilities:
+
+- `prepare_data.py`: create and populate the local Parquet files/SQL tables and write site bindings and policies before the federated job.
+- `job.py`: configure and run `CatalogRecipe`, then print the published catalog.
+- `discover.py`: inspect metadata and compare published table schemas.
+- `verify_result.py`: optionally verify a completed run.
+
+The job imports no preparation module and does not create or populate source tables.
+
 ## Install and run
 
 From this directory in an activated Python environment:
