@@ -34,7 +34,7 @@ pip install -r ./requirements.txt
 ```
 
 > **_NOTE:_**  We recommend either using a containerized deployment or virtual environment,
-> please refer to [getting started](https://nvflare.readthedocs.io/en/latest/getting_started.html).
+> please refer to [getting started](https://nvflare.readthedocs.io/en/2.6/getting_started.html).
 
 
 ## 2. Run experiments

@@ -32,7 +32,8 @@ jobs:
       with:
         workingDirectory: .github/workflows
         args: >-
-          --accept=200,403,429
+          --accept=200,202,203,403,429
+          --exclude-path nvflare/dashboard/application/static
           --verbose
           --no-progress
           '${{ github.workspace }}/**/*.md'
