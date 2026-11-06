@@ -125,7 +125,7 @@ def prepare_data(data_root):
                 pq.write_table(pa.table(columns), directory / f"{name}.parquet")
             shutil.copyfile(declarations, directory / "catalog.json")
             source = directory
-        elif storage_format == "sqlite":
+        elif storage_format == "sql":
             source = directory.with_suffix(".sqlite")
             source.unlink(missing_ok=True)
             write_sqlite(source, tables)
