@@ -73,6 +73,12 @@ python -m collab.response_callbacks.job
 python -m collab.swarm.swarm --num-clients 3
 ```
 
+### Explore a non-ML workflow
+
+[Distributed SQL](distributed_sql/README.md) queries same-schema SQLite databases
+at each site and combines their summaries on the server. It uses plain Collab
+functions, includes sample data, and runs in simulation or local POC mode.
+
 ### Train with larger workflows
 
 Follow each example's README for its dependencies, data preparation, and run
