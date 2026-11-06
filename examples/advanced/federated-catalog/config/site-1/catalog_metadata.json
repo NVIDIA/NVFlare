@@ -1,0 +1,121 @@
+{
+  "semantic_profile": {
+    "standard": "OMOP",
+    "version": "5.4"
+  },
+  "tables": {
+    "person": {
+      "primary_key": [
+        "person_id"
+      ],
+      "relationships": []
+    },
+    "observation_period": {
+      "primary_key": [
+        "observation_period_id"
+      ],
+      "relationships": [
+        {
+          "columns": [
+            "person_id"
+          ],
+          "target_table": "person",
+          "target_columns": [
+            "person_id"
+          ]
+        }
+      ]
+    },
+    "visit_occurrence": {
+      "primary_key": [
+        "visit_occurrence_id"
+      ],
+      "relationships": [
+        {
+          "columns": [
+            "person_id"
+          ],
+          "target_table": "person",
+          "target_columns": [
+            "person_id"
+          ]
+        }
+      ]
+    },
+    "condition_occurrence": {
+      "primary_key": [
+        "condition_occurrence_id"
+      ],
+      "relationships": [
+        {
+          "columns": [
+            "person_id"
+          ],
+          "target_table": "person",
+          "target_columns": [
+            "person_id"
+          ]
+        },
+        {
+          "columns": [
+            "visit_occurrence_id"
+          ],
+          "target_table": "visit_occurrence",
+          "target_columns": [
+            "visit_occurrence_id"
+          ]
+        }
+      ]
+    },
+    "measurement": {
+      "primary_key": [
+        "measurement_id"
+      ],
+      "relationships": [
+        {
+          "columns": [
+            "person_id"
+          ],
+          "target_table": "person",
+          "target_columns": [
+            "person_id"
+          ]
+        },
+        {
+          "columns": [
+            "visit_occurrence_id"
+          ],
+          "target_table": "visit_occurrence",
+          "target_columns": [
+            "visit_occurrence_id"
+          ]
+        }
+      ]
+    },
+    "drug_exposure": {
+      "primary_key": [
+        "drug_exposure_id"
+      ],
+      "relationships": [
+        {
+          "columns": [
+            "person_id"
+          ],
+          "target_table": "person",
+          "target_columns": [
+            "person_id"
+          ]
+        },
+        {
+          "columns": [
+            "visit_occurrence_id"
+          ],
+          "target_table": "visit_occurrence",
+          "target_columns": [
+            "visit_occurrence_id"
+          ]
+        }
+      ]
+    }
+  }
+}

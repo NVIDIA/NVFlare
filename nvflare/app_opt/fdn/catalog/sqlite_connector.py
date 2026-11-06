@@ -19,6 +19,7 @@ import time
 
 from nvflare.app_common.fdn.catalog.common.schema import PROFILE_KEYS, CatalogInfo
 from nvflare.app_common.fdn.catalog.site.connector import CatalogConnector, ConnectorError
+from nvflare.app_opt.fdn.catalog.declarations import read_declarations
 
 
 def quote_identifier(name):
@@ -29,6 +30,8 @@ class SQLiteConnector(CatalogConnector):
     source = "sqlite"
 
     def read_catalog(self, dataset, limits, options=None):
+        if options:
+            raise ConnectorError("built-in sqlite reader accepts no options")
         path = self._datasets.get(dataset)
         if path is None or not path.is_file():
             raise ConnectorError("database is unavailable")
@@ -92,16 +95,19 @@ class SQLiteConnector(CatalogConnector):
                 "operations": [],
                 "source_version": None,
             }
-            metadata.update((options or {}).get("metadata", {}))
+            declarations = read_declarations(path.with_suffix(".catalog.json"))
+            metadata.update({k: v for k, v in declarations.items() if k not in {"tables", "observed_at", "provenance"}})
             profile = metadata.get("semantic_profile", {})
             metadata["semantic_profile"] = {key: profile.get(key) for key in PROFILE_KEYS}
             metadata.update(
                 tables=tables,
                 resources=[],
-                lineage=[],
+                lineage=metadata.get("lineage", []),
                 provenance={"source": self.source, "declaration_ref": None, "validation_ref": None},
             )
-            catalog = CatalogInfo.from_wire({"dataset": dataset, "metadata": metadata, "observed_at": None})
+            catalog = CatalogInfo.from_wire(
+                {"dataset": dataset, "metadata": metadata, "observed_at": declarations.get("observed_at")}
+            )
             if catalog.record_count() > limits.max_records:
                 raise ConnectorError("schema record budget exceeded", budget=True)
             return catalog
