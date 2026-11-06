@@ -1,0 +1,170 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import os
+import queue
+import socket
+from contextlib import ExitStack
+from datetime import timedelta
+from unittest.mock import patch
+
+import pytest
+
+from tests.timing_utils import stop_processes
+
+torch = pytest.importorskip("torch")
+pl = pytest.importorskip("pytorch_lightning")
+
+gloo_available = torch.distributed.is_available() and torch.distributed.is_gloo_available()
+running_under_xdist = bool(os.environ.get("PYTEST_XDIST_WORKER"))
+
+
+class _FakeFlare:
+    def __init__(self, tasks):
+        self._tasks = list(tasks)
+        self._current = None
+        self.events = []
+        self.sent_steps = []
+
+    def receive(self, *args, **kwargs):
+        if self._current is None:
+            if not self._tasks:
+                self.events.append("receive:none")
+                return None
+            self._current = self._tasks.pop(0)
+        self.events.append("receive")
+        return self._current
+
+    def is_train(self):
+        return self._current is not None
+
+    def is_evaluate(self):
+        return False
+
+    def is_submit_model(self):
+        return False
+
+    def send(self, model, clear_cache=True):
+        from nvflare.app_common.abstract.fl_model import MetaKey
+
+        self.sent_steps.append(model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND])
+        self.events.append("send")
+        if clear_cache:
+            self.clear()
+
+    def clear(self):
+        self._current = None
+
+
+def _worker(rank, port, result_queue):
+    import torch.nn.functional as F
+    from pytorch_lightning.plugins.environments import LightningEnvironment
+    from pytorch_lightning.strategies import DDPStrategy
+    from torch.utils.data import DataLoader, TensorDataset
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+    from nvflare.app_opt.lightning.api import patch as lightning_patch
+
+    class Net(pl.LightningModule):
+        def __init__(self):
+            super().__init__()
+            self.fc = torch.nn.Linear(2, 2)
+            self.seen = []
+
+        def training_step(self, batch, batch_idx):
+            self.seen.append(float(self.fc.weight.detach()[0, 0]))
+            inputs, labels = batch
+            return F.cross_entropy(self.fc(inputs), labels)
+
+        def configure_optimizers(self):
+            return torch.optim.SGD(self.parameters(), lr=0.1)
+
+    try:
+        os.environ.update(
+            MASTER_ADDR="127.0.0.1", MASTER_PORT=str(port), WORLD_SIZE="2", NODE_RANK="0", LOCAL_RANK=str(rank)
+        )
+        tasks = [
+            FLModel(params={"fc.weight": torch.full((2, 2), float(r)), "fc.bias": torch.zeros(2)}, current_round=r)
+            for r in range(2)
+        ]
+        fake = _FakeFlare(tasks if rank == 0 else [])
+        api = "nvflare.app_opt.lightning.api"
+        with ExitStack() as stack:
+            stack.enter_context(patch(f"{api}.init"))
+            stack.enter_context(patch(f"{api}.get_config", return_value={}))
+            for name in ("receive", "is_train", "is_evaluate", "is_submit_model", "send", "clear"):
+                stack.enter_context(patch(f"{api}.{name}", new=getattr(fake, name)))
+
+            trainer = pl.Trainer(
+                accelerator="cpu",
+                devices=2,
+                strategy=DDPStrategy(timeout=timedelta(seconds=60)),
+                plugins=[LightningEnvironment()],
+                max_epochs=1,
+                logger=False,
+                enable_checkpointing=False,
+                enable_progress_bar=False,
+                enable_model_summary=False,
+                num_sanity_val_steps=0,
+            )
+            lightning_patch(trainer, sync_every_n_steps=2)
+            inputs = torch.arange(8, dtype=torch.float32).unsqueeze(1).repeat(1, 2)
+            loader = DataLoader(TensorDataset(inputs, torch.arange(8) % 2), batch_size=1, shuffle=False)
+            trainer.fit(Net(), train_dataloaders=loader)
+            module = trainer.lightning_module
+        result_queue.put(
+            {
+                "rank": rank,
+                "ok": True,
+                "global_step": trainer.global_step,
+                "sent_steps": fake.sent_steps,
+                "events": fake.events,
+                "seen": module.seen,
+            }
+        )
+    except Exception as e:
+        result_queue.put({"rank": rank, "ok": False, "error": repr(e)})
+
+
+@pytest.mark.skipif(not gloo_available, reason="torch.distributed gloo is required")
+@pytest.mark.skipif(running_under_xdist, reason="nested torch.multiprocessing gloo tests are unstable under xdist")
+def test_step_sync_under_ddp_pauses_all_ranks_together_and_only_rank_zero_exchanges():
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+
+    ctx = torch.multiprocessing.get_context("spawn")
+    result_queue = ctx.Queue()
+    procs = [ctx.Process(target=_worker, args=(rank, port, result_queue)) for rank in range(2)]
+    try:
+        for proc in procs:
+            proc.start()
+    finally:
+        stop_processes(*procs, timeout=60)
+    assert all(proc.exitcode == 0 for proc in procs)
+
+    results = []
+    for _ in procs:
+        try:
+            results.append(result_queue.get(timeout=5))
+        except queue.Empty:
+            pytest.fail("timed out waiting for a DDP step-sync worker result")
+    rank0, rank1 = sorted(results, key=lambda result: result["rank"])
+    assert rank0["ok"] and rank1["ok"], results
+
+    assert rank0["global_step"] == rank1["global_step"] == 4
+    assert rank0["sent_steps"] == [2, 2]
+    assert rank1["events"] == []
+    assert rank0["seen"] == rank1["seen"]
+    assert [rank0["seen"][0], rank0["seen"][2]] == [0.0, 1.0]
