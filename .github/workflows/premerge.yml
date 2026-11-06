@@ -133,6 +133,9 @@ jobs:
         run: >-
           python3 -m pytest -q
           tests/integration_test/fast/client_api_external_process_lifecycle_test.py
+      - name: Run secure server command authorization integration
+        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
+        run: python3 -m pytest -q -rs tests/integration_test/fast/server_command_authorization_test.py
 
   hf-client-api-tests:
     runs-on: ubuntu-24.04

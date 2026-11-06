@@ -1359,7 +1359,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def _send_direct_message(self, target_cell, message):
         target_cell.process_message(
-            endpoint=Endpoint(self.my_info.fqcn), connection=None, app_id=self.APP_ID, message=message
+            endpoint=self.communicator.local_endpoint, connection=None, app_id=self.APP_ID, message=message
         )
 
     def _send_target_messages(

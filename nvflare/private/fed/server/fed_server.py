@@ -50,7 +50,7 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
-from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
@@ -536,17 +536,33 @@ class FederatedServer(BaseServer):
             message=message,
             token_verifier=token_verifier,
             logger=self.logger,
-            client_fqcn_resolver=self._resolve_client_fqcn_for_auth,
+            client_fqcn_resolver=lambda name, token: self._resolve_client_fqcn_for_auth(
+                name, token, message.get_header(MessageHeaderKey.ORIGIN), message.get_prop(MessagePropKey.ENDPOINT)
+            ),
             local_cell_fqcn=self.cell.get_fqcn() if getattr(self, "cell", None) else None,
         )
         if not reply:
             self._strip_peer_transit_headers(message)
         return reply
 
-    def _resolve_client_fqcn_for_auth(self, client_name: str, token: str):
+    def _resolve_client_fqcn_for_auth(self, client_name: str, token: str, origin: str = "", peer=None):
+        if origin == FQCN.ROOT_SERVER or client_name == FQCN.ROOT_SERVER:
+            # Only this server's in-process endpoint may originate parent-server messages.
+            local_peer = self.cell.core_cell.communicator.local_endpoint
+            if client_name == token == origin == FQCN.ROOT_SERVER and peer is local_peer:
+                return FQCN.ROOT_SERVER
+            return MISSING_CLIENT_FQCN
         client = self.client_manager.clients.get(token)
         if client and client.name == client_name:
             return client.get_fqcn() or MISSING_CLIENT_FQCN
+        if client_name == private_defs.AUTH_CLIENT_NAME_FOR_SJ:
+            # Bind both the job runner and its workspace bootstrap to the signed job ID.
+            bootstrap = f"{FQCN.ROOT_SERVER}.ws_transfer_{token}"
+            if origin == bootstrap:
+                return bootstrap
+            return f"{FQCN.ROOT_SERVER}.{token}"
+        # Delegated admin sessions and lost client registrations are authenticated by their
+        # signed tokens and existing handlers; they cannot claim the parent identity above.
         return None
 
     def sign_auth_token(self, client_name: str, token: str):

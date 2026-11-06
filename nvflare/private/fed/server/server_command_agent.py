@@ -17,6 +17,8 @@ from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode, make_reply
+from nvflare.fuel.f3.cellnet.defs import MessagePropKey
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
@@ -85,6 +87,16 @@ class ServerCommandAgent(object):
                         "Request from client: missing client token",
                         None,
                     )
+            else:
+                # Relayed client traffic also arrives through the parent server. Require both
+                # the original sender and the authenticated last-hop peer to be the parent.
+                peer = request.get_prop(MessagePropKey.ENDPOINT)
+                if (
+                    request.get_header(MessageHeaderKey.ORIGIN) != FQCN.ROOT_SERVER
+                    or peer is None
+                    or peer.name != FQCN.ROOT_SERVER
+                ):
+                    return make_reply(ReturnCode.AUTHENTICATION_ERROR, "Server control requires the parent server")
 
             with self.engine.new_context() as new_fl_ctx:
                 if command_name in ServerCommands.client_request_commands_names:
