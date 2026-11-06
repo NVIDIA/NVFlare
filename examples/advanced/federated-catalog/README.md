@@ -19,16 +19,18 @@ Site-1 therefore publishes three dataset catalogs; site-2 publishes one.
 
 | CSV dataset | Columns and inferred types |
 | --- | --- |
-| `lab_results` | `person_id`: int64, `test_name`: string, `result_value`: float64, `collected_date`: date, `abnormal`: bool |
-| `visits` | `visit_id`: int64, `person_id`: int64, `visit_date`: date, `visit_type`: string, `duration_minutes`: int64 |
+| `lab_results` | `person_id`: int64, `test_name`: string, `result_value`: double, `collected_date`: date32[day], `abnormal`: bool |
+| `visits` | `visit_id`: int64, `person_id`: int64, `visit_date`: date32[day], `visit_type`: string, `duration_minutes`: int64 |
 
-The CSV connector infers types from up to 100 local data rows, with a 1 MiB
-sample limit and the site's call/time/schema budgets. Only schema metadata is
-published. Empty cells are null; all-empty columns have type `unknown`.
-Mixed integers/floats become float64; other conflicting types become string.
-Nullability remains unknown, and keys/relationships are not inferred.
-Unsampled rows may contain different types; this is schema discovery, not
-full-file validation. Preparation copies the checked-in CSV files.
+The CSV connector delegates parsing and type inference to PyArrow. It infers
+from the first 64 KiB block, with at most 1 MiB of local source input for
+record boundaries and read-ahead, subject to site call/time/schema budgets.
+Only schema metadata is published; Arrow physical type names are retained.
+All-empty columns have Arrow type `null`. Nullability remains unknown, and no
+keys/relationships are inferred. Arrow may infer numeric identifiers with
+leading zeros as integers. Inferred types describe the initial block, not a
+validated full-file schema; later rows can differ. Preparation copies the
+checked-in CSV files.
 
 ## Install, prepare and run
 
