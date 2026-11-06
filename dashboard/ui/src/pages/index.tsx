@@ -42,6 +42,7 @@ export default function ProjectHome() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [confirmFreeze, setConfirmFreeze] = useState(false)
+  const canFreeze = Boolean(project?.public && !project.frozen)
 
   useEffect(() => {
     APICall.getProject().then(response => {
@@ -74,6 +75,7 @@ export default function ProjectHome() {
   }
 
   async function freeze() {
+    if (!canFreeze || busy) return
     setBusy(true)
     setError('')
     try {
@@ -96,11 +98,13 @@ export default function ProjectHome() {
         <Typography sx={{ whiteSpace: 'pre-wrap', my: 2 }}>{project?.description}</Typography>
         {project && <Typography>Project status: {project.frozen ? 'Frozen' : 'Setup in progress'}</Typography>}
         {project?.app_location && <Button component="a" href={project.app_location} target="_blank" rel="noopener noreferrer">Application download</Button>}
-        {session.user.role === 4 && <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
+        {session.user.role === 4 && <><Stack direction="row" spacing={2} sx={{ mt: 2 }}>
           <Button component={Link} href="/project-configuration">Project Configuration</Button>
           <Button component={Link} href="/server-config">Server Configuration</Button>
-          <Button variant="contained" disabled={!project || project.frozen || busy} onClick={() => { setError(''); setConfirmFreeze(true) }}>Freeze Project</Button>
-        </Stack>}
+          <Button variant="contained" disabled={!canFreeze || busy} onClick={() => { setError(''); setConfirmFreeze(true) }}>Freeze Project</Button>
+        </Stack>
+          {project && !project.public && !project.frozen && <Alert severity="info" sx={{ mt: 2 }}>Make the project public in Project Configuration before freezing it.</Alert>}
+        </>}
       </Paper>
       {session.user.role === 0 ? <Paper sx={{ p: 3, maxWidth: 480 }}>
         <Typography variant="h6" component="h2">Log in</Typography>
@@ -124,7 +128,7 @@ export default function ProjectHome() {
         <Typography>Freeze the completed project configuration and create its trust material? Project settings cannot be edited afterward.</Typography>
         {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
       </DialogContent>
-      <DialogActions><Button disabled={busy} onClick={() => setConfirmFreeze(false)}>Cancel</Button><Button disabled={busy} onClick={freeze}>Freeze</Button></DialogActions>
+      <DialogActions><Button disabled={busy} onClick={() => setConfirmFreeze(false)}>Cancel</Button><Button disabled={!canFreeze || busy} onClick={freeze}>Freeze</Button></DialogActions>
     </Dialog>
   </Layout>
 }
