@@ -12,49 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Infer a CSV schema locally from its header and a bounded sample; never publish rows."""
+"""Discover CSV schemas with PyArrow; publish metadata, never source rows."""
 
-import csv
-import math
-import re
 import time
-from datetime import date
-from itertools import islice
 
 from nvflare.app_common.fdn.catalog.common.schema import CatalogInfo, ColumnInfo, Provenance, TableInfo
 from nvflare.app_common.fdn.catalog.site.connector import CatalogConnector, ConnectorError
 
-SAMPLE_ROWS = 100
 MAX_SAMPLE_BYTES = 1024 * 1024
-_NUMBER = re.compile(r"[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\Z")
-
-
-def _value_type(value):
-    if value == "":
-        return None
-    if value.lower() in {"true", "false"}:
-        return "bool"
-    if _NUMBER.fullmatch(value):
-        if "." not in value and "e" not in value.lower():
-            # Keep oversized integers and identifier-like leading zeros as strings.
-            if len(value.lstrip("+-")) <= 19 and -(2**63) <= int(value) < 2**63:
-                return "int64"
-            return "string"
-        if math.isfinite(float(value)):
-            return "float64"
-    try:
-        if date.fromisoformat(value).isoformat() == value:
-            return "date"
-    except ValueError:
-        pass
-    return "string"
+INFERENCE_BLOCK_BYTES = 64 * 1024
 
 
 class CSVConnector(CatalogConnector):
-    """One UTF-8, comma-delimited file per dataset, with a mandatory unique header.
+    """One UTF-8 CSV file per dataset, with a mandatory unique, nonempty header.
 
-    Types describe at most 100 sampled rows, not a validated full-file schema.
-    Empty cells are null; nullability remains unknown. No keys are inferred.
+    Arrow infers types from its initial 64 KiB block, with at most 1 MiB of
+    local input for record boundaries/read-ahead. These are sampled types,
+    not a full-file validation. Nullability stays unknown; no keys are inferred.
     """
 
     source = "csv"
@@ -62,61 +36,41 @@ class CSVConnector(CatalogConnector):
     def read_catalog(self, dataset, limits, options=None):
         if options:
             raise ConnectorError("built-in csv reader accepts no options")
+        import pyarrow as pa
+        import pyarrow.csv as arrow_csv
+
         path = self._datasets.get(dataset)
         if path is None or not path.is_file():
             raise ConnectorError("CSV dataset is unavailable")
         deadline = time.monotonic() + limits.max_duration_s
-        calls, consumed = 0, 0
-
-        def lines(stream):
-            nonlocal calls, consumed
-            while True:
-                calls += 1
-                if calls > limits.max_calls or time.monotonic() >= deadline:
-                    raise ConnectorError("CSV sample read budget exceeded", budget=True)
-                line = stream.readline(MAX_SAMPLE_BYTES - consumed + 1)
-                consumed += len(line)
-                if consumed > MAX_SAMPLE_BYTES:
-                    raise ConnectorError("CSV sample byte budget exceeded", budget=True)
-                if not line:
-                    return
-                yield line.decode("utf-8-sig" if calls == 1 else "utf-8")
-
+        if limits.max_calls < 1 or time.monotonic() >= deadline:
+            raise ConnectorError("CSV sample read budget exceeded", budget=True)
         try:
+            # Stage bounded local bytes: Arrow's internal read-ahead cannot read
+            # more source data, and no file handle outlives this context.
             with path.open("rb") as stream:
-                reader = csv.reader(lines(stream), strict=True)
-                header = next(reader, None)
-                if not header or any(not name.strip() for name in header) or len(set(header)) != len(header):
-                    raise ConnectorError("CSV requires nonempty, unique column headers")
-                if 2 + len(header) > limits.max_records:
-                    raise ConnectorError("CSV schema record budget exceeded", budget=True)
-                types = [set() for _ in header]
-                for row in islice(reader, SAMPLE_ROWS):
-                    if len(row) != len(header):
-                        raise ConnectorError("CSV row does not match header width")
-                    for observed, value in zip(types, row):
-                        kind = _value_type(value)
-                        if kind is not None:
-                            observed.add(kind)
-        except (OSError, UnicodeError, csv.Error):
-            raise ConnectorError("CSV dataset is unreadable") from None
+                sample = stream.read(MAX_SAMPLE_BYTES)
+            if time.monotonic() >= deadline:
+                raise ConnectorError("CSV sample read budget exceeded", budget=True)
+            with arrow_csv.open_csv(
+                pa.BufferReader(sample),
+                read_options=arrow_csv.ReadOptions(block_size=INFERENCE_BLOCK_BYTES, use_threads=False),
+                parse_options=arrow_csv.ParseOptions(newlines_in_values=True),
+            ) as reader:
+                schema = reader.schema
+        except (OSError, pa.ArrowException):
+            raise ConnectorError("CSV schema is unreadable") from None
         if time.monotonic() >= deadline:
             raise ConnectorError("CSV sample read budget exceeded", budget=True)
-        columns = []
-        for name, observed in zip(header, types):
-            if not observed:
-                kind = "unknown"
-            elif len(observed) == 1:
-                kind = next(iter(observed))
-            elif observed <= {"int64", "float64"}:
-                kind = "float64"
-            else:
-                kind = "string"
-            columns.append(ColumnInfo(name, kind))
+        names = schema.names
+        if any(not name.strip() for name in names) or len(set(names)) != len(names):
+            raise ConnectorError("CSV requires nonempty, unique column headers")
+        if 2 + len(schema) > limits.max_records:
+            raise ConnectorError("CSV schema record budget exceeded", budget=True)
         return CatalogInfo(
             dataset=dataset,
             display_name=dataset,
             provenance=Provenance(self.source),
-            tables=(TableInfo(path.stem, tuple(columns)),),
+            tables=(TableInfo(path.stem, tuple(ColumnInfo(f.name, str(f.type)) for f in schema)),),
             modalities=("tabular",),
         )
