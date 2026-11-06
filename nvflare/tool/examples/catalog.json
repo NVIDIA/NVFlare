@@ -272,10 +272,6 @@
     "source_path": "examples/advanced/swarm_learning",
     "category": "advanced"
   },
-  "tensor-stream": {
-    "source_path": "examples/advanced/tensor-stream",
-    "category": "advanced"
-  },
   "splitnn-cifar10": {
     "source_path": "examples/advanced/vertical_federated_learning/cifar10-splitnn",
     "category": "advanced"
