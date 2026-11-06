@@ -60,13 +60,7 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     normalize_slurm_executables,
     normalize_slurm_workspace_path,
 )
-from nvflare.app_opt.job_launcher.slurm.manager import (
-    SlurmJobHandle,
-    SlurmJobManager,
-    _ensure_dir,
-    _is_terminal,
-    _write_exclusive,
-)
+from nvflare.app_opt.job_launcher.slurm.manager import SlurmJobManager, _ensure_dir, _is_terminal, _write_exclusive
 from nvflare.app_opt.job_launcher.slurm.scheduler_client import _command_diagnostic
 from nvflare.app_opt.job_launcher.slurm.task_scheduler import SlurmTaskCliAdapter, submission_was_rejected
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
@@ -295,11 +289,16 @@ class SlurmTaskManager(SlurmJobManager):
             return handle
 
 
-class SlurmTaskHandle(SlurmJobHandle, TaskHandleSpec):
+class SlurmTaskHandle(TaskHandleSpec):
     def __init__(self, manager, request, key, name, job_dir):
-        super().__init__(
-            manager, key, name, job_dir, None, manager.config.pending_timeout, manager.config.poll_interval
-        )
+        self.manager = manager
+        self.nvflare_job_id = key
+        self.job_name = name
+        self.job_dir = job_dir
+        self.job_id = None
+        self.pending_timeout = manager.config.pending_timeout
+        self.poll_interval = manager.config.poll_interval
+        self.cancel_requested = False
         self._request = request
         self.operation_lock = threading.RLock()
         self.cluster = None
