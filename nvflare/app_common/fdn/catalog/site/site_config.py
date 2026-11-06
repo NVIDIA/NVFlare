@@ -102,6 +102,8 @@ def _binding(path: Path, study, dataset, spec, connectors) -> DatasetBinding:
     options = spec.get("options", {})
     if not isinstance(options, dict):
         raise _error(path, f"{where} options must be an object")
+    if options and connectors[spec["connector"]].path in {DEFAULT_CONNECTOR_CLASS, SQLITE_CONNECTOR_CLASS}:
+        raise _error(path, f"{where}: built-in connectors accept no options; keep declarations beside source data")
     return DatasetBinding(spec["connector"], options)
 
 

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -121,3 +122,30 @@ class TestConnectorsAndBindings:
             config["default_connector"] = reference
         with pytest.raises(SiteConfigError):
             load(tmp_path, config)
+
+
+def test_minimal_sqlite_site_needs_no_dataset_or_metadata_repetition(tmp_path):
+    site = load(tmp_path, {"format_version": 1, "default_connector": "sqlite"})
+    assert site.default_connector == "sqlite" and site.bindings("default") == {}
+    assert site.installed_operations == frozenset()
+
+
+@pytest.mark.parametrize("connector", ["parquet", "sqlite"])
+@pytest.mark.parametrize("options", [{"storage_format": "parquet"}, {"metadata": {"owner": "private"}}])
+def test_builtin_bindings_reject_redundant_or_inline_metadata(tmp_path, connector, options):
+    with pytest.raises(SiteConfigError, match="accept no options"):
+        load(
+            tmp_path,
+            {"format_version": 1, "studies": {"default": {"omop": {"connector": connector, "options": options}}}},
+        )
+
+
+def test_checked_in_example_catalog_inputs_are_valid_and_minimal():
+    root = Path(__file__).resolve().parents[6] / "examples/advanced/federated-catalog/config"
+    paths = list(root.rglob("catalog_site*.json"))
+    assert len(paths) == 3
+    for path in paths:
+        raw = json.loads(path.read_text())
+        assert set(raw) <= {"format_version", "default_connector"}
+        site = load_site_config(path)
+        assert site.default_connector in {"parquet", "sqlite"}

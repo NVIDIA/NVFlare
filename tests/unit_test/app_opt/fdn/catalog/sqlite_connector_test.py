@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import sqlite3
 from dataclasses import replace
 from types import SimpleNamespace
@@ -107,3 +108,25 @@ def test_expired_deadline_stops_before_query_and_closes_connection(database, con
         subject.SQLiteConnector({"omop": database}).read_catalog("omop", ReadLimits(**DEFAULT_LIMITS))
     assert error.value.budget and connections[1] == []
     assert_closed(connections[0])
+
+
+def test_optional_sidecar_declares_semantics_without_repeating_observed_schema(database):
+    database.with_suffix(".catalog.json").write_text(
+        json.dumps({"semantic_profile": {"standard": "OMOP", "version": "5.4"}})
+    )
+    result = subject.SQLiteConnector({"omop": database}).read_catalog("omop", ReadLimits(**DEFAULT_LIMITS))
+    assert result.semantic_profile.standard == "OMOP" and result.semantic_profile.version == "5.4"
+    assert result.display_name == "omop" and result.operations == ()
+    assert {t.name for t in result.tables} == {"person", "condition_occurrence", 'quoted"table'}
+
+
+def test_invalid_declaration_does_not_publish_metadata_and_closes_connection(database, connections):
+    database.with_suffix(".catalog.json").write_text('{"unsupported": true}')
+    with pytest.raises(ConnectorError, match="unsupported content"):
+        subject.SQLiteConnector({"omop": database}).read_catalog("omop", ReadLimits(**DEFAULT_LIMITS))
+    assert_closed(connections[0])
+
+
+def test_inline_metadata_options_are_not_part_of_builtin_contract(database):
+    with pytest.raises(ConnectorError, match="accepts no options"):
+        subject.SQLiteConnector({"omop": database}).read_catalog("omop", ReadLimits(**DEFAULT_LIMITS), {"metadata": {}})

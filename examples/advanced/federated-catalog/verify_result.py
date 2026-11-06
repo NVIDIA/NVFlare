@@ -81,7 +81,8 @@ def verify_result(data_root, store_root):
         if condition_columns - common != extra:
             raise RuntimeError("Unexpected site-specific condition schema")
         config = json.loads((data_root / entry["client"] / "local/fdn/catalog_site.json").read_text())
-        backend = config["studies"]["default"][entry["dataset"]]["options"]["storage_format"]
+        binding = config.get("studies", {}).get("default", {}).get(entry["dataset"], {})
+        backend = binding.get("connector", config.get("default_connector", "parquet"))
         if metadata["provenance"]["source"] != backend:
             raise RuntimeError("Catalog provenance does not match the site's storage format")
         if not tables["condition_occurrence"]["relationships"]:

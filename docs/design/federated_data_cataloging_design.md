@@ -70,6 +70,52 @@ The catalog covers the following five source categories. A source is selected **
 
 The operator selects installed readers in approved site configuration. Installing another `CatalogConnector` requires no controller/server change or dynamic registry. Task payloads cannot select executable code. `CatalogRecipe(catalog_reader=...)` can also install a reviewed `CatalogReader` component, analogous to a FedStats generator, with normal job/component authorization. It receives site-owned dataset bindings; the executor still applies the site publication policy, budgets and result validation.
 
+#### `catalog_site.json` contract v1
+
+This site-owned file configures **reader selection only**, with optional site-wide limits and capabilities. It is not a catalog result, a duplicate dataset registry, or a place to enter column schemas. The normative keys and defaults are:
+
+| Key | Required / default | Contract |
+| --- | --- | --- |
+| `format_version` | Required; integer `1` | Reject booleans and unsupported versions. |
+| `default_connector` | Optional; `"parquet"` | Reader for mounted datasets without an explicit override. Built-ins are `parquet` and `sqlite`; installed custom names may also be referenced. |
+| `studies` | Optional; `{}` | Map Study names to dataset-name maps. Existing Study runtime bindings supply dataset paths; repeat a dataset here only to override the default reader or configure a custom source. |
+| `studies.<study>.<dataset>.connector` | Required only for an explicit binding | One known built-in or installed connector name. An undefined name is an error; there is no format guessing or fallback after a selected reader fails. |
+| `studies.<study>.<dataset>.options` | Optional; `{}` | Non-secret, connector-specific options for custom integrations. Current built-in Parquet/SQLite readers accept no nonempty options. In particular, do not repeat `storage_format` or put `metadata` here. |
+| `connectors` | Optional; built-ins already installed | Advanced map of additional reader names to `{ "class": "fully.qualified.Connector", "args": {} }`. `args` is optional and non-secret. Standard Parquet/SQLite users supply no class paths. |
+| `limits` | Optional | Positive integer overrides: `max_duration_s=60`, `max_calls=1000`, `max_records=10000`. Omitted values retain these defaults. |
+| `installed_operations` | Optional; `[]` | Explicit operations this site can actually execute. A catalog-only deployment leaves this absent. It does not enable operations or grant execution access. |
+
+Reject unknown keys and wrong field types at the file, connector-spec and dataset-binding levels. Reject nonempty options for built-in reader implementations. Invalid or missing site configuration follows the fail-closed publication behavior below. Connector-specific extensions must document their own `args`/`options` rather than silently accepting unrelated fields.
+
+The complete minimal Parquet file is:
+
+```json
+{"format_version": 1}
+```
+
+A site whose mounted datasets are SQLite files needs only:
+
+```json
+{"format_version": 1, "default_connector": "sqlite"}
+```
+
+For mixed formats within a site, override only the relevant existing dataset:
+
+```json
+{
+  "format_version": 1,
+  "studies": {
+    "oncology": {
+      "registry": {"connector": "sqlite"}
+    }
+  }
+}
+```
+
+**Separate inputs by responsibility.** Existing `study_runtime.yaml` bindings own source paths and mounts; `<study>.json` owns publication rules. Optional source declarations own descriptive and semantic metadata: a Parquet directory's `catalog.json`, or `<database>.catalog.json` beside a SQLite file (`registry.sqlite` uses `registry.catalog.json`). If declarations are absent, readers still discover structure, use the dataset name as display name, and leave optional semantic/descriptive fields unknown. Parquet keys/relationships require declarations; SQLite obtains them from database constraints. Sidecars are bounded to 1 MiB and reject unsupported declaration keys. Source observations take precedence over annotations for structural metadata. No user must enter observed columns, inferred keys, output timestamps, version counters or provenance into `catalog_site.json`.
+
+**Examples are source artifacts.** Check the complete `catalog_site.json`, publication policy and optional declaration examples into the example directory. Data preparation creates the synthetic source tables/files, copies those versioned configurations, and resolves runtime paths; it does not synthesize the catalog input specification. `job.py` only configures/runs the recipe and prints its result.
+
 **One policy source.** One site-owned Study publication policy is authoritative. Its protected file is one JSON file per Study, `<policy_root>/<study>.json`, under the site's Study configuration directory, outside user-editable job packages. `<policy_root>` is `/fdn/policy`, a read-only mount the site declares as a `secret_mounts` entry of the Study runtime, when that directory exists (Docker, Kubernetes and Slurm container modes), and otherwise `<workspace>/local/fdn/` (process mode). The handler reads it through that binding, which exposes atomic replacements, not a stale packaged/default file, and applies it before releasing metadata on every read. Next to it the site keeps `catalog_site.json`, which defines named connectors (`connectors.<name>`: a class and non-secret `args`), binds each dataset that is not mounted Parquet to one of them per Study (`studies.<study>.<dataset>`: a connector name and non-secret `options`), and sets the limits and installed operations. A mounted dataset with no binding is read by the default connector, the built-in `parquet` unless `default_connector` says otherwise. A job cannot supply or change any of it. The site service uses no copy of it: catalog entries for derived datasets are produced by the same handler. Docker binds the whole `local/` folder read-only, so the `local/fdn/` fallback also works there without the mount. The launchers need no catalog-specific code; `local/fdn/` is excluded from Kubernetes workspace bundles so a pod without the mount fails closed. Slurm sandbox `none` has no Study mounts, so catalog reads are not supported there yet.
 
 **Policy-load failure is closed.** If that source is missing, unreadable or invalid, release no source metadata. Return a safe application `FAILED` with `reason_code: POLICY_UNAVAILABLE`, no catalogs, no availability claims, and `withheld` containing the selected previously indexed names from `previous_datasets`. This hides cached metadata without disclosing newly discovered names. Preserve protected history and record a configuration diagnostic. Never fall back to no restrictions, packaged defaults or a cached permissive policy. A later result evaluated under the valid policy may restore entries.

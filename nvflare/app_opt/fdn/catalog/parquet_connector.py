@@ -14,30 +14,12 @@
 
 """Reads a dataset's catalog from Parquet footers, plus an optional site-authored catalog.json sidecar."""
 
-import json
 import time
 from pathlib import Path
 
 from nvflare.app_common.fdn.catalog.common.schema import PROFILE_KEYS, CatalogInfo, ReadLimits, ValidationError
 from nvflare.app_common.fdn.catalog.site.connector import CatalogConnector, ConnectorError
-
-SIDECAR_NAME = "catalog.json"
-MAX_SIDECAR_BYTES = 1024 * 1024
-_SIDECAR_KEYS = frozenset(
-    {
-        "display_name",
-        "description",
-        "owner",
-        "modalities",
-        "operations",
-        "semantic_profile",
-        "source_version",
-        "lineage",
-        "provenance",
-        "observed_at",
-        "tables",
-    }
-)
+from nvflare.app_opt.fdn.catalog.declarations import SIDECAR_NAME, read_declarations
 
 
 class ParquetConnector(CatalogConnector):
@@ -46,6 +28,8 @@ class ParquetConnector(CatalogConnector):
     source = "parquet"
 
     def read_catalog(self, dataset: str, limits: ReadLimits, options: dict | None = None) -> CatalogInfo:
+        if options:
+            raise ConnectorError("built-in parquet reader accepts no options")
         import pyarrow.parquet as pq
 
         root = self._datasets.get(dataset)
@@ -153,17 +137,4 @@ class ParquetConnector(CatalogConnector):
 
     @staticmethod
     def _read_sidecar(root: Path) -> dict:
-        path = root / SIDECAR_NAME if root.is_dir() else None
-        if path is None or not path.is_file():
-            return {}
-        try:
-            if path.stat().st_size > MAX_SIDECAR_BYTES:
-                raise ConnectorError("sidecar is too large")
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except ConnectorError:
-            raise
-        except Exception:
-            raise ConnectorError("sidecar is unreadable") from None
-        if not isinstance(data, dict) or set(data) - _SIDECAR_KEYS:
-            raise ConnectorError("sidecar has unsupported content")
-        return data
+        return read_declarations(root / SIDECAR_NAME) if root.is_dir() else {}

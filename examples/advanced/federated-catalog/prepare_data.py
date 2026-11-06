@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import shutil
 import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
@@ -175,53 +176,24 @@ def prepare_data(data_root, site_2_format="parquet"):
         storage_format = site_2_format if site == "site-2" else "parquet"
         site_only = "oncology" if index == 1 else "registry"
         dataset_sizes = {"omop": people, "cardiology": people // 2, site_only: people // 4}
-        sources, bindings, policies = {}, {}, {}
+        sources = {}
+        config = Path(__file__).resolve().parent / "config" / site
         for number, (dataset, size) in enumerate(dataset_sizes.items()):
             directory = root / site / "datasets" / dataset
             directory.mkdir(parents=True, exist_ok=True)
             tables = make_tables(index, size, id_offset=number * 1000000)
             if dataset in ("oncology", "registry"):
                 tables.pop("measurement")
-            metadata = {
-                "display_name": f"Synthetic {dataset} extract at {site}",
-                "description": "OMOP 5.4-shaped subset for metadata discovery; not a validated clinical cohort",
-                "owner": "private-site-contact",
-                "modalities": ["tabular"],
-                "operations": ["statistics"],
-                "source_version": "synthetic-2024-v1",
-                "semantic_profile": {
-                    "standard": "OMOP",
-                    "version": "5.4",
-                    "mapping_version": f"demo-etl-{site}-v1",
-                    "declaration_ref": f"synthetic-omop-subset:{site}:{dataset}",
-                },
-                "tables": table_declarations(tables),
-            }
             source = directory
             if storage_format == "parquet":
                 for name, columns in tables.items():
                     pq.write_table(pa.table(columns), directory / f"{name}.parquet")
-                write_json(directory / "catalog.json", metadata)
+                shutil.copyfile(config / "catalog_metadata.json", directory / "catalog.json")
             else:
                 source = directory.with_suffix(".sqlite")
                 write_sqlite(source, tables)
+                shutil.copyfile(config / "catalog_metadata.json", source.with_suffix(".catalog.json"))
             sources[dataset] = {"source": str(source), "mode": "ro"}
-            bindings[dataset] = {
-                "connector": storage_format,
-                "options": {
-                    "storage_format": storage_format,
-                    "metadata": {k: v for k, v in metadata.items() if k != "tables"},
-                },
-            }
-            exclusions = {name: [c for c in columns if c.endswith("_source_value")] for name, columns in tables.items()}
-            exclusions["person"] += ["month_of_birth", "day_of_birth"]
-            policies[dataset] = {
-                "share": True,
-                "exclude_columns": exclusions,
-                "exclude_metadata": ["owner"],
-                "exclude_tables": ["measurement"] if index == 2 and dataset == "omop" else [],
-                "operations": ["statistics"],
-            }
             print(f"{site}/{dataset}: {storage_format}, {size} synthetic persons, {len(tables)} local tables")
         internal = root / site / "datasets/internal"
         internal.mkdir(parents=True, exist_ok=True)
@@ -230,14 +202,15 @@ def prepare_data(data_root, site_2_format="parquet"):
             internal / "identity_crosswalk.parquet",
         )
         sources["internal"] = {"source": str(internal), "mode": "ro"}
-        policies["internal"] = {"share": False}
         local = root / site / "local"
         write_json(local / "study_runtime.yaml", {"format_version": 2, "studies": {"default": {"datasets": sources}}})
-        write_json(
-            local / "fdn/catalog_site.json",
-            {"format_version": 1, "installed_operations": ["statistics"], "studies": {"default": bindings}},
+        policy_root = local / "fdn"
+        policy_root.mkdir(parents=True, exist_ok=True)
+        filename = (
+            "catalog_site.parquet.json" if site == "site-2" and storage_format == "parquet" else "catalog_site.json"
         )
-        write_json(local / "fdn/default.json", {"format_version": 1, "datasets": policies})
+        shutil.copyfile(config / filename, policy_root / "catalog_site.json")
+        shutil.copyfile(config / "default.json", policy_root / "default.json")
     print(f"Prepared multiple OMOP-shaped datasets per site in {root}")
 
 

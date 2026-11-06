@@ -65,26 +65,60 @@ python job.py
 python discover.py
 ```
 
-The site-owned `local/study_runtime.yaml` binds `omop` to either its Parquet
-directory or SQLite database. Its `local/fdn/catalog_site.json` selects a built-in
-connector per dataset:
+The example includes the actual site configurations as readable files:
+
+| File | Purpose |
+| --- | --- |
+| [config/site-1/catalog_site.json](config/site-1/catalog_site.json) | Minimal Parquet configuration |
+| [config/site-2/catalog_site.json](config/site-2/catalog_site.json) | SQLite configuration for the mixed variation |
+| [config/site-2/catalog_site.parquet.json](config/site-2/catalog_site.parquet.json) | Site-2 configuration for the Parquet-only variation |
+| [config/site-1/default.json](config/site-1/default.json), [config/site-2/default.json](config/site-2/default.json) | Site-owned publication policies |
+| [config/site-1/catalog_metadata.json](config/site-1/catalog_metadata.json), [config/site-2/catalog_metadata.json](config/site-2/catalog_metadata.json) | Optional OMOP declarations and Parquet key/relationship annotations |
+
+Site-1's complete `catalog_site.json`:
+
+```json
+{"format_version": 1}
+```
+
+Site-2's complete mixed-source `catalog_site.json`:
+
+```json
+{"format_version": 1, "default_connector": "sqlite"}
+```
+
+Preparation **copies these checked-in files** into each site's `local/fdn/`;
+it does not construct catalog configuration or policy JSON dynamically. It
+creates/populates the source tables and writes `study_runtime.yaml` with the
+absolute paths appropriate for `--data-root`. Those existing runtime bindings
+already name each dataset, so catalog configuration need not repeat them when
+they use the site's default connector.
+
+A site with different formats within one Study can add only its exceptions:
 
 ```json
 {
   "format_version": 1,
   "studies": {
     "default": {
-      "omop": {"connector": "sqlite"}
+      "registry": {"connector": "sqlite"}
     }
   }
 }
 ```
 
-Use `"parquet"` at site-1. Preparation also adds site-declared profile metadata in
-binding `options`; the Parquet version supplies declarations in `catalog.json`.
-The executor maps connector names to their reader implementations. A global recipe
-format would not represent these different site sources, so the example needs no
-`catalog_reader=` argument. That argument remains available for custom readers.
+The executor maps source names to built-in readers; no `catalog_reader=` argument
+is needed. Built-in connectors accept no `options`, repeated `storage_format`,
+class paths, or inline metadata. Optional declarations live beside the source:
+`catalog.json` inside a Parquet dataset or `<database>.catalog.json` beside a
+SQLite file (`omop.sqlite` uses `omop.catalog.json`). Preparation copies the
+checked-in metadata file to those locations. SQLite observes keys/relationships
+from the database; Parquet uses the site's optional annotations. Metadata fields
+and an installed-operations list are not required for a basic catalog read. The
+example advertises no execution operations.
+
+The normative input contract is in the
+[catalog design](../../../docs/design/federated_data_cataloging_design.md#catalog_sitejson-contract-v1).
 
 The SQLite connector opens the database [read-only](https://www.sqlite.org/uri.html)
 and inspects `sqlite_schema`, `PRAGMA table_info`, and `PRAGMA foreign_key_list`.
@@ -147,8 +181,7 @@ also prints common columns, site-specific additions, and differing storage types
 A missing catalog table may reflect source coverage or publication policy; the
 consumer cannot infer which from its absence. A metadata candidate is not proof
 of patient eligibility, join correctness, clinical equivalence, or analysis access.
-The published `statistics` operation is a declaration; this example does not run
-federated statistics or a cohort query.
+This example does not advertise or execute analysis operations.
 
 The full result is printed by `job.py` and saved to
 `/tmp/nvflare/federated-catalog/store/discovery.json`. A fresh store has six dataset
@@ -180,40 +213,68 @@ publication rules. The complete [withdrawal policy](config/site-2-withdraw-omop.
     "omop": {
       "share": false,
       "exclude_columns": {
-        "person": ["person_source_value", "month_of_birth", "day_of_birth"],
-        "observation_period": [],
-        "visit_occurrence": ["visit_source_value"],
-        "condition_occurrence": ["condition_source_value"],
-        "measurement": ["measurement_source_value"]
+        "person": [
+          "person_source_value",
+          "month_of_birth",
+          "day_of_birth"
+        ],
+        "visit_occurrence": [
+          "visit_source_value"
+        ],
+        "condition_occurrence": [
+          "condition_source_value"
+        ],
+        "measurement": [
+          "measurement_source_value"
+        ]
       },
-      "exclude_metadata": ["owner"],
-      "exclude_tables": ["measurement"],
-      "operations": ["statistics"]
+      "exclude_metadata": [
+        "owner"
+      ],
+      "exclude_tables": [
+        "measurement"
+      ]
     },
     "cardiology": {
       "share": true,
       "exclude_columns": {
-        "person": ["person_source_value", "month_of_birth", "day_of_birth"],
-        "observation_period": [],
-        "visit_occurrence": ["visit_source_value"],
-        "condition_occurrence": ["condition_source_value"],
-        "measurement": ["measurement_source_value"]
+        "person": [
+          "person_source_value",
+          "month_of_birth",
+          "day_of_birth"
+        ],
+        "visit_occurrence": [
+          "visit_source_value"
+        ],
+        "condition_occurrence": [
+          "condition_source_value"
+        ],
+        "measurement": [
+          "measurement_source_value"
+        ]
       },
-      "exclude_metadata": ["owner"],
-      "exclude_tables": [],
-      "operations": ["statistics"]
+      "exclude_metadata": [
+        "owner"
+      ]
     },
     "registry": {
       "share": true,
       "exclude_columns": {
-        "person": ["person_source_value", "month_of_birth", "day_of_birth"],
-        "observation_period": [],
-        "visit_occurrence": ["visit_source_value"],
-        "condition_occurrence": ["condition_source_value"]
+        "person": [
+          "person_source_value",
+          "month_of_birth",
+          "day_of_birth"
+        ],
+        "visit_occurrence": [
+          "visit_source_value"
+        ],
+        "condition_occurrence": [
+          "condition_source_value"
+        ]
       },
-      "exclude_metadata": ["owner"],
-      "exclude_tables": [],
-      "operations": ["statistics"]
+      "exclude_metadata": [
+        "owner"
+      ]
     },
     "internal": {
       "share": false
