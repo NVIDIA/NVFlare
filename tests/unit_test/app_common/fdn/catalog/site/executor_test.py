@@ -99,7 +99,9 @@ def env(tmp_path):
 
 
 def write_policy(env, datasets, study="study1"):
-    (env / "policy" / f"{study}.json").write_text(json.dumps({"format_version": 1, "datasets": datasets}))
+    directory = env / "policy" / study
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "catalog_policy.json").write_text(json.dumps({"format_version": 1, "datasets": datasets}))
 
 
 def run(
@@ -471,7 +473,8 @@ class TestSiteLocations:
         (local / "fdn" / "catalog_site.json").write_text(
             json.dumps({"format_version": 1, "connectors": FILES, "default_connector": "files"})
         )
-        (local / "fdn" / "study1.json").write_text(
+        (local / "fdn" / "study1").mkdir()
+        (local / "fdn" / "study1" / "catalog_policy.json").write_text(
             json.dumps({"format_version": 1, "datasets": {"good": {"share": True}}})
         )
         executor, ctx = self._executor_with_workspace(tmp_path / "ws")
@@ -518,3 +521,19 @@ def test_missing_policy_prevents_reader_invocation(env):
     reader = RecordingReader()
     parsed = result(run(env, datasets=["good"], reader=reader), datasets=["good"])
     assert parsed.status == ResultStatus.FAILED and reader.calls == []
+
+
+def test_another_study_policy_is_not_used_for_the_active_study(env):
+    write_policy(env, {"good": {"share": True}}, study="another-study")
+    parsed = result(run(env, datasets=["good"], previous=["good"]), datasets=["good"], previous=["good"])
+    assert parsed.status == ResultStatus.FAILED and parsed.reason_code == ReasonCode.POLICY_UNAVAILABLE
+    assert parsed.withheld == ("good",) and parsed.catalogs == ()
+
+
+def test_legacy_and_unscoped_policy_files_are_not_fallbacks(env):
+    permissive = json.dumps({"format_version": 1, "datasets": {"good": {"share": True}}})
+    (env / "policy/study1.json").write_text(permissive)
+    (env / "policy/catalog_policy.json").write_text(permissive)
+    parsed = result(run(env, datasets=["good"], previous=["good"]), datasets=["good"], previous=["good"])
+    assert parsed.status == ResultStatus.FAILED and parsed.reason_code == ReasonCode.POLICY_UNAVAILABLE
+    assert parsed.withheld == ("good",) and parsed.catalogs == ()

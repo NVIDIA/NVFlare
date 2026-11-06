@@ -37,7 +37,7 @@ from nvflare.app_common.fdn.catalog.common.payload import (
 )
 from nvflare.app_common.fdn.catalog.common.schema import ValidationError, validate
 from nvflare.app_common.fdn.catalog.site.connector import CatalogConnector, ConnectorError
-from nvflare.app_common.fdn.catalog.site.policy import PolicyError, apply_policy, load_policy
+from nvflare.app_common.fdn.catalog.site.policy import PolicyError, apply_policy, load_policy, policy_file_path
 from nvflare.app_common.fdn.catalog.site.site_config import (
     DATASET_NAME,
     SITE_CONFIG_FILE,
@@ -183,7 +183,7 @@ class CatalogExecutor(Executor):
         policy_root = self._policy_root(workspace_root)
         try:
             site = load_site_config(policy_root / SITE_CONFIG_FILE)
-            policy = load_policy(policy_root / f"{study}.json")
+            policy = load_policy(policy_file_path(policy_root, study))
         except (PolicyError, SiteConfigError):
             return self._fail(asked, previous, ReasonCode.POLICY_UNAVAILABLE)
 
