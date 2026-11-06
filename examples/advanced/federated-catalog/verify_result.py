@@ -25,9 +25,10 @@ def verify_result(data_root, store_root):
     data_root = Path(data_root)
     output = json.loads((Path(store_root) / "discovery.json").read_text())
     expected = {
-        (site, "omop")
+        (site, dataset)
         for site in SITES
-        if json.loads((data_root / site / "local/fdn/default.json").read_text())["datasets"]["omop"]["share"]
+        for dataset, rule in json.loads((data_root / site / "local/fdn/default.json").read_text())["datasets"].items()
+        if rule["share"]
     }
     if {(e["client"], e["dataset"]) for e in output["entries"]} != expected:
         raise RuntimeError("Discovery does not match the current site publication policies")
@@ -38,7 +39,11 @@ def verify_result(data_root, store_root):
         tables = {t["name"]: t for t in metadata["tables"]}
         expected_tables = {"person", "observation_period", "visit_occurrence", "condition_occurrence"}
         if entry["client"] == "site-1":
-            expected_tables |= {"drug_exposure", "measurement"}
+            expected_tables.add("drug_exposure")
+        if entry["dataset"] not in ("oncology", "registry") and not (
+            entry["client"] == "site-2" and entry["dataset"] == "omop"
+        ):
+            expected_tables.add("measurement")
         if set(tables) != expected_tables:
             raise RuntimeError(f"Unexpected published tables at {entry['client']}: {sorted(tables)}")
         profile = metadata["semantic_profile"]
@@ -76,7 +81,7 @@ def verify_result(data_root, store_root):
         if condition_columns - common != extra:
             raise RuntimeError("Unexpected site-specific condition schema")
         config = json.loads((data_root / entry["client"] / "local/fdn/catalog_site.json").read_text())
-        backend = config["studies"]["default"]["omop"]["options"]["storage_format"]
+        backend = config["studies"]["default"][entry["dataset"]]["options"]["storage_format"]
         if metadata["provenance"]["source"] != backend:
             raise RuntimeError("Catalog provenance does not match the site's storage format")
         if not tables["condition_occurrence"]["relationships"]:

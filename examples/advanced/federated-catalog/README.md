@@ -24,8 +24,26 @@ python discover.py
 
 The default creates Parquet sources at both sites under
 `/tmp/nvflare/federated-catalog/data`. Site-1 has 64 synthetic persons and site-2
-has 96, with two visits and associated clinical events per person. These fixture
-sizes are known from preparation; the catalog does not calculate population sizes.
+has 96 in the main `omop` extract, with two visits and associated clinical events
+per person. Each site also has smaller, independent department/registry fixtures.
+These fixture sizes are known from preparation; the catalog does not calculate
+population sizes or clinical cohort membership.
+
+Each site has **three published datasets plus one withheld internal dataset**:
+
+| Site | Dataset | Published tables | Main difference |
+| --- | --- | ---: | --- |
+| site-1 | `omop` | 6 | General clinical extract |
+| site-1 | `cardiology` | 6 | Separate, smaller synthetic extract |
+| site-1 | `oncology` | 5 | Site-specific dataset; no measurement table |
+| site-2 | `omop` | 4 | Measurement table withheld by policy |
+| site-2 | `cardiology` | 5 | Measurement table shared; no drug exposure table |
+| site-2 | `registry` | 4 | Site-specific dataset; no measurement or drug exposure tables |
+
+Dataset names label illustrative extracts, not validated disease cohorts. Each
+has its own source binding, metadata, schema versions and publication rule.
+Table names such as `person` belong to their containing dataset; they are not
+merged across datasets or sites. Each fixture has a separate local ID range.
 
 ## Variation: Parquet and an RDBMS
 
@@ -69,6 +87,9 @@ remote PostgreSQL/MySQL credentials and database services are not required.
 
 ## Overlapping and different schemas
 
+The main `omop` dataset illustrates the following table coverage. Other datasets
+have their own coverage, as listed above.
+
 | Table | Site-1 source | Site-2 source | Published view |
 | --- | --- | --- | --- |
 | `person` | Present | Present | Source identifiers and birth month/day fields excluded |
@@ -104,11 +125,15 @@ python discover.py
 python discover.py --require-tables person condition_occurrence
 
 # Compare overlapping and site-specific columns of another table.
-python discover.py --table person
+python discover.py --dataset omop --table person
+
+# Show every table, column/type/nullability, primary key and relationship.
+python discover.py --dataset omop --show-schema
 ```
 
-The first query identifies site-1 as a metadata candidate and reports missing
-`measurement` metadata at site-2. The second identifies both sites. The script
+The default query reports a candidate per **site/dataset**, not just per site.
+For example, site-2/omop lacks published `measurement`, but site-2/cardiology
+has it. Requiring only the common clinical tables includes all six datasets. The script
 also prints common columns, site-specific additions, and differing storage types.
 A missing catalog table may reflect source coverage or publication policy; the
 consumer cannot infer which from its absence. A metadata candidate is not proof
@@ -117,8 +142,8 @@ The published `statistics` operation is a declaration; this example does not run
 federated statistics or a cohort query.
 
 The full result is printed by `job.py` and saved to
-`/tmp/nvflare/federated-catalog/store/discovery.json`. A fresh store has two `omop`
-entries with six published tables at site-1 and four at site-2. Catalog/schema
+`/tmp/nvflare/federated-catalog/store/discovery.json`. A fresh store has six dataset
+entries across the two sites, with the table counts listed above. Catalog/schema
 versions start at 1; unchanged reads retain their versions. Simulator logs and
 intermediate manifests are under
 `/tmp/nvflare/federated-catalog/simulation/catalog_read/`.
@@ -151,8 +176,9 @@ python job.py
 python verify_result.py
 ```
 
-Discovery now contains only site-1. Previous names are recovered from persistent
-state so site-2 can withdraw its earlier publication. Re-run preparation and the
+Discovery now contains five dataset entries: only site-2/omop is withdrawn,
+while site-2/cardiology and site-2/registry remain visible. Previous names are
+recovered from persistent state so a site can withdraw an individual dataset. Re-run preparation and the
 job to restore initial policies and sharing.
 
 ## Customize paths
