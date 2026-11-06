@@ -205,9 +205,20 @@ from `job.py`. Run it after rerunning the job whenever a policy changes.
 
 ## Withdraw one site's metadata
 
+Both sites have a complete publication-policy example for this run:
+
+| Example policy file | Install at the site | Behavior |
+| --- | --- | --- |
+| [config/catalog_site-1.json](config/catalog_site-1.json) | `site-1/local/fdn/default.json` | Keep site-1's datasets published |
+| [config/catalog_site-2.json](config/catalog_site-2.json) | `site-2/local/fdn/default.json` | Withdraw only site-2's `omop` dataset |
+
+These are publication-policy snapshots. The reader configurations are the
+separate `config/site-1/catalog_site.json` and `config/site-2/catalog_site.json`
+files shown above; the installed filenames keep the two contracts distinct.
+
 Edit `/tmp/nvflare/federated-catalog/data/site-2/local/fdn/default.json` as
 site-2's local owner. Set `datasets.omop.share` to `false` and keep the other
-publication rules. The complete [withdrawal policy](config/site-2-withdraw-omop.json) is:
+publication rules. The complete [withdrawal policy](config/catalog_site-2.json) is:
 
 ```json
 {

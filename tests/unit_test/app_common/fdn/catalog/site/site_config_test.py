@@ -142,7 +142,7 @@ def test_builtin_bindings_reject_redundant_or_inline_metadata(tmp_path, connecto
 
 def test_checked_in_example_catalog_inputs_are_valid_and_minimal():
     root = Path(__file__).resolve().parents[6] / "examples/advanced/federated-catalog/config"
-    paths = list(root.rglob("catalog_site*.json"))
+    paths = [path for site in ("site-1", "site-2") for path in (root / site).glob("catalog_site*.json")]
     assert len(paths) == 4
     for path in paths:
         raw = json.loads(path.read_text())
@@ -155,3 +155,14 @@ def test_example_sites_each_declare_their_own_reader():
     root = Path(__file__).resolve().parents[6] / "examples/advanced/federated-catalog/config"
     assert load_site_config(root / "site-1/catalog_site.json").default_connector == "parquet"
     assert load_site_config(root / "site-2/catalog_site.json").default_connector == "sqlite"
+
+
+def test_named_site_policy_examples_use_the_publication_policy_contract():
+    from nvflare.app_common.fdn.catalog.site.policy import load_policy
+
+    root = Path(__file__).resolve().parents[6] / "examples/advanced/federated-catalog/config"
+    site1 = load_policy(root / "catalog_site-1.json")
+    site2 = load_policy(root / "catalog_site-2.json")
+    assert site1.datasets["omop"].share
+    assert not site2.datasets["omop"].share
+    assert site2.datasets["cardiology"].share and site2.datasets["registry"].share
