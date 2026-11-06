@@ -16,6 +16,7 @@ python -m pip install -e .
 python -m pip install -r research/memorization-reduction/huggingface/requirements.txt
 cd research/memorization-reduction/huggingface
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
+export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
 # Choose a new absolute directory for every run. Commands reject existing outputs.
 RUN=/tmp/trap-hf-run-1
 python prepare.py --assets "$RUN/assets"

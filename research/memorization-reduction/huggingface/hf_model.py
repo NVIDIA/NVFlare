@@ -16,6 +16,7 @@
 
 import hashlib
 import json
+import os
 import resource
 import sys
 import time
@@ -39,6 +40,8 @@ SCORING_ID = "completion-only/shifted-labels/fp32/eager/max128/v1"
 
 
 def configure(seed=17):
+    if os.environ.get("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE") == "1":
+        raise RuntimeError("Set TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0 before starting this fp32 example")
     torch.manual_seed(seed)
     torch.set_num_threads(2)
     torch.backends.cuda.matmul.allow_tf32 = False

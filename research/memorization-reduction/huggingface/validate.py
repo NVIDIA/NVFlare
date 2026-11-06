@@ -45,8 +45,10 @@ from nvflare.app_opt.pt.trap_loss import PTTRAPLoss, causal_token_log_probs
 def independent_tokens(output, labels):
     """Negative cross entropy, independently shifted/masked (not the SDK helper)."""
     observed = labels[:, 1:]
-    loss = F.cross_entropy(output[:, :-1].float().transpose(1, 2), observed, ignore_index=-100, reduction="none")
-    return -loss, observed != -100
+    loss = F.cross_entropy(
+        output[:, :-1].float().reshape(-1, output.shape[-1]), observed.reshape(-1), ignore_index=-100, reduction="none"
+    )
+    return -loss.reshape(observed.shape), observed != -100
 
 
 def pair_auc(members, nonmembers):
@@ -206,6 +208,8 @@ def main():
             "gradient_tensors": sum(p.requires_grad for p in module.parameters()),
             "active_trap_tokens": active,
             "valid_tokens": mask.sum().item(),
+            "input_shape": list(tokens["input_ids"].shape),
+            "tf32_matmul": torch.backends.cuda.matmul.allow_tf32,
             "trap_penalty": sdk_penalty.item(),
             "full_state_bytes": sum(v.numel() * v.element_size() for v in baseline.values()),
             "audit_metrics": report["metrics"],
