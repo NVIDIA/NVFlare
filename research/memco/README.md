@@ -302,11 +302,8 @@ python -m flake8 research/memco
 python ci/check_license_header.py research/memco
 ```
 
-The 33 unit tests cover actual job export and worker-path resolution, Workspace API
-compatibility, domain subsets, partial-reward versus task-success metrics, known
-Wilson values, episode-level evidence reduction, structural eligibility,
-serialization, legacy/shadow isolation, snapshot rebuilding, domain loading, and
-deterministic LLM replay. They do not contact a model endpoint.
+All 33 unit tests pass without a model endpoint, including export/path regressions,
+Workspace compatibility, success metrics, Wilson promotion, aggregation, and replay.
 
 Run style checks explicitly on `research/memco`; the repository's default style-check
 targets do not include `research/`.
@@ -325,72 +322,28 @@ python research/memco/job.py \
   --workspace /tmp/memco-validation-live-final
 ```
 
-`HF_HUB_OFFLINE=1` assumes the embedding model is already cached; omit it on the
-first run to allow the download. Use a fresh workspace to avoid resuming old local
-memory. Each client evaluates the first task of the common PDDL evaluation set, so
-two evaluations here represent two clients evaluating the same task.
+Use a fresh workspace. Omit `HF_HUB_OFFLINE=1` if the embedding model is not cached.
 
-Task accuracy counts the environment's success flag. A positive partial-goal reward
-alone does not count as a solved task; average reward is reported separately.
+Validated on November 6, 2026 with MemCo commit `0be515ac0` on NVFlare core commit
+`c224d87d8` (source checkout), Python 3.11.4, and macOS 15.7.7 on Apple Silicon/CPU.
+The run used OpenAI `gpt-4o-mini-2024-07-18` and
+`sentence-transformers/all-MiniLM-L6-v2`; the canonical PDDL files passed dataset
+hash/count checks.
 
-The representative run was performed on November 6, 2026 with:
+The simulator completed in **204.9 seconds** with exit code `0`: two clients ran
+four training tasks, Wilson aggregation, and two parallel evaluations. The final
+global memory contained **2 candidates, 10 rules, and 23 artifacts**. Both clients
+received identical frozen global memory and retained unchanged local memory.
+Evaluation accuracy was **0%**, with average reward **0.125** from partial goal
+progress. Both clients evaluated the same first test task. This validates the
+integration flow, not the paper's performance; FEVER, ALFWorld, and production
+deployment were not exercised.
 
-| Component | Tested value |
-| --- | --- |
-| MemCo project commit | `0be515ac0ecb7b8b35cbeef49e2c7ef039c77e52` |
-| NVFlare core source commit | `c224d87d85a99c81aec97c663be470ad1bd8563d` |
-| NVFlare source version | `0+untagged.2.g0be515a` (editable source checkout) |
-| Platform | macOS 15.7.7, Apple Silicon, CPU execution |
-| Python | 3.11.4 |
-| Model endpoint | OpenAI; requested `gpt-4o-mini`, returned `gpt-4o-mini-2024-07-18` |
-| Model settings | Temperature `0.1`, maximum completion tokens `512` |
-| Embedding model | `sentence-transformers/all-MiniLM-L6-v2`, cached locally |
-| Relevant dependencies | OpenAI 1.99.5, sentence-transformers 5.2.2, PyTorch 2.8.0, NumPy 2.3.4 |
-| Environment dependencies | Gym 0.26.2, NLTK 3.8.1, LangChain 0.3.27, grpcio 1.74.0 |
-| Data | Canonical PDDL files; all five files passed `configs/datasets.json` hash/count checks |
-
-The command above and `configs/pddl-smoke.json` define the tested workload. The
-project commit includes the MemCo fixes on top of the listed NVFlare core commit.
-
-The simulator completed successfully (exit code `0`) in `204.9` seconds. Both clients
-completed training, the server reconstructed a nonempty Wilson global memory, and
-both clients completed evaluation with that frozen global memory:
-
-| Stage | Client / training domain | Completed tasks | Solved tasks | Accuracy | Average reward |
-| --- | --- | ---: | ---: | ---: | ---: |
-| Train | site-1 / gripper | 2 | 0 | 0.0 | 0.208333 |
-| Train | site-2 / blockworld | 2 | 0 | 0.0 | 0.083333 |
-| Evaluate | site-1 / gripper | 1 | 0 | 0.0 | 0.25 |
-| Evaluate | site-2 / blockworld | 1 | 0 | 0.0 | 0.0 |
-| Evaluate | Aggregate | 2 | 0 | 0.0 | 0.125 |
-
-The final server memory contains **2 candidates, 10 rules, and 23 artifacts**.
-The gripper local memory contains 2 episodes, 5 candidates, 26 rules, and 56 artifacts;
-the blockworld local memory contains 2 episodes, 4 candidates, 36 rules, and 64
-artifacts. After evaluation, each client's global-memory file matched the server's
-file byte for byte, and its local-memory JSON was unchanged.
-
-Observed metrics, dataset hashes, output hashes, environment, and tested revisions
-are recorded in [`validation/pddl-smoke.json`](validation/pddl-smoke.json). Full
-generated memories and logs remain in the workspace. Relative to
-`/tmp/memco-validation-live-final/memco-pddl-smoke`, the main outputs are:
-
-```text
-server/simulate_job/artifacts/pddl/server/global_memory.json
-server/simulate_job/artifacts/pddl/server/metrics_by_client.json
-site-1/simulate_job/artifacts/pddl/gripper/local_memory.json
-site-1/simulate_job/artifacts/pddl/gripper/train_metrics.json
-site-1/simulate_job/artifacts/pddl/gripper/evaluate_metrics.json
-site-2/simulate_job/artifacts/pddl/blockworld/local_memory.json
-site-2/simulate_job/artifacts/pddl/blockworld/train_metrics.json
-site-2/simulate_job/artifacts/pddl/blockworld/evaluate_metrics.json
-```
-
-This small run validates exported worker startup, client training, memory transport,
-Wilson aggregation, and parallel evaluation. Neither evaluation solved the task;
-the positive average reward reflects partial goal progress. It does not reproduce
-the paper's performance results. FEVER, ALFWorld, and distributed production
-deployment were not exercised in this validation.
+Server results are under
+`<workspace>/memco-pddl-smoke/server/simulate_job/artifacts/pddl/server/`
+in `global_memory.json` and `metrics_by_client.json`. Full revisions, dependency
+versions, per-client metrics, and dataset/output hashes are retained in
+[`validation/pddl-smoke.json`](validation/pddl-smoke.json).
 
 ## Reproducibility and Legacy Parity
 
