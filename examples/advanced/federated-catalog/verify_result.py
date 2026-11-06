@@ -18,7 +18,7 @@ import argparse
 import json
 from pathlib import Path
 
-from prepare_data import DEFAULT_DATA, SITES
+from constants import DEFAULT_DATA, SITES
 
 
 def verify_result(data_root, store_root):
