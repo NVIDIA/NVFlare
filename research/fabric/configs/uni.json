@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "experiment": "uni",
+  "model_key": "uni_dtfd",
+  "encoder": "UNI",
+  "model_name": "dtfd_mil",
+  "input_dim": 1024,
+  "sites": ["CBTN_CQU", "Harvard", "EBRAINS"],
+  "folds": [0, 1, 2, 3, 4],
+  "settings": {
+    "n_folds": 5,
+    "rounds": 5,
+    "local_epochs": 5,
+    "batch_size": 32,
+    "num_workers": 1,
+    "max_instances": 4000,
+    "lr": 0.00001,
+    "weight_decay": 0.0001,
+    "threshold": 0.5,
+    "seed": 42,
+    "device": "cuda",
+    "gpu": 0,
+    "amp": true,
+    "embed_dim": 512,
+    "attn_dim": 256,
+    "dropout": 0.25,
+    "dtfd_pseudo_bags": 8
+  },
+  "nvflare_version": "2.7.2"
+}
