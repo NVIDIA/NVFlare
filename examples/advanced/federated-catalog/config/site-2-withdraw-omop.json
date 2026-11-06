@@ -1,0 +1,46 @@
+{
+  "format_version": 1,
+  "datasets": {
+    "omop": {
+      "share": false,
+      "exclude_columns": {
+        "person": ["person_source_value", "month_of_birth", "day_of_birth"],
+        "observation_period": [],
+        "visit_occurrence": ["visit_source_value"],
+        "condition_occurrence": ["condition_source_value"],
+        "measurement": ["measurement_source_value"]
+      },
+      "exclude_metadata": ["owner"],
+      "exclude_tables": ["measurement"],
+      "operations": ["statistics"]
+    },
+    "cardiology": {
+      "share": true,
+      "exclude_columns": {
+        "person": ["person_source_value", "month_of_birth", "day_of_birth"],
+        "observation_period": [],
+        "visit_occurrence": ["visit_source_value"],
+        "condition_occurrence": ["condition_source_value"],
+        "measurement": ["measurement_source_value"]
+      },
+      "exclude_metadata": ["owner"],
+      "exclude_tables": [],
+      "operations": ["statistics"]
+    },
+    "registry": {
+      "share": true,
+      "exclude_columns": {
+        "person": ["person_source_value", "month_of_birth", "day_of_birth"],
+        "observation_period": [],
+        "visit_occurrence": ["visit_source_value"],
+        "condition_occurrence": ["condition_source_value"]
+      },
+      "exclude_metadata": ["owner"],
+      "exclude_tables": [],
+      "operations": ["statistics"]
+    },
+    "internal": {
+      "share": false
+    }
+  }
+}
