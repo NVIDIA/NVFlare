@@ -29,10 +29,11 @@ TRAP is introduced by Muhammed Ustaomeroglu et al. (2026) in
 arXiv:2609.32293. This design covers the NVFlare integration of the preprint's
 reference-based penalty and the supporting audit interfaces.
 
-**Full benchmarking results will be shared separately.** This draft includes unit
-tests and a small synthetic CPU integration example. Those establish implementation
-behavior, not a privacy/utility improvement. In particular, TRAP is not differential
-privacy, and this proposal adds neither a DP mechanism nor a privacy accountant.
+The [benchmark report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/TRAP_DP_RESULTS.md)
+now includes the completed frozen research study. Unit tests and the small synthetic
+CPU example establish this SDK integration's behavior; the separate benchmark
+evidence and its limits are summarized below. TRAP is not differential privacy,
+and this proposal adds neither a DP mechanism nor a privacy accountant.
 
 ## Components and ownership
 
@@ -249,5 +250,20 @@ that empirical mitigation has a formal DP guarantee.
 
 Open review questions include API maturity/naming, audit coverage reporting,
 deployment-specific reference provisioning and storage retention, and whether a
-future isolated audit worker is needed for hard time/memory bounds. Full benchmark
-tables, plots and scientific conclusions are intentionally deferred from this PR.
+future isolated audit worker is needed for hard time/memory bounds.
+
+## Benchmark evidence
+
+The [Pythia-70M benchmark report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/TRAP_DP_RESULTS.md)
+provides all 525 fits and 210 final evaluations, complete strength/seed tables,
+negative outcomes, privacy and compute accounting, and eight PNG/PDF figure pairs.
+It uses the frozen research implementation preceding this SDK refactor; the CPU
+example and unit tests separately validate the current integration.
+
+TRAP passed 60/84 paired accuracy-and-leakage screens, falling to 24/84 when the
+separate CE criterion was also required. The tested DP settings passed 0/84 in this
+bounded six-configuration search. Seed 13 is tuning; seeds 29/47 reuse its frozen
+configurations. These descriptive results motivate the APIs without establishing
+statistical non-inferiority, optimal DP performance, or a formal privacy guarantee
+for TRAP. They do not by themselves remove the experimental status or the API and
+security review gates above.

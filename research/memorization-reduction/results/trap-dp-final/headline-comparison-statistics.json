@@ -1,0 +1,66 @@
+{
+  "methods": {
+    "baseline": {
+      "evaluations": 21,
+      "field_accuracy": {
+        "min": 0.9616161616161616,
+        "median": 0.9737373737373738,
+        "max": 0.9858585858585859
+      },
+      "strongest_identifier_nAUC": {
+        "min": 0.45100000000000007,
+        "median": 0.7969999999999999,
+        "max": 0.9789999999999999
+      }
+    },
+    "trap": {
+      "evaluations": 84,
+      "field_accuracy": {
+        "min": 0.9515151515151515,
+        "median": 0.9727272727272728,
+        "max": 0.9929292929292929
+      },
+      "strongest_identifier_nAUC": {
+        "min": 0.10199999999999998,
+        "median": 0.336,
+        "max": 0.9940000000000002
+      }
+    },
+    "dp": {
+      "evaluations": 84,
+      "field_accuracy": {
+        "min": 0.00101010101010101,
+        "median": 0.2606060606060606,
+        "max": 0.7878787878787878
+      },
+      "strongest_identifier_nAUC": {
+        "min": 0.16500000000000004,
+        "median": 0.27349999999999985,
+        "max": 0.45650000000000013
+      }
+    }
+  },
+  "paired_comparisons": {
+    "trap": {
+      "comparisons": 84,
+      "accuracy_preserved": 70,
+      "leakage_reduced_by_at_least_0_05": 72,
+      "both": 60,
+      "accuracy_change_pp_min": -1.8181818181818188,
+      "accuracy_change_pp_median": 0.05050505050505083,
+      "accuracy_change_pp_max": 2.626262626262621
+    },
+    "dp": {
+      "comparisons": 84,
+      "accuracy_preserved": 0,
+      "leakage_reduced_by_at_least_0_05": 84,
+      "both": 0,
+      "accuracy_change_pp_min": -98.48484848484848,
+      "accuracy_change_pp_median": -71.71717171717171,
+      "accuracy_change_pp_max": -18.787878787878785
+    }
+  },
+  "population": "All 21 baseline and 84 finals per defense; 21 fixed zero-noise controls in full tables.",
+  "interpretation": "Pooled descriptive medians across K/strength/seed; not a matched-privacy estimate or CI.",
+  "seed_13_role": "tuning"
+}

@@ -115,9 +115,33 @@ uses a tiny CPU model, local synthetic records, and two-client FedAvg. It exerci
 loss integration and periodic audits without downloading a model or dataset.
 It is a functional example and supplies no evidence of privacy or utility benefit.
 
-Full paired benchmarking results will be shared separately. The
-:doc:`design document <../design/federated_memorization_reduction>`
-describes the API boundaries, reference assumptions, resource costs and review gates.
+Benchmark evidence
+------------------
+
+A separate Pythia-70M study completed **525 fits and 210 final evaluations** across
+seven client counts, four strengths per defense and three seeds. TRAP passed the
+paired accuracy-and-leakage screen in **60/84** comparisons; **24/84** also passed
+the separate cross-entropy screen. The tested DP settings passed **0/84** in this
+bounded search. The accuracy/leakage screen requires accuracy loss at most one
+percentage point and strongest identifier nAUC reduction at least 0.05, paired at
+the same client count and seed; the CE screen requires defended/baseline CE at most
+1.01. These are descriptive screens, not significance tests or matched DP budgets.
+
+.. image:: ../../research/memorization-reduction/figures/trap-dp-final/accuracy-leakage-headline.png
+   :alt: Individual baseline, TRAP and DP final evaluations, with median accuracy and measured leakage
+
+Dots show all evaluations; diamonds are pooled medians and lines show full ranges,
+not confidence intervals. Seed 13 is tuning; seeds 29/47 reuse frozen configurations.
+The `complete benchmark report
+<https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/TRAP_DP_RESULTS.md>`_
+includes every strength and seed, zero-noise controls, CE results, unattainable
+leakage targets, scalar tables, costs, reference provenance, and PNG/PDF figures.
+TRAP has no formal DP guarantee, and this search does not establish optimal DP
+performance. The measurements used the frozen research implementation before the
+SDK refactor, rather than the small CPU example or a rerun of this PR revision.
+
+The :doc:`design document <../design/federated_memorization_reduction>` describes the
+API boundaries, reference assumptions, resource costs and remaining review gates.
 
 .. toctree::
    :hidden:

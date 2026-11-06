@@ -56,8 +56,29 @@ stop model transmission, and missing/unsupported measurements are never zero lea
 No summary analytics are relayed by this example.
 
 See the [programming guide](../../docs/programming_guide/memorization_reduction.rst)
-and [design](../../docs/design/federated_memorization_reduction.md). Full paired
-benchmarking results and conclusions will be added separately.
+and [design](../../docs/design/federated_memorization_reduction.md).
+
+## Benchmark results
+
+The separate [Pythia-70M TRAP–DP benchmark](TRAP_DP_RESULTS.md) includes all **525 fits
+and 210 final evaluations** across seven client counts, four strengths per defense,
+and three seeds (13 is tuning). TRAP passed the paired accuracy-and-leakage screen
+in **60/84** comparisons; **24/84** also passed the separate cross-entropy screen.
+The tested DP settings passed **0/84** under either screen in this bounded search.
+TRAP provides no formal DP guarantee; these results do not establish optimal DP
+performance or matched privacy budgets.
+
+![Field accuracy and measured leakage across all baseline, TRAP and DP finals](figures/trap-dp-final/accuracy-leakage-headline.png)
+
+[Vector PDF](figures/trap-dp-final/accuracy-leakage-headline.pdf) ·
+[Protocol](TRAP_DP_COMPARISON.md) · [All results and limitations](TRAP_DP_RESULTS.md) ·
+[Complete scalar tables](results/trap-dp-final/README.md)
+
+The plot pools client counts, strengths and seeds; dots are individual evaluations,
+diamonds are medians, and lines are full ranges, not confidence intervals. Zero-noise
+controls and CE outcomes are retained in the full report. The benchmark used the
+frozen research implementation before this SDK refactor. The small `job.py` example
+above demonstrates integration and does not reproduce these measurements.
 
 ## Functional validation
 
@@ -71,7 +92,8 @@ Running `python job.py` completed two FedAvg rounds on both clients. All four
 local audit reports had `completed` status, matching site/round identities,
 baseline fingerprints, and 32 member plus 32 nonmember records. Job export with
 `python job.py --export --export-dir <output-directory>` also succeeded. These
-checks validate packaging and functional integration on CPU; full benchmarking
-results and GPU validation remain separate work.
+checks validate packaging and functional integration on CPU. The separate benchmark
+above reports research measurements; it does not establish CUDA validation of this
+PR revision.
 
 This research integration is distributed under the repository's [Apache 2.0 license](../../LICENSE).
