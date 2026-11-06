@@ -28,6 +28,8 @@ from nvflare.app_common.fdn.catalog.common.schema import DEFAULT_LIMITS, ReadLim
 SITE_CONFIG_FORMAT_VERSION = 1
 SITE_CONFIG_FILE = "catalog_site.json"
 PARQUET_CONNECTOR = "parquet"  # built in, so a site with only mounted Parquet data needs no connectors at all
+SQLITE_CONNECTOR = "sqlite"
+SQLITE_CONNECTOR_CLASS = "nvflare.app_opt.fdn.catalog.sqlite_connector.SQLiteConnector"
 DEFAULT_CONNECTOR_CLASS = "nvflare.app_opt.fdn.catalog.parquet_connector.ParquetConnector"
 _KEYS = frozenset({"format_version", "connectors", "default_connector", "studies", "limits", "installed_operations"})
 _CONNECTOR_KEYS = frozenset({"class", "args"})
@@ -56,7 +58,10 @@ class DatasetBinding:
 @dataclass(frozen=True)
 class SiteConfig:
     connectors: dict[str, ConnectorSpec] = field(
-        default_factory=lambda: {PARQUET_CONNECTOR: ConnectorSpec(DEFAULT_CONNECTOR_CLASS)}
+        default_factory=lambda: {
+            PARQUET_CONNECTOR: ConnectorSpec(DEFAULT_CONNECTOR_CLASS),
+            SQLITE_CONNECTOR: ConnectorSpec(SQLITE_CONNECTOR_CLASS),
+        }
     )
     default_connector: str = PARQUET_CONNECTOR  # reads a mounted dataset that has no binding
     studies: dict[str, dict[str, DatasetBinding]] = field(default_factory=dict)

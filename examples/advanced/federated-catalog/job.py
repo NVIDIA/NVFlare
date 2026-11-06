@@ -18,7 +18,6 @@ import argparse
 import json
 from pathlib import Path
 
-from client import ParquetCatalogReader
 from prepare_data import DEFAULT_DATA, SITES
 
 from nvflare.recipe import SimEnv
@@ -36,7 +35,6 @@ def main():
     store_root = str(Path(args.store_root).resolve())
     recipe = CatalogRecipe(
         sites=SITES,
-        catalog_reader=ParquetCatalogReader(),
         site_config_root=args.data_root,
         output_dir=store_root,
     )

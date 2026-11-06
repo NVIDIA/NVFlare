@@ -116,6 +116,9 @@ Enforce both per-dataset read limits and the enclosing job's aggregate budgets. 
 
 The pilot Parquet adapter accepts file mounts and nested partition files beneath each top-level table directory. It verifies all footers within read budgets and fails a dataset on corrupt or inconsistent parts. It does not infer partition-value types or replace existing local catalog engines.
 
+Built-in source names `parquet` and `sqlite` map to their connector implementations in site configuration, allowing different sites to use different storage without configuring a reader in the recipe. The SQLite adapter opens a local database read-only and inspects ordinary table schemas, primary keys and foreign keys within read budgets; it does not select application rows. Network database engines require separately installed and qualified connectors. `catalog_reader=` remains an optional extension for custom reading logic, with the same site publication-policy enforcement.
+
+
 ### 3.3 Data structures
 
 The read path uses these structures. Class names follow the Unity Catalog SDK (`CatalogInfo`, with nested `TableInfo` and `ColumnInfo`), so users who know it find the same names; one dataset is one `CatalogInfo`.
