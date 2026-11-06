@@ -49,13 +49,25 @@ site's policy before returning metadata; data rows stay in the site's dataset.
 The recipe reconciles results into `CatalogStore`, reopens the store, and searches
 it to demonstrate persistent discovery.
 
-The run checks the expected site/dataset set and column/owner exclusions. The
-printed JSON and `/tmp/nvflare/federated-catalog/store/discovery.json` contain two
+The printed JSON and `/tmp/nvflare/federated-catalog/store/discovery.json` contain two
 `clinical` entries, each with a `patients` table containing only `age` and `bmi`.
 The `internal` dataset does not appear. Catalog/schema version counters start at
 1 in a fresh store. Reading unchanged metadata again preserves those counters.
 Simulator logs and intermediate metadata manifests are under
 `/tmp/nvflare/federated-catalog/simulation/catalog_read/`.
+
+## Optional verification
+
+`job.py` configures the recipe, runs it and prints the result. To check a completed
+run's site/dataset selection and column/owner exclusions separately:
+
+```bash
+python verify_result.py
+```
+
+For custom paths, pass the same `--data-root` and `--store-root` used for the run.
+The verifier checks the saved `discovery.json` against the current site policies;
+run the job again after editing a policy before verifying.
 
 ## Change one site's policy
 
