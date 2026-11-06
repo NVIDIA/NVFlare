@@ -14,6 +14,8 @@
 
 import importlib.util
 import json
+import re
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -41,6 +43,12 @@ def test_cohort_isolation_and_final_membership():
     final = ids(data["final"]["members"])
     assert len(train) == 32 and len(local) == len(final) == 16
     assert not local & final and local | final == train
+    # Cohort labels must not be exposed in the text scored by the membership attacks.
+    rows = data["reference"] + data["validation"]
+    rows += [row for site in ("site-1", "site-2") for row in data[site]["train"] + data[site]["nonmembers"]]
+    rows += data["final"]["nonmembers"]
+    assert len({row["prompt"] for row in rows}) == len(rows)
+    assert all(re.fullmatch(r"Fictional dossier [0-9a-f]{8}\. Access code:", row["prompt"]) for row in rows)
     other_groups = [ids(data[key]) for key in ("reference", "validation")]
     other_groups += [ids(data[key]["nonmembers"]) for key in ("site-1", "site-2", "final")]
     for index, group in enumerate(other_groups):
@@ -80,7 +88,7 @@ def test_coverage_detects_missing_failed_duplicate_and_partial_audits():
 
 
 def test_offline_global_report_has_valid_workspace(tmp_path, monkeypatch):
-    monkeypatch.syspath_prepend(str(EXAMPLE))
+    monkeypatch.setitem(sys.modules, "hf_model", load("hf_model"))
     subject = load("evaluate")
     context = subject.FLContextManager(
         engine=subject.EvaluationWorkspace(str(tmp_path)), identity_name="global-evaluation", job_id="final-evaluation"

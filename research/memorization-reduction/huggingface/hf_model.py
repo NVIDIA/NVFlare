@@ -65,7 +65,8 @@ def records(group, count):
     for i in range(count):
         identity = f"{group}-{i:03d}"
         code = hashlib.sha256(identity.encode()).hexdigest()[:8]
-        result.append({"id": identity, "prompt": f"Fictional dossier {identity}. Access code:", "answer": f" {code}"})
+        display_id = hashlib.sha256(f"display:{identity}".encode()).hexdigest()[:8]
+        result.append({"id": identity, "prompt": f"Fictional dossier {display_id}. Access code:", "answer": f" {code}"})
     return result
 
 

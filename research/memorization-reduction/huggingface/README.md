@@ -50,7 +50,9 @@ pattern for collecting private patient/user data centrally.
 ## Task, cohorts, and attack adapter
 
 The task completes the access code in a fictional dossier. All records are generated
-locally from fixed identifiers; no real personal data are used. `make_cohorts()` in
+locally from fixed identifiers; no real personal data are used. All cohorts use
+the same prompt format and hashed display identifiers: split/site labels appear
+only in cohort metadata, never in the text scored by the attacks. `make_cohorts()` in
 `hf_model.py` makes 32 public-reference records and 16 validation records disjoint
 from both sites' training records. Each site trains on 16 records. Local audits
 use eight training members and eight disjoint nonmembers. Final evaluation uses
