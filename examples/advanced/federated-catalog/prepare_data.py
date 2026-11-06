@@ -178,7 +178,7 @@ def prepare_data(data_root):
         sources = {}
         example_root = Path(__file__).resolve().parent
         config = example_root / "config" / site
-        declarations = example_root / "fixtures" / site / "catalog.json"
+        declarations = example_root / "data" / "metadata" / site / "catalog.json"
         storage_format = json.loads((config / "catalog_site.json").read_text())["default_connector"]
         if storage_format not in {"parquet", "sqlite"}:
             raise ValueError(f"Synthetic data preparation does not support {storage_format!r}")
