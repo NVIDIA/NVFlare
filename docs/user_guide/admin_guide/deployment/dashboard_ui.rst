@@ -214,24 +214,28 @@ Configure the following project values and click ``Save``:
 
    Configure the project before freezing it.
 
-``Make Project Public`` enables the web interface's Sign Up flow. Save project
-and server settings before choosing ``Freeze Project`` on Project Home and
-confirming the dialog. Freezing creates the project's trust material and locks
-project and server configuration. Participant registration and review can
-continue after freezing.
+``Make Project Public`` enables the web interface's Sign Up flow and is required
+before freezing. Save project and server settings, make the project public, then
+choose ``Freeze Project`` on Project Home and confirm the dialog. Freezing
+creates the project's trust material and locks project and server configuration.
+Participant registration and review can continue after freezing.
 
 .. _dashboard_server_configuration:
 
 Server Configuration
 --------------------
 
-Enter the FL Server hostname or IP address and click ``Save``. If required for
-your deployment, ``CC Enabled`` exposes the target deployment environment and CPU
-family settings. Complete these values before freezing the project.
+Enter the FL Server hostname or IP address and click ``Save`` before freezing
+the project. Saving the hostname preserves server properties configured through
+the API.
+
+Dashboard-generated kits do not configure confidential computing or attestation.
+Use the :doc:`NVFlare provisioning workflow </programming_guide/provisioning_system>`
+for confidential computing deployments.
 
 .. figure:: ../../../resources/dashboard_server_config.png
    :width: 100%
-   :alt: Server Configuration form with the sample server hostname and CC settings.
+   :alt: Server Configuration form with the sample server hostname.
 
    Configure the FL Server.
 

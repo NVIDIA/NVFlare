@@ -1,10 +1,10 @@
 __turbopack_load_page_chunks__("/project-admin-dashboard", [
-  "static/chunks/273lua_7kywls.js",
-  "static/chunks/0mk9yh02vebqa.js",
-  "static/chunks/0sml7fuqxusl4.js",
-  "static/chunks/2s8ed3gfomtk_.js",
+  "static/chunks/0wifuq2vlq3h7.js",
+  "static/chunks/4314knczu2h27.js",
+  "static/chunks/2n6kn2ytg3yc_.js",
   "static/chunks/3jcbm97gzk4hf.js",
-  "static/chunks/06d29k2bh8gzt.js",
+  "static/chunks/0y9u7zxsokzs0.js",
+  "static/chunks/3il-w59ffhy8u.js",
   "static/chunks/3h3tndn00994o.js",
   "static/chunks/turbopack-40s8jzm9yyxo8.js"
 ])
