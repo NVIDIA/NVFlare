@@ -22,8 +22,6 @@ from pydantic import BaseModel, model_validator
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import RunStatus
-from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
-from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST
 from nvflare.job_config.api import FedJob
 from nvflare.recipe._failure_summary import failure_summary
 from nvflare.recipe._run_summary import _print_output, run_context, summary_header
@@ -134,7 +132,7 @@ class SimEnv(ExecEnv):
 
             _print_output(f"Simulation · {self.num_clients} clients\nStarting server and clients...", flush=True)
             workspace = os.path.join(self.workspace_root, job_id)
-            self._ensure_default_component_policy(workspace)
+            self._ensure_simulation_resources(workspace)
             run_status = job.simulator_run(
                 workspace=workspace,
                 n_clients=self.num_clients if self.clients is None else None,
@@ -166,27 +164,25 @@ class SimEnv(ExecEnv):
         self._job_statuses[job_id] = status.value
 
     @staticmethod
-    def _ensure_default_component_policy(workspace: str) -> None:
-        """Install the standard policy unless the simulation workspace already defines one."""
+    def _ensure_simulation_resources(workspace: str) -> None:
+        """Create resources without freezing the authorizer's built-in default policy."""
         local_dir = os.path.join(workspace, WorkspaceConstants.SITE_FOLDER_NAME)
         resources_file = os.path.join(local_dir, WorkspaceConstants.RESOURCES_CONFIG)
         default_resources_file = os.path.join(local_dir, WorkspaceConstants.DEFAULT_RESOURCES_CONFIG)
 
         target_file = resources_file if os.path.exists(resources_file) else default_resources_file
-        resources = {"format_version": 2}
         if os.path.exists(target_file):
             with open(target_file) as f:
                 resources = json.load(f)
             if not isinstance(resources, dict):
                 raise ValueError(f"Simulator resources file must contain a JSON object: {target_file}")
-
-        if CLASS_ALLOW_LIST in resources:
             return
 
-        resources[CLASS_ALLOW_LIST] = list(DEFAULT_CLASS_ALLOW_LIST)
+        # ComponentPathAuthorizer resolves its current defaults when class_allow_list
+        # is absent. Persisting a copy would leave reused workspaces on old defaults.
         os.makedirs(local_dir, exist_ok=True)
         with open(target_file, "w") as f:
-            json.dump(resources, f, indent=4)
+            json.dump({"format_version": 2}, f, indent=4)
 
     def get_job_status(self, job_id: str) -> Optional[str]:
         """Get the final status of a synchronous simulation, if known."""
