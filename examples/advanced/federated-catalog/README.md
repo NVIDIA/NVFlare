@@ -5,7 +5,7 @@ and `SimEnv`. The example follows the federated statistics/Hello PyTorch structu
 prepare data, run a short `job.py`, then inspect or verify results separately.
 It runs on CPU and downloads no datasets.
 
-The fixture is a deterministic, **synthetic OMOP CDM 5.4-shaped subset** based on
+The example data is a deterministic, **synthetic OMOP CDM 5.4-shaped subset** based on
 [OHDSI's CDM specification](https://ohdsi.github.io/CommonDataModel/cdm54.html).
 It contains selected columns and tables, not a complete CDM database. Concept IDs
 are 0 (unmapped), no vocabulary release is installed, and no clinical or vocabulary
@@ -34,8 +34,8 @@ python discover.py
 The checked-in configurations create Parquet sources at site-1 and SQLite sources at site-2 under
 `/tmp/nvflare/federated-catalog/data`. Site-1 has 64 synthetic persons and site-2
 has 96 in the main `omop` extract, with two visits and associated clinical events
-per person. Each site also has smaller, independent department/registry fixtures.
-These fixture sizes are known from preparation; the catalog does not calculate
+per person. Each site also has smaller, independent department/registry datasets.
+These dataset sizes are known from preparation; the catalog does not calculate
 population sizes or clinical cohort membership.
 
 Each site has **three published datasets plus one withheld internal dataset**:
@@ -52,7 +52,7 @@ Each site has **three published datasets plus one withheld internal dataset**:
 Dataset names label illustrative extracts, not validated disease cohorts. Each
 has its own source binding, metadata, schema versions and publication rule.
 Table names such as `person` belong to their containing dataset; they are not
-merged across datasets or sites. Each fixture has a separate local ID range.
+merged across datasets or sites. Each dataset has a separate local ID range.
 
 ## Per-site sources: Parquet and an RDBMS
 
@@ -67,7 +67,6 @@ The example includes the actual site configurations as readable files:
 | [config/site-1/catalog_site.json](config/site-1/catalog_site.json) | Explicit site-1 Parquet configuration |
 | [config/site-2/catalog_site.json](config/site-2/catalog_site.json) | Explicit site-2 SQLite configuration |
 | [config/site-1/catalog_policy.json](config/site-1/catalog_policy.json), [config/site-2/catalog_policy.json](config/site-2/catalog_policy.json) | Site-owned publication policies |
-| [fixtures/site-1/catalog.json](fixtures/site-1/catalog.json), [fixtures/site-2/catalog.json](fixtures/site-2/catalog.json) | Optional data-fixture OMOP declarations and Parquet key/relationship annotations |
 
 Site-1's complete `catalog_site.json`:
 
@@ -150,7 +149,7 @@ catalog preserves these differences rather than filling missing columns or
 assuming equivalent schemas.
 
 In mixed storage, physical types also differ: Parquet dates are `date32[day]`,
-while the SQLite fixture stores dates as ISO text. `discover.py` reports observed
+while the SQLite example stores dates as ISO text. `discover.py` reports observed
 types without asserting semantic equivalence or performing conversions.
 
 Each site also has an `internal` identity-crosswalk dataset which is never shared.
