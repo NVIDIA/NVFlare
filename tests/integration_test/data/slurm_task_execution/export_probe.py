@@ -39,17 +39,17 @@ def main():
     if args.clients < 1 or (args.device == "cuda" and gpu_count < 1):
         parser.error("clients and requested CUDA GPU count must be positive")
     if args.resource_format == "native":
+        slurm_spec = {
+            "nodes": 1,
+            "cpus_per_node": 1,
+            "mem_per_node": 2048,
+            "time": "00:20:00",
+        }
+        if gpu_count or args.lifetime == "task":
+            slurm_spec["gpus_per_node"] = gpu_count
         metadata = {
             "launcher_spec": {
-                "default": {
-                    "slurm": {
-                        "nodes": 1,
-                        "cpus_per_node": 1,
-                        "mem_per_node": 2048,
-                        "gpus_per_node": gpu_count,
-                        "time": "00:20:00",
-                    }
-                },
+                "default": {"slurm": slurm_spec},
                 "server": {"slurm": {"gpus_per_node": None}},
             }
         }
