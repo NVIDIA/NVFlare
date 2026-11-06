@@ -41,6 +41,7 @@ from nvflare.app_common.fdn.catalog.common.payload import (
     parse_result,
 )
 from nvflare.app_common.fdn.catalog.server.fileio import write_atomically
+from nvflare.fuel.utils.log_utils import log_progress
 
 _POLL_SECONDS = 0.5
 
@@ -88,6 +89,9 @@ class CatalogController(Controller):
             self.log_warning(fl_ctx, f"datasets name sites that are not in this job and are ignored: {unknown}")
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
+        log_progress(
+            self.logger, f"\n  Federated catalog · {len(self._clients)} sites\n\n  Reading site-approved metadata…"
+        )
         # One task per client because the names the server already holds differ by client.
         done = {name: threading.Event() for name in self._clients}
         for name in self._clients:
@@ -107,6 +111,14 @@ class CatalogController(Controller):
                     self.cancel_all_tasks(fl_ctx=fl_ctx)
                     break
         self._write_manifest()
+        if abort_signal.triggered:
+            log_progress(self.logger, "  Catalog collection cancelled")
+        else:
+            with self._lock:
+                responded = len(set(self._entries) & set(self._clients))
+            log_progress(
+                self.logger, f"\n  Catalog collection completed · {responded}/{len(self._clients)} sites responded"
+            )
 
     def _load_context(self, path: str, fl_ctx: FLContext):
         """What the server hands over in the job's own run directory, which every launcher exposes to the job: the
@@ -165,6 +177,8 @@ class CatalogController(Controller):
                 rc, payload if isinstance(payload, dict) else None, None if wanted is None else tuple(wanted)
             )
         client_task.result = None
+        message = "catalog response received" if rc == ReturnCode.OK else "catalog request failed"
+        log_progress(self.logger, f"  {name}: {message}")
 
     def _write_manifest(self):
         with self._lock:
