@@ -82,7 +82,8 @@ clients:
 - ALFWorld: `bathroom`, `bedroom`, `kitchen`, and `living`.
 
 PDDL, FEVER, and ALFWorld are separate experiments. Training calls one client at a
-time so each domain receives the cumulative global memory from preceding domains.
+time so each domain receives the training-time global snapshot returned by the
+preceding domain.
 After training, the server reconstructs a final global snapshot from every local
 memory artifact and distributes the frozen result to all clients for parallel
 `local_plus_global` evaluation.
@@ -110,6 +111,7 @@ research/memco/
 |-- job.py                     # MemCoServer, MemCoClient, recipe, and simulator entry
 |-- configs/
 |   |-- pddl.json              # PDDL Collab experiment
+|   |-- pddl-smoke.json        # Two-client, four-training-task integration run
 |   |-- fever.json             # FEVER Collab experiment
 |   |-- alfworld.json          # ALFWorld Collab experiment
 |   `-- datasets.json          # Expected dataset counts and hashes
@@ -124,6 +126,7 @@ research/memco/
 |   |-- validate_datasets.py   # Dataset validation
 |   |-- check_parity.py        # Memory artifact comparison
 |   `-- check_global_parity.py # Ordered local-to-global comparison
+|-- validation/                # Observed smoke metrics, revisions, and artifact hashes
 `-- tests/                     # Collab, aggregation, replay, and promotion tests
 ```
 
@@ -253,6 +256,11 @@ Each family configuration accepts these promotion settings:
 - `wilson_threshold`: required Wilson lower confidence bound, default `0.35`.
 - `promotion_threshold`: legacy empirical score threshold.
 
+An optional `domains` list selects an ordered subset of the family's supported
+domains. The smoke configuration uses `gripper` and `blockworld`, with two training
+tasks per client and one evaluation task per client. Without `domains`, the full
+canonical domain order is used.
+
 `wilson` rebuilds the committed global snapshot solely from episode-level evidence.
 Starting from an empty snapshot also removes records that no longer meet the lower
 bound. `shadow` keeps legacy promotion active while writing the corresponding Wilson
@@ -282,22 +290,107 @@ its configured output directory.
 
 ## Validation
 
-Run the MemCo unit tests without contacting a model endpoint:
+### Unit and Style Checks
+
+Run these commands from the NVIDIA FLARE repository root:
 
 ```bash
-cd research/memco
-PYTHONPATH=src python -m unittest discover -s tests -v
-```
-
-The tests cover Collab recipe construction, known Wilson values, episode-level
-evidence reduction, structural eligibility, serialization, legacy/shadow isolation,
-snapshot rebuilding, domain loading, and deterministic LLM replay.
-
-Check NVIDIA license headers from the repository root:
-
-```bash
+PYTHONPATH=.:research/memco/src python -m unittest discover -s research/memco/tests -v
+python -m black --check research/memco
+python -m isort --check-only research/memco
+python -m flake8 research/memco
 python ci/check_license_header.py research/memco
 ```
+
+The 33 unit tests cover actual job export and worker-path resolution, Workspace API
+compatibility, domain subsets, partial-reward versus task-success metrics, known
+Wilson values, episode-level evidence reduction, structural eligibility,
+serialization, legacy/shadow isolation, snapshot rebuilding, domain loading, and
+deterministic LLM replay. They do not contact a model endpoint.
+
+Run style checks explicitly on `research/memco`; the repository's default style-check
+targets do not include `research/`.
+
+### Representative NVFlare Run
+
+The two-client PDDL smoke configuration uses live model calls. Set `OPENAI_API_KEY`
+and `OPENAI_API_BASE` as described above, prepare the PDDL partitions, and run:
+
+```bash
+PYTHONHASHSEED=41 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+TOKENIZERS_PARALLELISM=false HF_HUB_OFFLINE=1 PYTHONPATH=. \
+python research/memco/job.py \
+  --config research/memco/configs/pddl-smoke.json \
+  --data-root /path/to/data-root \
+  --workspace /tmp/memco-validation-live-final
+```
+
+`HF_HUB_OFFLINE=1` assumes the embedding model is already cached; omit it on the
+first run to allow the download. Use a fresh workspace to avoid resuming old local
+memory. Each client evaluates the first task of the common PDDL evaluation set, so
+two evaluations here represent two clients evaluating the same task.
+
+Task accuracy counts the environment's success flag. A positive partial-goal reward
+alone does not count as a solved task; average reward is reported separately.
+
+The representative run was performed on November 6, 2026 with:
+
+| Component | Tested value |
+| --- | --- |
+| MemCo project commit | `0be515ac0ecb7b8b35cbeef49e2c7ef039c77e52` |
+| NVFlare core source commit | `c224d87d85a99c81aec97c663be470ad1bd8563d` |
+| NVFlare source version | `0+untagged.2.g0be515a` (editable source checkout) |
+| Platform | macOS 15.7.7, Apple Silicon, CPU execution |
+| Python | 3.11.4 |
+| Model endpoint | OpenAI; requested `gpt-4o-mini`, returned `gpt-4o-mini-2024-07-18` |
+| Model settings | Temperature `0.1`, maximum completion tokens `512` |
+| Embedding model | `sentence-transformers/all-MiniLM-L6-v2`, cached locally |
+| Relevant dependencies | OpenAI 1.99.5, sentence-transformers 5.2.2, PyTorch 2.8.0, NumPy 2.3.4 |
+| Environment dependencies | Gym 0.26.2, NLTK 3.8.1, LangChain 0.3.27, grpcio 1.74.0 |
+| Data | Canonical PDDL files; all five files passed `configs/datasets.json` hash/count checks |
+
+The command above and `configs/pddl-smoke.json` define the tested workload. The
+project commit includes the MemCo fixes on top of the listed NVFlare core commit.
+
+The simulator completed successfully (exit code `0`) in `204.9` seconds. Both clients
+completed training, the server reconstructed a nonempty Wilson global memory, and
+both clients completed evaluation with that frozen global memory:
+
+| Stage | Client / training domain | Completed tasks | Solved tasks | Accuracy | Average reward |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Train | site-1 / gripper | 2 | 0 | 0.0 | 0.208333 |
+| Train | site-2 / blockworld | 2 | 0 | 0.0 | 0.083333 |
+| Evaluate | site-1 / gripper | 1 | 0 | 0.0 | 0.25 |
+| Evaluate | site-2 / blockworld | 1 | 0 | 0.0 | 0.0 |
+| Evaluate | Aggregate | 2 | 0 | 0.0 | 0.125 |
+
+The final server memory contains **2 candidates, 10 rules, and 23 artifacts**.
+The gripper local memory contains 2 episodes, 5 candidates, 26 rules, and 56 artifacts;
+the blockworld local memory contains 2 episodes, 4 candidates, 36 rules, and 64
+artifacts. After evaluation, each client's global-memory file matched the server's
+file byte for byte, and its local-memory JSON was unchanged.
+
+Observed metrics, dataset hashes, output hashes, environment, and tested revisions
+are recorded in [`validation/pddl-smoke.json`](validation/pddl-smoke.json). Full
+generated memories and logs remain in the workspace. Relative to
+`/tmp/memco-validation-live-final/memco-pddl-smoke`, the main outputs are:
+
+```text
+server/simulate_job/artifacts/pddl/server/global_memory.json
+server/simulate_job/artifacts/pddl/server/metrics_by_client.json
+site-1/simulate_job/artifacts/pddl/gripper/local_memory.json
+site-1/simulate_job/artifacts/pddl/gripper/train_metrics.json
+site-1/simulate_job/artifacts/pddl/gripper/evaluate_metrics.json
+site-2/simulate_job/artifacts/pddl/blockworld/local_memory.json
+site-2/simulate_job/artifacts/pddl/blockworld/train_metrics.json
+site-2/simulate_job/artifacts/pddl/blockworld/evaluate_metrics.json
+```
+
+This small run validates exported worker startup, client training, memory transport,
+Wilson aggregation, and parallel evaluation. Neither evaluation solved the task;
+the positive average reward reflects partial goal progress. It does not reproduce
+the paper's performance results. FEVER, ALFWorld, and distributed production
+deployment were not exercised in this validation.
 
 ## Reproducibility and Legacy Parity
 
@@ -310,6 +403,9 @@ four points:
 2. Promoted global memory JSON.
 3. Per-task predictions, rewards, and completion flags.
 4. Aggregate PDDL, FEVER, and ALFWorld metrics.
+
+Accuracy is computed from task-success flags. Compare rewards and success flags
+directly when checking a report that uses a different partial-reward convention.
 
 External retrieval must also remain fixed. In particular, FEVER comparisons should
 use the same `FEVER_WIKI_CACHE` file.
