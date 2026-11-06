@@ -29,6 +29,7 @@ from pathlib import Path
 
 import pytest
 
+from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.network_utils import get_open_ports
@@ -39,7 +40,7 @@ from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
-from nvflare.private.defs import RequestHeader
+from nvflare.private.defs import CellChannel, RequestHeader
 from tests.peer_admin_test_utils import _write_json
 from tests.process_test_utils import OwnedProcesses
 
@@ -93,6 +94,7 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         args = {"directory": str(evidence[name])}
         if name == "site-1":
             args["target"] = "relay-1.site-2" if with_relay else "site-2"
+        config.setdefault("class_allow_list", []).append("tests.peer_admin_test_utils.PeerAdminJobTrainer")
         config["components"].append({"id": "probe", "path": "tests.peer_admin_test_utils.PeerAdminProbe", "args": args})
         path.write_text(json.dumps(config))
 
@@ -224,7 +226,37 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         config = json.loads(config_path.read_text())
         config["workflows"][0]["args"].update(num_rounds=1, wait_time_after_min_received=0)
         config_path.write_text(json.dumps(config))
+        children = tmp_path / "children"
+        config_path = job / "app/config/config_fed_client.json"
+        config = json.loads(config_path.read_text())
+        config["executors"][0]["executor"] = {
+            "path": "tests.peer_admin_test_utils.PeerAdminJobTrainer",
+            "args": {"directory": str(children)},
+        }
+        config_path.write_text(json.dumps(config))
         job_id = admin.submit_job(str(job))
+        for name in ("site-1", "site-2"):
+            wait_for(lambda name=name: (children / f"{name}.json").exists())
+        target = json.loads((children / "site-2.json").read_text())["fqcn"]
+        assert "private-job-error-marker" in json.dumps(admin.show_errors(job_id, "client", ["site-2"]))
+        job_cases = [{"name": "peer_job_errors"}]
+        if with_relay:
+            job_cases.extend(
+                [
+                    {"name": "forged_server_job_errors", "forge_origin": True},
+                    {"name": "forged_parent_job_errors", "forge_origin": target.rsplit(".", 1)[0]},
+                ]
+            )
+        for case in job_cases:
+            case.update(channel=CellChannel.CLIENT_COMMAND, topic=AdminCommandNames.SHOW_ERRORS, target=target)
+        result_path.unlink()
+        _write_json(evidence["site-1"] / "request.json", job_cases)
+        wait_for(result_path.exists)
+        job_results = json.loads(result_path.read_text())
+        assert all(r["rc"] == ReturnCode.UNAUTHENTICATED for r in job_results), job_results
+        assert "private-job-error-marker" in json.dumps(admin.show_errors(job_id, "client", ["site-2"]))
+        summary["job_commands"] = job_results
+        children.joinpath("release").write_text("finish")
 
         def finished():
             status = admin.get_job_meta(job_id).get("status", "")

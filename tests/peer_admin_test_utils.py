@@ -21,14 +21,17 @@ The probe uses only the enrolled attacker's existing Cell and authentication fil
 import json
 import os
 import threading
+import time
 import traceback
 from pathlib import Path
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
+from nvflare.app_common.np.np_trainer import NPTrainer
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, SysCommandTopic, new_cell_message
+from nvflare.widgets.widget import WidgetID
 
 
 def _write_json(path, value):
@@ -96,19 +99,19 @@ class PeerAdminProbe(FLComponent):
                 self.worker.join(timeout=15)
 
     def observe(self, message):
-        if message.get_header(MessageHeaderKey.CHANNEL) == CellChannel.CLIENT_MAIN:
+        if message.get_header(MessageHeaderKey.CHANNEL) in (CellChannel.CLIENT_MAIN, CellChannel.CLIENT_COMMAND):
             with self.lock, (self.directory / "received.jsonl").open("a") as stream:
                 stream.write(json.dumps(_metadata(message)) + "\n")
 
     def forge_server(self, message):
-        if message.get_header(MessageHeaderKey.CHANNEL) != CellChannel.CLIENT_MAIN:
+        if message.get_header(MessageHeaderKey.CHANNEL) not in (CellChannel.CLIENT_MAIN, CellChannel.CLIENT_COMMAND):
             return
         if self.omit_token:
             message.remove_header(CellMessageHeaderKeys.TOKEN)
         if self.forge_origin:
             # An enrolled hostile site can modify its own outgoing wire headers.
             # Keep its real token/signature; do not impersonate any TLS endpoint.
-            message.set_header(MessageHeaderKey.ORIGIN, "server")
+            message.set_header(MessageHeaderKey.ORIGIN, "server" if self.forge_origin is True else self.forge_origin)
             message.remove_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED)
 
     def probe(self, cell):
@@ -123,16 +126,21 @@ class PeerAdminProbe(FLComponent):
                 for case in cases:
                     self.forge_origin = case.get("forge_origin", False)
                     self.omit_token = case.get("omit_token", False)
-                    payload = Message(topic=SysCommandTopic.SHELL, body="cat peer-marker.txt")
-                    for key, value in case.get("headers", {}).items():
-                        payload.set_header(key, value)
+                    channel = case.get("channel", CellChannel.CLIENT_MAIN)
+                    payload = {}
+                    if channel == CellChannel.CLIENT_MAIN:
+                        payload = Message(topic=SysCommandTopic.SHELL, body="cat peer-marker.txt")
+                        for key, value in case.get("headers", {}).items():
+                            payload.set_header(key, value)
                     reply = cell.send_request(
-                        channel=CellChannel.CLIENT_MAIN,
-                        topic=SysCommandTopic.SHELL,
-                        target=self.target,
+                        channel=channel,
+                        topic=case.get("topic", SysCommandTopic.SHELL),
+                        target=case.get("target", self.target),
                         request=new_cell_message({}, payload),
                         timeout=10,
                     )
+                    self.forge_origin = False
+                    self.omit_token = False
                     results.append(
                         dict(
                             _metadata(reply),
@@ -144,3 +152,23 @@ class PeerAdminProbe(FLComponent):
                 _write_json(self.directory / "results.json", results)
         except Exception:
             _write_json(self.directory / "results.json", {"error": traceback.format_exc()})
+
+
+class PeerAdminJobTrainer(NPTrainer):
+    """Keep a real job alive while the test probes its command channel."""
+
+    def __init__(self, directory):
+        super().__init__()
+        self.directory = Path(directory)
+
+    def execute(self, task_name, shareable, fl_ctx, abort_signal):
+        engine = fl_ctx.get_engine()
+        engine.get_widget(WidgetID.INFO_COLLECTOR).add_error("regression", "marker", "private-job-error-marker")
+        self.directory.mkdir(parents=True, exist_ok=True)
+        _write_json(self.directory / f"{fl_ctx.get_identity_name()}.json", {"fqcn": engine.get_cell().get_fqcn()})
+        deadline = time.monotonic() + 90
+        while not (self.directory / "release").exists():
+            if abort_signal.triggered or time.monotonic() >= deadline:
+                raise RuntimeError("job command regression gate timed out or aborted")
+            time.sleep(0.05)
+        return super().execute(task_name, shareable, fl_ctx, abort_signal)
