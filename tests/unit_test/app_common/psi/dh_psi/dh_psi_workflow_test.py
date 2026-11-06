@@ -21,7 +21,7 @@ from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.wf_comm_server import _TASK_KEY_MANAGER, WFCommServer
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import PSIConst
 from nvflare.app_common.psi.dh_psi.dh_psi_workflow import DhPSIWorkFlow, SiteSize
@@ -364,13 +364,16 @@ class TestDhPSIWorkflow:
         communicator = WFCommServer()
         communicator._client_task_map[client_task.id] = client_task
         callback_ctx = self._callback_context()
+        result = make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
+        # Model the real client's echo of the scheduling authority's attempt.
+        result.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, client_task.attempt_id)
 
         with caplog.at_level("ERROR"):
             communicator.process_submission(
                 client=client,
                 task_name=PSIConst.TASK,
                 task_id=client_task.id,
-                result=make_reply(ReturnCode.EXECUTION_RESULT_ERROR),
+                result=result,
                 fl_ctx=callback_ctx,
             )
 

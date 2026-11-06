@@ -59,12 +59,12 @@ def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict
                 digest_dict: Dict = feature_metrics[feature_name].get(StC.STATS_DIGEST_COORD)
                 if digest_dict:
                     feature_digest = TDigest.from_dict(digest_dict)
-                    if feature_name not in g_digest[ds_name]:
+                    if not g_digest[ds_name].get(feature_name):
                         g_digest[ds_name][feature_name] = feature_digest
                     else:
                         g_digest[ds_name][feature_name] = g_digest[ds_name][feature_name].merge(feature_digest)
                 else:
-                    g_digest[ds_name][feature_name] = {}
+                    g_digest[ds_name].setdefault(feature_name, {})
 
     return g_digest
 

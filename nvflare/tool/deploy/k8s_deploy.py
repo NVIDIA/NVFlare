@@ -395,7 +395,8 @@ def _write_client_helm_chart(
                 "claimName": workspace_pvc,
                 "volumeName": WORKSPACE_VOLUME_NAME,
                 "mountPath": workspace_mount_path,
-            }
+            },
+            "jobs": {"claimName": None, "mountPath": "/mnt/nvflare-jobs"},
         },
         "workspaceConfig": {
             "namespace": None,

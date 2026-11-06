@@ -15,11 +15,11 @@
 
 import argparse
 
-from model import create_model
+from model import MODEL_SEED, create_model
 from prepare_data import add_dataset_arguments
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv, add_final_global_evaluation
+from nvflare.recipe import SimEnv, add_final_global_evaluation, is_export_requested
 
 DEFAULT_NUM_CLIENTS = 2
 DEFAULT_NUM_ROUNDS = 3
@@ -44,12 +44,50 @@ def define_parser() -> argparse.ArgumentParser:
     )
 
     add_dataset_arguments(parser)
+    parser.add_argument("--seed", type=int, default=MODEL_SEED)
+    parser.add_argument(
+        "--torch_threads",
+        type=int,
+        default=None,
+        help="Set PyTorch CPU threads per client (default: leave PyTorch settings unchanged).",
+    )
+    parser.add_argument(
+        "--resume_training",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Restore the PyTorch checkpoint in exported task jobs only (task mode defaults to enabled).",
+    )
+    parser.add_argument(
+        "--execution_lifetime",
+        choices=("job", "task"),
+        default="job",
+        help="Keep client compute for the job, or export task workers for a configured Kubernetes/Slurm site.",
+    )
 
     return parser
 
 
+def parse_args(argv=None):
+    parser = define_parser()
+    args = parser.parse_args(argv)
+    if args.execution_lifetime == "task" and not is_export_requested():
+        parser.error(
+            "task lifetime requires --export for a configured Kubernetes/Slurm site; local simulation requires job lifetime"
+        )
+    return args
+
+
 def create_recipe(args):
+    seed = getattr(args, "seed", MODEL_SEED)
     train_args = ["--dataset", args.dataset]
+    if seed != MODEL_SEED:
+        train_args.extend(("--seed", str(seed)))
+    if getattr(args, "resume_training", None) is not None:
+        if getattr(args, "execution_lifetime", "job") != "task":
+            raise ValueError("--resume_training requires --execution_lifetime task; job mode keeps state in memory")
+        train_args.append("--resume_training" if args.resume_training else "--no-resume_training")
+    if getattr(args, "torch_threads", None) is not None:
+        train_args.extend(("--torch_threads", str(args.torch_threads)))
     if args.dataset == "cifar10":
         train_args.extend(("--data_root", args.data_root))
 
@@ -58,13 +96,14 @@ def create_recipe(args):
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
         # Model can be specified as class instance or dict config:
-        model=create_model(),
+        model=create_model(seed=seed),
         # Alternative: model={"class_path": "model.SimpleNetwork", "args": {}},
         # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
         train_script="client.py",
         # Pass argv directly so a client-local path containing spaces, quotes,
         # or apostrophes keeps its exact argument boundary without shell parsing.
         train_args=train_args,
+        execution_lifetime=getattr(args, "execution_lifetime", "job"),
     )
     # Always verify the persisted final global model in the basic quickstart.
     add_final_global_evaluation(recipe)
@@ -73,7 +112,7 @@ def create_recipe(args):
 
 
 def main(argv=None):
-    args = define_parser().parse_args(argv)
+    args = parse_args(argv)
     recipe = create_recipe(args)
 
     env = SimEnv(num_clients=args.n_clients)

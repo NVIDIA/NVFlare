@@ -341,3 +341,14 @@ sequenceDiagram
 
 We provide federated statistics operators that can easily aggregate and visualize the local statistics for
 different data site and features. We hope this feature will make it easier to perform federated data analysis.
+
+
+### Task execution lifetime
+
+The dataframe and image recipe examples accept `--execution_lifetime task`.
+Export this configuration for a scheduler-backed task site (Kubernetes; Slurm
+integration is separate), where `StatisticsExecutor` and its named generator
+run in a fresh worker for each assignment. Local Process/Docker task execution
+is deferred; use the default job lifetime for simulator and local POC runs. Privacy filters and cleansers stay in the
+Client Job. Generators must load their data during initialization and cannot depend
+on in-memory state from previous statistics tasks. The default is `job` lifetime.

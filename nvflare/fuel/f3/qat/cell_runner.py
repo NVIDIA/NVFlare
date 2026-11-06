@@ -14,7 +14,6 @@
 
 import os
 import shlex
-import subprocess
 import sys
 import threading
 import time
@@ -24,6 +23,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.utils.process_utils import popen_in_new_session
 
 from .net_config import NetConfig
 
@@ -165,7 +165,7 @@ class CellRunner:
         print(f"Start Cell Command: {command}")
 
         if start_it:
-            return subprocess.Popen(shlex.split(command), shell=False, preexec_fn=os.setsid, env=os.environ.copy())
+            return popen_in_new_session(shlex.split(command), shell=False, env=os.environ.copy())
         else:
             return None
 

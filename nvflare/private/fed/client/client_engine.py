@@ -381,8 +381,8 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
 
         return "Start the client app..."
 
-    def notify_job_status(self, job_id: str, job_status):
-        self.client_executor.notify_job_status(job_id, job_status)
+    def notify_job_status(self, job_id: str, job_status, launch_id=None):
+        self.client_executor.notify_job_status(job_id, job_status, launch_id)
 
     def get_client_name(self):
         return self.client.client_name

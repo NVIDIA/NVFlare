@@ -73,6 +73,8 @@ paths:
             schema:
               $ref: '#/components/schemas/Project'
       responses:
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "200":
           description: Project patched
           content:
@@ -131,6 +133,10 @@ paths:
                 pin:
                   type: string
       responses:
+        "409":
+          $ref: '#/components/responses/RequestRejected'
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "200":
           description: API accepted
           content:
@@ -190,6 +196,12 @@ paths:
             schema:
               $ref: '#/components/schemas/BaseClient'
       responses:
+        "403":
+          $ref: '#/components/responses/RequestRejected'
+        "409":
+          $ref: '#/components/responses/RequestRejected'
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "201":
           description: Resource created
           content:
@@ -204,7 +216,8 @@ paths:
     get:
       security:
       - bearerAuth: []
-      summary: Get a list of all clients
+      summary: Get client sites visible to the caller
+      description: Approved project administrators see all sites. Org Admin applicants see only their own pending sites in their registered organization; approved Org Admins see their own sites. Members and Leads receive an empty list.
       operationId: get_clients
       responses:
         "200":
@@ -249,6 +262,8 @@ paths:
             schema:
               $ref: "#/components/schemas/BaseClient"
       responses:
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "200":
           description: API accepted
           content:
@@ -347,6 +362,10 @@ paths:
                 pin:
                   type: string
       responses:
+        "409":
+          $ref: '#/components/responses/RequestRejected'
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "200":
           description: API accepted
           content:
@@ -367,7 +386,7 @@ paths:
   /users:
     post:
       summary: "Create user"
-      description: "Create a user registration."
+      description: Public signup accepts member, lead, or org_admin role requests. The account remains pending until a project administrator approves the complete role and organization. Project-admin and custom roles cannot be requested publicly.
       operationId: "create_user"
       requestBody:
         required: true
@@ -376,6 +395,12 @@ paths:
             schema:
               $ref: '#/components/schemas/RqsUser'
       responses:
+        "403":
+          $ref: '#/components/responses/RequestRejected'
+        "409":
+          $ref: '#/components/responses/RequestRejected'
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "201":
           description: Resource created
           content:
@@ -452,7 +477,7 @@ paths:
       security:
       - bearerAuth: []
       summary: "Updated user"
-      description: "This can only be done by the logged in user."
+      description: Users can complete an unset role and organization only before approval. Existing or approved identity fields require a project administrator. To approve a pending user, supply reviewed_role and reviewed_organization matching the registration shown to the administrator.
       operationId: "update_user"
       parameters:
         - name: "id"
@@ -468,6 +493,10 @@ paths:
             schema:
               $ref: "#/components/schemas/RqsUser"
       responses:
+        "409":
+          $ref: '#/components/responses/RequestRejected'
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "200":
           description: API accepted
           content:
@@ -534,6 +563,10 @@ paths:
                 pin:
                   type: string
       responses:
+        "409":
+          $ref: '#/components/responses/RequestRejected'
+        "400":
+          $ref: '#/components/responses/InvalidName'
         "200":
           description: API accepted
           content:
@@ -552,12 +585,43 @@ paths:
                     type: "string"
 
 components:
+  responses:
+    RequestRejected:
+      description: A role or ownership policy rejects the request (403), or the reviewed registration/project setup changed or is incomplete (409). Correct the request or reload and review the current registration.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/NameValidationError'
+    InvalidName:
+      description: A supplied or stored name does not satisfy provisioning rules. Correct the indicated field before saving or downloading a startup kit.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/NameValidationError'
+          example:
+            status: error
+            message: Organization must contain only letters, digits, and underscores.
+            errors:
+              organization: Organization must contain only letters, digits, and underscores.
   securitySchemes:
     bearerAuth:            # arbitrary name for the security scheme
       type: http
       scheme: bearer
       bearerFormat: JWT    # optional, arbitrary value for documentation purposes
   schemas:
+    NameValidationError:
+      type: object
+      required: [status, message, errors]
+      properties:
+        status:
+          type: string
+          enum: [error]
+        message:
+          type: string
+        errors:
+          type: object
+          additionalProperties:
+            type: string
     Project:
       type: "object"
       properties:
@@ -577,6 +641,7 @@ components:
           type: string
         server1:
           type: "string"
+          description: A hostname or IPv4 address without a scheme or port. May be empty while configuring the project, but is required before freezing.
         starting_date:
           type: "string"
         end_date:
@@ -591,15 +656,22 @@ components:
           type: "string"
         organization:
           type: "string"
+          description: Letters, digits, and underscores only. May be empty during initial user registration; a valid organization is required for startup kit download.
         email:
           type: "string"
         role:
           type: "string"
-          enum: ["user", "org_admin", "proj_admin"]
+          description: A requested role while pending, and an authorized role after approval. Public requests allow member, lead, org_admin, or an empty value during staged signup. Only an approved project administrator can assign project_admin or custom roles.
         approval_state:
           type: "integer"
           format: "int32"
-          description: "User approval state"
+          description: Pending is 0, denied is negative, and approved is at least 100. Public signup cannot set approval; approving an incomplete registration is rejected.
+        reviewed_role:
+          type: string
+          description: Required when approving a pending user. Must match the role reviewed in the users table.
+        reviewed_organization:
+          type: string
+          description: Required when approving a pending user. Must match the organization reviewed in the users table.
 
     RqsUser:
       allOf:
@@ -626,9 +698,11 @@ components:
       properties:
         name:
           type: "string"
+          pattern: '^[A-Za-z0-9_-]+$'
           example: "site-1"
         organization:
           type: "string"
+          pattern: '^[A-Za-z0-9_]+$'
           example: "nvidia"
         capacity:
           type: "object"

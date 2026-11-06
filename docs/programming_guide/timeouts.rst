@@ -1003,10 +1003,6 @@ For PSI operations, timeouts are controlled at lower levels:
 - **Task-level timeouts**: Use controller's general ``timeout`` parameter
 - **Communication timeouts**: Inherited from system ``heartbeat_timeout`` and ``peer_read_timeout``
 
-**Note**: For large-scale PSI operations, ensure adequate system-level timeouts in 
-``application.conf`` to handle the iterative Diffie-Hellman protocol exchanges.
-
-
 Aggregator Timeouts
 -------------------
 
@@ -1997,13 +1993,18 @@ Recommended Settings by Use Case
 Development Environment
 -----------------------
 
-Fast iteration with quick feedback:
+Fast iteration with quick feedback. Server ``fed_server.json`` (quick dead client detection,
+fast admin commands):
+
+.. code-block:: json
+
+   {
+     "servers": [{"heart_beat_timeout": 60, "admin_timeout": 5.0}]
+   }
+
+Component parameters:
 
 .. code-block:: python
-
-   # Server (fed_server.json)
-   heart_beat_timeout = 60        # Quick dead client detection
-   admin_timeout = 5.0            # Fast admin commands
 
    # Client API executor parameters
    heartbeat_timeout = 30.0
@@ -2018,19 +2019,36 @@ Fast iteration with quick feedback:
 Production - Standard Training
 ------------------------------
 
-Balanced settings for typical federated learning:
+Balanced settings for typical federated learning. Server ``fed_server.json``
+(``heart_beat_timeout``: 10 min before client considered dead):
+
+.. code-block:: json
+
+   {
+     "servers": [{"heart_beat_timeout": 600, "admin_timeout": 10.0}]
+   }
+
+Job ``config_fed_server.json``:
+
+.. code-block:: json
+
+   {
+     "server": {"task_request_interval": 2.0}
+   }
+
+``comm_config.json``:
+
+.. code-block:: json
+
+   {
+     "heartbeat_interval": 10,
+     "subnet_heartbeat_interval": 5,
+     "streaming_read_timeout": 300
+   }
+
+Component parameters:
 
 .. code-block:: python
-
-   # Server (fed_server.json)
-   heart_beat_timeout = 600       # 10 min before client considered dead
-   admin_timeout = 10.0
-   task_request_interval = 2.0
-
-   # comm_config.json
-   heartbeat_interval = 10
-   subnet_heartbeat_interval = 5
-   streaming_read_timeout = 300
 
    # Client API executor
    launch_timeout = 300.0
@@ -2040,12 +2058,18 @@ Balanced settings for typical federated learning:
 Production - Large Models (100M+ parameters)
 --------------------------------------------
 
-Extended timeouts for large model training:
+Extended timeouts for large model training. Server ``fed_server.json`` (20 min for large
+model operations):
+
+.. code-block:: json
+
+   {
+     "servers": [{"heart_beat_timeout": 1200}]
+   }
+
+Component parameters:
 
 .. code-block:: python
-
-   # Server
-   heart_beat_timeout = 1200      # 20 min for large model operations
 
    # Client API executor
    launch_timeout = 600.0      # 10 min for process launch and model init
@@ -2306,9 +2330,6 @@ These files are located in the job's ``app/config/`` directory.
    * - File
      - Location
      - Timeouts Controlled
-   * - application.conf
-     - app/config/
-     - Task timeouts, streaming timeouts, runner sync timeouts
    * - config_fed_client.json
      - app/config/
      - Executor timeouts, Client API task exchange, pipe handler settings
@@ -2403,34 +2424,24 @@ Client API Configuration (config_fed_client.json)
    }
 
 
-application.conf Settings
--------------------------
+Job Configuration Settings
+--------------------------
 
-.. code-block::
+Set these as top-level entries in the job's ``config_fed_client.json``:
 
-   # Task communication timeouts
-   get_task_timeout = 60.0
-   submit_task_result_timeout = 120.0
-   task_check_timeout = 5.0
+.. code-block:: json
 
-   # Cell/messaging timeouts
-   cell_wait_timeout = 5.0
-
-   # Streaming timeouts
-   streaming_per_request_timeout = 600.0
-   np_download_chunk_size = 4194304
-   tensor_download_chunk_size = 4194304
-
-   # Runner sync timeouts
-   runner_sync_timeout = 10.0
-   max_runner_sync_timeout = 60.0
-
-   # Shutdown
-   end_run_readiness_timeout = 10.0
-
-   # Server startup/dead-job safety flags
-   strict_start_job_reply_check = false
-   sync_client_jobs_require_previous_report = true
+   {
+     "get_task_timeout": 60.0,
+     "submit_task_result_timeout": 120.0,
+     "task_check_timeout": 5.0,
+     "cell_wait_timeout": 5.0,
+     "np_download_chunk_size": 4194304,
+     "tensor_download_chunk_size": 4194304,
+     "runner_sync_timeout": 10.0,
+     "max_runner_sync_timeout": 60.0,
+     "end_run_readiness_timeout": 10.0
+   }
 
 
 .. _server_startup_dead_job_safety_flags:
@@ -2438,8 +2449,10 @@ application.conf Settings
 Server Startup and Dead-Job Safety Flags
 ----------------------------------------
 
-These ``application.conf`` flags are server-side safety controls used during job startup
-and client heartbeat synchronization:
+These flags are read by the server parent (SP). Set them before SP startup using
+``NVFLARE_STRICT_START_JOB_REPLY_CHECK`` and
+``NVFLARE_SYNC_CLIENT_JOBS_REQUIRE_PREVIOUS_REPORT``, or the corresponding
+``--set`` arguments on SP's Python launch command:
 
 .. list-table::
    :header-rows: 1

@@ -465,6 +465,28 @@ API:
   implementation to be compatible with); every site running a Collab job
   must run 2.9.0 or newer.
 
+**Custom Workflow Harnesses and Simulators**
+
+- **Task results must echo the issued assignment cookies.** A harness
+  that calls ``WFCommServer.process_submission`` with a fresh
+  ``Shareable`` must copy the cookie jar from the task data returned by
+  ``process_task_request``. Results missing the attempt cookie are
+  rejected before the workflow's result callback, so a workflow waiting
+  for those results can stall until its timeout instead of raising an
+  exception at submission.
+
+  .. code-block:: python
+
+     task_name, task_id, task_data = comm.process_task_request(client, fl_ctx)
+     result = FLModelUtils.to_shareable(model)
+     result.set_cookie_jar(dict(task_data.get_cookie_jar()))
+     comm.process_submission(client, task_name, task_id, result, fl_ctx)
+
+  Result receipts remain independent of aggregation decisions:
+  ``RECEIVED`` and ``TASK_CLOSED`` stop resending; ``RETRY`` retains the
+  saved result for another submission without rerunning the executor.
+  ``TASK_CLOSED`` does not establish whether an earlier upload was received.
+
 **Framework and Workflow-Specific Changes** — scoped to Lightning, CCWF,
 and Swarm Learning users:
 

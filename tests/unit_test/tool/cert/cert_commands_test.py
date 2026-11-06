@@ -36,7 +36,8 @@ from cryptography.x509.oid import NameOID
 
 # Ensure parsers are initialized by importing cert_cli (registers module-level parser refs)
 import nvflare.tool.cert.cert_cli  # noqa: F401
-from nvflare.lighter.utils import load_crt, load_private_key_file, serialize_cert
+from nvflare.lighter.constants import PropKey
+from nvflare.lighter.utils import load_crt, load_private_key_file, serialize_cert, verify_cert_chain
 from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_commands import (
     _generate_csr,
@@ -841,13 +842,12 @@ class TestCertInit:
         bc = cert.extensions.get_extension_for_class(BasicConstraints)
         assert bc.value.ca is True
 
-    def test_rootca_is_self_signed(self, tmp_path):
-        _run_init(tmp_path)
+    @pytest.mark.parametrize("org", [None, "NVIDIA"])
+    def test_rootca_is_self_signed(self, tmp_path, org):
+        _run_init(tmp_path, org=org)
         cert = load_crt(str(tmp_path / "rootCA.pem"))
-        # For a self-signed cert, subject CN == issuer CN
-        subject_cn = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
-        issuer_cn = cert.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
-        assert subject_cn == issuer_cn
+        assert cert.subject == cert.issuer
+        cert.verify_directly_issued_by(cert)
 
     def test_org_in_cert(self, tmp_path):
         _run_init(tmp_path, org="NVIDIA")
@@ -2584,6 +2584,7 @@ def _write_request_zip(
     hash_mismatch=False,
     omit_fields=(),
     metadata_updates=None,
+    participant_updates=None,
 ):
     request_dir = tmp_path / name
     request_dir.mkdir()
@@ -2598,6 +2599,7 @@ def _write_request_zip(
     participant = {"name": name, "type": participant_type, "org": org}
     if participant_type == "admin":
         participant["role"] = cert_type
+    participant.update(participant_updates or {})
     site_yaml_path.write_text(
         yaml.safe_dump(
             {
@@ -2924,6 +2926,75 @@ class TestDistributedCertParticipantWorkflow:
         captured = capsys.readouterr()
         assert "listening_host" in captured.err
         assert "not supported" in captured.err
+
+    @pytest.mark.parametrize("option", [PropKey.EXTERNAL_CERT, PropKey.EXTERNAL_JOB_CA])
+    def test_request_rejects_external_cert_before_key_creation(self, tmp_path, capsys, monkeypatch, option):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.chdir(tmp_path)
+        participant_path = tmp_path / "site-1.yaml"
+        _write_participant_definition(
+            participant_path,
+            {
+                "name": "hospital_federation",
+                "participants": [
+                    {
+                        "name": "hospital-a",
+                        "type": "server" if option == PropKey.EXTERNAL_JOB_CA else "client",
+                        "org": "hospital_alpha",
+                        option: True,
+                    }
+                ],
+            },
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(_participant_request_args(participant_path))
+
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert option in captured.err
+        assert "centralized 'nvflare provision'" in captured.err
+        assert not (tmp_path / "hospital-a" / "hospital-a.key").exists()
+
+    @pytest.mark.parametrize("option", [PropKey.EXTERNAL_CERT, PropKey.EXTERNAL_JOB_CA])
+    def test_approve_rejects_external_cert_in_request_zip(self, tmp_path, capsys, monkeypatch, option):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        ca_dir = tmp_path / "ca"
+        profile_path = tmp_path / "project_profile.yaml"
+        handle_cert_init(
+            _init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir))
+        )
+        _write_project_profile(profile_path)
+        request_zip = _write_request_zip(
+            tmp_path,
+            participant_updates={option: True},
+        )
+        capsys.readouterr()
+
+        signed_zip = tmp_path / "site-3.signed.zip"
+        with patch("nvflare.tool.cert.cert_commands.sign_csr_files") as sign_csr:
+            with pytest.raises(SystemExit) as exc_info:
+                _run_cert_cli(
+                    [
+                        "approve",
+                        str(request_zip),
+                        "--ca-dir",
+                        str(ca_dir),
+                        "--profile",
+                        str(profile_path),
+                        "--out",
+                        str(signed_zip),
+                    ]
+                )
+
+        assert exc_info.value.code == 4
+        sign_csr.assert_not_called()
+        assert not signed_zip.exists()
+        error = capsys.readouterr().err
+        assert option in error
+        assert "centralized 'nvflare provision'" in error
 
     def test_request_from_user_participant_definition_derives_role(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
@@ -3536,6 +3607,11 @@ class TestDistributedCertRequestApprove:
             cert_bytes = zf.read("site-3.crt")
             rootca_bytes = zf.read("rootCA.pem")
             site_yaml_bytes = zf.read("site.yaml")
+        cert = x509.load_pem_x509_certificate(cert_bytes)
+        rootca = x509.load_pem_x509_certificate(rootca_bytes)
+        assert cert.issuer == rootca.subject
+        cert.verify_directly_issued_by(rootca)
+        verify_cert_chain(cert, [], rootca)
         assert signed_json["name"] == "site-3"
         assert signed_json["org"] == "nvidia"
         assert signed_json["kind"] == "site"

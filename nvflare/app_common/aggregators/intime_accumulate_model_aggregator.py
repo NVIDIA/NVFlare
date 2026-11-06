@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from threading import Lock
 from typing import Any, Dict, Union
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
@@ -84,6 +85,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
 
         self._single_dxo_key = ""
         self._weigh_by_local_iter = weigh_by_local_iter
+        self._lock = Lock()
 
         self.aggregation_weights = aggregation_weights
         self.exclude_vars = exclude_vars
@@ -179,8 +181,8 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             fl_ctx: context provided by workflow
 
         Returns:
-            The first boolean indicates if this shareable is accepted.
-            The second boolean indicates if aggregate can be called.
+            Whether this shareable is accepted. Collection eligibility and exposed shapes are
+            checked for all present expected DXOs before any member is accumulated.
         """
         try:
             dxo = from_shareable(shareable)
@@ -204,8 +206,8 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             self.log_warning(fl_ctx, f"Contributor {contributor_name} returned rc: {rc}. Disregarding contribution.")
             return False
 
-        # Accept expected DXO(s) in shareable
-        n_accepted = 0
+        # Preserve partial collections: only present expected DXOs are considered.
+        dxos = {}
         for key in self.expected_data_kind.keys():
             if key == self._single_dxo_key:  # expecting a single DXO
                 sub_dxo = dxo
@@ -214,20 +216,22 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             if not isinstance(sub_dxo, DXO):
                 self.log_warning(fl_ctx, f"Collection does not contain DXO for key {key} but {type(sub_dxo)}.")
                 continue
+            dxos[key] = sub_dxo
 
-            accepted = self.dxo_aggregators[key].accept(
-                dxo=sub_dxo, contributor_name=contributor_name, contribution_round=contribution_round, fl_ctx=fl_ctx
-            )
-            if not accepted:
-                return False
-            else:
-                n_accepted += 1
-
-        if n_accepted > 0:
-            return True
-        else:
+        if not dxos:
             self.log_warning(fl_ctx, f"Did not accept any DXOs from {contributor_name} in round {contribution_round}!")
             return False
+
+        # Keep the collection preflight and accumulation atomic with respect to other accepts and aggregation.
+        with self._lock:
+            if len(dxos) > 1:
+                for key, sub_dxo in dxos.items():
+                    if not self.dxo_aggregators[key].can_accept(sub_dxo, contributor_name, contribution_round, fl_ctx):
+                        return False
+            for key, sub_dxo in dxos.items():
+                if not self.dxo_aggregators[key].accept(sub_dxo, contributor_name, contribution_round, fl_ctx):
+                    return False
+            return True
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
         """Called when workflow determines to generate shareable to send back to contributors
@@ -239,6 +243,10 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             Shareable: the weighted mean of accepted shareables from contributors
         """
 
+        with self._lock:
+            return self._aggregate(fl_ctx)
+
+    def _aggregate(self, fl_ctx: FLContext) -> Shareable:
         self.log_debug(fl_ctx, "Start aggregation")
         result_dxo_dict = dict()
         # Aggregate the expected DXO(s)

@@ -170,11 +170,8 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 
 | Subcommand | Server? | Agent Readiness Status |
 | --- | --- | --- |
-| `create` | No | Deprecated — retain with stderr warning; use `python job.py --export --export-dir <job_folder>` + `nvflare job submit` instead |
 | `submit` | Yes | Needs JSON output, exit codes, structured errors; returns `job_id` immediately |
 | `wait` | Yes | Single-envelope automation wait; no progress stream |
-| `list-templates` | No | Deprecated — retain with stderr warning; use `nvflare recipe list`. Underscore alias `list_templates` kept. |
-| `show-variables` | No | Deprecated — retain with stderr warning; use Job Recipe API. Underscore alias `show_variables` kept. |
 
 `submit` already uses `new_secure_session()` (`nvflare/fuel/flare_api/flare_api.py`) for server connectivity. The same session infrastructure is used by `ProdEnv` and `PocEnv`.
 
@@ -184,7 +181,7 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 | --- | --- | --- |
 | `nvflare simulator` | — | Deprecated — retain with stderr warning; use Job Recipe SimEnv directly (`python job.py`) |
 | `nvflare poc` | `config`, `prepare`, `start`, `stop`, `clean`, `add-user`, `add-site` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass and to `clean` for stop-before-cleanup; register generated user/admin kits in the shared startup kit registry |
-| `nvflare config` | `add`, `use`, `inspect`, `list`, `remove` | User-facing startup kit registry commands; keeps 2.7.x root flags `-d/--startup_kit_dir`, deprecated `-pw/--poc_workspace_dir`, and deprecated `-jt/--job_templates_dir`; no server connection |
+| `nvflare config` | `add`, `use`, `inspect`, `list`, `remove` | User-facing startup kit registry commands; keeps 2.7.x root flags `-d/--startup_kit_dir` and deprecated `-pw/--poc_workspace_dir`; no server connection |
 | `nvflare poc config` | — | POC-specific local config, including the POC workspace path |
 | `nvflare study` | `register`, `show`, `list`, `remove`, `add-site`, `remove-site`, `add-user`, `remove-user` | Add multi-study lifecycle CLI using the active startup kit |
 | `nvflare provision` | — | Add JSON output, `--schema`, `--force` for Y/N prompts; restore pre-2.7.0 default: no args = generate `project.yml` |
@@ -697,22 +694,22 @@ Activation is local config mutation only. It does not contact the server.
 
 ### Startup Kit Registry Storage
 
-`~/.nvflare/config.conf` is the local storage file for the startup kit registry. The
+`~/.nvflare/config.json` is the local storage file for the startup kit registry. The
 user-facing command is `nvflare config`; the stored `startup_kits` data is an
 implementation detail, not a separate customer-facing concept.
 
-```hocon
-version = 2
-
-startup_kits {
-  active = "admin@nvidia.com"
-
-  entries {
-    "admin@nvidia.com" = "/tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com"
-    "lead@nvidia.com" = "/tmp/nvflare/poc/example_project/prod_00/lead@nvidia.com"
-    "org-admin@nvidia.com" = "/tmp/nvflare/poc/example_project/prod_00/org-admin@nvidia.com"
-    cancer_lead = "/secure/startup_kits/cancer/lead@nvidia.com"
-    fraud_org_admin = "/secure/startup_kits/fraud/org_admin@nvidia.com"
+```json
+{
+  "version": 2,
+  "startup_kits": {
+    "active": "admin@nvidia.com",
+    "entries": {
+      "admin@nvidia.com": "/tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com",
+      "lead@nvidia.com": "/tmp/nvflare/poc/example_project/prod_00/lead@nvidia.com",
+      "org-admin@nvidia.com": "/tmp/nvflare/poc/example_project/prod_00/org-admin@nvidia.com",
+      "cancer_lead": "/secure/startup_kits/cancer/lead@nvidia.com",
+      "fraud_org_admin": "/secure/startup_kits/fraud/org_admin@nvidia.com"
+    }
   }
 }
 ```
@@ -725,10 +722,10 @@ choose meaningful local IDs such as `cancer_lead`.
 
 The entry value is only the startup kit path. Metadata such as identity and certificate
 role is inspected from the startup kit when needed by commands such as `nvflare config inspect`;
-it is not duplicated in `config.conf`. Fields that are not reliably derivable from the
+it is not duplicated in `config.json`. Fields that are not reliably derivable from the
 startup kit are omitted from normal output.
 
-Other CLI state may also be stored in `~/.nvflare/config.conf`, but it is outside the
+Other CLI state may also be stored in `~/.nvflare/config.json`, but it is outside the
 startup kit registry and should not be part of the normal user workflow.
 
 ### `nvflare config`
@@ -744,8 +741,6 @@ Root compatibility flags:
   New workflows should use `nvflare config add` and `nvflare config use`.
 - `-pw` / `--poc_workspace_dir`: accepted for compatibility with 2.7.x scripts, but
   deprecated. New workflows should use `nvflare poc config --pw <poc-workspace-dir>`.
-- `-jt` / `--job_templates_dir`: accepted for compatibility with 2.7.x scripts, but job
-  template config is deprecated.
 - Interim development-only spellings such as `--poc.workspace`,
   `--poc.startup_kit`, and `--prod.startup_kit` are not part of the public
   compatibility contract and must be rejected.
@@ -756,7 +751,7 @@ Registers a startup kit location under a local ID.
 
 Behavior:
 
-1. Read `~/.nvflare/config.conf`.
+1. Read `~/.nvflare/config.json`.
 2. Validate that `<path>` is a valid admin/user startup kit directory. A valid admin/user
    startup kit must contain all three of:
    - `startup/fed_admin.json`
@@ -783,7 +778,7 @@ Makes a registered startup kit active.
 
 Behavior:
 
-1. Read `~/.nvflare/config.conf`.
+1. Read `~/.nvflare/config.json`.
 2. Resolve `<id>` to a path from `startup_kits.entries`.
 3. Validate that the path still passes the admin/user startup kit check.
 4. Set `startup_kits.active = "<id>"`.
@@ -843,7 +838,7 @@ active  id           status  identity         cert_role  path
 ------------------------------------------------------------------------
 *       cancer_lead  ok      lead@nvidia.com  lead       /secure/startup_kits/cancer/lead@nvidia.com
 
-config_file: /home/user/.nvflare/config.conf
+config_file: /home/user/.nvflare/config.json
 ```
 
 The JSON payload preserves the existing fields and adds best-effort local
@@ -907,7 +902,7 @@ and `nvflare network`, resolve the startup kit using this ordered lookup:
    kit for this command only by validating that explicit admin startup-kit path.
 3. If `NVFLARE_STARTUP_KIT_DIR` is set, validate it with the same three-file admin
    startup kit check and use it.
-4. Otherwise, use `startup_kits.active` from `~/.nvflare/config.conf`.
+4. Otherwise, use `startup_kits.active` from `~/.nvflare/config.json`.
 5. If no source resolves to a valid admin/user startup kit, fail before any server
    connection attempt.
 
@@ -1074,7 +1069,7 @@ Behavior:
 2. Remove the POC workspace.
 3. Remove startup kit entries whose canonical paths are under the canonical POC workspace
    path.
-4. Remove local POC workspace state from `~/.nvflare/config.conf`.
+4. Remove local POC workspace state from `~/.nvflare/config.json`.
 5. If the active startup kit was removed, clear `startup_kits.active`.
 6. Leave manually registered production startup kits untouched.
 
@@ -1086,7 +1081,7 @@ raw string prefix check because `/tmp/nvflare/poc-backup` is not under `/tmp/nvf
 
 General rules:
 
-- Validate before mutating `~/.nvflare/config.conf`.
+- Validate before mutating `~/.nvflare/config.json`.
 - Write config atomically so a failed command does not leave a partially written config.
 - Do not contact the server for `nvflare config` registration, activation, listing, or
   removal errors.
@@ -1094,7 +1089,7 @@ General rules:
   metadata should not break `config add` or `config use` when the startup kit path itself is
   valid.
 
-If `~/.nvflare/config.conf` does not exist:
+If `~/.nvflare/config.json` does not exist:
 
 - `nvflare config list` prints an empty list.
 - `nvflare config inspect` reports that no active startup kit is configured.
@@ -1108,7 +1103,7 @@ Hint: Run nvflare poc prepare, or run nvflare config add <id> <startup-kit-dir> 
 If config parsing fails, commands stop without modifying the file:
 
 ```text
-Error: cannot parse ~/.nvflare/config.conf
+Error: cannot parse ~/.nvflare/config.json
 Hint: Fix the config file, or move it aside and run nvflare poc prepare.
 ```
 
@@ -1237,7 +1232,7 @@ All commands need `--schema` and always emit a JSON envelope unless marked other
 | `--schema` | flag | No | — | Print command schema and exit |
 
 `nvflare poc config --pw <path>` is the preferred command for setting the local
-POC workspace. It writes `poc.workspace` in `~/.nvflare/config.conf`, the same
+POC workspace. It writes `poc.workspace` in `~/.nvflare/config.json`, the same
 storage key used by `poc prepare`, `poc start`, `poc stop`, and `poc clean`.
 Running `nvflare poc config` without `--pw` reports the effective POC workspace
 and any `NVFLARE_POC_WORKSPACE` environment override.
@@ -1351,20 +1346,6 @@ dynamically generates only that participant's startup kit with the existing POC 
 updates POC service metadata so `nvflare poc start -p <name>` can manage the new site.
 
 ### `nvflare job`
-
-#### `nvflare job create` — deprecated
-
-Retain with stderr deprecation warning. Migrate to `python job.py --export --export-dir <job_folder>` + `nvflare job submit -j <job_folder>`.
-
-| Argument | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `-j`, `--job_folder` | str | No | `"./current_job"` | Job folder path |
-| `-w`, `--template` | str | No | `"sag_pt"` | Template name or folder |
-| `-sd`, `--script_dir` | str | No | — | Additional script directory |
-| `-f`, `--config_file` | str (append) | No | — | Config file with optional `key=value` overrides |
-| `-force`, `--force` | flag | No | — | Overwrite existing config |
-| `-debug`, `--debug` | flag | No | — | Debug mode |
-| `--schema` | flag | No | — | Print command schema and exit |
 
 #### `nvflare job submit`
 
@@ -1603,14 +1584,6 @@ Schema contract:
 - `streaming: true`
 - `output_modes: ["json", "jsonl"]`
 
-#### `nvflare job list-templates` — deprecated
-
-Retain with stderr warning; use `nvflare recipe list` instead. Underscore alias `list_templates` accepted for backward compatibility.
-
-#### `nvflare job show-variables` — deprecated
-
-Retain with stderr warning; job variables are defined and inspected via the Job Recipe API. Underscore alias `show_variables` accepted for backward compatibility.
-
 ### `nvflare provision`
 
 | Argument | Type | Required | Default | Description |
@@ -1662,8 +1635,7 @@ Admin startup kit directories and startup kit IDs are often email addresses such
 2. **Startup kit IDs and paths with `@`** — When an ID or path containing `@` is passed
    on the command line, most shells pass it through unchanged. Some shell configurations
    may attempt expansion on `@`. NVFlare cannot control shell parsing; if a shell expands
-   `@`, the user must quote the argument. The config writer must quote IDs when HOCON
-   requires quoting.
+   `@`, the user must quote the argument.
 
 **Implementation requirement:** update `_SAFE_CERT_NAME_PATTERN` in `nvflare/tool/cert/cert_commands.py` from `[A-Za-z0-9][A-Za-z0-9._-]*` to `[A-Za-z0-9][A-Za-z0-9._@-]*`. No change is needed in argparse or path resolution — `@` is valid at the filesystem level and passes through argparse unchanged.
 
@@ -1693,7 +1665,6 @@ Retain with stderr warning. Underscore alias `authz_preview` accepted for backwa
 | `poc stop` | Add | Add | Add | — |
 | `poc clean` | Add | Add | Add | Add `--force` to stop a running local POC system before cleanup |
 | `config add/use/inspect/list/remove` | Add | Add | Add | Manage local startup kit registry; no server connection |
-| `job create` | — | — | — | Deprecated |
 | `job submit` | Add | Add | Add | Returns `job_id` immediately |
 | `job wait` | Add | Add | Add | Single-envelope automation wait/poll |
 | `job monitor` | Add | Add | Add | Interactive progress wait/poll |
@@ -1701,8 +1672,6 @@ Retain with stderr warning. Underscore alias `authz_preview` accepted for backwa
 | `provision` | Add | Add | Add | Restore pre-2.7.0 default; add `--force` |
 | `preflight-check` | Add | Add | Fix | 0=pass, 1=fail; alias `preflight_check` kept |
 | `config` | Add | Add | Add | Local config parent command and startup kit registry; no normal server connection |
-| `job list-templates` | — | — | — | Deprecated; alias `list_templates` kept |
-| `job show-variables` | — | — | — | Deprecated; alias `show_variables` kept |
 | `simulator` | — | — | — | Deprecated |
 | `dashboard` | — | — | — | No changes |
 | `authz-preview` | — | — | — | Deprecated; alias `authz_preview` kept |
@@ -1959,12 +1928,12 @@ All server-connected commands (`nvflare job`, `nvflare study`, `nvflare system`,
 `nvflare network`) resolve the startup kit using the same ordered lookup:
 
 1. Optional `--kit-id <id>` — override the active startup kit for this command
-   only by resolving a registered startup-kit ID from `~/.nvflare/config.conf`
+   only by resolving a registered startup-kit ID from `~/.nvflare/config.json`
    without changing `startup_kits.active`.
 2. Optional `--startup-kit <path>` — override the active startup kit for this
    command only by validating the explicit path as an admin/user startup kit.
 3. `NVFLARE_STARTUP_KIT_DIR` — validate the environment path as an admin/user startup kit.
-4. `startup_kits.active` — resolve the active ID from `~/.nvflare/config.conf`, then
+4. `startup_kits.active` — resolve the active ID from `~/.nvflare/config.json`, then
    validate the registered path.
 5. If no source resolves to a valid admin/user startup kit, fail before any server
    connection attempt.

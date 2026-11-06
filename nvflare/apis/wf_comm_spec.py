@@ -275,6 +275,27 @@ class WFCommSpec(ABC):
         """Called after process_task_request returns, but exception occurs before task is sent out."""
         raise NotImplementedError
 
+    def check_submission(
+        self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
+    ) -> bool:
+        """Validate assignment identity and replay an existing receipt before processing."""
+        return result.get_task_attempt_id() is None
+
+    def claim_submission(
+        self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
+    ) -> bool:
+        """Record complete result receipt before filters or application side effects.
+
+        Return True for the first publication only. Fenced authorities must retain
+        the receipt and let process_submission consume this request's claim.
+        The default preserves processing for legacy unfenced communicators.
+        """
+        return self.check_submission(client, task_name, task_id, result, fl_ctx)
+
+    def finish_submission(self, task_id: str, fl_ctx: FLContext):
+        """Release this request's claim even if filters or callbacks failed."""
+        pass
+
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         """Called by the Engine to process the submitted result from a client.
 
@@ -321,10 +342,18 @@ class WFCommSpec(ABC):
 
     def process_task_check(self, task_id: str, fl_ctx: FLContext):
         """Called by the Engine to check whether a specified task still exists.
+
+        For an attempt-fenced check, fl_ctx contains TASK_NAME and TASK_ATTEMPT_ID,
+        plus the authenticated peer context. Validate this assignment and set
+        FLContextKey.TASK_RESULT_RECEIPT to RECEIVED, RETRY, or TASK_CLOSED.
+        The caller uses that receipt without inspecting the returned record.
+        TASK_CLOSED ends retries but does not establish whether an earlier
+        publication was received. Legacy unfenced checks use task presence.
+
         Args:
             task_id: the id of the task
             fl_ctx: the FLContext
-        Returns: the ClientTask object if exists; None otherwise
+        Returns: the authority's task record if available; None otherwise
         """
         raise NotImplementedError
 

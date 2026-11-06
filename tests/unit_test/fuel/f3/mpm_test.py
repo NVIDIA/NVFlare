@@ -12,11 +12,86 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import threading
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.mpm import MainProcessMonitor
+
+
+@pytest.fixture
+def cleanup_monitor(monkeypatch):
+    monkeypatch.setattr(MainProcessMonitor, "_cleanup_cbs", [])
+    monkeypatch.setattr(MainProcessMonitor, "_logger", MagicMock())
+    monkeypatch.setattr(MainProcessMonitor, "_stopping", False)
+    return MainProcessMonitor
+
+
+def test_dependent_cleanup_precedes_process_services_on_one_thread(cleanup_monitor):
+    calls = []
+
+    def cleanup(name):
+        calls.append((name, threading.current_thread()))
+
+    def stop_transport():
+        cleanup("transport")
+
+    def stop_pools():
+        cleanup("global pools")
+
+    cleanup_monitor.add_cleanup_cb(stop_transport)
+    cleanup_monitor.add_cleanup_cb(stop_pools)
+    cleanup_monitor.prepend_cleanup_cb(cleanup, name="worker archival")
+    completed = threading.Event()
+    cleanup_monitor._do_cleanup(completed)
+
+    assert completed.is_set()
+    assert calls == [(name, threading.current_thread()) for name in ("worker archival", "transport", "global pools")]
+
+
+@pytest.mark.parametrize(
+    "error_type, expected_rc",
+    [
+        (RuntimeError, ProcessExitCode.EXCEPTION),
+        (ConfigError, ProcessExitCode.CONFIG_ERROR),
+        (ComponentNotAuthorized, ProcessExitCode.UNSAFE_COMPONENT),
+    ],
+)
+def test_execution_failure_is_classified_before_deferred_cleanup(cleanup_monitor, tmp_path, error_type, expected_rc):
+    logger = cleanup_monitor.logger()
+    errors_before_cleanup = []
+
+    def failed_main():
+        def failed_cleanup():
+            errors_before_cleanup.extend(call.args[0] for call in logger.error.call_args_list)
+            raise ValueError("secondary cleanup failure")
+
+        cleanup_monitor.prepend_cleanup_cb(failed_cleanup)
+        raise error_type("original execution failure")
+
+    with (
+        patch("nvflare.fuel.f3.mpm.AioContext.close_global_context"),
+        patch("nvflare.fuel.f3.mpm.threading.enumerate", return_value=[threading.current_thread()]),
+    ):
+        rc = cleanup_monitor.run(failed_main, run_dir=str(tmp_path), shutdown_grace_time=0)
+
+    assert rc == expected_rc
+    assert any("original execution failure" in message for message in errors_before_cleanup)
+    assert any("secondary cleanup failure" in call.args[0] for call in logger.error.call_args_list)
+
+
+def test_dependent_cleanup_rejects_duplicate_callback(cleanup_monitor):
+    def cleanup():
+        pass
+
+    cleanup_monitor.add_cleanup_cb(cleanup)
+    with pytest.raises(RuntimeError, match="already registered"):
+        cleanup_monitor.prepend_cleanup_cb(cleanup)
 
 
 def _fake_thread(name, daemon):
@@ -107,3 +182,22 @@ class TestMainProcessMonitorReturnCode:
 
         force_exit = self._run(tmp_path / "missing", _fail_publication)
         force_exit.assert_called_once_with(ProcessExitCode.EXCEPTION)
+
+
+@pytest.mark.parametrize("completed", [True, False])
+def test_cleanup_deadline_policy_does_not_depend_on_thread_scheduling(cleanup_monitor, monkeypatch, completed):
+    from nvflare.fuel.f3 import mpm
+
+    waiter = MagicMock()
+    waiter.wait.return_value = completed
+    cleanup_thread = MagicMock()
+    local_threading = SimpleNamespace(Event=lambda: waiter, Thread=MagicMock(return_value=cleanup_thread))
+    monkeypatch.setattr(mpm, "threading", local_threading)
+    monkeypatch.setattr(mpm, "time", SimpleNamespace(sleep=MagicMock()))
+    cleanup_monitor.add_cleanup_cb(lambda: None)
+
+    cleanup_monitor._start_shutdown(shutdown_grace_time=0, cleanup_grace_time=0.1)
+
+    cleanup_thread.start.assert_called_once_with()
+    waiter.wait.assert_called_once_with(timeout=0.1)
+    assert cleanup_monitor.logger().warning.called is (not completed)

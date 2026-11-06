@@ -29,7 +29,7 @@ and are not affected.
 How it works
 ============
 
-Provisioning creates a job-signing intermediate CA — ``job_ca.crt`` and
+By default, provisioning creates a job-signing intermediate CA — ``job_ca.crt`` and
 ``job_ca.key`` — in the **server** startup kit only. It is signed by the project
 root CA, so no participant needs a new trust anchor. When a job is deployed, the
 server issues one certificate per participating site (``CN=<site name>``, with
@@ -39,13 +39,20 @@ job's run directory, and sends each client its own credential inside the deploy
 message over the existing mutually authenticated channel. Every site verifies
 these certificates against the ``rootCA.pem`` it already has.
 
+With ``external_job_ca: true``, deployment tooling supplies the server's job CA
+certificate chain and private key instead. The chain must reach the same trusted
+root; the server still issues job certificates locally, without contacting the
+external CA. This setting is required by :ref:`public_root_only_provisioning`.
+See :ref:`external_job_ca` for the certificate profile and installation steps.
+
 Job certificates are valid for 30 days by default (see `Certificate validity`_)
 and are not renewed: a job cannot run longer than its certificate.
 
 What to expect after provisioning
 =================================
 
-The server startup kit gains two files::
+In the default provisioning mode, the server startup kit gains two files
+(install these separately when using an external job CA)::
 
    startup/
      job_ca.crt      job-signing CA certificate, signed by the project root
@@ -67,7 +74,7 @@ on the server (``download_job``) never contains them.
 Enabling and disabling
 ======================
 
-The job CA is created by default. To turn it off, set ``enable_job_ca`` on
+The job CA is created by default in legacy provisioning. To turn it off, set ``enable_job_ca`` on
 ``CertBuilder`` in ``project.yml``:
 
 .. code-block:: yaml
@@ -87,7 +94,8 @@ Upgrading an existing project
 
 Server startup kits provisioned before this feature have no job CA. Once the
 server runs a release with per-job certificates, every job deploy fails until
-the project is re-provisioned:
+the project is re-provisioned, or an approved external job CA is installed.
+For the default provisioning workflow:
 
 #. Run ``nvflare provision`` again on the same provisioning workspace. The root
    CA and all participant certificates are reused from the workspace's
@@ -114,10 +122,15 @@ setting, resolved in this order:
 #. the same entry in the server's ``resources.json``;
 #. the environment variable ``NVFLARE_JOB_CERT_VALID_DAYS``.
 
-The job CA itself is valid for 360 days, bounded by the root CA. When it has
+The provisioned job CA itself is valid for 360 days, bounded by the root CA. When it has
 less than one hour of validity left, job deploys fail with ``job CA expires at
 ...``; re-provision the project to renew it (``nvflare provision`` regenerates
 an expired job CA automatically).
+
+For an externally supplied job CA, validity is determined by your PKI and the
+whole certificate chain. Provisioning does not renew or replace it. Secure job
+issuance requires more than one hour remaining across the chain, and job
+certificates cannot outlive that chain.
 
 Job launchers
 =============

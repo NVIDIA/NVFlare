@@ -12,8 +12,8 @@ Authentication
 ==============
 NVFLARE's authentication model is based on Public Key Infrastructure (PKI) technology:
 
-    - For the FL project, the Project Admin uses the Provisioning Tool to create a Root CA with a self-signed root certificate. This Root CA will be used to issue all other certs needed by communicating parties.
-    - Identities involved in the study (Server(s), Clients, Users) are provisioned with the Provisioning Tool. Each identity is defined with a unique common name. For each identity, the Provisioning Tool generates a separate password-protected Startup Kit, which includes security credentials for mutual TLS authentication:
+    - By default, the Project Admin uses the Provisioning Tool to create a Root CA with a self-signed root certificate and issue participant certificates. With :ref:`public_root_only_provisioning`, an enterprise PKI issues credentials and provisioning distributes only its public root and configuration.
+    - Identities involved in the study (Server(s), Clients, Users) are provisioned with the Provisioning Tool. Each identity is defined with a unique common name. In the default provisioning workflow, each Startup Kit includes security credentials for mutual TLS authentication:
         - The certificate of the Root CA
         - The cert of the identity
         - The private key of the identity
@@ -21,7 +21,7 @@ NVFLARE's authentication model is based on Public Key Infrastructure (PKI) techn
         - The FL Server's kit is sent to the Project Admin
         - The kit for each FL Client is sent to the Org Admin responsible for the site
         - FLARE Console (previously called Admin Client) kits are sent to the user(s)
-    - To ensure the integrity of the Startup Kit, each file in the kit is signed by the Root CA.
+    - CC/HE startup content requires signatures. Ordinary mTLS kits do not receive ``signature.json``; distribute their configuration through authenticated deployment tooling. CC/HE content signing is unsupported in public-root-only mode.
     - Each Startup Kit also contains a "start.sh" file, which can be used to properly start the NVFLARE application.
     - Once started, the Client tries to establish a mutually-authenticated TLS connection with the Server, using the PKI credentials in its Startup Kits. This is possible only if the client and the server both have the correct Startup Kits.
     - Similarly, when a user tries to operate the NVFLARE system with the Admin Client app, the admin client tries to establish a mutually-authenticated TLS connection with the Server, using the PKI credentials in its Startup Kits. This is possible only if the admin client and the server both have the correct Startup Kits. The admin user also must enter his/her assigned user name correctly.
@@ -31,6 +31,12 @@ The security of the system comes from the PKI credentials in the Startup Kits. A
     - The Project Admin, who is responsible for the provisioning process of the study, should protect the study's configuration files and store created Startup Kits securely.
     - When distributing Startup Kits, the Project Admin should use trusted communication methods, and never send passwords of the Startup Kits in the same communication. It is preferred to send the Kits and passwords with different communication methods.
     - Org Admin and users must protect their Startup Kits and only use them for intended purposes.
+
+In public-root-only mode, endpoint and job-CA private keys are installed by
+deployment tooling. Admins use IT-installed files (``external_cert: true``) or an admin
+certificate provider. Provisioning never receives the enterprise root key or
+issues these credentials. All certificate chains must reach the distributed
+``rootCA.pem``; normal identity and authorization checks remain in effect.
 
 Job processes do not use the site's certificate and private key. In secure mode
 every job process runs on a short-lived certificate issued for that job alone,

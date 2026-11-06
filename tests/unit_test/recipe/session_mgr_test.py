@@ -21,6 +21,7 @@ from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.session_mgr import SessionManager, _job_monitor_callback
+from tests.timing_utils import isolate_time
 
 
 def test_submit_job_scans_generated_config_before_submission():
@@ -59,6 +60,36 @@ def test_monitor_reports_changes_without_repeating_normal_waits(monkeypatch, cap
     assert "Job status: FINISHED:COMPLETED" in output
     for field in ("resource_spec", "deploy_map"):
         assert output.count(field) == (0 if log_mode in ("concise", "progress") else 2)
+
+
+@pytest.mark.parametrize("log_mode", ["concise", "progress"])
+def test_monitor_reports_completion_before_first_poll(monkeypatch, capsys, log_mode):
+    monkeypatch.setenv("FL_LOG_LEVEL", log_mode)
+    session = MagicMock()
+    session.get_job_logs.return_value = {
+        "logs": {
+            "server": json.dumps(
+                {
+                    "fullName": "nvflare.app_common.widgets.metrics_artifact_writer",
+                    "message": "✓ Aggregated 2 client updates",
+                    "nvflare_progress": True,
+                }
+            )
+        }
+    }
+    state = {"count": 0}
+    if log_mode == "progress":
+        state["progress"] = {"seen": set()}
+
+    assert _job_monitor_callback(session, "job-id", {"status": "FINISHED:COMPLETED"}, cb_run_counter=state)
+
+    output = capsys.readouterr().out
+    assert "Job ID: job-id" in output
+    assert "Job status: FINISHED:COMPLETED" in output
+    assert "Job status: RUNNING" not in output
+    assert ("✓ Aggregated 2 client updates" in output) == (log_mode == "progress")
+    assert state["status"] == "FINISHED:COMPLETED"
+    assert session.get_job_logs.call_count == int(log_mode == "progress")
 
 
 def test_progress_monitor_replays_new_records_and_retries_partial_lines(monkeypatch, capsys):
@@ -297,3 +328,11 @@ def test_error_log_retrieval_failure_preserves_result_and_closes_session(tmp_pat
     assert manager.get_job_result("job-id") == str(tmp_path)
     assert session.get_job_logs.call_count == int(failed)
     session.close.assert_called_once()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.recipe.session_mgr",
+    )

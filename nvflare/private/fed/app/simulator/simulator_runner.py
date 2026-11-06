@@ -14,7 +14,6 @@
 import copy
 import json
 import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -75,6 +74,7 @@ from nvflare.private.fed.utils.fed_utils import (
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
+from nvflare.utils.process_utils import popen_in_new_session
 
 CLIENT_CREATE_POOL_SIZE = 200
 POOL_STATS_DIR = "pool_stats"
@@ -110,6 +110,8 @@ class SimulatorRunner(FLComponent):
 
         self.simulator_root = None
         self.server = None
+        self.client_fatal_error = False
+        self.server_workflow_done = False
         self.deployer = SimulatorDeployer()
         self.client_names = []
         self.federated_clients = []
@@ -350,6 +352,14 @@ class SimulatorRunner(FLComponent):
         valid, error, meta = job_validator.validate(job_name, data_bytes)
         if not valid:
             raise RuntimeError(error)
+        # Validation derives these site markers from the submitted client apps.
+        # Reject task apps before creating simulator servers or clients, including
+        # jobs exported separately and passed directly to the simulator CLI.
+        if meta.get(JobMetaKey.CJ_RESOURCE_SPEC.value):
+            raise ValueError(
+                "local Process task execution is deferred; simulator requires job lifetime. "
+                "Run task-lifetime apps on configured Kubernetes/Slurm sites"
+            )
         return data_bytes, job_name, meta
 
     def _extract_client_names_from_meta(self, meta):
@@ -523,6 +533,9 @@ class SimulatorRunner(FLComponent):
                     executor.submit(lambda p: self.client_run(*p), [self.server_custom_folder, clients, gpus[index]])
 
                 executor.shutdown()
+                # Before aborting, check if the server workflows already finished on their own
+                server_runner = self.server.server_runner
+                self.server_workflow_done = server_runner is not None and server_runner.status == "done"
                 # Abort the server after all clients finished run
                 self.server.abort_run()
                 server_thread.join()
@@ -540,13 +553,17 @@ class SimulatorRunner(FLComponent):
     def _get_server_run_status(self):
         with self.server.engine.new_context() as fl_ctx:
             execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
-        return 2 if execution_error else 0
+        # A client fatal error fails the run only if the server workflows could not finish
+        client_failed_run = self.client_fatal_error and not self.server_workflow_done
+        return 2 if execution_error or client_failed_run else 0
 
     def client_run(self, server_custom_folder, clients, gpu):
         client_runner = SimulatorClientRunner(
             server_custom_folder, self.args, clients, self.client_config, self.deploy_args, self.build_ctx
         )
         client_runner.run(gpu)
+        if client_runner.fatal_clients:
+            self.client_fatal_error = True
 
     def start_server_app(self, args):
         app_server_root = os.path.join(self.simulator_root, "server", SimulatorConstants.JOB_NAME, "app_server")
@@ -616,6 +633,7 @@ class SimulatorClientRunner(FLComponent):
         self.logging_config = os.path.join(self.args.workspace, "local", WorkspaceConstants.LOGGING_CONFIG)
 
         self.clients_finished_end_run = []
+        self.fatal_clients = []
 
     def run(self, gpu):
         try:
@@ -730,33 +748,35 @@ class SimulatorClientRunner(FLComponent):
             SimulatorConstants.JOB_NAME
         )
 
-        command = (
-            sys.executable
-            + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
-            + client_workspace
-            + " --logging_config "
-            + logging_config
-            + " --client "
-            + client.client_name
-            + " --token "
-            + client.token
-            + " --port "
-            + str(open_port)
-            + " --parent_pid "
-            + str(os.getpid())
-            + " --simulator_root "
-            + self.simulator_root
-            + " --root_url "
-            + str(client.cell.get_root_url_for_child())
-            + " --parent_url "
-            + str(client.cell.get_internal_listener_url())
-            + " --task_name "
-            + str(task_name)
-            + " --decomposer_module "
-            + str(decomposer_module)
-        )
+        args = [
+            sys.executable,
+            "-m",
+            "nvflare.private.fed.app.simulator.simulator_worker",
+            "-o",
+            client_workspace,
+            "--logging_config",
+            logging_config,
+            "--client",
+            client.client_name,
+            "--token",
+            client.token,
+            "--port",
+            str(open_port),
+            "--parent_pid",
+            str(os.getpid()),
+            "--simulator_root",
+            self.simulator_root,
+            "--root_url",
+            str(client.cell.get_root_url_for_child()),
+            "--parent_url",
+            str(client.cell.get_internal_listener_url()),
+            "--task_name",
+            str(task_name),
+            "--decomposer_module",
+            str(decomposer_module),
+        ]
         if gpu:
-            command += " --gpu " + str(gpu)
+            args += ["--gpu", str(gpu)]
         new_env = os.environ.copy()
         add_custom_dir_to_path(app_custom_folder, new_env)
         if os.path.isdir(self.server_custom_folder):
@@ -765,7 +785,7 @@ class SimulatorClientRunner(FLComponent):
                 python_paths.remove(self.server_custom_folder)
             new_env[SystemVarName.PYTHONPATH] = os.pathsep.join(python_paths)
 
-        process = subprocess.Popen(shlex.split(command, True), shell=False, preexec_fn=os.setsid, env=new_env)
+        process = popen_in_new_session(args, shell=False, env=new_env)
 
         conn = self._create_connection(open_port, timeout=timeout)
 
@@ -802,6 +822,10 @@ class SimulatorClientRunner(FLComponent):
 
                     # the child process is in nvflare/private/fed/app/simulator/simulator_worker.py
                     end_run_client = conn.recv()
+                    if conn.recv():
+                        self.logger.error(f"Client {client.client_name} stopped due to FATAL_SYSTEM_ERROR")
+                        with lock:
+                            self.fatal_clients.append(client.client_name)
 
                 with lock:
                     if num_of_threads != len(self.federated_clients):

@@ -46,9 +46,10 @@ from nvflare.fuel.f3.cellnet.identity import (
     get_cert_common_name_from_file,
     get_param,
     is_mtls_config,
+    load_job_ca_cert,
 )
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
-from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, format_log_message, make_reply
+from nvflare.fuel.f3.cellnet.utils import buffer_len, decode_payload, encode_payload, format_log_message, make_reply
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
 from nvflare.fuel.f3.connection import Connection
@@ -58,6 +59,7 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.f3.traffic_stats import PeerTrafficCounters
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
@@ -113,11 +115,12 @@ class CellAgent:
         Args:
             fqcn: FQCN of the cell represented
         """
+        fqcn = FQCN.normalize(fqcn)
         err = FQCN.validate(fqcn)
         if err:
             raise ValueError(f"Invalid FQCN '{fqcn}': {err}")
 
-        self.info = FqcnInfo(FQCN.normalize(fqcn))
+        self.info = FqcnInfo(fqcn)
         self.endpoint = endpoint
 
     def get_fqcn(self):
@@ -341,6 +344,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 client_1            (he root cell of client_1)
 
         """
+        # Normalize before the name is used as a key or validated, so the duplicate
+        # check, ALL_CELLS and my_info all agree on one spelling.
+        fqcn = FQCN.normalize(fqcn)
         if fqcn in self.ALL_CELLS:
             raise ValueError(f"there is already a cell named {fqcn}")
 
@@ -365,7 +371,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 secure = True
 
         self.logger.debug(f"connection secure: {secure}")
-        self.my_info = FqcnInfo(FQCN.normalize(fqcn))
+        self.my_info = FqcnInfo(fqcn)
+        self.traffic_stats = PeerTrafficCounters()
         self.secure = secure
         self.logger.debug(f"{self.my_info.fqcn}: max_msg_size={self.max_msg_size}")
 
@@ -430,6 +437,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             local_fqcn=self.my_info.fqcn,
             prefix_identity_map=prefix_identity_map,
             exact_identity_map=exact_identity_map,
+            job_ca_cert=load_job_ca_cert(get_param(credentials, DriverParams.CA_CERT)),
         )
 
         ep = Endpoint(
@@ -596,6 +604,27 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def get_fqcn(self) -> str:
         return self.my_info.fqcn
+
+    def get_traffic_stats(self) -> dict:
+        """Snapshot cumulative remote payload bytes for each adjacent peer."""
+        return self.traffic_stats.snapshot()
+
+    def pop_traffic_stats(self, peer: str):
+        """Return and remove one peer's counters without changing other peers."""
+        return self.traffic_stats.pop(peer)
+
+    def _record_traffic(self, peer, message, sent):
+        if peer == self.my_info.fqcn:
+            return
+        try:
+            payload_bytes = buffer_len(message.payload)
+            if sent:
+                self.traffic_stats.record_sent(peer, payload_bytes)
+            else:
+                self.traffic_stats.record_received(peer, payload_bytes)
+        except Exception:
+            # Observing bytes must not change message delivery or its result.
+            pass
 
     def is_cell_reachable(self, target_fqcn: str, for_msg=None) -> bool:
         if target_fqcn in self.ALL_CELLS:
@@ -1349,6 +1378,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
                 else:
                     self.communicator.send(to_endpoint, CoreCell.APP_ID, message)
+                    self._record_traffic(to_endpoint.name, message, sent=True)
                 self.sent_msg_size_pool.record_value(category=self._stats_category(message), value=msg_size_mbs)
         except Exception as ex:
             err_text = f"Failed to send message to {to_endpoint.name}: {secure_format_exception(ex)}"
@@ -2039,6 +2069,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         return msg_size / _ONE_MB
 
     def _process_received_msg(self, endpoint: Endpoint, connection: Connection, message: Message):
+        # Direct in-process delivery has no transport connection.
+        if connection is not None:
+            self._record_traffic(endpoint.name, message, sent=False)
         route = message.get_header(MessageHeaderKey.ROUTE)
         if route:
             origin_name = route[0][0]
@@ -2091,10 +2124,19 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 if reply:
                     return reply
 
-        if msg_type == MessageType.REQ and self.message_interceptor is not None:
-            reply = self._try_cb(
-                message, self.message_interceptor, *self.message_interceptor_args, **self.message_interceptor_kwargs
-            )
+        if msg_type == MessageType.REQ:
+            reply = None
+            reply_target = origin
+            if channel == CellChannel.SERVER_PARENT_LISTENER and (
+                FQCN.validate(origin) or (origin != endpoint.name and not FQCN.is_ancestor(endpoint.name, origin))
+            ):
+                # Check each hop before forwarding: a job child must not claim a sibling job or the server.
+                reply = make_reply(ReturnCode.UNAUTHENTICATED, "origin does not belong to sending peer")
+                reply_target = endpoint.name
+            elif self.message_interceptor is not None:
+                reply = self._try_cb(
+                    message, self.message_interceptor, *self.message_interceptor_args, **self.message_interceptor_kwargs
+                )
 
             if reply:
                 self.logger.debug(f"{self.my_info.fqcn}: interceptor stopped message!")
@@ -2109,7 +2151,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                         MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
                         MessageHeaderKey.TO_CELL: endpoint.name,
                         MessageHeaderKey.ORIGIN: self.my_info.fqcn,
-                        MessageHeaderKey.DESTINATION: origin,
+                        MessageHeaderKey.DESTINATION: reply_target,
                         MessageHeaderKey.REQ_ID: [req_id],
                         MessageHeaderKey.MSG_TYPE: MessageType.RETURN,
                         MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
@@ -2265,6 +2307,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.logger.debug(f"========= {self.my_info.fqcn}: EP {endpoint.name} state changed to {endpoint.state}")
         fqcn = endpoint.name
         if endpoint.state == EndpointState.READY:
+            # A reconnected peer may have restarted with a new key. Routed peers
+            # may also have changed, so exchange certificates again on demand.
+            self.credential_manager.clear_cert_cache()
             # create the CellAgent for this endpoint
             agent = self.agents.get(fqcn)
             if not agent:

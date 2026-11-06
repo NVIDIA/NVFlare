@@ -26,11 +26,11 @@ from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
 from nvflare.dashboard.application.models import Client, Project
 from nvflare.dashboard.application.store import Store
 
-CLIENT1 = {"name": "site-1", "organization": "test.com", "capacity": {"num_gpus": 16, "mem_per_gpu_in_GiB": 64}}
+CLIENT1 = {"name": "site-1", "organization": "test_org", "capacity": {"num_gpus": 16, "mem_per_gpu_in_GiB": 64}}
 
-CLIENT2 = {"name": "site-2", "organization": "example.com", "capacity": {"num_gpus": 4, "mem_per_gpu_in_GiB": 32}}
+CLIENT2 = {"name": "site-2", "organization": "example_org", "capacity": {"num_gpus": 4, "mem_per_gpu_in_GiB": 32}}
 
-NEW_ORG = "company.com"
+NEW_ORG = "company_org"
 
 
 class TestClients:
@@ -89,10 +89,16 @@ class TestClientPropsRejection:
         email = f"client-creator-{uuid4().hex}@test.com"
         response = client.post(
             FLARE_DASHBOARD_NAMESPACE + "/api/v1/users",
-            json={"email": email, "password": "test-password", "organization": "test.com", "role": "member"},
+            json={"email": email, "password": "test-password", "organization": "test_org", "role": "org_admin"},
         )
         assert response.status_code == 201
         user_id = response.json["user"]["id"]
+        response = client.patch(
+            FLARE_DASHBOARD_NAMESPACE + f"/api/v1/users/{user_id}",
+            json={"approval_state": 100, "reviewed_role": "org_admin", "reviewed_organization": "test_org"},
+            headers=auth_header,
+        )
+        assert response.status_code == 200
         response = client.post(
             FLARE_DASHBOARD_NAMESPACE + "/api/v1/login", json={"email": email, "password": "test-password"}
         )
@@ -186,7 +192,7 @@ class TestClientPropsRejection:
         capacity = {"num_of_gpus": 2, "mem_per_gpu_in_GiB": 16}
         response = client.post(
             FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients",
-            json={"name": f"legacy-{uuid4().hex}", "organization": "testorg", "capacity": capacity},
+            json={"name": f"legacy-{uuid4().hex}", "organization": "test_org", "capacity": capacity},
             headers=creator_header,
         )
         assert response.status_code == 201
@@ -194,9 +200,12 @@ class TestClientPropsRejection:
         url = FLARE_DASHBOARD_NAMESPACE + f"/api/v1/clients/{client_id}"
         with app.app_context():
             project = Project.query.first()
-            original = {key: getattr(project, key) for key in ("short_name", "server1", "root_key", "root_cert")}
+            original = {
+                key: getattr(project, key) for key in ("short_name", "server1", "root_key", "root_cert", "frozen")
+            }
             project.short_name = "legacy-test"
             project.server1 = "server.test.com"
+            project.frozen = True
             Store.build_project(project)
             legacy_client = db.session.get(Client, client_id)
             legacy_client.props = legacy_props

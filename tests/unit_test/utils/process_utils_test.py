@@ -14,11 +14,20 @@
 
 import os
 import signal
+import subprocess
+import sys
 from unittest import mock
 
 import pytest
 
-from nvflare.utils.process_utils import ProcessAdapter, prepare_subprocess_command, spawn_process
+from nvflare.utils.process_utils import (
+    ProcessAdapter,
+    ProcessSpawnError,
+    popen_in_new_session,
+    prepare_subprocess_command,
+    run_in_new_session,
+    spawn_process,
+)
 
 
 class TestPrepareSubprocessCommand:
@@ -251,6 +260,22 @@ class TestProcessAdapterTerminate:
 class TestSpawnProcess:
     """Test the spawn_process utility function."""
 
+    def test_cwd_uses_new_session_without_preexec_or_parent_chdir(self, monkeypatch, tmp_path):
+        original_cwd = os.getcwd()
+        monkeypatch.setattr("nvflare.utils.process_utils._POSIX_SPAWN_SUPPORTED", True)
+        posix_spawn = mock.Mock()
+        monkeypatch.setattr("nvflare.utils.process_utils.os.posix_spawn", posix_spawn)
+        popen = mock.Mock(return_value=mock.Mock(pid=5555))
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.Popen", popen)
+        command = ["/bin/echo", "hello"]
+        environment = {"VALUE": "exact"}
+
+        spawn_process(command, environment, cwd=str(tmp_path))
+
+        posix_spawn.assert_not_called()
+        popen.assert_called_once_with(command, shell=False, env=environment, cwd=str(tmp_path), start_new_session=True)
+        assert os.getcwd() == original_cwd
+
     def test_spawn_uses_posix_spawn_when_available(self, monkeypatch):
         spawned = {}
 
@@ -282,6 +307,33 @@ class TestSpawnProcess:
         assert adapter.process is None
         assert spawned["setsid"] is True
         assert spawned["path"] == "/bin/echo"
+
+    @pytest.mark.parametrize("backend", ["popen", "posix_spawn"])
+    @pytest.mark.parametrize("error_type", [OSError, TypeError])
+    def test_post_spawn_logging_error_carries_ownership_without_fallback(self, monkeypatch, backend, error_type):
+        monkeypatch.setattr("nvflare.utils.process_utils._POSIX_SPAWN_SUPPORTED", backend == "posix_spawn")
+        posix_spawn = mock.Mock(return_value=9999)
+        monkeypatch.setattr("nvflare.utils.process_utils.os.posix_spawn", posix_spawn)
+        process = mock.Mock(pid=8888)
+        popen = mock.Mock(return_value=process)
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.Popen", popen)
+        fault = error_type("logging failed after process creation")
+        monkeypatch.setattr("nvflare.utils.process_utils.log.info", mock.Mock(side_effect=fault))
+
+        with pytest.raises(ProcessSpawnError) as caught:
+            spawn_process(["/bin/echo", "hello"], {"PATH": "/usr/bin"})
+
+        assert caught.value.__cause__ is fault
+        if backend == "posix_spawn":
+            assert caught.value.adapter.pid == 9999
+            assert caught.value.adapter.process is None
+            posix_spawn.assert_called_once()
+            popen.assert_not_called()
+        else:
+            assert caught.value.adapter.pid == process.pid
+            assert caught.value.adapter.process is process
+            popen.assert_called_once()
+            posix_spawn.assert_not_called()
 
     def test_spawn_falls_back_on_posix_spawn_failure(self, monkeypatch):
         def failing_spawn(*args, **kwargs):
@@ -339,6 +391,120 @@ class TestSpawnProcess:
 
         spawn_process(["/bin/echo"], {"PATH": "/usr/bin"})
 
-        # Verify preexec_fn is set to os.setsid
+        # setsid must be done by start_new_session (in C), not by a Python preexec_fn run in the forked child
         call_kwargs = popen_mock.call_args[1]
-        assert call_kwargs["preexec_fn"] is os.setsid
+        assert call_kwargs["start_new_session"] is True
+        assert "preexec_fn" not in call_kwargs
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            NotImplementedError("posix_spawn: setsid unavailable on this platform"),
+            TypeError("posix_spawn() got an unexpected keyword argument 'setsid'"),
+        ],
+    )
+    def test_spawn_falls_back_when_setsid_unsupported(self, monkeypatch, error):
+        def unsupported_spawn(*args, **kwargs):
+            raise error
+
+        mock_popen = mock.Mock()
+        mock_popen.pid = 4444
+
+        monkeypatch.setattr("nvflare.utils.process_utils._POSIX_SPAWN_SUPPORTED", True)
+        monkeypatch.setattr("nvflare.utils.process_utils.os.posix_spawn", unsupported_spawn)
+        popen_mock = mock.Mock(return_value=mock_popen)
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.Popen", popen_mock)
+
+        adapter = spawn_process(["/bin/echo", "hello"], {"PATH": "/usr/bin"})
+
+        assert adapter.process is mock_popen
+        call_kwargs = popen_mock.call_args[1]
+        assert call_kwargs["start_new_session"] is True
+        assert "preexec_fn" not in call_kwargs
+
+    @pytest.mark.skipif(not hasattr(os, "setsid"), reason="requires POSIX sessions")
+    def test_popen_fallback_child_runs_in_new_session(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("nvflare.utils.process_utils._POSIX_SPAWN_SUPPORTED", False)
+        out = tmp_path / "sid.txt"
+        script = f"import os; open({str(out)!r}, 'w').write(str(os.getsid(0)) + ' ' + str(os.getpid()))"
+
+        adapter = spawn_process([sys.executable, "-c", script], dict(os.environ))
+        adapter.wait()
+
+        sid, pid = out.read_text().split()
+        assert sid == pid
+
+
+class TestPopenInNewSession:
+    def test_sets_start_new_session_and_passes_kwargs(self, monkeypatch):
+        popen_mock = mock.Mock(return_value=mock.Mock())
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.Popen", popen_mock)
+
+        popen_in_new_session(["/bin/echo", "hi"], shell=False, env={"A": "1"}, stdout=-1)
+
+        popen_mock.assert_called_once_with(
+            ["/bin/echo", "hi"], shell=False, env={"A": "1"}, stdout=-1, start_new_session=True
+        )
+
+    def test_rejects_preexec_fn(self, monkeypatch):
+        popen_mock = mock.Mock()
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.Popen", popen_mock)
+
+        with pytest.raises(ValueError, match="preexec_fn"):
+            popen_in_new_session(["/bin/echo"], preexec_fn=os.setsid if hasattr(os, "setsid") else print)
+        popen_mock.assert_not_called()
+
+    @pytest.mark.skipif(not hasattr(os, "setsid"), reason="requires POSIX sessions")
+    def test_child_runs_in_new_session(self):
+        process = popen_in_new_session(
+            [sys.executable, "-c", "import os; print(os.getsid(0), os.getpid())"],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        out, _ = process.communicate(timeout=30)
+
+        sid, pid = out.split()
+        assert sid == pid
+
+
+class TestRunInNewSession:
+    def test_sets_start_new_session_and_passes_kwargs(self, monkeypatch):
+        run_mock = mock.Mock(return_value=mock.Mock())
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.run", run_mock)
+
+        run_in_new_session(["/bin/echo", "hi"], stdout=-1, stderr=-2)
+
+        run_mock.assert_called_once_with(["/bin/echo", "hi"], stdout=-1, stderr=-2, start_new_session=True)
+
+    def test_rejects_preexec_fn(self, monkeypatch):
+        run_mock = mock.Mock()
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.run", run_mock)
+
+        with pytest.raises(ValueError, match="preexec_fn"):
+            run_in_new_session(["/bin/echo"], preexec_fn=print)
+        run_mock.assert_not_called()
+
+    def test_kills_child_when_wait_is_interrupted(self, monkeypatch):
+        process = mock.MagicMock()
+        process.__enter__.return_value = process
+        process.communicate.side_effect = KeyboardInterrupt
+        popen_mock = mock.Mock(return_value=process)
+        monkeypatch.setattr("nvflare.utils.process_utils.subprocess.Popen", popen_mock)
+
+        with pytest.raises(KeyboardInterrupt):
+            run_in_new_session(["/bin/sleep", "60"])
+
+        assert popen_mock.call_args[1]["start_new_session"] is True
+        process.kill.assert_called()
+
+    @pytest.mark.skipif(not hasattr(os, "setsid"), reason="requires POSIX sessions")
+    def test_child_runs_in_new_session(self):
+        result = run_in_new_session(
+            [sys.executable, "-c", "import os; print(os.getsid(0), os.getpid())"],
+            stdout=subprocess.PIPE,
+            text=True,
+            timeout=30,
+        )
+
+        sid, pid = result.stdout.split()
+        assert sid == pid

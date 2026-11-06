@@ -121,6 +121,12 @@ class Provisioner:
             ctx.set_logger(logger)
 
         try:
+            from nvflare.lighter.impl.cert import CertBuilder
+
+            cert_builders = [b for b in self.builders if isinstance(b, CertBuilder)]
+            ctx[CtxKey.PUBLIC_ROOT_ONLY] = any(b.public_root_cert is not None for b in cert_builders)
+            if ctx[CtxKey.PUBLIC_ROOT_ONLY] and len(cert_builders) != 1:
+                raise ValueError("public_root_cert requires exactly one CertBuilder")
             for b in self.builders:
                 b.initialize(project, ctx)
 

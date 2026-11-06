@@ -15,15 +15,18 @@ import os
 import shutil
 import tempfile
 import threading
+import time
 from collections import OrderedDict
+from functools import partial
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ReturnCode, SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReturnCode, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import DataTypes
 from nvflare.apis.streaming import StreamContext
 from nvflare.app_common.logging.constants import ALLOW_LOG_STREAMING_VAR, LIVE_LOG_TOPIC, Channels
 from nvflare.app_common.streamers.log_streamer import LogStreamer
+from nvflare.fuel.utils.app_config_utils import get_positive_float_var
 from nvflare.widgets.widget import Widget
 
 # Keys for per-stream state stored in StreamContext
@@ -70,6 +73,10 @@ class JobLogReceiver(Widget):
     The stream handler may be (re-)registered on every triggering event;
     ``registry.set`` is idempotent for the same channel/topic pair.
 
+    End-run readiness waits for active streams and a quiet drain window of
+    one configured readiness-check interval. Admission stays open until
+    ``END_RUN``, which rechecks draining within the remaining readiness timeout.
+
     Args:
         dest_dir: directory where incoming log staging files are written.
             Defaults to the system temporary directory.
@@ -88,6 +95,15 @@ class JobLogReceiver(Widget):
         # lock so the check-then-add is atomic across concurrent stream chunks.
         self._unauthorized_logged: OrderedDict = OrderedDict()
         self._unauthorized_lock = threading.Lock()
+        # Keep receiver-owned references: stream_ctx comes from the sender and
+        # must not control admission or completion bookkeeping.
+        self._active_streams = {}
+        self._accepting_streams = True
+        self._stream_generation = object()
+        self._active_stream_lock = threading.Condition()
+        self._end_run_deadline = None
+        self._quiet_since = None
+        self._quiet_period = None
         # Trigger on every event that may bring up a fresh ObjectStreamer:
         #   - SYSTEM_START fires once in the long-lived server parent process.
         #   - ABOUT_TO_START_RUN fires only on the client side, but listing it
@@ -103,6 +119,8 @@ class JobLogReceiver(Widget):
             [EventType.SYSTEM_START, EventType.ABOUT_TO_START_RUN, EventType.START_RUN],
             self._register,
         )
+        self.register_event_handler(EventType.CHECK_END_RUN_READINESS, self._check_end_run_readiness)
+        self.register_event_handler(EventType.END_RUN, self._on_end_run)
 
     def _effective_dest_dir(self) -> str:
         return self._dest_dir or tempfile.gettempdir()
@@ -165,6 +183,64 @@ class JobLogReceiver(Widget):
             self._unauthorized_logged[key] = None
             return True
 
+    def _on_stream_started(self, stream_ctx: StreamContext, fl_ctx: FLContext, generation=None):
+        with self._active_stream_lock:
+            if not self._accepting_streams or (generation is not None and generation is not self._stream_generation):
+                return False
+            self._active_streams[id(stream_ctx)] = stream_ctx
+            self._quiet_since = None
+            return True
+
+    def _mark_stream_done(self, stream_ctx: StreamContext):
+        with self._active_stream_lock:
+            removed = self._active_streams.pop(id(stream_ctx), None)
+            if removed is not None:
+                if not self._active_streams:
+                    self._quiet_since = time.monotonic()
+                self._active_stream_lock.notify_all()
+
+    def _check_end_run_readiness(self, event_type: str, fl_ctx: FLContext):
+        with self._active_stream_lock:
+            now = time.monotonic()
+            if self._end_run_deadline is None:
+                self._end_run_deadline = now + get_positive_float_var(ConfigVarName.END_RUN_READINESS_TIMEOUT, 5.0)
+                self._quiet_period = get_positive_float_var(ConfigVarName.END_RUN_READINESS_CHECK_INTERVAL, 0.5)
+                # Even a run with no received streams needs a drain window:
+                # a client's first request may still be in flight.
+                self._quiet_since = now if not self._active_streams else None
+            active_stream_count = len(self._active_streams)
+            ready = not active_stream_count and now - self._quiet_since >= self._quiet_period
+        if not ready:
+            self.log_debug(
+                fl_ctx, f"Waiting for {active_stream_count} active live log stream(s) and a quiet drain window"
+            )
+            fl_ctx.set_prop(FLContextKey.NOT_READY_TO_END_RUN, value=True, private=True, sticky=False)
+
+    def _on_end_run(self, event_type: str, fl_ctx: FLContext):
+        with self._active_stream_lock:
+            # Admission stays open during readiness. Recheck here so a stream
+            # admitted after the last ready result is still drained before
+            # closing. Use only the remaining readiness budget, not a second
+            # timeout. Condition.wait releases the lock for completion callbacks.
+            while self._end_run_deadline is not None:
+                now = time.monotonic()
+                remaining = self._end_run_deadline - now
+                if remaining <= 0:
+                    break
+                if not self._active_streams:
+                    quiet_remaining = self._quiet_period - (now - self._quiet_since)
+                    if quiet_remaining <= 0:
+                        break
+                    remaining = min(remaining, quiet_remaining)
+                self._active_stream_lock.wait(timeout=remaining)
+            self._accepting_streams = False
+            # A timed-out transport can complete later, even after START_RUN.
+            # Its callback must not affect the next run's readiness state.
+            self._active_streams.clear()
+            self._end_run_deadline = None
+            self._quiet_since = None
+            self._quiet_period = None
+
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)
         if f is None:
@@ -191,6 +267,12 @@ class JobLogReceiver(Widget):
         f.flush()
 
     def _on_stream_done(self, stream_ctx: StreamContext, fl_ctx: FLContext):
+        try:
+            self._finalize_stream(stream_ctx, fl_ctx)
+        finally:
+            self._mark_stream_done(stream_ctx)
+
+    def _finalize_stream(self, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)
         if f is not None:
             f.close()
@@ -247,11 +329,19 @@ class JobLogReceiver(Widget):
         # leave the new run_manager's registry empty and produce
         # "no stream processing info registered for log_streaming:live_log"
         # on the first incoming chunk.
+        with self._active_stream_lock:
+            if not self._accepting_streams:
+                # Old transport factories must stay closed after this widget
+                # is reopened for the next run.
+                self._stream_generation = object()
+            self._accepting_streams = True
+            generation = self._stream_generation
         LogStreamer.register_stream_processing(
             fl_ctx,
             channel=Channels.LOG_STREAMING_CHANNEL,
             topic=LIVE_LOG_TOPIC,
             chunk_received_cb=self._on_chunk_received,
+            stream_started_cb=partial(self._on_stream_started, generation=generation),
             stream_done_cb=self._on_stream_done,
             idle_timeout=self._idle_timeout,
         )

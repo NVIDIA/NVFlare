@@ -410,7 +410,7 @@ def handle_cert_init(args):
         cert = CertBuilder._generate_cert(
             subject=project,
             subject_org=args.org,
-            issuer=project,  # self-signed: issuer == subject
+            issuer=x509_name(project, args.org),
             signing_pri_key=pri_key,
             subject_pub_key=pub_key,
             valid_days=getattr(args, "valid_days", 3650) or 3650,
@@ -1226,7 +1226,6 @@ def _build_signed_cert(
         if attr.oid == NameOID.ORGANIZATION_NAME:
             subject_org = attr.value
 
-    issuer_cn = ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
     extra_extensions = [
         (x509.BasicConstraints(ca=False, path_length=None), True),
         (x509.KeyUsage(**key_usage_kwargs), True),
@@ -1234,7 +1233,7 @@ def _build_signed_cert(
     ]
     return generate_cert(
         subject=Identity(subject_cn, subject_org, cert_type),
-        issuer=Identity(issuer_cn),
+        issuer=ca_cert.subject,
         signing_pri_key=ca_key,
         subject_pub_key=csr.public_key(),
         server_default_host=server_default_host if cert_type == "server" else None,
@@ -1624,7 +1623,25 @@ def _derive_identity_from_participant(project_name: str, participant: dict) -> d
     return identity
 
 
+def _validate_distributed_participant_features(participant: dict) -> bool:
+    for option in (PropKey.EXTERNAL_CERT, PropKey.EXTERNAL_JOB_CA):
+        value = participant.get(option)
+        if value is not None and value is not False:
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail=f"{option} is supported only by centralized 'nvflare provision'",
+            )
+            return False
+    return True
+
+
 def _validate_participant_connection_fields(participant: dict, identity: dict) -> bool:
+    if not _validate_distributed_participant_features(participant):
+        return False
+
     if PropKey.LISTENING_HOST in participant:
         output_error_message(
             "INVALID_ARGS",
@@ -2157,8 +2174,11 @@ def _validate_request_metadata(
             detail="site.yaml field 'cert_role' does not match request metadata",
         )
         return None
-    if _is_project_shaped_site_meta(site_meta):
-        participant = site_meta["participants"][0]
+    project_shaped_site = _is_project_shaped_site_meta(site_meta)
+    participant = site_meta["participants"][0] if project_shaped_site else site_meta
+    if not _validate_distributed_participant_features(participant):
+        return None
+    if project_shaped_site:
         if "connection_security" in participant:
             output_error_message(
                 "INVALID_ARGS",

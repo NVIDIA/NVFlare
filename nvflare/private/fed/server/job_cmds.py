@@ -61,7 +61,7 @@ from nvflare.apis.storage import (
 )
 from nvflare.apis.utils.job_submit_token import canonical_job_content_hash, validate_submit_token
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
+from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
@@ -93,6 +93,7 @@ CLONED_META_KEYS = {
     JobMetaKey.JOB_FOLDER_NAME.value,
     JobMetaKey.DEPLOY_MAP.value,
     JobMetaKey.RESOURCE_SPEC.value,
+    JobMetaKey.CJ_RESOURCE_SPEC.value,
     JobMetaKey.CONTENT_LOCATION.value,
     JobMetaKey.RESULT_LOCATION.value,
     JobMetaKey.APPROVALS.value,
@@ -1076,11 +1077,12 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         try:
             job_id = conn.get_prop(self.JOB_ID)
             with engine.new_context() as fl_ctx:
-                job_manager = engine.job_def_manager
-                job = job_manager.get_job(job_id, fl_ctx)
-                job_status = job.meta.get(JobMetaKey.STATUS)
+                job_status = job_runner.abort_before_start(job_id, fl_ctx)
+                if job_status is job_runner.STARTING:
+                    message = f"Job {job_id} {ReplyKeyword.JOB_STARTING_RETRY_ABORT}"
+                    conn.append_error(message, meta=make_meta(MetaStatusValue.ERROR, message))
+                    return
                 if job_status in [RunStatus.SUBMITTED.value, RunStatus.DISPATCHED.value]:
-                    job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
                     message = f"Aborted the job {job_id} before running it."
                     conn.append_string(message)
                     conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))

@@ -46,13 +46,15 @@ def contains_lazy_download_ref(value) -> bool:
     return _contains_lazy_download_ref(value, excluded_dict_keys=_FILTER_GRAPH_EXCLUDED_DICT_KEYS)
 
 
-def materialize_lazy_download_refs(value, cell, abort_signal=None):
+def materialize_lazy_download_refs(value, cell, abort_signal=None, *, download_props=None, owners=None):
     """Materialize filter-visible payload data without traversing framework-only peer context."""
     return _materialize_lazy_download_refs(
         value,
         cell,
         abort_signal,
         excluded_dict_keys=_FILTER_GRAPH_EXCLUDED_DICT_KEYS,
+        download_props=download_props,
+        owners=owners,
     )
 
 

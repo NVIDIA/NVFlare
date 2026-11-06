@@ -108,7 +108,7 @@ Communication Mechanisms
 **Cell Network**: All parent and job processes communicate via F3 Cell objects that provide:
 
 - FQCN (Fully Qualified Cell Name) addressing (e.g., server.job_123)
-- Channel-based routing (SERVER_MAIN, CLIENT_MAIN, AUX_COMMUNICATION)
+- Channel-based routing (SERVER_MAIN, SERVER_COMMAND, CLIENT_MAIN, AUX_COMMUNICATION)
 - Secure, encrypted messaging with authentication
 - Streaming support for large data transfers
   

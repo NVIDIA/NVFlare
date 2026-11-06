@@ -172,13 +172,24 @@ class _LogChunkConsumer(BaseChunkConsumer):
 
 
 class LogChunkConsumerFactory(ConsumerFactory):
-    def __init__(self, chunk_received_cb, idle_timeout: float, stream_done_cb, cb_kwargs: dict):
+    def __init__(
+        self,
+        chunk_received_cb,
+        idle_timeout: float,
+        stream_done_cb,
+        cb_kwargs: dict,
+        stream_started_cb=None,
+    ):
         self._chunk_received_cb = chunk_received_cb
         self._idle_timeout = idle_timeout
         self._stream_done_cb = stream_done_cb
         self._cb_kwargs = cb_kwargs
+        self._stream_started_cb = stream_started_cb
 
     def get_consumer(self, stream_ctx: StreamContext, fl_ctx: FLContext) -> ObjectConsumer:
+        if self._stream_started_cb:
+            if self._stream_started_cb(stream_ctx, fl_ctx, **self._cb_kwargs) is False:
+                return None
         if self._stream_done_cb:
             stream_ctx[KEY_STREAM_DONE_CB] = _make_once(self._stream_done_cb)
         return _LogChunkConsumer(
@@ -391,6 +402,7 @@ class LogStreamer(StreamerBase):
         chunk_received_cb=None,
         stream_done_cb=None,
         idle_timeout: float = 30.0,
+        stream_started_cb=None,
         **cb_kwargs,
     ):
         """Register for live log stream processing on the receiving side.
@@ -410,7 +422,11 @@ class LogStreamer(StreamerBase):
             idle_timeout: seconds without any message (data or heartbeat) before the
                 receiver declares the sender dead and closes the stream (default 30.0).
                 Set to 0 to disable.
-            **cb_kwargs: kwargs forwarded to both callbacks
+            stream_started_cb: called once when the receiver accepts a new stream,
+                before its first message is consumed; follows the same signature as
+                ``stream_done_cb``. Returning False rejects the stream without
+                creating a consumer or invoking ``stream_done_cb``.
+            **cb_kwargs: kwargs forwarded to all callbacks
 
         Returns: None
 
@@ -425,7 +441,13 @@ class LogStreamer(StreamerBase):
         engine.register_stream_processing(
             channel=channel,
             topic=topic,
-            factory=LogChunkConsumerFactory(chunk_received_cb, idle_timeout, stream_done_cb, cb_kwargs),
+            factory=LogChunkConsumerFactory(
+                chunk_received_cb,
+                idle_timeout,
+                stream_done_cb,
+                cb_kwargs,
+                stream_started_cb=stream_started_cb,
+            ),
             stream_done_cb=dispatch_stream_done if stream_done_cb else None,
             **cb_kwargs,
         )

@@ -183,6 +183,9 @@ class ClientTask:
         self.client = client
         self.task = task
         self.id = str(uuid.uuid4())
+        # The scheduling authority issues the physical-attempt fence. Sending
+        # this assignment again does not authorize a new worker attempt.
+        self.attempt_id = str(uuid.uuid4())
         self.task_send_count = 0  # number of times the task is sent to the client
         self.task_sent_time = None  # last time the task was sent to the client
         self.result_received_time = None  # time when the result was received from the client
@@ -305,6 +308,11 @@ class ControllerSpec(ABC):
         This could happen when:
         - the client's submission is too late - the task is already completed
         - the Controller lost the task, e.g. the Server is restarted
+
+        During this hook and its surrounding events, WFCommServer exposes the private,
+        non-sticky FLContextKey.TASK_RESULT_IS_LATE property for a recognized retired
+        assignment. Read it with fl_ctx.get_prop(FLContextKey.TASK_RESULT_IS_LATE, False);
+        an absent property defaults to False. The property is removed after processing.
 
         Args:
             client: the client that the result comes from

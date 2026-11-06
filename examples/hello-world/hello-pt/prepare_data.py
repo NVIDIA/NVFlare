@@ -55,14 +55,14 @@ def add_dataset_arguments(parser: argparse.ArgumentParser):
     )
 
 
-def stable_seed(site_name: str, purpose: str) -> int:
+def stable_seed(site_name: str, purpose: str, seed: int = _BASE_SEED) -> int:
     """Derive a process-independent PyTorch seed for one site and purpose."""
     if not site_name:
         raise ValueError("site_name must be non-empty")
     if not purpose:
         raise ValueError("purpose must be non-empty")
 
-    value = f"{_BASE_SEED}:{site_name}:{purpose}".encode("utf-8")
+    value = f"{seed}:{site_name}:{purpose}".encode("utf-8")
     return int.from_bytes(hashlib.sha256(value).digest()[:8], "big") % (2**63 - 1)
 
 

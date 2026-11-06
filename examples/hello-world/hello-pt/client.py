@@ -17,7 +17,7 @@
 import argparse
 
 import torch
-from model import create_model
+from model import MODEL_SEED, create_model
 from prepare_data import DATASET_PATH, SyntheticImageDataset, add_dataset_arguments, stable_seed, validate_cifar10
 from torch import nn
 from torch.optim import SGD
@@ -57,7 +57,9 @@ def evaluate(net, data_loader, device):
     return accuracy
 
 
-def create_data_loaders(dataset, site_name, train_size, test_size, batch_size, num_workers, data_root=DATASET_PATH):
+def create_data_loaders(
+    dataset, site_name, train_size, test_size, batch_size, num_workers, data_root=DATASET_PATH, seed=MODEL_SEED
+):
     if dataset == "synthetic":
         train_set = SyntheticImageDataset(site_name=site_name, split="train", size=train_size)
         test_set = SyntheticImageDataset(site_name=site_name, split="eval", size=test_size)
@@ -77,7 +79,7 @@ def create_data_loaders(dataset, site_name, train_size, test_size, batch_size, n
         train_set = torchvision.datasets.CIFAR10(root=data_root, train=True, download=False, transform=transform)
         test_set = torchvision.datasets.CIFAR10(root=data_root, train=False, download=False, transform=transform)
 
-    shuffle_generator = torch.Generator().manual_seed(stable_seed(site_name, "train-loader"))
+    shuffle_generator = torch.Generator().manual_seed(stable_seed(site_name, "train-loader", seed))
     train_loader = torch.utils.data.DataLoader(
         train_set,
         batch_size=batch_size,
@@ -89,16 +91,79 @@ def create_data_loaders(dataset, site_name, train_size, test_size, batch_size, n
     return train_loader, test_loader
 
 
-def main():
+def train_one_round(model, optimizer, train_loader, device, epochs, current_round, client_name, summary_writer):
+    """Use the same local training loop in resident and task scripts."""
+    num_train_batches = len(train_loader)
+    if num_train_batches == 0:
+        raise ValueError("Training data_loader produced no batches; check --train_size and --batch_size.")
+    loss = nn.CrossEntropyLoss()
+    model.train()
+    for epoch in range(epochs):
+        running_loss = 0.0
+        for images, labels in train_loader:
+            images, labels = images.to(device), labels.to(device)
+            optimizer.zero_grad()
+            predictions = model(images)
+            cost = loss(predictions, labels)
+            cost.backward()
+            optimizer.step()
+            running_loss += cost.item()
+        avg_loss = running_loss / num_train_batches
+        print(f"site={client_name}, epoch={epoch + 1}/{epochs}, loss={avg_loss:.4f}")
+        global_step = current_round * epochs + epoch
+        summary_writer.add_scalar(tag="train_loss", scalar=avg_loss, global_step=global_step)
+    return epochs * num_train_batches
+
+
+def restore_training_state(checkpoint, optimizer, train_loader, *, job_id, site_name, current_round):
+    """Restore native PyTorch state from the last successful local assignment."""
+    if checkpoint["input"] is None:
+        return
+    state = torch.load(checkpoint["input"], map_location="cpu", weights_only=True)
+    if state["job_id"] != job_id or state["site_name"] != site_name:
+        raise RuntimeError("Training checkpoint belongs to a different job or site")
+    previous_round = state["round"]
+    if type(previous_round) is not int or not 0 <= previous_round < current_round:
+        raise RuntimeError("Training checkpoint must come from an earlier successful round")
+    optimizer.load_state_dict(state["optimizer"])
+    train_loader.generator.set_state(state["train_rng"])
+    torch.set_rng_state(state["torch_rng"])
+
+
+def save_training_state(checkpoint, optimizer, train_loader, *, job_id, site_name, current_round):
+    """Write a candidate; the runtime promotes it with successful task completion."""
+    torch.save(
+        {
+            "job_id": job_id,
+            "site_name": site_name,
+            "round": current_round,
+            "optimizer": optimizer.state_dict(),
+            "train_rng": train_loader.generator.get_state(),
+            "torch_rng": torch.get_rng_state(),
+        },
+        checkpoint["output"],
+    )
+
+
+def create_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS)
     parser.add_argument("--learning_rate", type=float, default=None)
     parser.add_argument("--batch_size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--num_workers", type=int, default=DEFAULT_NUM_WORKERS)
+    parser.add_argument("--seed", type=int, default=MODEL_SEED)
+    parser.add_argument("--torch_threads", type=int, default=None)
+    parser.add_argument("--resume_training", action=argparse.BooleanOptionalAction, default=True)
     add_dataset_arguments(parser)
     parser.add_argument("--train_size", type=int, default=DEFAULT_TRAIN_SIZE)
     parser.add_argument("--test_size", type=int, default=DEFAULT_TEST_SIZE)
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    args = create_parser().parse_args()
+    if args.torch_threads is not None:
+        torch.set_num_threads(args.torch_threads)
     learning_rate = args.learning_rate
     if learning_rate is None:
         learning_rate = DEFAULT_SYNTHETIC_LEARNING_RATE if args.dataset == "synthetic" else DEFAULT_CIFAR_LEARNING_RATE
@@ -107,12 +172,17 @@ def main():
     flare.init()
     sys_info = flare.system_info()
     client_name = sys_info["site_name"]
+    checkpoint = sys_info.get("task_checkpoint")
+    torch.manual_seed(stable_seed(client_name, "training", args.seed))
 
     # Keep the zero-argument quickstart on CPU for repeatable behavior across
     # developer machines. The opt-in CIFAR-10 run can use a GPU when available.
-    device = torch.device("cpu" if args.dataset == "synthetic" else "cuda:0" if torch.cuda.is_available() else "cpu")
-    model = create_model().to(device)
-    loss = nn.CrossEntropyLoss()
+    device = torch.device(
+        "cpu"
+        if checkpoint is not None or args.dataset == "synthetic"
+        else "cuda:0" if torch.cuda.is_available() else "cpu"
+    )
+    model = create_model(seed=args.seed).to(device)
     optimizer = SGD(model.parameters(), lr=learning_rate, momentum=0.9)
     train_loader, test_loader = create_data_loaders(
         dataset=args.dataset,
@@ -122,16 +192,13 @@ def main():
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         data_root=args.data_root,
+        seed=args.seed,
     )
     last_params = None
 
     # The client writer is transport-only and does not require TensorBoard.
     # An optional server-side tracking receiver decides whether to persist it.
     summary_writer = SummaryWriter()
-    num_train_batches = len(train_loader)
-    if num_train_batches == 0:
-        raise ValueError("Training data_loader produced no batches; check --train_size and --batch_size.")
-
     while flare.is_running():
         # (4) receives FLModel from NVFlare
         input_model = flare.receive()
@@ -150,6 +217,18 @@ def main():
             flare.send(flare.FLModel(params=last_params))
             continue
 
+        # Resident job compute retains these objects. Fresh workers restore
+        # only local optimizer/RNG state; the server still supplies the weights.
+        if flare.is_train() and checkpoint is not None and args.resume_training:
+            restore_training_state(
+                checkpoint,
+                optimizer,
+                train_loader,
+                job_id=sys_info["job_id"],
+                site_name=client_name,
+                current_round=input_model.current_round,
+            )
+
         # (5) loads model from NVFlare
         model.load_state_dict(input_model.params)
         # (6) evaluate the received global model before local training
@@ -163,25 +242,9 @@ def main():
             flare.send(output_model)
             continue
 
-        model.train()
-        steps = args.epochs * num_train_batches
-        for epoch in range(args.epochs):
-            running_loss = 0.0
-            for i, batch in enumerate(train_loader):
-                images, labels = batch[0].to(device), batch[1].to(device)
-                optimizer.zero_grad()
-
-                predictions = model(images)
-                cost = loss(predictions, labels)
-                cost.backward()
-                optimizer.step()
-
-                running_loss += cost.item()
-            avg_loss = running_loss / num_train_batches
-            print(f"site={client_name}, epoch={epoch + 1}/{args.epochs}, loss={avg_loss:.4f}")
-            global_step = input_model.current_round * args.epochs + epoch
-            summary_writer.add_scalar(tag="train_loss", scalar=avg_loss, global_step=global_step)
-
+        steps = train_one_round(
+            model, optimizer, train_loader, device, args.epochs, input_model.current_round, client_name, summary_writer
+        )
         print(f"Finished Training for {client_name}")
         trained_accuracy = evaluate(model, test_loader, device)
 
@@ -200,6 +263,15 @@ def main():
             },
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
+        if checkpoint is not None and args.resume_training:
+            save_training_state(
+                checkpoint,
+                optimizer,
+                train_loader,
+                job_id=sys_info["job_id"],
+                site_name=client_name,
+                current_round=input_model.current_round,
+            )
         print(f"site: {client_name}, sending model to server.")
         # (8) send model back to NVFlare
         flare.send(output_model)

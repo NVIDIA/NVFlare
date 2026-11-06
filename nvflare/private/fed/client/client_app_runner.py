@@ -23,6 +23,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_module_logger
+from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import CellChannel, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
@@ -32,8 +33,9 @@ from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.command_agent import CommandAgent
 from nvflare.private.fed.runner import Runner
-from nvflare.private.fed.utils.fed_utils import authorize_build_component
+from nvflare.private.fed.utils.fed_utils import authorize_build_component, get_job_meta_from_workspace
 from nvflare.private.privacy_manager import PrivacyService
+from nvflare.utils.job_launcher_utils import validate_cj_execution_lifetime
 
 
 class ClientAppRunner(Runner):
@@ -77,13 +79,23 @@ class ClientAppRunner(Runner):
         )
         federated_client.status = ClientStatus.STARTED
 
-        self.client_runner.run(app_root, args)
+        def on_ready():
+            self.notify_job_status(
+                federated_client,
+                args.job_id,
+                ClientStatus.READY,
+                timeout=notify_timeout,
+                retry_timeout=retry_timeout,
+            )
+
+        self.client_runner.run(app_root, args, on_ready=on_ready)
 
         self.notify_job_status(
             federated_client,
             args.job_id,
             ClientStatus.STOPPED,
             timeout=notify_timeout,
+            retry_timeout=retry_timeout,
         )
         federated_client.status = ClientStatus.STOPPED
         federated_client.stop_cell()
@@ -111,6 +123,13 @@ class ClientAppRunner(Runner):
             app_root=app_root,
             args=args,
             kv_list=args.set,
+        )
+        # Includes, format search and image environment can resolve differently
+        # here than at submission/CP. Check before building any app component.
+        validate_cj_execution_lifetime(
+            get_job_meta_from_workspace(workspace, args.job_id),
+            args.client_name,
+            get_client_execution_lifetime(conf.config_data),
         )
         conf.set_component_build_authorizer(
             authorize_build_component, fl_ctx=fl_ctx, event_handlers=event_handlers or []
@@ -180,14 +199,14 @@ class ClientAppRunner(Runner):
 
         Returns: None
 
-        When the CJ is just started (status=2), it tries to notify the CP. Since this is the very first message from
-        CJ to SP, the connection to CP may not have been established. We'll retry until the notification is sent
-        successfully, or the retry_timeout has been reached.
+        Retry until acknowledged or retry_timeout is reached. Exhausting status
+        delivery retries is logged without failing the job or skipping teardown.
 
         """
         message = Message(topic=TrainingTopic.NOTIFY_JOB_STATUS, body="")
         message.set_header(RequestHeader.JOB_ID, str(job_id))
         message.set_header(RequestHeader.JOB_STATUS, status)
+        message.set_header(RequestHeader.CJ_LAUNCH_ID, ConfigService.get_str_var(RequestHeader.CJ_LAUNCH_ID))
 
         my_fqcn = federated_client.cell.core_cell.get_fqcn()
         cp_fqcn = FQCN.get_parent(my_fqcn)
@@ -218,6 +237,7 @@ class ClientAppRunner(Runner):
                 self.logger.error(
                     f"cannot notify status {status} to {cp_fqcn} in {duration} seconds after {num_tries} tries"
                 )
+                return
             else:
                 time.sleep(0.5)
 

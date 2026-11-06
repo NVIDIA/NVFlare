@@ -19,6 +19,7 @@ class ClientStatus(object):
     STARTED = 2
     STOPPED = 3
     EXCEPTION = 4
+    READY = 5  # Runner initialization completed; CP keeps the public STARTED status.
 
     status_messages = {
         NOT_STARTED: "not started",

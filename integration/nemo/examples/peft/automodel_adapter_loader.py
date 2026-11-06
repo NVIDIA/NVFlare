@@ -35,15 +35,35 @@ def _has_adapter_weights(adapter_dir: str | None) -> bool:
 def _compatible_adapter_state(
     model_state: Mapping[str, torch.Tensor], adapter_state: Mapping[str, torch.Tensor]
 ) -> OrderedDict[str, torch.Tensor]:
-    compatible = OrderedDict()
-    adapter_by_canonical_key = {
-        adapter_checkpoint.canonical_adapter_key(key): value for key, value in adapter_state.items()
-    }
-    for key, target in model_state.items():
-        value = adapter_by_canonical_key.get(adapter_checkpoint.canonical_adapter_key(key))
-        if not isinstance(value, torch.Tensor) or not isinstance(target, torch.Tensor):
+    model_by_canonical_key = {}
+    for key, value in model_state.items():
+        if not isinstance(value, torch.Tensor) or "lora_" not in key:
             continue
-        compatible[key] = value.detach().to(device=target.device, dtype=target.dtype)
+        canonical_key = adapter_checkpoint.canonical_adapter_key(key)
+        if canonical_key in model_by_canonical_key:
+            raise ValueError(f"Duplicate model adapter key after normalization: {canonical_key}")
+        model_by_canonical_key[canonical_key] = (key, value)
+
+    compatible = OrderedDict()
+    seen_adapter_keys = set()
+    for key, value in adapter_state.items():
+        canonical_key = adapter_checkpoint.canonical_adapter_key(key)
+        if canonical_key in seen_adapter_keys:
+            raise ValueError(f"Duplicate incoming adapter key after normalization: {canonical_key}")
+        seen_adapter_keys.add(canonical_key)
+        if canonical_key not in model_by_canonical_key:
+            raise ValueError(f"Incoming adapter tensor has no matching AutoModel LoRA parameter: {key}")
+        model_key, target = model_by_canonical_key[canonical_key]
+        if not isinstance(value, torch.Tensor):
+            raise TypeError(f"Adapter value for {key} is not a tensor.")
+        if tuple(value.shape) != tuple(target.shape):
+            raise ValueError(
+                f"Adapter shape mismatch for {key}: got {tuple(value.shape)}, expected {tuple(target.shape)}"
+            )
+        if torch.is_floating_point(value) and not torch.isfinite(value).all():
+            raise ValueError(f"Adapter tensor contains non-finite values: {key}")
+        compatible[model_key] = value.detach().to(device=target.device, dtype=target.dtype)
+
     return compatible
 
 

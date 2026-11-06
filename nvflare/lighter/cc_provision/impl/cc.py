@@ -18,7 +18,7 @@ from typing import Any, Dict, Optional, Type
 
 from nvflare.app_opt.confidential_computing.cc_manager import CC_ISSUER_ID, TOKEN_EXPIRATION
 from nvflare.lighter import utils
-from nvflare.lighter.constants import PropKey, ProvFileName, TemplateSectionKey
+from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName, TemplateSectionKey
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Builder
@@ -110,6 +110,8 @@ class CCBuilder(Builder):
 
     def initialize(self, project: Project, ctx: ProvisionContext):
         """Initialize all CC builders needed for the project."""
+        if ctx.get(CtxKey.PUBLIC_ROOT_ONLY):
+            raise ValueError("public-root-only provisioning does not support CC content signing")
         self.project_name = project.name
         self.project = project
         for participant in project.get_all_participants():

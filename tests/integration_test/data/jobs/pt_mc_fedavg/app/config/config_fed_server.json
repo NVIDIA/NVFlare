@@ -1,0 +1,28 @@
+{
+  "format_version": 2,
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "model_class_path": "net.Net",
+  "workflows": [
+    {
+      "id": "fedavg_ctl",
+      "path": "nvflare.app_common.workflows.fedavg.FedAvg",
+      "args": {
+        "num_clients": 2,
+        "num_rounds": 3,
+        "persistor_id": "persistor"
+      }
+    }
+  ],
+  "components": [
+    {
+      "id": "persistor",
+      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+      "args": {
+        "model": {
+          "path": "{model_class_path}"
+        }
+      }
+    }
+  ]
+}

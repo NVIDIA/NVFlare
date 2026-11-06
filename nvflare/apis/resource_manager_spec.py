@@ -37,6 +37,10 @@ class ResourceManagerSpec(ABC):
 
             is_resource_enough is a bool indicates whether there is enough resources;
             token is for resource reservation / cancellation for this check request.
+
+            Implementations that reserve resources must automatically expire reservations
+            that are not allocated or cancelled. A client can disconnect or lose its reply
+            after reserving resources, leaving the server without a token to cancel them.
         """
         pass
 

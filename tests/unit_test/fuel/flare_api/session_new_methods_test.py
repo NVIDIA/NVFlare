@@ -663,6 +663,34 @@ class TestGetJobLogs:
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == ["grep", "server", 'foo"bar', "log.txt"]
 
+    @pytest.mark.parametrize(
+        "method, kwargs, expected",
+        [
+            ("ls_target", {"options": "-l -a"}, ["ls", "server", "-l", "-a"]),
+            ("cat_target", {"options": "-n -s", "file": "log.txt"}, ["cat", "server", "-n", "-s", "log.txt"]),
+            ("tail_target", {"options": "-n 20", "file": "log.txt"}, ["tail", "server", "-n", "20", "log.txt"]),
+            (
+                "grep_target",
+                {"options": "-n -i", "pattern": "error", "file": "log.txt"},
+                ["grep", "server", "-n", "-i", "error", "log.txt"],
+            ),
+        ],
+    )
+    def test_shell_target_sends_each_option_as_separate_arg(self, method, kwargs, expected):
+        session = _make_session()
+        from nvflare.fuel.hci.client.api import APIStatus
+
+        reply = {
+            ResultKey.STATUS: APIStatus.SUCCESS,
+            ResultKey.META: None,
+            "data": [{"type": "string", "data": "ok"}],
+        }
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            getattr(session, method)("server", **kwargs)
+
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == expected
+
     def test_returns_logs_dict_and_unavailable(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus
@@ -778,7 +806,15 @@ class TestConfigureSiteLog:
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
             session.configure_site_log("INFO", target="site-2")
         cmd = mock_cmd.call_args[0][0]
-        assert "site-2" in cmd
+        assert cmd == "configure_site_log client site-2 INFO"
+
+    @pytest.mark.parametrize("target", ["all", "server", "client"])
+    def test_target_type_passed_through(self, target):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.configure_site_log("INFO", target=target)
+        cmd = mock_cmd.call_args[0][0]
+        assert cmd == f"configure_site_log {target} INFO"
 
     def test_disables_meta_enforcement(self):
         session = _make_session()

@@ -47,10 +47,17 @@ _EXAMPLES = [
     ),
     pytest.param(
         _ADVANCED_EXAMPLES_ROOT,
-        "collab.async_aggregation.async_aggregation",
+        "collab.response_callbacks.job",
         SimpleNamespace(num_clients=2, num_rounds=2),
         (),
-        id="async_aggregation",
+        id="response_callbacks",
+    ),
+    pytest.param(
+        _ADVANCED_EXAMPLES_ROOT,
+        "collab.simple_async.job",
+        None,
+        ("torch", "torchvision"),
+        id="simple_async",
     ),
     pytest.param(
         _ADVANCED_EXAMPLES_ROOT,

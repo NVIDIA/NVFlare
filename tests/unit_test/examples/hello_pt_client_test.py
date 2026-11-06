@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import importlib.util
+import sys
 from collections import Counter
+from types import SimpleNamespace
 
 import pytest
 
@@ -191,3 +193,191 @@ def test_cifar_preflight_rejects_present_but_empty_files(tmp_path):
         (batch_dir / name).touch()
     with pytest.raises(FileNotFoundError, match="Missing or empty CIFAR-10 files"):
         data_module.validate_cifar10(str(tmp_path))
+
+
+@pytest.fixture
+def task_client(tmp_path, monkeypatch):
+    import torch
+
+    with load_hello_pt_module("client.py") as module:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["client.py"])
+        monkeypatch.setattr(module.flare, "init", lambda: None)
+        monkeypatch.setattr(module.flare, "get_site_name", lambda: "site-1")
+        monkeypatch.setattr(module.flare, "get_job_id", lambda: "job-1")
+        monkeypatch.setattr(
+            module.flare,
+            "system_info",
+            lambda: {
+                "site_name": "site-1",
+                "job_id": "job-1",
+                "task_checkpoint": {
+                    "input": str(tmp_path / "training_state.pt") if (tmp_path / "training_state.pt").exists() else None,
+                    "output": str(tmp_path / "checkpoint.pending"),
+                },
+            },
+        )
+        running = iter((True, False))
+        monkeypatch.setattr(module.flare, "is_running", lambda: next(running, False))
+        monkeypatch.setattr(module.flare, "is_submit_model", lambda: False)
+        monkeypatch.setattr(module.flare, "is_train", lambda: True)
+        monkeypatch.setattr(module.flare, "is_evaluate", lambda: False)
+        model = torch.nn.Linear(1, 2)
+        monkeypatch.setattr(module, "create_model", lambda **kwargs: model)
+        monkeypatch.setattr(
+            module.flare, "receive", lambda: module.flare.FLModel(params=model.state_dict(), current_round=1)
+        )
+        loader = SimpleNamespace(generator=torch.Generator())
+        monkeypatch.setattr(module, "create_data_loaders", lambda **kwargs: (loader, loader))
+        monkeypatch.setattr(module, "evaluate", lambda *args: 0.0)
+        monkeypatch.setattr(module, "train_one_round", lambda *args: 0)
+        monkeypatch.setattr(module, "SummaryWriter", object)
+        yield module
+
+
+@pytest.mark.parametrize(
+    "checkpoint,error",
+    [
+        ({"job_id": "other", "site_name": "site-1", "round": 0}, "different job or site"),
+        ({"job_id": "job-1", "site_name": "other", "round": 0}, "different job or site"),
+        ({"job_id": "job-1", "site_name": "site-1", "round": -1}, "earlier successful round"),
+        ({"job_id": "job-1", "site_name": "site-1", "round": 1}, "earlier successful round"),
+    ],
+)
+def test_task_training_rejects_invalid_or_foreign_checkpoint(task_client, tmp_path, monkeypatch, checkpoint, error):
+    import torch
+
+    if checkpoint is not None:
+        torch.save(checkpoint, tmp_path / "training_state.pt")
+    monkeypatch.setattr(task_client.flare, "send", lambda *args: pytest.fail("must not send a result"))
+    with pytest.raises(RuntimeError, match=error):
+        task_client.main()
+
+
+@pytest.mark.parametrize("fresh_training", [False, True])
+def test_task_evaluation_and_fresh_training_leave_checkpoint_untouched(
+    task_client, tmp_path, monkeypatch, fresh_training
+):
+    checkpoint = tmp_path / "training_state.pt"
+    checkpoint.write_bytes(b"not a PyTorch checkpoint")
+    if fresh_training:
+        monkeypatch.setattr(sys, "argv", ["client.py", "--no-resume_training"])
+    else:
+        monkeypatch.setattr(task_client.flare, "is_train", lambda: False)
+        monkeypatch.setattr(task_client.flare, "is_evaluate", lambda: True)
+    outputs = []
+    monkeypatch.setattr(task_client.flare, "send", outputs.append)
+    task_client.main()
+    assert len(outputs) == 1
+    assert bool(outputs[0].params) == fresh_training
+    assert checkpoint.read_bytes() == b"not a PyTorch checkpoint"
+
+
+def test_task_checkpoint_does_not_advance_when_send_fails(task_client, tmp_path, monkeypatch):
+    import torch
+
+    checkpoint = tmp_path / "training_state.pt"
+    model = task_client.create_model()
+    torch.save(
+        {
+            "job_id": "job-1",
+            "site_name": "site-1",
+            "round": 0,
+            "optimizer": task_client.SGD(model.parameters(), lr=0.1, momentum=0.9).state_dict(),
+            "train_rng": torch.Generator().get_state(),
+            "torch_rng": torch.get_rng_state(),
+        },
+        checkpoint,
+    )
+    previous = checkpoint.read_bytes()
+
+    def fail_send(*args):
+        raise OSError("result disk is full")
+
+    monkeypatch.setattr(task_client.flare, "send", fail_send)
+    with pytest.raises(OSError, match="result disk is full"):
+        task_client.main()
+    assert checkpoint.read_bytes() == previous
+    assert torch.load(tmp_path / "checkpoint.pending", weights_only=True)["round"] == 1
+
+
+def test_task_training_writes_pending_state_without_replacing_committed_input(task_client, tmp_path, monkeypatch):
+    import torch
+
+    model = task_client.create_model()
+    checkpoint = tmp_path / "training_state.pt"
+    torch.save(
+        {
+            "job_id": "job-1",
+            "site_name": "site-1",
+            "round": 0,
+            "optimizer": task_client.SGD(model.parameters(), lr=0.1, momentum=0.9).state_dict(),
+            "train_rng": torch.Generator().get_state(),
+            "torch_rng": torch.get_rng_state(),
+        },
+        checkpoint,
+    )
+    previous = checkpoint.read_bytes()
+    outputs = []
+    monkeypatch.setattr(task_client.flare, "send", outputs.append)
+    task_client.main()
+    assert len(outputs) == 1
+    assert checkpoint.read_bytes() == previous
+    candidate = torch.load(tmp_path / "checkpoint.pending", weights_only=True)
+    assert candidate["round"] == 1
+    assert candidate["job_id"] == "job-1"
+
+
+@pytest.mark.parametrize("saved_round", [None, 0])
+def test_task_training_accepts_a_later_round_after_missed_assignments(task_client, tmp_path, monkeypatch, saved_round):
+    import torch
+
+    model = task_client.create_model()
+    if saved_round is not None:
+        torch.save(
+            {
+                "job_id": "job-1",
+                "site_name": "site-1",
+                "round": saved_round,
+                "optimizer": task_client.SGD(model.parameters(), lr=0.1, momentum=0.9).state_dict(),
+                "train_rng": torch.Generator().get_state(),
+                "torch_rng": torch.get_rng_state(),
+            },
+            tmp_path / "training_state.pt",
+        )
+    monkeypatch.setattr(
+        task_client.flare, "receive", lambda: task_client.flare.FLModel(params=model.state_dict(), current_round=3)
+    )
+    outputs = []
+    monkeypatch.setattr(task_client.flare, "send", outputs.append)
+    task_client.main()
+    assert len(outputs) == 1
+    assert torch.load(tmp_path / "checkpoint.pending", weights_only=True)["round"] == 3
+
+
+def test_job_training_keeps_state_in_memory_without_checkpoint_io(task_client, monkeypatch):
+    optimizer_ids = []
+    learning_rates = []
+    running = iter((True, True, False))
+    monkeypatch.setattr(task_client.flare, "is_running", lambda: next(running, False))
+    monkeypatch.setattr(task_client.flare, "system_info", lambda: {"site_name": "site-1", "job_id": "job-1"})
+    monkeypatch.setattr(
+        task_client.torch, "load", lambda *args, **kwargs: pytest.fail("job mode must retain native state")
+    )
+    monkeypatch.setattr(
+        task_client.torch, "set_num_threads", lambda *args: pytest.fail("default thread settings must stay unchanged")
+    )
+
+    def train(model, optimizer, *args):
+        optimizer_ids.append(id(optimizer))
+        learning_rates.append(optimizer.param_groups[0]["lr"])
+        optimizer.param_groups[0]["lr"] *= 0.5
+        return 1
+
+    monkeypatch.setattr(task_client, "train_one_round", train)
+    outputs = []
+    monkeypatch.setattr(task_client.flare, "send", outputs.append)
+    task_client.main()
+    assert len(outputs) == 2
+    assert optimizer_ids[0] == optimizer_ids[1]
+    assert learning_rates == [0.1, 0.05]

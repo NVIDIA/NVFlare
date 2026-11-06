@@ -23,18 +23,23 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class SVMAssembler(Assembler):
-    """Assembler for federated SVM using support vector aggregation.
+    """Assembler for federated SVM using support record pooling.
+
+    Support vectors here are exact client training feature rows with labels.
+    They are visible to the server. The server-selected subset is sent to the
+    clients sampled for round 1, who may differ from the round-0 contributors.
+    This assembler does not average model parameters.
 
     This assembler implements the aggregation logic for federated SVM training.
     The approach is to:
-    1. Each client trains a local SVM on their data
-    2. Each client sends their support vectors (and labels) to the server
-    3. Server concatenates all support vectors from all clients
+    1. Each sampled round-0 client trains a local SVM on their data
+    2. These clients send their support vectors (and labels) to the server
+    3. Server concatenates the submitted support vectors
     4. Server trains a global SVM on the aggregated support vectors
-    5. Server extracts final global support vectors and sends back to clients
+    5. Server extracts final global support vectors for round-1 clients
 
-    This approach only requires one round of training since SVM is not an
-    iterative algorithm in the federated setting.
+    Both client and server fitting occur in round 0. Round-1 clients fit on the
+    selected global support rows and validate against their local data.
 
     Args:
         kernel: Kernel type to use in SVM. Options include 'linear', 'poly', 'rbf', 'sigmoid'.
@@ -73,8 +78,8 @@ class SVMAssembler(Assembler):
         """Assemble the federated SVM model from client contributions.
 
         This method implements the core SVM aggregation logic:
-        - Round 0: Collects support vectors from all clients, trains a global SVM
-          on the concatenated support vectors, and extracts global support vectors
+        - Round 0: Collects support vectors from the sampled contributors, trains
+          a global SVM on their pooled records, and extracts global support vectors
         - Round 1+: Returns the previously computed global support vectors
 
         Args:

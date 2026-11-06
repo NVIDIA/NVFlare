@@ -30,7 +30,7 @@ from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, p
 from cryptography.x509.oid import ExtensionOID, NameOID
 from cryptography.x509.verification import ExtensionPolicy, PolicyBuilder, Store
 
-from nvflare.fuel.sec.admin_cert import validate_admin_leaf_cert
+from nvflare.fuel.sec.admin_cert import reject_job_credential, validate_admin_leaf_cert
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
 
 _GENERATE_CERT_RESERVED_EXTENSION_OIDS = {
@@ -73,7 +73,7 @@ def build_subject_alt_names(server_default_host=None, server_additional_hosts=No
 
 def generate_cert(
     subject: Identity,
-    issuer: Identity,
+    issuer: Identity | x509.Name,
     signing_pri_key,
     subject_pub_key,
     valid_days=360,
@@ -90,7 +90,9 @@ def generate_cert(
     cert_not_valid_after = not_valid_after or now + datetime.timedelta(days=valid_days)
 
     x509_subject = x509_name(subject.name, subject.org, subject.role)
-    x509_issuer = x509_name(issuer.name, issuer.org, issuer.role)
+    # Preserve the CA's full subject as issuer; rebuilding it from just its CN
+    # drops fields such as O/OU and breaks chains for externally supplied job CAs.
+    x509_issuer = issuer if isinstance(issuer, x509.Name) else x509_name(issuer.name, issuer.org, issuer.role)
 
     builder = (
         x509.CertificateBuilder()
@@ -313,7 +315,7 @@ def verify_cert_chain(leaf_cert, intermediate_certs, root_ca_cert, now=None):
         .extension_policies(ca_policy=ExtensionPolicy.webpki_defaults_ca(), ee_policy=ExtensionPolicy.permit_all())
         .build_client_verifier()
     )
-    verifier.verify(leaf_cert, intermediate_certs or [])
+    return verifier.verify(leaf_cert, intermediate_certs or []).chain
 
 
 def _verify_cert_signature(cert, issuer_public_key):
@@ -441,6 +443,7 @@ def verify_folder_signature_and_get_signers(
                         intermediate_certs=cert_chain[1:],
                         root_ca_cert=root_ca_cert,
                     )
+                    reject_job_credential(cert, cert_chain[1:])
                     validate_admin_leaf_cert(cert)
                     signer = _cert_to_submitter(cert)
                 signers[signer] = signer

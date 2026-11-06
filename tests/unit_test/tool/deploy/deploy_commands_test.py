@@ -21,6 +21,7 @@ import socket
 import subprocess
 import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 import yaml
@@ -188,16 +189,21 @@ def _install_fake_docker(tmp_path, monkeypatch):
         "#!/usr/bin/env bash\n"
         'printf \'%s\\n\' "$*" >> "$NVFL_TEST_DOCKER_LOG"\n'
         'case " $* " in\n'
+        '    *" context show "*) echo "${NVFL_TEST_CONTEXT:-}" ;;\n'
+        '    *" context inspect "*) echo "${NVFL_TEST_ENDPOINT:-}" ;;\n'
         '    *" network ls "*) echo nvflare-network ;;\n'
         "esac\n"
         'case " $* " in\n'
         '    *" --entrypoint /usr/local/bin/python3 "*)\n'
         '        if [ "${NVFL_TEST_PROBE_FAIL:-}" = "1" ]; then exit 1; fi\n'
-        '        echo "${NVFL_TEST_REMOTE_SOCK_GID:-2375}"\n'
+        '        echo "${NVFL_TEST_REMOTE_SOCK_GID-2375}"\n'
         "        ;;\n"
         "esac\n"
     )
     fake_docker.chmod(0o755)
+    fake_uname = fake_bin / "uname"
+    fake_uname.write_text('#!/bin/sh\nprintf "%s\\n" "${NVFL_TEST_HOST_OS:-Linux}"\n')
+    fake_uname.chmod(0o755)
     monkeypatch.setenv("NVFL_TEST_DOCKER_LOG", str(docker_log))
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
     return docker_log
@@ -259,9 +265,15 @@ def _add_server_storage(resources_path, snapshot_persistor=None):
     _write_json(resources_path, resources)
 
 
-def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys):
+@pytest.mark.parametrize("num_of_gpus", [0, 2])
+def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys, num_of_gpus):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-docker"
+    resources_path = kit / "local" / "resources.json.default"
+    resources = json.loads(resources_path.read_text())
+    manager = _component(resources, "resource_manager")
+    manager.update(path=GPU_RESOURCE_MANAGER, args={"num_of_gpus": num_of_gpus, "mem_per_gpu_in_GiB": 0})
+    _write_json(resources_path, resources)
 
     _run_prepare(
         kit,
@@ -276,7 +288,9 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
             },
         },
     )
-    capsys.readouterr()
+    captured = capsys.readouterr()
+    if num_of_gpus:
+        assert "replaces component 'resource_manager'" not in captured.out + captured.err
 
     assert not (kit / "startup" / "start_docker.sh").exists()
     assert (kit / "startup" / "start.sh").exists()
@@ -309,14 +323,26 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
     assert not (output / "local" / "resources.json").exists()
     component_ids = [c["id"] for c in resources["components"]]
     assert "process_launcher" not in component_ids
-    assert "resource_consumer" not in component_ids
-    assert _component(resources, "resource_manager")["path"].endswith("PassthroughResourceManager")
+    manager = _component(resources, "resource_manager")
+    if num_of_gpus == 0:
+        assert "resource_consumer" not in component_ids
+        assert manager["path"].endswith("PassthroughResourceManager")
+    else:
+        assert manager["path"] == GPU_RESOURCE_MANAGER
+        assert manager["args"] == {
+            "num_of_gpus": num_of_gpus,
+            "mem_per_gpu_in_GiB": 0,
+            "ignore_host": True,
+            "exclusive": True,
+        }
+        assert _component(resources, "resource_consumer")["path"].endswith("PassthroughResourceConsumer")
     launcher = _component(resources, "docker_launcher")
     assert launcher["path"] == "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher"
     assert launcher["args"]["network"] == "nvflare-test"
     assert launcher["args"]["default_python_path"] == "/usr/bin/python"
     assert launcher["args"]["default_job_env"] == {"NCCL_P2P_DISABLE": "1"}
     assert launcher["args"]["default_job_container_kwargs"] == {"shm_size": "8g"}
+    assert "gpu_ids" not in launcher["args"]
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"]["host"] == "0.0.0.0"
@@ -366,15 +392,7 @@ def test_prepare_docker_start_script_handles_docker_socket_path_and_groups(tmp_p
     assert 'if ! docker "${DOCKER_CLI_ARGS[@]}" network inspect' in script
     assert 'docker "${DOCKER_CLI_ARGS[@]}" network create' in script
     assert 'docker "${DOCKER_CLI_ARGS[@]}" run' in script
-    assert (
-        "SOCK_GID=$(stat -c '%g' \"$DOCKER_SOCK\" 2>/dev/null || "
-        'stat -f \'%g\' "$DOCKER_SOCK" 2>/dev/null || echo "")'
-    ) in script
-    assert "HOST_OS=$(uname -s)" in script
     assert "GROUP_ADD_ARGS=()" in script
-    assert 'if [ "$HOST_OS" = "Darwin" ] || [ "$SOCK_GID" = "0" ]; then' in script
-    assert "GROUP_ADD_ARGS+=(--group-add 0)" in script
-    assert "GROUP_ADD_ARGS=(--group-add 0)" not in script
     assert 'GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")' in script
     assert '"${GROUP_ADD_ARGS[@]}"' in script
     assert "NVFL_DOCKER_SOCK_GID" in script
@@ -445,6 +463,7 @@ def test_prepare_docker_start_script_pins_local_socket_override(tmp_path, capsys
     )
     capsys.readouterr()
     docker_log = _install_fake_docker(tmp_path, monkeypatch)
+    monkeypatch.setenv("NVFL_TEST_HOST_OS", "Darwin")
 
     with tempfile.TemporaryDirectory(prefix=".nvfl-sock-", dir=os.getcwd()) as socket_dir:
         docker_socket_path = os.path.join(socket_dir, "docker.sock")
@@ -465,7 +484,7 @@ def test_prepare_docker_start_script_pins_local_socket_override(tmp_path, capsys
     expected_prefix = f"--host unix://{docker_socket_path} "
     assert calls
     assert all(call.startswith(expected_prefix) for call in calls)
-    assert not any("--entrypoint /usr/local/bin/python3" in call for call in calls)
+    assert sum("--entrypoint /usr/local/bin/python3" in call for call in calls) == 1
     run_call = next(call for call in calls if " run --name" in call)
     assert f"--mount type=bind,src={docker_socket_path},dst=/var/run/docker.sock" in run_call
 
@@ -535,6 +554,77 @@ def test_prepare_docker_start_script_fails_when_daemon_host_socket_probe_fails(t
     assert "Set NVFL_DOCKER_SOCK_GID" in result.stdout
     calls = docker_log.read_text().splitlines()
     assert not any(call.startswith("run --name") for call in calls)
+
+
+@pytest.mark.parametrize("host_os", ["Linux", "Darwin"])
+@pytest.mark.parametrize("endpoint_source", ["host", "context", "absolute_symlink", "relative_symlink"])
+@pytest.mark.parametrize(
+    "probe_gid,configured_gid,probe_fail,expected_gid",
+    [
+        ("2375", None, False, "2375"),
+        ("0", None, False, "0"),
+        ("bad", None, False, None),
+        ("", None, False, None),
+        ("2375", None, True, None),
+        ("2375", "4242", True, "4242"),
+        ("2375", "0", True, "0"),
+        ("2375", "bad", False, None),
+    ],
+)
+def test_prepare_docker_local_socket_uses_daemon_gid(
+    tmp_path, capsys, monkeypatch, host_os, endpoint_source, probe_gid, configured_gid, probe_fail, expected_gid
+):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(kit, output, {"runtime": "docker", "parent": {"docker_image": "repo/nvflare:dev"}})
+    capsys.readouterr()
+    docker_log = _install_fake_docker(tmp_path, monkeypatch)
+    monkeypatch.delenv("NVFL_DOCKER_SOCK", raising=False)
+    monkeypatch.delenv("DOCKER_HOST", raising=False)
+    monkeypatch.delenv("NVFL_DOCKER_SOCK_GID", raising=False)
+    monkeypatch.setenv("NVFL_TEST_HOST_OS", host_os)
+    monkeypatch.setenv("NVFL_TEST_REMOTE_SOCK_GID", probe_gid)
+    monkeypatch.setenv("NVFL_TEST_PROBE_FAIL", "1" if probe_fail else "0")
+    if configured_gid is not None:
+        monkeypatch.setenv("NVFL_DOCKER_SOCK_GID", configured_gid)
+
+    # Short paths keep AF_UNIX sockets below macOS's path length limit.
+    with tempfile.TemporaryDirectory(prefix=".nvfl-sock-", dir=os.getcwd()) as socket_dir:
+        socket_path = Path(socket_dir) / "rootless.sock"
+        with socket.socket(socket.AF_UNIX) as local_socket:
+            local_socket.bind(str(socket_path))
+            endpoint_path = socket_path
+            if endpoint_source.endswith("symlink"):
+                endpoint_path = Path(socket_dir) / "docker.sock"
+                endpoint_path.symlink_to(socket_path if endpoint_source == "absolute_symlink" else socket_path.name)
+            if endpoint_source == "host":
+                monkeypatch.setenv("DOCKER_HOST", f"unix://{endpoint_path}")
+            else:
+                monkeypatch.setenv("NVFL_TEST_CONTEXT", "colima-test")
+                monkeypatch.setenv("NVFL_TEST_ENDPOINT", f"unix://{endpoint_path}")
+            result = subprocess.run(
+                ["bash", str(output / "startup" / "start_docker.sh")], capture_output=True, text=True, check=False
+            )
+
+    calls = docker_log.read_text().splitlines()
+    probes = [call for call in calls if "--entrypoint /usr/local/bin/python3" in call]
+    parent_calls = [call for call in calls if "run --name" in call]
+    assert len(probes) == (1 if configured_gid is None else 0)
+    if probes:
+        assert probes[0].startswith(f"--host unix://{socket_path} run --rm ")
+        mount_socket = "/var/run/docker.sock" if host_os == "Darwin" else socket_path
+        assert f"--mount type=bind,src={mount_socket},dst=/var/run/docker.sock" in probes[0]
+    if expected_gid is None:
+        assert result.returncode == 1
+        assert "ERROR:" in result.stdout
+        assert not parent_calls
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert len(parent_calls) == 1
+        assert f"--group-add {expected_gid} " in parent_calls[0]
+        assert parent_calls[0].count("--group-add") == 1
+        mount_socket = "/var/run/docker.sock" if host_os == "Darwin" else socket_path
+        assert f"--mount type=bind,src={mount_socket},dst=/var/run/docker.sock" in parent_calls[0]
 
 
 def test_prepare_docker_start_script_rejects_missing_local_socket(tmp_path, capsys, monkeypatch):
@@ -2239,3 +2329,75 @@ def test_prepare_rejects_non_string_optional_config_values(tmp_path, capsys, con
     assert "INVALID_CONFIG" in err
     assert expected in err
     assert not output.exists()
+
+
+@pytest.mark.skipif(shutil.which("helm") is None, reason="Helm is not installed")
+@pytest.mark.parametrize("jobs_claim", [None, "site-1-jobs", "nvflws"])
+def test_client_chart_mounts_separate_jobs_pvc_and_rejects_private_claim(tmp_path, capsys, jobs_claim):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(kit, output, {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev"}})
+    capsys.readouterr()
+    command = [
+        shutil.which("helm"),
+        "template",
+        "site-1",
+        str(output / "helm_chart"),
+        "--show-only",
+        "templates/client-deployment.yaml",
+    ]
+    if jobs_claim:
+        command += ["--set-string", "persistence.jobs.claimName=" + jobs_claim]
+    result = subprocess.run(command, capture_output=True, text=True)
+    if jobs_claim == "nvflws":
+        assert result.returncode != 0
+        assert "must differ from the private CP workspace claim" in result.stderr
+        return
+    assert result.returncode == 0, result.stderr
+    spec = yaml.safe_load(result.stdout)["spec"]["template"]["spec"]
+    claims = {
+        v["name"]: v["persistentVolumeClaim"]["claimName"] for v in spec["volumes"] if "persistentVolumeClaim" in v
+    }
+    assert claims["workspace"] == "nvflws"
+    if jobs_claim:
+        assert claims == {"workspace": "nvflws", "job-workspaces": jobs_claim}
+        mounts = {m["name"]: m["mountPath"] for m in spec["containers"][0]["volumeMounts"]}
+        assert mounts["workspace"] == "/var/tmp/nvflare/workspace"
+        assert mounts["job-workspaces"] == "/mnt/nvflare-jobs"
+    else:
+        assert claims == {"workspace": "nvflws"}
+
+
+@pytest.mark.skipif(shutil.which("helm") is None, reason="Helm is not installed")
+@pytest.mark.parametrize(
+    "mount_path",
+    [
+        "/",
+        "relative",
+        "/var/tmp/nvflare/workspace",
+        "/var/tmp/nvflare/workspace/.",
+        "/var/tmp/nvflare/workspace/local",
+        "/var/tmp/nvflare",
+    ],
+)
+def test_client_chart_rejects_jobs_mount_over_private_workspace(tmp_path, capsys, mount_path):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(kit, output, {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev"}})
+    capsys.readouterr()
+    result = subprocess.run(
+        [
+            shutil.which("helm"),
+            "template",
+            "site-1",
+            str(output / "helm_chart"),
+            "--set-string",
+            "persistence.jobs.claimName=site-1-jobs",
+            "--set-string",
+            "persistence.jobs.mountPath=" + mount_path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "must be a dedicated absolute directory" in result.stderr

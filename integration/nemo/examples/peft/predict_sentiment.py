@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Run notebook sentiment predictions from a federated Nemotron 3 Nano LoRA adapter."""
+"""Run notebook sentiment predictions from a federated Nemotron 3 LoRA adapter."""
 
 from __future__ import annotations
 
@@ -20,13 +20,8 @@ import json
 import os
 
 import adapter_checkpoint
+import model_profiles
 import torch
-
-DEFAULT_MODEL_NAME_OR_PATH = "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16"
-DEFAULT_SERVER_MODEL = (
-    "/tmp/nvflare/nemotron3_nano_peft/" "nemotron3-nano-peft/server/simulate_job/app_server/FL_global_model.pt"
-)
-DEFAULT_TARGET_MODULES = "down_proj,in_proj,out_proj,up_proj"
 
 SENTIMENT_LABELS = ("neutral", "positive", "negative")
 NOTEBOOK_EXAMPLES = [
@@ -43,16 +38,40 @@ NOTEBOOK_EXAMPLES = [
 
 def define_parser():
     parser = argparse.ArgumentParser(description="Score notebook sentiment prompts with a federated LoRA adapter.")
-    parser.add_argument("--model_name_or_path", default=DEFAULT_MODEL_NAME_OR_PATH)
-    parser.add_argument("--server_model", default=DEFAULT_SERVER_MODEL)
-    parser.add_argument("--output_dir", default="./models/nemotron3_nano_lora_final")
-    parser.add_argument("--output_json", default="./models/nemotron3_nano_prediction_summary.json")
-    parser.add_argument("--lora_rank", type=int, default=8)
-    parser.add_argument("--lora_alpha", type=int, default=16)
-    parser.add_argument("--lora_dropout", type=float, default=0.05)
-    parser.add_argument("--target_modules", default=DEFAULT_TARGET_MODULES)
+    model_profiles.add_model_profile_argument(parser)
+    parser.add_argument("--model_name_or_path", default=None)
+    parser.add_argument("--tokenizer_name_or_path", default=None)
+    parser.add_argument("--model_revision", default=None)
+    parser.add_argument("--tokenizer_revision", default=None)
+    parser.add_argument("--server_model", default=None)
+    parser.add_argument("--output_dir", default=None)
+    parser.add_argument("--output_json", default=None)
+    parser.add_argument("--lora_rank", type=int, default=None)
+    parser.add_argument("--lora_alpha", type=int, default=None)
+    parser.add_argument("--lora_dropout", type=float, default=None)
+    parser.add_argument("--target_modules", default=None)
+    parser.add_argument("--exclude_modules", default=None)
+    parser.add_argument("--use_triton_lora", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--tp_size", type=int, default=None)
+    parser.add_argument("--cp_size", type=int, default=None)
+    parser.add_argument("--ep_size", type=int, default=None)
+    parser.add_argument("--activation_checkpointing", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--device_map", default="auto")
-    return parser.parse_args()
+    parser.add_argument("--seed", type=int, default=42)
+    args = model_profiles.resolve_model_profile(parser.parse_args())
+    if args.server_model is None:
+        args.server_model = model_profiles.default_server_model_path(args)
+    if args.output_dir is None:
+        name = "nemotron35_lightning_lora_final" if model_profiles.is_lightning35(args) else "nemotron3_nano_lora_final"
+        args.output_dir = os.path.join(".", "models", name)
+    if args.output_json is None:
+        name = (
+            "nemotron35_lightning_prediction_summary.json"
+            if model_profiles.is_lightning35(args)
+            else "nemotron3_nano_prediction_summary.json"
+        )
+        args.output_json = os.path.join(".", "models", name)
+    return args
 
 
 def _split_target_modules(target_modules: str):
@@ -109,24 +128,36 @@ def classify(scores: dict[str, float]) -> str:
 
 
 def predict(args):
-    from peft import PeftModel
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    if model_profiles.is_lightning35(args):
+        import evaluate_sentiment
 
-    adapter_dir, adapter_tensor_count = _prepare_hf_adapter_dir(args)
+        adapter_dir = args.server_model
+        adapter_tensor_count = len(adapter_checkpoint.load_adapter_state(args.server_model))
+        args.adapter_dir = args.server_model
+        model, tokenizer = evaluate_sentiment.load_model(args)
+    else:
+        from peft import PeftModel
+        from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+        adapter_dir, adapter_tensor_count = _prepare_hf_adapter_dir(args)
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.tokenizer_name_or_path,
+            revision=args.tokenizer_revision,
+            trust_remote_code=True,
+        )
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
 
-    base_model = AutoModelForCausalLM.from_pretrained(
-        args.model_name_or_path,
-        trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
-        device_map=args.device_map,
-    )
-    base_model.eval()
-    model = PeftModel.from_pretrained(base_model, adapter_dir)
-    model.eval()
+        base_model = AutoModelForCausalLM.from_pretrained(
+            args.model_name_or_path,
+            revision=args.model_revision,
+            trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
+            device_map=args.device_map,
+        )
+        base_model.eval()
+        model = PeftModel.from_pretrained(base_model, adapter_dir)
+        model.eval()
 
     rows = []
     for prompt, expected in NOTEBOOK_EXAMPLES:

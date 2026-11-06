@@ -23,7 +23,9 @@ class FQN:
 
     @staticmethod
     def normalize(fqn: str) -> str:
-        return fqn.strip()
+        # Pass a non-str through unchanged so validate reports its type, rather than
+        # raising AttributeError here. Callers normalize before they validate.
+        return fqn.strip() if isinstance(fqn, str) else fqn
 
     @staticmethod
     def split(fqn: str) -> List[str]:
@@ -37,10 +39,12 @@ class FQN:
     def validate(cls, fqn) -> str:
         if not isinstance(fqn, str):
             return f"must be str but got {type(fqn)}"
-        fqn = cls.normalize(fqn)
         if not fqn:
             return "empty"
-        valid = bool(re.match(cls.VALID_PATTERN, fqn))
+        # Check the name the caller holds, not a stripped copy of it: the caller keeps
+        # using its own string. fullmatch is needed because "$" also matches just before
+        # a trailing newline, which would let "server\n" through on its own.
+        valid = bool(re.fullmatch(cls.VALID_PATTERN, fqn))
         if not valid:
             return "invalid char"
         parts = cls.split(fqn)

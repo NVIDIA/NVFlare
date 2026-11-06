@@ -18,6 +18,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
 
 
@@ -655,13 +656,28 @@ class TestFedJobConfig:
         assert expected == job_config._trim_whitespace(" site-0,site-1 ")
         assert expected == job_config._trim_whitespace(" site-0, site-1 ")
 
+    @pytest.mark.parametrize("gpu", [None, "0"])
+    def test_simulator_rejects_task_lifetime_before_export_or_spawn(self, tmp_path, gpu):
+        job_config = FedJobConfig(job_name="task_job", min_clients=1)
+        client_app = ClientAppConfig()
+        client_app.additional_params["execution_lifetime"] = "task"
+        job_config.add_fed_app("app", FedAppConfig(client_app=client_app))
+
+        with patch.object(job_config, "generate_job_config") as export:
+            with patch("nvflare.job_config.fed_job_config.popen_in_new_session") as spawn:
+                with pytest.raises(ValueError, match="simulator requires job lifetime"):
+                    job_config.simulator_run(str(tmp_path), n_clients=1, gpu=gpu)
+
+        export.assert_not_called()
+        spawn.assert_not_called()
+
     def test_simulator_run_returns_process_returncode(self, tmp_path):
         job_config = FedJobConfig(job_name="test_job", min_clients=1)
         process = Mock()
         process.wait.return_value = 0
 
         with patch.object(job_config, "generate_job_config"):
-            with patch("nvflare.job_config.fed_job_config.subprocess.Popen", return_value=process):
+            with patch("nvflare.job_config.fed_job_config.popen_in_new_session", return_value=process):
                 result = job_config.simulator_run(str(tmp_path), n_clients=1)
 
         assert result == 0
@@ -672,7 +688,37 @@ class TestFedJobConfig:
         process.wait.return_value = 2
 
         with patch.object(job_config, "generate_job_config"):
-            with patch("nvflare.job_config.fed_job_config.subprocess.Popen", return_value=process):
+            with patch("nvflare.job_config.fed_job_config.popen_in_new_session", return_value=process):
                 result = job_config.simulator_run(workspace=str(tmp_path), clients="site-1", threads=1)
 
         assert result == 2
+
+    def test_simulator_run_keeps_paths_with_spaces_intact(self, tmp_path):
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        process = Mock()
+        process.wait.return_value = 0
+        job_root = tmp_path / "job root"
+        job_root.mkdir()
+        workspace = str(tmp_path / "work space")
+        executable = str(tmp_path / "py env" / "bin" / "python")
+        log_config = str(tmp_path / "log dir" / "log_config.json")
+
+        class _JobRoot:
+            def __enter__(self):
+                return str(job_root)
+
+            def __exit__(self, *exc):
+                return False
+
+        with patch.object(job_config, "generate_job_config"):
+            with patch("nvflare.job_config.fed_job_config.TemporaryDirectory", return_value=_JobRoot()):
+                with patch("nvflare.job_config.fed_job_config.sys.executable", executable):
+                    with patch("nvflare.job_config.fed_job_config.popen_in_new_session", return_value=process) as popen:
+                        job_config.simulator_run(workspace, clients="site-1, site-2", threads=2, log_config=log_config)
+
+        args = popen.call_args.args[0]
+        assert args[0] == executable
+        assert args[args.index("-m") + 2] == os.path.join(str(job_root), "job_name")
+        assert args[args.index("-w") + 1] == workspace
+        assert args[args.index("-c") + 1] == "site-1,site-2"
+        assert args[-1] == "-l" + log_config

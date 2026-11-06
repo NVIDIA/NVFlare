@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -160,7 +160,11 @@ class EdgeModelUpdater(Updater):
             old_versions = set()
             # make a set of current active model versions from unique value of device_selection dict
             active_model_versions = set(new_state.device_selection.values())
-            for mv in self.aggr_states.keys():
+            for mv, state in self.aggr_states.items():
+                # Results may arrive while waiting for this parent reply. Preserve them
+                # until the next report forwards them, regardless of selection or age.
+                if mv == new_state.model_version or state.devices:
+                    continue
                 # remove the model versions that are
                 # - either not in device_selection values
                 if mv not in active_model_versions:

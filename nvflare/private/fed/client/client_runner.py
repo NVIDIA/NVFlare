@@ -19,19 +19,33 @@ import uuid
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConfigVarName, FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import (
+    ConfigVarName,
+    FilterKey,
+    FLContextKey,
+    ReservedKey,
+    ReservedTopic,
+    ReturnCode,
+    ServerCommandKey,
+    ServerCommandNames,
+    TaskResultReceipt,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.apis.task_launcher_spec import TaskExecutionInterrupted
 from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
-from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.apis.utils.task_utils import apply_filters, get_filters, materialize_lazy_download_refs
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_download_ref
 from nvflare.fuel.utils.msg_root_utils import delete_msg_root
-from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, SpecialTaskName, TaskConstant, new_cell_message
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from nvflare.private.fed.tbi import TBI
 from nvflare.private.json_configer import ConfigError
@@ -170,6 +184,12 @@ class ClientRunner(TBI):
         self.log_debug(fl_ctx, f"received TASK_ASSIGNMENT_SENT {event_type}")
         task_data = fl_ctx.get_prop(FLContextKey.TASK_DATA)
         assert isinstance(task_data, Shareable)
+        peer_ctx = fl_ctx.get_peer_context()
+        with self.task_lock:
+            task = self.running_tasks.get(fl_ctx.get_prop(FLContextKey.TASK_ID))
+            if task and isinstance(peer_ctx, FLContext) and peer_ctx.get_job_id() == self.job_id:
+                task.restore_assignment_identity(task_data)
+                task.child_result_receipts.setdefault(peer_ctx.get_identity_name(), False)
         task_name = task_data.get_header(ReservedHeaderKey.TASK_NAME)
         executor = None
         if not task_name:
@@ -223,14 +243,21 @@ class ClientRunner(TBI):
         return reply
 
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
+        cookie_jar = task.data.get_cookie_jar() if isinstance(task.data, Shareable) else None
+        cookie_jar = dict(cookie_jar) if cookie_jar else None
         reply = self._do_process_task(task, fl_ctx)
+        # Bind the actual outgoing reply on every path, including an early
+        # filter failure that replaced a previously successful executor result.
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
 
-        cookie_jar = task.data.get_cookie_jar()
         if cookie_jar:
             reply.set_cookie_jar(cookie_jar)
 
         reply.set_header(ReservedHeaderKey.TASK_NAME, task.name)
         reply.set_header(ReservedHeaderKey.TASK_ID, task.task_id)
+        if task.attempt_id is not None:
+            reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, task.attempt_id)
+            reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_REQUIRED, True)
         return reply
 
     def _do_process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
@@ -243,6 +270,8 @@ class ClientRunner(TBI):
         abort_signal = Signal(parent=self.run_abort_signal)
         try:
             reply = self._do_task(task, fl_ctx, abort_signal)
+        except TaskExecutionInterrupted:
+            raise
         except Exception as ex:
             self.log_exception(fl_ctx, secure_format_exception(ex))
             reply = make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -264,6 +293,8 @@ class ClientRunner(TBI):
         fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task.name, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task.task_id, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, value=task.attempt_id, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.WORKFLOW, value=task.workflow_id, private=True, sticky=False)
 
         server_audit_event_id = task.data.get_header(ReservedKey.AUDIT_EVENT_ID, "")
         add_job_audit_event(fl_ctx=fl_ctx, ref=server_audit_event_id, msg="received task from server")
@@ -311,6 +342,36 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.TASK_UNKNOWN}",
             )
 
+        release_task_data = None
+        try:
+            resolve = getattr(executor, "resolve_task_data", None)
+            if callable(resolve) and contains_lazy_download_ref(task.data):
+                try:
+                    if get_filters(
+                        Scope.TASK_DATA_FILTERS_NAME, fl_ctx, self.task_data_filters, task.name, FilterKey.IN
+                    ):
+                        task.data = materialize_lazy_download_refs(
+                            task.data, fl_ctx.get_engine().get_cell(), abort_signal
+                        )
+                    else:
+                        task.data, release_task_data = resolve(task.data, fl_ctx, abort_signal=abort_signal)
+                    fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
+                except Exception as e:
+                    self.log_exception(fl_ctx, f"task data resolution failed: {secure_format_exception(e)}")
+                    return self._reply_and_audit(
+                        reply=make_reply(
+                            ReturnCode.TASK_ABORTED if abort_signal.triggered else ReturnCode.BAD_TASK_DATA
+                        ),
+                        ref=server_audit_event_id,
+                        fl_ctx=fl_ctx,
+                        msg="task data resolution failed",
+                    )
+            return self._execute_task(task, fl_ctx, abort_signal, executor, server_audit_event_id)
+        finally:
+            if release_task_data is not None:
+                release_task_data()
+
+    def _execute_task(self, task, fl_ctx, abort_signal, executor, server_audit_event_id):
         executor_name = executor.__class__.__name__
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
@@ -367,6 +428,7 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.TASK_DATA_FILTER_ERROR}",
             )
 
+        task.restore_assignment_identity(task_data)
         task.data = task_data
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
@@ -413,6 +475,9 @@ class ClientRunner(TBI):
                     msg=f"submit result: {ReturnCode.EXECUTION_RESULT_ERROR}",
                 )
 
+        except TaskExecutionInterrupted:
+            # Do not close the outstanding server assignment with an error result.
+            raise
         except RuntimeError as e:
             self.log_exception(
                 fl_ctx, f"RuntimeError from executor {executor_name}: {secure_format_exception(e)}: Aborting the job!"
@@ -581,13 +646,19 @@ class ClientRunner(TBI):
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_SEND_TASK_RESULT")
         self.fire_event(EventType.BEFORE_SEND_TASK_RESULT, fl_ctx)
 
-        self._send_task_result(task_reply, task.task_id, fl_ctx)
+        send_success = self._send_task_result(task_reply, task.task_id, fl_ctx)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, send_success, private=True, sticky=False)
         self.log_debug(fl_ctx, "firing event EventType.AFTER_SEND_TASK_RESULT")
         self.fire_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
 
         return task_fetch_interval, True
 
     def _send_task_result(self, result: Shareable, task_id: str, fl_ctx: FLContext):
+        # This fact spans retries: False proves the result never reached the
+        # submission transport; send success alone cannot distinguish that from
+        # an upload whose acknowledgement was lost before abort/task removal.
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED, False, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, None, private=True, sticky=False)
         try_count = 1
         while True:
             self.log_debug(fl_ctx, f"try #{try_count}: sending task result to server")
@@ -618,6 +689,9 @@ class ClientRunner(TBI):
 
             rc = self._check_task_once(task_id, fl_ctx)
             if rc == _TASK_CHECK_RESULT_OK:
+                if fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED:
+                    delete_msg_root(msg_root_id)
+                    return _TASK_CHECK_RESULT_OK
                 break
             elif rc == _TASK_CHECK_RESULT_TASK_GONE:
                 return rc
@@ -625,10 +699,20 @@ class ClientRunner(TBI):
                 # try again
                 time.sleep(self.task_check_interval)
 
+        # Readiness checking may race an abort. Do not hand an already
+        # cancelled publication to transport or mark it as an attempted send.
+        if self.run_abort_signal.triggered:
+            return _TASK_CHECK_RESULT_TASK_GONE
+
         # try to send the result
         self.log_info(fl_ctx, f"start to send task result to {self.parent_target}")
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED, True, private=True, sticky=False)
         reply_sent = self.engine.send_task_result(result, fl_ctx, timeout=self.submit_task_result_timeout)
-        if reply_sent:
+        receipt = fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT)
+        if receipt == TaskResultReceipt.TASK_CLOSED:
+            delete_msg_root(msg_root_id)
+            return _TASK_CHECK_RESULT_TASK_GONE
+        if reply_sent and (receipt == TaskResultReceipt.RECEIVED or result.get_task_attempt_id() is None):
             self.log_info(fl_ctx, f"task result sent to {self.parent_target}")
             delete_msg_root(msg_root_id)
             return _TASK_CHECK_RESULT_OK
@@ -650,6 +734,11 @@ class ClientRunner(TBI):
         self.log_debug(fl_ctx, f"checking task with {self.parent_target} ...")
         task_check_req = Shareable()
         task_check_req.set_header(ReservedKey.TASK_ID, task_id)
+        attempt_id = fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID)
+        if attempt_id is not None:
+            task_check_req.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
+            task_check_req.set_header(ReservedHeaderKey.TASK_NAME, fl_ctx.get_prop(FLContextKey.TASK_NAME))
+            task_check_req.set_header(ReservedHeaderKey.WORKFLOW, fl_ctx.get_prop(FLContextKey.WORKFLOW))
         resp = self.engine.send_aux_request(
             targets=[self.parent_target],
             topic=ReservedTopic.TASK_CHECK,
@@ -666,7 +755,20 @@ class ClientRunner(TBI):
                 )
                 return _TASK_CHECK_RESULT_TRY_AGAIN
 
-            rc = reply.get_return_code()
+            try:
+                rc = reply.get_return_code()
+            except ValueError:
+                self.log_error(fl_ctx, "malformed task_check reply - will retry")
+                return _TASK_CHECK_RESULT_TRY_AGAIN
+            if attempt_id is not None and rc in (ReturnCode.OK, ReturnCode.TASK_UNKNOWN):
+                receipt = reply.get_task_result_receipt(task_id, attempt_id, fl_ctx.get_prop(FLContextKey.WORKFLOW))
+                if receipt is None:
+                    return _TASK_CHECK_RESULT_TRY_AGAIN
+                fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, receipt, private=True, sticky=False)
+                if receipt == TaskResultReceipt.TASK_CLOSED:
+                    return _TASK_CHECK_RESULT_TASK_GONE
+                if rc != ReturnCode.OK:
+                    return _TASK_CHECK_RESULT_TRY_AGAIN
             if rc == ReturnCode.OK:
                 return _TASK_CHECK_RESULT_OK
             elif rc == ReturnCode.COMMUNICATION_ERROR:
@@ -686,11 +788,27 @@ class ClientRunner(TBI):
             self.log_error(fl_ctx, f"bad task_check reply from {self.parent_target}: invalid resp {type(resp)}")
             return _TASK_CHECK_RESULT_TRY_AGAIN
 
-    def run(self, app_root, args):
-        self.init_run(app_root, args)
+    def run(self, app_root, args, on_ready=None):
+        if self.init_run(app_root, args) is False:
+            # The server job already ended; no application run or messaging was started.
+            self.engine.shutdown_streamer()
+            DownloadService.shutdown()
+            return
 
         try:
+            if on_ready and not self.run_abort_signal.triggered:
+                try:
+                    on_ready()
+                except Exception as e:
+                    with self.engine.new_context() as fl_ctx:
+                        self.log_exception(
+                            fl_ctx, f"could not notify CP of runner readiness: {secure_format_exception(e)}"
+                        )
             self._try_run()
+        except TaskExecutionInterrupted:
+            # Unwind through normal cleanup, but skip the successful STOPPED
+            # notification. The process monitor reports a recoverable nonzero exit.
+            raise
         except Exception as e:
             with self.engine.new_context() as fl_ctx:
                 self.log_exception(fl_ctx, f"processing error in RUN execution: {secure_format_exception(e)}")
@@ -775,6 +893,28 @@ class ClientRunner(TBI):
                     break
 
             if not synced:
+                # A replacement can arrive after the final result was accepted and
+                # SJ exited. Confirm that with SP; an unreachable SJ alone is not proof.
+                reply = None
+                if cell is not None:
+                    reply = cell.send_request(
+                        target=FQCN.ROOT_SERVER,
+                        channel=CellChannel.SERVER_PARENT_LISTENER,
+                        topic=ServerCommandNames.GET_CLIENTS,
+                        request=new_cell_message({CellMessageHeaderKeys.JOB_ID: self.job_id}, {}),
+                        timeout=sync_timeout,
+                        optional=True,
+                    )
+                if (
+                    reply is not None
+                    and reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
+                    and isinstance(reply.payload, dict)
+                    and reply.payload.get(ServerCommandKey.JOB_ID) == self.job_id
+                    and reply.payload.get(ServerCommandKey.CLIENTS, {}) is None
+                ):
+                    self.log_info(fl_ctx, "server job has ended; finishing this client runner")
+                    self.run_abort_signal.trigger(True)
+                    return False
                 raise RuntimeError(f"cannot sync with {target} Runner after {max_sync_timeout} seconds")
 
             self.log_info(fl_ctx, f"synced to parent {target} in {time.time() - sync_start} seconds")
@@ -798,12 +938,80 @@ class ClientRunner(TBI):
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         self.log_debug(fl_ctx, f"received task_check on task {task_id}")
+        try:
+            attempt_id = request.get_task_attempt_id()
+        except ValueError:
+            return make_reply(ReturnCode.BAD_REQUEST_DATA)
         with self.task_lock:
+            if attempt_id is not None:
+                receipt = self._child_result_receipt(request, fl_ctx)
+                reply = make_reply(
+                    ReturnCode.TASK_UNKNOWN if receipt == TaskResultReceipt.TASK_CLOSED else ReturnCode.OK
+                )
+                reply.set_header(ReservedHeaderKey.TASK_ID, task_id)
+                reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)
+                reply.set_header(ReservedHeaderKey.WORKFLOW, request.get_header(ReservedHeaderKey.WORKFLOW))
+                reply.set_header(ReservedHeaderKey.TASK_RESULT_RECEIPT, receipt)
+                return reply
             if task_id not in self.running_tasks:
                 self.log_debug(fl_ctx, f"task {task_id} is not found")
                 return make_reply(ReturnCode.TASK_UNKNOWN)
             else:
                 return make_reply(ReturnCode.OK)
+
+    def _child_result_receipt(self, request: Shareable, fl_ctx: FLContext) -> str:
+        """Resolve child assignment authority while holding task_lock."""
+        task_id = request.get_header(ReservedHeaderKey.TASK_ID)
+        task = self.running_tasks.get(task_id)
+        peer_ctx = fl_ctx.get_peer_context()
+        if (
+            task is None
+            or self.run_abort_signal.triggered
+            or not isinstance(peer_ctx, FLContext)
+            or peer_ctx.get_job_id() != self.job_id
+            or peer_ctx.get_identity_name() not in task.child_result_receipts
+        ):
+            return TaskResultReceipt.TASK_CLOSED
+        try:
+            if request.get_task_attempt_id() != task.attempt_id:
+                return TaskResultReceipt.TASK_CLOSED
+            for key, expected in (
+                (ReservedHeaderKey.TASK_ID, task.task_id),
+                (ReservedHeaderKey.TASK_NAME, task.name),
+                (ReservedHeaderKey.WORKFLOW, task.workflow_id),
+            ):
+                header = request.get_header(key)
+                cookie = request.get_cookie(key)
+                if (cookie if cookie is not None else header) != expected:
+                    return TaskResultReceipt.TASK_CLOSED
+                if header is not None and header != expected:
+                    return TaskResultReceipt.TASK_CLOSED
+        except ValueError:
+            return TaskResultReceipt.TASK_CLOSED
+        return (
+            TaskResultReceipt.RECEIVED
+            if task.child_result_receipts[peer_ctx.get_identity_name()]
+            else TaskResultReceipt.RETRY
+        )
+
+    def claim_child_result(self, result: Shareable, fl_ctx: FLContext):
+        """Claim full child receipt before events; return (process, receipt)."""
+        with self.task_lock:
+            try:
+                attempt_id = result.get_task_attempt_id()
+                task = self.running_tasks.get(result.get_header(ReservedHeaderKey.TASK_ID))
+            except ValueError:
+                return False, TaskResultReceipt.TASK_CLOSED
+            if attempt_id is None and (task is None or task.attempt_id is None):
+                # Unfenced custom/older authorities retain their event path.
+                return True, None
+            receipt = self._child_result_receipt(result, fl_ctx)
+            if receipt != TaskResultReceipt.RETRY:
+                return False, receipt
+            if contains_lazy_download_ref(result):
+                return False, TaskResultReceipt.RETRY
+            task.child_result_receipts[fl_ctx.get_peer_context().get_identity_name()] = True
+            return True, TaskResultReceipt.RECEIVED
 
     def _handle_job_heartbeat(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.log_debug(fl_ctx, "received client job_heartbeat")
@@ -870,6 +1078,7 @@ class ClientRunner(TBI):
             # This happens when a task calls system_panic().
             reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")
             self.log_error(fl_ctx, "Stopped ClientRunner due to FATAL_SYSTEM_ERROR: {}".format(reason))
+            fl_ctx.set_prop(key=FLContextKey.FATAL_SYSTEM_ERROR, value=True, private=True, sticky=True)
             self._run_abort_requested = True
             self.run_abort_signal.trigger(True)
 

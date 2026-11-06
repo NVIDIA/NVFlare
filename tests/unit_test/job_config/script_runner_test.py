@@ -747,7 +747,7 @@ class TestExecutionModeSelection:
             assert command[command.index("-gpu") + 1] == "0,1"
             return process
 
-        with patch("nvflare.job_config.fed_job_config.subprocess.Popen", side_effect=start_simulator):
+        with patch("nvflare.job_config.fed_job_config.popen_in_new_session", side_effect=start_simulator):
             result = job.simulator_run(str(tmp_path / "workspace"), n_clients=2, gpu="0,1")
 
         assert result == 0

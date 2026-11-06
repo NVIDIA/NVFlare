@@ -13,15 +13,19 @@
 # limitations under the License.
 
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.app_common.abstract.statistics_spec import Bin, Feature, Histogram, HistogramType, StatisticConfig
 from nvflare.app_common.app_constant import StatisticsConstants as StC
+from nvflare.app_common.executors.statistics.statistics_executor import StatisticsExecutor
 from nvflare.app_common.executors.statistics.statistics_task_handler import StatisticsTaskHandler
 from nvflare.app_common.statistics.numeric_stats import get_global_stats
 from nvflare.app_common.workflows.statistics_controller import StatisticsController
@@ -227,3 +231,14 @@ class TestStatisticsExecutor:
         histogram = self.stats_executor.get_histogram("train", "Age", statistic_config, inputs, None)
         assert histogram.hist_type == HistogramType.STANDARD
         assert len(histogram.bins) == 3
+
+
+def test_job_event_dispatch_records_statistics_finalization_failure():
+    executor = StatisticsExecutor("statistics")
+    executor.task_handler = Mock()
+    error = ValueError("statistics cleanup failed")
+    executor.task_handler.finalize.side_effect = error
+    context = FLContext()
+    fire_event_to_components(EventType.END_RUN, [executor], context)
+    executor.task_handler.finalize.assert_called_once_with(context)
+    assert context.get_prop(FLContextKey.EXCEPTIONS)[executor.name] is error

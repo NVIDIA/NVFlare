@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.fuel.f3.drivers.net_utils import MAX_PAYLOAD_SIZE
-from nvflare.fuel.utils.config import Config
 from nvflare.fuel.utils.config_service import ConfigService
 
 _comm_config_files = ["comm_config.json", "comm_config.json.default"]
@@ -62,8 +61,7 @@ class CommConfigurator:
     def __init__(self):
         # only load once!
         if not CommConfigurator._config_loaded:
-            config: Config = ConfigService.load_configuration(file_basename=_comm_config_files[0])
-            CommConfigurator._configuration = None if config is None else config.to_dict()
+            CommConfigurator._configuration = ConfigService.load_configuration(file_basename=_comm_config_files[0])
             CommConfigurator._config_loaded = True
         self.config = CommConfigurator._configuration
 
@@ -75,6 +73,12 @@ class CommConfigurator:
 
         """
         CommConfigurator._config_loaded = False
+
+    @classmethod
+    def reload_from_dir(cls, config_dir: str):
+        """Reload communication settings from one directory, including when no file exists there."""
+        cls._configuration = ConfigService.load_config_dict(_comm_config_files[0], [config_dir], raise_exception=False)
+        cls._config_loaded = True
 
     def get_config(self):
         return self.config

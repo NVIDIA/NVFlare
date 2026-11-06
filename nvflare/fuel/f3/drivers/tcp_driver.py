@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 class TcpStreamServer(ThreadingTCPServer):
 
     TCPServer.allow_reuse_address = True
+    daemon_threads = True
 
     def __init__(self, driver: Driver, connector: ConnectorInfo):
         self.driver = driver
@@ -45,9 +46,6 @@ class TcpStreamServer(ThreadingTCPServer):
 
         TCPServer.__init__(self, (host, port), ConnectionHandler, False)
 
-        if self.ssl_context:
-            self.socket = self.ssl_context.wrap_socket(self.socket, server_side=True)
-
         try:
             self.server_bind()
             self.server_activate()
@@ -56,11 +54,35 @@ class TcpStreamServer(ThreadingTCPServer):
             self.server_close()
             raise
 
+    def get_request(self):
+        sock, address = super().get_request()
+        if self.ssl_context:
+            try:
+                sock = self.ssl_context.wrap_socket(sock, server_side=True, do_handshake_on_connect=False)
+            except Exception:
+                sock.close()
+                raise
+        return sock, address
+
 
 class TcpDriver(BaseDriver):
     def __init__(self):
         super().__init__()
         self.server = None
+        self._pending_sockets = set()
+
+    def register_pending_socket(self, sock):
+        with self.conn_lock:
+            admitted = not self._connection_admission_closed
+            if admitted:
+                self._pending_sockets.add(sock)
+        if not admitted:
+            sock.close()
+        return admitted
+
+    def release_pending_socket(self, sock):
+        with self.conn_lock:
+            self._pending_sockets.discard(sock)
 
     @staticmethod
     def supported_transports() -> List[str]:
@@ -72,8 +94,17 @@ class TcpDriver(BaseDriver):
 
     def listen(self, connector: ConnectorInfo):
         self.connector = connector
-        self.server = TcpStreamServer(self, connector)
-        self.server.serve_forever()
+        server = TcpStreamServer(self, connector)
+        # Pair publication with shutdown's snapshot. Once published, serve_forever()
+        # must run so that a concurrent server.shutdown() can finish.
+        with self.conn_lock:
+            stopped = self._connection_admission_closed or connector.stopped.is_set()
+            if not stopped:
+                self.server = server
+        if stopped:
+            server.server_close()
+        else:
+            server.serve_forever()
 
     def connect(self, connector: ConnectorInfo):
         self.connector = connector
@@ -83,28 +114,47 @@ class TcpDriver(BaseDriver):
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            sock.settimeout(params.get(DriverParams.CONNECT_TIMEOUT))
+            timeout = params.get(DriverParams.CONNECT_TIMEOUT)
+            sock.settimeout(float(timeout) if timeout is not None else None)
             context = get_ssl_context(params, ssl_server=False)
             if context:
                 sock = context.wrap_socket(sock)
-            sock.connect((host, port))
-            sock.settimeout(None)
+            if not self.register_pending_socket(sock):
+                return
+            try:
+                sock.connect((host, port))
+                sock.settimeout(None)
+            finally:
+                self.release_pending_socket(sock)
         except Exception:
             sock.close()
             raise
 
         connection = SocketConnection(sock, connector, bool(context))
-        self.add_connection(connection)
-        # Shutdown may have missed this connection while connect/TLS was still in progress.
-        if connector.stopped.is_set():
-            connection.close()
+        if not self.add_connection(connection):
+            return
         connection.read_loop()
         self.close_connection(connection)
 
     def shutdown(self):
+        self.stop_connection_admission()
+        with self.conn_lock:
+            server = self.server
+            pending = list(self._pending_sockets)
+        for sock in pending:
+            try:
+                # Wake the owner thread without clearing SSLSocket's state or
+                # closing its descriptor while a handshake is still using it.
+                socket.socket.shutdown(sock, socket.SHUT_RDWR)
+            except OSError:
+                # The socket may not have connected yet, or its owner may
+                # already have closed it. The owner closes it in either case.
+                pass
+        if server:
+            server.shutdown()
         self.close_all()
-        if self.server:
-            self.server.shutdown()
+        if server:
+            server.server_close()
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):

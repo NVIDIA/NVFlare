@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -51,24 +51,29 @@ class BuffModelManager(ModelManager):
         The aggregation scheme and weights are calculated following FedBuff paper "Federated Learning with Buffered Asynchronous Aggregation".
         The staleness_weight can be enabled to apply staleness weighting to model updates.
 
-        Special cases for max_model_history:
-        - If None: Keep every model versions, only remove a version when all devices processing it reports back (version no longer related with any device_id in the current_selection from device_manager).
+        Accepted updates are retained until aggregation consumes them. Empty historical states
+        can be removed when no outstanding assignment needs them or their versions are too old.
 
         Args:
             num_updates_for_model (int): Number of updates required before generating a new model version.
-            max_model_history (int): Maximum number of historical model versions to keep in memory.
-                - None (default): keep every version until all devices processing a particular version report back.
-                - positive integer: keep only the latest n versions
+            max_model_history (int): Model-version window for accepting incoming updates.
+                - None (default): no age limit; retain empty versions while assignments remain outstanding.
+                - positive integer: reject updates whose version is at least this far behind the current model.
+                Already accepted updates remain buffered until consumed, even outside this window.
             global_lr (float): Global learning rate for model aggregation, default is 1.0.
             staleness_weight (bool): Whether to apply staleness weighting to model updates, default is False.
         """
 
         super().__init__()
         self.num_updates_for_model = num_updates_for_model
-        self.num_updates_counter = 0
         self.max_model_history = max_model_history
         self.global_lr = global_lr
         self.staleness_weight = staleness_weight
+
+    @property
+    def num_updates_counter(self) -> int:
+        """Number of accepted device updates still buffered for aggregation."""
+        return sum(state.aggregator.count for state in self.updates.values())
 
     def initialize_model(self, model: DXO, fl_ctx: FLContext):
         self.current_model = model
@@ -76,12 +81,13 @@ class BuffModelManager(ModelManager):
         self.updates[self.current_model_version] = _ModelState(ModelUpdateDXOAggregator())
 
     def prune_model_versions(self, versions_to_keep: Set[int], fl_ctx: FLContext) -> None:
-        # go through all versions and remove the ones:
-        # - either not in versions_to_keep
-        # - or too old (current_model_version - v >= max_model_history)
+        # Version age and outstanding assignments only govern empty historical states.
+        # The current state and accepted, unconsumed updates must remain available.
         versions_to_remove = set()
 
-        for v in self.updates.keys():
+        for v, state in self.updates.items():
+            if v == self.current_model_version or state.aggregator.count > 0:
+                continue
             if v not in versions_to_keep:
                 versions_to_remove.add(v)
             if self.max_model_history and self.current_model_version - v >= self.max_model_history:
@@ -155,9 +161,6 @@ class BuffModelManager(ModelManager):
         new_model = {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in new_model.items()}
         self.current_model = DXO(data_kind=DataKind.WEIGHTS, data=new_model)
 
-        # reset the num_updates_counter
-        self.num_updates_counter = 0
-
         # set fl_ctx and fire the event
         # wrap new_model to a learnable
         learnable = make_model_learnable(new_model, {})
@@ -195,9 +198,6 @@ class BuffModelManager(ModelManager):
                 fl_ctx,
                 f"processed child update V{model_version} with {len(model_update.devices)} devices: {accepted=}",
             )
-
-            # update the global num_updates_counter
-            self.num_updates_counter += len(model_update.devices)
 
         current_model_state = self.updates.get(self.current_model_version)
         if isinstance(current_model_state, _ModelState):

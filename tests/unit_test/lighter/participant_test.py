@@ -14,6 +14,7 @@
 
 import pytest
 
+from nvflare.lighter.constants import PropKey
 from nvflare.lighter.entity import Participant
 
 
@@ -58,15 +59,19 @@ class TestParticipant:
         [
             ({"role": "project_admin", "admin_cert_provider": {"provider": "step_ca"}}, None, "must not define role"),
             ({"admin_cert_provider": {"provider": "step_ca"}}, "org", "must not define org"),
+            ({"external_cert": True, "role": "project_admin"}, None, "must not define role"),
+            ({"external_cert": True}, "org", "must not define org"),
         ],
     )
-    def test_admin_cert_provider_rejects_project_time_identity(self, props, org, match):
+    def test_external_admin_rejects_project_time_identity(self, props, org, match):
         with pytest.raises(ValueError, match=match):
-            _ = Participant(name="sso-admin-kit", org=org, type="admin", props=props)
+            _ = Participant(name="admin@example.com", org=org, type="admin", props=props)
 
-    def test_static_admin_rejects_kit_name(self):
-        with pytest.raises(ValueError):
-            _ = Participant(name="sso-admin-kit", org="org", type="admin", props={"role": "project_admin"})
+    @pytest.mark.parametrize("external_cert", [False, True])
+    def test_file_based_admin_rejects_non_email_name(self, external_cert):
+        props = {"external_cert": True} if external_cert else {"role": "project_admin"}
+        with pytest.raises(ValueError, match="ill-formatted"):
+            Participant(name="automation", org=None if external_cert else "org", type="admin", props=props)
 
     @pytest.mark.parametrize(
         "invalid_org",
@@ -83,3 +88,11 @@ class TestParticipant:
     def test_invalid_type(self, invalid_type):
         with pytest.raises(ValueError):
             _ = Participant(name="server", type=invalid_type, org="org")
+
+    def test_external_cert_must_be_bool(self):
+        with pytest.raises(ValueError, match="external_cert.*must be bool"):
+            Participant(name="server", type="server", org="org", props={PropKey.EXTERNAL_CERT: "true"})
+
+    def test_external_cert_rejects_unsupported_participant_type(self):
+        with pytest.raises(ValueError, match="external_cert is supported only for server, client, relay and admin"):
+            Participant(name="other", type="other", org="org", props={PropKey.EXTERNAL_CERT: True})

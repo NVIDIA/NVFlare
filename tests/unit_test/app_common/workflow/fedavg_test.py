@@ -1092,6 +1092,35 @@ class TestScatterAndGatherDownloadToDiskContext:
         assert not root_dir.exists()
 
 
+class TestScatterAndGatherResultAdmission:
+    @pytest.mark.parametrize("accepted", [False, True])
+    def test_process_train_result_keeps_aggregator_decision_server_local_after_cleanup(self, accepted):
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+
+        controller = ScatterAndGather()
+        controller._current_round = 0
+        controller.aggregator = MagicMock()
+        controller.aggregator.accept.return_value = accepted
+        controller.fire_event = MagicMock()
+        fl_ctx = FLContext()
+        task = Task(name=AppConstants.TASK_TRAIN, data=Shareable())
+        client_task = ClientTask(client=Client("site-1", "token"), task=task)
+        result = Shareable({"model": "unchanged"})
+        client_task.result = result
+
+        assert controller._process_train_result(client_task, fl_ctx) is None
+
+        controller.aggregator.accept.assert_called_once_with(result, fl_ctx)
+        assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is accepted
+        assert [call.args[0] for call in controller.fire_event.call_args_list] == [
+            AppEventType.BEFORE_CONTRIBUTION_ACCEPT,
+            AppEventType.AFTER_CONTRIBUTION_ACCEPT,
+        ]
+        assert client_task.result is None
+        assert result.get_return_code(default=None) is None
+        assert task.completion_status is None
+
+
 class TestScaffoldDownloadToDiskContext:
     def test_run_restores_context_and_cleans_root_dir(self, tmp_path, monkeypatch):
         from nvflare.app_common.app_constant import AlgorithmConstants
@@ -1547,6 +1576,29 @@ class TestFedAvgWorkflowEvents:
         assert accepted_flags_seen == [False]
         assert controller._results == []
         assert client_task.result is None
+
+    def test_process_result_returns_rejection_for_handled_callback_failure(self):
+        controller = FedAvg(num_clients=1)
+        fl_ctx = FLContext()
+        callback = MagicMock(side_effect=RuntimeError("aggregator callback failed"))
+        task = Task(
+            name=AppConstants.TASK_TRAIN,
+            data=Shareable(),
+            props={AppConstants.META_DATA: {}, AppConstants.TASK_PROP_CALLBACK: callback},
+        )
+        client_task = ClientTask(client=Client("site-1", "token"), task=task)
+        result = FLModelUtils.to_shareable(FLModel(params={"w": 1.0}))
+        client_task.result = result
+
+        with patch.object(controller, "event"), patch.object(controller, "error") as log_error:
+            controller._process_result(client_task, fl_ctx)
+
+        callback.assert_called_once()
+        log_error.assert_called_once()
+        assert fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED) is False
+        assert fl_ctx.get_prop(AppConstants.TRAINING_RESULT) is None
+        assert client_task.result is None
+        assert task.completion_status is None
 
     def test_process_result_releases_raw_in_memory_training_result(self):
         import gc

@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from nvflare.apis.fl_constant import ConfigVarName
+from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.download_service import Downloadable, ProduceRC
@@ -744,3 +745,51 @@ def test_materialize_lazy_ref_does_not_rewrite_unchanged_dictionary(monkeypatch)
     assert result["unchanged"] is unchanged
     assert unchanged.clear_calls == 0
     assert unchanged.update_calls == 0
+
+
+@pytest.mark.parametrize("kinds", [("numpy",), ("torch",), ("numpy", "torch")])
+def test_disk_resolution_tracks_only_file_owners(tmp_path, monkeypatch, kinds):
+    import numpy as np
+    import torch
+    from safetensors.torch import save_file
+
+    from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
+    from nvflare.app_opt.pt.decomposers import TensorDecomposer
+    from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict, _LazyRef
+
+    class FakeCell:
+        def get_fobs_context(self, props=None):
+            return {fobs.FOBSContextKey.CELL: self, **(props or {})}
+
+    fobs.register(NumpyArrayDecomposer)
+    fobs.register(TensorDecomposer)
+    scratch = tmp_path / "offload"
+    scratch.mkdir()
+    file = scratch / "chunk.safetensors"
+    save_file({"T0": torch.ones(4)}, str(file))
+    owner = LazyTensorDict({"T0": (str(file), "T0")}, str(scratch))
+    monkeypatch.setattr(
+        "nvflare.app_common.decomposers.numpy_decomposers.download_arrays",
+        lambda **kwargs: (None, {"T0": np.ones(4)}),
+    )
+    monkeypatch.setattr("nvflare.app_opt.pt.decomposers.download_tensors_to_disk", lambda **kwargs: (None, owner))
+    types = {"numpy": NumpyArrayDecomposer, "torch": TensorDecomposer}
+    value = {kind: LazyDownloadRef("server", kind, "T0", dot=types[kind]().get_download_dot()) for kind in kinds}
+    owners = []
+    resolved = materialize_lazy_download_refs(
+        value,
+        FakeCell(),
+        download_props={fobs.FOBSContextKey.TENSOR_DISK_OFFLOAD: True, _TENSOR_DISK_OFFLOAD_ROOT_DIR: str(tmp_path)},
+        owners=owners,
+    )
+    assert owners == ([owner] if "torch" in kinds else [])
+    if "torch" in kinds:
+        assert isinstance(resolved["torch"], _LazyRef)
+        assert resolved["torch"].file_path == str(file)
+        assert resolved["torch"].nbytes == 16
+    if "numpy" in kinds:
+        assert np.array_equal(resolved["numpy"], np.ones(4))
+    for item in owners:
+        item.cleanup()
+    if "torch" in kinds:
+        assert not scratch.exists()

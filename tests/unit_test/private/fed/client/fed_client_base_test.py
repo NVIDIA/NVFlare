@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import socket
+import ssl
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext, suppress
@@ -32,6 +33,7 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 from nvflare.private.fed.client import fed_client_base, upgrade
 from nvflare.private.fed.client.fed_client_base import FederatedClientBase
+from tests.timing_utils import WAIT_TIMEOUT, ObservedLock, ThreadGroup
 
 _SITE_ARGS = {
     SecureTrainConst.SSL_ROOT_CERT: "rootCA.pem",
@@ -164,6 +166,14 @@ def test_cj_cell_uses_job_credential_in_both_tls_roles(monkeypatch):
     assert credentials[DriverParams.SERVER_KEY.value] == "job.key"
 
 
+def test_cells_under_the_cj_authenticate_as_the_job_and_cp_cells_are_unchanged(monkeypatch):
+    """Task workers join the job cell with its own credential; the CP keeps per-child identities."""
+    cj = _create_cell_credentials(monkeypatch, "job-1", _JOB_ARGS)
+    assert cj["auth_identity_map"]["site-1.job-1"] == cj["auth_identity"]
+    cp = _create_cell_credentials(monkeypatch, None, _SITE_ARGS)
+    assert set(cp["auth_identity_map"]) == {"site-1"}
+
+
 @pytest.fixture
 def probe_credentials(tmp_path, monkeypatch):
     monkeypatch.setattr(upgrade.MainProcessMonitor, "_stopping", False)
@@ -183,8 +193,8 @@ def probe_credentials(tmp_path, monkeypatch):
 
 @pytest.mark.timeout(15)
 @pytest.mark.parametrize("scheme", ["stcp", "satcp"])
-@pytest.mark.parametrize("finish_tls", [False, True])
-def test_upgrade_probe_cancels_stalled_tls(monkeypatch, probe_credentials, scheme, finish_tls):
+@pytest.mark.parametrize("reply_after_stop", [False, True])
+def test_upgrade_probe_cancels_stalled_tls(monkeypatch, probe_credentials, scheme, reply_after_stop):
     server_credentials, credentials = probe_credentials
     signal = Signal()
     stopped = threading.Event()
@@ -210,26 +220,30 @@ def test_upgrade_probe_cancels_stalled_tls(monkeypatch, probe_credentials, schem
             {},
             signal,
             60,
-            3 if finish_tls else 0.3,
+            60,  # Cancellation must release TLS well before its connection timeout.
         )
         connection = None
         try:
             connection, _ = listener.accept()
             signal.trigger(True)
-            if finish_tls:
-                # Complete TLS only after shutdown has scanned the empty connection set.
+            # Cancellation must finish while the peer stays open and sends no TLS reply.
+            with pytest.raises(RuntimeError, match="cancelled"):
+                future.result(timeout=3)
+            if reply_after_stop:
                 assert stopped.wait(2)
                 context = get_ssl_context({**server_credentials, "scheme": "stcp"}, ssl_server=True)
                 connection.settimeout(3)
-                connection = context.wrap_socket(connection, server_side=True)
-            with connection:
-                # Cancellation must finish even while the remote socket stays open.
-                with pytest.raises(RuntimeError, match="cancelled"):
-                    future.result(timeout=3)
-                connection.settimeout(1)
-                with suppress(ConnectionResetError):
-                    while connection.recv(4096):
-                        pass  # EOF or a reset confirms the probe closed its socket.
+                # Shutdown wakes the pending handshake, then the connecting
+                # thread closes its socket before the probe returns.
+                with pytest.raises((ssl.SSLError, ConnectionResetError, BrokenPipeError)):
+                    with context.wrap_socket(connection, server_side=True):
+                        pass
+            else:
+                with connection:
+                    connection.settimeout(1)
+                    with suppress(ConnectionResetError, BrokenPipeError):
+                        while connection.recv(4096):
+                            pass  # EOF, a reset or a broken pipe confirms the probe closed its socket.
         finally:
             signal.trigger(True)
             if connection:
@@ -254,7 +268,7 @@ def test_upgrade_probe_through_relay(monkeypatch, probe_credentials, security, u
 
         def track_connection(connection):
             connections.append(connection)
-            add_connection(connection)
+            return add_connection(connection)
 
         monkeypatch.setattr(driver, "add_connection", track_connection)
         captured = _create_cell_credentials(
@@ -314,32 +328,25 @@ def test_send_request_before_shutdown_skips_after_close():
 
 def test_close_waits_for_terminal_request_before_logout():
     client = _make_client()
+    client._shutdown_lock = ObservedLock(client._shutdown_lock)
     request_started = threading.Event()
     release_request = threading.Event()
     close_entered = threading.Event()
 
     def send_request(**_kwargs):
         request_started.set()
-        assert release_request.wait(timeout=1.0)
+        assert release_request.wait(WAIT_TIMEOUT)
         return MagicMock()
 
     client.cell.send_request.side_effect = send_request
     client.terminate.side_effect = close_entered.set
 
-    request_thread = threading.Thread(target=client.send_request_before_shutdown, kwargs={"topic": "outcome"})
-    request_thread.start()
-    assert request_started.wait(timeout=1.0)
-
-    close_thread = threading.Thread(target=client.close)
-    close_thread.start()
-    assert not close_entered.wait(timeout=0.1)
-    client.logout_client.assert_not_called()
-
-    release_request.set()
-    request_thread.join(timeout=1.0)
-    close_thread.join(timeout=1.0)
-
-    assert not request_thread.is_alive()
-    assert not close_thread.is_alive()
+    with ThreadGroup(release_request) as workers:
+        workers.start(client.send_request_before_shutdown, topic="outcome")
+        assert request_started.wait(WAIT_TIMEOUT)
+        workers.start(client.close)
+        assert client._shutdown_lock.blocked.wait(WAIT_TIMEOUT), "close did not wait for the terminal request"
+        assert not close_entered.is_set()
+        client.logout_client.assert_not_called()
     assert client.communicator.heartbeat_done is True
     client.logout_client.assert_called_once()

@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -83,7 +83,6 @@ class TaskController(FLComponent, ControllerSpec):
         abort_signal: Signal = None,
     ):
         engine = fl_ctx.get_engine()
-        request = task.data
         # apply task filters
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
@@ -94,7 +93,7 @@ class TaskController(FLComponent, ControllerSpec):
             filter_name = Scope.TASK_DATA_FILTERS_NAME
             task.data = apply_filters(
                 filter_name,
-                request,
+                task.data,
                 fl_ctx,
                 self.task_data_filters,
                 task.name,
@@ -132,6 +131,8 @@ class TaskController(FLComponent, ControllerSpec):
         if task.timeout <= 0:
             raise ValueError(f"The task timeout must > 0. But got {task.timeout}")
 
+        # Filters can return a new Shareable.
+        request = task.data
         request.set_header(ReservedKey.TASK_NAME, task.name)
         msg_root_id = task.msg_root_id
         request.set_header(ReservedHeaderKey.MSG_ROOT_ID, msg_root_id)

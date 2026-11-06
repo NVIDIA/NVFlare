@@ -22,6 +22,7 @@ from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    AggregationShapeError,
     AggregationStatsKey,
     WeightedAggregationHelper,
     filter_aggregatable_metrics,
@@ -54,6 +55,11 @@ class FedAvg(BaseFedAvg):
     Streaming accumulation applies contributions in result-arrival order; floating-point
     addition is non-associative, so identical inputs can produce ulp-level differences
     between runs and bitwise reproducibility is not guaranteed for >=2 clients.
+
+    Built-in aggregation rejects a whole contribution when exposed parameter or aggregated
+    metric shapes are incompatible, and continues with accepted clients. A round with no
+    accepted contributions fails without updating or saving. Errors during accumulation
+    still fail the round because they may have partially changed its state.
 
     Supports custom aggregators via the ModelAggregator interface.
 
@@ -298,10 +304,6 @@ class FedAvg(BaseFedAvg):
             self.warning(f"Empty result from client {client_name}, skipping.")
             return False
 
-        # Store only params_type from first result (not the full model)
-        if self._params_type is None:
-            self._params_type = result.params_type
-
         client_name = _get_client_name(result)
         if self.aggregator:
             # Use custom aggregator
@@ -316,12 +318,24 @@ class FedAvg(BaseFedAvg):
                 aggregation_weight = 1.0
 
             weight = aggregation_weight * _get_num_steps_weight(result)
-            self._site_metric_weights[client_name] = {
-                "name": client_name,
-                "weight": weight,
-                "weight_key": "effective_fedavg_metric_weight",
-            }
 
+            # The round callback lock serializes these checks with accumulation. Validate both
+            # helpers before changing either, and defer skipped-metric warnings until acceptance.
+            aggregatable = {}
+            skipped_metrics = []
+            try:
+                self._aggr_helper.validate_shapes(result.params, client_name, self.current_round)
+                if self._all_metrics and result.metrics:
+                    aggregatable = filter_aggregatable_metrics(
+                        result.metrics, warn_skipped=lambda k, tn: skipped_metrics.append((k, tn))
+                    )
+                    self._aggr_metrics_helper.validate_shapes(aggregatable, client_name, self.current_round)
+            except AggregationShapeError as e:
+                self.warning(f"Discarding result from client {client_name}: {e}")
+                return False
+
+            # Do not recover errors here: parameters may already have changed when metrics
+            # accumulation or lazy tensor materialization fails. The round failure guard applies.
             self._aggr_helper.add(
                 data=result.params,
                 weight=weight,
@@ -329,28 +343,31 @@ class FedAvg(BaseFedAvg):
                 contribution_round=self.current_round,
             )
 
-            # Add to metrics aggregation if available (only aggregatable values;
-            # non-aggregatable metrics like dicts are still in result.metrics for collection)
-            # If a client omits metrics entirely (None), disable round-level metrics
-            # aggregation instead of mixing present/absent metric coverage.
+            if aggregatable:
+                self._aggr_metrics_helper.add(
+                    data=aggregatable,
+                    weight=weight,
+                    contributor_name=client_name,
+                    contribution_round=self.current_round,
+                )
+
+            # Only accepted clients affect metric coverage, weights, and warning suppression.
+            # An accepted client omitting metrics disables round-level metrics aggregation.
             if result.metrics is None:
                 self._all_metrics = False
-            if self._all_metrics and result.metrics:
-                # Non-empty metric dicts are treated as "present"; unsupported values are
-                # filtered per key while allowing other aggregatable keys to contribute.
-                aggregatable = filter_aggregatable_metrics(
-                    result.metrics,
-                    warn_skipped=lambda k, tn: self.warning(f"Metric '{k}' ({tn}) skipped for aggregation."),
-                    warned_metric_keys=self._warned_metric_keys,
-                )
-                if aggregatable:
-                    self._aggr_metrics_helper.add(
-                        data=aggregatable,
-                        weight=weight,
-                        contributor_name=client_name,
-                        contribution_round=self.current_round,
-                    )
+            self._site_metric_weights[client_name] = {
+                "name": client_name,
+                "weight": weight,
+                "weight_key": "effective_fedavg_metric_weight",
+            }
+            for key, type_name in skipped_metrics:
+                if key not in self._warned_metric_keys:
+                    self.warning(f"Metric '{key}' ({type_name}) skipped for aggregation.")
+                    self._warned_metric_keys.add(key)
 
+        # Store only params_type from the first accepted result (not the full model).
+        if self._params_type is None:
+            self._params_type = result.params_type
         self._received_count += 1
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
         return True
@@ -369,6 +386,8 @@ class FedAvg(BaseFedAvg):
             return result
         else:
             # Use built-in InTime aggregation
+            if self._received_count == 0:
+                raise RuntimeError("FedAvg has no accepted contributions; refusing to update or save the model")
             aggr_stats = self._aggr_helper.get_aggregation_stats()
             aggr_stats[AggregationStatsKey.ROUND] = self.current_round
             if self.fl_ctx:

@@ -106,12 +106,19 @@ class SequentialRelayTaskManager(TaskManager):
             Tuple[int, int]: starting and ending indices of a window of client candidates.
 
         """
+        # relay(targets=[], dynamic_targets=True) schedules a task whose target
+        # list is filled in by the job participants that ask for work, so it is
+        # empty for as long as none has asked. There is no candidate to window
+        # over until the first one is appended.
+        if not task.targets:
+            return -1, -1
+
         # adjust client window
         task_result_timeout = task.props[_KEY_TASK_RESULT_TIMEOUT]
         last_send_idx = task.props[_KEY_LAST_SEND_IDX]
-        last_send_target = task.targets[last_send_idx]
 
-        if last_send_idx >= 0 and last_send_target in task.last_client_task_map:
+        if last_send_idx >= 0 and task.targets[last_send_idx] in task.last_client_task_map:
+            last_send_target = task.targets[last_send_idx]
             # see whether the result has been received
             last_task = task.last_client_task_map[last_send_target]
             self.logger.debug("last_task={}".format(last_task))
@@ -189,9 +196,9 @@ class SequentialRelayTaskManager(TaskManager):
         self.logger.debug("check_task_exit: win_start_idx={}, win_end_idx={}".format(win_start_idx, win_end_idx))
         if win_start_idx < 0 and win_end_idx == 0:
             last_send_idx = task.props[_KEY_LAST_SEND_IDX]
-            last_send_target = task.targets[last_send_idx]
 
-            if last_send_idx >= 0 and last_send_target in task.last_client_task_map:
+            if last_send_idx >= 0 and task.targets[last_send_idx] in task.last_client_task_map:
+                last_send_target = task.targets[last_send_idx]
                 # see whether the result has been received
                 last_client_task = task.last_client_task_map[last_send_target]
                 if last_client_task.result_received_time is not None:

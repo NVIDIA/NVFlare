@@ -47,3 +47,9 @@ class StatisticsExecutor(ErrorHandlingExecutor):
         task_handler = StatisticsTaskHandler(self.generator_id, self.precision)
         task_handler.initialize(fl_ctx)
         return task_handler
+
+    def finalize(self, fl_ctx: FLContext):
+        # The caller must observe generator cleanup failures. In a task worker,
+        # swallowing them would allow a successful completion to be published.
+        if self.task_handler:
+            self.task_handler.finalize(fl_ctx)

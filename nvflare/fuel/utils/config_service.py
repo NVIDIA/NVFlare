@@ -16,9 +16,8 @@ import json
 import os
 from typing import Dict, List, Optional, Union
 
-from nvflare.fuel.utils.config import Config, ConfigFormat
-from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.log_utils import get_module_logger
+from nvflare.security.logging import secure_format_exception
 
 ENV_VAR_PREFIX = "NVFLARE_"
 
@@ -66,8 +65,11 @@ class ConfigService:
     1. Config info is preloaded into predefined sections. Callers can get the config data by a section name.
     2. Manages config path (a list of directories) and loads file from the path.
 
-    Only JSON file loading is supported.
+    Only JSON file loading is supported. A config named "x" may exist as x.json or the lower-priority
+    fallback x.json.default (CONFIG_EXTENSIONS).
     """
+
+    CONFIG_EXTENSIONS = (".json", ".json.default")
 
     logger = get_module_logger(__module__, __qualname__)
     _sections = {}
@@ -144,6 +146,26 @@ class ConfigService:
         cls._var_values = {}
 
     @classmethod
+    def refresh_config_path(cls, config_path: List[str]):
+        """Prioritize new config paths and invalidate cached scalar values.
+
+        Keep registered sections, command arguments, and variable overrides.
+        This is useful when config files become available after initialization.
+        """
+        if not isinstance(config_path, list):
+            raise TypeError(f"config_dirs must be list but got {type(config_path)}")
+        if not config_path:
+            raise ValueError("config_dirs is empty")
+        for path in config_path:
+            if not isinstance(path, str):
+                raise ValueError(f"config_dirs must contain str but got {type(path)}")
+            if not os.path.isdir(path):
+                raise ValueError(f"'{path}' is not a valid directory")
+
+        cls._config_path = list(dict.fromkeys(config_path + cls._config_path))
+        cls._var_values = {}
+
+    @classmethod
     def get_section(cls, name: str):
         """Get the specified section.
 
@@ -177,18 +199,19 @@ class ConfigService:
             cls._sections[section_name] = data
 
     @classmethod
-    def load_configuration(cls, file_basename: str) -> Optional[Config]:
-        """Load config data from the specified file basename.
-        The full name of the config file will be determined by ConfigFactory.
-
-        Args:
-            file_basename: the basename of the config file.
-
-        Returns: config data loaded, or None if the config file is not found.
-
-        """
-        result = ConfigFactory.load_config(file_basename, cls._config_path)
-        return result
+    def _find_config_file(cls, file_basename: str, search_dirs: Optional[List[str]]) -> Optional[str]:
+        """Each search dir is walked recursively, trying each of CONFIG_EXTENSIONS in priority order;
+        the first match wins. With no search dirs, the parent dir of file_basename is searched."""
+        if not search_dirs:
+            search_dirs = [os.path.dirname(file_basename) or "."]
+        # cut at the first dot so "x.json.default" and "x.json" both map to "x"
+        basename = os.path.basename(file_basename).split(".", 1)[0]
+        for search_dir in search_dirs:
+            for ext in cls.CONFIG_EXTENSIONS:
+                path = find_file_in_dir(f"{basename}{ext}", search_dir)
+                if path:
+                    return path
+        return None
 
     @classmethod
     def load_config_dict(
@@ -198,32 +221,37 @@ class ConfigService:
         Load a specified config file ( ignore extension)
 
         Args:
-            raise_exception: if True raise exception when error occurs
+            raise_exception: if True raise exception when the config file is not found
             file_basename: base name of the config file to be loaded.
             for example: file_basename = config_fed_server.json
             what the function does is to search for config file that matches
-            config_fed_server.[json|json.default|conf|conf.default|yml|yml.default]
-            in given search directories: cls._config_path
-            if json or json.default is not found;
-            then switch to Pyhoncon [.conf] or corresponding default file; if still not found; then we switch
-            to YAML files. We use OmegaConf to load YAML
-            search_dirs: which directories to search.
+            config_fed_server.[json|json.default]
+            search_dirs: which directories to search; defaults to the parent dir of file_basename.
+                Pass cls._config_path to search the config path.
 
-        Returns: Dictionary from the configuration
-                if not found, exception will be raised.
+        Returns: Dictionary from the configuration, or None if not found and raise_exception is False.
         """
-        conf = ConfigFactory.load_config(file_basename, search_dirs)
-        if conf:
-            return conf.to_dict()
-        else:
+        path = cls._find_config_file(file_basename, search_dirs)
+        if path is None:
             if raise_exception:
                 raise FileNotFoundError(cls.config_not_found_msg(file_basename, search_dirs))
             return None
+        with open(path, "r") as f:
+            try:
+                return json.load(f)
+            except Exception as e:
+                cls.logger.error(f"Error loading config file {path}: {secure_format_exception(e)}")
+                raise
+
+    @classmethod
+    def load_configuration(cls, file_basename: str) -> Optional[Dict]:
+        """Load the config file_basename from the config path; None if not found."""
+        return cls.load_config_dict(file_basename, cls._config_path, raise_exception=False)
 
     @classmethod
     def config_not_found_msg(cls, file_basename, search_dirs):
         basename = os.path.splitext(file_basename)[0]
-        conf_exts = "|".join(ConfigFormat.config_ext_formats().keys())
+        conf_exts = "|".join(cls.CONFIG_EXTENSIONS)
         msg = f"cannot find file '{basename}[{conf_exts}]'"
         msg = f"{msg} from search paths: '{search_dirs}'" if search_dirs else msg
         return msg

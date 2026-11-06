@@ -16,7 +16,7 @@ import os
 
 import tenseal as ts
 
-from nvflare.lighter.constants import ProvFileName
+from nvflare.lighter.constants import CtxKey, ProvFileName
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
@@ -56,6 +56,8 @@ class HEBuilder(Builder):
         self.serialized = None
 
     def initialize(self, project: Project, ctx: ProvisionContext):
+        if ctx.get(CtxKey.PUBLIC_ROOT_ONLY):
+            raise ValueError("public-root-only provisioning does not support HE content signing")
         self._context = ts.context(
             self.scheme_type,
             poly_modulus_degree=self.poly_modulus_degree,

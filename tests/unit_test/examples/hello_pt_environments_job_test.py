@@ -19,6 +19,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -112,7 +113,7 @@ def test_application_recipe_is_independent_of_environment(monkeypatch, environme
     recipe = SimpleNamespace(enable_log_streaming=lambda: calls.append("log-streaming"))
     recipe_kwargs = {}
     monkeypatch.setattr(job_module, "FedAvgRecipe", lambda **kwargs: recipe_kwargs.update(kwargs) or recipe)
-    monkeypatch.setattr(job_module, "create_model", lambda: "model")
+    monkeypatch.setattr(job_module, "create_model", lambda **kwargs: "model")
     monkeypatch.setattr(job_module, "add_final_global_evaluation", lambda value: calls.append(("final", value)))
     monkeypatch.setattr(job_module, "add_cross_site_evaluation", lambda value: calls.append(("cross-site", value)))
     monkeypatch.setattr(
@@ -138,7 +139,7 @@ def test_advanced_recipe_controls_are_explicit(monkeypatch):
     recipe = SimpleNamespace(enable_log_streaming=lambda: calls.append("log-streaming"))
     recipe_kwargs = {}
     monkeypatch.setattr(job_module, "FedAvgRecipe", lambda **kwargs: recipe_kwargs.update(kwargs) or recipe)
-    monkeypatch.setattr(job_module, "create_model", lambda: "model")
+    monkeypatch.setattr(job_module, "create_model", lambda **kwargs: "model")
     monkeypatch.setattr(job_module, "add_final_global_evaluation", lambda value: calls.append(("final", value)))
     monkeypatch.setattr(job_module, "add_cross_site_evaluation", lambda value: calls.append(("cross-site", value)))
     monkeypatch.setattr(
@@ -325,6 +326,41 @@ def test_exported_job_uses_the_bundled_shared_application(tmp_path, monkeypatch)
     assert executor_args["task_script_path"] == "client.py"
 
 
+def test_task_export_uses_shared_entry_point_and_keeps_training_seed(tmp_path, monkeypatch):
+    with load_hello_pt_module("job.py", example_dir=ADVANCED_DIR) as job_module:
+        monkeypatch.setattr(job_module, "is_export_requested", lambda: True)
+        args = job_module.parse_args(["--execution_lifetime", "task", "--seed", "731", "--no-resume_training"])
+        recipe = job_module.create_recipe(args)
+        monkeypatch.chdir(ADVANCED_DIR)
+        recipe.export(job_dir=str(tmp_path), env=job_module.create_environment(args))
+    job_dir = tmp_path / "hello-pt"
+    custom = job_dir / "app" / "custom"
+    assert all((custom / name).is_file() for name in ("client.py", "model.py", "prepare_data.py"))
+    config = json.loads((job_dir / "app" / "config" / "config_fed_client.json").read_text())
+    executor_args = config["executors"][0]["executor"]["args"]
+    assert executor_args["task_script_path"] == "client.py"
+    assert executor_args["task_script_args"] == ["--dataset", "synthetic", "--seed", "731", "--no-resume_training"]
+
+
+@pytest.mark.parametrize("environment", ["sim", "poc"])
+def test_local_task_run_rejected_before_environment_creation(monkeypatch, environment):
+    job_module = _load_job_module()
+    monkeypatch.setattr(job_module, "is_export_requested", lambda: False)
+    create = Mock(side_effect=AssertionError("must reject before starting local services"))
+    monkeypatch.setattr(job_module, "create_environment", create)
+    with pytest.raises(SystemExit, match="2"):
+        job_module.main(["--env", environment, "--execution_lifetime", "task"])
+    create.assert_not_called()
+
+
+@pytest.mark.parametrize("environment", ["sim", "poc"])
+def test_task_export_is_backend_neutral(monkeypatch, environment):
+    job_module = _load_job_module()
+    monkeypatch.setattr(job_module, "is_export_requested", lambda: True)
+    args = job_module.parse_args(["--env", environment, "--execution_lifetime", "task"])
+    assert args.execution_lifetime == "task"
+
+
 @pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit, GeneratorExit, pytest.fail.Exception])
 def test_monitoring_interruption_stops_poc(monkeypatch, error_type):
     job_module = _load_job_module()
@@ -353,7 +389,9 @@ def test_negative_memory_gc_interval_is_rejected_before_execution(monkeypatch, c
 def test_copied_example_reports_missing_shared_application(tmp_path):
     script = tmp_path / "job.py"
     script.write_text((ADVANCED_DIR / "job.py").read_text())
-    result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=10)
+    # The missing-checkout guard uses only the standard library. Isolate it from
+    # site initialization and environment hooks that can stall subprocess startup.
+    result = subprocess.run([sys.executable, "-I", "-S", str(script)], capture_output=True, text=True, timeout=30)
     assert result.returncode != 0
     assert "full NVFlare checkout" in result.stderr
     assert "Traceback" not in result.stderr

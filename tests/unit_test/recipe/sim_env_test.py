@@ -55,7 +55,7 @@ def _default_resources_path(workspace_root, job_name):
 def _mock_simulator_popen():
     process = MagicMock()
     process.wait.return_value = 0
-    return patch("nvflare.job_config.fed_job_config.subprocess.Popen", return_value=process)
+    return patch("nvflare.job_config.fed_job_config.popen_in_new_session", return_value=process)
 
 
 def test_sim_env_validation():
@@ -95,7 +95,8 @@ def test_sim_env_validation():
 def test_preparation_reports_resolved_client_count(tmp_path, capsys, kwargs, expected_count):
     env = SimEnv(workspace_root=str(tmp_path), **kwargs)
     _deploy_with_mocked_simulator(env, _make_job())
-    assert f"Simulation · {expected_count} clients" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert f"Simulation · {expected_count} clients\nStarting server and clients..." in output
 
 
 def test_sim_env_status_tracks_synchronous_deployment(tmp_path):

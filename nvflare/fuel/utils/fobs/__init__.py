@@ -65,6 +65,9 @@ class FOBSContextKey:
     # When True, streamed PyTorch tensors are downloaded into temporary files
     # and recomposed as disk-backed lazy tensor references.
     TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
+    # Native artifact serialization can externalize tensor leaves through these hooks.
+    TENSOR_FILE_SINK = "tensor_file_sink"
+    TENSOR_FILE_SOURCE = "tensor_file_source"
     # Optional callable set by the trainer-side Client API before serialising a result message
     # when reverse PASS_THROUGH is active (subprocess → CJ → server).  Signature:
     #   cb(tx_id: str, status: str, base_objs: list) -> None

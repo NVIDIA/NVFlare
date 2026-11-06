@@ -20,6 +20,8 @@ from nvflare.lighter.constants import PropKey
 
 def get_admin_cert_provider_config(admin) -> Optional[dict]:
     config = admin.get_prop(PropKey.ADMIN_CERT_PROVIDER)
+    if config and admin.get_prop(PropKey.EXTERNAL_CERT):
+        raise ValueError(f"admin {admin.name}: external_cert and admin_cert_provider are mutually exclusive")
     if not config:
         return None
     scope = f"admin {admin.name}.{PropKey.ADMIN_CERT_PROVIDER}"

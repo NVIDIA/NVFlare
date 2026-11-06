@@ -351,8 +351,7 @@ Typical Workflow
    python job.py --export --export-dir /tmp/nvflare/hello-pt
    nvflare job submit -j /tmp/nvflare/hello-pt
 
-``nvflare recipe list`` replaces the deprecated ``nvflare job list_templates``
-discovery flow for new examples and recipes.
+``nvflare recipe list`` is the way to discover available recipes.
 
 *********************
 JSON Output and Help

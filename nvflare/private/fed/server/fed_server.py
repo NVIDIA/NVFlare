@@ -50,7 +50,7 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
-from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
@@ -69,7 +69,7 @@ from nvflare.private.defs import (
     ClientRegSession,
     ClientType,
     InternalFLContextKey,
-    JobFailureMsgKey,
+    JobOutcomeMsgKey,
     new_cell_message,
 )
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, validate_auth_headers
@@ -461,7 +461,8 @@ class FederatedServer(BaseServer):
 
         self.cell.register_request_cb(
             channel=CellChannel.SERVER_MAIN,
-            topic=CellChannelTopic.REPORT_JOB_FAILURE,
+            topic=CellChannelTopic.REPORT_JOB_OUTCOME,
+            # Preserve existing overrides through the legacy forwarding method.
             cb=self.process_job_failure,
         )
 
@@ -581,17 +582,34 @@ class FederatedServer(BaseServer):
         command = request.get_header(MessageHeaderKey.TOPIC)
         data = request.payload
 
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        peer = request.get_prop(MessagePropKey.ENDPOINT)
+        # CoreCell validates the origin against the transport peer before dispatch.
+        if not peer or FQCN.validate(job_id) or FQCN.SEPARATOR in job_id:
+            return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED)
+
+        is_server_job = peer.name == origin == f"{FQCN.ROOT_SERVER}.{job_id}"
+
         if command == ServerCommandNames.GET_CLIENTS:
+            if not is_server_job:
+                client_fqcn = self._resolve_client_fqcn_for_auth(
+                    request.get_header(CellMessageHeaderKeys.CLIENT_NAME),
+                    request.get_header(CellMessageHeaderKeys.TOKEN),
+                )
+                if not client_fqcn or origin != f"{client_fqcn}.{job_id}":
+                    return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED)
+
             if job_id in self.engine.run_processes:
-                clients = self.engine.run_processes[job_id].get(RunProcessKey.PARTICIPANTS)
+                # CJs only need to know whether their SJ still exists during recovery.
+                clients = self.engine.run_processes[job_id].get(RunProcessKey.PARTICIPANTS) if is_server_job else {}
                 return_data = {ServerCommandKey.CLIENTS: clients, ServerCommandKey.JOB_ID: job_id}
-                for t, c in clients.items():
-                    self.logger.debug(f"sending client {t}: {c.name=} {c.props=}")
             else:
                 return_data = {ServerCommandKey.CLIENTS: None, ServerCommandKey.JOB_ID: job_id}
 
             return make_cellnet_reply(F3ReturnCode.OK, "", return_data)
         elif command == ServerCommandNames.UPDATE_RUN_STATUS:
+            if not is_server_job:
+                return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED)
             execution_error = data.get("execution_error")
             with self.lock:
                 run_process_info = self.engine.run_processes.get(job_id)
@@ -603,6 +621,10 @@ class FederatedServer(BaseServer):
                 reply = make_cellnet_reply(F3ReturnCode.OK, "", None)
                 return reply
         elif command == ServerCommandNames.HEARTBEAT:
+            # The simulator sends its heartbeat locally from the parent cell.
+            is_self_heartbeat = origin == peer.name == FQCN.ROOT_SERVER
+            if not is_server_job and not is_self_heartbeat:
+                return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED)
             if job_id not in self.engine.run_processes:
                 self.engine.abort_app_on_server(job_id)
                 self._set_job_aborted(job_id)
@@ -906,32 +928,33 @@ class FederatedServer(BaseServer):
             headers = {CellMessageHeaderKeys.MESSAGE: "Removed client"}
             return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
 
-    def process_job_failure(self, request: Message):
+    def process_job_outcome(self, request: Message):
+        """Apply a client's terminal result and resolve its pending outcome, including success."""
         payload = request.payload
         client = request.get_header(key=MessageHeaderKey.ORIGIN)
 
         # Validate sender identity using token only.
         # Note: validate_client() cannot be used here because the
-        # REPORT_JOB_FAILURE message (sent by ClientExecutor via
+        # REPORT_JOB_OUTCOME message (sent by ClientExecutor via
         # send_request) does not carry a PROJECT_NAME header —
         # only TOKEN is injected by the outgoing auth filter.
         token = request.get_header(CellMessageHeaderKeys.TOKEN)
         if not token or not self.client_manager.is_from_authorized_client(token):
-            self.logger.warning(f"Dropped unauthenticated Job Failure report from {client}")
+            self.logger.warning(f"Dropped unauthenticated job outcome report from {client}")
             return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, "", None)
 
         if not isinstance(payload, dict):
             self.logger.error(
-                f"dropped bad Job Failure report from {client}: expect payload to be dict but got {type(payload)}"
+                f"dropped bad job outcome report from {client}: expect payload to be dict but got {type(payload)}"
             )
             return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
-        job_id = payload.get(JobFailureMsgKey.JOB_ID)
+        job_id = payload.get(JobOutcomeMsgKey.JOB_ID)
         if not job_id:
-            self.logger.error(f"dropped bad Job Failure report from {client}: no job_id")
+            self.logger.error(f"dropped bad job outcome report from {client}: no job_id")
             return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
 
-        code = payload.get(JobFailureMsgKey.CODE)
-        reason = payload.get(JobFailureMsgKey.REASON, "?")
+        code = payload.get(JobOutcomeMsgKey.CODE)
+        reason = payload.get(JobOutcomeMsgKey.REASON, "?")
         registered_client = self.client_manager.clients.get(token)
         if not registered_client:
             self.logger.warning(f"Dropped terminal outcome from unknown client token for job {job_id}")
@@ -958,6 +981,10 @@ class FederatedServer(BaseServer):
                 job_runner.stop_run(job_id, fl_ctx)
         job_runner.resolve_client_outcome(job_id, client_name)
         return make_cellnet_reply(F3ReturnCode.OK, "", None)
+
+    def process_job_failure(self, request: Message):
+        """Compatibility entry point; use process_job_outcome for all terminal results."""
+        return self.process_job_outcome(request)
 
     def client_heartbeat(self, request: Message) -> Message:
 

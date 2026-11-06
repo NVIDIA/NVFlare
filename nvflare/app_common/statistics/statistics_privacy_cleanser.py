@@ -23,6 +23,21 @@ class StatisticsPrivacyCleanser(ABC):
     def apply(self, statistics: dict, client_name: str) -> Tuple[dict, bool]:
         pass
 
+    def withheld_features(self, statistics: dict, client_name: str) -> Dict[str, List[str]]:
+        """Report the features whose statistics this cleanser withholds entirely (except the count).
+
+        The server uses this to leave those sites out of the global aggregates of the features. A cleanser that
+        only modifies or removes individual statistics, such as a noise or histogram cleanser, reports none.
+
+        Args:
+            statistics: the client's statistics, before ``apply`` is called
+            client_name: the client name
+
+        Returns:
+            ``{dataset: [feature, ...]}`` of the features that will be withheld
+        """
+        return {}
+
     def cleanse(
         self, statistics: dict, statistic_keys: List[str], validation_result: Dict[str, Dict[str, bool]]
     ) -> (dict, bool):

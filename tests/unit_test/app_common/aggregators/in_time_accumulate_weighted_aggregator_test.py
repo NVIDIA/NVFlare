@@ -12,8 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import random
 import re
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event, Lock, current_thread
 from types import SimpleNamespace
 
 import numpy as np
@@ -23,12 +26,183 @@ from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.aggregators.dxo_aggregator import DXOAggregator
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import AggregationStatsKey
 from nvflare.app_common.app_constant import AppConstants
 
 
 class TestInTimeAccumulateWeightedAggregator:
+    @pytest.mark.parametrize("next_algorithm", [None, "valid-algorithm"])
+    def test_rejected_shape_does_not_commit_algorithm_metadata(self, next_algorithm):
+        aggregator = DXOAggregator()
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
+        assert aggregator.accept(DXO(DataKind.WEIGHT_DIFF, {"w": np.array([1.0, 2.0])}), "site-1", 0, fl_ctx)
+        rejected = DXO(
+            DataKind.WEIGHT_DIFF,
+            {"w": np.array([100.0])},
+            meta={MetaKey.PROCESSED_ALGORITHM: "rejected-algorithm"},
+        )
+
+        assert not aggregator.accept(rejected, "site-2", 0, fl_ctx)
+        assert aggregator.processed_algorithm is None
+        valid = DXO(DataKind.WEIGHT_DIFF, {"w": np.array([3.0, 4.0])})
+        if next_algorithm is not None:
+            valid.set_meta_prop(MetaKey.PROCESSED_ALGORITHM, next_algorithm)
+        assert aggregator.accept(valid, "site-3", 0, fl_ctx)
+        result = aggregator.aggregate(fl_ctx)
+
+        np.testing.assert_allclose(result.data["w"], [2.0, 3.0])
+        assert result.get_meta_prop(MetaKey.PROCESSED_ALGORITHM) == next_algorithm
+        assert aggregator.last_aggregation_stats[AggregationStatsKey.CONTRIBUTORS] == ["site-1", "site-3"]
+
+    @pytest.mark.parametrize("bad_member", ["weights", "metrics"])
+    def test_collection_shape_rejection_preserves_all_members(self, bad_member):
+        aggregator = InTimeAccumulateWeightedAggregator(
+            expected_data_kind={"weights": DataKind.WEIGHTS, "metrics": DataKind.METRICS}
+        )
+        aggregator._initialize(aggregator.aggregation_weights, aggregator.exclude_vars, aggregator.expected_data_kind)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
+
+        def contribution(name, value, rejected=False):
+            members = {}
+            for key, kind in aggregator.expected_data_kind.items():
+                values = [value] if rejected and key == bad_member else [value, value + 1]
+                members[key] = DXO(kind, {"w": np.array(values)}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1})
+                if rejected:
+                    members[key].set_meta_prop(MetaKey.PROCESSED_ALGORITHM, "rejected-algorithm")
+            shareable = DXO(DataKind.COLLECTION, members).to_shareable()
+            shareable.set_peer_props({ReservedKey.IDENTITY_NAME: name})
+            shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
+            return shareable
+
+        assert aggregator.accept(contribution("site-1", 1.0), fl_ctx)
+        state_fields = (
+            "total",
+            "counts",
+            "history",
+            "key_contribution_counts",
+            "skipped_keys",
+            "last_aggregation_stats",
+        )
+        before = {
+            key: {field: copy.deepcopy(getattr(member.aggregation_helper, field)) for field in state_fields}
+            for key, member in aggregator.dxo_aggregators.items()
+        }
+
+        assert not aggregator.accept(contribution("site-2", 100.0, rejected=True), fl_ctx)
+        for key, member in aggregator.dxo_aggregators.items():
+            helper = member.aggregation_helper
+            for field in state_fields:
+                if field == "total":
+                    assert helper.total.keys() == before[key][field].keys()
+                    for param, total in helper.total.items():
+                        np.testing.assert_array_equal(total, before[key][field][param])
+                else:
+                    assert getattr(helper, field) == before[key][field]
+            assert member.processed_algorithm is None
+
+        assert aggregator.accept(contribution("site-3", 3.0), fl_ctx)
+        result = from_shareable(aggregator.aggregate(fl_ctx))
+        for member in result.data.values():
+            np.testing.assert_allclose(member.data["w"], [2.0, 3.0])
+            assert member.get_meta_prop(MetaKey.PROCESSED_ALGORITHM) is None
+        stats = fl_ctx.get_prop(AppConstants.AGGREGATION_STATS)
+        assert stats[AggregationStatsKey.CONTRIBUTORS] == ["site-1", "site-3"]
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 2
+
+    def test_arithmetic_value_error_is_not_treated_as_shape_rejection(self):
+        class FailingValue:
+            shape = (2,)
+
+            def __mul__(self, weight):
+                raise ValueError("arithmetic failure")
+
+        aggregator = DXOAggregator()
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
+        first = DXO(DataKind.WEIGHT_DIFF, {"early": np.ones(2), "late": np.ones(2)})
+        assert aggregator.accept(first, "site-1", 0, fl_ctx)
+        second = DXO(DataKind.WEIGHT_DIFF, {"early": np.ones(2), "late": FailingValue()})
+
+        # Arithmetic may fail after an earlier key was accumulated; it is not a safe rejection.
+        with pytest.raises(ValueError, match="arithmetic failure"):
+            aggregator.accept(second, "site-2", 0, fl_ctx)
+
+    @pytest.mark.parametrize("operation", ["accept", "aggregate"])
+    def test_collection_accumulation_cannot_be_interleaved(self, monkeypatch, operation):
+        aggregator = InTimeAccumulateWeightedAggregator(
+            expected_data_kind={"first": DataKind.WEIGHTS, "last": DataKind.WEIGHTS}
+        )
+        aggregator._initialize(aggregator.aggregation_weights, aggregator.exclude_vars, aggregator.expected_data_kind)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
+        first_added, release, waiting = Event(), Event(), Event()
+
+        class ObservedLock:
+            def __init__(self):
+                self.lock = Lock()
+
+            def __enter__(self):
+                if current_thread().name.startswith("other"):
+                    waiting.set()
+                self.lock.acquire()
+
+            def __exit__(self, *args):
+                self.lock.release()
+
+        monkeypatch.setattr(aggregator, "_lock", ObservedLock())
+        helper = aggregator.dxo_aggregators["first"].aggregation_helper
+        original_add = helper.add
+
+        def pause_after_first_member(data, weight, contributor_name, contribution_round):
+            original_add(data, weight, contributor_name, contribution_round)
+            if contributor_name == "site-1":
+                first_added.set()
+                assert release.wait(5), "test did not release collection accumulation"
+
+        monkeypatch.setattr(helper, "add", pause_after_first_member)
+
+        def contribution(name, last_shape):
+            members = {
+                "first": DXO(DataKind.WEIGHTS, {"w": np.ones(2)}),
+                "last": DXO(DataKind.WEIGHTS, {"w": np.ones(last_shape)}),
+            }
+            result = DXO(DataKind.COLLECTION, members).to_shareable()
+            result.set_peer_props({ReservedKey.IDENTITY_NAME: name})
+            result.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
+            return result
+
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="first") as first_pool:
+            first = first_pool.submit(aggregator.accept, contribution("site-1", 2), fl_ctx)
+            try:
+                assert first_added.wait(5), "first collection never started accumulating"
+                with ThreadPoolExecutor(max_workers=1, thread_name_prefix="other") as other_pool:
+                    if operation == "accept":
+                        other = other_pool.submit(aggregator.accept, contribution("site-2", 1), fl_ctx)
+                    else:
+                        other = other_pool.submit(aggregator.aggregate, fl_ctx)
+                    try:
+                        assert waiting.wait(5), "other operation never reached the collection lock"
+                        assert not other.done(), "another operation observed a partially accumulated collection"
+                    finally:
+                        release.set()
+                    assert first.result(timeout=5)
+                    outcome = other.result(timeout=5)
+            finally:
+                release.set()
+
+        if operation == "accept":
+            assert outcome is False
+            outcome = aggregator.aggregate(fl_ctx)
+        for member in from_shareable(outcome).data.values():
+            np.testing.assert_array_equal(member.data["w"], np.ones(2))
+        stats = fl_ctx.get_prop(AppConstants.AGGREGATION_STATS)
+        assert stats[AggregationStatsKey.CONTRIBUTORS] == ["site-1"]
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 1
+
     @pytest.mark.parametrize(
         "exclude_vars,aggregation_weights,expected_data_kind,error,error_msg,is_regex",
         [
