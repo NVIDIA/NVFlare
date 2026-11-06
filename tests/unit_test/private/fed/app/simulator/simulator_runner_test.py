@@ -25,7 +25,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus, RunnerTask, WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.utils import gpu_utils
 from nvflare.private.fed.app.simulator import simulator_runner as simulator_runner_module
@@ -223,6 +223,17 @@ class TestSimulatorRunner:
 
         fl_ctx.get_prop.assert_called_once_with(FLContextKey.FATAL_SYSTEM_ERROR, False)
 
+    @pytest.mark.parametrize("server_workflow_done,expected_status", [(False, 2), (True, 0)])
+    def test_client_fatal_error_sets_simulator_status(self, server_workflow_done, expected_status):
+        runner = SimulatorRunner(job_folder="", workspace="")
+        runner.server = MagicMock()
+        fl_ctx = runner.server.engine.new_context.return_value.__enter__.return_value
+        fl_ctx.get_prop.return_value = False
+        runner.client_fatal_error = True
+        runner.server_workflow_done = server_workflow_done
+
+        assert runner._get_server_run_status() == expected_status
+
     @pytest.mark.parametrize(
         "gpus, expected_gpus",
         [
@@ -357,7 +368,7 @@ class TestSimulatorRunner:
         process = Mock()
         process.poll.return_value = None
         conn = Mock()
-        conn.recv.side_effect = [True, None]  # stop_run, then end_run_client
+        conn.recv.side_effect = [True, None, False]  # stop_run, end_run_client, fatal_error
 
         with patch("nvflare.private.fed.app.simulator.simulator_runner.sys.executable", executable):
             with patch("nvflare.private.fed.app.simulator.simulator_runner.get_open_ports", return_value=[12345]):
@@ -372,6 +383,51 @@ class TestSimulatorRunner:
         assert launched[launched.index("-o") + 1] == os.path.join(workspace, "site-1")
         assert launched[launched.index("--logging_config") + 1] == log_config
         assert launched[launched.index("--simulator_root") + 1] == workspace
+
+    @pytest.mark.parametrize("fatal_error,expected", [(False, []), (True, ["site-1"])])
+    def test_do_one_task_records_client_fatal_error(self, tmp_path, fatal_error, expected):
+        workspace = str(tmp_path)
+        for folder in ("startup", "local"):
+            (tmp_path / "site-1" / folder).mkdir(parents=True)
+        args = Namespace(workspace=workspace, log_config=None)
+        args.set = []
+        runner = SimulatorClientRunner(str(tmp_path / "custom"), args, [], None, Namespace(workspace=workspace), {})
+        client = Mock()
+        client.client_name = "site-1"
+        client.token = "token"
+        process = Mock()
+        process.poll.return_value = None
+        conn = Mock()
+        conn.recv.side_effect = [True, "site-1", fatal_error]  # stop_run, end_run_client, fatal_error
+
+        with patch("nvflare.private.fed.app.simulator.simulator_runner.get_open_ports", return_value=[12345]):
+            with patch.object(runner, "_create_connection", return_value=conn):
+                with patch(
+                    "nvflare.private.fed.app.simulator.simulator_runner.popen_in_new_session", return_value=process
+                ):
+                    runner.do_one_task(client, num_of_threads=0, gpu=None, lock=threading.Lock())
+
+        assert runner.fatal_clients == expected
+
+    @pytest.mark.parametrize("task_name", [RunnerTask.END_RUN, RunnerTask.TASK_EXEC])
+    def test_worker_reports_client_fatal_error(self, task_name):
+        worker = simulator_worker.ClientTaskWorker()
+        client = MagicMock()
+        client.client_name = "site-1"
+        client_runner = Mock()
+        client_runner.fetch_and_run_one_task.return_value = (1.0, True)
+        client_runner.run_abort_signal.triggered = True
+        fl_ctx = client.run_manager.new_context.return_value.__enter__.return_value
+        fl_ctx.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.RUNNER: client_runner,
+            FLContextKey.FATAL_SYSTEM_ERROR: True,
+        }.get(key, default)
+
+        with patch.object(worker, "fire_event"):
+            _, stop_run, _, fatal_error = worker.do_one_task(client, Namespace(task_name=task_name))
+
+        assert stop_run
+        assert fatal_error
 
     def test_worker_create_connection_does_not_require_authkey(self):
         conn = Mock()
