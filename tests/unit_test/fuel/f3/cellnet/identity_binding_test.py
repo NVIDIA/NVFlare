@@ -35,6 +35,7 @@ from nvflare.fuel.f3.cellnet.cell_cipher import (
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.credential_manager import CERT_CONTENT, CredentialManager
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY, CellIdentityResolver
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.comm_error import CommError
@@ -164,7 +165,7 @@ class _EmptyRegistry:
 
 def _receive_test_core_cell(reply):
     cell = CoreCell.__new__(CoreCell)
-    cell.my_info = SimpleNamespace(fqcn="server")
+    cell.my_info = FqcnInfo("server")
     cell.logger = logging.getLogger(__name__)
     cell.received_msg_counter_pool = _NoOpStats()
     cell.sent_msg_counter_pool = _NoOpStats()
