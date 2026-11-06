@@ -15,10 +15,11 @@
 import { ReactNode } from 'react'
 import Link from 'next/link'
 import { AppBar, Box, Button, Toolbar, Typography } from '@mui/material'
+import ProjectName from '../ProjectName'
 
 export default function NoMenuLayout({ children, title, headerChildren }: { children: ReactNode; title: string; headerChildren?: ReactNode }) {
   return <Box sx={{ minHeight: '100vh' }}>
-    <AppBar position="static"><Toolbar><Typography variant="h6" sx={{ flexGrow: 1 }}>NVFlare</Typography><Button color="inherit" component={Link} href="/">Login</Button></Toolbar></AppBar>
+    <AppBar position="static"><Toolbar><Typography variant="h6" sx={{ flexGrow: 1 }}><ProjectName /></Typography><Button color="inherit" component={Link} href="/">Login</Button></Toolbar></AppBar>
     <Box component="main" sx={{ maxWidth: 1100, mx: 'auto', p: { xs: 2, md: 4 } }}><Typography variant="h4" component="h1" sx={{ mb: 3 }}>{title}</Typography>{headerChildren}{children}</Box>
   </Box>
 }

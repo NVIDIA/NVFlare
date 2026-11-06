@@ -45,9 +45,9 @@ jobs:
         run: python -m pip install -e '.[dashboard]' 'pytest<9.2' build playwright==1.64.1 black==25.9.0 isort==5.13.2 flake8==7.1.1
       - name: Check Python build tooling style
         run: |
-          python -m black --check dashboard/build_ui.py dashboard/smoke_wheel.py dashboard/ui/tests
-          python -m isort --check dashboard/build_ui.py dashboard/smoke_wheel.py dashboard/ui/tests
-          python -m flake8 dashboard/build_ui.py dashboard/smoke_wheel.py dashboard/ui/tests
+          python -m black --check dashboard/build_ui.py dashboard/smoke_wheel.py dashboard/capture_screenshots.py dashboard/ui/tests
+          python -m isort --check dashboard/build_ui.py dashboard/smoke_wheel.py dashboard/capture_screenshots.py dashboard/ui/tests
+          python -m flake8 dashboard/build_ui.py dashboard/smoke_wheel.py dashboard/capture_screenshots.py dashboard/ui/tests
       - name: Check committed frontend freshness
         run: python dashboard/build_ui.py --check
       - name: Install locked frontend dependencies

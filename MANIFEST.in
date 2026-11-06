@@ -12,6 +12,7 @@ recursive-include nvflare/tool/deploy/templates *
 # Dashboard contributors can rebuild the shipped frontend from the source archive.
 include dashboard/build_ui.py
 include dashboard/smoke_wheel.py
+include dashboard/capture_screenshots.py
 include dashboard/ui/.npmrc
 include dashboard/ui/.nvmrc
 include dashboard/ui/.gitignore

@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ReactNode, useEffect, useState } from 'react'
+import { ReactNode, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { AppBar, Box, Button, Drawer, IconButton, List, ListItemButton, ListItemText, Toolbar, Typography } from '@mui/material'
 import MenuIcon from '@mui/icons-material/Menu'
-import { APICall } from '../../apis'
+import ProjectName from '../ProjectName'
 import { getSession, setSession } from '../../sess/session-manager'
 
 const width = 240
@@ -31,11 +31,7 @@ const participantLinks = [['Project Home', '/'], ['My Info', '/user-dashboard'],
 export default function Layout({ children, headerChildren, title }: { children: ReactNode; headerChildren?: ReactNode; title: string }) {
   const { pathname, push } = useRouter()
   const session = getSession()
-  const [name, setName] = useState('NVFlare')
   const [menuOpen, setMenuOpen] = useState(false)
-  useEffect(() => {
-    APICall.getProject().then(response => { if (response.project?.short_name) setName(response.project.short_name) }).catch(() => {})
-  }, [])
   const links = session.user.role === 4 ? adminLinks : session.user.role > 0 ? participantLinks : session.user.role === -1 ? [['Continue Registration', '/registration-form']] : [['Login', '/'], ['User Registration Form', '/registration-form']]
   const navigation = <List aria-label="Dashboard navigation">{links.map(([label, href]) =>
     <ListItemButton key={href} component={Link} href={href} selected={pathname === href} onClick={() => setMenuOpen(false)}><ListItemText primary={label} /></ListItemButton>
@@ -44,7 +40,7 @@ export default function Layout({ children, headerChildren, title }: { children: 
   return <Box sx={{ display: 'flex', minHeight: '100vh' }}>
     <AppBar position="fixed" sx={{ zIndex: theme => theme.zIndex.drawer + 1 }}><Toolbar>
       <IconButton color="inherit" aria-label="Open navigation" edge="start" onClick={() => setMenuOpen(true)} sx={{ mr: 2, display: { md: 'none' } }}><MenuIcon /></IconButton>
-      <Typography variant="h6" sx={{ flexGrow: 1 }}>{name}</Typography>
+      <Typography variant="h6" sx={{ flexGrow: 1 }}><ProjectName /></Typography>
       {session.user.token && <Button color="inherit" onClick={logout}>Logout</Button>}
     </Toolbar></AppBar>
     <Box component="nav" sx={{ width: { md: width }, flexShrink: { md: 0 } }}>

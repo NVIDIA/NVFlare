@@ -1,30 +1,25 @@
 .. _nvflare_dashboard_ui:
 
-######################################################
-NVFLARE Dashboard UI
-######################################################
+####################
+NVFlare Dashboard UI
+####################
 
-The NVFlare Dashboard is an optional addition to NVIDIA FLARE that helps the project administrator
-to deploy a website to gather information about the sites and distribute startup kits.
+The NVFlare Dashboard collects user and client-site registrations, lets the
+Project Admin review them, and distributes encrypted startup kits. The frontend
+uses the open-source MUI community components and works with the Dashboard
+backend included in NVFlare. See :ref:`dashboard_api` for deployment and backend
+API details, or :ref:`dashboard_frontend` for building the frontend from source.
 
-This simplifies the process of data collection and provisioning with users registering to join the project and provide
-their own information then downloading their own startup kits once the project admin has approved the registration.
-All the project information can be managed online with provisioning done on the fly.
+``Member`` and ``Lead`` users can download a FLARE Console startup kit after
+approval. ``Org Admin`` users can also register client sites and download their
+approved sites' kits. The ``Project Admin`` configures the project and server,
+reviews registrations, and can download the server kit.
 
-Users with :ref:`role <nvflare_roles>` ``Member`` or ``Lead`` can register a user account and then
-download the startup kit for the FLARE console once the account is approved.
-
-Users of the :ref:`role <nvflare_roles>` ``Org Admin`` have the additional ability to specify the name and resource specifications
-for client sites and then download startup kits for each client site after it is approved.
-
-Finally, the ``Project Admin`` or project administrator is responsible for overall site management from setting up the project
-to approving the users and client sites after inviting users to sign up (for details on how the project administrator can set up
-the site, see :ref:`dashboard_api`). The ``Project Admin`` can also download the startup kit
-for the server.
+Screenshots below show a sample project and synthetic accounts. Downloads require
+a frozen project and the applicable user and site approvals.
 
 Member and Lead User Experience
 ===============================
-The website should already be set up when ``Member`` or ``Lead`` users are invited to sign up by the project admin.
 
 .. _dashboard_homepage:
 
@@ -32,266 +27,283 @@ Home Page with Login and Sign Up
 --------------------------------
 
 .. figure:: ../../../resources/dashboard_login.png
-    :height: 500px
+   :width: 100%
+   :alt: Project Home with the sample project description, login form, and Sign Up link.
 
-    Home Page with Login and Sign Up on the right.
+   Project Home with login and public registration.
 
-On the Home Page for the NVFlare Dashboard website, there should be a button for ``Sign Up`` under New User on the right. The Home Page will
-have the project title with a description set by the Project Admin as well as other project information including clients registered, organizations
-joined, and planned start and end date. Once client sites are approved, they will appear on the Home Page below
-the project description. 
+The upper-left header shows the configured Project Short Name on every page,
+including registration. It falls back to ``NVFlare`` when no name is configured
+or project details cannot be loaded.
+
+The Project Home shows the project title, description, and configuration status.
+Log in with your registered email and password. ``Sign Up`` is available after
+the Project Admin makes the project public. If an application download link has
+been configured, it appears here as ``Application download``.
+
+After logging in, use the navigation menu to open your dashboard and Downloads.
+The Project Home also lists the approved client sites visible to your account.
 
 .. _dashboard_new_user_reg:
 
 New User Registration
-----------------------
+---------------------
 
-After clicking ``Sign Up`` on the Home Page, the User Registration page has fields for filling out the user's email, name, and password.
+Choose ``Sign Up`` and enter your name, email, password, and password confirmation,
+then click ``Register``.
 
 .. figure:: ../../../resources/dashboard_user_registration.png
-    :height: 500px
+   :width: 100%
+   :alt: Registration form with name, email, password, and password confirmation fields.
 
-    User Registration first page for email, name, and password.
+   Create a user account.
 
-Proceeding to the next page, fill out the field for organization and select a role. If these values need to be updated later, you will need to contact the Project
-Admin to help you update them.
-
-Selecting ``Org Admin`` requests the ability to manage client sites. The request remains pending until the
-Project Admin reviews and approves the displayed role and organization. It does not grant project-administrator
-access. Your role and organization cannot be changed through self-service after they have been set, including
-after approval; contact the Project Admin to correct them.
+Enter your organization and choose ``Member``, ``Lead``, or ``Org Admin``, then
+click ``Save``. Organization names use letters, digits, and underscores. Your
+role and organization remain pending until the Project Admin reviews them.
 
 .. figure:: ../../../resources/dashboard_user_registration_2.png
-    :height: 500px
+   :width: 100%
+   :alt: Registration fields showing the organization and selected Org Admin role.
 
-    User Registration second page for organization and role.
+   Request a role in your organization.
 
-After this step, your registration is complete, and you will be linked to the User Dashboard with the information from the registration.
+Selecting ``Org Admin`` requests permission to manage client sites. It does not
+grant Project Admin access. Once set, your role and organization cannot be
+changed through self-service, including while approval is pending. Contact the
+Project Admin to correct them.
+
+Members and Leads can finish registration and choose ``Go to my dashboard``.
+Org Admin applicants can first register their own pending sites as described
+below.
 
 .. _dashboard_user_dashboard_members:
 
 User Dashboard
-----------------
+--------------
 
-On the User Dashboard, you can click ``Edit My Profile`` to update your password, but for other changes you will need to contact your Project Admin for help.
-
-Note that immediately after registering, you will not be able to download your startup kit until you have been approved by the Project Admin.
+Your User Dashboard displays your name, email, organization, and role. A pending
+account displays its requested role and an approval notice. ``Edit My Profile``
+opens a dialog for changing your password; contact the Project Admin for other
+account corrections.
 
 .. figure:: ../../../resources/dashboard_user_info.png
-    :height: 500px
+   :width: 100%
+   :alt: User Dashboard showing an approved participant profile and Member role.
 
-    User Info after registration.
+   Participant profile and registration status.
 
 .. _dashboard_user_download:
 
 FLARE Console Download
------------------------
+----------------------
 
-After being approved by the Project Admin, the ``Download FLARE Console`` button will become available on the Downloads page. Clicking on this
-will download the FLARE Console for the logged in user. The package will be zipped and password protected with a PIN provided in a modal window
-that will appear upon clicking Download. The name of the package will be the email that the user registered with. Note that the FLARE Console
-was previously called the Admin Client before NVIDIA FLARE 2.2.
+Open ``Downloads`` after the Project Admin approves your account and freezes the
+project. ``Download FLARE Console`` downloads ``flare-console.zip`` for the
+logged-in user. Buttons remain disabled until the required approvals and project
+configuration are ready.
 
 .. figure:: ../../../resources/dashboard_member_download.png
-    :height: 500px
+   :width: 100%
+   :alt: Member Downloads page with the Download FLARE Console button.
 
-    Download page with FLARE Console.
+   FLARE Console download for an approved participant.
+
+After a successful download, a dialog displays the PIN for opening that encrypted
+ZIP. Record the PIN before closing the dialog. Each download uses a new PIN.
 
 .. figure:: ../../../resources/dashboard_download_pin.png
-    :height: 200px
+   :width: 100%
+   :alt: Startup kit downloaded dialog displaying an example PIN for an encrypted ZIP.
 
-    PIN for unzipping the download.
+   Record the PIN shown after downloading a kit.
+
+The FLARE Console was called the Admin Client before NVIDIA FLARE 2.2.
 
 Org Admin User Experience
-===============================
-Users of the role ``Org Admin`` have a similar experience as ``Member`` or ``Lead`` users but with the additional capability to specify client sites
-and their resource specifications and then to download startup kits for each client site after approval by the Project Admin.
+=========================
+
+Org Admins follow the same account-registration steps as Members and Leads, with
+an additional client-site registration step.
 
 .. _dashboard_org_admin_user_reg:
 
 Org Admin Registration - Configure Client Sites
 -----------------------------------------------
-:ref:`Home Page with Login and Sign Up <dashboard_homepage>` and the first part of creating an account and then specifying an organization and role for
-:ref:`New User Registration <dashboard_new_user_reg>` are the same as for ``Member`` and ``Lead`` users. After choosing a role of ``Org Admin``, users
-should see an interface to specify client sites.
 
-While the request is pending, you can register, view, edit, and delete your own pending client sites in your
-registered organization. You cannot access another participant's sites, even if that participant selected the
-same organization. Site registrations also remain pending until the Project Admin approves them. Returning to
-your User Dashboard preserves these registrations, so you can finish onboarding without waiting for approval.
+After saving the ``Org Admin`` request, the registration page displays a
+``Client Sites`` table. Click ``Add Site`` to open the site editor. Enter the
+site name, number of GPUs, and memory per GPU in GiB, then click ``Save``.
 
 .. figure:: ../../../resources/dashboard_org_admin_reg_clients.png
-    :height: 500px
+   :width: 100%
+   :alt: Org Admin registration with a pending client site and Add Site control.
 
-    User Registration for Org Admin configuring client sites after selecting role.
+   Register client sites while the Org Admin request is pending.
 
-The table will initially have nothing because there are no client sites at first. To add a client site, click on ``Add Site`` to the upper right of
-the table, then type the client site name in the input box in the table for the new client site. Values will be updated automatically after clicking
-outside of the input. Click on the value again to edit it. The fields for NUM GPU (number of GPUs) and MEMORY PER GPU (memory per GPU in GiBs) can
-also be edited here. When done configuring client sites, click ``Next`` below to complete registration, and you will be linked to the User Dashboard.
+The saved site appears in the table with ``Pending`` status. Click its name to
+reopen the editor, or ``Delete`` to remove a pending site. Changes are saved with
+``Save`` in the dialog; clicking outside a field does not save an edit.
+
+You can register, view, edit, and delete only your own pending sites in your
+registered organization. Another participant's sites remain inaccessible even
+when that participant selected the same organization. User approval and site
+approval are separate. Click ``Next`` and then ``Go to my dashboard`` to finish
+onboarding without waiting for either approval.
 
 Org Admin User Dashboard
 ------------------------
-The User Dashboard for ``Org Admin`` users is the same as for ``Member`` and ``Lead`` users on the top, but below the user information is an
-interface to add and edit client sites.
+
+The Org Admin User Dashboard includes the profile and client-site table. Sites
+registered during onboarding remain available here, and ``Add Site`` opens the
+same editor.
 
 .. figure:: ../../../resources/dashboard_org_admin_dashboard.png
-    :height: 500px
+   :width: 100%
+   :alt: Org Admin User Dashboard showing the profile and owned client sites.
 
-    User Dashboard for Org Admin with interface to add and edit client sites.
+   Manage your own client-site registrations.
 
-The client sites that were configured during registration should appear in the table, and the inline editing of the values in the table is the same too.
-Just click on a field to edit, then click outside of the input to automatically save the updated value. Note that once the Project Admin has approved a
-client site, you will no longer be able to edit the name of that client site or delete it.
+Once a site is approved, its name is locked in the participant editor and its
+``Delete`` action is disabled. Contact the Project Admin to rename or delete an
+approved site. Capacity values can still be edited in the site dialog.
 
 .. _dashboard_org_admin_downloads:
 
 Org Admin Downloads
 -------------------
 
-After being approved by the Project Admin, the ``Download FLARE Console`` button will become available on the Downloads page similar to ``Member`` and
-``Lead`` users. In addition to the download of the FLARE Console, Org Admins can see the application docker image location specified by the Project
-Admin and download startup kits for the client sites that have been approved. The name of each client site startup kit will be the site name followed
-by the extension ".zip".
-
-.. note::
-
-   Each site needs to be approved by the Project Admin, so it is possible to have some sites approved while others are not, in which case the
-   ``Download Startup Kit`` button for client sites that have not been approved will not be active.
+An approved Org Admin can download the FLARE Console and the startup kits for
+approved client sites once the project is frozen. Client ZIP filenames use the
+site name followed by ``.zip``.
 
 .. figure:: ../../../resources/dashboard_org_admin_downloads.png
-    :height: 500px
+   :width: 100%
+   :alt: Org Admin Downloads page with FLARE Console and client startup-kit controls.
 
-    Download page for Org Admin.
+   Download the FLARE Console and approved client-site kits.
 
-Each package will be zipped and password protected with a separate PIN provided in a modal window that will appear upon clicking to download.
-
+Each site's approval is independent, so some site download buttons can remain
+disabled while others are enabled. Each successful download displays the PIN
+for that ZIP in its own dialog.
 
 Project Admin Guide
-===============================
-The ``Project Admin`` is the administrator for the site and is responsible for inputting the values to set up the project in the beginning and
-then approving the users and client sites while making edits if necessary.
+===================
 
-After deploying the FLARE Dashboard website package, the Project Admin should log in from the Home Page with the bootstrapped credentials
-provided in the deployment process. At this point, the Project Home Page only has a placeholder title since none of the project values have
-been set yet.
-
-.. note::
-
-   After logging in, the Project Admin will have the additional option to ``Freeze Project``. This should only be done after all project values
-   are finalized because after freezing the project, they will no longer be editable.
+Log in using the bootstrapped Project Admin credentials from the deployment
+process. A project that is not yet public opens at Project Configuration; public
+projects open at Users Dashboard. Use the navigation menu to switch pages.
 
 .. _dashboard_project_configuration:
 
 Project Configuration
 ---------------------
-Upon the first login, the first page that the Project Admin should be directed to is the Project Configuration page (after the project has been
-made public, the Project Admin will be directed to the Users Dashboard).
 
-On the Project Configuration page, the Project Admin can set:
+Configure the following project values and click ``Save``:
 
-  - Short Name: a short name with a maximum of 16 characters that is shown at the top left of the website and also used in certificates
-  - Title: the title of the project displayed on the Project Home Page
-  - Description: the description for the project displayed on the Project Home Page
-  - Docker Download Link: the application image location displayed on the Downloads page for ``Org Admin`` and ``Project Admin`` users when configured
-  - Start date: the start date for the project
-  - End date: the end date for the project
+- ``Project Short Name``: at most 16 characters, used in certificates and the
+  Dashboard header.
+- ``Title`` and ``Project Description``: displayed on Project Home.
+- ``Docker Download Link``: an optional application location linked from Project
+  Home as ``Application download``.
+- ``Project Start Date`` and ``Project End Date``: the planned project dates.
 
-The page also provides a ``Make Project Public`` action. Making the project public enables the Sign Up flow in the Dashboard web interface.
+.. figure:: ../../../resources/dashboard_project_configuration.png
+   :width: 100%
+   :alt: Project Configuration form with the sample project's description and dates.
 
-.. tip::
+   Configure the project before freezing it.
 
-   Click ``Save`` after entering the values to save the changes.
+``Make Project Public`` enables the web interface's Sign Up flow. Save project
+and server settings before choosing ``Freeze Project`` on Project Home and
+confirming the dialog. Freezing creates the project's trust material and locks
+project and server configuration. Participant registration and review can
+continue after freezing.
 
 .. _dashboard_server_configuration:
 
 Server Configuration
-----------------------
+--------------------
+
+Enter the FL Server hostname or IP address and click ``Save``. If required for
+your deployment, ``CC Enabled`` exposes the target deployment environment and CPU
+family settings. Complete these values before freezing the project.
 
 .. figure:: ../../../resources/dashboard_server_config.png
-    :height: 500px
+   :width: 100%
+   :alt: Server Configuration form with the sample server hostname and CC settings.
 
-    Server Configuration page.
-
-On the Server Configuration page, the Project Admin can set the information for the FL Server.
+   Configure the FL Server.
 
 .. _dashboard_users_dashboard:
 
 Users Dashboard
-----------------
+---------------
 
-On the Users Dashboard, the Project Admin can see all of the users that have registered with the system and their name, email, organization,
-role, created time, approval status, and download count for their FLARE Console.
-
-Pending site-owner requests are labeled ``Org Admin (requested)``. Approval authorizes the role and organization
-shown in that row; review both before selecting ``Approve User``. An incomplete registration cannot be approved.
-Here, incomplete means that this user's organization or role field is empty or invalid. An organization does not
-need to contain every role or a client site. The Project Admin decides whether the person should receive the
-requested permissions; approval never authorizes that person to promote themselves later through the API.
-If the registration has changed since the table was loaded, reload it and review the current values before
-approving again. User approval and client-site approval are separate actions. Client kits require both approvals
-and a frozen project; the participant can then download the ZIP and record the PIN shown in the download dialog.
+The Users Dashboard lists registered users' names, emails, organizations, roles,
+creation times, approval states, and FLARE Console download counts. Pending
+site-owner requests appear as ``Org Admin (requested)``.
 
 .. figure:: ../../../resources/dashboard_users_dashboard.png
-    :height: 500px
+   :width: 100%
+   :alt: Users Dashboard listing registered participants and requested roles.
 
-    Project Admin: Users Dashboard.
+   Review each participant's role and organization before approving.
 
-By clicking the organization or role, the Project Admin can update and change the values with inline editing. Note that users cannot change
-their organization or role after setting it initially and only the Project Admin has the ability to change these values. The name and email
-cannot be changed for any users, so if it is necessary to change that, the Project Admin may need to delete the user and have the user sign up again.
+Approval authorizes the role and organization displayed in the selected row.
+Both fields must be complete and valid; an organization does not need every role
+or a client site. If a registration changes after the table was loaded, reload
+and review the current values before approving again. Approval never authorizes
+participants to promote themselves later through the API.
 
-.. figure:: ../../../resources/dashboard_users_dash_actions.png
-    :height: 200px
+Select one or more rows using their checkboxes, then choose ``Approve Selected``,
+``Deny Selected``, or ``Delete Selected``. Deletion requires confirmation and
+removes the selected users and their client-site registrations.
 
-    Project Admin: Approve, deny, or delete on Users Dashboard.
-
-The actions of Approve, Deny, and Delete are available to the Project Admin to apply to a single user or a selection of users by clicking the
-checkbox at the left of the user records, selecting the desired action from the dropdown menu at the top left of the Users table, then clicking ``Apply``.
-
-Users will not be able to download their FLARE Console or any startup kits until approved by the Project Admin.
+Click a name, organization, or participant role to open its edit dialog, then
+click ``Save``. The Project Admin can correct those fields; participants cannot
+change their own role or organization. User email addresses and the Project
+Admin role are not editable in this interface.
 
 .. _dashboard_client_sites:
 
 Client Sites Dashboard
 ----------------------
 
-On the Client Sites Dashboard, the Project Admin can see the name and capacity specification for each client site in the system as well as the
-organization of the user that created the site, time of creation, approval status, and download count of that site's startup kit.
+The Client Sites Dashboard lists site names, organizations, capacity, creation
+times, approval states, and kit download counts.
 
 .. figure:: ../../../resources/dashboard_sites_dashboard.png
-    :height: 500px
+   :width: 100%
+   :alt: Client Sites Dashboard listing site capacity, organization, and approval status.
 
-    Project Admin: Client Sites Dashboard.
+   Review the registered client sites.
 
-By clicking on the name of a client site, the Project Admin can change the client site name with inline editing. Note that client sites that
-have been approved cannot have the name changed anymore.
+Click a site name or organization to open its edit dialog, then click ``Save``.
+The Project Admin can correct an approved site's name or organization. If moving
+an owner's account to another organization, first move each owned site to that
+organization and then update the account.
 
-.. figure:: ../../../resources/dashboard_client_sites_actions.png
-    :height: 200px
+Select site rows and choose ``Approve Selected``, ``Deny Selected``, or
+``Delete Selected``; deletion requires confirmation.
 
-    Project Admin: Approve, deny, or delete client sites on the Client Sites Dashboard.
-
-The actions of Approve, Deny, and Delete are available to the Project Admin to apply to a single client site or a selection of sites by clicking the
-checkbox at the left of the row, selecting the desired action from the dropdown menu at the top left of the table, then clicking ``Apply``.
-
-Org Admin Users will not be able to download a startup kits for a client site until that site is approved by the Project Admin.
+Client-kit downloads require approval of both the site and its owner, as well
+as a frozen project.
 
 .. _dashboard_proj_admin_downloads:
 
 Project Admin Downloads
 -----------------------
 
-The Project Admin has the same ``Download FLARE Console`` button as the other users at the top of the page. The application docker image location visible
-to Org Admins will be on the Project Admin Downloads page as well. In addition to this, the Project Admin has the ability to download the startup kit
-for the FL Server.
-
-Downloads will be available after the project has been frozen. The name of the FL Server startup kit will be the DNS name that was configured
-on the :ref:`Server Configuration <dashboard_server_configuration>` page followed by the extension ".zip".
+Once the project is frozen, Downloads provides the Project Admin's FLARE Console,
+the server startup kit, and approved client-site kits. The console downloads as
+``flare-console.zip`` and the server as ``server.zip``. Client kit filenames use
+their site names.
 
 .. figure:: ../../../resources/dashboard_proj_admin_downloads.png
-    :height: 500px
+   :width: 100%
+   :alt: Project Admin Downloads page with console, server, and client kit download controls.
 
-    Download page for Project Admin.
+   Download the console, server, and approved client-site kits.
 
-Each package will be zipped and password protected with a separate PIN provided in a modal window that will appear upon clicking to download.
+Each successful download displays a separate PIN for opening its encrypted ZIP.

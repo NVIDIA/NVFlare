@@ -15,10 +15,10 @@
 import { test, expect, Page } from '@playwright/test'
 
 const NS = '/nvflare-dashboard'
-async function mockProject(page: Page) {
+async function mockProject(page: Page, shortName = 'test', unavailable = false) {
   await page.route('**/api/v1/**', async route => {
     const resource = new URL(route.request().url()).pathname.split('/api/v1/')[1]
-    if (resource === 'project') return route.fulfill({ json: { status: 'ok', project: { short_name: 'test', title: 'Workshop', description: '', app_location: '', public: true, frozen: false } } })
+    if (resource === 'project') return route.fulfill(unavailable ? { status: 503, json: { status: 'error', message: 'Project unavailable' } } : { json: { status: 'ok', project: { short_name: shortName, title: 'Workshop', description: '', app_location: '', public: true, frozen: false } } })
     if (resource === 'login') return route.fulfill({ status: 401, json: { status: 'unauthenticated' } })
     if (resource === 'users') return route.fulfill({ json: { status: 'ok', user_list: [] } })
     if (resource === 'clients') return route.fulfill({ json: { status: 'ok', client_list: [] } })
@@ -47,3 +47,29 @@ test('mobile navigation opens and routes through the dashboard prefix', async ({
   await expect(page).toHaveURL(/\/nvflare-dashboard\/project-admin-dashboard$/)
   await expect(page.getByRole('heading', { name: 'Users Dashboard' })).toBeVisible()
 })
+
+for (const route of ['/', '/registration-form']) {
+  test(`configured project name appears in the header on ${route}`, async ({ page }) => {
+    await mockProject(page, '  Example_Project  ')
+    await page.goto(NS + route)
+    await expect(page.getByRole('banner').getByText('Example_Project', { exact: true })).toBeVisible()
+    await expect(page.getByRole('banner').getByText('NVFlare', { exact: true })).toHaveCount(0)
+  })
+
+  test(`blank project name falls back to NVFlare on ${route}`, async ({ page }) => {
+    await mockProject(page, '   ')
+    const project = page.waitForResponse(response => response.url().endsWith('/api/v1/project'))
+    await page.goto(NS + route)
+    await project
+    await expect(page.getByRole('banner').getByText('NVFlare', { exact: true })).toBeVisible()
+  })
+
+  test(`project API failure keeps the NVFlare header on ${route}`, async ({ page }) => {
+    await mockProject(page, '', true)
+    const project = page.waitForResponse(response => response.url().endsWith('/api/v1/project') && response.status() === 503)
+    await page.goto(NS + route)
+    await project
+    await expect(page.getByRole('banner').getByText('NVFlare', { exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Login', exact: true }).first()).toBeVisible()
+  })
+}

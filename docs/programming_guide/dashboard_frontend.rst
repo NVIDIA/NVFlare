@@ -1,7 +1,7 @@
 .. _dashboard_frontend:
 
 Building the Dashboard Frontend
-==============================
+===============================
 
 The Dashboard frontend source lives in ``dashboard/ui/``. It uses the open-source
 MUI community components, React, and Next.js Pages Router. Its build exports static
@@ -127,6 +127,29 @@ client and console kits using the displayed PIN. A system ``zip`` executable is
 required for these real-kit tests. The fixture does not use an existing Dashboard
 database. The frontend tests complement the Python Dashboard authorization and
 concurrency tests, rather than replacing them.
+
+Refresh documentation screenshots
+---------------------------------
+
+The :ref:`Dashboard user guide <nvflare_dashboard_ui>` screenshots can be captured
+from the packaged production UI:
+
+.. code-block:: shell
+
+   python -m pip install playwright==1.64.1
+   python -m playwright install chromium
+   python -m dashboard.capture_screenshots
+
+Run from the repository root after building and checking frontend freshness.
+Set ``NVFLARE_TEST_BROWSER_CHANNEL=chrome`` to use an installed Google Chrome.
+The capture command serves the packaged assets through a loopback-only Flask
+backend with a temporary SQLite database and synthetic ``example.test`` accounts.
+It refuses stale assets, exercises actual registration and download controls,
+and writes 14 PNGs to ``docs/resources/``. It does not use an existing Dashboard
+database. Use ``--output-dir`` to preview captures in another directory.
+
+Review the images before committing them alongside any user-guide changes.
+The example PIN shown in the guide belongs only to a synthetic downloaded kit.
 
 Dependency and license updates
 ------------------------------
