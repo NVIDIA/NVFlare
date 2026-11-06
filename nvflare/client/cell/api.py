@@ -66,6 +66,7 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     ResultUploadProgressContextKey,
 )
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.private.fed.resource_stats.message_traffic import snapshot_message_traffic
 
 _HELLO_TIMEOUT = SESSION_CONTROL_TIMEOUT
 _HELLO_RETRY_INTERVAL = 1.0
@@ -589,7 +590,10 @@ class CellClientAPI(APISpec):
 
     def _notify_result_source_settled(self, task_id: str) -> None:
         """Publish the send-barrier transition before a one-shot trainer closes its Cell."""
-        request = new_cell_message({}, {MsgKey.SESSION_ID: self._session_id, MsgKey.TASK_ID: task_id})
+        payload = {MsgKey.SESSION_ID: self._session_id, MsgKey.TASK_ID: task_id}
+        if not self._attach:
+            payload[MsgKey.MESSAGE_TRAFFIC] = snapshot_message_traffic(self._cell)
+        request = new_cell_message({}, payload)
         for attempt in range(_RESULT_SOURCE_SETTLED_ATTEMPTS):
             try:
                 reply = self._cell.send_request(
@@ -912,7 +916,10 @@ class CellClientAPI(APISpec):
         # result signal remains live until downstream transfer settlement.
         self._abort_signal.trigger("session shutdown")
         self.logger.info("session shutdown requested by CJ")
-        return make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: result_source_live})
+        body = {MsgKey.RESULT_SOURCE_LIVE: result_source_live}
+        if not self._attach:
+            body[MsgKey.MESSAGE_TRAFFIC] = snapshot_message_traffic(self._cell)
+        return make_cell_reply(CellReturnCode.OK, body=body)
 
     # ------------------------------------------------------------------ helpers
 

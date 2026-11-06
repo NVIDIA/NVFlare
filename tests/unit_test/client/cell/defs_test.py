@@ -128,6 +128,7 @@ class TestDefs:
             "RESULT_STATE": "result_state",
             "ACCEPTED_ATTEMPT_ID": "accepted_attempt_id",
             "RESULT_SOURCE_LIVE": "result_source_live",
+            "MESSAGE_TRAFFIC": "message_traffic",
             "HEARTBEAT_INTERVAL": "heartbeat_interval",
             "HEARTBEAT_TIMEOUT": "heartbeat_timeout",
             "TASK_EXCHANGE": "task_exchange",
