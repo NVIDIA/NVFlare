@@ -91,7 +91,9 @@ def _make_workspace_save_inputs(run_dir, result_root, log_root, audit_root):
     engine.get_component.return_value = job_manager
 
     fl_ctx = MagicMock()
-    fl_ctx.get_prop.return_value = "job-1"
+    props = {FLContextKey.CURRENT_JOB_ID: "job-1"}
+    fl_ctx.get_prop.side_effect = lambda key, default=None: props.get(key, default)
+    fl_ctx.set_prop.side_effect = lambda key, value, **kwargs: props.__setitem__(key, value)
     fl_ctx.get_workspace.return_value = workspace
     fl_ctx.get_engine.return_value = engine
     return runner, fl_ctx, job_manager
@@ -392,6 +394,48 @@ def test_save_workspace_destroys_job_credential_before_archiving(tmp_path):
 
     assert archived["job-1"] == [os.path.join("app_server", "result.txt")]
     assert not run_dir.exists()
+
+
+def test_save_workspace_lets_components_clean_the_run_dir_before_archiving(tmp_path):
+    # A component removes the private files it put in the run dir; the archive is taken after that.
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "private.json").write_text("secret")
+    (run_dir / "result.json").write_text("{}")
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
+    engine = fl_ctx.get_engine()
+    seen = []
+
+    def fire_event(event_type, ctx):
+        if event_type == EventType.BEFORE_JOB_WORKSPACE_ARCHIVE:
+            seen.append(ctx.get_prop(FLContextKey.CURRENT_JOB_ID))
+            os.remove(run_dir / "private.json")
+
+    engine.fire_event.side_effect = fire_event
+    archived = []
+
+    def capture(job_id, sources, ctx):
+        archived.extend(os.path.basename(f) for f in get_all_file_paths(sources[0]) if os.path.isfile(f))
+        return "/store/job-1/workspace"
+
+    job_manager.save_workspace.side_effect = capture
+    runner._save_workspace(fl_ctx)
+
+    assert seen == ["job-1"] and archived == ["result.json"]
+
+
+def test_a_component_that_cannot_clean_the_run_dir_blocks_the_archive(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
+
+    def fire_event(event_type, ctx):
+        ctx.set_prop(FLContextKey.JOB_BLOCK_REASON, "private file left", private=True, sticky=False)
+
+    fl_ctx.get_engine().fire_event.side_effect = fire_event
+    with pytest.raises(RuntimeError, match="private file left"):
+        runner._save_workspace(fl_ctx)
+    job_manager.save_workspace.assert_not_called()
 
 
 def test_save_workspace_tolerates_source_disappearing_during_cleanup(tmp_path):
