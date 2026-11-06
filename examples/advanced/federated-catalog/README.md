@@ -169,18 +169,62 @@ from `job.py`. Run it after rerunning the job whenever a policy changes.
 
 ## Withdraw one site's metadata
 
-Acting as site-2's local owner, change its policy:
+Edit `/tmp/nvflare/federated-catalog/data/site-2/local/fdn/default.json` as
+site-2's local owner. Set `datasets.omop.share` to `false` and keep the other
+publication rules. The complete [withdrawal policy](config/site-2-withdraw-omop.json) is:
+
+```json
+{
+  "format_version": 1,
+  "datasets": {
+    "omop": {
+      "share": false,
+      "exclude_columns": {
+        "person": ["person_source_value", "month_of_birth", "day_of_birth"],
+        "observation_period": [],
+        "visit_occurrence": ["visit_source_value"],
+        "condition_occurrence": ["condition_source_value"],
+        "measurement": ["measurement_source_value"]
+      },
+      "exclude_metadata": ["owner"],
+      "exclude_tables": ["measurement"],
+      "operations": ["statistics"]
+    },
+    "cardiology": {
+      "share": true,
+      "exclude_columns": {
+        "person": ["person_source_value", "month_of_birth", "day_of_birth"],
+        "observation_period": [],
+        "visit_occurrence": ["visit_source_value"],
+        "condition_occurrence": ["condition_source_value"],
+        "measurement": ["measurement_source_value"]
+      },
+      "exclude_metadata": ["owner"],
+      "exclude_tables": [],
+      "operations": ["statistics"]
+    },
+    "registry": {
+      "share": true,
+      "exclude_columns": {
+        "person": ["person_source_value", "month_of_birth", "day_of_birth"],
+        "observation_period": [],
+        "visit_occurrence": ["visit_source_value"],
+        "condition_occurrence": ["condition_source_value"]
+      },
+      "exclude_metadata": ["owner"],
+      "exclude_tables": [],
+      "operations": ["statistics"]
+    },
+    "internal": {
+      "share": false
+    }
+  }
+}
+```
+
+Save the updated JSON at the site policy path, then rerun:
 
 ```bash
-python - <<'PY'
-import json
-from pathlib import Path
-
-path = Path('/tmp/nvflare/federated-catalog/data/site-2/local/fdn/default.json')
-policy = json.loads(path.read_text())
-policy['datasets']['omop']['share'] = False
-path.write_text(json.dumps(policy, indent=2) + '\n')
-PY
 python job.py
 python verify_result.py
 ```
