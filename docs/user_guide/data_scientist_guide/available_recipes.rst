@@ -29,6 +29,110 @@ see :ref:`recipe_api`.
    otherwise read the secret directly inside your training code. See
    :ref:`recipe_secrets` for the supported locations.
 
+.. _recipe_execution_lifetime:
+
+Client Execution Lifetime
+=========================
+
+NVFlare 2.10 adds the task-lifetime options below. Recipes default to
+``execution_lifetime="job"``: client compute stays alive across tasks. With ``execution_lifetime="task"``, each client task runs in a fresh
+CPU worker process. The server workflow and its aggregation state continue
+across rounds.
+
+Use task lifetime when releasing worker memory between tasks is worth the
+repeated process startup, data loading, and checkpoint I/O. Use job lifetime
+when retaining that state in memory is preferable. GPU training remains
+supported with the default job lifetime.
+
+Restarting workers adds overhead and does not imply higher throughput. The
+lifetime option does not provide cross-job scheduling, resource admission, or
+shared-GPU arbitration.
+
+The table below lists how to select task lifetime for the built-in recipe
+catalog. Names match ``nvflare recipe list``. For rows marked **Constructor**,
+pass ``execution_lifetime="task"`` to the recipe constructor. For rows marked
+**Client config**, call the common helper before exporting or executing:
+
+.. code-block:: python
+
+    recipe.add_client_config({"execution_lifetime": "task"})
+
+These options configure task execution. A training script that retains local
+state across tasks must also implement checkpoint restoration, as described
+below.
+
+.. list-table:: Recipe execution-lifetime options
+   :header-rows: 1
+   :widths: 58 42
+
+   * - Recipe catalog names
+     - Task-lifetime selection
+   * - ``fedavg``, ``fedavg-pt``
+     - Constructor
+   * - ``fedopt-pt``, ``fedprox-pt``
+     - Constructor
+   * - ``fedavg-numpy``
+     - Constructor
+   * - ``fedavg-sklearn``
+     - Constructor; the sklearn-linear client restores a native classifier checkpoint
+   * - ``kmeans-sklearn``
+     - Constructor; the shipped client derives cluster count from each received model
+   * - ``svm-sklearn``
+     - Constructor
+   * - ``fedce-pt``
+     - Use job lifetime; previous local model and score history are not restored between workers
+   * - ``fedavg-tf``, ``fedopt-tf``
+     - Client config
+   * - ``lr``
+     - Client config
+   * - ``fedeval-pt``, ``fed-task``
+     - Client config
+   * - ``cyclic``, ``cyclic-pt``, ``cyclic-tf``
+     - Client config
+   * - ``fedstats``
+     - Client config; the statistics generator is recreated for each stage
+   * - ``fedavg-he-pt``
+     - Client config; requires provisioned HE contexts and a supported HE
+       environment (``PocEnv`` or ``ProdEnv``)
+   * - ``scaffold-pt``, ``scaffold-tf``
+     - Use job lifetime; client control variates are not restored between workers
+   * - ``swarm-pt``
+     - Use job lifetime
+   * - ``xgb-bagging``, ``xgb-horizontal``, ``xgb-vertical``
+     - Use job lifetime
+
+Task lifetime currently requires CPU Process execution on Linux, or on macOS
+with Python 3.13 or newer. The platform must support POSIX process groups and
+``waitid``/``WNOWAIT``. Client API recipes must use in-process script execution
+(``launch_external_process=False``). External
+process and Attach execution, GPU resource requests, and custom or legacy
+Learner executors are unsupported in this profile. Collab, Flower, PSI, and
+edge recipes also require job lifetime.
+
+Application State And Evaluation
+--------------------------------
+
+Selecting task lifetime does not automatically preserve optimizer, scheduler,
+estimator, data-loader, or random-number state from the previous task. Scripts
+that need that state must save and restore it with their framework's native
+checkpoint APIs. Client API scripts receive ``flare.system_info()["task_checkpoint"]``
+with an ``input`` path for the last successfully committed local checkpoint
+(``None`` initially) and an ``output`` path for the new candidate checkpoint.
+The runtime promotes the candidate on successful local task completion. The
+server still supplies the global model for the next training task.
+
+See the :github_nvflare_link:`PyTorch hello-world client
+<examples/hello-world/hello-pt/client.py>` for an example using native PyTorch
+checkpoints. State held inside persistent data-loader workers or external
+trainer sessions needs additional application integration. Lightning's default
+in-memory ``restore_state=True`` mode is unsupported with task lifetime.
+
+Evaluation of server-provided global models can use task lifetime. For PyTorch
+recipes that support ``add_final_global_evaluation()``, the client script must
+handle evaluation-only tasks. Cross-site evaluation that asks clients to submit
+their previous local models is unsupported with task lifetime; use job lifetime
+for that workflow. See :ref:`recipe_api` for evaluation helpers.
+
 Fed Task
 ==============
 

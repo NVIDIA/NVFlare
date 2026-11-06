@@ -19,6 +19,7 @@ Uses the NVFlare Client API for federated learning.
 
 import argparse
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import SGDClassifier
@@ -68,6 +69,8 @@ def main():
     flare.init()
 
     local_model = None
+    system_info = flare.system_info()
+    checkpoint = system_info.get("task_checkpoint")
     n_features = X_train.shape[1]
 
     print("Starting federated learning loop...")
@@ -77,6 +80,18 @@ def main():
         input_model = flare.receive()
         curr_round = input_model.current_round
         print(f"\n=== Round {curr_round} ===")
+
+        if checkpoint is not None and checkpoint["input"] is not None:
+            state = joblib.load(checkpoint["input"])
+            if (
+                state["version"] != 1
+                or state["job_id"] != system_info["job_id"]
+                or state["site_name"] != system_info["site_name"]
+                or type(state["round"]) is not int
+                or not 0 <= state["round"] < curr_round
+            ):
+                raise RuntimeError("Classifier checkpoint has an invalid scope, version or training round")
+            local_model = state["model"]
 
         if curr_round == 0:
             # Initialize model with global parameters
@@ -104,6 +119,8 @@ def main():
         else:
             # Update model with global parameters from aggregation
             print("Updating model with global parameters")
+            if local_model is None:
+                raise RuntimeError("Classifier state is unavailable after round 0; restore its native checkpoint")
             local_model.coef_ = input_model.params["coef"]
             if local_model.fit_intercept:
                 local_model.intercept_ = input_model.params["intercept"]
@@ -125,6 +142,18 @@ def main():
             }
         else:
             params = {"coef": local_model.coef_}
+
+        if checkpoint is not None:
+            joblib.dump(
+                {
+                    "version": 1,
+                    "job_id": system_info["job_id"],
+                    "site_name": system_info["site_name"],
+                    "round": curr_round,
+                    "model": local_model,
+                },
+                checkpoint["output"],
+            )
 
         # Send model back to server
         print(f"Sending model back to server (train_size={train_size})")
