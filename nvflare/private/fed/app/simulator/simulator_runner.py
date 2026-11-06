@@ -110,6 +110,8 @@ class SimulatorRunner(FLComponent):
 
         self.simulator_root = None
         self.server = None
+        self.client_fatal_error = False
+        self.server_workflow_done = False
         self.deployer = SimulatorDeployer()
         self.client_names = []
         self.federated_clients = []
@@ -531,6 +533,9 @@ class SimulatorRunner(FLComponent):
                     executor.submit(lambda p: self.client_run(*p), [self.server_custom_folder, clients, gpus[index]])
 
                 executor.shutdown()
+                # Before aborting, check if the server workflows already finished on their own
+                server_runner = self.server.server_runner
+                self.server_workflow_done = server_runner is not None and server_runner.status == "done"
                 # Abort the server after all clients finished run
                 self.server.abort_run()
                 server_thread.join()
@@ -548,13 +553,17 @@ class SimulatorRunner(FLComponent):
     def _get_server_run_status(self):
         with self.server.engine.new_context() as fl_ctx:
             execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
-        return 2 if execution_error else 0
+        # A client fatal error fails the run only if the server workflows could not finish
+        client_failed_run = self.client_fatal_error and not self.server_workflow_done
+        return 2 if execution_error or client_failed_run else 0
 
     def client_run(self, server_custom_folder, clients, gpu):
         client_runner = SimulatorClientRunner(
             server_custom_folder, self.args, clients, self.client_config, self.deploy_args, self.build_ctx
         )
         client_runner.run(gpu)
+        if client_runner.fatal_clients:
+            self.client_fatal_error = True
 
     def start_server_app(self, args):
         app_server_root = os.path.join(self.simulator_root, "server", SimulatorConstants.JOB_NAME, "app_server")
@@ -624,6 +633,7 @@ class SimulatorClientRunner(FLComponent):
         self.logging_config = os.path.join(self.args.workspace, "local", WorkspaceConstants.LOGGING_CONFIG)
 
         self.clients_finished_end_run = []
+        self.fatal_clients = []
 
     def run(self, gpu):
         try:
@@ -812,6 +822,10 @@ class SimulatorClientRunner(FLComponent):
 
                     # the child process is in nvflare/private/fed/app/simulator/simulator_worker.py
                     end_run_client = conn.recv()
+                    if conn.recv():
+                        self.logger.error(f"Client {client.client_name} stopped due to FATAL_SYSTEM_ERROR")
+                        with lock:
+                            self.fatal_clients.append(client.client_name)
 
                 with lock:
                     if num_of_threads != len(self.federated_clients):
