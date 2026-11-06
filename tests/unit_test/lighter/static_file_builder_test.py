@@ -204,6 +204,12 @@ class TestStaticFileBuilder:
             resources_file = Path(ctx.get_local_dir(participant)) / "resources.json.default"
             resources = json.loads(resources_file.read_text())
             assert resources["class_allow_list"] == list(DEFAULT_CLASS_ALLOW_LIST)
+            assert {
+                "nvflare.app_common.fdn.catalog.server.controller.CatalogController",
+                "nvflare.app_common.fdn.catalog.site.executor.CatalogExecutor",
+                "nvflare.app_common.fdn.catalog.simulation.SimulationCatalogController",
+                "nvflare.app_common.fdn.catalog.simulation.SimulationCatalogExecutor",
+            } <= set(resources["class_allow_list"])
 
     @pytest.mark.parametrize("require_signed_jobs", [None, True, False])
     def test_build_configures_require_signed_jobs_for_server_and_client(self, tmp_path, require_signed_jobs):

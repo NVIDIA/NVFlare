@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import hashlib
 import json
 import os
 import time
@@ -22,6 +23,8 @@ from pydantic import BaseModel, model_validator
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import RunStatus
+from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
+from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST
 from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, validate_log_config
 from nvflare.job_config.api import FedJob
 from nvflare.recipe._failure_summary import failure_summary
@@ -32,6 +35,11 @@ from .utils import collect_non_local_scripts
 
 WORKSPACE_ROOT = "/tmp/nvflare/simulation"
 SIMULATOR_WORKSPACE_ROOT_ENV_VAR = "NVFLARE_SIMULATOR_WORKSPACE_ROOT"
+_DEFAULT_POLICY_DIGEST = "_simenv_default_class_allow_list_sha256"
+
+
+def _policy_digest(policy: list) -> str:
+    return hashlib.sha256(json.dumps(policy, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 # Internal — not part of the public API
@@ -170,24 +178,36 @@ class SimEnv(ExecEnv):
 
     @staticmethod
     def _ensure_simulation_resources(workspace: str) -> None:
-        """Create resources without freezing the authorizer's built-in default policy."""
+        """Install current defaults, refreshing only an unchanged SimEnv-generated allowlist.
+
+        A digest records which list SimEnv generated. An explicit list without
+        that marker, or a list edited since generation, remains site-owned.
+        """
         local_dir = os.path.join(workspace, WorkspaceConstants.SITE_FOLDER_NAME)
         resources_file = os.path.join(local_dir, WorkspaceConstants.RESOURCES_CONFIG)
         default_resources_file = os.path.join(local_dir, WorkspaceConstants.DEFAULT_RESOURCES_CONFIG)
 
         target_file = resources_file if os.path.exists(resources_file) else default_resources_file
+        resources = {"format_version": 2}
         if os.path.exists(target_file):
             with open(target_file) as f:
                 resources = json.load(f)
             if not isinstance(resources, dict):
                 raise ValueError(f"Simulator resources file must contain a JSON object: {target_file}")
-            return
+        if CLASS_ALLOW_LIST in resources:
+            policy = resources[CLASS_ALLOW_LIST]
+            if not isinstance(policy, list) or resources.get(_DEFAULT_POLICY_DIGEST) != _policy_digest(policy):
+                return
 
-        # ComponentPathAuthorizer resolves its current defaults when class_allow_list
-        # is absent. Persisting a copy would leave reused workspaces on old defaults.
+        policy = list(DEFAULT_CLASS_ALLOW_LIST)
+        digest = _policy_digest(policy)
+        if resources.get(CLASS_ALLOW_LIST) == policy and resources.get(_DEFAULT_POLICY_DIGEST) == digest:
+            return
+        resources[CLASS_ALLOW_LIST] = policy
+        resources[_DEFAULT_POLICY_DIGEST] = digest
         os.makedirs(local_dir, exist_ok=True)
         with open(target_file, "w") as f:
-            json.dump({"format_version": 2}, f, indent=4)
+            json.dump(resources, f, indent=4)
 
     def get_job_status(self, job_id: str) -> Optional[str]:
         """Get the final status of a synchronous simulation, if known."""

@@ -197,38 +197,63 @@ def test_sim_env_deploy_records_base_exception_as_failed_to_run(tmp_path, error_
     assert env.get_job_status(job.name) == RunStatus.FAILED_TO_RUN.value
 
 
-def test_sim_env_uses_current_builtin_component_policy(tmp_path):
+def test_sim_env_installs_and_refreshes_current_component_policy(tmp_path, caplog):
     job = _make_job("standard-policy")
     env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
 
     _deploy_with_mocked_simulator(env, job)
 
     resources_file = _default_resources_path(tmp_path, job.name)
-    assert json.loads(resources_file.read_text()) == {"format_version": 2}
+    assert json.loads(resources_file.read_text())[CLASS_ALLOW_LIST] == list(DEFAULT_CLASS_ALLOW_LIST)
     workspace = _ResourcesWorkspace(str(resources_file))
     authorizer = ComponentPathAuthorizer()
-    authorizer.authorize_component_config(
-        {"path": "nvflare.app_common.fdn.catalog.simulation.SimulationCatalogController"}, workspace=workspace
-    )
+    for component_path in (
+        "nvflare.app_common.fdn.catalog.server.controller.CatalogController",
+        "nvflare.app_common.fdn.catalog.site.executor.CatalogExecutor",
+        "nvflare.app_common.fdn.catalog.simulation.SimulationCatalogController",
+        "nvflare.app_common.fdn.catalog.simulation.SimulationCatalogExecutor",
+    ):
+        assert component_path in json.loads(resources_file.read_text())[CLASS_ALLOW_LIST]
+        authorizer.authorize_component_config({"path": component_path}, workspace=workspace)
     with pytest.raises(UnsafeComponentError, match="not in allow_list"):
         authorizer.authorize_component_config({"path": "example.custom.Unlisted"}, workspace=workspace)
 
     # Reusing a workspace after a package upgrade must not freeze old defaults.
     with patch(
-        "nvflare.app_common.widgets.component_path_authorizer.DEFAULT_CLASS_ALLOW_LIST",
-        (*DEFAULT_CLASS_ALLOW_LIST, "example.new.BuiltinComponent"),
+        "nvflare.recipe.sim_env.DEFAULT_CLASS_ALLOW_LIST",
+        (*DEFAULT_CLASS_ALLOW_LIST[1:], "example.new.BuiltinComponent"),
     ):
         _deploy_with_mocked_simulator(env, job)
         ComponentPathAuthorizer().authorize_component_config(
             {"path": "example.new.BuiltinComponent"}, workspace=workspace
         )
-    assert json.loads(resources_file.read_text()) == {"format_version": 2}
+        with pytest.raises(UnsafeComponentError, match="not in allow_list"):
+            ComponentPathAuthorizer().authorize_component_config(
+                {"path": DEFAULT_CLASS_ALLOW_LIST[0]}, workspace=workspace
+            )
+    assert "example.new.BuiltinComponent" in json.loads(resources_file.read_text())[CLASS_ALLOW_LIST]
+    assert "using the built-in default list" not in caplog.text
+
+
+@pytest.mark.parametrize("custom_policy", [[], ["example.custom.ExactComponent"]])
+def test_sim_env_does_not_refresh_a_user_edited_generated_policy(tmp_path, custom_policy):
+    job = _make_job("edited-policy")
+    env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
+    _deploy_with_mocked_simulator(env, job)
+    resources_file = _default_resources_path(tmp_path, job.name)
+    resources = json.loads(resources_file.read_text())
+    resources[CLASS_ALLOW_LIST] = custom_policy
+    resources_file.write_text(json.dumps(resources))
+    original = resources_file.read_text()
+    with patch("nvflare.recipe.sim_env.DEFAULT_CLASS_ALLOW_LIST", (*DEFAULT_CLASS_ALLOW_LIST, "example.new.Component")):
+        _deploy_with_mocked_simulator(env, job)
+    assert resources_file.read_text() == original
 
 
 @pytest.mark.parametrize(
     "resources_name", [WorkspaceConstants.DEFAULT_RESOURCES_CONFIG, WorkspaceConstants.RESOURCES_CONFIG]
 )
-def test_sim_env_preserves_resources_without_explicit_policy(tmp_path, resources_name):
+def test_sim_env_adds_policy_without_changing_other_resources(tmp_path, resources_name):
     job = _make_job("missing-policy")
     resources_file = tmp_path / job.name / WorkspaceConstants.SITE_FOLDER_NAME / resources_name
     resources_file.parent.mkdir(parents=True)
@@ -238,7 +263,8 @@ def test_sim_env_preserves_resources_without_explicit_policy(tmp_path, resources
     _deploy_with_mocked_simulator(env, job)
 
     resources = json.loads(resources_file.read_text())
-    assert resources == {"format_version": 2, "preserved": True}
+    assert resources["format_version"] == 2 and resources["preserved"] is True
+    assert resources[CLASS_ALLOW_LIST] == list(DEFAULT_CLASS_ALLOW_LIST)
 
 
 @pytest.mark.parametrize("policy", [[], ["example.custom.ExactComponent"]])
@@ -336,7 +362,7 @@ def test_sim_env_byoc_job_does_not_expand_standard_policy(tmp_path):
 
         assert popen.called
         resources_file = _default_resources_path(workspace_root, job.name)
-        assert CLASS_ALLOW_LIST not in json.loads(resources_file.read_text())
+        assert json.loads(resources_file.read_text())[CLASS_ALLOW_LIST] == list(DEFAULT_CLASS_ALLOW_LIST)
         with pytest.raises(UnsafeComponentError, match="not in allow_list"):
             ComponentPathAuthorizer().authorize_component_config(
                 {"path": f"{module.CustomExecutor.__module__}.{module.CustomExecutor.__name__}"},
