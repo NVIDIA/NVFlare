@@ -334,20 +334,20 @@ TOKENIZERS_PARALLELISM=false HF_HUB_OFFLINE=1 PYTHONPATH=. \
 python research/memco/job.py \
   --config research/memco/configs/pddl-smoke.json \
   --data-root /path/to/data-root \
-  --workspace /tmp/memco-validation-live-final
+  --workspace /tmp/memco-validation-post-sync
 ```
 
 Use a fresh workspace. Omit `HF_HUB_OFFLINE=1` if the embedding model is not cached.
 
-Validated on November 6, 2026 with MemCo commit `0be515ac0` on NVFlare core commit
-`c224d87d8` (source checkout), Python 3.11.4, and macOS 15.7.7 on Apple Silicon/CPU.
-The run used OpenAI `gpt-4o-mini-2024-07-18` and
+Revalidated after merging upstream `main` on November 6, 2026 with MemCo commit
+`f106f5189` on NVFlare core commit `e17c1edf6` (source checkout), Python 3.11.4, and
+macOS 15.7.7 on Apple Silicon/CPU. The run requested OpenAI `gpt-4o-mini` and used
 `sentence-transformers/all-MiniLM-L6-v2`; the canonical PDDL files passed dataset
 hash/count checks.
 
-The simulator completed in **204.9 seconds** with exit code `0`: two clients ran
+The simulator completed in **201.1 seconds** with exit code `0`: two clients ran
 four training tasks, Wilson aggregation, and two parallel evaluations. The final
-global memory contained **2 candidates, 10 rules, and 23 artifacts**. Both clients
+global memory contained **2 candidates, 10 rules, and 22 artifacts**. Both clients
 received identical frozen global memory and retained unchanged local memory.
 Evaluation accuracy was **0%**, with average reward **0.125** from partial goal
 progress. Both clients evaluated the same first test task. This validates the
@@ -358,6 +358,9 @@ Server results are under
 `<workspace>/memco-pddl-smoke/server/simulate_job/artifacts/pddl/server/`
 in `global_memory.json` and `metrics_by_client.json`. Full revisions, dependency
 versions, per-client metrics, and dataset/output hashes are retained in
+[`validation/pddl-smoke-post-sync.json`](validation/pddl-smoke-post-sync.json).
+All 40 MemCo unit tests and 236 focused NVFlare Collab/Recipe regression tests
+passed after the merge. The earlier run remains in
 [`validation/pddl-smoke.json`](validation/pddl-smoke.json).
 
 ## Reproducibility and Legacy Parity
