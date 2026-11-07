@@ -26,20 +26,20 @@ def get_open_ports(number) -> list:
     """
     ports = []
     sockets = []
-    for i in range(number):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(("", 0))
-        s.listen(1)
+    try:
+        for i in range(number):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sockets.append(s)
+            s.bind(("", 0))
+            s.listen(1)
 
-        # to prevent the same port number used multiple times, we only close it after all ports are obtained
-        sockets.append(s)
-        port = s.getsockname()[1]
-        if port > 0:
-            ports.append(port)
-
-    # close obtained ports
-    for s in sockets:
-        s.close()
+            # to prevent the same port number used multiple times, we only close it after all ports are obtained
+            port = s.getsockname()[1]
+            if port > 0:
+                ports.append(port)
+    finally:
+        for s in sockets:
+            s.close()
 
     if len(ports) != number:
         raise RuntimeError(
