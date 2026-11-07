@@ -31,6 +31,8 @@ services:
         target: /poc/catalog-demo/prod_00/site-1
         bind: {create_host_path: false}
       - site-1-data:/data
+      - ./config/site-1/catalog_site.json:/poc/catalog-demo/prod_00/site-1/local/fdn/catalog_site.json:ro
+      - ./config/site-1/catalog_policy.json:/poc/catalog-demo/prod_00/site-1/local/fdn/default/catalog_policy.json:ro
     post_start:
       - command: ["python", "prepare_data.py", "site-1"]
     depends_on:
@@ -46,6 +48,8 @@ services:
         source: ./workspace/catalog-demo/prod_00/site-2
         target: /poc/catalog-demo/prod_00/site-2
         bind: {create_host_path: false}
+      - ./config/site-2/catalog_site.json:/poc/catalog-demo/prod_00/site-2/local/fdn/catalog_site.json:ro
+      - ./config/site-2/catalog_policy.json:/poc/catalog-demo/prod_00/site-2/local/fdn/default/catalog_policy.json:ro
     post_start:
       - command: ["python", "prepare_data.py", "site-2"]
     depends_on:

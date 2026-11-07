@@ -96,6 +96,12 @@ workspace and identities. The next Compose startup recreates the source fixtures
 
 ## Site configuration
 
+`compose.yaml` mounts each site's `catalog_site.json` and `catalog_policy.json`
+read-only into its FLARE workspace at `local/fdn/catalog_site.json` and
+`local/fdn/default/catalog_policy.json`. These are deployment configuration;
+`prepare_data.py` only populates the synthetic source data and does not install
+or modify FLARE configuration.
+
 - Site-1: [catalog_site.json](config/site-1/catalog_site.json) selects Unity
   Catalog and [catalog_policy.json](config/site-1/catalog_policy.json) controls
   publication. Startup registers 50 synthetic pets in `flare_demo.sanctuary.pets`.
