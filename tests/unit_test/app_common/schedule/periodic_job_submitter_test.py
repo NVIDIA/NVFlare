@@ -169,6 +169,13 @@ class TestSchedule:
         assert s._engine.job_runner.aborted == ["job-1"] and "study1" not in s._running
         assert "job-1" in s.jobs.jobs  # aborted through the job runner, never deleted under it
 
+    def test_a_dispatched_job_that_never_started_is_aborted_so_the_study_is_not_stuck(self):
+        s = make(studies=("study1",), submit_timeout_s=600)
+        s._tick()
+        s.jobs.jobs["job-1"].update(status="DISPATCHED", submit_time=(T0 - timedelta(hours=1)).timestamp())
+        s._reap()
+        assert s._engine.job_runner.aborted == ["job-1"] and "study1" not in s._running
+
     def test_a_job_the_runner_is_starting_is_left_to_run(self):
         s = make(studies=("study1",), submit_timeout_s=600)
         s._tick()

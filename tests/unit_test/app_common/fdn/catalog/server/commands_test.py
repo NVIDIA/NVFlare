@@ -151,6 +151,16 @@ class TestCommands:
         assert health["site-a"].last_success_at == NOW and health["site-a"].stale is True  # NOW is long past
 
 
+class TestNotReady:
+    def test_search_and_status_before_the_service_has_started_report_not_ready(self, manager, client):
+        manager._store = None
+        with pytest.raises(CommandError) as search:
+            client.search_page()
+        with pytest.raises(CommandError) as status:
+            client.status()
+        assert search.value.error_code == status.value.error_code == "SYSTEM_NOT_READY"
+
+
 class TestRegistration:
     def test_the_manager_registers_its_commands_once(self, monkeypatch):
         from nvflare.private.fed.server.server_cmd_modules import ServerCommandModules

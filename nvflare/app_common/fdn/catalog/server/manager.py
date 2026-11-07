@@ -20,6 +20,7 @@ import threading
 import time
 import zipfile
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -36,7 +37,7 @@ from nvflare.app_common.fdn.catalog.common.payload import (
 )
 from nvflare.app_common.fdn.catalog.common.schema import DEFAULT_LIMITS, ReadLimits
 from nvflare.app_common.fdn.catalog.server.artifacts import CatalogArtifacts, read_archived_manifest, redact_archive
-from nvflare.app_common.fdn.catalog.server.commands import CatalogCommandModule
+from nvflare.app_common.fdn.catalog.server.commands import CatalogCommandModule, NotReady
 from nvflare.app_common.fdn.catalog.server.fileio import write_atomically
 from nvflare.app_common.fdn.catalog.server.reconcile import Outcome, Reconciler
 from nvflare.app_common.fdn.catalog.server.search import SearchPage, SearchQuery
@@ -141,7 +142,7 @@ class CatalogManager(FLComponent):
     def _hand_over(self, fl_ctx: FLContext):
         """Before a catalog job starts, put what its controller needs in the job's run directory: the job process may
         run in a container that sees only its own job directory, never the server's catalog store. Only one job per
-        Study gets it; another one runs without a key, so its result is never applied."""
+        Study gets it; a launch while another job holds the Study is blocked, so no run is wasted."""
         meta = fl_ctx.get_prop(FLContextKey.JOB_META)
         study = self._catalog_study(meta)
         if self._store is None or study is None:
@@ -150,8 +151,12 @@ class CatalogManager(FLComponent):
         with self._lock:
             holder = self._in_flight.setdefault(study, job_id)
         if holder != job_id:
-            self.log_warning(
-                fl_ctx, f"study '{study}' already has catalog read {holder}; the result of job {job_id} is not applied"
+            self.log_warning(fl_ctx, f"study '{study}' already has catalog read {holder}; job {job_id} is not launched")
+            fl_ctx.set_prop(
+                FLContextKey.JOB_BLOCK_REASON,
+                f"a catalog read for study '{study}' is still running or being applied: job {holder}",
+                private=True,
+                sticky=False,
             )
             return
         try:
@@ -296,6 +301,8 @@ class CatalogManager(FLComponent):
                 if self._catalog_study(meta) != study:
                     return
             now = _iso(self._now())
+            context = self._context_path(job_id)
+            never_started = context is not None and context.exists()  # the controller removes it on start
             try:
                 try:
                     manifest = self._artifacts.read(job_id, self._key)
@@ -306,8 +313,9 @@ class CatalogManager(FLComponent):
                 entries = parse_manifest(manifest)
             except Exception as e:
                 self.logger.warning(f"catalog manifest unavailable: {type(e).__name__}")
-                for client in self._sites(meta, study):
-                    self._store.record_no_result(study, client, "NO_RESULT", now)
+                if not never_started:  # a job that never ran says nothing about its sites
+                    for client in self._sites(meta, study):
+                        self._store.record_no_result(study, client, "NO_RESULT", now)
                 return
             for client, entry in entries.items():
                 try:
@@ -326,10 +334,26 @@ class CatalogManager(FLComponent):
         finally:
             try:
                 self._artifacts.discard(job_id)
+                self._remove_context(job_id)
             finally:
                 with self._lock:
                     if self._in_flight.get(study) == job_id:
                         del self._in_flight[study]
+
+    def _context_path(self, job_id: str) -> Path | None:
+        try:
+            return Path(self._workspace.get_run_dir(job_id)) / CONTEXT_FILE
+        except Exception:  # applying the result does not depend on finding the run directory
+            return None
+
+    def _remove_context(self, job_id: str):
+        """The hand-over file holds the job's key; a job that never started leaves it behind."""
+        path = self._context_path(job_id)
+        try:
+            if path is not None:
+                path.unlink(missing_ok=True)
+        except OSError as e:
+            self.logger.warning(f"catalog job context could not be removed: {type(e).__name__}")
 
     def _sites(self, meta: dict, study: str) -> list[str]:
         """The sites a job was deployed to; for every site, those the catalog knows in the Study."""
@@ -346,13 +370,18 @@ class CatalogManager(FLComponent):
 
     # ---- queries -------------------------------------------------------------------------------------------
 
+    def _ready_store(self) -> CatalogStore:
+        if self._store is None:
+            raise NotReady("the catalog service is still starting")
+        return self._store
+
     def search(self, study: str, query: SearchQuery) -> SearchPage:
-        return self._store.search(study, query)
+        return self._ready_store().search(study, query)
 
     def health(self, study: str) -> list[dict]:
         now = self._now()
         report = []
-        for row in self._store.health(study):
+        for row in self._ready_store().health(study):
             last = row["last_success_at"]
             stale = last is None or now - datetime.fromisoformat(last.replace("Z", "+00:00")) > timedelta(
                 seconds=self._stale_after_s

@@ -105,10 +105,13 @@ class CatalogController(Controller):
                 task_done_cb=self._done_callback(done[name]),
             )
             self.broadcast(task, fl_ctx, targets=[name], min_responses=1)
+        cancelled = False
         for event in done.values():
             while not event.wait(_POLL_SECONDS):
                 if abort_signal.triggered:
-                    self.cancel_all_tasks(fl_ctx=fl_ctx)
+                    if not cancelled:  # one call cancels every task
+                        self.cancel_all_tasks(fl_ctx=fl_ctx)
+                        cancelled = True
                     break
         self._write_manifest()
         if abort_signal.triggered:

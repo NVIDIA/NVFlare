@@ -116,6 +116,25 @@ class TestManifest:
         assert [p.name for p in tmp_path.iterdir()] == ["f.json"]
 
 
+class TestAbort:
+    def test_an_abort_cancels_the_tasks_once_however_many_sites_are_waiting(self, tmp_path, monkeypatch):
+        from nvflare.apis.signal import Signal
+        from nvflare.app_common.fdn.catalog.server import controller as controller_module
+
+        controller = make_controller(tmp_path, clients=("site-a", "site-b", "site-c"))
+        cancels = []
+        monkeypatch.setattr(controller_module, "_POLL_SECONDS", 0.01)
+        monkeypatch.setattr(controller, "broadcast", lambda *args, **kwargs: None)
+        monkeypatch.setattr(controller, "cancel_all_tasks", lambda **kwargs: cancels.append(kwargs))
+        monkeypatch.setattr(controller, "_write_manifest", lambda: None)
+        abort_signal = Signal()
+        abort_signal.trigger(True)
+
+        controller.control_flow(abort_signal, FLContext())
+
+        assert len(cancels) == 1
+
+
 class TestCallbacks:
     def test_callbacks_accept_the_keyword_arguments_the_framework_uses(self, tmp_path):
         controller = make_controller(tmp_path)

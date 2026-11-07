@@ -191,7 +191,7 @@ class PeriodicJobSubmitter(FLComponent):
             status = (stored.meta.get(JobMetaKey.STATUS.value) or "") if stored is not None else None
             if status is None or status.startswith(_FINISHED_PREFIX):
                 del self._running[study]
-            elif status == RunStatus.SUBMITTED and (
+            elif status in (RunStatus.SUBMITTED, RunStatus.DISPATCHED) and (
                 self._now().timestamp() - stored.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0) > self._submit_timeout_s
             ):
                 # Through the job runner, which knows whether it is starting the job right now; deleting the

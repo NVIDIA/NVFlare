@@ -40,6 +40,10 @@ class RequestError(ValueError):
     """A malformed request. The message never repeats request values."""
 
 
+class NotReady(RuntimeError):
+    """The service has not finished starting."""
+
+
 def _text(value, name: str, limit: int = _MAX_TEXT) -> str:
     if not isinstance(value, str) or not 0 < len(value) <= limit:
         raise RequestError(f"{name} must be a non-empty string of at most {limit} characters")
@@ -135,6 +139,9 @@ class CatalogCommandModule(CommandModule):
         except (RequestError, ValueError) as e:
             self._error(conn, "INVALID_ARGS", str(e))
             return
+        except NotReady as e:
+            self._error(conn, "SYSTEM_NOT_READY", str(e))
+            return
         self._reply(
             conn,
             {
@@ -146,4 +153,9 @@ class CatalogCommandModule(CommandModule):
         )
 
     def cmd_status(self, conn: Connection, args: list[str]):
-        self._reply(conn, {"clients": self._manager.health(conn.get_prop(ConnProps.ACTIVE_STUDY))})
+        try:
+            clients = self._manager.health(conn.get_prop(ConnProps.ACTIVE_STUDY))
+        except NotReady as e:
+            self._error(conn, "SYSTEM_NOT_READY", str(e))
+            return
+        self._reply(conn, {"clients": clients})

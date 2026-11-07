@@ -41,6 +41,7 @@ from nvflare.app_common.fdn.catalog.common.payload import (
 )
 from nvflare.app_common.fdn.catalog.server import manager as manager_module
 from nvflare.app_common.fdn.catalog.server.artifacts import CatalogArtifacts
+from nvflare.app_common.fdn.catalog.server.commands import NotReady
 from nvflare.app_common.fdn.catalog.server.manager import CatalogManager
 from nvflare.app_common.fdn.catalog.server.reconcile import Reconciler
 from nvflare.app_common.fdn.catalog.server.search import SearchQuery
@@ -192,6 +193,14 @@ class TestOneReadPerStudy:
         event(mgr, EventType.BEFORE_JOB_LAUNCH, **{FLContextKey.JOB_META: catalog_meta("j3", study="other")})
         assert (first / "catalog_context.json").exists() and not (second / "catalog_context.json").exists()
         assert (elsewhere / "catalog_context.json").exists() and mgr._in_flight == {STUDY: "j1", "other": "j3"}
+
+    def test_a_job_launched_while_another_holds_the_study_is_blocked_not_run_without_a_key(self, mgr, run_dirs):
+        run_dirs("j1"), run_dirs("j2")
+        first = event(mgr, EventType.BEFORE_JOB_LAUNCH, **{FLContextKey.JOB_META: catalog_meta("j1")})
+        second = event(mgr, EventType.BEFORE_JOB_LAUNCH, **{FLContextKey.JOB_META: catalog_meta("j2")})
+        assert first.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+        assert "job j1" in second.get_prop(FLContextKey.JOB_BLOCK_REASON)
+        assert mgr._in_flight == {STUDY: "j1"}
 
     def test_the_next_read_may_launch_once_the_result_is_applied(self, mgr, run_dirs):
         run_dirs("j1"), run_dirs("j2")
@@ -445,6 +454,18 @@ class TestIngest:
         assert failures == {"site-a": ("FAILED", "NO_RESULT", 2), "site-b": ("FAILED", "NO_RESULT", 1)}
         assert state(mgr, "site-a")["datasets"]["clinical-research"]["available"] is True
 
+    def test_a_job_that_never_started_counts_no_site_failure_and_leaves_no_context(self, mgr, tmp_path):
+        seed(mgr, client="site-a")
+        run_dir = tmp_path / "run" / "j1"
+        run_dir.mkdir(parents=True)
+        context = run_dir / "catalog_context.json"
+        context.write_text("{}")  # the controller removes this as soon as it starts, so the job never started
+        mgr._workspace = SimpleNamespace(get_run_dir=lambda job_id: str(run_dir))
+        held(mgr, "j1")
+        mgr._ingest("j1")
+        assert state(mgr, "site-a")["client"]["failures"] == 0 and state(mgr, "site-a")["client"]["health"] == "OK"
+        assert not context.exists() and not mgr._in_flight
+
     def test_a_site_that_failed_to_answer_counts_a_failure_and_keeps_its_catalog(self, mgr):
         held(mgr, "j1", manifest(**{"site-a": ok_entry()}))
         mgr._ingest("j1")
@@ -627,6 +648,15 @@ class TestRecoveryLoop:
         mgr._run()
         assert recovered == [30, 60]
         assert applied == ([("finished", second) for second in range(2, 65, 2)] if completion_events else [])
+
+
+class TestNotReady:
+    def test_queries_before_the_service_has_started_say_so(self, mgr):
+        mgr._store = None
+        with pytest.raises(NotReady):
+            mgr.search(STUDY, SearchQuery())
+        with pytest.raises(NotReady):
+            mgr.health(STUDY)
 
 
 class TestHealth:
