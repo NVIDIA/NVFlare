@@ -14,10 +14,11 @@
 
 """Site-local paths for the containerized catalog demo."""
 import json
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-WORKSPACE = Path("/workspace")
+WORKSPACE = Path(os.environ.get("NVFL_WORKSPACE", "/poc"))
 PIN = "3310a1f61b345951adc29cdb8f12f9e1d982f88c"
 
 
