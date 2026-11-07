@@ -107,8 +107,18 @@
     "source_path": "examples/advanced/codon-fm",
     "category": "advanced"
   },
+  "collab-pt-async-reproducible": {
+    "source_path": "examples/advanced/collab/pt_async_cifar10_reproducible",
+    "destination_path": "collab/pt_async_cifar10_reproducible",
+    "category": "advanced"
+  },
   "collab-llm-sft": {
     "source_path": "examples/advanced/collab/pt_llm_sft",
+    "category": "advanced"
+  },
+  "collab-numpy-async": {
+    "source_path": "examples/advanced/collab/numpy_async",
+    "destination_path": "collab/numpy_async",
     "category": "advanced"
   },
   "collab-pt": {

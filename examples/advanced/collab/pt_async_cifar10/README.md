@@ -33,12 +33,12 @@ For a source checkout, install that checkout from its repository root with
 
 ```text
 pt_async_cifar10/
-├── async_aggregator.py  # Server-side FedBuff scheduler and aggregation
+├── async_aggregator.py  # CIFAR model, evaluation, and artifact hooks
 ├── trainer.py           # Published client-side local training
-├── model.py             # FedAvg ModerateCNN and state helpers
+├── model.py             # FedAvg ModerateCNN, state and arithmetic helpers
 ├── cifar10_data.py      # Local CIFAR-10 download and Dirichlet splitter
 ├── prepare_data.sh      # Standalone CIFAR-10 download entry point
-├── job.py               # CollabRecipe CLI and simulator wiring
+├── job.py               # FedBuffRecipe CLI and simulator wiring
 └── requirements.txt
 ```
 
@@ -46,32 +46,33 @@ pt_async_cifar10/
 
 The execution policy has three independent parameters:
 
-| Symbol | CLI argument | Meaning |
-|---|---|---|
-| $K$ | `--num-active-jobs` | Maximum client jobs kept active at once |
-| $B$ | `--buffer-size` | Returned updates required to create a new global model version |
-| $O$ | `--min-open-slots` | Open client slots accumulated before new jobs are dispatched |
+| CLI argument | Meaning |
+|---|---|
+| `--concurrency` | Maximum concurrent client assignments |
+| `--buffer-size` | Returned updates required to create a global model version |
+| `--min-open-slots` | Free client slots required before replacement work is dispatched |
 
-Aggregation is performed before dispatch when both $B$ and $O$ are reached by
-the same response. The newly dispatched job therefore receives the new global
-model version.
-
-Common configurations are:
+Aggregation happens before dispatch when a response reaches both the buffer
+size and refill threshold. Replacement work therefore receives the newly
+published model.
 
 | Configuration | Behavior |
 |---|---|
-| $O=1$ | FedBuff: refill each completed slot immediately |
-| $O=B<K$ | Minimum-response synchronization: aggregate and refill in batches of $B$ while $K-B$ jobs may remain active |
-| $O=B=K$ | Synchronous FedAvg-style rounds: all jobs finish before aggregation and redistribution |
+| `min_open_slots=1` | FedBuff: refill each completed slot immediately |
+| `min_open_slots=buffer_size<concurrency` | Aggregate and refill in batches while other clients remain active |
+| `min_open_slots=buffer_size=concurrency` | Synchronous FedAvg-style rounds |
 
-Because the server dispatches all $K$ initial slots with a nonblocking group
-call, $K$ is also the configured client-training parallelism. It may be smaller
-than `--num-clients`, but cannot exceed the available physical clients.
+The [FedBuff paper](https://proceedings.mlr.press/v151/nguyen22b/nguyen22b.pdf)
+distinguishes concurrency from buffer size and uses K for buffer size. This
+example uses full parameter names. The configurable refill threshold is an
+implementation extension beyond immediate refill.
 
-`--num-rounds` counts global aggregations, not client dispatches. The default
-is eight physical clients, $K=8$, $B=4$, $O=1$, and 100 global aggregations.
-This matches the referenced 8-client, 50-round CIFAR-10 FedAvg baseline's 400
-accepted-update budget while using FedBuff's immediate refill policy.
+`concurrency` also sets the initial client-training parallelism. It may
+be smaller than `--num-clients`, but cannot exceed available physical clients.
+`--num-rounds` counts global aggregations, not dispatches. Defaults are eight
+physical clients, eight active clients, buffer size four, minimum open slots
+one and 100 aggregations. This matches the referenced eight-client, 50-round
+FedAvg baseline's 400 accepted-update budget.
 
 ## Data
 
@@ -113,24 +114,30 @@ model version.
 
 ## Server-Side Workflow
 
-`Cifar10AsyncAggregator.execute()` uses `@collab.main` as the server workflow
-entry point. It:
+`FedBuffRecipe` runs the shared `FedBuffWorkflow.execute()` entry point, marked
+with `@collab.main`. `Cifar10ModelLoader` supplies the initial model, and
+`Cifar10Observer` supplies evaluation and artifact hooks. The shared workflow:
 
-1. fills $K$ physical client-job slots;
+1. fills the configured active-client slots;
 2. invokes selected clients with a nonblocking Collab group call;
 3. handles successful responses in arrival order;
-4. refills when at least $O$ slots are open;
-5. creates a new global version whenever $B$ updates are buffered; and
+4. refills when at least `min_open_slots` client slots are open;
+5. creates a new global version whenever `buffer_size` updates are buffered; and
 6. leaves other jobs active on the model versions they originally received.
 
 The server computes each client delta relative to that assignment's base
 model, weights updates by local training steps, and applies the FedBuff average
 with `--server-lr` to match the existing FedAvg example.
 
+See the [FedBuff recipe guide](../../../../docs/user_guide/data_scientist_guide/fedbuff_recipe.rst)
+for configuration, client contracts, observer hooks, and component scope.
+
 ## Job Recipe Code
 
-`job.py` constructs a `CollabRecipe` with the server workflow and published
-client trainer. `recipe.execute(SimEnv(...))` starts the requested physical
+`job.py` constructs a `FedBuffRecipe` with a published client trainer,
+`Cifar10ModelLoader`, `PTModelOps`, and a CIFAR evaluation/artifact observer. The recipe owns
+assignment tracking, client concurrency, buffering and refill, and step-weighted buffered aggregation.
+`async_aggregator.py` contains the model loader and observer. `recipe.execute(SimEnv(...))` starts the requested physical
 simulator clients. Each physical client retains its optimizer, learning-rate
 scheduler, data loader, and corresponding `site-<N>` shard across assignments.
 The cosine schedule reaches its minimum after `--total-client-rounds`
@@ -139,14 +146,14 @@ additional assignments.
 
 ## Run Job
 
-Run the default FedBuff configuration explicitly as $K=8$, $B=4$, $O=1$:
+Run the default FedBuff configuration with eight active clients and buffer size four:
 
 ```bash
 python job.py \
     --num-clients 8 \
     --alpha 0.5 \
     --split-seed 0 \
-    --num-active-jobs 8 \
+    --concurrency 8 \
     --buffer-size 4 \
     --min-open-slots 1 \
     --num-rounds 100
@@ -154,13 +161,13 @@ python job.py \
 
 ## Synchronous FedAvg Comparison
 
-Set $O=B=K$ to give this Collab workflow the same scheduling boundary as the
+Set `concurrency=buffer_size=min_open_slots` to give this Collab workflow the same scheduling boundary as the
 [standard CIFAR-10 FedAvg example](../../cifar10/pt/cifar10-sim/cifar10_fedavg/README.md):
 
 The following configurations consume the same number of accepted client
 updates, which makes them a useful first comparison:
 
-| Workflow | $K$ | $B$ | $O$ | Global aggregations | Accepted updates |
+| Workflow | Active clients | Buffer size | Minimum open slots | Global aggregations | Accepted updates |
 |---|---:|---:|---:|---:|---:|
 | FedBuff | 8 | 4 | 1 | 100 | 400 |
 | Synchronous | 8 | 8 | 8 | 50 | 400 |
@@ -177,7 +184,7 @@ python job.py \
     --num-clients 8 \
     --alpha 0.5 \
     --split-seed 0 \
-    --num-active-jobs 8 \
+    --concurrency 8 \
     --buffer-size 4 \
     --min-open-slots 1 \
     --num-rounds 100 \
@@ -189,7 +196,7 @@ python job.py \
     --num-clients 8 \
     --alpha 0.5 \
     --split-seed 0 \
-    --num-active-jobs 8 \
+    --concurrency 8 \
     --buffer-size 8 \
     --min-open-slots 8 \
     --num-rounds 50 \
@@ -216,14 +223,18 @@ server evaluates every saved version on that common test set. Deferring
 evaluation prevents evaluation work from changing client completion order,
 open-slot timing, staleness, or the asynchronous participation sequence.
 
-### Matched comparison
+## Seeds and arrival timing
 
-The two synchronous curves align when the model, client data, optimizer,
-learning-rate schedule, and accepted-update budget are matched. FedBuff uses
-the same 400 accepted updates, but its immediate slot refill and stale updates
-produce a different, more variable trajectory.
+`--split-seed` controls the prepared shards; `--setup-seed` controls initial
+model weights. `--run-seed` sets the server-side RNG after model setup. Client
+training uses ordinary persistent loaders, optimizer and scheduler state; this
+example does not impose per-assignment RNG scopes or replay.
 
-![FedAvg and FedBuff comparison](comparison_results/fedavg_fedbuff_comparison.png)
+Actual arrivals depend on training and RPC timing. `schedule.jsonl` records the
+observed assignment IDs, physical/logical clients and base versions. For fixed
+replay and assignment seed helpers, see the separate
+[async research example](../pt_async_cifar10_reproducible/README.md). Its client contract can
+be adopted explicitly when building a reproducible training experiment.
 
 ## Outputs
 
@@ -233,6 +244,7 @@ contains:
 
 - `eval_snapshots/model_version_<N>.pt`
 - `accuracy_history.json`
+- `schedule.jsonl`
 - `final_model/global_model.pt`
 - `tensorboard/`
 
