@@ -1,0 +1,13 @@
+# The server parent runs as a service on the same authorized single-node host.
+# Set python_path to the candidate's existing environment before preparing.
+runtime: slurm
+job_launcher:
+  sandbox: none
+  python_path: /shared/nvflare/venv/bin/python
+  internal_port: 18110
+  parent_host: "127.0.0.1"
+  internal_connection_security: mtls
+  sbatch_directives:
+    partition: gpu
+    time: "01:00:00"
+  pending_timeout: 120

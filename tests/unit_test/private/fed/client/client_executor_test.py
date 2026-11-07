@@ -304,6 +304,53 @@ def test_replacement_failure_after_attachment_reaps_worker_before_releasing_reso
     assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == 104
 
 
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True])
+@pytest.mark.parametrize("abort_before_publication", [False, True])
+def test_replacement_handle_publication_keeps_abort_live(tmp_path, heartbeat_cleanup, abort_before_publication):
+    def intercept_launch(executor, index, _):
+        if index != 0:
+            return
+        launcher = executor.run_processes["job-1"][_RESTART_KEY].launcher
+        launch = launcher.launch_job.side_effect
+
+        def publish_and_abort(meta, ctx):
+            if abort_before_publication:
+                executor.abort_app("job-1", heartbeat_cleanup=heartbeat_cleanup)
+            handle = launch(meta, ctx)
+            publish_job_handle(handle, ctx)
+            if not abort_before_publication:
+                executor.abort_app("job-1", heartbeat_cleanup=heartbeat_cleanup)
+            handle.terminate.assert_called_once()
+            return handle
+
+        launcher.launch_job.side_effect = publish_and_abort
+
+    launcher, _, handles = _run_recovery(tmp_path, [(True, 104), (False, 9)], on_wait=intercept_launch)
+    assert launcher.launch_job.call_count == 2
+    handles[-1].terminate.assert_called_once()
+
+
+def test_replacement_submission_failure_after_publication_reaps_accepted_worker(tmp_path):
+    def intercept_launch(executor, index, handle):
+        if index:
+            handle.terminate.assert_called_once()
+            return
+        launcher = executor.run_processes["job-1"][_RESTART_KEY].launcher
+        launch = launcher.launch_job.side_effect
+
+        def publish_then_fail(meta, ctx):
+            handle = launch(meta, ctx)
+            publish_job_handle(handle, ctx)
+            raise RuntimeError("launcher failed after accepting the replacement")
+
+        launcher.launch_job.side_effect = publish_then_fail
+
+    launcher, _, handles = _run_recovery(tmp_path, [(True, 104), (False, 1)], on_wait=intercept_launch)
+    assert launcher.launch_job.call_count == 2
+    handles[-1].terminate.assert_called_once()
+    handles[-1].wait.assert_called_once()
+
+
 def test_abort_while_replacement_launcher_has_not_returned(tmp_path):
     def intercept_launch(executor, index, _):
         if index != 0:
@@ -1177,10 +1224,11 @@ def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path):
 
 
 @pytest.mark.parametrize("budget", [{}, {"num_of_cpus": 0.5}, {"memory": "1Gi"}, {"num_of_gpus": 1}])
-@pytest.mark.parametrize("backend", ["process", "docker", "custom"])
+@pytest.mark.parametrize("backend", ["process", "docker", "custom", "slurm_server"])
 def test_shared_admission_rejects_unsupported_task_cj_before_launch(tmp_path, budget, backend):
     from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
     from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher
+    from nvflare.app_opt.job_launcher.slurm.launcher import ServerSlurmJobLauncher
     from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 
     job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
@@ -1189,12 +1237,16 @@ def test_shared_admission_rejects_unsupported_task_cj_before_launch(tmp_path, bu
     config_dir = Path(workspace.get_app_config_dir("job-1"))
     config_dir.mkdir(parents=True)
     (config_dir / "config_fed_client.json").write_text('{"execution_lifetime":"task"}')
-    classes = {"process": ClientProcessJobLauncher, "docker": ClientDockerJobLauncher}
+    classes = {
+        "process": ClientProcessJobLauncher,
+        "docker": ClientDockerJobLauncher,
+        "slurm_server": ServerSlurmJobLauncher,
+    }
     launcher = object.__new__(classes[backend]) if backend in classes else Mock()
     launcher.launch_job = Mock(side_effect=AssertionError("unsupported task CJ must not start"))
     # Canonical site-policy validation has its own tests. Exercise the real
     # selected-launcher check at the shared parent admission boundary here.
-    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode="k8s"))
+    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode="slurm" if backend == "slurm_server" else "k8s"))
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
         with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
             with pytest.raises(ValueError, match="supported Kubernetes or Slurm client-job launcher"):
@@ -1222,16 +1274,23 @@ def test_process_resident_compute_admission_keeps_legacy_behavior():
         )
 
 
-@pytest.mark.parametrize("mode", ["k8s", "slurm"])
-def test_shared_admission_reaches_matching_native_cj_launcher(tmp_path, mode):
+@pytest.mark.parametrize("gpus", [0, 1])
+@pytest.mark.parametrize(
+    "mode,module_name,class_name",
+    [
+        ("k8s", "nvflare.app_opt.job_launcher.k8s_launcher", "ClientK8sJobLauncher"),
+        ("slurm", "nvflare.app_opt.job_launcher.slurm.launcher", "ClientSlurmJobLauncher"),
+    ],
+)
+def test_shared_admission_reaches_matching_native_cj_launcher(tmp_path, mode, module_name, class_name, gpus):
     import importlib
 
-    from nvflare.private.fed.client.task_execution_policy import _NATIVE_JOB_LAUNCHERS, TaskExecutionPolicy
+    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 
-    module_name, class_name = _NATIVE_JOB_LAUNCHERS[mode]
     launcher = object.__new__(getattr(importlib.import_module(module_name), class_name))
     launcher.launch_job = Mock(side_effect=RuntimeError("native launch boundary reached"))
     job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    job_meta["resource_spec"] = {"site-1": {"num_of_gpus": gpus}}
     job_meta["cj_resource_spec"] = {"site-1": {}}
     Path(workspace.get_job_meta_path("job-1")).write_text(json.dumps(job_meta))
     config_dir = Path(workspace.get_app_config_dir("job-1"))
