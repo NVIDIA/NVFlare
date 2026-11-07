@@ -19,7 +19,6 @@ services:
         bind: {create_host_path: false}
       - ./workspace/jobs-storage:${PWD}/workspace/jobs-storage
       - ./workspace/snapshot-storage:${PWD}/workspace/snapshot-storage
-      - ./config/server/catalog__p_resources.json:/poc/catalog-demo/prod_00/nvflare-poc-server/local/catalog__p_resources.json:ro
   nvflare-poc-site-1:
     <<: *flare
     environment:

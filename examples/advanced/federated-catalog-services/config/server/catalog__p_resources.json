@@ -1,8 +1,0 @@
-{
-  "components": [
-    {
-      "id": "catalog_manager",
-      "path": "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"
-    }
-  ]
-}
