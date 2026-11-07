@@ -5,8 +5,8 @@ Catalog commands
 
 Use ``nvflare catalog read`` for an ad hoc catalog update or to test site
 catalog configuration. Sites publish metadata according to their own study
-policies. The server must have catalog management configured. Scheduled reads
-use the same recipe and default to once every 24 hours.
+policies. The server must have catalog management configured. Reads run on
+demand; use an external scheduler such as cron to refresh regularly.
 
 For a named Study, catalog search and status require Study membership or a
 certificate entitlement, including for project and organization admins. The

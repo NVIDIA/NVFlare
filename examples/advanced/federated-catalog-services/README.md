@@ -98,8 +98,8 @@ metadata. Without the server manager, job results are not applied to the
 persistent catalog and catalog query commands are unavailable.
 
 Refresh is job-driven: rerun `python job.py` to collect source changes. Only one
-catalog read per Study runs at a time; a second submission is refused until the first is applied. This
-example does not schedule periodic discovery. The default health threshold marks
+catalog read per Study runs at a time; a second submission is refused until the first is applied. Use an
+external scheduler such as cron for regular refreshes. The default health threshold marks
 a site's last successful read stale after two days.
 
 ### Clients: bindings and publication policy

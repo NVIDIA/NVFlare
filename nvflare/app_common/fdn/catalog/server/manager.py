@@ -61,7 +61,7 @@ class CatalogManager(FLComponent):
         register_commands: bool = True,
     ):
         """Runs one catalog read job per Study at a time and applies its result, however the job was submitted: by
-        the recipe, `nvflare catalog read` or a PeriodicJobSubmitter. A site is reported stale when its last
+        the recipe or `nvflare catalog read`. A site is reported stale when its last
         successful read is older than stale_after_s."""
         super().__init__()
         self._stale_after_s = stale_after_s
