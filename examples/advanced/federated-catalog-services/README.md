@@ -9,21 +9,35 @@ those sites. Each publishes the schema of its `sanctuary.pets` table, excluding
 
 Prerequisites: Docker Compose **2.30 or later** (for automatic demo-data startup
 hooks), and a Python environment with this FLARE checkout installed for admin
-commands. Run from this directory.
+commands. The commands below run from this example directory; the POC workspace
+can be anywhere accessible to Docker.
 
 Generate the standard server, client and admin startup kits:
 
 ```bash
-nvflare poc config --pw ./workspace
+# Choose an absolute path; this is an example, not a required location.
+export NVFLARE_POC_WORKSPACE=/tmp/flare-catalog
+nvflare poc config --pw "$NVFLARE_POC_WORKSPACE"
 nvflare poc prepare -i project.yml
 ```
 
-The admin kit is generated at `workspace/catalog-demo/prod_00/admin@nvidia.com`
+If preparation reports that `admin@nvidia.com` is already registered to another
+workspace, it preserves that registration. Once the new kits have been generated,
+use the normal CLI commands to explicitly select the new kit if you intend to
+switch POCs:
+
+```bash
+nvflare config add admin@nvidia.com "$NVFLARE_POC_WORKSPACE/catalog-demo/prod_00/admin@nvidia.com" --force
+nvflare config use admin@nvidia.com
+```
+
+The admin kit is generated at
+`$NVFLARE_POC_WORKSPACE/catalog-demo/prod_00/admin@nvidia.com`
 and selected as the active CLI identity. It stays on your computer. Subsequent
 admin commands do not need `--startup-kit`.
 
 Register the catalog service in the server's normal deployment configuration:
-edit `workspace/catalog-demo/prod_00/nvflare-poc-server/local/resources.json`
+edit `$NVFLARE_POC_WORKSPACE/catalog-demo/prod_00/nvflare-poc-server/local/resources.json`
 and append this entry to its existing `components` array:
 
 ```json
@@ -86,7 +100,7 @@ The standard POC CLI writes participant console logs into the mounted workspace.
 For startup and registration progress:
 
 ```bash
-tail -f workspace/catalog-demo/prod_00/{nvflare-poc-server,site-1,site-2}/poc_console.log
+tail -f "$NVFLARE_POC_WORKSPACE"/catalog-demo/prod_00/{nvflare-poc-server,site-1,site-2}/poc_console.log
 ```
 
 Use `docker compose logs` for source-service errors. The normal `nvflare job`
@@ -122,6 +136,22 @@ settings belong to the deployment; `job.py` submits the workflow and
 | Server `local/resources.json` | Edit the generated file after preparation | Registers the long-lived `CatalogManager` alongside the existing server components. |
 | Client `local/fdn/catalog_site.json` | Read-only Compose mount from `config/<site>/catalog_site.json` | Maps Study and dataset names to that site's metadata connector and source. |
 | Client `local/fdn/default/catalog_policy.json` | Read-only Compose mount from `config/<site>/catalog_policy.json` | Authorizes publication and filters the metadata that the site shares. |
+
+### Workspace selection
+
+Compose requires `NVFLARE_POC_WORKSPACE`; it has no fallback to a directory in
+this example. The variable is also honored by the POC CLI, and `poc config --pw`
+persists the selection for future CLI sessions. Keep the variable exported for
+Compose commands. To reuse an already configured workspace in a new terminal:
+
+```bash
+export NVFLARE_POC_WORKSPACE="$(nvflare poc config --format json | python -c 'import json, sys; print(json.load(sys.stdin)["data"]["poc_workspace_dir"])')"
+```
+
+To change the selection, export the new absolute path and run
+`nvflare poc config --pw "$NVFLARE_POC_WORKSPACE"` before preparing it. The
+container-local `/poc` paths are mount points inside the image; the host kits and
+storage come from the selected workspace. Missing kit directories fail startup.
 
 ### Server: CatalogManager
 
@@ -183,10 +213,15 @@ mounts both files read-only, and the data preparation script does not modify the
 
 ### Credentials and example assumptions
 
-- All commands run from this example directory on one Docker host. The Compose
-  mount paths match the configured `workspace`, project `catalog-demo`, initial
-  kit directory `prod_00`, and participant names in `project.yml`. Update those
-  paths together if changing the deployment layout.
+- The admin and Compose use the same Docker host. The host workspace is selected
+  through `NVFLARE_POC_WORKSPACE`; no mount depends on the shell's current
+  directory. Project `catalog-demo`, initial kit directory `prod_00` and participant
+  names still match this example's `project.yml`.
+- To run from another directory, pass the absolute Compose file path with
+  `docker compose -f /path/to/federated-catalog-services/compose.yaml ...`, and
+  absolute paths to `project.yml` and `job.py` for preparation/submission.
+  Configuration files and build context resolve relative to the Compose file.
+  Keep `NVFLARE_POC_WORKSPACE` exported in that shell.
 - The demo uses the `default` Study. `ProdEnv`, the site bindings and the policy
   directory all use that same Study.
 - Each FLARE container receives its own participant kit. The admin kit remains
