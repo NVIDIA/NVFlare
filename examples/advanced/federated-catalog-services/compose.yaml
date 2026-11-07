@@ -7,6 +7,12 @@ x-flare: &flare
   init: true
   stop_grace_period: 45s
   tmpfs: ["/workspace"]
+  pre_stop:
+    - command:
+        - bash
+        - -c
+        - |
+          printf 'y\n' | /startup-kit/startup/stop_fl.sh
 services:
   nvflare-server:
     <<: *flare
@@ -15,7 +21,7 @@ services:
     ports: ["127.0.0.1:8002:8002", "127.0.0.1:8003:8003"]
     volumes:
       - type: bind
-        source: ${CATALOG_KITS:?Set CATALOG_KITS}/nvflare-server
+        source: ${CATALOG_KITS:?Run python setup.py first}/nvflare-server
         target: /startup-kit
         read_only: true
         bind: {create_host_path: false}
@@ -29,7 +35,7 @@ services:
       UNITY_CATALOG_URL: http://unity-catalog:8080/api/2.1/unity-catalog
     volumes:
       - type: bind
-        source: ${CATALOG_KITS:?Set CATALOG_KITS}/site-1
+        source: ${CATALOG_KITS:?Run python setup.py first}/site-1
         target: /startup-kit
         read_only: true
         bind: {create_host_path: false}
@@ -48,7 +54,7 @@ services:
       CATALOG_DATABASE_URL: postgresql+psycopg://catalog_reader:local-demo-reader@postgres:5432/sanctuary
     volumes:
       - type: bind
-        source: ${CATALOG_KITS:?Set CATALOG_KITS}/site-2
+        source: ${CATALOG_KITS:?Run python setup.py first}/site-2
         target: /startup-kit
         read_only: true
         bind: {create_host_path: false}

@@ -5,133 +5,75 @@ Catalog OSS with a Parquet table; site-2 uses PostgreSQL. Source rows stay at
 those sites. Each publishes the schema of its `sanctuary.pets` table, excluding
 `name` through its local catalog policy.
 
-## Provision startup kits
+## Quick start
 
-Prerequisites: Docker Compose **2.30 or later** (for automatic demo-data startup
-hooks), and a Python environment with this FLARE checkout installed for admin
-commands. Run the following commands from this example directory.
-
-Use the standard provision command to generate server, site and admin kits:
+Prerequisites: Docker Compose **2.30 or later**, and a Python environment with
+this FLARE checkout installed. Run from this example directory:
 
 ```bash
-# Example location; choose any absolute path accessible to Docker.
-export CATALOG_WORKSPACE=/tmp/nvflare/catalog
-nvflare provision -p project.yml -w "$CATALOG_WORKSPACE"
-export CATALOG_KITS="$CATALOG_WORKSPACE/catalog-demo/prod_00"
-```
-
-Select the generation printed by provisioning. The first is `prod_00`; later
-provisioning runs can generate `prod_01`, etc. Compose requires `CATALOG_KITS`
-and mounts only each participant's own kit. No POC commands or POC workspace
-settings are used.
-
-Register the generated admin kit on your computer and select it:
-
-```bash
-nvflare config add catalog-admin@nvidia.com "$CATALOG_KITS/catalog-admin@nvidia.com" --force
-nvflare config use catalog-admin@nvidia.com
-```
-
-The admin kit stays on the host. Subsequent commands do not need `--startup-kit`.
-The explicit registration also replaces any registration left by an older run
-of this example.
-
-Activate the server's normal resources configuration:
-
-```bash
-cp "$CATALOG_KITS/nvflare-server/local/resources.json.default" \
-   "$CATALOG_KITS/nvflare-server/local/resources.json"
-```
-
-Edit that `resources.json` and append this entry to its existing `components`
-array, retaining the other generated components and authorization settings:
-
-```json
-{
-  "id": "catalog_manager",
-  "path": "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"
-}
-```
-
-Do this once per newly provisioned server kit; keep an existing customized
-`resources.json` rather than overwriting it with the default again.
-
-## Start and monitor
-
-```bash
+python setup.py --workspace /tmp/nvflare/catalog
 docker compose up -d --build --wait
-docker compose ps
-docker compose logs -f nvflare-server nvflare-site-1 nvflare-site-2
-```
-
-Compose starts FLARE automatically using the generated
-`startup/sub_start.sh` in the foreground. This is the same script invoked by
-`startup/start.sh`; running it in the foreground lets Docker track the service.
-There is no custom process launcher and no separate `poc start` step.
-
-Each site automatically prepares its own synthetic demo data during container
-startup. In a real deployment the data already exists. Preparation only seeds
-the sources; deployment configuration is supplied separately by Compose.
-
-`up --wait` waits for container/source-service startup, not FLARE registration.
-After inspecting startup logs, check readiness from the host:
-
-```bash
-nvflare system status
-```
-
-Wait until both sites are registered before submitting a job. If connection
-fails, inspect `docker compose logs --tail 100 nvflare-server` and check that
-`nvflare config use catalog-admin@nvidia.com` selects the kit provisioned above.
-
-## Run and retrieve
-
-Run these commands on the admin user's computer:
-
-```bash
 python job.py
-nvflare catalog show --format json > catalog-summary.json
+nvflare catalog show
+```
+
+`--workspace` accepts any absolute or relative location. Omitting it uses this
+example's `workspace` directory. Setup provisions kits when needed, registers
+and selects the admin identity, adds `CatalogManager` to the server resources,
+and writes Compose's `.env`. Existing kits, custom server components and other
+`.env` settings are preserved when setup is rerun. Use `--reprovision` after
+changing `project.yml` to generate new kits.
+
+Compose starts FLARE through the generated startup scripts and prepares demo
+data at each site. `job.py` submits and monitors the catalog read from your
+computer using the selected admin kit. Source rows stay at the sites.
+
+Stop after the job completes:
+
+```bash
+docker compose down
+```
+
+Compose's stop hook calls each generated `stop_fl.sh` before Docker stops the
+container. Kits, source data, accepted catalogs and archived jobs remain for
+the next `docker compose up -d --wait`. `down --volumes` removes demo data/state.
+
+## Progress and results
+
+These standard commands are available when needed:
+
+```bash
+docker compose logs -f nvflare-server nvflare-site-1 nvflare-site-2
+nvflare system status
 nvflare catalog show --site site-1 --dataset sanctuary --format json > site-1-catalog.json
 nvflare catalog show --site site-2 --dataset sanctuary --format json > site-2-catalog.json
 nvflare job logs JOB_ID --site all --tail 100
 ```
 
-`job.py` submits `CatalogRecipe`, enables standard client log streaming, and
-uses `nvflare job monitor` to display progress through completion. It does not
-prepare data, start services or export results. Use the normal job CLI for job
-archive downloads. Catalog commands retrieve the reconciled catalog separately.
+`job.py` streams client logs and uses `nvflare job monitor` through completion.
+Use the normal job CLI for archive downloads. `docker compose up --wait` waits
+for container/source startup; `nvflare system status` checks FLARE registration.
 
-## Stop and restart
+## What setup configures
 
-Finish the demo job, then request shutdown through the generated kit scripts:
+[setup.py](setup.py) calls the standard `nvflare provision` and `nvflare config
+add/use` commands. It selects the latest generated kit directory, creates the
+server's `local/resources.json` from its default when needed, and appends the
+`catalog_manager` component once. It records `CATALOG_KITS` in `.env` so users
+need no exports or manual kit-generation selection. The admin kit remains on
+your computer; it is never mounted in a service container.
 
-```bash
-docker compose exec -T nvflare-site-1 bash -c 'printf "y\n" | /startup-kit/startup/stop_fl.sh'
-docker compose exec -T nvflare-site-2 bash -c 'printf "y\n" | /startup-kit/startup/stop_fl.sh'
-docker compose exec -T nvflare-server bash -c 'printf "y\n" | /startup-kit/startup/stop_fl.sh'
-docker compose wait nvflare-site-1 nvflare-site-2 nvflare-server
-docker compose down
-```
-
-The confirmation is for the generated local process-stop script. Its daemon
-observes the shutdown request, stops its worker, and exits. Compose waits for
-these foreground startup scripts to finish before removing the containers.
-
-To restart, run `docker compose up -d --wait`; existing kits and source data are
-reused, and FLARE starts automatically. No provisioning step is needed.
-
-Named volumes retain source fixtures, server catalog state, archived jobs and
-snapshots. `docker compose down --volumes` removes that demo state. Provision a
-new generation only when changing participant identities or certificates, select
-its directory with `CATALOG_KITS`, register its admin kit, and configure its new
-server resources before starting it.
+When switching from an older manual setup, unset a previously exported
+`CATALOG_KITS` if it points elsewhere: shell variables override Compose's `.env`.
+Changing the workspace does not reset Docker volumes; use `down --volumes` when
+you also want fresh demo data/state.
 
 ## Deployment configuration
 
 | Configuration | Supplied by | Purpose |
 | --- | --- | --- |
 | [project.yml](project.yml) | `nvflare provision` | Defines participants, endpoints, certificate host names and startup kits. |
-| Server `local/resources.json` | Edit the generated kit | Registers the long-lived `CatalogManager` alongside the existing server components. |
+| Server `local/resources.json` | Setup updates the generated kit | Registers the long-lived `CatalogManager` alongside the existing server components. |
 | Client `/fdn/policy/catalog_site.json` | Read-only Compose mount from `config/<site>/catalog_site.json` | Maps Study and dataset names to the site's connector and source. |
 | Client `/fdn/policy/default/catalog_policy.json` | Read-only Compose mount from `config/<site>/catalog_policy.json` | Authorizes publication and filters the shared metadata. |
 
@@ -147,10 +89,10 @@ has an explicit `connect_to` override; clients use the Compose hostname. Source
 services have no published host ports. Remote deployments must substitute their
 own routable host names and provision matching certificates.
 
-`CATALOG_KITS` is the selected host kit directory, with no hard-coded workspace
-fallback. Keep it exported for Compose commands. To run from another directory,
-pass an absolute Compose path with `docker compose -f /path/to/compose.yaml ...`
-and absolute paths to `project.yml` and `job.py`.
+Setup stores the selected host kit directory as `CATALOG_KITS` in `.env`.
+To run from another directory, pass an absolute Compose path with
+`docker compose -f /path/to/compose.yaml ...` and an absolute path to `job.py`.
+Setup locates `project.yml` relative to its own file.
 
 Each container mounts its own kit read-only at `/startup-kit`. The generated
 startup script uses its native `NVFL_WORKSPACE` support to create a working copy
