@@ -327,11 +327,11 @@ We provide a log config argument (``-l`` or ``log_config`` in simulator mode, an
 This argument can be any of the following:
 
 - log configuration json file (``/path/to/my_log_config.json``, ``my_log_config.json``)
-- predefined console :class:`LogMode<nvflare.fuel.utils.log_utils.LogMode>` (``concise``, ``progress``, ``msg_only``, ``full``, ``verbose``)
+- predefined console :class:`LogMode<nvflare.fuel.utils.log_utils.LogMode>` (``concise``, ``progressive``/``progress``, ``msg_only``, ``full``, ``verbose``)
 
     - ``concise`` (default for simulator mode): all non-NVFlare logs plus selected NVFlare application logs, with
       simplified log attributes. This preserves the existing NVFlare 2.9 behavior.
-    - ``progress``: training rounds and metrics for deep-learning, traditional-ML, Swarm, cyclic,
+    - ``progressive`` (also accepted as ``progress``): training rounds and metrics for deep-learning, traditional-ML, Swarm, cyclic,
       and XGBoost jobs, evaluation progress, and workflow phases for federated statistics, PSI, and
       survival analysis, plus warnings and errors. INFO progress is formatted as messages only; WARNING,
       ERROR, and CRITICAL records keep a textual severity label as well as terminal

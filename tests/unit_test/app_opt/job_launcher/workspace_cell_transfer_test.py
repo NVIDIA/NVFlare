@@ -171,6 +171,20 @@ class TestWorkspaceTransferManager:
             assert "local/study_data.yaml" not in names
             assert "local/study_runtime.yaml" not in names
 
+    def test_workspace_bundle_excludes_the_catalog_site_files(self):
+        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
+            _make_workspace(ws_root, JOB_ID)
+            _write_file(os.path.join(ws_root, "local", "fdn", "catalog_site.json"), b"{}")
+            _write_file(os.path.join(ws_root, "local", "fdn", "study-a.json"), b"{}")
+            zip_path = os.path.join(tmp, "workspace.zip")
+
+            _zip_workspace_to_file(ws_root, JOB_ID, zip_path)
+
+            with zipfile.ZipFile(zip_path) as zf:
+                names = set(zf.namelist())
+            assert "local/resources.json" in names
+            assert not any(name.startswith("local/fdn/") for name in names)
+
     def test_workspace_bundle_excludes_legacy_custom_study_data_path(self):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
             _make_workspace(ws_root, JOB_ID)

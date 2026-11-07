@@ -1,0 +1,13 @@
+{
+  "format_version": 1,
+  "datasets": {
+    "sanctuary": {
+      "share": true,
+      "exclude_columns": {
+        "pets": [
+          "name"
+        ]
+      }
+    }
+  }
+}

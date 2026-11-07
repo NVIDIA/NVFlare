@@ -1,0 +1,8 @@
+.env
+startup-kits/
+workspace*/
+data/generated/
+data/playground/
+discovery.json
+/catalog-summary.json
+/site-*-catalog.json

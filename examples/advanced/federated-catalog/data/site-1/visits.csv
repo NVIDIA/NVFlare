@@ -1,0 +1,4 @@
+visit_id,person_id,visit_date,visit_type,duration_minutes
+1,1001,2024-01-01,outpatient,30
+2,1002,2024-01-02,outpatient,45
+3,1003,2024-01-03,telehealth,20

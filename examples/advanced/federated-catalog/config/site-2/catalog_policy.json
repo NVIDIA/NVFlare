@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "datasets": {
+    "omop": {
+      "share": true,
+      "exclude_columns": {
+        "person": [
+          "person_source_value"
+        ],
+        "condition_occurrence": [
+          "condition_source_value"
+        ]
+      }
+    }
+  }
+}

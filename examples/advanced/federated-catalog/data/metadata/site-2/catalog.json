@@ -1,0 +1,30 @@
+{
+  "semantic_profile": {
+    "standard": "OMOP",
+    "version": "5.4"
+  },
+  "tables": {
+    "person": {
+      "primary_key": [
+        "person_id"
+      ],
+      "relationships": []
+    },
+    "condition_occurrence": {
+      "primary_key": [
+        "condition_occurrence_id"
+      ],
+      "relationships": [
+        {
+          "columns": [
+            "person_id"
+          ],
+          "target_table": "person",
+          "target_columns": [
+            "person_id"
+          ]
+        }
+      ]
+    }
+  }
+}
