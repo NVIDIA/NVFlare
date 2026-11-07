@@ -21,9 +21,11 @@ nvflare poc config --pw "$NVFLARE_POC_WORKSPACE"
 nvflare poc prepare -i project.yml
 ```
 
-If preparation reports that `admin@nvidia.com` is already registered to another
-workspace, it preserves that registration. Once the new kits have been generated,
-use the normal CLI commands to explicitly select the new kit if you intend to
+If `admin@nvidia.com` is already registered to another workspace that still
+exists, `nvflare poc prepare` generates the new kits, keeps the existing
+registration, and then stops with `startup kit id 'admin@nvidia.com' already
+exists outside POC workspace` (exit code 4). The new kits are already in place,
+so use the normal CLI commands to explicitly select the new kit if you intend to
 switch POCs:
 
 ```bash
