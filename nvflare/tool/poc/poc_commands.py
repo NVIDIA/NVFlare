@@ -2286,6 +2286,49 @@ def _build_poc_console_logs(
     return logs
 
 
+def _clear_stale_poc_pid_files(service_dir: str, proc_root: Path = Path("/proc")):
+    """On Linux, discard PID markers owned by unrelated or exited processes.
+
+    Container recreation retains mounted kits but replaces the PID namespace.
+    A reused PID (including the current CLI's PID) must not block startup or be
+    treated as the worker. If process identity cannot be read, retain the marker.
+    Platforms without procfs keep the existing startup-script checks.
+    """
+    if not proc_root.is_dir():
+        return
+    service = Path(service_dir).resolve()
+    workspace = os.environ.get("NVFL_WORKSPACE") or str(service)
+    for name in ("daemon_pid.fl", "pid.fl"):
+        marker = service / name
+        try:
+            pid = int(marker.read_text().strip())
+        except FileNotFoundError:
+            continue
+        except ValueError:
+            pid = 0
+        except OSError:
+            continue
+        try:
+            args = (proc_root / str(pid) / "cmdline").read_bytes().split(b"\0") if pid > 0 else []
+        except FileNotFoundError:
+            args = []
+        except OSError:
+            continue
+        paths = {os.path.realpath(os.fsdecode(arg)) for arg in args if os.path.isabs(os.fsdecode(arg))}
+        if name == "daemon_pid.fl":
+            owned = str(service / "startup" / "sub_start.sh") in paths
+        else:
+            owned = os.path.realpath(workspace) in paths and any(
+                module in args
+                for module in (
+                    b"nvflare.private.fed.app.server.server_train",
+                    b"nvflare.private.fed.app.client.client_train",
+                )
+            )
+        if not owned:
+            marker.unlink(missing_ok=True)
+
+
 def async_process(
     service_name,
     cmd_path,
@@ -2303,12 +2346,16 @@ def async_process(
     )
     console_log = _poc_service_console_log(cmd_path)
     os.makedirs(os.path.dirname(console_log), exist_ok=True)
+    if not service_config.get(SC.IS_DOCKER_RUN):
+        _clear_stale_poc_pid_files(os.path.dirname(console_log))
     with open(console_log, "a", buffering=1) as output:
         output.write(f"\n--- nvflare poc start {time.asctime()} ---\n")
         if my_env:
-            subprocess.Popen(cmd_path.split(" "), env=my_env, stdout=output, stderr=subprocess.STDOUT)
+            subprocess.Popen(
+                cmd_path.split(" "), env=my_env, stdout=output, stderr=subprocess.STDOUT, start_new_session=True
+            )
         else:
-            subprocess.Popen(cmd_path.split(" "), stdout=output, stderr=subprocess.STDOUT)
+            subprocess.Popen(cmd_path.split(" "), stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
 
 
 def sync_process(service_name, cmd_path):
