@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import os
 import shlex
 import threading
@@ -21,7 +22,7 @@ from abc import abstractmethod
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReturnCode, SystemConfigs
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReservedKey, ReturnCode, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.shareable import Shareable, make_reply
@@ -42,6 +43,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.deprecated import warn_deprecated
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
@@ -61,9 +63,13 @@ class WorkerComponentBuilder(ComponentBuilder):
         self.workspace = workspace
         self.enforce_authorization = enforce_authorization
         self.component_path_authorizer = ComponentPathAuthorizer()
+        self.component_build_authorizer = None
 
     def get_module_scanner(self):
         return self.module_scanner
+
+    def has_component_build_authorizer(self):
+        return self.enforce_authorization
 
     @staticmethod
     def make_component_node(component_config, index=None):
@@ -130,6 +136,8 @@ class WorkerComponentBuilder(ComponentBuilder):
         if node is None:
             node = self.make_component_node(config_dict)
         self._authorize_component_config_tree(config_dict, node, force_current=True)
+        if self.enforce_authorization and self.component_build_authorizer:
+            self.component_build_authorizer(config_dict)
         return super().build_component(config_dict)
 
 
@@ -143,6 +151,11 @@ class MultiProcessExecutor(Executor):
             components: a dictionary for component classes to their arguments
         """
         super().__init__()
+        warn_deprecated(
+            "MultiProcessExecutor and PTMultiProcessExecutor are deprecated as of NVFlare 2.10. "
+            "Use job-based Client API with external-process torchrun; see the Migration Guide.",
+            stacklevel=3,
+        )
         self.executor_id = executor_id
 
         self.components_conf = components
@@ -192,7 +205,11 @@ class MultiProcessExecutor(Executor):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
-            self.initialize(fl_ctx)
+            try:
+                self.initialize(fl_ctx)
+            except Exception:
+                self.system_panic("multi-process executor initialization failed", fl_ctx)
+                raise
         elif event_type == EventType.END_RUN:
             self.finalize(fl_ctx)
 
@@ -294,6 +311,11 @@ class MultiProcessExecutor(Executor):
                 topic=CellChannelTopic.FIRE_EVENT,
                 cb=self._relay_fire_event,
             )
+            cell.register_request_cb(
+                channel=CellChannel.MULTI_PROCESS_EXECUTOR,
+                topic=EventType.BEFORE_BUILD_COMPONENT,
+                cb=self._authorize_rank_component,
+            )
 
             self.targets = []
             for i in range(self.num_of_processes):
@@ -324,6 +346,33 @@ class MultiProcessExecutor(Executor):
                     raise ValueError(reply.get_header(MessageHeaderKey.ERROR))
         except Exception as e:
             self.log_exception(fl_ctx, f"error initializing multi_process executor: {secure_format_exception(e)}")
+            raise
+
+    def _authorize_rank_component(self, request: CellMessage) -> CellMessage:
+        try:
+            conf = self.engine.conf
+            if not conf or not conf.has_component_build_authorizer():
+                raise RuntimeError("No component build authorizer set up.")
+            # Reuse config traversal with request-local callback state. Never
+            # replace the original configurator's bound context or kwargs.
+            conf = copy.copy(conf)
+            conf._build_auth_state = threading.local()
+            conf.build_auth_kwargs = dict(conf.build_auth_kwargs)
+            auth_ctx = conf.build_auth_kwargs.get("fl_ctx")
+            if isinstance(auth_ctx, FLContext):
+                auth_ctx = auth_ctx.clone()
+                for key in (ReservedKey.MANAGER, FLContextKey.COMPONENT_BUILD_ERROR, FLContextKey.EXCEPTIONS):
+                    auth_ctx.remove_prop(key, force_removal=True)
+                conf.build_auth_kwargs["fl_ctx"] = auth_ctx
+            config_dict = request.payload
+            # Use the parent's existing site handlers and configuration context,
+            # without constructing the requested component in the parent.
+            conf._authorize_component_config_tree(
+                config_dict, conf._get_config_ctx(), conf._make_runtime_component_node(config_dict), force_current=True
+            )
+        except Exception as ex:
+            return F3make_reply(F3ReturnCode.INVALID_REQUEST, secure_format_exception(ex))
+        return F3make_reply(F3ReturnCode.OK)
 
     def receive_execute_result(self, request: CellMessage) -> CellMessage:
         return_data = request.payload
