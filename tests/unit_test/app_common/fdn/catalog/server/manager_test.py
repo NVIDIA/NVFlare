@@ -384,7 +384,7 @@ class TestIngest:
         mgr._ingest("j1")
         assert mgr.search(STUDY, SearchQuery()).total == 1
 
-    def test_missing_workspace_records_failure_and_releases_the_study(self, mgr, monkeypatch):
+    def test_missing_workspace_releases_the_study_without_blaming_a_site(self, mgr, monkeypatch):
         held(mgr, "j1", deploy_map={"app": ["site-a"]})
 
         def missing(*args):
@@ -393,7 +393,7 @@ class TestIngest:
         monkeypatch.setattr(mgr.jobs, "get_storage_component", missing)
         mgr._ingest("j1")
         assert not mgr._in_flight
-        assert state(mgr, "site-a")["client"]["reason_code"] == "NO_RESULT"
+        assert not mgr._store._clients  # the job failed; nothing says which site did
         # The stored job is terminal, so it cannot block the next read either.
         mgr.jobs.metas["j1"]["status"] = "FINISHED:FAILED_TO_RUN"
         ctx = event(mgr, EventType.SUBMIT_JOB, **{FLContextKey.JOB_META: catalog_meta(None)})
@@ -421,7 +421,7 @@ class TestIngest:
         held(mgr, "j1", deploy_map={"app": ["site-a"]})
         mgr.jobs.raw["j1"] = {"j1/app_server/config/catalog_results.json": forged}
         mgr._ingest("j1")
-        assert set(mgr._store.health(STUDY)[0][k] for k in ("client", "reason_code")) == {"site-a", "NO_RESULT"}
+        assert not mgr._store._clients and not mgr._in_flight
 
     @pytest.mark.parametrize("signed", ["bad mac", "no mac", "unsigned", "another job"])
     def test_a_manifest_in_the_right_place_without_this_jobs_signature_applies_nothing(self, mgr, signed):
@@ -435,7 +435,7 @@ class TestIngest:
         held(mgr, "j1", deploy_map={"app": ["site-a"]})
         mgr.jobs.raw["j1"] = {"j1/catalog_results.json": json.dumps(content)}
         mgr._ingest("j1")
-        assert [h["client"] for h in mgr._store.health(STUDY)] == ["site-a"]  # no site-x entry
+        assert not mgr._store._clients and not mgr._in_flight  # nothing applied, nobody blamed
 
     def test_without_a_key_nothing_is_applied(self, mgr):
         mgr._key = None
@@ -443,28 +443,44 @@ class TestIngest:
         mgr._ingest("j1")
         assert not mgr._store._clients  # nothing stored
 
-    def test_a_job_without_a_manifest_counts_a_failure_for_each_of_its_sites(self, mgr):
+    def test_a_job_without_a_manifest_changes_no_sites_health(self, mgr):
         seed(mgr, client="site-a")
         seed(mgr, client="site-b")
         held(mgr, "j1")  # deployed to @ALL: every site the catalog knows in the Study
         mgr._ingest("j1")
         held(mgr, "j2", deploy_map={"app_server": ["server"], "app_site-a": ["site-a"]})
         mgr._ingest("j2")
-        failures = {h["client"]: (h["health"], h["reason_code"], h["failures"]) for h in mgr._store.health(STUDY)}
-        assert failures == {"site-a": ("FAILED", "NO_RESULT", 2), "site-b": ("FAILED", "NO_RESULT", 1)}
+        health = {h["client"]: (h["health"], h["failures"]) for h in mgr._store.health(STUDY)}
+        assert health == {"site-a": ("OK", 0), "site-b": ("OK", 0)}
         assert state(mgr, "site-a")["datasets"]["clinical-research"]["available"] is True
 
-    def test_a_job_that_never_started_counts_no_site_failure_and_leaves_no_context(self, mgr, tmp_path):
+    def test_a_job_that_left_no_result_leaves_no_context_file(self, mgr, tmp_path):
         seed(mgr, client="site-a")
         run_dir = tmp_path / "run" / "j1"
         run_dir.mkdir(parents=True)
         context = run_dir / "catalog_context.json"
-        context.write_text("{}")  # the controller removes this as soon as it starts, so the job never started
+        context.write_text("{}")  # the controller removes this as soon as it starts, so this job never did
         mgr._workspace = SimpleNamespace(get_run_dir=lambda job_id: str(run_dir))
         held(mgr, "j1")
         mgr._ingest("j1")
         assert state(mgr, "site-a")["client"]["failures"] == 0 and state(mgr, "site-a")["client"]["health"] == "OK"
         assert not context.exists() and not mgr._in_flight
+
+    def test_a_failed_cleanup_does_not_skip_the_other_or_keep_the_study(self, mgr, tmp_path, monkeypatch):
+        run_dir = tmp_path / "run" / "j1"
+        run_dir.mkdir(parents=True)
+        context = run_dir / "catalog_context.json"
+        context.write_text("{}")
+        mgr._workspace = SimpleNamespace(get_run_dir=lambda job_id: str(run_dir))
+        held(mgr, "j1", manifest(**{"site-a": ok_entry()}))
+
+        def broken(job_id):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(mgr._artifacts, "discard", broken)
+        mgr._ingest("j1")
+        assert not context.exists() and not mgr._in_flight
+        assert mgr._store.search(STUDY, SearchQuery()).total == 1  # the result was applied before cleanup
 
     def test_a_site_that_failed_to_answer_counts_a_failure_and_keeps_its_catalog(self, mgr):
         held(mgr, "j1", manifest(**{"site-a": ok_entry()}))

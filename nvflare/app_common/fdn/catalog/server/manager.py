@@ -26,7 +26,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey, RunStatus, get_job_meta_study
+from nvflare.apis.job_def import JobMetaKey, RunStatus, get_job_meta_study
 from nvflare.apis.storage import WORKSPACE
 from nvflare.app_common.fdn.catalog.common.payload import (
     CATALOG_JOB_META,
@@ -301,8 +301,6 @@ class CatalogManager(FLComponent):
                 if self._catalog_study(meta) != study:
                     return
             now = _iso(self._now())
-            context = self._context_path(job_id)
-            never_started = context is not None and context.exists()  # the controller removes it on start
             try:
                 try:
                     manifest = self._artifacts.read(job_id, self._key)
@@ -312,10 +310,8 @@ class CatalogManager(FLComponent):
                     manifest = self._read_manifest(data, job_id)
                 entries = parse_manifest(manifest)
             except Exception as e:
-                self.logger.warning(f"catalog manifest unavailable: {type(e).__name__}")
-                if not never_started:  # a job that never ran says nothing about its sites
-                    for client in self._sites(meta, study):
-                        self._store.record_no_result(study, client, "NO_RESULT", now)
+                # No signed manifest says the job failed, not which site did: no site's health changes.
+                self.logger.warning(f"catalog job {job_id} left no usable result: {type(e).__name__}")
                 return
             for client, entry in entries.items():
                 try:
@@ -332,13 +328,14 @@ class CatalogManager(FLComponent):
                 except Exception as e:
                     self.logger.warning(f"catalog result for a client could not be applied: {type(e).__name__}")
         finally:
-            try:
-                self._artifacts.discard(job_id)
-                self._remove_context(job_id)
-            finally:
-                with self._lock:
-                    if self._in_flight.get(study) == job_id:
-                        del self._in_flight[study]
+            for cleanup in (self._artifacts.discard, self._remove_context):
+                try:
+                    cleanup(job_id)
+                except Exception as e:
+                    self.logger.warning(f"catalog job cleanup failed: {type(e).__name__}")
+            with self._lock:
+                if self._in_flight.get(study) == job_id:
+                    del self._in_flight[study]
 
     def _context_path(self, job_id: str) -> Path | None:
         try:
@@ -354,14 +351,6 @@ class CatalogManager(FLComponent):
                 path.unlink(missing_ok=True)
         except OSError as e:
             self.logger.warning(f"catalog job context could not be removed: {type(e).__name__}")
-
-    def _sites(self, meta: dict, study: str) -> list[str]:
-        """The sites a job was deployed to; for every site, those the catalog knows in the Study."""
-        deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value) or {}
-        sites = {s for targets in deploy_map.values() for s in targets if isinstance(s, str)}
-        if ALL_SITES in sites:
-            return sorted(self._store.indexed(study))
-        return sorted(sites - {SERVER_SITE_NAME})
 
     def _read_manifest(self, data: bytes, job_id: str) -> dict:
         """The manifest the job's controller wrote in the run dir, if its signature checks out. A job's own files

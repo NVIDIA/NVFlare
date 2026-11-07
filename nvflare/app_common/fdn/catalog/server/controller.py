@@ -130,9 +130,10 @@ class CatalogController(Controller):
         try:
             with open(path, encoding="utf-8") as f:
                 context = json.load(f)
-            os.remove(path)
-            self._key = bytes.fromhex(context["key"])
-            self._previous_names = {c: list(names) for c, names in context["previous"].items()}
+            key = bytes.fromhex(context["key"])
+            previous = {c: list(names) for c, names in context["previous"].items()}
+            os.remove(path)  # only a file that was understood is removed; the server removes any other
+            self._key, self._previous_names = key, previous
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             self.log_warning(fl_ctx, "no catalog context from the server; the result will not be applied")
 

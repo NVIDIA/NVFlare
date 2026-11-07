@@ -17,6 +17,7 @@
 import hmac
 import io
 import json
+import logging
 import re
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -32,6 +33,7 @@ from nvflare.app_common.fdn.catalog.server.fileio import write_atomically
 
 _PRIVATE_FILES = frozenset((CONTEXT_FILE, MANIFEST_FILE, f"{CONTEXT_FILE}.tmp", f"{MANIFEST_FILE}.tmp"))
 _SAFE_JOB_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+logger = logging.getLogger(__name__)
 
 
 def verify_manifest(signed: dict, key: bytes | None, job_id: str) -> dict:
@@ -92,7 +94,8 @@ class CatalogArtifacts:
         except FileNotFoundError:
             pass  # an archive retry may already have captured it
         except (ValueError, UnicodeError):
-            pass  # malformed JSON establishes no publication
+            # Malformed JSON establishes no publication; say so, or it looks like a job that wrote nothing.
+            logger.warning("catalog job %s left a malformed result; it is discarded", job_id)
         else:
             if keep:
                 write_atomically(str(self._path(job_id)), signed)
