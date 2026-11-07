@@ -240,6 +240,10 @@
     "source_path": "examples/advanced/multi-gpu/pt",
     "category": "advanced"
   },
+  "omop": {
+    "source_path": "examples/advanced/omop",
+    "category": "advanced"
+  },
   "psi": {
     "source_path": "examples/advanced/psi",
     "category": "advanced"
