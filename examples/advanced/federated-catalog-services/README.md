@@ -65,10 +65,16 @@ Wait for Compose startup to finish successfully and confirm all five services
 are running. Then start each FLARE participant with the standard POC CLI:
 
 ```bash
-docker compose exec nvflare-poc-server nvflare poc start -p nvflare-poc-server --no-wait
-docker compose exec nvflare-poc-site-1 nvflare poc start -p site-1 --no-wait
-docker compose exec nvflare-poc-site-2 nvflare poc start -p site-2 --no-wait
+docker compose exec -T nvflare-poc-server nvflare poc start -p nvflare-poc-server --no-wait
+docker compose exec -T nvflare-poc-site-1 nvflare poc start -p site-1 --no-wait
+docker compose exec -T nvflare-poc-site-2 nvflare poc start -p site-2 --no-wait
 ```
+
+Use `-T` for these commands. The POC CLI starts background processes; Compose's
+default pseudo-terminal can terminate them when the exec session closes. The
+command can report success while FLARE never becomes reachable. Disabling the
+pseudo-terminal lets the processes survive the session. `--no-wait` skips
+readiness checking, so confirm startup with `nvflare system status` below.
 
 If `docker compose exec` reports `service "nvflare-poc-server" is not running`,
 inspect the container state and logs:
@@ -146,6 +152,7 @@ Stop FLARE before recreating or rebuilding running containers too. Otherwise,
 the mounted kits can retain `pid.fl` and `daemon_pid.fl` from the old containers.
 A reused PID can make startup report that an instance is already running even
 though FLARE is absent, leaving the admin port unreachable.
+An earlier start without `exec -T` can also leave stale process markers.
 
 If the startup log reports this stale-PID condition, stop all demo containers
 before removing the obsolete markers:
@@ -156,7 +163,8 @@ rm -f "$NVFLARE_POC_WORKSPACE"/catalog-demo/prod_00/{nvflare-poc-server,site-1,s
 docker compose up -d --wait
 ```
 
-Then run the three participant start commands above. Remove these markers only
+Then run the three participant start commands above, including `exec -T`.
+Remove these markers only
 after the containers are stopped; the startup kits, source data and catalog
 state are retained.
 
