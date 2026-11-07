@@ -202,8 +202,8 @@ local development wheels, and editable installs all use the distribution name
 ``nvflare``. Versioneer derives the version and source revision from the
 checkout; ``NVFL_RELEASE`` no longer changes the NVFlare package name.
 This applies to the main package built by the repository-root ``setup.py``.
-The separate ``nvflight/setup.py`` packaging still uses ``NVFL_RELEASE`` to
-choose between ``nvflare-light`` and ``nvflare-light-nightly``.
+The separate ``nvflight/setup.py`` packaging also uses one distribution name,
+``nvflare-light``, for release and development builds.
 This does not introduce a nightly publishing service. For unreleased features,
 install from source or build a local wheel.
 
@@ -248,6 +248,31 @@ Build scripts should look for ``nvflare-*.whl`` rather than
 to ``nvflare`` with an appropriate version constraint. A development version
 still needs to satisfy that constraint; using one name does not make an
 incompatible version acceptable to pip.
+
+Migrating an existing nvflare-light-nightly installation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+NVFlight builds use ``nvflare-light`` with the version supplied through
+``NVFL_VERSION``. ``NVFL_RELEASE`` no longer changes the package name.
+Older development builds used ``nvflare-light-nightly``; pip treats that name
+as a separate distribution even though both install the same Python modules.
+
+Use a new virtual environment, or remove both NVFlight distributions before
+reinstalling the desired local wheel (replace the filename with its actual path):
+
+.. code-block:: shell
+
+  $ python -m pip uninstall nvflare-light-nightly nvflare-light
+  $ python -m pip install "/path/to/nvflare_light-<version>-py3-none-any.whl"
+
+Update build scripts expecting ``nvflare_light_nightly-*.whl`` to use
+``nvflare_light-*.whl``, and dependencies on ``nvflare-light-nightly`` to
+``nvflare-light`` with an appropriate version constraint. Development versions
+must still satisfy that constraint.
+
+NVFlight is a separate lightweight distribution, not an alternative name for
+the full NVFlare package. Keep it in a separate environment from ``nvflare``
+because both provide ``nvflare`` Python modules.
 
 Running the Build with a Specific Python Version
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
