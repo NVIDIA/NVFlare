@@ -12,7 +12,6 @@ federated task. In a real deployment, the data already exists at each site.
 | `nvflare-poc-site-2` | FLARE site-2; prepares its PostgreSQL demo source once |
 | `unity-catalog` | Unity Catalog OSS metadata; registered Parquet table |
 | `postgres` | PostgreSQL source database |
-| `provision` | One-shot initialization using standard NVFLARE provisioning |
 
 Each site owns the `sanctuary` dataset with a `pets` table. Site-1 has 50 synthetic
 pets and site-2 has 70. Their policies exclude `name` from published schemas.
@@ -26,27 +25,40 @@ this FLARE checkout installed for the admin commands. No database drivers,
 PyArrow, or Spark are needed on the admin's computer. Run from this directory:
 
 ```bash
+# Once, on the admin user's computer: select the workspace and generate all kits.
+nvflare poc config --pw ./workspace
+nvflare poc prepare -i project.yml
+
 docker compose up -d --build --wait
 
-# On the admin user's computer, using the standard exported admin startup kit:
-python job.py --startup-kit ./startup-kits/admin@nvidia.com
-nvflare catalog show --startup-kit ./startup-kits/admin@nvidia.com --format json > catalog-summary.json
+# On the same computer, using the admin kit selected by poc prepare:
+python job.py
+nvflare catalog show --format json > catalog-summary.json
 
 docker compose down
 ```
 
-The image builds FLARE from this checkout. Provisioning writes the **standard
-NVFLARE admin startup kit** to `startup-kits/admin@nvidia.com`. `job.py` only
-submits a `CatalogRecipe` through `ProdEnv` and invokes the standard
+`nvflare poc config` sets the host's POC workspace. `nvflare poc prepare` generates
+the server, site-1, site-2 and **admin** startup kits from `project.yml` and
+registers the Project Admin kit as the active CLI identity. The admin kit is at
+`workspace/catalog-demo/prod_00/admin@nvidia.com`; it stays on the host and is
+not mounted into any container. No separate admin-kit generation or copy is needed,
+and subsequent admin commands do not require `--startup-kit`.
+
+The image builds FLARE from this checkout. Compose mounts each FLARE participant's
+own prepared kit from `workspace/catalog-demo/prod_00/` as that container's
+`/workspace`. Missing kit directories fail startup; run the two POC preparation
+commands first. The project explicitly directs clients to the Compose server
+hostname while the host admin connects to `localhost`.
+
+`job.py` only submits a `CatalogRecipe` through `ProdEnv` and invokes the standard
 `nvflare job monitor` command to show progress until completion; it does
 not start services, prepare data, or export results. The normal catalog CLI
 retrieves the server's aggregated view. To retrieve full schema details:
 
 ```bash
-nvflare catalog show --startup-kit ./startup-kits/admin@nvidia.com \
-  --site site-1 --dataset sanctuary --format json > site-1-catalog.json
-nvflare catalog show --startup-kit ./startup-kits/admin@nvidia.com \
-  --site site-2 --dataset sanctuary --format json > site-2-catalog.json
+nvflare catalog show --site site-1 --dataset sanctuary --format json > site-1-catalog.json
+nvflare catalog show --site site-2 --dataset sanctuary --format json > site-2-catalog.json
 ```
 
 The normal `nvflare job` CLI remains available for job status, logs and job
@@ -57,10 +69,13 @@ catalog; a generic job archive is not the catalog store.
 is reachable from the host on loopback ports 8002/8003. Source services and sites are
 reachable inside the Compose network and have no published host ports.
 `down` sends stop signals to the FLARE containers and stops the source services.
-Named volumes retain source data, FLARE identities, and catalog state. Repeating
-`up --wait` reuses these volumes and does not replace existing fixtures. For an
-explicit reset, stop the stack and run `docker compose down --volumes`; the next
-startup generates new identities and replaces the exported admin startup kit.
+Named volumes retain source data; the host POC workspace retains identities and
+catalog state. Repeating `up --wait` reuses them without preparing the POC again.
+To reset source fixtures, run `docker compose down --volumes`. To also recreate
+identities and catalog state, run `nvflare poc prepare -i project.yml --force`
+after stopping the stack, then start Compose again. The force option replaces
+the configured POC workspace. Compose owns the running services in this example;
+use `docker compose up/down` for lifecycle operations.
 
 ## Monitor progress and logs
 
@@ -69,7 +84,7 @@ uses `nvflare job monitor` for status and progress. In another terminal, inspect
 its server/site logs using the normal CLI:
 
 ```bash
-nvflare job logs JOB_ID --startup-kit ./startup-kits/admin@nvidia.com --site all --tail 100
+nvflare job logs JOB_ID --site all --tail 100
 ```
 
 For Compose startup, automatic demo preparation, registration and service errors:

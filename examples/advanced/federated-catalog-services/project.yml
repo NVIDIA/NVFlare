@@ -4,12 +4,12 @@ participants:
   - name: nvflare-poc-server
     type: server
     org: nvidia
-    default_host: nvflare-poc-server
-    host_names: [localhost]
+    default_host: localhost
+    host_names: [localhost, nvflare-poc-server]
     fed_learn_port: 8002
     admin_port: 8003
-  - {name: site-1, type: client, org: nvidia}
-  - {name: site-2, type: client, org: nvidia}
+  - {name: site-1, type: client, org: nvidia, connect_to: {host: nvflare-poc-server}}
+  - {name: site-2, type: client, org: nvidia, connect_to: {host: nvflare-poc-server}}
   - {name: admin@nvidia.com, type: admin, org: nvidia, role: project_admin}
 builders:
   - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
