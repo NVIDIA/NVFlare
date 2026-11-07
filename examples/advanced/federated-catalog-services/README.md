@@ -58,15 +58,30 @@ In a real deployment, the data already exists at each site.
 
 ```bash
 docker compose up -d --build --wait
+docker compose ps
 ```
 
-Start each FLARE participant with the standard POC CLI:
+Wait for Compose startup to finish successfully and confirm all five services
+are running. Then start each FLARE participant with the standard POC CLI:
 
 ```bash
 docker compose exec nvflare-poc-server nvflare poc start -p nvflare-poc-server --no-wait
 docker compose exec nvflare-poc-site-1 nvflare poc start -p site-1 --no-wait
 docker compose exec nvflare-poc-site-2 nvflare poc start -p site-2 --no-wait
 ```
+
+If `docker compose exec` reports `service "nvflare-poc-server" is not running`,
+inspect the container state and logs:
+
+```bash
+docker compose ps -a
+docker compose logs --tail 100 nvflare-poc-server
+```
+
+Run `docker compose up -d --build --wait` successfully before retrying the POC
+start commands. If no containers are listed, they have not been created in the
+current Docker context or were removed. Keep `NVFLARE_POC_WORKSPACE` exported
+in this shell; it must point to the workspace where you prepared the kits.
 
 `--no-wait` starts the participant without an admin login inside its container.
 Each container mounts only its own participant kit; the admin credentials stay
@@ -79,10 +94,17 @@ loopback ports 8002/8003; clients use its Compose hostname from `project.yml`.
 Run these commands on the admin user's computer:
 
 ```bash
+nvflare config use catalog-admin@nvidia.com
 nvflare system status
 python job.py
 nvflare catalog show --format json > catalog-summary.json
 ```
+
+Select the demo identity even if another POC previously selected a different
+admin. An error that the active kit points to a missing path means the CLI is
+still using an old registration. If the demo identity itself points to an old
+workspace, use the explicit `nvflare config add ... --force` command above to
+update its registration, then select it again.
 
 `job.py` submits `CatalogRecipe`, enables standard client log streaming, and
 uses `nvflare job monitor` to display progress through completion. It does not
