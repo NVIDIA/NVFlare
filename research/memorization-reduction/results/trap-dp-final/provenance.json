@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "accepted_date": "2026-11-05",
+  "study": "Frozen Pythia-70M TRAP-DP comparison",
+  "scope": "Historical research measurements; not a rerun of the current SDK PR revision.",
+  "source_manifest_sha256": "39ce6df19dba9fe6f308bb35d3fa43a85159876806ce3e10405a34a74f1ccd77",
+  "full_fit_final_freeze_proof_sha256": "f6c203e8c79dabf3b2e3af027790a60fbc95ba55286df7a5b2be082230e29192",
+  "source_delivery_manifest_sha256": "6cec5f981d53617306b5f0a668b9b3794d99472d0d34af4799c2bd148976b40d",
+  "source_report_sha256": "39b172d092a1be11d7c0fccde1f9d05ff14dfc786af7e7d2888162a127bcb9f1",
+  "independent_report_receipt_sha256": "7b8cf8b169888dd6c00adc2a10ac49d5d80ac715c90289f2b0e6a6b0fb5492f1",
+  "independent_report_binding_sha256": "b05090e46e0d043ed023a47d6ffd9e40a60fad264385d6bd9e12bb137f47c338",
+  "overview_generator_sha256": "30e9ab0e321652b8361f4387917a24cd6c5bb12c2b18312d6d0d6432fd236a3c",
+  "original_visual_review_sha256": "b958b27ae15c853dbf8740ba639295f4fbfba44034aaf06b701f960243af9049",
+  "evidence_availability": "Original raw evidence and proof archives retained separately; not included in this publication.",
+  "coverage": {
+    "primary_fits": 525,
+    "final_evaluations": 210,
+    "paired_screens": 189,
+    "strength_seed_groups": 27,
+    "frozen_operating_point_rows": 132,
+    "unattainable_choices": 39,
+    "private_mechanisms": 228,
+    "terminal_allocations": 764,
+    "canonical_figure_pairs": 5,
+    "overview_figure_pairs": 3
+  },
+  "scientific_tolerance": 1e-12,
+  "new_training": 0,
+  "new_inference": 0,
+  "new_selection": 0,
+  "published_files": {
+    "results/trap-dp-final/all-210-final-outcomes.csv": {
+      "sha256": "745387c7a3fff242bacf3829b2ac93e52808aedc59aa98c1eaef52216cc2e218",
+      "bytes": 57200
+    },
+    "results/trap-dp-final/all-fits-scalars.csv": {
+      "sha256": "75ed3552ae578c365fd37c08c0315c687cb06a762f7e90a9d3bd0114f1ab9e31",
+      "bytes": 213940
+    },
+    "results/trap-dp-final/all-frozen-cross-method-target-pairs.csv": {
+      "sha256": "116d58abebe88d9ed10c72d3a6bd80830d113b95adc619c822005cd0ee13eef2",
+      "bytes": 6193
+    },
+    "results/trap-dp-final/allocation-cost-by-phase.csv": {
+      "sha256": "eced23c6589b43dce6b997dc4d4f51bb22201df2071488999e9ac4e16b37c4a9",
+      "bytes": 720
+    },
+    "results/trap-dp-final/canonical-primary-privacy-bounds.csv": {
+      "sha256": "93ee8a2f6cbd10621b9ed961ca4cfd473ce6b46c1d8c33896b4d7f328e37bb0b",
+      "bytes": 15327
+    },
+    "results/trap-dp-final/compute-by-method-and-phase.csv": {
+      "sha256": "8fd9abf56de047e5701df8597a84acf43a94ce7cfe0e1f9bdb8988b250a3e4d2",
+      "bytes": 2510
+    },
+    "results/trap-dp-final/final-common-evaluation-time-by-method.csv": {
+      "sha256": "bb7358342e3f3106ebc5958b711dbad720bb2d43f2211958016c2e2c8dd31109",
+      "bytes": 387
+    },
+    "results/trap-dp-final/final-results-scalars.csv": {
+      "sha256": "43eeb3f43e507ca1acbcb92ce651bb0ef932072557fe11fecbb516fa9b97d771",
+      "bytes": 192577
+    },
+    "results/trap-dp-final/frozen-operating-points.csv": {
+      "sha256": "907dbb3171e06e7161acf3e675428b88a5aae1ecccdd7a3234480ec4e5b9d466",
+      "bytes": 9399
+    },
+    "results/trap-dp-final/headline-comparison-statistics.json": {
+      "sha256": "49ab37c76d1593c7bc61939ff47e479db4693f5f517fbee1ac3efa545c28092e",
+      "bytes": 1912
+    },
+    "results/trap-dp-final/individual-results.md": {
+      "sha256": "fe46c3af98f4ed9e55dce96dbec3d050e4e26cb01a39316cd70b797cc681d322",
+      "bytes": 25292
+    },
+    "results/trap-dp-final/native-accepted-privacy-composition-scalars.json": {
+      "sha256": "26fe488c504bb3d4dc9e8401d7eccf8f0a049e94912152cf179fcf01aa0d596e",
+      "bytes": 329
+    },
+    "results/trap-dp-final/native-accepted-privacy-scalars-all228.csv": {
+      "sha256": "ca414d4c0b727184c81a574c4be1844acd7ed27b806c566a3b4696c23631574b",
+      "bytes": 29241
+    },
+    "results/trap-dp-final/operating-points-with-achieved-targets-and-runtime.csv": {
+      "sha256": "5d1d1daf82252cabb3b3f9e7dea959b65ad99ed87ee7f35a98c3122ae9d337ff",
+      "bytes": 14285
+    },
+    "results/trap-dp-final/paired-screens.csv": {
+      "sha256": "0009c36fcda8b91a14d4a8fc015bbc2cd1c95a867cd097034afa3ec2dbe38310",
+      "bytes": 23837
+    },
+    "results/trap-dp-final/reference-construction-and-amortization.csv": {
+      "sha256": "b1378debcf38abad3bc8ae2c4d7a1d1ff564e20923a5e36ef05e1864f4d203b5",
+      "bytes": 727
+    },
+    "results/trap-dp-final/screen-counts-every-strength-and-seed.csv": {
+      "sha256": "400713609aaf32d63dc26da83c03a064739597d7e1bfa8954033ff9a51ed2202",
+      "bytes": 622
+    },
+    "figures/trap-dp-final/accuracy-leakage-headline.pdf": {
+      "sha256": "8521a394ede09f9a1b7a6a1fc5249b7cb46b353dbe7143861cfd5c47d3dabda8",
+      "bytes": 31025
+    },
+    "figures/trap-dp-final/accuracy-leakage-headline.png": {
+      "sha256": "dea4519fa2ac35b3355794ef994443cbdb97a55a9c0f14821130206c74e1f78b",
+      "bytes": 298031
+    },
+    "figures/trap-dp-final/attacks.pdf": {
+      "sha256": "54b0c5dbaf4d23cce40e7e54e97715cb3d9124870ce08c210c855738558e3da6",
+      "bytes": 105385
+    },
+    "figures/trap-dp-final/attacks.png": {
+      "sha256": "e8ccf05bc24f81395e8f2d709fff159a2b75ecee09b3b5d083582cb95baaeb63",
+      "bytes": 2721528
+    },
+    "figures/trap-dp-final/computation.pdf": {
+      "sha256": "793173be700d7ffe5f1a7ee641e8cf63c861bee54a366727c5fe7c4cc5b6cd5d",
+      "bytes": 61835
+    },
+    "figures/trap-dp-final/computation.png": {
+      "sha256": "80a74d9b00dfdd0d85d9e865e62f751cbcefb77c364b331da641d1a5a55d4071",
+      "bytes": 1201277
+    },
+    "figures/trap-dp-final/frozen-target-attainment.pdf": {
+      "sha256": "107202aeb95a87a0271ef03f10a4c35202b893d2680962f681714a61d2d2b1e7",
+      "bytes": 26491
+    },
+    "figures/trap-dp-final/frozen-target-attainment.png": {
+      "sha256": "e94b61dd344b24d12cfa7f0c532c38ef6e47f203b33bdf0a1cb29ce011498c57",
+      "bytes": 288053
+    },
+    "figures/trap-dp-final/paired-screen-overview.pdf": {
+      "sha256": "c76cc4b4c785d1b7e0af38df30370e9e92683774d3463d2cad22a81838bf9696",
+      "bytes": 24544
+    },
+    "figures/trap-dp-final/paired-screen-overview.png": {
+      "sha256": "868ef2e60c8815306ae95c8d933730fcbf3657f9069afaa7b041cc8353bf0c08",
+      "bytes": 174869
+    },
+    "figures/trap-dp-final/privacy-utility.pdf": {
+      "sha256": "53a654348ec9cdcd6c753355319f6068d0d03b23240fd9714756f132a5ad0d00",
+      "bytes": 40879
+    },
+    "figures/trap-dp-final/privacy-utility.png": {
+      "sha256": "342829835270dce71bb081a2d7325828c7f6f1734f9510c1e157c01a2ced596a",
+      "bytes": 370057
+    },
+    "figures/trap-dp-final/recovery-exposure.pdf": {
+      "sha256": "3bb319c64c172c247e3c4deedba113d3c2566b85c449d0030f06996ad980d9a7",
+      "bytes": 55457
+    },
+    "figures/trap-dp-final/recovery-exposure.png": {
+      "sha256": "ebb507fc4591011dbd4fb47c0277f6006b87a9c4143d1c2b8f27296f34ed8528",
+      "bytes": 955434
+    },
+    "figures/trap-dp-final/utility-by-k.pdf": {
+      "sha256": "7c86be7425325300b04aecce77ee21f9ed385a5c3bf95919282b93a2eeef5530",
+      "bytes": 58867
+    },
+    "figures/trap-dp-final/utility-by-k.png": {
+      "sha256": "93e0f913c62e2b0c8b269ab2c62bad2a121dedff8a3c9ef1c6191c044cd04f14",
+      "bytes": 991757
+    }
+  }
+}

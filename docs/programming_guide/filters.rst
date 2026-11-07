@@ -178,6 +178,56 @@ API training process. Existing Client API and client-runner paths materialize la
 parameters when their active filter chains need them, increasing runtime memory and
 transfer cost. No additional transport setting is required for ``ModelFilter``.
 
+Memorization Audits (Experimental)
+==================================
+
+``MemorizationAuditFilter`` uses ``ModelFilter`` to audit outgoing client models without
+changing updates. Register a ``MemorizationAuditor`` implementation as a job component;
+the filter resolves it by ID. The optional ``AuditSnapshotFilter`` and ``AuditModelSnapshot``
+retain the matching incoming model for difference reconstruction and before/after scoring.
+
+.. code-block:: python
+
+    from nvflare.app_common.filters.memorization_audit_filter import (
+        AuditModelSnapshot, AuditSnapshotFilter, MemorizationAuditFilter,
+    )
+
+    recipe.add_client_component(AuditModelSnapshot(), "audit_snapshot")
+    recipe.add_client_component(my_auditor, "memorization_auditor")
+    recipe.add_client_input_filter(AuditSnapshotFilter("audit_snapshot"), tasks=["train"])
+    recipe.add_client_output_filter(
+        MemorizationAuditFilter("memorization_auditor", "audit_snapshot", frequency=10),
+        tasks=["train"],
+    )
+
+The initial implementation supports sequential training tasks with a single full model
+or complete weight difference. It explicitly rejects collections and partial model updates
+for auditing. Place snapshot capture after incoming parameter transformations and the audit
+after outgoing privacy transformations, before encryption. Executor conversions must preserve
+the parameter values and names, or a custom adapter must capture the actual training baseline.
+
+``PTMemorizationAuditor`` supplies strict model loading, difference reconstruction,
+directional AUROC, normalized AUROC, and isolation of Python, NumPy, and PyTorch RNG state.
+Subclasses implement ``build_model()`` and ``evaluate()`` with bounded local audit data.
+Evaluation deadlines are cooperative and must be checked between batches; they do not
+preempt a blocked framework call. The same auditor can evaluate a selected global checkpoint.
+
+Reports are local JSON files in ``<job run directory>/memorization_audits``. Status values
+are ``completed``, ``skipped``, ``unsupported``, and ``failed``. Failed or unsupported audits
+have no valid privacy score. Empty updates, unsupported data kinds, collections, and
+non-model results are reported as unsupported; non-OK task replies are skipped.
+Every output path clears the baseline snapshot, including conversion and reporting
+failures. Runtime audit failures preserve the outgoing update; reporting failures
+are logged. A DXO filter-application event alone is not a completed privacy audit.
+Only metrics explicitly listed in ``summary_metrics`` are emitted to analytics receivers;
+their configured event handling determines whether they remain local or are relayed.
+``MemorizationAuditReporter`` in ``nvflare.app_common.widgets`` can also persist a
+final evaluation job's aggregate report, using ``stage="global_model"`` to distinguish it
+from a periodic client audit.
+
+See :doc:`memorization_reduction` for the loss, reference scorer, and a runnable
+CPU workflow under ``research/memorization-reduction``. TRAP provides no differential privacy guarantee.
+
 Filter Behavior in 1-N Communication
 ====================================
 

@@ -17,6 +17,7 @@ from contextlib import contextmanager
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.filter import Filter
+from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
@@ -409,6 +410,21 @@ class Recipe(ABC):
 
         """
         pass
+
+    def add_client_component(self, component: FLComponent, component_id: str, clients: Optional[List[str]] = None):
+        """Register a supporting component in the selected client applications.
+
+        Use a unique component ID when a filter or executor resolves this component
+        by ID. Omit clients to use all existing client applications; explicit site
+        selection follows the same topology rules as client filters.
+        Component constructor arguments are exported in job configuration and must
+        not contain secrets. This method does not register a task executor/filter.
+        """
+        if not isinstance(component, FLComponent):
+            raise TypeError("component must be an FLComponent")
+        if not isinstance(component_id, str) or not component_id.strip():
+            raise ValueError("component_id must be a nonempty string")
+        self._add_to_client_apps(component, clients=clients, id=component_id)
 
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
