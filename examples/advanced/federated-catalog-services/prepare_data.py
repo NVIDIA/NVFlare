@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Initialize one site's demo source and install its catalog configuration at container startup."""
+"""Populate one site's source service with synthetic demo data."""
 import argparse
 import importlib.util
 import json
@@ -25,7 +25,7 @@ import psycopg
 import pyarrow as pa
 import pyarrow.parquet as pq
 import requests
-from common import ROOT, WORKSPACE, write_json
+from common import ROOT
 
 
 def prepare(site):
@@ -134,10 +134,6 @@ def prepare(site):
                 connection.execute("CREATE ROLE catalog_reader LOGIN PASSWORD 'local-demo-reader'")
             connection.execute("GRANT CONNECT ON DATABASE sanctuary TO catalog_reader")
             connection.execute("GRANT USAGE ON SCHEMA sanctuary TO catalog_reader")
-    config = ROOT / "config" / site
-    local = WORKSPACE / "local/fdn"
-    write_json(local / "catalog_site.json", json.loads((config / "catalog_site.json").read_text()))
-    write_json(local / "default/catalog_policy.json", json.loads((config / "catalog_policy.json").read_text()))
     print(f"Prepared catalog source for {site}", flush=True)
 
 
