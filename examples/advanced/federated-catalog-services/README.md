@@ -142,6 +142,24 @@ docker compose down
 
 Source data, startup kits and catalog state persist. To restart, run Compose up
 and the three `nvflare poc start` commands again; do not prepare the POC again.
+Stop FLARE before recreating or rebuilding running containers too. Otherwise,
+the mounted kits can retain `pid.fl` and `daemon_pid.fl` from the old containers.
+A reused PID can make startup report that an instance is already running even
+though FLARE is absent, leaving the admin port unreachable.
+
+If the startup log reports this stale-PID condition, stop all demo containers
+before removing the obsolete markers:
+
+```bash
+docker compose down
+rm -f "$NVFLARE_POC_WORKSPACE"/catalog-demo/prod_00/{nvflare-poc-server,site-1,site-2}/{pid.fl,daemon_pid.fl}
+docker compose up -d --wait
+```
+
+Then run the three participant start commands above. Remove these markers only
+after the containers are stopped; the startup kits, source data and catalog
+state are retained.
+
 For a full demo reset, stop FLARE, run `docker compose down --volumes`, then
 `nvflare poc prepare -i project.yml --force`. This replaces the configured POC
 workspace and identities. The next Compose startup recreates the source fixtures.
