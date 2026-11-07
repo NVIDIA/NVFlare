@@ -1,0 +1,24 @@
+{
+  "format_version": 1,
+  "studies": {
+    "default": {
+      "sanctuary": {
+        "connector": "clinical-db",
+        "options": {
+          "schema": "sanctuary"
+        }
+      }
+    }
+  },
+  "connectors": {
+    "clinical-db": {
+      "class": "nvflare.app_opt.fdn.catalog.sql_connector.SQLConnector",
+      "args": {
+        "url_env": "CATALOG_DATABASE_URL",
+        "connect_args": {
+          "connect_timeout": 5
+        }
+      }
+    }
+  }
+}

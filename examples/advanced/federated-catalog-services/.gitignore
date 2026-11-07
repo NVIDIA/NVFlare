@@ -1,0 +1,5 @@
+.env
+workspace*/
+data/generated/
+data/playground/
+discovery.json

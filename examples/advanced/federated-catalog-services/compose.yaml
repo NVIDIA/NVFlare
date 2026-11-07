@@ -1,0 +1,20 @@
+name: flare-catalog-services
+services:
+  unity-catalog:
+    image: unitycatalog/unitycatalog:v0.7.0
+    ports: ["127.0.0.1:18080:8080"]
+    volumes: ["./data/generated:/home/unitycatalog/demo-data:ro"]
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: sanctuary
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run setup.py first}
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sanctuary"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+volumes:
+  postgres-data:
