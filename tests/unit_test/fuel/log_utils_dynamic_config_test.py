@@ -74,57 +74,15 @@ def test_log_modes_preserve_concise_and_add_progress():
     assert logmode_config_dict[LogMode.FULL]["handlers"]["FLFileHandler"]["filters"] == ["FLFilter"]
 
 
-@pytest.mark.parametrize("mode", ["progress", "progressive"])
-def test_dynamic_log_config_accepts_progress_mode(tmp_path, mode):
+def test_dynamic_log_config_accepts_progress_mode(tmp_path):
     from nvflare.fuel.utils.log_utils import LogMode, dynamic_log_config, logmode_config_dict
 
     with patch("nvflare.fuel.utils.log_utils.apply_log_config") as mock_apply:
-        dynamic_log_config(mode, str(tmp_path), str(tmp_path / "reload.json"))
+        dynamic_log_config(LogMode.PROGRESS, str(tmp_path), str(tmp_path / "reload.json"))
 
     applied = mock_apply.call_args.args[0]
     assert applied == logmode_config_dict[LogMode.PROGRESS]
     assert applied is not logmode_config_dict[LogMode.PROGRESS]
-
-
-@pytest.mark.parametrize(
-    "selector", ["progressive", "progress", "concise", "full", "msg_only", "verbose", "INFO", "35"]
-)
-def test_validate_log_config_accepts_modes_and_levels_without_applying_them(selector):
-    from nvflare.fuel.utils.log_utils import validate_log_config
-
-    with patch("nvflare.fuel.utils.log_utils.apply_log_config") as apply:
-        assert validate_log_config(selector) == selector
-    apply.assert_not_called()
-
-
-@pytest.mark.parametrize("selector", ["progres", "missing.json", "51", "BASIC_FORMAT", "", None])
-def test_validate_log_config_rejects_invalid_selectors(selector):
-    from nvflare.fuel.utils.log_utils import validate_log_config
-
-    with pytest.raises(ValueError):
-        validate_log_config(selector)
-
-
-@pytest.mark.parametrize("content", ['{"version": 1,', "[]", '{"version": 2}'])
-def test_validate_log_config_rejects_invalid_json_files(tmp_path, content):
-    from nvflare.fuel.utils.log_utils import validate_log_config
-
-    path = tmp_path / "logging.json"
-    path.write_text(content)
-    with pytest.raises(ValueError, match="logging"):
-        validate_log_config(str(path))
-
-
-def test_validate_log_config_accepts_file_and_inline_json_without_constructing_handlers(tmp_path):
-    from nvflare.fuel.utils.log_utils import validate_log_config
-
-    content = '{"version": 1, "handlers": {"custom": {"()": "example.factory"}}}'
-    path = tmp_path / "logging.json"
-    path.write_text(content)
-    with patch("logging.config.dictConfig") as configure:
-        assert validate_log_config(content) == content
-        assert validate_log_config(str(path)) == str(path)
-    configure.assert_not_called()
 
 
 @pytest.mark.parametrize(

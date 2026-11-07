@@ -125,9 +125,7 @@ does not infer clinical equivalence or perform conversions.
 
 ## Inspect results
 
-For workflow progress on the console, run `python job.py --log_config progressive`
-(`progress` is also supported). Invalid logging selectors are rejected before
-the simulator starts, with a usage error listing supported modes.
+For workflow progress on the console, run `python job.py --log_config progress`.
 
 A fresh run returns four catalog entries: three at site-1 and one at site-2.
 The OMOP datasets each contain two tables; each CSV dataset contains one. The JSON is

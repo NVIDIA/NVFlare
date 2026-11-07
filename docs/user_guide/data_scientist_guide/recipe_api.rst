@@ -558,11 +558,7 @@ statistics, PSI, and survival analysis. Warnings and errors remain visible:
 
 .. code-block:: bash
 
-   python job.py --log_config progressive
-
-``progressive`` and ``progress`` select the same mode. Invalid logging selectors
-are reported as command-line usage errors before job startup. Named logging
-levels and custom JSON configuration files are also accepted.
+   python job.py --log_config progress
 
 SimEnv installs the SDK's canonical component allowlist in workspace resources,
 including built-in catalog components. It tracks the generated list so unchanged
@@ -583,7 +579,7 @@ retain their aggregation or evaluation phase, without changing the incoming-mode
 model-selection components.
 
 Recipe consumes ``--log_config`` as a system argument before the script's own
-argument parser. The ``concise``, ``progressive`` (alias ``progress``), ``msg_only``, ``full``, and
+argument parser. The ``concise``, ``progress``, ``msg_only``, ``full``, and
 ``verbose`` modes are supported. The separate ``nvflare simulator`` command continues to use
 ``-l`` or ``--log_config``. See :ref:`logging_configuration` for the mode and file
 details.
