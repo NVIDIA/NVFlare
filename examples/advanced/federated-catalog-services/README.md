@@ -21,22 +21,22 @@ nvflare poc config --pw "$NVFLARE_POC_WORKSPACE"
 nvflare poc prepare -i project.yml
 ```
 
-If `admin@nvidia.com` is already registered to another workspace that still
-exists, `nvflare poc prepare` generates the new kits, keeps the existing
-registration, and then stops with `startup kit id 'admin@nvidia.com' already
-exists outside POC workspace` (exit code 4). The new kits are already in place,
-so use the normal CLI commands to explicitly select the new kit if you intend to
-switch POCs:
+The admin kit is generated at
+`$NVFLARE_POC_WORKSPACE/catalog-demo/prod_00/catalog-admin@nvidia.com`,
+registered as `catalog-admin@nvidia.com` and selected as the active CLI identity.
+It stays on your computer. Subsequent admin commands do not need `--startup-kit`.
+The example uses its own admin id so it does not collide with the default
+`admin@nvidia.com` that other POCs register.
+
+If `catalog-admin@nvidia.com` is already registered to a different workspace that
+still exists, `nvflare poc prepare` generates the kits, keeps that registration
+and stops with `startup kit id 'catalog-admin@nvidia.com' already exists outside
+POC workspace` (exit code 4). Select the new kit explicitly:
 
 ```bash
-nvflare config add admin@nvidia.com "$NVFLARE_POC_WORKSPACE/catalog-demo/prod_00/admin@nvidia.com" --force
-nvflare config use admin@nvidia.com
+nvflare config add catalog-admin@nvidia.com "$NVFLARE_POC_WORKSPACE/catalog-demo/prod_00/catalog-admin@nvidia.com" --force
+nvflare config use catalog-admin@nvidia.com
 ```
-
-The admin kit is generated at
-`$NVFLARE_POC_WORKSPACE/catalog-demo/prod_00/admin@nvidia.com`
-and selected as the active CLI identity. It stays on your computer. Subsequent
-admin commands do not need `--startup-kit`.
 
 Register the catalog service in the server's normal deployment configuration:
 edit `$NVFLARE_POC_WORKSPACE/catalog-demo/prod_00/nvflare-poc-server/local/resources.json`
