@@ -12,46 +12,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Run a catalog-only job on a provisioned two-site POC and save its federated discovery view."""
-import json
-import time
-from contextlib import closing
+"""Submit a catalog-only job to the running federation. Retrieve results with nvflare catalog show."""
+import argparse
+import subprocess
+import sys
 
-from common import ROOT, prod_dir
+from common import ROOT
 
-from nvflare.app_common.fdn.catalog.admin.catalog_api import CatalogAdminApi
-from nvflare.app_common.fdn.catalog.server.search import entry_to_dict
-from nvflare.fuel.flare_api.flare_api import new_session
 from nvflare.recipe import ProdEnv
 from nvflare.recipe.catalog import CatalogRecipe
 
 
 def main():
-    admin = str(prod_dir() / "admin@nvidia.com")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--startup-kit", default=str(ROOT / "startup-kits/admin@nvidia.com"))
+    args = parser.parse_args()
+    admin = args.startup_kit
     # ProdEnv submits to the provisioned POC, exactly as to separately deployed sites.
     env = ProdEnv(startup_kit_location=admin, login_timeout=60)
     recipe = CatalogRecipe(sites=["site-1", "site-2"])
+    recipe.enable_log_streaming("log.txt")
     run = recipe.execute(env)
-    deadline = time.monotonic() + 300
-    while not run.get_status().startswith("FINISHED"):
-        if time.monotonic() >= deadline:
-            raise TimeoutError("Catalog job did not finish within five minutes")
-        time.sleep(1)
-    if run.get_status() != "FINISHED:COMPLETED":
-        raise RuntimeError(f"Catalog job failed: {run.get_status()}")
-    with closing(new_session("admin@nvidia.com", admin, timeout=30)) as session:
-        api = CatalogAdminApi(session)
-        deadline = time.monotonic() + 30
-        while True:
-            entries = [entry_to_dict(entry) for entry in api.search()]
-            if len(entries) == 2:
-                break
-            if time.monotonic() >= deadline:
-                raise RuntimeError("Server did not publish both catalogs; inspect POC server/site logs")
-            time.sleep(0.5)
-    output = {"entries": entries, "total": len(entries)}
-    (ROOT / "discovery.json").write_text(json.dumps(output, indent=2) + "\n")
-    print(json.dumps(output, indent=2))
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "nvflare.cli",
+            "job",
+            "monitor",
+            run.get_job_id(),
+            "--startup-kit",
+            admin,
+            "--timeout",
+            "300",
+        ],
+        check=True,
+    )
 
 
 if __name__ == "__main__":

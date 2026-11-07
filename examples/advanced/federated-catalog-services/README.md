@@ -1,95 +1,108 @@
-# Federated Catalog: Unity Catalog and PostgreSQL in a two-site POC
+# Federated Catalog: containerized Unity Catalog and PostgreSQL sites
 
-This second catalog example runs a provisioned FLARE server, two sites and an
-admin connection as separate local processes. Each site uses a different real
-catalog source hosted in Docker. It complements the [first SimEnv example](../federated-catalog),
-which continues to use Parquet/CSV at site-1 and SQLite through `SQLConnector`
-at site-2.
+This example discovers approved metadata from two sites. Docker Compose runs the
+FLARE server, each client site, and each source service in separate containers.
+Data preparation is automatic demo initialization, not an admin operation or a
+federated task. In a real deployment, the data already exists at each site.
 
-| Site | Source | Dataset / table | Synthetic rows |
-| --- | --- | --- | ---: |
-| site-1 | Unity Catalog OSS, registered Parquet | `sanctuary` / `pets` | 50 |
-| site-2 | PostgreSQL, SQLAlchemy reflection | `sanctuary` / `pets` | 70 |
+| Service | Role |
+| --- | --- |
+| `nvflare-poc-server` | FLARE server and aggregate catalog manager |
+| `nvflare-poc-site-1` | FLARE site-1; prepares its Unity Catalog demo source once |
+| `nvflare-poc-site-2` | FLARE site-2; prepares its PostgreSQL demo source once |
+| `unity-catalog` | Unity Catalog OSS metadata; registered Parquet table |
+| `postgres` | PostgreSQL source database |
+| `provision` | One-shot initialization using standard NVFLARE provisioning |
 
-The fixtures use the existing [Unity Catalog Playground sanctuary generator](https://github.com/open-lakehouse/unitycatalog-playground/blob/3310a1f61b345951adc29cdb8f12f9e1d982f88c/marimo-playground/notebooks/sanctuary.py)
-and the same `uuid`, `name`, `age`, `adopted` projection as its Delta notebook.
-Setup downloads that pinned source and its Apache-2.0 license into ignored
-`data/playground/`; preparation calls its standard-library-only generator.
-Site seeds differ, so these are separate synthetic populations. This catalog-only
-example writes Parquet with PyArrow and registers it through the Unity Catalog
-API; Spark, Delta processing and the Playground notebook stack are unnecessary.
+Each site owns the `sanctuary` dataset with a `pets` table. Site-1 has 50 synthetic
+pets and site-2 has 70. Their policies exclude `name` from published schemas.
+The first [SimEnv example](../federated-catalog) uses Parquet/CSV and SQLite
+through the same catalog interfaces.
 
-## Install and run
+## Run
 
-Prerequisites: Docker with Compose v2 running, Python 3.10+, and a Python
-virtual environment with this FLARE checkout installed. Activate the environment
-before running these commands so provisioned POC processes use the same Python.
-Allow outbound HTTPS for the pinned Playground assets and Docker image pulls.
-From this directory:
+Prerequisites: Docker with Compose v2, and an activated Python environment with
+this FLARE checkout installed for the admin commands. No database drivers,
+PyArrow, or Spark are needed on the admin's computer. Run from this directory:
 
 ```bash
-python -m pip install -r requirements.txt
-python setup.py
-python prepare_data.py
-python job.py
-python -m json.tool discovery.json
-python teardown.py
+docker compose up -d --build --wait
+
+# On the admin user's computer, using the standard exported admin startup kit:
+python job.py --startup-kit ./startup-kits/admin@nvidia.com
+nvflare catalog show --startup-kit ./startup-kits/admin@nvidia.com --format json > catalog-summary.json
+
+docker compose down
 ```
 
-1. **Setup** creates a private local `.env`, starts Unity Catalog 0.7.0 and
-   PostgreSQL 17 in Docker, downloads preparation assets, provisions an
-   isolated two-site POC under `workspace/`, and starts its server and clients.
-   It installs `CatalogManager` in the server's site-owned resources. Existing
-   prepared workspaces are reused without overwriting their configuration.
-   Setup waits for the server and both sites to register.
-   Ports 18080 and 55432 are reserved for the two source
-   services; FLARE's local POC uses 8002/8003. Stop other POCs before running.
-2. **Prepare data** creates the Parquet fixture and registers it as
-   `flare_demo.sanctuary.pets` in Unity Catalog. It creates/populates PostgreSQL's
-   `sanctuary.pets`, creates a metadata reader, and installs the checked-in
-   configurations/policies into each provisioned site's `local/fdn/`.
-   Re-running preparation replaces only these demo table fixtures.
-3. **Run** submits an ordinary `CatalogRecipe` to the already running POC
-   through `ProdEnv`, waits for the job and server reconciliation, queries the
-   authenticated catalog admin API and saves `discovery.json`. `ProdEnv` here
-   addresses a local POC; it does not use simulation-only catalog overrides.
-   The job leaves all services running; repeat it without restarting the POC.
-4. **Inspect** expects two dataset catalogs containing three approved columns:
-   `uuid`, `age`, `adopted`. Both policies exclude pet names. Physical types
-   remain source-specific. PostgreSQL reports the `uuid` primary key; UC OSS
-   does not expose primary/foreign-key constraints in its table metadata.
-5. **Teardown** stops the POC services and runs `docker compose down`.
-   PostgreSQL's named volume and local preparation assets remain. To reset
-   completely, first stop the example, then remove its `workspace/`, `.env`,
-   generated assets and Compose volume (`docker compose down --volumes`).
+The image builds FLARE from this checkout. Provisioning writes the **standard
+NVFLARE admin startup kit** to `startup-kits/admin@nvidia.com`. `job.py` only
+submits a `CatalogRecipe` through `ProdEnv` and invokes the standard
+`nvflare job monitor` command to show progress until completion; it does
+not start services, prepare data, or export results. The normal catalog CLI
+retrieves the server's aggregated view. To retrieve full schema details:
 
-To run again after stopping, keep the prepared POC workspace and run
-`python setup.py`, `python prepare_data.py`, and `python job.py`.
-Preparation re-registers Unity Catalog metadata after its container is recreated.
+```bash
+nvflare catalog show --startup-kit ./startup-kits/admin@nvidia.com \
+  --site site-1 --dataset sanctuary --format json > site-1-catalog.json
+nvflare catalog show --startup-kit ./startup-kits/admin@nvidia.com \
+  --site site-2 --dataset sanctuary --format json > site-2-catalog.json
+```
 
-## Source and publication configuration
+The normal `nvflare job` CLI remains available for job status, logs and job
+archive downloads. The catalog CLI is the interface for the server's reconciled
+catalog; a generic job archive is not the catalog store.
 
-The checked-in `config/site-1/catalog_site.json` binds `sanctuary` to the
-built-in `unity-catalog` reader with catalog/schema selection. Site-2's file
-names `SQLConnector`, references `CATALOG_DATABASE_URL`, and selects the
-PostgreSQL `sanctuary` schema. No endpoint credentials or source column schemas
-are passed in the federated job. Both sites have their own `catalog_policy.json`.
+`up --wait` waits for source preparation and fresh site registration. The server
+is reachable from the host on loopback ports 8002/8003. Source services and sites are
+reachable inside the Compose network and have no published host ports.
+`down` sends stop signals to the FLARE containers and stops the source services.
+Named volumes retain source data, FLARE identities, and catalog state. Repeating
+`up --wait` reuses these volumes and does not replace existing fixtures. For an
+explicit reset, stop the stack and run `docker compose down --volumes`; the next
+startup generates new identities and replaces the exported admin startup kit.
 
-The source files and rows remain at their respective services. Unity Catalog's
-container has a read-only mount of site-1's generated Parquet file. The catalog
-connector reads only REST metadata, never that file. PostgreSQL's catalog reader
-has schema visibility but no `SELECT` grant on the application table.
+## Monitor progress and logs
 
-The local demo starts both FLARE sites from one environment, so their parent
-processes inherit the example's demo connection settings. A deployed federation
-must supply separate, site-local identities and secrets to each site's runtime.
-The PostgreSQL bootstrap password is randomly generated in ignored `.env`;
-the fixed `catalog_reader` password is a local-demo credential only. Unity
-Catalog uses its default local unauthenticated endpoint. These settings are for
-loopback demonstration and do not qualify production authentication, tenant
-isolation, cancellation or Kubernetes deployment.
+`job.py` enables standard client log streaming, prints the submitted job ID, and
+uses `nvflare job monitor` for status and progress. In another terminal, inspect
+its server/site logs using the normal CLI:
 
-Logs and server catalog state remain under `workspace/`. Data preparation and
-service lifecycle are separate from `job.py`; no training, analytics or data
-processing workflow is submitted. Preparation runs against sources only to
-construct the example fixtures.
+```bash
+nvflare job logs JOB_ID --startup-kit ./startup-kits/admin@nvidia.com --site all --tail 100
+```
+
+For Compose startup, automatic demo preparation, registration and service errors:
+
+```bash
+docker compose logs -f nvflare-poc-server nvflare-poc-site-1 nvflare-poc-site-2
+```
+
+These commands monitor the existing services and jobs; they do not prepare data
+or export results. Result retrieval uses the catalog CLI shown above.
+
+## Data and configuration
+
+The image includes the pinned [Unity Catalog Playground sanctuary generator](https://github.com/open-lakehouse/unitycatalog-playground/blob/3310a1f61b345951adc29cdb8f12f9e1d982f88c/marimo-playground/notebooks/sanctuary.py)
+and its Apache-2.0 license, fetched during the build. Each site uses its own seed
+and the Playground's `uuid`, `name`, `age`, `adopted` projection. Site-1 writes
+Parquet into its data volume and registers `flare_demo.sanctuary.pets` through
+the Unity Catalog REST API. Site-2 creates and populates `sanctuary.pets` in
+PostgreSQL. Existing tables and Parquet fixtures are preserved on restart.
+
+Each site's checked-in `config/<site>/catalog_site.json` binds its dataset to
+its reader. The adjacent `catalog_policy.json` controls publication. Startup
+installs these into that site's own `local/fdn/` directory. Each FLARE role
+mounts only its own startup kit/runtime volume; the server and site-1 do not
+receive the PostgreSQL bootstrap password. The SQL connector's metadata reader
+has schema visibility without an application-table `SELECT` grant. Neither
+connector reads business rows during a catalog job.
+
+This is a local POC: Unity Catalog's demo endpoint has authorization disabled,
+and Compose supplies fixed demonstration PostgreSQL credentials (the bootstrap
+password can be overridden with `POSTGRES_PASSWORD`). These are not production
+credentials. Production authentication, network policy and secret distribution
+remain site deployment responsibilities. No Docker socket is mounted into any
+FLARE container. Logs are available with `docker compose logs` and in each role's
+runtime volume. Initial image builds need Internet access; site restarts do not
+need to download the generator or reinstall dependencies.
