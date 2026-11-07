@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Provision this example's POC and start/stop its catalog services."""
-import argparse
+"""Provision and start this example's POC and catalog services."""
 import json
 import secrets
+import socket
 import subprocess
 import time
 
 import requests
-from common import PIN, ROOT, WORKSPACE, prod_dir, write_json
+from common import PIN, ROOT, WORKSPACE, load_environment, prod_dir, write_json
 
 
 def compose(*args):
@@ -28,8 +28,9 @@ def compose(*args):
 
 
 def setup():
-    if WORKSPACE.exists():
-        raise RuntimeError("Workspace already exists; use the existing setup or choose a fresh example directory")
+    for port in (8002, 8003):
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", port))
     env_file = ROOT / ".env"
     if not env_file.exists():
         env_file.write_text("POSTGRES_PASSWORD=" + secrets.token_urlsafe(24) + "\n")
@@ -54,47 +55,45 @@ def setup():
         if time.monotonic() >= deadline:
             raise RuntimeError("Unity Catalog did not become ready; inspect docker compose logs")
         time.sleep(1)
-    from nvflare.tool.poc.poc_commands import prepare_poc_provision
+    if not WORKSPACE.exists():
+        from nvflare.tool.poc.poc_commands import prepare_poc_provision
 
-    (WORKSPACE / "jobs").mkdir(parents=True, exist_ok=True)
-    prepare_poc_provision(
-        clients=["site-1", "site-2"],
-        number_of_clients=2,
-        workspace=str(WORKSPACE),
-        docker_image=None,
-        examples_dir=str(WORKSPACE / "jobs"),
-    )
-    server = prod_dir() / "server/local"
-    resources_file = server / "resources.json"
-    resources = json.loads(
-        (resources_file if resources_file.exists() else server / "resources.json.default").read_text()
-    )
-    resources["components"].append(
-        {"id": "catalog_manager", "path": "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"}
-    )
-    allow = resources.get("class_allow_list", [])
-    manager = "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"
-    if isinstance(allow, list) and manager not in allow:
-        allow.append(manager)
-    write_json(resources_file, resources)
-    print("Setup complete. Next: python prepare_data.py, then python job.py")
+        (WORKSPACE / "jobs").mkdir(parents=True, exist_ok=True)
+        prepare_poc_provision(
+            clients=["site-1", "site-2"],
+            number_of_clients=2,
+            workspace=str(WORKSPACE),
+            docker_image=None,
+            examples_dir=str(WORKSPACE / "jobs"),
+        )
+        server = prod_dir() / "server/local"
+        resources_file = server / "resources.json"
+        resources = json.loads(
+            (resources_file if resources_file.exists() else server / "resources.json.default").read_text()
+        )
+        resources["components"].append(
+            {"id": "catalog_manager", "path": "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"}
+        )
+        allow = resources.get("class_allow_list", [])
+        manager = "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"
+        if isinstance(allow, list) and manager not in allow:
+            allow.append(manager)
+        write_json(resources_file, resources)
+    load_environment()
+    from nvflare.tool.poc.poc_commands import _start_poc, _wait_for_poc_system_ready, setup_service_config
 
+    for site in ("server", "site-1", "site-2"):
+        for flag in ("shutdown.fl", "restart.fl"):
+            (prod_dir() / site / flag).unlink(missing_ok=True)
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["setup", "stop"], nargs="?", default="setup")
-    args = parser.parse_args()
-    if args.action == "setup":
-        setup()
-    else:
-        from nvflare.tool.poc.poc_commands import _stop_poc
-
-        try:
-            if WORKSPACE.exists():
-                _stop_poc(str(WORKSPACE), excluded=["admin@nvidia.com"], services_list=[])
-        finally:
-            compose("down")
+    _start_poc(str(WORKSPACE), gpu_ids=[], excluded=["admin@nvidia.com"], services_list=[])
+    project, services = setup_service_config(str(WORKSPACE))
+    if not _wait_for_poc_system_ready(
+        str(WORKSPACE), project, services, services_list=[], excluded=["admin@nvidia.com"], timeout_in_sec=60
+    ):
+        raise RuntimeError("POC services did not become ready; inspect workspace logs")
+    print("POC and source services started. Next: python prepare_data.py, then python job.py")
 
 
 if __name__ == "__main__":
-    main()
+    setup()

@@ -33,36 +33,38 @@ python setup.py
 python prepare_data.py
 python job.py
 python -m json.tool discovery.json
-python setup.py stop
+python teardown.py
 ```
 
 1. **Setup** creates a private local `.env`, starts Unity Catalog 0.7.0 and
-   PostgreSQL 17 in Docker, downloads preparation assets and provisions an
-   isolated two-site POC under `workspace/`. It installs `CatalogManager` in
-   the server's site-owned resources. Existing workspaces are refused rather
-   than overwritten. Ports 18080 and 55432 are reserved for the two source
+   PostgreSQL 17 in Docker, downloads preparation assets, provisions an
+   isolated two-site POC under `workspace/`, and starts its server and clients.
+   It installs `CatalogManager` in the server's site-owned resources. Existing
+   prepared workspaces are reused without overwriting their configuration.
+   Setup waits for the server and both sites to register.
+   Ports 18080 and 55432 are reserved for the two source
    services; FLARE's local POC uses 8002/8003. Stop other POCs before running.
 2. **Prepare data** creates the Parquet fixture and registers it as
    `flare_demo.sanctuary.pets` in Unity Catalog. It creates/populates PostgreSQL's
    `sanctuary.pets`, creates a metadata reader, and installs the checked-in
    configurations/policies into each provisioned site's `local/fdn/`.
    Re-running preparation replaces only these demo table fixtures.
-3. **Run** starts the provisioned POC, submits an ordinary `CatalogRecipe`
+3. **Run** submits an ordinary `CatalogRecipe` to the already running POC
    through `ProdEnv`, waits for the job and server reconciliation, queries the
    authenticated catalog admin API and saves `discovery.json`. `ProdEnv` here
    addresses a local POC; it does not use simulation-only catalog overrides.
-   POC processes are stopped in `finally`; Docker services stay up until step 5.
+   The job leaves all services running; repeat it without restarting the POC.
 4. **Inspect** expects two dataset catalogs containing three approved columns:
    `uuid`, `age`, `adopted`. Both policies exclude pet names. Physical types
    remain source-specific. PostgreSQL reports the `uuid` primary key; UC OSS
    does not expose primary/foreign-key constraints in its table metadata.
-5. **Stop** stops any remaining POC services and runs `docker compose down`.
+5. **Teardown** stops the POC services and runs `docker compose down`.
    PostgreSQL's named volume and local preparation assets remain. To reset
    completely, first stop the example, then remove its `workspace/`, `.env`,
    generated assets and Compose volume (`docker compose down --volumes`).
 
 To run again after stopping, keep the prepared POC workspace and run
-`docker compose up -d --wait`, `python prepare_data.py`, and `python job.py`.
+`python setup.py`, `python prepare_data.py`, and `python job.py`.
 Preparation re-registers Unity Catalog metadata after its container is recreated.
 
 ## Source and publication configuration
