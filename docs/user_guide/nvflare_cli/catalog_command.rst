@@ -8,6 +8,11 @@ catalog configuration. Sites publish metadata according to their own study
 policies. The server must have catalog management configured. Scheduled reads
 use the same recipe and default to once every 24 hours.
 
+For a named Study, catalog search and status require Study membership or a
+certificate entitlement, including for project and organization admins. The
+site's authorization policy also applies. The default Study follows the site's
+authorization policy without a separate membership requirement.
+
 .. code-block:: bash
 
    nvflare catalog read --study oncology

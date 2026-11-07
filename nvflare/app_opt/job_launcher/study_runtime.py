@@ -30,7 +30,7 @@ from typing import Optional
 
 import yaml
 
-from nvflare.apis.job_launcher_spec import JobProcessEnv
+from nvflare.apis.job_launcher_spec import JOB_LAUNCHER_MODE_ENV, JobProcessEnv
 from nvflare.app_opt.job_launcher.study_data import MODE_RO, MODE_RW, StudyDatasetMount
 
 STUDY_RUNTIME_FILE = "local/study_runtime.yaml"
@@ -66,6 +66,7 @@ _VALID_POSIX_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _RESERVED_ENV_NAMES = frozenset(
     {
         "PYTHONPATH",
+        JOB_LAUNCHER_MODE_ENV,
         "NVFL_WORKSPACE_OWNER_FQCN",
         "NVFL_WORKSPACE_TRANSFER_TOKEN",
         *JobProcessEnv.ALL,

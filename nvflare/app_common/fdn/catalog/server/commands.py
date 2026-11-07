@@ -32,7 +32,6 @@ if TYPE_CHECKING:
 SEARCH = "fdn_catalog_search"
 STATUS = "fdn_catalog_status"
 
-_ADMIN_ROLES = {"project_admin", "org_admin"}
 _MAX_TEXT = 256
 _MAX_CURSOR = 1024
 
@@ -114,7 +113,7 @@ class CatalogCommandModule(CommandModule):
                 or study in (conn.get_prop(ConnProps.CERT_STUDIES) or ())
                 or (registry is not None and registry.has_user(conn.get_prop(ConnProps.USER_NAME, ""), study))
             )
-            if member or role in _ADMIN_ROLES:
+            if member:
                 # Study membership is checked here; the site's authorization policy then decides the right.
                 return PreAuthzReturnCode.REQUIRE_AUTHZ
             conn.append_error(f"NOT_AUTHORIZED for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))

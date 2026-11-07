@@ -41,7 +41,14 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JOB_LAUNCHER_MODE_ENV,
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobProcessArgs,
+    JobReturnCode,
+    add_launcher,
+)
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.app_common.resource_managers.passthrough_resource_manager import PassthroughResourceManager
@@ -702,6 +709,7 @@ class DockerJobLauncher(JobLauncherSpec):
             "HOME": os.environ.get("HOME", "/tmp"),
         }
         environment.update(get_credential_env(job_args))
+        environment[JOB_LAUNCHER_MODE_ENV] = "docker"
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         if workspace_obj is not None:
             python_paths = []

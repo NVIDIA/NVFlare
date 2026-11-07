@@ -19,6 +19,7 @@ import pytest
 
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_launcher_spec import JOB_LAUNCHER_MODE_ENV
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.fdn.catalog.common.payload import (
@@ -434,11 +435,44 @@ class TestMountResolver:
         )
         assert MountResolver(str(tmp_path / "no-mounts")).resolve("s", str(runtime)) == {"omop": real, "single": single}
 
-    def test_container_mounts_win_over_the_study_runtime(self, tmp_path):
+    def test_explicit_process_bindings_win_over_unrelated_data_directories(self, tmp_path):
         (tmp_path / "s" / "mounted").mkdir(parents=True)
+        source = tmp_path / "real-source"
+        source.mkdir()
         runtime = tmp_path / "study_runtime.yaml"
-        runtime.write_text("format_version: 2\nstudies:\n  s:\n    datasets: {other: {source: /x, mode: ro}}\n")
-        assert list(MountResolver(str(tmp_path)).resolve("s", str(runtime))) == ["mounted"]
+        runtime.write_text(
+            f"format_version: 2\nstudies:\n  s:\n    datasets: {{other: {{source: {source}, mode: ro}}}}\n"
+        )
+        assert MountResolver(str(tmp_path)).resolve("s", str(runtime)) == {"other": source}
+
+    @pytest.mark.parametrize("mode", ["docker", "k8s", "slurm"])
+    def test_container_runtime_uses_mounted_paths_even_when_the_host_runtime_file_is_visible(
+        self, tmp_path, monkeypatch, mode
+    ):
+        monkeypatch.setenv(JOB_LAUNCHER_MODE_ENV, mode)
+        mounted = tmp_path / "s" / "mounted"
+        mounted.mkdir(parents=True)
+        host = tmp_path / "host-only"
+        host.mkdir()
+        runtime = tmp_path / "study_runtime.yaml"
+        runtime.write_text(
+            f"format_version: 2\nstudies:\n  s:\n    datasets: {{other: {{source: {host}, mode: ro}}}}\n"
+        )
+        assert MountResolver(str(tmp_path)).resolve("s", str(runtime)) == {"mounted": mounted}
+
+    def test_bare_slurm_does_not_infer_unconfigured_datasets_from_data_directories(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(JOB_LAUNCHER_MODE_ENV, "slurm-process")
+        (tmp_path / "s" / "unrelated").mkdir(parents=True)
+        runtime = tmp_path / "study_runtime.yaml"
+        runtime.write_text("format_version: 2\nstudies:\n  s:\n    slurm: {sandbox: none}\n")
+        assert MountResolver(str(tmp_path)).resolve("s", str(runtime)) == {}
+
+    @pytest.mark.parametrize("content", ["format_version: 99\n", "format_version: 2\nstudies: {}\n"])
+    def test_invalid_or_empty_process_bindings_do_not_fall_back_to_data_directories(self, tmp_path, content):
+        (tmp_path / "s" / "unrelated").mkdir(parents=True)
+        runtime = tmp_path / "study_runtime.yaml"
+        runtime.write_text(content)
+        assert MountResolver(str(tmp_path)).resolve("s", str(runtime)) == {}
 
     def test_an_unreadable_study_runtime_gives_no_bindings(self, tmp_path):
         runtime = tmp_path / "study_runtime.yaml"

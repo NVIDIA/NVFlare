@@ -16,6 +16,7 @@ import contextlib
 import io
 import json
 import os
+import queue
 import threading
 import zipfile
 from datetime import datetime, timezone
@@ -38,6 +39,7 @@ from nvflare.app_common.fdn.catalog.common.payload import (
     job_key,
     manifest_mac,
 )
+from nvflare.app_common.fdn.catalog.server import manager as manager_module
 from nvflare.app_common.fdn.catalog.server.artifacts import CatalogArtifacts
 from nvflare.app_common.fdn.catalog.server.manager import CatalogManager
 from nvflare.app_common.fdn.catalog.server.reconcile import Reconciler
@@ -45,7 +47,7 @@ from nvflare.app_common.fdn.catalog.server.search import SearchQuery
 from nvflare.app_common.fdn.catalog.server.store import CatalogStore
 from nvflare.app_common.storages.filesystem_storage import _write_multi
 from nvflare.private.fed.server.job_runner import JobRunner
-from tests.timing_utils import ObservedLock, ThreadGroup
+from tests.timing_utils import ManualClock, ObservedLock, ThreadGroup
 from tests.unit_test.app_common.fdn.catalog.helpers import LIMITS, make_catalog
 
 STUDY = "study1"
@@ -92,6 +94,10 @@ class FakeJobManager:
 
     def save_workspace(self, job_id, data, fl_ctx):
         self.workspaces[job_id] = data
+
+    def list_components(self, job_id, fl_ctx):
+        archived = job_id in self.workspaces or job_id in self.manifests or job_id in self.raw
+        return ["data", "meta", "workspace"] if archived else ["data", "meta"]
 
 
 @pytest.fixture
@@ -222,9 +228,10 @@ class TestOneReadPerStudy:
         ctx = event(mgr, EventType.SUBMIT_JOB, **{FLContextKey.JOB_META: catalog_meta(None)})
         assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None and not mgr._in_flight
 
+    @pytest.mark.parametrize("status", ["FINISHED:ABORTED", "FINISHED:FAILED_TO_RUN"])
     @pytest.mark.parametrize("gone", [False, True])
-    def test_a_terminal_or_deleted_holder_is_recovered_without_an_event(self, mgr, gone):
-        held(mgr, "j1", status="FINISHED:ABORTED")
+    def test_a_terminal_or_deleted_holder_is_recovered_without_an_event(self, mgr, gone, status):
+        held(mgr, "j1", status=status)
         if gone:
             del mgr.jobs.metas["j1"]
         mgr._recover_finished()
@@ -452,6 +459,12 @@ class TestIngest:
         mgr._ingest("j1")
         assert state(mgr, "site-a")["client"]["reason_code"] == "UNSUPPORTED_RESULT"
 
+    def test_an_ok_return_code_without_a_result_records_no_result(self, mgr):
+        held(mgr, "j1", manifest(**{"site-a": ManifestEntry("OK", None)}))
+        mgr._ingest("j1")
+        health = state(mgr, "site-a")["client"]
+        assert health["health"] == "FAILED" and health["reason_code"] == "NO_RESULT"
+
     def test_an_aborted_job_reported_twice_is_applied_once(self, mgr):
         held(mgr, "j1", manifest(**{"site-a": ManifestEntry("TIMEOUT", None)}))
         mgr._ingest("j1")  # JOB_ABORTED
@@ -484,6 +497,27 @@ class TestEvents:
 
 
 class TestDownloads:
+    @pytest.mark.parametrize("status", ["SUBMITTED", "FINISHED:ABORTED", "FINISHED:FAILED_TO_RUN"])
+    def test_missing_workspace_does_not_block_definition_download(self, mgr, monkeypatch, status):
+        mgr.jobs.add("j1", status=status)
+
+        def missing(*args):
+            raise StorageException("workspace absent")
+
+        monkeypatch.setattr(mgr.jobs, "get_storage_component", missing)
+        ctx = event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"})
+        assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+
+    def test_an_existing_workspace_that_cannot_be_read_still_blocks_download(self, mgr, monkeypatch):
+        mgr.jobs.add("j1", manifest(**{"site-a": ok_entry()}))
+
+        def denied(*args):
+            raise StorageException("read denied")
+
+        monkeypatch.setattr(mgr.jobs, "get_storage_component", denied)
+        ctx = event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"})
+        assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
+
     def test_concurrent_legacy_download_and_ingestion_apply_once_and_leave_no_private_copy(self, mgr, monkeypatch):
         held(mgr, "j1", manifest(**{"site-a": ok_entry()}), status="FINISHED:COMPLETED")
         entered, release = threading.Event(), threading.Event()
@@ -566,6 +600,33 @@ class TestDownloads:
         mgr.jobs.add("j1", marker=False)
         event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"})
         assert not mgr.jobs.workspaces
+
+
+class TestRecoveryLoop:
+    @pytest.mark.parametrize("completion_events", [False, True])
+    def test_recovery_sweeps_are_spaced_out_without_delaying_completion_events(
+        self, mgr, monkeypatch, completion_events
+    ):
+        clock = ManualClock(now=0)
+        monkeypatch.setattr(manager_module, "time", clock)
+        recovered, applied = [], []
+
+        class Polls:
+            def get(self, timeout):
+                assert timeout == 1.0
+                clock.advance(1)
+                if clock.monotonic() >= 65:
+                    mgr._stop.set()
+                if completion_events and clock.monotonic() % 2 == 0:
+                    return "finished"
+                raise queue.Empty
+
+        mgr._finished = Polls()
+        monkeypatch.setattr(mgr, "_recover_finished", lambda: recovered.append(clock.monotonic()))
+        monkeypatch.setattr(mgr, "_ingest", lambda job_id: applied.append((job_id, clock.monotonic())))
+        mgr._run()
+        assert recovered == [30, 60]
+        assert applied == ([("finished", second) for second in range(2, 65, 2)] if completion_events else [])
 
 
 class TestHealth:

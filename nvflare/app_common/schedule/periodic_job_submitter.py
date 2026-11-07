@@ -42,6 +42,7 @@ from nvflare.security.study_registry import StudyRegistryService
 
 SERVICE_SUBMITTER = "scheduled-job-submitter"
 _TICK_S = 5.0
+_RETRY_S = 30.0
 _FINISHED_PREFIX = "FINISHED:"
 SIGNER_DIR = Path("private") / "scheduled_jobs"
 
@@ -72,6 +73,9 @@ class PeriodicJobSubmitter(FLComponent):
         signer_cert: str | None = None,
     ):
         """Submits `recipe(**recipe_args)` to each Study every interval_s.
+
+        Failed submissions retry after 30 seconds (or interval_s if shorter),
+        while successful submissions retain the normal jittered interval.
 
         Args:
             recipe: the dotted path of a Recipe class.
@@ -155,14 +159,15 @@ class PeriodicJobSubmitter(FLComponent):
                 self._next[study] = now + timedelta(seconds=random.uniform(0, self._startup_delay_s))
             if study in self._running or now < self._next[study]:
                 continue
-            # The next one is due an interval from now whatever happens, so a failing submit retries then.
-            self._next[study] = now + timedelta(
-                seconds=self._interval_s * random.uniform(1 - self._jitter_fraction, 1 + self._jitter_fraction)
-            )
             try:
                 self._running[study] = self._submit(study)
             except Exception as e:
+                self._next[study] = self._now() + timedelta(seconds=min(_RETRY_S, self._interval_s))
                 self.logger.warning(f"scheduled job could not be submitted: {type(e).__name__}")
+                continue
+            self._next[study] = now + timedelta(
+                seconds=self._interval_s * random.uniform(1 - self._jitter_fraction, 1 + self._jitter_fraction)
+            )
 
     def _reap(self):
         """Forget a job that finished or is gone, and abort one that never started."""

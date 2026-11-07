@@ -25,7 +25,7 @@ import yaml
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobReturnCode
+from nvflare.apis.job_launcher_spec import JOB_LAUNCHER_MODE_ENV, JobProcessArgs, JobProcessEnv, JobReturnCode
 from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 from nvflare.app_common.job_launcher.process_launcher import ProcessHandle, ProcessJobLauncher
 from nvflare.app_common.job_launcher.server_process_launcher import ServerProcessJobLauncher
@@ -149,6 +149,7 @@ def _write_runtime(tmp_path, studies):
 @pytest.mark.parametrize("launcher_class", [ClientProcessJobLauncher, ServerProcessJobLauncher])
 @pytest.mark.parametrize("study", [None, "study-a", "study-b", "unconfigured"])
 def test_study_environment(launcher_class, study, tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv(JOB_LAUNCHER_MODE_ENV, "docker")
     monkeypatch.setenv("DB_HOST", "inherited-host")
     monkeypatch.setenv("STUDY_PASSWORD", "synthetic-secret\nwith spaces")
     monkeypatch.setenv("EMPTY_SOURCE", "")
@@ -179,6 +180,7 @@ def test_study_environment(launcher_class, study, tmp_path, monkeypatch, caplog)
     argv, child_env = spawn.call_args.args
     assert argv == ["python", "worker.py"]
     assert child_env[JobProcessEnv.AUTH_TOKEN] == "bootstrap-token"
+    assert child_env[JOB_LAUNCHER_MODE_ENV] == "process"
     assert custom_path in child_env["PYTHONPATH"].split(os.pathsep)
     if study == "unconfigured":
         assert child_env["DB_HOST"] == "inherited-host"
@@ -206,7 +208,7 @@ def test_runtime_is_optional_and_legacy_is_ignored(tmp_path, monkeypatch, legacy
         expected_env["DB_HOST"] = "study-host"
     with mock.patch("nvflare.app_common.job_launcher.process_launcher.spawn_process") as spawn:
         DummyLauncher().launch_job({JobConstants.JOB_ID: "job"}, _build_fl_ctx(DummyWorkspace(tmp_path)))
-    assert spawn.call_args.args[1] == expected_env
+    assert spawn.call_args.args[1] == {**expected_env, JOB_LAUNCHER_MODE_ENV: "process"}
 
 
 @pytest.mark.parametrize("failure", ["missing-secret", "malformed", "unsupported", "read-error"])

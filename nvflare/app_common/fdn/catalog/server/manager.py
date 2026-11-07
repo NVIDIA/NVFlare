@@ -17,6 +17,7 @@
 import os
 import queue
 import threading
+import time
 import zipfile
 from datetime import datetime, timedelta, timezone
 
@@ -44,6 +45,7 @@ from nvflare.private.fed.server.server_cmd_modules import ServerCommandModules
 
 _UNFINISHED = [RunStatus.SUBMITTED, RunStatus.APPROVED, RunStatus.DISPATCHED, RunStatus.RUNNING]
 _LAUNCHED = (RunStatus.DISPATCHED, RunStatus.RUNNING)
+_RECOVERY_INTERVAL_S = 30.0
 
 
 def _iso(moment: datetime) -> str:
@@ -195,6 +197,8 @@ class CatalogManager(FLComponent):
             if self._catalog_study(self._job_meta(job_id, fl_ctx)) is None:
                 return
             job_manager = self._engine.get_component(SystemComponents.JOB_MANAGER)
+            if WORKSPACE not in job_manager.list_components(job_id, fl_ctx):
+                return  # a job that never archived a workspace has nothing to redact
             data = job_manager.get_storage_component(job_id, WORKSPACE, fl_ctx)
             replacement = redact_archive(data)
             if replacement is not None:
@@ -233,16 +237,21 @@ class CatalogManager(FLComponent):
         self._thread.start()
 
     def _run(self):
+        next_recovery = time.monotonic() + _RECOVERY_INTERVAL_S
         while not self._stop.is_set():
             try:
                 job_id = self._finished.get(timeout=1.0)
             except queue.Empty:
+                pass
+            else:
+                try:
+                    self._ingest(job_id)
+                except Exception as e:
+                    self.logger.warning(f"catalog result could not be applied: {type(e).__name__}")
+            now = time.monotonic()
+            if now >= next_recovery:
                 self._recover_finished()
-                continue
-            try:
-                self._ingest(job_id)
-            except Exception as e:
-                self.logger.warning(f"catalog result could not be applied: {type(e).__name__}")
+                next_recovery = now + _RECOVERY_INTERVAL_S
 
     def _recover_finished(self):
         """Some terminal transitions (including deletion) emit no completion event."""
@@ -300,7 +309,11 @@ class CatalogManager(FLComponent):
                     if entry.rc == "OK" and entry.result is not None:
                         outcome = self._reconciler.apply(study, client, Selection(entry.datasets), entry.result, now)
                     if outcome is None or outcome is Outcome.UNSUPPORTED:
-                        reason = "UNSUPPORTED_RESULT" if outcome is Outcome.UNSUPPORTED else entry.rc
+                        reason = (
+                            "UNSUPPORTED_RESULT"
+                            if outcome is Outcome.UNSUPPORTED
+                            else "NO_RESULT" if entry.rc == "OK" else entry.rc
+                        )
                         self._store.record_no_result(study, client, reason, now)
                 except Exception as e:
                     self.logger.warning(f"catalog result for a client could not be applied: {type(e).__name__}")

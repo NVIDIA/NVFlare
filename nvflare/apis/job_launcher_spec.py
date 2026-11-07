@@ -19,6 +19,9 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 
+# Non-secret, launcher-owned runtime information retained by the job process.
+JOB_LAUNCHER_MODE_ENV = "NVFLARE_JOB_LAUNCHER_MODE"
+
 
 class JobProcessArgs:
 

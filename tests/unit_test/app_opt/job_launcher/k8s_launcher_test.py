@@ -77,7 +77,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey, RunProcessKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobReturnCode
+from nvflare.apis.job_launcher_spec import JOB_LAUNCHER_MODE_ENV, JobProcessArgs, JobProcessEnv, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.k8s_launcher import (
     JOB_RETURN_CODE_MAPPING,
@@ -3373,6 +3373,7 @@ spec:
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             env_entries = {e["name"]: e for e in manifest["spec"]["containers"][0].get("env", [])}
             assert env_entries[ENV_WORKSPACE_OWNER_FQCN]["value"] == "site-1.parent"
+            assert env_entries[JOB_LAUNCHER_MODE_ENV]["value"] == "k8s"
             # the transfer token rides the credential Secret, never a literal pod env value
             token_entry = env_entries[ENV_WORKSPACE_TRANSFER_TOKEN]
             assert "value" not in token_entry

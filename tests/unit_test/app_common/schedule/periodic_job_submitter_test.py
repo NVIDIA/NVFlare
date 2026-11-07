@@ -132,16 +132,34 @@ class TestSchedule:
         s._tick()
         assert s._next["study1"] <= T0 + timedelta(seconds=60)
 
-    def test_a_failed_submit_is_retried_an_interval_later_not_every_tick(self):
+    def test_a_failed_submit_retries_soon_and_success_restores_the_normal_interval(self):
         s = make(studies=("study1",))
         s.jobs.fail = True
         s._tick()
         s.jobs.fail = False
         s._tick()
         assert s.jobs.jobs == {}
-        s.clock += timedelta(hours=1, seconds=1)
+        s.clock += timedelta(seconds=29)
+        s._tick()
+        assert s.jobs.jobs == {}
+        s.clock += timedelta(seconds=1)
         s._tick()
         assert len(s.jobs.jobs) == 1
+        assert s._next["study1"] == s.clock + timedelta(hours=1)
+
+    def test_a_failed_study_does_not_delay_other_studies(self, monkeypatch):
+        s = make()
+        submit = s._submit
+
+        def submit_one(study):
+            if study == "study1":
+                raise ValueError("temporary overlap")
+            return submit(study)
+
+        monkeypatch.setattr(s, "_submit", submit_one)
+        s._tick()
+        assert set(s._running) == {"study2"}
+        assert s._next["study1"] == T0 + timedelta(seconds=30)
 
     def test_a_job_that_never_started_is_aborted_so_the_study_is_not_stuck(self):
         s = make(studies=("study1",), submit_timeout_s=600)
