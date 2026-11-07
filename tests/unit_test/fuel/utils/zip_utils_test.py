@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import os
 import shutil
 import tempfile
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 
@@ -26,6 +28,7 @@ from nvflare.fuel.utils.zip_utils import (
     remove_leading_dotdot,
     split_path,
     unzip_all_from_bytes,
+    unzip_single_file_from_bytes,
     zip_directory_to_bytes,
 )
 
@@ -155,3 +158,37 @@ class TestZipUtils:
         assert names == sorted(i.filename for i in ls_zip_from_bytes(expected))
         if folder_name:
             assert all(n.startswith("c/") for n in names)
+
+    @pytest.mark.parametrize("file_path", ["file.txt", "nested/file.txt", "nested/deep/file.txt"])
+    @pytest.mark.parametrize("output_exists", [False, True])
+    def test_unzip_single_file_keeps_relative_path(self, tmp_path, file_path, output_exists):
+        archive_bytes = io.BytesIO()
+        with ZipFile(archive_bytes, "w") as archive:
+            archive.writestr(file_path, b"payload")
+
+        output_dir = tmp_path / "output"
+        if output_exists:
+            output_dir.mkdir()
+
+        unzip_single_file_from_bytes(archive_bytes.getvalue(), str(output_dir), file_path)
+
+        assert (output_dir / file_path).read_bytes() == b"payload"
+        extracted = sorted(p.relative_to(output_dir).as_posix() for p in output_dir.rglob("*") if p.is_file())
+        assert extracted == [file_path]
+
+    def test_unzip_single_file_can_extract_again(self, tmp_path):
+        archive_bytes = io.BytesIO()
+        with ZipFile(archive_bytes, "w") as archive:
+            archive.writestr("nested/file.txt", b"payload")
+
+        output_dir = tmp_path / "output"
+        for _ in range(2):
+            unzip_single_file_from_bytes(archive_bytes.getvalue(), str(output_dir), "nested/file.txt")
+
+        assert (output_dir / "nested" / "file.txt").read_bytes() == b"payload"
+
+    def test_unzip_single_file_rejects_unsafe_path_before_creating_output(self, tmp_path):
+        output_dir = tmp_path / "output"
+        with pytest.raises(ValueError, match="unsafe"):
+            unzip_single_file_from_bytes(b"not a zip", str(output_dir), "../file.txt")
+        assert not output_dir.exists()
