@@ -10,7 +10,7 @@ participants:
     admin_port: 8003
   - {name: site-1, type: client, org: nvidia, connect_to: {host: nvflare-poc-server}}
   - {name: site-2, type: client, org: nvidia, connect_to: {host: nvflare-poc-server}}
-  - {name: admin@nvidia.com, type: admin, org: nvidia, role: project_admin}
+  - {name: catalog-admin@nvidia.com, type: admin, org: nvidia, role: project_admin}
 builders:
   - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
   - path: nvflare.lighter.impl.static_file.StaticFileBuilder
