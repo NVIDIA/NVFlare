@@ -78,7 +78,7 @@ def test_dynamic_log_config_accepts_progress_mode(tmp_path):
     from nvflare.fuel.utils.log_utils import LogMode, dynamic_log_config, logmode_config_dict
 
     with patch("nvflare.fuel.utils.log_utils.apply_log_config") as mock_apply:
-        dynamic_log_config("progress", str(tmp_path), str(tmp_path / "reload.json"))
+        dynamic_log_config(LogMode.PROGRESS, str(tmp_path), str(tmp_path / "reload.json"))
 
     applied = mock_apply.call_args.args[0]
     assert applied == logmode_config_dict[LogMode.PROGRESS]
