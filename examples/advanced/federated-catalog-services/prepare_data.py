@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Initialize one site's demo source and install its catalog configuration at container startup."""
+import argparse
 import importlib.util
 import json
 import os
@@ -138,3 +139,9 @@ def prepare(site):
     write_json(local / "catalog_site.json", json.loads((config / "catalog_site.json").read_text()))
     write_json(local / "default/catalog_policy.json", json.loads((config / "catalog_policy.json").read_text()))
     print(f"Prepared catalog source for {site}", flush=True)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("site", choices=["site-1", "site-2"])
+    prepare(parser.parse_args().site)
