@@ -148,7 +148,7 @@ class EdgeModelUpdater(Updater):
         if update_reply.device_selection_version != new_state.device_selection_version:
             # device selection has changed.
             new_state.device_selection_version = update_reply.device_selection_version
-            new_state.device_selection = update_reply.device_selection
+            new_state.device_selection = update_reply.device_selection or {}
             num_changes += 1
 
         if num_changes > 0:
