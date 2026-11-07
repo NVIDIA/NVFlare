@@ -28,10 +28,20 @@ ROOT = Path(__file__).resolve().parent
 MANAGER = "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"
 
 
-def cli(*args):
+def cli(*args, step, verbose=False):
+    """Run an nvflare command. Show one line for the step; show the command's own output only on failure."""
     command = [sys.executable, "-m", "nvflare.cli", *map(str, args)]
-    print(f"+ {shlex.join(command)}", flush=True)
-    subprocess.run(command, check=True)
+    if verbose:
+        print(f"+ {shlex.join(command)}", flush=True)
+        subprocess.run(command, check=True)
+        return
+    print(f"{step} ...", end=" ", flush=True)
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode:
+        print("failed", flush=True)
+        sys.stderr.write(f"+ {shlex.join(command)}\n{result.stdout}{result.stderr}")
+        raise subprocess.CalledProcessError(result.returncode, command)
+    print("done", flush=True)
 
 
 def write_config(path, content):
@@ -48,6 +58,7 @@ def main():
     parser.add_argument(
         "--reprovision", action="store_true", help="create a new kit generation instead of reusing kits"
     )
+    parser.add_argument("--verbose", action="store_true", help="show the output of every nvflare command")
     args = parser.parse_args()
     workspace = args.workspace.expanduser().resolve()
     if "\n" in str(workspace) or "\r" in str(workspace):
@@ -63,7 +74,16 @@ def main():
         )
 
     if args.reprovision or not generations():
-        cli("provision", "-p", project_file, "-w", workspace, "--force")
+        cli(
+            "provision",
+            "-p",
+            project_file,
+            "-w",
+            workspace,
+            "--force",
+            step="Creating startup kits",
+            verbose=args.verbose,
+        )
     kits = generations()[-1]
     for participant in project["participants"]:
         if not (kits / participant["name"] / "startup").is_dir():
@@ -80,8 +100,8 @@ def main():
     if existing is None:
         components.append({"id": "catalog_manager", "path": MANAGER})
     write_config(resources, json.dumps(config, indent=2) + "\n")
-    cli("config", "add", admin, kits / admin, "--force")
-    cli("config", "use", admin)
+    cli("config", "add", admin, kits / admin, "--force", step=f"Registering admin kit {admin}", verbose=args.verbose)
+    cli("config", "use", admin, step="Selecting it as the active admin", verbose=args.verbose)
 
     # Keep other Compose settings (for example POSTGRES_PASSWORD) when rerun.
     env_file = ROOT / ".env"
@@ -90,7 +110,7 @@ def main():
     value = str(kits).replace("'", "\\'")
     lines.append(f"CATALOG_KITS='{value}'")
     write_config(env_file, "\n".join(lines) + "\n")
-    print(f"\nSetup complete: {kits}\nNext: docker compose up -d --build --wait")
+    print(f"\nReady. Kits: {kits}\nNext: docker compose up -d --build --wait")
 
 
 if __name__ == "__main__":

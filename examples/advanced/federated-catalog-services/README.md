@@ -8,35 +8,21 @@ those sites. Each publishes the schema of its `sanctuary.pets` table, excluding
 ## Quick start
 
 Prerequisites: Docker Compose **2.30 or later**, and a Python environment with
-this FLARE checkout installed. Run from this example directory:
+this FLARE checkout installed. From this directory:
 
 ```bash
-python setup.py --workspace /tmp/nvflare/catalog
-docker compose up -d --build --wait
-python job.py
-nvflare catalog show
+python setup.py --workspace /tmp/nvflare/catalog   # create the startup kits and select the admin
+docker compose up -d --build --wait                # start the server and both sites
+python job.py                                      # collect the site-approved metadata
+nvflare catalog show                               # browse it
 ```
 
-`--workspace` accepts any absolute or relative location. Omitting it uses this
-example's `workspace` directory. Setup provisions kits when needed, registers
-and selects the admin identity, adds `CatalogManager` to the server resources,
-and writes Compose's `.env`. Existing kits, custom server components and other
-`.env` settings are preserved when setup is rerun. Use `--reprovision` after
-changing `project.yml` to generate new kits.
+That is all. Setup is safe to rerun, and `--workspace` can be any path (the
+default is `./workspace`). Source rows stay at the sites.
 
-Compose starts FLARE through the generated startup scripts and prepares demo
-data at each site. `job.py` submits and monitors the catalog read from your
-computer using the selected admin kit. Source rows stay at the sites.
-
-Stop after the job completes:
-
-```bash
-docker compose down
-```
-
-Compose's stop hook calls each generated `stop_fl.sh` before Docker stops the
-container. Kits, source data, accepted catalogs and archived jobs remain for
-the next `docker compose up -d --wait`. `down --volumes` removes demo data/state.
+Stop with `docker compose down`. Kits, source data and catalogs are kept for the
+next `docker compose up -d --wait`; `docker compose down --volumes` also removes
+the demo data. If something goes wrong, see [Troubleshooting](#troubleshooting).
 
 ## Progress and results
 
@@ -111,7 +97,8 @@ coordinates reads and private artifacts during archival/download.
 metadata. Without the server manager, job results are not applied to the
 persistent catalog and catalog query commands are unavailable.
 
-Refresh is job-driven: rerun `python job.py` to collect source changes. This
+Refresh is job-driven: rerun `python job.py` to collect source changes. Only one
+catalog read per Study runs at a time; a second submission is refused until the first is applied. This
 example does not schedule periodic discovery. The default health threshold marks
 a site's last successful read stale after two days.
 
@@ -161,3 +148,13 @@ The image builds FLARE from this checkout and includes the pinned
 and its Apache-2.0 license. No Spark, PyArrow or database driver installation is
 needed on the admin computer. The [first example](../federated-catalog) uses
 SimEnv with Parquet/CSV and SQLite.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `docker compose` cannot find the kits, or uses an old workspace | Rerun `python setup.py --workspace <path>`. A shell variable `CATALOG_KITS` overrides `.env`; `unset CATALOG_KITS`. |
+| Changed `project.yml` | `python setup.py --workspace <path> --reprovision` |
+| Need the full output of a setup step | `python setup.py --verbose ...` |
+| `nvflare catalog show` reports the service is not ready | The server is still starting. Wait a few seconds, or check `nvflare system status`. |
+| Start over with fresh demo data | `docker compose down --volumes`, then run the four commands again. |
