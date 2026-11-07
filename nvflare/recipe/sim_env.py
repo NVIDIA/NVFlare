@@ -24,6 +24,7 @@ from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import RunStatus
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST
+from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, validate_log_config
 from nvflare.job_config.api import FedJob
 from nvflare.recipe._failure_summary import failure_summary
 from nvflare.recipe._run_summary import _print_output, run_context, summary_header
@@ -103,6 +104,10 @@ class SimEnv(ExecEnv):
         self.num_threads = v.num_threads if v.num_threads is not None else resolved_num_clients
         self.gpu_config = v.gpu_config
         self.log_config = self._log_config_override if self._log_config_override is not None else v.log_config
+        if self.log_config is not None:
+            self.log_config = validate_log_config(self.log_config)
+        elif os.environ.get(FL_LOG_LEVEL):
+            validate_log_config(os.environ[FL_LOG_LEVEL])
         self.clients = v.clients or None
         workspace_override = os.environ.get(SIMULATOR_WORKSPACE_ROOT_ENV_VAR)
         if workspace_override and workspace_override != v.workspace_root:

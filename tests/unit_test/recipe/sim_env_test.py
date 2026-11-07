@@ -83,6 +83,17 @@ def test_sim_env_validation():
     assert env.num_threads == 3
 
 
+def test_sim_env_rejects_invalid_api_logging_selector_before_creating_workspace(tmp_path):
+    with pytest.raises(ValueError, match="unknown logging configuration 'progres'"):
+        SimEnv(num_clients=1, log_config="progres", workspace_root=str(tmp_path / "simulation"))
+    assert not (tmp_path / "simulation").exists()
+
+
+def test_sim_env_ignores_an_empty_log_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("FL_LOG_LEVEL", "")
+    assert SimEnv(num_clients=1, workspace_root=str(tmp_path / "simulation")).log_config is None
+
+
 @pytest.mark.parametrize(
     "kwargs,expected_count",
     [

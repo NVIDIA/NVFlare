@@ -560,6 +560,9 @@ statistics, PSI, and survival analysis. Warnings and errors remain visible:
 
    python job.py --log_config progress
 
+Invalid logging selectors are reported as command-line usage errors before job
+startup. Named logging levels and custom JSON configuration files are also accepted.
+
 Detailed diagnostic records remain in ``log.txt`` and ``log.json``. To show full
 diagnostics on the console, run:
 
