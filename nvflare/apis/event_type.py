@@ -89,6 +89,7 @@ class EventType:
 
     AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
     BEFORE_BUILD_COMPONENT = "_before_build_component"
+    # Server launcher selection honors FLContextKey.JOB_BLOCK_REASON set by a handler.
     BEFORE_JOB_LAUNCH = "_before_job_launch"
     AFTER_JOB_LAUNCH = "_after_job_launch"
     # server side, before a finished job's run dir is archived for download: a component removes the private files

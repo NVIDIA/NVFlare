@@ -85,7 +85,7 @@ class Provenance:
 
 @dataclass(frozen=True)
 class ReadLimits:
-    max_duration_s: int
+    max_duration_s: float
     max_calls: int
     max_records: int
 

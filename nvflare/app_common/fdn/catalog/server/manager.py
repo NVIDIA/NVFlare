@@ -163,6 +163,12 @@ class CatalogManager(FLComponent):
             write_atomically(os.path.join(run_dir, CONTEXT_FILE), context)
         except Exception as e:
             self.log_warning(fl_ctx, f"catalog job context could not be written: {type(e).__name__}")
+            with self._lock:
+                if self._in_flight.get(study) == job_id:
+                    del self._in_flight[study]
+            fl_ctx.set_prop(
+                FLContextKey.JOB_BLOCK_REASON, "catalog job context could not be written", private=True, sticky=False
+            )
 
     def _take_back(self, fl_ctx: FLContext):
         """Capture the result privately, then remove both result and context before archiving for download."""

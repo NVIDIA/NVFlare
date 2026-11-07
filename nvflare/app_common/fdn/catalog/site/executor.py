@@ -208,7 +208,11 @@ class CatalogExecutor(Executor):
             for name in selected
             if name in routes and name in policy.datasets and policy.datasets[name].share
         }
-        opened = self._open_connectors(needed, site, mounts, fl_ctx)
+        try:
+            opened = self._open_connectors(needed, site, mounts, fl_ctx)
+        except Exception as e:
+            self.log_warning(fl_ctx, f"catalog readers could not be opened: {type(e).__name__}")
+            return self._fail(selected, previous, ReasonCode.INTERNAL)
         withheld, unavailable, catalogs = [], [], []
         reason = None
         used_records = 0
@@ -237,12 +241,14 @@ class CatalogExecutor(Executor):
                 try:
                     per_dataset = replace(
                         limits,
-                        max_duration_s=min(limits.max_duration_s, max(1, int(deadline - time.monotonic()))),
+                        max_duration_s=max(0.0, deadline - time.monotonic()),
                         max_records=limits.max_records - used_records,
                     )
                     catalog = apply_policy(
                         rule, connector.read_catalog(name, per_dataset, route.options), site.installed_operations
                     )
+                    if time.monotonic() >= deadline:
+                        raise ConnectorError("read budget exceeded", budget=True)
                     if catalog.dataset != name:
                         raise ValidationError("a connector may only return the dataset it was asked for")
                     catalog = self._without_unshared_lineage(catalog, policy)

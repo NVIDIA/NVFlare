@@ -155,6 +155,7 @@ class CatalogStore:
         self._root.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
         self._clients: dict[tuple[str, str], dict] = {}
+        self._entry_cache: dict[tuple[str, str], tuple[dict, tuple[CatalogEntry, ...]]] = {}
         self._load()
 
     # ---- loading -------------------------------------------------------------------------------------------
@@ -195,6 +196,7 @@ class CatalogStore:
             study_dir.mkdir(exist_ok=True)
             write_atomically(str(study_dir / f"{client}.json"), state)
             self._clients[(study, client)] = copy.deepcopy(state)
+            self._entry_cache.pop((study, client), None)
 
     # ---- results -------------------------------------------------------------------------------------------
 
@@ -210,36 +212,51 @@ class CatalogStore:
     # ---- queries -------------------------------------------------------------------------------------------
 
     def _entries(self, study: str) -> list[CatalogEntry]:
-        entries = []
         with self.lock:
-            for (s, client), state in self._clients.items():
-                if s != study:
-                    continue
-                withheld = {n for n, r in state["datasets"].items() if r["withheld"]}
-                for name, row in state["datasets"].items():
-                    if row["withheld"]:
-                        continue
-                    catalog = None
-                    if row["available"]:
-                        catalog = CatalogInfo.from_wire(
-                            {"dataset": name, "metadata": row["metadata"], "observed_at": row["observed_at"]}
-                        )
-                        if any(x.dataset in withheld for x in catalog.lineage):
-                            lineage = tuple(x for x in catalog.lineage if x.dataset not in withheld)
-                            catalog = replace(catalog, lineage=lineage)
-                    entries.append(
-                        CatalogEntry(
-                            client=client,
-                            dataset=name,
-                            available=row["available"],
-                            last_checked_at=row["last_checked_at"],
-                            catalog=catalog,
-                            catalog_version=row["catalog_version"] if row["available"] else None,
-                            schema_version=row["schema_version"] if row["available"] else None,
-                            published_at=row["published_at"] if row["available"] else None,
-                        )
-                    )
+            snapshot = [
+                (key, state, self._entry_cache.get(key)) for key, state in self._clients.items() if key[0] == study
+            ]
+        entries = []
+        for key, state, cached in snapshot:
+            if cached is not None and cached[0] is state:
+                entries.extend(cached[1])
+                continue
+            client_entries = self._client_entries(key[1], state)
+            with self.lock:
+                if self._clients.get(key) is state:
+                    self._entry_cache[key] = (state, client_entries)
+            entries.extend(client_entries)
         return entries
+
+    @staticmethod
+    def _client_entries(client: str, state: dict) -> tuple[CatalogEntry, ...]:
+        # Committed states are replaced whole and never mutated; this snapshot is safe outside the lock.
+        entries = []
+        withheld = {n for n, r in state["datasets"].items() if r["withheld"]}
+        for name, row in state["datasets"].items():
+            if row["withheld"]:
+                continue
+            catalog = None
+            if row["available"]:
+                catalog = CatalogInfo.from_wire(
+                    {"dataset": name, "metadata": row["metadata"], "observed_at": row["observed_at"]}
+                )
+                if any(x.dataset in withheld for x in catalog.lineage):
+                    lineage = tuple(x for x in catalog.lineage if x.dataset not in withheld)
+                    catalog = replace(catalog, lineage=lineage)
+            entries.append(
+                CatalogEntry(
+                    client=client,
+                    dataset=name,
+                    available=row["available"],
+                    last_checked_at=row["last_checked_at"],
+                    catalog=catalog,
+                    catalog_version=row["catalog_version"] if row["available"] else None,
+                    schema_version=row["schema_version"] if row["available"] else None,
+                    published_at=row["published_at"] if row["available"] else None,
+                )
+            )
+        return tuple(entries)
 
     def search(self, study: str, query: SearchQuery) -> SearchPage:
         return run_search(study, self._entries(study), query)

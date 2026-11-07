@@ -631,8 +631,13 @@ def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
     with engine.new_context() as job_launcher_ctx:
         # Remove the potential not cleaned up JOB_LAUNCHER
         job_launcher_ctx.remove_prop(FLContextKey.JOB_LAUNCHER)
+        job_launcher_ctx.remove_prop(FLContextKey.JOB_BLOCK_REASON)
         job_launcher_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
         engine.fire_event(EventType.BEFORE_JOB_LAUNCH, job_launcher_ctx)
+
+        block_reason = job_launcher_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
+        if block_reason:
+            raise RuntimeError(f"Job launch blocked: {block_reason}")
 
         job_launcher = job_launcher_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
         if not (job_launcher and isinstance(job_launcher, list)):

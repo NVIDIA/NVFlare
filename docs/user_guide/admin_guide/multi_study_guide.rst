@@ -248,8 +248,11 @@ names; launcher-owned names such as ``PYTHONPATH`` cannot be configured or used 
 A destination cannot appear in both ``env`` and ``secret_env``.
 
 Applications must read path variables such as ``TRAINING_DATA`` and ``DB_CA_FILE`` to use them.
-Files must already exist on the host. Process mode supports only ``env`` and ``secret_env``;
-container and mount settings are rejected, and hard-coded container paths are not translated.
+Files must already exist on the host. Process mode also accepts ``datasets`` with absolute
+``source`` paths for catalog discovery. These are source bindings, not mounts: ``mode: ro`` is
+advisory and does not prevent writes. Jobs retain the host user's filesystem permissions.
+Use container launchers or OS permissions when read-only access must be enforced. Other
+container and mount settings are rejected, and container paths are not translated.
 
 Process mode inherits the complete parent environment, including secret source variables and
 variables for other studies. This feature provides configuration convenience, not isolation between

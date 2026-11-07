@@ -116,7 +116,14 @@ class PeriodicJobSubmitter(FLComponent):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:
             self._engine = fl_ctx.get_engine()
-            self._load_signer(fl_ctx.get_workspace())
+            try:
+                self._load_signer(fl_ctx.get_workspace())
+            except Exception as e:
+                self.logger.error(
+                    f"periodic scheduling is disabled: invalid signer configuration ({type(e).__name__}); "
+                    "correct signer_key/signer_cert and restart the server"
+                )
+                return
             threading.Thread(target=self._run, name="periodic-job-submitter", daemon=True).start()
         elif event_type == EventType.SYSTEM_END:
             self._stop.set()
@@ -172,20 +179,26 @@ class PeriodicJobSubmitter(FLComponent):
     def _reap(self):
         """Forget a job that finished or is gone, and abort one that never started."""
         for study, job_id in list(self._running.items()):
-            with self._engine.new_context() as fl_ctx:
-                stored = self._job_manager().get_job(job_id, fl_ctx)
-                status = (stored.meta.get(JobMetaKey.STATUS.value) or "") if stored is not None else None
-                if status is None or status.startswith(_FINISHED_PREFIX):
+            try:
+                self._reap_job(study, job_id)
+            except Exception as e:
+                # Keep this Study held while its job status is unknown; independent Studies can proceed.
+                self.logger.warning(f"scheduled job status could not be read: {type(e).__name__}")
+
+    def _reap_job(self, study, job_id):
+        with self._engine.new_context() as fl_ctx:
+            stored = self._job_manager().get_job(job_id, fl_ctx)
+            status = (stored.meta.get(JobMetaKey.STATUS.value) or "") if stored is not None else None
+            if status is None or status.startswith(_FINISHED_PREFIX):
+                del self._running[study]
+            elif status == RunStatus.SUBMITTED and (
+                self._now().timestamp() - stored.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0) > self._submit_timeout_s
+            ):
+                # Through the job runner, which knows whether it is starting the job right now; deleting the
+                # job under it would break the start.
+                runner = self._engine.job_runner
+                if runner.abort_before_start(job_id, fl_ctx) is not runner.STARTING:
                     del self._running[study]
-                elif status == RunStatus.SUBMITTED and (
-                    self._now().timestamp() - stored.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0)
-                    > self._submit_timeout_s
-                ):
-                    # Through the job runner, which knows whether it is starting the job right now; deleting the
-                    # job under it would break the start.
-                    runner = self._engine.job_runner
-                    if runner.abort_before_start(job_id, fl_ctx) is not runner.STARTING:
-                        del self._running[study]
 
     def _job_manager(self):
         return self._engine.get_component(SystemComponents.JOB_MANAGER)

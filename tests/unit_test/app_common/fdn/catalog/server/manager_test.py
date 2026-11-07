@@ -641,3 +641,31 @@ class TestHealth:
         held(mgr, "j1", manifest(**{"site-a": ManifestEntry("TIMEOUT", None)}))
         mgr._ingest("j1")
         assert mgr.health(STUDY)[0]["stale"] is True
+
+
+def test_context_write_failure_vetoes_launch_and_preserves_site_health(mgr, monkeypatch):
+    from nvflare.apis.fl_constant import ReservedKey
+    from nvflare.private.fed.utils.fed_utils import get_job_launcher
+
+    seed(mgr)
+    before = mgr._store.client_state(STUDY, "site-a")
+    mgr._workspace = SimpleNamespace(get_run_dir=lambda _: "/unused")
+
+    def denied(*args):
+        raise OSError("disk full")
+
+    def fire(event_type, ctx):
+        ctx.set_prop(FLContextKey.JOB_LAUNCHER, [object()], private=True, sticky=False)
+        mgr.handle_event(event_type, ctx)
+
+    monkeypatch.setattr(manager_module, "write_atomically", denied)
+    mgr._engine.new_context = FLContext
+    mgr._engine.fire_event = fire
+    ctx = FLContext()
+    ctx.set_prop(ReservedKey.ENGINE, mgr._engine, private=True, sticky=False)
+    with pytest.raises(RuntimeError, match="Job launch blocked: catalog job context"):
+        get_job_launcher(catalog_meta("j1"), ctx)
+    assert not mgr._in_flight
+    mgr.jobs.add("j1", status="FINISHED:FAILED_TO_RUN")
+    mgr._ingest("j1")
+    assert mgr._store.client_state(STUDY, "site-a") == before
