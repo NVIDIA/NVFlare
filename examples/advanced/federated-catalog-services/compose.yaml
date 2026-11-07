@@ -1,15 +1,63 @@
 name: flare-catalog-services
+x-flare: &flare
+  image: nvflare-catalog-demo:local
+  build:
+    context: ../../..
+    dockerfile: examples/advanced/federated-catalog-services/Dockerfile
+  init: true
+  stop_grace_period: 45s
+  healthcheck:
+    test: ["CMD", "python", "healthcheck.py"]
+    interval: 2s
+    timeout: 5s
+    retries: 60
+    start_period: 10s
 services:
+  provision:
+    <<: *flare
+    command: ["python", "provision.py"]
+    healthcheck: {disable: true}
+    volumes:
+      - provision-state:/provision
+      - server-kit:/kits/server
+      - site-1-kit:/kits/site-1
+      - site-2-kit:/kits/site-2
+      - ./startup-kits/admin@nvidia.com:/admin-kit
+      - ./:/example-host:ro
+  nvflare-poc-server:
+    <<: *flare
+    environment: {FLARE_ROLE: server}
+    ports: ["127.0.0.1:8002:8002", "127.0.0.1:8003:8003"]
+    volumes: ["server-kit:/workspace"]
+    depends_on:
+      provision: {condition: service_completed_successfully}
+  nvflare-poc-site-1:
+    <<: *flare
+    environment:
+      FLARE_ROLE: site-1
+      UNITY_CATALOG_URL: http://unity-catalog:8080/api/2.1/unity-catalog
+    volumes: ["site-1-kit:/workspace", "site-1-data:/data"]
+    depends_on:
+      nvflare-poc-server: {condition: service_healthy}
+      unity-catalog: {condition: service_started}
+  nvflare-poc-site-2:
+    <<: *flare
+    environment:
+      FLARE_ROLE: site-2
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-demo-bootstrap}
+      CATALOG_DATABASE_URL: postgresql+psycopg://catalog_reader:local-demo-reader@postgres:5432/sanctuary
+    volumes: ["site-2-kit:/workspace"]
+    depends_on:
+      nvflare-poc-server: {condition: service_healthy}
+      postgres: {condition: service_healthy}
   unity-catalog:
     image: unitycatalog/unitycatalog:v0.7.0
-    ports: ["127.0.0.1:18080:8080"]
-    volumes: ["./data/generated:/home/unitycatalog/demo-data:ro"]
+    volumes: ["site-1-data:/home/unitycatalog/demo-data:ro"]
   postgres:
     image: postgres:17-alpine
     environment:
       POSTGRES_DB: sanctuary
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run setup.py first}
-    ports: ["127.0.0.1:55432:5432"]
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-demo-bootstrap}
     volumes: ["postgres-data:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d sanctuary"]
@@ -17,4 +65,9 @@ services:
       timeout: 2s
       retries: 30
 volumes:
+  provision-state:
+  server-kit:
+  site-1-kit:
+  site-2-kit:
+  site-1-data:
   postgres-data:

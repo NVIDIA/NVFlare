@@ -12,19 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Stop this example's POC and Docker source services, preserving data and configuration."""
-from common import WORKSPACE
+"""Compose readiness includes this startup's site preparation and FLARE registration."""
+import json
+import os
+import socket
 
-from nvflare.tool.poc.poc_commands import _stop_poc
-from setup import compose
+from common import WORKSPACE
 
 
 def main():
-    try:
-        if WORKSPACE.exists():
-            _stop_poc(str(WORKSPACE), excluded=["admin@nvidia.com"], services_list=[])
-    finally:
-        compose("down")
+    state = json.loads((WORKSPACE / ".startup.json").read_text())
+    os.kill(state["pid"], 0)
+    role = os.environ["FLARE_ROLE"]
+    if role == "server":
+        with socket.create_connection(("127.0.0.1", 8002), timeout=2):
+            pass
+    else:
+        with (WORKSPACE / "log.txt").open() as stream:
+            stream.seek(state["log_offset"])
+            if f"Successfully registered client:{role}" not in stream.read():
+                raise RuntimeError("site not registered yet")
 
 
 if __name__ == "__main__":

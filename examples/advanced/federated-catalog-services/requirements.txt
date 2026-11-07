@@ -1,4 +1,1 @@
 nvflare>=2.10.0rc0,<2.11
-SQLAlchemy>=2.0,<3
-psycopg[binary]>=3,<4
-pyarrow>=14
