@@ -148,11 +148,13 @@ Define jobs with the Job Recipe API instead. Use ``nvflare recipe list`` and
 HOCON and OmegaConf Config Support Removed
 ------------------------------------------
 
-FLARE reads configuration files only as JSON (``.json``, with ``.json.default``
+FLARE's generic configuration loader reads only JSON (``.json``, with ``.json.default``
 as the fallback). HOCON (``.conf``) and OmegaConf (``.yml``/``.yaml``) job and
 site configs are no longer recognized, and ``pyhocon`` is no longer a
 dependency. The ``CONFIG`` and ``core_opt`` install extras are removed.
-Provisioning and Kubernetes YAML files are not affected.
+Provisioning, Kubernetes, ``local/study_runtime.yaml``, and integration test
+scenario YAML files are not affected; they use separate PyYAML readers.
+See :ref:`configurations` for the formats used by each configuration type.
 
 Impact:
 
