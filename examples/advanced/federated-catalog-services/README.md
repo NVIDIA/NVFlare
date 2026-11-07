@@ -70,11 +70,11 @@ docker compose exec -T nvflare-poc-site-1 nvflare poc start -p site-1 --no-wait
 docker compose exec -T nvflare-poc-site-2 nvflare poc start -p site-2 --no-wait
 ```
 
-Use `-T` for these commands. The POC CLI starts background processes; Compose's
-default pseudo-terminal can terminate them when the exec session closes. The
-command can report success while FLARE never becomes reachable. Disabling the
-pseudo-terminal lets the processes survive the session. `--no-wait` skips
-readiness checking, so confirm startup with `nvflare system status` below.
+Use `-T` to disable Compose's pseudo-terminal for background startup. The POC
+CLI also detaches its startup process from the invoking terminal. Older images
+could report success and lose the daemon when that terminal closed; rebuild the
+image after updating this checkout. `--no-wait` skips readiness checking, so
+confirm startup with `nvflare system status` below.
 
 If `docker compose exec` reports `service "nvflare-poc-server" is not running`,
 inspect the container state and logs:
@@ -148,25 +148,11 @@ docker compose down
 
 Source data, startup kits and catalog state persist. To restart, run Compose up
 and the three `nvflare poc start` commands again; do not prepare the POC again.
-Stop FLARE before recreating or rebuilding running containers too. Otherwise,
-the mounted kits can retain `pid.fl` and `daemon_pid.fl` from the old containers.
-A reused PID can make startup report that an instance is already running even
-though FLARE is absent, leaving the admin port unreachable.
-An earlier start without `exec -T` can also leave stale process markers.
-
-If the startup log reports this stale-PID condition, stop all demo containers
-before removing the obsolete markers:
-
-```bash
-docker compose down
-rm -f "$NVFLARE_POC_WORKSPACE"/catalog-demo/prod_00/{nvflare-poc-server,site-1,site-2}/{pid.fl,daemon_pid.fl}
-docker compose up -d --wait
-```
-
-Then run the three participant start commands above, including `exec -T`.
-Remove these markers only
-after the containers are stopped; the startup kits, source data and catalog
-state are retained.
+Stop FLARE before recreating or rebuilding running containers too. If a
+container is removed without a graceful stop, the current POC CLI checks the
+Linux process identity before honoring persisted PID markers. PIDs reused by
+unrelated processes no longer block the next startup. Rebuild the image after
+updating this checkout to receive this fix; the existing kits can be reused.
 
 For a full demo reset, stop FLARE, run `docker compose down --volumes`, then
 `nvflare poc prepare -i project.yml --force`. This replaces the configured POC
