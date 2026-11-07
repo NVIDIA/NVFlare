@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Prepare one site, run its FLARE process, and handle Compose stop signals."""
+import json
 import os
 import signal
 import subprocess
@@ -22,9 +23,31 @@ import time
 from common import WORKSPACE, write_json
 
 
+def configure_server():
+    """Use container-local storage and enable the server's catalog manager."""
+    from nvflare.lighter.utils import update_storage_locations
+
+    local = WORKSPACE / "local"
+    resources_file = local / "resources.json"
+    update_storage_locations(
+        local_dir=str(local),
+        workspace=str(WORKSPACE),
+        default_resource_name="resources.json" if resources_file.exists() else "resources.json.default",
+    )
+    resources = json.loads(resources_file.read_text())
+    manager = "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"
+    if not any(c.get("id") == "catalog_manager" for c in resources["components"]):
+        resources["components"].append({"id": "catalog_manager", "path": manager})
+    if manager not in resources["class_allow_list"]:
+        resources["class_allow_list"].append(manager)
+    write_json(resources_file, resources)
+
+
 def main():
     role = os.environ["FLARE_ROLE"]
-    if role != "server":
+    if role == "server":
+        configure_server()
+    else:
         from prepare_data import prepare
 
         prepare(role)

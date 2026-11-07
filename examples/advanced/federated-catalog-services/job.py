@@ -13,23 +13,17 @@
 # limitations under the License.
 
 """Submit a catalog-only job to the running federation. Retrieve results with nvflare catalog show."""
-import argparse
 import subprocess
 import sys
 
-from common import ROOT
-
 from nvflare.recipe import ProdEnv
 from nvflare.recipe.catalog import CatalogRecipe
+from nvflare.tool.kit.kit_config import resolve_startup_kit_dir
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--startup-kit", default=str(ROOT / "startup-kits/admin@nvidia.com"))
-    args = parser.parse_args()
-    admin = args.startup_kit
     # ProdEnv submits to the provisioned POC, exactly as to separately deployed sites.
-    env = ProdEnv(startup_kit_location=admin, login_timeout=60)
+    env = ProdEnv(startup_kit_location=resolve_startup_kit_dir(), login_timeout=60)
     recipe = CatalogRecipe(sites=["site-1", "site-2"])
     recipe.enable_log_streaming("log.txt")
     run = recipe.execute(env)
@@ -41,8 +35,6 @@ def main():
             "job",
             "monitor",
             run.get_job_id(),
-            "--startup-kit",
-            admin,
             "--timeout",
             "300",
         ],
