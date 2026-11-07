@@ -32,6 +32,10 @@ leading zeros as integers. Inferred types describe the initial block, not a
 validated full-file schema; later rows can differ. Preparation copies the
 checked-in CSV files.
 
+For a provisioned two-site POC using Docker-hosted Unity Catalog and PostgreSQL,
+see the [catalog services example](../federated-catalog-services). Both examples
+use `SQLConnector`; this example retains SQLite as its local SQL backend.
+
 ## Install, prepare and run
 
 From this directory in an activated Python environment:

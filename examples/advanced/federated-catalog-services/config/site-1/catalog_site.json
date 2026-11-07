@@ -1,0 +1,14 @@
+{
+  "format_version": 1,
+  "studies": {
+    "default": {
+      "sanctuary": {
+        "connector": "unity-catalog",
+        "options": {
+          "catalog": "flare_demo",
+          "schema": "sanctuary"
+        }
+      }
+    }
+  }
+}
