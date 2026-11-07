@@ -1,0 +1,79 @@
+name: Dashboard frontend
+
+on:
+  pull_request:
+    paths:
+      - "dashboard/**"
+      - "nvflare/dashboard/**"
+      - "tests/unit_test/dashboard/**"
+      - "tests/integration_test/fast/dashboard*"
+      - "setup.py"
+      - "setup.cfg"
+      - "MANIFEST.in"
+      - ".github/workflows/dashboard-ui.yml"
+  push:
+    branches: [main]
+    paths:
+      - "dashboard/**"
+      - "nvflare/dashboard/**"
+      - "tests/unit_test/dashboard/**"
+      - "tests/integration_test/fast/dashboard*"
+      - "setup.py"
+      - "setup.cfg"
+      - "MANIFEST.in"
+      - ".github/workflows/dashboard-ui.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: dashboard/ui/package-lock.json
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install Python validation dependencies
+        run: python -m pip install -e '.[dashboard]' 'pytest<9.2' build playwright==1.64.1 black==25.9.0 isort==5.13.2 flake8==7.1.1
+      - name: Check Python build tooling style
+        run: |
+          python -m black --check dashboard/build_ui.py dashboard/smoke_wheel.py dashboard/capture_screenshots.py dashboard/ui/tests
+          python -m isort --check dashboard/build_ui.py dashboard/smoke_wheel.py dashboard/capture_screenshots.py dashboard/ui/tests
+          python -m flake8 dashboard/build_ui.py dashboard/smoke_wheel.py dashboard/capture_screenshots.py dashboard/ui/tests
+      - name: Check committed frontend freshness
+        run: python dashboard/build_ui.py --check
+      - name: Install locked frontend dependencies
+        working-directory: dashboard/ui
+        run: npm ci --ignore-scripts --strict-peer-deps --no-audit --no-fund
+      - name: Check frontend types, style, and unit tests
+        working-directory: dashboard/ui
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test -- --runInBand
+          npm run test:notices
+          npm audit --omit=dev
+      - name: Build and stage the Dashboard export
+        run: python dashboard/build_ui.py
+      - name: Install Chromium
+        working-directory: dashboard/ui
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Test exported frontend and real backend workflows
+        working-directory: dashboard/ui
+        run: |
+          npm run test:browser
+          npm run test:backend
+      - name: Test packaged Dashboard contracts
+        run: |
+          python -m pytest -q tests/unit_test/dashboard
+          python -m pytest -q tests/integration_test/fast/dashboard_validation_ui_test.py
+          python -m build
+          python dashboard/smoke_wheel.py dist/*.whl --sdist dist/*.tar.gz

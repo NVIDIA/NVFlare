@@ -1,0 +1,63 @@
+{
+  "name": "@nvflare/dashboard-ui",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11 <12"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build && node scripts/third-party-notices.mjs",
+    "lint": "eslint src tests scripts --max-warnings=0",
+    "test": "jest",
+    "typecheck": "next typegen && tsc --noEmit --incremental false",
+    "test:browser": "playwright test",
+    "test:backend": "playwright test --config playwright.backend.config.ts",
+    "test:notices": "node --test scripts/*.test.mjs"
+  },
+  "dependencies": {
+    "@emotion/react": "11.14.0",
+    "@emotion/styled": "11.14.1",
+    "@mui/icons-material": "9.5.0",
+    "@mui/material": "9.5.0",
+    "@mui/system": "9.5.0",
+    "@mui/x-data-grid": "9.17.0",
+    "@mui/x-date-pickers": "9.17.0",
+    "axios": "1.21.0",
+    "dayjs": "1.11.23",
+    "formik": "2.4.9",
+    "js-file-download": "0.4.12",
+    "next": "16.4.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "yup": "1.7.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.8",
+    "@types/jest": "30.0.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "eslint": "10.14.0",
+    "jest": "30.5.2",
+    "jest-environment-jsdom": "30.5.2",
+    "@types/node": "^24.0.0",
+    "typescript": "6.0.3",
+    "@eslint/js": "10.0.1",
+    "typescript-eslint": "8.72.1",
+    "@next/eslint-plugin-next": "16.4.5",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.14.0"
+  },
+  "packageManager": "npm@11.19.1",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NVIDIA/NVFlare.git",
+    "directory": "dashboard/ui"
+  }
+}
