@@ -6,53 +6,54 @@ x-flare: &flare
     dockerfile: examples/advanced/federated-catalog-services/Dockerfile
   init: true
   stop_grace_period: 45s
+  tmpfs: ["/workspace"]
 services:
-  nvflare-poc-server:
+  nvflare-server:
     <<: *flare
     environment:
-      NVFL_WORKSPACE: /poc/catalog-demo/prod_00/nvflare-poc-server
+      NVFL_WORKSPACE: /workspace
     ports: ["127.0.0.1:8002:8002", "127.0.0.1:8003:8003"]
     volumes:
       - type: bind
-        source: ${NVFLARE_POC_WORKSPACE:?Set NVFLARE_POC_WORKSPACE}/catalog-demo/prod_00/nvflare-poc-server
-        target: /poc/catalog-demo/prod_00/nvflare-poc-server
+        source: ${CATALOG_KITS:?Set CATALOG_KITS}/nvflare-server
+        target: /startup-kit
+        read_only: true
         bind: {create_host_path: false}
-      - type: bind
-        source: ${NVFLARE_POC_WORKSPACE:?Set NVFLARE_POC_WORKSPACE}/jobs-storage
-        target: ${NVFLARE_POC_WORKSPACE:?Set NVFLARE_POC_WORKSPACE}/jobs-storage
-      - type: bind
-        source: ${NVFLARE_POC_WORKSPACE:?Set NVFLARE_POC_WORKSPACE}/snapshot-storage
-        target: ${NVFLARE_POC_WORKSPACE:?Set NVFLARE_POC_WORKSPACE}/snapshot-storage
-  nvflare-poc-site-1:
+      - server-catalog:/workspace/fdn
+      - jobs-storage:/tmp/nvflare/jobs-storage
+      - snapshot-storage:/tmp/nvflare/snapshot-storage
+  nvflare-site-1:
     <<: *flare
     environment:
-      NVFL_WORKSPACE: /poc/catalog-demo/prod_00/site-1
+      NVFL_WORKSPACE: /workspace
       UNITY_CATALOG_URL: http://unity-catalog:8080/api/2.1/unity-catalog
     volumes:
       - type: bind
-        source: ${NVFLARE_POC_WORKSPACE:?Set NVFLARE_POC_WORKSPACE}/catalog-demo/prod_00/site-1
-        target: /poc/catalog-demo/prod_00/site-1
+        source: ${CATALOG_KITS:?Set CATALOG_KITS}/site-1
+        target: /startup-kit
+        read_only: true
         bind: {create_host_path: false}
       - site-1-data:/data
-      - ./config/site-1/catalog_site.json:/poc/catalog-demo/prod_00/site-1/local/fdn/catalog_site.json:ro
-      - ./config/site-1/catalog_policy.json:/poc/catalog-demo/prod_00/site-1/local/fdn/default/catalog_policy.json:ro
+      - ./config/site-1/catalog_site.json:/fdn/policy/catalog_site.json:ro
+      - ./config/site-1/catalog_policy.json:/fdn/policy/default/catalog_policy.json:ro
     post_start:
       - command: ["python", "prepare_data.py", "site-1"]
     depends_on:
       unity-catalog: {condition: service_started}
-  nvflare-poc-site-2:
+  nvflare-site-2:
     <<: *flare
     environment:
-      NVFL_WORKSPACE: /poc/catalog-demo/prod_00/site-2
+      NVFL_WORKSPACE: /workspace
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-demo-bootstrap}
       CATALOG_DATABASE_URL: postgresql+psycopg://catalog_reader:local-demo-reader@postgres:5432/sanctuary
     volumes:
       - type: bind
-        source: ${NVFLARE_POC_WORKSPACE:?Set NVFLARE_POC_WORKSPACE}/catalog-demo/prod_00/site-2
-        target: /poc/catalog-demo/prod_00/site-2
+        source: ${CATALOG_KITS:?Set CATALOG_KITS}/site-2
+        target: /startup-kit
+        read_only: true
         bind: {create_host_path: false}
-      - ./config/site-2/catalog_site.json:/poc/catalog-demo/prod_00/site-2/local/fdn/catalog_site.json:ro
-      - ./config/site-2/catalog_policy.json:/poc/catalog-demo/prod_00/site-2/local/fdn/default/catalog_policy.json:ro
+      - ./config/site-2/catalog_site.json:/fdn/policy/catalog_site.json:ro
+      - ./config/site-2/catalog_policy.json:/fdn/policy/default/catalog_policy.json:ro
     post_start:
       - command: ["python", "prepare_data.py", "site-2"]
     depends_on:
@@ -74,3 +75,6 @@ services:
 volumes:
   site-1-data:
   postgres-data:
+  server-catalog:
+  jobs-storage:
+  snapshot-storage:

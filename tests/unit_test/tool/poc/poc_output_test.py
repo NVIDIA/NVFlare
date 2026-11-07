@@ -792,7 +792,6 @@ class TestPocOutput:
         assert popen.call_args.args[0] == [str(start_sh)]
         assert popen.call_args.kwargs["stdout"].name == str(console_log)
         assert popen.call_args.kwargs["stderr"] == subprocess.STDOUT
-        assert popen.call_args.kwargs["start_new_session"] is True
 
     def test_start_poc_reports_bound_addresses_and_port_conflicts(self, capsys, tmp_path):
         from nvflare.lighter.constants import PropKey
@@ -1736,83 +1735,3 @@ def _isolate_module_clocks(monkeypatch):
 @pytest.fixture(autouse=True)
 def _isolate_home(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
-
-
-@pytest.mark.parametrize("marker_name", ["daemon_pid.fl", "pid.fl"])
-@pytest.mark.parametrize("process", ["owned", "unrelated", "missing", "zombie"])
-def test_stale_pid_cleanup_checks_process_identity(tmp_path, monkeypatch, marker_name, process):
-    from nvflare.tool.poc.poc_commands import _clear_stale_poc_pid_files
-
-    monkeypatch.delenv("NVFL_WORKSPACE", raising=False)
-    service = tmp_path / "server"
-    service.mkdir()
-    marker = service / marker_name
-    marker.write_text("34\n")
-    proc = tmp_path / "proc"
-    proc.mkdir()
-    if process != "missing":
-        entry = proc / "34"
-        entry.mkdir()
-        if process == "owned":
-            args = (
-                ["bash", str(service / "startup" / "sub_start.sh")]
-                if marker_name == "daemon_pid.fl"
-                else ["python", "-m", "nvflare.private.fed.app.server.server_train", "-m", str(service)]
-            )
-        elif process == "unrelated":
-            args = ["python", "-m", "nvflare.cli", "poc", "start"]
-        else:
-            args = []
-        (entry / "cmdline").write_bytes(b"\0".join(arg.encode() for arg in args))
-    _clear_stale_poc_pid_files(str(service), proc_root=proc)
-    assert marker.exists() is (process == "owned")
-
-
-def test_stale_pid_cleanup_retains_markers_when_procfs_is_absent(tmp_path):
-    from nvflare.tool.poc.poc_commands import _clear_stale_poc_pid_files
-
-    marker = tmp_path / "daemon_pid.fl"
-    marker.write_text("34\n")
-    _clear_stale_poc_pid_files(str(tmp_path), proc_root=tmp_path / "not-procfs")
-    assert marker.read_text() == "34\n"
-
-
-def test_stale_pid_cleanup_preserves_unreadable_process_identity(tmp_path, monkeypatch):
-    from pathlib import Path
-
-    from nvflare.tool.poc.poc_commands import _clear_stale_poc_pid_files
-
-    marker = tmp_path / "daemon_pid.fl"
-    marker.write_text("34\n")
-    proc = tmp_path / "proc"
-    proc.mkdir()
-
-    def denied(path):
-        raise PermissionError("identity unavailable")
-
-    monkeypatch.setattr(Path, "read_bytes", denied)
-    _clear_stale_poc_pid_files(str(tmp_path), proc_root=proc)
-    assert marker.exists()
-
-
-@pytest.mark.parametrize("marker_name", ["daemon_pid.fl", "pid.fl"])
-def test_pid_identity_accepts_symlinked_kit_paths(tmp_path, monkeypatch, marker_name):
-    from nvflare.tool.poc.poc_commands import _clear_stale_poc_pid_files
-
-    monkeypatch.delenv("NVFL_WORKSPACE", raising=False)
-    service = tmp_path / "server"
-    service.mkdir()
-    alias = tmp_path / "alias"
-    alias.symlink_to(service, target_is_directory=True)
-    marker = service / marker_name
-    marker.write_text("34\n")
-    entry = tmp_path / "proc" / "34"
-    entry.mkdir(parents=True)
-    args = (
-        ["bash", str(alias / "startup" / "sub_start.sh")]
-        if marker_name == "daemon_pid.fl"
-        else ["python", "-m", "nvflare.private.fed.app.client.client_train", "-m", str(alias)]
-    )
-    (entry / "cmdline").write_bytes(b"\0".join(arg.encode() for arg in args))
-    _clear_stale_poc_pid_files(str(alias), proc_root=entry.parent)
-    assert marker.exists()

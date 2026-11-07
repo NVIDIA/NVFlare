@@ -18,12 +18,12 @@ import sys
 
 from nvflare.recipe import ProdEnv
 from nvflare.recipe.catalog import CatalogRecipe
-from nvflare.tool.kit.kit_config import resolve_startup_kit_dir
+from nvflare.tool.kit.kit_config import resolve_admin_user_and_dir_from_startup_kit, resolve_startup_kit_dir
 
 
 def main():
-    # ProdEnv submits to the provisioned POC, exactly as to separately deployed sites.
-    env = ProdEnv(startup_kit_location=resolve_startup_kit_dir(), login_timeout=60)
+    username, kit_dir = resolve_admin_user_and_dir_from_startup_kit(resolve_startup_kit_dir())
+    env = ProdEnv(startup_kit_location=kit_dir, username=username, login_timeout=60)
     recipe = CatalogRecipe(sites=["site-1", "site-2"])
     recipe.enable_log_streaming("log.txt")
     run = recipe.execute(env)

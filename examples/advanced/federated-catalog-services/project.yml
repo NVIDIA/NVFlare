@@ -1,16 +1,16 @@
 api_version: 3
 name: catalog-demo
 participants:
-  - name: nvflare-poc-server
+  - name: nvflare-server
     type: server
     org: nvidia
-    default_host: localhost
-    host_names: [localhost, nvflare-poc-server]
+    default_host: nvflare-server
+    host_names: [localhost, nvflare-server]
     fed_learn_port: 8002
     admin_port: 8003
-  - {name: site-1, type: client, org: nvidia, connect_to: {host: nvflare-poc-server}}
-  - {name: site-2, type: client, org: nvidia, connect_to: {host: nvflare-poc-server}}
-  - {name: catalog-admin@nvidia.com, type: admin, org: nvidia, role: project_admin}
+  - {name: site-1, type: client, org: nvidia, connect_to: {host: nvflare-server}}
+  - {name: site-2, type: client, org: nvidia, connect_to: {host: nvflare-server}}
+  - {name: catalog-admin@nvidia.com, type: admin, org: nvidia, role: project_admin, connect_to: {host: localhost}}
 builders:
   - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
   - path: nvflare.lighter.impl.static_file.StaticFileBuilder
