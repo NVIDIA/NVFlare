@@ -110,30 +110,57 @@ class ParquetConnector(CatalogConnector):
             raise ConnectorError("sidecar metadata is invalid") from None
         if catalog.record_count() > limits.max_records:
             raise ConnectorError("record budget exceeded", budget=True)
+        if time.monotonic() >= deadline:
+            raise ConnectorError("read budget exceeded", budget=True)
         return catalog
 
     @staticmethod
     def _table_files(root: Path, deadline: float, max_calls: int) -> list[tuple[str, list[Path]]]:
         """(table name, part files) in name order. The mount's listing order is not stable, so sort. The walk of a
         partitioned table stops at the read budget: each part costs a read, and a deep tree can take long to list."""
+
+        def check():
+            if time.monotonic() >= deadline:
+                raise ConnectorError("read budget exceeded", budget=True)
+
+        def children(directory):
+            check()
+            for path in directory.iterdir():
+                check()
+                yield path
+            check()
+
+        check()
         if root.is_file():
-            # Container mount aliases need not retain the source filename's extension.
             return [(root.stem, [root])]
         tables = []
-        for child in sorted(root.iterdir()):
+        count = 0
+
+        def add(parts, path):
+            nonlocal count
+            count += 1
+            if count > max_calls:
+                raise ConnectorError("read budget exceeded", budget=True)
+            parts.append(path)
+
+        for child in children(root):
             if child.is_file() and child.suffix == ".parquet":
-                tables.append((child.stem, [child]))
-            elif child.is_dir():
                 parts = []
-                for part in child.rglob("*.parquet"):
-                    if len(parts) >= max_calls or time.monotonic() >= deadline:
-                        raise ConnectorError("read budget exceeded", budget=True)
-                    if part.is_file():
-                        parts.append(part)
+                add(parts, child)
+                tables.append((child.stem, parts))
+            elif child.is_dir():
+                parts, pending = [], [child]
+                while pending:
+                    for part in children(pending.pop()):
+                        if part.is_dir() and not part.is_symlink():
+                            pending.append(part)
+                        elif part.suffix == ".parquet" and part.is_file():
+                            add(parts, part)
                 parts.sort()
                 if parts:
                     tables.append((child.name, parts))
-        return tables
+        check()
+        return sorted(tables)
 
     @staticmethod
     def _read_sidecar(root: Path) -> dict:

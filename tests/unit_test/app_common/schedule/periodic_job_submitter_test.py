@@ -302,3 +302,35 @@ class TestSigning:
         monkeypatch.setattr(s.logger, "error", errors.append)
         s._load_signer(SimpleNamespace(get_root_dir=lambda: "/ws"))
         assert bool(errors) is required and s._signer is None
+
+
+def test_invalid_startup_signer_is_explicitly_reported_and_never_starts_unsigned(monkeypatch, caplog):
+    s = make(signer_key="half-configured")
+    ctx = FLContext()
+    monkeypatch.setattr(ctx, "get_engine", lambda: s._engine)
+    monkeypatch.setattr(ctx, "get_workspace", lambda: None)
+    started = []
+    monkeypatch.setattr(module.threading, "Thread", lambda **kw: started.append(kw))
+    s.handle_event(EventType.SYSTEM_START, ctx)
+    assert not started and s._signer is None
+    assert "periodic scheduling is disabled: invalid signer configuration" in caplog.text
+
+
+def test_unreadable_running_job_does_not_starve_other_studies(monkeypatch):
+    s = make()
+    s._tick()
+    first, second = s._running["study1"], s._running["study2"]
+    finish(s, second)
+    original = s.jobs.get_job
+
+    def read(job_id, ctx):
+        if job_id == first:
+            raise OSError("unreadable record")
+        return original(job_id, ctx)
+
+    monkeypatch.setattr(s.jobs, "get_job", read)
+    s.clock += timedelta(hours=1)
+    s._tick()
+    assert s._running["study1"] == first
+    assert s._running["study2"] != second
+    assert len(s.jobs.jobs) == 3

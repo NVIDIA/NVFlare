@@ -133,7 +133,11 @@ def run(
     if reader is not None:
         ctx.set_prop(
             ReservedKey.ENGINE,
-            SimpleNamespace(get_component=lambda _: reader, get_workspace=lambda: None),
+            SimpleNamespace(
+                get_component=lambda _: None if reader == "missing-reader" else reader,
+                get_workspace=lambda: None,
+                fire_event=lambda *args: None,
+            ),
             private=True,
             sticky=False,
         )
@@ -571,3 +575,34 @@ def test_legacy_and_unscoped_policy_files_are_not_fallbacks(env):
     parsed = result(run(env, datasets=["good"], previous=["good"]), datasets=["good"], previous=["good"])
     assert parsed.status == ResultStatus.FAILED and parsed.reason_code == ReasonCode.POLICY_UNAVAILABLE
     assert parsed.withheld == ("good",) and parsed.catalogs == ()
+
+
+@pytest.mark.parametrize("reader", [object(), "missing-reader"])
+def test_invalid_reader_withholds_previously_indexed_datasets(env, reader):
+    write_policy(env, {"good": {"share": True}})
+    result = run(env, previous=("good",), reader=reader)[CATALOG_READ_KEY]
+    assert result["status"] == "FAILED"
+    assert result["withheld"] == ["good"]
+    assert result["reason_code"] == "INTERNAL"
+
+
+def test_subsecond_remaining_budget_is_not_rounded_up(env, monkeypatch):
+    from nvflare.app_common.fdn.catalog.site import executor as module
+    from tests.timing_utils import ManualClock
+
+    clock = ManualClock(now=0)
+    monkeypatch.setattr(module, "time", clock)
+    write_policy(env, {"good": {"share": True}, "good-c": {"share": True}})
+    original = FakeConnector.read_catalog
+    received = []
+
+    def read(self, dataset, limits, options=None):
+        received.append(limits.max_duration_s)
+        clock.advance(0.75)
+        return original(self, dataset, limits, options)
+
+    monkeypatch.setattr(FakeConnector, "read_catalog", read)
+    result = run(env, datasets=["good", "good-c"], previous=("good-c",), limits={"max_duration_s": 1})[CATALOG_READ_KEY]
+    assert received == [1.0, 0.25]
+    assert result["reason_code"] == "BUDGET_EXCEEDED"
+    assert result["withheld"] == ["good-c"]

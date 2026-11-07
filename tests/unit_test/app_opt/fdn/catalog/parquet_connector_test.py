@@ -104,15 +104,16 @@ class TestBudgets:
         for i in range(5):
             write(tmp_path / "events" / f"day={i}" / "part.parquet", value=[i])
         walked = []
-        original = Path.rglob
+        original = Path.iterdir
 
-        def counting_rglob(self, pattern):
-            for p in original(self, pattern):
-                walked.append(p)
+        def counting_iterdir(self):
+            for p in original(self):
+                if p.suffix == ".parquet":
+                    walked.append(p)
                 yield p
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(Path, "rglob", counting_rglob)
+            mp.setattr(Path, "iterdir", counting_iterdir)
             with pytest.raises(ConnectorError) as e:
                 read(tmp_path, ReadLimits(30, 2, 1000))
         assert e.value.budget and len(walked) == 3  # stopped at the budget, not after listing the whole tree
@@ -190,3 +191,29 @@ class TestSidecar:
 
     def test_file_mtime_is_never_the_observation(self, root):
         assert read(root).observed_at is None
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_walk_deadline_applies_without_any_parquet_matches(tmp_path, monkeypatch, nested):
+    from nvflare.app_opt.fdn.catalog import parquet_connector as module
+    from tests.timing_utils import ManualClock
+
+    clock = ManualClock(now=0)
+    monkeypatch.setattr(module, "time", clock)
+    directory = tmp_path / "table" if nested else tmp_path
+    directory.mkdir(exist_ok=True)
+    for i in range(10):
+        (directory / str(i)).mkdir()
+    original = Path.iterdir
+    visited = []
+
+    def slow(directory):
+        for path in original(directory):
+            clock.advance(0.4)
+            visited.append(path)
+            yield path
+
+    monkeypatch.setattr(Path, "iterdir", slow)
+    with pytest.raises(ConnectorError) as error:
+        read(tmp_path, ReadLimits(1, 100, 1000))
+    assert error.value.budget and len(visited) == 3

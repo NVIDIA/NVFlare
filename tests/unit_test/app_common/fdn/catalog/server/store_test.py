@@ -226,3 +226,24 @@ class TestSearch:
         assert entry.available is False and entry.catalog is None and entry.catalog_version is None
         assert store.search(STUDY, SearchQuery(client="site-a", text="omop")).total == 0
         assert store.search(STUDY, SearchQuery(available=False)).total == 1
+
+
+def test_search_reuses_client_views_and_invalidates_withholding_on_commit(tmp_path, monkeypatch):
+    store = seeded(tmp_path)
+    original = store._client_entries
+    rebuilt = []
+
+    def build(client, state):
+        assert not store.lock._is_owned()
+        rebuilt.append(client)
+        return original(client, state)
+
+    monkeypatch.setattr(store, "_client_entries", build)
+    assert store.search(STUDY, SearchQuery()).total == 1
+    assert store.search(STUDY, SearchQuery(page_size=1)).total == 1
+    assert rebuilt == [CLIENT]
+    changed = store.client_state(STUDY, CLIENT)
+    changed["datasets"]["clinical-research"]["withheld"] = True
+    store.commit(STUDY, CLIENT, changed)
+    assert store.search(STUDY, SearchQuery()).total == 0
+    assert rebuilt == [CLIENT, CLIENT]

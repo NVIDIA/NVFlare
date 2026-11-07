@@ -283,6 +283,7 @@ def _parse_dataset(study: str, dataset: str, entry, file_path: str, launcher_mod
         if launcher_mode == "process" and not posixpath.isabs(source):
             # nothing is mounted in process mode: the job reads the source in place, from any working directory
             raise _error(file_path, f"{label}.source must be an absolute path.")
+    # In process mode this declares intended access only; no mount or filesystem isolation is applied.
     mode = entry.get("mode")
     if mode not in (MODE_RO, MODE_RW):
         raise _error(file_path, f"{label}.mode must be '{MODE_RO}' or '{MODE_RW}'.")
