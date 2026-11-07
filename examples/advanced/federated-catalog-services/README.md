@@ -16,7 +16,7 @@ Generate the standard server, client and admin startup kits:
 
 ```bash
 # Choose an absolute path; this is an example, not a required location.
-export NVFLARE_POC_WORKSPACE=/tmp/flare-catalog
+export NVFLARE_POC_WORKSPACE=/tmp/nvflare/poc
 nvflare poc config --pw "$NVFLARE_POC_WORKSPACE"
 nvflare poc prepare -i project.yml
 ```
@@ -239,6 +239,8 @@ mounts both files read-only, and the data preparation script does not modify the
 - `UNITY_CATALOG_URL` points site-1 at the local Unity Catalog REST endpoint.
   Authentication is disabled in this Unity Catalog demo. Real deployments must
   provide the appropriate source authentication, network policy and secrets.
+  A connector configured with `token_env` requires HTTPS, with HTTP allowed only
+  for literal loopback addresses or localhost during local testing.
 - Compose startup hooks seed 50 synthetic pets at site-1 and 70 at site-2, then
   preserve existing fixtures on restart. In a real deployment, data already
   exists; supply the bindings, credentials and publication policy for that data.

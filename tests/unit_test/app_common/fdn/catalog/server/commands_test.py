@@ -62,6 +62,7 @@ class FakeSession:
                 ConnProps.ACTIVE_STUDY: STUDY,
                 ConnProps.USER_ROLE: self.role,
                 ConnProps.USER_NAME: self.user,
+                ConnProps.CERT_STUDIES: [STUDY],  # a session admitted to this Study
                 ConnProps.CMD_PROPS: props,
             }
         )
@@ -179,8 +180,10 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "role,member,command,allowed",
         [
-            ("project_admin", False, commands.SEARCH, True),
-            ("org_admin", False, commands.STATUS, True),
+            ("project_admin", False, commands.SEARCH, False),
+            ("project_admin", True, commands.SEARCH, True),
+            ("org_admin", False, commands.STATUS, False),
+            ("org_admin", True, commands.STATUS, True),
             ("member", True, commands.SEARCH, True),
             ("member", True, commands.STATUS, True),
             ("member", False, commands.SEARCH, False),

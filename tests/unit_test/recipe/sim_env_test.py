@@ -235,6 +235,21 @@ def test_sim_env_installs_and_refreshes_current_component_policy(tmp_path, caplo
     assert "using the built-in default list" not in caplog.text
 
 
+def test_unmarked_legacy_defaults_are_not_silently_expanded(tmp_path):
+    resources_file = _default_resources_path(tmp_path, "legacy-policy")
+    resources_file.parent.mkdir(parents=True)
+    legacy = [path for path in DEFAULT_CLASS_ALLOW_LIST if ".fdn.catalog." not in path]
+    original = {"format_version": 2, "preserved": True, CLASS_ALLOW_LIST: legacy}
+    resources_file.write_text(json.dumps(original))
+    SimEnv._ensure_simulation_resources(str(resources_file.parent.parent))
+    assert json.loads(resources_file.read_text()) == original
+    with pytest.raises(UnsafeComponentError, match="not in allow_list"):
+        ComponentPathAuthorizer().authorize_component_config(
+            {"path": "nvflare.app_common.fdn.catalog.server.controller.CatalogController"},
+            workspace=_ResourcesWorkspace(str(resources_file)),
+        )
+
+
 @pytest.mark.parametrize("custom_policy", [[], ["example.custom.ExactComponent"]])
 def test_sim_env_does_not_refresh_a_user_edited_generated_policy(tmp_path, custom_policy):
     job = _make_job("edited-policy")

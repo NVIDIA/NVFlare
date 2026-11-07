@@ -24,6 +24,7 @@ from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import get_job_meta_study
+from nvflare.apis.job_launcher_spec import JOB_LAUNCHER_MODE_ENV
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.fdn.catalog.common.payload import (
@@ -64,7 +65,8 @@ class MountResolver:
 
     Container launchers mount each dataset at <mount_root>/<study>/<dataset>. Process mode mounts nothing, so the
     bindings come from the `datasets` of the Study's entry in the site's study_runtime.yaml, where `source` is the
-    real path.
+    real path. The launcher-owned runtime marker distinguishes remapped container
+    paths from process sources even when both are visible in the job workspace.
     """
 
     def __init__(self, mount_root: str):
@@ -72,16 +74,22 @@ class MountResolver:
 
     def resolve(self, study: str, runtime_file: str | None = None) -> dict[str, Path]:
         study_dir = self._root / study
-        if study_dir.is_dir():
-            return {
-                p.name: p
-                for p in sorted(study_dir.iterdir())
-                if (p.is_dir() or p.is_file()) and DATASET_NAME.match(p.name)
-            }
-        if runtime_file is None or not os.path.exists(runtime_file):
-            return {}
+        mode = os.environ.get(JOB_LAUNCHER_MODE_ENV, "process")
+        if mode in {"docker", "k8s", "slurm"} or runtime_file is None or not os.path.exists(runtime_file):
+            # Container dataset paths are remapped. Docker may also expose the
+            # host runtime file through its read-only local directory mount.
+            return (
+                {
+                    p.name: p
+                    for p in sorted(study_dir.iterdir())
+                    if (p.is_dir() or p.is_file()) and DATASET_NAME.match(p.name)
+                }
+                if study_dir.is_dir()
+                else {}
+            )
         try:
-            runtime = resolve_study_runtime(load_study_runtime_file(runtime_file, "process"), study, runtime_file)
+            parser_mode = "slurm" if mode == "slurm-process" else "process"
+            runtime = resolve_study_runtime(load_study_runtime_file(runtime_file, parser_mode), study, runtime_file)
         except (OSError, ValueError) as e:
             _logger.warning("the study runtime file could not be used, so no dataset is bound: %s", type(e).__name__)
             return {}

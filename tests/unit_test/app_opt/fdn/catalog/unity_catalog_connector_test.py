@@ -203,3 +203,33 @@ def test_configured_but_missing_credentials_never_fall_back_to_anonymous(transpo
     with pytest.raises(ConnectorError, match="credentials are not configured"):
         subject.UnityCatalogConnector({}, token_env="MISSING_UC_TOKEN").read_catalog("omop", LIMITS, OPTIONS)
     assert transport.calls == []
+
+
+@pytest.mark.parametrize("host", ["uc.example.com", "localhost.example.com", "10.0.0.1", "0.0.0.0", "[::]"])
+def test_bearer_tokens_never_reach_non_loopback_http_endpoints(transport, monkeypatch, host):
+    monkeypatch.setenv("UNITY_CATALOG_URL", f"http://{host}:8080/api/2.1/unity-catalog")
+    monkeypatch.setenv("UC_TOKEN", "synthetic-token")
+    with pytest.raises(ConnectorError, match="requires HTTPS"):
+        subject.UnityCatalogConnector({}, token_env="UC_TOKEN").read_catalog("omop", LIMITS, OPTIONS)
+    assert transport.calls == []
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "https://uc.example.com",
+        "http://localhost",
+        "http://localhost.",
+        "http://127.0.0.1",
+        "http://127.12.0.1",
+        "http://[::1]",
+    ],
+)
+def test_bearer_tokens_use_https_or_explicit_local_loopback(transport, monkeypatch, endpoint):
+    monkeypatch.setenv("UNITY_CATALOG_URL", endpoint + "/api/2.1/unity-catalog")
+    monkeypatch.setenv("UC_TOKEN", "synthetic-token")
+    transport.responses.append({"tables": [table()]})
+    subject.UnityCatalogConnector({}, token_env="UC_TOKEN").read_catalog("omop", LIMITS, OPTIONS)
+    assert len(transport.calls) == 1
+    assert transport.calls[0][1]["headers"]["Authorization"] == "Bearer synthetic-token"
+    assert transport.calls[0][1]["allow_redirects"] is False

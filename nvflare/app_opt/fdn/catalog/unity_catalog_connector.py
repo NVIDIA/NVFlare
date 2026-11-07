@@ -16,6 +16,7 @@
 
 import math
 import os
+from ipaddress import ip_address
 from urllib.parse import quote, urlsplit
 
 import requests
@@ -31,6 +32,8 @@ class UnityCatalogConnector(CatalogConnector):
     ``token_env`` optionally names a required bearer-token variable. Leave it
     unset for a local server with authorization disabled. Secrets are never
     passed in the job, dataset options, or published catalog.
+    Bearer-token endpoints require HTTPS, except literal loopback addresses or
+    localhost for local testing. Anonymous HTTP is supported by the local demo.
     """
 
     source = "unity-catalog"
@@ -53,7 +56,7 @@ class UnityCatalogConnector(CatalogConnector):
             raise ConnectorError("Unity Catalog endpoint is invalid") from None
         if (
             parsed.scheme not in {"http", "https"}
-            or not parsed.netloc
+            or not parsed.hostname
             or parsed.username is not None
             or parsed.query
             or parsed.fragment
@@ -61,6 +64,13 @@ class UnityCatalogConnector(CatalogConnector):
             raise ConnectorError("Unity Catalog endpoint is not configured")
         headers = {"Accept": "application/json"}
         if self.token_env is not None:
+            if parsed.scheme != "https":
+                try:
+                    loopback = ip_address(parsed.hostname).is_loopback
+                except ValueError:
+                    loopback = parsed.hostname.lower().rstrip(".") == "localhost"
+                if not loopback:
+                    raise ConnectorError("Unity Catalog bearer-token authentication requires HTTPS")
             token = os.environ.get(self.token_env)
             if not token:
                 raise ConnectorError("Unity Catalog credentials are not configured")
