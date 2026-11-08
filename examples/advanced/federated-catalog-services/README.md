@@ -36,9 +36,12 @@ These standard commands are available when needed:
 ```bash
 docker compose logs -f nvflare-server nvflare-site-1 nvflare-site-2
 nvflare system status
-nvflare catalog show --site site-1 --dataset sanctuary --format json > site-1-catalog.json
-nvflare catalog show --site site-2 --dataset sanctuary --format json > site-2-catalog.json
+nvflare catalog show --site site-1 --dataset sanctuary
+nvflare catalog show --site site-2 --dataset sanctuary
 ```
+
+The catalog commands above display human-readable results. For JSON export,
+add `--format json` and redirect the output to a file.
 
 `job.py` prints a ready-to-run `nvflare job logs` command containing the actual
 submitted job ID. Copy that command to inspect the job logs.
@@ -220,4 +223,4 @@ No Spark server or client is needed for this metadata-only path.
 | `docker compose` cannot find the kits, or uses an old workspace | Rerun `python example_setup.py --workspace <path>`. A shell variable `CATALOG_KITS` overrides `.env`; `unset CATALOG_KITS`. |
 | Changed `project.yml` | `python example_setup.py --workspace <path> --reprovision` |
 | `nvflare catalog show` reports the service is not ready | The server is still starting. Wait a few seconds, or check `nvflare system status`. |
-| Start over with fresh demo data | `docker compose down --volumes`, then run the four commands again. |
+| Start over with fresh demo data | `docker compose down --volumes`, then repeat the quick start. |

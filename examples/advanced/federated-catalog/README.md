@@ -38,9 +38,12 @@ Stop with `docker compose down`. Kits, source data and catalog state persist.
 ```bash
 nvflare system status
 docker compose logs -f nvflare-files-server nvflare-files-site-1 nvflare-files-site-2
-nvflare catalog show --site site-1 --dataset omop --format json
-nvflare catalog show --site site-2 --dataset omop --format json
+nvflare catalog show --site site-1 --dataset omop
+nvflare catalog show --site site-2 --dataset omop
 ```
+
+The catalog commands above display human-readable results. For JSON export,
+add `--format json` and redirect the output to a file.
 
 `job.py` prints a ready-to-run `nvflare job logs` command containing the actual
 submitted job ID. Copy that command to inspect the job logs.
