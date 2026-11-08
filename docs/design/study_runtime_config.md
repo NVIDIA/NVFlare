@@ -149,10 +149,8 @@ Process:
   Booleans become `true` or `false`, numbers become strings, and values are literal with no shell expansion.
 - `secret_env.*.source` names a parent environment variable; `key` is optional and ignored. Missing sources
   fail launch. Values are resolved before applying study overrides, and the parent environment is unchanged.
-- Only `datasets`, `env` and `secret_env` are supported. Container, secret-mount, and other launcher-specific
-  settings are rejected. The process launcher mounts nothing: a `datasets` entry's `source` is the real path of
-  the data and is read by site components that look datasets up by name (the catalog executor); the launcher
-  itself ignores it. Applications can also read existing host paths supplied through `env`.
+- Only `env` and `secret_env` are supported. Container, dataset, secret-mount, and other launcher-specific
+  settings are rejected. Applications can read existing host paths supplied through `env`.
 - The full parent environment remains inherited, including secrets for other studies. This is configuration
   convenience, not process isolation.
 

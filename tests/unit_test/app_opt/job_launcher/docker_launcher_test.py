@@ -82,7 +82,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JOB_LAUNCHER_MODE_ENV, JobProcessArgs, JobProcessEnv, JobReturnCode
+from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobReturnCode
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.app_common.resource_managers.passthrough_resource_manager import PassthroughResourceManager
 from nvflare.app_opt.job_launcher.docker_launcher import (
@@ -1546,7 +1546,6 @@ class TestGetModuleArgs:
 class TestDockerCredentialTransport:
     def test_credentials_in_env_not_command(self):
         launcher = _make_launcher()
-        launcher.default_job_env[JOB_LAUNCHER_MODE_ENV] = "process"
         dc = launcher._docker_client
         container = MagicMock()
         container.id = "abc123"
@@ -1566,7 +1565,6 @@ class TestDockerCredentialTransport:
         run_kwargs = dc.containers.run.call_args[1]
         environment = run_kwargs["environment"]
         assert environment[JobProcessEnv.AUTH_TOKEN] == "secret-token"
-        assert environment[JOB_LAUNCHER_MODE_ENV] == "docker"
         assert environment[JobProcessEnv.TOKEN_SIGNATURE] == "secret-signature"
         assert environment[JobProcessEnv.SSID] == "secret-ssid"
         assert "secret-" not in " ".join(str(a) for a in run_kwargs["command"])

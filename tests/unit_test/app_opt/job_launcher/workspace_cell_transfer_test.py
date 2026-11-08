@@ -171,19 +171,20 @@ class TestWorkspaceTransferManager:
             assert "local/study_data.yaml" not in names
             assert "local/study_runtime.yaml" not in names
 
-    def test_workspace_bundle_excludes_the_catalog_site_files(self):
+    def test_workspace_bundle_preserves_site_catalog_configuration(self):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
             _make_workspace(ws_root, JOB_ID)
-            _write_file(os.path.join(ws_root, "local", "fdn", "catalog_site.json"), b"{}")
-            _write_file(os.path.join(ws_root, "local", "fdn", "study-a.json"), b"{}")
+            configs = {
+                "local/fdn/catalog_site.json": b'{"format_version": 1}',
+                "local/fdn/study-a/catalog_policy.json": b'{"format_version": 1, "datasets": {}}',
+            }
+            for path, content in configs.items():
+                _write_file(os.path.join(ws_root, *path.split("/")), content)
             zip_path = os.path.join(tmp, "workspace.zip")
-
             _zip_workspace_to_file(ws_root, JOB_ID, zip_path)
-
             with zipfile.ZipFile(zip_path) as zf:
-                names = set(zf.namelist())
-            assert "local/resources.json" in names
-            assert not any(name.startswith("local/fdn/") for name in names)
+                for path, content in configs.items():
+                    assert zf.read(path) == content
 
     def test_workspace_bundle_excludes_legacy_custom_study_data_path(self):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:

@@ -30,7 +30,7 @@ from typing import Optional
 
 import yaml
 
-from nvflare.apis.job_launcher_spec import JOB_LAUNCHER_MODE_ENV, JobProcessEnv
+from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.app_opt.job_launcher.study_data import MODE_RO, MODE_RW, StudyDatasetMount
 
 STUDY_RUNTIME_FILE = "local/study_runtime.yaml"
@@ -66,7 +66,6 @@ _VALID_POSIX_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _RESERVED_ENV_NAMES = frozenset(
     {
         "PYTHONPATH",
-        JOB_LAUNCHER_MODE_ENV,
         "NVFL_WORKSPACE_OWNER_FQCN",
         "NVFL_WORKSPACE_TRANSFER_TOKEN",
         *JobProcessEnv.ALL,
@@ -280,10 +279,6 @@ def _parse_dataset(study: str, dataset: str, entry, file_path: str, launcher_mod
         source = _require_slurm_absolute_path(source, f"{label}.source", file_path, mount_operand=True)
     else:
         source = _require_str(source, f"{label}.source", file_path)
-        if launcher_mode == "process" and not posixpath.isabs(source):
-            # nothing is mounted in process mode: the job reads the source in place, from any working directory
-            raise _error(file_path, f"{label}.source must be an absolute path.")
-    # In process mode this declares intended access only; no mount or filesystem isolation is applied.
     mode = entry.get("mode")
     if mode not in (MODE_RO, MODE_RW):
         raise _error(file_path, f"{label}.mode must be '{MODE_RO}' or '{MODE_RW}'.")
@@ -433,7 +428,7 @@ def _parse_study(
     if "slurm" in entry and launcher_mode != "slurm":
         raise _error(file_path, "slurm is Slurm-only and is not supported by this launcher.")
     if launcher_mode == "process":
-        unsupported = set(entry) - {"datasets", "env", "secret_env"}
+        unsupported = set(entry) - {"env", "secret_env"}
         if unsupported:
             raise _error(file_path, f"studies.{study}: process mode does not support {sorted(unsupported)}.")
 

@@ -24,13 +24,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import get_job_meta_study
-from nvflare.apis.job_launcher_spec import (
-    JOB_LAUNCHER_MODE_ENV,
-    JobHandleSpec,
-    JobLauncherSpec,
-    JobReturnCode,
-    add_launcher,
-)
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.study_runtime import (
     load_study_runtime_file,
@@ -156,7 +150,6 @@ class ProcessJobLauncher(JobLauncherSpec):
             add_custom_dir_to_path(app_custom_folder, new_env)
 
         new_env.update(get_credential_env(fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS) or {}))
-        new_env[JOB_LAUNCHER_MODE_ENV] = "process"
 
         command = self.get_command(job_meta, fl_ctx)
         argv = shlex.split(command, True)

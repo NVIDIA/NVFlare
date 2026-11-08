@@ -32,7 +32,6 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import (
-    JOB_LAUNCHER_MODE_ENV,
     JobHandleSpec,
     JobLauncherSpec,
     JobProcessArgs,
@@ -1039,7 +1038,6 @@ class K8sJobLauncher(JobLauncherSpec):
         _, job_cmd = exe_module_entry
 
         env = dict(study_runtime.env) if study_runtime is not None else {}
-        env[JOB_LAUNCHER_MODE_ENV] = "k8s"
         if app_custom_folder:
             workspace_root_abs = os.path.abspath(workspace_root)
             custom_folder_abs = os.path.abspath(app_custom_folder)

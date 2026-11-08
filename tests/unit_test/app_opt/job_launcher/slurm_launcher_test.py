@@ -22,7 +22,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JOB_LAUNCHER_MODE_ENV, JobProcessArgs, JobProcessEnv
+from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.config import (
     SLURM_CHILD_PROCESS_ENV,
@@ -264,7 +264,6 @@ def test_containerized_slurm_mounts_shared_file_parent_directory_read_write(tmp_
     plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _file_parent_context(workspace, listener))
 
     assert len(plan.mounts) == 1
-    assert plan.study_env[JOB_LAUNCHER_MODE_ENV] == "slurm"
     assert plan.mounts[0].source == str(transport_parent)
     assert plan.mounts[0].destination == str(transport_parent)
     assert plan.mounts[0].mode == "rw"
@@ -449,7 +448,6 @@ def test_launch_plan_uses_fixed_worker_and_one_resolved_job_spec(tmp_path):
     plan = launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(workspace))
 
     assert plan.exe_module == ClientSlurmJobLauncher.EXE_MODULE
-    assert plan.study_env[JOB_LAUNCHER_MODE_ENV] == "slurm-process"
     assert plan.site_name == "site-1"
     parent_url_index = plan.module_args.index("-p") + 1
     assert plan.module_args[parent_url_index] == "tcp://compute.example:8102"

@@ -116,27 +116,9 @@ class TestLoadStudyRuntimeFile:
             ("USER", "DB_USER", "ignored"),
         ]
 
-    def test_process_accepts_datasets_as_real_paths(self, tmp_path):
-        runtime = load_study_runtime_file(
-            _write(
-                tmp_path,
-                "format_version: 2\nstudies:\n  study-a:\n    datasets:\n"
-                "      omop: {source: /srv/hospital/omop, mode: ro}\n",
-            ),
-            launcher_mode="process",
-        )["study-a"]
-        assert [(d.dataset, d.source, d.mode) for d in runtime.datasets] == [("omop", "/srv/hospital/omop", "ro")]
-
-    def test_process_refuses_a_relative_dataset_source(self, tmp_path):
-        # nothing is mounted in process mode, so a relative source would resolve against the job's working directory
-        path = _write(
-            tmp_path,
-            "format_version: 2\nstudies:\n  study-a:\n    datasets:\n      omop: {source: data/omop, mode: ro}\n",
-        )
-        with pytest.raises(ValueError, match="must be an absolute path"):
-            load_study_runtime_file(path, launcher_mode="process")
-
-    @pytest.mark.parametrize("field", ["container", "secret_mounts", "pod_template", "docker_kwargs", "slurm"])
+    @pytest.mark.parametrize(
+        "field", ["container", "datasets", "secret_mounts", "pod_template", "docker_kwargs", "slurm"]
+    )
     def test_process_rejects_non_environment_fields(self, tmp_path, field):
         with pytest.raises(ValueError, match="does not support|Slurm-only"):
             load_study_runtime_file(
@@ -352,8 +334,6 @@ class TestLoadStudyRuntimeFile:
             ("secret_env", "NVFL_WORKSPACE_TRANSFER_TOKEN: {source: study-db, key: token}"),
             ("secret_env", "NVFL_WORKSPACE_OWNER_FQCN: {source: study-db, key: fqcn}"),
             ("env", "NVFLARE_JOB_AUTH_TOKEN: site-value"),
-            ("env", "NVFLARE_JOB_LAUNCHER_MODE: docker"),
-            ("secret_env", "NVFLARE_JOB_LAUNCHER_MODE: {source: study-db, key: mode}"),
             ("secret_env", "NVFLARE_JOB_TOKEN_SIGNATURE: {source: study-db, key: sig}"),
             ("secret_env", "NVFLARE_JOB_SSID: {source: study-db, key: ssid}"),
         ],

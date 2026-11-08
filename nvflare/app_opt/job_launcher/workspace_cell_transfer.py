@@ -86,8 +86,6 @@ BOOTSTRAP_CONNECT_TIMEOUT = 30.0
 BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
 _DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml", "local/study_runtime.yaml"})
-# the federated data catalog's site files reach a pod only through its read-only mount, never inside a bundle
-_WORKSPACE_DOWNLOAD_EXCLUDED_DIRS = ("local/fdn/",)
 _RESOURCE_CONFIG_NAMES = ("resources.json", "resources.json.default")
 _K8S_LAUNCHER_COMPONENT_ID = "k8s_launcher"
 
@@ -204,7 +202,7 @@ def _write_dir_to_zip(zf: zipfile.ZipFile, src: str, root: str, excluded_paths: 
         for fname in files:
             abs_path = os.path.join(dirpath, fname)
             rel_path = os.path.relpath(abs_path, root).replace(os.sep, "/")
-            if rel_path in excluded_paths or rel_path.startswith(_WORKSPACE_DOWNLOAD_EXCLUDED_DIRS):
+            if rel_path in excluded_paths:
                 continue
             zf.write(abs_path, rel_path)
 
