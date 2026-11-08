@@ -18,7 +18,10 @@ import hmac
 import io
 import json
 import logging
+import os
 import re
+import shutil
+import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -58,17 +61,27 @@ def read_archived_manifest(data: bytes, key: bytes | None, job_id: str) -> dict:
     return verify_manifest(signed, key, job_id)
 
 
-def redact_archive(data: bytes) -> bytes | None:
-    """Remove private catalog files, including legacy nested paths. None means no replacement is needed."""
-    with zipfile.ZipFile(io.BytesIO(data)) as source:
-        if not any(PurePosixPath(info.filename).name in _PRIVATE_FILES for info in source.infolist()):
-            return None
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w") as target:
-            for info in source.infolist():
-                if PurePosixPath(info.filename).name not in _PRIVATE_FILES:
-                    target.writestr(info, source.read(info))
-        return buffer.getvalue()
+def redact_download(path: str) -> None:
+    """Scrub a per-download copy. Normal archives need only a central-directory scan, not a full read."""
+    temporary = None
+    try:
+        with zipfile.ZipFile(path) as source:
+            if not any(PurePosixPath(info.filename).name in _PRIVATE_FILES for info in source.infolist()):
+                return
+            with tempfile.NamedTemporaryFile(dir=Path(path).parent, delete=False) as output:
+                temporary = output.name
+                with zipfile.ZipFile(output, "w") as target:
+                    target.comment = source.comment
+                    for info in source.infolist():
+                        if PurePosixPath(info.filename).name in _PRIVATE_FILES:
+                            continue
+                        with source.open(info) as src, target.open(info, "w", force_zip64=True) as dst:
+                            shutil.copyfileobj(src, dst, length=1024 * 1024)
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            Path(temporary).unlink(missing_ok=True)
 
 
 class CatalogArtifacts:
@@ -88,22 +101,23 @@ class CatalogArtifacts:
 
         Signature verification happens at ingestion. Even an invalid result must be removed before download.
         """
-        path = Path(run_dir) / MANIFEST_FILE
-        try:
-            signed = json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            pass  # an archive retry may already have captured it
-        except (ValueError, UnicodeError):
-            # Malformed JSON establishes no publication; say so, or it looks like a job that wrote nothing.
-            logger.warning("catalog job %s left a malformed result; it is discarded", job_id)
-        else:
-            if keep and not self._path(job_id).exists():
-                envelope = (
-                    {"manifest": signed.get("manifest"), "mac": signed.get("mac")}
-                    if isinstance(signed, dict)
-                    else signed
-                )
-                write_atomically(str(self._path(job_id)), envelope)
+        if keep:
+            path = Path(run_dir) / MANIFEST_FILE
+            try:
+                signed = json.loads(path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                pass  # an archive retry may already have captured it
+            except (ValueError, UnicodeError):
+                # Malformed JSON establishes no publication; say so, or it looks like a job that wrote nothing.
+                logger.warning("catalog job %s left a malformed result; it is discarded", job_id)
+            else:
+                if not self._path(job_id).exists():
+                    envelope = (
+                        {"manifest": signed.get("manifest"), "mac": signed.get("mac")}
+                        if isinstance(signed, dict)
+                        else signed
+                    )
+                    write_atomically(str(self._path(job_id)), envelope)
         for name in _PRIVATE_FILES:
             (Path(run_dir) / name).unlink(missing_ok=True)
 
@@ -112,7 +126,7 @@ class CatalogArtifacts:
 
     def capture_archive(self, job_id: str, data: bytes, key: bytes) -> None:
         if self._path(job_id).exists():
-            return  # an archive/download retry must not overwrite parent application progress
+            return  # retain the first parent-captured result across archive/download retries
         manifest = read_archived_manifest(data, key, job_id)
         write_atomically(
             str(self._path(job_id)),
@@ -126,20 +140,6 @@ class CatalogArtifacts:
             for path in self._root.glob("*.json")
             if _SAFE_JOB_ID.fullmatch(path.stem) and path.is_file() and not path.is_symlink()
         }
-
-    def applied_clients(self, job_id: str) -> set[str]:
-        signed = json.loads(self._path(job_id).read_text(encoding="utf-8"))
-        applied = signed.get("applied_clients", [])
-        if not isinstance(applied, list) or any(not isinstance(client, str) for client in applied):
-            raise PayloadError("invalid catalog application progress")
-        return set(applied)
-
-    def save_progress(self, job_id: str, clients: set[str]) -> None:
-        """Record parent-owned retry progress without changing the signed site-result manifest."""
-        path = self._path(job_id)
-        signed = json.loads(path.read_text(encoding="utf-8"))
-        signed["applied_clients"] = sorted(clients)
-        write_atomically(str(path), signed)
 
     def discard(self, job_id: str) -> None:
         self._path(job_id).unlink(missing_ok=True)

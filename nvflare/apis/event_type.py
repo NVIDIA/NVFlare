@@ -97,6 +97,7 @@ class EventType:
     BEFORE_JOB_WORKSPACE_ARCHIVE = "_before_job_workspace_archive"
     # server side, before preparing artifacts for download: components may redact stored artifacts or set
     # FLContextKey.JOB_BLOCK_REASON to refuse the download
+    # Components have been staged; callbacks may sanitize them or block before transfer is published.
     BEFORE_JOB_DOWNLOAD = "_before_job_download"
 
     TASK_RESULT_RECEIVED = "_task_result_received"

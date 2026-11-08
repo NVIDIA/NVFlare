@@ -23,6 +23,7 @@ from nvflare.apis.job_launcher_spec import JOB_LAUNCHER_MODE_ENV
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.fdn.catalog.common.payload import (
+    CATALOG_JOB_META,
     CATALOG_READ_KEY,
     ReasonCode,
     ResultStatus,
@@ -141,7 +142,7 @@ def run(
             private=True,
             sticky=False,
         )
-    ctx.set_prop(FLContextKey.JOB_META, {"study": "study1"}, private=False, sticky=False)
+    ctx.set_prop(FLContextKey.JOB_META, {"study": "study1", CATALOG_JOB_META: True}, private=False, sticky=False)
     shareable = Shareable()
     shareable[CATALOG_READ_KEY] = build_task_payload(datasets, list(previous))
     abort = abort or Signal()
@@ -402,7 +403,7 @@ class TestExecute:
         executor.policy_root = env / "policy"
         executor.resolver = MountResolver(str(env / "data"))
         ctx = FLContext()
-        ctx.set_prop(FLContextKey.JOB_META, {"study": "study1"}, private=False, sticky=False)
+        ctx.set_prop(FLContextKey.JOB_META, {"study": "study1", CATALOG_JOB_META: True}, private=False, sticky=False)
         shareable = Shareable()
         shareable[CATALOG_READ_KEY] = build_task_payload(["good"], ["good"])
         parsed = result(executor.execute("catalog.read", shareable, ctx, Signal()), ["good"], ["good"])
@@ -491,7 +492,7 @@ class TestSiteLocations:
         executor = CatalogExecutor()
         engine = SimpleNamespace(get_workspace=lambda: SimpleNamespace(get_root_dir=lambda: str(root)))
         ctx = FLContext()
-        ctx.set_prop(FLContextKey.JOB_META, {"study": "study1"}, private=False, sticky=False)
+        ctx.set_prop(FLContextKey.JOB_META, {"study": "study1", CATALOG_JOB_META: True}, private=False, sticky=False)
         ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
         return executor, ctx
 
@@ -779,7 +780,7 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
     executor.policy_root = policy_root
     executor.resolver = MountResolver(str(root.parent))
     ctx = FLContext()
-    ctx.set_prop(FLContextKey.JOB_META, {"study": "study1"}, private=True, sticky=False)
+    ctx.set_prop(FLContextKey.JOB_META, {"study": "study1", CATALOG_JOB_META: True}, private=True, sticky=False)
     data = Shareable()
     data[CATALOG_READ_KEY] = build_task_payload(None, [])
     result = executor.execute("catalog.read", data, ctx, Signal())
@@ -795,3 +796,17 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
     assert len(calls) == 1 and calls[0][0] == endpoint + "/api/2.1/unity-catalog/tables"
     assert (calls[0][1]["headers"].get("Authorization") == "Bearer site-only-token") is managed
     assert "private-row" not in json.dumps(result) and "site-only-token" not in json.dumps(result)
+
+
+def test_unmarked_job_cannot_read_site_configuration_or_collect_metadata(monkeypatch):
+    executor = CatalogExecutor()
+    ctx = FLContext()
+    ctx.set_prop(FLContextKey.JOB_META, {"study": "study1"}, private=True, sticky=False)
+
+    def forbidden(*args):
+        raise AssertionError("unadmitted task touched the site")
+
+    monkeypatch.setattr(executor, "_read", forbidden)
+    response = executor.execute("catalog.read", Shareable(), ctx, Signal())
+    assert response.get_return_code() == ReturnCode.TASK_UNSUPPORTED
+    assert CATALOG_READ_KEY not in response

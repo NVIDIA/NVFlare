@@ -2146,7 +2146,7 @@ def test_download_job_packages_all_default_components_for_finished_job(monkeypat
 
 
 @pytest.mark.parametrize("blocked", [False, True])
-def test_artifact_policy_runs_before_any_download_is_prepared(monkeypatch, tmp_path, blocked):
+def test_artifact_policy_runs_on_staged_files_before_transfer(monkeypatch, tmp_path, blocked):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     engine = _FakeListEngine(
         [
@@ -2160,7 +2160,9 @@ def test_artifact_policy_runs_before_any_download_is_prepared(monkeypatch, tmp_p
     def authorize_download(event_type, fl_ctx):
         assert event_type == EventType.BEFORE_JOB_DOWNLOAD
         assert fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID) == "job-1"
-        assert fl_ctx.get_prop(FLContextKey.JOB_META)[JobMetaKey.JOB_ID.value] == "job-1"
+        staged = fl_ctx.get_prop(FLContextKey.JOB_DOWNLOAD_FILES)
+        assert set(staged) == {"data", "meta", "workspace"}
+        assert staged["workspace"].endswith("/job-1/workspace.zip")
         actions.append("policy")
         if blocked:
             fl_ctx.set_prop(FLContextKey.JOB_BLOCK_REASON, "private artifacts could not be secured", sticky=False)
@@ -2170,9 +2172,11 @@ def test_artifact_policy_runs_before_any_download_is_prepared(monkeypatch, tmp_p
     conn = _MockConnection(app_ctx=engine, props={ConnProps.DOWNLOAD_DIR: str(tmp_path)})
     module = JobCommandModule()
     module.download_folder = MagicMock()
+    module._clean_up_download = MagicMock()
     module.download_job(conn, ["download_job", "job-1"])
+    assert bool(module._clean_up_download.call_count) is blocked
 
-    assert actions == (["policy"] if blocked else ["policy", "package", "package", "package"])
+    assert actions == ["package", "package", "package", "policy"]
     assert bool(conn.errors) is blocked
     assert module.download_folder.called is not blocked
 

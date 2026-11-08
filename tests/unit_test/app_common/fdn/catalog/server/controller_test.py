@@ -18,10 +18,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import make_reply
 from nvflare.app_common.fdn.catalog.common.payload import (
+    CATALOG_JOB_META,
     CATALOG_READ_KEY,
     ManifestEntry,
     PayloadError,
@@ -39,6 +40,7 @@ from tests.unit_test.app_common.fdn.catalog.helpers import make_catalog
 
 def make_controller(tmp_path, clients=("site-a", "site-b"), **kw):
     controller = CatalogController(**kw)
+    controller._key, controller._job_id = b"k" * 32, "job-1"
     controller._clients = list(clients)
     controller._manifest_path = str(tmp_path / "catalog_results.json")
     return controller
@@ -82,7 +84,7 @@ class TestManifest:
         controller._write_manifest()
         signed = json.loads((tmp_path / "catalog_results.json").read_text())
         entries = parse_manifest(signed["manifest"])
-        assert signed["mac"] is None  # no CatalogManager key on this server
+        assert signed["mac"] is not None
         assert entries["site-a"] == ManifestEntry("OK", {"status": "OK"})
         assert entries["site-b"] == ManifestEntry("TIMEOUT", None)
 
@@ -181,7 +183,17 @@ class TestContext:
         self.load(tmp_path, controller, {"key": "6b" * 32, "previous": {"site-a": ["fhir", "omop"]}})
         assert controller._previous("site-a") == ["omop"]
 
-    @pytest.mark.parametrize("content", ["{not json", {"key": "zz", "previous": {}}, {"previous": {}}, []])
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "{not json",
+            {"key": "zz", "previous": {}},
+            {"key": "", "previous": {}},
+            {"key": "00", "previous": {}},
+            {"previous": {}},
+            [],
+        ],
+    )
     def test_without_a_usable_context_nothing_is_signed_and_no_name_is_known(self, tmp_path, content):
         controller = make_controller(tmp_path)
         self.load(tmp_path, controller, content)
@@ -220,3 +232,24 @@ class TestManifestFormat:
     def test_manifest_round_trip(self):
         entries = {"a": ManifestEntry("OK", {"k": 1}, ("x", "y")), "b": ManifestEntry("TIMEOUT", None)}
         assert parse_manifest(build_manifest(entries)) == entries
+
+
+@pytest.mark.parametrize("marked", [False, True])
+def test_unadmitted_controller_never_collects_or_writes_an_unsigned_manifest(tmp_path, monkeypatch, marked):
+    controller = CatalogController()
+    engine = SimpleNamespace(
+        get_workspace=lambda: SimpleNamespace(get_run_dir=lambda _: str(tmp_path)),
+        fire_event=lambda *args: None,
+    )
+    ctx = FLContext()
+    ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    ctx.set_prop(FLContextKey.JOB_META, {CATALOG_JOB_META: marked}, private=True, sticky=False)
+    controller._job_id = "job-1"
+    broadcasts = []
+    monkeypatch.setattr(controller, "broadcast", lambda *a, **k: broadcasts.append(a))
+    with pytest.raises(RuntimeError, match="requires"):
+        controller.start_controller(ctx)
+    controller.stop_controller(ctx)
+    with pytest.raises(RuntimeError, match="not been admitted"):
+        controller.control_flow(None, ctx)
+    assert not broadcasts and not (tmp_path / "catalog_results.json").exists()

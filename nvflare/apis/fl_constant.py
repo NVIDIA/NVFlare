@@ -178,6 +178,7 @@ class FLContextKey:
     ALLOCATED_RESOURCES = "__allocated_resources"
     RESOURCE_CHECK_RESULT = "__resource_check_result"
     JOB_PARTICIPANTS = "__job_participants"
+    JOB_DOWNLOAD_FILES = "__job_download_files__"  # staged component paths, before transfer authorization
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
     SSID = "__ssid__"
     CLIENT_TOKEN = "__client_token"

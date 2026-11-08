@@ -66,11 +66,20 @@ class Reconciler:
         self._store = store
         self._limits = read_limits
 
-    def apply(self, study: str, client: str, selection: Selection, raw_result: dict, now: str) -> Outcome:
+    def apply(
+        self,
+        study: str,
+        client: str,
+        selection: Selection,
+        raw_result: dict,
+        now: str,
+        application_id: str | None = None,
+        pending_applications: set[str] | None = None,
+    ) -> Outcome:
         with self._store.lock:
-            return self._apply(study, client, selection, raw_result, now)
+            return self._apply(study, client, selection, raw_result, now, application_id, pending_applications)
 
-    def _apply(self, study, client, selection, raw_result, now) -> Outcome:
+    def _apply(self, study, client, selection, raw_result, now, application_id, pending_applications) -> Outcome:
         state = self._store.client_state(study, client)
         row = state["client"]
         parsed = parse_result(raw_result, selection)
@@ -136,5 +145,5 @@ class Reconciler:
             row.update(last_success_at=now, failures=0, health=HEALTH_DEGRADED if reason else HEALTH_OK)
         else:
             row.update(health=HEALTH_FAILED, failures=row["failures"] + 1)
-        self._store.commit(study, client, state)
+        self._store.commit_application(study, client, state, application_id, pending_applications)
         return Outcome.APPLIED

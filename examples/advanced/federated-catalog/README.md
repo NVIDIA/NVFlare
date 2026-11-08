@@ -122,3 +122,7 @@ For PostgreSQL and Unity Catalog OSS, see the
 Databricks Unity Catalog configuration and the REST metadata coverage limits.
 SQL databases use SQLAlchemy plus the relevant site's database driver; the
 recipe and workflow stay the same.
+
+The site images install the optional `nvflare[catalog]` dependencies (SQLAlchemy
+and PyArrow); network databases also require their SQLAlchemy driver. Their
+license/notice files are included from the repository's `3rdParty` directory.

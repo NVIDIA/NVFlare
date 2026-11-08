@@ -19,7 +19,6 @@ import os
 import queue
 import threading
 import time
-import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -38,7 +37,7 @@ from nvflare.app_common.fdn.catalog.common.payload import (
     parse_manifest,
 )
 from nvflare.app_common.fdn.catalog.common.schema import DEFAULT_LIMITS, ReadLimits
-from nvflare.app_common.fdn.catalog.server.artifacts import CatalogArtifacts, read_archived_manifest, redact_archive
+from nvflare.app_common.fdn.catalog.server.artifacts import CatalogArtifacts, read_archived_manifest, redact_download
 from nvflare.app_common.fdn.catalog.server.commands import CatalogCommandModule, NotReady
 from nvflare.app_common.fdn.catalog.server.controller import CatalogController
 from nvflare.app_common.fdn.catalog.server.fileio import write_atomically
@@ -80,9 +79,8 @@ class CatalogManager(FLComponent):
         self._stop = threading.Event()
         self._finished: queue.Queue = queue.Queue()  # ids of finished jobs, handled off the job runner's thread
         self._lock = threading.Lock()
-        self._result_lock = threading.Lock()  # serialize ingestion with legacy archive redaction on downloads
+        self._result_lock = threading.Lock()  # serialize parent inbox capture with ingestion
         self._pending: set[str] = set()  # launched jobs whose results still need processing; never blocks a read
-        self._applied_clients: dict[str, set[str]] = {}  # completed clients of a result being retried
         self._now = lambda: datetime.now(timezone.utc)
         if register_commands:
             self._register_commands()
@@ -112,7 +110,7 @@ class CatalogManager(FLComponent):
 
     @staticmethod
     def _catalog_study(meta) -> str | None:
-        return get_job_meta_study(meta) if isinstance(meta, dict) and meta.get(CATALOG_JOB_META) else None
+        return get_job_meta_study(meta) if isinstance(meta, dict) and meta.get(CATALOG_JOB_META) is True else None
 
     def _validate_catalog_job(self, job_id: str, meta: dict, server_name: str = SiteType.SERVER):
         """Only the built-in collector may receive a key; the catalog marker is not code authorization."""
@@ -188,12 +186,6 @@ class CatalogManager(FLComponent):
                 FLContextKey.JOB_BLOCK_REASON, "catalog job context could not be written", private=True, sticky=False
             )
 
-    def _event_job_meta(self, job_id: str, fl_ctx: FLContext):
-        meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-        if isinstance(meta, dict) and meta.get(JobMetaKey.JOB_ID.value) == job_id:
-            return meta
-        return self._job_meta(job_id, fl_ctx)
-
     def _take_back(self, fl_ctx: FLContext):
         """Capture the result privately, then remove both result and context before archiving for download."""
         with self._result_lock:
@@ -202,8 +194,6 @@ class CatalogManager(FLComponent):
     def _capture_result(self, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
         try:
-            if self._catalog_study(self._event_job_meta(job_id, fl_ctx)) is None:
-                return
             run_dir = self._workspace.get_run_dir(job_id)
             with self._lock:
                 keep = job_id in self._pending
@@ -217,30 +207,13 @@ class CatalogManager(FLComponent):
             )
 
     def _prepare_download(self, fl_ctx: FLContext):
-        """Scrub publications from older catalog archives before any download is prepared."""
-        with self._result_lock:
-            self._redact_download(fl_ctx)
-
-    def _redact_download(self, fl_ctx: FLContext):
-        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+        """Reserved catalog files never leave in a staged workspace, regardless of the job's marker."""
+        staged = fl_ctx.get_prop(FLContextKey.JOB_DOWNLOAD_FILES) or {}
+        path = staged.get(WORKSPACE)
+        if path is None:
+            return  # definition/meta-only downloads have no workspace to scrub
         try:
-            if self._catalog_study(self._event_job_meta(job_id, fl_ctx)) is None:
-                return
-            job_manager = self._engine.get_component(SystemComponents.JOB_MANAGER)
-            if WORKSPACE not in job_manager.list_components(job_id, fl_ctx):
-                return  # a job that never archived a workspace has nothing to redact
-            data = job_manager.get_storage_component(job_id, WORKSPACE, fl_ctx)
-            replacement = redact_archive(data)
-            if replacement is not None:
-                # Preserve a legacy result if completion and download arrive together.
-                with self._lock:
-                    pending = job_id in self._pending
-                if pending:
-                    try:
-                        self._artifacts.capture_archive(job_id, data, self._key)
-                    except (ValueError, TypeError, zipfile.BadZipFile):
-                        pass  # invalid results establish no publication; download reveals none
-                job_manager.save_workspace(job_id, replacement, fl_ctx)
+            redact_download(path)
         except Exception as e:
             fl_ctx.set_prop(
                 FLContextKey.JOB_BLOCK_REASON,
@@ -338,7 +311,6 @@ class CatalogManager(FLComponent):
                     manifest = self._read_manifest(data, job_id)
                     self._artifacts.capture_archive(job_id, data, self._key)
                 entries = parse_manifest(manifest)
-                recorded_progress = self._artifacts.applied_clients(job_id)
             except OSError as e:
                 if not isinstance(e, FileNotFoundError):
                     raise
@@ -348,31 +320,34 @@ class CatalogManager(FLComponent):
                 # No signed manifest says the job failed, not which site did: no site's health changes.
                 self.logger.warning(f"catalog job {job_id} left no usable result: {type(e).__name__}")
                 return
-            applied = self._applied_clients.setdefault(job_id, recorded_progress)
+            outstanding = self._artifacts.pending_jobs()
             for client, entry in entries.items():
-                if client in applied:
-                    continue
                 try:
                     outcome = None
                     if entry.rc == "OK" and entry.result is not None:
-                        outcome = self._reconciler.apply(study, client, Selection(entry.datasets), entry.result, now)
+                        outcome = self._reconciler.apply(
+                            study,
+                            client,
+                            Selection(entry.datasets),
+                            entry.result,
+                            now,
+                            application_id=job_id,
+                            pending_applications=outstanding,
+                        )
                     if outcome is None or outcome is Outcome.UNSUPPORTED:
                         reason = (
                             "UNSUPPORTED_RESULT"
                             if outcome is Outcome.UNSUPPORTED
                             else "NO_RESULT" if entry.rc == "OK" else entry.rc
                         )
-                        self._store.record_no_result(study, client, reason, now)
+                        self._store.record_no_result(
+                            study, client, reason, now, application_id=job_id, pending_applications=outstanding
+                        )
                 except OSError as e:
                     retry = True
                     self.logger.warning(f"catalog result for a client will be retried: {type(e).__name__}")
                 except Exception as e:
                     self.logger.warning(f"catalog result for a client could not be applied: {type(e).__name__}")
-                else:
-                    applied.add(client)
-                    self._artifacts.save_progress(job_id, applied)
-            # Also flush cached progress if a prior progress write failed after the store commit.
-            self._artifacts.save_progress(job_id, applied)
         except Exception as e:
             retry = True
             self.logger.warning(f"catalog result application will be retried: {type(e).__name__}")
@@ -385,7 +360,6 @@ class CatalogManager(FLComponent):
                     retry = True
                     self.logger.warning(f"catalog job cleanup failed: {type(e).__name__}")
             if not retry:
-                self._applied_clients.pop(job_id, None)
                 with self._lock:
                     self._pending.discard(job_id)
 

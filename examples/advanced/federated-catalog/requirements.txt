@@ -1,3 +1,1 @@
 nvflare>=2.10.0rc0,<2.11
-pyarrow>=14
-SQLAlchemy>=2.0,<3

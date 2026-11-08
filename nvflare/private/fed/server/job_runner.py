@@ -532,7 +532,6 @@ class JobRunner(FLComponent):
                             )
                         with engine.new_context() as completion_ctx:
                             completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, sticky=False)
-                            completion_ctx.set_prop(FLContextKey.JOB_META, job.meta, private=True, sticky=False)
                             finished_state = self._finished_job_states.get(job.job_id)
                             if finished_state is None:
                                 if job.run_aborted:

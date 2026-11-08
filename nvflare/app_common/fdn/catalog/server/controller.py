@@ -19,12 +19,13 @@ import os
 import threading
 
 from nvflare.apis.controller_spec import ClientTask, Task
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.fdn.catalog.common.payload import (
+    CATALOG_JOB_META,
     CATALOG_READ_KEY,
     CONTEXT_FILE,
     MANIFEST_FILE,
@@ -78,17 +79,26 @@ class CatalogController(Controller):
         self._lock = threading.Lock()
 
     def start_controller(self, fl_ctx: FLContext):
+        self._key = None
+        self._manifest_path = None
+        meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+        if not isinstance(meta, dict) or meta.get(CATALOG_JOB_META) is not True:
+            raise RuntimeError("catalog collection requires an admitted catalog job")
         workspace = fl_ctx.get_engine().get_workspace()
         self._job_id = fl_ctx.get_job_id()
         run_dir = workspace.get_run_dir(self._job_id)
-        self._manifest_path = os.path.join(run_dir, MANIFEST_FILE)
         self._load_context(os.path.join(run_dir, CONTEXT_FILE), fl_ctx)
+        if self._key is None:
+            raise RuntimeError("catalog collection requires the manager-issued signing context")
+        self._manifest_path = os.path.join(run_dir, MANIFEST_FILE)
         self._clients = sorted(c.name for c in self._engine.get_clients())
         unknown = sorted(set(self.datasets or {}) - set(self._clients))
         if unknown:
             self.log_warning(fl_ctx, f"datasets name sites that are not in this job and are ignored: {unknown}")
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
+        if self._key is None or self._manifest_path is None:
+            raise RuntimeError("catalog collection has not been admitted")
         log_progress(
             self.logger, f"\n  Federated catalog · {len(self._clients)} sites\n\n  Reading site-approved metadata…"
         )
@@ -127,15 +137,19 @@ class CatalogController(Controller):
         """What the server hands over in the job's own run directory, which every launcher exposes to the job: the
         key of this job and the dataset names the server holds. Remove this copy immediately; JobRunner also
         removes the parent copy before archiving when a container has its own workspace."""
+        self._key = None
+        self._previous_names = {}
         try:
             with open(path, encoding="utf-8") as f:
                 context = json.load(f)
             key = bytes.fromhex(context["key"])
+            if len(key) != 32:
+                raise ValueError("invalid catalog signing key")
             previous = {c: list(names) for c, names in context["previous"].items()}
             os.remove(path)  # only a file that was understood is removed; the server removes any other
             self._key, self._previous_names = key, previous
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
-            self.log_warning(fl_ctx, "no catalog context from the server; the result will not be applied")
+            self.log_warning(fl_ctx, "no valid catalog context from the server; collection is refused")
 
     def _wanted(self, client: str) -> list[str] | None:
         return (self.datasets or {}).get(client)
@@ -188,10 +202,12 @@ class CatalogController(Controller):
         log_progress(self.logger, f"  {name}: {message}")
 
     def _write_manifest(self):
+        if self._key is None or self._manifest_path is None or self._job_id is None:
+            return  # never emit unsigned publications, including during failed-start cleanup
         with self._lock:
             entries = {name: self._entries.get(name, ManifestEntry(ReturnCode.TIMEOUT, None)) for name in self._clients}
         manifest = build_manifest(entries)
-        mac = manifest_mac(self._key, self._job_id, manifest) if self._key else None
+        mac = manifest_mac(self._key, self._job_id, manifest)
         write_atomically(self._manifest_path, {"manifest": manifest, "mac": mac})
 
     def stop_controller(self, fl_ctx: FLContext):

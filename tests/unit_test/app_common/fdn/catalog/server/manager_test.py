@@ -17,7 +17,6 @@ import io
 import json
 import os
 import queue
-import threading
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,7 +47,7 @@ from nvflare.app_common.fdn.catalog.server.search import SearchQuery
 from nvflare.app_common.fdn.catalog.server.store import CatalogStore
 from nvflare.app_common.storages.filesystem_storage import _write_multi
 from nvflare.private.fed.server.job_runner import JobRunner
-from tests.timing_utils import ManualClock, ObservedLock, ThreadGroup
+from tests.timing_utils import ManualClock
 from tests.unit_test.app_common.fdn.catalog.helpers import LIMITS, make_catalog
 
 STUDY = "study1"
@@ -121,6 +120,7 @@ def mgr(tmp_path):
     )
     manager._workspace = SimpleNamespace(
         get_root_dir=lambda: str(tmp_path),
+        get_run_dir=lambda job_id: str(tmp_path / job_id),
         get_server_app_config_file_path=lambda _: str(config_file),
         get_app_custom_dir=lambda _: str(tmp_path / "server_custom"),
     )
@@ -391,9 +391,9 @@ class TestTakeBack:
         assert sorted(p.name for p in run_dir.iterdir()) == ["keep.json"]
         assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
 
-    def test_another_jobs_file_of_the_same_name_is_left_alone(self, mgr, tmp_path):
+    def test_reserved_private_files_are_removed_even_without_the_catalog_marker(self, mgr, tmp_path):
         run_dir, ctx = self.archive(mgr, tmp_path, "catalog_context.json", marker=False)
-        assert (run_dir / "catalog_context.json").exists() and ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+        assert not (run_dir / "catalog_context.json").exists() and ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
 
     def test_a_context_that_cannot_be_removed_blocks_the_archive(self, mgr, tmp_path, monkeypatch):
         def denied(path, **kwargs):
@@ -610,10 +610,10 @@ class TestIngest:
         pending(mgr, "j1", manifest(**{"site-a": ok_entry(), "site-b": ok_entry()}))
         real = mgr._reconciler.apply
 
-        def apply(study, client, *args):
+        def apply(study, client, *args, **kwargs):
             if client == "site-a":
                 raise RuntimeError("disk full")
-            return real(study, client, *args)
+            return real(study, client, *args, **kwargs)
 
         monkeypatch.setattr(mgr._reconciler, "apply", apply)
         mgr._ingest("j1")
@@ -632,109 +632,81 @@ class TestEvents:
 
 
 class TestDownloads:
-    @pytest.mark.parametrize("status", ["SUBMITTED", "FINISHED:ABORTED", "FINISHED:FAILED_TO_RUN"])
-    def test_missing_workspace_does_not_block_definition_download(self, mgr, monkeypatch, status):
-        mgr.jobs.add("j1", status=status)
+    def staged(self, tmp_path, entries):
+        path = tmp_path / "workspace.zip"
+        with zipfile.ZipFile(path, "w") as archive:
+            for name, value in entries.items():
+                archive.writestr(name, value)
+        return path
 
-        def missing(*args):
-            raise StorageException("workspace absent")
-
-        monkeypatch.setattr(mgr.jobs, "get_storage_component", missing)
-        ctx = event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"})
-        assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
-
-    def test_an_existing_workspace_that_cannot_be_read_still_blocks_download(self, mgr, monkeypatch):
-        mgr.jobs.add("j1", manifest(**{"site-a": ok_entry()}))
-
-        def denied(*args):
-            raise StorageException("read denied")
-
-        monkeypatch.setattr(mgr.jobs, "get_storage_component", denied)
-        ctx = event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"})
-        assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
-
-    def test_concurrent_legacy_download_and_ingestion_apply_once_and_leave_no_private_copy(self, mgr, monkeypatch):
-        pending(mgr, "j1", manifest(**{"site-a": ok_entry()}), status="FINISHED:COMPLETED")
-        entered, release = threading.Event(), threading.Event()
-        observed = ObservedLock()
-        monkeypatch.setattr(mgr, "_result_lock", observed)
-        capture = mgr._artifacts.capture_archive
-        applications, download_contexts = [], []
-        apply = mgr._reconciler.apply
-
-        def gated_capture(*args):
-            capture(*args)
-            entered.set()
-            release.wait()
-
-        def record_apply(*args):
-            applications.append(args[1])
-            return apply(*args)
-
-        def download():
-            download_contexts.append(event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"}))
-
-        monkeypatch.setattr(mgr._artifacts, "capture_archive", gated_capture)
-        monkeypatch.setattr(mgr._reconciler, "apply", record_apply)
-        with ThreadGroup(release) as threads:
-            threads.start(download)
-            assert entered.wait(3.0), "download never captured the legacy result"
-            threads.start(mgr._ingest, "j1")
-            assert observed.blocked.wait(3.0), "ingestion did not wait for the archive replacement"
-            assert not applications
-            release.set()
-        assert download_contexts[0].get_prop(FLContextKey.JOB_BLOCK_REASON) is None
-        assert applications == ["site-a"] and not mgr._pending
-        assert mgr.search(STUDY, SearchQuery()).total == 1
-        with pytest.raises(FileNotFoundError):
-            mgr._artifacts.read("j1", KEY)
-        with zipfile.ZipFile(io.BytesIO(mgr.jobs.workspaces["j1"])) as zf:
-            assert not zf.namelist()
-
-    @pytest.mark.parametrize("prefix", ["", "j1/"])
-    def test_legacy_archives_hide_publications_and_context_but_preserve_logs(self, mgr, prefix):
-        mgr.jobs.add("j1", manifest(**{"site-a": ok_entry(owner="old-owner")}), status="FINISHED:COMPLETED")
-        if prefix:
-            publication = mgr.jobs.manifests.pop("j1")
-            mgr.jobs.raw["j1"] = {
-                prefix
-                + "catalog_results.json": json.dumps(
-                    {"manifest": publication, "mac": manifest_mac(job_key(KEY, "j1"), "j1", publication)}
-                )
-            }
-        mgr.jobs.raw.setdefault("j1", {}).update(
-            {
-                prefix + "catalog_context.json": "secret",
-                prefix + "catalog_results.json.tmp": "partial metadata",
-                "log.txt": "safe",
-            }
+    def prepare(self, mgr, path=None):
+        return event(
+            mgr,
+            EventType.BEFORE_JOB_DOWNLOAD,
+            **{
+                FLContextKey.CURRENT_JOB_ID: "j1",
+                FLContextKey.JOB_DOWNLOAD_FILES: {} if path is None else {"workspace": str(path)},
+            },
         )
-        ctx = event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"})
-        assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
-        with zipfile.ZipFile(io.BytesIO(mgr.jobs.workspaces["j1"])) as zf:
-            assert zf.namelist() == ["log.txt"] and zf.read("log.txt") == b"safe"
 
-    def test_download_before_ingestion_preserves_the_private_result(self, mgr):
+    def test_definition_only_download_has_no_workspace_to_scrub(self, mgr):
+        assert self.prepare(mgr).get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+
+    @pytest.mark.parametrize("prefix", ["", "j1/", "j1/app_server/"])
+    def test_unmarked_unsigned_archives_hide_private_files_without_modifying_store(self, mgr, tmp_path, prefix):
+        path = self.staged(
+            tmp_path,
+            {
+                prefix + "catalog_results.json": '{"unsigned": "site-private-metadata"}',
+                prefix + "catalog_context.json": "key",
+                prefix + "catalog_results.json.tmp": "partial",
+                "log.txt": "safe log",
+            },
+        )
+        stored = path.read_bytes()
+        mgr.jobs.workspaces["j1"] = stored
+        ctx = self.prepare(mgr, path)
+        assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+        assert mgr.jobs.workspaces["j1"] == stored
+        with zipfile.ZipFile(path) as archive:
+            assert archive.namelist() == ["log.txt"] and archive.read("log.txt") == b"safe log"
+
+    def test_redacting_a_download_does_not_consume_the_pending_result(self, mgr, tmp_path):
         pending(mgr, "j1", manifest(**{"site-a": ok_entry()}), status="FINISHED:COMPLETED")
-        ctx = event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"})
-        assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+        path = tmp_path / "workspace.zip"
+        path.write_bytes(mgr.jobs.get_storage_component("j1", "workspace", None))
+        assert self.prepare(mgr, path).get_prop(FLContextKey.JOB_BLOCK_REASON) is None
         mgr._ingest("j1")
-        assert mgr.search(STUDY, SearchQuery()).total == 1
+        assert mgr.search(STUDY, SearchQuery()).total == 1 and not mgr._pending
+        with zipfile.ZipFile(path) as archive:
+            assert not archive.namelist()
 
-    def test_an_archive_that_cannot_be_rewritten_blocks_the_download(self, mgr, monkeypatch):
-        mgr.jobs.add("j1", manifest(**{"site-a": ok_entry()}), status="FINISHED:COMPLETED")
+    def test_normal_model_archive_is_not_read_or_rewritten(self, mgr, tmp_path, monkeypatch):
+        path = self.staged(tmp_path, {"model.pt": "model bytes"})
+        before = path.read_bytes()
 
-        def denied(*args):
-            raise OSError("store unavailable")
+        def forbidden(*args, **kwargs):
+            raise AssertionError("normal archive member content was read")
 
-        monkeypatch.setattr(mgr.jobs, "save_workspace", denied)
-        ctx = event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"})
-        assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
+        monkeypatch.setattr(zipfile.ZipFile, "open", forbidden)
+        assert self.prepare(mgr, path).get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+        assert path.read_bytes() == before
 
-    def test_other_jobs_are_left_unchanged(self, mgr):
-        mgr.jobs.add("j1", marker=False)
-        event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"})
-        assert not mgr.jobs.workspaces
+    def test_redaction_failure_blocks_transfer_and_leaves_no_partial_copy(self, mgr, tmp_path, monkeypatch):
+        from nvflare.app_common.fdn.catalog.server import artifacts
+
+        path = self.staged(tmp_path, {"catalog_results.json": "private", "log.txt": "safe"})
+        before = path.read_bytes()
+
+        def full(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(artifacts.shutil, "copyfileobj", full)
+        assert self.prepare(mgr, path).get_prop(FLContextKey.JOB_BLOCK_REASON)
+        assert path.read_bytes() == before and sorted(p.name for p in tmp_path.iterdir() if p.is_file()) == [
+            "config_fed_server.json",
+            "workspace.zip",
+        ]
 
 
 class TestRecoveryLoop:
@@ -848,7 +820,7 @@ def test_failed_commit_retains_result_and_retries_only_unapplied_clients(mgr, tm
     assert mgr.search(STUDY, SearchQuery()).total == 0
     assert state(mgr, "site-a")["datasets"]["clinical-research"]["withheld"]
     assert state(mgr, "site-b")["client"]["failures"] == 1
-    assert not inbox.exists() and not mgr._pending and not mgr._applied_clients
+    assert not inbox.exists() and not mgr._pending
 
 
 def test_unreadable_private_result_is_retried_after_storage_recovers(mgr, monkeypatch):
@@ -906,7 +878,7 @@ def test_restart_applies_retained_terminal_result_and_skips_committed_clients(mg
 
     monkeypatch.setattr(mgr._store, "commit", unavailable)
     mgr._ingest("j1")
-    assert mgr._artifacts.applied_clients("j1") == {"site-b"}
+    assert state(mgr, "site-b")["applied_jobs"] == ["j1"]
     assert state(mgr, "site-b")["client"]["failures"] == 1
     monkeypatch.setattr(manager_module, "manifest_key", lambda _: KEY)
     restarted = CatalogManager(register_commands=False)
@@ -939,78 +911,55 @@ def test_job_cannot_supply_parent_application_progress(mgr, tmp_path):
         )
     )
     mgr._artifacts.capture("j1", str(run_dir), True)
-    assert mgr._artifacts.applied_clients("j1") == set()
     mgr._ingest("j1")
     assert mgr.search(STUDY, SearchQuery()).total == 1
 
 
-def test_corrupt_parent_progress_is_discarded_without_holding_other_reads(mgr, tmp_path):
-    pending(mgr, "bad", status="FINISHED:COMPLETED")
-    publication = manifest(**{"site-a": ok_entry()})
-    inbox = tmp_path / "fdn/catalog-results/bad.json"
-    inbox.write_text(
-        json.dumps(
-            {
-                "manifest": publication,
-                "mac": manifest_mac(job_key(KEY, "bad"), "bad", publication),
-                "applied_clients": "corrupt",
-            }
-        )
-    )
-    mgr._ingest("bad")
-    assert not mgr._pending and not inbox.exists() and not mgr._store._clients
-    pending(mgr, "good", manifest(**{"site-a": ok_entry()}))
-    mgr._ingest("good")
-    assert mgr.search(STUDY, SearchQuery()).total == 1
+def test_crash_after_state_commit_is_idempotent_on_restart(mgr, tmp_path, monkeypatch):
+    pending(mgr, "j1", manifest(**{"site-a": ManifestEntry("TIMEOUT", None)}), status="FINISHED:COMPLETED")
+    commit = mgr._store.commit
 
+    def committed_then_lost_ack(*args):
+        commit(*args)
+        raise OSError("crash after durable state replacement")
 
-def test_legacy_download_does_not_replace_saved_parent_progress(mgr):
-    pending(
-        mgr,
-        "j1",
-        manifest(
-            **{
-                "site-a": ok_entry(),
-                "site-b": ManifestEntry("TIMEOUT", None),
-            }
-        ),
-        status="FINISHED:COMPLETED",
-    )
-    archive = mgr.jobs.get_storage_component("j1", "workspace", None)
-    mgr._artifacts.capture_archive("j1", archive, KEY)
-    mgr._artifacts.save_progress("j1", {"site-b"})
-    ctx = event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"})
-    assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
-    assert mgr._artifacts.applied_clients("j1") == {"site-b"}
-
-
-def test_client_progress_is_durable_before_the_next_client_is_applied(mgr, monkeypatch):
-    pending(
-        mgr,
-        "j1",
-        manifest(
-            **{
-                "site-a": ManifestEntry("TIMEOUT", None),
-                "site-b": ManifestEntry("TIMEOUT", None),
-            }
-        ),
-        status="FINISHED:COMPLETED",
-    )
-    original = mgr._store.record_no_result
-    observed = []
-
-    def record(study, client, reason, now):
-        if client == "site-b":
-            observed.append(mgr._artifacts.applied_clients("j1"))
-            raise OSError("failure before the next client commits")
-        original(study, client, reason, now)
-
-    monkeypatch.setattr(mgr._store, "record_no_result", record)
+    monkeypatch.setattr(mgr._store, "commit", committed_then_lost_ack)
     mgr._ingest("j1")
-    assert observed == [{"site-a"}]
     assert state(mgr, "site-a")["client"]["failures"] == 1
-    assert mgr._artifacts.applied_clients("j1") == {"site-a"}
-    monkeypatch.setattr(mgr._store, "record_no_result", original)
+    assert state(mgr, "site-a")["applied_jobs"] == ["j1"]
+    monkeypatch.setattr(manager_module, "manifest_key", lambda _: KEY)
+    restarted = CatalogManager(register_commands=False)
+    try:
+        restarted._start(SimpleNamespace(get_engine=lambda: mgr._engine, get_workspace=lambda: mgr._workspace))
+        restarted._recover_finished()
+        assert state(restarted, "site-a")["client"]["failures"] == 1
+        assert not restarted._pending and not restarted._artifacts.pending_jobs()
+    finally:
+        restarted._stop.set()
+        if restarted._thread is not None:
+            restarted._thread.join(timeout=3)
+            assert not restarted._thread.is_alive()
+
+
+def test_receipt_survives_an_overlapping_update_before_retry(mgr, monkeypatch):
+    pending(mgr, "old", manifest(**{"site-a": ManifestEntry("TIMEOUT", None)}), status="FINISHED:COMPLETED")
+    commit = mgr._store.commit
+
+    def committed_then_lost_ack(*args):
+        commit(*args)
+        raise OSError("lost acknowledgement")
+
+    monkeypatch.setattr(mgr._store, "commit", committed_then_lost_ack)
+    mgr._ingest("old")
+    monkeypatch.setattr(mgr._store, "commit", commit)
+    pending(mgr, "new", manifest(**{"site-a": ok_entry(display_name="latest")}))
+    mgr._ingest("new")
+    # Lose all process-local job state, as on restart, then replay the old inbox.
+    mgr._store = CatalogStore(mgr._workspace.get_root_dir())
+    mgr._reconciler = Reconciler(mgr._store, LIMITS)
     mgr._recover_finished()
-    assert state(mgr, "site-a")["client"]["failures"] == 1
-    assert state(mgr, "site-b")["client"]["failures"] == 1
+    assert state(mgr, "site-a")["client"]["failures"] == 0
+    assert state(mgr, "site-a")["datasets"]["clinical-research"]["metadata"]["display_name"] == "latest"
+    pending(mgr, "next", manifest(**{"site-a": ok_entry()}))
+    mgr._ingest("next")
+    assert state(mgr, "site-a")["applied_jobs"] == ["next"]

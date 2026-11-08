@@ -7,6 +7,10 @@
 !versioneer.py
 !README.md
 !LICENSE
+!3rdParty/
+!3rdParty/sqlalchemy.LICENSE.txt
+!3rdParty/pyarrow.LICENSE.txt
+!3rdParty/pyarrow.NOTICE.txt
 !MANIFEST.in
 !examples/
 !examples/advanced/

@@ -96,6 +96,9 @@ def _valid_state(state) -> bool:
             state["format"] == FORMAT
             and set(state["client"]) == set(_CLIENT_FIELDS)
             and all(_is(state["client"][k], *types) for k, types in _CLIENT_FIELDS.items())
+            and isinstance(state.get("applied_jobs", []), list)
+            and all(isinstance(job, str) and job for job in state.get("applied_jobs", []))
+            and len(set(state.get("applied_jobs", []))) == len(state.get("applied_jobs", []))
             and isinstance(state["datasets"], dict)
             and all(_valid_row(n, r) for n, r in state["datasets"].items())
         )
@@ -213,16 +216,42 @@ class CatalogStore:
             self._clients[(study, client)] = copy.deepcopy(state)
             self._entry_cache.pop((study, client), None)
 
+    def commit_application(
+        self,
+        study: str,
+        client: str,
+        state: dict,
+        application_id: str | None = None,
+        pending_applications: set[str] | None = None,
+    ) -> None:
+        """Commit the update and its delivery receipt together; retain receipts only for outstanding results."""
+        with self.lock:
+            if application_id is not None:
+                receipts = set(self.client_state(study, client).get("applied_jobs", []))
+                if application_id in receipts:
+                    return
+                outstanding = receipts if pending_applications is None else pending_applications
+                state["applied_jobs"] = sorted((receipts & outstanding) | {application_id})
+            self.commit(study, client, state)
+
     # ---- results -------------------------------------------------------------------------------------------
 
-    def record_no_result(self, study: str, client: str, reason: str, now: str) -> None:
+    def record_no_result(
+        self,
+        study: str,
+        client: str,
+        reason: str,
+        now: str,
+        application_id: str | None = None,
+        pending_applications: set[str] | None = None,
+    ) -> None:
         """A job that produced nothing for the client. Availability and check times are untouched."""
         with self.lock:
             state = self.client_state(study, client)
             c = state["client"]
             c.update(health="FAILED", reason_code=reason, failures=c["failures"] + 1)
             c.update(last_attempt_at=now)
-            self.commit(study, client, state)
+            self.commit_application(study, client, state, application_id, pending_applications)
 
     # ---- queries -------------------------------------------------------------------------------------------
 

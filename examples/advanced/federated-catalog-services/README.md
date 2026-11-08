@@ -230,3 +230,7 @@ No Spark server or client is needed for this metadata-only path.
 | Changed `project.yml` | `python example_setup.py --workspace <path> --reprovision` |
 | `nvflare catalog show` reports the service is not ready | The server is still starting. Wait a few seconds, or check `nvflare system status`. |
 | Start over with fresh demo data | `docker compose down --volumes`, then repeat the quick start. |
+
+The site images install the optional `nvflare[catalog]` dependencies (SQLAlchemy
+and PyArrow); network databases also require their SQLAlchemy driver. Their
+license/notice files are included from the repository's `3rdParty` directory.

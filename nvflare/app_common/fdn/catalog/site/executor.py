@@ -28,6 +28,7 @@ from nvflare.apis.job_launcher_spec import JOB_LAUNCHER_MODE_ENV
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.fdn.catalog.common.payload import (
+    CATALOG_JOB_META,
     CATALOG_READ_KEY,
     TASK_NAME,
     PayloadError,
@@ -135,6 +136,9 @@ class CatalogExecutor(Executor):
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name != TASK_NAME:
             return make_reply(ReturnCode.TASK_UNKNOWN)
+        meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+        if not isinstance(meta, dict) or meta.get(CATALOG_JOB_META) is not True:
+            return make_reply(ReturnCode.TASK_UNSUPPORTED)
         return self._reply(self._read(shareable, fl_ctx, abort_signal))
 
     @staticmethod
