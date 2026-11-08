@@ -85,7 +85,7 @@ class DuckDBConnector(CatalogConnector):
                     continue
                 if kind == "PRIMARY KEY":
                     keys[table] = list(constrained)
-                # The v1 model only represents relationships within this dataset's selected tables.
+                # The model only represents relationships within this dataset's selected tables.
                 elif referred in keys:
                     relationships[table].append(
                         {

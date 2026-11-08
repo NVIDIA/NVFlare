@@ -104,7 +104,7 @@ class SQLConnector(CatalogConnector):
                     primary_key = inspector.get_pk_constraint(name, schema=schema).get("constrained_columns", [])
                     relationships = []
                     for foreign_key in inspector.get_foreign_keys(name, schema=schema):
-                        # The v1 model only represents relationships within this
+                        # The model only represents relationships within this
                         # dataset; do not name an unselected or external table.
                         if foreign_key["referred_schema"] not in (None, effective_schema):
                             continue
