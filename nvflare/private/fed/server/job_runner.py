@@ -642,10 +642,15 @@ class JobRunner(FLComponent):
         archive, which is retried like any failed archive."""
         fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.JOB_BLOCK_REASON, None, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.EXCEPTIONS, None, private=True, sticky=False)
         fl_ctx.get_engine().fire_event(EventType.BEFORE_JOB_WORKSPACE_ARCHIVE, fl_ctx)
         reason = fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
         if reason:
             raise RuntimeError(f"workspace archive blocked: {reason}")
+        # fire_event swallows handler errors into EXCEPTIONS; a failed cleanup must not publish private files
+        exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
+        if exceptions:
+            raise RuntimeError(f"workspace archive cleanup failed: {sorted(exceptions)}")
 
     def _save_workspace(
         self, fl_ctx: FLContext, finished_state: _FinishedJobState | None = None, job_id: str | None = None

@@ -438,6 +438,21 @@ def test_a_component_that_cannot_clean_the_run_dir_blocks_the_archive(tmp_path):
     job_manager.save_workspace.assert_not_called()
 
 
+def test_a_failed_cleanup_callback_blocks_the_archive(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
+
+    def fire_event(event_type, ctx):
+        # fire_event records handler errors in EXCEPTIONS instead of raising
+        ctx.set_prop(FLContextKey.EXCEPTIONS, {"cleaner": RuntimeError("boom")}, private=True, sticky=False)
+
+    fl_ctx.get_engine().fire_event.side_effect = fire_event
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        runner._save_workspace(fl_ctx)
+    job_manager.save_workspace.assert_not_called()
+
+
 def test_save_workspace_tolerates_source_disappearing_during_cleanup(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()

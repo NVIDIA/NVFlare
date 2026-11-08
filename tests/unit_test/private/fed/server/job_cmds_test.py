@@ -2181,6 +2181,69 @@ def test_artifact_policy_runs_on_staged_files_before_transfer(monkeypatch, tmp_p
     assert module.download_folder.called is not blocked
 
 
+def test_failed_download_callback_blocks_transfer(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine(
+        [
+            _FakeListedJob(
+                {JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED.value}
+            )
+        ]
+    )
+
+    def failing_callback(event_type, fl_ctx):
+        # mimic fire_event_to_components: the handler error is recorded, not raised
+        fl_ctx.set_prop(FLContextKey.EXCEPTIONS, {"cleaner": RuntimeError("boom")}, private=True, sticky=False)
+
+    engine.fire_event = failing_callback
+    engine.job_def_manager.get_storage_for_download = MagicMock()
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.DOWNLOAD_DIR: str(tmp_path)})
+    module = JobCommandModule()
+    module.download_folder = MagicMock()
+    module._clean_up_download = MagicMock()
+
+    module.download_job(conn, ["download_job", "job-1"])
+
+    assert conn.errors
+    module._clean_up_download.assert_called_once()
+    module.download_folder.assert_not_called()
+
+
+def test_download_staging_copies_symlinked_originals(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine(
+        [
+            _FakeListedJob(
+                {JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED.value}
+            )
+        ]
+    )
+    store = tmp_path / "store"
+    store.mkdir()
+    original = store / "meta.json"
+    original.write_text("original")
+
+    def stage(job_id, download_dir, ct, file_name, fl_ctx):
+        dest = Path(download_dir) / job_id / file_name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.symlink_to(original)
+
+    def redact(event_type, fl_ctx):
+        staged = fl_ctx.get_prop(FLContextKey.JOB_DOWNLOAD_FILES)
+        assert not os.path.islink(staged["meta"])
+        Path(staged["meta"]).write_text("redacted")
+
+    engine.fire_event = redact
+    engine.job_def_manager.get_storage_for_download = stage
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.DOWNLOAD_DIR: str(tmp_path / "dl")})
+    module = JobCommandModule()
+    module.download_folder = MagicMock()
+
+    module.download_job(conn, ["download_job", "job-1"])
+
+    assert original.read_text() == "original"
+
+
 def test_get_job_log_returns_server_log(monkeypatch, tmp_path):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
 
