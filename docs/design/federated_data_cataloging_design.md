@@ -2,8 +2,6 @@
 
 **Status:** Proposed implementation design
 **Date:** November 1, 2026
-**Parent:** Federated Data Network Engineering Design
-**Requirements:** Federated Data Network Feature Requirements, CAT-01 through CAT-07
 
 ## 1. Purpose and assumptions
 
