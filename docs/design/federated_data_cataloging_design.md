@@ -21,7 +21,56 @@ Use FLARE's existing concepts:
 
 The first release publishes one site-approved metadata view for the participating users of a Study. It does not introduce a separate audience identity or membership registry. The site's Study policy may withhold fields or the entire dataset from that shared view. Metadata requiring different user-specific views is withheld from the shared index until a separately qualified use of existing user authorization supports it. Catalog visibility never grants access to source records.
 
+### 1.1 Architecture at a glance
+
+A catalog read is an ordinary FLARE job. A server component applies its result to a per-client catalog store, and search reads only that store.
+
+**Figure 1. Where each part runs.** Sites decide what leaves them; the server never reads a source.
+
+```mermaid
+flowchart LR
+    subgraph User["Participating user"]
+        CLI["nvflare catalog read, show<br/>or python job.py"]
+    end
+    subgraph Server["FLARE server"]
+        JR["Job runner<br/>existing"]
+        JOB["CatalogController<br/>runs inside the catalog job"]
+        MGR["CatalogManager<br/>hands over, captures, applies"]
+        STORE[("Catalog store<br/>one file per study and client")]
+        CMD["Catalog commands<br/>search and status"]
+    end
+    subgraph Site["Each site"]
+        EXE["CatalogExecutor"]
+        POL["catalog_site.json and<br/>catalog_policy.json<br/>owned by the site"]
+        CON["Connectors<br/>parquet, csv, sql, unity-catalog"]
+        SRC[("Mounted Study datasets<br/>metadata only")]
+    end
+    CLI -- "submit the catalog job" --> JR
+    JR -- "launch and archive hooks" --> MGR
+    JR -- "starts" --> JOB
+    JOB -- "task with optional dataset names" --> EXE
+    EXE -- "reads" --> POL
+    EXE --> CON
+    CON -- "schema and structure only" --> SRC
+    EXE -- "approved catalogs, withheld, unavailable" --> JOB
+    JOB -- "signed manifest" --> MGR
+    MGR -- "reconcile and commit" --> STORE
+    CLI -- "search and status" --> CMD
+    CMD -- "reads" --> STORE
+```
+
+| To understand | Read |
+| --- | --- |
+| One read from request to stored result | Section 2, then Section 6.1 |
+| What a site reads and publishes | Sections 3.1 to 3.4 and 5 |
+| What is stored, and how updates are merged | Sections 4 and 6.2 |
+| Concurrency, crash recovery, integrity | Section 6.3 |
+| Health, CLI and search | Sections 6.4 to 7 |
+| Choices not taken | Section 10 |
+
 ## 2. Read flow
+
+**Figure 2. One read, end to end.**
 
 ```mermaid
 sequenceDiagram
@@ -45,6 +94,31 @@ The job is the catalog recipe a user runs with `python job.py` or `nvflare catal
 The pilot uses bounded full metadata reads per dataset. There is no incremental checkpoint protocol, progress object, or client-side comparison with previous catalog versions. The server already stores previous versions and owns comparison. Incremental reads are deferred until measured cost justifies a provider-qualified extension.
 
 ## 3. Components and data
+
+**Figure 3. What the site executor does for one task.** Every outcome is one of `catalog`, `withheld` or `unavailable`, or a whole-read failure.
+
+```mermaid
+flowchart TD
+    T["Task from CatalogController"] --> K{"Job marked as a catalog read?"}
+    K -- no --> X["TASK_UNSUPPORTED"]
+    K -- yes --> P["Parse the bounded task payload"]
+    P --> M["Resolve the Study's dataset mounts"]
+    M -- "mounts or runtime file unusable" --> F1["FAILED, INTERNAL<br/>selected indexed names withheld"]
+    M --> C["Load catalog_site.json and<br/>the Study's catalog_policy.json"]
+    C -- "missing or invalid" --> F2["FAILED, POLICY_UNAVAILABLE<br/>selected indexed names withheld"]
+    C --> L["For each selected dataset"]
+    L --> S{"Policy shares it?"}
+    S -- no --> W["withheld, only if previously indexed"]
+    S -- yes --> R["Connector reads that one dataset"]
+    R --> Q["Apply policy, check limits, validate"]
+    Q -- accepted --> O["catalog"]
+    Q -- "source or validation error" --> U["unavailable"]
+    Q -- "budget or cancellation" --> V["withheld if previously indexed<br/>reason code set"]
+    O --> Z["Shareable with catalogs, withheld and unavailable"]
+    W --> Z
+    U --> Z
+    V --> Z
+```
 
 ### 3.1 Existing Study dataset bindings
 
@@ -213,6 +287,30 @@ class CatalogConnector(ABC):
     def __init__(self, datasets: dict[str, Path]): ...
     def read_catalog(self, dataset: str, limits: ReadLimits, options: dict | None = None) -> CatalogInfo: ...   # options: the dataset's non-secret settings from catalog_site.json
     def close(self) -> None: ...
+```
+
+**Figure 4. Connectors.** The executor builds one connector for each configured connector the Study's datasets use, and asks it for one dataset at a time.
+
+```mermaid
+classDiagram
+    class CatalogConnector {
+        <<interface>>
+        source
+        read_catalog(dataset, limits, options)
+        close()
+    }
+    CatalogConnector <|-- ParquetConnector
+    CatalogConnector <|-- CSVConnector
+    CatalogConnector <|-- SQLConnector
+    CatalogConnector <|-- UnityCatalogConnector
+    class CatalogReader {
+        <<optional extension>>
+        read_catalog(dataset, limits, options)
+    }
+    class ReaderConnector {
+        used when CatalogRecipe(catalog_reader=...) is set
+    }
+    ReaderConnector ..> CatalogReader : delegates to
 ```
 
 The handler iterates selected datasets, catches a safe `ConnectorError` per call, and continues with the others. Each successful call returns one complete dataset catalog. A corrupt footer, missing mount, denied source access or invalid metadata affects only that dataset and produces an explicit `unavailable` name. No incomplete table/column inventory is returned for that dataset. A budget/cancellation error without source-validity evidence changes read health only. Enforce each dataset deadline before the job's response deadline, leaving time to return completed results; qualify cancellation of blocking provider calls under the actual launcher. Keep the reader's failure state isolated: discard/reopen a failed connection when needed before reading the next dataset.
@@ -451,6 +549,30 @@ Keep availability separate from permission to show metadata:
 | Site configuration, connector or dataset listing fails before any dataset is read | Publish nothing; return `FAILED` (`POLICY_UNAVAILABLE` for the site configuration, `INTERNAL` otherwise) and withhold every selected previously indexed name, because the permitted view cannot be rebuilt and a narrowed policy cannot be applied to what the server holds |
 | A connector returns a catalog for a different dataset than the one asked for | That dataset is `unavailable`; the catalog is discarded |
 
+**Figure 5. What search can see of one dataset entry.** Availability and permission are separate; withheld always wins.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Visible: permitted catalog accepted
+    Visible --> Visible: a newer permitted catalog replaces it
+    Visible --> Unavailable: checked and found unavailable
+    Visible --> Withheld: withheld, replacement rejected, or skipped for budget
+    Unavailable --> Visible: permitted catalog accepted
+    Unavailable --> Withheld: withheld
+    Withheld --> Visible: permitted catalog accepted
+    Withheld --> Withheld: reported unavailable, suppression kept
+    note right of Visible
+        Full metadata in search
+    end note
+    note right of Unavailable
+        Client, dataset, available and
+        last_checked_at only
+    end note
+    note right of Withheld
+        Never in search, facets or counts
+    end note
+```
+
 The handler evaluates installed policy; no person reviews each read. It returns no incomplete metadata for a failed dataset, while healthy datasets remain independent. Before releasing metadata, apply the common current policy and remove dangling references created by its exclusions. A failed/absent dataset does not prove source deletion; a reused binding name still requires live operation validation.
 
 Search may show unavailable entries by name and availability only, never their metadata, and never withheld entries. Existing Study permissions apply in both availability states. Operations revalidate live bindings, structure and rights; a cached flag grants no authority.
@@ -462,6 +584,31 @@ A job that returns no result (timeout, disconnect, deferral) cannot report a pol
 ### 6.1 Catalog read job
 
 A catalog read is a standard Job Recipe, `CatalogRecipe`, run against a deployment with the standard server `CatalogManager` enabled (the Study comes from the environment). One job covers every site of the Study. `CatalogController` sends the optional dataset selection, and the names the server already holds for each site, in a normal FLARE task. The job carries a meta property, `fdn_catalog_read`, that tells the server to apply its result. `CatalogExecutor` resolves existing mounts, reads metadata, preserves approved declarations, applies the Study policy and returns a `Shareable`.
+
+**Figure 6. Life of one catalog job on the server.** The job's own files are never trusted; the server applies its own captured copy.
+
+```mermaid
+sequenceDiagram
+    participant R as Job runner
+    participant M as CatalogManager
+    participant J as CatalogController in the job
+    participant S as Sites
+    participant I as Parent-only inbox
+    participant T as Catalog store
+    R->>M: BEFORE_JOB_LAUNCH
+    Note over M: Check the job configuration, write catalog_context.json with the job key and indexed names, add the job to the pending list
+    R->>J: start the job
+    J->>S: task
+    S-->>J: results
+    J->>J: write the signed catalog_results.json in the run directory
+    R->>M: JOB_COMPLETED or JOB_ABORTED, queued
+    R->>M: BEFORE_JOB_WORKSPACE_ARCHIVE
+    M->>I: copy the manifest and remove reserved files from the run directory
+    Note over M: The manager thread verifies the signature, using the inbox copy or the stored archive if the inbox copy is absent
+    M->>T: apply each client, one atomic write per client
+    M->>I: discard the copy, remove the context file, drop the job from the pending list
+    Note over M: A storage error keeps the copy and the pending entry, and a 30 second sweep retries
+```
 
 A catalog read uses the execute task only. No service socket, prepare/commit protocol or separate catalog Study is required by the mounted-data pilot. Cancellation uses normal job/task lifecycle handling and must stop the reader; an interrupted result supplies no metadata, and the manager updates job health without claiming a dataset check.
 
@@ -481,17 +628,105 @@ For each client's terminal result:
 4. Compare accepted metadata under Section 3.3, assign catalog/schema versions, store the reported observation, and commit all accepted changes atomically. The last applied valid update for each dataset wins; no update leaves its state unchanged. Duplicate completion notifications do not apply a job twice.
 5. Invalidate affected search caches/cursors; check suppression in the authoritative store until convergence. Report last attempt, last source-check time and health separately. One client's failure does not block another's results.
 
+**Figure 7. Applying one client's result.** Restrictions are applied first so they survive a failure anywhere else in the result.
+
+```mermaid
+flowchart TD
+    R["Client result from a verified manifest"] --> A["1. Apply withheld names<br/>entry hidden, metadata kept"]
+    A --> B["2. For each catalog, validate it"]
+    B -- invalid --> C["Entry withheld<br/>versions and availability kept"]
+    B -- valid --> D{"Digest changed?"}
+    D -- yes --> E["catalog_version plus 1<br/>schema_version plus 1 only if tables or resources changed<br/>published_at set"]
+    D -- no --> F["Versions and metadata kept"]
+    E --> G["available, not withheld, last_checked_at set"]
+    F --> G
+    C --> H["3. Names reported unavailable<br/>available false, last_checked_at set"]
+    G --> H
+    H --> I["4. Set client health"]
+    I --> J["5. One atomic write of the client state and the job's receipt"]
+```
+
 The server stores catalog publications and read health under `(study, client, dataset)`. Existing `StudyRegistryService` remains the authority for Study membership; these rows do not define membership. There are no source checkpoints, catalog-scope rows, absence counters or duplicate identity registries in the pilot.
 
 ### 6.3 Concurrent reads and recovery
 
 Catalog reads may run concurrently, including reads of the same Study. The manager does not hold a Study or refuse an overlapping submission or launch. It applies valid dataset updates as results are processed, using the last-applied-update rule in Section 4.2. A brief store lock keeps each client update atomic; it is not held while sites read their sources. Launch order and observation timestamps do not determine which update wins.
 
+**Figure 8. Locks on the server.** `_result_lock` is taken before `_lock` or `store.lock`; `_lock` and `store.lock` are never held together. Only the archive hook of another job can wait on a catalog apply.
+
+```mermaid
+flowchart LR
+    subgraph Threads["Threads"]
+        T1["Job runner thread<br/>BEFORE_JOB_LAUNCH"]
+        T2["Completion thread<br/>BEFORE_JOB_WORKSPACE_ARCHIVE<br/>and queueing finished job ids"]
+        T3["catalog-manager thread<br/>apply, and a 30 second sweep"]
+        T4["Admin command thread<br/>search and status"]
+        T5["Job process<br/>controller"]
+    end
+    subgraph Locks["Locks"]
+        L1["_lock<br/>pending job ids, brief"]
+        L2["_result_lock<br/>capture against apply"]
+        L3["store.lock, re-entrant<br/>client state and search cache"]
+        L4["controller _lock and _write_lock<br/>replies and the manifest file"]
+    end
+    T1 --> L1
+    T2 --> L2
+    T3 --> L2
+    T3 -- "briefly, inside" --> L1
+    T3 -- "per client commit" --> L3
+    T4 -- "snapshot only" --> L3
+    T5 --> L4
+```
+
 Each launched job receives its own signing key and a snapshot of the dataset names currently indexed for its sites. That snapshot helps a site report withdrawals for previously published names; it does not reserve the Study or define a complete replacement of its index. Absence from a result is not a deletion or withdrawal. Only explicit dataset updates change the catalog.
 
 The manager tracks pending results by job ID for completion handling and retry, never to exclude another read. Transient result-read or catalog-write failures retain that job's result for the recovery sweep while other jobs continue. Each client-state mutation and its application receipt (the job ID) are written in one atomic JSON replacement. Replaying that application is a no-op, including failure counters, even after restart or an overlapping job update. Receipts are pruned on subsequent client updates to the outstanding result-inbox IDs plus the current application; they are delivery bookkeeping, not job ordering or catalog history. There is no separate checkpoint file or process-local applied-client cache. A retried update follows the same last-applied rule. A missing or invalid signed manifest changes no site's health; an explicit missing-site entry in a valid manifest records that site's failure. Result and context cleanup remain independent.
 
 Restart restores both running catalog jobs and retained result-inbox files, including terminal jobs whose application failed. Recovery sweeps also discover retained files after transient filesystem failures. Each result is signature-checked again before application; malformed or deleted-job results are discarded without changing site health. A crash after a client commit but before inbox cleanup is safe: the persisted receipt prevents that client from being applied again. The receipt does not impose ordering on distinct jobs; the last new valid dataset update applied still wins. Source reads never mutate the source dataset.
+
+**Figure 9. Persistence.** A client's file is always the old version or the new one, and a file that cannot be read is kept, not overwritten.
+
+```mermaid
+flowchart LR
+    subgraph Write["Commit one client update, store.lock held"]
+        W1["Copy the client state"] --> W2["Edit the copy and add the job's receipt"]
+        W2 --> W3["Write file.tmp<br/>owner only, fsync"]
+        W3 --> W4["Rename over the client file<br/>atomic"]
+        W4 --> W5["Swap the in-memory state<br/>drop its search cache"]
+    end
+    subgraph Load["Load at server start"]
+        S1["Each study and client file"] --> S2["Remove leftover tmp files"]
+        S2 --> S3{"Valid?"}
+        S3 -- yes --> S4["Use as stored"]
+        S3 -- no --> S5["Rename to .damaged<br/>log an error, start empty"]
+    end
+```
+
+**Figure 10. How a result is trusted.** Only the server holds the master key; a job gets one derived key and the server verifies what it signs.
+
+```mermaid
+flowchart LR
+    ADM["Admission check<br/>built-in controller only, no custom server code"]
+    MK[("Server master key<br/>never leaves the server")]
+    JK["Job key<br/>derived from the master key and the job id"]
+    CTX["catalog_context.json<br/>in the run directory"]
+    CTRL["CatalogController<br/>signs the manifest with the job key"]
+    MF["catalog_results.json<br/>manifest and MAC"]
+    INB["Parent-only inbox"]
+    VER["Server re-derives the key<br/>and verifies the MAC"]
+    OK["Apply"]
+    NO["Discard and log<br/>no site health change"]
+    ADM -.-> JK
+    MK --> JK
+    JK --> CTX
+    CTX --> CTRL
+    CTRL --> MF
+    MF -- "copied at archive" --> INB
+    INB --> VER
+    MK --> VER
+    VER -- valid --> OK
+    VER -- "missing or invalid" --> NO
+```
 
 Only a manifest signed with the job-specific key is applied. Before issuing a key or indexed-name snapshot, the manager validates the deployed server JSON: exactly the built-in `CatalogController`, its supported data arguments, optional standard log receivers, and no custom server code, BYOC entrypoint or server task filters. The gate explicitly rejects effective job-supplied server launcher settings, including defaults, server overrides and legacy nested resource specifications, independently of the BYOC flag. Use site-owned server images and execution settings. Client-only launcher settings and portable server resource requests remain supported. Custom client-side readers remain supported. The default component allowlist alone is not this admission check: authorized BYOC bypasses that allowlist. Site-installed code and principals otherwise authorized to execute arbitrary code on the server remain trusted; a job-local signature does not isolate catalog data from other code with the same filesystem privileges. Existing server BYOC permissions must therefore be limited to trusted principals. Any member authorized to submit jobs to the Study may request a catalog read, while sites publish only what their own policy permits. An offline site retains its last known metadata, and transport failures change health without establishing a new dataset observation.
 
@@ -500,6 +735,26 @@ Only a manifest signed with the job-specific key is applied. Before issuing a ke
 A read is `CatalogRecipe` run with `python job.py` or `nvflare catalog read`; there is no special refresh command and the server has no built-in scheduler. An operator who wants regular reads runs one of them from an external scheduler such as cron. Reads may overlap; the last applied dataset update wins (Section 6.3). The server never deletes a finished catalog job, so the job store grows by one job per read.
 
 The site may enforce execution time windows in its approved handler. The site has no persistent read state in this design. Dataset reuse across Studies may require an operator-configured shared resource limit; FDN does not invent another source identity to infer it. A site's hard quota must be enforced by its existing launcher/storage/resource controls.
+
+**Figure 11. Client health.** Stale is computed from the last successful read; it is not a stored state.
+
+```mermaid
+stateDiagram-v2
+    [*] --> UNKNOWN
+    UNKNOWN --> OK: successful read
+    UNKNOWN --> DEGRADED: success with a reason code or some catalogs rejected
+    UNKNOWN --> FAILED: failed or no result
+    OK --> DEGRADED
+    OK --> FAILED
+    DEGRADED --> OK
+    DEGRADED --> FAILED
+    FAILED --> OK
+    FAILED --> DEGRADED
+    note right of FAILED
+        failures count up on each failed read
+        and reset on any successful read
+    end note
+```
 
 Show the latest check time and report clients whose checks fail or are deferred. Report any entries hidden because a read skipped them for budget (`reason_code: BUDGET_EXCEEDED`), per client, so operators raise the budget instead of living with hidden entries. A catalog is as current as its last read. There is no catalog validity lifetime to renew.
 
@@ -510,6 +765,23 @@ Show the latest check time and report clients whose checks fail or are deferred.
 ## 7. Search and execution handoff
 
 Catalog search queries the stored catalogs of the active FLARE Study across its authorized clients. It checks the current user's existing Study authorization on every call and page. Filter before ranking, facets, totals and pagination. Search caches and cursors bind the Study and relevant existing user permissions; never merge metadata across Studies into a broader view.
+
+**Figure 12. How a search is answered.** Search never reads a source; it works on a snapshot of the stored catalogs.
+
+```mermaid
+flowchart TD
+    Q["Search request"] --> AZ["Check the user's Study authorization"]
+    AZ --> SN["Snapshot the Study's client states"]
+    SN --> CA{"Cached entries for this exact client state?"}
+    CA -- yes --> EN["Reuse them"]
+    CA -- no --> BU["Build entries<br/>skip withheld, no metadata for unavailable<br/>drop withheld datasets from lineage"]
+    EN --> FI["Filter"]
+    BU --> FI
+    FI --> SO["Order by client, then dataset"]
+    SO --> FA["Facets and total over all matches"]
+    FA --> CU["Continue after the cursor key<br/>cursor must match the filters"]
+    CU --> PG["One page and the next cursor"]
+```
 
 Results expose the existing client and dataset name, permitted metadata, version, source observation, publication time, `available` and `last_checked_at`. An unavailable entry shows only client, dataset name, `available` and `last_checked_at`, not its metadata, and metadata filters do not match it; an available-only filter is optional. Withheld entries and their history are excluded regardless of availability. Apply Study authorization and suppression before all filters and projections. Shared lineage projections also omit references to currently withheld entries. Detailed failures remain in authorized diagnostics.
 
@@ -551,3 +823,21 @@ Required checks:
 5. Set full-read budgets and refresh frequency from measured workload costs, and confirm that no budget skips entries in normal operation.
 6. Decide whether the no-result exposure window (Section 5) is acceptable for the pilot Study; if not, plan the administrative Study access restriction as its mitigation.
 7. Defer incremental checkpoints, absence inference and per-user metadata projections until requirements and measurements justify their contracts.
+
+## 10. Alternatives and trade-offs
+
+Each row names a choice this design makes, what was set aside, and what the choice costs.
+
+| Area | Chosen | Set aside | Trade-off |
+| --- | --- | --- | --- |
+| How a read runs | A standard FLARE job per read | The manager calling sites directly, with no job | The job reuses authentication, task delivery, launchers, abort and logs. It costs a job per read in the job store, and a hand-over of the result from the job to the server (Sections 6.1 and 6.3). |
+| Refreshing | On demand, with an external scheduler such as cron | A scheduler built into the manager | A built-in scheduler adds state, lifecycle code and recovery cases for something operators already have. The cost is no built-in periodic refresh; health reports stale sites instead. |
+| Overlapping reads | Allowed; the last applied update wins | One read per Study at a time, refusing a second | A hold is simple to reason about. Overlap needs no hold or refusal. Its cost is that a slow read from before a policy change can be applied after a newer one and briefly restore what was hidden, until the next read (Section 6.3). |
+| Trusting a job's result | A per-job signed manifest, and admission that allows only the built-in controller | Reading the job's output as is, or relying on the component allow-list alone | The allow-list does not stop authorized custom server code, so it is not an admission check (Section 6.3). The cost is the key hand-over, the parent-only inbox and the archive and download hooks. |
+| What a read returns | Full bounded metadata for each selected dataset | Incremental reads with checkpoints | Full reads need no checkpoint protocol or client-side comparison, and the server already owns versions. The cost is more source reads, so incremental reads wait for measured cost (Section 2). |
+| Missing from a result | Absence changes nothing; only explicit updates do | Treating absence as deletion | A failed or partial read cannot erase a catalog. The cost is that a removed dataset stays until a site reports it unavailable or withheld (Section 5). |
+| Who sees what | One shared view of each Study, filtered by the site's policy | A different view per user | There is no audience registry or per-user caching to build. Metadata that would need user-specific views is withheld until existing authorization can support it (Section 1). |
+| An offline site | Keep its last metadata and report it stale | Expiry, or live confirmation, of stored metadata | There is no validity lifetime to renew. The cost is that a policy change cannot reach a site that is offline, so stored metadata stays visible until the next read. Where that is not acceptable, an administrator restricts the Study's access (Section 5). |
+| A site file that cannot be used | The read fails and the selected, previously indexed names are withheld | Treating the site as having no datasets | A silent empty result would look like a healthy site with nothing to share. The cost is that one bad file stops that site's read until it is fixed (Section 5). |
+| Unity Catalog and SQL sources | Unity Catalog metadata through its REST API, and SQL through SQLAlchemy reflection | Spark or a vendor SDK | No heavy dependency on the site. The cost is that only what these interfaces expose can be cataloged (Section 3.2). |
+| A policy name that matches nothing | Logged at the site; it excludes nothing (Section 8) | Failing closed, withholding the whole dataset | Failing closed would withhold a dataset over a typo or a stale entry. The cost is that a mistyped exclusion excludes nothing, and the site log is the only signal. |
