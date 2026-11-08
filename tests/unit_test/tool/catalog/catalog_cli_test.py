@@ -100,7 +100,7 @@ class TestArguments:
 class TestRead:
     def test_read_options_have_defaults(self):
         args = parse("read")
-        assert (args.study, args.sites, args.only, args.timeout, args.no_wait) == ("default", None, None, 300, False)
+        assert (args.study, args.sites, args.datasets, args.timeout, args.no_wait) == ("default", None, [], 300, False)
 
     def test_csv(self):
         assert catalog_cli._csv("a, b,a,") == ["a", "b"]
@@ -111,7 +111,7 @@ class TestRead:
 
     def test_dataset_options_become_a_per_site_mapping(self):
         assert catalog_cli._dataset_map(["a:x", "a:y", "b:z", "a:x"]) == {"a": ["x", "y"], "b": ["z"]}
-        assert catalog_cli._dataset_map(None) is None
+        assert catalog_cli._dataset_map([]) is None
         for bad in ("x", ":x", "a:"):
             with pytest.raises(ValueError):
                 catalog_cli._dataset_map([bad])
@@ -125,7 +125,7 @@ class TestRead:
             return session
 
         monkeypatch.setattr(cli_session, "new_cli_session_for_args", connect)
-        args = parse("read", "--study", "s", "--sites", "a,b", "--only", "a:x")
+        args = parse("read", "--study", "s", "--sites", "a,b", "a:x")
         data = catalog_cli._submit_read(args)
         assert data == {"study": "s", "job_id": "job-1", "status": "FINISHED:COMPLETED"}
         assert seen["study"] == "s" and seen["args"] is args
@@ -149,7 +149,7 @@ class TestRead:
         assert data == {"study": "s", "job_id": "job-1"}
         assert session.closed and not session.submitted["path"].exists()
 
-    @pytest.mark.parametrize("argv", [("--sites", ","), ("--only", "bad"), ("--timeout", "0")])
+    @pytest.mark.parametrize("argv", [("--sites", ","), ("bad",), ("--timeout", "0")])
     def test_invalid_scope_is_rejected_before_connecting(self, monkeypatch, argv):
         def unexpected(**kw):
             pytest.fail("invalid arguments must not connect")

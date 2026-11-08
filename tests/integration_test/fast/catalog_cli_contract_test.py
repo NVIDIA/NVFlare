@@ -106,7 +106,7 @@ def test_schema_needs_no_kit_and_describes_machine_contract(command, mutating):
         assert "--wait" not in args
 
 
-@pytest.mark.parametrize("args", [("--sites", ","), ("--timeout", "0"), ("--only", "bad"), ("--unknown",), ("--wait",)])
+@pytest.mark.parametrize("args", [("--sites", ","), ("--timeout", "0"), ("bad",), ("--unknown",), ("--wait",)])
 def test_bad_arguments_have_one_error_envelope_and_exit_four(args):
     proc = invoke("catalog", "read", *args, "--format", "json")
     assert proc.returncode == 4, (proc.stdout, proc.stderr)

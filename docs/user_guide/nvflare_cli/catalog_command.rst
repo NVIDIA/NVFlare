@@ -19,14 +19,15 @@ authorization policy without a separate membership requirement.
 .. code-block:: bash
 
    nvflare catalog read --study oncology
-   nvflare catalog read --study oncology --sites site-a --only site-a:clinical
+   nvflare catalog read --study oncology --sites site-a site-a:clinical
    nvflare catalog read --study oncology --no-wait
    nvflare catalog show --study oncology
    nvflare catalog show --study oncology --site site-a --dataset clinical
 
 ``--sites`` selects the sites to read; omitting it selects every site in the
-study. Repeat ``--only SITE:NAME`` to select datasets at a site. A selected site
-without an ``--only`` entry reads everything its policy shares. ``--timeout``
+study. Name datasets as ``SITE:NAME`` arguments after the options, for example
+``site-a:clinical``, to read only those datasets. A selected site with no
+``SITE:NAME`` entry reads everything its policy shares. ``--timeout``
 sets the task timeout per site in seconds (default 300).
 
 ``read`` waits for the job to finish by default and reports its actual terminal

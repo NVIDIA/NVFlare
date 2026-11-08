@@ -277,12 +277,12 @@ def _csv(value: str | None) -> list[str] | None:
 
 
 def _dataset_map(values: list[str] | None) -> dict[str, list[str]] | None:
-    """Repeated --only SITE:NAME options as {site: [names]}."""
+    """Positional SITE:NAME arguments as {site: [names]}."""
     result: dict[str, list[str]] = {}
     for value in values or []:
         site, sep, name = value.partition(":")
         if not (sep and site.strip() and name.strip()):
-            raise ValueError(f"--only must be SITE:NAME, got '{value}'")
+            raise ValueError(f"dataset must be SITE:NAME, got '{value}'")
         names = result.setdefault(site.strip(), [])
         if name.strip() not in names:
             names.append(name.strip())
@@ -295,7 +295,7 @@ def _submit_read(args) -> dict:
 
     name = "catalog_read"
     recipe = CatalogRecipe(
-        name=name, sites=_csv(args.sites), datasets=_dataset_map(args.only), task_timeout_s=args.timeout
+        name=name, sites=_csv(args.sites), datasets=_dataset_map(args.datasets), task_timeout_s=args.timeout
     )
     with TemporaryDirectory(prefix="nvflare-catalog-") as job_root:
         recipe.export(job_root)
@@ -358,7 +358,7 @@ def cmd_read(args):
         "nvflare catalog read",
         [
             "nvflare catalog read --study lung-cancer",
-            "nvflare catalog read --sites site-a,site-b --only site-a:omop",
+            "nvflare catalog read --sites site-a,site-b site-a:omop",
             "nvflare catalog read --study lung-cancer --no-wait --format json",
         ],
         sys.argv[1:],
@@ -390,11 +390,10 @@ def _define_catalog_subcommands(parser):
     p.add_argument("--study", default=DEFAULT_STUDY, help="study to read")
     p.add_argument("--sites", default=None, help="comma-separated sites to read (default: every site of the study)")
     p.add_argument(
-        "--only",
-        action="append",
-        default=None,
+        "datasets",
+        nargs="*",
         metavar="SITE:NAME",
-        help="read only this dataset at that site; repeatable. A site with none reads all it shares",
+        help="read only these datasets, each as SITE:NAME. A site with none listed reads all it shares",
     )
     p.add_argument("--timeout", type=int, default=300, help="seconds to wait for each site (default: 300)")
     p.add_argument(
