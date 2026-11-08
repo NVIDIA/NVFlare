@@ -400,7 +400,7 @@ The manager updates this view as each client's result is reconciled under Sectio
 
 ### 4.2 Comparison and versions
 
-**Last applied update wins.** Each successful read returns permitted complete metadata per dataset. For each `(study, client, dataset)`, the last valid update the server applies determines the current state, regardless of job submission time, launch time or source observation time. Reads may overlap within the same Study. A complete catalog replaces that entry; an explicit withdrawal hides it; a later permitted catalog may publish it again. A dataset with no update in a result is unchanged. The manager compares accepted metadata with the current entry to detect changes; no job-order timestamps or generation counters are needed.
+**Last applied update wins.** Each successful read returns permitted complete metadata per dataset. For each `(study, client, dataset)`, the last valid update the server applies determines the current state, regardless of job submission time, launch time or source observation time. Reads may overlap within the same Study, so a slow read that started under an older site policy can be applied after a newer one and briefly restore what the newer policy hid; the next read restores the newer policy. A complete catalog replaces that entry; an explicit withdrawal hides it; a later permitted catalog may publish it again. A dataset with no update in a result is unchanged. The manager compares accepted metadata with the current entry to detect changes; no job-order timestamps or generation counters are needed.
 
 | Dimension | Rule |
 | --- | --- |

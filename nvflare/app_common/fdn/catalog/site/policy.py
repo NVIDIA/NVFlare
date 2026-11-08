@@ -163,6 +163,8 @@ def apply_policy(rule: DatasetRule, catalog: CatalogInfo, installed_ops: set[str
         if t.name not in removed_tables
     }
     _warn_unmatched(rule, catalog, removed_tables)
+    removed_folded = {n.casefold() for n in removed_tables}
+    removed_columns_folded = {t.casefold(): c for t, c in removed_columns.items()}
 
     tables = []
     for t in catalog.tables:
@@ -173,8 +175,8 @@ def apply_policy(rule: DatasetRule, catalog: CatalogInfo, installed_ops: set[str
             r
             for r in t.relationships
             if not (set(r.columns) & gone)
-            and r.target_table not in removed_tables
-            and not (set(r.target_columns) & removed_columns.get(r.target_table, set()))
+            and r.target_table.casefold() not in removed_folded
+            and not (set(r.target_columns) & removed_columns_folded.get(r.target_table.casefold(), set()))
         )
         tables.append(
             TableInfo(

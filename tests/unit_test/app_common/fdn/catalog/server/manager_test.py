@@ -861,6 +861,19 @@ def test_ordinary_job_uses_supplied_metadata_without_an_extra_store_lookup(mgr, 
     assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
 
 
+def test_a_download_of_a_job_with_no_stored_workspace_is_not_refused(mgr, tmp_path):
+    ctx = event(
+        mgr,
+        EventType.BEFORE_JOB_DOWNLOAD,
+        **{
+            FLContextKey.CURRENT_JOB_ID: "aborted",
+            FLContextKey.JOB_META: {"job_id": "aborted", "study": STUDY},
+            FLContextKey.JOB_DOWNLOAD_FILES: {"workspace": str(tmp_path / "aborted" / "workspace.zip")},
+        },
+    )
+    assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+
+
 def test_restart_applies_retained_terminal_result_and_skips_committed_clients(mgr, tmp_path, monkeypatch):
     seed(mgr)
     pending(

@@ -120,6 +120,16 @@ class TestApplyPolicy:
         view = apply_policy(rule, make_catalog(), set())
         assert next(t for t in view.tables if t.name == "visit").relationships == ()
 
+    def test_a_relationship_target_is_matched_without_regard_to_case(self):
+        visit = TableInfo(
+            "visit",
+            (ColumnInfo("person_id", "int"),),
+            relationships=(Relationship(("person_id",), "PERSON", ("person_id",)),),
+        )
+        catalog = make_catalog(tables=(make_catalog().tables[0], visit))
+        view = apply_policy(DatasetRule(share=True, exclude_tables=frozenset({"person"})), catalog, set())
+        assert next(t for t in view.tables if t.name == "visit").relationships == ()
+
     def test_unrelated_broken_reference_is_kept_for_validation(self):
         broken = TableInfo("t", (ColumnInfo("a", "int"),), relationships=(Relationship(("a",), "missing", ("x",)),))
         view = apply_policy(DatasetRule(share=True), make_catalog(tables=(broken,)), set())

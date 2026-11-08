@@ -78,6 +78,18 @@ class TestManifest:
         assert failed.status == ResultStatus.FAILED and failed.reason_code == "INTERNAL"
         assert failed.withheld == ("private",) and failed.unavailable == ("missing",)
 
+    def test_the_manifest_is_written_by_one_writer_at_a_time(self, tmp_path, monkeypatch):
+        from nvflare.app_common.fdn.catalog.server import controller as controller_module
+
+        controller = make_controller(tmp_path)
+        controller._key, controller._job_id = b"k" * 32, "job-1"
+        held = []
+        monkeypatch.setattr(
+            controller_module, "write_atomically", lambda *a: held.append(controller._write_lock.locked())
+        )
+        controller._write_manifest()
+        assert held == [True]
+
     def test_missing_clients_are_timeouts(self, tmp_path):
         controller = make_controller(tmp_path)
         controller._record(client_task("site-a", reply(ReturnCode.OK, {"status": "OK"})), None)

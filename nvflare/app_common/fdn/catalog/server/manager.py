@@ -212,8 +212,8 @@ class CatalogManager(FLComponent):
         """Reserved catalog files never leave in a staged workspace, regardless of the job's marker."""
         staged = fl_ctx.get_prop(FLContextKey.JOB_DOWNLOAD_FILES) or {}
         path = staged.get(WORKSPACE)
-        if path is None:
-            return  # definition/meta-only downloads have no workspace to scrub
+        if path is None or not os.path.exists(path):
+            return  # no workspace archive was stored (an aborted job, or its archive failed): nothing to scrub
         try:
             redact_download(path)
         except Exception as e:

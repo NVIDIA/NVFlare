@@ -77,6 +77,7 @@ class CatalogController(Controller):
         self._clients: list[str] = []
         self._entries: dict[str, ManifestEntry] = {}
         self._lock = threading.Lock()
+        self._write_lock = threading.Lock()
 
     def start_controller(self, fl_ctx: FLContext):
         self._key = None
@@ -204,11 +205,14 @@ class CatalogController(Controller):
     def _write_manifest(self):
         if self._key is None or self._manifest_path is None or self._job_id is None:
             return  # never emit unsigned publications, including during failed-start cleanup
-        with self._lock:
-            entries = {name: self._entries.get(name, ManifestEntry(ReturnCode.TIMEOUT, None)) for name in self._clients}
-        manifest = build_manifest(entries)
-        mac = manifest_mac(self._key, self._job_id, manifest)
-        write_atomically(self._manifest_path, {"manifest": manifest, "mac": mac})
+        with self._write_lock:  # control_flow and stop_controller can both write; they share one temporary file
+            with self._lock:
+                entries = {
+                    name: self._entries.get(name, ManifestEntry(ReturnCode.TIMEOUT, None)) for name in self._clients
+                }
+            manifest = build_manifest(entries)
+            mac = manifest_mac(self._key, self._job_id, manifest)
+            write_atomically(self._manifest_path, {"manifest": manifest, "mac": mac})
 
     def stop_controller(self, fl_ctx: FLContext):
         if self._manifest_path is not None:
