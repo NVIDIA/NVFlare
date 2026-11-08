@@ -45,14 +45,14 @@ for container/source startup; `nvflare system status` checks FLARE registration.
 [example_setup.py](example_setup.py) runs these standard steps and prints each
 command and its output as it goes, so you can repeat them by hand or reuse them
 in your own deployment. It invokes the `nvflare` executable from your active
-environment; it does not call Python provisioning or kit-management APIs. Rerunning it keeps existing kits, other server components and other
-`.env` settings.
+environment; it does not call Python provisioning or kit-management APIs. Rerunning it reuses existing kits, reinstalls the example server resources, and
+writes the one-line Compose `.env` file again.
 
 | Step | Command or file | What it sets up |
 | --- | --- | --- |
 | 1 | `nvflare provision -p project.yml -w <workspace>` | A startup kit (certificates, configuration, start scripts) for the server, each site and the admin, as described in [project.yml](project.yml). |
 | 2 | `nvflare config add catalog-admin@nvidia.com <kit> --force`, then `nvflare config use catalog-admin@nvidia.com` | Registers the admin kit as the active identity for `nvflare job`, `nvflare catalog` and `nvflare system`. The admin kit stays on your computer and is never mounted in a container. |
-| 3 | Write `SERVER_RESOURCES_JSON` to `<server kit>/local/resources.json` | The script contains a complete JSON configuration showing the standard server services and CatalogManager, as an operator would author the file. |
+| 3 | Install [config/server/resources.json](config/server/resources.json) as `<server kit>/local/resources.json` | This complete deployment file declares the standard server services and CatalogManager. |
 | 4 | `CATALOG_KITS=<kits>` in `.env` | Tells `docker compose` which kits to mount; each container mounts only its own. |
 
 Setup finishes with `nvflare config list`, showing the registered admin kits.
@@ -67,15 +67,20 @@ you also want fresh demo data/state.
 | Configuration | Supplied by | Purpose |
 | --- | --- | --- |
 | [project.yml](project.yml) | `nvflare provision` | Defines participants, endpoints, certificate host names and startup kits. |
-| Server `local/resources.json` | Setup writes the complete JSON template for a new kit | Defines the standard server services and the long-lived `CatalogManager`. |
+| Server `local/resources.json` | Setup installs [config/server/resources.json](config/server/resources.json) | Defines the standard server services and the long-lived `CatalogManager`. |
 | Client `/fdn/policy/catalog_site.json` | Read-only Compose mount from `config/<site>/catalog_site.json` | Maps Study and dataset names to the site's connector and source. |
 | Client `/fdn/policy/default/catalog_policy.json` | Read-only Compose mount from `config/<site>/catalog_policy.json` | Authorizes publication and filters the shared metadata. |
 
-The setup script contains the complete server resources JSON as a readable string
-and loads it with `json.loads` before writing `local/resources.json`. It uses the
-built-in default component allowlist with enforcement enabled. Existing resources
-are kept; if they do not enable CatalogManager, setup asks you to update that
-configuration using the template as a reference. It does not alter component lists.
+[config/server/resources.json](config/server/resources.json) is the server deployment
+configuration. CatalogManager is declared directly in its `components` list;
+setup simply loads and installs the file. Edit this source file to customize the
+example deployment. Rerunning setup replaces the kit's `local/resources.json`
+with this configuration. The built-in default component allowlist remains enforced.
+
+Step 4 writes a one-line `.env` file containing `CATALOG_KITS`, just as you would
+create for Docker Compose after provisioning. Setup replaces this example-owned
+file on each run; keep additional environment overrides in your shell or add them
+to `.env` after setup.
 
 ### Network and workspace
 

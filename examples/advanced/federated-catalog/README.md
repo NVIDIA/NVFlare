@@ -49,16 +49,21 @@ server is still initializing.
 | Configuration | Purpose |
 | --- | --- |
 | [project.yml](project.yml) | Defines the server, sites, admin, endpoints and certificate host names. Sites use `nvflare-files-server:8102`; the host admin uses `localhost:8103`. |
-| Server kit `local/resources.json` | Setup writes the complete `SERVER_RESOURCES_JSON` template, including `CatalogManager` and the standard server services. Existing resources are preserved. It applies results, stores catalog versions and health, and handles catalog queries. |
+| Server kit `local/resources.json` | Setup installs [config/server/resources.json](config/server/resources.json), which declares `CatalogManager` and the standard server services. It applies results, stores catalog versions and health, and handles catalog queries. |
 | Site kit `local/study_runtime.yaml` | Setup copies the authored [site-1](config/site-1/study_runtime.yaml) and [site-2](config/site-2/study_runtime.yaml) runtime mappings into new kits, preserving existing operator files. These map logical dataset names to site-local paths. |
 | `config/<site>/catalog_site.json` | Selects the site's installed connectors. Compose mounts it read-only at `/fdn/policy/catalog_site.json`. |
 | `config/<site>/catalog_policy.json` | Defines what the site permits publishing for Study `default`. Compose mounts it read-only at `/fdn/policy/default/catalog_policy.json`. |
 
-The setup script contains the complete server resources JSON as a readable string
-and loads it with `json.loads` before writing `local/resources.json`. It uses the
-built-in default component allowlist with enforcement enabled. Existing resources
-are kept; if they do not enable CatalogManager, setup asks you to update that
-configuration using the template as a reference. It does not alter component lists.
+[config/server/resources.json](config/server/resources.json) is the server deployment
+configuration. CatalogManager is declared directly in its `components` list;
+setup simply loads and installs the file. Edit this source file to customize the
+example deployment. Rerunning setup replaces the kit's `local/resources.json`
+with this configuration. The built-in default component allowlist remains enforced.
+
+Step 4 writes a one-line `.env` file containing `CATALOG_KITS`, just as you would
+create for Docker Compose after provisioning. Setup replaces this example-owned
+file on each run; keep additional environment overrides in your shell or add them
+to `.env` after setup.
 
 The same standard `CatalogController` and `CatalogExecutor` serve every source.
 The recipe selects sites and optional dataset names; backend selection belongs
