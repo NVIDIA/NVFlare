@@ -644,7 +644,7 @@ def test_recipe_list_uses_generated_catalog_without_importing_recipe_modules(mon
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "ok"
-    assert len(payload["data"]) == 25
+    assert len(payload["data"]) == 26
 
 
 def test_recipe_show_uses_static_metadata_when_optional_dependency_is_missing(monkeypatch, capsys):

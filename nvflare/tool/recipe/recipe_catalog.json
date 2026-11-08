@@ -3,6 +3,87 @@
   "recipes": [
     {
       "summary": {
+        "name": "catalog",
+        "description": "Reads the dataset catalogs of the sites in a Study into the server's federated data catalog.",
+        "framework": "core",
+        "module": "nvflare.recipe.catalog",
+        "class": "CatalogRecipe",
+        "algorithm": null,
+        "aggregation": null,
+        "state_exchange": null,
+        "privacy": []
+      },
+      "detail": {
+        "name": "catalog",
+        "description": "Reads the dataset catalogs of the sites in a Study into the server's federated data catalog.",
+        "framework": "core",
+        "module": "nvflare.recipe.catalog",
+        "class": "CatalogRecipe",
+        "algorithm": null,
+        "aggregation": null,
+        "state_exchange": null,
+        "privacy": [],
+        "client_requirements": {
+          "state_exchange": null,
+          "requires_training_script": false,
+          "requires_per_site_config": false,
+          "requires_site_list": true,
+          "sites": {
+            "required": false,
+            "default": null
+          }
+        },
+        "framework_support": [
+          "framework_agnostic"
+        ],
+        "heterogeneity_support": [
+          "horizontal"
+        ],
+        "privacy_compatible": [],
+        "notes": [],
+        "parameters": [
+          {
+            "name": "name",
+            "type": "str",
+            "required": false,
+            "default": "catalog_read",
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "sites",
+            "type": "list[str] | None",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "datasets",
+            "type": "dict[str, list[str]] | None",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "task_timeout_s",
+            "type": "int",
+            "required": false,
+            "default": 300,
+            "kind": "positional_or_keyword"
+          },
+          {
+            "name": "catalog_reader",
+            "type": "CatalogReader | None",
+            "required": false,
+            "default": null,
+            "kind": "positional_or_keyword"
+          }
+        ],
+        "optional_dependencies": [],
+        "template_references": []
+      }
+    },
+    {
+      "summary": {
         "name": "cyclic",
         "description": "Cyclic federated learning recipe for sequential model training across clients.",
         "framework": "core",

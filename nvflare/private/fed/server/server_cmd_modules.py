@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.app_common.fdn.catalog.server.commands import CatalogCommandModule
 from nvflare.fuel.hci.reg import CommandModule
 from nvflare.private.fed.server.info_coll_cmd import InfoCollectorCommandModule
 from nvflare.private.fed.server.job_cmds import JobCommandModule
@@ -29,6 +30,7 @@ class ServerCommandModules:
         JobCommandModule(),
         StudyCommandModule(),
         InfoCollectorCommandModule(),
+        CatalogCommandModule(),
     ]
 
     @staticmethod
