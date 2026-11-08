@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 704" width="780" height="704" role="img" aria-labelledby="t d">
+<title id="t">What the site executor does for one task</title><desc id="d">Flow of one catalog task at a site: admission, mount resolution, policy loading, then per dataset the policy check and a connector read, ending in catalog, unavailable or withheld outcomes.</desc>
+<style>
+:root { --bg:#fbfcfb; --zone:#f0f3f2; --surface:#ffffff; --ink:#1b2422; --muted:#5a6764; --line:#b9c4c0;
+  --accent:#0b6e67; --accent-tint:#d7ece9; --warn:#8f5400; --warn-tint:#f5e5c6; }
+@media (prefers-color-scheme: dark) { :root { --bg:#14191a; --zone:#1b2322; --surface:#202928; --ink:#e3eae7;
+  --muted:#9aa7a3; --line:#3b4845; --accent:#55c7bb; --accent-tint:#17332f; --warn:#e5a94c; --warn-tint:#3a2f17; } }
+.bg { fill:var(--bg); }
+.zone { fill:var(--zone); stroke:var(--line); stroke-width:1.2; }
+.box { fill:var(--surface); stroke:var(--line); stroke-width:1.3; }
+.box.a { fill:var(--accent-tint); stroke:var(--accent); }
+.box.w { fill:var(--warn-tint); stroke:var(--warn); }
+.cell { fill:var(--surface); stroke:var(--line); stroke-width:1; }
+.cell.good { fill:var(--accent-tint); stroke:var(--accent); }
+.cell.warn { fill:var(--warn-tint); stroke:var(--warn); }
+text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; font-size:13px; fill:var(--ink); }
+.b { font-weight:600; }
+.m { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
+.l { font-size:12px; }
+.s { font-size:11.5px; }
+.muted { fill:var(--muted); }
+.warnt { fill:var(--warn); }
+.zt { font-size:12px; font-weight:600; letter-spacing:0.06em; fill:var(--muted); }
+.arr { fill:none; stroke:var(--muted); stroke-width:1.6; }
+.arr.d { stroke-dasharray:5 4; }
+.head { fill:var(--muted); }
+.brace { stroke:var(--muted); stroke-width:1.2; fill:none; }
+.band { fill:transparent; }
+.band.alt { fill:var(--zone); opacity:0.7; }
+.dot.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:2; }
+.dot.brief { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.bar.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:1.2; }
+.bar.brief { fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2; }
+.bar.none { fill:var(--surface); stroke:var(--line); stroke-width:1.2; stroke-dasharray:4 3; }
+</style>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker></defs>
+<rect class="bg" x="0" y="0" width="780" height="704" rx="10"/>
+<rect class="box a" x="30" y="10" width="330" height="46" rx="7"/>
+<text class="b" x="195.0" y="37.5" text-anchor="middle">Task from CatalogController</text>
+<polyline class="arr" points="195.0,56 195.0,72" marker-end="url(#ah)"/>
+<rect class="box" x="30" y="72" width="330" height="46" rx="7"/>
+<text class="" x="195.0" y="99.5" text-anchor="middle">Job marked as a catalog read?</text>
+<polyline class="arr" points="195.0,118 195.0,134" marker-end="url(#ah)"/>
+<polyline class="arr" points="360,95 480,95" marker-end="url(#ah)"/>
+<text class="l s" x="420.0" y="87" text-anchor="middle">no</text>
+<rect class="box" x="480" y="70" width="280" height="50" rx="7"/>
+<text class="b" x="620.0" y="99.5" text-anchor="middle">TASK_UNSUPPORTED</text>
+<rect class="box" x="30" y="134" width="330" height="46" rx="7"/>
+<text class="" x="195.0" y="161.5" text-anchor="middle">Parse the bounded task payload</text>
+<polyline class="arr" points="195.0,180 195.0,196" marker-end="url(#ah)"/>
+<rect class="box" x="30" y="196" width="330" height="46" rx="7"/>
+<text class="" x="195.0" y="223.5" text-anchor="middle">Resolve the Study's dataset mounts</text>
+<polyline class="arr" points="195.0,242 195.0,258" marker-end="url(#ah)"/>
+<polyline class="arr" points="360,219 480,219" marker-end="url(#ah)"/>
+<text class="l s" x="420.0" y="211" text-anchor="middle">unusable</text>
+<rect class="box w" x="480" y="194" width="280" height="50" rx="7"/>
+<text class="b" x="620.0" y="215.0" text-anchor="middle">FAILED, INTERNAL</text>
+<text class="" x="620.0" y="232.0" text-anchor="middle">selected indexed names withheld</text>
+<rect class="box" x="30" y="258" width="330" height="52" rx="7"/>
+<text class="" x="195.0" y="280.0" text-anchor="middle">Load catalog_site.json and the</text>
+<text class="" x="195.0" y="297.0" text-anchor="middle">Study's catalog_policy.json</text>
+<polyline class="arr" points="195.0,310 195.0,320" marker-end="url(#ah)"/>
+<polyline class="arr" points="360,281 480,281" marker-end="url(#ah)"/>
+<text class="l s" x="420.0" y="273" text-anchor="middle">missing or invalid</text>
+<rect class="box w" x="480" y="256" width="280" height="50" rx="7"/>
+<text class="b" x="620.0" y="277.0" text-anchor="middle">FAILED, POLICY_UNAVAILABLE</text>
+<text class="" x="620.0" y="294.0" text-anchor="middle">selected indexed names withheld</text>
+<rect class="box" x="30" y="320" width="330" height="52" rx="7"/>
+<text class="" x="195.0" y="342.0" text-anchor="middle">For each selected dataset: does</text>
+<text class="" x="195.0" y="359.0" text-anchor="middle">the policy share it?</text>
+<polyline class="arr" points="195.0,372 195.0,382" marker-end="url(#ah)"/>
+<polyline class="arr" points="360,343 480,343" marker-end="url(#ah)"/>
+<text class="l s" x="420.0" y="335" text-anchor="middle">no</text>
+<rect class="box w" x="480" y="318" width="280" height="50" rx="7"/>
+<text class="b" x="620.0" y="339.0" text-anchor="middle">withheld</text>
+<text class="" x="620.0" y="356.0" text-anchor="middle">only if previously indexed</text>
+<rect class="box" x="30" y="382" width="330" height="46" rx="7"/>
+<text class="" x="195.0" y="409.5" text-anchor="middle">Connector reads that one dataset</text>
+<polyline class="arr" points="195.0,428 195.0,444" marker-end="url(#ah)"/>
+<rect class="box" x="30" y="444" width="330" height="46" rx="7"/>
+<text class="" x="195.0" y="471.5" text-anchor="middle">Apply policy, check limits, validate</text>
+<rect class="box a" x="30" y="540" width="200" height="52" rx="7"/>
+<text class="b" x="130.0" y="570.5" text-anchor="middle">catalog</text>
+<rect class="box" x="260" y="540" width="200" height="52" rx="7"/>
+<text class="b" x="360.0" y="570.5" text-anchor="middle">unavailable</text>
+<rect class="box w" x="490" y="540" width="270" height="52" rx="7"/>
+<text class="b" x="625.0" y="562.0" text-anchor="middle">withheld if previously indexed</text>
+<text class="" x="625.0" y="579.0" text-anchor="middle">and a reason code is set</text>
+<polyline class="arr" points="195,490 195,508"/>
+<polyline class="arr" points="130,508 625,508"/>
+<polyline class="arr" points="130,508 130,540" marker-end="url(#ah)"/>
+<text class="l s" x="138" y="528" text-anchor="start">accepted</text>
+<polyline class="arr" points="360,508 360,540" marker-end="url(#ah)"/>
+<text class="l s" x="368" y="528" text-anchor="start">source or validation error</text>
+<polyline class="arr" points="625,508 625,540" marker-end="url(#ah)"/>
+<text class="l s" x="633" y="528" text-anchor="start">budget or cancellation</text>
+<rect class="box a" x="30" y="640" width="730" height="46" rx="7"/>
+<text class="b" x="395.0" y="659.0" text-anchor="middle">Shareable result</text>
+<text class="" x="395.0" y="676.0" text-anchor="middle">catalogs, withheld and unavailable</text>
+<polyline class="arr" points="130,592 130,640" marker-end="url(#ah)"/>
+<polyline class="arr" points="360,592 360,640" marker-end="url(#ah)"/>
+<polyline class="arr" points="625,592 625,640" marker-end="url(#ah)"/>
+</svg>

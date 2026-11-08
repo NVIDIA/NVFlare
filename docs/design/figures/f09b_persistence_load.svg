@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 216" width="960" height="216" role="img" aria-labelledby="t d">
+<title id="t">Loading client files at server start</title><desc id="d">Leftover temp files are removed, each client file is validated, and an unreadable one is kept aside as .damaged and replaced by an empty state.</desc>
+<style>
+:root { --bg:#fbfcfb; --zone:#f0f3f2; --surface:#ffffff; --ink:#1b2422; --muted:#5a6764; --line:#b9c4c0;
+  --accent:#0b6e67; --accent-tint:#d7ece9; --warn:#8f5400; --warn-tint:#f5e5c6; }
+@media (prefers-color-scheme: dark) { :root { --bg:#14191a; --zone:#1b2322; --surface:#202928; --ink:#e3eae7;
+  --muted:#9aa7a3; --line:#3b4845; --accent:#55c7bb; --accent-tint:#17332f; --warn:#e5a94c; --warn-tint:#3a2f17; } }
+.bg { fill:var(--bg); }
+.zone { fill:var(--zone); stroke:var(--line); stroke-width:1.2; }
+.box { fill:var(--surface); stroke:var(--line); stroke-width:1.3; }
+.box.a { fill:var(--accent-tint); stroke:var(--accent); }
+.box.w { fill:var(--warn-tint); stroke:var(--warn); }
+.cell { fill:var(--surface); stroke:var(--line); stroke-width:1; }
+.cell.good { fill:var(--accent-tint); stroke:var(--accent); }
+.cell.warn { fill:var(--warn-tint); stroke:var(--warn); }
+text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; font-size:13px; fill:var(--ink); }
+.b { font-weight:600; }
+.m { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
+.l { font-size:12px; }
+.s { font-size:11.5px; }
+.muted { fill:var(--muted); }
+.warnt { fill:var(--warn); }
+.zt { font-size:12px; font-weight:600; letter-spacing:0.06em; fill:var(--muted); }
+.arr { fill:none; stroke:var(--muted); stroke-width:1.6; }
+.arr.d { stroke-dasharray:5 4; }
+.head { fill:var(--muted); }
+.brace { stroke:var(--muted); stroke-width:1.2; fill:none; }
+.band { fill:transparent; }
+.band.alt { fill:var(--zone); opacity:0.7; }
+.dot.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:2; }
+.dot.brief { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.bar.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:1.2; }
+.bar.brief { fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2; }
+.bar.none { fill:var(--surface); stroke:var(--line); stroke-width:1.2; stroke-dasharray:4 3; }
+</style>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker></defs>
+<rect class="bg" x="0" y="0" width="960" height="216" rx="10"/>
+<rect class="box" x="10" y="30" width="170" height="64" rx="7"/>
+<text class="" x="95.0" y="58.0" text-anchor="middle">Each study folder,</text>
+<text class="" x="95.0" y="75.0" text-anchor="middle">each client file</text>
+<rect class="box" x="210" y="30" width="200" height="64" rx="7"/>
+<text class="" x="310.0" y="58.0" text-anchor="middle">Remove leftover temp files</text>
+<text class="" x="310.0" y="75.0" text-anchor="middle">a failure is logged</text>
+<rect class="box" x="440" y="30" width="200" height="64" rx="7"/>
+<text class="" x="540.0" y="58.0" text-anchor="middle">Parse and validate</text>
+<text class="" x="540.0" y="75.0" text-anchor="middle">format, fields, every row</text>
+<rect class="box a" x="690" y="30" width="260" height="64" rx="7"/>
+<text class="b" x="820.0" y="58.0" text-anchor="middle">Load into memory</text>
+<text class="" x="820.0" y="75.0" text-anchor="middle">state used as stored</text>
+<rect class="box w" x="690" y="130" width="260" height="70" rx="7"/>
+<text class="" x="820.0" y="152.5" text-anchor="middle">Keep as client.json.damaged</text>
+<text class="" x="820.0" y="169.5" text-anchor="middle">log an error and start empty</text>
+<text class="" x="820.0" y="186.5" text-anchor="middle">the next read repopulates it</text>
+<polyline class="arr" points="180,62 210,62" marker-end="url(#ah)"/>
+<polyline class="arr" points="410,62 440,62" marker-end="url(#ah)"/>
+<polyline class="arr" points="640,62 690,62" marker-end="url(#ah)"/>
+<text class="l s" x="665" y="54" text-anchor="middle">valid</text>
+<polyline class="arr" points="540,94 540,165 690,165" marker-end="url(#ah)"/>
+<text class="l s" x="548" y="130" text-anchor="start">unreadable or invalid</text>
+</svg>

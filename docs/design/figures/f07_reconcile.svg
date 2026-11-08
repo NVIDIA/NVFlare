@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 386" width="1000" height="386" role="img" aria-labelledby="t d">
+<title id="t">Applying one client's result</title><desc id="d">Five steps: withheld names, each catalog, unavailable names, client health and one atomic write. The per-catalog decision is shown in detail.</desc>
+<style>
+:root { --bg:#fbfcfb; --zone:#f0f3f2; --surface:#ffffff; --ink:#1b2422; --muted:#5a6764; --line:#b9c4c0;
+  --accent:#0b6e67; --accent-tint:#d7ece9; --warn:#8f5400; --warn-tint:#f5e5c6; }
+@media (prefers-color-scheme: dark) { :root { --bg:#14191a; --zone:#1b2322; --surface:#202928; --ink:#e3eae7;
+  --muted:#9aa7a3; --line:#3b4845; --accent:#55c7bb; --accent-tint:#17332f; --warn:#e5a94c; --warn-tint:#3a2f17; } }
+.bg { fill:var(--bg); }
+.zone { fill:var(--zone); stroke:var(--line); stroke-width:1.2; }
+.box { fill:var(--surface); stroke:var(--line); stroke-width:1.3; }
+.box.a { fill:var(--accent-tint); stroke:var(--accent); }
+.box.w { fill:var(--warn-tint); stroke:var(--warn); }
+.cell { fill:var(--surface); stroke:var(--line); stroke-width:1; }
+.cell.good { fill:var(--accent-tint); stroke:var(--accent); }
+.cell.warn { fill:var(--warn-tint); stroke:var(--warn); }
+text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; font-size:13px; fill:var(--ink); }
+.b { font-weight:600; }
+.m { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
+.l { font-size:12px; }
+.s { font-size:11.5px; }
+.muted { fill:var(--muted); }
+.warnt { fill:var(--warn); }
+.zt { font-size:12px; font-weight:600; letter-spacing:0.06em; fill:var(--muted); }
+.arr { fill:none; stroke:var(--muted); stroke-width:1.6; }
+.arr.d { stroke-dasharray:5 4; }
+.head { fill:var(--muted); }
+.brace { stroke:var(--muted); stroke-width:1.2; fill:none; }
+.band { fill:transparent; }
+.band.alt { fill:var(--zone); opacity:0.7; }
+.dot.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:2; }
+.dot.brief { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.bar.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:1.2; }
+.bar.brief { fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2; }
+.bar.none { fill:var(--surface); stroke:var(--line); stroke-width:1.2; stroke-dasharray:4 3; }
+</style>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker></defs>
+<rect class="bg" x="0" y="0" width="1000" height="386" rx="10"/>
+<rect class="box" x="10" y="10" width="170" height="60" rx="7"/>
+<text class="b" x="95.0" y="36.0" text-anchor="middle">1  Withheld names</text>
+<text class="" x="95.0" y="53.0" text-anchor="middle">hidden, metadata kept</text>
+<polyline class="arr" points="180,40 200,40" marker-end="url(#ah)"/>
+<rect class="box a" x="200" y="10" width="170" height="60" rx="7"/>
+<text class="b" x="285.0" y="36.0" text-anchor="middle">2  Each catalog</text>
+<text class="" x="285.0" y="53.0" text-anchor="middle">validate, then store</text>
+<polyline class="arr" points="370,40 390,40" marker-end="url(#ah)"/>
+<rect class="box" x="390" y="10" width="170" height="60" rx="7"/>
+<text class="b" x="475.0" y="36.0" text-anchor="middle">3  Unavailable names</text>
+<text class="" x="475.0" y="53.0" text-anchor="middle">marked unavailable</text>
+<polyline class="arr" points="560,40 580,40" marker-end="url(#ah)"/>
+<rect class="box" x="580" y="10" width="170" height="60" rx="7"/>
+<text class="b" x="665.0" y="36.0" text-anchor="middle">4  Client health</text>
+<text class="" x="665.0" y="53.0" text-anchor="middle">OK, DEGRADED or FAILED</text>
+<polyline class="arr" points="750,40 770,40" marker-end="url(#ah)"/>
+<rect class="box" x="770" y="10" width="170" height="60" rx="7"/>
+<text class="b" x="855.0" y="36.0" text-anchor="middle">5  One atomic write</text>
+<text class="" x="855.0" y="53.0" text-anchor="middle">state plus job receipt</text>
+<text class="l warnt" x="10" y="98" text-anchor="start">Withheld names go first, so a restriction survives a failure anywhere else in the result.</text>
+<text class="l b" x="10" y="124" text-anchor="start">Step 2, for each catalog in the result:</text>
+<rect class="box" x="10" y="210" width="150" height="56" rx="7"/>
+<text class="b" x="85.0" y="234.0" text-anchor="middle">A catalog</text>
+<text class="" x="85.0" y="251.0" text-anchor="middle">in the result</text>
+<rect class="box" x="190" y="210" width="150" height="56" rx="7"/>
+<text class="b" x="265.0" y="242.5" text-anchor="middle">validate</text>
+<rect class="box w" x="190" y="140" width="330" height="52" rx="7"/>
+<text class="b" x="355.0" y="162.0" text-anchor="middle">rejected: entry withheld</text>
+<text class="" x="355.0" y="179.0" text-anchor="middle">versions and availability kept</text>
+<rect class="box" x="380" y="210" width="150" height="56" rx="7"/>
+<text class="b" x="455.0" y="242.5" text-anchor="middle">digest changed?</text>
+<rect class="box a" x="580" y="165" width="410" height="66" rx="7"/>
+<text class="b" x="785.0" y="185.5" text-anchor="middle">new content</text>
+<text class="" x="785.0" y="202.5" text-anchor="middle">catalog_version plus 1, published_at set</text>
+<text class="" x="785.0" y="219.5" text-anchor="middle">schema_version plus 1 only if tables or resources changed</text>
+<rect class="box" x="580" y="250" width="410" height="56" rx="7"/>
+<text class="b" x="785.0" y="274.0" text-anchor="middle">same content</text>
+<text class="" x="785.0" y="291.0" text-anchor="middle">versions and metadata kept</text>
+<polyline class="arr" points="160,238 190,238" marker-end="url(#ah)"/>
+<polyline class="arr" points="265,210 265,192" marker-end="url(#ah)"/>
+<text class="l s" x="272" y="204" text-anchor="start">fails</text>
+<polyline class="arr" points="340,238 380,238" marker-end="url(#ah)"/>
+<text class="l s" x="360" y="230" text-anchor="middle">ok</text>
+<polyline class="arr" points="530,228 580,202" marker-end="url(#ah)"/>
+<text class="l s" x="546" y="206" text-anchor="start">yes</text>
+<polyline class="arr" points="530,248 580,278" marker-end="url(#ah)"/>
+<text class="l s" x="546" y="280" text-anchor="start">no</text>
+<text class="l" x="10" y="340" text-anchor="start">A passing catalog is stored as available, not withheld, with last_checked_at set.</text>
+<text class="l" x="10" y="362" text-anchor="start">Names reported unavailable then become available = false, with last_checked_at set and metadata kept.</text>
+</svg>

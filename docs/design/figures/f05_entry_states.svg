@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 292" width="900" height="292" role="img" aria-labelledby="t d">
+<title id="t">What search can see of one dataset entry</title><desc id="d">A dataset entry is visible, unavailable or withheld. Withheld always wins; a newly accepted permitted catalog makes it visible again.</desc>
+<style>
+:root { --bg:#fbfcfb; --zone:#f0f3f2; --surface:#ffffff; --ink:#1b2422; --muted:#5a6764; --line:#b9c4c0;
+  --accent:#0b6e67; --accent-tint:#d7ece9; --warn:#8f5400; --warn-tint:#f5e5c6; }
+@media (prefers-color-scheme: dark) { :root { --bg:#14191a; --zone:#1b2322; --surface:#202928; --ink:#e3eae7;
+  --muted:#9aa7a3; --line:#3b4845; --accent:#55c7bb; --accent-tint:#17332f; --warn:#e5a94c; --warn-tint:#3a2f17; } }
+.bg { fill:var(--bg); }
+.zone { fill:var(--zone); stroke:var(--line); stroke-width:1.2; }
+.box { fill:var(--surface); stroke:var(--line); stroke-width:1.3; }
+.box.a { fill:var(--accent-tint); stroke:var(--accent); }
+.box.w { fill:var(--warn-tint); stroke:var(--warn); }
+.cell { fill:var(--surface); stroke:var(--line); stroke-width:1; }
+.cell.good { fill:var(--accent-tint); stroke:var(--accent); }
+.cell.warn { fill:var(--warn-tint); stroke:var(--warn); }
+text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; font-size:13px; fill:var(--ink); }
+.b { font-weight:600; }
+.m { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
+.l { font-size:12px; }
+.s { font-size:11.5px; }
+.muted { fill:var(--muted); }
+.warnt { fill:var(--warn); }
+.zt { font-size:12px; font-weight:600; letter-spacing:0.06em; fill:var(--muted); }
+.arr { fill:none; stroke:var(--muted); stroke-width:1.6; }
+.arr.d { stroke-dasharray:5 4; }
+.head { fill:var(--muted); }
+.brace { stroke:var(--muted); stroke-width:1.2; fill:none; }
+.band { fill:transparent; }
+.band.alt { fill:var(--zone); opacity:0.7; }
+.dot.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:2; }
+.dot.brief { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.bar.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:1.2; }
+.bar.brief { fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2; }
+.bar.none { fill:var(--surface); stroke:var(--line); stroke-width:1.2; stroke-dasharray:4 3; }
+</style>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker></defs>
+<rect class="bg" x="0" y="0" width="900" height="292" rx="10"/>
+<rect class="box a" x="20" y="110" width="200" height="84" rx="7"/>
+<text class="b" x="120.0" y="148.0" text-anchor="middle">Visible</text>
+<text class="" x="120.0" y="165.0" text-anchor="middle">full metadata in search</text>
+<rect class="box" x="350" y="110" width="200" height="84" rx="7"/>
+<text class="b" x="450.0" y="139.5" text-anchor="middle">Unavailable</text>
+<text class="" x="450.0" y="156.5" text-anchor="middle">client, dataset, available,</text>
+<text class="" x="450.0" y="173.5" text-anchor="middle">last_checked_at only</text>
+<rect class="box w" x="680" y="110" width="200" height="84" rx="7"/>
+<text class="b" x="780.0" y="139.5" text-anchor="middle">Withheld</text>
+<text class="" x="780.0" y="156.5" text-anchor="middle">never in search,</text>
+<text class="" x="780.0" y="173.5" text-anchor="middle">facets or counts</text>
+<polyline class="arr" points="220,135 350,135" marker-end="url(#ah)"/>
+<text class="l s" x="285" y="127" text-anchor="middle">checked unavailable</text>
+<polyline class="arr" points="350,170 220,170" marker-end="url(#ah)"/>
+
+<polyline class="arr" points="550,135 680,135" marker-end="url(#ah)"/>
+<text class="l s" x="615" y="127" text-anchor="middle">withheld</text>
+
+<text class="l s" x="285" y="188" text-anchor="middle">permitted catalog</text>
+<polyline class="arr" points="120,110 120,52 780,52 780,110" marker-end="url(#ah)"/>
+<text class="l s" x="450" y="44" text-anchor="middle">withheld, replacement rejected, or skipped for budget</text>
+<polyline class="arr" points="780,194 780,252 120,252 120,194" marker-end="url(#ah)"/>
+<text class="l s" x="450" y="270" text-anchor="middle">permitted catalog accepted</text>
+<text class="l muted" x="450" y="226" text-anchor="middle">A withheld entry stays withheld when it is later reported unavailable.</text>
+</svg>

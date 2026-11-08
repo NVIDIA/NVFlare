@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 360" width="1000" height="360" role="img" aria-labelledby="t d">
+<title id="t">Client health</title><desc id="d">Three result shapes map to OK, DEGRADED and FAILED with their counters. Stale is computed from the last successful read.</desc>
+<style>
+:root { --bg:#fbfcfb; --zone:#f0f3f2; --surface:#ffffff; --ink:#1b2422; --muted:#5a6764; --line:#b9c4c0;
+  --accent:#0b6e67; --accent-tint:#d7ece9; --warn:#8f5400; --warn-tint:#f5e5c6; }
+@media (prefers-color-scheme: dark) { :root { --bg:#14191a; --zone:#1b2322; --surface:#202928; --ink:#e3eae7;
+  --muted:#9aa7a3; --line:#3b4845; --accent:#55c7bb; --accent-tint:#17332f; --warn:#e5a94c; --warn-tint:#3a2f17; } }
+.bg { fill:var(--bg); }
+.zone { fill:var(--zone); stroke:var(--line); stroke-width:1.2; }
+.box { fill:var(--surface); stroke:var(--line); stroke-width:1.3; }
+.box.a { fill:var(--accent-tint); stroke:var(--accent); }
+.box.w { fill:var(--warn-tint); stroke:var(--warn); }
+.cell { fill:var(--surface); stroke:var(--line); stroke-width:1; }
+.cell.good { fill:var(--accent-tint); stroke:var(--accent); }
+.cell.warn { fill:var(--warn-tint); stroke:var(--warn); }
+text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; font-size:13px; fill:var(--ink); }
+.b { font-weight:600; }
+.m { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
+.l { font-size:12px; }
+.s { font-size:11.5px; }
+.muted { fill:var(--muted); }
+.warnt { fill:var(--warn); }
+.zt { font-size:12px; font-weight:600; letter-spacing:0.06em; fill:var(--muted); }
+.arr { fill:none; stroke:var(--muted); stroke-width:1.6; }
+.arr.d { stroke-dasharray:5 4; }
+.head { fill:var(--muted); }
+.brace { stroke:var(--muted); stroke-width:1.2; fill:none; }
+.band { fill:transparent; }
+.band.alt { fill:var(--zone); opacity:0.7; }
+.dot.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:2; }
+.dot.brief { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.bar.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:1.2; }
+.bar.brief { fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2; }
+.bar.none { fill:var(--surface); stroke:var(--line); stroke-width:1.2; stroke-dasharray:4 3; }
+</style>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker></defs>
+<rect class="bg" x="0" y="0" width="1000" height="360" rx="10"/>
+<text class="l muted" x="20" y="24" text-anchor="start">A client starts as UNKNOWN. Each result sets its health:</text>
+<rect class="box" x="20" y="48" width="420" height="58" rx="7"/>
+<text class="" x="230.0" y="73.0" text-anchor="middle">Status OK, nothing rejected,</text>
+<text class="" x="230.0" y="90.0" text-anchor="middle">no reason code</text>
+<polyline class="arr" points="440,77 520,77" marker-end="url(#ah)"/>
+<rect class="box a" x="520" y="48" width="170" height="58" rx="7"/>
+<text class="b" x="605.0" y="81.5" text-anchor="middle">OK</text>
+<text class="l" x="715" y="73" text-anchor="start">failures reset to 0</text>
+<text class="l muted" x="715" y="91" text-anchor="start">last success set</text>
+<rect class="box" x="20" y="128" width="420" height="58" rx="7"/>
+<text class="" x="230.0" y="153.0" text-anchor="middle">Status OK with a reason code, or some</text>
+<text class="" x="230.0" y="170.0" text-anchor="middle">catalogs rejected and others accepted</text>
+<polyline class="arr" points="440,157 520,157" marker-end="url(#ah)"/>
+<rect class="box w" x="520" y="128" width="170" height="58" rx="7"/>
+<text class="b" x="605.0" y="161.5" text-anchor="middle">DEGRADED</text>
+<text class="l" x="715" y="153" text-anchor="start">failures reset to 0</text>
+<text class="l muted" x="715" y="171" text-anchor="start">last success set</text>
+<rect class="box" x="20" y="208" width="420" height="58" rx="7"/>
+<text class="" x="230.0" y="233.0" text-anchor="middle">Status not OK, every catalog rejected,</text>
+<text class="" x="230.0" y="250.0" text-anchor="middle">or the job produced no result</text>
+<polyline class="arr" points="440,237 520,237" marker-end="url(#ah)"/>
+<rect class="box w" x="520" y="208" width="170" height="58" rx="7"/>
+<text class="b" x="605.0" y="241.5" text-anchor="middle">FAILED</text>
+<text class="l" x="715" y="233" text-anchor="start">failures plus 1</text>
+<text class="l muted" x="715" y="251" text-anchor="start">last success kept</text>
+<rect class="box" x="20" y="296" width="960" height="46" rx="7"/>
+<text class="b" x="500.0" y="315.0" text-anchor="middle">Stale is computed when asked, not stored</text>
+<text class="" x="500.0" y="332.0" text-anchor="middle">the last successful read is older than the threshold (default two days)</text>
+</svg>

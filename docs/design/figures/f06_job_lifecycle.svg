@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 384" width="960" height="384" role="img" aria-labelledby="t d">
+<title id="t">Life of one catalog job on the server</title><desc id="d">Six stages: launch, run, terminal event, archive hook, ingest, cleanup.</desc>
+<style>
+:root { --bg:#fbfcfb; --zone:#f0f3f2; --surface:#ffffff; --ink:#1b2422; --muted:#5a6764; --line:#b9c4c0;
+  --accent:#0b6e67; --accent-tint:#d7ece9; --warn:#8f5400; --warn-tint:#f5e5c6; }
+@media (prefers-color-scheme: dark) { :root { --bg:#14191a; --zone:#1b2322; --surface:#202928; --ink:#e3eae7;
+  --muted:#9aa7a3; --line:#3b4845; --accent:#55c7bb; --accent-tint:#17332f; --warn:#e5a94c; --warn-tint:#3a2f17; } }
+.bg { fill:var(--bg); }
+.zone { fill:var(--zone); stroke:var(--line); stroke-width:1.2; }
+.box { fill:var(--surface); stroke:var(--line); stroke-width:1.3; }
+.box.a { fill:var(--accent-tint); stroke:var(--accent); }
+.box.w { fill:var(--warn-tint); stroke:var(--warn); }
+.cell { fill:var(--surface); stroke:var(--line); stroke-width:1; }
+.cell.good { fill:var(--accent-tint); stroke:var(--accent); }
+.cell.warn { fill:var(--warn-tint); stroke:var(--warn); }
+text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; font-size:13px; fill:var(--ink); }
+.b { font-weight:600; }
+.m { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
+.l { font-size:12px; }
+.s { font-size:11.5px; }
+.muted { fill:var(--muted); }
+.warnt { fill:var(--warn); }
+.zt { font-size:12px; font-weight:600; letter-spacing:0.06em; fill:var(--muted); }
+.arr { fill:none; stroke:var(--muted); stroke-width:1.6; }
+.arr.d { stroke-dasharray:5 4; }
+.head { fill:var(--muted); }
+.brace { stroke:var(--muted); stroke-width:1.2; fill:none; }
+.band { fill:transparent; }
+.band.alt { fill:var(--zone); opacity:0.7; }
+.dot.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:2; }
+.dot.brief { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.bar.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:1.2; }
+.bar.brief { fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2; }
+.bar.none { fill:var(--surface); stroke:var(--line); stroke-width:1.2; stroke-dasharray:4 3; }
+</style>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker></defs>
+<rect class="bg" x="0" y="0" width="960" height="384" rx="10"/>
+<rect class="box" x="10" y="10" width="300" height="128" rx="7"/>
+<text class="b" x="160.0" y="44.5" text-anchor="middle">1  Launch</text>
+<text class="" x="160.0" y="61.5" text-anchor="middle">BEFORE_JOB_LAUNCH</text>
+<text class="" x="160.0" y="78.5" text-anchor="middle">check the job configuration</text>
+<text class="" x="160.0" y="95.5" text-anchor="middle">write catalog_context.json</text>
+<text class="" x="160.0" y="112.5" text-anchor="middle">add the job to the pending list</text>
+<rect class="box" x="330" y="10" width="300" height="128" rx="7"/>
+<text class="b" x="480.0" y="44.5" text-anchor="middle">2  Run</text>
+<text class="" x="480.0" y="61.5" text-anchor="middle">in the job process</text>
+<text class="" x="480.0" y="78.5" text-anchor="middle">each site's reply is recorded</text>
+<text class="" x="480.0" y="95.5" text-anchor="middle">a signed manifest is written</text>
+<text class="" x="480.0" y="112.5" text-anchor="middle">at the end, or on abort</text>
+<rect class="box" x="650" y="10" width="300" height="128" rx="7"/>
+<text class="b" x="800.0" y="44.5" text-anchor="middle">3  Terminal event</text>
+<text class="" x="800.0" y="61.5" text-anchor="middle">JOB_COMPLETED or JOB_ABORTED</text>
+<text class="" x="800.0" y="78.5" text-anchor="middle">the job id is queued</text>
+<text class="" x="800.0" y="95.5" text-anchor="middle">the completion thread</text>
+<text class="" x="800.0" y="112.5" text-anchor="middle">moves on at once</text>
+<rect class="box w" x="650" y="190" width="300" height="128" rx="7"/>
+<text class="b" x="800.0" y="224.5" text-anchor="middle">4  Archive hook</text>
+<text class="" x="800.0" y="241.5" text-anchor="middle">BEFORE_JOB_WORKSPACE_ARCHIVE</text>
+<text class="" x="800.0" y="258.5" text-anchor="middle">copy the manifest to the inbox</text>
+<text class="" x="800.0" y="275.5" text-anchor="middle">remove reserved files</text>
+<text class="" x="800.0" y="292.5" text-anchor="middle">a failure blocks the archive</text>
+<rect class="box a" x="330" y="190" width="300" height="128" rx="7"/>
+<text class="b" x="480.0" y="224.5" text-anchor="middle">5  Ingest</text>
+<text class="" x="480.0" y="241.5" text-anchor="middle">catalog-manager thread</text>
+<text class="" x="480.0" y="258.5" text-anchor="middle">verify the signature</text>
+<text class="" x="480.0" y="275.5" text-anchor="middle">apply each client, one atomic</text>
+<text class="" x="480.0" y="292.5" text-anchor="middle">write each, with a receipt</text>
+<rect class="box" x="10" y="190" width="300" height="128" rx="7"/>
+<text class="b" x="160.0" y="224.5" text-anchor="middle">6  Cleanup</text>
+<text class="" x="160.0" y="241.5" text-anchor="middle">discard the inbox copy</text>
+<text class="" x="160.0" y="258.5" text-anchor="middle">remove the context file</text>
+<text class="" x="160.0" y="275.5" text-anchor="middle">drop the job from pending</text>
+<text class="" x="160.0" y="292.5" text-anchor="middle">a storage error retries in 30 s</text>
+<polyline class="arr" points="310,74 330,74" marker-end="url(#ah)"/>
+<polyline class="arr" points="630,74 650,74" marker-end="url(#ah)"/>
+<polyline class="arr" points="800,138 800,190" marker-end="url(#ah)"/>
+<polyline class="arr" points="650,254 630,254" marker-end="url(#ah)"/>
+<polyline class="arr" points="330,254 310,254" marker-end="url(#ah)"/>
+<text class="l muted" x="10" y="348" text-anchor="start">After a server restart, running catalog jobs and retained inbox files go back on the pending list and are applied the same way.</text>
+<text class="l muted" x="10" y="368" text-anchor="start">The server applies its own captured copy of the result, never the job's files.</text>
+</svg>

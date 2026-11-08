@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 388" width="960" height="388" role="img" aria-labelledby="t d">
+<title id="t">Committing one client update</title><desc id="d">Copy, edit, write to a temp file, fsync, rename, swap in memory. The client file is always the old version or the new one.</desc>
+<style>
+:root { --bg:#fbfcfb; --zone:#f0f3f2; --surface:#ffffff; --ink:#1b2422; --muted:#5a6764; --line:#b9c4c0;
+  --accent:#0b6e67; --accent-tint:#d7ece9; --warn:#8f5400; --warn-tint:#f5e5c6; }
+@media (prefers-color-scheme: dark) { :root { --bg:#14191a; --zone:#1b2322; --surface:#202928; --ink:#e3eae7;
+  --muted:#9aa7a3; --line:#3b4845; --accent:#55c7bb; --accent-tint:#17332f; --warn:#e5a94c; --warn-tint:#3a2f17; } }
+.bg { fill:var(--bg); }
+.zone { fill:var(--zone); stroke:var(--line); stroke-width:1.2; }
+.box { fill:var(--surface); stroke:var(--line); stroke-width:1.3; }
+.box.a { fill:var(--accent-tint); stroke:var(--accent); }
+.box.w { fill:var(--warn-tint); stroke:var(--warn); }
+.cell { fill:var(--surface); stroke:var(--line); stroke-width:1; }
+.cell.good { fill:var(--accent-tint); stroke:var(--accent); }
+.cell.warn { fill:var(--warn-tint); stroke:var(--warn); }
+text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; font-size:13px; fill:var(--ink); }
+.b { font-weight:600; }
+.m { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
+.l { font-size:12px; }
+.s { font-size:11.5px; }
+.muted { fill:var(--muted); }
+.warnt { fill:var(--warn); }
+.zt { font-size:12px; font-weight:600; letter-spacing:0.06em; fill:var(--muted); }
+.arr { fill:none; stroke:var(--muted); stroke-width:1.6; }
+.arr.d { stroke-dasharray:5 4; }
+.head { fill:var(--muted); }
+.brace { stroke:var(--muted); stroke-width:1.2; fill:none; }
+.band { fill:transparent; }
+.band.alt { fill:var(--zone); opacity:0.7; }
+.dot.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:2; }
+.dot.brief { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.bar.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:1.2; }
+.bar.brief { fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2; }
+.bar.none { fill:var(--surface); stroke:var(--line); stroke-width:1.2; stroke-dasharray:4 3; }
+</style>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker></defs>
+<rect class="bg" x="0" y="0" width="960" height="388" rx="10"/>
+<rect class="box" x="10" y="20" width="180" height="56" rx="7"/>
+<text class="" x="100.0" y="44.0" text-anchor="middle">Copy the client</text>
+<text class="" x="100.0" y="61.0" text-anchor="middle">state</text>
+<rect class="box" x="200" y="20" width="180" height="56" rx="7"/>
+<text class="" x="290.0" y="44.0" text-anchor="middle">Edit the copy and add</text>
+<text class="" x="290.0" y="61.0" text-anchor="middle">the job's receipt</text>
+<rect class="box" x="390" y="20" width="180" height="56" rx="7"/>
+<text class="" x="480.0" y="44.0" text-anchor="middle">Write the temp file</text>
+<text class="" x="480.0" y="61.0" text-anchor="middle">owner only, fsync</text>
+<rect class="box a" x="580" y="20" width="180" height="56" rx="7"/>
+<text class="" x="670.0" y="44.0" text-anchor="middle">Rename over the</text>
+<text class="" x="670.0" y="61.0" text-anchor="middle">client file, atomic</text>
+<rect class="box" x="770" y="20" width="180" height="56" rx="7"/>
+<text class="" x="860.0" y="44.0" text-anchor="middle">Swap the in-memory</text>
+<text class="" x="860.0" y="61.0" text-anchor="middle">state, drop its cache</text>
+<polyline class="arr" points="190,48 210,48" marker-end="url(#ah)"/>
+<polyline class="arr" points="380,48 400,48" marker-end="url(#ah)"/>
+<polyline class="arr" points="570,48 590,48" marker-end="url(#ah)"/>
+<polyline class="arr" points="760,48 780,48" marker-end="url(#ah)"/>
+<line class="brace" x1="10" y1="96" x2="950" y2="96"/>
+<text class="l" x="480" y="116" text-anchor="middle">all of it under store.lock</text>
+<rect class="box" x="130" y="150" width="155" height="50" rx="7"/>
+<text class="b" x="207.5" y="171.0" text-anchor="middle">1 open temp</text>
+<text class="" x="207.5" y="188.0" text-anchor="middle">0600, truncate</text>
+<rect class="box" x="295" y="150" width="155" height="50" rx="7"/>
+<text class="b" x="372.5" y="171.0" text-anchor="middle">2 write JSON</text>
+<text class="" x="372.5" y="188.0" text-anchor="middle">into the temp file</text>
+<rect class="box" x="460" y="150" width="155" height="50" rx="7"/>
+<text class="b" x="537.5" y="171.0" text-anchor="middle">3 flush, fsync</text>
+<text class="" x="537.5" y="188.0" text-anchor="middle">temp is durable</text>
+<rect class="box a" x="625" y="150" width="155" height="50" rx="7"/>
+<text class="b" x="702.5" y="171.0" text-anchor="middle">4 os.replace</text>
+<text class="" x="702.5" y="188.0" text-anchor="middle">temp becomes the file</text>
+<rect class="box" x="790" y="150" width="155" height="50" rx="7"/>
+<text class="b" x="867.5" y="171.0" text-anchor="middle">5 finally</text>
+<text class="" x="867.5" y="188.0" text-anchor="middle">remove temp if left</text>
+<text class="m b" x="10" y="238" text-anchor="start">client file</text>
+<text class="m b" x="10" y="290" text-anchor="start">temp file</text>
+<rect class="cell" x="130" y="218" width="155" height="36" rx="7"/>
+<text class="" x="207.5" y="240.5" text-anchor="middle">old</text>
+<rect class="cell" x="295" y="218" width="155" height="36" rx="7"/>
+<text class="" x="372.5" y="240.5" text-anchor="middle">old</text>
+<rect class="cell" x="460" y="218" width="155" height="36" rx="7"/>
+<text class="" x="537.5" y="240.5" text-anchor="middle">old</text>
+<rect class="cell good" x="625" y="218" width="155" height="36" rx="7"/>
+<text class="" x="702.5" y="240.5" text-anchor="middle">new</text>
+<rect class="cell good" x="790" y="218" width="155" height="36" rx="7"/>
+<text class="" x="867.5" y="240.5" text-anchor="middle">new</text>
+<rect class="cell warn" x="130" y="270" width="155" height="36" rx="7"/>
+<text class="" x="207.5" y="292.5" text-anchor="middle">empty</text>
+<rect class="cell warn" x="295" y="270" width="155" height="36" rx="7"/>
+<text class="" x="372.5" y="292.5" text-anchor="middle">partial</text>
+<rect class="cell warn" x="460" y="270" width="155" height="36" rx="7"/>
+<text class="" x="537.5" y="292.5" text-anchor="middle">complete</text>
+<rect class="cell" x="625" y="270" width="155" height="36" rx="7"/>
+<text class="" x="702.5" y="292.5" text-anchor="middle">gone</text>
+<rect class="cell" x="790" y="270" width="155" height="36" rx="7"/>
+<text class="" x="867.5" y="292.5" text-anchor="middle">gone</text>
+<line class="brace" x1="130" y1="326" x2="455" y2="326"/><text class="l" x="292" y="346" text-anchor="middle">a crash before step 4 leaves the old file intact</text>
+<line class="brace" x1="460" y1="326" x2="950" y2="326"/><text class="l" x="705" y="346" text-anchor="middle">a crash after step 4 leaves the new file in place</text>
+<text class="l muted" x="10" y="372" text-anchor="start">The temp file is created readable by its owner only and removed even after a failure, because it can hold a job key or stored catalogs.</text>
+</svg>
