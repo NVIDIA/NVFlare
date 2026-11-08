@@ -81,13 +81,14 @@ working copy in `/workspace` using the startup script's native `NVFL_WORKSPACE`
 support. Separate volumes retain source data, server catalog, jobs and
 snapshots. The admin kit stays on the host; no Docker socket is mounted.
 
-[example_setup.py](example_setup.py) reuses the service example's deployment
-setup helper, which prints the standard commands it runs. Keep the sibling
-`federated-catalog-services` directory when copying this example; `nvflare
-examples` includes that dependency. Setup writes the selected kit location to
+[example_setup.py](example_setup.py) runs and displays ordinary `nvflare provision`,
+`nvflare config add`, `nvflare config use` and `nvflare config list` commands.
+Their output is shown directly so the script also serves as a deployment
+walkthrough. It is standalone; the service example is not required.
+Setup writes the selected kit location to
 `.env`; it does not hard-code the workspace. Unset an old exported
 `CATALOG_KITS` if it overrides that file. Use `--reprovision` after changing
-`project.yml`, and `--verbose` for full setup output.
+`project.yml`.
 
 For PostgreSQL and Unity Catalog OSS, see the
 [service-backed example](../federated-catalog-services). It also describes

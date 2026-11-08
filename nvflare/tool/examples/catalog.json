@@ -312,10 +312,7 @@
   },
   "federated-catalog": {
     "source_path": "examples/advanced/federated-catalog",
-    "category": "advanced",
-    "dependencies": [
-      "federated-catalog-services"
-    ]
+    "category": "advanced"
   },
   "federated-catalog-services": {
     "source_path": "examples/advanced/federated-catalog-services",

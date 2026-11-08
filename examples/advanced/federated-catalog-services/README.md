@@ -43,8 +43,9 @@ for container/source startup; `nvflare system status` checks FLARE registration.
 ## What setup does
 
 [example_setup.py](example_setup.py) runs these standard steps and prints each
-command as it goes, so you can repeat them by hand or reuse them in your own
-deployment. Rerunning it keeps existing kits, other server components and other
+command and its output as it goes, so you can repeat them by hand or reuse them
+in your own deployment. It invokes the `nvflare` executable from your active
+environment; it does not call Python provisioning or kit-management APIs. Rerunning it keeps existing kits, other server components and other
 `.env` settings.
 
 | Step | Command or file | What it sets up |
@@ -54,7 +55,7 @@ deployment. Rerunning it keeps existing kits, other server components and other
 | 3 | Add `{"id": "catalog_manager", "path": "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"}` to the `components` list of `<server kit>/local/resources.json` | Runs the `CatalogManager` on the server. This is how any server component is enabled. |
 | 4 | `CATALOG_KITS=<kits>` in `.env` | Tells `docker compose` which kits to mount; each container mounts only its own. |
 
-`nvflare config list` shows the registered admin kits.
+Setup finishes with `nvflare config list`, showing the registered admin kits.
 
 When switching from an older manual setup, unset a previously exported
 `CATALOG_KITS` if it points elsewhere: shell variables override Compose's `.env`.
@@ -200,6 +201,5 @@ No Spark server or client is needed for this metadata-only path.
 | --- | --- |
 | `docker compose` cannot find the kits, or uses an old workspace | Rerun `python example_setup.py --workspace <path>`. A shell variable `CATALOG_KITS` overrides `.env`; `unset CATALOG_KITS`. |
 | Changed `project.yml` | `python example_setup.py --workspace <path> --reprovision` |
-| Need the full output of a setup step | `python example_setup.py --verbose ...` |
 | `nvflare catalog show` reports the service is not ready | The server is still starting. Wait a few seconds, or check `nvflare system status`. |
 | Start over with fresh demo data | `docker compose down --volumes`, then run the four commands again. |

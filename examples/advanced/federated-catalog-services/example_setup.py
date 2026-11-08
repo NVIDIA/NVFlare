@@ -14,7 +14,7 @@
 
 """Set up the catalog demo with the standard NVFLARE commands, and show each one.
 
-Nothing here is specific to this example. Every step prints the command it runs, so you can repeat it by hand or
+Every step prints the command it runs, so you can repeat it by hand or
 use it in your own deployment:
 
   1. nvflare provision -p project.yml -w <workspace>   create startup kits for the server, sites and admin
@@ -31,11 +31,9 @@ import json
 import re
 import shlex
 import subprocess
-import sys
 from pathlib import Path
 
-from nvflare.apis.fl_constant import WorkspaceConstants
-from nvflare.lighter.utils import load_yaml
+import yaml
 
 ROOT = Path(__file__).resolve().parent
 COMPONENT = {"id": "catalog_manager", "path": "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"}
@@ -55,17 +53,11 @@ def step(number, title, why):
     print(f"\nStep {number}/{STEPS}  {title}\n  {why}", flush=True)
 
 
-def nvflare(*args, verbose=False):
-    """Show the command as a user would type it (paths shortened), then run it with absolute paths, using this
-    Python so it is the same installation."""
-    typed = [shown(a) if isinstance(a, Path) else str(a) for a in args]
-    print(f"  $ {shlex.join(['nvflare', *typed])}", flush=True)
-    result = subprocess.run(
-        [sys.executable, "-m", "nvflare.cli", *map(str, args)], capture_output=not verbose, text=True, check=False
-    )
-    if result.returncode:  # the command's own output is shown only when it fails, or with --verbose
-        sys.stderr.write(f"{result.stdout or ''}{result.stderr or ''}")
-        raise subprocess.CalledProcessError(result.returncode, ["nvflare", *typed])
+def run_command(*args):
+    """Print and run exactly the same CLI command a user can run in their terminal."""
+    command = [str(arg) for arg in args]
+    print(f"  $ {shlex.join(command)}", flush=True)
+    subprocess.run(command, check=True)
 
 
 def write_private(path, content):
@@ -76,19 +68,20 @@ def write_private(path, content):
     temporary.replace(path)
 
 
-def main(example_root=ROOT):
+def main():
+    example_root = ROOT
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--workspace", type=Path, default=example_root / "workspace", help="where the startup kits are written"
     )
     parser.add_argument("--reprovision", action="store_true", help="create new startup kits even if some exist")
-    parser.add_argument("--verbose", action="store_true", help="show the full output of every command")
     args = parser.parse_args()
     workspace = args.workspace.expanduser().resolve()
     if "\n" in str(workspace) or "\r" in str(workspace):
         raise ValueError("Workspace paths cannot contain newlines")
     project_file = example_root / "project.yml"
-    project = load_yaml(str(project_file))
+    with project_file.open() as stream:
+        project = yaml.safe_load(stream)
     project_root = workspace / project["name"]
 
     def generations():
@@ -109,7 +102,7 @@ def main(example_root=ROOT):
         "`nvflare provision` reads project.yml (participants, ports, host names) and writes one kit for each.",
     )
     if args.reprovision or not generations():
-        nvflare("provision", "-p", project_file, "-w", workspace, "--force", verbose=args.verbose)
+        run_command("nvflare", "provision", "-p", project_file, "-w", workspace, "--force")
     else:
         print("  Kits already exist; reusing them. Add --reprovision to create new ones.", flush=True)
     kits = generations()[-1]
@@ -124,14 +117,14 @@ def main(example_root=ROOT):
         f"Register the admin kit as {admin}",
         "The admin kit stays on your computer; it is never mounted into a container. `nvflare` commands use the active one.",
     )
-    nvflare("config", "add", admin, kits / admin, "--force", verbose=args.verbose)
-    nvflare("config", "use", admin, verbose=args.verbose)
+    run_command("nvflare", "config", "add", admin, kits / admin, "--force")
+    run_command("nvflare", "config", "use", admin)
 
     # 3. The one catalog-specific deployment setting: the server runs a CatalogManager component. Any server component
     #    is declared the same way, in the `components` list of the server's local/resources.json.
-    local = kits / server / WorkspaceConstants.SITE_FOLDER_NAME
-    resources = local / WorkspaceConstants.RESOURCES_CONFIG
-    source = resources if resources.exists() else local / WorkspaceConstants.DEFAULT_RESOURCES_CONFIG
+    local = kits / server / "local"
+    resources = local / "resources.json"
+    source = resources if resources.exists() else local / "resources.json.default"
     step(
         3,
         "Enable the catalog on the server",
@@ -148,7 +141,7 @@ def main(example_root=ROOT):
     print(f"  Component: {json.dumps(COMPONENT)}", flush=True)
     for site in sites:
         source = example_root / "config" / site / "study_runtime.yaml"
-        target = kits / site / WorkspaceConstants.SITE_FOLDER_NAME / "study_runtime.yaml"
+        target = kits / site / "local" / "study_runtime.yaml"
         if source.exists() and not target.exists():
             write_private(target, source.read_text())
             print(f"  Site runtime: {shown(source)} -> {shown(target)}", flush=True)
@@ -168,10 +161,8 @@ def main(example_root=ROOT):
     write_private(env_file, "\n".join(lines) + "\n")
     print(f"  CATALOG_KITS={shown(kits)}  (in {shown(env_file)})", flush=True)
 
-    print(
-        "\nDone. To see what is registered:  nvflare config list\n"
-        "Next:                             docker compose up -d --build --wait"
-    )
+    run_command("nvflare", "config", "list")
+    print("\nNext: docker compose up -d --build --wait")
 
 
 if __name__ == "__main__":
