@@ -126,8 +126,8 @@ coordinates reads and private artifacts during archival/download.
 metadata. Without the server manager, job results are not applied to the
 persistent catalog and catalog query commands are unavailable.
 
-Refresh is job-driven: rerun `python job.py` to collect source changes. Only one
-catalog read per Study runs at a time; a second submission is refused until the first is applied. Use an
+Refresh is job-driven: rerun `python job.py` to collect source changes. Reads may
+overlap within the same Study; the last valid update applied for each dataset wins. Datasets with no update in a result remain unchanged. Use an
 external scheduler such as cron for regular refreshes. The default health threshold marks
 a site's last successful read stale after two days.
 

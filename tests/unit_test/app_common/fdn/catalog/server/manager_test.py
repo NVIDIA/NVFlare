@@ -120,10 +120,10 @@ def mgr(tmp_path):
         assert not manager._thread.is_alive()
 
 
-def held(mgr, job_id, manifest=None, study=STUDY, **kw):
-    """A catalog job that was launched with its Study's context, so its result is the one to apply."""
+def pending(mgr, job_id, manifest=None, study=STUDY, **kw):
+    """A launched catalog job with a result waiting to be processed."""
     mgr.jobs.add(job_id, manifest, study=study, **kw)
-    mgr._in_flight[study or "default"] = job_id
+    mgr._pending.add(job_id)
 
 
 def ok_entry(**kw):
@@ -154,97 +154,123 @@ def catalog_meta(job_id, study=STUDY):
     return {"job_id": job_id, "study": study, CATALOG_JOB_META: True}
 
 
-class TestOneReadPerStudy:
-    """One catalog job per Study runs at a time, so results apply in order and no read races another."""
-
+class TestOverlappingReads:
     @pytest.fixture
     def run_dirs(self, mgr, tmp_path):
         mgr._workspace = SimpleNamespace(get_run_dir=lambda job_id: str(tmp_path / "run" / job_id))
         return lambda job_id: (tmp_path / "run" / job_id).mkdir(parents=True) or tmp_path / "run" / job_id
 
-    def test_a_submit_is_refused_while_the_studys_read_is_running(self, mgr):
-        mgr._in_flight[STUDY] = "j1"
-        ctx = event(mgr, EventType.SUBMIT_JOB, **{FLContextKey.JOB_META: catalog_meta(None)})
-        assert "job j1" in ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
-
-    def test_a_submit_is_refused_while_an_earlier_one_waits_to_launch(self, mgr):
-        mgr.jobs.add("j1", status="SUBMITTED")
-        ctx = event(mgr, EventType.SUBMIT_JOB, **{FLContextKey.JOB_META: catalog_meta(None)})
-        assert "job j1" in ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
-
-    @pytest.mark.parametrize(
-        "meta", [catalog_meta(None, study="other"), {"study": STUDY}]  # another Study; not a catalog job
-    )
-    def test_other_studies_and_other_jobs_are_not_refused(self, mgr, meta):
-        mgr._in_flight[STUDY] = "j1"
-        mgr.jobs.add("j1")
-        ctx = event(mgr, EventType.SUBMIT_JOB, **{FLContextKey.JOB_META: meta})
-        assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
-
-    def test_a_finished_read_does_not_refuse_the_next(self, mgr):
-        mgr.jobs.add("j1", status="FINISHED:COMPLETED")
+    @pytest.mark.parametrize("status", ["SUBMITTED", "RUNNING", "FINISHED:COMPLETED"])
+    def test_another_catalog_job_never_blocks_submission(self, mgr, status):
+        pending(mgr, "j1", status=status)
         ctx = event(mgr, EventType.SUBMIT_JOB, **{FLContextKey.JOB_META: catalog_meta(None)})
         assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
 
-    def test_only_the_first_job_launched_for_a_study_gets_a_context(self, mgr, run_dirs):
-        first, second, elsewhere = run_dirs("j1"), run_dirs("j2"), run_dirs("j3")
-        event(mgr, EventType.BEFORE_JOB_LAUNCH, **{FLContextKey.JOB_META: catalog_meta("j1")})
-        event(mgr, EventType.BEFORE_JOB_LAUNCH, **{FLContextKey.JOB_META: catalog_meta("j2")})
-        event(mgr, EventType.BEFORE_JOB_LAUNCH, **{FLContextKey.JOB_META: catalog_meta("j3", study="other")})
-        assert (first / "catalog_context.json").exists() and not (second / "catalog_context.json").exists()
-        assert (elsewhere / "catalog_context.json").exists() and mgr._in_flight == {STUDY: "j1", "other": "j3"}
+    def test_overlapping_jobs_get_independent_contexts_for_the_same_study(self, mgr, run_dirs):
+        first, second = run_dirs("j1"), run_dirs("j2")
+        for job_id in ("j1", "j2"):
+            ctx = event(mgr, EventType.BEFORE_JOB_LAUNCH, **{FLContextKey.JOB_META: catalog_meta(job_id)})
+            assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+        assert (first / "catalog_context.json").exists() and (second / "catalog_context.json").exists()
+        assert mgr._pending == {"j1", "j2"}
+        assert (
+            json.loads((first / "catalog_context.json").read_text())["key"]
+            != json.loads((second / "catalog_context.json").read_text())["key"]
+        )
 
-    def test_a_job_launched_while_another_holds_the_study_is_blocked_not_run_without_a_key(self, mgr, run_dirs):
-        run_dirs("j1"), run_dirs("j2")
-        first = event(mgr, EventType.BEFORE_JOB_LAUNCH, **{FLContextKey.JOB_META: catalog_meta("j1")})
-        second = event(mgr, EventType.BEFORE_JOB_LAUNCH, **{FLContextKey.JOB_META: catalog_meta("j2")})
-        assert first.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
-        assert "job j1" in second.get_prop(FLContextKey.JOB_BLOCK_REASON)
-        assert mgr._in_flight == {STUDY: "j1"}
+    def test_last_applied_result_wins_even_when_its_job_was_submitted_first(self, mgr):
+        pending(mgr, "first", manifest(**{"site-a": ok_entry(display_name="First job")}))
+        pending(mgr, "second", manifest(**{"site-a": ok_entry(display_name="Second job")}))
+        mgr.jobs.metas["first"]["submit_time"] = 1
+        mgr.jobs.metas["second"]["submit_time"] = 2
+        mgr._ingest("second")
+        assert state(mgr, "site-a")["datasets"]["clinical-research"]["metadata"]["display_name"] == "Second job"
+        mgr._ingest("first")
+        row = state(mgr, "site-a")["datasets"]["clinical-research"]
+        assert row["metadata"]["display_name"] == "First job" and row["catalog_version"] == 2
+        assert not mgr._pending
 
-    def test_the_next_read_may_launch_once_the_result_is_applied(self, mgr, run_dirs):
-        run_dirs("j1"), run_dirs("j2")
-        mgr.jobs.add("j1", manifest(**{"site-a": ok_entry()}))
-        event(mgr, EventType.BEFORE_JOB_LAUNCH, **{FLContextKey.JOB_META: catalog_meta("j1")})
-        mgr._ingest("j1")
-        event(mgr, EventType.BEFORE_JOB_LAUNCH, **{FLContextKey.JOB_META: catalog_meta("j2")})
-        assert mgr._in_flight == {STUDY: "j2"}
+    def test_last_explicit_withdrawal_or_publication_wins(self, mgr):
+        seed(mgr)
+        pending(
+            mgr,
+            "withdraw",
+            manifest(**{"site-a": ManifestEntry("OK", build_result(ResultStatus.OK, withheld=["clinical-research"]))}),
+        )
+        pending(mgr, "publish", manifest(**{"site-a": ok_entry()}))
+        mgr._ingest("withdraw")
+        assert mgr.search(STUDY, SearchQuery()).total == 0
+        mgr._ingest("publish")
+        assert mgr.search(STUDY, SearchQuery()).total == 1
+        pending(
+            mgr,
+            "withdraw-again",
+            manifest(**{"site-a": ManifestEntry("OK", build_result(ResultStatus.OK, withheld=["clinical-research"]))}),
+        )
+        mgr._ingest("withdraw-again")
+        assert mgr.search(STUDY, SearchQuery()).total == 0
 
-    def test_the_result_of_a_job_refused_at_launch_is_never_applied(self, mgr):
-        mgr._in_flight[STUDY] = "j1"
-        mgr.jobs.add("j2", manifest(**{"site-a": ok_entry()}))  # even if it carried a valid manifest
-        mgr._ingest("j2")
-        assert not mgr._store._clients and mgr._in_flight == {STUDY: "j1"}
+    def test_partial_and_empty_results_leave_unmentioned_datasets_unchanged(self, mgr):
+        pending(mgr, "a", manifest(**{"site-a": ok_entry(dataset="a")}))
+        pending(mgr, "b", manifest(**{"site-a": ok_entry(dataset="b")}))
+        pending(mgr, "empty", manifest(**{"site-a": ManifestEntry("OK", build_result(ResultStatus.OK))}))
+        mgr._ingest("b")
+        mgr._ingest("a")
+        before = state(mgr, "site-a")["datasets"]
+        mgr._ingest("empty")
+        assert set(before) == {"a", "b"} and state(mgr, "site-a")["datasets"] == before
 
-    def test_a_job_that_survived_a_restart_still_holds_its_studys_read(self, mgr, tmp_path):
+    def test_failed_application_does_not_block_another_read_and_retry_applies_last(self, mgr, run_dirs, monkeypatch):
+        pending(
+            mgr, "retry", manifest(**{"site-a": ok_entry(display_name="Retried update")}), status="FINISHED:COMPLETED"
+        )
+        commit = mgr._store.commit
+
+        def unavailable(*args):
+            raise OSError("temporary storage failure")
+
+        monkeypatch.setattr(mgr._store, "commit", unavailable)
+        mgr._ingest("retry")
+        assert mgr._pending == {"retry"}
+        monkeypatch.setattr(mgr._store, "commit", commit)
+        run_dirs("next")
+        mgr.jobs.add("next", manifest(**{"site-a": ok_entry(display_name="Other update")}))
+        submitted = event(mgr, EventType.SUBMIT_JOB, **{FLContextKey.JOB_META: catalog_meta(None)})
+        launched = event(mgr, EventType.BEFORE_JOB_LAUNCH, **{FLContextKey.JOB_META: catalog_meta("next")})
+        assert submitted.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+        assert launched.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+        mgr._ingest("next")
+        assert state(mgr, "site-a")["datasets"]["clinical-research"]["metadata"]["display_name"] == "Other update"
+        mgr._recover_finished()
+        assert state(mgr, "site-a")["datasets"]["clinical-research"]["metadata"]["display_name"] == "Retried update"
+        assert not mgr._pending
+
+    def test_an_untracked_jobs_result_is_not_applied(self, mgr):
+        pending(mgr, "j1")
+        mgr.jobs.add("untracked", manifest(**{"site-a": ok_entry()}))
+        mgr._ingest("untracked")
+        assert not mgr._store._clients and mgr._pending == {"j1"}
+
+    def test_restart_tracks_all_running_jobs_of_the_same_study(self, mgr, tmp_path):
         mgr.jobs.add("j1", status="RUNNING")
-        mgr.jobs.add("j0", study="other", status="SUBMITTED")
+        mgr.jobs.add("j2", status="RUNNING")
+        mgr.jobs.add("waiting", status="SUBMITTED")
         mgr.jobs.add("done", status="FINISHED:COMPLETED")
         ctx = SimpleNamespace(
             get_engine=lambda: mgr._engine, get_workspace=lambda: SimpleNamespace(get_root_dir=lambda: str(tmp_path))
         )
-        mgr._in_flight.clear()
         mgr._start(ctx)
         mgr._stop.set()
-        assert mgr._in_flight == {STUDY: "j1"}
-
-    def test_a_pending_job_aborted_after_restart_does_not_hold_the_study(self, mgr, tmp_path):
-        mgr.jobs.add("pending", status="SUBMITTED")
-        ctx = SimpleNamespace(get_engine=lambda: mgr._engine, get_workspace=lambda: mgr._workspace)
-        mgr._start(ctx)
-        # abort_before_start only sets terminal status; there is no lifecycle event to release a holder.
-        mgr.jobs.metas["pending"]["status"] = "FINISHED:ABORTED"
-        ctx = event(mgr, EventType.SUBMIT_JOB, **{FLContextKey.JOB_META: catalog_meta(None)})
-        assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None and not mgr._in_flight
+        assert mgr._pending == {"j1", "j2"}
 
     @pytest.mark.parametrize("status", ["FINISHED:ABORTED", "FINISHED:FAILED_TO_RUN"])
     @pytest.mark.parametrize("gone", [False, True])
-    def test_a_terminal_or_deleted_holder_is_recovered_without_an_event(self, mgr, gone, status):
-        held(mgr, "j1", status=status)
+    def test_a_terminal_or_deleted_job_is_cleaned_up_without_an_event(self, mgr, gone, status):
+        pending(mgr, "j1", status=status)
         if gone:
             del mgr.jobs.metas["j1"]
         mgr._recover_finished()
-        assert not mgr._in_flight
+        assert not mgr._pending
 
 
 class TestHandOver:
@@ -307,7 +333,7 @@ class TestTakeBack:
 
     def test_result_is_captured_privately_and_never_enters_the_downloadable_archive(self, mgr, tmp_path, monkeypatch):
         publication = manifest(**{"site-a": ok_entry(owner="private-after-withdrawal")})
-        held(mgr, "j1")
+        pending(mgr, "j1")
         run_dir = tmp_path / "j1"
         run_dir.mkdir()
         result_path = run_dir / "catalog_results.json"
@@ -352,7 +378,7 @@ class TestTakeBack:
         assert b"private-after-withdrawal" not in archive.read_bytes()
 
     def test_failure_to_save_the_private_result_blocks_archiving_and_keeps_the_source(self, mgr, tmp_path, monkeypatch):
-        held(mgr, "j1")
+        pending(mgr, "j1")
         run_dir = tmp_path / "j1"
         run_dir.mkdir()
         source = run_dir / "catalog_results.json"
@@ -372,7 +398,7 @@ class TestTakeBack:
 class TestIngest:
     def test_a_manifest_packaged_by_the_real_filesystem_archiver_is_applied(self, mgr, tmp_path):
         publication = manifest(**{"site-a": ok_entry()})
-        held(mgr, "j1")
+        pending(mgr, "j1")
         run_dir = tmp_path / "j1"
         run_dir.mkdir()
         (run_dir / "catalog_results.json").write_text(
@@ -384,29 +410,29 @@ class TestIngest:
         mgr._ingest("j1")
         assert mgr.search(STUDY, SearchQuery()).total == 1
 
-    def test_missing_workspace_releases_the_study_without_blaming_a_site(self, mgr, monkeypatch):
-        held(mgr, "j1", deploy_map={"app": ["site-a"]})
+    def test_missing_workspace_finishes_processing_without_blaming_a_site(self, mgr, monkeypatch):
+        pending(mgr, "j1", deploy_map={"app": ["site-a"]})
 
         def missing(*args):
             raise StorageException("workspace absent")
 
         monkeypatch.setattr(mgr.jobs, "get_storage_component", missing)
         mgr._ingest("j1")
-        assert not mgr._in_flight
+        assert not mgr._pending
         assert not mgr._store._clients  # the job failed; nothing says which site did
-        # The stored job is terminal, so it cannot block the next read either.
+        # A failed job does not prevent another submission.
         mgr.jobs.metas["j1"]["status"] = "FINISHED:FAILED_TO_RUN"
         ctx = event(mgr, EventType.SUBMIT_JOB, **{FLContextKey.JOB_META: catalog_meta(None)})
         assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
 
     def test_every_client_of_the_manifest_is_applied_in_the_jobs_study(self, mgr):
-        held(mgr, "j1", manifest(**{"site-a": ok_entry(), "site-b": ok_entry(display_name="B")}))
+        pending(mgr, "j1", manifest(**{"site-a": ok_entry(), "site-b": ok_entry(display_name="B")}))
         mgr._ingest("j1")
         assert mgr._store.search(STUDY, SearchQuery()).total == 2 and state(mgr, "site-a")["client"]["health"] == "OK"
-        assert mgr._in_flight == {}  # the Study is free for the next read
+        assert mgr._pending == set()  # this job no longer needs processing
 
     def test_a_job_without_a_study_is_the_default_study(self, mgr):
-        held(mgr, "j1", manifest(**{"site-a": ok_entry()}), study=None)
+        pending(mgr, "j1", manifest(**{"site-a": ok_entry()}), study=None)
         mgr._ingest("j1")
         assert mgr._store.search("default", SearchQuery()).total == 1
 
@@ -418,10 +444,10 @@ class TestIngest:
 
     def test_a_manifest_a_job_ships_in_its_own_app_is_not_the_result(self, mgr):
         forged = json.dumps({"manifest": manifest(**{"site-x": ok_entry()}), "mac": "0" * 64})
-        held(mgr, "j1", deploy_map={"app": ["site-a"]})
+        pending(mgr, "j1", deploy_map={"app": ["site-a"]})
         mgr.jobs.raw["j1"] = {"j1/app_server/config/catalog_results.json": forged}
         mgr._ingest("j1")
-        assert not mgr._store._clients and not mgr._in_flight
+        assert not mgr._store._clients and not mgr._pending
 
     @pytest.mark.parametrize("signed", ["bad mac", "no mac", "unsigned", "another job"])
     def test_a_manifest_in_the_right_place_without_this_jobs_signature_applies_nothing(self, mgr, signed):
@@ -432,23 +458,23 @@ class TestIngest:
             "unsigned": forged,
             "another job": {"manifest": forged, "mac": manifest_mac(job_key(KEY, "j9"), "j9", forged)},
         }[signed]
-        held(mgr, "j1", deploy_map={"app": ["site-a"]})
+        pending(mgr, "j1", deploy_map={"app": ["site-a"]})
         mgr.jobs.raw["j1"] = {"j1/catalog_results.json": json.dumps(content)}
         mgr._ingest("j1")
-        assert not mgr._store._clients and not mgr._in_flight  # nothing applied, nobody blamed
+        assert not mgr._store._clients and not mgr._pending  # nothing applied, nobody blamed
 
     def test_without_a_key_nothing_is_applied(self, mgr):
         mgr._key = None
-        held(mgr, "j1", manifest(**{"site-a": ok_entry()}), deploy_map={"app": []})
+        pending(mgr, "j1", manifest(**{"site-a": ok_entry()}), deploy_map={"app": []})
         mgr._ingest("j1")
         assert not mgr._store._clients  # nothing stored
 
     def test_a_job_without_a_manifest_changes_no_sites_health(self, mgr):
         seed(mgr, client="site-a")
         seed(mgr, client="site-b")
-        held(mgr, "j1")  # deployed to @ALL: every site the catalog knows in the Study
+        pending(mgr, "j1")  # deployed to @ALL: every site the catalog knows in the Study
         mgr._ingest("j1")
-        held(mgr, "j2", deploy_map={"app_server": ["server"], "app_site-a": ["site-a"]})
+        pending(mgr, "j2", deploy_map={"app_server": ["server"], "app_site-a": ["site-a"]})
         mgr._ingest("j2")
         health = {h["client"]: (h["health"], h["failures"]) for h in mgr._store.health(STUDY)}
         assert health == {"site-a": ("OK", 0), "site-b": ("OK", 0)}
@@ -461,10 +487,10 @@ class TestIngest:
         context = run_dir / "catalog_context.json"
         context.write_text("{}")  # the controller removes this as soon as it starts, so this job never did
         mgr._workspace = SimpleNamespace(get_run_dir=lambda job_id: str(run_dir))
-        held(mgr, "j1")
+        pending(mgr, "j1")
         mgr._ingest("j1")
         assert state(mgr, "site-a")["client"]["failures"] == 0 and state(mgr, "site-a")["client"]["health"] == "OK"
-        assert not context.exists() and not mgr._in_flight
+        assert not context.exists() and not mgr._pending
 
     def test_a_failed_cleanup_does_not_skip_the_other_or_keep_the_study(self, mgr, tmp_path, monkeypatch):
         run_dir = tmp_path / "run" / "j1"
@@ -472,44 +498,44 @@ class TestIngest:
         context = run_dir / "catalog_context.json"
         context.write_text("{}")
         mgr._workspace = SimpleNamespace(get_run_dir=lambda job_id: str(run_dir))
-        held(mgr, "j1", manifest(**{"site-a": ok_entry()}))
+        pending(mgr, "j1", manifest(**{"site-a": ok_entry()}))
 
         def broken(job_id):
             raise OSError("disk full")
 
         monkeypatch.setattr(mgr._artifacts, "discard", broken)
         mgr._ingest("j1")
-        assert not context.exists() and not mgr._in_flight
+        assert not context.exists() and not mgr._pending
         assert mgr._store.search(STUDY, SearchQuery()).total == 1  # the result was applied before cleanup
 
     def test_a_site_that_failed_to_answer_counts_a_failure_and_keeps_its_catalog(self, mgr):
-        held(mgr, "j1", manifest(**{"site-a": ok_entry()}))
+        pending(mgr, "j1", manifest(**{"site-a": ok_entry()}))
         mgr._ingest("j1")
-        held(mgr, "j2", manifest(**{"site-a": ManifestEntry("TIMEOUT", None)}))
+        pending(mgr, "j2", manifest(**{"site-a": ManifestEntry("TIMEOUT", None)}))
         mgr._ingest("j2")
         row = state(mgr, "site-a")
         assert row["client"]["health"] == "FAILED" and row["client"]["reason_code"] == "TIMEOUT"
         assert row["client"]["failures"] == 1 and "clinical-research" in row["datasets"]
 
     def test_an_unsupported_result_counts_as_a_failure(self, mgr):
-        held(mgr, "j1", manifest(**{"site-a": ManifestEntry("OK", {"format_version": 9})}))
+        pending(mgr, "j1", manifest(**{"site-a": ManifestEntry("OK", {"format_version": 9})}))
         mgr._ingest("j1")
         assert state(mgr, "site-a")["client"]["reason_code"] == "UNSUPPORTED_RESULT"
 
     def test_an_ok_return_code_without_a_result_records_no_result(self, mgr):
-        held(mgr, "j1", manifest(**{"site-a": ManifestEntry("OK", None)}))
+        pending(mgr, "j1", manifest(**{"site-a": ManifestEntry("OK", None)}))
         mgr._ingest("j1")
         health = state(mgr, "site-a")["client"]
         assert health["health"] == "FAILED" and health["reason_code"] == "NO_RESULT"
 
     def test_an_aborted_job_reported_twice_is_applied_once(self, mgr):
-        held(mgr, "j1", manifest(**{"site-a": ManifestEntry("TIMEOUT", None)}))
+        pending(mgr, "j1", manifest(**{"site-a": ManifestEntry("TIMEOUT", None)}))
         mgr._ingest("j1")  # JOB_ABORTED
         mgr._ingest("j1")  # then JOB_COMPLETED
         assert state(mgr, "site-a")["client"]["failures"] == 1
 
     def test_one_clients_failure_does_not_stop_the_others(self, mgr, monkeypatch):
-        held(mgr, "j1", manifest(**{"site-a": ok_entry(), "site-b": ok_entry()}))
+        pending(mgr, "j1", manifest(**{"site-a": ok_entry(), "site-b": ok_entry()}))
         real = mgr._reconciler.apply
 
         def apply(study, client, *args):
@@ -519,7 +545,7 @@ class TestIngest:
 
         monkeypatch.setattr(mgr._reconciler, "apply", apply)
         mgr._ingest("j1")
-        assert state(mgr, "site-b")["client"]["health"] == "OK" and mgr._in_flight == {}
+        assert state(mgr, "site-b")["client"]["health"] == "OK" and mgr._pending == set()
 
 
 class TestEvents:
@@ -556,7 +582,7 @@ class TestDownloads:
         assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
 
     def test_concurrent_legacy_download_and_ingestion_apply_once_and_leave_no_private_copy(self, mgr, monkeypatch):
-        held(mgr, "j1", manifest(**{"site-a": ok_entry()}), status="FINISHED:COMPLETED")
+        pending(mgr, "j1", manifest(**{"site-a": ok_entry()}), status="FINISHED:COMPLETED")
         entered, release = threading.Event(), threading.Event()
         observed = ObservedLock()
         monkeypatch.setattr(mgr, "_result_lock", observed)
@@ -586,7 +612,7 @@ class TestDownloads:
             assert not applications
             release.set()
         assert download_contexts[0].get_prop(FLContextKey.JOB_BLOCK_REASON) is None
-        assert applications == ["site-a"] and not mgr._in_flight
+        assert applications == ["site-a"] and not mgr._pending
         assert mgr.search(STUDY, SearchQuery()).total == 1
         with pytest.raises(FileNotFoundError):
             mgr._artifacts.read("j1", KEY)
@@ -617,7 +643,7 @@ class TestDownloads:
             assert zf.namelist() == ["log.txt"] and zf.read("log.txt") == b"safe"
 
     def test_download_before_ingestion_preserves_the_private_result(self, mgr):
-        held(mgr, "j1", manifest(**{"site-a": ok_entry()}), status="FINISHED:COMPLETED")
+        pending(mgr, "j1", manifest(**{"site-a": ok_entry()}), status="FINISHED:COMPLETED")
         ctx = event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"})
         assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
         mgr._ingest("j1")
@@ -677,19 +703,19 @@ class TestNotReady:
 
 class TestHealth:
     def test_a_site_is_stale_when_its_last_success_is_older_than_the_limit(self, mgr):
-        held(mgr, "j1", manifest(**{"site-a": ok_entry()}))
+        pending(mgr, "j1", manifest(**{"site-a": ok_entry()}))
         mgr._ingest("j1")
         assert [h["stale"] for h in mgr.health(STUDY)] == [False]
         mgr._now = lambda: datetime(2026, 6, 1, 2, tzinfo=timezone.utc)
         assert [h["stale"] for h in mgr.health(STUDY)] == [True]
 
     def test_a_site_that_never_succeeded_is_stale(self, mgr):
-        held(mgr, "j1", manifest(**{"site-a": ManifestEntry("TIMEOUT", None)}))
+        pending(mgr, "j1", manifest(**{"site-a": ManifestEntry("TIMEOUT", None)}))
         mgr._ingest("j1")
         assert mgr.health(STUDY)[0]["stale"] is True
 
 
-def test_context_write_failure_vetoes_launch_and_preserves_site_health(mgr, monkeypatch):
+def test_context_write_failure_vetoes_only_that_launch_and_preserves_site_health(mgr, monkeypatch):
     from nvflare.apis.fl_constant import ReservedKey
     from nvflare.private.fed.utils.fed_utils import get_job_launcher
 
@@ -711,7 +737,7 @@ def test_context_write_failure_vetoes_launch_and_preserves_site_health(mgr, monk
     ctx.set_prop(ReservedKey.ENGINE, mgr._engine, private=True, sticky=False)
     with pytest.raises(RuntimeError, match="Job launch blocked: catalog job context"):
         get_job_launcher(catalog_meta("j1"), ctx)
-    assert not mgr._in_flight
+    assert not mgr._pending
     mgr.jobs.add("j1", status="FINISHED:FAILED_TO_RUN")
     mgr._ingest("j1")
     assert mgr._store.client_state(STUDY, "site-a") == before
@@ -725,7 +751,7 @@ def test_failed_commit_retains_result_and_retries_only_unapplied_clients(mgr, tm
             "site-b": ManifestEntry("TIMEOUT", None),
         }
     )
-    held(mgr, "j1", status="FINISHED:COMPLETED")
+    pending(mgr, "j1", status="FINISHED:COMPLETED")
     run_dir = tmp_path / "j1"
     run_dir.mkdir()
     (run_dir / "catalog_results.json").write_text(
@@ -743,18 +769,18 @@ def test_failed_commit_retains_result_and_retries_only_unapplied_clients(mgr, tm
 
     monkeypatch.setattr(mgr._store, "commit", commit)
     mgr._ingest("j1")
-    assert inbox.exists() and mgr._in_flight == {STUDY: "j1"}
+    assert inbox.exists() and mgr._pending == {"j1"}
     assert state(mgr, "site-b")["client"]["failures"] == 1
     blocked = False
     mgr._recover_finished()
     assert mgr.search(STUDY, SearchQuery()).total == 0
     assert state(mgr, "site-a")["datasets"]["clinical-research"]["withheld"]
     assert state(mgr, "site-b")["client"]["failures"] == 1
-    assert not inbox.exists() and not mgr._in_flight and not mgr._applied_clients
+    assert not inbox.exists() and not mgr._pending and not mgr._applied_clients
 
 
 def test_unreadable_private_result_is_retried_after_storage_recovers(mgr, monkeypatch):
-    held(mgr, "j1", manifest(**{"site-a": ok_entry()}), status="FINISHED:COMPLETED")
+    pending(mgr, "j1", manifest(**{"site-a": ok_entry()}), status="FINISHED:COMPLETED")
     original = mgr._artifacts.read
 
     def denied(*args):
@@ -762,8 +788,8 @@ def test_unreadable_private_result_is_retried_after_storage_recovers(mgr, monkey
 
     monkeypatch.setattr(mgr._artifacts, "read", denied)
     mgr._ingest("j1")
-    assert mgr._in_flight == {STUDY: "j1"}
+    assert mgr._pending == {"j1"}
     monkeypatch.setattr(mgr._artifacts, "read", original)
     mgr._recover_finished()
     assert mgr.search(STUDY, SearchQuery()).total == 1
-    assert not mgr._in_flight
+    assert not mgr._pending

@@ -59,8 +59,8 @@ def _stored_catalog(name: str, row: dict) -> CatalogInfo:
 
 
 class Reconciler:
-    """Applies results in the order the jobs ran. One catalog job per Study runs at a time (CatalogManager), and each
-    starts from the state its predecessor left, so a result never needs to be ordered against another."""
+    """Applies complete dataset updates atomically. The last applied valid update wins, regardless of job order.
+    Datasets with no update in a result are unchanged."""
 
     def __init__(self, store: CatalogStore, read_limits: ReadLimits):
         self._store = store

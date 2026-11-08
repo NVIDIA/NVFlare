@@ -279,6 +279,5 @@ class CatalogExecutor(Executor):
                     self.log_warning(fl_ctx, f"catalog connector close failed: {type(e).__name__}")
 
         # A completed policy-only read is authoritative even when no dataset has ever been shared.
-        # Its coverage must prevent an older, more permissive result from first publishing a name.
         status = ResultStatus.OK if catalogs or withheld or unavailable or reason is None else ResultStatus.FAILED
         return build_result(status, catalogs=catalogs, withheld=withheld, unavailable=unavailable, reason_code=reason)

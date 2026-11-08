@@ -60,9 +60,9 @@ class CatalogManager(FLComponent):
         read_limits: dict | None = None,
         register_commands: bool = True,
     ):
-        """Runs one catalog read job per Study at a time and applies its result, however the job was submitted: by
-        the recipe or `nvflare catalog read`. A site is reported stale when its last
-        successful read is older than stale_after_s."""
+        """Applies catalog results as they arrive: the last applied update for each dataset wins.
+        Reads may overlap, including within a Study. A site is reported stale when its last successful read
+        is older than stale_after_s."""
         super().__init__()
         self._stale_after_s = stale_after_s
         self._read_limits = {**DEFAULT_LIMITS, **(read_limits or {})}
@@ -77,8 +77,7 @@ class CatalogManager(FLComponent):
         self._finished: queue.Queue = queue.Queue()  # ids of finished jobs, handled off the job runner's thread
         self._lock = threading.Lock()
         self._result_lock = threading.Lock()  # serialize ingestion with legacy archive redaction on downloads
-        # study -> the one catalog job that holds its read: launched with a context, its result not yet applied
-        self._in_flight: dict[str, str] = {}
+        self._pending: set[str] = set()  # launched jobs whose results still need processing; never blocks a read
         self._applied_clients: dict[str, set[str]] = {}  # completed clients of a result being retried
         self._now = lambda: datetime.now(timezone.utc)
         if register_commands:
@@ -97,8 +96,6 @@ class CatalogManager(FLComponent):
             self._start(fl_ctx)
         elif event_type == EventType.SYSTEM_END:
             self._stop.set()
-        elif event_type == EventType.SUBMIT_JOB:
-            self._refuse_overlap(fl_ctx)
         elif event_type == EventType.BEFORE_JOB_LAUNCH:
             self._hand_over(fl_ctx)
         elif event_type == EventType.BEFORE_JOB_WORKSPACE_ARCHIVE:
@@ -113,53 +110,14 @@ class CatalogManager(FLComponent):
     def _catalog_study(meta) -> str | None:
         return get_job_meta_study(meta) if isinstance(meta, dict) and meta.get(CATALOG_JOB_META) else None
 
-    def _unfinished_catalog_jobs(self, fl_ctx: FLContext) -> list:
-        jobs = self._engine.get_component(SystemComponents.JOB_MANAGER).get_jobs_by_status(_UNFINISHED, fl_ctx)
-        return sorted(
-            (j for j in jobs if self._catalog_study(j.meta) is not None),
-            key=lambda j: j.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0),
-        )
-
-    def _refuse_overlap(self, fl_ctx: FLContext):
-        """Refuse a catalog job while another for the same Study is unfinished or not yet applied. A convenience:
-        the launch check in _hand_over is what guarantees one read per Study, whatever path created the job."""
-        study = self._catalog_study(fl_ctx.get_prop(FLContextKey.JOB_META))
-        if self._store is None or study is None:
-            return
-        with self._lock:
-            busy = self._in_flight.get(study)
-        if busy is None:
-            busy = next(
-                (j.job_id for j in self._unfinished_catalog_jobs(fl_ctx) if get_job_meta_study(j.meta) == study), None
-            )
-        if busy is not None:
-            fl_ctx.set_prop(
-                FLContextKey.JOB_BLOCK_REASON,
-                f"a catalog read for study '{study}' is still running or being applied: job {busy}",
-                private=True,
-                sticky=False,
-            )
-
     def _hand_over(self, fl_ctx: FLContext):
-        """Before a catalog job starts, put what its controller needs in the job's run directory: the job process may
-        run in a container that sees only its own job directory, never the server's catalog store. Only one job per
-        Study gets it; a launch while another job holds the Study is blocked, so no run is wasted."""
+        """Give each catalog job its own signing key and a snapshot of indexed names, in its run directory.
+        The job process may run in a container that cannot see the server's catalog store."""
         meta = fl_ctx.get_prop(FLContextKey.JOB_META)
         study = self._catalog_study(meta)
         if self._store is None or study is None:
             return
         job_id = meta.get(JobMetaKey.JOB_ID.value)
-        with self._lock:
-            holder = self._in_flight.setdefault(study, job_id)
-        if holder != job_id:
-            self.log_warning(fl_ctx, f"study '{study}' already has catalog read {holder}; job {job_id} is not launched")
-            fl_ctx.set_prop(
-                FLContextKey.JOB_BLOCK_REASON,
-                f"a catalog read for study '{study}' is still running or being applied: job {holder}",
-                private=True,
-                sticky=False,
-            )
-            return
         try:
             run_dir = self._workspace.get_run_dir(job_id)
             context = {
@@ -167,11 +125,10 @@ class CatalogManager(FLComponent):
                 "previous": self._store.indexed(get_job_meta_study(meta)),
             }
             write_atomically(os.path.join(run_dir, CONTEXT_FILE), context)
+            with self._lock:
+                self._pending.add(job_id)
         except Exception as e:
             self.log_warning(fl_ctx, f"catalog job context could not be written: {type(e).__name__}")
-            with self._lock:
-                if self._in_flight.get(study) == job_id:
-                    del self._in_flight[study]
             fl_ctx.set_prop(
                 FLContextKey.JOB_BLOCK_REASON, "catalog job context could not be written", private=True, sticky=False
             )
@@ -188,7 +145,7 @@ class CatalogManager(FLComponent):
                 return
             run_dir = self._workspace.get_run_dir(job_id)
             with self._lock:
-                keep = job_id in self._in_flight.values()
+                keep = job_id in self._pending
             self._artifacts.capture(job_id, run_dir, keep)
         except Exception as e:
             fl_ctx.set_prop(
@@ -216,8 +173,8 @@ class CatalogManager(FLComponent):
             if replacement is not None:
                 # Preserve a legacy result if completion and download arrive together.
                 with self._lock:
-                    held = job_id in self._in_flight.values()
-                if held:
+                    pending = job_id in self._pending
+                if pending:
                     try:
                         self._artifacts.capture_archive(job_id, data, self._key)
                     except (ValueError, TypeError, zipfile.BadZipFile):
@@ -239,12 +196,11 @@ class CatalogManager(FLComponent):
         self._store = CatalogStore(root)
         self._artifacts = CatalogArtifacts(root)
         self._reconciler = Reconciler(self._store, ReadLimits(**self._read_limits))
-        try:  # a job that survived a restart still holds its Study's read
-            for job in self._unfinished_catalog_jobs(fl_ctx):
-                if job.meta.get(JobMetaKey.STATUS.value) in _LAUNCHED:
-                    self._in_flight.setdefault(get_job_meta_study(job.meta), job.job_id)
+        try:  # continue tracking jobs that were running when the server restarted
+            jobs = self._engine.get_component(SystemComponents.JOB_MANAGER).get_jobs_by_status(list(_LAUNCHED), fl_ctx)
+            self._pending.update(job.job_id for job in jobs if self._catalog_study(job.meta) is not None)
         except Exception as e:
-            self.log_warning(fl_ctx, f"unfinished catalog jobs could not be listed: {type(e).__name__}")
+            self.log_warning(fl_ctx, f"running catalog jobs could not be listed: {type(e).__name__}")
         self._thread = threading.Thread(target=self._run, name="catalog-manager", daemon=True)
         self._thread.start()
 
@@ -268,8 +224,8 @@ class CatalogManager(FLComponent):
     def _recover_finished(self):
         """Recover missed terminal events and retry results held after transient storage failures."""
         with self._lock:
-            holders = list(self._in_flight.values())
-        for job_id in holders:
+            pending = list(self._pending)
+        for job_id in pending:
             try:
                 with self._engine.new_context() as fl_ctx:
                     meta = self._job_meta(job_id, fl_ctx)
@@ -285,22 +241,21 @@ class CatalogManager(FLComponent):
         return job.meta if job is not None else None
 
     def _ingest(self, job_id: str):
-        """Apply the holder's result, retaining it on storage failure and skipping clients already committed.
-        Other jobs (not catalog jobs, refused at launch, or already applied) change nothing."""
+        """Apply a pending job's result once; retry storage failures without blocking other catalog reads."""
         with self._result_lock:
             self._apply_job(job_id)
 
     def _apply_job(self, job_id: str):
         with self._lock:
-            study = next((s for s, held in self._in_flight.items() if held == job_id), None)
-        if study is None:
-            return
+            if job_id not in self._pending:
+                return
         retry = False
         try:
             job_manager = self._engine.get_component(SystemComponents.JOB_MANAGER)
             with self._engine.new_context() as fl_ctx:
                 meta = self._job_meta(job_id, fl_ctx)
-                if self._catalog_study(meta) != study:
+                study = self._catalog_study(meta)
+                if study is None:
                     return
             now = _iso(self._now())
             try:
@@ -355,8 +310,7 @@ class CatalogManager(FLComponent):
             if not retry:
                 self._applied_clients.pop(job_id, None)
                 with self._lock:
-                    if self._in_flight.get(study) == job_id:
-                        del self._in_flight[study]
+                    self._pending.discard(job_id)
 
     def _context_path(self, job_id: str) -> Path | None:
         try:
