@@ -58,7 +58,7 @@ text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif
 <polyline class="arr" points="560,98 600,112" marker-end="url(#ah)"/>
 <text class="l s" x="575" y="128" text-anchor="middle">no</text>
 <polyline class="arr" points="775,151 775,176 95,176 95,196" marker-end="url(#ah)"/>
-<text class="l s" x="105" y="170" text-anchor="start">every available entry of the Study</text>
+<text class="l s" x="105" y="170" text-anchor="start">every visible entry of the Study (withheld removed)</text>
 <rect class="box" x="10" y="196" width="170" height="66" rx="7"/>
 <text class="b" x="95.0" y="216.5" text-anchor="middle">Filter</text>
 <text class="" x="95.0" y="233.5" text-anchor="middle">client, dataset, available,</text>

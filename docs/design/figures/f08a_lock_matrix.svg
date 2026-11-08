@@ -51,10 +51,12 @@ text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif
 <text class="l b" x="10" y="73" text-anchor="start">Job runner</text>
 <text class="l muted" x="10" y="88" text-anchor="start">BEFORE_JOB_LAUNCH: _hand_over</text>
 <circle class="dot brief" cx="587.5" cy="76.0" r="10"/>
+<circle class="dot brief" cx="690.5" cy="76.0" r="10"/>
 <rect class="band alt" x="0" y="96" width="960" height="40"/>
 <text class="l b" x="10" y="113" text-anchor="start">Completion thread</text>
 <text class="l muted" x="10" y="128" text-anchor="start">BEFORE_JOB_WORKSPACE_ARCHIVE: _take_back</text>
 <circle class="dot held" cx="484.5" cy="116.0" r="10"/>
+<circle class="dot brief" cx="587.5" cy="116.0" r="10"/>
 <rect class="band" x="0" y="136" width="960" height="40"/>
 <text class="l b" x="10" y="153" text-anchor="start">Completion thread</text>
 <text class="l muted" x="10" y="168" text-anchor="start">JOB_COMPLETED or JOB_ABORTED: enqueue id</text>
