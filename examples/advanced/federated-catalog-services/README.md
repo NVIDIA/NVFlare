@@ -40,14 +40,21 @@ nvflare job logs JOB_ID --site all --tail 100
 Use the normal job CLI for archive downloads. `docker compose up --wait` waits
 for container/source startup; `nvflare system status` checks FLARE registration.
 
-## What setup configures
+## What setup does
 
-[example_setup.py](example_setup.py) calls the standard `nvflare provision` and `nvflare config
-add/use` commands. It selects the latest generated kit directory, creates the
-server's `local/resources.json` from its default when needed, and appends the
-`catalog_manager` component once. It records `CATALOG_KITS` in `.env` so users
-need no exports or manual kit-generation selection. The admin kit remains on
-your computer; it is never mounted in a service container.
+[example_setup.py](example_setup.py) runs these standard steps and prints each
+command as it goes, so you can repeat them by hand or reuse them in your own
+deployment. Rerunning it keeps existing kits, other server components and other
+`.env` settings.
+
+| Step | Command or file | What it sets up |
+| --- | --- | --- |
+| 1 | `nvflare provision -p project.yml -w <workspace>` | A startup kit (certificates, configuration, start scripts) for the server, each site and the admin, as described in [project.yml](project.yml). |
+| 2 | `nvflare config add catalog-admin@nvidia.com <kit> --force`, then `nvflare config use catalog-admin@nvidia.com` | Registers the admin kit as the active identity for `nvflare job`, `nvflare catalog` and `nvflare system`. The admin kit stays on your computer and is never mounted in a container. |
+| 3 | Add `{"id": "catalog_manager", "path": "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"}` to the `components` list of `<server kit>/local/resources.json` | Runs the `CatalogManager` on the server. This is how any server component is enabled. |
+| 4 | `CATALOG_KITS=<kits>` in `.env` | Tells `docker compose` which kits to mount; each container mounts only its own. |
+
+`nvflare config list` shows the registered admin kits.
 
 When switching from an older manual setup, unset a previously exported
 `CATALOG_KITS` if it points elsewhere: shell variables override Compose's `.env`.
