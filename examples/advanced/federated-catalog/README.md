@@ -35,8 +35,10 @@ nvflare system status
 docker compose logs -f nvflare-files-server nvflare-files-site-1 nvflare-files-site-2
 nvflare catalog show --site site-1 --dataset omop --format json
 nvflare catalog show --site site-2 --dataset omop --format json
-nvflare job logs JOB_ID --site all --tail 100
 ```
+
+`job.py` prints a ready-to-run `nvflare job logs` command containing the actual
+submitted job ID. Copy that command to inspect the job logs.
 
 Use the standard job CLI to download job archives. Catalog queries return the
 current permitted metadata; raw publications are removed from job archives.

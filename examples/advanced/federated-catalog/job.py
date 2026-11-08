@@ -27,6 +27,8 @@ def main():
     recipe = CatalogRecipe(sites=["site-1", "site-2"])
     recipe.enable_log_streaming("log.txt")
     run = recipe.execute(env)
+    job_id = run.get_job_id()
+    print(f"\nTo inspect this job's logs, run:\n  nvflare job logs {job_id} --site all --tail 100\n", flush=True)
     subprocess.run(
         [
             sys.executable,
@@ -34,7 +36,7 @@ def main():
             "nvflare.cli",
             "job",
             "monitor",
-            run.get_job_id(),
+            job_id,
             "--timeout",
             "300",
         ],

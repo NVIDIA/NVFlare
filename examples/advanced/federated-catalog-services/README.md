@@ -33,8 +33,10 @@ docker compose logs -f nvflare-server nvflare-site-1 nvflare-site-2
 nvflare system status
 nvflare catalog show --site site-1 --dataset sanctuary --format json > site-1-catalog.json
 nvflare catalog show --site site-2 --dataset sanctuary --format json > site-2-catalog.json
-nvflare job logs JOB_ID --site all --tail 100
 ```
+
+`job.py` prints a ready-to-run `nvflare job logs` command containing the actual
+submitted job ID. Copy that command to inspect the job logs.
 
 `job.py` streams client logs and uses `nvflare job monitor` through completion.
 Use the normal job CLI for archive downloads. `docker compose up --wait` waits
