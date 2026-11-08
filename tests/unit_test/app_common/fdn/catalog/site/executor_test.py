@@ -471,17 +471,19 @@ class TestMountResolver:
         runtime.write_text("format_version: 2\nstudies:\n  s:\n    slurm: {sandbox: none}\n")
         assert MountResolver(str(tmp_path)).resolve("s", str(runtime)) == {}
 
-    @pytest.mark.parametrize("content", ["format_version: 99\n", "format_version: 2\nstudies: {}\n"])
-    def test_invalid_or_empty_process_bindings_do_not_fall_back_to_data_directories(self, tmp_path, content):
+    def test_empty_process_bindings_do_not_fall_back_to_data_directories(self, tmp_path):
+        (tmp_path / "s" / "unrelated").mkdir(parents=True)
+        runtime = tmp_path / "study_runtime.yaml"
+        runtime.write_text("format_version: 2\nstudies: {}\n")
+        assert MountResolver(str(tmp_path)).resolve("s", str(runtime)) == {}
+
+    @pytest.mark.parametrize("content", ["format_version: 99\n", "studies: [unbalanced\n"])
+    def test_an_unusable_study_runtime_is_an_error_not_an_empty_site(self, tmp_path, content):
         (tmp_path / "s" / "unrelated").mkdir(parents=True)
         runtime = tmp_path / "study_runtime.yaml"
         runtime.write_text(content)
-        assert MountResolver(str(tmp_path)).resolve("s", str(runtime)) == {}
-
-    def test_an_unreadable_study_runtime_gives_no_bindings(self, tmp_path):
-        runtime = tmp_path / "study_runtime.yaml"
-        runtime.write_text("format_version: 99\n")
-        assert MountResolver(str(tmp_path / "none")).resolve("s", str(runtime)) == {}
+        with pytest.raises(ValueError):
+            MountResolver(str(tmp_path)).resolve("s", str(runtime))
 
 
 class TestSiteLocations:
@@ -519,6 +521,26 @@ class TestSiteLocations:
         executor.resolver = MountResolver(str(tmp_path / "no-data"))
         parsed = self._run(executor, ctx, ["good"])
         assert [c.dataset for c in parsed.catalogs] == ["good"]
+
+    def test_an_unusable_study_runtime_fails_the_read_and_withholds_what_the_server_holds(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(executor_module, "DEFAULT_POLICY_ROOT", str(tmp_path / "no-mount"))
+        monkeypatch.setattr(executor_module, "DEFAULT_MOUNT_ROOT", str(tmp_path / "no-data"))
+        local = tmp_path / "ws" / "local"
+        (local / "fdn" / "study1").mkdir(parents=True)
+        (local / "study_runtime.yaml").write_text("format_version: 99\n")
+        (local / "fdn" / "catalog_site.json").write_text(
+            json.dumps({"format_version": 1, "connectors": FILES, "default_connector": "files"})
+        )
+        (local / "fdn" / "study1" / "catalog_policy.json").write_text(
+            json.dumps({"format_version": 1, "datasets": {"good": {"share": True}}})
+        )
+        executor, ctx = self._executor_with_workspace(tmp_path / "ws")
+        ctx.get_engine().fire_event = lambda *args, **kwargs: None  # the failure is logged through the engine
+        executor.resolver = MountResolver(str(tmp_path / "no-data"))
+        parsed = self._run(executor, ctx, ["good"], previous=["good"])
+        # A broken site configuration is a failed read, not a clean read of a site with no datasets.
+        assert parsed.status == ResultStatus.FAILED and parsed.reason_code == ReasonCode.INTERNAL
+        assert parsed.withheld == ("good",) and not parsed.catalogs
 
     def test_the_policy_mount_wins_over_local_fdn(self, tmp_path, monkeypatch):
         mount = tmp_path / "mount"

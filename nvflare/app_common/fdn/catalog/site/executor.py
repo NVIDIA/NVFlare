@@ -87,12 +87,9 @@ class MountResolver:
                 if study_dir.is_dir()
                 else {}
             )
-        try:
-            parser_mode = "slurm" if mode == "slurm-process" else "process"
-            runtime = resolve_study_runtime(load_study_runtime_file(runtime_file, parser_mode), study, runtime_file)
-        except (OSError, ValueError) as e:
-            _logger.warning("the study runtime file could not be used, so no dataset is bound: %s", type(e).__name__)
-            return {}
+        parser_mode = "slurm" if mode == "slurm-process" else "process"
+        # An unusable runtime file raises ValueError: the read fails, it does not report a site with no datasets.
+        runtime = resolve_study_runtime(load_study_runtime_file(runtime_file, parser_mode), study, runtime_file)
         paths = {d.dataset: Path(d.source) for d in runtime.datasets}
         return {
             name: path
@@ -186,6 +183,11 @@ class CatalogExecutor(Executor):
             mounts = self.resolver.resolve(study, runtime_file)
         except OSError as e:
             self.log_warning(fl_ctx, f"catalog datasets could not be listed: {type(e).__name__}")
+            return self._fail(asked, previous, ReasonCode.INTERNAL)
+        except ValueError as e:
+            self.log_warning(
+                fl_ctx, f"the study runtime file could not be used, so the read failed: {type(e).__name__}"
+            )
             return self._fail(asked, previous, ReasonCode.INTERNAL)
 
         policy_root = self._policy_root(workspace_root)
