@@ -14,9 +14,14 @@ this FLARE checkout installed. From this directory:
 ```bash
 python example_setup.py --workspace /tmp/nvflare/catalog-files
 docker compose up -d --build --wait
+nvflare system status
 python job.py
 nvflare catalog show
 ```
+
+Before running `python job.py`, confirm `nvflare system status` shows both
+`site-1` and `site-2` registered. If startup is still in progress, wait a few
+seconds and rerun the status command.
 
 Setup uses `nvflare provision` to create server, client and admin startup kits,
 then selects the host admin identity with `nvflare config add` and `config use`.

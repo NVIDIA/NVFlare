@@ -13,9 +13,14 @@ this FLARE checkout installed. From this directory:
 ```bash
 python example_setup.py --workspace /tmp/nvflare/catalog   # create the startup kits and select the admin
 docker compose up -d --build --wait                        # start the server and both sites
+nvflare system status                                     # confirm both sites are registered
 python job.py                                              # collect the site-approved metadata
 nvflare catalog show                                       # browse it
 ```
+
+Before running `python job.py`, confirm `nvflare system status` shows both
+`site-1` and `site-2` registered. If startup is still in progress, wait a few
+seconds and rerun the status command.
 
 That is all. Setup is safe to rerun, and `--workspace` can be any path (the
 default is `./workspace`). Source rows stay at the sites.
