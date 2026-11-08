@@ -25,7 +25,7 @@ A catalog read is an ordinary FLARE job. A server component applies its result t
 
 **Figure 1. Where each part runs.** Sites decide what leaves them; the server never reads a source.
 
-![Architecture at a glance: user, FLARE server and each site, and what talks to what](figures/f01_architecture.svg)
+![Architecture at a glance: user, FLARE server and each site, and what talks to what](../resources/catalog_design_f01_architecture.svg)
 
 | To understand | Read |
 | --- | --- |
@@ -65,7 +65,7 @@ The pilot uses bounded full metadata reads per dataset. There is no incremental 
 
 **Figure 3. What the site executor does for one task.** Every outcome is one of `catalog`, `withheld` or `unavailable`, or a whole-read failure.
 
-![What the site executor does for one task](figures/f03_site_executor.svg)
+![What the site executor does for one task](../resources/catalog_design_f03_site_executor.svg)
 
 ### 3.1 Existing Study dataset bindings
 
@@ -238,7 +238,7 @@ class CatalogConnector(ABC):
 
 **Figure 4. Connectors.** The executor builds one connector for each configured connector the Study's datasets use, and asks it for one dataset at a time.
 
-![Connectors implementing the CatalogConnector interface](figures/f04_connectors.svg)
+![Connectors implementing the CatalogConnector interface](../resources/catalog_design_f04_connectors.svg)
 
 The handler iterates selected datasets, catches a safe `ConnectorError` per call, and continues with the others. Each successful call returns one complete dataset catalog. A corrupt footer, missing mount, denied source access or invalid metadata affects only that dataset and produces an explicit `unavailable` name. No incomplete table/column inventory is returned for that dataset. A budget/cancellation error without source-validity evidence changes read health only. Enforce each dataset deadline before the job's response deadline, leaving time to return completed results; qualify cancellation of blocking provider calls under the actual launcher. Keep the reader's failure state isolated: discard/reopen a failed connection when needed before reading the next dataset.
 
@@ -478,7 +478,7 @@ Keep availability separate from permission to show metadata:
 
 **Figure 5. What search can see of one dataset entry.** Availability and permission are separate; withheld always wins.
 
-![What search can see of one dataset entry: visible, unavailable or withheld](figures/f05_entry_states.svg)
+![What search can see of one dataset entry: visible, unavailable or withheld](../resources/catalog_design_f05_entry_states.svg)
 
 The handler evaluates installed policy; no person reviews each read. It returns no incomplete metadata for a failed dataset, while healthy datasets remain independent. Before releasing metadata, apply the common current policy and remove dangling references created by its exclusions. A failed/absent dataset does not prove source deletion; a reused binding name still requires live operation validation.
 
@@ -494,7 +494,7 @@ A catalog read is a standard Job Recipe, `CatalogRecipe`, run against a deployme
 
 **Figure 6. Life of one catalog job on the server.** The job's own files are never trusted; the server applies its own captured copy.
 
-![Life of one catalog job on the server in six stages](figures/f06_job_lifecycle.svg)
+![Life of one catalog job on the server in six stages](../resources/catalog_design_f06_job_lifecycle.svg)
 
 A catalog read uses the execute task only. No service socket, prepare/commit protocol or separate catalog Study is required by the mounted-data pilot. Cancellation uses normal job/task lifecycle handling and must stop the reader; an interrupted result supplies no metadata, and the manager updates job health without claiming a dataset check.
 
@@ -516,7 +516,7 @@ For each client's terminal result:
 
 **Figure 7. Applying one client's result.** Restrictions are applied first so they survive a failure anywhere else in the result.
 
-![Applying one client's result in five steps, with the per-catalog decision](figures/f07_reconcile.svg)
+![Applying one client's result in five steps, with the per-catalog decision](../resources/catalog_design_f07_reconcile.svg)
 
 The server stores catalog publications and read health under `(study, client, dataset)`. Existing `StudyRegistryService` remains the authority for Study membership; these rows do not define membership. There are no source checkpoints, catalog-scope rows, absence counters or duplicate identity registries in the pilot.
 
@@ -526,9 +526,9 @@ Catalog reads may run concurrently, including reads of the same Study. The manag
 
 **Figure 8. Locks on the server.** `_result_lock` is taken before `_lock` or `store.lock`; `_lock` and `store.lock` are never held together. Only the archive hook of another job can wait on a catalog apply.
 
-![Which thread takes which lock](figures/f08a_lock_matrix.svg)
+![Which thread takes which lock](../resources/catalog_design_f08a_lock_matrix.svg)
 
-![What is held during one apply](figures/f08b_apply_timeline.svg)
+![What is held during one apply](../resources/catalog_design_f08b_apply_timeline.svg)
 
 Each launched job receives its own signing key and a snapshot of the dataset names currently indexed for its sites. That snapshot helps a site report withdrawals for previously published names; it does not reserve the Study or define a complete replacement of its index. Absence from a result is not a deletion or withdrawal. Only explicit dataset updates change the catalog.
 
@@ -538,13 +538,13 @@ Restart restores both running catalog jobs and retained result-inbox files, incl
 
 **Figure 9. Persistence.** A client's file is always the old version or the new one, and a file that cannot be read is kept, not overwritten.
 
-![Committing one client update atomically](figures/f09a_persistence_write.svg)
+![Committing one client update atomically](../resources/catalog_design_f09a_persistence_write.svg)
 
-![Loading client files at server start](figures/f09b_persistence_load.svg)
+![Loading client files at server start](../resources/catalog_design_f09b_persistence_load.svg)
 
 **Figure 10. How a result is trusted.** Only the server holds the master key; a job gets one derived key and the server verifies what it signs.
 
-![How a result is trusted: master key, job key, signed manifest, verification](figures/f10_trust.svg)
+![How a result is trusted: master key, job key, signed manifest, verification](../resources/catalog_design_f10_trust.svg)
 
 Only a manifest signed with the job-specific key is applied. Before issuing a key or indexed-name snapshot, the manager validates the deployed server JSON: exactly the built-in `CatalogController`, its supported data arguments, optional standard log receivers, and no custom server code, BYOC entrypoint or server task filters. The gate explicitly rejects effective job-supplied server launcher settings, including defaults, server overrides and legacy nested resource specifications, independently of the BYOC flag. Use site-owned server images and execution settings. Client-only launcher settings and portable server resource requests remain supported. Custom client-side readers remain supported. The default component allowlist alone is not this admission check: authorized BYOC bypasses that allowlist. Site-installed code and principals otherwise authorized to execute arbitrary code on the server remain trusted; a job-local signature does not isolate catalog data from other code with the same filesystem privileges. Existing server BYOC permissions must therefore be limited to trusted principals. Any member authorized to submit jobs to the Study may request a catalog read, while sites publish only what their own policy permits. An offline site retains its last known metadata, and transport failures change health without establishing a new dataset observation.
 
@@ -556,7 +556,7 @@ The site may enforce execution time windows in its approved handler. The site ha
 
 **Figure 11. Client health.** Stale is computed from the last successful read; it is not a stored state.
 
-![Client health from three result shapes, and stale](figures/f11_health.svg)
+![Client health from three result shapes, and stale](../resources/catalog_design_f11_health.svg)
 
 Show the latest check time and report clients whose checks fail or are deferred. Report any entries hidden because a read skipped them for budget (`reason_code: BUDGET_EXCEEDED`), per client, so operators raise the budget instead of living with hidden entries. A catalog is as current as its last read. There is no catalog validity lifetime to renew.
 
@@ -570,7 +570,7 @@ Catalog search queries the stored catalogs of the active FLARE Study across its 
 
 **Figure 12. How a search is answered.** Search never reads a source; it works on a snapshot of the stored catalogs.
 
-![How a search is answered](figures/f12_search.svg)
+![How a search is answered](../resources/catalog_design_f12_search.svg)
 
 Results expose the existing client and dataset name, permitted metadata, version, source observation, publication time, `available` and `last_checked_at`. An unavailable entry shows only client, dataset name, `available` and `last_checked_at`, not its metadata, and metadata filters do not match it; an available-only filter is optional. Withheld entries and their history are excluded regardless of availability. Apply Study authorization and suppression before all filters and projections. Shared lineage projections also omit references to currently withheld entries. Detailed failures remain in authorized diagnostics.
 
