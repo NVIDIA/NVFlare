@@ -167,7 +167,10 @@ class CatalogStore:
         for study_dir in sorted(p for p in self._root.iterdir() if p.is_dir() and _SAFE_NAME.fullmatch(p.name)):
             study = study_dir.name
             for tmp in study_dir.glob("*.tmp"):
-                tmp.unlink()
+                try:
+                    tmp.unlink()
+                except OSError as error:  # a leftover partial write must not keep the service from starting
+                    _logger.warning(f"could not remove {tmp.name}: {type(error).__name__}")
             for path in sorted(study_dir.glob("*.json")):
                 client = path.stem
                 if not _SAFE_NAME.fullmatch(client):

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -117,6 +118,16 @@ class TestPersistence:
         tmp.write_text("partial")
         CatalogStore(str(tmp_path))
         assert not tmp.exists()
+
+    def test_a_leftover_temp_file_that_cannot_be_removed_does_not_stop_the_store(self, tmp_path, monkeypatch):
+        seeded(tmp_path)
+        (tmp_path / "fdn" / "catalog" / STUDY / "site-a.json.tmp").write_text("partial")
+
+        def refuse(self, *args, **kwargs):
+            raise PermissionError("not yours")
+
+        monkeypatch.setattr(Path, "unlink", refuse)
+        assert CatalogStore(str(tmp_path)).client_state(STUDY, CLIENT)["datasets"]
 
     @pytest.mark.parametrize("bad", ["../x", "a/b", "", ".hidden", "a b"])
     def test_names_cannot_escape_the_store(self, tmp_path, bad):

@@ -192,6 +192,8 @@ class CatalogManager(FLComponent):
             self._capture_result(fl_ctx)
 
     def _capture_result(self, fl_ctx: FLContext):
+        if self._artifacts is None:  # the service did not start, so it handed nothing over; do not block other jobs
+            return
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
         try:
             run_dir = self._workspace.get_run_dir(job_id)

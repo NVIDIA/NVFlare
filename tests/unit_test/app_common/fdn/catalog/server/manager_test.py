@@ -391,6 +391,11 @@ class TestTakeBack:
         assert sorted(p.name for p in run_dir.iterdir()) == ["keep.json"]
         assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
 
+    def test_a_service_that_did_not_start_does_not_block_other_jobs_from_archiving(self, mgr, tmp_path):
+        mgr._artifacts = None
+        run_dir, ctx = self.archive(mgr, tmp_path, "keep.json")
+        assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+
     def test_reserved_private_files_are_removed_even_without_the_catalog_marker(self, mgr, tmp_path):
         run_dir, ctx = self.archive(mgr, tmp_path, "catalog_context.json", marker=False)
         assert not (run_dir / "catalog_context.json").exists() and ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None

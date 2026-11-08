@@ -93,6 +93,17 @@ def test_reflects_columns_ordered_keys_and_relationships_without_source_rows(dat
     assert_closed(opened)
 
 
+def test_a_column_type_sqlalchemy_cannot_render_is_published_as_unknown():
+    from sqlalchemy import Integer
+    from sqlalchemy.dialects import sqlite
+    from sqlalchemy.types import NullType
+
+    from nvflare.app_opt.fdn.catalog.sql_connector import _type_name
+
+    assert _type_name(Integer(), sqlite.dialect()) == "INTEGER"
+    assert _type_name(NullType(), sqlite.dialect()) == "UNKNOWN"
+
+
 def test_mounted_sqlite_is_opened_read_only(database, monkeypatch):
     create_engine = sqlalchemy.create_engine
 

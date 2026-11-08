@@ -23,6 +23,16 @@ from nvflare.app_opt.fdn.catalog._metadata import ReadBudget, build_catalog, sel
 from nvflare.app_opt.fdn.catalog.declarations import read_declarations
 
 
+def _type_name(column_type, dialect) -> str:
+    """The column's type as the database names it; a type SQLAlchemy cannot render is published as UNKNOWN."""
+    from sqlalchemy.exc import CompileError
+
+    try:
+        return column_type.compile(dialect=dialect)
+    except CompileError:
+        return "UNKNOWN"
+
+
 class SQLConnector(CatalogConnector):
     """Use a site environment variable containing a SQLAlchemy URL, or a mounted SQLite file.
 
@@ -113,7 +123,7 @@ class SQLConnector(CatalogConnector):
                             "columns": [
                                 {
                                     "name": column["name"],
-                                    "type": column["type"].compile(dialect=engine.dialect),
+                                    "type": _type_name(column["type"], engine.dialect),
                                     "nullable": column.get("nullable"),
                                 }
                                 for column in columns
