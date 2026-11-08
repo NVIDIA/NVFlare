@@ -21,7 +21,7 @@ services:
     ports: ["127.0.0.1:8002:8002", "127.0.0.1:8003:8003"]
     volumes:
       - type: bind
-        source: ${CATALOG_KITS:?Run python setup.py first}/nvflare-server
+        source: ${CATALOG_KITS:?Run python example_setup.py first}/nvflare-server
         target: /startup-kit
         read_only: true
         bind: {create_host_path: false}
@@ -35,7 +35,7 @@ services:
       UNITY_CATALOG_URL: http://unity-catalog:8080/api/2.1/unity-catalog
     volumes:
       - type: bind
-        source: ${CATALOG_KITS:?Run python setup.py first}/site-1
+        source: ${CATALOG_KITS:?Run python example_setup.py first}/site-1
         target: /startup-kit
         read_only: true
         bind: {create_host_path: false}
@@ -54,7 +54,7 @@ services:
       CATALOG_DATABASE_URL: postgresql+psycopg://catalog_reader:local-demo-reader@postgres:5432/sanctuary
     volumes:
       - type: bind
-        source: ${CATALOG_KITS:?Run python setup.py first}/site-2
+        source: ${CATALOG_KITS:?Run python example_setup.py first}/site-2
         target: /startup-kit
         read_only: true
         bind: {create_host_path: false}

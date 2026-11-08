@@ -11,10 +11,10 @@ Prerequisites: Docker Compose **2.30 or later**, and a Python environment with
 this FLARE checkout installed. From this directory:
 
 ```bash
-python setup.py --workspace /tmp/nvflare/catalog   # create the startup kits and select the admin
-docker compose up -d --build --wait                # start the server and both sites
-python job.py                                      # collect the site-approved metadata
-nvflare catalog show                               # browse it
+python example_setup.py --workspace /tmp/nvflare/catalog   # create the startup kits and select the admin
+docker compose up -d --build --wait                        # start the server and both sites
+python job.py                                              # collect the site-approved metadata
+nvflare catalog show                                       # browse it
 ```
 
 That is all. Setup is safe to rerun, and `--workspace` can be any path (the
@@ -42,7 +42,7 @@ for container/source startup; `nvflare system status` checks FLARE registration.
 
 ## What setup configures
 
-[setup.py](setup.py) calls the standard `nvflare provision` and `nvflare config
+[example_setup.py](example_setup.py) calls the standard `nvflare provision` and `nvflare config
 add/use` commands. It selects the latest generated kit directory, creates the
 server's `local/resources.json` from its default when needed, and appends the
 `catalog_manager` component once. It records `CATALOG_KITS` in `.env` so users
@@ -153,8 +153,8 @@ SimEnv with Parquet/CSV and SQLite.
 
 | Symptom | Fix |
 | --- | --- |
-| `docker compose` cannot find the kits, or uses an old workspace | Rerun `python setup.py --workspace <path>`. A shell variable `CATALOG_KITS` overrides `.env`; `unset CATALOG_KITS`. |
-| Changed `project.yml` | `python setup.py --workspace <path> --reprovision` |
-| Need the full output of a setup step | `python setup.py --verbose ...` |
+| `docker compose` cannot find the kits, or uses an old workspace | Rerun `python example_setup.py --workspace <path>`. A shell variable `CATALOG_KITS` overrides `.env`; `unset CATALOG_KITS`. |
+| Changed `project.yml` | `python example_setup.py --workspace <path> --reprovision` |
+| Need the full output of a setup step | `python example_setup.py --verbose ...` |
 | `nvflare catalog show` reports the service is not ready | The server is still starting. Wait a few seconds, or check `nvflare system status`. |
 | Start over with fresh demo data | `docker compose down --volumes`, then run the four commands again. |
