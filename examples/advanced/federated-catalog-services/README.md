@@ -52,7 +52,7 @@ environment; it does not call Python provisioning or kit-management APIs. Rerunn
 | --- | --- | --- |
 | 1 | `nvflare provision -p project.yml -w <workspace>` | A startup kit (certificates, configuration, start scripts) for the server, each site and the admin, as described in [project.yml](project.yml). |
 | 2 | `nvflare config add catalog-admin@nvidia.com <kit> --force`, then `nvflare config use catalog-admin@nvidia.com` | Registers the admin kit as the active identity for `nvflare job`, `nvflare catalog` and `nvflare system`. The admin kit stays on your computer and is never mounted in a container. |
-| 3 | Add `{"id": "catalog_manager", "path": "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"}` to the `components` list of `<server kit>/local/resources.json` | Runs the `CatalogManager` on the server. This is how any server component is enabled. |
+| 3 | Write `SERVER_RESOURCES_JSON` to `<server kit>/local/resources.json` | The script contains a complete JSON configuration showing the standard server services and CatalogManager, as an operator would author the file. |
 | 4 | `CATALOG_KITS=<kits>` in `.env` | Tells `docker compose` which kits to mount; each container mounts only its own. |
 
 Setup finishes with `nvflare config list`, showing the registered admin kits.
@@ -67,9 +67,15 @@ you also want fresh demo data/state.
 | Configuration | Supplied by | Purpose |
 | --- | --- | --- |
 | [project.yml](project.yml) | `nvflare provision` | Defines participants, endpoints, certificate host names and startup kits. |
-| Server `local/resources.json` | Setup updates the generated kit | Registers the long-lived `CatalogManager` alongside the existing server components. |
+| Server `local/resources.json` | Setup writes the complete JSON template for a new kit | Defines the standard server services and the long-lived `CatalogManager`. |
 | Client `/fdn/policy/catalog_site.json` | Read-only Compose mount from `config/<site>/catalog_site.json` | Maps Study and dataset names to the site's connector and source. |
 | Client `/fdn/policy/default/catalog_policy.json` | Read-only Compose mount from `config/<site>/catalog_policy.json` | Authorizes publication and filters the shared metadata. |
+
+The setup script contains the complete server resources JSON as a readable string
+and loads it with `json.loads` before writing `local/resources.json`. It uses the
+built-in default component allowlist with enforcement enabled. Existing resources
+are kept; if they do not enable CatalogManager, setup asks you to update that
+configuration using the template as a reference. It does not alter component lists.
 
 ### Network and workspace
 

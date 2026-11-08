@@ -49,10 +49,16 @@ server is still initializing.
 | Configuration | Purpose |
 | --- | --- |
 | [project.yml](project.yml) | Defines the server, sites, admin, endpoints and certificate host names. Sites use `nvflare-files-server:8102`; the host admin uses `localhost:8103`. |
-| Server kit `local/resources.json` | Setup registers the long-lived `CatalogManager` alongside the generated server components. It applies results, stores catalog versions and health, and handles catalog queries. |
+| Server kit `local/resources.json` | Setup writes the complete `SERVER_RESOURCES_JSON` template, including `CatalogManager` and the standard server services. Existing resources are preserved. It applies results, stores catalog versions and health, and handles catalog queries. |
 | Site kit `local/study_runtime.yaml` | Setup copies the authored [site-1](config/site-1/study_runtime.yaml) and [site-2](config/site-2/study_runtime.yaml) runtime mappings into new kits, preserving existing operator files. These map logical dataset names to site-local paths. |
 | `config/<site>/catalog_site.json` | Selects the site's installed connectors. Compose mounts it read-only at `/fdn/policy/catalog_site.json`. |
 | `config/<site>/catalog_policy.json` | Defines what the site permits publishing for Study `default`. Compose mounts it read-only at `/fdn/policy/default/catalog_policy.json`. |
+
+The setup script contains the complete server resources JSON as a readable string
+and loads it with `json.loads` before writing `local/resources.json`. It uses the
+built-in default component allowlist with enforcement enabled. Existing resources
+are kept; if they do not enable CatalogManager, setup asks you to update that
+configuration using the template as a reference. It does not alter component lists.
 
 The same standard `CatalogController` and `CatalogExecutor` serve every source.
 The recipe selects sites and optional dataset names; backend selection belongs

@@ -19,8 +19,7 @@ use it in your own deployment:
 
   1. nvflare provision -p project.yml -w <workspace>   create startup kits for the server, sites and admin
   2. nvflare config add <admin> <kit> / config use     register the admin kit, so `nvflare` commands can connect
-  3. add the CatalogManager to the server's            the one deployment setting the catalog needs
-     local/resources.json
+  3. write local/resources.json from the JSON below  configure server services, including CatalogManager
   4. CATALOG_KITS in .env                              tells `docker compose` where the kits are
 
 Run it again at any time: existing kits, other server components and other .env settings are kept.
@@ -36,7 +35,68 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent
-COMPONENT = {"id": "catalog_manager", "path": "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"}
+# The complete server local/resources.json, as an operator would author it.
+# Omitting class_allow_list uses FLARE's built-in default policy; enforcement stays enabled.
+SERVER_RESOURCES_JSON = """
+{
+  "format_version": 2,
+  "class_list_enforcement_mode": "enforce",
+  "servers": [
+    {
+      "admin_storage": "transfer",
+      "max_num_clients": 100,
+      "heart_beat_timeout": 600,
+      "admin_timeout": 10.0
+    }
+  ],
+  "snapshot_persistor": {
+    "path": "nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor",
+    "args": {
+      "uri_root": "/",
+      "storage": {
+        "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
+        "args": {
+          "root_dir": "/tmp/nvflare/snapshot-storage",
+          "uri_root": "/"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "job_scheduler",
+      "path": "nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler",
+      "args": {
+        "max_jobs": 4
+      }
+    },
+    {
+      "id": "job_manager",
+      "path": "nvflare.apis.impl.job_def_manager.SimpleJobDefManager",
+      "args": {
+        "uri_root": "/tmp/nvflare/jobs-storage",
+        "job_store_id": "job_store"
+      }
+    },
+    {
+      "id": "job_store",
+      "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage"
+    },
+    {
+      "id": "process_launcher",
+      "path": "nvflare.app_common.job_launcher.server_process_launcher.ServerProcessJobLauncher"
+    },
+    {
+      "id": "log_receiver",
+      "path": "nvflare.app_common.logging.job_log_receiver.JobLogReceiver"
+    },
+    {
+      "id": "catalog_manager",
+      "path": "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"
+    }
+  ]
+}
+"""
 STEPS = 4
 
 
@@ -120,31 +180,34 @@ def main():
     run_command("nvflare", "config", "add", admin, kits / admin, "--force")
     run_command("nvflare", "config", "use", admin)
 
-    # 3. The one catalog-specific deployment setting: the server runs a CatalogManager component. Any server component
-    #    is declared the same way, in the `components` list of the server's local/resources.json.
-    local = kits / server / "local"
-    resources = local / "resources.json"
-    source = resources if resources.exists() else local / "resources.json.default"
+    # 3. Write the same complete JSON file an operator would put in the server startup kit.
+    resources = kits / server / "local" / "resources.json"
     step(
         3,
-        "Enable the catalog on the server",
-        f"Adds the CatalogManager to {shown(resources)}; the other settings and components are kept.",
+        "Configure the server resources",
+        f"Writes the SERVER_RESOURCES_JSON template to {shown(resources)} for a new kit.",
     )
-    config = json.loads(source.read_text())
-    components = config.setdefault("components", [])
-    existing = next((c for c in components if c.get("id") == COMPONENT["id"]), None)
-    if existing is not None and existing.get("path") != COMPONENT["path"]:
-        raise ValueError(f"{COMPONENT['id']} in {resources} already has a different implementation")
-    if existing is None:
-        components.append(COMPONENT)
-    write_private(resources, json.dumps(config, indent=2) + "\n")
-    print(f"  Component: {json.dumps(COMPONENT)}", flush=True)
+    config = json.loads(SERVER_RESOURCES_JSON)
+    if resources.exists():
+        existing = json.loads(resources.read_text())
+        if not any(
+            component.get("id") == "catalog_manager"
+            and component.get("path") == "nvflare.app_common.fdn.catalog.server.manager.CatalogManager"
+            for component in existing.get("components", [])
+        ):
+            raise ValueError(
+                f"{resources} already exists without CatalogManager. Use SERVER_RESOURCES_JSON as a reference "
+                "to enable it in your existing configuration; setup will not overwrite your resources."
+            )
+        print(f"  Keeping existing {shown(resources)}", flush=True)
+    else:
+        write_private(resources, json.dumps(config, indent=2) + "\n")
+        print(SERVER_RESOURCES_JSON, flush=True)
     for site in sites:
         source = example_root / "config" / site / "study_runtime.yaml"
         target = kits / site / "local" / "study_runtime.yaml"
         if source.exists() and not target.exists():
-            write_private(target, source.read_text())
-            print(f"  Site runtime: {shown(source)} -> {shown(target)}", flush=True)
+            run_command("cp", source, target)
 
     # 4. Docker Compose mounts each participant's own kit, so it needs to know where they are. Other settings in
     #    .env (for example POSTGRES_PASSWORD) are kept.
