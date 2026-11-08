@@ -19,8 +19,37 @@ from dataclasses import dataclass
 
 from nvflare.app_common.fdn.catalog.server.commands import SEARCH, STATUS
 from nvflare.app_common.fdn.catalog.server.search import CatalogEntry, SearchPage, entry_from_dict
-from nvflare.fuel.flare_api.api_spec import CommandError, InternalError
+from nvflare.fuel.flare_api.api_spec import (
+    AuthenticationError,
+    AuthorizationError,
+    CommandError,
+    InternalError,
+    NoConnection,
+    SessionClosed,
+)
+from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
+
+
+def _raise_for_api_status(reply: dict, command: str) -> None:
+    """Raise the session exception that matches a failed API status, as Session's own commands do.
+
+    ``Session.do_command`` returns the raw reply, so a lost connection or an expired session arrives as a status
+    with no catalog payload, and must not be mistaken for an empty or internal reply."""
+    status = reply.get(ProtoKey.STATUS) if isinstance(reply, dict) else None
+    if status is None or status == APIStatus.SUCCESS:
+        return
+    details = reply.get(ProtoKey.DETAILS, "")
+    text = status.value if hasattr(status, "value") else str(status)
+    if status in (APIStatus.ERROR_CERT, APIStatus.ERROR_AUTHENTICATION):
+        raise AuthenticationError(details or f"user not authenticated: {text}", auth_code=reply.get("auth_code"))
+    if status == APIStatus.ERROR_AUTHORIZATION:
+        raise AuthorizationError(f"user not authorized for the action '{command}'")
+    if status == APIStatus.ERROR_INACTIVE_SESSION:
+        raise SessionClosed("the session is closed on server")
+    if status == APIStatus.ERROR_SERVER_CONNECTION:
+        raise NoConnection(f"cannot connect to server: {text}")
+    raise InternalError(f"{text}: {details}" if details else text)
 
 
 @dataclass(frozen=True)
@@ -40,6 +69,7 @@ class CatalogAdminApi:
 
     def _call(self, command: str, request: dict) -> dict:
         reply = self._session.do_command(command, props=request)
+        _raise_for_api_status(reply, command)
         payload = {}
         for item in reply.get(ProtoKey.DATA, []) if isinstance(reply, dict) else []:
             if isinstance(item, dict) and item.get(ProtoKey.TYPE) == ProtoKey.DICT:

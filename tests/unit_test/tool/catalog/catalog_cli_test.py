@@ -31,6 +31,7 @@ from nvflare.fuel.flare_api.api_spec import (
     NoConnection,
     SessionExpired,
 )
+from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.tool import cli_output, cli_session
 from nvflare.tool.catalog import catalog_cli
 from tests.catalog_cli_test_utils import CatalogSession
@@ -294,3 +295,29 @@ class TestRendering:
         catalog_cli._render_show(data)
         text = "\n".join(out.lines)
         assert "table person" in text and "person_id" in text and "int64" in text and "source: parquet" in text
+
+
+@pytest.mark.parametrize(
+    "api_status,code,error_code",
+    [
+        (APIStatus.ERROR_SERVER_CONNECTION, 2, "CONNECTION_FAILED"),
+        (APIStatus.ERROR_INACTIVE_SESSION, 2, "CONNECTION_FAILED"),
+        (APIStatus.ERROR_AUTHENTICATION, 2, "AUTH_FAILED"),
+        (APIStatus.ERROR_CERT, 2, "AUTH_FAILED"),
+        (APIStatus.ERROR_AUTHORIZATION, 1, "NOT_AUTHORIZED"),
+        (APIStatus.ERROR_PROTOCOL, 5, "INTERNAL_ERROR"),
+        (APIStatus.ERROR_RUNTIME, 5, "INTERNAL_ERROR"),
+    ],
+)
+def test_a_failed_api_response_uses_the_same_exit_codes_as_a_raised_error(
+    monkeypatch, capsys, machine_output, api_status, code, error_code
+):
+    """The admin session returns a connection or session failure as a response, with no catalog payload. It must
+    not be reported as an internal error."""
+    session = CatalogSession(api_status=api_status)
+    monkeypatch.setattr(cli_session, "new_cli_session_for_args", lambda **kw: session)
+    with pytest.raises(SystemExit) as stopped:
+        catalog_cli.cmd_show(parse("show"))
+    assert stopped.value.code == code and session.closed
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["status"] == "error" and envelope["error_code"] == error_code

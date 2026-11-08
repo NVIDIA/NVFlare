@@ -24,7 +24,15 @@ from nvflare.app_common.fdn.catalog.server.commands import CatalogCommandModule,
 from nvflare.app_common.fdn.catalog.server.manager import CatalogManager
 from nvflare.app_common.fdn.catalog.server.reconcile import Reconciler
 from nvflare.app_common.fdn.catalog.server.store import CatalogStore
-from nvflare.fuel.flare_api.api_spec import CommandError
+from nvflare.fuel.flare_api.api_spec import (
+    AuthenticationError,
+    AuthorizationError,
+    CommandError,
+    InternalError,
+    NoConnection,
+    SessionClosed,
+)
+from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.proto import ProtoKey
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -270,3 +278,33 @@ class TestAuthorization:
         spec = module.get_spec().cmd_specs[0]
         conn = FakeConn({ConnProps.ACTIVE_STUDY: STUDY, ConnProps.USER_ROLE: "member", ConnProps.USER_NAME: "u"})
         assert spec.authz_func(conn, ["x"]) == PreAuthzReturnCode.ERROR
+
+
+class StatusSession:
+    """Returns a failed API response with no catalog payload, as the admin client does for a lost connection."""
+
+    def __init__(self, status):
+        self.status = status
+
+    def do_command(self, command, props=None):
+        return {ProtoKey.STATUS: self.status, ProtoKey.DETAILS: "simulated"}
+
+
+@pytest.mark.parametrize(
+    "status,error",
+    [
+        (APIStatus.ERROR_SERVER_CONNECTION, NoConnection),
+        (APIStatus.ERROR_INACTIVE_SESSION, SessionClosed),
+        (APIStatus.ERROR_AUTHENTICATION, AuthenticationError),
+        (APIStatus.ERROR_CERT, AuthenticationError),
+        (APIStatus.ERROR_AUTHORIZATION, AuthorizationError),
+        (APIStatus.ERROR_PROTOCOL, InternalError),
+        (APIStatus.ERROR_RUNTIME, InternalError),
+    ],
+)
+def test_a_failed_api_status_raises_the_matching_session_error_not_an_empty_reply(status, error):
+    api = CatalogAdminApi(StatusSession(status))
+    with pytest.raises(error):
+        api.status()
+    with pytest.raises(error):
+        list(api.search())
