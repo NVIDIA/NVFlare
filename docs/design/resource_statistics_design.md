@@ -16,6 +16,26 @@ Collection follows the runtime's execution boundaries and admission checks. Each
 execution mode provides attributable measurements and lifecycle ownership; resource
 statistics does not select or enable backends.
 
+## Relationship to JobStatsReporter
+
+Resource statistics automatically records startup capacity, capacity-time, CPU
+work, message payload traffic and retained file sizes. Use it for final
+participant reports and job/study comparisons; no application widget needs to
+be enabled.
+
+Use the optional [JobStatsReporter](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/widgets/job_stats_reporter.py)
+widget for task/round timing, errors and communication diagnostics. Configure it
+on the server and on clients whose task measurements are needed. With
+`collect_resources=True` (default), clients also sample process-family CPU
+utilization, resident memory (RSS), GPU utilization and GPU memory when available.
+`resource_sample_interval` controls the interval; `collect_resources=False`
+keeps diagnostics without resource sampling.
+
+Both can run in the same job and write separate reports. Their scopes and
+observation windows differ: CPU work and GPU capacity-time are not derived from
+utilization samples, and overlapping measurements should not be added together.
+Sampling and telemetry add job overhead that resource statistics can include.
+
 ## Detailed design
 
 This page introduces the contract. The following pages describe the measurement
