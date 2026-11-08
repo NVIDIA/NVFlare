@@ -79,6 +79,7 @@ class CatalogManager(FLComponent):
         self._result_lock = threading.Lock()  # serialize ingestion with legacy archive redaction on downloads
         # study -> the one catalog job that holds its read: launched with a context, its result not yet applied
         self._in_flight: dict[str, str] = {}
+        self._applied_clients: dict[str, set[str]] = {}  # completed clients of a result being retried
         self._now = lambda: datetime.now(timezone.utc)
         if register_commands:
             self._register_commands()
@@ -265,7 +266,7 @@ class CatalogManager(FLComponent):
                 next_recovery = now + _RECOVERY_INTERVAL_S
 
     def _recover_finished(self):
-        """Some terminal transitions (including deletion) emit no completion event."""
+        """Recover missed terminal events and retry results held after transient storage failures."""
         with self._lock:
             holders = list(self._in_flight.values())
         for job_id in holders:
@@ -284,8 +285,8 @@ class CatalogManager(FLComponent):
         return job.meta if job is not None else None
 
     def _ingest(self, job_id: str):
-        """Apply the result of the job that holds its Study's read, once, then free the Study for the next read. Any
-        other job (not a catalog job, refused at launch, or already applied) changes nothing."""
+        """Apply the holder's result, retaining it on storage failure and skipping clients already committed.
+        Other jobs (not catalog jobs, refused at launch, or already applied) change nothing."""
         with self._result_lock:
             self._apply_job(job_id)
 
@@ -294,6 +295,7 @@ class CatalogManager(FLComponent):
             study = next((s for s, held in self._in_flight.items() if held == job_id), None)
         if study is None:
             return
+        retry = False
         try:
             job_manager = self._engine.get_component(SystemComponents.JOB_MANAGER)
             with self._engine.new_context() as fl_ctx:
@@ -309,11 +311,19 @@ class CatalogManager(FLComponent):
                         data = job_manager.get_storage_component(job_id, WORKSPACE, fl_ctx)
                     manifest = self._read_manifest(data, job_id)
                 entries = parse_manifest(manifest)
+            except OSError as e:
+                if not isinstance(e, FileNotFoundError):
+                    raise
+                self.logger.warning(f"catalog job {job_id} left no result: {type(e).__name__}")
+                return
             except Exception as e:
                 # No signed manifest says the job failed, not which site did: no site's health changes.
                 self.logger.warning(f"catalog job {job_id} left no usable result: {type(e).__name__}")
                 return
+            applied = self._applied_clients.setdefault(job_id, set())
             for client, entry in entries.items():
+                if client in applied:
+                    continue
                 try:
                     outcome = None
                     if entry.rc == "OK" and entry.result is not None:
@@ -325,17 +335,28 @@ class CatalogManager(FLComponent):
                             else "NO_RESULT" if entry.rc == "OK" else entry.rc
                         )
                         self._store.record_no_result(study, client, reason, now)
+                except OSError as e:
+                    retry = True
+                    self.logger.warning(f"catalog result for a client will be retried: {type(e).__name__}")
                 except Exception as e:
                     self.logger.warning(f"catalog result for a client could not be applied: {type(e).__name__}")
+                else:
+                    applied.add(client)
+        except Exception as e:
+            retry = True
+            self.logger.warning(f"catalog result application will be retried: {type(e).__name__}")
         finally:
-            for cleanup in (self._artifacts.discard, self._remove_context):
+            cleanups = (self._remove_context,) if retry else (self._artifacts.discard, self._remove_context)
+            for cleanup in cleanups:
                 try:
                     cleanup(job_id)
                 except Exception as e:
                     self.logger.warning(f"catalog job cleanup failed: {type(e).__name__}")
-            with self._lock:
-                if self._in_flight.get(study) == job_id:
-                    del self._in_flight[study]
+            if not retry:
+                self._applied_clients.pop(job_id, None)
+                with self._lock:
+                    if self._in_flight.get(study) == job_id:
+                        del self._in_flight[study]
 
     def _context_path(self, job_id: str) -> Path | None:
         try:

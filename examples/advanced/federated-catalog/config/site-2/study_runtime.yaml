@@ -1,0 +1,5 @@
+format_version: 2
+studies:
+  default:
+    datasets:
+      omop: {source: /data/omop.sqlite, mode: ro}

@@ -1,0 +1,58 @@
+name: flare-catalog-files
+x-flare: &flare
+  image: nvflare-catalog-files:local
+  build:
+    context: ../../..
+    dockerfile: examples/advanced/federated-catalog/Dockerfile
+  init: true
+  stop_grace_period: 45s
+  tmpfs: ["/workspace"]
+  environment:
+    NVFL_WORKSPACE: /workspace
+  pre_stop:
+    - command: ["bash", "-c", "printf 'y\n' | /startup-kit/startup/stop_fl.sh"]
+services:
+  nvflare-files-server:
+    <<: *flare
+    ports: ["127.0.0.1:8102:8102", "127.0.0.1:8103:8103"]
+    volumes:
+      - type: bind
+        source: ${CATALOG_KITS:?Run python example_setup.py first}/nvflare-files-server
+        target: /startup-kit
+        read_only: true
+        bind: {create_host_path: false}
+      - server-catalog:/workspace/fdn
+      - jobs-storage:/tmp/nvflare/jobs-storage
+      - snapshot-storage:/tmp/nvflare/snapshot-storage
+  nvflare-files-site-1:
+    <<: *flare
+    volumes:
+      - type: bind
+        source: ${CATALOG_KITS:?Run python example_setup.py first}/site-1
+        target: /startup-kit
+        read_only: true
+        bind: {create_host_path: false}
+      - site-1-data:/data
+      - ./config/site-1/catalog_site.json:/fdn/policy/catalog_site.json:ro
+      - ./config/site-1/catalog_policy.json:/fdn/policy/default/catalog_policy.json:ro
+    post_start:
+      - command: ["python", "prepare_data.py", "--site", "site-1", "--data-root", "/data"]
+  nvflare-files-site-2:
+    <<: *flare
+    volumes:
+      - type: bind
+        source: ${CATALOG_KITS:?Run python example_setup.py first}/site-2
+        target: /startup-kit
+        read_only: true
+        bind: {create_host_path: false}
+      - site-2-data:/data
+      - ./config/site-2/catalog_site.json:/fdn/policy/catalog_site.json:ro
+      - ./config/site-2/catalog_policy.json:/fdn/policy/default/catalog_policy.json:ro
+    post_start:
+      - command: ["python", "prepare_data.py", "--site", "site-2", "--data-root", "/data"]
+volumes:
+  site-1-data:
+  site-2-data:
+  server-catalog:
+  jobs-storage:
+  snapshot-storage:

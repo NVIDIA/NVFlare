@@ -46,8 +46,6 @@ DEFAULT_CLASS_ALLOW_LIST = (
     "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
     "nvflare.app_common.fdn.catalog.server.controller.CatalogController",
     "nvflare.app_common.fdn.catalog.site.executor.CatalogExecutor",
-    "nvflare.app_common.fdn.catalog.simulation.SimulationCatalogController",
-    "nvflare.app_common.fdn.catalog.simulation.SimulationCatalogExecutor",
     "nvflare.app_common.filters.exclude_vars.ExcludeVars",
     "nvflare.app_common.filters.percentile_privacy.PercentilePrivacy",
     "nvflare.app_common.filters.statistics_privacy_filter.StatisticsPrivacyFilter",

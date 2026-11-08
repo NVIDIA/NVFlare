@@ -36,6 +36,10 @@ class TestCatalogRecipe:
         assert meta["deploy_map"] == {"app": ["@ALL"]} and meta["min_clients"] == 1
         assert server["workflows"][0]["args"] == {}  # nothing to tell the controller: it decides from the sites
         assert client["executors"][0]["tasks"] == ["catalog.read"]
+        assert server["workflows"][0]["path"] == "nvflare.app_common.fdn.catalog.server.controller.CatalogController"
+        assert (
+            client["executors"][0]["executor"]["path"] == "nvflare.app_common.fdn.catalog.site.executor.CatalogExecutor"
+        )
 
     def test_the_job_carries_the_marker_the_server_looks_for(self, tmp_path):
         meta, _, _ = export(tmp_path)
@@ -82,24 +86,3 @@ def test_reader_component_is_deployed_and_executor_references_it(tmp_path):
 def test_non_reader_is_rejected():
     with pytest.raises(TypeError, match="CatalogReader"):
         CatalogRecipe(catalog_reader=object())
-
-
-def test_simulation_site_paths_are_rejected_in_production_environment(tmp_path):
-    from nvflare.recipe import ProdEnv
-
-    recipe = CatalogRecipe(site_config_root=str(tmp_path))
-    with pytest.raises(ValueError, match="SimEnv only"):
-        recipe.process_env(ProdEnv(startup_kit_location=str(tmp_path)))
-
-
-def test_simulation_components_refuse_deployed_runtime_contexts(tmp_path):
-    from types import SimpleNamespace
-
-    from nvflare.app_common.fdn.catalog.simulation import SimulationCatalogController, SimulationCatalogExecutor
-
-    client = SimulationCatalogExecutor(str(tmp_path))
-    with pytest.raises(RuntimeError, match="only be used in SimEnv"):
-        client._workspace_root(SimpleNamespace(get_prop=lambda _: False))
-    controller = SimulationCatalogController(str(tmp_path))
-    with pytest.raises(RuntimeError, match="only be used in SimEnv"):
-        controller._load_context(None, SimpleNamespace(get_engine=lambda: object()))

@@ -1,0 +1,19 @@
+api_version: 3
+name: catalog-files-demo
+participants:
+  - name: nvflare-files-server
+    type: server
+    org: nvidia
+    default_host: nvflare-files-server
+    host_names: [localhost, nvflare-files-server]
+    fed_learn_port: 8102
+    admin_port: 8103
+  - {name: site-1, type: client, org: nvidia, connect_to: {host: nvflare-files-server}}
+  - {name: site-2, type: client, org: nvidia, connect_to: {host: nvflare-files-server}}
+  - {name: catalog-files-admin@nvidia.com, type: admin, org: nvidia, role: project_admin, connect_to: {host: localhost}}
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args: {config_folder: config}
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder

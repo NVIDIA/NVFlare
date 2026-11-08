@@ -76,16 +76,18 @@ def write_private(path, content):
     temporary.replace(path)
 
 
-def main():
+def main(example_root=ROOT):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--workspace", type=Path, default=ROOT / "workspace", help="where the startup kits are written")
+    parser.add_argument(
+        "--workspace", type=Path, default=example_root / "workspace", help="where the startup kits are written"
+    )
     parser.add_argument("--reprovision", action="store_true", help="create new startup kits even if some exist")
     parser.add_argument("--verbose", action="store_true", help="show the full output of every command")
     args = parser.parse_args()
     workspace = args.workspace.expanduser().resolve()
     if "\n" in str(workspace) or "\r" in str(workspace):
         raise ValueError("Workspace paths cannot contain newlines")
-    project_file = ROOT / "project.yml"
+    project_file = example_root / "project.yml"
     project = load_yaml(str(project_file))
     project_root = workspace / project["name"]
 
@@ -144,6 +146,12 @@ def main():
         components.append(COMPONENT)
     write_private(resources, json.dumps(config, indent=2) + "\n")
     print(f"  Component: {json.dumps(COMPONENT)}", flush=True)
+    for site in sites:
+        source = example_root / "config" / site / "study_runtime.yaml"
+        target = kits / site / WorkspaceConstants.SITE_FOLDER_NAME / "study_runtime.yaml"
+        if source.exists() and not target.exists():
+            write_private(target, source.read_text())
+            print(f"  Site runtime: {shown(source)} -> {shown(target)}", flush=True)
 
     # 4. Docker Compose mounts each participant's own kit, so it needs to know where they are. Other settings in
     #    .env (for example POSTGRES_PASSWORD) are kept.
@@ -152,7 +160,7 @@ def main():
         "Tell Docker Compose where the kits are",
         "Each container mounts only its own kit; the admin kit is not mounted.",
     )
-    env_file = ROOT / ".env"
+    env_file = example_root / ".env"
     lines = env_file.read_text().splitlines() if env_file.exists() else []
     lines = [line for line in lines if not re.match(r"^\s*(?:export\s+)?CATALOG_KITS\s*=", line)]
     value = str(kits).replace("'", "\\'")

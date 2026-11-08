@@ -1,0 +1,7 @@
+format_version: 2
+studies:
+  default:
+    datasets:
+      omop: {source: /data/omop, mode: ro}
+      lab_results: {source: /data/lab_results.csv, mode: ro}
+      visits: {source: /data/visits.csv, mode: ro}

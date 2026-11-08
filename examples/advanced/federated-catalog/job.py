@@ -12,37 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Run catalog discovery with SimEnv and inspect the persisted, policy-filtered metadata."""
+"""Submit a catalog-only job to the running file-backed federation. Retrieve results with nvflare catalog show."""
+import subprocess
+import sys
 
-import argparse
-import json
-from pathlib import Path
-
-from constants import DEFAULT_DATA, SITES
-
-from nvflare.recipe import SimEnv
+from nvflare.recipe import ProdEnv
 from nvflare.recipe.catalog import CatalogRecipe
-
-DEFAULT_WORKSPACE = "/tmp/nvflare/federated-catalog/simulation"
+from nvflare.tool.kit.kit_config import resolve_admin_user_and_dir_from_startup_kit, resolve_startup_kit_dir
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-root", default=DEFAULT_DATA)
-    parser.add_argument("--workspace", default=DEFAULT_WORKSPACE)
-    parser.add_argument("--store-root", default="/tmp/nvflare/federated-catalog/store")
-    args = parser.parse_args()
-    store_root = str(Path(args.store_root).resolve())
-    recipe = CatalogRecipe(
-        sites=SITES,
-        site_config_root=args.data_root,
-        output_dir=store_root,
+    username, kit_dir = resolve_admin_user_and_dir_from_startup_kit(resolve_startup_kit_dir())
+    env = ProdEnv(startup_kit_location=kit_dir, username=username, login_timeout=60)
+    recipe = CatalogRecipe(sites=["site-1", "site-2"])
+    recipe.enable_log_streaming("log.txt")
+    run = recipe.execute(env)
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "nvflare.cli",
+            "job",
+            "monitor",
+            run.get_job_id(),
+            "--timeout",
+            "300",
+        ],
+        check=True,
     )
-    recipe.execute(SimEnv(clients=SITES, num_threads=2, workspace_root=args.workspace))
-    output = recipe.catalog_results
-    result = Path(store_root) / "discovery.json"
-    print(json.dumps(output, indent=2))
-    print(f"Persisted discovery result: {result}")
 
 
 if __name__ == "__main__":

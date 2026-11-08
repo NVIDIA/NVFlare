@@ -204,8 +204,6 @@ def test_sim_env_installs_and_refreshes_current_component_policy(tmp_path, caplo
     for component_path in (
         "nvflare.app_common.fdn.catalog.server.controller.CatalogController",
         "nvflare.app_common.fdn.catalog.site.executor.CatalogExecutor",
-        "nvflare.app_common.fdn.catalog.simulation.SimulationCatalogController",
-        "nvflare.app_common.fdn.catalog.simulation.SimulationCatalogExecutor",
     ):
         assert component_path in json.loads(resources_file.read_text())[CLASS_ALLOW_LIST]
         authorizer.authorize_component_config({"path": component_path}, workspace=workspace)

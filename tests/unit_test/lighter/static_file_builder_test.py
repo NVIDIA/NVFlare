@@ -207,8 +207,6 @@ class TestStaticFileBuilder:
             assert {
                 "nvflare.app_common.fdn.catalog.server.controller.CatalogController",
                 "nvflare.app_common.fdn.catalog.site.executor.CatalogExecutor",
-                "nvflare.app_common.fdn.catalog.simulation.SimulationCatalogController",
-                "nvflare.app_common.fdn.catalog.simulation.SimulationCatalogExecutor",
             } <= set(resources["class_allow_list"])
 
     @pytest.mark.parametrize("require_signed_jobs", [None, True, False])

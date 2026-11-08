@@ -1,202 +1,96 @@
-# Federated Catalog: two tables at two sites
+# Federated Catalog: Parquet, CSV and SQL sites
 
-This CPU-only example uses `CatalogRecipe` and `SimEnv` to discover metadata
-from two sites. Both sites have an `omop` dataset containing exactly two tables:
-`person` and `condition_occurrence`.
+Discover site-approved metadata across different backends with one
+`CatalogRecipe`. Site-1 exposes synthetic OMOP-shaped Parquet tables and two
+CSV datasets; site-2 exposes OMOP-shaped SQLite tables through the general
+`SQLConnector`. Each site filters its publication locally. Patient records and
+source credentials stay at the sites.
 
-| Site | Storage | Tables | Synthetic persons |
-| --- | --- | --- | ---: |
-| site-1 | Parquet | `person`, `condition_occurrence` | 8 |
-| site-2 | SQLite | `person`, `condition_occurrence` | 12 |
+## Quick start
 
-There are two condition rows per person. The data is a small synthetic subset
-shaped after [OMOP CDM 5.4](https://ohdsi.github.io/CommonDataModel/cdm54.html).
-Concept IDs are 0 (unmapped); this is not a complete or clinically validated CDM.
-
-Site-1 additionally shares two header-bearing CSV datasets, checked into
-`data/site-1/`: `lab_results` and `visits`, each containing one table.
-Site-1 therefore publishes three dataset catalogs; site-2 publishes one.
-
-| CSV dataset | Columns and inferred types |
-| --- | --- |
-| `lab_results` | `person_id`: int64, `test_name`: string, `result_value`: double, `collected_date`: date32[day], `abnormal`: bool |
-| `visits` | `visit_id`: int64, `person_id`: int64, `visit_date`: date32[day], `visit_type`: string, `duration_minutes`: int64 |
-
-The CSV connector delegates parsing and type inference to PyArrow. It infers
-from the first 64 KiB block, with at most 1 MiB of local source input for
-record boundaries and read-ahead, subject to site call/time/schema budgets.
-Only schema metadata is published; Arrow physical type names are retained.
-All-empty columns have Arrow type `null`. Nullability remains unknown, and no
-keys/relationships are inferred. Arrow may infer numeric identifiers with
-leading zeros as integers. Inferred types describe the initial block, not a
-validated full-file schema; later rows can differ. Preparation copies the
-checked-in CSV files.
-
-For a provisioned two-site POC using Docker-hosted Unity Catalog and PostgreSQL,
-see the [catalog services example](../federated-catalog-services). Both examples
-use `SQLConnector`; this example retains SQLite as its local SQL backend.
-
-## Install, prepare and run
-
-From this directory in an activated Python environment:
+Prerequisites: Docker Compose **2.30 or later** and a Python environment with
+this FLARE checkout installed. From this directory:
 
 ```bash
-python -m pip install -r requirements.txt
-python prepare_data.py
+python example_setup.py --workspace /tmp/nvflare/catalog-files
+docker compose up -d --build --wait
 python job.py
+nvflare catalog show
 ```
 
-`prepare_data.py` creates/populates the source tables, installs the checked-in
-site configurations and writes runtime bindings for their generated paths.
-Preparation regenerates this example's source files, including removing tables
-left by earlier versions. `job.py` only configures/runs the catalog recipe and
-prints the resulting metadata.
+Setup uses `nvflare provision` to create server, client and admin startup kits,
+then selects the host admin identity with `nvflare config add` and `config use`.
+The workspace can be any path; the default is `./workspace`. Compose starts the
+server and both sites with the generated startup scripts. Startup hooks prepare
+demo data automatically, preserving it on restart. `job.py` submits the catalog
+recipe and monitors progress with the normal CLI.
 
-## Site configurations
+Stop with `docker compose down`. Kits, source data and catalog state persist.
+`docker compose down --volumes` also removes the demo data and stored results.
 
-Both sites explicitly declare their reader in separate checked-in files.
+## Progress and results
 
-[config/site-1/catalog_site.json](config/site-1/catalog_site.json):
-
-```json
-{
-  "format_version": 1,
-  "default_connector": "parquet",
-  "studies": {
-    "default": {
-      "lab_results": {
-        "connector": "csv"
-      },
-      "visits": {
-        "connector": "csv"
-      }
-    }
-  }
-}
+```bash
+nvflare system status
+docker compose logs -f nvflare-files-server nvflare-files-site-1 nvflare-files-site-2
+nvflare catalog show --site site-1 --dataset omop --format json
+nvflare catalog show --site site-2 --dataset omop --format json
+nvflare job logs JOB_ID --site all --tail 100
 ```
 
-[config/site-2/catalog_site.json](config/site-2/catalog_site.json):
+Use the standard job CLI to download job archives. Catalog queries return the
+current permitted metadata; raw publications are removed from job archives.
+Rerun `python job.py` to refresh the catalog after a source or policy change.
+Wait for `nvflare system status` to report both clients before submission if the
+server is still initializing.
 
-```json
-{"format_version": 1, "default_connector": "sql"}
-```
+## Deployment configuration
 
-Each site also has its own checked-in `catalog_policy.json`:
-[site-1](config/site-1/catalog_policy.json), [site-2](config/site-2/catalog_policy.json).
-The policies share `omop` and exclude `person_source_value` and
-`condition_source_value` from published schemas. Source rows stay local.
+| Configuration | Purpose |
+| --- | --- |
+| [project.yml](project.yml) | Defines the server, sites, admin, endpoints and certificate host names. Sites use `nvflare-files-server:8102`; the host admin uses `localhost:8103`. |
+| Server kit `local/resources.json` | Setup registers the long-lived `CatalogManager` alongside the generated server components. It applies results, stores catalog versions and health, and handles catalog queries. |
+| Site kit `local/study_runtime.yaml` | Setup copies the authored [site-1](config/site-1/study_runtime.yaml) and [site-2](config/site-2/study_runtime.yaml) runtime mappings into new kits, preserving existing operator files. These map logical dataset names to site-local paths. |
+| `config/<site>/catalog_site.json` | Selects the site's installed connectors. Compose mounts it read-only at `/fdn/policy/catalog_site.json`. |
+| `config/<site>/catalog_policy.json` | Defines what the site permits publishing for Study `default`. Compose mounts it read-only at `/fdn/policy/default/catalog_policy.json`. |
 
-Preparation copies the JSON configurations unchanged. Source paths go in the
-site's `study_runtime.yaml`. Optional OMOP and Parquet key/relationship annotations
-are included with the example's preparation assets under `data/` and copied
-beside the generated sources.
+The same standard `CatalogController` and `CatalogExecutor` serve every source.
+The recipe selects sites and optional dataset names; backend selection belongs
+to site configuration, not the job. `CatalogManager` is enabled through normal
+server resources configuration, not through another controller.
 
-The [design](../../../docs/design/federated_data_cataloging_design.md#catalog_sitejson-contract-v1)
-defines the reader configuration and
-[policy contract](../../../docs/design/federated_data_cataloging_design.md#catalog_policyjson-contract-v1).
-
-## What schemas are published?
-
-Both sites publish these `person` columns:
-
-| Column | site-1: Parquet | site-2: SQLite |
+| Site / dataset | Connector | Local source |
 | --- | --- | --- |
-| `person_id` (primary key) | `int64` | `INTEGER` |
-| `gender_concept_id` | `int64` | `INTEGER` |
-| `year_of_birth` | `int64` | `INTEGER` |
+| site-1 / `omop` | `ParquetConnector` | `/data/omop`, schema from Parquet footers with declared keys/relationships in `catalog.json` |
+| site-1 / `lab_results`, `visits` | `CSVConnector` | `/data/lab_results.csv`, `/data/visits.csv`, headers and bounded type inference |
+| site-2 / `omop` | `SQLConnector` | `/data/omop.sqlite`, reflected table schema, primary keys and foreign keys |
 
-The `condition_occurrence` schemas overlap but have one different column:
+Both OMOP publications exclude `person_source_value` and
+`condition_source_value`. The two sites have deliberately different condition
+columns to illustrate heterogeneous schemas. OMOP-shaped fixtures demonstrate
+metadata discovery, not clinical vocabulary validation or OMOP conformance.
 
-| Column | site-1: Parquet | site-2: SQLite |
-| --- | --- | --- |
-| `condition_occurrence_id` (primary key) | `int64` | `INTEGER` |
-| `person_id` (references `person.person_id`) | `int64` | `INTEGER` |
-| `condition_concept_id` | `int64` | `INTEGER` |
-| `condition_start_date` | `date32[day]` | `TEXT` |
-| `condition_type_concept_id` | `int64` | `INTEGER` |
-| `condition_end_date` | `date32[day]` | absent |
-| `condition_status_concept_id` | absent | `INTEGER` |
+`prepare_data.py` only creates synthetic source data. Deployment configuration
+is supplied separately by setup and Compose. The standard process launcher runs
+jobs inside each site container; `mode: ro` in its runtime mapping is advisory
+and does not enforce filesystem permissions. Production sites must enforce
+read-only access with filesystem, database or launcher controls.
 
-The Parquet reader observes schemas from footers; optional annotations declare
-keys and relationships. The SQLAlchemy-based SQL reader opens this SQLite database read-only and
-inspects schema metadata and declared constraints. It does not select source
-rows. Published physical types retain their source representation; the catalog
-does not infer clinical equivalence or perform conversions.
+Each container mounts only its own startup kit read-only, with an ephemeral
+working copy in `/workspace` using the startup script's native `NVFL_WORKSPACE`
+support. Separate volumes retain source data, server catalog, jobs and
+snapshots. The admin kit stays on the host; no Docker socket is mounted.
 
-## Inspect results
+[example_setup.py](example_setup.py) reuses the service example's deployment
+setup helper, which prints the standard commands it runs. Keep the sibling
+`federated-catalog-services` directory when copying this example; `nvflare
+examples` includes that dependency. Setup writes the selected kit location to
+`.env`; it does not hard-code the workspace. Unset an old exported
+`CATALOG_KITS` if it overrides that file. Use `--reprovision` after changing
+`project.yml`, and `--verbose` for full setup output.
 
-For workflow progress on the console, run `python job.py --log_config progress`.
-
-A fresh run returns four catalog entries: three at site-1 and one at site-2.
-The OMOP datasets each contain two tables; each CSV dataset contains one. The JSON is
-printed and saved to `/tmp/nvflare/federated-catalog/store/discovery.json`.
-Use a JSON viewer or standard tools:
-
-```bash
-python -m json.tool /tmp/nvflare/federated-catalog/store/discovery.json
-```
-
-With `jq`, display the table schemas at both sites:
-
-```bash
-jq '.entries[] | {site: .client, dataset, tables: .metadata.tables}' \
-  /tmp/nvflare/federated-catalog/store/discovery.json
-```
-
-Catalog/schema versions start at 1 in a fresh store. Unchanged reads retain
-their versions. Simulator logs are under
-`/tmp/nvflare/federated-catalog/simulation/catalog_read/`.
-
-## Change a publication policy
-
-Edit the installed site-2 policy at
-`/tmp/nvflare/federated-catalog/data/site-2/local/fdn/default/catalog_policy.json`.
-To withhold its whole dataset, the complete policy can simply be:
-
-```json
-{
-  "format_version": 1,
-  "datasets": {
-    "omop": {"share": false}
-  }
-}
-```
-
-Run `python job.py` again. Discovery now contains only site-1's dataset.
-Previous published names come from the persistent catalog, so withdrawing
-site-2 works across simulation runs. Running preparation again restores the
-checked-in policies.
-
-## Custom paths and deployment
-
-```bash
-python prepare_data.py --data-root /tmp/my-catalog/data
-python job.py --data-root /tmp/my-catalog/data \
-  --workspace /tmp/my-catalog/simulation --store-root /tmp/my-catalog/store
-```
-
-Use a dedicated simulation workspace; `SimEnv` replaces its job contents.
-Data and catalog state live outside that workspace. The environment variable
-`NVFLARE_SIMULATOR_WORKSPACE_ROOT`, when set, overrides `--workspace`.
-
-When upgrading a reused simulation workspace, an explicit `class_allow_list`
-without a SimEnv generation marker is preserved because it may be an operator's
-security policy. If it predates catalog support, use a fresh `--workspace` or
-add the following entries to its existing `local/resources.json` or
-`local/resources.json.default` allowlist, retaining the other approved entries:
-
-```text
-nvflare.app_common.fdn.catalog.server.controller.CatalogController
-nvflare.app_common.fdn.catalog.site.executor.CatalogExecutor
-nvflare.app_common.fdn.catalog.simulation.SimulationCatalogController
-nvflare.app_common.fdn.catalog.simulation.SimulationCatalogExecutor
-```
-
-Unchanged policies generated by current SimEnv versions refresh automatically.
-
-For a different source combination, edit the relevant site's existing
-`default_connector` and rerun preparation; no alternative configuration file is
-needed. In production, omit `site_config_root` and configure `CatalogManager`
-and the site-owned runtime bindings and policies. Simulation keeps unsigned
-manifests locally and does not exercise production admin login, scheduling or
-archive/download protections.
+For PostgreSQL and Unity Catalog OSS, see the
+[service-backed example](../federated-catalog-services). It also describes
+Databricks Unity Catalog configuration and the REST metadata coverage limits.
+SQL databases use SQLAlchemy plus the relevant site's database driver; the
+recipe and workflow stay the same.

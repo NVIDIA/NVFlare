@@ -154,7 +154,45 @@ The image builds FLARE from this checkout and includes the pinned
 [Unity Catalog Playground sanctuary generator](https://github.com/open-lakehouse/unitycatalog-playground/blob/3310a1f61b345951adc29cdb8f12f9e1d982f88c/marimo-playground/notebooks/sanctuary.py)
 and its Apache-2.0 license. No Spark, PyArrow or database driver installation is
 needed on the admin computer. The [first example](../federated-catalog) uses
-SimEnv with Parquet/CSV and SQLite.
+the same provisioned workflow with Parquet/CSV and SQLite.
+
+### Databricks Unity Catalog
+
+The same `UnityCatalogConnector` reads schema metadata from a Databricks
+workspace. For example, replace site-1's `catalog_site.json` with:
+
+```json
+{
+  "format_version": 1,
+  "connectors": {
+    "managed-uc": {
+      "class": "nvflare.app_opt.fdn.catalog.unity_catalog_connector.UnityCatalogConnector",
+      "args": {"url_env": "UNITY_CATALOG_URL", "token_env": "UNITY_CATALOG_TOKEN"}
+    }
+  },
+  "studies": {
+    "default": {
+      "sanctuary": {
+        "connector": "managed-uc",
+        "options": {"catalog": "your_catalog", "schema": "your_schema"}
+      }
+    }
+  }
+}
+```
+
+Supply `UNITY_CATALOG_URL=https://<workspace>/api/2.1/unity-catalog` and
+`UNITY_CATALOG_TOKEN` only to that site's container through its secret/environment
+configuration. Do not run the demo's seeding hook against the production
+workspace. Grant the token identity permission to discover the intended tables
+and adapt the publication policy to their columns. The job and recipe stay the
+same. Secrets belong at the site, never in the job or published catalog.
+
+The adapter uses the [Unity Catalog tables REST API](https://docs.databricks.com/api/uc-tables/v1/list-tables)
+for table names, columns and types, with pagination. It does not collect Databricks
+lineage or table constraints. The tests exercise the API contract with controlled
+responses; this example runs Unity Catalog OSS, not a live Databricks workspace.
+No Spark server or client is needed for this metadata-only path.
 
 ## Troubleshooting
 

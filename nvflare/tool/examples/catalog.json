@@ -309,5 +309,16 @@
     "source_path": "examples/devops/openshift",
     "destination_path": "examples/devops/openshift",
     "category": "deployment"
+  },
+  "federated-catalog": {
+    "source_path": "examples/advanced/federated-catalog",
+    "category": "advanced",
+    "dependencies": [
+      "federated-catalog-services"
+    ]
+  },
+  "federated-catalog-services": {
+    "source_path": "examples/advanced/federated-catalog-services",
+    "category": "advanced"
   }
 }

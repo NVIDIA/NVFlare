@@ -233,3 +233,27 @@ def test_bearer_tokens_use_https_or_explicit_local_loopback(transport, monkeypat
     assert len(transport.calls) == 1
     assert transport.calls[0][1]["headers"]["Authorization"] == "Bearer synthetic-token"
     assert transport.calls[0][1]["allow_redirects"] is False
+
+
+def test_databricks_workspace_uses_same_rest_contract_and_follows_empty_pages(transport, monkeypatch):
+    monkeypatch.setenv("UNITY_CATALOG_URL", "https://workspace.cloud.databricks.com/api/2.1/unity-catalog")
+    monkeypatch.setenv("DATABRICKS_TOKEN", "site-managed-token")
+    delta_table = table("events")
+    delta_table.update(table_type="MANAGED", data_source_format="DELTA", table_id="provider-table-id")
+    delta_table["columns"][0]["type_text"] = "array<struct<code:string,value:double>>"
+    transport.responses.extend(
+        [
+            {"tables": [], "next_page_token": "continue-after-empty-page"},
+            {"tables": [delta_table]},
+        ]
+    )
+    result = subject.UnityCatalogConnector({}, token_env="DATABRICKS_TOKEN").read_catalog("events", LIMITS, OPTIONS)
+    assert result.tables[0].columns[0].type == "array<struct<code:string,value:double>>"
+    assert len(transport.calls) == 2
+    assert transport.calls[1][1]["params"]["page_token"] == "continue-after-empty-page"
+    assert all(
+        call[0].startswith("https://workspace.cloud.databricks.com/api/2.1/unity-catalog/tables")
+        for call in transport.calls
+    )
+    assert all(call[1]["headers"]["Authorization"] == "Bearer site-managed-token" for call in transport.calls)
+    assert "site-managed-token" not in json.dumps(result.to_wire())

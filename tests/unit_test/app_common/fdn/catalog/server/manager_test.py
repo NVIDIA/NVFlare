@@ -715,3 +715,55 @@ def test_context_write_failure_vetoes_launch_and_preserves_site_health(mgr, monk
     mgr.jobs.add("j1", status="FINISHED:FAILED_TO_RUN")
     mgr._ingest("j1")
     assert mgr._store.client_state(STUDY, "site-a") == before
+
+
+def test_failed_commit_retains_result_and_retries_only_unapplied_clients(mgr, tmp_path, monkeypatch):
+    seed(mgr)
+    publication = manifest(
+        **{
+            "site-a": ManifestEntry("OK", build_result(ResultStatus.OK, withheld=["clinical-research"])),
+            "site-b": ManifestEntry("TIMEOUT", None),
+        }
+    )
+    held(mgr, "j1", status="FINISHED:COMPLETED")
+    run_dir = tmp_path / "j1"
+    run_dir.mkdir()
+    (run_dir / "catalog_results.json").write_text(
+        json.dumps({"manifest": publication, "mac": manifest_mac(job_key(KEY, "j1"), "j1", publication)})
+    )
+    mgr._artifacts.capture("j1", str(run_dir), True)
+    inbox = tmp_path / "fdn/catalog-results/j1.json"
+    original = mgr._store.commit
+    blocked = True
+
+    def commit(study, client, state):
+        if client == "site-a" and blocked:
+            raise OSError("temporary storage failure")
+        return original(study, client, state)
+
+    monkeypatch.setattr(mgr._store, "commit", commit)
+    mgr._ingest("j1")
+    assert inbox.exists() and mgr._in_flight == {STUDY: "j1"}
+    assert state(mgr, "site-b")["client"]["failures"] == 1
+    blocked = False
+    mgr._recover_finished()
+    assert mgr.search(STUDY, SearchQuery()).total == 0
+    assert state(mgr, "site-a")["datasets"]["clinical-research"]["withheld"]
+    assert state(mgr, "site-b")["client"]["failures"] == 1
+    assert not inbox.exists() and not mgr._in_flight and not mgr._applied_clients
+
+
+def test_unreadable_private_result_is_retried_after_storage_recovers(mgr, monkeypatch):
+    held(mgr, "j1", manifest(**{"site-a": ok_entry()}), status="FINISHED:COMPLETED")
+    original = mgr._artifacts.read
+
+    def denied(*args):
+        raise PermissionError("temporary read failure")
+
+    monkeypatch.setattr(mgr._artifacts, "read", denied)
+    mgr._ingest("j1")
+    assert mgr._in_flight == {STUDY: "j1"}
+    monkeypatch.setattr(mgr._artifacts, "read", original)
+    mgr._recover_finished()
+    assert mgr.search(STUDY, SearchQuery()).total == 1
+    assert not mgr._in_flight

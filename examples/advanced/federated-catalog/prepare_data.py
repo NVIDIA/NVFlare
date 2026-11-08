@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Prepare deterministic synthetic OMOP 5.4-shaped subsets and site publication policies."""
+"""Prepare deterministic synthetic OMOP 5.4-shaped subsets at each demo site."""
 
 import argparse
 import json
@@ -24,11 +24,6 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 from constants import DEFAULT_DATA, SITES
-
-
-def write_json(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2) + "\n")
 
 
 def make_tables(site_index, people):
@@ -107,58 +102,45 @@ def write_sqlite(path, tables):
         connection.close()
 
 
-def prepare_data(data_root):
+def prepare_data(data_root, site=None):
     root = Path(data_root).resolve()
     example_root = Path(__file__).resolve().parent
-    for index, site in enumerate(SITES, start=1):
-        config = example_root / "config" / site
-        declarations = example_root / "data" / "metadata" / site / "catalog.json"
-        storage_format = json.loads((config / "catalog_site.json").read_text())["default_connector"]
-        tables = make_tables(index, people=8 if index == 1 else 12)
-        directory = root / site / "datasets/omop"
+    for index, name in enumerate(SITES, start=1):
+        if site is not None and name != site:
+            continue
+        directory = root if site is not None else root / name
         directory.mkdir(parents=True, exist_ok=True)
+        declarations = example_root / "data" / "metadata" / name / "catalog.json"
+        config = example_root / "config" / name / "catalog_site.json"
+        storage_format = json.loads(config.read_text())["default_connector"]
+        tables = make_tables(index, people=8 if index == 1 else 12)
         if storage_format == "parquet":
-            # Regenerate the example's files, removing tables from older versions.
-            for old_file in directory.glob("*.parquet"):
-                old_file.unlink()
-            for name, columns in tables.items():
-                pq.write_table(pa.table(columns), directory / f"{name}.parquet")
-            shutil.copyfile(declarations, directory / "catalog.json")
-            source = directory
+            source = directory / "omop"
+            if not source.exists():
+                source.mkdir()
+                for table_name, columns in tables.items():
+                    pq.write_table(pa.table(columns), source / f"{table_name}.parquet")
+                shutil.copyfile(declarations, source / "catalog.json")
         elif storage_format == "sql":
-            source = directory.with_suffix(".sqlite")
-            source.unlink(missing_ok=True)
-            write_sqlite(source, tables)
-            shutil.copyfile(declarations, source.with_suffix(".catalog.json"))
+            source = directory / "omop.sqlite"
+            if not source.exists():
+                write_sqlite(source, tables)
+                shutil.copyfile(declarations, source.with_suffix(".catalog.json"))
         else:
             raise ValueError(f"Synthetic data preparation does not support {storage_format!r}")
-        local = root / site / "local"
-        datasets = {"omop": {"source": str(source), "mode": "ro"}}
-        if site == "site-1":
-            for name in ("lab_results", "visits"):
-                csv_path = root / site / "datasets" / f"{name}.csv"
-                shutil.copyfile(example_root / "data" / site / f"{name}.csv", csv_path)
-                datasets[name] = {"source": str(csv_path), "mode": "ro"}
-        write_json(
-            local / "study_runtime.yaml",
-            {
-                "format_version": 2,
-                "studies": {"default": {"datasets": datasets}},
-            },
-        )
-        policy_root = local / "fdn"
-        policy_root.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(config / "catalog_site.json", policy_root / "catalog_site.json")
-        study_policy = policy_root / "default"
-        study_policy.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(config / "catalog_policy.json", study_policy / "catalog_policy.json")
-        print(f"{site}: {storage_format}, omop dataset with person and condition_occurrence")
-        if site == "site-1":
+        if name == "site-1":
+            for table_name in ("lab_results", "visits"):
+                csv_path = directory / f"{table_name}.csv"
+                if not csv_path.exists():
+                    shutil.copyfile(example_root / "data" / name / f"{table_name}.csv", csv_path)
+        print(f"{name}: {storage_format}, omop dataset with person and condition_occurrence")
+        if name == "site-1":
             print("site-1: csv, lab_results and visits datasets (headers with inferred types)")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", default=DEFAULT_DATA)
+    parser.add_argument("--site", choices=SITES, help="prepare only this site's data directly under --data-root")
     args = parser.parse_args()
-    prepare_data(args.data_root)
+    prepare_data(args.data_root, args.site)

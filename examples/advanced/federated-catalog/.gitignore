@@ -1,0 +1,5 @@
+.env
+workspace*/
+data/generated/
+catalog-summary.json
+site-*-catalog.json
