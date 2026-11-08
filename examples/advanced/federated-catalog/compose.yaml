@@ -9,6 +9,7 @@ x-flare: &flare
   tmpfs: ["/workspace"]
   environment:
     NVFL_WORKSPACE: /workspace
+    NVFLARE_CATALOG_POLICY_ROOT: /fdn/policy
   pre_stop:
     - command: ["bash", "-c", "printf 'y\n' | /startup-kit/startup/stop_fl.sh"]
 services:

@@ -97,8 +97,13 @@ class CatalogArtifacts:
             # Malformed JSON establishes no publication; say so, or it looks like a job that wrote nothing.
             logger.warning("catalog job %s left a malformed result; it is discarded", job_id)
         else:
-            if keep:
-                write_atomically(str(self._path(job_id)), signed)
+            if keep and not self._path(job_id).exists():
+                envelope = (
+                    {"manifest": signed.get("manifest"), "mac": signed.get("mac")}
+                    if isinstance(signed, dict)
+                    else signed
+                )
+                write_atomically(str(self._path(job_id)), envelope)
         for name in _PRIVATE_FILES:
             (Path(run_dir) / name).unlink(missing_ok=True)
 
@@ -106,11 +111,35 @@ class CatalogArtifacts:
         return verify_manifest(json.loads(self._path(job_id).read_text(encoding="utf-8")), key, job_id)
 
     def capture_archive(self, job_id: str, data: bytes, key: bytes) -> None:
+        if self._path(job_id).exists():
+            return  # an archive/download retry must not overwrite parent application progress
         manifest = read_archived_manifest(data, key, job_id)
         write_atomically(
             str(self._path(job_id)),
             {"manifest": manifest, "mac": manifest_mac(job_key(key, job_id), job_id, manifest)},
         )
+
+    def pending_jobs(self) -> set[str]:
+        """Retained inbox files survive restart; only safe regular-file names are eligible."""
+        return {
+            path.stem
+            for path in self._root.glob("*.json")
+            if _SAFE_JOB_ID.fullmatch(path.stem) and path.is_file() and not path.is_symlink()
+        }
+
+    def applied_clients(self, job_id: str) -> set[str]:
+        signed = json.loads(self._path(job_id).read_text(encoding="utf-8"))
+        applied = signed.get("applied_clients", [])
+        if not isinstance(applied, list) or any(not isinstance(client, str) for client in applied):
+            raise PayloadError("invalid catalog application progress")
+        return set(applied)
+
+    def save_progress(self, job_id: str, clients: set[str]) -> None:
+        """Record parent-owned retry progress without changing the signed site-result manifest."""
+        path = self._path(job_id)
+        signed = json.loads(path.read_text(encoding="utf-8"))
+        signed["applied_clients"] = sorted(clients)
+        write_atomically(str(path), signed)
 
     def discard(self, job_id: str) -> None:
         self._path(job_id).unlink(missing_ok=True)

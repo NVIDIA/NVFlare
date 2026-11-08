@@ -14,6 +14,7 @@
 
 """The server-side manager: applies the results of catalog read jobs and answers queries."""
 
+import json
 import os
 import queue
 import threading
@@ -22,6 +23,7 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, SystemComponents
@@ -38,6 +40,7 @@ from nvflare.app_common.fdn.catalog.common.payload import (
 from nvflare.app_common.fdn.catalog.common.schema import DEFAULT_LIMITS, ReadLimits
 from nvflare.app_common.fdn.catalog.server.artifacts import CatalogArtifacts, read_archived_manifest, redact_archive
 from nvflare.app_common.fdn.catalog.server.commands import CatalogCommandModule, NotReady
+from nvflare.app_common.fdn.catalog.server.controller import CatalogController
 from nvflare.app_common.fdn.catalog.server.fileio import write_atomically
 from nvflare.app_common.fdn.catalog.server.reconcile import Outcome, Reconciler
 from nvflare.app_common.fdn.catalog.server.search import SearchPage, SearchQuery
@@ -110,6 +113,44 @@ class CatalogManager(FLComponent):
     def _catalog_study(meta) -> str | None:
         return get_job_meta_study(meta) if isinstance(meta, dict) and meta.get(CATALOG_JOB_META) else None
 
+    def _validate_catalog_job(self, job_id: str, meta: dict):
+        """Only the built-in collector may receive a key; the catalog marker is not code authorization."""
+        custom = Path(self._workspace.get_app_custom_dir(job_id))
+        if meta.get(AppValidationKey.BYOC) or (custom.is_dir() and any(custom.iterdir())):
+            raise ValueError("catalog jobs cannot contain server-side BYOC code or custom entrypoints")
+        path = self._workspace.get_server_app_config_file_path(job_id)
+        config = json.loads(Path(path).read_text())
+        allowed = {"format_version", "workflows", "components", "task_data_filters", "task_result_filters"}
+        if not isinstance(config, dict) or set(config) - allowed or config.get("format_version") != 2:
+            raise ValueError("catalog jobs require the standard server JSON configuration")
+        workflows = config.get("workflows")
+        if not isinstance(workflows, list) or len(workflows) != 1:
+            raise ValueError("catalog jobs require exactly one CatalogController")
+        workflow = workflows[0]
+        if (
+            not isinstance(workflow, dict)
+            or set(workflow) - {"id", "path", "args"}
+            or not isinstance(workflow.get("id", "controller"), str)
+            or workflow.get("path") != "nvflare.app_common.fdn.catalog.server.controller.CatalogController"
+        ):
+            raise ValueError("catalog jobs require the built-in CatalogController")
+        args = workflow.get("args", {})
+        if not isinstance(args, dict) or set(args) - {"datasets", "task_timeout_s"}:
+            raise ValueError("unsupported CatalogController arguments")
+        CatalogController(**args)  # validate only the built-in controller's data arguments
+        components = config.get("components", [])
+        if not isinstance(components, list) or any(
+            not isinstance(component, dict)
+            or set(component) - {"id", "path", "args"}
+            or not isinstance(component.get("id"), str)
+            or component.get("path") != "nvflare.app_common.logging.job_log_receiver.JobLogReceiver"
+            or component.get("args", {}) != {}
+            for component in components
+        ):
+            raise ValueError("catalog jobs permit only the standard log receiver alongside the controller")
+        if config.get("task_data_filters") or config.get("task_result_filters"):
+            raise ValueError("catalog jobs cannot install server task filters")
+
     def _hand_over(self, fl_ctx: FLContext):
         """Give each catalog job its own signing key and a snapshot of indexed names, in its run directory.
         The job process may run in a container that cannot see the server's catalog store."""
@@ -118,6 +159,14 @@ class CatalogManager(FLComponent):
         if self._store is None or study is None:
             return
         job_id = meta.get(JobMetaKey.JOB_ID.value)
+        try:
+            self._validate_catalog_job(job_id, meta)
+        except Exception as e:
+            self.log_warning(fl_ctx, f"catalog job configuration rejected: {e}")
+            fl_ctx.set_prop(
+                FLContextKey.JOB_BLOCK_REASON, "catalog job configuration is not permitted", private=True, sticky=False
+            )
+            return
         try:
             run_dir = self._workspace.get_run_dir(job_id)
             context = {
@@ -133,6 +182,12 @@ class CatalogManager(FLComponent):
                 FLContextKey.JOB_BLOCK_REASON, "catalog job context could not be written", private=True, sticky=False
             )
 
+    def _event_job_meta(self, job_id: str, fl_ctx: FLContext):
+        meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+        if isinstance(meta, dict) and meta.get(JobMetaKey.JOB_ID.value) == job_id:
+            return meta
+        return self._job_meta(job_id, fl_ctx)
+
     def _take_back(self, fl_ctx: FLContext):
         """Capture the result privately, then remove both result and context before archiving for download."""
         with self._result_lock:
@@ -141,7 +196,7 @@ class CatalogManager(FLComponent):
     def _capture_result(self, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
         try:
-            if self._catalog_study(self._job_meta(job_id, fl_ctx)) is None:
+            if self._catalog_study(self._event_job_meta(job_id, fl_ctx)) is None:
                 return
             run_dir = self._workspace.get_run_dir(job_id)
             with self._lock:
@@ -163,7 +218,7 @@ class CatalogManager(FLComponent):
     def _redact_download(self, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
         try:
-            if self._catalog_study(self._job_meta(job_id, fl_ctx)) is None:
+            if self._catalog_study(self._event_job_meta(job_id, fl_ctx)) is None:
                 return
             job_manager = self._engine.get_component(SystemComponents.JOB_MANAGER)
             if WORKSPACE not in job_manager.list_components(job_id, fl_ctx):
@@ -201,6 +256,10 @@ class CatalogManager(FLComponent):
             self._pending.update(job.job_id for job in jobs if self._catalog_study(job.meta) is not None)
         except Exception as e:
             self.log_warning(fl_ctx, f"running catalog jobs could not be listed: {type(e).__name__}")
+        try:
+            self._pending.update(self._artifacts.pending_jobs())
+        except OSError as e:
+            self.log_warning(fl_ctx, f"retained catalog results could not be listed: {type(e).__name__}")
         self._thread = threading.Thread(target=self._run, name="catalog-manager", daemon=True)
         self._thread.start()
 
@@ -222,7 +281,13 @@ class CatalogManager(FLComponent):
                 next_recovery = now + _RECOVERY_INTERVAL_S
 
     def _recover_finished(self):
-        """Recover missed terminal events and retry results held after transient storage failures."""
+        """Recover missed terminal events and retained inbox results, including after restart."""
+        try:
+            retained = self._artifacts.pending_jobs()
+            with self._lock:
+                self._pending.update(retained)
+        except OSError as e:
+            self.logger.warning(f"retained catalog results could not be listed: {type(e).__name__}")
         with self._lock:
             pending = list(self._pending)
         for job_id in pending:
@@ -265,7 +330,9 @@ class CatalogManager(FLComponent):
                     with self._engine.new_context() as fl_ctx:
                         data = job_manager.get_storage_component(job_id, WORKSPACE, fl_ctx)
                     manifest = self._read_manifest(data, job_id)
+                    self._artifacts.capture_archive(job_id, data, self._key)
                 entries = parse_manifest(manifest)
+                recorded_progress = self._artifacts.applied_clients(job_id)
             except OSError as e:
                 if not isinstance(e, FileNotFoundError):
                     raise
@@ -275,7 +342,7 @@ class CatalogManager(FLComponent):
                 # No signed manifest says the job failed, not which site did: no site's health changes.
                 self.logger.warning(f"catalog job {job_id} left no usable result: {type(e).__name__}")
                 return
-            applied = self._applied_clients.setdefault(job_id, set())
+            applied = self._applied_clients.setdefault(job_id, recorded_progress)
             for client, entry in entries.items():
                 if client in applied:
                     continue
@@ -297,6 +364,7 @@ class CatalogManager(FLComponent):
                     self.logger.warning(f"catalog result for a client could not be applied: {type(e).__name__}")
                 else:
                     applied.add(client)
+            self._artifacts.save_progress(job_id, applied)
         except Exception as e:
             retry = True
             self.logger.warning(f"catalog result application will be retried: {type(e).__name__}")
@@ -306,6 +374,7 @@ class CatalogManager(FLComponent):
                 try:
                     cleanup(job_id)
                 except Exception as e:
+                    retry = True
                     self.logger.warning(f"catalog job cleanup failed: {type(e).__name__}")
             if not retry:
                 self._applied_clients.pop(job_id, None)

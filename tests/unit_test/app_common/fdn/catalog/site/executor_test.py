@@ -543,6 +543,7 @@ class TestSiteLocations:
         assert parsed.withheld == ("good",) and not parsed.catalogs
 
     def test_the_policy_mount_wins_over_local_fdn(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(JOB_LAUNCHER_MODE_ENV, "docker")
         mount = tmp_path / "mount"
         mount.mkdir()
         monkeypatch.setattr(executor_module, "DEFAULT_POLICY_ROOT", str(mount))
@@ -552,6 +553,60 @@ class TestSiteLocations:
         )
         executor, ctx = self._executor_with_workspace(tmp_path / "ws")
         # the mount exists but holds no site file, so nothing is shared even though local/fdn has one
+        parsed = self._run(executor, ctx, ["good"], previous=["good"])
+        assert parsed.reason_code == ReasonCode.POLICY_UNAVAILABLE and parsed.withheld == ("good",)
+
+    @pytest.mark.parametrize("mode", ["process", "slurm-process"])
+    def test_bare_process_policy_is_not_selected_from_another_host_directory(self, tmp_path, monkeypatch, mode):
+        mount = tmp_path / "unrelated-policy"
+        mount.mkdir()
+        monkeypatch.setenv(JOB_LAUNCHER_MODE_ENV, mode)
+        monkeypatch.delenv(executor_module.POLICY_ROOT_ENV, raising=False)
+        monkeypatch.setattr(executor_module, "DEFAULT_POLICY_ROOT", str(mount))
+        assert CatalogExecutor()._policy_root(str(tmp_path / "site")) == tmp_path / "site/local/fdn"
+
+    @pytest.mark.parametrize("mode", ["process", "docker", "k8s", "slurm", "slurm-process"])
+    def test_explicit_site_policy_location_is_used_in_every_namespace(self, tmp_path, monkeypatch, mode):
+        policy = tmp_path / "site-policy"
+        monkeypatch.setenv(JOB_LAUNCHER_MODE_ENV, mode)
+        monkeypatch.setenv(executor_module.POLICY_ROOT_ENV, str(policy))
+        assert CatalogExecutor()._policy_root(str(tmp_path / "workspace")) == policy
+
+    @pytest.mark.parametrize("mode", ["docker", "k8s", "slurm"])
+    def test_container_reads_its_mounted_policy_and_remapped_dataset(self, tmp_path, monkeypatch, mode):
+        monkeypatch.setenv(JOB_LAUNCHER_MODE_ENV, mode)
+        monkeypatch.delenv(executor_module.POLICY_ROOT_ENV, raising=False)
+        mounted_data = tmp_path / "data/study1/good"
+        mounted_data.mkdir(parents=True)
+        policy = tmp_path / "policy"
+        (policy / "study1").mkdir(parents=True)
+        (policy / "catalog_site.json").write_text(
+            json.dumps(
+                {
+                    "format_version": 1,
+                    "connectors": FILES,
+                    "default_connector": "files",
+                }
+            )
+        )
+        (policy / "study1/catalog_policy.json").write_text(
+            json.dumps(
+                {
+                    "format_version": 1,
+                    "datasets": {"good": {"share": True, "exclude_columns": {"person": ["name"]}}},
+                }
+            )
+        )
+        monkeypatch.setattr(executor_module, "DEFAULT_POLICY_ROOT", str(policy))
+        executor, ctx = self._executor_with_workspace(tmp_path / "workspace")
+        executor.resolver = MountResolver(str(tmp_path / "data"))
+        parsed = self._run(executor, ctx, ["good"])
+        assert parsed.status == ResultStatus.OK
+        assert [c.name for c in parsed.catalogs[0].tables[0].columns] == ["person_id"]
+
+    def test_invalid_explicit_policy_location_fails_closed(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(executor_module.POLICY_ROOT_ENV, "relative/policy")
+        executor, ctx = self._executor_with_workspace(tmp_path / "workspace")
         parsed = self._run(executor, ctx, ["good"], previous=["good"])
         assert parsed.reason_code == ReasonCode.POLICY_UNAVAILABLE and parsed.withheld == ("good",)
 

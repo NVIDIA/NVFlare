@@ -129,7 +129,7 @@ def main():
     for site in sites:
         source = example_root / "config" / site / "study_runtime.yaml"
         target = kits / site / "local" / "study_runtime.yaml"
-        if source.exists() and not target.exists():
+        if source.exists():
             run_command("cp", source, target)
 
     # 4. Docker Compose reads .env from the example directory automatically.

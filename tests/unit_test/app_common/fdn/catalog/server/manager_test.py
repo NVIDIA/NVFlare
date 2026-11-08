@@ -108,7 +108,22 @@ def mgr(tmp_path):
     manager._engine = SimpleNamespace(get_component=lambda name: jobs, new_context=lambda: contextlib.nullcontext())
     manager._store = CatalogStore(str(tmp_path))
     manager._artifacts = CatalogArtifacts(str(tmp_path))
-    manager._workspace = SimpleNamespace(get_root_dir=lambda: str(tmp_path))
+    config_file = tmp_path / "config_fed_server.json"
+    config_file.write_text(
+        json.dumps(
+            {
+                "format_version": 2,
+                "workflows": [
+                    {"id": "controller", "path": "nvflare.app_common.fdn.catalog.server.controller.CatalogController"}
+                ],
+            }
+        )
+    )
+    manager._workspace = SimpleNamespace(
+        get_root_dir=lambda: str(tmp_path),
+        get_server_app_config_file_path=lambda _: str(config_file),
+        get_app_custom_dir=lambda _: str(tmp_path / "server_custom"),
+    )
     manager._reconciler = Reconciler(manager._store, LIMITS)
     manager._now = lambda: T0
     manager._key = KEY
@@ -157,7 +172,7 @@ def catalog_meta(job_id, study=STUDY):
 class TestOverlappingReads:
     @pytest.fixture
     def run_dirs(self, mgr, tmp_path):
-        mgr._workspace = SimpleNamespace(get_run_dir=lambda job_id: str(tmp_path / "run" / job_id))
+        mgr._workspace.get_run_dir = lambda job_id: str(tmp_path / "run" / job_id)
         return lambda job_id: (tmp_path / "run" / job_id).mkdir(parents=True) or tmp_path / "run" / job_id
 
     @pytest.mark.parametrize("status", ["SUBMITTED", "RUNNING", "FINISHED:COMPLETED"])
@@ -280,7 +295,7 @@ class TestHandOver:
     def launch(self, mgr, tmp_path, meta):
         run_dir = str(tmp_path / "run" / "j1")
         os.makedirs(run_dir, exist_ok=True)
-        mgr._workspace = SimpleNamespace(get_run_dir=lambda job_id: run_dir)
+        mgr._workspace.get_run_dir = lambda job_id: run_dir
         event(mgr, EventType.BEFORE_JOB_LAUNCH, **{FLContextKey.JOB_META: meta})
         return os.path.join(run_dir, "catalog_context.json")
 
@@ -299,6 +314,46 @@ class TestHandOver:
         seed(mgr, study="other", client="site-z")
         path = self.launch(mgr, tmp_path, catalog_meta("j1"))
         assert json.loads(open(path).read())["previous"] == {}
+
+    @pytest.mark.parametrize("change", ["byoc", "custom", "workflow", "component", "filter", "args", "nested-id"])
+    def test_unapproved_server_code_gets_neither_key_nor_indexed_names(self, mgr, tmp_path, change):
+        from nvflare.apis.app_validation import AppValidationKey
+
+        seed(mgr)
+        config_path = Path(mgr._workspace.get_server_app_config_file_path("j1"))
+        config = json.loads(config_path.read_text())
+        meta = catalog_meta("j1")
+        if change == "byoc":
+            meta[AppValidationKey.BYOC] = True
+        elif change == "custom":
+            custom = Path(mgr._workspace.get_app_custom_dir("j1"))
+            custom.mkdir()
+            (custom / "controller.py").write_text("# job-supplied code")
+        elif change == "workflow":
+            config["workflows"][0]["path"] = "nvflare.app_common.workflows.statistics_controller.StatisticsController"
+        elif change == "component":
+            config["components"] = [{"id": "custom", "path": "untrusted.CustomComponent"}]
+        elif change == "filter":
+            config["task_result_filters"] = [{"path": "untrusted.CustomFilter"}]
+        elif change == "nested-id":
+            config["workflows"][0]["id"] = {"path": "untrusted.CustomComponent"}
+        else:
+            config["workflows"][0]["args"] = {"unknown": "argument"}
+        config_path.write_text(json.dumps(config))
+        path = self.launch(mgr, tmp_path, meta)
+        assert not Path(path).exists() and not mgr._pending
+
+    def test_recipe_with_log_streaming_passes_the_server_gate(self, mgr, tmp_path):
+        from nvflare.recipe.catalog import CatalogRecipe
+
+        recipe = CatalogRecipe(sites=["site-a"])
+        recipe.enable_log_streaming("log.txt")
+        recipe.export(str(tmp_path / "export"))
+        mgr._workspace.get_server_app_config_file_path = lambda _: str(
+            tmp_path / "export/catalog_read/app_server/config/config_fed_server.json"
+        )
+        path = self.launch(mgr, tmp_path, catalog_meta("j1"))
+        assert Path(path).exists() and mgr._pending == {"j1"}
 
 
 class TestTakeBack:
@@ -505,7 +560,7 @@ class TestIngest:
 
         monkeypatch.setattr(mgr._artifacts, "discard", broken)
         mgr._ingest("j1")
-        assert not context.exists() and not mgr._pending
+        assert not context.exists() and mgr._pending == {"j1"}
         assert mgr._store.search(STUDY, SearchQuery()).total == 1  # the result was applied before cleanup
 
     def test_a_site_that_failed_to_answer_counts_a_failure_and_keeps_its_catalog(self, mgr):
@@ -721,7 +776,7 @@ def test_context_write_failure_vetoes_only_that_launch_and_preserves_site_health
 
     seed(mgr)
     before = mgr._store.client_state(STUDY, "site-a")
-    mgr._workspace = SimpleNamespace(get_run_dir=lambda _: "/unused")
+    mgr._workspace.get_run_dir = lambda _: "/unused"
 
     def denied(*args):
         raise OSError("disk full")
@@ -793,3 +848,120 @@ def test_unreadable_private_result_is_retried_after_storage_recovers(mgr, monkey
     mgr._recover_finished()
     assert mgr.search(STUDY, SearchQuery()).total == 1
     assert not mgr._pending
+
+
+@pytest.mark.parametrize("event_type", [EventType.BEFORE_JOB_DOWNLOAD, EventType.BEFORE_JOB_WORKSPACE_ARCHIVE])
+def test_ordinary_job_uses_supplied_metadata_without_an_extra_store_lookup(mgr, monkeypatch, event_type):
+    def unavailable(*args):
+        raise OSError("job store unavailable after metadata was obtained")
+
+    monkeypatch.setattr(mgr, "_job_meta", unavailable)
+    ctx = event(
+        mgr,
+        event_type,
+        **{
+            FLContextKey.CURRENT_JOB_ID: "ordinary",
+            FLContextKey.JOB_META: {"job_id": "ordinary", "study": STUDY},
+        },
+    )
+    assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+
+
+def test_restart_applies_retained_terminal_result_and_skips_committed_clients(mgr, tmp_path, monkeypatch):
+    seed(mgr)
+    pending(
+        mgr,
+        "j1",
+        manifest(
+            **{
+                "site-a": ManifestEntry("OK", build_result(ResultStatus.OK, withheld=["clinical-research"])),
+                "site-b": ManifestEntry("TIMEOUT", None),
+            }
+        ),
+        status="FINISHED:COMPLETED",
+    )
+    commit = mgr._store.commit
+
+    def unavailable(study, client, state):
+        if client == "site-a":
+            raise OSError("transient failure")
+        commit(study, client, state)
+
+    monkeypatch.setattr(mgr._store, "commit", unavailable)
+    mgr._ingest("j1")
+    assert mgr._artifacts.applied_clients("j1") == {"site-b"}
+    assert state(mgr, "site-b")["client"]["failures"] == 1
+    monkeypatch.setattr(manager_module, "manifest_key", lambda _: KEY)
+    restarted = CatalogManager(register_commands=False)
+    try:
+        restarted._start(SimpleNamespace(get_engine=lambda: mgr._engine, get_workspace=lambda: mgr._workspace))
+        assert restarted._pending == {"j1"}
+        restarted._recover_finished()
+        assert restarted.search(STUDY, SearchQuery()).total == 0
+        assert state(restarted, "site-b")["client"]["failures"] == 1
+        assert not restarted._pending and not restarted._artifacts.pending_jobs()
+    finally:
+        restarted._stop.set()
+        if restarted._thread is not None:
+            restarted._thread.join(timeout=3.0)
+            assert not restarted._thread.is_alive()
+
+
+def test_job_cannot_supply_parent_application_progress(mgr, tmp_path):
+    pending(mgr, "j1", status="FINISHED:COMPLETED")
+    publication = manifest(**{"site-a": ok_entry()})
+    run_dir = tmp_path / "j1"
+    run_dir.mkdir()
+    (run_dir / "catalog_results.json").write_text(
+        json.dumps(
+            {
+                "manifest": publication,
+                "mac": manifest_mac(job_key(KEY, "j1"), "j1", publication),
+                "applied_clients": ["site-a"],
+            }
+        )
+    )
+    mgr._artifacts.capture("j1", str(run_dir), True)
+    assert mgr._artifacts.applied_clients("j1") == set()
+    mgr._ingest("j1")
+    assert mgr.search(STUDY, SearchQuery()).total == 1
+
+
+def test_corrupt_parent_progress_is_discarded_without_holding_other_reads(mgr, tmp_path):
+    pending(mgr, "bad", status="FINISHED:COMPLETED")
+    publication = manifest(**{"site-a": ok_entry()})
+    inbox = tmp_path / "fdn/catalog-results/bad.json"
+    inbox.write_text(
+        json.dumps(
+            {
+                "manifest": publication,
+                "mac": manifest_mac(job_key(KEY, "bad"), "bad", publication),
+                "applied_clients": "corrupt",
+            }
+        )
+    )
+    mgr._ingest("bad")
+    assert not mgr._pending and not inbox.exists() and not mgr._store._clients
+    pending(mgr, "good", manifest(**{"site-a": ok_entry()}))
+    mgr._ingest("good")
+    assert mgr.search(STUDY, SearchQuery()).total == 1
+
+
+def test_legacy_download_does_not_replace_saved_parent_progress(mgr):
+    pending(
+        mgr,
+        "j1",
+        manifest(
+            **{
+                "site-a": ok_entry(),
+                "site-b": ManifestEntry("TIMEOUT", None),
+            }
+        ),
+        status="FINISHED:COMPLETED",
+    )
+    archive = mgr.jobs.get_storage_component("j1", "workspace", None)
+    mgr._artifacts.capture_archive("j1", archive, KEY)
+    mgr._artifacts.save_progress("j1", {"site-b"})
+    ctx = event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"})
+    assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
+    assert mgr._artifacts.applied_clients("j1") == {"site-b"}

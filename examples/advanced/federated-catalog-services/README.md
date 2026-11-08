@@ -153,6 +153,12 @@ column `name` from `pets`. Published columns are `uuid`, `age` and `adopted`.
 Missing or invalid policy fails closed. Credentials and database permissions are
 configured separately; jobs supply neither bindings nor publication policy.
 
+The site containers set `NVFLARE_CATALOG_POLICY_ROOT=/fdn/policy` explicitly.
+Their jobs use the process launcher inside each isolated site container. A bare
+process deployment instead defaults to its own `<workspace>/local/fdn`, even if
+an unrelated `/fdn/policy` directory exists on the host. For Docker, Kubernetes
+and Slurm job launchers, see the [launcher policy configuration](../../../docs/design/federated_data_cataloging_design.md#31-existing-study-dataset-bindings).
+
 ### Source credentials and assumptions
 
 - `CATALOG_DATABASE_URL` is supplied only to site-2. Its demo value uses

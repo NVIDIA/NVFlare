@@ -2160,6 +2160,7 @@ def test_artifact_policy_runs_before_any_download_is_prepared(monkeypatch, tmp_p
     def authorize_download(event_type, fl_ctx):
         assert event_type == EventType.BEFORE_JOB_DOWNLOAD
         assert fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID) == "job-1"
+        assert fl_ctx.get_prop(FLContextKey.JOB_META)[JobMetaKey.JOB_ID.value] == "job-1"
         actions.append("policy")
         if blocked:
             fl_ctx.set_prop(FLContextKey.JOB_BLOCK_REASON, "private artifacts could not be secured", sticky=False)

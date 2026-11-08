@@ -141,7 +141,7 @@ def manifest_key(workspace_root: str) -> bytes | None:
 
 
 def _check_name(value: str) -> str:
-    if not isinstance(value, str) or not _SAFE_NAME.match(value):
+    if not isinstance(value, str) or not _SAFE_NAME.fullmatch(value):
         raise ValueError("invalid study or client name")
     return value
 
@@ -161,12 +161,14 @@ class CatalogStore:
     # ---- loading -------------------------------------------------------------------------------------------
 
     def _load(self) -> None:
-        for study_dir in sorted(p for p in self._root.iterdir() if p.is_dir() and _SAFE_NAME.match(p.name)):
+        for study_dir in sorted(p for p in self._root.iterdir() if p.is_dir() and _SAFE_NAME.fullmatch(p.name)):
             study = study_dir.name
             for tmp in study_dir.glob("*.tmp"):
                 tmp.unlink()
             for path in sorted(study_dir.glob("*.json")):
                 client = path.stem
+                if not _SAFE_NAME.fullmatch(client):
+                    continue
                 try:
                     state = json.loads(path.read_text(encoding="utf-8"))
                     if not _valid_state(state):

@@ -259,3 +259,24 @@ def test_search_reuses_client_views_and_invalidates_withholding_on_commit(tmp_pa
     store.commit(STUDY, CLIENT, changed)
     assert store.search(STUDY, SearchQuery()).total == 0
     assert rebuilt == [CLIENT, CLIENT]
+
+
+@pytest.mark.parametrize("name", ["site\n", "study\r", "site\nextra"])
+def test_names_with_line_breaks_cannot_be_used_as_store_paths(tmp_path, name):
+    store = CatalogStore(str(tmp_path))
+    with pytest.raises(ValueError, match="invalid study or client name"):
+        store.client_state(name, "site-a")
+    with pytest.raises(ValueError, match="invalid study or client name"):
+        store.commit("study1", name, {})
+
+
+def test_loading_does_not_accept_line_breaks_in_persisted_directory_or_file_names(tmp_path):
+    seeded(tmp_path)
+    root = tmp_path / "fdn/catalog"
+    content = (root / "study1/site-a.json").read_bytes()
+    invalid_study = root / "study2\n"
+    invalid_study.mkdir()
+    (invalid_study / "site-a.json").write_bytes(content)
+    (root / "study1/site-b\n.json").write_bytes(content)
+    restored = CatalogStore(str(tmp_path))
+    assert set(restored._clients) == {("study1", "site-a")}

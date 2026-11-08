@@ -60,7 +60,7 @@ server is still initializing.
 | --- | --- |
 | [project.yml](project.yml) | Defines the server, sites, admin, endpoints and certificate host names. Sites use `nvflare-files-server:8102`; the host admin uses `localhost:8103`. |
 | Server kit `local/resources.json` | Setup installs [config/server/resources.json](config/server/resources.json), which declares `CatalogManager` and the standard server services. It applies results, stores catalog versions and health, and handles catalog queries. |
-| Site kit `local/study_runtime.yaml` | Setup copies the authored [site-1](config/site-1/study_runtime.yaml) and [site-2](config/site-2/study_runtime.yaml) runtime mappings into new kits, preserving existing operator files. These map logical dataset names to site-local paths. |
+| Site kit `local/study_runtime.yaml` | Setup copies the authored [site-1](config/site-1/study_runtime.yaml) and [site-2](config/site-2/study_runtime.yaml) runtime mappings into new kits, reinstalling the example mappings on each setup run. These map logical dataset names to site-local paths. |
 | `config/<site>/catalog_site.json` | Selects the site's installed connectors. Compose mounts it read-only at `/fdn/policy/catalog_site.json`. |
 | `config/<site>/catalog_policy.json` | Defines what the site permits publishing for Study `default`. Compose mounts it read-only at `/fdn/policy/default/catalog_policy.json`. |
 
@@ -74,6 +74,12 @@ Step 4 writes a one-line `.env` file containing `CATALOG_KITS`, just as you woul
 create for Docker Compose after provisioning. Setup replaces this example-owned
 file on each run; keep additional environment overrides in your shell or add them
 to `.env` after setup.
+
+The site containers set `NVFLARE_CATALOG_POLICY_ROOT=/fdn/policy` explicitly.
+Their jobs use the process launcher inside each isolated site container. A bare
+process deployment instead defaults to its own `<workspace>/local/fdn`, even if
+an unrelated `/fdn/policy` directory exists on the host. For Docker, Kubernetes
+and Slurm job launchers, see the [launcher policy configuration](../../../docs/design/federated_data_cataloging_design.md#31-existing-study-dataset-bindings).
 
 The same standard `CatalogController` and `CatalogExecutor` serve every source.
 The recipe selects sites and optional dataset names; backend selection belongs

@@ -46,6 +46,7 @@ from nvflare.app_common.fdn.catalog.site.site_config import (
     SiteConfigError,
     load_site_config,
 )
+from nvflare.app_opt.job_launcher.study_data import DATA_MOUNT_ROOT
 from nvflare.app_opt.job_launcher.study_runtime import (
     load_study_runtime_file,
     resolve_study_runtime,
@@ -53,8 +54,9 @@ from nvflare.app_opt.job_launcher.study_runtime import (
 )
 from nvflare.fuel.utils.class_loader import load_class
 
-DEFAULT_MOUNT_ROOT = "/data"
+DEFAULT_MOUNT_ROOT = DATA_MOUNT_ROOT
 DEFAULT_POLICY_ROOT = "/fdn/policy"
+POLICY_ROOT_ENV = "NVFLARE_CATALOG_POLICY_ROOT"
 
 
 _logger = logging.getLogger(__name__)
@@ -115,11 +117,19 @@ class CatalogExecutor(Executor):
         return workspace.get_root_dir() if workspace is not None else None
 
     def _policy_root(self, workspace_root: str | None) -> Path:
-        """The read-only mount that container launchers expose, else the site's local/fdn (process mode)."""
+        """Use an explicit site-owned location, or the default for this execution namespace."""
         if self.policy_root is not None:
             return self.policy_root
-        if Path(DEFAULT_POLICY_ROOT).is_dir() or workspace_root is None:
+        configured = os.environ.get(POLICY_ROOT_ENV)
+        if configured is not None:
+            if not configured or not Path(configured).is_absolute():
+                raise SiteConfigError(f"{POLICY_ROOT_ENV} must be an absolute path")
+            return Path(configured)
+        mode = os.environ.get(JOB_LAUNCHER_MODE_ENV, "process")
+        if mode in {"docker", "k8s", "slurm"} and Path(DEFAULT_POLICY_ROOT).is_dir():
             return Path(DEFAULT_POLICY_ROOT)
+        if workspace_root is None:
+            raise SiteConfigError("the site's catalog policy location is unavailable")
         return Path(workspace_root) / "local" / "fdn"
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -190,8 +200,8 @@ class CatalogExecutor(Executor):
             )
             return self._fail(asked, previous, ReasonCode.INTERNAL)
 
-        policy_root = self._policy_root(workspace_root)
         try:
+            policy_root = self._policy_root(workspace_root)
             site = load_site_config(policy_root / SITE_CONFIG_FILE)
             policy = load_policy(policy_file_path(policy_root, study))
         except (PolicyError, SiteConfigError):

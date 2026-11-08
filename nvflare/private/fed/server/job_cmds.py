@@ -1731,6 +1731,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_id = args[1]
 
         with engine.new_context() as fl_ctx:
+            job = conn.get_prop(self.JOB)
             if require_finished:
                 job = job_def_manager.get_job(job_id, fl_ctx)
                 if not job:
@@ -1757,6 +1758,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             try:
                 fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
                 fl_ctx.set_prop(FLContextKey.JOB_BLOCK_REASON, None, private=True, sticky=False)
+                if job is not None and job.meta.get(JobMetaKey.JOB_ID.value) == job_id:
+                    fl_ctx.set_prop(FLContextKey.JOB_META, job.meta, private=True, sticky=False)
                 engine.fire_event(EventType.BEFORE_JOB_DOWNLOAD, fl_ctx)
                 if fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON):
                     conn.append_error("job artifacts are not available", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))

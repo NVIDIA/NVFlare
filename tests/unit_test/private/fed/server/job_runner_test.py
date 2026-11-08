@@ -682,7 +682,8 @@ def test_job_complete_process_saves_workspace_before_publishing_aborted_status()
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
-    completion_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1", sticky=False)
+    completion_ctx.set_prop.assert_any_call(FLContextKey.CURRENT_JOB_ID, "job-1", sticky=False)
+    completion_ctx.set_prop.assert_any_call(FLContextKey.JOB_META, job.meta, private=True, sticky=False)
     assert parent.mock_calls == [
         call.save_workspace(completion_ctx, ANY, "job-1"),
         call.set_status("job-1", RunStatus.FINISHED_ABORTED, completion_ctx),
