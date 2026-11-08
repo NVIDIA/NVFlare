@@ -110,12 +110,43 @@ enabled for HTTPS, redirects are rejected, and no storage credentials are reques
 See the [Unity Catalog API definition](https://github.com/unitycatalog/unitycatalog/blob/main/api/all.yaml)
 and [local server setup](https://docs.unitycatalog.io/how-to/run-local-server).
 
+## DuckDBConnector
+
+`nvflare.app_opt.fdn.catalog.duckdb_connector.DuckDBConnector` reads a mounted
+DuckDB database file. Install the `duckdb>=1.1` package at the site. It is not
+part of the `catalog` extra, and SQLAlchemy is not used: reflection through
+`duckdb-engine` fails on DuckDB's catalog, so the connector runs four fixed
+queries against DuckDB's own `information_schema` and `duckdb_constraints()`.
+Column names, physical types, nullability, primary keys and foreign keys are
+published; no application rows are read.
+
+The file is opened read-only with external file access disabled. Optional
+descriptive and semantic declarations stay in `<database>.catalog.json`, as for
+SQLite. The connector is not built in, so the site names it:
+
+```json
+{
+  "format_version": 1,
+  "connectors": {
+    "duckdb": {"class": "nvflare.app_opt.fdn.catalog.duckdb_connector.DuckDBConnector"}
+  },
+  "default_connector": "duckdb"
+}
+```
+
+`schema` (default `main`) and `tables` are the only options. Without `tables`,
+every ordinary table in the schema is published; views are not. A relationship
+is published only when its target is one of the selected tables. DuckDB does not
+report the target's schema, so keep related tables in one schema. A DuckDB file
+that another process has open for writing cannot be read and is reported as
+unavailable.
+
 ## Limits and failures
 
-Both readers return a complete dataset catalog or raise a safe `ConnectorError`.
+All three readers return a complete dataset catalog or raise a safe `ConnectorError`.
 They enforce record budgets and check the duration budget before/after provider
 operations. SQL call accounting includes reflection statements emitted through
-the SQLAlchemy connection; Unity Catalog counts HTTP requests, including pages
+the SQLAlchemy connection; DuckDB counts its four metadata queries; Unity Catalog counts HTTP requests, including pages
 and detail lookups. A repeated page token or inconsistent inventory fails the read.
 Connections and HTTP sessions are closed on success and failure; raw provider
 errors, SQL text, endpoints and credentials are not returned.
