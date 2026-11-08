@@ -56,7 +56,7 @@ def reply(rc, payload=None):
 
 
 class TestManifest:
-    @pytest.mark.parametrize("bad_value", [b"binary", float("nan"), {1: "a", "b": "c"}])
+    @pytest.mark.parametrize("bad_value", [b"binary", float("nan"), {1: "a", "b": "c"}, {2: "a", 10: "b"}])
     def test_a_bad_site_cannot_block_other_sites_or_its_own_restrictions(self, tmp_path, bad_value):
         controller = make_controller(tmp_path)
         controller._key, controller._job_id = b"k" * 32, "job-1"

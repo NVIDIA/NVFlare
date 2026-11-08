@@ -164,7 +164,10 @@ class CatalogController(Controller):
             try:
                 # A site result must be safe for the shared JSON manifest. One bad site must not
                 # prevent other sites' publications or policy restrictions from being applied.
-                json.dumps(payload, sort_keys=True, allow_nan=False)
+                # It must also come back unchanged from JSON: integer keys would return as strings and
+                # re-sort, which would invalidate the signature for every site in the job.
+                if json.loads(json.dumps(payload, sort_keys=True, allow_nan=False)) != payload:
+                    raise ValueError("site result does not survive a JSON round trip")
             except (TypeError, ValueError, OverflowError, RecursionError):
                 parsed = parse_result(
                     {**payload, "status": ResultStatus.FAILED.value},
