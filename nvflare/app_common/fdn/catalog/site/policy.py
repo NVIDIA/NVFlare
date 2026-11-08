@@ -18,6 +18,7 @@ This module has no FLARE imports.
 """
 
 import json
+import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -25,6 +26,7 @@ from pathlib import Path
 
 from nvflare.app_common.fdn.catalog.common.schema import CatalogInfo, Provenance, SemanticProfile, TableInfo
 
+_logger = logging.getLogger(__name__)
 POLICY_FORMAT_VERSION = 1
 POLICY_FILE = "catalog_policy.json"
 _TOP_LEVEL_KEYS = frozenset({"format_version", "datasets"})
@@ -118,14 +120,49 @@ def load_policy(path: Path) -> StudyPolicy:
     return StudyPolicy(datasets={name: _parse_rule(rule, f"datasets.{name}", path) for name, rule in datasets.items()})
 
 
+def _warn_unmatched(rule: DatasetRule, catalog: CatalogInfo, removed_tables: set[str]) -> None:
+    """An exclusion that matches nothing excludes nothing, which is how a typo shares what the operator meant to
+    hide. Say so in the site's own log."""
+    tables = {t.name.casefold(): t for t in catalog.tables}
+    for name in sorted(rule.exclude_tables):
+        if name.casefold() not in tables:
+            _logger.warning("catalog policy for dataset %r: exclude_tables %r matches no table", catalog.dataset, name)
+    for table, columns in sorted(rule.exclude_columns.items()):
+        found = tables.get(table.casefold())
+        if found is None:
+            _logger.warning(
+                "catalog policy for dataset %r: exclude_columns names table %r, which is not in the catalog",
+                catalog.dataset,
+                table,
+            )
+        elif found.name not in removed_tables:
+            present = {c.name.casefold() for c in found.columns}
+            for column in sorted(columns):
+                if column.casefold() not in present:
+                    _logger.warning(
+                        "catalog policy for dataset %r: exclude_columns %r.%r matches no column",
+                        catalog.dataset,
+                        table,
+                        column,
+                    )
+
+
 def apply_policy(rule: DatasetRule, catalog: CatalogInfo, installed_ops: set[str]) -> CatalogInfo:
-    """The shareable view of a catalog. Returns a new object; the caller validates it."""
-    removed_tables = {t.name for t in catalog.tables if t.name in rule.exclude_tables}
+    """The shareable view of a catalog. Returns a new object; the caller validates it.
+
+    Names are matched without regard to case, so a differently cased entry excludes at least what it names."""
+    excluded_tables = {n.casefold() for n in rule.exclude_tables}
+    excluded_columns: dict[str, set[str]] = {}
+    for table, columns in rule.exclude_columns.items():
+        excluded_columns.setdefault(table.casefold(), set()).update(c.casefold() for c in columns)
+    excluded_resources = {r.casefold() for r in rule.exclude_resources}
+    removed_tables = {t.name for t in catalog.tables if t.name.casefold() in excluded_tables}
     removed_columns = {
-        t.name: {c.name for c in t.columns if c.name in rule.exclude_columns.get(t.name, ())}
+        t.name: {c.name for c in t.columns if c.name.casefold() in excluded_columns.get(t.name.casefold(), ())}
         for t in catalog.tables
         if t.name not in removed_tables
     }
+    _warn_unmatched(rule, catalog, removed_tables)
 
     tables = []
     for t in catalog.tables:
@@ -152,7 +189,7 @@ def apply_policy(rule: DatasetRule, catalog: CatalogInfo, installed_ops: set[str
     return replace(
         catalog,
         tables=tuple(tables),
-        resources=tuple(r for r in catalog.resources if r.type not in rule.exclude_resources),
+        resources=tuple(r for r in catalog.resources if r.type.casefold() not in excluded_resources),
         description=None if "description" in excluded else catalog.description,
         owner=None if "owner" in excluded else catalog.owner,
         modalities=() if "modalities" in excluded else catalog.modalities,

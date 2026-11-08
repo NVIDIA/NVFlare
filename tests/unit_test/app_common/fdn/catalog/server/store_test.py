@@ -66,6 +66,18 @@ class TestPersistence:
         assert store.client_state(STUDY, "site-b")["client"]["health"] == "UNKNOWN"
         assert store.search(STUDY, SearchQuery()).total == 1
 
+    def test_a_corrupt_client_file_is_kept_aside_and_not_overwritten_by_the_next_commit(self, tmp_path, caplog):
+        seeded(tmp_path)
+        path = tmp_path / "fdn" / "catalog" / STUDY / "site-b.json"
+        path.write_text("{not json")
+        store = CatalogStore(str(tmp_path))
+        kept = path.with_name("site-b.json.damaged")
+        assert kept.read_text() == "{not json" and not path.exists()
+        assert "site-b.json.damaged" in caplog.text
+        store.commit(STUDY, "site-b", store.client_state(STUDY, "site-b"))
+        assert kept.read_text() == "{not json"  # a later commit replaces the live file only
+        assert CatalogStore(str(tmp_path)).client_state(STUDY, "site-b")["client"]["health"] == "UNKNOWN"
+
     @pytest.mark.parametrize(
         "damage",
         [

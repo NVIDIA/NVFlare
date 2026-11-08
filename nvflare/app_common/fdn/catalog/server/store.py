@@ -172,9 +172,22 @@ class CatalogStore:
                     if not _valid_state(state):
                         raise ValueError
                 except (OSError, ValueError, KeyError, TypeError):
-                    _logger.warning(f"catalog state for a client was unreadable and starts empty: {client}")
+                    kept = self._keep_aside(path)
+                    _logger.error(
+                        f"catalog state for a client was unreadable and starts empty: {client}; the file is kept as {kept}"
+                    )
                     state = new_client_state()
                 self._clients[(study, client)] = state
+
+    @staticmethod
+    def _keep_aside(path: Path) -> str:
+        """The next commit replaces the client's file; keep the damaged one for whoever has to find out why."""
+        target = path.with_name(path.name + ".damaged")
+        try:
+            os.replace(path, target)
+        except OSError:
+            return "in place (it could not be moved)"
+        return target.name
 
     # ---- state access --------------------------------------------------------------------------------------
 

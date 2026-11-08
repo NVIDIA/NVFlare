@@ -129,6 +129,34 @@ class TestApplyPolicy:
         rule = DatasetRule(share=True, exclude_tables=frozenset({"nope"}), exclude_columns={"nope": frozenset({"x"})})
         assert apply_policy(rule, make_catalog(), set()).tables == make_catalog().tables
 
+    def test_names_are_matched_without_regard_to_case(self):
+        rule = DatasetRule(
+            share=True, exclude_tables=frozenset({"VISIT"}), exclude_columns={"PERSON": frozenset({"NAME"})}
+        )
+        view = apply_policy(rule, make_catalog(), set())
+        assert [t.name for t in view.tables] == ["person"]
+        assert [c.name for c in view.tables[0].columns] == ["person_id"]
+
+    def test_an_exclusion_that_matches_nothing_is_reported_and_excludes_nothing(self, caplog):
+        rule = DatasetRule(
+            share=True,
+            exclude_tables=frozenset({"patients"}),
+            exclude_columns={"person": frozenset({"ssn"}), "visits": frozenset({"x"})},
+        )
+        with caplog.at_level("WARNING", logger="nvflare.app_common.fdn.catalog.site.policy"):
+            view = apply_policy(rule, make_catalog(), set())
+        assert view.tables == make_catalog().tables
+        messages = "\n".join(r.getMessage() for r in caplog.records)
+        assert "exclude_tables 'patients' matches no table" in messages
+        assert "exclude_columns 'person'.'ssn' matches no column" in messages
+        assert "names table 'visits'" in messages
+
+    def test_an_exclusion_that_matches_is_not_reported(self, caplog):
+        rule = DatasetRule(share=True, exclude_columns={"person": frozenset({"name"})})
+        with caplog.at_level("WARNING", logger="nvflare.app_common.fdn.catalog.site.policy"):
+            apply_policy(rule, make_catalog(), set())
+        assert not caplog.records
+
     def test_excluded_resource(self):
         rule = DatasetRule(share=True, exclude_resources=frozenset({"Patient"}))
         assert apply_policy(rule, make_catalog(), set()).resources == ()
