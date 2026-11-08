@@ -42,7 +42,9 @@ class CatalogRecipe(Recipe):
         catalog_reader: optional CatalogReader component, instantiated at each site, like a FedStats generator.
             Site-owned policies and budgets still apply to every returned catalog.
         site_config_root: SimEnv-only parent of per-site directories containing local/fdn and runtime bindings.
-        output_dir: SimEnv persistent catalog store and discovery.json output directory.
+        output_dir: SimEnv persistent catalog store and discovery.json output directory. SimEnv has no Study, so
+            results are kept under the `default` Study. Runs that share this directory share one store; give
+            separate runs separate directories.
         task_timeout_s: how long to wait for a site before recording it as not responding.
 
     Example:
