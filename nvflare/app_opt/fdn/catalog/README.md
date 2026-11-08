@@ -2,8 +2,93 @@
 
 These connectors publish `CatalogInfo` metadata through the existing site
 publication policy. They do not select application rows, execute arbitrary SQL,
-or process data. Connector selection, source bindings and credentials are
-site-owned; a federated catalog task cannot provide them.
+or process data. The CSV connector reads a bounded sample of one file only to
+infer column types, and publishes schema metadata, never values. Connector
+selection, source bindings and credentials are site-owned; a federated catalog
+task cannot provide them.
+
+## The connectors
+
+| Connector | Name in `catalog_site.json` | What it reads | Binding options |
+| --- | --- | --- | --- |
+| `ParquetConnector` | `parquet` (built in, the default) | Parquet file footers of a mounted dataset | none |
+| `CSVConnector` | `csv` (built in) | The header and a bounded sample of one CSV file | none |
+| `SQLConnector` | `sql` (built in) | A SQL database through SQLAlchemy reflection | `schema`, `tables` |
+| `DuckDBConnector` | declared by class path under `connectors` | A DuckDB file through its own catalog views | `schema`, `tables` |
+| `UnityCatalogConnector` | `unity-catalog` (built in) | Unity Catalog or Databricks through the REST API | `catalog`, `schema`, `tables` |
+
+A site names the connector for each dataset in `catalog_site.json`, or uses a
+default connector for mounted datasets that have no binding. Different datasets,
+and different sites, can use different connectors.
+
+## ParquetConnector
+
+`nvflare.app_opt.fdn.catalog.parquet_connector.ParquetConnector` is the default
+connector, named `parquet`. It reads Parquet file footers and never rows. Install
+`pyarrow>=14`, which `nvflare[catalog]` includes. A site whose datasets are all
+mounted Parquet needs only `{"format_version": 1}` in `catalog_site.json`, with no
+connector entries.
+
+A mounted dataset is either one `.parquet` file or a directory:
+
+- A single file is one table, named after the file.
+- In a directory, each `.parquet` file directly inside it is one table, named
+  after the file.
+- Each subdirectory is also one table, named after the directory. Its table is
+  made of every `.parquet` part file below it. Symlinked directories are not
+  followed.
+
+Tables are listed in name order. Column names, physical types and nullability
+come from the footer, with types written as Arrow type names. For a partitioned
+table every part file must have the same schema as the first. A difference fails
+the dataset. Partition-value types are not inferred.
+
+Parquet footers carry no keys or relationships. A site that wants them published
+declares them in an optional `catalog.json` inside the dataset directory (a
+single-file mount has no sidecar):
+
+```json
+{
+  "display_name": "OMOP CDM",
+  "semantic_profile": {"standard": "OMOP", "version": "5.4"},
+  "tables": {
+    "person": {"primary_key": ["person_id"]},
+    "condition_occurrence": {
+      "relationships": [
+        {"columns": ["person_id"], "target_table": "person", "target_columns": ["person_id"]}
+      ]
+    }
+  }
+}
+```
+
+The sidecar may also carry `description`, `owner`, `modalities`, `operations`,
+`source_version`, `lineage`, `observed_at` and the provenance references
+`declaration_ref` and `validation_ref`. It is limited to 1 MiB, unknown keys are
+rejected, and a table entry may only hold `primary_key` and `relationships`.
+Observed columns always come from the footers. The built-in reader accepts no
+binding options.
+
+## CSVConnector
+
+`nvflare.app_opt.fdn.catalog.csv_connector.CSVConnector`, named `csv`, reads one
+UTF-8 CSV file per dataset. The file needs a header row with unique, nonempty
+column names. Install `pyarrow>=14`. Bind a dataset to it in `catalog_site.json`:
+
+```json
+{
+  "format_version": 1,
+  "studies": {"default": {"lab_results": {"connector": "csv"}}}
+}
+```
+
+PyArrow infers column types from the first 64 KiB of a sample of at most 1 MiB
+of the file. These are sampled types, not a validation of the whole file, and are
+written as Arrow type names such as `int64`, `double`, `string` or `date32[day]`.
+The dataset is one table named after the file, marked tabular. Nullability stays
+unknown, and no keys are inferred. The connector reads the sample only to infer
+types and publishes the schema, never any values. It has no sidecar and accepts
+no binding options.
 
 ## SQLConnector
 
@@ -143,9 +228,10 @@ unavailable.
 
 ## Limits and failures
 
-All three readers return a complete dataset catalog or raise a safe `ConnectorError`.
+All five connectors return a complete dataset catalog or raise a safe `ConnectorError`.
 They enforce record budgets and check the duration budget before/after provider
-operations. SQL call accounting includes reflection statements emitted through
+operations. Parquet counts one call for each footer it reads and for each part
+file it lists; CSV counts its one bounded sample read. SQL call accounting includes reflection statements emitted through
 the SQLAlchemy connection; DuckDB counts its four metadata queries; Unity Catalog counts HTTP requests, including pages
 and detail lookups. A repeated page token or inconsistent inventory fails the read.
 Connections and HTTP sessions are closed on success and failure; raw provider
