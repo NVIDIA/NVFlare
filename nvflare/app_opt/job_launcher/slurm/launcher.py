@@ -25,7 +25,13 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JOB_LAUNCHER_MODE_ENV,
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobProcessArgs,
+    add_launcher,
+)
 from nvflare.apis.utils.format_check import check_job_id
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.config import (
@@ -504,6 +510,7 @@ class SlurmJobLauncher(JobLauncherSpec):
             self.SUPPORTS_ADDITIONAL_NODE_COMMAND,
         )
         study_env, secret_env = self._study_environment(runtime)
+        study_env[JOB_LAUNCHER_MODE_ENV] = "slurm-process" if sandbox == "none" else "slurm"
         secret_env.update(get_credential_env(job_args))
         mounts = list(self._study_mounts(runtime)) if sandbox != "none" else []
         if sandbox != "none":

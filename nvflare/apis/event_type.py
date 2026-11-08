@@ -89,8 +89,16 @@ class EventType:
 
     AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
     BEFORE_BUILD_COMPONENT = "_before_build_component"
+    # Server launcher selection honors FLContextKey.JOB_BLOCK_REASON set by a handler.
     BEFORE_JOB_LAUNCH = "_before_job_launch"
     AFTER_JOB_LAUNCH = "_after_job_launch"
+    # server side, before a finished job's run dir is archived for download: a component removes the private files
+    # it put there, or sets FLContextKey.JOB_BLOCK_REASON to stop the archive from being published
+    BEFORE_JOB_WORKSPACE_ARCHIVE = "_before_job_workspace_archive"
+    # server side, before preparing artifacts for download: components may redact stored artifacts or set
+    # FLContextKey.JOB_BLOCK_REASON to refuse the download
+    # Components have been staged; callbacks may sanitize them or block before transfer is published.
+    BEFORE_JOB_DOWNLOAD = "_before_job_download"
 
     TASK_RESULT_RECEIVED = "_task_result_received"
     TASK_ASSIGNMENT_SENT = "_task_assignment_sent"

@@ -1755,8 +1755,18 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 return
 
             try:
+                fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
+                fl_ctx.set_prop(FLContextKey.JOB_BLOCK_REASON, None, private=True, sticky=False)
+                staged = {}
                 for ct, file_name in comps:
                     job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
+                    staged[ct] = os.path.join(job_download_dir, job_id, file_name)
+                fl_ctx.set_prop(FLContextKey.JOB_DOWNLOAD_FILES, staged, private=True, sticky=False)
+                engine.fire_event(EventType.BEFORE_JOB_DOWNLOAD, fl_ctx)
+                if fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON):
+                    self._clean_up_download(conn, tx_id)
+                    conn.append_error("job artifacts are not available", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+                    return
 
                 self.download_folder(
                     conn,
