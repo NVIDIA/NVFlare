@@ -108,7 +108,7 @@ class CatalogCommandModule(CommandModule):
 
     def _authorizer(self):
         def authorize(conn: Connection, args: list[str]):
-            study = conn.get_prop(ConnProps.ACTIVE_STUDY)
+            study = conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY)
             role = conn.get_prop(ConnProps.USER_ROLE, "")
             registry = StudyRegistryService.get_registry()
             # The default Study has no membership (login does not check it); the authorization policy decides.
@@ -135,7 +135,7 @@ class CatalogCommandModule(CommandModule):
     def cmd_search(self, conn: Connection, args: list[str]):
         try:
             query = parse_search_request(conn.get_prop(ConnProps.CMD_PROPS))
-            page = self._manager.search(conn.get_prop(ConnProps.ACTIVE_STUDY), query)
+            page = self._manager.search(conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY), query)
         except (RequestError, ValueError) as e:
             self._error(conn, "INVALID_ARGS", str(e))
             return
@@ -154,7 +154,7 @@ class CatalogCommandModule(CommandModule):
 
     def cmd_status(self, conn: Connection, args: list[str]):
         try:
-            clients = self._manager.health(conn.get_prop(ConnProps.ACTIVE_STUDY))
+            clients = self._manager.health(conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY))
         except NotReady as e:
             self._error(conn, "SYSTEM_NOT_READY", str(e))
             return

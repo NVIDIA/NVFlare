@@ -229,6 +229,12 @@ class TestAuthorization:
         props = {ConnProps.ACTIVE_STUDY: "default", ConnProps.USER_ROLE: "member", ConnProps.USER_NAME: "u"}
         assert by_name[commands.SEARCH].authz_func(FakeConn(props), ["x"]) == PreAuthzReturnCode.REQUIRE_AUTHZ
 
+    def test_a_connection_without_an_active_study_is_in_the_default_study(self):
+        module = CatalogCommandModule(SimpleNamespace())
+        by_name = {s.name: s for s in module.get_spec().cmd_specs}
+        props = {ConnProps.USER_ROLE: "member", ConnProps.USER_NAME: "u"}
+        assert by_name[commands.SEARCH].authz_func(FakeConn(props), ["x"]) == PreAuthzReturnCode.REQUIRE_AUTHZ
+
     def test_no_registry_means_only_admins(self, manager):
         module = CatalogCommandModule(manager)
         spec = module.get_spec().cmd_specs[0]
