@@ -26,7 +26,7 @@ from pathlib import Path
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, SystemComponents
+from nvflare.apis.fl_constant import FLContextKey, SiteType, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey, RunStatus, get_job_meta_study
 from nvflare.apis.storage import WORKSPACE
@@ -46,6 +46,7 @@ from nvflare.app_common.fdn.catalog.server.reconcile import Outcome, Reconciler
 from nvflare.app_common.fdn.catalog.server.search import SearchPage, SearchQuery
 from nvflare.app_common.fdn.catalog.server.store import CatalogStore, manifest_key
 from nvflare.private.fed.server.server_cmd_modules import ServerCommandModules
+from nvflare.utils.job_launcher_utils import get_job_launcher_spec
 
 _UNFINISHED = [RunStatus.SUBMITTED, RunStatus.APPROVED, RunStatus.DISPATCHED, RunStatus.RUNNING]
 _LAUNCHED = (RunStatus.DISPATCHED, RunStatus.RUNNING)
@@ -113,8 +114,13 @@ class CatalogManager(FLComponent):
     def _catalog_study(meta) -> str | None:
         return get_job_meta_study(meta) if isinstance(meta, dict) and meta.get(CATALOG_JOB_META) else None
 
-    def _validate_catalog_job(self, job_id: str, meta: dict):
+    def _validate_catalog_job(self, job_id: str, meta: dict, server_name: str = SiteType.SERVER):
         """Only the built-in collector may receive a key; the catalog marker is not code authorization."""
+        # Resolve exactly as the launchers do: defaults, site overrides and legacy resource_spec.
+        # This gate is independent of the locally derived BYOC flag.
+        for name in {SiteType.SERVER, server_name}:
+            if any(get_job_launcher_spec(meta, name, mode) for mode in ("docker", "k8s", "slurm")):
+                raise ValueError("catalog server execution settings must be site-owned, not job-supplied")
         custom = Path(self._workspace.get_app_custom_dir(job_id))
         if meta.get(AppValidationKey.BYOC) or (custom.is_dir() and any(custom.iterdir())):
             raise ValueError("catalog jobs cannot contain server-side BYOC code or custom entrypoints")
@@ -160,7 +166,7 @@ class CatalogManager(FLComponent):
             return
         job_id = meta.get(JobMetaKey.JOB_ID.value)
         try:
-            self._validate_catalog_job(job_id, meta)
+            self._validate_catalog_job(job_id, meta, fl_ctx.get_identity_name() or SiteType.SERVER)
         except Exception as e:
             self.log_warning(fl_ctx, f"catalog job configuration rejected: {e}")
             fl_ctx.set_prop(
@@ -364,6 +370,8 @@ class CatalogManager(FLComponent):
                     self.logger.warning(f"catalog result for a client could not be applied: {type(e).__name__}")
                 else:
                     applied.add(client)
+                    self._artifacts.save_progress(job_id, applied)
+            # Also flush cached progress if a prior progress write failed after the store commit.
             self._artifacts.save_progress(job_id, applied)
         except Exception as e:
             retry = True

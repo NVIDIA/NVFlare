@@ -343,6 +343,23 @@ class TestHandOver:
         path = self.launch(mgr, tmp_path, meta)
         assert not Path(path).exists() and not mgr._pending
 
+    @pytest.mark.parametrize("mode", ["docker", "k8s", "slurm"])
+    @pytest.mark.parametrize("source", ["server", "default", "legacy"])
+    def test_job_image_is_rejected_even_without_a_byoc_flag(self, mgr, tmp_path, mode, source):
+        meta = catalog_meta("j1")
+        if source == "legacy":
+            meta["resource_spec"] = {"server": {mode: {"image": "untrusted/catalog:latest"}}}
+        else:
+            meta["launcher_spec"] = {source: {mode: {"image": "untrusted/catalog:latest"}}}
+        path = self.launch(mgr, tmp_path, meta)
+        assert not Path(path).exists() and not mgr._pending
+
+    def test_client_image_and_portable_server_resources_do_not_override_server_execution(self, mgr, tmp_path):
+        meta = catalog_meta("j1")
+        meta["launcher_spec"] = {"site-a": {"docker": {"image": "site-approved/client:latest"}}}
+        meta["resource_spec"] = {"server": {"num_of_cpus": 2}}
+        assert Path(self.launch(mgr, tmp_path, meta)).exists()
+
     def test_recipe_with_log_streaming_passes_the_server_gate(self, mgr, tmp_path):
         from nvflare.recipe.catalog import CatalogRecipe
 
@@ -965,3 +982,35 @@ def test_legacy_download_does_not_replace_saved_parent_progress(mgr):
     ctx = event(mgr, EventType.BEFORE_JOB_DOWNLOAD, **{FLContextKey.CURRENT_JOB_ID: "j1"})
     assert ctx.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
     assert mgr._artifacts.applied_clients("j1") == {"site-b"}
+
+
+def test_client_progress_is_durable_before_the_next_client_is_applied(mgr, monkeypatch):
+    pending(
+        mgr,
+        "j1",
+        manifest(
+            **{
+                "site-a": ManifestEntry("TIMEOUT", None),
+                "site-b": ManifestEntry("TIMEOUT", None),
+            }
+        ),
+        status="FINISHED:COMPLETED",
+    )
+    original = mgr._store.record_no_result
+    observed = []
+
+    def record(study, client, reason, now):
+        if client == "site-b":
+            observed.append(mgr._artifacts.applied_clients("j1"))
+            raise OSError("failure before the next client commits")
+        original(study, client, reason, now)
+
+    monkeypatch.setattr(mgr._store, "record_no_result", record)
+    mgr._ingest("j1")
+    assert observed == [{"site-a"}]
+    assert state(mgr, "site-a")["client"]["failures"] == 1
+    assert mgr._artifacts.applied_clients("j1") == {"site-a"}
+    monkeypatch.setattr(mgr._store, "record_no_result", original)
+    mgr._recover_finished()
+    assert state(mgr, "site-a")["client"]["failures"] == 1
+    assert state(mgr, "site-b")["client"]["failures"] == 1
