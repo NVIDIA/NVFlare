@@ -101,6 +101,45 @@ def test_sim_env_validates_at_deployment_after_api_configuration_changes(tmp_pat
     assert not (tmp_path / "simulation").exists()
 
 
+@pytest.mark.parametrize("source", ["api", "environment", "argument"])
+def test_failed_logging_retry_does_not_return_previous_success(monkeypatch, tmp_path, source):
+    from nvflare.recipe import _args
+
+    monkeypatch.setenv("FL_LOG_LEVEL", "full")
+    if source == "argument":
+        monkeypatch.setattr(_args, "_RECIPE_LOG_CONFIG", "full")
+    env = SimEnv(
+        num_clients=1,
+        log_config="full" if source == "api" else None,
+        workspace_root=str(tmp_path / "simulation"),
+    )
+    job = _make_job()
+    _deploy_with_mocked_simulator(env, job)
+    workspace = tmp_path / "simulation" / job.name
+    artifact = workspace / "previous-result.txt"
+    artifact.write_text("previous successful run")
+    assert env.get_job_status(job.name) == RunStatus.FINISHED_COMPLETED.value
+    assert env.get_job_result(job.name) == str(workspace)
+    assert not env.last_run_failed
+
+    if source == "environment":
+        monkeypatch.setenv("FL_LOG_LEVEL", "progres")
+    else:
+        env.log_config = "progres"
+    error_type = ValueError if source == "api" else SystemExit
+    with patch.object(job, "simulator_run") as run, patch.object(env, "_ensure_default_component_policy") as policy:
+        with pytest.raises(error_type) as error:
+            env.deploy(job)
+    if source != "api":
+        assert error.value.code == 2
+    run.assert_not_called()
+    policy.assert_not_called()
+    assert env.get_job_status(job.name) == RunStatus.FAILED_TO_RUN.value
+    assert env.last_run_failed
+    assert env.get_job_result(job.name) is None
+    assert artifact.read_text() == "previous successful run"
+
+
 def test_sim_env_uses_environment_repaired_after_construction(monkeypatch, tmp_path):
     monkeypatch.setenv("FL_LOG_LEVEL", "missing.json")
     env = SimEnv(num_clients=1, workspace_root=str(tmp_path / "simulation"))

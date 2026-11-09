@@ -139,7 +139,6 @@ class SimEnv(ExecEnv):
             self.log_config = validated
 
     def deploy(self, job: FedJob):
-        self._validate_log_config()
         job_id = job.name
         self._job_statuses.pop(job_id, None)
         self.last_run_failed = False
@@ -147,6 +146,7 @@ class SimEnv(ExecEnv):
         started_at = time.time()
         started_timer = time.monotonic()
         try:
+            self._validate_log_config()
             # Validate scripts exist locally for simulation
             non_local_scripts = collect_non_local_scripts(job)
             if non_local_scripts:
