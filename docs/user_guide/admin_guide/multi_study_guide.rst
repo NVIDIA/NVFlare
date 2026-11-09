@@ -207,6 +207,14 @@ data mounts, job images, and related settings in each site's ``local/study_runti
 managed by each site's operator, not by these commands. Until a site defines runtime resources for
 a study, jobs for that study run at that site without any study-specific data mounts or settings.
 
+Once a client site's ``study_runtime.yaml`` lists at least one study, the site runs only the listed
+studies and rejects jobs for any other study, including ``default``. An entry can be empty.
+
+.. note::
+
+   On upgrading, a client site whose file lists some studies must add an entry for every study it
+   serves, including ``default`` if it should run default-study jobs.
+
 Runtime study mutations are persisted to ``study_registry.json`` in the server workspace root, not
 in the ``local/`` folder. The provisioned copy under ``local/`` is only a first-start seed: once a
 runtime mutation has been persisted, the workspace-root copy is authoritative, shadows the seed,
@@ -255,7 +263,8 @@ Process mode inherits the complete parent environment, including secret source v
 variables for other studies. This feature provides configuration convenience, not isolation between
 studies. Use a suitably configured Docker deployment when jobs require isolation.
 
-If the file or selected study entry is absent, the job uses its usual environment. Jobs without a
+If the file or selected study entry is absent, the job uses its usual environment (a client whose
+file lists other studies rejects the job). Jobs without a
 study use ``default``. Invalid configuration anywhere in the file fails launch. Process mode always
 ignores the legacy ``study_data.yaml``, including when both files exist.
 

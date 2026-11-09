@@ -4,6 +4,7 @@
 # For process mode, secret_env.source names a parent env var; key is optional and ignored.
 # Everything a study gets at this site lives in this file: data mounts, env
 # vars, secret-backed env vars and file mounts, and (K8s only) a pod template.
+# Once this file lists a study, a client site runs only the listed studies (including "default").
 # Example:
 # studies:
 #   default:
