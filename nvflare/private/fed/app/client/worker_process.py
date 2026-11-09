@@ -27,11 +27,15 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import configure_logging, get_script_logger
+from nvflare.private.defs import RequestHeader
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.app.job_process_cleanup import shutdown_job_process_runtime
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_status import ClientStatus
+from nvflare.private.fed.resource_stats.collector import JobResourceCollector
+from nvflare.private.fed.resource_stats.handoff import launch_generation_from_options, write_terminal_handoff
+from nvflare.private.fed.resource_stats.message_traffic import snapshot_message_traffic
 from nvflare.private.fed.utils.fed_utils import (
     create_stats_pool_files_for_job,
     fobs_initialize,
@@ -44,6 +48,7 @@ from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
 
 def main(args):
+    launch_generation = launch_generation_from_options(args.set, option_name=RequestHeader.CJ_LAUNCH_ID)
     kv_list = parse_vars(args.set)
 
     # get parent process id
@@ -61,6 +66,14 @@ def main(args):
     download_workspace(args, secure_train)
     workspace = Workspace(args.workspace, args.client_name, config_folder)
     refresh_custom_dir_import_path(workspace.get_app_custom_dir(args.job_id))
+    resource_collector = None
+    try:
+        # Observe capacity within the existing job startup lifecycle. Keep
+        # normal Python imports and dependency paths available throughout.
+        resource_collector = JobResourceCollector(workspace.get_run_dir(args.job_id))
+    except Exception:
+        # Resource reporting is observational and must never change the job outcome.
+        pass
     set_stats_pool_config_for_job(workspace, args.job_id)
 
     try:
@@ -85,6 +98,7 @@ def main(args):
     federated_client = None
     logger = None
     execution_failed = False
+    message_traffic_incomplete = False
 
     app_root = workspace.get_app_dir(str(args.job_id))
 
@@ -133,10 +147,33 @@ def main(args):
     finally:
 
         def _archive_results():
+            if resource_collector:
+                try:
+                    write_terminal_handoff(
+                        workspace.get_run_dir(args.job_id),
+                        resource_collector.finish(
+                            message_traffic=snapshot_message_traffic(
+                                getattr(federated_client, "cell", None), incomplete=message_traffic_incomplete
+                            )
+                        ),
+                        launch_generation=launch_generation,
+                    )
+                except Exception as e:
+                    if logger:
+                        try:
+                            logger.warning(f"Could not write resource statistics: {secure_format_exception(e)}")
+                        except Exception:
+                            pass
             err = create_stats_pool_files_for_job(workspace, args.job_id)
             if err and logger:
                 logger.warning(err)
             upload_results_on_shutdown(args, secure_train, log=logger)
+
+        def _mark_callback_drain_incomplete():
+            nonlocal message_traffic_incomplete
+            message_traffic_incomplete = True
+            if resource_collector:
+                resource_collector.mark_cpu_consumption_incomplete()
 
         def _close_commands():
             try:
@@ -158,6 +195,7 @@ def main(args):
                     stop_cell=federated_client.stop_cell if federated_client else None,
                     logger=logger,
                     before_streaming_shutdown=before_streaming_shutdown,
+                    mark_callback_drain_incomplete=_mark_callback_drain_incomplete,
                 )
             finally:
                 # Preserve the upload exception, but never let it bypass the remaining
@@ -181,6 +219,13 @@ def main(args):
                     except Exception as e:
                         if logger:
                             logger.warning(f"failed to stop command admission: {secure_format_exception(e)}")
+                # Preserve main's failure publication path and cleanup owner.
+                # These callbacks have not drained; report best-effort subtotals.
+                try:
+                    _mark_callback_drain_incomplete()
+                except Exception:
+                    # Optional accounting must not prevent existing result publication.
+                    pass
                 _archive_results()
             except Exception as e:
                 if logger:

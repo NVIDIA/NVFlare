@@ -28,9 +28,140 @@ import pytest
 from nvflare.apis.fl_constant import ReturnCode, TaskResultReceipt
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.task_launcher_spec import TaskExecutionInterrupted, TaskLaunchError, TaskSettlementError
+from nvflare.private.fed.resource_stats import task_rollup
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore, IncompleteTaskArtifactError
+from nvflare.private.fed.task_worker.protocol import read_bootstrap
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
 from tests.task_supervisor_test_utils import RUNNING, SETTLED, UNSETTLED, _attempt, _payload, _records
+
+
+def test_resources_register_before_launch_and_fold_once_before_result_receipts(tmp_path):
+    reducer = Mock(register=Mock(return_value=True))
+    supervisor = TaskSupervisor(resource_reducer=reducer)
+    attempt, _ = _attempt(tmp_path)
+    launch = attempt["launcher"].launch_task.side_effect
+
+    def checked_launch(request):
+        reducer.register.assert_called_once_with(attempt["bootstrap"].identity)
+        return launch(request)
+
+    attempt["launcher"].launch_task.side_effect = checked_launch
+    outcome = supervisor.run(**attempt)
+    reducer.bind.assert_called_once_with(outcome.identity, "test:attempt-1")
+    reducer.settle.assert_called_once_with(outcome.identity, attempt["store"], started=True, settled=True)
+    assert supervisor.read_saved_result(outcome.identity)["value"] == 2
+    supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)
+    supervisor.end_run()
+    assert reducer.settle.call_count == 1
+
+
+def test_retirement_budget_exhaustion_disables_reporting_without_blocking_the_next_task(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_rollup, "_MAX_PENDING_BYTES", task_rollup.MAX_SIDECAR_BYTES)
+    reducer = task_rollup.TaskResourceReducer()
+    supervisor = TaskSupervisor(resource_reducer=reducer)
+    first, _ = _attempt(tmp_path)
+    first["store"].read_resource_stats = Mock(side_effect=OSError("unreadable statistics file"))
+    first["store"].remove_resource_stats = Mock(side_effect=OSError("unremovable statistics file"))
+    assert supervisor.run(**first).result["value"] == 2
+    assert reducer._pending_bytes == task_rollup.MAX_SIDECAR_BYTES
+
+    second, _ = _attempt(tmp_path, attempt_id="attempt-2")
+    launch = second["launcher"].launch_task.side_effect
+
+    def without_reporting(request):
+        assert not read_bootstrap(request.argv[-1]).resource_reporting
+        return launch(request)
+
+    second["launcher"].launch_task.side_effect = without_reporting
+    assert supervisor.run(**second).result["value"] == 2
+    second["launcher"].launch_task.assert_called_once()
+    assert reducer._pending_bytes == task_rollup.MAX_SIDECAR_BYTES
+
+
+def test_resource_collection_failure_cannot_invalidate_a_valid_result(tmp_path):
+    reducer = Mock(register=Mock(side_effect=OSError("statistics unavailable")))
+    supervisor = TaskSupervisor(resource_reducer=reducer)
+    attempt, _ = _attempt(tmp_path)
+    outcome = supervisor.run(**attempt)
+    assert outcome.result["value"] == 2
+    reducer.mark_incomplete.assert_called_once_with()
+    reducer.settle.assert_not_called()
+
+
+def test_worker_statistics_fold_even_when_training_result_cannot_be_read(tmp_path):
+    reducer = Mock(register=Mock(return_value=True))
+    supervisor = TaskSupervisor(resource_reducer=reducer)
+    attempt, _ = _attempt(tmp_path)
+    attempt["store"].read_result = Mock(side_effect=ValueError("bad training payload"))
+    with pytest.raises(ValueError, match="bad training payload"):
+        supervisor.run(**attempt)
+    reducer.settle.assert_called_once_with(attempt["bootstrap"].identity, attempt["store"], started=True, settled=True)
+
+
+def test_accepted_launch_failure_folds_only_after_normal_owner_cancels(tmp_path):
+    reducer = Mock(register=Mock(return_value=True))
+    supervisor = TaskSupervisor(resource_reducer=reducer)
+    attempt, handle = _attempt(tmp_path)
+
+    def launch_error(request):
+        handle.request = request
+        raise TaskLaunchError("post-spawn failure", handle)
+
+    attempt["launcher"].launch_task.side_effect = launch_error
+    with pytest.raises(TaskLaunchError, match="post-spawn failure"):
+        supervisor.run(**attempt)
+    handle.cancel.assert_called_once_with()
+    reducer.settle.assert_called_once_with(attempt["bootstrap"].identity, attempt["store"], started=True, settled=True)
+
+
+def test_ambiguous_launch_error_is_not_reported_as_observed_zero_work(tmp_path):
+    reducer = Mock(register=Mock(return_value=True))
+    supervisor = TaskSupervisor(resource_reducer=reducer)
+    attempt, _ = _attempt(tmp_path)
+    attempt["launcher"].launch_task.side_effect = OSError("lost launch response")
+    with pytest.raises(OSError, match="lost launch response"):
+        supervisor.run(**attempt)
+    reducer.settle.assert_called_once_with(attempt["bootstrap"].identity, attempt["store"], started=None, settled=False)
+
+
+def test_late_cleanup_proof_folds_resources_without_clearing_the_runtime_fence(tmp_path):
+    reducer = Mock(register=Mock(return_value=True))
+    supervisor = TaskSupervisor(resource_reducer=reducer)
+    attempt, handle = _attempt(tmp_path)
+
+    def aborted_launch(request):
+        handle.request = request
+        attempt["abort_signal"].trigger(True)
+        return handle
+
+    attempt["launcher"].launch_task.side_effect = aborted_launch
+    handle.cancel.side_effect = [TaskSettlementError("still alive", UNSETTLED), SETTLED]
+    with pytest.raises(TaskSettlementError, match="still alive"):
+        supervisor.run(**attempt)
+    reducer.settle.assert_called_once_with(attempt["bootstrap"].identity, attempt["store"], started=True, settled=False)
+    supervisor.end_run()
+    assert reducer.settle.call_count == 2
+    assert reducer.settle.call_args.kwargs == {"started": True, "settled": True}
+    assert supervisor.settlement_unconfirmed
+
+
+def test_cancelled_staging_is_known_never_started_not_a_missing_worker(tmp_path):
+    reducer = Mock(register=Mock(return_value=True))
+    supervisor = TaskSupervisor(resource_reducer=reducer)
+    attempt, _ = _attempt(tmp_path)
+    make_request = attempt["request_factory"]
+
+    def cancel_before_launch(identity, path):
+        request = make_request(identity, path)
+        attempt["abort_signal"].trigger(True)
+        return request
+
+    attempt["request_factory"] = cancel_before_launch
+    assert supervisor.run(**attempt).aborted
+    attempt["launcher"].launch_task.assert_not_called()
+    reducer.settle.assert_called_once_with(
+        attempt["bootstrap"].identity, attempt["store"], started=False, settled=False
+    )
 
 
 @pytest.mark.parametrize("fault", ["none", "payload", "completion", "released", "unknown"])
@@ -685,8 +816,10 @@ def test_saved_result_readers_hold_payloads_without_holding_compute(tmp_path, re
 
 
 @pytest.mark.parametrize("case", ["interrupted", "rejected", "cancelled", "unsettled", "completed"])
-def test_only_settled_worker_loss_without_a_result_requests_cj_recovery(tmp_path, case):
-    supervisor = TaskSupervisor()
+@pytest.mark.parametrize("collect_resources", [False, True])
+def test_only_settled_worker_loss_without_a_result_requests_cj_recovery(tmp_path, case, collect_resources):
+    reducer = task_rollup.TaskResourceReducer() if collect_resources else None
+    supervisor = TaskSupervisor(resource_reducer=reducer)
     attempt, handle = _attempt(tmp_path)
     status = replace(
         SETTLED,
@@ -716,3 +849,10 @@ def test_only_settled_worker_loss_without_a_result_requests_cj_recovery(tmp_path
             supervisor.run(**attempt)
     assert attempt["launcher"].launch_task.call_count == 1
     assert supervisor.settlement_unconfirmed == (case == "unsettled")
+    if reducer is not None:
+        # This launcher produces no optional statistics artifact. Recovery must
+        # preserve that gap without changing the result/settlement decision.
+        snapshot = reducer.snapshot()
+        assert snapshot["duration_contained"] is (case != "unsettled")
+        for field in ("resource_time", "cpu_consumed", "message_traffic"):
+            assert snapshot[field]["status"] == "unavailable"

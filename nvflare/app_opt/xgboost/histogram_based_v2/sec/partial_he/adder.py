@@ -15,6 +15,7 @@
 import concurrent.futures
 
 from nvflare.app_opt.xgboost.histogram_based_v2.aggr import Aggregator
+from nvflare.private.fed.resource_stats.cpu_consumed import mark_unwaited_managed_children
 
 from .util import encode_encrypted_numbers_to_str
 
@@ -22,6 +23,7 @@ from .util import encode_encrypted_numbers_to_str
 class Adder:
     def __init__(self, max_workers=10):
         self.exe = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
+        mark_unwaited_managed_children()
         self.num_workers = max_workers
 
     def add(self, encrypted_numbers, features, sample_groups=None, encode_sum=True):
