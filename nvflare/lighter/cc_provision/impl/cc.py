@@ -127,6 +127,17 @@ class CCBuilder(Builder):
             except Exception as exc:
                 raise ValueError(f"Invalid CC configuration for {participant.name}: {exc}") from exc
 
+        aci_participants = [
+            participant
+            for participant in selected
+            if normalized[participant.name]["mode"] is CCDeploymentMode.AZURE_CC
+            and normalized[participant.name]["mode_config"]["deployment_target"] == "confidential_container"
+        ]
+        if len(aci_participants) > 1 or any(
+            participant.type != ParticipantType.SERVER for participant in aci_participants
+        ):
+            raise ValueError("Only one ACI deployment is supported, and it must be the server")
+
         used_modes = {value["mode"] for value in normalized.values()}
         supplied_blocks = {
             CCDeploymentMode(name)

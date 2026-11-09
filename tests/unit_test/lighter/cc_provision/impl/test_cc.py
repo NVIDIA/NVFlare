@@ -14,9 +14,11 @@
 
 import base64
 import hashlib
+import io
 import json
 import shlex
 import shutil
+import tarfile
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,7 +27,7 @@ from unittest.mock import Mock, patch
 import pytest
 import yaml
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.confidential_computing.aci_authorizer import ACI_NAMESPACE, ACIAuthorizer
@@ -34,6 +36,7 @@ from nvflare.app_opt.confidential_computing.cc_manager import CCManager
 from nvflare.lighter.cc.vault_adapter import VaultAdapter
 from nvflare.lighter.cc_provision.config import _warn_jwt_expiry, load_participant_config, load_project_config
 from nvflare.lighter.cc_provision.deployment import CPUTEE, GPUTEE, CCDeploymentMode, WorkloadSourceType
+from nvflare.lighter.cc_provision.impl.azure_cc import AzureCCDeployment
 from nvflare.lighter.cc_provision.impl.bare_metal_cvm import BareMetalCVMDeployment
 from nvflare.lighter.cc_provision.impl.cc import CC_PACKAGER_PATH, CCBuilder
 from nvflare.lighter.cc_provision.impl.cc_packager import CCPackager
@@ -46,7 +49,7 @@ from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
-from nvflare.lighter.utils import verify_folder_signature
+from nvflare.lighter.utils import verify_content, verify_folder_signature
 
 
 def _write(path, value):
@@ -102,6 +105,201 @@ def _resources(ctx, participant):
     path = local / ProvFileName.RESOURCES_JSON_DEFAULT
     path.write_text(json.dumps({"format_version": 2, "class_allow_list": [], "components": []}))
     return path
+
+
+def _aci_config(tmp_path, policy=b"package policy\n\n# exact approved bytes\n"):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    (tmp_path / "approved-policy.txt").write_bytes(policy)
+    (tmp_path / "deployment-private.pem").write_bytes(
+        key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    )
+    return {
+        "schema_version": 1,
+        "cc_deployment_mode": "azure_cc",
+        "cpu_tee": "amd_sev_snp",
+        "gpu_tee": "none",
+        "attestation": {"service": "azure_maa"},
+        "workload": {"source": {"type": "external"}},
+        "azure_cc": {
+            "deployment_target": "confidential_container",
+            "cce_policy_file": "approved-policy.txt",
+            "startup_kit_signing_key_file": "deployment-private.pem",
+        },
+    }, key
+
+
+def test_aci_preparation_snapshots_exact_policy_and_signing_key(tmp_path):
+    policy = b"package policy\r\n# retained whitespace\n  \n"
+    config, key = _aci_config(tmp_path, policy)
+    project = _azure_project(tmp_path, participant=config)
+    ctx = ProvisionContext(str(tmp_path / "workspace"), project)
+    _resources(ctx, project.get_server())
+    builder = CCBuilder()
+    builder.initialize(project, ctx)
+    (tmp_path / "approved-policy.txt").write_bytes(b"changed after approval")
+    (tmp_path / "deployment-private.pem").write_bytes(b"changed after approval")
+    builder.build(project, ctx)
+
+    plan = builder.plans[project.get_server().name]
+    assert plan.internal["cce_policy"] == policy
+    assert plan.internal["expected_policy_hash"] == hashlib.sha256(policy).hexdigest()
+    local = Path(ctx.get_local_dir(project.get_server()))
+    assert (local / "approved_cce_policy.txt").read_bytes() == policy
+    # Packaging must use both snapshots instead of reopening mutable inputs.
+    private_kit = tmp_path / "signed-kit"
+    (private_kit / "local").mkdir(parents=True)
+    (private_kit / "local/approved_cce_policy.txt").write_bytes(policy)
+    result = AzureCCDeployment().package(plan, private_kit, tmp_path / "delivery", ctx)
+    archive = (tmp_path / "delivery/startup-kit.tar").read_bytes()
+    signature = (tmp_path / "delivery/startup-kit.sig").read_bytes()
+    verify_content(archive, signature, key.public_key())
+    assert (tmp_path / "delivery/approved_cce_policy.txt").read_bytes() == policy
+    assert all(
+        artifact.metadata["policy_sha256"] == hashlib.sha256(policy).hexdigest() for artifact in result.artifacts
+    )
+
+
+def test_aci_hash_propagates_to_server_and_client_verifiers(tmp_path):
+    config, _ = _aci_config(tmp_path)
+    project = _azure_project(tmp_path, participant=config)
+    client_config = {**config, "azure_cc": {"deployment_target": "confidential_vm"}}
+    _write(tmp_path / "cc_client.yml", client_config)
+    project.add_client("site-1", "example", {PropKey.CC_CONFIG: "cc_client.yml"})
+    ctx = ProvisionContext(str(tmp_path / "workspace"), project)
+    for participant in [project.get_server(), *project.get_clients()]:
+        _resources(ctx, participant)
+    builder = CCBuilder()
+    builder.initialize(project, ctx)
+    builder.build(project, ctx)
+    expected = hashlib.sha256((tmp_path / "approved-policy.txt").read_bytes()).hexdigest()
+    for participant in [project.get_server(), *project.get_clients()]:
+        local = Path(ctx.get_local_dir(participant))
+        manager = json.loads((local / "cc_manager__p_resources.json").read_text())["components"][0]
+        aci_id = manager["args"]["required_site_verifier_ids"]["server"][0]
+        client_id = manager["args"]["required_site_verifier_ids"]["site-1"][0]
+        assert aci_id.startswith("aci_authorizer_")
+        assert client_id.startswith("az_cvm_authorizer_")
+        spec = json.loads((local / f"{aci_id}__p_resources.json").read_text())["components"][0]
+        assert spec["args"]["expected_policy_hash"] == expected
+        assert "signing_key" not in spec["args"]
+
+
+def test_aci_server_and_coco_client_preserve_distinct_required_verifiers(tmp_path):
+    project = _coco_project(tmp_path)
+    config, _ = _aci_config(tmp_path)
+    _write(tmp_path / "cc_server.yml", config)
+    project.get_server().set_prop(PropKey.CC_CONFIG, "cc_server.yml")
+    project_config = yaml.safe_load((tmp_path / "cc_project.yml").read_text())
+    project_config["attestation_services"]["azure_maa"] = {
+        "type": "azure_maa",
+        "endpoint": "https://sharedeus2.eus2.attest.azure.net",
+        "token_expiration_seconds": 100,
+        "check_frequency_seconds": 60,
+    }
+    _write(tmp_path / "cc_project.yml", project_config)
+    ctx = ProvisionContext(str(tmp_path / "workspace"), project)
+    for participant in [project.get_server(), *project.get_clients()]:
+        _resources(ctx, participant)
+    builder = CCBuilder()
+    builder.initialize(project, ctx)
+    # The client launch-file rewrite is independent of checker distribution.
+    with patch.object(CoCoDeployment, "configure_startup_kit"):
+        builder.build(project, ctx)
+    for participant in [project.get_server(), *project.get_clients()]:
+        local = Path(ctx.get_local_dir(participant))
+        manager = json.loads((local / "cc_manager__p_resources.json").read_text())["components"][0]
+        required = manager["args"]["required_site_verifier_ids"]
+        assert required["server"][0].startswith("aci_authorizer_")
+        assert required["server"] != required["site-1"]
+        spec = json.loads((local / f'{required["server"][0]}__p_resources.json').read_text())["components"][0]
+        assert (
+            spec["args"]["expected_policy_hash"]
+            == hashlib.sha256((tmp_path / "approved-policy.txt").read_bytes()).hexdigest()
+        )
+
+
+@pytest.mark.parametrize("field", ["cce_policy_file", "startup_kit_signing_key_file"])
+def test_aci_requires_policy_and_signing_key_configuration(tmp_path, field):
+    config, _ = _aci_config(tmp_path)
+    del config["azure_cc"][field]
+    project = _azure_project(tmp_path, participant=config)
+    with pytest.raises(ValueError, match=field):
+        CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+
+
+@pytest.mark.parametrize("policy", [b"", b" \n\t"])
+def test_aci_rejects_empty_policy(tmp_path, policy):
+    config, _ = _aci_config(tmp_path, policy)
+    project = _azure_project(tmp_path, participant=config)
+    with pytest.raises(ValueError, match="nonempty decoded policy"):
+        CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+
+
+def test_aci_rejects_invalid_private_key_without_disclosing_contents(tmp_path):
+    config, _ = _aci_config(tmp_path)
+    (tmp_path / "deployment-private.pem").write_text("not-a-private-key-secret")
+    project = _azure_project(tmp_path, participant=config)
+    with pytest.raises(ValueError, match="startup_kit_signing_key_file") as exc:
+        CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+    assert "not-a-private-key-secret" not in str(exc.value)
+
+
+@pytest.mark.parametrize("server_aci", [True, False])
+def test_aci_rejects_client_or_multiple_aci_deployments(tmp_path, server_aci):
+    config, _ = _aci_config(tmp_path)
+    server_config = config if server_aci else {**config, "azure_cc": {"deployment_target": "confidential_vm"}}
+    project = _azure_project(tmp_path, participant=server_config)
+    _write(tmp_path / "cc_client.yml", config)
+    project.add_client("site-1", "example", {PropKey.CC_CONFIG: "cc_client.yml"})
+    with pytest.raises(ValueError, match="Only one ACI deployment.*server"):
+        CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+
+
+def test_aci_end_to_end_provisioning_delivers_signed_external_archive(tmp_path, monkeypatch):
+    from nvflare.app_opt.confidential_computing import aci_bootstrap
+
+    config, key = _aci_config(tmp_path)
+    policy = (tmp_path / "approved-policy.txt").read_bytes()
+    project = _azure_project(tmp_path, participant=config)
+    provisioner = Provisioner(
+        str(tmp_path / "output"),
+        [WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), CCBuilder(), SignatureBuilder()],
+        CCPackager(),
+    )
+    ctx = provisioner.provision(project)
+    assert ctx[CtxKey.PROVISION_SUCCESS] is True
+    output = Path(ctx[CtxKey.CURRENT_PROD_DIR])
+    delivery = output / "server.example.com"
+    contents = (delivery / "startup-kit.tar").read_bytes()
+    verify_content(contents, (delivery / "startup-kit.sig").read_bytes(), key.public_key())
+    with tarfile.open(fileobj=io.BytesIO(contents), mode="r:") as archive:
+        assert archive.extractfile("local/approved_cce_policy.txt").read() == policy
+        assert archive.getmember("signature.json").isfile()
+        assert archive.getmember("startup/rootCA.pem").isfile()
+        assert not any("deployment-private" in name for name in archive.getnames())
+    manifest = json.loads((output / "cc_manifests/server.example.com.json").read_text())
+    assert [item["type"] for item in manifest["artifacts"]] == [
+        "azure_aci_startup_archive",
+        "azure_aci_startup_signature",
+        "azure_cce_policy",
+    ]
+    assert "signing_key" not in json.dumps(manifest)
+    assert str(tmp_path) not in json.dumps(manifest)
+    for item in manifest["artifacts"]:
+        assert hashlib.sha256((output / item["path"]).read_bytes()).hexdigest() == item["sha256"]
+        assert item["policy_sha256"] == hashlib.sha256(policy).hexdigest()
+    public_key = tmp_path / "deployment-public.pem"
+    public_key.write_bytes(
+        key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    )
+    workspaces = tmp_path / "bootstrap-workspaces"
+    workspaces.mkdir()
+    monkeypatch.setattr(aci_bootstrap, "INPUT_DIR", delivery)
+    monkeypatch.setattr(aci_bootstrap, "PUBLIC_KEY_FILE", public_key)
+    monkeypatch.setattr(aci_bootstrap, "WORKSPACE_DIR", workspaces)
+    workspace = aci_bootstrap.prepare_workspace()
+    assert (workspace / "local/approved_cce_policy.txt").read_bytes() == policy
+    assert aci_bootstrap._server_command(workspace)[-1] == "org=example"
 
 
 def _coco_project(tmp_path):
@@ -210,12 +408,14 @@ def test_unified_azure_config_creates_immutable_plan(tmp_path):
     [(AZCVMAuthorizer, AZ_CVM_NAMESPACE), (ACIAuthorizer, ACI_NAMESPACE)],
 )
 def test_azure_authorizers_accept_endpoint_scoped_namespace(authorizer_class, default_namespace):
-    assert authorizer_class().get_namespace() == default_namespace
+    kwargs = {"expected_policy_hash": "ab" * 32} if authorizer_class is ACIAuthorizer else {}
+    assert authorizer_class(**kwargs).get_namespace() == default_namespace
     assert (
-        authorizer_class(namespace=f"{default_namespace}-endpoint").get_namespace() == f"{default_namespace}-endpoint"
+        authorizer_class(namespace=f"{default_namespace}-endpoint", **kwargs).get_namespace()
+        == f"{default_namespace}-endpoint"
     )
     with pytest.raises(ValueError, match="namespace"):
-        authorizer_class(namespace="")
+        authorizer_class(namespace="", **kwargs)
 
 
 def test_builder_writes_azure_authorizer_manager_and_allow_list(tmp_path):
@@ -470,7 +670,7 @@ def test_empty_class_allow_list_adds_no_classes(tmp_path):
         "attestation": {"service": "azure_maa"},
         "class_allow_list": [],
         "workload": {"source": {"type": "external"}},
-        "azure_cc": {"deployment_target": "confidential_container"},
+        "azure_cc": {"deployment_target": "confidential_vm"},
     }
     project = _azure_project(tmp_path, participant=config)
     ctx = ProvisionContext(str(tmp_path / "workspace"), project)
