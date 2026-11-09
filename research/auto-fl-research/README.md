@@ -128,7 +128,6 @@ python3.12 -m venv .venv
 python -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
 
 python -m pip install --upgrade pip
-python -m pip uninstall -y nvflare-nightly
 python -m pip install -r tasks/cifar10/requirements.txt
 export PYTHON=.venv/bin/python
 "$PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
@@ -137,7 +136,9 @@ make validate
 make smoke
 ```
 
-The default CIFAR-10 harness expects the released PyPI `nvflare` package from `tasks/cifar10/requirements.txt`, not an editable install of the repository checkout. If `pip freeze` shows `nvflare-nightly @ file://...`, remove it with `python -m pip uninstall -y nvflare-nightly` and rerun `python -m pip install -r tasks/cifar10/requirements.txt`.
+The harness can reuse a compatible NVFlare installation, including an editable source checkout. The task requirements and required APIs determine compatibility, not whether the package came from PyPI or source. Check the printed version and import path, then run the preflight checks before starting a campaign.
+
+If an existing environment still contains the legacy `nvflare-nightly` distribution, follow the [NVFlare migration instructions](../../docs/installation.rst#migrating-an-existing-nvflare-nightly-installation) before installing the task requirements. That cleanup is only needed for the legacy package-name conflict; normal setup does not require uninstalling a compatible `nvflare` installation.
 
 If `apt-get` cannot find the Python 3.12 packages, update the devcontainer image or add an appropriate Python 3.12 package source before continuing; do not fall back to Python 3.13.
 

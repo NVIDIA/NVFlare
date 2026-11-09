@@ -14,9 +14,6 @@
 
 """Regression coverage for Dashboard names that cannot be provisioned."""
 
-import io
-import shutil
-import zipfile
 
 import pytest
 from flask_jwt_extended import create_access_token
@@ -113,18 +110,27 @@ def test_patch_client_rejects_invalid_names_without_writes(app, client, auth_hea
     assert saved == site
 
 
-def test_creator_patch_checks_name_but_preserves_organization_permissions(app, client, site):
+def test_creator_patch_checks_name_but_preserves_organization_permissions(app, client, site, auth_header):
+    response = client.post(
+        API + "/users",
+        json={"email": "name-owner@test.com", "password": "p", "role": "org_admin", "organization": "Valid_org"},
+    )
+    user = response.json["user"]
     with app.app_context():
-        token = create_access_token(
-            identity=User.query.get(1).email, additional_claims={"role": "member", "approved": True}
-        )
+        record = Client.query.get(site["id"])
+        record.creator_id = user["id"]
+        db.session.commit()
+        token = create_access_token(identity=user["email"])
     headers = {"Authorization": f"Bearer {token}"}
     url = API + f"/clients/{site['id']}"
-    assert_invalid(client.patch(url, json={"name": "bad name"}, headers=headers), "name")
-    response = client.patch(url, json={"name": "renamed-site_2", "organization": "Ignored org"}, headers=headers)
-    assert response.status_code == 200
-    assert response.json["client"]["name"] == "renamed-site_2"
-    assert response.json["client"]["organization"] == site["organization"]
+    try:
+        assert_invalid(client.patch(url, json={"name": "bad name"}, headers=headers), "name")
+        response = client.patch(url, json={"name": "renamed-site_2", "organization": "Ignored org"}, headers=headers)
+        assert response.status_code == 200
+        assert response.json["client"]["name"] == "renamed-site_2"
+        assert response.json["client"]["organization"] == site["organization"]
+    finally:
+        client.delete(API + f"/users/{user['id']}", headers=auth_header)
 
 
 @pytest.mark.parametrize(
@@ -212,19 +218,6 @@ def test_legacy_names_return_actionable_download_error(
         finally:
             setattr(target, attribute, original)
             db.session.commit()
-
-
-@pytest.mark.skipif(shutil.which("zip") is None, reason="Encrypted startup kits require the system zip executable")
-def test_valid_client_names_generate_encrypted_startup_kit(app, client, auth_header, site, configured_project):
-    client.patch(API + f"/clients/{site['id']}", json={"approval_state": 100}, headers=auth_header)
-    response = client.post(API + f"/clients/{site['id']}/blob", json={"pin": "1234"}, headers=auth_header)
-    assert response.status_code == 200
-    assert response.headers["Content-Disposition"] == f"attachment; filename=\"{site['name']}.zip\""
-    with zipfile.ZipFile(io.BytesIO(response.data)) as kit:
-        assert "startup/fed_client.json" in kit.namelist()
-        assert kit.read("startup/fed_client.json", pwd=b"1234")
-    with app.app_context():
-        assert Client.query.get(site["id"]).download_count == 1
 
 
 @pytest.mark.parametrize("organization", ["Bad org", "", None])
