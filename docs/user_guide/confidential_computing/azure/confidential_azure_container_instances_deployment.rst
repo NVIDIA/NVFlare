@@ -34,7 +34,7 @@ the kit. The fixed image verifies the archive before using it.
    is required.
 
 Prepare the fixed image and deployment key
-=========================================
+==========================================
 
 Use the files in ``examples/advanced/azure_cc``. Commands below run from that
 example directory. Install Azure's ``az`` command-line tool, its ``confcom``
@@ -98,7 +98,7 @@ cover the public key, interpreter, installed Python packages, or startup
 program. Do not add launch environment variables that replace executable code.
 
 Generate the policy before provisioning
-======================================
+=======================================
 
 Copy ``docs/resources/ccprep.json`` into the example directory as
 ``aci-template.json``. This is an Azure Resource Manager deployment document,
@@ -212,7 +212,7 @@ Keep the private provisioning state and private deployment key
 under administrator control; distribute only the intended participant outputs.
 
 Launch with the approved policy and signed kit
-=============================================
+==============================================
 
 Use the server delivery files emitted by provisioning: ``startup-kit.tar``,
 ``startup-kit.sig``, and the packaged approved policy. Create a private launch
@@ -299,7 +299,7 @@ an approved policy:
    :language: json
 
 Verify and maintain the deployment
-=================================
+==================================
 
 The administrator should run these checks against the actual Azure deployment:
 
@@ -336,7 +336,7 @@ concerns the Azure virtual-machine checker; it does not establish a bypass of
 Confidential-Containers verification.
 
 Recovery after a credential compromise
-=====================================
+======================================
 
 Revocation means withdrawing previously granted trust. Repeating provisioning
 does not revoke old archives, and the provisioner can reuse the existing
