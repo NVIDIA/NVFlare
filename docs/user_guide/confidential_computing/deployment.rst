@@ -268,6 +268,28 @@ SEV-SNP with ``gpu_tee: none``. Intel TDX and NVIDIA confidential GPU targets
 fail validation until the authorizer, claim policy, deployment workflow, and
 end-to-end tests support them together.
 
+For ``confidential_container``, only one protected server is supported. Clients
+use confidential virtual machines or Confidential Containers. The server's
+``azure_cc`` block additionally requires ``cce_policy_file``, the prepared,
+decoded enforcement policy, and ``startup_kit_signing_key_file``, the private
+deployment-signing key. Relative paths resolve against the participant
+configuration file.
+
+Provisioning treats the invocation as approval of that exact policy. It reads
+the policy once, calculates its SHA-256 fingerprint without changing its bytes,
+and configures every ACI verifier with ``expected_policy_hash``. The signed
+``x-ms-sevsnpvm-hostdata`` claim must match that fingerprint. Missing policy
+configuration or a missing, malformed, or different claim is rejected.
+
+The server image contains a fixed bootstrap program and public deployment key;
+the final startup kit is delivered separately, through a read-only Azure secret
+volume, when the administrator launches ACI. This avoids the circular dependency
+that would result from copying the final kit and its policy fingerprint into
+the image measured by that policy. Follow
+:ref:`confidential_azure_container_instances_deployment` for the complete order
+of operations. Existing ACI configurations must be reprovisioned; there is no
+signature-only compatibility mode. Confidential-VM configuration is unchanged.
+
 Delivery manifests
 ------------------
 

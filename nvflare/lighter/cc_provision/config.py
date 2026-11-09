@@ -606,9 +606,21 @@ def _validate_mode(mode, value, cpu, gpu, config_path, project_config):
         if not project_config.get("build_tools", {}).get(mode.value):
             raise ValueError("coco requires build_tools.coco in cc_project.yml")
         return settings
-    settings = _exact(value, {"deployment_target"}, "azure_cc", required=("deployment_target",))
+    settings = _exact(
+        value,
+        {"deployment_target", "cce_policy_file", "startup_kit_signing_key_file"},
+        "azure_cc",
+        required=("deployment_target",),
+    )
     if settings["deployment_target"] not in ("confidential_vm", "confidential_container"):
         raise ValueError("azure_cc.deployment_target must be confidential_vm or confidential_container")
     if cpu is not CPUTEE.AMD_SEV_SNP or gpu is not GPUTEE.NONE:
         raise ValueError("azure_cc currently supports only cpu_tee: amd_sev_snp with gpu_tee: none")
+    if settings["deployment_target"] == "confidential_container":
+        for field in ("cce_policy_file", "startup_kit_signing_key_file"):
+            if field not in settings:
+                raise ValueError(f"azure_cc.{field} is required for confidential_container")
+            settings[field] = _path(config_path, settings[field], f"azure_cc.{field}")
+    elif set(settings) != {"deployment_target"}:
+        raise ValueError("azure_cc policy and startup-kit signing files are only valid for confidential_container")
     return settings
