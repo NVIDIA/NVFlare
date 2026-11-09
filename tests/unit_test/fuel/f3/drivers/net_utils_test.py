@@ -16,7 +16,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.drivers.net_utils import encode_url, get_ssl_context, get_tcp_urls, parse_url
+from nvflare.fuel.f3.drivers.net_utils import encode_url, get_ssl_context, get_tcp_urls, parse_url, short_url
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
 
 
@@ -102,3 +102,14 @@ class TestNetUtils:
         }
 
         assert TcpDriver.get_urls("tcp", resources) == ("stcp://site-1:1234", "stcp://0:1234")
+
+    @pytest.mark.parametrize(
+        "params, expected",
+        [
+            ({"scheme": "tcp", "host": "site-1", "port": 8002}, "tcp://site-1:8002"),
+            ({"scheme": "grpc", "host": "localhost"}, "grpc://localhost"),
+            ({"url": "tcp://old:9999", "scheme": "grpc"}, "tcp://old:9999"),
+        ],
+    )
+    def test_short_url_does_not_require_optional_url_fields(self, params, expected):
+        assert short_url(params) == expected
