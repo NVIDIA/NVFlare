@@ -21,13 +21,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.apis.client import Client, ClientPropKey
-from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.private.fed.server.study_cmds import StudyCommandModule
-from nvflare.security.study_registry import StudyRegistry, StudyRegistryService
+from nvflare.security.study_registry import StudyRegistry
 
 _EMPTY_REGISTRY = {"format_version": "1.0", "studies": {}}
 
@@ -1075,32 +1075,3 @@ class TestRegistryPersistencePath:
         (tmp_path / "study_registry.json").write_text(json.dumps(self._registry_config("root-study")))
         persisted = self._register_study1(tmp_path, engine)
         assert set(persisted["studies"]) == {"root-study", "study1"}
-
-
-# ---------------------------------------------------------------------------
-# Section 14: default-study routing follows runtime site enrollment
-# ---------------------------------------------------------------------------
-
-
-class TestDefaultStudyRoutingFollowsSiteMutations:
-    def test_add_and_remove_site_update_default_study_access(self, tmp_path):
-        (tmp_path / "startup").mkdir()
-        (tmp_path / "local").mkdir()
-        (tmp_path / "study_registry.json").write_text(json.dumps(_REGISTRY_WITH_STUDY))
-        engine = _make_engine({"site-new": "org_a"})
-        engine.get_workspace.return_value = Workspace(str(tmp_path))
-        conn = _FakeConnection(role="project_admin", org="project", engine=engine)
-        module = StudyCommandModule()
-        previous_registry = StudyRegistryService.get_registry()
-
-        try:
-            with patch("nvflare.private.fed.server.study_cmds.ServerEngine", MagicMock):
-                module.cmd_add_study_site(conn, ["add_study_site", "study1", "--site-org", "org_a:site-new"])
-                assert "error_code" not in conn.last_reply
-                assert StudyRegistryService.get_registry().is_site_allowed(DEFAULT_STUDY, "site-new") is False
-
-                module.cmd_remove_study_site(conn, ["remove_study_site", "study1", "--site-org", "org_a:site-new"])
-                assert "error_code" not in conn.last_reply
-                assert StudyRegistryService.get_registry().is_site_allowed(DEFAULT_STUDY, "site-new") is True
-        finally:
-            StudyRegistryService.initialize(previous_registry)

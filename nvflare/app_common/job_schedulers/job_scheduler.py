@@ -116,6 +116,11 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                 fl_ctx=fl_ctx,
             )
 
+    def _block_unavailable_site(self, job: Job, job_study: str, site_name: str, fl_ctx: FLContext):
+        error = f"site '{site_name}' is not available to study '{job_study}'"
+        self.log_error(fl_ctx, f"Job {job.job_id}: {error}")
+        return SCHEDULE_RESULT_BLOCK, None, error
+
     def _try_job(self, job: Job, fl_ctx: FLContext) -> (int, Optional[Dict[str, DispatchInfo]], str):
         engine = fl_ctx.get_engine()
         online_clients = engine.get_clients()
@@ -143,9 +148,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                     sites_to_app = {x: app_name for x in online_site_names}
                     sites_to_app[SERVER_SITE_NAME] = app_name
                 elif registry and site_name != SERVER_SITE_NAME and not registry.is_site_allowed(job_study, site_name):
-                    error = f"site '{site_name}' is not available to study '{job_study}'"
-                    self.log_error(fl_ctx, f"Job {job.job_id}: {error}")
-                    return SCHEDULE_RESULT_BLOCK, None, error
+                    return self._block_unavailable_site(job, job_study, site_name, fl_ctx)
                 elif site_name in online_site_names:
                     applicable_sites.append(site_name)
                     sites_to_app[site_name] = app_name
@@ -172,9 +175,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         if registry:
             for site_name in required_sites:
                 if not registry.is_site_allowed(job_study, site_name):
-                    error = f"site '{site_name}' is not available to study '{job_study}'"
-                    self.log_error(fl_ctx, f"Job {job.job_id}: {error}")
-                    return SCHEDULE_RESULT_BLOCK, None, error
+                    return self._block_unavailable_site(job, job_study, site_name, fl_ctx)
         if required_sites:
             for s in required_sites:
                 if s not in applicable_sites:

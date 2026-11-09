@@ -450,13 +450,10 @@ class _FakeClient:
         self.token = token
 
 
-def _study_registry(sites):
-    return StudyRegistry(
-        {
-            "format_version": "1.0",
-            "studies": {study: {"site_orgs": {"org": sorted(study_sites)}} for study, study_sites in sites.items()},
-        }
-    )
+class _FakeStudyRegistry(StudyRegistry):
+    def __init__(self, sites=None):
+        studies = {study: {"site_orgs": {"org": sorted(study_sites)}} for study, study_sites in (sites or {}).items()}
+        super().__init__({"format_version": StudyRegistry.FORMAT_VERSION, "studies": studies})
 
 
 class _FakeStudyRegistryService:
@@ -1880,7 +1877,7 @@ def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
     monkeypatch.setattr(
         _FakeStudyRegistryService,
         "registry",
-        _study_registry({"cancer-research": {"site1"}}),
+        _FakeStudyRegistry(sites={"cancer-research": {"site1"}}),
         raising=False,
     )
 
@@ -1944,7 +1941,7 @@ def test_authorize_job_id_keeps_cert_role_before_authz(monkeypatch):
     monkeypatch.setattr(
         _FakeStudyRegistryService,
         "registry",
-        _study_registry({"cancer-research": {"site1"}}),
+        _FakeStudyRegistry(sites={"cancer-research": {"site1"}}),
         raising=False,
     )
 
@@ -2020,7 +2017,7 @@ def test_submit_job_persists_cert_submitter_role(monkeypatch):
     monkeypatch.setattr(
         _FakeStudyRegistryService,
         "registry",
-        _study_registry({"cancer-research": {"site1"}}),
+        _FakeStudyRegistry(sites={"cancer-research": {"site1"}}),
         raising=False,
     )
     monkeypatch.setattr(
@@ -2062,7 +2059,7 @@ def test_submit_job_rejects_deploy_map_sites_outside_study(monkeypatch):
     monkeypatch.setattr(
         _FakeStudyRegistryService,
         "registry",
-        _study_registry({"cancer-research": {"site1", "site2"}}),
+        _FakeStudyRegistry(sites={"cancer-research": {"site1", "site2"}}),
         raising=False,
     )
     monkeypatch.setattr(
@@ -2095,22 +2092,25 @@ def test_submit_job_rejects_deploy_map_sites_outside_study(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "deploy_sites, expected_error",
+    "studies, deploy_sites, expected_error",
     [
-        pytest.param(["server", "site1"], "site 'site1' is not available to study 'default'", id="study-site"),
-        pytest.param(["server", "site3"], None, id="unenrolled-site"),
-        pytest.param([ALL_SITES], None, id="all-sites"),
+        pytest.param(
+            {"cancer-research": {"site1", "site2"}},
+            ["server", "site1"],
+            "site 'site1' is not available to study 'default'",
+            id="study-site",
+        ),
+        pytest.param({"cancer-research": {"site1", "site2"}}, ["server", "site3"], None, id="unenrolled-site"),
+        pytest.param({"cancer-research": {"site1", "site2"}}, [ALL_SITES], None, id="all-sites"),
+        pytest.param({}, ["server", "site1"], None, id="no-named-studies"),
     ],
 )
-def test_submit_job_in_default_study_rejects_sites_enrolled_in_named_studies(monkeypatch, deploy_sites, expected_error):
+def test_submit_job_in_default_study_rejects_sites_enrolled_in_named_studies(
+    monkeypatch, studies, deploy_sites, expected_error
+):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
-    monkeypatch.setattr(
-        _FakeStudyRegistryService,
-        "registry",
-        _study_registry({"cancer-research": {"site1", "site2"}}),
-        raising=False,
-    )
+    monkeypatch.setattr(_FakeStudyRegistryService, "registry", _FakeStudyRegistry(sites=studies), raising=False)
     monkeypatch.setattr(
         job_cmds_module,
         "JobMetaValidator",
@@ -2123,16 +2123,7 @@ def test_submit_job_in_default_study_rejects_sites_enrolled_in_named_studies(mon
     )
 
     engine = _FakeEngine()
-    conn = _MockConnection(
-        app_ctx=engine,
-        props={
-            ConnProps.FILE_LOCATION: "job.zip",
-            ConnProps.ACTIVE_STUDY: "default",
-            ConnProps.USER_NAME: "submitter",
-            ConnProps.USER_ORG: "org",
-            ConnProps.USER_ROLE: "lead",
-        },
-    )
+    conn = _submit_conn(engine, "job.zip")
 
     JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
 
@@ -2142,39 +2133,6 @@ def test_submit_job_in_default_study_rejects_sites_enrolled_in_named_studies(mon
     else:
         assert conn.errors == []
         assert engine.job_def_manager.created_meta[JobMetaKey.STUDY.value] == "default"
-
-
-def test_submit_job_in_default_study_is_unrestricted_without_named_studies(monkeypatch):
-    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
-    monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
-    monkeypatch.setattr(_FakeStudyRegistryService, "registry", _study_registry({}), raising=False)
-    monkeypatch.setattr(
-        job_cmds_module,
-        "JobMetaValidator",
-        lambda: _FakeJobMetaValidatorWithMeta(
-            {
-                JobMetaKey.JOB_NAME.value: "default-job",
-                JobMetaKey.DEPLOY_MAP.value: {"app1": ["server", "site1"]},
-            }
-        ),
-    )
-
-    engine = _FakeEngine()
-    conn = _MockConnection(
-        app_ctx=engine,
-        props={
-            ConnProps.FILE_LOCATION: "job.zip",
-            ConnProps.ACTIVE_STUDY: "default",
-            ConnProps.USER_NAME: "submitter",
-            ConnProps.USER_ORG: "org",
-            ConnProps.USER_ROLE: "lead",
-        },
-    )
-
-    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
-
-    assert conn.errors == []
-    assert engine.job_def_manager.created_meta is not None
 
 
 def test_download_job_rejects_unfinished_job_before_packaging(monkeypatch, tmp_path):
@@ -2347,7 +2305,7 @@ def test_submit_job_reports_all_deploy_map_sites_outside_study(monkeypatch):
     monkeypatch.setattr(
         _FakeStudyRegistryService,
         "registry",
-        _study_registry({"cancer-research": {"site1"}}),
+        _FakeStudyRegistry(sites={"cancer-research": {"site1"}}),
         raising=False,
     )
     monkeypatch.setattr(

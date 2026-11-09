@@ -14,6 +14,8 @@
 
 import importlib
 
+import pytest
+
 
 def _registry_module():
     return importlib.import_module("nvflare.security.study_registry")
@@ -192,41 +194,24 @@ def test_study_registry_flat_sites_excludes_sites_from_removed_org():
     assert sites == {"site-a"}
 
 
-def test_is_site_allowed_limits_named_study_to_enrolled_sites():
-    study_registry = _registry_module()
-    registry = study_registry.StudyRegistry(
-        _make_registry_config(
-            {
-                "study-a": {"site_orgs": {"org_a": ["site-a"]}},
-                "study-b": {"site_orgs": {"org_b": ["site-b"]}},
-            }
-        )
-    )
-
-    assert registry.is_site_allowed("study-a", "site-a") is True
-    assert registry.is_site_allowed("study-a", "site-b") is False
-    assert registry.is_site_allowed("study-a", "site-c") is False
-    assert registry.is_site_allowed("unknown-study", "site-c") is False
+_TWO_STUDIES = {
+    "study-a": {"site_orgs": {"org_a": ["site-a"]}},
+    "study-b": {"site_orgs": {"org_b": ["site-b"]}},
+}
 
 
-def test_is_site_allowed_limits_default_study_to_sites_outside_named_studies():
-    study_registry = _registry_module()
-    registry = study_registry.StudyRegistry(
-        _make_registry_config(
-            {
-                "study-a": {"site_orgs": {"org_a": ["site-a"]}},
-                "study-b": {"site_orgs": {"org_b": ["site-b"]}},
-            }
-        )
-    )
+@pytest.mark.parametrize(
+    "studies, study, site, expected",
+    [
+        pytest.param(_TWO_STUDIES, "study-a", "site-a", True, id="named-enrolled"),
+        pytest.param(_TWO_STUDIES, "study-a", "site-b", False, id="named-other-study-site"),
+        pytest.param(_TWO_STUDIES, "unknown-study", "site-c", False, id="unknown-study"),
+        pytest.param(_TWO_STUDIES, "default", "site-a", False, id="default-study-site"),
+        pytest.param(_TWO_STUDIES, "default", "site-c", True, id="default-unenrolled-site"),
+        pytest.param({}, "default", "site-a", True, id="default-no-named-studies"),
+    ],
+)
+def test_is_site_allowed(studies, study, site, expected):
+    registry = _registry_module().StudyRegistry(_make_registry_config(studies))
 
-    assert registry.is_site_allowed("default", "site-a") is False
-    assert registry.is_site_allowed("default", "site-b") is False
-    assert registry.is_site_allowed("default", "site-c") is True
-
-
-def test_is_site_allowed_keeps_default_study_unrestricted_without_named_studies():
-    study_registry = _registry_module()
-    registry = study_registry.StudyRegistry(_make_registry_config({}))
-
-    assert registry.is_site_allowed("default", "site-a") is True
+    assert registry.is_site_allowed(study, site) is expected

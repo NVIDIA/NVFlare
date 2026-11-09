@@ -38,6 +38,7 @@ class StudyRegistry:
         self._site_orgs = {}
         self._sites = {}
         self._studies = {}
+        self._named_study_sites = set()
         for study_name, study_def in studies.items():
             study_def = study_def or {}
             admins = study_def.get("admins", [])
@@ -82,16 +83,13 @@ class StudyRegistry:
             self._admins[study_name] = set(admin_list)
             self._site_orgs[study_name] = normalized_site_orgs
             self._sites[study_name] = sites
+            if study_name != DEFAULT_STUDY:
+                self._named_study_sites |= sites
             self._studies[study_name] = {
                 "site_orgs": deepcopy(normalized_site_orgs),
                 "sites": sorted(sites),
                 "admins": list(admin_list),
             }
-
-        self._named_study_sites = set()
-        for study_name, sites in self._sites.items():
-            if study_name != DEFAULT_STUDY:
-                self._named_study_sites.update(sites)
 
     def has_user(self, user_name: str, study: str) -> bool:
         return user_name in self._admins.get(study, set())

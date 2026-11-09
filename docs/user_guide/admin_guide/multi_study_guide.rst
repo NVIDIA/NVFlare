@@ -176,33 +176,17 @@ When a session is bound to a study, the following scoping rules apply to study-a
 - ``get_job_meta`` and ``clone_job`` return "not found" for jobs in other studies.
 - ``check_status client`` shows only sites enrolled in the active study.
 - ``submit_job`` tags the job with the active study; ``@ALL`` is narrowed to study-enrolled sites.
-- ``deploy_map`` validation rejects sites not enrolled in the study.
+- ``deploy_map`` validation rejects sites not available to the study.
+- When named studies exist, ``default`` jobs can use only sites that are not enrolled in any named
+  study. Client-targeted admin commands in a ``default`` session still see all sites.
 - Jobs without a ``study`` field (legacy) are normalized to ``"default"``.
-
-Job routing also isolates study-enrolled sites from the ``default`` study. When the registry
-contains named studies, a site enrolled in any named study receives jobs only from the studies it
-is enrolled in. ``default`` jobs can use only sites that are not enrolled in any named study:
-``@ALL`` is narrowed to those sites, and naming a study-enrolled site in ``deploy_map`` or
-``required_sites`` is rejected with ``site '<site>' is not available to study 'default'``. The set
-is computed from the live registry, so ``nvflare study add-site`` and ``remove-site`` take effect
-for subsequent submissions and scheduling. Without named studies, ``default`` jobs can use every
-site.
-
-This restriction applies only to job routing. Client-targeted admin commands such as
-``check_status client``, shell commands, and ``restart client`` in a ``default`` session still see
-all sites, so site org admins can operate their sites under their certificate-based role.
 
 Server-only/global operations continue to use the certificate-based role.
 
 .. note::
 
-   On upgrading, ``default`` jobs stop reaching sites enrolled in a named study. Running jobs are
-   unaffected. Queued ``default`` or legacy jobs (no ``study`` field) whose ``deploy_map`` or
-   ``required_sites`` name a study-enrolled site can no longer be scheduled and finish with
-   ``FINISHED_CANT_SCHEDULE``; resubmit them in the appropriate named study. Queued ``default``
-   ``@ALL`` jobs run only on sites outside named studies, and wait if too few such sites are
-   connected to satisfy ``min_sites``. To keep a site available to ``default`` jobs, do not enroll
-   it in a named study.
+   On upgrading, queued ``default`` or legacy jobs that name a study-enrolled site finish with
+   ``FINISHED_CANT_SCHEDULE``; resubmit them in the named study. Running jobs are unaffected.
 
 When to Use Multi-Study vs. Separate Deployments
 =================================================

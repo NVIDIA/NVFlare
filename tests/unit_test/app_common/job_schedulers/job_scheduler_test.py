@@ -169,13 +169,10 @@ class MockServerEngine(ServerEngineSpec):
         pass
 
 
-def _study_registry(sites):
-    return StudyRegistry(
-        {
-            "format_version": "1.0",
-            "studies": {study: {"site_orgs": {"org": sorted(study_sites)}} for study, study_sites in sites.items()},
-        }
-    )
+class _FakeStudyRegistry(StudyRegistry):
+    def __init__(self, sites=None):
+        studies = {study: {"site_orgs": {"org": sorted(study_sites)}} for study, study_sites in (sites or {}).items()}
+        super().__init__({"format_version": StudyRegistry.FORMAT_VERSION, "studies": studies})
 
 
 class _FakeStudyRegistryService:
@@ -481,7 +478,7 @@ class TestDefaultJobScheduler:
         monkeypatch.setattr(
             _FakeStudyRegistryService,
             "registry",
-            _study_registry({"cancer-research": {"site0"}}),
+            _FakeStudyRegistry(sites={"cancer-research": {"site0"}}),
             raising=False,
         )
         malformed_candidate = create_job(
@@ -1100,7 +1097,7 @@ class TestDefaultJobScheduler:
         monkeypatch.setattr(
             _FakeStudyRegistryService,
             "registry",
-            _study_registry({"cancer-research": {"site0", "site2"}}),
+            _FakeStudyRegistry(sites={"cancer-research": {"site0", "site2"}}),
             raising=False,
         )
 
@@ -1128,7 +1125,7 @@ class TestDefaultJobScheduler:
         monkeypatch.setattr(
             _FakeStudyRegistryService,
             "registry",
-            _study_registry({"cancer-research": {"site0"}}),
+            _FakeStudyRegistry(sites={"cancer-research": {"site0"}}),
             raising=False,
         )
 
@@ -1150,14 +1147,27 @@ class TestDefaultJobScheduler:
         assert dispatch_info is None
         assert job_manager.set_status.called
 
-    def test_default_study_all_sites_excludes_study_enrolled_sites(self, monkeypatch, setup_and_teardown):
+    @pytest.mark.parametrize(
+        "studies, required_sites, expected_sites",
+        [
+            pytest.param({"cancer-research": {"site0"}}, None, {"server", "site1", "site2"}, id="named-studies"),
+            pytest.param({}, ["site0"], {"server", "site0", "site1", "site2"}, id="no-named-studies"),
+        ],
+    )
+    def test_default_study_all_sites_uses_only_sites_outside_named_studies(
+        self, monkeypatch, setup_and_teardown, studies, required_sites, expected_sites
+    ):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
         monkeypatch.setattr(job_scheduler_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
-        monkeypatch.setattr(
-            _FakeStudyRegistryService, "registry", _study_registry({"cancer-research": {"site0"}}), raising=False
-        )
+        monkeypatch.setattr(_FakeStudyRegistryService, "registry", _FakeStudyRegistry(sites=studies), raising=False)
 
-        candidate = create_job(job_id="default_job", resource_spec={}, deploy_map={"app5": [ALL_SITES]}, min_sites=1)
+        candidate = create_job(
+            job_id="default_job",
+            resource_spec={},
+            deploy_map={"app5": [ALL_SITES]},
+            min_sites=1,
+            required_sites=required_sites,
+        )
         candidate.meta[JobMetaKey.STUDY.value] = "default"
 
         with servers[0].new_context() as fl_ctx:
@@ -1166,7 +1176,7 @@ class TestDefaultJobScheduler:
             )
 
         assert job is candidate
-        assert set(dispatch_info) == {"server", "site1", "site2"}
+        assert set(dispatch_info) == expected_sites
 
     @pytest.mark.parametrize(
         "deploy_map, required_sites",
@@ -1181,7 +1191,10 @@ class TestDefaultJobScheduler:
         servers, scheduler, num_sites, job_manager = setup_and_teardown
         monkeypatch.setattr(job_scheduler_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
         monkeypatch.setattr(
-            _FakeStudyRegistryService, "registry", _study_registry({"cancer-research": {"site0"}}), raising=False
+            _FakeStudyRegistryService,
+            "registry",
+            _FakeStudyRegistry(sites={"cancer-research": {"site0"}}),
+            raising=False,
         )
 
         # Legacy jobs without a study field are routed as the default study.
@@ -1204,24 +1217,3 @@ class TestDefaultJobScheduler:
         assert (
             "site 'site0' is not available to study 'default'" in candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
         )
-
-    def test_default_study_is_unrestricted_without_named_studies(self, monkeypatch, setup_and_teardown):
-        servers, scheduler, num_sites, job_manager = setup_and_teardown
-        monkeypatch.setattr(job_scheduler_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
-        monkeypatch.setattr(_FakeStudyRegistryService, "registry", _study_registry({}), raising=False)
-
-        candidate = create_job(
-            job_id="default_job",
-            resource_spec={},
-            deploy_map={"app5": [ALL_SITES]},
-            min_sites=1,
-            required_sites=["site0"],
-        )
-
-        with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(
-                job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
-            )
-
-        assert job is candidate
-        assert set(dispatch_info) == {"server", "site0", "site1", "site2"}
