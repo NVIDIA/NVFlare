@@ -1,0 +1,8 @@
+deployment-private-key.pem
+deployment-public-key.pem
+approved-cce-policy.txt
+cce-policy.b64
+aci-template.json
+aci-launch.json
+workspace/
+wheels/
