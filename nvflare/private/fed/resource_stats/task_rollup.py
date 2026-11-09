@@ -19,19 +19,21 @@ from __future__ import annotations
 import json
 import os
 import threading
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, replace
 
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 
-from .contract import (
-    ContractError,
-    _capacity_time_from_validated,
+from .handoff import _read_capacity, _read_fields, _read_issues, _read_number, _read_usage
+from .measurements import (
+    SCHEMA_VERSION,
     aggregate_cpu_consumed,
     aggregate_message_traffic,
     aggregate_resource_time,
     aggregate_scope_issues,
-    normalize_worker_record,
+    capacity_to_resource_time,
+    ordered_issues,
 )
 
 MAX_SIDECAR_BYTES = 64 * 1024
@@ -63,6 +65,50 @@ def install_task_resource_reducer(reducer):
 def get_task_resource_reducer():
     with _ACTIVE_LOCK:
         return _ACTIVE
+
+
+def _read_worker_record(value, expected_identity):
+    fields = {"schema_version", "identity", "scope", "resource_capacity", "cpu_consumed", "message_traffic", "issues"}
+    _read_fields(value, fields, {"duration_seconds"})
+    if value["schema_version"] != SCHEMA_VERSION or value["scope"] != "worker":
+        raise ValueError("unsupported worker schema or scope")
+    identity = _read_fields(value["identity"], {"job_id", "site_name", "task_id", "task_name", "attempt_id"})
+    if identity != expected_identity or any(not isinstance(item, str) for item in identity.values()):
+        raise ValueError("worker identity does not match its owned execution")
+    names = ("resource_capacity", "cpu_consumed", "message_traffic")
+    by_metric = {name: [] for name in names}
+    if not isinstance(value["issues"], list):
+        raise ValueError("worker issues must be a list")
+    for issue in value["issues"]:
+        if (
+            not isinstance(issue, Mapping)
+            or not isinstance(issue.get("metric"), str)
+            or issue["metric"] not in by_metric
+        ):
+            raise ValueError("worker issue must name a known metric")
+        by_metric[issue["metric"]].append(issue)
+    result = {"schema_version": SCHEMA_VERSION, "identity": dict(expected_identity), "scope": "worker"}
+    issues = []
+    for name in names:
+        try:
+            if name == "resource_capacity":
+                measurement = _read_capacity(value[name])
+            else:
+                fields = ("cpu_seconds",) if name == "cpu_consumed" else ("sent_bytes", "received_bytes")
+                measurement = _read_usage(value[name], fields, integer=name != "cpu_consumed")
+            tags = _read_issues(by_metric[name], {name: measurement})
+        except ValueError:
+            measurement = {"status": "unavailable"}
+            tags = [{"metric": name, "code": "malformed_source"}]
+        result[name] = measurement
+        issues.extend(tags)
+    result["issues"] = ordered_issues(issues)
+    if "duration_seconds" in value:
+        try:
+            result["duration_seconds"] = _read_number(value["duration_seconds"])
+        except ValueError:
+            pass
+    return result
 
 
 def _encoded(value):
@@ -191,7 +237,7 @@ class TaskResourceReducer:
             try:
                 combined = aggregate_resource_time(sources)[dimension]
                 result[dimension] = combined
-            except (ContractError, ValueError):
+            except (OverflowError, ValueError):
                 # An overflowing dimension cannot erase other usable subtotals.
                 if previous is not None and dimension in previous:
                     result[dimension] = deepcopy(previous[dimension])
@@ -210,7 +256,7 @@ class TaskResourceReducer:
     def _updated_totals(self, record):
         totals = deepcopy(self._totals)
         record_issues = list(record["issues"])
-        resource_time = _capacity_time_from_validated(
+        resource_time = capacity_to_resource_time(
             record["resource_capacity"], record.get("duration_seconds"), record_issues
         )
         issues = totals["issues"]
@@ -227,7 +273,7 @@ class TaskResourceReducer:
                 sources.insert(0, totals[field])
             try:
                 totals[field] = aggregate(sources)
-            except (ContractError, ValueError):
+            except (OverflowError, ValueError):
                 issues.append({"metric": field, "code": "observation_incomplete"})
                 previous = totals[field]
                 totals[field] = aggregate([previous], complete=False) if previous is not None else dict(_UNAVAILABLE)
@@ -252,7 +298,7 @@ class TaskResourceReducer:
         if started is not False:
             try:
                 raw = store.read_resource_stats(identity)
-                record = normalize_worker_record(raw, identity.to_dict()) if raw is not None else None
+                record = _read_worker_record(raw, identity.to_dict()) if raw is not None else None
             except Exception:
                 invalid = True
         with self._lock:

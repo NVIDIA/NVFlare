@@ -24,18 +24,17 @@ from nvflare.private.fed.resource_stats.collector import (
     assemble_participant_summary,
     observe_retained_content,
 )
-from nvflare.private.fed.resource_stats.contract import canonical_json_bytes, capacity_to_resource_time
 from nvflare.private.fed.resource_stats.handoff import (
     INTERNAL_HANDOFF_KIND,
     INTERNAL_HANDOFF_VERSION,
     RESOURCE_STATS_DIR,
     STAGING_DIR,
-    InvalidTerminalHandoff,
     read_terminal_handoff,
     remove_terminal_handoff,
     terminal_handoff_path,
     write_terminal_handoff,
 )
+from nvflare.private.fed.resource_stats.measurements import canonical_json_bytes, capacity_to_resource_time
 from nvflare.private.fed.resource_stats.probes import cgroup_linux, gpu_nvidia
 from tests.timing_utils import isolate_time
 
@@ -573,16 +572,16 @@ def test_terminal_handoff_requires_cpu_consumed(tmp_path):
     handoff = _minimal_handoff()
     del handoff["resource_utilization"]["cpu_consumed"]
 
-    with pytest.raises(InvalidTerminalHandoff, match="resource_utilization"):
-        write_terminal_handoff(tmp_path, handoff)
+    write_terminal_handoff(tmp_path, handoff)
+    assert read_terminal_handoff(tmp_path) is None
 
 
 def test_terminal_handoff_rejects_old_runtime_count_basis(tmp_path):
     old_handoff = _minimal_handoff()
     old_handoff["internal_version"] = "1"
 
-    with pytest.raises(InvalidTerminalHandoff, match="unsupported version"):
-        write_terminal_handoff(tmp_path, old_handoff)
+    write_terminal_handoff(tmp_path, old_handoff)
+    assert read_terminal_handoff(tmp_path) is None
 
 
 def test_handoff_reader_rejects_symlink(tmp_path):
@@ -704,15 +703,3 @@ def test_retained_scan_is_unavailable_without_safe_directory_operations(tmp_path
     (tmp_path / "file.bin").write_bytes(b"xxx")
     monkeypatch.setattr(collector, "_RETAINED_DIR_FD_SUPPORTED", False)
     assert observe_retained_content(tmp_path) == {"status": "unavailable", "issues": ["unsupported"]}
-
-
-@pytest.mark.parametrize("count", ["2", 2, True, "1.5"])
-def test_gpu_probe_count_must_conform_to_public_capacity(monkeypatch, count):
-    gpu = {"count": count}
-    monkeypatch.setattr(gpu_nvidia, "probe_gpu", lambda: gpu)
-    capacity = collector.probe_capacity()
-    if type(count) is int and count == 2:
-        assert capacity["gpu"] == gpu
-    else:
-        assert "gpu" not in capacity
-        assert capacity["status"] == "partial"

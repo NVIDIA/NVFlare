@@ -27,17 +27,17 @@ from pathlib import Path
 from typing import Any, Optional
 
 from . import filesystem_probe, handoff
-from .contract import (
+from .cpu_consumed import CpuConsumedAccountant, install_cpu_accountant
+from .handoff import _read_capacity, _read_issues
+from .measurements import (
     SCHEMA_VERSION,
-    _capacity_time_from_validated,
     aggregate_cpu_consumed,
     aggregate_message_traffic,
     aggregate_scope_issues,
-    normalize_measurement,
-    normalize_scope_issues,
+    capacity_to_resource_time,
+    ordered_issues,
     scoped_measurement,
 )
-from .cpu_consumed import CpuConsumedAccountant, install_cpu_accountant
 from .probes import cgroup_linux, gpu_nvidia
 from .task_rollup import TaskResourceReducer, install_task_resource_reducer
 
@@ -87,10 +87,6 @@ def utc_now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
-def _checked_capacity_dimension(name: str, value: Any) -> Any:
-    return normalize_measurement("resource_capacity", {"status": "partial", name: value})[name]
-
-
 def probe_capacity() -> dict[str, Any]:
     """Keep independent usable observations, marking any unchecked limits."""
 
@@ -111,9 +107,9 @@ def probe_capacity() -> dict[str, Any]:
             value = probe()
             if value is None:
                 continue
-            capacity[name] = _checked_capacity_dimension(name, value)
+            capacity[name] = value
         except Exception:
-            # A native query or malformed dimension must not erase the others.
+            # An unavailable native query must not erase the others.
             issues.add("observation_incomplete")
     if issues:
         capacity.update(status="partial", issues=sorted(issues))
@@ -242,16 +238,15 @@ def _startup_capacity_snapshot(capacity_probe, prior_observation_incomplete):
         capacity = capacity_probe()
         if not isinstance(capacity, Mapping):
             raise TypeError("capacity probe must return a mapping")
-        value = dict(capacity)
-        if "status" not in value and not all(name in value for name in ("cpu", "memory", "gpu")):
-            value.update(status="partial", issues=["observation_incomplete"])
-        codes = value.pop("issues", [])
-        result = normalize_measurement("resource_capacity", value)
-        normalize_scope_issues(
-            [{"metric": "resource_capacity", "code": code} for code in codes], {"resource_capacity": result}
-        )
+        result = deepcopy(dict(capacity))
+        if "status" not in result and not all(name in result for name in ("cpu", "memory", "gpu")):
+            result.update(status="partial", issues=["observation_incomplete"])
+        # This one adapter also contains malformed injected-provider output.
+        codes = result.pop("issues", [])
+        result = _read_capacity(result)
+        _read_issues([{"metric": "resource_capacity", "code": code} for code in codes], {"resource_capacity": result})
         if codes:
-            result["issues"] = deepcopy(codes)
+            result["issues"] = codes
     except Exception:
         return _unavailable("observation_incomplete")
     if prior_observation_incomplete:
@@ -345,9 +340,7 @@ class ExecutionResourceCollector:
             "resource_capacity": scoped_measurement("resource_capacity", self._startup_capacity, issues),
             "cpu_consumed": scoped_measurement("cpu_consumed", cpu_consumed, issues),
         }
-        self._snapshot["issues"] = normalize_scope_issues(
-            issues, {name: self._snapshot[name] for name in ("resource_capacity", "cpu_consumed")}
-        )
+        self._snapshot["issues"] = ordered_issues(issues)
         return deepcopy(self._snapshot)
 
 
@@ -416,7 +409,7 @@ class JobResourceCollector(ExecutionResourceCollector):
             resource_capacity = {"status": "unavailable"}
             issues = [issue for issue in issues if issue["metric"] != "resource_capacity"]
             issues.append({"metric": "resource_capacity", "code": "unsupported"})
-        resource_time = _capacity_time_from_validated(resource_capacity, timing.get("duration_seconds"), issues)
+        resource_time = capacity_to_resource_time(resource_capacity, timing.get("duration_seconds"), issues)
         traffic = scoped_measurement(
             "message_traffic",
             message_traffic if message_traffic is not None else _unavailable("observation_incomplete"),
@@ -483,8 +476,8 @@ def assemble_participant_summary(
 ) -> dict[str, Any]:
     """Assemble a handoff already checked by read_terminal_handoff.
 
-    The parent supplies identity; the handoff reader already checked and
-    normalized each measurement.
+    The parent supplies identity; the handoff reader already checked each
+    measurement.
     """
 
     issues = (
@@ -512,7 +505,7 @@ def assemble_participant_summary(
         "job_id": job_id,
         "participant_name": participant_name,
         "reported_at": utc_now(),
-        "issues": normalize_scope_issues(issues),
+        "issues": ordered_issues(issues),
         **measurements,
         "resource_utilization": (
             child_handoff["resource_utilization"]

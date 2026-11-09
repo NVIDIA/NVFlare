@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 from copy import deepcopy
 from unittest.mock import Mock
@@ -76,14 +77,12 @@ def _link(path, target, *, directory):
 def test_live_handoff_rejects_prior_versions(tmp_path, version):
     handoff = _handoff()
     handoff["internal_version"] = version
-    with pytest.raises(module.InvalidTerminalHandoff, match="unsupported version"):
-        module.write_terminal_handoff(tmp_path, handoff)
-    assert not module.terminal_handoff_path(tmp_path).exists()
+    module.write_terminal_handoff(tmp_path, handoff)
+    assert module.read_terminal_handoff(tmp_path) is None
 
     handoff["resource_time"] = handoff.pop("resource_capacity")
-    with pytest.raises(module.InvalidTerminalHandoff, match="fields"):
-        module.write_terminal_handoff(tmp_path, handoff)
-    assert not module.terminal_handoff_path(tmp_path).exists()
+    module.write_terminal_handoff(tmp_path, handoff)
+    assert module.read_terminal_handoff(tmp_path) is None
 
 
 @pytest.mark.parametrize("fallback", [False, True])
@@ -382,3 +381,67 @@ def test_launch_option_keeps_exact_token_before_generic_type_coercion():
     )
     assert module.launch_generation_from_options(["cj_launch_id=00017"], option_name="cj_launch_id") == "00017"
     assert module.launch_generation_from_options([]) == ""
+
+
+@pytest.mark.parametrize(
+    "metric,value",
+    [
+        ("cpu_consumed", {"cpu_seconds": True}),
+        ("cpu_consumed", {"cpu_seconds": "2"}),
+        ("cpu_consumed", {"cpu_seconds": -1}),
+        ("retained_content", {"bytes": 1.0}),
+        ("message_traffic", {"sent_bytes": 0, "received_bytes": False}),
+        ("resource_capacity", {"cpu": {"units": 0}, "memory": {"bytes": 0}, "gpu": {"count": 0}}),
+        ("resource_capacity", {"cpu": {"units": 2}, "memory": {"bytes": 1.0}, "gpu": {"count": 0}}),
+        ("resource_capacity", {"cpu": {"units": 2}, "memory": {"bytes": 0}, "gpu": {"count": 0.5}}),
+        ("resource_capacity", {"cpu": {"units": 2}, "memory": {"bytes": 0}, "gpu": {"count": True}}),
+    ],
+)
+def test_reader_rejects_bad_numeric_fields_without_erasing_sibling_metrics(tmp_path, metric, value):
+    payload = _complete_handoff()
+    target = payload if metric == "resource_capacity" else payload["resource_utilization"]
+    target[metric] = value
+    module.write_terminal_handoff(tmp_path, payload)
+
+    checked = module.read_terminal_handoff(tmp_path)
+
+    target = checked if metric == "resource_capacity" else checked["resource_utilization"]
+    assert target[metric] == {"status": "unavailable"}
+    assert {"metric": metric, "code": "malformed_source"} in checked["issues"]
+    assert checked["resource_time"] == _complete_handoff()["resource_time"]
+    assert checked["workspace_filesystem"] == {"capacity_bytes": 1024}
+
+
+def test_reader_preserves_zero_capacity_and_exact_integer_bytes(tmp_path):
+    payload = _complete_handoff()
+    payload["resource_capacity"]["memory"]["bytes"] = 0
+    payload["resource_utilization"]["retained_content"]["bytes"] = 10**50
+    module.write_terminal_handoff(tmp_path, payload)
+
+    assert module.read_terminal_handoff(tmp_path) == payload
+
+
+def test_reader_contains_nonfinite_json_number_without_erasing_other_metrics(tmp_path):
+    payload = _complete_handoff()
+    payload["resource_utilization"]["cpu_consumed"]["cpu_seconds"] = 1.0
+    path = module.write_terminal_handoff(tmp_path, payload)
+    path.write_text(json.dumps(payload).replace('"cpu_seconds": 1.0', '"cpu_seconds": 1e999'))
+
+    checked = module.read_terminal_handoff(tmp_path)
+
+    assert checked["resource_utilization"]["cpu_consumed"] == {"status": "unavailable"}
+    assert checked["resource_capacity"] == payload["resource_capacity"]
+
+
+@pytest.mark.parametrize("bad", ["unknown", "unsupported"])
+def test_reader_contains_invalid_partial_cause_to_its_metric(tmp_path, bad):
+    payload = _complete_handoff()
+    payload["resource_utilization"]["cpu_consumed"]["status"] = "partial"
+    payload["issues"] = [{"metric": "cpu_consumed", "code": bad}]
+    module.write_terminal_handoff(tmp_path, payload)
+
+    checked = module.read_terminal_handoff(tmp_path)
+
+    assert checked["resource_utilization"]["cpu_consumed"] == {"status": "unavailable"}
+    assert checked["resource_capacity"] == payload["resource_capacity"]
+    assert checked["issues"] == [{"metric": "cpu_consumed", "code": "malformed_source"}]

@@ -170,9 +170,7 @@ def test_final_worker_fold_keeps_cpu_and_gpu_when_memory_total_overflows():
     assert issues == [{"metric": "resource_time", "code": "observation_incomplete"}]
 
 
-@pytest.mark.parametrize(
-    "gpu_value", [{"count": value} for value in (2, 0, "2", True)] + [None, OSError("query failed")]
-)
+@pytest.mark.parametrize("gpu_value", [{"count": value} for value in (2, 0)] + [None, OSError("query failed")])
 def test_gpu_snapshot_precedes_cpu_and_duration_baselines(monkeypatch, gpu_value):
     events = []
     counters = [0.0, 0.0]

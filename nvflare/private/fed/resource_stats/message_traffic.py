@@ -21,7 +21,8 @@ from nvflare.apis.client import ClientDictKey
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.fed.utils.job_cert_utils import job_cell_scopes
 
-from .contract import normalize_measurement, normalize_scope_issues, scoped_measurement
+from .handoff import _read_issues, _read_usage
+from .measurements import scoped_measurement
 
 _LOCK = threading.Lock()
 _TRAINERS = weakref.WeakKeyDictionary()
@@ -51,8 +52,8 @@ def record_external_trainer_traffic(job_cell, trainer_fqcn, traffic, *, incomple
     """Accept cumulative totals only after the existing session checks succeed."""
     try:
         issues = []
-        checked = normalize_measurement("message_traffic", scoped_measurement("message_traffic", traffic, issues))
-        normalize_scope_issues(issues, {"message_traffic": checked})
+        checked = _read_usage(scoped_measurement("message_traffic", traffic, issues), ("sent_bytes", "received_bytes"))
+        _read_issues(issues, {"message_traffic": checked})
         values = (
             checked["sent_bytes"],
             checked["received_bytes"],

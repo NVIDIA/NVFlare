@@ -25,7 +25,8 @@ import threading
 import time
 from copy import deepcopy
 
-from .contract import ContractError, normalize_measurement, normalize_scope_issues, scoped_measurement
+from .handoff import _read_issues, _read_usage, _read_workspace
+from .measurements import scoped_measurement
 
 _HELPER_MODULE = "nvflare.private.fed.resource_stats.filesystem_probe_worker"
 _OBSERVATION_TIMEOUT_SECONDS = 2.0
@@ -40,8 +41,9 @@ def _unavailable():
 
 def _checked_observation(name, value):
     issues = []
-    result = normalize_measurement(name, scoped_measurement(name, value, issues))
-    tags = normalize_scope_issues(issues, {name: result})
+    measurement = scoped_measurement(name, value, issues)
+    result = _read_workspace(measurement) if name == "workspace_filesystem" else _read_usage(measurement, ("bytes",))
+    tags = _read_issues(issues, {name: result})
     if tags:
         result["issues"] = [item["code"] for item in tags]
     return result
@@ -148,7 +150,7 @@ class FilesystemProbe:
                                 continue
                             result[name] = _checked_observation(name, value)
                             received.add(name)
-                        except (ValueError, TypeError, RecursionError, ContractError):
+                        except (ValueError, TypeError, RecursionError):
                             continue
         except (OSError, ValueError, TypeError, RecursionError, subprocess.SubprocessError):
             pass

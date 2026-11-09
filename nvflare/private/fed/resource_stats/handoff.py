@@ -25,27 +25,22 @@ claim race-proof traversal.
 from __future__ import annotations
 
 import json
+import math
 import os
 import secrets
 import stat
 import tempfile
 from collections.abc import Mapping
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Optional
 
-from .contract import (
-    MAX_PARTICIPANT_SUMMARY_BYTES,
-    ContractError,
-    canonical_json_bytes,
-    normalize_duration,
-    normalize_measurement,
-    normalize_scope_issues,
-)
+from .measurements import canonical_json_bytes, ordered_issues
 
 # The private handoff carries startup capacity and accumulated execution time.
 INTERNAL_HANDOFF_VERSION = "4"
 INTERNAL_HANDOFF_KIND = "nvflare.resource_stats.internal.terminal_handoff"
-MAX_TERMINAL_HANDOFF_BYTES = MAX_PARTICIPANT_SUMMARY_BYTES
+MAX_TERMINAL_HANDOFF_BYTES = 1024 * 1024
 
 RESOURCE_STATS_DIR = "resource_stats"
 STAGING_DIR = "staging"
@@ -138,7 +133,105 @@ def _open_handoff_directory(
             os.close(descriptor)
 
 
-def _validate_handoff(value: Mapping[str, Any]) -> dict[str, Any]:
+def _read_fields(value, required, optional=()):
+    if not isinstance(value, Mapping) or any(not isinstance(key, str) for key in value):
+        raise ValueError("measurement must be an object with string keys")
+    required, optional = set(required), set(optional)
+    if not required <= value.keys() or value.keys() - required - optional:
+        raise ValueError("measurement has missing or unexpected fields")
+    return value
+
+
+def _read_number(value, *, integer=False, positive=False):
+    if isinstance(value, bool) or not isinstance(value, int if integer else (int, float)):
+        raise ValueError("measurement must be an integer" if integer else "measurement must be a number")
+    if value < 0 or (positive and value == 0) or (isinstance(value, float) and not math.isfinite(value)):
+        raise ValueError(
+            "measurement must be finite and positive" if positive else "measurement must be finite and non-negative"
+        )
+    return value
+
+
+def _read_status(value, allowed=("partial", "unavailable")):
+    if not isinstance(value, Mapping):
+        raise ValueError("measurement must be an object")
+    status = value.get("status", "reported")
+    if "status" in value and status not in allowed:
+        raise ValueError("measurement has an invalid status")
+    return status
+
+
+def _read_capacity(value, *, elapsed=False):
+    status = _read_status(value)
+    dimensions = {"cpu", "memory", "gpu"}
+    _read_fields(value, dimensions if status == "reported" else {"status"}, dimensions if status == "partial" else ())
+    if status == "partial" and not dimensions & value.keys():
+        raise ValueError("partial capacity needs an observed dimension")
+    fields = (
+        {"cpu": "unit_seconds", "memory": "byte_seconds", "gpu": "instance_seconds"}
+        if elapsed
+        else {"cpu": "units", "memory": "bytes", "gpu": "count"}
+    )
+    for dimension, field in fields.items():
+        if dimension in value:
+            item = _read_fields(value[dimension], {field})
+            _read_number(
+                item[field], integer=not elapsed and dimension != "cpu", positive=not elapsed and dimension == "cpu"
+            )
+    return deepcopy(value)
+
+
+def _read_usage(value, fields, *, integer=True):
+    status = _read_status(value)
+    required = set(fields) if status != "unavailable" else set()
+    if status != "reported":
+        required.add("status")
+    _read_fields(value, required)
+    if status != "unavailable":
+        for field in fields:
+            _read_number(value[field], integer=integer)
+    return deepcopy(value)
+
+
+def _read_workspace(value):
+    if _read_status(value, ("unavailable",)) == "reported":
+        _read_fields(value, {"capacity_bytes"})
+        _read_number(value["capacity_bytes"], integer=True, positive=True)
+    else:
+        _read_fields(value, {"status"})
+    return deepcopy(value)
+
+
+def _read_issues(issues, measurements):
+    """Check incoming scope diagnostics and their relation to accepted values."""
+    if not isinstance(issues, list):
+        raise ValueError("scope issues must be a list")
+    allowed_codes = {"observation_incomplete", "attribution_incomplete", "unsupported", "malformed_source"}
+    for item in issues:
+        _read_fields(item, {"metric", "code"})
+        if not isinstance(item["metric"], str) or item["metric"] not in measurements:
+            raise ValueError("scope issue names an unknown metric")
+        if not isinstance(item["code"], str) or item["code"] not in allowed_codes:
+            raise ValueError("scope issue has an unknown cause")
+    result = ordered_issues(issues)
+    for metric, value in measurements.items():
+        codes = {item["code"] for item in result if item["metric"] == metric}
+        status = value.get("status", "reported")
+        if status == "reported":
+            if codes:
+                raise ValueError("complete measurements cannot have issues")
+            continue
+        allowed = {"observation_incomplete", "attribution_incomplete"} if status == "partial" else allowed_codes
+        if metric == "message_traffic":
+            allowed = (
+                {"observation_incomplete"} if status == "partial" else {"observation_incomplete", "malformed_source"}
+            )
+        if not codes or codes - allowed:
+            raise ValueError("measurement status needs supported causes")
+    return result
+
+
+def _read_handoff(value: Mapping[str, Any]) -> dict[str, Any]:
     required = {
         "internal_version",
         "kind",
@@ -180,9 +273,17 @@ def _validate_handoff(value: Mapping[str, Any]) -> dict[str, Any]:
     issues = []
     for name, measurement in measurements.items():
         try:
-            checked = normalize_measurement(name, measurement)
-            tags = normalize_scope_issues(by_metric[name], {name: checked})
-        except ContractError:
+            if name in {"resource_capacity", "resource_time"}:
+                checked = _read_capacity(measurement, elapsed=name == "resource_time")
+            elif name == "workspace_filesystem":
+                checked = _read_workspace(measurement)
+            elif name == "cpu_consumed":
+                checked = _read_usage(measurement, ("cpu_seconds",), integer=False)
+            else:
+                quantity_fields = ("bytes",) if name == "retained_content" else ("sent_bytes", "received_bytes")
+                checked = _read_usage(measurement, quantity_fields)
+            tags = _read_issues(by_metric[name], {name: checked})
+        except ValueError:
             checked = {"status": "unavailable"}
             tags = [{"metric": name, "code": "malformed_source"}]
         measurements[name] = checked
@@ -192,7 +293,7 @@ def _validate_handoff(value: Mapping[str, Any]) -> dict[str, Any]:
         "kind": INTERNAL_HANDOFF_KIND,
         **{name: measurements[name] for name in ("resource_capacity", "resource_time", "workspace_filesystem")},
         "resource_utilization": {name: measurements[name] for name in sorted(fields)},
-        "issues": normalize_scope_issues(issues),
+        "issues": ordered_issues(issues),
     }
     if "launch_generation" in value:
         _handoff_filename(value["launch_generation"])
@@ -201,8 +302,8 @@ def _validate_handoff(value: Mapping[str, Any]) -> dict[str, Any]:
         result["launch_generation"] = value["launch_generation"]
     if "duration_seconds" in value:
         try:
-            result["duration_seconds"] = normalize_duration(value["duration_seconds"])
-        except ContractError:
+            result["duration_seconds"] = _read_number(value["duration_seconds"])
+        except ValueError:
             pass  # Preserve untimed quantities; never invent an elapsed duration.
     return result
 
@@ -217,8 +318,7 @@ def write_terminal_handoff(
         if "launch_generation" in handoff and handoff["launch_generation"] != launch_generation:
             raise InvalidTerminalHandoff("conflicting launch generation")
         handoff = {**handoff, "launch_generation": launch_generation}
-    validated = _validate_handoff(handoff)
-    data = canonical_json_bytes(validated)
+    data = canonical_json_bytes(handoff)
     if len(data) > MAX_TERMINAL_HANDOFF_BYTES:
         raise InvalidTerminalHandoff("terminal handoff exceeds its size limit")
     path = terminal_handoff_path(run_dir, launch_generation=launch_generation)
@@ -328,7 +428,7 @@ def read_terminal_handoff(run_dir: str | Path, *, expected_generation: str | Non
             object_pairs_hook=reject_duplicates,
             parse_constant=lambda value: (_ for _ in ()).throw(InvalidTerminalHandoff(value)),
         )
-        checked = _validate_handoff(value)
+        checked = _read_handoff(value)
         if expected_generation is not None and checked.get("launch_generation") != expected_generation:
             return None
         return checked
