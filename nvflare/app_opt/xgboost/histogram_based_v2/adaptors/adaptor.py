@@ -28,6 +28,7 @@ from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 from nvflare.fuel.utils.log_utils import configure_logging, get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_object_type
+from nvflare.private.fed.resource_stats.cpu_consumed import register_managed_child
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
@@ -255,6 +256,7 @@ class AppAdaptor(ABC, FLComponent):
                 name=f"{self.app_name}_server_process_runner",
             )
             self.process.start()
+            register_managed_child(self.process, descendants_may_be_unwaited=True)
 
     def stop_runner(self):
         if self.in_process:

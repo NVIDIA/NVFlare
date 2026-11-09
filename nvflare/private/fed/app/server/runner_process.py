@@ -33,6 +33,9 @@ from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ, AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.app.job_process_cleanup import shutdown_job_process_runtime
 from nvflare.private.fed.app.utils import monitor_parent_process
+from nvflare.private.fed.resource_stats.collector import JobResourceCollector
+from nvflare.private.fed.resource_stats.handoff import launch_generation_from_options, write_terminal_handoff
+from nvflare.private.fed.resource_stats.message_traffic import snapshot_message_traffic
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.fed_utils import (
@@ -47,6 +50,7 @@ from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
 
 def main(args):
+    launch_generation = launch_generation_from_options(args.set)
     kv_list = parse_vars(args.set)
 
     config_folder = kv_list.get("config_folder", "")
@@ -68,10 +72,23 @@ def main(args):
     download_workspace(args, secure_train)
     workspace = Workspace(root_dir=args.workspace, site_name=SiteType.SERVER)
     refresh_custom_dir_import_path(workspace.get_app_custom_dir(args.job_id))
+    resource_collector = None
+    try:
+        # Observe capacity within the existing job startup lifecycle. Keep
+        # normal Python imports and dependency paths available throughout.
+        resource_collector = JobResourceCollector(
+            workspace.get_run_dir(args.job_id),
+            prior_observation_incomplete=bool(args.snapshot)
+            or kv_list.get("resource_prior_attempt_incomplete") is True,
+        )
+    except Exception:
+        # Resource reporting is observational and must never change the job outcome.
+        pass
     set_stats_pool_config_for_job(workspace, args.job_id)
 
     server = None
     logger = None
+    message_traffic_incomplete = bool(args.snapshot) or kv_list.get("resource_prior_attempt_incomplete") is True
     try:
         os.chdir(args.workspace)
         fobs_initialize(workspace=workspace, job_id=args.job_id)
@@ -134,10 +151,31 @@ def main(args):
             cell = getattr(server, "cell", None)
 
             def _archive_results():
+                if resource_collector:
+                    try:
+                        write_terminal_handoff(
+                            workspace.get_run_dir(args.job_id),
+                            resource_collector.finish(
+                                message_traffic=snapshot_message_traffic(cell, incomplete=message_traffic_incomplete)
+                            ),
+                            launch_generation=launch_generation,
+                        )
+                    except Exception as e:
+                        if logger:
+                            try:
+                                logger.warning(f"Could not write resource statistics: {secure_format_exception(e)}")
+                            except Exception:
+                                pass
                 err = create_stats_pool_files_for_job(workspace, args.job_id)
                 if err and logger:
                     logger.warning(err)
                 upload_results_on_shutdown(args, secure_train, log=logger)
+
+            def _mark_callback_drain_incomplete():
+                nonlocal message_traffic_incomplete
+                message_traffic_incomplete = True
+                if resource_collector:
+                    resource_collector.mark_cpu_consumption_incomplete()
 
             try:
                 shutdown_job_process_runtime(
@@ -146,6 +184,7 @@ def main(args):
                     stop_cell=cell.stop if cell else None,
                     logger=logger,
                     before_streaming_shutdown=_archive_results,
+                    mark_callback_drain_incomplete=_mark_callback_drain_incomplete,
                 )
             finally:
                 if deployer:

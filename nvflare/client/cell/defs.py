@@ -99,6 +99,8 @@ class MsgKey:
     # True while send() owns an accepted source, including the RESULT_ACCEPTED race;
     # SHUTDOWN may stop the process only after this becomes False.
     RESULT_SOURCE_LIVE = "result_source_live"
+    # Optional cumulative payload-byte totals from a managed trainer.
+    MESSAGE_TRAFFIC = "message_traffic"
     # A zero timeout disables heartbeat lease enforcement for legacy compatibility.
     HEARTBEAT_INTERVAL = "heartbeat_interval"
     HEARTBEAT_TIMEOUT = "heartbeat_timeout"
