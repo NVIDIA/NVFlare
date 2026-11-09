@@ -67,7 +67,7 @@ from nvflare.fuel.f3.drivers.net_utils import parse_url
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY, LazyDownloadRef
-from nvflare.private.fed.resource_stats.cpu_consumed import register_managed_child
+from nvflare.private.fed.resource_stats.cpu_consumed import mark_unwaited_managed_children
 from nvflare.private.fed.resource_stats.message_traffic import (
     record_external_trainer_traffic,
     register_external_trainer,
@@ -505,7 +505,7 @@ class ExternalProcessBackend(CellBackendBase):
                         start_new_session=(os.name == "posix"),
                     )
                     trainer.process = process
-                    register_managed_child(process, descendants_may_be_unwaited=True)
+                    mark_unwaited_managed_children()
                     register_external_trainer(self._cell, trainer.trainer_fqcn)
                     if os.name == "posix":
                         # start_new_session made the child its own group leader (pgid == pid)

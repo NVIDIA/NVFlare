@@ -83,7 +83,6 @@ class CpuConsumedAccountant:
     ):
         self._usage_reader = usage_reader
         self._start: tuple[float, float] | None = None
-        self._children: list[Any] = []
         self._lock = threading.Lock()
         self._prior_observation_incomplete = prior_observation_incomplete
         self._known_attribution_incomplete = known_attribution_incomplete
@@ -92,18 +91,6 @@ class CpuConsumedAccountant:
             self._start = self._usage_reader()
         except (OSError, ValueError, AttributeError, TypeError, OverflowError):
             pass
-
-    def register_child(self, process: Any, *, descendants_may_be_unwaited: bool = False) -> None:
-        """Track a platform-managed child without touching its normal lifecycle."""
-
-        with self._lock:
-            if descendants_may_be_unwaited:
-                # We already know that a grandchild can escape CHILDREN usage.
-                # Do not retain many completed trainers and their pipe handles
-                # merely to reconfirm a status that must remain partial.
-                self._known_attribution_incomplete = True
-            else:
-                self._children.append(process)
 
     def mark_attribution_incomplete(self) -> None:
         """Record a lifecycle path that may outlive the final boundary."""
@@ -118,26 +105,13 @@ class CpuConsumedAccountant:
             self._include_children = False
 
     def finish(self) -> dict[str, Any]:
-        # poll() is nonblocking and reaps an already-exited child. It cannot
-        # make an un-waited live worker appear in RUSAGE_CHILDREN.
         with self._lock:
-            children = tuple(self._children)
             known_attribution_incomplete = self._known_attribution_incomplete
         issues = set()
         if self._prior_observation_incomplete:
             issues.add("observation_incomplete")
         if known_attribution_incomplete:
             issues.add("attribution_incomplete")
-        for process in children:
-            try:
-                # subprocess.Popen.poll() and multiprocessing.Process.exitcode
-                # each perform at most one nonblocking completion check.
-                completed = process.poll() if hasattr(process, "poll") else process.exitcode
-                if completed is None:
-                    issues.add("attribution_incomplete")
-            except Exception:
-                issues.add("attribution_incomplete")
-
         if self._start is None:
             return {"status": "unavailable", "issues": ["observation_incomplete"]}
         try:
@@ -162,17 +136,8 @@ def install_cpu_accountant(accountant: CpuConsumedAccountant) -> None:
         _active = accountant
 
 
-def register_managed_child(process: Any, *, descendants_may_be_unwaited: bool = False) -> None:
-    """Mark a known child; no-op in a shared site parent or unrelated process."""
-
-    with _active_lock:
-        accountant = _active
-    if accountant is not None:
-        accountant.register_child(process, descendants_may_be_unwaited=descendants_may_be_unwaited)
-
-
 def mark_unwaited_managed_children() -> None:
-    """Mark a managed worker pool whose members are not reliably waited for."""
+    """Mark managed children whose CPU attribution may be incomplete."""
 
     with _active_lock:
         accountant = _active

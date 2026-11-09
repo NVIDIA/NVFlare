@@ -108,7 +108,11 @@ def test_fork_discards_inherited_accountant_and_locked_hooks_without_changing_pa
             lock.release()
         writer.close()
         assert reader.poll(5), "a CPU hook blocked on an inherited parent lock"
-        assert reader.recv() == (True, True, {"cpu_seconds": 0})
+        assert reader.recv() == (
+            True,
+            True,
+            {"status": "partial", "issues": ["attribution_incomplete"], "cpu_seconds": 0},
+        )
         child.join(5)
         assert child.exitcode == 0
         assert cpu_module._active is accountant

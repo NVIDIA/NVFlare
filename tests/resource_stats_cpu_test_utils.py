@@ -15,7 +15,6 @@
 """Process targets and cleanup for resource-statistics CPU integration tests."""
 
 import subprocess
-from types import SimpleNamespace
 
 from nvflare.private.fed.resource_stats import cpu_consumed as cpu_module
 from nvflare.private.fed.resource_stats.cpu_consumed import CpuConsumedAccountant
@@ -36,10 +35,9 @@ def exercise_forked_cpu_hooks(connection):
     try:
         inherited_discarded = cpu_module._active is None
         cpu_module.mark_unwaited_managed_children()
-        cpu_module.register_managed_child(SimpleNamespace(poll=lambda: 0))
         fresh = CpuConsumedAccountant(usage_reader=lambda: (float(0), float(0)))
         cpu_module.install_cpu_accountant(fresh)
-        cpu_module.register_managed_child(SimpleNamespace(poll=lambda: 0))
+        cpu_module.mark_unwaited_managed_children()
         connection.send((inherited_discarded, cpu_module._active is fresh, fresh.finish()))
     finally:
         connection.close()
