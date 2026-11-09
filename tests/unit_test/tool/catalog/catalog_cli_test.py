@@ -137,6 +137,7 @@ class TestRead:
         assert meta["deploy_map"] == {"app_server": ["server"], "app_a": ["a"], "app_b": ["b"]}
         assert session.submitted["server"][0]["workflows"][0]["args"] == {"datasets": {"a": ["x"]}}
         assert session.closed and session.monitored
+        assert session.monitor_timeout == args.timeout + catalog_cli._JOB_START_MARGIN_S
         assert not session.submitted["path"].exists()
 
     def test_no_wait_returns_submission_without_monitoring(self, monkeypatch):
@@ -331,6 +332,7 @@ class TestRendering:
         (APIStatus.ERROR_AUTHORIZATION, 1, "NOT_AUTHORIZED"),
         (APIStatus.ERROR_PROTOCOL, 5, "INTERNAL_ERROR"),
         (APIStatus.ERROR_RUNTIME, 5, "INTERNAL_ERROR"),
+        (APIStatus.ERROR_SYNTAX, 1, "CATALOG_UNAVAILABLE"),
     ],
 )
 def test_a_failed_api_response_uses_the_same_exit_codes_as_a_raised_error(
@@ -345,3 +347,28 @@ def test_a_failed_api_response_uses_the_same_exit_codes_as_a_raised_error(
     assert stopped.value.code == code and session.closed
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["status"] == "error" and envelope["error_code"] == error_code
+
+
+@pytest.mark.parametrize(
+    "payload,code,error_code,hint_text",
+    [
+        ({"error_code": "INVALID_ARGS", "message": "bad filter"}, 4, "INVALID_ARGS", None),
+        ({"error_code": "SYSTEM_NOT_READY", "message": "no catalog"}, 1, "SYSTEM_NOT_READY", "CatalogManager"),
+        ({"entries": [{}], "next_cursor": None, "total": 1, "facets": {}}, 5, "INTERNAL_ERROR", None),
+        ({"entries": "not-a-list", "next_cursor": None, "total": 0, "facets": {}}, 5, "INTERNAL_ERROR", None),
+    ],
+)
+def test_server_rejections_and_malformed_replies_use_distinct_exit_codes(
+    monkeypatch, capsys, machine_output, payload, code, error_code, hint_text
+):
+    """A rejected request exits 4 only when the arguments were invalid. A reply the CLI cannot parse is an
+    internal error (5), not an argument error, so callers that retry on 5 and fix arguments on 4 act correctly."""
+    session = CatalogSession(reply_payload=payload)
+    monkeypatch.setattr(cli_session, "new_cli_session_for_args", lambda **kw: session)
+    with pytest.raises(SystemExit) as stopped:
+        catalog_cli.cmd_show(parse("show"))
+    assert stopped.value.code == code and session.closed
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["status"] == "error" and envelope["error_code"] == error_code
+    if hint_text:
+        assert hint_text in json.dumps(envelope)

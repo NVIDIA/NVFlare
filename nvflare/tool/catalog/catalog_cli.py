@@ -303,6 +303,10 @@ def _dataset_map(values: list[str] | None) -> dict[str, list[str]] | None:
     return result or None
 
 
+# Time allowed for the job to be scheduled, deployed and finished on top of the per-site task timeout.
+_JOB_START_MARGIN_S = 60
+
+
 def _submit_read(args) -> dict:
     """Export and submit the recipe through the shared CLI session, without downloading job results."""
     from nvflare.recipe.catalog import CatalogRecipe
@@ -328,10 +332,13 @@ def _submit_read(args) -> dict:
                         last_status = status
                     return True
 
-                rc, meta = sess.monitor_job_and_return_job_meta(job_id, cb=progress)
+                rc, meta = sess.monitor_job_and_return_job_meta(
+                    job_id, timeout=args.timeout + _JOB_START_MARGIN_S, cb=progress
+                )
                 if rc == MonitorReturnCode.TIMEOUT:
                     raise TimeoutError(
-                        f"waiting for catalog job {job_id}; check it with 'nvflare job meta {job_id} --study {args.study}'"
+                        f"stopped waiting for catalog job {job_id}, which keeps running; "
+                        f"check it with 'nvflare job meta {job_id} --study {args.study}'"
                     )
                 status = meta.get("status") if isinstance(meta, dict) else None
                 if rc != MonitorReturnCode.JOB_FINISHED or job_status_outcome(status) is None:
@@ -410,7 +417,15 @@ def _define_catalog_subcommands(parser):
         metavar="SITE:NAME",
         help="read only these datasets, each as SITE:NAME. A site with none listed reads all it shares",
     )
-    p.add_argument("--timeout", type=int, default=300, help="seconds to wait for each site (default: 300)")
+    p.add_argument(
+        "--timeout",
+        type=int,
+        default=300,
+        help=(
+            "seconds to wait for each site (default: 300); the command stops waiting for the job "
+            f"{_JOB_START_MARGIN_S} seconds after that, and the job keeps running"
+        ),
+    )
     p.add_argument(
         "--no-wait", action="store_true", help="return after submission (default: wait for the job to finish)"
     )

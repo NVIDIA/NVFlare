@@ -78,7 +78,9 @@ retry-token deduplication. ``show`` is read-only and idempotent.
 
 Exit codes follow the shared CLI convention: 0 success, 1 server/job error,
 2 connection/authentication failure, 3 timeout, 4 invalid arguments, and
-5 unexpected internal error. Use ``nvflare job meta JOB_ID --study STUDY``
+5 unexpected internal error. A request the server rejects as invalid exits 4.
+``read`` waits for the job for ``--timeout`` plus 60 seconds and then exits 3;
+the job keeps running, and ``nvflare job meta`` shows its state. Use ``nvflare job meta JOB_ID --study STUDY``
 and ``nvflare job logs JOB_ID --study STUDY`` to inspect a failed job.
 
 Catalog commands use the standard startup-kit selection options and the

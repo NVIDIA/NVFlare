@@ -49,7 +49,18 @@ def _raise_for_api_status(reply: dict, command: str) -> None:
         raise SessionClosed("the session is closed on server")
     if status == APIStatus.ERROR_SERVER_CONNECTION:
         raise NoConnection(f"cannot connect to server: {text}")
+    if status == APIStatus.ERROR_SYNTAX:
+        raise CommandError(
+            error_code="CATALOG_UNAVAILABLE",
+            message=f"the server does not recognize the command '{command}'",
+            hint="Use a server that includes the catalog commands and has a CatalogManager configured.",
+        )
     raise InternalError(f"{text}: {details}" if details else text)
+
+
+_REJECTION_HINTS = {
+    "SYSTEM_NOT_READY": "Configure a CatalogManager on the server, or retry after it has finished starting.",
+}
 
 
 @dataclass(frozen=True)
@@ -85,18 +96,27 @@ class CatalogAdminApi:
         if not payload:
             raise InternalError("empty catalog reply")
         if payload.get("error_code"):
-            raise CommandError(error_code=payload["error_code"], message=payload.get("message", ""))
+            code = payload["error_code"]
+            raise CommandError(
+                error_code=code,
+                message=payload.get("message", ""),
+                hint=_REJECTION_HINTS.get(code, ""),
+                exit_code=4 if code == "INVALID_ARGS" else 1,
+            )
         return payload
 
     def search_page(self, cursor: str | None = None, page_size: int = 50, **filters) -> SearchPage:
         request = {k: v for k, v in {**filters, "cursor": cursor, "page_size": page_size}.items() if v is not None}
         reply = self._call(SEARCH, request)
-        return SearchPage(
-            entries=tuple(entry_from_dict(e) for e in reply["entries"]),
-            next_cursor=reply["next_cursor"],
-            total=reply["total"],
-            facets=reply["facets"],
-        )
+        try:
+            return SearchPage(
+                entries=tuple(entry_from_dict(e) for e in reply["entries"]),
+                next_cursor=reply["next_cursor"],
+                total=reply["total"],
+                facets=reply["facets"],
+            )
+        except (KeyError, TypeError, ValueError) as e:
+            raise InternalError(f"malformed catalog search reply: {e!r}") from e
 
     def search(self, **filters) -> Iterator[CatalogEntry]:
         cursor = None
@@ -108,15 +128,19 @@ class CatalogAdminApi:
                 return
 
     def status(self) -> list[ClientHealth]:
-        return [
-            ClientHealth(
-                c["client"],
-                c["health"],
-                c["reason_code"],
-                c["failures"],
-                c["last_attempt_at"],
-                c["last_success_at"],
-                c["stale"],
-            )
-            for c in self._call(STATUS, {})["clients"]
-        ]
+        reply = self._call(STATUS, {})
+        try:
+            return [
+                ClientHealth(
+                    c["client"],
+                    c["health"],
+                    c["reason_code"],
+                    c["failures"],
+                    c["last_attempt_at"],
+                    c["last_success_at"],
+                    c["stale"],
+                )
+                for c in reply["clients"]
+            ]
+        except (KeyError, TypeError, ValueError) as e:
+            raise InternalError(f"malformed catalog status reply: {e!r}") from e

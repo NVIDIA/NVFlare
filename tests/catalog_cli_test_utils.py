@@ -24,10 +24,13 @@ from nvflare.fuel.hci.proto import ProtoKey
 
 
 class CatalogSession:
-    def __init__(self, status="FINISHED:COMPLETED", error=None, health="OK", api_status=None):
+    def __init__(self, status="FINISHED:COMPLETED", error=None, health="OK", api_status=None, reply_payload=None):
         """``error`` is raised by the call. ``api_status`` is returned as a failed API response with no payload,
-        as the admin client does for a lost connection or an expired session."""
+        as the admin client does for a lost connection or an expired session. ``reply_payload`` replaces the
+        catalog payload of a successful response."""
         self.status, self.error, self.health, self.api_status = status, error, health, api_status
+        self.reply_payload = reply_payload
+        self.monitor_timeout = None
         self.closed = False
         self.submitted = None
         self.monitored = False
@@ -43,8 +46,9 @@ class CatalogSession:
         }
         return "job-1"
 
-    def monitor_job_and_return_job_meta(self, job_id, cb):
+    def monitor_job_and_return_job_meta(self, job_id, timeout=0.0, cb=None):
         self.monitored = True
+        self.monitor_timeout = timeout
         cb(self, job_id, {"status": "RUNNING"})
         if self.status == "TIMEOUT":
             return MonitorReturnCode.TIMEOUT, None
@@ -75,6 +79,8 @@ class CatalogSession:
             }
         else:
             raise AssertionError(f"unexpected command: {command}")
+        if self.reply_payload is not None:
+            payload = self.reply_payload
         return {
             ProtoKey.STATUS: APIStatus.SUCCESS,
             ProtoKey.DATA: [{ProtoKey.TYPE: ProtoKey.DICT, ProtoKey.DATA: payload}],
