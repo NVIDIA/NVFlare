@@ -165,9 +165,9 @@ All server-backed `nvflare study` commands require a connection to the server. S
 1. `--kit-id <id>` — registered startup-kit ID for this command only
 2. `--startup-kit <dir>` — explicit path to the startup kit directory (or its `startup/` subdirectory) for this command only
 3. `NVFLARE_STARTUP_KIT_DIR` environment variable
-4. `startup_kits.active` from `~/.nvflare/config.conf`
+4. `startup_kits.active` from `~/.nvflare/config.json`
 
-`~/.nvflare/config.conf` is written by `nvflare config`. When no explicit source is provided the config file is consulted automatically for the active registered startup kit, so a user who has run `nvflare config add` and `nvflare config use` once does not need to pass any flag on every command.
+`~/.nvflare/config.json` is written by `nvflare config`. When no explicit source is provided the config file is consulted automatically for the active registered startup kit, so a user who has run `nvflare config add` and `nvflare config use` once does not need to pass any flag on every command.
 
 `--kit-id` and `--startup-kit` are mutually exclusive. If no source resolves to a valid directory, the command exits with code 4 and `STARTUP_KIT_MISSING`.
 
@@ -218,7 +218,7 @@ nvflare study show        <name> [--kit-id <id> | --startup-kit <dir>] [--schema
 | `--startup-kit` | str | No* | Explicit path to the startup kit directory |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* `--kit-id` and `--startup-kit` are mutually exclusive optional selectors. The startup kit must be resolvable via `--kit-id`, `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or the active startup kit in `~/.nvflare/config.conf` — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
+\* `--kit-id` and `--startup-kit` are mutually exclusive optional selectors. The startup kit must be resolvable via `--kit-id`, `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or the active startup kit in `~/.nvflare/config.json` — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
 
 `--sites` and `--site-org` are mutually exclusive on the same invocation. If both are provided, the command fails with `INVALID_ARGS`.
 
@@ -261,7 +261,7 @@ nvflare study register cancer-research \
 | `--startup-kit` | str | No* | Explicit path to the startup kit directory |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* `--kit-id` and `--startup-kit` are mutually exclusive optional selectors. The startup kit must be resolvable via `--kit-id`, `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or the active startup kit in `~/.nvflare/config.conf` — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
+\* `--kit-id` and `--startup-kit` are mutually exclusive optional selectors. The startup kit must be resolvable via `--kit-id`, `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or the active startup kit in `~/.nvflare/config.json` — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
 
 `--sites` and `--site-org` are mutually exclusive on the same invocation. If both are provided, the command fails with `INVALID_ARGS`.
 
@@ -278,7 +278,7 @@ Both commands return per-site outcome lists. `add-site`: already-enrolled sites 
 | `--startup-kit` | str | No* | Explicit path to the startup kit directory |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* `--kit-id` and `--startup-kit` are mutually exclusive optional selectors. The startup kit must be resolvable via `--kit-id`, `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or the active startup kit in `~/.nvflare/config.conf` — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
+\* `--kit-id` and `--startup-kit` are mutually exclusive optional selectors. The startup kit must be resolvable via `--kit-id`, `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or the active startup kit in `~/.nvflare/config.json` — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
 
 ### User Membership Management
 
@@ -302,7 +302,7 @@ nvflare study remove-user <study> <user> [--kit-id <id> | --startup-kit <dir>] [
 | `--startup-kit` | str | No* | Explicit path to the startup kit directory |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* `--kit-id` and `--startup-kit` are mutually exclusive optional selectors. The startup kit must be resolvable via `--kit-id`, `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or the active startup kit in `~/.nvflare/config.conf` — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
+\* `--kit-id` and `--startup-kit` are mutually exclusive optional selectors. The startup kit must be resolvable via `--kit-id`, `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or the active startup kit in `~/.nvflare/config.json` — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
 
 #### Usage Examples — user membership commands
 

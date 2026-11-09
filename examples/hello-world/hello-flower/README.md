@@ -4,14 +4,11 @@ This example demonstrates how to use NVIDIA FLARE with Flower to train an image 
 
 ## Get NVFlare and the Example
 
-Install either the stable or nightly NVFlare distribution:
+Install a released NVFlare package:
 
 ```bash
 # Stable
 python -m pip install nvflare
-
-# Nightly (use instead of the stable command)
-python -m pip install nvflare-nightly
 ```
 
 Then download the matching example revision:
@@ -37,8 +34,8 @@ Then install the remaining example dependencies:
 python -m pip install -r requirements.txt
 ```
 
-The requirements file intentionally does not install NVFlare. This preserves the stable,
-nightly, or editable distribution that selected the example revision.
+The requirements file intentionally does not install NVFlare. This preserves the release, local wheel,
+or editable installation that selected the example revision.
 
 > [!IMPORTANT]
 > This `main` branch example uses Flower 1.26+ and the newer Flower SuperLink configuration flow.
