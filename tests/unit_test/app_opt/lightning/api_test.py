@@ -2291,6 +2291,22 @@ def test_in_place_hook_edits_change_the_received_model_only_without_diff(transfe
     assert torch.equal(module.seen[0].weight, torch.full((2, 2), 5.0))
 
 
+class NestedMetaHooks(pl.Callback):
+    def on_fl_receive(self, trainer, pl_module, fl_model):
+        fl_model.meta["ctrl"]["fc.weight"].mul_(0.0)
+
+
+def test_in_place_hook_edits_of_nested_meta_do_not_change_the_received_model():
+    tasks = [("train", _round_model(r, meta={"ctrl": {"fc.weight": torch.ones(2, 2)}})) for r in range(2)]
+    fake = _FakeFlare(tasks)
+
+    _fit_with_step_sync(
+        fake, RecordingNet(), _loader(4), sync_every_n_steps=2, max_epochs=1, callbacks=[NestedMetaHooks()]
+    )
+
+    assert all(torch.equal(received.meta["ctrl"]["fc.weight"], torch.ones(2, 2)) for received in fake.received)
+
+
 class ExtraStateNet(RecordingNet):
     def get_extra_state(self):
         return {"version": 1}

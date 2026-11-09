@@ -194,8 +194,9 @@ Three hooks, defined as methods on any `pl.Callback` in `trainer.callbacks`, cal
 - Not called for an empty receive or for a non-train task left pending in step mode.
 - Called in `trainer.callbacks` order.
 - Hooks get a copy of the received model, so edits change what is loaded, not the model the Client API keeps as
-  the baseline for DIFF transfers. The copy is shallow, except that with DIFF transfers rank 0 clones the tensors
-  when a callback defines `on_fl_receive` or `on_fl_model_loaded`, so in-place edits are safe too. That clone costs
+  the baseline for DIFF transfers. When a callback defines `on_fl_receive` or `on_fl_model_loaded`, `meta` is
+  deep-copied, so in-place edits of nested values (such as SCAFFOLD's control tensors) are safe. `params` is copied
+  one level deep, except that with DIFF transfers rank 0 clones the tensors, so in-place edits are safe too. That clone costs
   M host memory per sync and is only paid when a hook could change the DIFF baseline.
 - A model received by `trainer.validate()` before `fit()` runs the receive hooks once; `fit()` reuses it.
 

@@ -324,14 +324,11 @@ class _FLCallbackBase(Callback):
     def _load_received_model(self, trainer, pl_module, model: FLModel):
         editable = copy.copy(model)
         editable.params = dict(model.params) if model.params is not None else None
-        if (
-            editable.params
-            and self._diff_transfer
-            and trainer.global_rank == 0
-            and _has_fl_hooks(trainer, "on_fl_receive", "on_fl_model_loaded")
-        ):
+        has_hooks = _has_fl_hooks(trainer, "on_fl_receive", "on_fl_model_loaded")
+        if editable.params and self._diff_transfer and trainer.global_rank == 0 and has_hooks:
             editable.params = {k: v.clone() if isinstance(v, Tensor) else v for k, v in editable.params.items()}
-        editable.meta = dict(model.meta) if model.meta is not None else None
+        if model.meta is not None:
+            editable.meta = copy.deepcopy(model.meta) if has_hooks else dict(model.meta)
         _call_fl_hooks(trainer, pl_module, "on_fl_receive", editable)
         self._update_model(pl_module, editable)
         _call_fl_hooks(trainer, pl_module, "on_fl_model_loaded", editable)
