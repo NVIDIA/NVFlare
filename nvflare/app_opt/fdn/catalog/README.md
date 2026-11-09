@@ -198,9 +198,8 @@ and [local server setup](https://docs.unitycatalog.io/how-to/run-local-server).
 ## DuckDBConnector
 
 `nvflare.app_opt.fdn.catalog.duckdb_connector.DuckDBConnector` reads a mounted
-DuckDB database file. Install the `duckdb>=1.1` package at the site. It is not
-part of the `catalog` extra, and SQLAlchemy is not used: reflection through
-`duckdb-engine` fails on DuckDB's catalog, so the connector runs four fixed
+DuckDB database file. Install `duckdb>=1.1`, which `nvflare[catalog]` includes.
+SQLAlchemy is not used: reflection through `duckdb-engine` fails on DuckDB's catalog, so the connector runs four fixed
 queries against DuckDB's own `information_schema` and `duckdb_constraints()`.
 Column names, physical types, nullability, primary keys and foreign keys are
 published; no application rows are read.
