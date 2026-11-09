@@ -99,6 +99,21 @@ class TestSchema:
             read(root)
 
 
+def test_an_unreadable_directory_is_a_safe_connector_error_that_names_no_path(tmp_path, monkeypatch):
+    write(tmp_path / "events" / "part.parquet", value=[1])
+    original = Path.iterdir
+
+    def broken(self):
+        if self.name == "events":
+            raise PermissionError(f"denied: {self}")
+        return original(self)
+
+    monkeypatch.setattr(Path, "iterdir", broken)
+    with pytest.raises(ConnectorError) as e:
+        read(tmp_path)
+    assert not e.value.budget and str(tmp_path) not in str(e.value)
+
+
 def test_a_symlinked_directory_is_not_followed_so_it_cannot_add_a_table(tmp_path):
     outside = tmp_path / "outside"
     write(outside / "secret.parquet", value=[1])

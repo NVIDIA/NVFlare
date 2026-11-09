@@ -130,9 +130,13 @@ class ParquetConnector(CatalogConnector):
 
         def children(directory):
             check()
-            for path in directory.iterdir():
-                check()
-                yield path
+            try:
+                for path in directory.iterdir():
+                    check()
+                    yield path
+            except OSError:
+                # unreadable, or removed during the walk; never the raw error, which names a local path
+                raise ConnectorError("dataset directory is unreadable") from None
             check()
 
         check()

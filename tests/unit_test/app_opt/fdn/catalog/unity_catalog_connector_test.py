@@ -257,3 +257,28 @@ def test_databricks_workspace_uses_same_rest_contract_and_follows_empty_pages(tr
     )
     assert all(call[1]["headers"]["Authorization"] == "Bearer site-managed-token" for call in transport.calls)
     assert "site-managed-token" not in json.dumps(result.to_wire())
+
+
+def test_a_netrc_login_never_replaces_the_configured_bearer_token(tmp_path, monkeypatch):
+    """requests applies a matching .netrc login over an Authorization header unless the session has its own auth.
+    This uses the real Session and stops at the point where the request would be sent."""
+    netrc = tmp_path / "netrc"
+    netrc.write_text("machine localhost login someone password other-secret\n")
+    netrc.chmod(0o600)
+    monkeypatch.setenv("NETRC", str(netrc))
+    monkeypatch.setenv("UNITY_CATALOG_URL", "http://localhost:8080/api/2.1/unity-catalog")
+    monkeypatch.setenv("UC_TOKEN", "site-token")
+    sent = []
+
+    def send(self, request, **kwargs):
+        sent.append(request.headers.get("Authorization"))
+        response = requests.Response()
+        response.status_code = 200
+        response._content = b'{"tables": []}'
+        return response
+
+    monkeypatch.setattr(requests.Session, "send", send)
+    subject.UnityCatalogConnector({}, token_env="UC_TOKEN").read_catalog(
+        "ds", LIMITS, {"catalog": "main", "schema": "default"}
+    )
+    assert sent == ["Bearer site-token"]

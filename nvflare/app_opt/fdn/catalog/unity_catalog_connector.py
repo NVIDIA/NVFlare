@@ -25,6 +25,12 @@ from nvflare.app_common.fdn.catalog.site.connector import CatalogConnector, Conn
 from nvflare.app_opt.fdn.catalog._metadata import ReadBudget, build_catalog, selection
 
 
+def _keep_request_headers(request):
+    """Session auth that changes nothing. A session with no auth of its own lets requests apply a matching .netrc
+    login, which would replace the configured Authorization header; any auth of its own turns that off."""
+    return request
+
+
 class UnityCatalogConnector(CatalogConnector):
     """One dataset maps to one UC catalog/schema, optionally restricted to selected tables.
 
@@ -78,6 +84,7 @@ class UnityCatalogConnector(CatalogConnector):
 
         try:
             with requests.Session() as session:
+                session.auth = _keep_request_headers
 
                 def get(path, params=None):
                     budget.request()
