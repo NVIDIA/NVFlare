@@ -95,6 +95,8 @@ In step mode:
   and `max_steps` do not bound it: step mode lifts both at `on_train_start`, epochs keep cycling the data, and `fit()`
   ends when a receive returns no training task. `update_fit_loop` has no effect.
 - `restore_state` has no effect and `RestoreState` is not installed: the optimizer lives through the single `fit()`.
+  With task lifetime each task runs the script again, so every round starts with a fresh optimizer; use job lifetime
+  to keep optimizer state across rounds.
 - `train_with_evaluation=True` in the job config raises `ValueError` when `patch()` runs.
 - A site that stops on its own (`EarlyStopping`, `max_time`, `trainer.should_stop`) sends its open round, which may be
   shorter than N steps, and leaves. The server then handles the missing site as it handles any client that stops

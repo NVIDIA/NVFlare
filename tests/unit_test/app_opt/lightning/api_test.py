@@ -1709,6 +1709,16 @@ def test_patch_rejects_implicit_memory_restoration_in_task_workers(lightning_cli
         assert not any(isinstance(cb, RestoreState) for cb in trainer.callbacks)
 
 
+def test_patch_allows_restore_state_in_task_workers_in_step_mode(lightning_client):
+    trainer = SimpleNamespace(callbacks=[], global_rank=0)
+    lightning_client.sys_info["task_checkpoint"] = {"input": None}
+
+    lightning_patch(trainer, sync_every_n_steps=2)
+
+    assert any(isinstance(cb, _StepSyncFLCallback) for cb in trainer.callbacks)
+    assert not any(isinstance(cb, RestoreState) for cb in trainer.callbacks)
+
+
 def test_patch_existing_callback_without_client_context(lightning_client):
     callback = FLCallback()
     client_api.default_context = None

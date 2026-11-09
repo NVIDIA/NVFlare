@@ -168,7 +168,7 @@ def patch(
         context = get_context()
     except RuntimeError:
         context = None
-    if restore_state and context is not None and "task_checkpoint" in system_info(ctx=context):
+    if restore_state and not step_mode and context is not None and "task_checkpoint" in system_info(ctx=context):
         raise ValueError(
             "Lightning restore_state=True keeps optimizer and scheduler state only in memory and cannot "
             "restore it across task workers. Use job lifetime, or set restore_state=False and handle "
