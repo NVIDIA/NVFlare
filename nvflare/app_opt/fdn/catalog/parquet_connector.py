@@ -38,18 +38,22 @@ class ParquetConnector(CatalogConnector):
         deadline = time.monotonic() + limits.max_duration_s
         calls = 0
 
-        def read_schema(path: Path):
+        def spend():
+            """One call of the budget, shared by listing a part file and reading a footer."""
             nonlocal calls
             calls += 1
             if calls > limits.max_calls or time.monotonic() >= deadline:
                 raise ConnectorError("read budget exceeded", budget=True)
+
+        def read_schema(path: Path):
+            spend()
             try:
                 return pq.read_schema(path)
             except Exception:
                 raise ConnectorError("parquet metadata is unreadable") from None
 
         tables = []
-        for name, parts in self._table_files(root, deadline, limits.max_calls):
+        for name, parts in self._table_files(root, deadline, spend):
             schema = read_schema(parts[0])
             for part in parts[1:]:
                 if read_schema(part) != schema:
@@ -115,9 +119,10 @@ class ParquetConnector(CatalogConnector):
         return catalog
 
     @staticmethod
-    def _table_files(root: Path, deadline: float, max_calls: int) -> list[tuple[str, list[Path]]]:
-        """(table name, part files) in name order. The mount's listing order is not stable, so sort. The walk of a
-        partitioned table stops at the read budget: each part costs a read, and a deep tree can take long to list."""
+    def _table_files(root: Path, deadline: float, spend) -> list[tuple[str, list[Path]]]:
+        """(table name, part files) in name order. The mount's listing order is not stable, so sort. Each part file
+        listed costs one call of the read budget (``spend``), which its footer read then costs again, so the walk of
+        a partitioned table stops at the budget and a deep tree cannot take long to list."""
 
         def check():
             if time.monotonic() >= deadline:
@@ -134,13 +139,9 @@ class ParquetConnector(CatalogConnector):
         if root.is_file():
             return [(root.stem, [root])]
         tables = []
-        count = 0
 
         def add(parts, path):
-            nonlocal count
-            count += 1
-            if count > max_calls:
-                raise ConnectorError("read budget exceeded", budget=True)
+            spend()
             parts.append(path)
 
         for child in children(root):
@@ -148,7 +149,7 @@ class ParquetConnector(CatalogConnector):
                 parts = []
                 add(parts, child)
                 tables.append((child.stem, parts))
-            elif child.is_dir():
+            elif child.is_dir() and not child.is_symlink():
                 parts, pending = [], [child]
                 while pending:
                     for part in children(pending.pop()):

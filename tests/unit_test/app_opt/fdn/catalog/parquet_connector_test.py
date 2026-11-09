@@ -99,6 +99,18 @@ class TestSchema:
             read(root)
 
 
+def test_a_symlinked_directory_is_not_followed_so_it_cannot_add_a_table(tmp_path):
+    outside = tmp_path / "outside"
+    write(outside / "secret.parquet", value=[1])
+    dataset = tmp_path / "dataset"
+    write(dataset / "person.parquet", person_id=pa.array([1], pa.int64()))
+    try:
+        (dataset / "linked").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks are not available")
+    assert [t.name for t in read(dataset).tables] == ["person"]
+
+
 class TestBudgets:
     def test_the_walk_of_a_partitioned_table_stops_at_the_call_budget(self, tmp_path):
         for i in range(5):
@@ -124,13 +136,14 @@ class TestBudgets:
         assert e.value.budget
 
     def test_unverified_parts_are_a_budget_failure_not_a_catalog(self, root):
-        # two calls cover one file per table; the second part of "visit" cannot be verified
+        # three parts are listed (3 calls), then footers are read; the last footer is the sixth call
         with pytest.raises(ConnectorError) as e:
-            read(root, ReadLimits(30, 2, 1000))
+            read(root, ReadLimits(30, 5, 1000))
         assert e.value.budget
 
-    def test_every_part_verified_within_budget(self, root):
-        catalog = read(root, ReadLimits(30, 3, 1000))
+    def test_every_part_listed_and_verified_within_budget(self, root):
+        # each of the three parts costs one call to list and one to read
+        catalog = read(root, ReadLimits(30, 6, 1000))
         assert [t.name for t in catalog.tables] == ["person", "visit"]
 
     def test_record_budget(self, root):
