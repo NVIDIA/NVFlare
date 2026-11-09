@@ -26,7 +26,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Optional
 
-from . import accumulator, filesystem_probe, handoff
+from . import filesystem_probe, handoff
 from .contract import (
     SCHEMA_VERSION,
     _capacity_time_from_validated,
@@ -235,6 +235,31 @@ def _unavailable(issue: str) -> dict[str, Any]:
     return {"status": "unavailable", "issues": [issue]}
 
 
+def _startup_capacity_snapshot(capacity_probe, prior_observation_incomplete):
+    """Keep one startup observation and its quality, without resampling."""
+
+    try:
+        capacity = capacity_probe()
+        if not isinstance(capacity, Mapping):
+            raise TypeError("capacity probe must return a mapping")
+        value = dict(capacity)
+        if "status" not in value and not all(name in value for name in ("cpu", "memory", "gpu")):
+            value.update(status="partial", issues=["observation_incomplete"])
+        codes = value.pop("issues", [])
+        result = normalize_measurement("resource_capacity", value)
+        normalize_scope_issues(
+            [{"metric": "resource_capacity", "code": code} for code in codes], {"resource_capacity": result}
+        )
+        if codes:
+            result["issues"] = deepcopy(codes)
+    except Exception:
+        return _unavailable("observation_incomplete")
+    if prior_observation_incomplete:
+        result["status"] = "partial" if any(name in result for name in ("cpu", "memory", "gpu")) else "unavailable"
+        result["issues"] = sorted(set(result.get("issues", [])) | {"observation_incomplete"})
+    return result
+
+
 def _fold_measurements(name, current, contribution, issues=None):
     issues = [] if issues is None else issues
     aggregate = {
@@ -272,18 +297,9 @@ class ExecutionResourceCollector:
         include_children: bool = True,
         known_attribution_incomplete: bool = False,
     ):
-        self._accumulator = accumulator.ResourceCapacityRecorder()
         self._clock_ns = clock_ns
         self._snapshot: Optional[dict[str, Any]] = None
-        self._startup_capacity = {}
-        self._prior_observation_incomplete = prior_observation_incomplete
-        try:
-            capacity = capacity_probe()
-            if not isinstance(capacity, Mapping):
-                raise TypeError("capacity probe must return a mapping")
-            self._startup_capacity = deepcopy(dict(capacity))
-        except Exception:
-            pass
+        self._startup_capacity = _startup_capacity_snapshot(capacity_probe, prior_observation_incomplete)
         # Capacity probing finishes before both baselines, excluding the
         # inventory command's wait and CPU work from execution measurements.
         self._start_ns = self._read_clock()
@@ -323,16 +339,10 @@ class ExecutionResourceCollector:
                     timing["duration_seconds"] = duration
             except OverflowError:
                 pass
-        try:
-            self._accumulator.observe(self._startup_capacity)
-            if self._prior_observation_incomplete:
-                self._accumulator.mark_prior_observation_incomplete()
-        except Exception:
-            pass
         issues = []
         self._snapshot = {
             **timing,
-            "resource_capacity": scoped_measurement("resource_capacity", self._accumulator.finish(), issues),
+            "resource_capacity": scoped_measurement("resource_capacity", self._startup_capacity, issues),
             "cpu_consumed": scoped_measurement("cpu_consumed", cpu_consumed, issues),
         }
         self._snapshot["issues"] = normalize_scope_issues(

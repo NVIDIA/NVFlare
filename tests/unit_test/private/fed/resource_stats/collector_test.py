@@ -18,17 +18,13 @@ import os
 import pytest
 
 from nvflare.private.fed.resource_stats import collector
-from nvflare.private.fed.resource_stats.accumulator import ResourceCapacityRecorder
 from nvflare.private.fed.resource_stats.collector import (
+    ExecutionResourceCollector,
     JobResourceCollector,
     assemble_participant_summary,
     observe_retained_content,
 )
-from nvflare.private.fed.resource_stats.contract import (
-    canonical_json_bytes,
-    capacity_to_resource_time,
-    scoped_measurement,
-)
+from nvflare.private.fed.resource_stats.contract import canonical_json_bytes, capacity_to_resource_time
 from nvflare.private.fed.resource_stats.handoff import (
     INTERNAL_HANDOFF_KIND,
     INTERNAL_HANDOFF_VERSION,
@@ -50,10 +46,12 @@ def no_native_gpu_queries(monkeypatch):
 
 
 def test_capacity_retains_numeric_cpu_memory_and_gpu_count():
-    accumulator = ResourceCapacityRecorder()
-    accumulator.observe({"cpu": {"units": 4.0}, "memory": {"bytes": 1024}, "gpu": {"count": 2}})
+    instance = ExecutionResourceCollector(
+        capacity_probe=lambda: {"cpu": {"units": 4.0}, "memory": {"bytes": 1024}, "gpu": {"count": 2}},
+        clock_ns=lambda: 0,
+    )
 
-    result = accumulator.finish()
+    result = instance.stop()["resource_capacity"]
 
     assert result["cpu"] == {"units": 4}
     assert result["gpu"] == {"count": 2}
@@ -62,42 +60,45 @@ def test_capacity_retains_numeric_cpu_memory_and_gpu_count():
 
 @pytest.mark.parametrize("count", [-1, 1.5, True, "2"])
 def test_gpu_capacity_rejects_non_integer_or_negative_counts(count):
-    recorder = ResourceCapacityRecorder()
-    with pytest.raises(ValueError):
-        recorder.observe({"gpu": {"count": count}})
+    instance = ExecutionResourceCollector(capacity_probe=lambda: {"gpu": {"count": count}}, clock_ns=lambda: 0)
+
+    snapshot = instance.stop()
+
+    assert snapshot["resource_capacity"] == {"status": "unavailable"}
+    assert {"metric": "resource_capacity", "code": "observation_incomplete"} in snapshot["issues"]
 
 
 def test_fallback_capacity_keeps_numeric_values_and_full_observed_duration():
-    recorder = ResourceCapacityRecorder()
-    recorder.observe(
-        {
+    instance = ExecutionResourceCollector(
+        capacity_probe=lambda: {
             "status": "partial",
             "issues": ["observation_incomplete"],
             "cpu": {"units": 8},
             "memory": {"bytes": 4096},
             "gpu": {"count": 0},
-        }
+        },
+        clock_ns=lambda: 0,
     )
 
-    result = recorder.finish()
+    snapshot = instance.stop()
+    result = snapshot["resource_capacity"]
 
     assert result == {
         "status": "partial",
-        "issues": ["observation_incomplete"],
         "cpu": {"units": 8},
         "memory": {"bytes": 4096},
         "gpu": {"count": 0},
     }
-    issues = []
-    capacity = scoped_measurement("resource_capacity", result, issues)
-    assert capacity_to_resource_time(capacity, 10, issues)["cpu"] == {"unit_seconds": 80}
+    assert {"metric": "resource_capacity", "code": "observation_incomplete"} in snapshot["issues"]
+    assert capacity_to_resource_time(result, 10, snapshot["issues"])["cpu"] == {"unit_seconds": 80}
 
 
 def test_grouped_cpu_shape_is_not_an_alternate_capacity_format():
-    recorder = ResourceCapacityRecorder()
+    instance = ExecutionResourceCollector(
+        capacity_probe=lambda: {"cpu": {"groups": [{"units": 8}]}}, clock_ns=lambda: 0
+    )
 
-    with pytest.raises((TypeError, ValueError)):
-        recorder.observe({"cpu": {"groups": [{"units": 8}]}})
+    assert instance.stop()["resource_capacity"] == {"status": "unavailable"}
 
 
 def test_cpu_only_host_without_loadable_driver_has_partial_resource_capacity(monkeypatch):
@@ -109,12 +110,12 @@ def test_cpu_only_host_without_loadable_driver_has_partial_resource_capacity(mon
     capacity = collector.probe_capacity()
     assert "gpu" not in capacity
 
-    accumulator = ResourceCapacityRecorder()
-    accumulator.observe(capacity)
-    result = accumulator.finish()
+    instance = ExecutionResourceCollector(capacity_probe=lambda: capacity, clock_ns=lambda: 0)
+    snapshot = instance.stop()
+    result = snapshot["resource_capacity"]
 
     assert result["status"] == "partial"
-    assert result["issues"] == ["observation_incomplete"]
+    assert {"metric": "resource_capacity", "code": "observation_incomplete"} in snapshot["issues"]
     assert "duration_seconds" not in result
     assert "gpu" not in result
 
