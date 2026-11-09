@@ -488,10 +488,18 @@ class _StepSyncFLCallback(_FLCallbackBase):
             )
         self.sync_every_n_steps = sync_every_n_steps
         self._trainer_step_budget = None
+        self._trainer_limits = None
 
     def on_train_start(self, trainer, pl_module):
         budget = trainer.estimated_stepping_batches
         self._trainer_step_budget = int(budget) if 0 < budget < float("inf") else None
+        fit_loop = trainer.fit_loop
+        self._trainer_limits = (
+            fit_loop.max_epochs,
+            fit_loop.epoch_loop.max_steps,
+            fit_loop.min_epochs,
+            fit_loop.epoch_loop.min_steps,
+        )
         trainer.fit_loop.max_epochs = -1
         trainer.fit_loop.epoch_loop.max_steps = -1
         trainer.fit_loop.min_epochs = 0
@@ -526,8 +534,21 @@ class _StepSyncFLCallback(_FLCallbackBase):
             self._finish_round_and_send(trainer, pl_module)
 
     def on_train_end(self, trainer, pl_module):
+        self._restore_trainer_limits(trainer)
         if self._training_round_started:
             self._finish_round_and_send(trainer, pl_module)
+
+    def on_exception(self, trainer, pl_module, exception):
+        self._restore_trainer_limits(trainer)
+
+    def _restore_trainer_limits(self, trainer):
+        if self._trainer_limits is None:
+            return
+        fit_loop = trainer.fit_loop
+        fit_loop.max_epochs, fit_loop.epoch_loop.max_steps, fit_loop.min_epochs, fit_loop.epoch_loop.min_steps = (
+            self._trainer_limits
+        )
+        self._trainer_limits = None
 
     def _params_to_send(self, trainer, pl_module):
         if trainer.global_rank != 0:

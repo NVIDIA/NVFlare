@@ -1985,6 +1985,38 @@ def test_step_sync_stops_when_the_server_finishes_before_the_trainer_minimum(tra
     assert trainer.global_step == 4
 
 
+class FailAtStep(pl.Callback):
+    def __init__(self, step):
+        self.step = step
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if trainer.global_step == self.step:
+            raise RuntimeError("boom")
+
+
+def _trainer_limits(trainer):
+    fit_loop = trainer.fit_loop
+    return fit_loop.max_epochs, fit_loop.epoch_loop.max_steps, fit_loop.min_epochs, fit_loop.epoch_loop.min_steps
+
+
+@pytest.mark.parametrize("fails", [False, True], ids=["train-end", "exception"])
+def test_step_sync_restores_the_trainer_limits_after_fit(fails):
+    fake = _FakeFlare(_train_tasks(3))
+    callbacks = [FailAtStep(3)] if fails else []
+
+    with _flare(fake):
+        trainer = _pl_trainer(max_epochs=2, max_steps=7, min_epochs=1, min_steps=3, callbacks=callbacks)
+        limits = _trainer_limits(trainer)
+        lightning_patch(trainer, sync_every_n_steps=2)
+        if fails:
+            with pytest.raises(RuntimeError, match="boom"):
+                trainer.fit(RecordingNet(), train_dataloaders=_loader(4))
+        else:
+            trainer.fit(RecordingNet(), train_dataloaders=_loader(4))
+
+    assert _trainer_limits(trainer) == limits
+
+
 def test_step_sync_warns_once_when_training_passes_the_trainer_limit(caplog):
     fake = _FakeFlare(_train_tasks(4))
 
