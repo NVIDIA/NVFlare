@@ -12,12 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
+from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.core_cell import ReturnCode
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
+from nvflare.private.fed.server.server_commands import ServerCommands
 
 
 class TestAuxCommunicateAuthCheck:
@@ -58,3 +63,41 @@ def test_stopped_server_command_agent_rejects_requests_without_engine_access():
     assert execute_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.SERVICE_UNAVAILABLE
     assert aux_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.SERVICE_UNAVAILABLE
     engine.new_context.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "origin,peer",
+    [
+        ("site-1.attacker", "server"),  # authenticated client traffic relayed by the server
+        ("server", "site-1.attacker"),  # claimed server origin on a direct client connection
+        ("server", None),
+    ],
+)
+def test_control_commands_require_parent_origin_and_transport_peer(monkeypatch, origin, peer):
+    engine = MagicMock()
+    command = MagicMock()
+    monkeypatch.setattr(ServerCommands, "get_command", lambda name: command)
+    request = CellMessage({MessageHeaderKey.TOPIC: "abort", MessageHeaderKey.ORIGIN: origin}, Shareable())
+    # A wire header with a property key is not receiver-owned transport provenance.
+    request.set_header(MessagePropKey.ENDPOINT, SimpleNamespace(name="server"))
+    if peer is not None:
+        request.set_prop(MessagePropKey.ENDPOINT, SimpleNamespace(name=peer))
+
+    reply = ServerCommandAgent(engine, MagicMock()).execute_command(request)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.AUTHENTICATION_ERROR
+    command.process.assert_not_called()
+    engine.new_context.assert_not_called()
+
+
+def test_parent_can_issue_status_command(monkeypatch):
+    command = MagicMock()
+    command.process.return_value = Shareable({"result": "parent command processed"})
+    monkeypatch.setattr(ServerCommands, "get_command", lambda name: command)
+    request = CellMessage({MessageHeaderKey.TOPIC: "show_stats", MessageHeaderKey.ORIGIN: "server"}, Shareable())
+    request.set_prop(MessagePropKey.ENDPOINT, SimpleNamespace(name="server"))
+
+    reply = ServerCommandAgent(MagicMock(), MagicMock()).execute_command(request)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+    assert reply.payload["result"] == "parent command processed"
