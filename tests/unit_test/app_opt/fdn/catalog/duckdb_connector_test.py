@@ -31,7 +31,8 @@ def database(tmp_path):
     path = tmp_path / "source #1.duckdb"
     connection = duckdb.connect(str(path))
     try:
-        connection.execute("""
+        connection.execute(
+            """
             CREATE TABLE person (person_id INTEGER PRIMARY KEY, year_of_birth INTEGER NOT NULL, gender VARCHAR);
             CREATE TABLE condition_occurrence (condition_occurrence_id INTEGER PRIMARY KEY, person_id INTEGER,
                 condition_start_date DATE, cost DECIMAL(10, 2), tags VARCHAR[],
@@ -42,7 +43,8 @@ def database(tmp_path):
             CREATE SCHEMA other;
             CREATE TABLE other.extra (id INTEGER PRIMARY KEY);
             CREATE VIEW private_view AS SELECT * FROM person;
-            """)
+            """
+        )
     finally:
         connection.close()
     return path
