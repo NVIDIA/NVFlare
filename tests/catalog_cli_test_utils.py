@@ -19,12 +19,15 @@ from pathlib import Path
 
 from nvflare.app_common.fdn.catalog.server.commands import SEARCH, STATUS
 from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
+from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.proto import ProtoKey
 
 
 class CatalogSession:
-    def __init__(self, status="FINISHED:COMPLETED", error=None, health="OK"):
-        self.status, self.error, self.health = status, error, health
+    def __init__(self, status="FINISHED:COMPLETED", error=None, health="OK", api_status=None):
+        """``error`` is raised by the call. ``api_status`` is returned as a failed API response with no payload,
+        as the admin client does for a lost connection or an expired session."""
+        self.status, self.error, self.health, self.api_status = status, error, health, api_status
         self.closed = False
         self.submitted = None
         self.monitored = False
@@ -52,6 +55,8 @@ class CatalogSession:
     def do_command(self, command, props):
         if self.error:
             raise self.error
+        if self.api_status is not None:
+            return {ProtoKey.STATUS: self.api_status, ProtoKey.DETAILS: "simulated"}
         if command == SEARCH:
             payload = {"entries": [], "next_cursor": None, "total": 0, "facets": {}}
         elif command == STATUS:
@@ -70,7 +75,10 @@ class CatalogSession:
             }
         else:
             raise AssertionError(f"unexpected command: {command}")
-        return {ProtoKey.DATA: [{ProtoKey.TYPE: ProtoKey.DICT, ProtoKey.DATA: payload}]}
+        return {
+            ProtoKey.STATUS: APIStatus.SUCCESS,
+            ProtoKey.DATA: [{ProtoKey.TYPE: ProtoKey.DICT, ProtoKey.DATA: payload}],
+        }
 
     def close(self):
         self.closed = True
