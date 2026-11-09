@@ -1625,27 +1625,25 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 registry = StudyRegistryService.get_registry()
                 requested_study = meta[JobMetaKey.STUDY.value]
                 if registry:
-                    enrolled_sites = registry.get_sites(requested_study)
-                    if enrolled_sites is not None:
-                        deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value, {})
-                        invalid_sites = []
-                        seen_invalid_sites = set()
-                        for deployments in deploy_map.values():
-                            for site_name in extract_participants(deployments):
-                                if site_name == SERVER_SITE_NAME or site_name.upper() == ALL_SITES:
-                                    continue
-                                if site_name not in enrolled_sites:
-                                    if site_name not in seen_invalid_sites:
-                                        invalid_sites.append(site_name)
-                                        seen_invalid_sites.add(site_name)
-                        if invalid_sites:
-                            if len(invalid_sites) == 1:
-                                error = f"site '{invalid_sites[0]}' is not enrolled in study '{requested_study}'"
-                            else:
-                                quoted_names = ", ".join(f"'{name}'" for name in invalid_sites)
-                                error = f"sites {quoted_names} are not enrolled in study '{requested_study}'"
-                            conn.append_error(error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, error))
-                            return
+                    deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value, {})
+                    invalid_sites = []
+                    seen_invalid_sites = set()
+                    for deployments in deploy_map.values():
+                        for site_name in extract_participants(deployments):
+                            if site_name == SERVER_SITE_NAME or site_name.upper() == ALL_SITES:
+                                continue
+                            if not registry.is_site_allowed(requested_study, site_name):
+                                if site_name not in seen_invalid_sites:
+                                    invalid_sites.append(site_name)
+                                    seen_invalid_sites.add(site_name)
+                    if invalid_sites:
+                        if len(invalid_sites) == 1:
+                            error = f"site '{invalid_sites[0]}' is not available to study '{requested_study}'"
+                        else:
+                            quoted_names = ", ".join(f"'{name}'" for name in invalid_sites)
+                            error = f"sites {quoted_names} are not available to study '{requested_study}'"
+                        conn.append_error(error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, error))
+                        return
 
                 fl_ctx.set_prop(FLContextKey.JOB_META, meta, private=True, sticky=False)
                 engine.fire_event(EventType.SUBMIT_JOB, fl_ctx)

@@ -540,7 +540,7 @@ class TestMultiStudySessionIntegration:
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f)
 
-        with pytest.raises(InvalidJobDefinition, match="site 'site-3' is not enrolled in study 'study-a'"):
+        with pytest.raises(InvalidJobDefinition, match="site 'site-3' is not available to study 'study-a'"):
             study_a_session.submit_job(str(job_dir))
 
     def test_multistudy_prod_env_propagates_study_and_runtime_meta(self, multi_study_system):

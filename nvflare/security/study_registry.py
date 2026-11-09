@@ -16,6 +16,8 @@ import threading
 from copy import deepcopy
 from typing import Dict, Optional
 
+from nvflare.apis.job_def import DEFAULT_STUDY
+
 
 class StudyRegistry:
     FORMAT_VERSION = "1.0"
@@ -86,11 +88,26 @@ class StudyRegistry:
                 "admins": list(admin_list),
             }
 
+        self._named_study_sites = set()
+        for study_name, sites in self._sites.items():
+            if study_name != DEFAULT_STUDY:
+                self._named_study_sites.update(sites)
+
     def has_user(self, user_name: str, study: str) -> bool:
         return user_name in self._admins.get(study, set())
 
     def get_sites(self, study: str) -> Optional[set]:
         return self._sites.get(study)
+
+    def is_site_allowed(self, study: str, site: str) -> bool:
+        """Whether jobs of the study may be routed to the site.
+
+        A named study may use only its enrolled sites. The default study may use only sites
+        that are not enrolled in any named study, so it cannot bypass study isolation.
+        """
+        if study == DEFAULT_STUDY:
+            return site not in self._named_study_sites
+        return site in self._sites.get(study, set())
 
     def has_study(self, study: str) -> bool:
         return study in self._studies

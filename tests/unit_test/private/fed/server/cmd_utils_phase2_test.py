@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pytest
+
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.private.fed.server import cmd_utils as cmd_utils_module
 from nvflare.private.fed.server.cmd_utils import CommandUtil
+from nvflare.security.study_registry import StudyRegistry
 
 
 class _FakeConnection:
@@ -204,15 +207,20 @@ def test_validate_command_targets_errors_when_named_clients_are_outside_study(mo
     assert err == "site 'site-b' is not enrolled in study 'cancer-research'"
 
 
-def test_validate_command_targets_keeps_default_sessions_unfiltered_with_registry(monkeypatch):
-    _install_registry(monkeypatch, _FakeStudyRegistry(studies={"cancer-research": {"site-a"}}))
+@pytest.mark.parametrize("targets", [["client", "site-a", "site-b"], ["all"]], ids=["named-clients", "all"])
+def test_validate_command_targets_keeps_default_sessions_unfiltered_with_registry(monkeypatch, targets):
+    # Job routing excludes study-enrolled sites from the default study; client admin commands must not.
+    registry = StudyRegistry(
+        {"format_version": "1.0", "studies": {"cancer-research": {"site_orgs": {"org_a": ["site-a"]}}}}
+    )
+    _install_registry(monkeypatch, registry)
 
     conn = _FakeConnection(
         props={ConnProps.ACTIVE_STUDY: DEFAULT_STUDY},
         app_ctx=_FakeEngine([_FakeClient("site-a", "token-a"), _FakeClient("site-b", "token-b")]),
     )
 
-    err = CommandUtil().validate_command_targets(conn, ["client", "site-a", "site-b"])
+    err = CommandUtil().validate_command_targets(conn, targets)
 
     assert err == ""
     assert conn.get_prop(CommandUtil.TARGET_CLIENT_NAMES) == ["site-a", "site-b"]

@@ -31,7 +31,7 @@ from nvflare.apis.fl_constant import (
     ServerCommandKey,
     WorkspaceConstants,
 )
-from nvflare.apis.job_def import JobMetaKey, RunStatus, SubmitRecordKey, SubmitRecordState
+from nvflare.apis.job_def import ALL_SITES, JobMetaKey, RunStatus, SubmitRecordKey, SubmitRecordState
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
@@ -46,6 +46,7 @@ from nvflare.private.fed.server.job_cmds import (
     _create_list_job_cmd_parser,
 )
 from nvflare.private.fed.server.message_send import ClientReply
+from nvflare.security.study_registry import StudyRegistry
 
 TEST_CASES = [
     (
@@ -449,18 +450,13 @@ class _FakeClient:
         self.token = token
 
 
-class _FakeStudyRegistry:
-    def __init__(self, sites=None):
-        self.sites = sites or {}
-
-    def has_study(self, study):
-        return study in self.sites
-
-    def get_sites(self, study):
-        return self.sites.get(study)
-
-    def get_studies(self):
-        return {study: {"site_orgs": {"org": sorted(sites)}} for study, sites in self.sites.items()}
+def _study_registry(sites):
+    return StudyRegistry(
+        {
+            "format_version": "1.0",
+            "studies": {study: {"site_orgs": {"org": sorted(study_sites)}} for study, study_sites in sites.items()},
+        }
+    )
 
 
 class _FakeStudyRegistryService:
@@ -1884,7 +1880,7 @@ def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
     monkeypatch.setattr(
         _FakeStudyRegistryService,
         "registry",
-        _FakeStudyRegistry(sites={"cancer-research": {"site1"}}),
+        _study_registry({"cancer-research": {"site1"}}),
         raising=False,
     )
 
@@ -1948,7 +1944,7 @@ def test_authorize_job_id_keeps_cert_role_before_authz(monkeypatch):
     monkeypatch.setattr(
         _FakeStudyRegistryService,
         "registry",
-        _FakeStudyRegistry(sites={"cancer-research": {"site1"}}),
+        _study_registry({"cancer-research": {"site1"}}),
         raising=False,
     )
 
@@ -2024,7 +2020,7 @@ def test_submit_job_persists_cert_submitter_role(monkeypatch):
     monkeypatch.setattr(
         _FakeStudyRegistryService,
         "registry",
-        _FakeStudyRegistry(sites={"cancer-research": {"site1"}}),
+        _study_registry({"cancer-research": {"site1"}}),
         raising=False,
     )
     monkeypatch.setattr(
@@ -2066,7 +2062,7 @@ def test_submit_job_rejects_deploy_map_sites_outside_study(monkeypatch):
     monkeypatch.setattr(
         _FakeStudyRegistryService,
         "registry",
-        _FakeStudyRegistry(sites={"cancer-research": {"site1", "site2"}}),
+        _study_registry({"cancer-research": {"site1", "site2"}}),
         raising=False,
     )
     monkeypatch.setattr(
@@ -2095,7 +2091,90 @@ def test_submit_job_rejects_deploy_map_sites_outside_study(monkeypatch):
     JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
 
     assert conn.errors
-    assert "site 'site3' is not enrolled in study 'cancer-research'" in conn.errors[0][0]
+    assert "site 'site3' is not available to study 'cancer-research'" in conn.errors[0][0]
+
+
+@pytest.mark.parametrize(
+    "deploy_sites, expected_error",
+    [
+        pytest.param(["server", "site1"], "site 'site1' is not available to study 'default'", id="study-site"),
+        pytest.param(["server", "site3"], None, id="unenrolled-site"),
+        pytest.param([ALL_SITES], None, id="all-sites"),
+    ],
+)
+def test_submit_job_in_default_study_rejects_sites_enrolled_in_named_studies(monkeypatch, deploy_sites, expected_error):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(
+        _FakeStudyRegistryService,
+        "registry",
+        _study_registry({"cancer-research": {"site1", "site2"}}),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        lambda: _FakeJobMetaValidatorWithMeta(
+            {
+                JobMetaKey.JOB_NAME.value: "default-job",
+                JobMetaKey.DEPLOY_MAP.value: {"app1": deploy_sites},
+            }
+        ),
+    )
+
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.FILE_LOCATION: "job.zip",
+            ConnProps.ACTIVE_STUDY: "default",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "lead",
+        },
+    )
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    if expected_error:
+        assert conn.errors[0][0] == expected_error
+        assert engine.job_def_manager.created_meta is None
+    else:
+        assert conn.errors == []
+        assert engine.job_def_manager.created_meta[JobMetaKey.STUDY.value] == "default"
+
+
+def test_submit_job_in_default_study_is_unrestricted_without_named_studies(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(_FakeStudyRegistryService, "registry", _study_registry({}), raising=False)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        lambda: _FakeJobMetaValidatorWithMeta(
+            {
+                JobMetaKey.JOB_NAME.value: "default-job",
+                JobMetaKey.DEPLOY_MAP.value: {"app1": ["server", "site1"]},
+            }
+        ),
+    )
+
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.FILE_LOCATION: "job.zip",
+            ConnProps.ACTIVE_STUDY: "default",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "lead",
+        },
+    )
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors == []
+    assert engine.job_def_manager.created_meta is not None
 
 
 def test_download_job_rejects_unfinished_job_before_packaging(monkeypatch, tmp_path):
@@ -2268,7 +2347,7 @@ def test_submit_job_reports_all_deploy_map_sites_outside_study(monkeypatch):
     monkeypatch.setattr(
         _FakeStudyRegistryService,
         "registry",
-        _FakeStudyRegistry(sites={"cancer-research": {"site1"}}),
+        _study_registry({"cancer-research": {"site1"}}),
         raising=False,
     )
     monkeypatch.setattr(
@@ -2297,7 +2376,7 @@ def test_submit_job_reports_all_deploy_map_sites_outside_study(monkeypatch):
     JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
 
     assert conn.errors
-    assert conn.errors[0][0] == "sites 'site2', 'site3' are not enrolled in study 'cancer-research'"
+    assert conn.errors[0][0] == "sites 'site2', 'site3' are not available to study 'cancer-research'"
     assert engine.job_def_manager.created_meta is None
     assert conn.successes == []
 

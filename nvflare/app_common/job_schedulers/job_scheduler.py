@@ -122,9 +122,10 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         online_site_names = [x.name for x in online_clients]
         registry = StudyRegistryService.get_registry()
         job_study = get_job_meta_study(job.meta)
-        enrolled_sites = registry.get_sites(job_study) if registry else None
-        if enrolled_sites is not None:
-            online_site_names = [site_name for site_name in online_site_names if site_name in enrolled_sites]
+        if registry:
+            online_site_names = [
+                site_name for site_name in online_site_names if registry.is_site_allowed(job_study, site_name)
+            ]
 
         if not job.deploy_map:
             self.log_error(fl_ctx, f"Job '{job.job_id}' does not have deploy_map, can't be scheduled.")
@@ -141,9 +142,10 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                     applicable_sites = online_site_names
                     sites_to_app = {x: app_name for x in online_site_names}
                     sites_to_app[SERVER_SITE_NAME] = app_name
-                elif enrolled_sites is not None and site_name != SERVER_SITE_NAME and site_name not in enrolled_sites:
-                    self.log_error(fl_ctx, f"Job {job.job_id} targets site '{site_name}' outside study '{job_study}'")
-                    return SCHEDULE_RESULT_BLOCK, None, f"site '{site_name}' not in study '{job_study}'"
+                elif registry and site_name != SERVER_SITE_NAME and not registry.is_site_allowed(job_study, site_name):
+                    error = f"site '{site_name}' is not available to study '{job_study}'"
+                    self.log_error(fl_ctx, f"Job {job.job_id}: {error}")
+                    return SCHEDULE_RESULT_BLOCK, None, error
                 elif site_name in online_site_names:
                     applicable_sites.append(site_name)
                     sites_to_app[site_name] = app_name
@@ -167,11 +169,12 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             if site_name not in seen:
                 seen.add(site_name)
                 required_sites.append(site_name)
-        if enrolled_sites is not None:
+        if registry:
             for site_name in required_sites:
-                if site_name not in enrolled_sites:
-                    self.log_error(fl_ctx, f"Job {job.job_id} requires site '{site_name}' outside study '{job_study}'")
-                    return SCHEDULE_RESULT_BLOCK, None, f"site '{site_name}' not in study '{job_study}'"
+                if not registry.is_site_allowed(job_study, site_name):
+                    error = f"site '{site_name}' is not available to study '{job_study}'"
+                    self.log_error(fl_ctx, f"Job {job.job_id}: {error}")
+                    return SCHEDULE_RESULT_BLOCK, None, error
         if required_sites:
             for s in required_sites:
                 if s not in applicable_sites:

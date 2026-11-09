@@ -278,7 +278,14 @@ At submit time:
 
 - the job is tagged with the session's active study
 - `submitter_role` is persisted as the **effective** role for that session
-- `deploy_map` sites must all be enrolled in the active study
+- `deploy_map` sites must all be available to the active study
+- a named study's available sites are its enrolled sites
+- the `default` study's available sites are those not enrolled in any named study; with no named studies, every
+  site is available
+- a study missing from the registry has no available sites
+- availability comes from `StudyRegistry.is_site_allowed(study, site)` on the live registry, so runtime `add-site` /
+  `remove-site` apply to the next submission
+- violations are rejected with `site '<site>' is not available to study '<study>'`
 
 ### Client Target Filtering
 
@@ -286,14 +293,20 @@ For study-aware client operations:
 
 - `check_status client` shows only enrolled clients in the active study
 - mixed `all` operations include the server plus only the enrolled clients for that study
+- `default` sessions are not filtered: site org admins use them to operate their own sites under the `o:site`
+  authorization rules, so the `default` routing restriction applies only to jobs
 
 ### Scheduler
 
 The scheduler enforces the study boundary again at dispatch time:
 
-- `@ALL` is narrowed to the online clients enrolled in the job's study
-- explicit sites outside the study block scheduling
-- required sites outside the study block scheduling
+- `@ALL` is narrowed to the online clients available to the job's study
+- explicit sites not available to the study block scheduling
+- required sites not available to the study block scheduling
+
+Availability uses the same `StudyRegistry.is_site_allowed` rule as submission, so `default` jobs (including legacy
+jobs with no `study` field) never dispatch to a site enrolled in a named study. Running jobs are unaffected by
+registry changes; queued jobs are re-evaluated on each scheduling attempt.
 
 This is in addition to submit-time `deploy_map` validation.
 
@@ -356,4 +369,5 @@ Use separate deployments when:
 | Provisioned study schema | Each study stores `site_orgs: { org: [site, ...] }` plus `admins: [user, ...]`. |
 | Authorization config | Existing `authorization.json` RBAC remains in effect, using the effective role for each request. |
 | Update model | Ongoing study mapping changes are runtime-managed; dynamic provisioning does not manage studies. |
+| Default study routing | With named studies registered, `default` jobs only reach sites enrolled in no named study. |
 | Runtime posture | Multi-study provides authorization and scheduling boundaries within a shared deployment. |
