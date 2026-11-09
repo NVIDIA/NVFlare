@@ -541,8 +541,17 @@ class _StepSyncFLCallback(_FLCallbackBase):
 
     def on_train_end(self, trainer, pl_module):
         self._restore_trainer_limits(trainer)
-        if self._training_round_started:
-            self._finish_round_and_send(trainer, pl_module)
+        if not self._training_round_started:
+            return
+        if self._get_round_num_steps(trainer) == 0:
+            self.logger.warning(
+                f"Training stopped before the first optimizer step of round {self.current_round}. No result is sent "
+                "for it, so the server handles this site as one that stopped responding."
+            )
+            self._training_round_started = False
+            self._round_start_global_step = None
+            return
+        self._finish_round_and_send(trainer, pl_module)
 
     def on_exception(self, trainer, pl_module, exception):
         self._restore_trainer_limits(trainer)

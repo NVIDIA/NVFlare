@@ -2005,6 +2005,38 @@ def test_step_sync_sends_the_open_round_when_the_trainer_stops_itself():
     assert trainer.global_step == 6
 
 
+class StopAtBatch(pl.Callback):
+    def __init__(self, batch_idx):
+        self.batch_idx = batch_idx
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if batch_idx == self.batch_idx:
+            trainer.should_stop = True
+
+
+@pytest.mark.parametrize("with_scaffold", [False, True])
+def test_step_sync_does_not_send_a_round_without_optimizer_steps(caplog, with_scaffold):
+    module = RecordingNet()
+    meta = {AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: _zero_controls(module)} if with_scaffold else None
+    fake = _FakeFlare(_train_tasks(10, meta=meta))
+
+    with caplog.at_level(logging.WARNING, logger="_StepSyncFLCallback"):
+        trainer = _fit_with_step_sync(
+            fake,
+            module,
+            _loader(8),
+            sync_every_n_steps=2,
+            max_epochs=1,
+            accumulate_grad_batches=2,
+            callbacks=[StopAtBatch(4)],
+        )
+
+    assert fake.steps() == [2]
+    assert len(fake.received) == 2
+    assert trainer.global_step == 2
+    assert [r for r in caplog.records if "stopped before the first optimizer step of round 1" in r.getMessage()]
+
+
 @pytest.mark.timeout(60)
 @pytest.mark.parametrize("trainer_kwargs", [{"min_steps": 100}, {"min_epochs": 5}], ids=["min-steps", "min-epochs"])
 def test_step_sync_stops_when_the_server_finishes_before_the_trainer_minimum(trainer_kwargs):
