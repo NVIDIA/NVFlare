@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import json
 import os
 import time
@@ -84,6 +85,7 @@ class SimEnv(ExecEnv):
                 If not provided, the number of threads will be set to the number of clients.
             gpu_config (str, optional): GPU configuration string. Defaults to None.
             log_config (str, optional): Log configuration string. Defaults to None.
+                Validated at deployment so imports, script setup and export-only use need no logging file.
             workspace_root (str, optional): Root directory for simulation workspace. Defaults to WORKSPACE_ROOT.
                 The process-level NVFLARE_SIMULATOR_WORKSPACE_ROOT orchestration setting takes precedence when set.
             extra: extra env config info
@@ -104,10 +106,6 @@ class SimEnv(ExecEnv):
         self.num_threads = v.num_threads if v.num_threads is not None else resolved_num_clients
         self.gpu_config = v.gpu_config
         self.log_config = self._log_config_override if self._log_config_override is not None else v.log_config
-        if self.log_config is not None:
-            self.log_config = validate_log_config(self.log_config)
-        elif os.environ.get(FL_LOG_LEVEL):
-            validate_log_config(os.environ[FL_LOG_LEVEL])
         self.clients = v.clients or None
         workspace_override = os.environ.get(SIMULATOR_WORKSPACE_ROOT_ENV_VAR)
         if workspace_override and workspace_override != v.workspace_root:
@@ -121,7 +119,27 @@ class SimEnv(ExecEnv):
         self.last_run_failed = False
         self._job_statuses: dict[str, str] = {}
 
+    def _validate_log_config(self):
+        """Check the effective selector at deployment, after script setup and outside export-only paths."""
+        config = self.log_config if self.log_config is not None else (os.environ.get(FL_LOG_LEVEL) or None)
+        if config is None:
+            return
+        try:
+            validated = validate_log_config(config)
+        except ValueError as exc:
+            # CLI/environment inputs get a usage error; an invalid explicit API
+            # argument remains a ValueError for the calling application to handle.
+            source = "--log_config" if self._log_config_override is not None else None
+            if self.log_config is None:
+                source = FL_LOG_LEVEL
+            if source:
+                argparse.ArgumentParser(add_help=False).error(f"{source}: {exc}")
+            raise
+        if self.log_config is not None:
+            self.log_config = validated
+
     def deploy(self, job: FedJob):
+        self._validate_log_config()
         job_id = job.name
         self._job_statuses.pop(job_id, None)
         self.last_run_failed = False

@@ -114,7 +114,7 @@ def test_malformed_shared_logging_argument_reports_usage_error(monkeypatch, caps
 
 
 @pytest.mark.parametrize("source", ["argument", "environment"])
-def test_invalid_log_selector_is_rejected_before_arguments_or_environment_change(monkeypatch, capsys, source):
+def test_invalid_log_selector_is_collected_without_runtime_validation(monkeypatch, source):
     import sys
 
     import nvflare.recipe._args as args_module
@@ -122,14 +122,10 @@ def test_invalid_log_selector_is_rejected_before_arguments_or_environment_change
     monkeypatch.setenv("FL_LOG_LEVEL", "progres" if source == "environment" else "concise")
     argv = ["job.py", "--log_config", "progres"] if source == "argument" else ["job.py"]
     monkeypatch.setattr(sys, "argv", argv.copy())
-    with pytest.raises(SystemExit) as exc_info:
-        importlib.reload(args_module)
-    assert exc_info.value.code == 2
-    assert sys.argv == argv
-    assert os.environ["FL_LOG_LEVEL"] == ("progres" if source == "environment" else "concise")
-    error = capsys.readouterr().err
-    assert "unknown logging configuration 'progres'" in error
-    assert "choose a mode" in error
+    importlib.reload(args_module)
+    assert sys.argv == ["job.py"]
+    assert args_module._RECIPE_LOG_CONFIG == ("progres" if source == "argument" else None)
+    assert os.environ["FL_LOG_LEVEL"] == "progres"
 
 
 def test_empty_log_environment_is_treated_as_unset(monkeypatch):

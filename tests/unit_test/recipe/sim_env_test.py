@@ -84,9 +84,36 @@ def test_sim_env_validation():
 
 
 def test_sim_env_rejects_invalid_api_logging_selector_before_creating_workspace(tmp_path):
-    with pytest.raises(ValueError, match="unknown logging configuration 'progres'"):
-        SimEnv(num_clients=1, log_config="progres", workspace_root=str(tmp_path / "simulation"))
+    env = SimEnv(num_clients=1, log_config="progres", workspace_root=str(tmp_path / "simulation"))
+    job = _make_job()
+    with patch.object(job, "simulator_run") as run:
+        with pytest.raises(ValueError, match="unknown logging configuration 'progres'"):
+            env.deploy(job)
+    run.assert_not_called()
     assert not (tmp_path / "simulation").exists()
+
+
+def test_sim_env_validates_at_deployment_after_api_configuration_changes(tmp_path):
+    env = SimEnv(num_clients=1, log_config="full", workspace_root=str(tmp_path / "simulation"))
+    env.log_config = "progres"
+    with pytest.raises(ValueError, match="unknown logging configuration 'progres'"):
+        env.deploy(_make_job())
+    assert not (tmp_path / "simulation").exists()
+
+
+def test_sim_env_uses_environment_repaired_after_construction(monkeypatch, tmp_path):
+    monkeypatch.setenv("FL_LOG_LEVEL", "missing.json")
+    env = SimEnv(num_clients=1, workspace_root=str(tmp_path / "simulation"))
+    monkeypatch.setenv("FL_LOG_LEVEL", "full")
+    run = _deploy_with_mocked_simulator(env, _make_job())
+    run.assert_called_once()
+
+
+def test_sim_env_explicit_logging_ignores_invalid_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("FL_LOG_LEVEL", "missing.json")
+    env = SimEnv(num_clients=1, log_config="full", workspace_root=str(tmp_path / "simulation"))
+    run = _deploy_with_mocked_simulator(env, _make_job())
+    assert run.call_args.kwargs["log_config"] == "full"
 
 
 def test_sim_env_ignores_an_empty_log_environment(monkeypatch, tmp_path):

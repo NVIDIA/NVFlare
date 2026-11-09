@@ -94,7 +94,7 @@ def test_validate_log_config_accepts_modes_and_levels_without_applying_them(sele
     apply.assert_not_called()
 
 
-@pytest.mark.parametrize("selector", ["progres", "missing.json", "51", "BASIC_FORMAT", "", None])
+@pytest.mark.parametrize("selector", ["progres", "missing.json", "51", "²", "BASIC_FORMAT", "", None])
 def test_validate_log_config_rejects_invalid_selectors(selector):
     from nvflare.fuel.utils.log_utils import validate_log_config
 
