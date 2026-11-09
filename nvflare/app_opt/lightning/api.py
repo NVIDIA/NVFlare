@@ -491,7 +491,7 @@ class _StepSyncFLCallback(_FLCallbackBase):
 
     def on_train_start(self, trainer, pl_module):
         budget = trainer.estimated_stepping_batches
-        self._trainer_step_budget = int(budget) if budget != float("inf") else None
+        self._trainer_step_budget = int(budget) if 0 < budget < float("inf") else None
         trainer.fit_loop.max_epochs = -1
         trainer.fit_loop.epoch_loop.max_steps = -1
         trainer.fit_loop.min_epochs = 0

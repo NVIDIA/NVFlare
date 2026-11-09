@@ -2005,6 +2005,23 @@ def test_step_sync_does_not_warn_within_the_trainer_limit(caplog):
     assert not [r for r in caplog.records if "passed the trainer's own limit" in r.getMessage()]
 
 
+class _UnsizedDataset(torch.utils.data.IterableDataset):
+    def __iter__(self):
+        return iter(_loader(4).dataset)
+
+
+def test_step_sync_does_not_warn_without_a_trainer_step_limit(caplog):
+    fake = _FakeFlare(_train_tasks(3))
+
+    with caplog.at_level(logging.WARNING, logger="_StepSyncFLCallback"):
+        _fit_with_step_sync(
+            fake, RecordingNet(), DataLoader(_UnsizedDataset(), batch_size=1), sync_every_n_steps=2, max_epochs=1
+        )
+
+    assert fake.steps() == [2, 2, 2]
+    assert not [r for r in caplog.records if "passed the trainer's own limit" in r.getMessage()]
+
+
 def test_step_sync_validates_between_send_and_receive():
     events = []
     fake = _FakeFlare(_train_tasks(2), events=events)
