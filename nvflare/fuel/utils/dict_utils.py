@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import collections
+from collections.abc import Mapping
 
 from .validation_utils import check_object_type
 
 
 def update(d, u):
     for k, v in u.items():
-        if isinstance(v, collections.Mapping):
+        if isinstance(v, Mapping):
             d[k] = update(d.get(k, {}), v)
         else:
             d[k] = v
