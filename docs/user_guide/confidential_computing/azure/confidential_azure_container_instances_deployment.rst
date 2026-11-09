@@ -22,9 +22,13 @@ the kit. The fixed image verifies the archive before using it.
 
 .. important::
 
-   This direct-launch workflow trusts the administrator and Azure's deployment
-   service with the supplied credentials. A digital signature detects changes;
-   it does not encrypt the archive. Azure secret volumes are not
+   This direct-launch workflow trusts authorized deployment operators and Azure's
+   deployment service with the supplied credentials. Supply the startup archive
+   through a secure parameter, an input whose value Azure excludes from retained
+   deployment history. Keep the local parameters file private. Do not embed the
+   archive in the template or give the secure parameter a secret default value.
+   A digital signature detects changes; it does not encrypt the archive. Azure
+   secret volumes are not
    attestation-controlled secret release. Use a separately designed encrypted
    delivery and key-release workflow if protection from the deployment service
    is required.
@@ -98,18 +102,51 @@ Generate the policy before provisioning
 
 Copy ``docs/resources/ccprep.json`` into the example directory as
 ``aci-template.json``. This is an Azure Resource Manager deployment document,
-which describes the container group. Update its image references, registry
-credentials, location, resource group, networking, and resource requirements.
+which describes the container group. Update its image references, location,
+resource group, networking, resource requirements, and registry authentication.
+Protect any registry credentials through secure inputs as well; do not put
+credentials into the template, its defaults, or its outputs.
 Use immutable image references for both containers. Review the permitted
 commands, mounts, debugging and execution permissions in the generated policy.
 Provisioning approves the supplied policy; it does not determine whether that
 policy is sufficiently restrictive.
 
 The template defines a volume named ``nvflare-startup`` mounted read-only at
-``/run/nvflare-input``. Its two placeholder secret files reserve the final
-archive and signature names. They cannot start the server. Keep these names,
-the mount, image references, and launch commands unchanged after policy
-preparation. Secret file contents are supplied separately at launch time.
+``/run/nvflare-input``. Its ``startup-kit.tar`` and ``startup-kit.sig`` files
+refer directly to the secure inputs ``startupKitArchive`` and
+``startupKitSignature``. The ``secureString`` input type prevents Azure from
+retaining their values in deployment history; neither input has a default.
+Keep these names, the mount, image references, and launch commands unchanged
+after policy preparation. Secret file contents are supplied separately at
+launch time.
+
+See `Azure's secure-input documentation
+<https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/data-types#secure-strings-and-objects>`_
+for the deployment-history guarantees and their limits.
+
+Before provisioning, the policy generator needs values for these required
+inputs. Create ``aci-policy.parameters.json`` with harmless placeholders. The
+document's ``$schema`` selects Azure's deployment-parameter format,
+``contentVersion`` identifies this document version, and ``parameters`` maps
+each input name to its supplied ``value``. Both placeholder values below encode
+the word ``placeholder``; they cannot start the server. The policy describes
+the secret mount, rather than these file contents.
+
+.. code-block:: bash
+
+   python3 - <<'PY'
+   import json
+   from pathlib import Path
+   parameters = {
+       "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+       "contentVersion": "1.0.0.0",
+       "parameters": {
+           "startupKitArchive": {"value": "cGxhY2Vob2xkZXI="},
+           "startupKitSignature": {"value": "cGxhY2Vob2xkZXI="},
+       },
+   }
+   Path("aci-policy.parameters.json").write_text(json.dumps(parameters, indent=2))
+   PY
 
 The policy generator prints Base64, a text encoding of binary contents. Decode
 it to the raw policy file named by ``cce_policy_file``; do not provide the
@@ -118,7 +155,8 @@ encoded text or the entire deployment document to provisioning:
 .. code-block:: bash
 
    az extension add --name confcom
-   az confcom acipolicygen -a aci-template.json --print-policy > cce-policy.b64
+   az confcom acipolicygen -a aci-template.json \
+     --parameters aci-policy.parameters.json --print-policy > cce-policy.b64
    python3 - <<'PY'
    import base64
    from pathlib import Path
@@ -129,6 +167,9 @@ encoded text or the entire deployment document to provisioning:
 Run policy generation on a platform supported by Azure's extension. Pull the
 same image architecture Azure will run. The decoder changes only the transport
 encoding; do not edit or reformat the resulting policy afterward.
+The `policy-generator command reference
+<https://learn.microsoft.com/en-us/cli/azure/confcom#az-confcom-acipolicygen>`_
+documents the separate ``--parameters`` input file.
 
 Provision the project
 =====================
@@ -180,8 +221,14 @@ for the Azure secret-volume transport, and encode the raw approved policy once
 for the deployment's ``ccePolicy`` field. Do not calculate a new policy.
 
 The following Python script takes the prepared template and the three generated
-files as arguments and writes ``aci-launch.json``. That output contains
-credentials and must not be committed, printed, or shared with clients:
+files as arguments. It writes ``aci-launch.json`` with the unchanged secure
+input references and approved policy, plus ``aci-launch.parameters.json`` with
+the archive and signature values. The latter uses the parameter-document format
+described above and contains credentials: do not commit, print, or share it with
+clients. Both outputs are created with owner-only permissions and refuse to
+overwrite existing files. The startup input values go directly into the secret
+volume without a transformation inside the template. Azure's secure-input
+redaction does not necessarily cover transformed copies of a secure value.
 
 .. code-block:: bash
 
@@ -198,20 +245,44 @@ credentials and must not be committed, printed, or shared with clients:
    document = json.loads(template.read_text())
    properties = document["resources"][0]["properties"]
    volume = next(v for v in properties["volumes"] if v["name"] == "nvflare-startup")
-   volume["secret"] = {
-       "startup-kit.tar": base64.b64encode(archive.read_bytes()).decode("ascii"),
-       "startup-kit.sig": base64.b64encode(signature.read_bytes()).decode("ascii"),
+   expected = {
+       "startup-kit.tar": "[parameters('startupKitArchive')]",
+       "startup-kit.sig": "[parameters('startupKitSignature')]",
    }
+   if volume["secret"] != expected:
+       raise ValueError("Template must reference the secure startup inputs directly")
+   for name in ("startupKitArchive", "startupKitSignature"):
+       definition = document["parameters"][name]
+       if definition["type"].lower() != "securestring" or "defaultValue" in definition:
+           raise ValueError("Startup inputs must be secure strings without defaults")
    properties["confidentialComputeProperties"]["ccePolicy"] = (
        base64.b64encode(policy.read_bytes()).decode("ascii")
    )
-   descriptor = os.open("aci-launch.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-   with os.fdopen(descriptor, "w") as output:
-       json.dump(document, output, indent=2)
+   parameters = {
+       "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+       "contentVersion": "1.0.0.0",
+       "parameters": {
+           "startupKitArchive": {"value": base64.b64encode(archive.read_bytes()).decode("ascii")},
+           "startupKitSignature": {"value": base64.b64encode(signature.read_bytes()).decode("ascii")},
+       },
+   }
+   for name, contents in (("aci-launch.json", document), ("aci-launch.parameters.json", parameters)):
+       descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+       with os.fdopen(descriptor, "w") as output:
+           json.dump(contents, output, indent=2)
    PY
 
    az deployment group create --resource-group cc-prep-rsr-grp \
-     --template-file aci-launch.json --output none
+     --template-file aci-launch.json --parameters @aci-launch.parameters.json --output none
+
+Here ``@aci-launch.parameters.json`` tells Azure's command-line tool to read the
+private input values from that file. The command line contains its path, not
+the archive contents. Never pass credential bytes as command arguments, enable
+debug logging, or copy the values into template literals, defaults, or outputs.
+After deployment, securely remove unneeded local launch-input files according
+to your credential-handling policy. Secure parameters prevent this deployment-
+history disclosure; they do not encrypt the input files or protect credentials
+from authorized deployment operators or Azure's deployment service.
 
 The archive is uncompressed tar, a file-bundling format. The bootstrap limits
 both archive size and total extracted file contents to 16 MiB (16 times
@@ -253,6 +324,38 @@ also requires rebuilding the fixed image and regenerating its policy. Existing
 ACI configurations without the expected policy fingerprint must be
 reprovisioned; there is no signature-only fallback. Previously signed archives
 remain valid: this workflow does not impose an archive expiration or version
-counter. Confidential-VM and Confidential-Containers verification requirements
-remain in force; a client cannot substitute ACI evidence for its required
-proof type.
+counter. Each participant must still supply its configured checker labels, which
+select the configured verification components. A label alone does not establish
+the evidence type. The Azure confidential-virtual-machine checker,
+``AZCVMAuthorizer``, currently validates the evidence signature and applicable
+time limits but does not require a statement identifying an Azure compliant
+confidential virtual machine. An enrolled client can therefore present
+otherwise-accepted ACI evidence under its required Azure virtual-machine checker
+label. The client's transport identity must still authenticate. This limitation
+concerns the Azure virtual-machine checker; it does not establish a bypass of
+Confidential-Containers verification.
+
+Recovery after a credential compromise
+=====================================
+
+Revocation means withdrawing previously granted trust. Repeating provisioning
+does not revoke old archives, and the provisioner can reuse the existing
+participant certificate and private key from its saved state. Do not treat an
+ordinary provisioning run as credential rotation.
+
+To withdraw trust in old signed kits, replace the deployment-signing key, build
+a new fixed image containing its new public key, generate and approve the new
+image's policy, and reprovision. Redistribute the new expected fingerprint to
+every peer before resuming protected work, and stop and retire the old ACI
+deployment. Old images continue trusting the old signing key; key rotation
+does not remotely invalidate them. A deliberately changed policy fingerprint
+can also exclude an old deployment even if the signing key stays unchanged.
+
+If the server identity key was disclosed, also replace the compromised identity
+credentials and update peer trust so the old credentials are no longer
+accepted, using your project's credential-replacement procedure. Retire retained
+deployment templates and local launch documents that exposed those credentials,
+and audit who could retrieve them. Removing the history does not undo an
+earlier disclosure. The archive signature and policy fingerprint do not, by
+themselves, revoke a stolen identity key or a previously issued attestation
+token.

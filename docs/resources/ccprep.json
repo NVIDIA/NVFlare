@@ -30,6 +30,18 @@
         "description": "Proxy sidecar MAA endpoint"
       }
     },
+    "startupKitArchive": {
+      "type": "secureString",
+      "metadata": {
+        "description": "Base64-encoded signed server startup archive, supplied through a private parameters file"
+      }
+    },
+    "startupKitSignature": {
+      "type": "secureString",
+      "metadata": {
+        "description": "Base64-encoded detached startup archive signature"
+      }
+    },
     "restartPolicy": {
       "type": "string",
       "defaultValue": "Never",
@@ -142,8 +154,8 @@
           {
             "name": "nvflare-startup",
             "secret": {
-              "startup-kit.tar": "cGxhY2Vob2xkZXI=",
-              "startup-kit.sig": "cGxhY2Vob2xkZXI="
+              "startup-kit.tar": "[parameters('startupKitArchive')]",
+              "startup-kit.sig": "[parameters('startupKitSignature')]"
             }
           }
         ]

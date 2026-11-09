@@ -4,5 +4,7 @@ approved-cce-policy.txt
 cce-policy.b64
 aci-template.json
 aci-launch.json
+aci-policy.parameters.json
+aci-launch.parameters.json
 workspace/
 wheels/

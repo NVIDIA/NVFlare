@@ -40,11 +40,30 @@ def authorizer(monkeypatch, signing_key):
     return ACIAuthorizer(expected_policy_hash=APPROVED_POLICY_HASH)
 
 
-def signed_token(signing_key, *, hostdata=APPROVED_POLICY_HASH, expires_in=300, include_hostdata=True):
+def signed_token(
+    signing_key,
+    *,
+    hostdata=APPROVED_POLICY_HASH,
+    expires_in=300,
+    include_hostdata=True,
+    claim_overrides=None,
+    omit_claim=None,
+):
     now = int(time.time())
-    claims = {"iat": now - 10, "nbf": now - 10, "exp": now + expires_in}
+    claims = {
+        "iat": now - 10,
+        "nbf": now - 10,
+        "exp": now + expires_in,
+        "x-ms-attestation-type": "sevsnpvm",
+        "x-ms-compliance-status": "azure-compliant-uvm",
+        "x-ms-sevsnpvm-is-debuggable": False,
+    }
     if include_hostdata:
         claims["x-ms-sevsnpvm-hostdata"] = hostdata
+    if claim_overrides:
+        claims.update(claim_overrides)
+    if omit_claim is not None:
+        del claims[omit_claim]
     return jwt.encode(claims, signing_key, algorithm="RS256")
 
 
@@ -67,6 +86,35 @@ def test_normalizes_configured_policy_hash():
 @pytest.mark.parametrize("hostdata", [APPROVED_POLICY_HASH, APPROVED_POLICY_HASH.upper()])
 def test_accepts_approved_policy(authorizer, signing_key, hostdata):
     assert authorizer.verify(signed_token(signing_key, hostdata=hostdata)) is True
+
+
+@pytest.mark.parametrize(
+    "claim",
+    ["x-ms-attestation-type", "x-ms-compliance-status", "x-ms-sevsnpvm-is-debuggable"],
+)
+def test_rejects_missing_environment_claim(authorizer, signing_key, claim):
+    assert authorizer.verify(signed_token(signing_key, omit_claim=claim)) is False
+
+
+@pytest.mark.parametrize(
+    "claim,value",
+    [
+        ("x-ms-attestation-type", "other"),
+        ("x-ms-attestation-type", None),
+        ("x-ms-attestation-type", ["sevsnpvm"]),
+        ("x-ms-compliance-status", "azure-compliant-cvm"),
+        ("x-ms-compliance-status", None),
+        ("x-ms-compliance-status", ["azure-compliant-uvm"]),
+        ("x-ms-sevsnpvm-is-debuggable", True),
+        ("x-ms-sevsnpvm-is-debuggable", None),
+        ("x-ms-sevsnpvm-is-debuggable", 0),
+        ("x-ms-sevsnpvm-is-debuggable", 1),
+        ("x-ms-sevsnpvm-is-debuggable", "false"),
+        ("x-ms-sevsnpvm-is-debuggable", []),
+    ],
+)
+def test_rejects_wrong_or_malformed_environment_claim(authorizer, signing_key, claim, value):
+    assert authorizer.verify(signed_token(signing_key, claim_overrides={claim: value})) is False
 
 
 @pytest.mark.parametrize("hostdata", ["cd" * 32, None, "", "ab" * 31, "ab" * 33, "g" * 64, [], {}, 123, True])

@@ -75,7 +75,10 @@ class ACIAuthorizer(CCAuthorizer):
             claims = jwt.decode(token, signing_key.key, algorithms=[alg])
             policy_hash = claims.get("x-ms-sevsnpvm-hostdata")
             return (
-                isinstance(policy_hash, str)
+                claims.get("x-ms-attestation-type") == "sevsnpvm"
+                and claims.get("x-ms-compliance-status") == "azure-compliant-uvm"
+                and claims.get("x-ms-sevsnpvm-is-debuggable") is False
+                and isinstance(policy_hash, str)
                 and POLICY_HASH_PATTERN.fullmatch(policy_hash) is not None
                 and policy_hash.lower() == self.expected_policy_hash
             )
