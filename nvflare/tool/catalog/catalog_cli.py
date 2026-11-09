@@ -17,6 +17,7 @@
 import argparse
 import os
 import sys
+import time
 from contextlib import contextmanager
 from tempfile import TemporaryDirectory
 
@@ -311,6 +312,7 @@ def _submit_read(args) -> dict:
     """Export and submit the recipe through the shared CLI session, without downloading job results."""
     from nvflare.recipe.catalog import CatalogRecipe
 
+    started = time.monotonic()
     name = "catalog_read"
     recipe = CatalogRecipe(
         name=name, sites=_csv(args.sites), datasets=_dataset_map(args.datasets), task_timeout_s=args.timeout
@@ -344,6 +346,7 @@ def _submit_read(args) -> dict:
                 if rc != MonitorReturnCode.JOB_FINISHED or job_status_outcome(status) is None:
                     raise InternalError(f"no terminal status for catalog job {job_id}")
                 data["status"] = status
+                data["elapsed_s"] = round(time.monotonic() - started, 1)
             return data
 
 
@@ -363,7 +366,7 @@ def _render_read(data: dict):
         return
     print_human(f"catalog read job {data['job_id']} submitted for study {data['study']}")
     if "status" in data:
-        print_human(f"finished: {data['status']}")
+        print_human(f"finished: {data['status']} (elapsed_s: {data['elapsed_s']})")
     print_human(
         "see the result with: nvflare catalog show"
         + ("" if data["study"] == DEFAULT_STUDY else f" --study {data['study']}")

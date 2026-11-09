@@ -15,6 +15,7 @@
 """Real CLI parsing, recipe export, stream routing and process exits; only the session is fake."""
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -84,7 +85,9 @@ def test_default_wait_reports_job_outcome_as_one_json_envelope(status, code, err
     if error:
         assert envelope["error_code"] == error
     else:
-        assert envelope["data"] == {"study": "oncology", "job_id": "job-1", "status": status}
+        data = dict(envelope["data"])
+        assert data.pop("elapsed_s") >= 0
+        assert data == {"study": "oncology", "job_id": "job-1", "status": status}
     assert "waiting for completion" in proc.stderr and "RUNNING" in proc.stderr
 
 
@@ -95,7 +98,8 @@ def test_no_wait_json_reports_submission_and_human_output_is_readable():
     assert "waiting for completion" not in proc.stderr
     human = invoke("catalog", "read")
     assert human.returncode == 0, human.stderr
-    assert "finished: FINISHED:COMPLETED" in human.stdout and "catalog show" in human.stdout
+    assert re.search(r"finished: FINISHED:COMPLETED \(elapsed_s: \d+\.\d\)", human.stdout)
+    assert "catalog show" in human.stdout
 
 
 @pytest.mark.parametrize("fmt", ["txt", "json"])

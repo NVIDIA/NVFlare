@@ -130,6 +130,8 @@ class TestRead:
         monkeypatch.setattr(cli_session, "new_cli_session_for_args", connect)
         args = parse("read", "--study", "s", "--sites", "a,b", "a:x")
         data = catalog_cli._submit_read(args)
+        elapsed = data.pop("elapsed_s")
+        assert isinstance(elapsed, float) and elapsed >= 0
         assert data == {"study": "s", "job_id": "job-1", "status": "FINISHED:COMPLETED"}
         assert seen["study"] == "s" and seen["args"] is args
         meta = session.submitted["meta"]
