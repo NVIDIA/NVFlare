@@ -135,24 +135,29 @@ def _site_health(h) -> dict:
     }
 
 
+def _detail(entry) -> dict:
+    detail = _summary(entry)
+    if entry.catalog is not None:
+        detail["metadata"] = entry.catalog.metadata_wire()
+        detail["observed_at"] = entry.catalog.observed_at
+    return detail
+
+
 def _show(api, args) -> dict:
     filters = {k: v for k, v in {"client": args.site, "dataset": args.dataset}.items() if v is not None}
     entries = list(api.search(**filters))
     sites = [_site_health(h) for h in api.status()]
+    if args.overview:
+        return {"study": args.study, "total": len(entries), "datasets": [_summary(e) for e in entries], "sites": sites}
     if args.site is not None and args.dataset is not None:
         if not entries:
             raise CommandError(
                 error_code="DATASET_NOT_FOUND",
                 message=f"no dataset '{args.dataset}' at site '{args.site}'",
-                hint="Run 'nvflare catalog show' to list the datasets of the study.",
+                hint="Run 'nvflare catalog show --overview' to list the datasets of the study.",
             )
-        entry = entries[0]
-        detail = _summary(entry)
-        if entry.catalog is not None:
-            detail["metadata"] = entry.catalog.metadata_wire()
-            detail["observed_at"] = entry.catalog.observed_at
-        return {"study": args.study, "dataset": detail, "sites": sites}
-    return {"study": args.study, "total": len(entries), "datasets": [_summary(e) for e in entries], "sites": sites}
+        return {"study": args.study, "dataset": _detail(entries[0]), "sites": sites}
+    return {"study": args.study, "total": len(entries), "datasets": [_detail(e) for e in entries], "sites": sites}
 
 
 def _table(headers, rows):
@@ -212,7 +217,7 @@ def _render_dataset(detail: dict):
     print_human(f"source: {metadata['provenance']['source']}")
 
 
-def _render_show(data: dict):
+def _render_show(data: dict, overview=False):
     if is_json_mode():
         _warn_about_sites(data["sites"])
         output_ok(data)
@@ -222,7 +227,7 @@ def _render_show(data: dict):
     else:
         if not data["datasets"]:
             print_human("no datasets")
-        else:
+        elif overview:
             _table(
                 ("SITE", "DATASET", "NAME", "AVAILABLE", "VERSION", "LAST CHECKED"),
                 [
@@ -237,6 +242,11 @@ def _render_show(data: dict):
                     for d in data["datasets"]
                 ],
             )
+        else:
+            for i, detail in enumerate(data["datasets"]):
+                if i:
+                    print_human("")
+                _render_dataset(detail)
     _warn_about_sites(data["sites"])
 
 
@@ -247,7 +257,11 @@ def cmd_show(args):
     handle_schema_flag(
         _catalog_sub_cmd_parsers[CMD_CATALOG_SHOW],
         "nvflare catalog show",
-        ["nvflare catalog show --study lung-cancer", "nvflare catalog show --site site-a --dataset omop"],
+        [
+            "nvflare catalog show --format json",
+            "nvflare catalog show --overview",
+            "nvflare catalog show --site site-a --dataset omop",
+        ],
         sys.argv[1:],
         output_modes=["json"],
         streaming=False,
@@ -261,7 +275,7 @@ def cmd_show(args):
         with _catalog_session(args) as sess:
             return _show(CatalogAdminApi(sess), args)
 
-    _run(compute, _catalog_sub_cmd_parsers[CMD_CATALOG_SHOW], _render_show)
+    _run(compute, _catalog_sub_cmd_parsers[CMD_CATALOG_SHOW], lambda data: _render_show(data, overview=args.overview))
 
 
 # ---- read --------------------------------------------------------------------------------------------------
@@ -377,10 +391,11 @@ def cmd_read(args):
 def _define_catalog_subcommands(parser):
     sub = parser.add_subparsers(title="catalog subcommands", metavar="", dest="catalog_sub_cmd")
 
-    p = sub.add_parser(CMD_CATALOG_SHOW, help="show the dataset catalog, or one dataset in full")
+    p = sub.add_parser(CMD_CATALOG_SHOW, help="show complete catalog metadata, or a compact overview")
     p.add_argument("--study", default=DEFAULT_STUDY, help="study to show")
     p.add_argument("--site", default=None, help="only datasets of this site")
-    p.add_argument("--dataset", default=None, help="only datasets with this name; with --site, show it in full")
+    p.add_argument("--dataset", default=None, help="only datasets with this name")
+    p.add_argument("--overview", action="store_true", help="show a compact dataset summary instead of schema metadata")
     add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _catalog_sub_cmd_parsers[CMD_CATALOG_SHOW] = p

@@ -22,6 +22,7 @@ authorization policy without a separate membership requirement.
    nvflare catalog read --study oncology --sites site-a site-a:clinical
    nvflare catalog read --study oncology --no-wait
    nvflare catalog show --study oncology
+   nvflare catalog show --study oncology --overview
    nvflare catalog show --study oncology --site site-a --dataset clinical
 
 ``--sites`` selects the sites to read; omitting it selects every site in the
@@ -46,6 +47,22 @@ Progress and warnings go to stderr. ``read`` returns ``data.study`` and
 ``data.job_id`` and, by default, the terminal ``data.status``. With ``--no-wait``,
 it returns only the submission information; exit 0 means the job was submitted.
 ``show`` returns dataset entries and structured site health under ``data``.
+By default, every selected dataset includes full published metadata: tables,
+columns, keys, relationships, provenance and version information. With both
+``--site`` and ``--dataset``, it returns one dataset under ``data.dataset``;
+otherwise the complete collection is under ``data.datasets``.
+
+Use ``show --overview`` for the compact SITE/DATASET/NAME/AVAILABLE/VERSION/LAST
+CHECKED table. In JSON mode, ``--overview`` omits schema metadata. Both modes
+support ``--study``, ``--site`` and ``--dataset`` filters and retain site health
+and warnings. ``--overview`` applies to display/export only, not authorization.
+
+One command exports the entire visible Study catalog for offline visualization;
+users do not need to enumerate sites or combine per-dataset files:
+
+.. code-block:: bash
+
+   nvflare catalog show --format json > catalog_results.json
 
 .. code-block:: bash
 

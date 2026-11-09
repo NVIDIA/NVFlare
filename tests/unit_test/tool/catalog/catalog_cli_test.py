@@ -87,6 +87,8 @@ class TestArguments:
     def test_show_options(self):
         args = parse("show", "--site", "a", "--dataset", "x")
         assert (args.study, args.site, args.dataset) == ("default", "a", "x")
+        assert args.overview is False
+        assert parse("show", "--overview").overview is True
 
     @pytest.mark.parametrize(
         "argv",
@@ -200,15 +202,16 @@ def test_errors_use_shared_exit_codes_and_close_session(
 
 class TestShow:
     def args(self, **kw):
-        return SimpleNamespace(**{"study": "s", "site": None, "dataset": None, **kw})
+        return SimpleNamespace(**{"study": "s", "site": None, "dataset": None, "overview": False, **kw})
 
-    def test_list_is_one_summary_row_per_dataset_with_site_health(self):
+    def test_list_includes_full_metadata_and_site_health_by_default(self):
         client = FakeClient(statuses=[[health()]], entries=[entry(), entry("site-b", "imaging", available=False)])
         data = catalog_cli._show(client, self.args())
         assert client.filters == {} and data["total"] == 2
         assert (
             data["datasets"][0]["display_name"] == "Clinical research" and data["datasets"][0]["catalog_version"] == 1
         )
+        assert data["datasets"][0]["metadata"] == client.entries[0].catalog.metadata_wire()
         assert data["datasets"][1] == {
             "site": "site-b",
             "dataset": "imaging",
@@ -229,6 +232,19 @@ class TestShow:
         client = FakeClient(statuses=[[health()]])
         catalog_cli._show(client, self.args(site="site-a"))
         assert client.filters == {"client": "site-a"}
+
+    @pytest.mark.parametrize("filters", [{}, {"site": "site-a", "dataset": "clinical-research"}])
+    def test_overview_omits_metadata_even_for_a_single_dataset(self, filters):
+        client = FakeClient(statuses=[[health()]], entries=[entry()])
+        data = catalog_cli._show(client, self.args(overview=True, **filters))
+        assert data["total"] == 1 and data["datasets"][0]["display_name"] == "Clinical research"
+        assert "metadata" not in data["datasets"][0] and "observed_at" not in data["datasets"][0]
+
+    def test_full_export_keeps_multiple_sites_and_datasets(self):
+        entries = [entry(), entry("site-a", "imaging"), entry("site-b", "clinical-research")]
+        data = catalog_cli._show(FakeClient(statuses=[[health()]], entries=entries), self.args())
+        assert [(d["site"], d["dataset"]) for d in data["datasets"]] == [(e.client, e.dataset) for e in entries]
+        assert all(d["metadata"]["tables"][0]["name"] == "person" for d in data["datasets"])
 
     def test_site_and_dataset_give_one_dataset_in_full(self):
         client = FakeClient(statuses=[[health()]], entries=[entry()])
@@ -276,7 +292,7 @@ class TestRendering:
                 {"site": "c", "health": "OK", "reason_code": None, "last_success_at": "t", "stale": False},
             ],
         }
-        catalog_cli._render_show(data)
+        catalog_cli._render_show(data, overview=True)
         text = "\n".join(out.lines)
         assert "SITE" in text and "D" in text
         assert "warning: site a: last read failed (TIMEOUT)" in text and "site b: data may be out of date" in text
@@ -290,7 +306,15 @@ class TestRendering:
     def test_human_detail_shows_tables_and_columns(self, out):
         out.monkeypatch.setattr(catalog_cli, "is_json_mode", lambda: False)
         client = FakeClient(statuses=[[health()]], entries=[entry()])
-        data = catalog_cli._show(client, SimpleNamespace(study="s", site="site-a", dataset="clinical-research"))
+        data = catalog_cli._show(client, parse("show", "--site", "site-a", "--dataset", "clinical-research"))
         catalog_cli._render_show(data)
         text = "\n".join(out.lines)
         assert "table person" in text and "person_id" in text and "int64" in text and "source: parquet" in text
+
+    def test_default_human_output_renders_every_dataset_schema(self, out):
+        out.monkeypatch.setattr(catalog_cli, "is_json_mode", lambda: False)
+        client = FakeClient(statuses=[[health()]], entries=[entry(), entry("site-b", "imaging")])
+        catalog_cli._render_show(catalog_cli._show(client, parse("show")))
+        text = "\n".join(out.lines)
+        assert "site-a / clinical-research" in text and "site-b / imaging" in text
+        assert text.count("table person") == 2 and text.count("source: parquet") == 2

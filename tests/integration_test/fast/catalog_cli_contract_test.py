@@ -28,6 +28,22 @@ from nvflare import cli
 from nvflare.tool import cli_session
 from tests.catalog_cli_test_utils import CatalogSession
 session = CatalogSession(status=sys.argv.pop(1), health="DEGRADED")
+if sys.argv.pop(1) == "with-entries":
+    from nvflare.app_common.fdn.catalog.common.schema import CatalogInfo, ColumnInfo, Provenance, TableInfo
+    from nvflare.app_common.fdn.catalog.server.commands import SEARCH
+    from nvflare.fuel.hci.proto import ProtoKey
+    catalog = CatalogInfo("omop", "OMOP", Provenance("sql"), tables=(TableInfo("person", (ColumnInfo("id", "INTEGER"),)),))
+    original_command = session.do_command
+    def command_with_entries(command, props):
+        reply = original_command(command, props)
+        if command == SEARCH:
+            payload = reply[ProtoKey.DATA][0][ProtoKey.DATA]
+            payload["entries"] = [dict(client=site, dataset=dataset, available=True, last_checked_at=None,
+                metadata=catalog.metadata_wire(), catalog_version=1, schema_version=1, published_at=None)
+                for site, dataset in (("site-a", "omop"), ("site-a", "cohort"), ("site-b", "omop"))]
+            payload["total"] = len(payload["entries"])
+        return reply
+    session.do_command = command_with_entries
 cli_session.new_cli_session_for_args = lambda **kw: session
 if "--schema" in sys.argv:
     def unexpected_connection(**kw):
@@ -38,10 +54,14 @@ cli.main()
 """
 
 
-def invoke(*args, status="FINISHED:COMPLETED"):
+def invoke(*args, status="FINISHED:COMPLETED", with_entries=False):
     # Completion watchdog permits interpreter startup and CI contention; it is not a product timeout.
     return subprocess.run(
-        [sys.executable, "-c", SCRIPT, status, *args], cwd=ROOT, capture_output=True, text=True, timeout=90
+        [sys.executable, "-c", SCRIPT, status, "with-entries" if with_entries else "empty", *args],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=90,
     )
 
 
@@ -104,6 +124,28 @@ def test_schema_needs_no_kit_and_describes_machine_contract(command, mutating):
         args = {arg["name"]: arg for arg in schema["args"]}
         assert args["--no-wait"]["default"] is False
         assert "--wait" not in args
+    else:
+        args = {arg["name"]: arg for arg in schema["args"]}
+        assert args["--overview"]["default"] is False
+
+
+@pytest.mark.parametrize("overview", [False, True])
+def test_complete_json_export_and_overview_are_distinct(overview):
+    args = ["catalog", "show", "--format", "json"] + (["--overview"] if overview else [])
+    proc = invoke(*args, with_entries=True)
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    data = json.loads(proc.stdout)["data"]
+    assert data["total"] == 3
+    assert [(d["site"], d["dataset"]) for d in data["datasets"]] == [
+        ("site-a", "omop"),
+        ("site-a", "cohort"),
+        ("site-b", "omop"),
+    ]
+    for detail in data["datasets"]:
+        assert ("metadata" in detail) is not overview
+        if not overview:
+            assert detail["metadata"]["tables"][0]["columns"][0]["name"] == "id"
+    assert "incomplete" in proc.stderr
 
 
 @pytest.mark.parametrize("args", [("--sites", ","), ("--timeout", "0"), ("bad",), ("--unknown",), ("--wait",)])
