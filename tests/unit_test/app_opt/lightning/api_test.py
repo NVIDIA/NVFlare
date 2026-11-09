@@ -2117,8 +2117,17 @@ def test_step_sync_does_not_warn_without_a_trainer_step_limit(caplog):
     assert not [r for r in caplog.records if "passed the trainer's own limit" in r.getMessage()]
 
 
-def test_step_sync_validates_between_send_and_receive():
+class ValidationWeights(pl.Callback):
+    def __init__(self):
+        self.weights = []
+
+    def on_validation_start(self, trainer, pl_module):
+        self.weights.append(pl_module.fc.weight.detach().clone())
+
+
+def test_step_sync_receives_after_send_and_validates_the_local_model():
     events = []
+    weights = ValidationWeights()
     fake = _FakeFlare(_train_tasks(2), events=events)
 
     _fit_with_step_sync(
@@ -2129,10 +2138,29 @@ def test_step_sync_validates_between_send_and_receive():
         val_loader=_loader(2),
         max_epochs=1,
         val_check_interval=2,
+        callbacks=[ValidationEvents(events), weights],
+    )
+
+    assert events == ["receive", "send", "receive", "val", "send", "receive:none", "val"]
+    assert not torch.equal(weights.weights[0], torch.full((2, 2), 1.0))
+
+
+def test_step_sync_validates_once_more_when_the_server_ends_between_validations():
+    events = []
+    fake = _FakeFlare(_train_tasks(2), events=events)
+
+    _fit_with_step_sync(
+        fake,
+        RecordingNet(),
+        _loader(6),
+        sync_every_n_steps=2,
+        val_loader=_loader(2),
+        max_epochs=1,
+        val_check_interval=3,
         callbacks=[ValidationEvents(events)],
     )
 
-    assert events == ["receive", "send", "val", "receive", "send", "val", "receive:none"]
+    assert events == ["receive", "send", "receive", "val", "send", "receive:none", "val"]
 
 
 @pytest.mark.parametrize("with_scaffold", [False, True])
@@ -2147,6 +2175,16 @@ def test_step_sync_stops_training_when_the_server_finishes_first(with_scaffold):
     assert fake.events[-1] == "receive:none"
     assert trainer.global_step == 4
     assert trainer.lr_scheduler_configs[0].scheduler.last_epoch == 4
+
+
+def test_step_sync_trains_nothing_when_the_server_has_no_task():
+    fake = _FakeFlare([])
+
+    trainer = _fit_with_step_sync(fake, RecordingNet(), _loader(4), sync_every_n_steps=2, max_epochs=1)
+
+    assert fake.events == ["receive:none"]
+    assert trainer.global_step == 0
+    assert fake.sent == []
 
 
 def test_step_sync_leaves_a_mid_fit_evaluate_task_for_a_later_validate():

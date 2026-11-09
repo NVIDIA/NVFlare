@@ -169,8 +169,10 @@ the model with the server every N optimizer steps within a single ``fit()``:
     trainer.fit(model, datamodule=dm)
 
 Each received global model is loaded in place, so the optimizer, LR scheduler, AMP scaler and
-data position carry over between rounds. Rank 0 sends, and every rank loads the next global model
-at the start of the next batch. ``fit()`` ends when the server stops sending training tasks.
+data position carry over between rounds. Rank 0 sends and receives the next task at the end of the
+sync batch, and every rank loads the next global model at the start of the next batch. ``fit()`` ends
+when the server stops sending training tasks. In-fit validation right after a sync waits for the next
+global model, and Lightning runs one validation pass when training stops, as it does for ``EarlyStopping``.
 
 The server's ``num_rounds`` decides how long training runs: step mode lifts the trainer's ``max_epochs``
 and ``max_steps``, so epochs keep cycling the data until the server stops sending training tasks. A site

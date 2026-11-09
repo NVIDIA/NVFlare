@@ -486,6 +486,7 @@ class _StepSyncFLCallback(_FLCallbackBase):
         self.sync_every_n_steps = sync_every_n_steps
         self._trainer_step_budget = None
         self._trainer_limits = None
+        self._received_model = None
 
     def on_train_start(self, trainer, pl_module):
         budget = trainer.estimated_stepping_batches
@@ -501,20 +502,25 @@ class _StepSyncFLCallback(_FLCallbackBase):
         trainer.fit_loop.epoch_loop.max_steps = -1
         trainer.fit_loop.min_epochs = 0
         trainer.fit_loop.epoch_loop.min_steps = None
+        if self._pending_train_model is None:
+            self._receive_next_round(trainer)
+
+    def _receive_next_round(self, trainer):
+        model = self._receive_model(trainer)
+        if model and self._is_training:
+            self._received_model = model
+            return
+        trainer.should_stop = True
 
     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
         if self._training_round_started:
             return
-        input_model = self._pending_train_model
-        self._pending_train_model = None
+        input_model, self._pending_train_model = self._pending_train_model, None
         if input_model is not None:
             self._update_model(pl_module, input_model)
         else:
-            input_model = self._receive_model(trainer)
-            if not input_model or not self._is_training:
-                trainer.should_stop = True
-                raise StopIteration
-            input_model = self._load_received_model(trainer, pl_module, input_model)
+            received, self._received_model = self._received_model, None
+            input_model = self._load_received_model(trainer, pl_module, received)
         self._start_round(trainer, pl_module, input_model)
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
@@ -538,9 +544,11 @@ class _StepSyncFLCallback(_FLCallbackBase):
             )
         if round_steps == self.sync_every_n_steps:
             self._finish_round_and_send(trainer, pl_module)
+            self._receive_next_round(trainer)
 
     def on_train_end(self, trainer, pl_module):
         self._restore_trainer_limits(trainer)
+        self._received_model = None
         if not self._training_round_started:
             return
         if self._get_round_num_steps(trainer) == 0:

@@ -109,14 +109,14 @@ In step mode:
 ## Sync Lifecycle
 
 ```text
-fit() ─ on_train_batch_start (first batch): receive round 1, load, start round
-        │
-        ├─ batch … ─ on_train_batch_end: N steps since round start → finish round, rank 0 sends
-        │      (validation from val_check_interval / epoch end runs here, while the server aggregates)
-        ├─ on_train_batch_start: rank 0 receives → broadcast → every rank loads in place → start round
+fit() ─ on_train_start: rank 0 receives round 1 → broadcast (no training task → trainer.should_stop = True)
+        ├─ on_train_batch_start: every rank loads the received model in place → start round
+        ├─ batch … ─ on_train_batch_end: N steps since round start → finish round, rank 0 sends,
+        │      then rank 0 receives the next task → broadcast
         │      (no model → trainer.should_stop = True; a non-train task → stop, leave it pending)
+        │      (validation from val_check_interval / epoch end runs here, on the local model)
+        ├─ on_train_batch_start: load the received model → start round
         ├─ …
-        ├─ on_train_batch_start: no training task → stop before the batch trains
         └─ on_train_end: send the open round, if the trainer stopped itself
 ```
 
@@ -127,8 +127,13 @@ Rules:
    batch that ran the optimizer step. A batch that takes the round past N steps (manual optimization with several
    optimizer steps per batch) raises `RuntimeError`, because the round can no longer end at N; N must then be a
    multiple of the steps per batch.
-2. **Send before validation.** The send happens at batch end and the receive at the next batch start. Lightning runs
-   in-fit validation in between, so it overlaps the server's aggregation instead of delaying the upload.
+2. **Receive at batch end, load at batch start.** The send and the next receive both happen at batch end, so the
+   callback can stop with `trainer.should_stop` before another batch trains. The received model is loaded at the next
+   batch start, so in-fit validation between the two still evaluates the local model. The cost: a validation that
+   falls right after a sync waits for the server's aggregation instead of overlapping it, which adds up to the
+   shorter of the two per such sync. Lightning gives a callback no hook between batch end and its stop check that
+   says whether validation runs next, so the receive cannot be moved after it without copying Lightning's private
+   scheduling logic.
 3. **The server's horizon.** `on_train_start` sets `fit_loop.max_epochs` and `epoch_loop.max_steps` to `-1`, and
    clears `min_epochs` and `min_steps`, which would otherwise keep Lightning from honouring the stop, so only the
    server ends a normal run. `on_train_end` and `on_exception` put the four limits back, so a later `fit()` on the
@@ -144,13 +149,14 @@ Rules:
    receive that returned a train task and the next send; `on_train_end` sends only an open round.
 5. **Receive results.**
    - A train task: load in place, start the next round.
-   - No model (the server finished, or the job stopped): set `trainer.should_stop` and raise `StopIteration`, so
-     the batch that has started does not train; no round is open. `should_stop` alone would still train that
-     batch, one step that is never sent. `TrainingEpochLoop.run` ends the epoch on `StopIteration`, which keeps
-     the LR scheduler in step with the optimizer. Returning `-1` from `LightningModule.on_train_batch_start` is
-     the documented way to skip a batch, but a callback can only do it by wrapping the user's module, and it
-     steps step-interval LR schedulers once more. `StopIteration` is not a documented contract, so a test pins
-     the step count and the scheduler position.
+   - No model (the server finished, or the job stopped): set `trainer.should_stop`. The receive happens at batch end
+     (or at `on_train_start` for the first round), so Lightning stops before the next batch; no round is open and no
+     step is lost. As for any `should_stop` (`EarlyStopping`), Lightning then runs one validation pass if a
+     validation dataloader is set and that batch was not already a validation batch. It evaluates the last local
+     model and does not reach the server. Skipping it would mean changing `trainer.limit_val_batches` during
+     `fit()`, which would also drop a scheduled validation on the same batch. Raising `StopIteration` from
+     `on_train_batch_start`, used before, avoided that pass but relied on `TrainingEpochLoop.run` catching it,
+     which is not a documented contract, and left the batch counters inconsistent.
    - A non-train task (evaluate, submit model): stop the same way, without loading it or clearing the Client API
      cache. The task stays pending, and the script can handle it after `fit()` with the usual loop:
 
