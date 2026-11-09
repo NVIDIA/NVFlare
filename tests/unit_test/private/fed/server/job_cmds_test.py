@@ -15,6 +15,7 @@
 import datetime
 import gc
 import io
+import os
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -2241,6 +2242,12 @@ def test_download_staging_copies_symlinked_originals(monkeypatch, tmp_path):
 
     module.download_job(conn, ["download_job", "job-1"])
 
+    assert conn.errors == []
+    module.download_folder.assert_called_once()
+    tx_id = module.download_folder.call_args.kwargs["tx_id"]
+    staged_meta = tmp_path / "dl" / tx_id / "job-1" / "meta.json"
+    assert not staged_meta.is_symlink()
+    assert staged_meta.read_text() == "redacted"
     assert original.read_text() == "original"
 
 
