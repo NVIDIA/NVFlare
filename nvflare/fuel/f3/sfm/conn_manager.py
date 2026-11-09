@@ -408,7 +408,7 @@ class ConnManager(ConnMonitor):
 
                 self.update_endpoint(sfm_conn, data)
             elif prefix.type == Types.PING:
-                sfm_conn.send_heartbeat(Types.PONG)
+                sfm_conn.send_heartbeat_async(Types.PONG)
             elif prefix.type == Types.PONG:
                 log.debug(f"PONG received for {sfm_conn.conn}")
                 # No action is needed for PONG. The last_activity is already updated
@@ -444,6 +444,23 @@ class ConnManager(ConnMonitor):
     def process_frame(self, sfm_conn: SfmConnection, frame: BytesAlike):
         if self.stopped:
             log.debug(f"Frame received after shutdown for connection {sfm_conn.get_name()}")
+            return
+
+        try:
+            prefix = Prefix.from_bytes(frame)
+        except RuntimeError:
+            log.debug(f"Frame received after shutdown for connection {sfm_conn.get_name()}")
+            return
+        except Exception:
+            # Keep malformed-frame reporting in process_frame_task, which owns
+            # the normal frame parser's exception handling.
+            prefix = None
+
+        if prefix is not None and prefix.type == Types.PING:
+            sfm_conn.send_heartbeat_async(Types.PONG)
+            return
+        if prefix is not None and prefix.type == Types.PONG:
+            log.debug(f"PONG received for {sfm_conn.conn}")
             return
 
         try:

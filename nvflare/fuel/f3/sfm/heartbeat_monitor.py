@@ -111,7 +111,7 @@ class HeartbeatMonitor(Thread):
                 continue
 
             if self.curr_time - sfm_conn.last_activity > self.interval:
-                sfm_conn.send_heartbeat(Types.PING)
+                sfm_conn.send_heartbeat_async(Types.PING)
                 log.debug(f"Heartbeat sent to connection: {sfm_conn.conn}")
 
         stale_keys = [k for k in self.stall_counts.keys() if k not in active_keys]

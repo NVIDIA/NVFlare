@@ -66,6 +66,8 @@ class SfmConnection:
         self.lock = threading.Lock()
         self.send_state_lock = threading.Lock()
         self.send_started_at = 0.0
+        self.control_send_lock = threading.Lock()
+        self.control_sends_in_flight = set()
 
     def get_name(self) -> str:
         return self.conn.name
@@ -104,6 +106,30 @@ class SfmConnection:
 
         stream_id = self.sfm_endpoint.next_stream_id()
         self.send_dict(frame_type, stream_id, data)
+
+    def send_heartbeat_async(self, frame_type: int, data: Optional[dict] = None):
+        """Send control heartbeats without blocking frame or timeout processing.
+
+        A synchronous driver write can block behind application data and its
+        connection lock. Keep at most one send of each control type in flight
+        for this connection; a pending PING/PONG is already sufficient while
+        that transport is backpressured.
+        """
+        with self.control_send_lock:
+            if frame_type in self.control_sends_in_flight:
+                return
+            self.control_sends_in_flight.add(frame_type)
+
+        def send():
+            try:
+                self.send_heartbeat(frame_type, data)
+            except Exception as ex:
+                log.debug(f"Heartbeat send failed for {self.conn}: {ex}")
+            finally:
+                with self.control_send_lock:
+                    self.control_sends_in_flight.discard(frame_type)
+
+        threading.Thread(target=send, name="f3_heartbeat", daemon=True).start()
 
     def send_data(self, app_id: int, stream_id: int, headers: Optional[dict], payload: BytesAlike):
         """Send user data"""
