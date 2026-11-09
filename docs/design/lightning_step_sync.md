@@ -172,7 +172,7 @@ Custom training code often has to act at the sync point:
 
 | Need | When |
 | --- | --- |
-| Add EMA weights or other state to the outgoing payload | before send |
+| Add exponential moving average (EMA) weights or other state to the outgoing payload | before send |
 | Log drift between local and global weights | after receive, before load |
 | Take entries that are not module weights (EMA) out of the payload and load them | after receive, before load |
 | Refresh the EMA from the new global weights | after load |
