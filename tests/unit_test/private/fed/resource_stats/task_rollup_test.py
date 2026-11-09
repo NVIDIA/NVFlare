@@ -142,6 +142,34 @@ def test_missing_or_unsettled_worker_keeps_existing_values_and_marks_quality(set
     assert store.read_resource_stats.call_count == int(settled)
 
 
+def test_incomplete_snapshot_preserves_values_without_changing_stored_totals():
+    reducer = task_rollup.TaskResourceReducer()
+    identity = _identity()
+    _fold(
+        reducer,
+        identity,
+        _report(identity, seconds=0, cpu_seconds=0, message_traffic={"sent_bytes": 0, "received_bytes": 10**50}),
+    )
+    complete = reducer.snapshot()
+    stored = deepcopy(reducer._totals)
+    unresolved = _identity("unresolved")
+    assert reducer.register(unresolved)
+
+    values = reducer.snapshot()
+    assert values["resource_time"] == {**complete["resource_time"], "status": "partial"}
+    assert values["cpu_consumed"] == {"cpu_seconds": 0, "status": "partial"}
+    assert values["message_traffic"] == {"sent_bytes": 0, "received_bytes": 10**50, "status": "partial"}
+    assert not values["duration_contained"]
+    assert reducer._totals == stored
+    assert reducer.snapshot() == values
+
+    values["resource_time"]["cpu"]["unit_seconds"] = 99
+    assert reducer.snapshot()["resource_time"]["cpu"]["unit_seconds"] == 0
+    reducer.settle(unresolved, Mock(), started=False)
+    assert reducer.snapshot() == complete
+    assert reducer._totals == stored
+
+
 def test_late_confirmed_settlement_can_resolve_a_temporary_scope_gap():
     reducer = task_rollup.TaskResourceReducer()
     identity = _identity()

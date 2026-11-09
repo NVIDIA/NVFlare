@@ -304,13 +304,12 @@ class TaskResourceReducer:
             incomplete = self._incomplete or not contained
         issues = result["issues"]
         if incomplete:
-            for field, aggregate in (
-                ("resource_time", aggregate_resource_time),
-                ("cpu_consumed", aggregate_cpu_consumed),
-                ("message_traffic", aggregate_message_traffic),
-            ):
+            for field in ("resource_time", "cpu_consumed", "message_traffic"):
                 value = result[field]
-                result[field] = aggregate([value], complete=False) if value is not None else dict(_UNAVAILABLE)
+                if value is None:
+                    result[field] = dict(_UNAVAILABLE)
+                elif value.get("status") != "unavailable":
+                    value["status"] = "partial"
                 issues.append({"metric": field, "code": "observation_incomplete"})
         result["issues"] = aggregate_scope_issues(
             issues, {field: value for field, value in result.items() if field != "issues" and value is not None}
