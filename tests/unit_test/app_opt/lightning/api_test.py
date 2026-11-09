@@ -1916,6 +1916,37 @@ def test_step_sync_trains_each_received_model_from_the_next_batch():
         assert torch.equal(module.seen[2 * round_idx].weight, torch.full((2, 2), float(round_idx)))
 
 
+class TwoStepsPerBatchNet(TinyLightningNet):
+    def __init__(self):
+        super().__init__()
+        self.automatic_optimization = False
+
+    def training_step(self, batch, batch_idx):
+        optimizer = self.optimizers()
+        for _ in range(2):
+            optimizer.zero_grad()
+            self.manual_backward(super().training_step(batch, batch_idx))
+            optimizer.step()
+
+
+def test_step_sync_rejects_a_batch_that_passes_the_sync_point():
+    fake = _FakeFlare(_train_tasks(2))
+
+    with pytest.raises(RuntimeError, match="took the round to 4 optimizer steps, past sync_every_n_steps=3"):
+        _fit_with_step_sync(fake, TwoStepsPerBatchNet(), _loader(8), sync_every_n_steps=3, max_epochs=1)
+
+    assert fake.sent == []
+
+
+def test_step_sync_supports_several_steps_per_batch_when_n_is_a_multiple():
+    fake = _FakeFlare(_train_tasks(2))
+
+    trainer = _fit_with_step_sync(fake, TwoStepsPerBatchNet(), _loader(8), sync_every_n_steps=4, max_epochs=1)
+
+    assert fake.steps() == [4, 4]
+    assert trainer.global_step == 8
+
+
 def test_step_sync_keeps_optimizer_scheduler_and_data_order_across_syncs():
     module = RecordingNet()
     fake = _FakeFlare(_train_tasks(4))

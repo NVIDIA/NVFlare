@@ -527,7 +527,16 @@ class _StepSyncFLCallback(_FLCallbackBase):
                 "estimated_stepping_batches) is now past its end; size it for num_rounds * sync_every_n_steps."
             )
             self._trainer_step_budget = None
-        if self._training_round_started and self._get_round_num_steps(trainer) >= self.sync_every_n_steps:
+        if not self._training_round_started:
+            return
+        round_steps = self._get_round_num_steps(trainer)
+        if round_steps > self.sync_every_n_steps:
+            raise RuntimeError(
+                f"Step sync checks the sync point once per batch, but this batch took the round to {round_steps} "
+                f"optimizer steps, past sync_every_n_steps={self.sync_every_n_steps}. With manual optimization, "
+                "take one optimizer step per batch or set sync_every_n_steps to a multiple of the steps per batch."
+            )
+        if round_steps == self.sync_every_n_steps:
             self._finish_round_and_send(trainer, pl_module)
 
     def on_train_end(self, trainer, pl_module):

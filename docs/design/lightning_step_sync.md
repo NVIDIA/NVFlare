@@ -121,8 +121,10 @@ fit() ─ on_train_batch_start (first batch): receive round 1, load, start round
 Rules:
 
 1. **Sync condition.** At `on_train_batch_end`, the round finishes when
-   `trainer.global_step - round_start_step >= sync_every_n_steps`. With gradient accumulation this first holds on the
-   batch that ran the optimizer step.
+   `trainer.global_step - round_start_step == sync_every_n_steps`. With gradient accumulation this first holds on the
+   batch that ran the optimizer step. A batch that takes the round past N steps (manual optimization with several
+   optimizer steps per batch) raises `RuntimeError`, because the round can no longer end at N; N must then be a
+   multiple of the steps per batch.
 2. **Send before validation.** The send happens at batch end and the receive at the next batch start. Lightning runs
    in-fit validation in between, so it overlaps the server's aggregation instead of delaying the upload.
 3. **The server's horizon.** `on_train_start` sets `fit_loop.max_epochs` and `epoch_loop.max_steps` to `-1`, and
