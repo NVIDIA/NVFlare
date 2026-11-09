@@ -31,12 +31,21 @@ study. Name datasets as ``SITE:NAME`` arguments after the options, for example
 ``SITE:NAME`` entry reads everything its policy shares. ``--timeout``
 sets the task timeout per site in seconds (default 300).
 
-``read`` waits for the job to finish by default and reports its actual terminal
-status without downloading job results. Use ``--no-wait`` to return the job ID
-immediately after submission. The default exits 0 on successful job completion
-and 1 for failed, aborted or unschedulable jobs. A completed job can still have
+``read`` waits for the job to finish and for the server to persist its catalog
+updates before returning success. It reports the actual job status without
+downloading job results. An immediate ``show`` or JSON export therefore follows
+this read's application. Overlapping reads may subsequently update the shared
+catalog under the usual last-applied-update rule. Use ``--no-wait`` to return the job ID immediately after
+submission. The default exits 0 after successful completion and persistence,
+and 1 for failed, aborted or unschedulable jobs, or failed catalog ingestion.
+A completed job can still have
 incomplete site reads; use ``show`` to inspect site health. Warnings describe
 failed, degraded and stale sites, including when no datasets are visible.
+Job completion and persistence share the wait budget: the task timeout plus
+60 seconds for scheduling and ingestion. A wait timeout exits 3 and does not
+cancel the job. A pending persistence acknowledgement is never reported as
+success; ``nvflare job meta JOB_ID`` shows ``fdn_catalog_apply_status`` for
+later inspection.
 
 Human and agent output
 ----------------------

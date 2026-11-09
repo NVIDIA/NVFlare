@@ -22,6 +22,7 @@ from contextlib import contextmanager
 from tempfile import TemporaryDirectory
 
 from nvflare.apis.job_def import DEFAULT_STUDY
+from nvflare.app_common.fdn.catalog.common.payload import CATALOG_APPLY_META
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.flare_api.api_spec import (
     AuthenticationError,
@@ -308,6 +309,29 @@ def _dataset_map(values: list[str] | None) -> dict[str, list[str]] | None:
 _JOB_START_MARGIN_S = 60
 
 
+def _wait_for_persistence(sess, job_id: str, study: str, deadline: float):
+    """A terminal job can precede its parent-side ingestion. Wait on the job's durable acknowledgement."""
+    print_human(f"{job_id}: waiting for catalog results to be persisted", flush=True)
+    while True:
+        status = sess.get_job_meta(job_id).get(CATALOG_APPLY_META)
+        if status == "APPLIED":
+            return
+        if status == "FAILED":
+            raise CommandError(
+                error_code="CATALOG_APPLY_FAILED",
+                message=f"catalog job {job_id} completed but its results could not be applied",
+                hint="Ask the server operator to check the catalog manager logs, then run another catalog read.",
+                exit_code=1,
+            )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(
+                f"catalog job {job_id} completed, but persistence is not yet confirmed; "
+                f"check it with 'nvflare job meta {job_id} --study {study}'"
+            )
+        time.sleep(min(1.0, remaining))
+
+
 def _submit_read(args) -> dict:
     """Export and submit the recipe through the shared CLI session, without downloading job results."""
     from nvflare.recipe.catalog import CatalogRecipe
@@ -325,6 +349,7 @@ def _submit_read(args) -> dict:
             if not args.no_wait:
                 print_human(f"catalog read job {job_id} submitted; waiting for completion", flush=True)
                 last_status = None
+                deadline = time.monotonic() + args.timeout + _JOB_START_MARGIN_S
 
                 def progress(session, job_id, meta):
                     nonlocal last_status
@@ -345,6 +370,8 @@ def _submit_read(args) -> dict:
                 status = meta.get("status") if isinstance(meta, dict) else None
                 if rc != MonitorReturnCode.JOB_FINISHED or job_status_outcome(status) is None:
                     raise InternalError(f"no terminal status for catalog job {job_id}")
+                if job_status_outcome(status) == "completed":
+                    _wait_for_persistence(sess, job_id, args.study, deadline)
                 data["status"] = status
                 data["elapsed_s"] = round(time.monotonic() - started, 1)
             return data
@@ -425,8 +452,8 @@ def _define_catalog_subcommands(parser):
         type=int,
         default=300,
         help=(
-            "seconds to wait for each site (default: 300); the command stops waiting for the job "
-            f"{_JOB_START_MARGIN_S} seconds after that, and the job keeps running"
+            "seconds to wait for each site (default: 300); the command waits for the job and catalog persistence "
+            f"for up to {_JOB_START_MARGIN_S} seconds longer; a wait timeout does not cancel the job"
         ),
     )
     p.add_argument(

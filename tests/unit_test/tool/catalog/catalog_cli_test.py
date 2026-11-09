@@ -18,7 +18,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from nvflare.app_common.fdn.catalog.admin.catalog_api import ClientHealth
+from nvflare.app_common.fdn.catalog.admin.catalog_api import CatalogAdminApi, ClientHealth
+from nvflare.app_common.fdn.catalog.common.payload import CATALOG_APPLY_META
 from nvflare.app_common.fdn.catalog.server.search import CatalogEntry
 from nvflare.fuel.flare_api.api_spec import (
     AuthenticationError,
@@ -35,6 +36,7 @@ from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.tool import cli_output, cli_session
 from nvflare.tool.catalog import catalog_cli
 from tests.catalog_cli_test_utils import CatalogSession
+from tests.timing_utils import ManualClock
 from tests.unit_test.app_common.fdn.catalog.helpers import make_catalog
 
 
@@ -149,11 +151,89 @@ class TestRead:
             pytest.fail("--no-wait must not monitor the submitted job")
 
         session.monitor_job_and_return_job_meta = unexpected_monitor
+        session.get_job_meta = unexpected_monitor
         monkeypatch.setattr(cli_session, "new_cli_session_for_args", lambda **kw: session)
         data = catalog_cli._submit_read(parse("read", "--study", "s", "--no-wait"))
 
         assert data == {"study": "s", "job_id": "job-1"}
         assert session.closed and not session.submitted["path"].exists()
+
+    def test_read_waits_for_persistence_before_immediate_json_export(self, monkeypatch):
+        session = CatalogSession()
+        session.apply_status = "PENDING"
+        polls = iter(["PENDING", "PENDING", "APPLIED"])
+        sleeps = []
+        viewer = CatalogSession()
+
+        def metadata(job_id):
+            session.apply_status = next(polls)  # an extra poll fails promptly
+            return {CATALOG_APPLY_META: session.apply_status}
+
+        def command(command, props):
+            if command == "fdn_catalog_status":
+                return CatalogSession.do_command(viewer, command, props)
+            assert command == "fdn_catalog_search"
+            catalog = make_catalog(display_name="New view" if session.apply_status == "APPLIED" else "Old view")
+            return {
+                "data": [
+                    {
+                        "type": "dict",
+                        "data": {
+                            "entries": [
+                                dict(
+                                    client="site-a",
+                                    dataset=catalog.dataset,
+                                    available=True,
+                                    metadata=catalog.metadata_wire(),
+                                )
+                            ],
+                            "next_cursor": None,
+                            "total": 1,
+                            "facets": {},
+                        },
+                    }
+                ]
+            }
+
+        session.get_job_meta = metadata
+        viewer.do_command = command
+        monkeypatch.setattr(cli_session, "new_cli_session_for_args", lambda **kw: session)
+        monkeypatch.setattr(catalog_cli, "time", SimpleNamespace(monotonic=lambda: 0, sleep=sleeps.append))
+        result = catalog_cli._submit_read(parse("read"))
+        exported = json.loads(json.dumps(catalog_cli._show(CatalogAdminApi(viewer), parse("show"))))
+        assert result["status"] == "FINISHED:COMPLETED"
+        assert sleeps == [1.0, 1.0] and exported["datasets"][0]["metadata"]["display_name"] == "New view"
+
+    def test_persistence_wait_uses_the_remaining_job_wait_budget(self, monkeypatch):
+        session = CatalogSession()
+        session.apply_status = "PENDING"
+        clock = ManualClock(0)
+        sleeps = []
+
+        def monitor(*args, **kwargs):
+            clock.advance(60)
+            from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
+
+            return MonitorReturnCode.JOB_FINISHED, {"status": "FINISHED:COMPLETED"}
+
+        def sleep(seconds):
+            sleeps.append(seconds)
+            assert len(sleeps) <= 1, "persistence wait exceeded its deadline"
+            clock.advance(seconds)
+
+        session.monitor_job_and_return_job_meta = monitor
+        monkeypatch.setattr(cli_session, "new_cli_session_for_args", lambda **kw: session)
+        monkeypatch.setattr(catalog_cli, "time", SimpleNamespace(monotonic=clock.monotonic, sleep=sleep))
+        with pytest.raises(TimeoutError, match="persistence is not yet confirmed"):
+            catalog_cli._submit_read(parse("read", "--timeout", "1"))
+        assert clock.monotonic() == 61 and sleeps == [1] and session.closed
+
+    @pytest.mark.parametrize("status", ["FINISHED:ABORTED", "FINISHED:EXECUTION_EXCEPTION"])
+    def test_failed_jobs_do_not_wait_for_persistence(self, monkeypatch, status):
+        session = CatalogSession(status=status)
+        monkeypatch.setattr(cli_session, "new_cli_session_for_args", lambda **kw: session)
+        assert catalog_cli._submit_read(parse("read"))["status"] == status
+        assert session.meta_reads == 0 and session.closed
 
     @pytest.mark.parametrize("argv", [("--sites", ","), ("bad",), ("--timeout", "0")])
     def test_invalid_scope_is_rejected_before_connecting(self, monkeypatch, argv):
@@ -172,6 +252,32 @@ def machine_output():
         yield
     finally:
         cli_output.set_output_format("txt")
+
+
+def test_failed_persistence_reports_an_error_instead_of_a_success_envelope(monkeypatch, capsys, machine_output):
+    session = CatalogSession()
+    session.apply_status = "FAILED"
+    monkeypatch.setattr(cli_session, "new_cli_session_for_args", lambda **kw: session)
+    with pytest.raises(SystemExit) as stopped:
+        catalog_cli.cmd_read(parse("read"))
+    reply = json.loads(capsys.readouterr().out)
+    assert stopped.value.code == 1 and session.closed
+    assert reply["status"] == "error" and reply["error_code"] == "CATALOG_APPLY_FAILED"
+
+
+def test_disconnected_persistence_poll_reports_connection_failure(monkeypatch, capsys, machine_output):
+    session = CatalogSession()
+
+    def disconnected(job_id):
+        raise NoConnection("connection lost after job completion")
+
+    session.get_job_meta = disconnected
+    monkeypatch.setattr(cli_session, "new_cli_session_for_args", lambda **kw: session)
+    with pytest.raises(SystemExit) as stopped:
+        catalog_cli.cmd_read(parse("read"))
+    reply = json.loads(capsys.readouterr().out)
+    assert stopped.value.code == 2 and session.closed
+    assert reply["status"] == "error" and reply["error_code"] == "CONNECTION_FAILED"
 
 
 @pytest.mark.parametrize("command", ["read", "show"])

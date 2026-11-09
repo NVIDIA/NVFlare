@@ -17,6 +17,7 @@
 import json
 from pathlib import Path
 
+from nvflare.app_common.fdn.catalog.common.payload import CATALOG_APPLY_META
 from nvflare.app_common.fdn.catalog.server.commands import SEARCH, STATUS
 from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
 from nvflare.fuel.hci.client.api_status import APIStatus
@@ -34,6 +35,8 @@ class CatalogSession:
         self.closed = False
         self.submitted = None
         self.monitored = False
+        self.apply_status = "APPLIED"
+        self.meta_reads = 0
 
     def submit_job(self, path):
         if self.error:
@@ -85,6 +88,12 @@ class CatalogSession:
             ProtoKey.STATUS: APIStatus.SUCCESS,
             ProtoKey.DATA: [{ProtoKey.TYPE: ProtoKey.DICT, ProtoKey.DATA: payload}],
         }
+
+    def get_job_meta(self, job_id):
+        if self.error:
+            raise self.error
+        self.meta_reads += 1
+        return {"status": self.status, CATALOG_APPLY_META: self.apply_status}
 
     def close(self):
         self.closed = True
