@@ -2037,6 +2037,18 @@ def test_step_sync_does_not_send_a_round_without_optimizer_steps(caplog, with_sc
     assert [r for r in caplog.records if "stopped before the first optimizer step of round 1" in r.getMessage()]
 
 
+def test_step_sync_does_not_wait_for_the_next_task_when_the_trainer_stops_on_a_sync_batch():
+    fake = _FakeFlare(_train_tasks(10))
+
+    trainer = _fit_with_step_sync(
+        fake, RecordingNet(), _loader(8), sync_every_n_steps=2, max_epochs=1, callbacks=[StopAtStep(4)]
+    )
+
+    assert fake.steps() == [2, 2]
+    assert fake.events == ["receive", "send", "receive", "send"]
+    assert trainer.global_step == 4
+
+
 @pytest.mark.timeout(60)
 @pytest.mark.parametrize("trainer_kwargs", [{"min_steps": 100}, {"min_epochs": 5}], ids=["min-steps", "min-epochs"])
 def test_step_sync_stops_when_the_server_finishes_before_the_trainer_minimum(trainer_kwargs):

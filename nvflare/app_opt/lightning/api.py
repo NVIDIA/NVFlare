@@ -544,7 +544,8 @@ class _StepSyncFLCallback(_FLCallbackBase):
             )
         if round_steps == self.sync_every_n_steps:
             self._finish_round_and_send(trainer, pl_module)
-            self._receive_next_round(trainer)
+            if not trainer.should_stop:
+                self._receive_next_round(trainer)
 
     def on_train_end(self, trainer, pl_module):
         self._restore_trainer_limits(trainer)

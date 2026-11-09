@@ -128,7 +128,9 @@ Rules:
    optimizer steps per batch) raises `RuntimeError`, because the round can no longer end at N; N must then be a
    multiple of the steps per batch.
 2. **Receive at batch end, load at batch start.** The send and the next receive both happen at batch end, so the
-   callback can stop with `trainer.should_stop` before another batch trains. The received model is loaded at the next
+   callback can stop with `trainer.should_stop` before another batch trains. If `trainer.should_stop` is already set
+   when the round is sent (by the training step or a callback that runs earlier), the callback does not receive, so
+   `fit()` returns without waiting for the server's next task. The received model is loaded at the next
    batch start, so in-fit validation between the two still evaluates the local model. The cost: a validation that
    falls right after a sync waits for the server's aggregation instead of overlapping it, which adds up to the
    shorter of the two per such sync. Lightning gives a callback no hook between batch end and its stop check that
