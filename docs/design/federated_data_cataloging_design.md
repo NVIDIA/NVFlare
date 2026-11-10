@@ -259,7 +259,7 @@ Each connector call receives `max_calls` and the remaining whole-read time and r
 
 ## 4. The catalog result
 
-The controller collects one result per site and writes `catalog_results.json` in the job's server workspace. When the job finishes, the existing job runner saves that workspace, including the file, to the job store, so the result persists with the job. The recipe downloads it after completion and loads the file (Section 6), and the same result can be downloaded later from the job store. There is no catalog store, index or search service beyond that.
+The controller collects one result per site and writes `catalog_results.json` in the job's server workspace. When the job finishes, the existing job runner saves that workspace, including the file, to the job store, so the result persists with the job. The recipe downloads it after completion and loads the file (Section 6), and the same result can be downloaded later from the job store. FLARE's job download returns the whole job workspace (configuration, logs and other artifacts). After a completed read, the recipe keeps only `catalog_results.json` from it; after a failed read it keeps the whole workspace for diagnosis. A download that fetches only a job's result files would avoid transferring the rest; that is a general FLARE improvement, not part of this design. There is no catalog store, index or search service beyond that.
 
 **Last read wins.** Each read's result is complete on its own. The latest completed read supersedes the earlier ones: nothing is carried over from or merged with an earlier read. Earlier reads stay in the job store as ordinary finished jobs until they are deleted like any other job.
 
