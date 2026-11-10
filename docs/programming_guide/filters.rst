@@ -235,6 +235,19 @@ failures. If the executor exits before output filtering, the baseline is release
 when its task context is released. Runtime audit failures preserve the outgoing
 update; reporting failures are logged. A DXO filter-application event alone is not
 a completed privacy audit.
+
+Report fields depend on the observation path: ``elapsed_seconds`` is present only
+when ``process_model`` runs, and scorer/fingerprint/cohort fields come from
+successful auditor results. Bypass and conversion-failure reports omit elapsed
+time; consumers must handle absent fields and null round identities.
+
+On POSIX, report files use owner-only ``mkstemp`` permissions. Only a newly created
+leaf report directory requests mode ``0o700``; existing directories are unchanged,
+and missing intermediate parents use default permissions and the process umask.
+After each JSON write, the reporter calls ``add_job_audit_event`` with status and
+file name, independently of analytics selection. The event is recorded when the
+job audit service is initialized. Component logging also records status and path.
+
 Only metrics explicitly listed in ``summary_metrics`` are emitted to analytics receivers;
 their configured event handling determines whether they remain local or are relayed.
 ``MemorizationAuditReporter`` in ``nvflare.app_common.widgets`` can also persist a

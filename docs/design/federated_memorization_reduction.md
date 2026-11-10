@@ -1,6 +1,6 @@
 # Experimental memorization mitigation and auditing
 
-Status: draft for API and design review, updated November 5, 2026.
+Status: draft for API and design review, updated November 10, 2026.
 
 Issue: [NVIDIA/NVFlare#5680](https://github.com/NVIDIA/NVFlare/issues/5680).
 
@@ -30,10 +30,11 @@ arXiv:2609.32293. This design covers the NVFlare integration of the preprint's
 reference-based penalty and the supporting audit interfaces.
 
 The [benchmark report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/TRAP_DP_RESULTS.md)
-includes the completed GB300 research study. Representative SDK validation on H100
-and focused unit tests check this integration's behavior; the separate benchmark
-evidence and its limits are summarized below. TRAP is not differential privacy,
-and this proposal adds neither a DP mechanism nor a privacy accountant.
+includes the completed GB300 research study. The November 6 H100 validation covers
+SDK revision `778d632e`; subsequent changes have focused local regression coverage
+and have not rerun that GPU workflow. The separate benchmark evidence and its
+limits are summarized below. TRAP is not differential privacy, and this proposal
+adds neither a DP mechanism nor a privacy accountant.
 
 ## Components and ownership
 
@@ -44,7 +45,7 @@ and this proposal adds neither a DP mechanism nor a privacy accountant.
 | `MemorizationAuditor`, `UnsupportedAudit` | `app_common/abstract/memorization_auditor.py` | Framework-neutral application audit contract |
 | `AuditSnapshotFilter`, `MemorizationAuditFilter` | `app_common/filters/memorization_audit_filter.py` | Task-context baseline, scheduling and failure classification |
 | `PTMemorizationAuditor` | `app_opt/pt/memorization_auditor.py` | Model reconstruction, RNG isolation and membership aggregates |
-| `MemorizationAuditReporter` | `app_common/widgets/memorization_audit_reporter.py` | Local JSON reports and explicitly selected analytics |
+| `MemorizationAuditReporter` | `app_common/widgets/memorization_audit_reporter.py` | Local JSON reports, job audit-log events and explicitly selected analytics |
 
 The runnable research entry point is
 [`research/memorization-reduction/`](https://github.com/NVIDIA/NVFlare/tree/main/research/memorization-reduction).
@@ -249,12 +250,39 @@ enforce a privacy policy. Operators requiring fail-closed release control need a
 separate reviewed mechanism. Configuration errors are distinct from failed runtime
 measurements. A DXO filter-application event is not proof of a completed audit.
 
-Schema version 1 reports contain job/task/site/stage/round, status/reason, elapsed
-time, scorer/model identities, counts and aggregate metrics. Local files live under
-the job run directory, use atomic replacement and owner-only permissions for newly
-created files/directories. Retry identity includes job, task, stage, round and model
-fingerprint. A `global_model` stage separates final evaluation from client audits.
-Reporting failures are logged and return no report path.
+The reporter adds `schema_version=1`, `job_id`, `task_id`, `site` and `stage` to the
+supplied report; identities can be unavailable. Other fields depend on the caller
+and observation path:
+
+| Fields | Availability in filter reports |
+|---|---|
+| `status`, `round`, `metrics` | All filter paths; `round` can be null and non-completed reports have empty metrics |
+| `reason` | Explains skipped, unsupported or failed observations |
+| `elapsed_seconds` | Only paths reaching `process_model`, including schedule skips and caught audit failures; measures that callback before report I/O |
+| `scorer`, `model_fingerprint`, `sample_counts` | Supplied by successful `PTMemorizationAuditor` results; the reporter does not synthesize or require them from other auditors |
+| `baseline_fingerprint` | Supplied by successful paired PT audits |
+
+Early bypass reports (`task_result_not_ok`, `non_model_result`, `model_collection`,
+`unsupported_data_kind`, `missing_parameters`) and DXO conversion-failure reports
+have no `elapsed_seconds`. Consumers must handle absent observation fields. Direct
+reporter callers, including global evaluation jobs, supply their own observation
+fields. A `global_model` stage separates final evaluation from client audits.
+
+Local JSON files live under the job run directory and use atomic replacement.
+On POSIX, `mkstemp` creates each report file with owner-only mode `0o600`, subject
+to the process umask. Directory mode `0o700` applies only to a newly created leaf
+report directory. Existing directories retain their permissions; missing
+intermediate parents of a nested `report_dir` use the default permissions and
+umask. Applications must provision workspace and parent-directory access as needed.
+Retry identity includes job, task, stage, round and model fingerprint; unavailable
+rounds/fingerprints contribute null values.
+
+After writing JSON, the reporter calls `add_job_audit_event` with the status and
+report file name, independently of `summary_metrics`. The configured job audit
+service records that event; it is a no-op when no auditor is initialized. Normal
+component logging also records the status and report path. Reporting failures are
+logged and return no report path; if a later audit-log or analytics operation fails,
+the JSON file may already exist.
 
 Raw text, prompts and per-record scores must not enter the auditor's result dict.
 This is an application contract, not automatic content redaction. No analytics are
@@ -275,8 +303,9 @@ The [Hugging Face adoption example](https://github.com/NVIDIA/NVFlare/tree/main/
 provides reference preparation, completion cohorts, likelihood/TRA attacks, final
 global-checkpoint evaluation, and an expected site/round coverage checker. Its
 [SDK validation report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/huggingface/SDK_VALIDATION.md)
-records numerical parity and memory/runtime scope for the actual SDK. These bounded
-measurements do not establish capacity for arbitrary models or client concurrency.
+records numerical parity and memory/runtime scope for SDK revision `778d632e`.
+Those measurements do not cover subsequent revisions or establish capacity for
+arbitrary models or client concurrency.
 Operators must budget live trainer/reference/evaluation models, snapshots,
 materialized updates, activations/logits, optimizer state and temporary copies.
 

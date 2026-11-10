@@ -2,7 +2,7 @@
 
 Accepted November 5, 2026: **all 525 primary fits and 210 final evaluations are complete and independently checked**. The [protocol](TRAP_DP_COMPARISON.md), [complete scalar tables](results/trap-dp-final/README.md), and [provenance hashes](results/trap-dp-final/provenance.json) accompany this report.
 
-This benchmark used the frozen research implementation that preceded the SDK API refactor in this PR. It motivates the reusable TRAP and audit components; it is not a rerun of the current PR revision. The [H100 SDK validation](huggingface/SDK_VALIDATION.md) separately checks the current classes. This benchmark uses an APEX-style dossier extraction/rare-secret task with Pythia-70M on GB300 GPUs. It is a reconstruction of the task recipe, not an exact numerical reproduction of the [TRAP preprint](https://arxiv.org/abs/2609.32293).
+This benchmark used the frozen research implementation that preceded the SDK API refactor in this PR. It motivates the reusable TRAP and audit components; it is not a rerun of the current PR revision. The [H100 SDK validation](huggingface/SDK_VALIDATION.md) separately checked SDK revision `778d632e` on November 6, 2026; later changes have focused local regression coverage and have not rerun that GPU workflow. This benchmark uses an APEX-style dossier extraction/rare-secret task with Pythia-70M on GB300 GPUs. It is a reconstruction of the task recipe, not an exact numerical reproduction of the [TRAP preprint](https://arxiv.org/abs/2609.32293).
 
 TRAP often reduced measured membership leakage while preserving field accuracy in this study. It passed the paired accuracy-and-leakage screen in **60/84** comparisons, but only **24/84** also passed the CE screen. DP passed **0/84** of either screen in the bounded search. This is evidence about the evaluated settings and attacks: TRAP has no formal DP guarantee, and these results do not establish the best attainable DP baseline.
 
@@ -12,7 +12,7 @@ TRAP often reduced measured membership leakage while preserving field accuracy i
 
 The headline view shows all **21 baseline, 84 TRAP and 84 DP final evaluations**. Median field accuracy is **97.4% / 97.3% / 26.1%**, respectively; median strongest measured leakage is **0.7970 / 0.3360 / 0.2735 nAUC**. Dots retain every run and lines show full ranges. These are descriptive medians pooled across K, strengths and seeds, not matched privacy budgets or uncertainty intervals. The paired comparisons establish the headline: **60/84** TRAP results preserve accuracy within one percentage point while reducing nAUC by at least 0.05; every tested DP result loses accuracy, by **18.8–98.5 percentage points**. The 21 zero-noise controls and CE results remain in the full comparison below.
 
-The [separate SDK GPU validation](huggingface/SDK_VALIDATION.md) exercises the current classes in a bounded Pythia workflow, with numerical parity and resource measurements. It is not a rerun of this efficacy study.
+The [separate SDK GPU validation](huggingface/SDK_VALIDATION.md) records numerical parity and resource measurements for SDK revision `778d632e` in a bounded Pythia workflow. It is not a rerun of this efficacy study.
 
 ## Complete comparison
 
