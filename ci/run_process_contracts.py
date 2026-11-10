@@ -39,6 +39,7 @@ TESTS = (
     "tests/integration_test/fast/recipe_log_config_test.py",
     "tests/integration_test/fast/resource_stats_cpu_process_test.py",
     "tests/integration_test/fast/resource_stats_filesystem_probe_test.py",
+    "tests/integration_test/fast/resource_stats_task_process_test.py",
     "tests/integration_test/fast/server_transit_e2e_test.py",
     "tests/integration_test/fast/step_ca_admin_cert_process_test.py",
     "tests/integration_test/fast/streaming_pass_through_test.py",

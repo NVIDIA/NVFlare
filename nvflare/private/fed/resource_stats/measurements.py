@@ -17,6 +17,8 @@
 
 import json
 import math
+from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
 SCHEMA_VERSION = "1.0"
@@ -136,3 +138,63 @@ def aggregate_cpu_consumed(values, *, complete=True):
 
 def aggregate_message_traffic(values, *, complete=True):
     return aggregate_usage(values, ("sent_bytes", "received_bytes"), complete=complete)
+
+
+def utc_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def _sum_totals(entries, *, complete):
+    totals = {
+        "resource_time": aggregate_resource_time([entry["resource_time"] for entry in entries], complete=complete),
+        "resource_utilization": {
+            field: aggregate_usage(
+                [entry["resource_utilization"][field] for entry in entries], fields, complete=complete
+            )
+            for field, fields in (
+                ("cpu_consumed", {"cpu_seconds"}),
+                ("retained_content", {"bytes"}),
+                ("message_traffic", {"sent_bytes", "received_bytes"}),
+            )
+        },
+    }
+    issues = []
+    if totals["resource_time"].get("status") == "partial":
+        codes = set() if complete else {"observation_incomplete"}
+        for entry in entries:
+            source = entry["resource_time"]
+            causes = {item["code"] for item in entry["issues"] if item["metric"] == "resource_time"}
+            if source.get("status") == "partial":
+                codes.update(causes)
+            elif source.get("status") == "unavailable":
+                codes.add(
+                    "attribution_incomplete" if causes == {"attribution_incomplete"} else "observation_incomplete"
+                )
+        _append_issues(issues, "resource_time", codes or {"observation_incomplete"})
+    elif totals["resource_time"].get("status") == "unavailable":
+        _append_issues(issues, "resource_time", {"observation_incomplete"})
+    for metric, value in totals["resource_utilization"].items():
+        if "status" in value:
+            _append_issues(issues, metric, {"observation_incomplete"})
+    totals["issues"] = ordered_issues(issues)
+    return totals
+
+
+def participant_measurements(record):
+    result = {
+        field: deepcopy(record[field])
+        for field in ("resource_capacity", "resource_time", "resource_utilization", "duration_seconds")
+        if field in record
+    }
+    result["issues"] = [dict(item) for item in record["issues"] if item["metric"] != "workspace_filesystem"]
+    return result
+
+
+def sum_job_totals(participants):
+    accepted = [entry for entry in participants if "status" not in entry]
+    return _sum_totals(accepted, complete=len(accepted) == len(participants))
+
+
+def sum_study_totals(jobs):
+    """Sum already accepted job observations; selection coverage stays separate."""
+    return _sum_totals([job["totals"] for job in jobs if job["resource_data"] == "included"], complete=True)

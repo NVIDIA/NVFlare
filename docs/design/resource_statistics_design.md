@@ -1,10 +1,5 @@
 # Resource statistics design
 
-> **Availability:** These pages describe the complete resource-statistics design.
-> The `nvflare resources` command and `Session.get_job_resources` /
-> `Session.get_study_resources` APIs are not yet available on `main`; they are
-> added by the follow-on query implementation.
-
 ## Purpose
 
 Resource statistics provides a final, best-effort account of the resources visible
