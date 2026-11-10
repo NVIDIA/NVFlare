@@ -519,7 +519,11 @@ class _StepSyncFLCallback(_FLCallbackBase):
         if input_model is not None:
             self._update_model(pl_module, input_model)
         else:
+            if self._received_model is None:
+                self._receive_next_round(trainer)
             received, self._received_model = self._received_model, None
+            if received is None:
+                return
             input_model = self._load_received_model(trainer, pl_module, received)
         self._start_round(trainer, pl_module, input_model)
 

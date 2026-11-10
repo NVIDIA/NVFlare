@@ -2049,6 +2049,28 @@ def test_step_sync_does_not_wait_for_the_next_task_when_the_trainer_stops_on_a_s
     assert trainer.global_step == 4
 
 
+class ClearStopAtStep(pl.Callback):
+    def __init__(self, step):
+        self.step = step
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if trainer.global_step == self.step:
+            trainer.should_stop = False
+
+
+@pytest.mark.parametrize("tasks, expected_steps", [(4, [2, 2, 2, 2]), (1, [2])])
+def test_step_sync_receives_at_batch_start_when_a_later_callback_clears_the_stop(tasks, expected_steps):
+    fake = _FakeFlare(_train_tasks(tasks))
+
+    with _flare(fake):
+        trainer = _pl_trainer(max_epochs=1, callbacks=[StopAtStep(2)])
+        lightning_patch(trainer, sync_every_n_steps=2)
+        trainer.callbacks.append(ClearStopAtStep(2))
+        trainer.fit(RecordingNet(), train_dataloaders=_loader(8))
+
+    assert fake.steps() == expected_steps
+
+
 @pytest.mark.timeout(60)
 @pytest.mark.parametrize("trainer_kwargs", [{"min_steps": 100}, {"min_epochs": 5}], ids=["min-steps", "min-epochs"])
 def test_step_sync_stops_when_the_server_finishes_before_the_trainer_minimum(trainer_kwargs):
