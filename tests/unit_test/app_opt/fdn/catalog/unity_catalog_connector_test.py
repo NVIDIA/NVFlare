@@ -14,6 +14,7 @@
 
 import copy
 import json
+import os
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -24,9 +25,25 @@ from nvflare.app_common.fdn.catalog.common.schema import DEFAULT_LIMITS, ReadLim
 from nvflare.app_common.fdn.catalog.site.connector import ConnectorError
 from nvflare.app_opt.fdn.catalog import _metadata
 from nvflare.app_opt.fdn.catalog import unity_catalog_connector as subject
+from tests.unit_test.app_opt.fdn.catalog.datasets import read as read_dataset
 
 LIMITS = ReadLimits(**DEFAULT_LIMITS)
 OPTIONS = {"catalog": "unity", "schema": "clinical"}
+
+
+def uc_read(limits, options, name="omop", token_env=None):
+    """Reads through the dataset configuration API. The tests set the API root in UNITY_CATALOG_URL for brevity;
+    the connector itself reads only the dataset's uri and secrets."""
+    secrets = {"token": token_env} if token_env is not None else None
+    return read_dataset(
+        subject.UnityCatalogConnector(),
+        limits,
+        name=name,
+        type_="unity-catalog",
+        uri=os.environ["UNITY_CATALOG_URL"],
+        options=options,
+        secrets=secrets,
+    )
 
 
 def table(name="person"):
@@ -84,7 +101,7 @@ def test_reads_all_pages_and_only_publishes_structural_metadata(transport):
     transport.responses.extend(
         [{"tables": [table("visits")], "next_page_token": "page-2"}, {"tables": [table("person")]}]
     )
-    catalog = subject.UnityCatalogConnector({}).read_catalog("omop", LIMITS, OPTIONS)
+    catalog = uc_read(LIMITS, OPTIONS)
     assert [t.name for t in catalog.tables] == ["person", "visits"]
     assert catalog.tables[0].columns[0].type == "bigint" and catalog.tables[0].columns[0].nullable is False
     assert catalog.tables[0].primary_key == () and catalog.tables[0].relationships == ()
@@ -100,9 +117,7 @@ def test_reads_all_pages_and_only_publishes_structural_metadata(transport):
 def test_explicit_table_selection_fetches_only_selected_metadata(transport, monkeypatch):
     monkeypatch.setenv("STUDY_UC_TOKEN", "site-token")
     transport.responses.append(table("quoted/name"))
-    catalog = subject.UnityCatalogConnector({}, token_env="STUDY_UC_TOKEN").read_catalog(
-        "omop", LIMITS, {**OPTIONS, "tables": ["quoted/name"]}
-    )
+    catalog = uc_read(LIMITS, {**OPTIONS, "tables": ["quoted/name"]}, token_env="STUDY_UC_TOKEN")
     assert catalog.tables[0].name == "quoted/name"
     assert len(transport.calls) == 1 and transport.calls[0][0].endswith("/tables/unity.clinical.quoted%2Fname")
     assert transport.calls[0][1]["headers"]["Authorization"] == "Bearer site-token"
@@ -113,7 +128,7 @@ def test_list_without_columns_gets_complete_table_details(transport):
     brief = table()
     del brief["columns"]
     transport.responses.extend([{"tables": [brief]}, table()])
-    catalog = subject.UnityCatalogConnector({}).read_catalog("omop", LIMITS, OPTIONS)
+    catalog = uc_read(LIMITS, OPTIONS)
     assert catalog.tables[0].columns[0].name == "person_id"
     assert transport.calls[1][0].endswith("/tables/unity.clinical.person")
 
@@ -123,7 +138,7 @@ def test_missing_column_details_fail_without_returning_partial_metadata(transpor
     del brief["columns"]
     transport.responses.extend([{"tables": [brief]}, brief])
     with pytest.raises(ConnectorError, match="column inventory is missing"):
-        subject.UnityCatalogConnector({}).read_catalog("omop", LIMITS, OPTIONS)
+        uc_read(LIMITS, OPTIONS)
     assert len(transport.calls) == 2 and transport.closed[-1] == "session"
 
 
@@ -131,7 +146,7 @@ def test_missing_column_details_fail_without_returning_partial_metadata(transpor
 def test_budgets_never_return_a_partial_schema(transport, overrides):
     transport.responses.extend([{"tables": [table()], "next_page_token": "page-2"}, {"tables": [table("visits")]}])
     with pytest.raises(ConnectorError) as error:
-        subject.UnityCatalogConnector({}).read_catalog("omop", replace(LIMITS, **overrides), OPTIONS)
+        uc_read(replace(LIMITS, **overrides), OPTIONS)
     assert error.value.budget and transport.closed[-1] == "session"
 
 
@@ -139,7 +154,7 @@ def test_expired_deadline_performs_no_http_request(transport, monkeypatch):
     ticks = iter([0.0, 100.0])
     monkeypatch.setattr(_metadata, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
     with pytest.raises(ConnectorError) as error:
-        subject.UnityCatalogConnector({}).read_catalog("omop", LIMITS, OPTIONS)
+        uc_read(LIMITS, OPTIONS)
     assert error.value.budget and not transport.calls and transport.closed == ["session"]
 
 
@@ -148,7 +163,7 @@ def test_server_failures_are_sanitized_and_connections_are_closed(transport):
         [{"tables": [table()], "next_page_token": "p2"}, transport.response({"secret": "x"}, 403)]
     )
     with pytest.raises(ConnectorError) as error:
-        subject.UnityCatalogConnector({}).read_catalog("omop", LIMITS, OPTIONS)
+        uc_read(LIMITS, OPTIONS)
     assert str(error.value) == "Unity Catalog metadata is unavailable" and not error.value.budget
     assert transport.closed == ["response", "response", "session"]
 
@@ -156,14 +171,14 @@ def test_server_failures_are_sanitized_and_connections_are_closed(transport):
 def test_transport_failure_does_not_expose_endpoint_token_or_exception(transport):
     transport.responses.append(requests.ConnectionError("private-url Bearer private-token"))
     with pytest.raises(ConnectorError) as error:
-        subject.UnityCatalogConnector({}).read_catalog("omop", LIMITS, OPTIONS)
+        uc_read(LIMITS, OPTIONS)
     assert str(error.value) == "Unity Catalog metadata is unavailable" and transport.closed == ["session"]
 
 
 def test_request_timeout_is_a_budget_stop_not_evidence_that_a_dataset_is_gone(transport):
     transport.responses.append(requests.Timeout("private-url Bearer private-token"))
     with pytest.raises(ConnectorError) as error:
-        subject.UnityCatalogConnector({}).read_catalog("omop", LIMITS, OPTIONS)
+        uc_read(LIMITS, OPTIONS)
     assert error.value.budget and str(error.value) == "Unity Catalog metadata request timed out"
     assert transport.closed == ["session"]
 
@@ -171,7 +186,7 @@ def test_request_timeout_is_a_budget_stop_not_evidence_that_a_dataset_is_gone(tr
 def test_repeated_page_token_fails_instead_of_looping(transport):
     transport.responses.extend([{"tables": [], "next_page_token": "same"}] * 2)
     with pytest.raises(ConnectorError, match="pagination is inconsistent"):
-        subject.UnityCatalogConnector({}).read_catalog("omop", LIMITS, OPTIONS)
+        uc_read(LIMITS, OPTIONS)
     assert len(transport.calls) == 2
 
 
@@ -179,14 +194,14 @@ def test_repeated_page_token_fails_instead_of_looping(transport):
 def test_inconsistent_table_metadata_fails_closed(transport, change):
     transport.responses.append({**table(), **change})
     with pytest.raises(ConnectorError):
-        subject.UnityCatalogConnector({}).read_catalog("omop", LIMITS, {**OPTIONS, "tables": ["person"]})
+        uc_read(LIMITS, {**OPTIONS, "tables": ["person"]})
     assert transport.closed[-1] == "session"
 
 
 def test_duplicate_tables_across_pages_fail_closed(transport):
     transport.responses.extend([{"tables": [table()], "next_page_token": "p2"}, {"tables": [table()]}])
     with pytest.raises(ConnectorError, match="inventory is inconsistent"):
-        subject.UnityCatalogConnector({}).read_catalog("omop", LIMITS, OPTIONS)
+        uc_read(LIMITS, OPTIONS)
 
 
 @pytest.mark.parametrize(
@@ -194,14 +209,14 @@ def test_duplicate_tables_across_pages_fail_closed(transport):
 )
 def test_invalid_selection_is_rejected_before_io(transport, options):
     with pytest.raises(ConnectorError):
-        subject.UnityCatalogConnector({}).read_catalog("omop", LIMITS, options)
+        uc_read(LIMITS, options)
     assert transport.calls == []
 
 
 def test_configured_but_missing_credentials_never_fall_back_to_anonymous(transport, monkeypatch):
     monkeypatch.delenv("MISSING_UC_TOKEN", raising=False)
     with pytest.raises(ConnectorError, match="credentials are not configured"):
-        subject.UnityCatalogConnector({}, token_env="MISSING_UC_TOKEN").read_catalog("omop", LIMITS, OPTIONS)
+        uc_read(LIMITS, OPTIONS, token_env="MISSING_UC_TOKEN")
     assert transport.calls == []
 
 
@@ -210,7 +225,7 @@ def test_bearer_tokens_never_reach_non_loopback_http_endpoints(transport, monkey
     monkeypatch.setenv("UNITY_CATALOG_URL", f"http://{host}:8080/api/2.1/unity-catalog")
     monkeypatch.setenv("UC_TOKEN", "synthetic-token")
     with pytest.raises(ConnectorError, match="requires HTTPS"):
-        subject.UnityCatalogConnector({}, token_env="UC_TOKEN").read_catalog("omop", LIMITS, OPTIONS)
+        uc_read(LIMITS, OPTIONS, token_env="UC_TOKEN")
     assert transport.calls == []
 
 
@@ -229,7 +244,7 @@ def test_bearer_tokens_use_https_or_explicit_local_loopback(transport, monkeypat
     monkeypatch.setenv("UNITY_CATALOG_URL", endpoint + "/api/2.1/unity-catalog")
     monkeypatch.setenv("UC_TOKEN", "synthetic-token")
     transport.responses.append({"tables": [table()]})
-    subject.UnityCatalogConnector({}, token_env="UC_TOKEN").read_catalog("omop", LIMITS, OPTIONS)
+    uc_read(LIMITS, OPTIONS, token_env="UC_TOKEN")
     assert len(transport.calls) == 1
     assert transport.calls[0][1]["headers"]["Authorization"] == "Bearer synthetic-token"
     assert transport.calls[0][1]["allow_redirects"] is False
@@ -247,7 +262,7 @@ def test_databricks_workspace_uses_same_rest_contract_and_follows_empty_pages(tr
             {"tables": [delta_table]},
         ]
     )
-    result = subject.UnityCatalogConnector({}, token_env="DATABRICKS_TOKEN").read_catalog("events", LIMITS, OPTIONS)
+    result = uc_read(LIMITS, OPTIONS, name="events", token_env="DATABRICKS_TOKEN")
     assert result.tables[0].columns[0].type == "array<struct<code:string,value:double>>"
     assert len(transport.calls) == 2
     assert transport.calls[1][1]["params"]["page_token"] == "continue-after-empty-page"
@@ -278,7 +293,5 @@ def test_a_netrc_login_never_replaces_the_configured_bearer_token(tmp_path, monk
         return response
 
     monkeypatch.setattr(requests.Session, "send", send)
-    subject.UnityCatalogConnector({}, token_env="UC_TOKEN").read_catalog(
-        "ds", LIMITS, {"catalog": "main", "schema": "default"}
-    )
+    uc_read(LIMITS, {"catalog": "main", "schema": "default"}, name="ds", token_env="UC_TOKEN")
     assert sent == ["Bearer site-token"]

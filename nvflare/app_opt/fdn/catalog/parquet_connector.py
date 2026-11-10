@@ -12,13 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Reads a dataset's catalog from Parquet footers, plus an optional site-authored catalog.json sidecar."""
+"""Reads a dataset's catalog from Parquet footers, plus an optional site-authored catalog.json sidecar.
+
+The dataset's ``uri`` is a ``file://`` URI of a Parquet file or directory; the connector takes no options.
+"""
 
 import time
 from pathlib import Path
 
+from nvflare.apis.dataset_config_spec import DatasetConfig
 from nvflare.app_common.fdn.catalog.common.schema import PROFILE_KEYS, CatalogInfo, ReadLimits, ValidationError
 from nvflare.app_common.fdn.catalog.site.connector import CatalogConnector, ConnectorError
+from nvflare.app_opt.fdn.catalog._metadata import local_path, selection
 from nvflare.app_opt.fdn.catalog.declarations import SIDECAR_NAME, read_declarations
 
 
@@ -27,14 +32,13 @@ class ParquetConnector(CatalogConnector):
 
     source = "parquet"
 
-    def read_catalog(self, dataset: str, limits: ReadLimits, options: dict | None = None) -> CatalogInfo:
-        if options:
-            raise ConnectorError("built-in parquet reader accepts no options")
+    def read_catalog(self, dataset: DatasetConfig, secret, limits: ReadLimits) -> CatalogInfo:
+        selection(dataset.options, ())
         import pyarrow.parquet as pq
 
-        root = self._datasets.get(dataset)
-        if root is None or not root.exists():
-            raise ConnectorError("dataset mount is missing")
+        root = local_path(dataset)
+        if not root.exists():
+            raise ConnectorError("dataset files are missing")
         deadline = time.monotonic() + limits.max_duration_s
         calls = 0
 
@@ -88,9 +92,9 @@ class ParquetConnector(CatalogConnector):
             raise ConnectorError("sidecar semantic_profile is invalid")
 
         wire = {
-            "dataset": dataset,
+            "dataset": dataset.name,
             "metadata": {
-                "display_name": sidecar.get("display_name", dataset),
+                "display_name": sidecar.get("display_name", dataset.name),
                 "description": sidecar.get("description"),
                 "owner": sidecar.get("owner"),
                 "tables": tables,

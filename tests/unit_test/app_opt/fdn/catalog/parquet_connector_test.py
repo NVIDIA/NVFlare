@@ -22,6 +22,7 @@ import pytest
 from nvflare.app_common.fdn.catalog.common.schema import ReadLimits, validate
 from nvflare.app_common.fdn.catalog.site.connector import ConnectorError
 from nvflare.app_opt.fdn.catalog.parquet_connector import ParquetConnector
+from tests.unit_test.app_opt.fdn.catalog.datasets import read as read_dataset
 
 LIMITS = ReadLimits(max_duration_s=30, max_calls=100, max_records=1000)
 
@@ -39,8 +40,8 @@ def root(tmp_path):
     return tmp_path
 
 
-def read(root, limits=LIMITS):
-    return ParquetConnector({"ds": root}).read_catalog("ds", limits)
+def read(root, limits=LIMITS, **kwargs):
+    return read_dataset(ParquetConnector(), limits, path=root, **kwargs)
 
 
 class TestSchema:
@@ -55,7 +56,7 @@ class TestSchema:
         validate(catalog, LIMITS)
 
     def test_single_file_dataset(self, root):
-        catalog = ParquetConnector({"ds": root / "person.parquet"}).read_catalog("ds", LIMITS)
+        catalog = read(root / "person.parquet")
         assert [t.name for t in catalog.tables] == ["person"]
 
     def test_single_file_container_alias_needs_no_extension(self, tmp_path):
@@ -81,11 +82,15 @@ class TestSchema:
         with pytest.raises(ConnectorError, match="unreadable"):
             read(tmp_path)
 
-    def test_unknown_dataset_or_missing_mount(self, tmp_path):
+    def test_missing_files_or_a_network_uri(self, tmp_path):
         with pytest.raises(ConnectorError):
-            ParquetConnector({}).read_catalog("ds", LIMITS)
+            read(tmp_path / "gone")
+        with pytest.raises(ConnectorError, match="file://"):
+            read_dataset(ParquetConnector(), LIMITS, uri="https://example.com/data")
+
+    def test_options_are_rejected(self, root):
         with pytest.raises(ConnectorError):
-            ParquetConnector({"ds": tmp_path / "gone"}).read_catalog("ds", LIMITS)
+            read(root, options={"schema": "x"})
 
     def test_corrupt_footer(self, root):
         (root / "bad.parquet").write_bytes(b"not parquet")

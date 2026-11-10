@@ -15,7 +15,9 @@
 import json
 
 import pytest
+import yaml
 
+from nvflare.apis.dataset_config_spec import DATASET_CONFIG_ENV
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -23,17 +25,19 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.fdn.catalog.common.payload import (
     CATALOG_JOB_META,
     CATALOG_READ_KEY,
+    TASK_NAME,
     ResultStatus,
-    Selection,
     build_task_payload,
     parse_result,
 )
-from nvflare.app_common.fdn.catalog.site.executor import CatalogExecutor, MountResolver
+from nvflare.app_common.fdn.catalog.common.schema import DEFAULT_LIMITS, ReadLimits
+from nvflare.app_common.fdn.catalog.site.executor import CatalogExecutor
 
 
 @pytest.mark.parametrize("managed", [False, True], ids=["unity-catalog-oss", "databricks"])
 def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeypatch, managed):
-    """Real file/SQL metadata and a controlled REST boundary share the same task and publication policy."""
+    """Real file/SQL metadata and a controlled REST boundary, configured in one datasets.yaml and read through the
+    dataset configuration API, share the same task and catalog rules."""
     import sqlite3
 
     arrow = pytest.importorskip("pyarrow")
@@ -48,7 +52,6 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
     with sqlite3.connect(root / "sql") as connection:
         connection.execute("CREATE TABLE patients (id INTEGER PRIMARY KEY, secret TEXT)")
     endpoint = "https://workspace.cloud.databricks.com" if managed else "http://localhost:8080"
-    monkeypatch.setenv("SITE_CATALOG_URL", endpoint + "/api/2.1/unity-catalog")
     monkeypatch.setenv("SITE_CATALOG_TOKEN", "site-only-token")
     calls = []
 
@@ -83,54 +86,47 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
             return Response()
 
     monkeypatch.setattr(uc_module.requests, "Session", Session)
-    args = {"url_env": "SITE_CATALOG_URL"}
+
+    def dataset(type_, uri, table, **extra):
+        return {
+            "type": type_,
+            "uri": uri,
+            **extra,
+            "usage": {"catalog": {"share": True, "exclude_columns": {table: ["secret"]}}},
+        }
+
+    catalog_entry = dataset(
+        "unity-catalog",
+        endpoint + "/api/2.1/unity-catalog",
+        "patients",
+        options={"catalog": "health", "schema": "ehr"},
+    )
     if managed:
-        args["token_env"] = "SITE_CATALOG_TOKEN"
+        catalog_entry["secrets"] = {"token": "SITE_CATALOG_TOKEN"}
     config = {
         "format_version": 1,
-        "connectors": {
-            "catalog": {
-                "class": "nvflare.app_opt.fdn.catalog.unity_catalog_connector.UnityCatalogConnector",
-                "args": args,
-            }
-        },
         "studies": {
             "study1": {
-                "csv": {"connector": "csv"},
-                "sql": {"connector": "sql", "options": {"tables": ["patients"]}},
-                "catalog": {"connector": "catalog", "options": {"catalog": "health", "schema": "ehr"}},
+                "datasets": {
+                    "parquet": dataset("parquet", (root / "parquet").as_uri(), "parquet"),
+                    "csv": dataset("csv", (root / "csv").as_uri(), "csv"),
+                    "sql": dataset("sql", (root / "sql").as_uri(), "patients", options={"tables": ["patients"]}),
+                    "catalog": catalog_entry,
+                }
             }
         },
     }
-    policy_root = tmp_path / "policy"
-    (policy_root / "study1").mkdir(parents=True)
-    (policy_root / "catalog_site.json").write_text(json.dumps(config))
-    (policy_root / "study1" / "catalog_policy.json").write_text(
-        json.dumps(
-            {
-                "format_version": 1,
-                "datasets": {
-                    name: {"share": True, "exclude_columns": {table: ["secret"]}}
-                    for name, table in (
-                        ("parquet", "parquet"),
-                        ("csv", "csv"),
-                        ("sql", "patients"),
-                        ("catalog", "patients"),
-                    )
-                },
-            }
-        )
-    )
-    executor = CatalogExecutor()
-    executor.policy_root = policy_root
-    executor.resolver = MountResolver(str(root.parent))
+    config_file = tmp_path / "datasets.yaml"
+    config_file.write_text(yaml.safe_dump(config))
+    monkeypatch.setenv(DATASET_CONFIG_ENV, str(config_file))
+
     ctx = FLContext()
     ctx.set_prop(FLContextKey.JOB_META, {"study": "study1", CATALOG_JOB_META: True}, private=True, sticky=False)
     data = Shareable()
-    data[CATALOG_READ_KEY] = build_task_payload(None, [])
-    result = executor.execute("catalog.read", data, ctx, Signal())
-    parsed = parse_result(result[CATALOG_READ_KEY], Selection(None))
-    assert parsed.status == ResultStatus.OK and not parsed.unavailable and not parsed.withheld
+    data[CATALOG_READ_KEY] = build_task_payload(None)
+    result = CatalogExecutor().execute(TASK_NAME, data, ctx, Signal())
+    parsed = parse_result(result[CATALOG_READ_KEY], None, ReadLimits(**DEFAULT_LIMITS))
+    assert parsed.status == ResultStatus.OK and not parsed.unavailable and not parsed.skipped
     assert {c.dataset: c.provenance.source for c in parsed.catalogs} == {
         "parquet": "parquet",
         "csv": "csv",

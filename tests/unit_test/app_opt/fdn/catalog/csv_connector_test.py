@@ -20,15 +20,14 @@ import pytest
 from nvflare.app_common.fdn.catalog.common.schema import ReadLimits, validate
 from nvflare.app_common.fdn.catalog.site.connector import ConnectorError
 from nvflare.app_opt.fdn.catalog.csv_connector import INFERENCE_BLOCK_BYTES, MAX_SAMPLE_BYTES, CSVConnector
+from tests.unit_test.app_opt.fdn.catalog.datasets import read as read_dataset
 
 
 def read(tmp_path, content, **limits):
     path = tmp_path / "measurements.csv"
     path.write_text(content)
-    connector = CSVConnector({"measurements": path})
-    return connector.read_catalog(
-        "measurements", ReadLimits(**({"max_duration_s": 60, "max_calls": 1000, "max_records": 10000} | limits))
-    )
+    limits = ReadLimits(**({"max_duration_s": 60, "max_calls": 1000, "max_records": 10000} | limits))
+    return read_dataset(CSVConnector(), limits, name="measurements", type_="csv", path=path)
 
 
 def test_infers_schema_without_returning_source_rows(tmp_path):
@@ -83,7 +82,7 @@ def test_sample_bytes_are_bounded(tmp_path, monkeypatch):
 
     source = MeasuredSource(b"value\n" + b"1\n" * MAX_SAMPLE_BYTES)
     monkeypatch.setattr(Path, "open", lambda *args, **kwargs: source)
-    catalog = CSVConnector({"measurements": path}).read_catalog("measurements", ReadLimits(60, 1000, 10000))
+    catalog = read_dataset(CSVConnector(), ReadLimits(60, 1000, 10000), name="measurements", type_="csv", path=path)
     assert source.closed and source.consumed == MAX_SAMPLE_BYTES
     assert catalog.tables[0].columns[0].type == "int64"
 
@@ -95,3 +94,12 @@ def test_header_only_uses_arrow_null_type(tmp_path):
 def test_arrow_handles_quoted_commas_multiline_fields_and_bom(tmp_path):
     catalog = read(tmp_path, '\ufeffid,note\n1,"a,b\nc"\n')
     assert [(c.name, c.type) for c in catalog.tables[0].columns] == [("id", "int64"), ("note", "string")]
+
+
+def test_a_network_uri_or_options_are_rejected(tmp_path):
+    with pytest.raises(ConnectorError, match="file://"):
+        read_dataset(CSVConnector(), ReadLimits(60, 1000, 10000), type_="csv", uri="https://example.com/a.csv")
+    path = tmp_path / "a.csv"
+    path.write_text("a\n1\n")
+    with pytest.raises(ConnectorError):
+        read_dataset(CSVConnector(), ReadLimits(60, 1000, 10000), type_="csv", path=path, options={"x": 1})

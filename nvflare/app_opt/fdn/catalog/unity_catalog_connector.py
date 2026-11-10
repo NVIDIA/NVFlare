@@ -15,7 +15,6 @@
 """Read catalog schemas through the Unity Catalog REST API. No Spark or storage access."""
 
 import math
-import os
 from ipaddress import ip_address
 from urllib.parse import quote, urlsplit
 
@@ -34,28 +33,25 @@ def _keep_request_headers(request):
 class UnityCatalogConnector(CatalogConnector):
     """One dataset maps to one UC catalog/schema, optionally restricted to selected tables.
 
-    ``url_env`` holds the API root, including ``/api/2.1/unity-catalog``.
-    ``token_env`` optionally names a required bearer-token variable. Leave it
-    unset for a local server with authorization disabled. Secrets are never
-    passed in the job, dataset options, or published catalog.
-    Bearer-token endpoints require HTTPS, except literal loopback addresses or
-    localhost for local testing. Anonymous HTTP is supported by the local demo.
+    - ``uri``: the API root, including ``/api/2.1/unity-catalog``.
+    - secret ``token``, when configured, is sent as a bearer token. Leave it out for a local server with
+      authorization disabled. A bearer token requires HTTPS, except to a loopback address or localhost.
+    - options: ``catalog`` and ``schema`` are required; ``tables`` optionally restricts the read.
+
+    ``request_timeout_s`` is a connector argument a site can set where it declares the connector.
     """
 
     source = "unity-catalog"
 
-    def __init__(self, datasets, url_env="UNITY_CATALOG_URL", token_env=None, request_timeout_s=10.0):
-        super().__init__(datasets)
+    def __init__(self, request_timeout_s=10.0):
         if not math.isfinite(request_timeout_s) or request_timeout_s <= 0:
             raise ValueError("request_timeout_s must be positive and finite")
-        self.url_env = url_env
-        self.token_env = token_env
         self.request_timeout_s = request_timeout_s
 
-    def read_catalog(self, dataset, limits, options=None):
-        options = selection(options, {"catalog", "schema", "tables"}, required={"catalog", "schema"})
+    def read_catalog(self, dataset, secret, limits):
+        options = selection(dataset.options, {"catalog", "schema", "tables"}, required={"catalog", "schema"})
         budget = ReadBudget(limits)
-        url = os.environ.get(self.url_env, "").rstrip("/")
+        url = dataset.uri.rstrip("/")
         try:
             parsed = urlsplit(url)
         except ValueError:
@@ -69,7 +65,7 @@ class UnityCatalogConnector(CatalogConnector):
         ):
             raise ConnectorError("Unity Catalog endpoint is not configured")
         headers = {"Accept": "application/json"}
-        if self.token_env is not None:
+        if "token" in dataset.secret_keys:
             if parsed.scheme != "https":
                 try:
                     loopback = ip_address(parsed.hostname).is_loopback
@@ -77,7 +73,10 @@ class UnityCatalogConnector(CatalogConnector):
                     loopback = parsed.hostname.lower().rstrip(".") == "localhost"
                 if not loopback:
                     raise ConnectorError("Unity Catalog bearer-token authentication requires HTTPS")
-            token = os.environ.get(self.token_env)
+            try:
+                token = secret("token")
+            except Exception:
+                raise ConnectorError("Unity Catalog credentials are not configured") from None
             if not token:
                 raise ConnectorError("Unity Catalog credentials are not configured")
             headers["Authorization"] = f"Bearer {token}"
@@ -155,7 +154,9 @@ class UnityCatalogConnector(CatalogConnector):
                             raise ConnectorError("Unity Catalog pagination is inconsistent")
                         seen_tokens.add(token)
                         params = {**params, "page_token": token}
-                catalog = build_catalog(dataset, self.source, sorted(tables, key=lambda table: table["name"]), limits)
+                catalog = build_catalog(
+                    dataset.name, self.source, sorted(tables, key=lambda table: table["name"]), limits
+                )
                 budget.remaining()
                 return catalog
         except ConnectorError:

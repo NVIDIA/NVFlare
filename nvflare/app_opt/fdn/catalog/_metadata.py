@@ -15,6 +15,8 @@
 """Shared metadata-only connector validation and read accounting."""
 
 import time
+from collections.abc import Mapping
+from pathlib import Path
 
 from nvflare.app_common.fdn.catalog.common.schema import PROFILE_KEYS, CatalogInfo, ValidationError, validate
 from nvflare.app_common.fdn.catalog.site.connector import ConnectorError
@@ -44,20 +46,30 @@ class ReadBudget:
             raise ConnectorError("metadata record budget exceeded", budget=True)
 
 
+def local_path(dataset) -> Path:
+    """The local path of a dataset whose ``uri`` is a file URI; a network URL cannot be read by a file connector."""
+    if dataset.path is None:
+        raise ConnectorError("this connector reads local files and needs a file:// uri")
+    return Path(dataset.path)
+
+
 def selection(options, allowed, required=()):
-    options = {} if options is None else options
-    if not isinstance(options, dict) or set(options) - set(allowed) or set(required) - set(options):
-        raise ConnectorError("metadata selection options are invalid")
+    """The dataset's options as a plain dict, checked against the keys this connector accepts. The dataset
+    configuration API returns read-only mappings and tuples; "tables" comes back as a list."""
+    if not isinstance(options, Mapping) or set(options) - set(allowed) or set(required) - set(options):
+        raise ConnectorError("dataset options are invalid for this connector")
+    options = dict(options)
     for key, value in options.items():
         if key == "tables":
             if (
-                not isinstance(value, list)
+                not isinstance(value, (list, tuple))
                 or not value
                 or not all(isinstance(name, str) and name for name in value)
                 or len(set(value)) != len(value)
             ):
                 raise ConnectorError("table selection must be a nonempty list of unique names")
-        elif not isinstance(value, str) or not value:
+            options[key] = list(value)
+        elif key in ("schema", "catalog") and (not isinstance(value, str) or not value):
             raise ConnectorError("metadata selection names must be nonempty strings")
     return options
 

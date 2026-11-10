@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Discover CSV schemas with PyArrow; publish metadata, never source rows."""
+"""Discover CSV schemas with PyArrow; publish metadata, never source rows.
+
+The dataset's ``uri`` is a ``file://`` URI of one CSV file; the connector takes no options.
+"""
 
 import time
 
 from nvflare.app_common.fdn.catalog.common.schema import CatalogInfo, ColumnInfo, Provenance, TableInfo
 from nvflare.app_common.fdn.catalog.site.connector import CatalogConnector, ConnectorError
+from nvflare.app_opt.fdn.catalog._metadata import local_path, selection
 
 MAX_SAMPLE_BYTES = 1024 * 1024
 INFERENCE_BLOCK_BYTES = 64 * 1024
@@ -33,14 +37,13 @@ class CSVConnector(CatalogConnector):
 
     source = "csv"
 
-    def read_catalog(self, dataset, limits, options=None):
-        if options:
-            raise ConnectorError("built-in csv reader accepts no options")
+    def read_catalog(self, dataset, secret, limits):
+        selection(dataset.options, ())
         import pyarrow as pa
         import pyarrow.csv as arrow_csv
 
-        path = self._datasets.get(dataset)
-        if path is None or not path.is_file():
+        path = local_path(dataset)
+        if not path.is_file():
             raise ConnectorError("CSV dataset is unavailable")
         deadline = time.monotonic() + limits.max_duration_s
         if limits.max_calls < 1 or time.monotonic() >= deadline:
@@ -68,8 +71,8 @@ class CSVConnector(CatalogConnector):
         if 2 + len(schema) > limits.max_records:
             raise ConnectorError("CSV schema record budget exceeded", budget=True)
         return CatalogInfo(
-            dataset=dataset,
-            display_name=dataset,
+            dataset=dataset.name,
+            display_name=dataset.name,
             provenance=Provenance(self.source),
             tables=(TableInfo(path.stem, tuple(ColumnInfo(f.name, str(f.type)) for f in schema)),),
             modalities=("tabular",),

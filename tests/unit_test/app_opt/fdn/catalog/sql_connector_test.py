@@ -23,6 +23,12 @@ from nvflare.app_common.fdn.catalog.common.schema import DEFAULT_LIMITS, ReadLim
 from nvflare.app_common.fdn.catalog.site.connector import ConnectorError
 from nvflare.app_opt.fdn.catalog import _metadata
 from nvflare.app_opt.fdn.catalog.sql_connector import SQLConnector
+from tests.unit_test.app_opt.fdn.catalog.datasets import read as read_dataset
+
+NETWORK = {
+    "uri": "postgresql+psycopg://private-host/clinical",
+    "secrets": {"username": "STUDY_DB_USER", "password": "STUDY_DB_PASSWORD"},
+}
 
 sqlalchemy = pytest.importorskip("sqlalchemy")
 LIMITS = ReadLimits(**DEFAULT_LIMITS)
@@ -75,7 +81,7 @@ def assert_closed(opened):
 
 
 def test_reflects_columns_ordered_keys_and_relationships_without_source_rows(database, connections):
-    result = SQLConnector({"omop": database}).read_catalog("omop", LIMITS)
+    result = read_dataset(SQLConnector(), LIMITS, name="omop", type_="sql", path=database)
     tables = {table.name: table for table in result.tables}
     assert set(tables) == {"person", "condition_occurrence", 'quoted"table', "composite"}
     assert tables["person"].primary_key == ("person_id",)
@@ -118,18 +124,21 @@ def test_mounted_sqlite_is_opened_read_only(database, monkeypatch):
         return engine
 
     monkeypatch.setattr(sqlalchemy, "create_engine", create)
-    SQLConnector({"omop": database}).read_catalog("omop", LIMITS)
+    read_dataset(SQLConnector(), LIMITS, name="omop", type_="sql", path=database)
 
 
-def test_sqlalchemy_url_comes_from_the_site_environment(database, monkeypatch, connections):
-    monkeypatch.setenv("STUDY_DATABASE_URL", f"sqlite:///{database}")
-    result = SQLConnector({}, url_env="STUDY_DATABASE_URL").read_catalog("omop", LIMITS, {"schema": "main"})
+def test_a_sqlalchemy_uri_names_the_database(database, connections):
+    result = read_dataset(
+        SQLConnector(), LIMITS, name="omop", type_="sql", uri=f"sqlite:///{database}", options={"schema": "main"}
+    )
     assert {table.name for table in result.tables} == {"person", "condition_occurrence", 'quoted"table', "composite"}
     assert_closed(connections[0])
 
 
 def test_table_selection_does_not_expose_unselected_relationship_targets(database, connections):
-    result = SQLConnector({"omop": database}).read_catalog("omop", LIMITS, {"tables": ["condition_occurrence"]})
+    result = read_dataset(
+        SQLConnector(), LIMITS, name="omop", type_="sql", path=database, options={"tables": ["condition_occurrence"]}
+    )
     assert len(result.tables) == 1 and result.tables[0].name == "condition_occurrence"
     assert result.tables[0].relationships == ()
     assert_closed(connections[0])
@@ -137,14 +146,14 @@ def test_table_selection_does_not_expose_unselected_relationship_targets(databas
 
 def test_missing_schema_is_not_published_as_an_empty_catalog(database, connections):
     with pytest.raises(ConnectorError, match="schema is unavailable"):
-        SQLConnector({"omop": database}).read_catalog("omop", LIMITS, {"schema": "missing"})
+        read_dataset(SQLConnector(), LIMITS, name="omop", type_="sql", path=database, options={"schema": "missing"})
     assert_closed(connections[0])
 
 
 @pytest.mark.parametrize("overrides", [{"max_calls": 1}, {"max_records": 1}, {"max_records": 8}])
 def test_budgets_discard_incomplete_metadata_and_close_connections(database, connections, overrides):
     with pytest.raises(ConnectorError) as error:
-        SQLConnector({"omop": database}).read_catalog("omop", replace(LIMITS, **overrides))
+        read_dataset(SQLConnector(), replace(LIMITS, **overrides), name="omop", type_="sql", path=database)
     assert error.value.budget
     assert_closed(connections[0])
 
@@ -152,21 +161,29 @@ def test_budgets_discard_incomplete_metadata_and_close_connections(database, con
 def test_missing_database_is_not_created(tmp_path):
     path = tmp_path / "missing.sqlite"
     with pytest.raises(ConnectorError):
-        SQLConnector({"omop": path}).read_catalog("omop", LIMITS)
+        read_dataset(SQLConnector(), LIMITS, name="omop", type_="sql", path=path)
     assert not path.exists()
 
 
-def test_missing_database_url_does_not_fall_back_to_a_mounted_database(database, monkeypatch):
-    monkeypatch.delenv("MISSING_DATABASE_URL", raising=False)
-    with pytest.raises(ConnectorError, match="not configured"):
-        SQLConnector({"omop": database}, url_env="MISSING_DATABASE_URL").read_catalog("omop", LIMITS)
+def test_an_unset_credential_makes_the_database_unavailable(monkeypatch):
+    monkeypatch.delenv("STUDY_DB_PASSWORD", raising=False)
+    with pytest.raises(ConnectorError) as error:
+        read_dataset(
+            SQLConnector(),
+            LIMITS,
+            name="omop",
+            type_="sql",
+            uri="postgresql+psycopg://private-host/clinical",
+            secrets={"password": "STUDY_DB_PASSWORD"},
+        )
+    assert not error.value.budget
 
 
 def test_expired_deadline_stops_before_schema_io(database, connections, monkeypatch):
     ticks = iter([0.0, 100.0])
     monkeypatch.setattr(_metadata, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
     with pytest.raises(ConnectorError) as error:
-        SQLConnector({"omop": database}).read_catalog("omop", LIMITS)
+        read_dataset(SQLConnector(), LIMITS, name="omop", type_="sql", path=database)
     assert error.value.budget and connections == ([], [])
 
 
@@ -179,7 +196,7 @@ def test_sidecar_supplies_semantics_without_replacing_observed_structure(databas
             }
         )
     )
-    result = SQLConnector({"omop": database}).read_catalog("omop", LIMITS)
+    result = read_dataset(SQLConnector(), LIMITS, name="omop", type_="sql", path=database)
     assert result.semantic_profile.standard == "OMOP" and result.semantic_profile.version == "5.4"
     assert "invented" not in {table.name for table in result.tables}
     assert_closed(connections[0])
@@ -188,31 +205,33 @@ def test_sidecar_supplies_semantics_without_replacing_observed_structure(databas
 def test_invalid_declaration_fails_without_leaving_connections_open(database, connections):
     database.with_suffix(".catalog.json").write_text('{"unsupported": true}')
     with pytest.raises(ConnectorError, match="unsupported content"):
-        SQLConnector({"omop": database}).read_catalog("omop", LIMITS)
+        read_dataset(SQLConnector(), LIMITS, name="omop", type_="sql", path=database)
     assert_closed(connections[0])
 
 
 @pytest.mark.parametrize("options", [{"metadata": {}}, {"tables": []}, {"tables": ["person", "person"]}, {"schema": 3}])
 def test_invalid_options_are_rejected_before_connecting(database, connections, options):
     with pytest.raises(ConnectorError):
-        SQLConnector({"omop": database}).read_catalog("omop", LIMITS, options)
+        read_dataset(SQLConnector(), LIMITS, name="omop", type_="sql", path=database, options=options)
     assert connections == ([], [])
 
 
 def test_database_errors_do_not_expose_url_credentials_or_driver_text(monkeypatch):
-    monkeypatch.setenv("STUDY_DATABASE_URL", "postgresql+psycopg://reader:secret@private-host/clinical")
+    monkeypatch.setenv("STUDY_DB_USER", "reader")
+    monkeypatch.setenv("STUDY_DB_PASSWORD", "secret")
 
     def fail(*args, **kwargs):
         raise RuntimeError("reader:secret@private-host SELECT private_table")
 
     monkeypatch.setattr(sqlalchemy, "create_engine", fail)
     with pytest.raises(ConnectorError) as error:
-        SQLConnector({}, url_env="STUDY_DATABASE_URL").read_catalog("omop", LIMITS)
+        read_dataset(SQLConnector(), LIMITS, name="omop", type_="sql", **NETWORK)
     assert str(error.value) == "database metadata is unavailable" and not error.value.budget
 
 
-def test_sqlalchemy_receives_the_database_dialect_and_driver_settings(monkeypatch):
-    monkeypatch.setenv("STUDY_DATABASE_URL", "postgresql+psycopg://reader:secret@private-host/clinical")
+def test_sqlalchemy_receives_the_dialect_credentials_and_driver_settings(monkeypatch):
+    monkeypatch.setenv("STUDY_DB_USER", "reader")
+    monkeypatch.setenv("STUDY_DB_PASSWORD", "secret")
     captured = []
 
     def create(url, **kwargs):
@@ -221,7 +240,15 @@ def test_sqlalchemy_receives_the_database_dialect_and_driver_settings(monkeypatc
 
     monkeypatch.setattr(sqlalchemy, "create_engine", create)
     with pytest.raises(ConnectorError):
-        SQLConnector({}, url_env="STUDY_DATABASE_URL", connect_args={"connect_timeout": 5}).read_catalog("omop", LIMITS)
+        read_dataset(
+            SQLConnector(),
+            LIMITS,
+            name="omop",
+            type_="sql",
+            options={"connect_args": {"connect_timeout": 5}},
+            **NETWORK,
+        )
     url, kwargs = captured[0]
-    assert url.drivername == "postgresql+psycopg" and url.database == "clinical"
+    assert url.drivername == "postgresql+psycopg" and url.database == "clinical" and url.host == "private-host"
+    assert (url.username, url.password) == ("reader", "secret")
     assert kwargs["connect_args"] == {"connect_timeout": 5} and kwargs["hide_parameters"]

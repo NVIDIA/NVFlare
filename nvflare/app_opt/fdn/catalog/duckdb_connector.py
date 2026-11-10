@@ -16,7 +16,7 @@
 """Read the metadata of a mounted DuckDB database file, without reading application rows."""
 
 from nvflare.app_common.fdn.catalog.site.connector import CatalogConnector, ConnectorError
-from nvflare.app_opt.fdn.catalog._metadata import ReadBudget, build_catalog, selection
+from nvflare.app_opt.fdn.catalog._metadata import ReadBudget, build_catalog, local_path, selection
 from nvflare.app_opt.fdn.catalog.declarations import read_declarations
 
 _SCHEMA = "SELECT 1 FROM information_schema.schemata WHERE catalog_name = current_database() AND schema_name = ?"
@@ -37,7 +37,7 @@ _CONSTRAINTS = (
 
 
 class DuckDBConnector(CatalogConnector):
-    """Use a mounted DuckDB database file. Column types, nullability, primary keys and foreign keys come from
+    """Use a DuckDB database file, named by the dataset's ``file://`` uri. Column types, nullability, primary keys and foreign keys come from
     DuckDB's own catalog views; optional descriptive and semantic declarations stay in ``<database>.catalog.json``.
 
     The file is opened read-only with external file access disabled, and only four fixed metadata queries run.
@@ -47,11 +47,11 @@ class DuckDBConnector(CatalogConnector):
 
     source = "duckdb"
 
-    def read_catalog(self, dataset, limits, options=None):
-        options = selection(options, {"schema", "tables"})
+    def read_catalog(self, dataset, secret, limits):
+        options = selection(dataset.options, {"schema", "tables"})
         budget = ReadBudget(limits)
-        path = self._datasets.get(dataset)
-        if path is None or not path.is_file():
+        path = local_path(dataset)
+        if not path.is_file():
             raise ConnectorError("database is unavailable")
         connection = None
         try:
@@ -105,7 +105,7 @@ class DuckDBConnector(CatalogConnector):
             ]
             budget.records(1 + sum(1 + len(t["columns"]) + len(t["relationships"]) for t in tables))
             declarations = read_declarations(path.with_suffix(".catalog.json"))
-            catalog = build_catalog(dataset, self.source, tables, limits, declarations)
+            catalog = build_catalog(dataset.name, self.source, tables, limits, declarations)
             budget.remaining()
             return catalog
         except ConnectorError:

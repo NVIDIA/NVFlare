@@ -14,7 +14,7 @@
 
 """Reflect relational database metadata through SQLAlchemy, without reading application rows."""
 
-import os
+from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -33,54 +33,62 @@ def _type_name(column_type, dialect) -> str:
         return "UNKNOWN"
 
 
-class SQLConnector(CatalogConnector):
-    """Use a site environment variable containing a SQLAlchemy URL, or a mounted SQLite file.
+def _sqlite_url(path: Path):
+    from sqlalchemy.engine import URL
 
-    ``url_env`` names the variable, never its value. ``connect_args`` contains
-    non-secret driver settings, including driver-specific connection/query timeouts.
-    SQLAlchemy and the selected database driver are optional dependencies.
+    if not path.is_file():
+        raise ConnectorError("database is unavailable")
+    # SQLAlchemy passes URI options to sqlite3. mode=ro prevents creating or changing a database.
+    return URL.create("sqlite+pysqlite", database=path.resolve().as_uri(), query={"mode": "ro", "uri": "true"})
+
+
+class SQLConnector(CatalogConnector):
+    """Reads a relational database's metadata from the dataset's configuration.
+
+    - ``uri``: a ``file://`` URI is a SQLite database file, opened read-only. Any other URI is a SQLAlchemy URL such
+      as ``postgresql+psycopg://host:5432/db``, without credentials; a query string can carry driver settings.
+    - secrets ``username`` and ``password``, when configured, complete the URL.
+    - options: ``schema`` and ``tables`` select what is read; ``connect_args`` holds non-secret driver settings, such
+      as connection or query timeouts.
+
+    SQLAlchemy and the database's driver are optional dependencies.
     """
 
     source = "sql"
 
-    def __init__(self, datasets, url_env=None, connect_args=None):
-        super().__init__(datasets)
-        self.url_env = url_env
-        self.connect_args = dict(connect_args or {})
+    @staticmethod
+    def _url(dataset, secret):
+        from sqlalchemy.engine import make_url
 
-    def _url(self, dataset):
-        from sqlalchemy.engine import URL, make_url
-
-        if self.url_env is not None:
-            value = os.environ.get(self.url_env)
-            if not value:
-                raise ConnectorError("database connection is not configured")
-            url = make_url(value)
-            if url.get_backend_name() != "sqlite":
-                return url
+        if dataset.path is not None:
+            return _sqlite_url(Path(dataset.path)), Path(dataset.path)
+        url = make_url(dataset.uri)
+        if url.get_backend_name() == "sqlite":
             database = url.database
             if not database or database == ":memory:":
                 raise ConnectorError("an existing database is required")
             path = Path(unquote(urlsplit(database).path) if database.startswith("file:") else database)
-        else:
-            path = self._datasets.get(dataset)
-        if path is None or not path.is_file():
-            raise ConnectorError("database is unavailable")
-        # SQLAlchemy passes URI options to sqlite3. mode=ro prevents creating or
-        # changing a database even when the configured URL omitted read-only mode.
-        return URL.create("sqlite+pysqlite", database=path.resolve().as_uri(), query={"mode": "ro", "uri": "true"})
+            return _sqlite_url(path), path
+        if "username" in dataset.secret_keys:
+            url = url.set(username=secret("username"))
+        if "password" in dataset.secret_keys:
+            url = url.set(password=secret("password"))
+        return url, None
 
-    def read_catalog(self, dataset, limits, options=None):
+    def read_catalog(self, dataset, secret, limits):
         from sqlalchemy import create_engine, event, inspect
         from sqlalchemy.pool import NullPool
 
-        options = selection(options, {"schema", "tables"})
+        options = selection(dataset.options, {"schema", "tables", "connect_args"})
+        connect_args = options.get("connect_args", {})
+        if not isinstance(connect_args, Mapping):
+            raise ConnectorError("connect_args must be a mapping")
         budget = ReadBudget(limits)
         engine = None
         try:
-            url = self._url(dataset)
+            url, path = self._url(dataset, secret)
             budget.remaining()
-            engine = create_engine(url, connect_args=self.connect_args, poolclass=NullPool, hide_parameters=True)
+            engine = create_engine(url, connect_args=dict(connect_args), poolclass=NullPool, hide_parameters=True)
             # Count actual reflection statements, including additional statements
             # emitted internally by an Inspector method. No global event handler.
             event.listen(engine, "before_cursor_execute", lambda *args: budget.request())
@@ -134,9 +142,8 @@ class SQLConnector(CatalogConnector):
                     )
                     records += 1 + len(columns) + len(relationships)
                     budget.records(records)
-            path = self._datasets.get(dataset) if self.url_env is None else None
             declarations = read_declarations(path.with_suffix(".catalog.json")) if path is not None else {}
-            catalog = build_catalog(dataset, self.source, tables, limits, declarations)
+            catalog = build_catalog(dataset.name, self.source, tables, limits, declarations)
             budget.remaining()
             return catalog
         except ConnectorError:
