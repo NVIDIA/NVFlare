@@ -59,6 +59,119 @@ save their models on the clients, so they have no server-side model.
 - No change to the default download. Making outputs-only the default is a
   separate, later decision.
 
+## Using It from Recipes
+
+### Built-in recipes: nothing to declare
+
+Built-in recipes declare their outputs. The caller only asks for them:
+
+```python
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import ProdEnv, add_cross_site_evaluation
+
+recipe = FedAvgRecipe(
+    name="hello-pt",
+    min_clients=2,
+    num_rounds=5,
+    model=SimpleNetwork(),
+    train_script="client.py",
+)
+# Declares app_server/FL_global_model.pt, app_server/best_FL_global_model.pt
+# and metrics/. Cross-site evaluation adds cross_site_val/.
+add_cross_site_evaluation(recipe)
+
+env = ProdEnv(startup_kit_location="/path/to/admin@nvidia.com")
+run = recipe.execute(env)
+
+path = run.get_result(outputs_only=True)
+model_path = os.path.join(path, "workspace", "app_server", "FL_global_model.pt")
+```
+
+Federated statistics work the same way. The recipe declares its
+`stats_output_path`, normalized:
+
+```python
+from nvflare.recipe.fedstats import FedStatsRecipe
+
+recipe = FedStatsRecipe(
+    name="stats",
+    stats_output_path="./output",  # declared as "output"
+    sites=["site-1", "site-2"],
+    statistic_configs={"count": {}, "mean": {}, "stddev": {}},
+    stats_generator=my_stats_generator,
+)
+run = recipe.execute(env)
+path = run.get_result(outputs_only=True)
+stats_path = os.path.join(path, "workspace", "output")
+```
+
+### Choosing the outputs
+
+`set_recipe_meta` replaces the built-in list. For example, to keep only the
+final model:
+
+```python
+from nvflare.apis.job_def import JobMetaKey
+from nvflare.recipe import set_recipe_meta
+
+set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/FL_global_model.pt"])
+```
+
+A recipe declares only the files whose names it configures. With a custom
+`model_persistor`, the recipe does not know the model's file name, so the job
+declares it the same way. So does a job that writes its own files. Paths are
+relative to the server run folder:
+
+```python
+set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/report.json", "plots/"])
+```
+
+### Checking what was downloaded
+
+`outputs_manifest.json` says whether the download was filtered and which
+declared outputs were missing:
+
+```python
+import json
+
+manifest_path = os.path.join(path, "outputs_manifest.json")
+if not os.path.exists(manifest_path):
+    print("The server returned the whole job.")  # older server
+else:
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    if not manifest["outputs_only"]:
+        print(f"The whole job was downloaded: {manifest['reason']}")
+    elif manifest["missing"]:
+        print(f"Not produced by this run: {manifest['missing']}")
+```
+
+### Default behavior
+
+Without `outputs_only=True`, nothing changes:
+
+```python
+path = run.get_result()  # whole job, as today
+```
+
+With `SimEnv`, the job runs locally and `get_result(outputs_only=True)` returns
+the local workspace unchanged.
+
+### Outside recipes
+
+```python
+from nvflare.fuel.flare_api.flare_api import new_secure_session
+
+sess = new_secure_session("admin@nvidia.com", "/path/to/admin@nvidia.com")
+path = sess.download_job_result(job_id, outputs_only=True)
+```
+
+```shell
+nvflare job download <job_id> --outputs-only
+```
+
+A hand-written job adds `job_outputs` to its `meta.json`, as shown below.
+
 ## Design
 
 ### Job metadata: `job_outputs`
@@ -138,13 +251,19 @@ unchanged. With it, the server:
 2. Prepares the full download when:
    - the job did not finish successfully, or
    - the job's metadata has no `job_outputs`.
-3. Otherwise copies the `workspace` component into the transfer folder, and
-   writes a new `workspace.zip` there that holds only the declared entries.
-   Then it removes the copied archive. It uses the job store's existing
-   `get_storage_for_download`, so it works with any `StorageSpec` without
-   loading the archive into memory. The admin client unzips the filtered
-   archive into `workspace/` as it does today, and a large folder entry is still
-   one transfer.
+3. Otherwise prepares the `workspace` component in the transfer folder under a
+   temporary name, with the job store's existing `get_storage_for_download`.
+   It works with any `StorageSpec` without loading the archive into memory.
+   The prepared file may not be a copy: `FilesystemStorage` creates a symlink
+   to the stored archive. So the server:
+   - reads the prepared file and writes the declared entries to a separate
+     temporary file;
+   - unlinks the prepared file, which never modifies the stored archive;
+   - renames the filtered file to `workspace.zip`.
+
+   The stored archive is never written, so later full downloads are
+   unaffected. The admin client unzips the filtered archive into `workspace/`
+   as it does today, and a large folder entry is still one transfer.
 4. Always writes `outputs_manifest.json` with:
    - `outputs_only`: whether the download was filtered;
    - `reason`: why the download was not filtered, when it was not;
@@ -229,6 +348,8 @@ Unit tests:
 - `download_job` with `outputs_only`:
   - writes a filtered `workspace.zip` with only the declared entries, at their
     original paths;
+  - leaves the stored archive unchanged when the prepared file is a symlink to
+    it, so a later full download still has every file;
   - reports missing entries in the manifest;
   - rejects symlink entries;
   - falls back to the whole job for undeclared or failed jobs, with the reason
