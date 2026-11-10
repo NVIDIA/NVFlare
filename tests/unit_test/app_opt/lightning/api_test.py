@@ -2049,6 +2049,16 @@ def test_step_sync_does_not_wait_for_the_next_task_when_the_trainer_stops_on_a_s
     assert trainer.global_step == 4
 
 
+def test_step_sync_with_one_task_per_process_sends_one_round_and_returns():
+    fake = _FakeFlare(_train_tasks(1))
+
+    trainer = _fit_with_step_sync(fake, RecordingNet(), _loader(8), sync_every_n_steps=2, max_epochs=1)
+
+    assert fake.steps() == [2]
+    assert fake.events == ["receive", "send", "receive:none"]
+    assert trainer.global_step == 2
+
+
 class ClearStopAtStep(pl.Callback):
     def __init__(self, step):
         self.step = step

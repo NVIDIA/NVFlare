@@ -200,8 +200,9 @@ example as a script argument. ``OneCycleLR`` raises once it is stepped past ``to
 callback logs a warning when training passes the trainer's own limit.
 
 In this mode, ``restore_state`` and ``update_fit_loop`` have no effect, and ``train_with_evaluation``
-is not supported. Optimizer state carries over between rounds only with job lifetime; with task lifetime
-each round starts a fresh optimizer.
+is not supported. Optimizer state carries over between rounds only with job lifetime. With task lifetime
+(``launch_once=False``) each round starts a fresh optimizer, so step mode gives no benefit over
+``max_steps=N`` there.
 
 Any callback in ``trainer.callbacks`` can define these hooks, in both modes:
 
