@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Reads a dataset's catalog from Parquet footers, plus an optional site-authored catalog.json sidecar.
+"""Reads a dataset's catalog from Parquet footers.
 
 The dataset's ``uri`` is a ``file://`` URI of a Parquet file or directory; the connector takes no options.
 """
@@ -21,10 +21,9 @@ import time
 from pathlib import Path
 
 from nvflare.apis.dataset_config_spec import DatasetConfig
-from nvflare.app_common.fdn.catalog.common.schema import PROFILE_KEYS, CatalogInfo, ReadLimits, ValidationError
+from nvflare.app_common.fdn.catalog.common.schema import CatalogInfo, ReadLimits
 from nvflare.app_common.fdn.catalog.site.connector import CatalogConnector, ConnectorError
-from nvflare.app_opt.fdn.catalog._metadata import local_path, selection
-from nvflare.app_opt.fdn.catalog.declarations import SIDECAR_NAME, read_declarations
+from nvflare.app_opt.fdn.catalog._metadata import build_catalog, local_path, selection
 
 
 class ParquetConnector(CatalogConnector):
@@ -73,51 +72,7 @@ class ParquetConnector(CatalogConnector):
             if len(tables) + sum(len(t["columns"]) for t in tables) > limits.max_records:
                 raise ConnectorError("record budget exceeded", budget=True)
 
-        sidecar = self._read_sidecar(root)
-        extra = sidecar.get("tables", {})
-        if not isinstance(extra, dict):
-            raise ConnectorError("sidecar tables must be an object")
-        for table in tables:
-            declared = extra.get(table["name"], {})
-            if not isinstance(declared, dict) or set(declared) - {"primary_key", "relationships"}:
-                raise ConnectorError("sidecar table entry is invalid")
-            table["primary_key"] = declared.get("primary_key", [])
-            table["relationships"] = declared.get("relationships", [])
-
-        provenance = sidecar.get("provenance", {})
-        if not isinstance(provenance, dict) or set(provenance) - {"declaration_ref", "validation_ref"}:
-            raise ConnectorError("sidecar provenance may only carry references")
-        profile = sidecar.get("semantic_profile", {})
-        if not isinstance(profile, dict) or set(profile) - set(PROFILE_KEYS):
-            raise ConnectorError("sidecar semantic_profile is invalid")
-
-        wire = {
-            "dataset": dataset.name,
-            "metadata": {
-                "display_name": sidecar.get("display_name", dataset.name),
-                "description": sidecar.get("description"),
-                "owner": sidecar.get("owner"),
-                "tables": tables,
-                "resources": [],
-                "semantic_profile": {k: profile.get(k) for k in PROFILE_KEYS},
-                "modalities": sidecar.get("modalities", []),
-                "operations": sidecar.get("operations", []),
-                "source_version": sidecar.get("source_version"),
-                "lineage": sidecar.get("lineage", []),
-                "provenance": {
-                    "source": self.source,
-                    "declaration_ref": provenance.get("declaration_ref"),
-                    "validation_ref": provenance.get("validation_ref"),
-                },
-            },
-            "observed_at": sidecar.get("observed_at"),
-        }
-        try:
-            catalog = CatalogInfo.from_wire(wire)
-        except ValidationError:
-            raise ConnectorError("sidecar metadata is invalid") from None
-        if catalog.record_count() > limits.max_records:
-            raise ConnectorError("record budget exceeded", budget=True)
+        catalog = build_catalog(dataset.name, self.source, tables, limits)
         if time.monotonic() >= deadline:
             raise ConnectorError("read budget exceeded", budget=True)
         return catalog
@@ -170,7 +125,3 @@ class ParquetConnector(CatalogConnector):
                     tables.append((child.name, parts))
         check()
         return sorted(tables)
-
-    @staticmethod
-    def _read_sidecar(root: Path) -> dict:
-        return read_declarations(root / SIDECAR_NAME) if root.is_dir() else {}

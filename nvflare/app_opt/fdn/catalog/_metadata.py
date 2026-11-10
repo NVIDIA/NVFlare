@@ -74,9 +74,9 @@ def selection(options, allowed, required=()):
     return options
 
 
-def build_catalog(dataset, source, tables, limits, declarations=None):
-    """Preserve observed structure; declarations may supply descriptive and semantic fields only."""
-    declarations = declarations or {}
+def build_catalog(dataset, source, tables, limits):
+    """A complete, validated catalog of the structure the source reported. Descriptive and semantic fields stay
+    unknown: connectors publish what the source itself exposes, nothing a site types in beside the data."""
     metadata = {
         "display_name": dataset,
         "description": None,
@@ -85,31 +85,13 @@ def build_catalog(dataset, source, tables, limits, declarations=None):
         "operations": [],
         "source_version": None,
         "lineage": [],
+        "tables": tables,
+        "resources": [],
+        "semantic_profile": {key: None for key in PROFILE_KEYS},
+        "provenance": {"source": source, "declaration_ref": None, "validation_ref": None},
     }
-    metadata.update({k: v for k, v in declarations.items() if k not in {"tables", "observed_at", "provenance"}})
-    profile = metadata.get("semantic_profile", {})
-    provenance = declarations.get("provenance", {})
-    if (
-        not isinstance(profile, dict)
-        or set(profile) - set(PROFILE_KEYS)
-        or not isinstance(provenance, dict)
-        or set(provenance) - {"declaration_ref", "validation_ref"}
-    ):
-        raise ConnectorError("catalog declarations are invalid")
-    metadata.update(
-        tables=tables,
-        resources=[],
-        semantic_profile={key: profile.get(key) for key in PROFILE_KEYS},
-        provenance={
-            "source": source,
-            "declaration_ref": provenance.get("declaration_ref"),
-            "validation_ref": provenance.get("validation_ref"),
-        },
-    )
     try:
-        catalog = CatalogInfo.from_wire(
-            {"dataset": dataset, "metadata": metadata, "observed_at": declarations.get("observed_at")}
-        )
+        catalog = CatalogInfo.from_wire({"dataset": dataset, "metadata": metadata, "observed_at": None})
     except ValidationError:
         raise ConnectorError("catalog metadata is invalid") from None
     if catalog.record_count() > limits.max_records:

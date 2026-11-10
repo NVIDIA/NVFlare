@@ -14,7 +14,9 @@ configuration API. Each call to a connector receives:
   configuration names;
 - `limits`: the remaining time, call and record budgets.
 
-The dataset's catalog rules (`usage.catalog`) decide what is published; the connector only reads.
+The dataset's catalog rules (`usage.catalog`) decide what is published; the connector only reads. Connectors
+publish the structure the source itself reports. Descriptive and semantic fields, such as a description or a declared
+OMOP version, stay unknown.
 
 ## The connectors
 
@@ -53,28 +55,7 @@ Tables are listed in name order. Column names, physical types and nullability co
 type names. Every part file of a partitioned table must have the same schema as the first, or the dataset fails.
 Partition-value types are not inferred.
 
-Parquet footers carry no keys or relationships. A site that wants them published declares them in an optional
-`catalog.json` inside the dataset directory (a single-file dataset has no sidecar):
-
-```json
-{
-  "display_name": "OMOP CDM",
-  "semantic_profile": {"standard": "OMOP", "version": "5.4"},
-  "tables": {
-    "person": {"primary_key": ["person_id"]},
-    "condition_occurrence": {
-      "relationships": [
-        {"columns": ["person_id"], "target_table": "person", "target_columns": ["person_id"]}
-      ]
-    }
-  }
-}
-```
-
-The sidecar may also carry `description`, `owner`, `modalities`, `operations`, `source_version`, `lineage`,
-`observed_at` and the provenance references `declaration_ref` and `validation_ref`. It is limited to 1 MiB, unknown
-keys are rejected, and a table entry may only hold `primary_key` and `relationships`. Observed columns always come
-from the footers.
+Parquet footers carry no keys or relationships, so none are published.
 
 ## CSVConnector
 
@@ -113,8 +94,8 @@ A SQLite database file:
           catalog: {share: true}
 ```
 
-The file is opened read-only, and a missing database is never created. Optional descriptive and semantic
-declarations stay in `<database>.catalog.json` beside it; observed columns and constraints come from SQLAlchemy.
+The file is opened read-only, and a missing database is never created. Columns and constraints come from
+SQLAlchemy.
 
 A network database:
 
@@ -177,8 +158,8 @@ catalog, so the connector runs four fixed queries against DuckDB's own `informat
 `duckdb_constraints()`. Column names, physical types, nullability, primary keys and foreign keys are published; no
 application rows are read.
 
-The file is opened read-only with external file access disabled. Optional declarations stay in
-`<database>.catalog.json`, as for SQLite. The connector is not built in, so the site declares it:
+The file is opened read-only with external file access disabled. The connector is not built in, so the site
+declares it:
 
 ```yaml
 studies:

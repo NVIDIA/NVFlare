@@ -94,15 +94,6 @@ def test_table_selection_does_not_expose_unselected_relationship_targets(databas
     assert result.tables[0].relationships == ()
 
 
-def test_declarations_add_descriptive_metadata_but_not_structure(database):
-    database.with_suffix(".catalog.json").write_text(
-        json.dumps({"semantic_profile": {"standard": "OMOP", "version": "5.4"}, "tables": {}})
-    )
-    result = read_dataset(DuckDBConnector(), LIMITS, name="omop", type_="duckdb", path=database)
-    assert result.semantic_profile.standard == "OMOP"
-    assert {t.name for t in result.tables} >= {"person"}
-
-
 def test_the_database_is_opened_read_only_without_external_access(database, monkeypatch):
     seen = []
     connect = duckdb.connect

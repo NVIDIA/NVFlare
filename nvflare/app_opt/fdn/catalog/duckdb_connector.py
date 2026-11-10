@@ -17,7 +17,6 @@
 
 from nvflare.app_common.fdn.catalog.site.connector import CatalogConnector, ConnectorError
 from nvflare.app_opt.fdn.catalog._metadata import ReadBudget, build_catalog, local_path, selection
-from nvflare.app_opt.fdn.catalog.declarations import read_declarations
 
 _SCHEMA = "SELECT 1 FROM information_schema.schemata WHERE catalog_name = current_database() AND schema_name = ?"
 _TABLES = (
@@ -37,8 +36,8 @@ _CONSTRAINTS = (
 
 
 class DuckDBConnector(CatalogConnector):
-    """Use a DuckDB database file, named by the dataset's ``file://`` uri. Column types, nullability, primary keys and foreign keys come from
-    DuckDB's own catalog views; optional descriptive and semantic declarations stay in ``<database>.catalog.json``.
+    """Use a DuckDB database file, named by the dataset's ``file://`` uri. Column types, nullability, primary keys
+    and foreign keys come from DuckDB's own catalog views.
 
     The file is opened read-only with external file access disabled, and only four fixed metadata queries run.
     ``schema`` (default ``main``) and ``tables`` are the only options. The ``duckdb`` package is an optional
@@ -104,8 +103,7 @@ class DuckDBConnector(CatalogConnector):
                 for name in sorted(names)
             ]
             budget.records(1 + sum(1 + len(t["columns"]) + len(t["relationships"]) for t in tables))
-            declarations = read_declarations(path.with_suffix(".catalog.json"))
-            catalog = build_catalog(dataset.name, self.source, tables, limits, declarations)
+            catalog = build_catalog(dataset.name, self.source, tables, limits)
             budget.remaining()
             return catalog
         except ConnectorError:

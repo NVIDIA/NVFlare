@@ -172,55 +172,16 @@ class TestBudgets:
         assert e.value.budget
 
 
-class TestSidecar:
-    def sidecar(self, root, data):
-        (root / "catalog.json").write_text(json.dumps(data))
-
-    def test_declarations_are_carried(self, root):
-        self.sidecar(
-            root,
-            {
-                "display_name": "Clinical",
-                "owner": "steward",
-                "modalities": ["clinical_tabular"],
-                "operations": ["cohort.count"],
-                "semantic_profile": {"standard": "OMOP", "version": "5.4"},
-                "provenance": {"declaration_ref": "decl-1"},
-                "observed_at": "2026-01-01T00:00:00Z",
-                "tables": {"person": {"primary_key": ["person_id"]}},
-            },
+class TestPublishedFields:
+    def test_only_observed_structure_is_published(self, root):
+        (root / "catalog.json").write_text(
+            json.dumps({"display_name": "Declared", "semantic_profile": {"standard": "X"}})
         )
         catalog = read(root)
-        assert catalog.display_name == "Clinical" and catalog.owner == "steward"
-        assert catalog.semantic_profile.standard == "OMOP"
-        assert catalog.provenance.declaration_ref == "decl-1" and catalog.provenance.source == "parquet"
-        assert catalog.tables[0].primary_key == ("person_id",)
-        assert catalog.observed_at == "2026-01-01T00:00:00Z"
+        assert catalog.display_name == "ds" and catalog.semantic_profile.standard is None
+        assert all(not t.primary_key and not t.relationships for t in catalog.tables)
+        assert catalog.provenance.declaration_ref is None
         validate(catalog, LIMITS)
-
-    @pytest.mark.parametrize(
-        "data",
-        [
-            {"unknown": 1},
-            {"provenance": {"source": "elsewhere"}},
-            {"semantic_profile": {"bogus": "x"}},
-            {"tables": {"person": {"extra": []}}},
-            {"modalities": "not a list"},
-            [],
-        ],
-    )
-    def test_invalid_sidecar_is_a_connector_error(self, root, data):
-        self.sidecar(root, data)
-        with pytest.raises(ConnectorError):
-            read(root)
-
-    def test_oversize_and_unreadable_sidecar(self, root):
-        (root / "catalog.json").write_text("x" * (1024 * 1024 + 1))
-        with pytest.raises(ConnectorError):
-            read(root)
-        (root / "catalog.json").write_text("{not json")
-        with pytest.raises(ConnectorError):
-            read(root)
 
     def test_file_mtime_is_never_the_observation(self, root):
         assert read(root).observed_at is None

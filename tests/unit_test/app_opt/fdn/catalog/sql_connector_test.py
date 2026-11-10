@@ -187,25 +187,10 @@ def test_expired_deadline_stops_before_schema_io(database, connections, monkeypa
     assert error.value.budget and connections == ([], [])
 
 
-def test_sidecar_supplies_semantics_without_replacing_observed_structure(database, connections):
-    database.with_suffix(".catalog.json").write_text(
-        json.dumps(
-            {
-                "semantic_profile": {"standard": "OMOP", "version": "5.4"},
-                "tables": {"invented": {"primary_key": ["not-real"]}},
-            }
-        )
-    )
+def test_a_file_beside_the_database_is_not_read(database, connections):
+    database.with_suffix(".catalog.json").write_text('{"semantic_profile": {"standard": "OMOP"}}')
     result = read_dataset(SQLConnector(), LIMITS, name="omop", type_="sql", path=database)
-    assert result.semantic_profile.standard == "OMOP" and result.semantic_profile.version == "5.4"
-    assert "invented" not in {table.name for table in result.tables}
-    assert_closed(connections[0])
-
-
-def test_invalid_declaration_fails_without_leaving_connections_open(database, connections):
-    database.with_suffix(".catalog.json").write_text('{"unsupported": true}')
-    with pytest.raises(ConnectorError, match="unsupported content"):
-        read_dataset(SQLConnector(), LIMITS, name="omop", type_="sql", path=database)
+    assert result.semantic_profile.standard is None and result.display_name == "omop"
     assert_closed(connections[0])
 
 

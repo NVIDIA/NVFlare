@@ -20,7 +20,6 @@ from urllib.parse import unquote, urlsplit
 
 from nvflare.app_common.fdn.catalog.site.connector import CatalogConnector, ConnectorError
 from nvflare.app_opt.fdn.catalog._metadata import ReadBudget, build_catalog, selection
-from nvflare.app_opt.fdn.catalog.declarations import read_declarations
 
 
 def _type_name(column_type, dialect) -> str:
@@ -61,19 +60,19 @@ class SQLConnector(CatalogConnector):
         from sqlalchemy.engine import make_url
 
         if dataset.path is not None:
-            return _sqlite_url(Path(dataset.path)), Path(dataset.path)
+            return _sqlite_url(Path(dataset.path))
         url = make_url(dataset.uri)
         if url.get_backend_name() == "sqlite":
             database = url.database
             if not database or database == ":memory:":
                 raise ConnectorError("an existing database is required")
             path = Path(unquote(urlsplit(database).path) if database.startswith("file:") else database)
-            return _sqlite_url(path), path
+            return _sqlite_url(path)
         if "username" in dataset.secret_keys:
             url = url.set(username=secret("username"))
         if "password" in dataset.secret_keys:
             url = url.set(password=secret("password"))
-        return url, None
+        return url
 
     def read_catalog(self, dataset, secret, limits):
         from sqlalchemy import create_engine, event, inspect
@@ -86,7 +85,7 @@ class SQLConnector(CatalogConnector):
         budget = ReadBudget(limits)
         engine = None
         try:
-            url, path = self._url(dataset, secret)
+            url = self._url(dataset, secret)
             budget.remaining()
             engine = create_engine(url, connect_args=dict(connect_args), poolclass=NullPool, hide_parameters=True)
             # Count actual reflection statements, including additional statements
@@ -142,8 +141,7 @@ class SQLConnector(CatalogConnector):
                     )
                     records += 1 + len(columns) + len(relationships)
                     budget.records(records)
-            declarations = read_declarations(path.with_suffix(".catalog.json")) if path is not None else {}
-            catalog = build_catalog(dataset.name, self.source, tables, limits, declarations)
+            catalog = build_catalog(dataset.name, self.source, tables, limits)
             budget.remaining()
             return catalog
         except ConnectorError:
