@@ -23,15 +23,24 @@ from unittest.mock import Mock
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.memorization_auditor import MemorizationAuditor
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.executors.multi_process_executor import MultiProcessExecutor
 from nvflare.app_common.filters import memorization_audit_filter as audit_filters
-from nvflare.app_common.filters.memorization_audit_filter import _BASELINE, AuditSnapshotFilter, MemorizationAuditFilter
+from nvflare.app_common.filters.memorization_audit_filter import (
+    _BASELINE_ATTR,
+    AuditSnapshotFilter,
+    MemorizationAuditFilter,
+)
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
+from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.job_config.api import FedApp, FedJob
 from nvflare.job_config.fed_app_config import ClientAppConfig
@@ -76,7 +85,7 @@ def test_schedule_snapshot_preservation_and_retry_report(tmp_path, monkeypatch, 
         assert result is outgoing
         assert json.dumps(incoming, sort_keys=True) == incoming_before
         assert json.dumps(outgoing, sort_keys=True) == outgoing_before
-        assert fl_ctx.get_prop(_BASELINE) is None
+        assert getattr(fl_ctx, _BASELINE_ATTR, None) is None
         model = FLModelUtils.from_shareable(result)
         assert model.params == {"w": 2}
         assert model.metrics == {"accuracy": 0.7}
@@ -102,7 +111,7 @@ def test_missing_baseline_and_runtime_failure_are_not_zero_scores(tmp_path):
     report = json.loads(next(tmp_path.rglob("*.json")).read_text())
     assert report["status"] == "failed"
     assert report["reason"] == "TimeoutError"
-    assert fl_ctx.get_prop(_BASELINE) is None
+    assert getattr(fl_ctx, _BASELINE_ATTR, None) is None
 
 
 def test_round_mismatch_is_rejected_before_custom_auditor(tmp_path):
@@ -114,7 +123,7 @@ def test_round_mismatch_is_rejected_before_custom_auditor(tmp_path):
     auditor.audit.assert_not_called()
     report = json.loads(next(tmp_path.rglob("*.json")).read_text())
     assert (report["status"], report["reason"]) == ("unsupported", "baseline_round_mismatch")
-    assert fl_ctx.get_prop(_BASELINE) is None
+    assert getattr(fl_ctx, _BASELINE_ATTR, None) is None
 
 
 def test_snapshot_is_private_task_local_and_independent():
@@ -124,15 +133,16 @@ def test_snapshot_is_private_task_local_and_independent():
     filt = AuditSnapshotFilter()
     filt.process(FLModelUtils.to_shareable(incoming), fl_ctx)
     incoming.params["w"][0] = 2
-    detail = fl_ctx.get_prop_detail(_BASELINE)
-    assert detail["private"] and not detail["sticky"]
-    assert detail["value"].params == {"w": [1]}
-    assert _BASELINE not in fl_ctx.get_all_public_props()
-    assert manager.new_context().get_prop(_BASELINE) is None
-    baseline_ref = weakref.ref(detail["value"])
+    baseline = getattr(fl_ctx, _BASELINE_ATTR)
+    assert baseline.params == {"w": [1]}
+    assert _BASELINE_ATTR not in fl_ctx.props
+    assert _BASELINE_ATTR not in fl_ctx.get_all_public_props()
+    assert getattr(manager.new_context(), _BASELINE_ATTR, None) is None
+    assert getattr(fl_ctx.clone(), _BASELINE_ATTR, None) is None
+    baseline_ref = weakref.ref(baseline)
     # No output filter runs after an executor failure. Neither the manager nor
     # the long-lived input filter owns the baseline after its task is released.
-    del detail, fl_ctx
+    del baseline, fl_ctx
     assert baseline_ref() is None
 
 
@@ -141,7 +151,43 @@ def test_failed_capture_does_not_reuse_baseline(tmp_path):
     capture(FLModel(params={"w": 1}, current_round=0), fl_ctx)
     malformed = Shareable()
     assert AuditSnapshotFilter().process(malformed, fl_ctx) is malformed
-    assert fl_ctx.get_prop(_BASELINE) is None
+    assert getattr(fl_ctx, _BASELINE_ATTR, None) is None
+
+
+class RelayOnlyExecutor(MultiProcessExecutor):
+    def get_multi_process_command(self):
+        raise AssertionError("This serialization test must not launch workers")
+
+
+def test_baseline_stays_local_through_worker_event_and_task_relays(tmp_path, isolated_fobs):
+    fl_ctx, auditor = context(tmp_path)
+    marker = "AUDIT_BASELINE_MUST_NOT_ENTER_WORKER_MESSAGES"
+    capture(FLModel(params={"w": 1}, meta={"marker": marker}, current_round=0), fl_ctx)
+    executor = RelayOnlyExecutor(num_of_processes=2)
+    executor.engine = fl_ctx.get_engine()
+    executor.targets = ["rank-0", "rank-1"]
+    wires = []
+
+    def send_message(**kwargs):
+        # Use real message construction/FOBS with a fake Cell boundary. No
+        # workers, threads or sockets are started by these relay methods.
+        wires.append(fobs.dumps(kwargs["message"].payload))
+
+    executor.engine.client.cell.fire_and_forget.side_effect = send_message
+    executor._pass_event_to_rank_processes(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
+    outgoing = FLModelUtils.to_shareable(FLModel(params={"w": 2}, current_round=0))
+    executor._execute_multi_process("train", outgoing, fl_ctx, Signal())
+    assert len(wires) == 2
+    for wire in wires:
+        assert marker.encode() not in wire
+        relayed = fobs.loads(wire)[CommunicationMetaData.FL_CTX]
+        assert getattr(relayed, _BASELINE_ATTR, None) is None
+        assert _BASELINE_ATTR not in relayed.props
+    # Relays must neither consume nor replace the parent's baseline.
+    assert MemorizationAuditFilter(auditor).process(outgoing, fl_ctx) is outgoing
+    report = json.loads(next(tmp_path.rglob("*.json")).read_text())
+    assert report["status"] == "completed"
+    assert getattr(fl_ctx, _BASELINE_ATTR, None) is None
 
 
 class Builder(ComponentBuilder):
@@ -188,7 +234,7 @@ def test_export_reload_pairs_separate_filters_via_context(tmp_path, monkeypatch)
     assert report["status"] == "completed"
     assert report["baseline_fingerprint"] != report["model_fingerprint"]
     assert "likelihood/change_auc" in report["metrics"]
-    assert fl_ctx.get_prop(_BASELINE) is None
+    assert getattr(fl_ctx, _BASELINE_ATTR, None) is None
 
 
 @pytest.mark.parametrize(
@@ -226,7 +272,7 @@ def test_unsupported_output_is_reported_and_consumes_snapshot(tmp_path, kind, da
     assert report["status"] == "unsupported"
     assert report["reason"] == reason
     assert not report["metrics"]
-    assert fl_ctx.get_prop(_BASELINE) is None
+    assert getattr(fl_ctx, _BASELINE_ATTR, None) is None
     auditor.audit.assert_not_called()
     assert json.dumps(outgoing, default=lambda dxo: dxo.to_dict(), sort_keys=True) == before
 
@@ -260,7 +306,7 @@ def test_unauditable_result_reports_status_and_releases_baseline(tmp_path, case)
     assert report["status"] == status
     assert report["reason"] == reason
     assert not report["metrics"]
-    assert fl_ctx.get_prop(_BASELINE) is None
+    assert getattr(fl_ctx, _BASELINE_ATTR, None) is None
     auditor.audit.assert_not_called()
     assert json.dumps(outgoing, sort_keys=True) == before
 
@@ -274,7 +320,7 @@ def test_baseline_released_even_when_early_report_cannot_be_written(tmp_path):
 
     assert MemorizationAuditFilter(auditor).process(outgoing, fl_ctx) is outgoing
 
-    assert fl_ctx.get_prop(_BASELINE) is None
+    assert getattr(fl_ctx, _BASELINE_ATTR, None) is None
     assert not list(tmp_path.rglob("*.json"))
 
 
@@ -294,5 +340,5 @@ def test_tensor_dxo_decode_failure_reports_and_preserves_result(tmp_path):
     report = json.loads(next(tmp_path.rglob("*.json")).read_text())
     assert report["status"] == "failed" and report["reason"] == "RuntimeError"
     assert not report["metrics"]
-    assert fl_ctx.get_prop(_BASELINE) is None
+    assert getattr(fl_ctx, _BASELINE_ATTR, None) is None
     auditor.audit.assert_not_called()

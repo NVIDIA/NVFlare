@@ -25,7 +25,10 @@ from nvflare.app_common.filters.model_filter import ModelFilter
 from nvflare.app_common.widgets.memorization_audit_reporter import MemorizationAuditReporter
 from nvflare.fuel.utils.experimental import experimental
 
-_BASELINE = "memorization_audit.baseline"
+# Private/non-sticky props still travel to MultiProcessExecutor workers. Keep the
+# snapshot outside props: context relays and the FOBS ContextDecomposer omit it.
+# Both filters must run on the original task context in the same process.
+_BASELINE_ATTR = "_nvflare_memorization_audit_baseline"
 
 
 def _validate_schedule(start_round, frequency):
@@ -38,10 +41,12 @@ def _audit_due(round_number, start_round, frequency):
 
 
 class AuditSnapshotFilter(ModelFilter):
-    """Copy the incoming full model into the task's private, non-sticky context.
+    """Copy the incoming full model into an attribute on the original task context.
 
     Place after input transformations. The paired output filter consumes this
-    baseline from the same FLContext; neither filter retains it between tasks.
+    process-local baseline from the same FLContext object. It is not a context
+    property: worker relays, context clones and the FOBS context decomposer omit it.
+    Neither filter retains it between tasks.
     Match start_round/frequency to the output filter to avoid copies on skipped rounds.
     """
 
@@ -56,17 +61,17 @@ class AuditSnapshotFilter(ModelFilter):
         if model.params_type != ParamsType.FULL or model.current_round is None:
             raise UnsupportedAudit("Baseline requires full parameters and a round identity")
         if _audit_due(model.current_round, self.start_round, self.frequency):
-            fl_ctx.set_prop(_BASELINE, deepcopy(model), private=True, sticky=False)
+            setattr(fl_ctx, _BASELINE_ATTR, deepcopy(model))
         return None
 
     def process(self, shareable, fl_ctx):
-        fl_ctx.remove_prop(_BASELINE)
+        fl_ctx.__dict__.pop(_BASELINE_ATTR, None)
         try:
             if from_shareable(shareable).data_kind == DataKind.COLLECTION:
                 raise UnsupportedAudit("Audit snapshot requires a single model")
             return super().process(shareable, fl_ctx)
         except Exception as exc:
-            fl_ctx.remove_prop(_BASELINE)
+            fl_ctx.__dict__.pop(_BASELINE_ATTR, None)
             self.log_warning(fl_ctx, f"Audit baseline capture failed: {type(exc).__name__}")
             return shareable
 
@@ -75,8 +80,10 @@ class MemorizationAuditFilter(ModelFilter):
     """Experimental, report-only outgoing model audit. Never suppresses an update.
 
     Pass an auditor instance and install AuditSnapshotFilter on task input. The
-    baseline lives only in that task's FLContext. Job export rebuilds the auditor
-    as a nested object; it does not receive component events. Reports are local
+    baseline lives in an attribute on the original task's FLContext, outside its
+    serializable properties. Both filters must use that same object in the same
+    process. Job export rebuilds the auditor as a nested object; it does not
+    receive component events. Reports are local
     JSON under the job workspace. Only explicitly selected scalar metrics
     are emitted to analytics; detailed audit data belongs in the auditor's local
     storage. Runtime failures log a failed report and leave training unaffected.
@@ -132,7 +139,7 @@ class MemorizationAuditFilter(ModelFilter):
             return shareable
         finally:
             # Conversion, scheduling and reporting may all bypass process_model.
-            fl_ctx.remove_prop(_BASELINE)
+            fl_ctx.__dict__.pop(_BASELINE_ATTR, None)
 
     def process_dxo(self, dxo, shareable, fl_ctx):
         try:
@@ -145,8 +152,7 @@ class MemorizationAuditFilter(ModelFilter):
         report = {"round": model.current_round, "status": "skipped", "metrics": {}}
         begin = time.monotonic()
         try:
-            baseline = fl_ctx.get_prop(_BASELINE)
-            fl_ctx.remove_prop(_BASELINE)
+            baseline = fl_ctx.__dict__.pop(_BASELINE_ATTR, None)
             if model.current_round is None:
                 raise UnsupportedAudit("missing_round")
             if not _audit_due(model.current_round, self.start_round, self.frequency):

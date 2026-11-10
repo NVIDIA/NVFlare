@@ -167,12 +167,22 @@ registered event handlers, so they must not depend on component lifecycle events
 
 `ClientRunner` passes the same task `FLContext` through input filters, the executor,
 and output filters. `AuditSnapshotFilter` deep-copies the incoming full model into
-a private, non-sticky context property. The property is excluded from public peer
-metadata and is not inherited by later task contexts. The filters retain no model
-state themselves; there is no snapshot component, ID lookup, job/task/round storage
-key or run-event cleanup. One paired filter chain per task context is supported.
+a private Python attribute on the original context object, outside `FLContext.props`.
+The filters retain no model state themselves; there is no snapshot component, ID
+lookup, job/task/round storage key or run-event cleanup. One paired filter chain
+per task context is supported.
 
-The output filter consumes and removes the property on every output path, including
+This boundary matters for `MultiProcessExecutor`: private/non-sticky *properties*
+are still serialized by `get_serializable_data()` for task and event relays.
+The audit attribute is omitted by that helper and the standard FOBS context
+decomposer, so the extra full-model snapshot stays in the parent process. Normal
+training payloads continue through the executor's transport. Install both filters
+on the parent client's input/output chains with the same original `FLContext`
+object. Context clones, worker contexts and later task contexts do not inherit the
+snapshot; a custom pipeline that moves output filtering to one of them reports
+`unsupported / missing_baseline` unless it captures a baseline there itself.
+
+The output filter consumes and removes the attribute on every output path, including
 skipped rounds, empty or unsupported results, failed task replies, and conversion/
 reporting failures. A missing baseline is unsupported, never silently an unpaired
 audit. Before invoking any auditor, the filter also requires baseline and candidate

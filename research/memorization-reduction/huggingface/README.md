@@ -84,10 +84,14 @@ establish final global-model coverage.
 The recipe installs `AuditSnapshotFilter()` on input and
 `MemorizationAuditFilter(auditor=DossierAuditor(assets))` on output. The auditor is
 exported/reloaded as a nested constructor argument and does not receive component
-events. The baseline copy lives in a private, non-sticky property of the shared task
-`FLContext` and is removed on every output path. If an executor exits before output
-filtering, only that task context retains the copy until it is released; subsequent
-tasks cannot inherit it. Missing baselines are reported as unsupported.
+events. The baseline copy lives in a private Python attribute on the original task
+`FLContext`, outside its serialized properties, and is removed on every output
+path. Both filters must use that same context object in the parent client process.
+`MultiProcessExecutor` task/event relays omit the audit snapshot; context clones,
+worker contexts and subsequent tasks cannot inherit it. Private/non-sticky
+properties alone would not prevent worker serialization. If an executor exits
+before output filtering, only the original task context retains the copy until it
+is released. Missing baselines are reported as unsupported.
 
 ## Complete state and adapter-only updates
 

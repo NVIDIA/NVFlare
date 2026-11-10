@@ -14,16 +14,20 @@ added deadline checks between audit phases. These changes have focused local
 regression coverage; the H100 workflow has not been
 rerun after them. The measurements below belong to the pinned revision, not the
 updated implementation. The current API also replaces the historical
-`AuditModelSnapshot`/component-ID wiring with a private, non-sticky task-context
-baseline and a nested auditor constructor argument. Its local export/reload and
+`AuditModelSnapshot`/component-ID wiring with a process-local attribute on the
+original task context and a nested auditor constructor argument. Its local export/reload and
 lifetime tests do not establish GPU runtime or memory parity. Current `validate.py`
 checks ownership through the public input/output filters and includes output-filter
 reporting in the full-audit measurement; the historical measurements below used
 the removed snapshot store and direct auditor calls. The TRAP equation and audit
 metric formulas are unchanged. Later local follow-up also adds matching input
 snapshot schedules, checks paired round identity in the generic filter, and loads
-one reference per HF audit for both evaluation phases, releasing it at exit. The
-H100 workflow has not been rerun for these changes; the timings and memory figures
+one reference per HF audit for both evaluation phases, releasing it at exit. A
+worker-relay regression also checks the actual `MultiProcessExecutor` task/event
+message builders and FOBS serialization with a fake Cell boundary: the audit
+snapshot stays in the parent context and the paired audit still completes. It does
+not launch workers or establish end-to-end multiprocess/GPU validation. The H100
+workflow has not been rerun for these changes; the timings and memory figures
 below do not measure their effects.
 The historical [525-fit benchmark](../TRAP_DP_RESULTS.md) used the earlier research
 implementation; this run separately exercises the SDK classes at the pinned revision. Neither establishes
