@@ -50,7 +50,7 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
-from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
@@ -77,6 +77,7 @@ from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.identity_utils import TokenVerifier
+from nvflare.private.fed.utils.job_cert_utils import workspace_transfer_cell_name
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ServerFedEventRunner
 
@@ -537,17 +538,33 @@ class FederatedServer(BaseServer):
             message=message,
             token_verifier=token_verifier,
             logger=self.logger,
-            client_fqcn_resolver=self._resolve_client_fqcn_for_auth,
+            client_fqcn_resolver=lambda name, token: self._resolve_client_fqcn_for_auth(
+                name, token, message.get_header(MessageHeaderKey.ORIGIN), message.get_prop(MessagePropKey.ENDPOINT)
+            ),
             local_cell_fqcn=self.cell.get_fqcn() if getattr(self, "cell", None) else None,
         )
         if not reply:
             self._strip_peer_transit_headers(message)
         return reply
 
-    def _resolve_client_fqcn_for_auth(self, client_name: str, token: str):
+    def _resolve_client_fqcn_for_auth(self, client_name: str, token: str, origin: str = "", peer=None):
+        if origin == FQCN.ROOT_SERVER or client_name == FQCN.ROOT_SERVER:
+            # Only this server's in-process endpoint may originate parent-server messages.
+            local_peer = self.cell.core_cell.communicator.local_endpoint
+            if client_name == token == origin == FQCN.ROOT_SERVER and peer is local_peer:
+                return FQCN.ROOT_SERVER
+            return MISSING_CLIENT_FQCN
         client = self.client_manager.clients.get(token)
         if client and client.name == client_name:
             return client.get_fqcn() or MISSING_CLIENT_FQCN
+        if client_name == private_defs.AUTH_CLIENT_NAME_FOR_SJ:
+            # Bind both the job runner and its workspace bootstrap to the signed job ID.
+            bootstrap = FQCN.join([FQCN.ROOT_SERVER, workspace_transfer_cell_name(token)])
+            if origin == bootstrap:
+                return bootstrap
+            return f"{FQCN.ROOT_SERVER}.{token}"
+        # Delegated admin sessions and lost client registrations are authenticated by their
+        # signed tokens and existing handlers; they cannot claim the parent identity above.
         return None
 
     def sign_auth_token(self, client_name: str, token: str):
@@ -582,17 +599,34 @@ class FederatedServer(BaseServer):
         command = request.get_header(MessageHeaderKey.TOPIC)
         data = request.payload
 
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        peer = request.get_prop(MessagePropKey.ENDPOINT)
+        # CoreCell validates the origin against the transport peer before dispatch.
+        if not peer or FQCN.validate(job_id) or FQCN.SEPARATOR in job_id:
+            return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED)
+
+        is_server_job = peer.name == origin == f"{FQCN.ROOT_SERVER}.{job_id}"
+
         if command == ServerCommandNames.GET_CLIENTS:
+            if not is_server_job:
+                client_fqcn = self._resolve_client_fqcn_for_auth(
+                    request.get_header(CellMessageHeaderKeys.CLIENT_NAME),
+                    request.get_header(CellMessageHeaderKeys.TOKEN),
+                )
+                if not client_fqcn or origin != f"{client_fqcn}.{job_id}":
+                    return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED)
+
             if job_id in self.engine.run_processes:
-                clients = self.engine.run_processes[job_id].get(RunProcessKey.PARTICIPANTS)
+                # CJs only need to know whether their SJ still exists during recovery.
+                clients = self.engine.run_processes[job_id].get(RunProcessKey.PARTICIPANTS) if is_server_job else {}
                 return_data = {ServerCommandKey.CLIENTS: clients, ServerCommandKey.JOB_ID: job_id}
-                for t, c in clients.items():
-                    self.logger.debug(f"sending client {t}: {c.name=} {c.props=}")
             else:
                 return_data = {ServerCommandKey.CLIENTS: None, ServerCommandKey.JOB_ID: job_id}
 
             return make_cellnet_reply(F3ReturnCode.OK, "", return_data)
         elif command == ServerCommandNames.UPDATE_RUN_STATUS:
+            if not is_server_job:
+                return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED)
             execution_error = data.get("execution_error")
             with self.lock:
                 run_process_info = self.engine.run_processes.get(job_id)
@@ -604,6 +638,10 @@ class FederatedServer(BaseServer):
                 reply = make_cellnet_reply(F3ReturnCode.OK, "", None)
                 return reply
         elif command == ServerCommandNames.HEARTBEAT:
+            # The simulator sends its heartbeat locally from the parent cell.
+            is_self_heartbeat = origin == peer.name == FQCN.ROOT_SERVER
+            if not is_server_job and not is_self_heartbeat:
+                return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED)
             if job_id not in self.engine.run_processes:
                 self.engine.abort_app_on_server(job_id)
                 self._set_job_aborted(job_id)

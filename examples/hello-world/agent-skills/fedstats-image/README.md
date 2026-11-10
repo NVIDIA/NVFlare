@@ -7,7 +7,7 @@ image-statistics job from per-site synthetic PNG files.
 ## Setup
 
 Install NVFLARE using the [Installation guide](https://nvflare.readthedocs.io/en/main/installation.html), keeping
-the stable, nightly, or editable distribution already selected. Then install the example dependencies:
+the release, local wheel, or editable installation already selected. Then install the example dependencies:
 
 ```bash
 python -m pip install -r requirements.txt

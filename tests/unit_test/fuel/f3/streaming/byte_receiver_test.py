@@ -51,15 +51,15 @@ def clean_rx_task_map():
         tasks = list(RxTask.rx_task_map.values())
         RxTask.rx_task_map.clear()
     for task in tasks:
-        if task.cleanup_timer:
-            task.cleanup_timer.cancel()
+        if task.cleanup_deadline:
+            task.cleanup_deadline.cancel()
     yield
     with RxTask.map_lock:
         tasks = list(RxTask.rx_task_map.values())
         RxTask.rx_task_map.clear()
     for task in tasks:
-        if task.cleanup_timer:
-            task.cleanup_timer.cancel()
+        if task.cleanup_deadline:
+            task.cleanup_deadline.cancel()
 
 
 def _make_message(origin: str, sid: int, error: str = None) -> Message:
@@ -146,8 +146,8 @@ def test_stop_without_stream_future_retains_non_reliable_failure_tombstone():
 
     with RxTask.map_lock:
         assert RxTask.rx_task_map[(origin, sid)] is task
-    assert task.cleanup_timer is not None
-    assert task.cleanup_timer.interval == FAILED_NON_RELIABLE_TASK_TTL
+    assert task.cleanup_deadline is not None
+    assert task.cleanup_deadline.interval == FAILED_NON_RELIABLE_TASK_TTL
     assert len(fire_and_forget_calls) == 2
     assert [call[1] for call in fire_and_forget_calls] == [STREAM_ERROR_TOPIC, STREAM_ACK_TOPIC]
     error_message = fire_and_forget_calls[0][3]
@@ -644,12 +644,12 @@ def test_reliable_success_stop_is_idempotent():
 
     assert task.process_chunk(message) is True
     assert cell.fire_and_forget.call_count == 1
-    cleanup_timer = task.cleanup_timer
+    cleanup_deadline = task.cleanup_deadline
 
     task.stop()
 
     assert cell.fire_and_forget.call_count == 1
-    assert task.cleanup_timer is cleanup_timer
+    assert task.cleanup_deadline is cleanup_deadline
 
 
 def test_reliable_consumer_error_after_receive_completion_is_reported():
@@ -685,7 +685,7 @@ def test_reliable_failed_task_rejects_retried_initial_chunk():
     with RxTask.map_lock:
         assert RxTask.rx_task_map[("site-1", 516)] is task
     assert task.stream_future is None
-    assert task.cleanup_timer is not None
+    assert task.cleanup_deadline is not None
     assert cell.fire_and_forget.call_count == 2
 
     assert task.process_chunk(message) is False

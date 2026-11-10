@@ -114,5 +114,5 @@ processes to use.
             }
           }
         }
-      ],
+      ]
     }

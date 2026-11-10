@@ -21,6 +21,8 @@ import sys
 import tokenize
 import warnings
 
+from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL
+
 DEFAULT_EXPORT_DIR = "./fl_job"
 
 _CONSUMED = False
@@ -76,11 +78,19 @@ def _consume_recipe_args() -> tuple:
     try:
         args, remaining = parser.parse_known_args(sys.argv[1:])
     except argparse.ArgumentError as e:
+        if e.argument_name == "--log_config":
+            parser.error(errors["--log_config"])
         return _record_error(errors.get(e.argument_name, str(e)))
 
     for option, value in (("--export-dir", args.export_dir), ("--log_config", args.log_config)):
         if value is not None and not value.strip():
+            if option == "--log_config":
+                parser.error(errors[option])
             return _record_error(errors[option])
+
+    # Collect the selector now, but validate it only when a simulation is deployed.
+    # Help and export need no runtime logging, and the script may prepare its
+    # logging file or replace an inherited environment value after this import.
 
     export_dir_seen = args.export_dir is not None
     export_dir = args.export_dir if export_dir_seen else DEFAULT_EXPORT_DIR
@@ -100,7 +110,7 @@ def _consume_recipe_args() -> tuple:
     _RECIPE_LOG_CONFIG = args.log_config
     if args.log_config is not None:
         # Reuse the existing process/subprocess logging configuration path.
-        os.environ["FL_LOG_LEVEL"] = args.log_config
+        os.environ[FL_LOG_LEVEL] = args.log_config
     _CONSUMED = True
     return args.export, export_dir
 

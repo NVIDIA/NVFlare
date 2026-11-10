@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
 import os
 from argparse import Namespace
 
@@ -248,3 +249,63 @@ class TestConfigService:
         env[env_var_name] = str(value)
         v = ConfigService.get_int_var(var_name, conf=config)
         assert v == value
+
+
+def _write(path, content):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content if isinstance(content, str) else json.dumps(content), encoding="utf-8")
+
+
+class TestLoadConfigDict:
+    def test_only_json_extensions_in_priority_order(self):
+        assert ConfigService.CONFIG_EXTENSIONS == (".json", ".json.default")
+
+    def test_json_preferred_over_default_in_same_dir(self, tmp_path):
+        _write(tmp_path / "x.json.default", {"v": "default"})
+        _write(tmp_path / "x.json", {"v": "json"})
+
+        assert ConfigService.load_config_dict("x.json.default", [str(tmp_path)]) == {"v": "json"}
+
+    def test_nested_json_preferred_over_top_level_default(self, tmp_path):
+        _write(tmp_path / "x.json.default", "{not json")
+        _write(tmp_path / "nested" / "x.json", {"v": "nested"})
+
+        assert ConfigService.load_config_dict("x.json", [str(tmp_path)]) == {"v": "nested"}
+
+    def test_default_used_when_no_json(self, tmp_path):
+        _write(tmp_path / "x.json.default", {"v": "default"})
+
+        assert ConfigService.load_config_dict("x.json", [str(tmp_path)]) == {"v": "default"}
+
+    def test_search_dirs_searched_in_order(self, tmp_path):
+        _write(tmp_path / "a" / "x.json.default", {"v": "a"})
+        _write(tmp_path / "b" / "x.json", {"v": "b"})
+
+        assert ConfigService.load_config_dict("x.json", [str(tmp_path / "a"), str(tmp_path / "b")]) == {"v": "a"}
+
+    def test_defaults_to_parent_dir_of_file_path(self, tmp_path):
+        _write(tmp_path / "nested" / "x.json.default", {"v": 1})
+
+        assert ConfigService.load_config_dict(str(tmp_path / "x.json")) == {"v": 1}
+        assert ConfigService.load_config_dict(str(tmp_path / "x")) == {"v": 1}
+
+    def test_hocon_and_yaml_files_are_ignored(self, tmp_path):
+        _write(tmp_path / "x.conf", "v = 1")
+        _write(tmp_path / "x.yml", "v: 1")
+
+        assert ConfigService.load_config_dict("x.json", [str(tmp_path)], raise_exception=False) is None
+        with pytest.raises(FileNotFoundError, match=r"x\[\.json\|\.json\.default\]"):
+            ConfigService.load_config_dict("x.json", [str(tmp_path)])
+
+    def test_malformed_config_raises(self, tmp_path):
+        _write(tmp_path / "x.json", "{not json")
+
+        with pytest.raises(json.JSONDecodeError):
+            ConfigService.load_config_dict("x.json", [str(tmp_path)], raise_exception=False)
+
+    def test_load_configuration_searches_config_path(self, tmp_path, monkeypatch):
+        _write(tmp_path / "site" / "x.json", {"v": "site"})
+        monkeypatch.setattr(ConfigService, "_config_path", [str(tmp_path)])
+
+        assert ConfigService.load_configuration("x.json") == {"v": "site"}
+        assert ConfigService.load_configuration("missing.json") is None

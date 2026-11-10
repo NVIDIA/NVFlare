@@ -38,9 +38,6 @@ Command Usage
      download        download job result
      clone           clone an existing job
      delete          delete a job
-     list_templates  [DEPRECATED] use 'nvflare recipe list'
-     create          [DEPRECATED] use 'python job.py --export --export-dir <job_folder>' + 'nvflare job submit -j <job_folder>'
-     show_variables  [DEPRECATED] use 'nvflare recipe list' or the Job Recipe API
 
 *****************
 Common Workflow
@@ -64,13 +61,13 @@ Server-connected job commands use this startup kit resolution order:
 2. Optional ``--startup-kit <path>``: override the active startup kit for this
    command only by using an explicit admin startup-kit directory.
 3. ``NVFLARE_STARTUP_KIT_DIR`` when set.
-4. ``startup_kits.active`` from ``~/.nvflare/config.conf``.
+4. ``startup_kits.active`` from ``~/.nvflare/config.json``.
 5. If no source resolves to a valid admin startup kit, the command fails before connecting.
 
 ``--kit-id`` and ``--startup-kit`` are not required. When provided, they take
 precedence over the active startup kit for the current command only and do not
 change the globally active startup kit. They are useful for scripts, notebooks,
-and concurrent workflows that must not mutate ``~/.nvflare/config.conf``.
+and concurrent workflows that must not mutate ``~/.nvflare/config.json``.
 
 ****************
 Submit a Job
@@ -626,20 +623,6 @@ To discover built-in recipes, use:
 .. code-block:: shell
 
    nvflare recipe list
-
-Deprecated commands:
-
-- ``nvflare job create``: retained for compatibility. Prefer ``python job.py --export`` followed by ``nvflare job submit``.
-- ``nvflare job list_templates``: use ``nvflare recipe list``.
-- ``nvflare job show_variables``: use the Job Recipe API.
-
-Current deprecation notes:
-
-- ``nvflare job create`` still exposes template- and config-oriented arguments for
-  legacy workflows.
-- ``nvflare job list_templates`` and ``nvflare job show_variables`` remain
-  available for backward compatibility but are not the preferred interfaces for
-  recipe discovery or job-variable inspection.
 
 *********************
 JSON Output and Help

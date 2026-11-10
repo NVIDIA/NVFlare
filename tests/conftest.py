@@ -41,3 +41,27 @@ def isolated_fobs():
             patch.setattr(module.register, "registered", False)
         nvflare_fobs_initialize()
         yield
+
+
+@pytest.fixture(scope="session")
+def dashboard_app():
+    """Share an isolated Dashboard database without eagerly importing optional dependencies."""
+    import tempfile
+
+    from nvflare.dashboard.application import db, init_app
+    from nvflare.dashboard.config import Config
+    from tests.dashboard_test_utils import TEST_PW, TEST_USER
+
+    with tempfile.TemporaryDirectory(prefix="nvflare-dashboard-") as folder, pytest.MonkeyPatch.context() as patch:
+        patch.setenv("DATABASE_URL", f"sqlite:///{folder}/db.sqlite")
+        patch.setenv("NVFL_WEB_ROOT", folder)
+        patch.setenv("NVFL_CREDENTIAL", f"{TEST_USER}:{TEST_PW}:nvidia")
+        patch.setattr(Config, "SQLALCHEMY_DATABASE_URI", f"sqlite:///{folder}/db.sqlite")
+        application = init_app()
+        application.config.update(TESTING=True)
+        try:
+            yield application
+        finally:
+            with application.app_context():
+                db.session.remove()
+                db.engine.dispose()

@@ -30,12 +30,8 @@ import psutil
 import pytest
 
 from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskLauncherError, TaskLaunchError, TaskSettlementError
-from nvflare.app_common.task_launcher.process_launcher import (
-    ProcessTaskHandle,
-    ProcessTaskLauncher,
-    _OwnedProcessAdapter,
-)
 from nvflare.utils.process_utils import ProcessAdapter, spawn_process
+from tests.local_task_launcher import ProcessTaskHandle, ProcessTaskLauncher, _OwnedProcessAdapter
 from tests.process_launcher_test_utils import cleanup_launched_groups  # noqa: F401 (pytest fixture registration)
 from tests.process_launcher_test_utils import (
     _assert_pid_not_running,
@@ -184,7 +180,7 @@ def test_wait_timeout_does_not_claim_settlement_or_cancel(tmp_path):
 
 @requires_waitid
 def test_indefinite_settlement_wait_does_not_block_concurrent_cancel(tmp_path, monkeypatch):
-    from nvflare.app_common.task_launcher import process_launcher as launcher_module
+    from tests import local_task_launcher as launcher_module
 
     ready_path = tmp_path / "waiter.ready"
     code = "import pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text('ready'); time.sleep(30)"
@@ -469,7 +465,7 @@ def test_exited_leader_keeps_pid_reserved_until_stubborn_descendant_settles(tmp_
     assert observed.si_pid == handle.process_group_id
     assert observed.si_status == 0
     if bounded_wait:
-        import nvflare.app_common.task_launcher.process_launcher as process_launcher
+        import tests.local_task_launcher as process_launcher
 
         clock = ManualClock()
         started = clock.monotonic()
@@ -662,8 +658,8 @@ def test_subprocess_imports_the_isolated_checkout(tmp_path):
     assert Path(nvflare.__file__).resolve().is_relative_to(checkout)
     output = tmp_path / "import.json"
     code = (
-        "import json, pathlib, sys; import nvflare; from nvflare.app_common.task_launcher import ProcessTaskLauncher; "
-        "import nvflare.app_common.task_launcher.process_launcher as launcher; "
+        "import json, pathlib, sys; import nvflare; from tests.local_task_launcher import ProcessTaskLauncher; "
+        "import tests.local_task_launcher as launcher; "
         "pathlib.Path(sys.argv[1]).write_text(json.dumps([nvflare.__file__, launcher.__file__]))"
     )
     handle = ProcessTaskLauncher().launch_task(
@@ -713,7 +709,7 @@ def test_identity_capacity_is_bounded_without_evicting_settled_attempts(tmp_path
     request = _request(tmp_path, "retained-at-capacity", "pass")
     assert launcher.launch_task(request).wait_for_settlement(timeout=5).succeeded
     spawn = Mock()
-    monkeypatch.setattr("nvflare.app_common.task_launcher.process_launcher.spawn_process", spawn)
+    monkeypatch.setattr("tests.local_task_launcher.spawn_process", spawn)
     with pytest.raises(TaskLauncherError, match="already launched"):
         launcher.launch_task(request)
     with pytest.raises(TaskLauncherError, match="capacity exhausted"):

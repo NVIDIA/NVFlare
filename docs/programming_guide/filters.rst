@@ -83,6 +83,101 @@ Your subclass of DXOFilter benefits from the features of DXOFilter:
     - Filtering history recording. If a DXO node is processed by your filter, your filter's class name will be appended to the DXO's "filter_history"
     - Auditing. If your filter is applied, a job audit event will be created to record the fact that the filter is applied to data.
 
+.. _model_filter:
+
+Model Filters
+=============
+
+``nvflare.app_common.filters.model_filter.ModelFilter`` provides an ``FLModel`` callback
+for task filters used with Client API jobs. It extends ``DXOFilter`` and retains its
+registration, collection traversal, filter history, and audit events. Client scripts
+keep their existing ``flare.receive()`` and ``flare.send()`` calls.
+
+For example, this filter records the number of parameter entries in model metadata:
+
+.. code-block:: python
+
+    from nvflare.app_common.filters.model_filter import ModelFilter
+
+    class ParameterCountFilter(ModelFilter):
+        def process_model(self, model, fl_ctx):
+            if model.params is None:
+                return None
+            model.meta["parameter_entries"] = len(model.params)
+            return model
+
+Register it on an existing Recipe without changing its training script:
+
+.. code-block:: python
+
+    recipe.add_client_output_filter(ParameterCountFilter(), tasks=["train"])
+
+The same callback can be exercised directly with a small DXO:
+
+.. code-block:: python
+
+    from nvflare.apis.dxo import DXO, DataKind, from_shareable
+    from nvflare.apis.fl_context import FLContext
+
+    update = DXO(DataKind.WEIGHTS, {"weight": 2.0, "bias": 0.0}).to_shareable()
+    result = ParameterCountFilter().process(update, FLContext())
+    assert from_shareable(result).meta["parameter_entries"] == 2
+
+Supported encodings and identity
+--------------------------------
+
+The callback receives parameters, parameter type, metrics, round fields, and metadata.
+``WEIGHTS``, ``WEIGHT_DIFF``, ``METRICS``, and native ``FL_MODEL`` DXO leaves are supported.
+Each selected leaf of a collection is decoded independently; unselected siblings and
+collection structure are preserved. The adapter preserves the input data kind,
+unrelated headers/cookies and transport metadata, and unknown native model fields.
+Optimizer state can be carried only by native ``FL_MODEL`` encoding.
+
+Recognized envelope headers populate each callback model's ``meta``: ``validate_type``,
+``job_id``, and ``site_name``. When present, they take precedence over leaf metadata.
+Filter history is preserved independently of callback metadata, including when the
+callback returns a fresh ``FLModel``.
+
+The callback cannot change the parameter type or any round identity (``start_round``,
+``current_round``, ``total_rounds``). Specified rounds must be nonnegative integers;
+booleans are not accepted. For legacy encodings, task headers are authoritative and
+metadata supplies a fallback, which the callback must preserve when no task header
+is present. Aggregation metadata may describe an earlier round.
+Conflicting native model fields and task headers raise an error.
+
+For legacy weights or differences, ``ModelFilter`` writes the returned model's
+``metrics`` to the outgoing ``INITIAL_METRICS`` metadata entry, including an empty
+dict, and removes that entry when ``metrics`` is ``None``. This handling is local to
+the adapter. ``METRICS`` leaves keep their payload metrics and any separate
+``INITIAL_METRICS`` metadata entry distinct.
+
+Mutation, pass-through, and execution
+-------------------------------------
+
+Return an ``FLModel`` to apply callback changes and record filter history. Return
+``None`` to skip without recording processing; it never means suppressing an update.
+Callbacks returning ``None`` must leave shared data unchanged.
+
+Only the top-level metadata and metrics dictionaries are shallow-copied. Replacing
+entries in those two dictionaries is applied only when a model is returned. Their
+nested values, parameters, and native optimizer state are shared with the input.
+In-place mutations of shared objects are not rolled back on ``None`` or an exception;
+callbacks must copy the specific objects they need to isolate. Transport filter
+history is managed independently. Invalid callback return types or changes to
+encoding/identity raise an error.
+
+For example, SCAFFOLD's model-sized control tensors in ``model.meta`` are borrowed;
+enabling ``ModelFilter`` does not automatically copy those tensors.
+
+Like ``DXOFilter``, this adapter does not call the callback for non-OK task replies,
+non-DXO messages, empty DXO data, or excluded data kinds. An application needing status
+reporting or cleanup for those paths must implement it at its filter entry point.
+
+The callback runs in the NVFlare runtime process, which can be separate from the Client
+API training process. Existing Client API and client-runner paths materialize lazy
+parameters when their active filter chains need them, increasing runtime memory and
+transfer cost. No additional transport setting is required for ``ModelFilter``.
+
 Filter Behavior in 1-N Communication
 ====================================
 
