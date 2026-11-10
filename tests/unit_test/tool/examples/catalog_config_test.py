@@ -241,7 +241,7 @@ def test_service_setup_rejects_multiline_wheel_paths(monkeypatch, tmp_path, newl
     setup = _load("federated-catalog-services", "example_setup")
     monkeypatch.setattr(setup, "ROOT", tmp_path)
     monkeypatch.setenv("NVFLARE_PACKAGE", f"/host/nvflare-{newline}py3-none-any.whl[catalog]")
-    with pytest.raises(ValueError, match="must be a single-line"):
+    with pytest.raises(ValueError, match="contains a line break"):
         setup.installed_sdk_package()
 
 
@@ -263,6 +263,7 @@ def test_service_setup_separates_exported_host_input_from_container_settings(mon
     for participant in project["participants"]:
         (kits / participant["name"] / "startup").mkdir(parents=True)
     (kits / "nvflare-server/local").mkdir()
+    (kits / setup.KIT_SDK_FILE).write_text("/opt/sdk/sdk.whl[catalog]")
     wheel = tmp_path / "sdk.whl"
     wheel.write_bytes(b"controlled SDK wheel")
     host_input = f"{wheel}[catalog]"
@@ -279,6 +280,60 @@ def test_service_setup_separates_exported_host_input_from_container_settings(mon
     assert os.environ["NVFLARE_PACKAGE"] == host_input
     compose = yaml.safe_load((source / "compose.yaml").read_text())
     assert compose["x-flare"]["build"]["args"]["NVFLARE_PACKAGE"].startswith("${CATALOG_SDK_PACKAGE:")
+
+
+@pytest.mark.parametrize("recorded", [None, "/opt/sdk/older-sdk.whl[catalog]"])
+def test_service_setup_refuses_kits_created_for_another_sdk(monkeypatch, tmp_path, recorded):
+    import yaml
+
+    setup = _load("federated-catalog-services", "example_setup")
+    example = tmp_path / "example"
+    example.mkdir()
+    (example / "project.yml").write_text((EXAMPLES / "federated-catalog-services/project.yml").read_text())
+    project = yaml.safe_load((example / "project.yml").read_text())
+    kits = tmp_path / "kits" / project["name"] / "prod_00"
+    for participant in project["participants"]:
+        (kits / participant["name"] / "startup").mkdir(parents=True)
+    if recorded:
+        (kits / setup.KIT_SDK_FILE).write_text(recorded)
+    wheel = tmp_path / "sdk.whl"
+    wheel.write_bytes(b"controlled SDK wheel")
+    monkeypatch.setenv("NVFLARE_PACKAGE", f"{wheel}[catalog]")
+    monkeypatch.setattr(setup, "ROOT", example)
+    commands = []
+    monkeypatch.setattr(setup, "run_command", lambda *args: commands.append(args))
+    monkeypatch.setattr(sys, "argv", ["example_setup.py", "--workspace", str(tmp_path / "kits")])
+    with pytest.raises(ValueError, match="different NVFlare SDK.*--reprovision"):
+        setup.main()
+    assert commands == [] and not (example / ".env").exists()
+
+
+def test_service_setup_records_the_sdk_of_new_kits(monkeypatch, tmp_path):
+    import yaml
+
+    setup = _load("federated-catalog-services", "example_setup")
+    example = tmp_path / "example"
+    example.mkdir()
+    (example / "project.yml").write_text((EXAMPLES / "federated-catalog-services/project.yml").read_text())
+    project = yaml.safe_load((example / "project.yml").read_text())
+    workspace = tmp_path / "kits"
+
+    def provision(*args):
+        if args[:2] == ("nvflare", "provision"):
+            for participant in project["participants"]:
+                (workspace / project["name"] / "prod_00" / participant["name"] / "startup").mkdir(parents=True)
+
+    wheel = tmp_path / "sdk.whl"
+    wheel.write_bytes(b"controlled SDK wheel")
+    monkeypatch.setenv("NVFLARE_PACKAGE", f"{wheel}[catalog]")
+    monkeypatch.setattr(setup, "ROOT", example)
+    monkeypatch.setattr(setup, "installed_sdk_base_version", lambda: "3.1.0")
+    monkeypatch.setattr(setup, "run_command", provision)
+    monkeypatch.setattr(sys, "argv", ["example_setup.py", "--workspace", str(workspace)])
+    setup.main()
+    kits = workspace / project["name"] / "prod_00"
+    assert (kits / setup.KIT_SDK_FILE).read_text() == "/opt/sdk/sdk.whl[catalog]"
+    setup.main()  # the same SDK reuses them
 
 
 def test_service_database_readiness_checks_database_and_credentials():

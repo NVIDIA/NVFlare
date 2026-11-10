@@ -31,7 +31,7 @@ For a contributor SDK with local changes or an unpublished commit, build a wheel
 running setup:
 
 ```bash
-export NVFLARE_PACKAGE="/path/to/nvflare-sdk.whl[catalog]"
+export NVFLARE_PACKAGE="/tmp/nvflare-sdk-wheels/<wheel file>.whl[catalog]"
 python example_setup.py --workspace /tmp/nvflare/catalog
 ```
 
@@ -53,8 +53,9 @@ python job.py                                              # read the catalog an
 Before running `python job.py`, confirm `nvflare system status` shows both `site-1` and `site-2` registered. If
 startup is still in progress, wait a few seconds and rerun the status command.
 
-That is all. Setup is safe to rerun, and `--workspace` can be any path (the default is `./workspace`). Source rows
-stay at the sites.
+That is all. Setup is safe to rerun, and `--workspace` can be any path (the default is `./workspace`). Kits are tied
+to the SDK that created them: if you change the SDK, setup refuses the old kits and asks for `--reprovision`. Source
+rows stay at the sites.
 
 Stop with `docker compose down`. Kits and source data are kept for the next `docker compose up -d --wait`. For a
 clean run after changing demo credentials:
@@ -286,7 +287,8 @@ workspace. No Spark server or client is needed for this metadata-only path.
 | Symptom | Fix |
 | --- | --- |
 | `docker compose` cannot find the kits, or uses an old workspace | Rerun `python example_setup.py --workspace <path>`. A shell variable `CATALOG_KITS` overrides `.env`; `unset CATALOG_KITS`. |
-| Changed `project.yml` | `python example_setup.py --workspace <path> --reprovision` |
+| Changed `project.yml`, or setup says the kits were created for a different NVFlare SDK | `python example_setup.py --workspace <path> --reprovision`, then `docker compose up -d --build --wait` |
+| A job ends with `FAILED_TO_RUN` | The server refused to start it. Run `docker compose logs nvflare-server \| grep -E "ERROR\|WARNING"` for the reason. |
 | `job.py` cannot connect | The server is still starting. Wait a few seconds, or check `nvflare system status`. |
 | A site reports `NO_RESULT` | The site did not answer in time or is not registered. Check `nvflare system status` and `docker compose logs nvflare-site-1` (or `-site-2`). |
 | A site reports `FAILED` with `CONFIG_UNAVAILABLE` | Its `config/<site>/datasets.yaml` is invalid. The site's log names the problem. |
