@@ -18,7 +18,7 @@ from collections import deque
 from typing import Callable, Deque, Dict, Optional, Tuple
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.connection import BytesAlike
@@ -316,6 +316,7 @@ class RxTask:
                 self.completed_task_ttl = max(self.completed_task_ttl, requested_ttl)
 
         self.stream_future = StreamFuture(self.sid, self.headers)
+        self.stream_future.receiving_endpoint = message.get_prop(MessagePropKey.ENDPOINT)
         self.stream_future.set_size(self.size)
 
     def _update_sender_flow_control(self, message: Message):

@@ -17,6 +17,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from nvflare.apis.dxo import DXO, DataKind, from_file
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
@@ -54,3 +55,23 @@ class TestCrossSiteModelEvalPaths:
         run_dir = os.path.realpath(str(tmp_path / "run"))
         assert os.path.isdir(os.path.join(run_dir, AppConstants.CROSS_VAL_DIR, AppConstants.CROSS_VAL_MODEL_DIR_NAME))
         assert os.path.isdir(os.path.join(run_dir, AppConstants.CROSS_VAL_DIR, AppConstants.CROSS_VAL_RESULTS_DIR_NAME))
+
+    @pytest.mark.parametrize("key", ["normal", "/../../outside"])
+    def test_collection_model_paths_stay_under_output_dir(self, tmp_path, key):
+        models_dir = tmp_path / "models"
+        # Traversal through the authenticated site prefix requires this existing directory.
+        (models_dir / "site-1.").mkdir(parents=True)
+        controller = CrossSiteModelEval(participating_clients=["site-1"])
+        controller._cross_val_models_dir = str(models_dir)
+        controller.fire_event = Mock()
+        controller.broadcast = Mock()
+        model = DXO(DataKind.WEIGHTS, {"w": 3.0})
+        result = DXO(DataKind.COLLECTION, {key: model}).to_shareable()
+
+        if key.startswith("/"):
+            with pytest.raises(ValueError, match="must stay inside"):
+                controller._accept_local_model("site-1", result, FLContext())
+            assert not (tmp_path / "outside").exists()
+        else:
+            controller._accept_local_model("site-1", result, FLContext())
+            assert from_file(controller._client_models["site-1.normal"]).data == model.data
