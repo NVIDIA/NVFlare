@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 420" width="1040" height="420" role="img" aria-labelledby="t d">
+<title id="t">Architecture at a glance</title><desc id="d">A user calls get_catalog or runs CatalogRecipe, which submits a catalog job. The server job runner starts the CatalogController, which sends a task to each site executor. The executor reads its Study's part of the site dataset configuration, delivered read-only by the launcher, through the read-only API and reads each shared dataset through a connector. The controller validates the site results and writes catalog_results.json into the job workspace, which is saved to the job store and downloaded back to the user. The latest read supersedes earlier ones.</desc>
+<style>
+:root { --bg:#fbfcfb; --zone:#f0f3f2; --surface:#ffffff; --ink:#1b2422; --muted:#5a6764; --line:#b9c4c0;
+  --accent:#0b6e67; --accent-tint:#d7ece9; --warn:#8f5400; --warn-tint:#f5e5c6; }
+@media (prefers-color-scheme: dark) { :root { --bg:#14191a; --zone:#1b2322; --surface:#202928; --ink:#e3eae7;
+  --muted:#9aa7a3; --line:#3b4845; --accent:#55c7bb; --accent-tint:#17332f; --warn:#e5a94c; --warn-tint:#3a2f17; } }
+.bg { fill:var(--bg); }
+.zone { fill:var(--zone); stroke:var(--line); stroke-width:1.2; }
+.box { fill:var(--surface); stroke:var(--line); stroke-width:1.3; }
+.box.a { fill:var(--accent-tint); stroke:var(--accent); }
+.box.w { fill:var(--warn-tint); stroke:var(--warn); }
+.cell { fill:var(--surface); stroke:var(--line); stroke-width:1; }
+.cell.good { fill:var(--accent-tint); stroke:var(--accent); }
+.cell.warn { fill:var(--warn-tint); stroke:var(--warn); }
+text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; font-size:13px; fill:var(--ink); }
+.b { font-weight:600; }
+.m { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
+.l { font-size:12px; }
+.s { font-size:11.5px; }
+.muted { fill:var(--muted); }
+.warnt { fill:var(--warn); }
+.zt { font-size:12px; font-weight:600; letter-spacing:0.06em; fill:var(--muted); }
+.arr { fill:none; stroke:var(--muted); stroke-width:1.6; }
+.arr.d { stroke-dasharray:5 4; }
+.head { fill:var(--muted); }
+.brace { stroke:var(--muted); stroke-width:1.2; fill:none; }
+.band { fill:transparent; }
+.band.alt { fill:var(--zone); opacity:0.7; }
+.dot.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:2; }
+.dot.brief { fill:var(--surface); stroke:var(--accent); stroke-width:2; }
+.bar.held { fill:var(--warn-tint); stroke:var(--warn); stroke-width:1.2; }
+.bar.brief { fill:var(--accent-tint); stroke:var(--accent); stroke-width:1.2; }
+.bar.none { fill:var(--surface); stroke:var(--line); stroke-width:1.2; stroke-dasharray:4 3; }
+</style>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker></defs>
+<rect class="bg" x="0" y="0" width="1040" height="420" rx="10"/>
+<rect class="zone" x="10" y="40" width="190" height="340" rx="10"/><text class="zt" x="24" y="62">PARTICIPATING USER</text>
+<rect class="zone" x="220" y="40" width="450" height="340" rx="10"/><text class="zt" x="234" y="62">FLARE SERVER</text>
+<rect class="zone" x="690" y="40" width="340" height="340" rx="10"/><text class="zt" x="704" y="62">EACH SITE</text>
+<rect class="box" x="22" y="80" width="166" height="70" rx="7"/>
+<text class="b" x="105" y="104" text-anchor="middle">Run a read</text>
+<text class="m" x="105" y="122" text-anchor="middle">get_catalog()</text>
+<text class="" x="105" y="139" text-anchor="middle">or CatalogRecipe</text>
+<rect class="box a" x="22" y="270" width="166" height="90" rx="7"/>
+<text class="b" x="105" y="294" text-anchor="middle">Use the result</text>
+<text class="m" x="105" y="312" text-anchor="middle">catalog_results.json</text>
+<text class="" x="105" y="330" text-anchor="middle">notebook and</text>
+<text class="m" x="105" y="347" text-anchor="middle">CatalogVisualization</text>
+<rect class="box" x="235" y="80" width="180" height="70" rx="7"/>
+<text class="b" x="325" y="110" text-anchor="middle">Job runner</text>
+<text class="" x="325" y="128" text-anchor="middle">existing</text>
+<rect class="box a" x="455" y="80" width="200" height="70" rx="7"/>
+<text class="b" x="555" y="104" text-anchor="middle">CatalogController</text>
+<text class="" x="555" y="122" text-anchor="middle">inside the catalog job;</text>
+<text class="" x="555" y="139" text-anchor="middle">validates site results</text>
+<rect class="box" x="455" y="270" width="200" height="70" rx="7"/>
+<text class="b" x="555" y="294" text-anchor="middle">Job workspace</text>
+<text class="m" x="555" y="312" text-anchor="middle">catalog_results.json</text>
+<text class="" x="555" y="329" text-anchor="middle">saved to the job store</text>
+<rect class="box a" x="712" y="80" width="300" height="70" rx="7"/>
+<text class="b" x="862" y="104" text-anchor="middle">CatalogExecutor</text>
+<text class="" x="862" y="122" text-anchor="middle">reads one dataset at a time,</text>
+<text class="" x="862" y="139" text-anchor="middle">applies the site's catalog rules</text>
+<rect class="box w" x="712" y="190" width="160" height="80" rx="7"/>
+<text class="b" x="792" y="214" text-anchor="middle">Dataset config</text>
+<text class="" x="792" y="232" text-anchor="middle">job's Study part only,</text>
+<text class="" x="792" y="249" text-anchor="middle">read-only, from the</text>
+<text class="" x="792" y="265" text-anchor="middle">launcher</text>
+<rect class="box" x="882" y="190" width="138" height="80" rx="7"/>
+<text class="b" x="951" y="214" text-anchor="middle">Connectors</text>
+<text class="" x="951" y="232" text-anchor="middle">parquet, csv, sql,</text>
+<text class="" x="951" y="249" text-anchor="middle">duckdb,</text>
+<text class="" x="951" y="265" text-anchor="middle">unity-catalog</text>
+<rect class="box w" x="882" y="300" width="138" height="66" rx="7"/>
+<text class="b" x="951" y="322" text-anchor="middle">Study datasets</text>
+<text class="" x="951" y="339" text-anchor="middle">and remote catalogs</text>
+<text class="" x="951" y="356" text-anchor="middle">metadata only</text>
+<polyline class="arr" points="188,115 235,115" marker-end="url(#ah)"/>
+<text class="l s" x="211" y="107" text-anchor="middle">submit</text>
+<polyline class="arr" points="415,115 455,115" marker-end="url(#ah)"/>
+<text class="l s" x="435" y="107" text-anchor="middle">starts</text>
+<polyline class="arr" points="655,100 712,100" marker-end="url(#ah)"/>
+<text class="l s" x="683" y="92" text-anchor="middle">task</text>
+<polyline class="arr" points="712,132 655,132" marker-end="url(#ah)"/>
+<text class="l s" x="683" y="148" text-anchor="middle">results</text>
+<polyline class="arr" points="555,150 555,270" marker-end="url(#ah)"/>
+<text class="l s" x="562" y="215" text-anchor="start">writes</text>
+<polyline class="arr" points="455,305 188,305" marker-end="url(#ah)"/>
+<text class="l s" x="321" y="297" text-anchor="middle">download job result</text>
+<polyline class="arr" points="792,150 792,190" marker-end="url(#ah)"/>
+<polyline class="arr" points="951,150 951,190" marker-end="url(#ah)"/>
+<polyline class="arr" points="951,270 951,300" marker-end="url(#ah)"/>
+<text class="l muted" x="22" y="404" text-anchor="start">Amber boxes are owned and controlled by the site. The server never reads a source; the latest read supersedes earlier ones.</text>
+</svg>
