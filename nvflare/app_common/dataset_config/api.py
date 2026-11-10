@@ -49,12 +49,19 @@ _DATASET_KEYS = frozenset({"type", "uri", "options", "secrets", "usage"})
 
 
 def _freeze(value):
-    """A read-only copy: mappings become read-only views and lists become tuples, recursively."""
+    """A read-only copy: mappings become read-only views, lists become tuples and sets frozensets, recursively."""
     if isinstance(value, Mapping):
         return MappingProxyType({k: _freeze(v) for k, v in value.items()})
     if isinstance(value, (list, tuple)):
         return tuple(_freeze(v) for v in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(value)
     return value
+
+
+def _names(keys) -> list:
+    """Keys sorted for an error message; YAML keys need not all be strings, so sort by their text."""
+    return sorted(keys, key=str)
 
 
 def _error(source: str, message: str) -> DatasetConfigError:
@@ -96,7 +103,7 @@ def _dataset(study: str, name, entry, source: str) -> tuple[DatasetConfig, dict]
         raise _error(source, f"{label} must be a mapping")
     unknown = set(entry) - _DATASET_KEYS
     if unknown:
-        raise _error(source, f"{label} has unsupported keys {sorted(unknown)}")
+        raise _error(source, f"{label} has unsupported keys {_names(unknown)}")
     dataset_type = entry.get("type")
     if not isinstance(dataset_type, str) or not dataset_type:
         raise _error(source, f"{label}.type is required")
@@ -174,7 +181,7 @@ def parse_study_config(data, study: str, source: str, revision: str = "") -> Dat
         raise _error(source, "must be a mapping")
     unknown = set(data) - _TOP_KEYS
     if unknown:
-        raise _error(source, f"unsupported keys {sorted(unknown)}")
+        raise _error(source, f"unsupported keys {_names(unknown)}")
     version = data.get("format_version")
     if type(version) is not int or version != FORMAT_VERSION:
         raise _error(source, f"format_version must be {FORMAT_VERSION}")
@@ -188,7 +195,7 @@ def parse_study_config(data, study: str, source: str, revision: str = "") -> Dat
         unknown = set(entry) - _STUDY_KEYS
         if unknown:
             raise _error(
-                source, f"studies.{name} has unsupported keys {sorted(unknown)}; a Study entry holds only datasets"
+                source, f"studies.{name} has unsupported keys {_names(unknown)}; a Study entry holds only datasets"
             )
         datasets, secrets = {}, {}
         for dataset_name, dataset_entry in _mapping(entry.get("datasets"), f"studies.{name}.datasets", source).items():
