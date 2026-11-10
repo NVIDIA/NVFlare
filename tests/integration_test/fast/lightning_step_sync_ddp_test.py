@@ -33,7 +33,8 @@ running_under_xdist = bool(os.environ.get("PYTEST_XDIST_WORKER"))
 
 
 class _FakeFlare:
-    def __init__(self, tasks):
+    def __init__(self, tasks, rank):
+        self._rank = rank
         self._tasks = list(tasks)
         self._current = None
         self.events = []
@@ -46,21 +47,29 @@ class _FakeFlare:
                 return None
             self._current = self._tasks.pop(0)
         self.events.append("receive")
-        return self._current
+        return self._current[1]
+
+    def is_running(self):
+        return self.receive() is not None
+
+    def _task(self):
+        if self._rank != 0:
+            raise RuntimeError("only rank 0 can call is_train/is_evaluate/is_submit_model!")
+        return self._current[0] if self._current is not None else None
 
     def is_train(self):
-        return self._current is not None
+        return self._task() == "train"
 
     def is_evaluate(self):
-        return False
+        return self._task() == "evaluate"
 
     def is_submit_model(self):
-        return False
+        return self._task() == "submit_model"
 
     def send(self, model, clear_cache=True):
         from nvflare.app_common.abstract.fl_model import MetaKey
 
-        self.sent_steps.append(model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND])
+        self.sent_steps.append(model.meta.get(MetaKey.NUM_STEPS_CURRENT_ROUND) if model.metrics is None else "metrics")
         self.events.append("send")
         if clear_cache:
             self.clear()
@@ -83,11 +92,19 @@ def _worker(rank, port, result_queue, accelerator):
             super().__init__()
             self.fc = torch.nn.Linear(2, 2)
             self.seen = []
+            self.validated = 0
 
         def training_step(self, batch, batch_idx):
             self.seen.append((self.fc.weight.device.type, float(self.fc.weight.detach()[0, 0])))
             inputs, labels = batch
             return F.cross_entropy(self.fc(inputs), labels)
+
+        def validation_step(self, batch, batch_idx):
+            inputs, labels = batch
+            self.log("val_loss", F.cross_entropy(self.fc(inputs), labels), sync_dist=True)
+
+        def on_validation_end(self):
+            self.validated += 1
 
         def configure_optimizers(self):
             return torch.optim.SGD(self.parameters(), lr=0.1)
@@ -96,11 +113,10 @@ def _worker(rank, port, result_queue, accelerator):
         os.environ.update(
             MASTER_ADDR="127.0.0.1", MASTER_PORT=str(port), WORLD_SIZE="2", NODE_RANK="0", LOCAL_RANK=str(rank)
         )
-        tasks = [
-            FLModel(params={"fc.weight": torch.full((2, 2), float(r)), "fc.bias": torch.zeros(2)}, current_round=r)
-            for r in range(2)
-        ]
-        fake = _FakeFlare(tasks if rank == 0 else [])
+        weights = [{"fc.weight": torch.full((2, 2), float(r)), "fc.bias": torch.zeros(2)} for r in range(3)]
+        tasks = [("train", FLModel(params=weights[r], current_round=r)) for r in range(2)]
+        tasks += [("evaluate", FLModel(params=weights[2])), ("submit_model", FLModel(params={}))]
+        fake = _FakeFlare(tasks if rank == 0 else [], rank)
         api = "nvflare.app_opt.lightning.api"
         with ExitStack() as stack:
             stack.enter_context(patch(f"{api}.init"))
@@ -124,7 +140,13 @@ def _worker(rank, port, result_queue, accelerator):
             lightning_patch(trainer, sync_every_n_steps=2)
             inputs = torch.arange(8, dtype=torch.float32).unsqueeze(1).repeat(1, 2)
             loader = DataLoader(TensorDataset(inputs, torch.arange(8) % 2), batch_size=1, shuffle=False)
-            trainer.fit(Net(), train_dataloaders=loader)
+            net = Net()
+            trainer.fit(net, train_dataloaders=loader)
+            while True:
+                evaluate = trainer.global_rank == 0 and fake.is_running() and fake.is_evaluate()
+                if not trainer.strategy.broadcast(evaluate, src=0):
+                    break
+                trainer.validate(net, dataloaders=loader)
             module = trainer.lightning_module
         result_queue.put(
             {
@@ -134,6 +156,8 @@ def _worker(rank, port, result_queue, accelerator):
                 "sent_steps": fake.sent_steps,
                 "events": fake.events,
                 "seen": module.seen,
+                "validated": net.validated,
+                "pending_task": fake._current[0] if fake._current else None,
             }
         )
     except Exception as e:
@@ -176,7 +200,9 @@ def test_step_sync_under_ddp_pauses_all_ranks_together_and_only_rank_zero_exchan
     assert rank0["ok"] and rank1["ok"], results
 
     assert rank0["global_step"] == rank1["global_step"] == 4
-    assert rank0["sent_steps"] == [2, 2]
+    assert rank0["sent_steps"] == [2, 2, "metrics"]
+    assert rank0["validated"] == rank1["validated"] == 1
+    assert rank0["pending_task"] == "submit_model"
     assert rank1["events"] == []
     assert rank0["seen"] == rank1["seen"]
     assert {device for device, _ in rank0["seen"]} == {"cuda" if accelerator == "gpu" else "cpu"}

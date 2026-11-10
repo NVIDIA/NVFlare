@@ -161,14 +161,22 @@ Rules:
      `on_train_batch_start`, used before, avoided that pass but relied on `TrainingEpochLoop.run` catching it,
      which is not a documented contract, and left the batch counters inconsistent.
    - A non-train task (evaluate, submit model): stop the same way, without loading it or clearing the Client API
-     cache. The task stays pending, and the script can handle it after `fit()` with the usual loop:
+     cache. The task stays pending. A train-only job needs no code after `fit()`: the script exits, and the pending
+     task is handled as for any client that leaves. A job that also sends evaluate tasks (cross-site evaluation)
+     answers them after `fit()`:
 
      ```python
      trainer.fit(model, datamodule=dm)
-     while flare.is_running():
-         flare.receive()
+     while True:
+         evaluate = trainer.global_rank == 0 and flare.is_running() and flare.is_evaluate()
+         if not trainer.strategy.broadcast(evaluate, src=0):
+             break
          trainer.validate(model, datamodule=dm)
      ```
+
+     The loop stops on any task that is not an evaluate task, because `validate()` answers only evaluate tasks and
+     would otherwise get the same pending task again. Only rank 0 may call `is_evaluate()`, so rank 0 decides and
+     broadcasts, and all ranks validate or leave together.
 6. **In-place load.** The received weights go through the existing `_update_model` (key and shape checks, strict and
    non-strict loading) into the existing parameters with `load_state_dict`. No optimizer or loop state is touched.
 7. **DDP.** All ranks evaluate the sync condition on the same `global_step`, so they reach the send and the receive

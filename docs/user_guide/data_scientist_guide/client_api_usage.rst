@@ -174,6 +174,19 @@ sync batch, and every rank loads the next global model at the start of the next 
 when the server stops sending training tasks. In-fit validation right after a sync waits for the next
 global model, and Lightning runs one validation pass when training stops, as it does for ``EarlyStopping``.
 
+A train-only job needs no code after ``fit()``. If the job also sends evaluate tasks (cross-site
+evaluation), answer them after ``fit()``. The loop stops on any other task, and rank 0 decides for all
+ranks, since only rank 0 can call ``is_evaluate()``:
+
+.. code-block:: python
+
+    trainer.fit(model, datamodule=dm)
+    while True:
+        evaluate = trainer.global_rank == 0 and flare.is_running() and flare.is_evaluate()
+        if not trainer.strategy.broadcast(evaluate, src=0):
+            break
+        trainer.validate(model, datamodule=dm)
+
 The server's ``num_rounds`` decides how long training runs: step mode lifts the trainer's ``max_epochs``
 and ``max_steps``, so epochs keep cycling the data until the server stops sending training tasks. A site
 that stops on its own (``EarlyStopping``, ``max_time``) sends its open round and leaves. Each site reports
