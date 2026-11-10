@@ -19,11 +19,7 @@ from pathlib import Path
 
 from hf_model import ROUNDS, DossierAuditor
 
-from nvflare.app_common.filters.memorization_audit_filter import (
-    AuditModelSnapshot,
-    AuditSnapshotFilter,
-    MemorizationAuditFilter,
-)
+from nvflare.app_common.filters.memorization_audit_filter import AuditSnapshotFilter, MemorizationAuditFilter
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 
@@ -49,10 +45,8 @@ def main():
         key_metric="ce",
         key_metric_mode="min",
     )
-    recipe.add_client_component(AuditModelSnapshot(), "audit_snapshot")
-    recipe.add_client_component(DossierAuditor(assets), "memorization_auditor")
-    recipe.add_client_input_filter(AuditSnapshotFilter("audit_snapshot"), tasks=["train"])
-    recipe.add_client_output_filter(MemorizationAuditFilter("memorization_auditor", "audit_snapshot"), tasks=["train"])
+    recipe.add_client_input_filter(AuditSnapshotFilter(), tasks=["train"])
+    recipe.add_client_output_filter(MemorizationAuditFilter(auditor=DossierAuditor(assets)), tasks=["train"])
     run = recipe.execute(
         SimEnv(num_clients=2, num_threads=2, gpu_config="0", workspace_root=str(output / "simulation"))
     )

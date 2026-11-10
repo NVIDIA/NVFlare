@@ -18,72 +18,41 @@ from copy import deepcopy
 from pathlib import Path
 
 from nvflare.apis.dxo import DataKind, from_shareable
-from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.app_common.abstract.fl_model import ParamsType
 from nvflare.app_common.abstract.memorization_auditor import MemorizationAuditor, UnsupportedAudit
 from nvflare.app_common.filters.model_filter import ModelFilter
 from nvflare.app_common.widgets.memorization_audit_reporter import MemorizationAuditReporter
 from nvflare.fuel.utils.experimental import experimental
 
-
-def _task_key(fl_ctx, round_number):
-    return (fl_ctx.get_job_id(), fl_ctx.get_prop(FLContextKey.TASK_ID), round_number)
-
-
-class AuditModelSnapshot(FLComponent):
-    """Private baseline store for sequential client training tasks; never transmitted."""
-
-    @experimental("AuditModelSnapshot API may change")
-    def __init__(self):
-        super().__init__()
-        self._key = None
-        self._model = None
-
-    def capture(self, model, fl_ctx):
-        if model.params_type != ParamsType.FULL or model.current_round is None:
-            raise UnsupportedAudit("Baseline requires full parameters and a round identity")
-        self._key = _task_key(fl_ctx, model.current_round)
-        self._model = deepcopy(model)
-
-    def pop(self, model, fl_ctx):
-        result = self._model if self._key == _task_key(fl_ctx, model.current_round) else None
-        self.clear()
-        return result
-
-    def clear(self):
-        self._key, self._model = None, None
-
-    def handle_event(self, event_type, fl_ctx):
-        if event_type in (EventType.START_RUN, EventType.END_RUN):
-            self.clear()
+_BASELINE = "memorization_audit.baseline"
 
 
 class AuditSnapshotFilter(ModelFilter):
-    """Capture the incoming baseline after input transformations for a paired audit."""
+    """Copy the incoming full model into the task's private, non-sticky context.
+
+    Place after input transformations. The paired output filter consumes this
+    baseline from the same FLContext; neither filter retains it between tasks.
+    """
 
     @experimental("AuditSnapshotFilter API may change")
-    def __init__(self, snapshot_id: str):
+    def __init__(self):
         super().__init__([DataKind.WEIGHTS, DataKind.FL_MODEL])
-        self.snapshot_id = snapshot_id
 
     def process_model(self, model, fl_ctx):
-        snapshot = fl_ctx.get_engine().get_component(self.snapshot_id)
-        if not isinstance(snapshot, AuditModelSnapshot):
-            raise TypeError("snapshot_id must name an AuditModelSnapshot")
-        snapshot.capture(model, fl_ctx)
+        if model.params_type != ParamsType.FULL or model.current_round is None:
+            raise UnsupportedAudit("Baseline requires full parameters and a round identity")
+        fl_ctx.set_prop(_BASELINE, deepcopy(model), private=True, sticky=False)
         return None
 
     def process(self, shareable, fl_ctx):
+        fl_ctx.remove_prop(_BASELINE)
         try:
             if from_shareable(shareable).data_kind == DataKind.COLLECTION:
                 raise UnsupportedAudit("Audit snapshot requires a single model")
             return super().process(shareable, fl_ctx)
         except Exception as exc:
-            snapshot = fl_ctx.get_engine().get_component(self.snapshot_id)
-            if isinstance(snapshot, AuditModelSnapshot):
-                snapshot.clear()
+            fl_ctx.remove_prop(_BASELINE)
             self.log_warning(fl_ctx, f"Audit baseline capture failed: {type(exc).__name__}")
             return shareable
 
@@ -91,8 +60,10 @@ class AuditSnapshotFilter(ModelFilter):
 class MemorizationAuditFilter(ModelFilter):
     """Experimental, report-only outgoing model audit. Never suppresses an update.
 
-    Register an auditor and optional snapshot store as job components. Reports are
-    local JSON under the job workspace. Only explicitly selected scalar metrics
+    Pass an auditor instance and install AuditSnapshotFilter on task input. The
+    baseline lives only in that task's FLContext. Job export rebuilds the auditor
+    as a nested object; it does not receive component events. Reports are local
+    JSON under the job workspace. Only explicitly selected scalar metrics
     are emitted to analytics; detailed audit data belongs in the auditor's local
     storage. Runtime failures log a failed report and leave training unaffected.
     """
@@ -100,8 +71,7 @@ class MemorizationAuditFilter(ModelFilter):
     @experimental("MemorizationAuditFilter API may change")
     def __init__(
         self,
-        auditor_id: str,
-        snapshot_id: str | None = None,
+        auditor: MemorizationAuditor,
         start_round: int = 0,
         frequency: int = 1,
         report_dir: str = "memorization_audits",
@@ -112,8 +82,9 @@ class MemorizationAuditFilter(ModelFilter):
             raise ValueError("start_round must be nonnegative and frequency positive")
         if Path(report_dir).is_absolute() or ".." in Path(report_dir).parts:
             raise ValueError("report_dir must be relative to the job workspace")
-        self.auditor_id = auditor_id
-        self.snapshot_id = snapshot_id
+        if not isinstance(auditor, MemorizationAuditor):
+            raise TypeError("auditor must be a MemorizationAuditor")
+        self.auditor = auditor
         self.start_round = start_round
         self.frequency = frequency
         self.report_dir = report_dir
@@ -148,10 +119,7 @@ class MemorizationAuditFilter(ModelFilter):
             return shareable
         finally:
             # Conversion, scheduling and reporting may all bypass process_model.
-            if self.snapshot_id:
-                snapshot = fl_ctx.get_engine().get_component(self.snapshot_id)
-                if isinstance(snapshot, AuditModelSnapshot):
-                    snapshot.clear()
+            fl_ctx.remove_prop(_BASELINE)
 
     def process_dxo(self, dxo, shareable, fl_ctx):
         try:
@@ -164,25 +132,18 @@ class MemorizationAuditFilter(ModelFilter):
         report = {"round": model.current_round, "status": "skipped", "metrics": {}}
         begin = time.monotonic()
         try:
-            baseline = None
-            if self.snapshot_id:
-                snapshot = fl_ctx.get_engine().get_component(self.snapshot_id)
-                if not isinstance(snapshot, AuditModelSnapshot):
-                    raise TypeError("snapshot_id must name an AuditModelSnapshot")
-                baseline = snapshot.pop(model, fl_ctx)
+            baseline = fl_ctx.get_prop(_BASELINE)
+            fl_ctx.remove_prop(_BASELINE)
             if model.current_round is None:
                 raise UnsupportedAudit("missing_round")
             if model.current_round < self.start_round or (model.current_round - self.start_round) % self.frequency:
                 report["reason"] = "schedule"
             elif model.params is None:
                 raise UnsupportedAudit("missing_parameters")
-            elif self.snapshot_id and baseline is None:
-                raise UnsupportedAudit("missing_matching_baseline")
+            elif baseline is None:
+                raise UnsupportedAudit("missing_baseline")
             else:
-                auditor = fl_ctx.get_engine().get_component(self.auditor_id)
-                if not isinstance(auditor, MemorizationAuditor):
-                    raise TypeError("auditor_id must name a MemorizationAuditor")
-                result = auditor.audit(model, baseline, fl_ctx)
+                result = self.auditor.audit(model, baseline, fl_ctx)
                 json.dumps(result, allow_nan=False)
                 report.update(result)
                 report["status"] = "completed"

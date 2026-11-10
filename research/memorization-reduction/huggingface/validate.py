@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
+from evaluate import EvaluationWorkspace
 from hf_model import (
     BATCH_SIZE,
     CausalLM,
@@ -38,7 +39,9 @@ from hf_model import (
 
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
-from nvflare.app_common.filters.memorization_audit_filter import AuditModelSnapshot
+from nvflare.app_common.abstract.memorization_auditor import MemorizationAuditor
+from nvflare.app_common.filters.memorization_audit_filter import AuditSnapshotFilter, MemorizationAuditFilter
+from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_opt.pt.trap_loss import PTTRAPLoss, causal_token_log_probs
 
 
@@ -139,18 +142,33 @@ def main():
     module.zero_grad(set_to_none=True)
     del gradients
     candidate = {k: v.detach().cpu().clone() for k, v in module.state_dict().items()}
-    context = FLContextManager(identity_name="site-1", job_id="sdk-parity").new_context()
+    context = FLContextManager(
+        engine=EvaluationWorkspace(str(output)), identity_name="site-1", job_id="sdk-parity"
+    ).new_context()
     baseline_model = FLModel(params=baseline, current_round=0)
-    snapshot = AuditModelSnapshot()
+    incoming = FLModelUtils.to_shareable(baseline_model)
     with measurement(resources.setdefault("baseline_snapshot", {}), device):
-        snapshot.capture(baseline_model, context)
-        copied = snapshot.pop(baseline_model, context)
-    assert copied is not None
-    assert all(copied.params[k].data_ptr() != v.data_ptr() for k, v in baseline.items())
-    del copied
+        captured_result = AuditSnapshotFilter().process(incoming, context)
+        assert captured_result is incoming
     auditor = DossierAuditor(str(assets))
+
+    class SnapshotCheckingAuditor(MemorizationAuditor):
+        def audit(self, model, captured, fl_ctx):
+            assert captured is not None
+            assert all(captured.params[k].data_ptr() != v.data_ptr() for k, v in baseline.items())
+            for key, value in baseline.items():
+                torch.testing.assert_close(captured.params[key], value, atol=0, rtol=0)
+            return auditor.audit(model, captured, fl_ctx)
+
+    outgoing = FLModelUtils.to_shareable(FLModel(params=candidate, current_round=0))
+    paired_filter = MemorizationAuditFilter(auditor=SnapshotCheckingAuditor())
     with measurement(resources.setdefault("full_audit", {}), device):
-        report = auditor.audit(FLModel(params=candidate, current_round=0), baseline_model, context)
+        audited_result = paired_filter.process(outgoing, context)
+        assert audited_result is outgoing
+    reports = list(output.rglob("memorization_audits/*.json"))
+    assert len(reports) == 1, "Expected one persisted paired audit report"
+    report = json.loads(reports[0].read_text())
+    assert report["status"] == "completed", report
     candidate_scores, metrics = independent_audit(module, reference.model, tokenizer, data["site-1"], device)
     module.load_state_dict(baseline)
     baseline_scores, _ = independent_audit(module, reference.model, tokenizer, data["site-1"], device)

@@ -182,23 +182,30 @@ Memorization Audits (Experimental)
 ==================================
 
 ``MemorizationAuditFilter`` uses ``ModelFilter`` to audit outgoing client models without
-changing updates. Register a ``MemorizationAuditor`` implementation as a job component;
-the filter resolves it by ID. The optional ``AuditSnapshotFilter`` and ``AuditModelSnapshot``
-retain the matching incoming model for difference reconstruction and before/after scoring.
+changing updates. Pass a ``MemorizationAuditor`` instance directly to the filter.
+Job export serializes the auditor as a nested constructor argument; the runtime
+rebuilds it without registering it for component events. Auditors used this way
+must not depend on event callbacks.
 
 .. code-block:: python
 
     from nvflare.app_common.filters.memorization_audit_filter import (
-        AuditModelSnapshot, AuditSnapshotFilter, MemorizationAuditFilter,
+        AuditSnapshotFilter, MemorizationAuditFilter,
     )
 
-    recipe.add_client_component(AuditModelSnapshot(), "audit_snapshot")
-    recipe.add_client_component(my_auditor, "memorization_auditor")
-    recipe.add_client_input_filter(AuditSnapshotFilter("audit_snapshot"), tasks=["train"])
+    recipe.add_client_input_filter(AuditSnapshotFilter(), tasks=["train"])
     recipe.add_client_output_filter(
-        MemorizationAuditFilter("memorization_auditor", "audit_snapshot", frequency=10),
+        MemorizationAuditFilter(auditor=my_auditor, frequency=10),
         tasks=["train"],
     )
+
+``AuditSnapshotFilter`` deep-copies the incoming baseline into a private, non-sticky
+property on the task's ``FLContext``. The client runner passes that same context to
+the output filter. The baseline is neither transmitted as public metadata nor
+inherited by later task contexts, and neither filter retains it. Install one paired
+input/output chain per task context. Missing baselines report ``unsupported``;
+for unpaired full-model or final global evaluation, call the auditor directly with
+``baseline=None``.
 
 The initial implementation supports sequential training tasks with a single full model
 or complete weight difference. It explicitly rejects collections and partial model updates
@@ -217,8 +224,10 @@ are ``completed``, ``skipped``, ``unsupported``, and ``failed``. Failed or unsup
 have no valid privacy score. Empty updates, unsupported data kinds, collections, and
 non-model results are reported as unsupported; non-OK task replies are skipped.
 Every output path clears the baseline snapshot, including conversion and reporting
-failures. Runtime audit failures preserve the outgoing update; reporting failures
-are logged. A DXO filter-application event alone is not a completed privacy audit.
+failures. If the executor exits before output filtering, the baseline is released
+when its task context is released. Runtime audit failures preserve the outgoing
+update; reporting failures are logged. A DXO filter-application event alone is not
+a completed privacy audit.
 Only metrics explicitly listed in ``summary_metrics`` are emitted to analytics receivers;
 their configured event handling determines whether they remain local or are relayed.
 ``MemorizationAuditReporter`` in ``nvflare.app_common.widgets`` can also persist a

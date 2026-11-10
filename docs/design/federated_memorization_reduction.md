@@ -42,7 +42,7 @@ and this proposal adds neither a DP mechanism nor a privacy accountant.
 | `PTTRAPLoss`, `causal_token_log_probs` | `app_opt/pt/trap_loss.py` | Masked penalty, causal alignment and diagnostics |
 | `FrozenReferenceScorer` | `app_opt/pt/reference_scorer.py` | Frozen inference and optional local score cache |
 | `MemorizationAuditor`, `UnsupportedAudit` | `app_common/abstract/memorization_auditor.py` | Framework-neutral application audit contract |
-| `AuditModelSnapshot`, `AuditSnapshotFilter`, `MemorizationAuditFilter` | `app_common/filters/memorization_audit_filter.py` | Matching baseline, scheduling and failure classification |
+| `AuditSnapshotFilter`, `MemorizationAuditFilter` | `app_common/filters/memorization_audit_filter.py` | Task-context baseline, scheduling and failure classification |
 | `PTMemorizationAuditor` | `app_opt/pt/memorization_auditor.py` | Model reconstruction, RNG isolation and membership aggregates |
 | `MemorizationAuditReporter` | `app_common/widgets/memorization_audit_reporter.py` | Local JSON reports and explicitly selected analytics |
 
@@ -132,9 +132,8 @@ That contract owns supported encodings, borrowed parameters and nested values,
 shallow copies of metadata and metrics dictionaries, `None` pass-through semantics,
 and immutable round identity. A callback returning `None` must leave shared data
 unchanged. This proposal adds application-specific baseline ownership, audit
-scheduling, measurement and reporting. `Recipe.add_client_component` stays here
-because those components need registration; the generic filter example uses existing
-filter registration.
+scheduling, measurement and reporting. It uses existing Recipe filter registration
+and nested constructor-argument export; no Recipe or shared runtime changes are needed.
 
 On current main, `ClientRunner` materializes lazy input references for active input
 filters, and `ClientAPIExecutor` materializes external/attached-process results for
@@ -152,23 +151,39 @@ incoming full model -> input transformations -> baseline snapshot -> trainer
 server <- encryption <- report-only audit <- outgoing transformations/update
 ```
 
-Register the snapshot store and auditor by component ID through Recipe/FedJob.
-`Recipe.add_client_component(component, component_id, clients=None)` adds a public
-registration surface for supporting FLComponents, reusing the existing client-app
-topology checks. The exact requested ID must be available in every selected app;
-collisions and existing-object aliases are rejected before registration. Repeating
-the same object/ID is allowed. Constructor arguments are exported and must not
-contain secrets. Direct FedJob users can use
-`job.to_clients(component, id=...)`.
-The snapshot key contains job ID, task ID and round. The output filter consumes and
-clears it on every output path, including skipped rounds, empty or unsupported
-results, failed task replies, and conversion/reporting failures. A stale or missing
-baseline is unsupported. Both observer callbacks return `None`, preserving model
-contents, metadata and transport history without model re-encoding; observation
-status is recorded in the separate audit report.
-Start/end-run events clear the store. Initial support is sequential training tasks
-with one full model or a complete parameter difference. Collections, partial
-updates, incompatible names/shapes and missing round identities are unsupported.
+Pass the auditor instance directly to the output filter:
+
+```python
+recipe.add_client_input_filter(AuditSnapshotFilter(), tasks=["train"])
+recipe.add_client_output_filter(
+    MemorizationAuditFilter(auditor=my_auditor), tasks=["train"]
+)
+```
+
+The filter stores `self.auditor`; job export serializes it as a nested `path`/`args`
+configuration and the runtime component builder reconstructs it. Constructor
+arguments are exported and must not contain secrets. Nested auditors are not
+registered event handlers, so they must not depend on component lifecycle events.
+
+`ClientRunner` passes the same task `FLContext` through input filters, the executor,
+and output filters. `AuditSnapshotFilter` deep-copies the incoming full model into
+a private, non-sticky context property. The property is excluded from public peer
+metadata and is not inherited by later task contexts. The filters retain no model
+state themselves; there is no snapshot component, ID lookup, job/task/round storage
+key or run-event cleanup. One paired filter chain per task context is supported.
+
+The output filter consumes and removes the property on every output path, including
+skipped rounds, empty or unsupported results, failed task replies, and conversion/
+reporting failures. A missing baseline is unsupported, never silently an unpaired
+audit. If execution exits before output filtering, the baseline lives only as long
+as that task context is retained. Direct auditor calls still accept `baseline=None`
+for unpaired full-model/global evaluation.
+
+Both observer callbacks return `None`, preserving model contents, metadata and
+transport history without model re-encoding; observation status is recorded in the
+separate audit report. Initial support is sequential training tasks with one full
+model or a complete parameter difference. Collections, partial updates, incompatible
+names/shapes and missing round identities are unsupported.
 The input filter captures every selected training task, including rounds skipped
 by the output audit schedule. Budget that full-state copy even with sparse audits;
 the filters currently have independent placement and no shared capture schedule.

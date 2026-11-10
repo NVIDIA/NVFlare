@@ -99,7 +99,7 @@ def test_coverage_reports_sdk_failure_with_unknown_round(tmp_path, monkeypatch, 
     context = FLContextManager(engine=engine, identity_name="site-1", job_id="test-job").new_context()
     result = Shareable()
     result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-    MemorizationAuditFilter("auditor").process(result, context)
+    MemorizationAuditFilter(load("hf_model").DossierAuditor(str(tmp_path))).process(result, context)
     report = json.loads(next(tmp_path.rglob("memorization_audits/*.json")).read_text())
     assert report["round"] is None
     assert (report["status"], report["reason"]) == ("skipped", "task_result_not_ok")

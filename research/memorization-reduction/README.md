@@ -78,7 +78,11 @@ auditors, and reporting components remain in the `nvflare/app_opt/pt` and
 guide and design document linked below.
 
 `model.py` provides the model, deterministic local cohorts and a likelihood auditor.
-`job.py` registers a matching incoming snapshot and outgoing audit for `train` tasks.
+`job.py` installs `AuditSnapshotFilter()` and
+`MemorizationAuditFilter(auditor=SyntheticAuditor(...))` for `train` tasks. The
+baseline is a private, non-sticky property of the shared task `FLContext`; the
+output filter consumes it. The auditor is exported as a nested constructor
+argument, with no supporting component registration or event handling.
 The auditor reconstructs complete differences when used in a compatible FedOpt job;
 this example itself uses full weights. Reference scoring and audit model copies add
 memory and runtime costs. Audits are cooperative and report-only: failures do not

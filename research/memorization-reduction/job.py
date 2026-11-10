@@ -16,11 +16,7 @@
 
 from model import SyntheticAuditor, create_model
 
-from nvflare.app_common.filters.memorization_audit_filter import (
-    AuditModelSnapshot,
-    AuditSnapshotFilter,
-    MemorizationAuditFilter,
-)
+from nvflare.app_common.filters.memorization_audit_filter import AuditSnapshotFilter, MemorizationAuditFilter
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 
@@ -35,11 +31,9 @@ def create_recipe():
         key_metric="ce",
         key_metric_mode="min",
     )
-    recipe.add_client_component(AuditModelSnapshot(), "audit_snapshot")
-    recipe.add_client_component(SyntheticAuditor(max_seconds=30), "memorization_auditor")
-    recipe.add_client_input_filter(AuditSnapshotFilter("audit_snapshot"), tasks=["train"])
+    recipe.add_client_input_filter(AuditSnapshotFilter(), tasks=["train"])
     recipe.add_client_output_filter(
-        MemorizationAuditFilter("memorization_auditor", "audit_snapshot", frequency=1), tasks=["train"]
+        MemorizationAuditFilter(auditor=SyntheticAuditor(max_seconds=30), frequency=1), tasks=["train"]
     )
     return recipe
 
