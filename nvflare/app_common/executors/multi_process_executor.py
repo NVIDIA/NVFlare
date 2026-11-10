@@ -63,6 +63,7 @@ class WorkerComponentBuilder(ComponentBuilder):
         self.enforce_authorization = enforce_authorization
         self.component_path_authorizer = ComponentPathAuthorizer()
         self.component_build_authorizer = None
+        self._build_state = threading.local()
 
     def get_module_scanner(self):
         return self.module_scanner
@@ -137,7 +138,23 @@ class WorkerComponentBuilder(ComponentBuilder):
         self._authorize_component_config_tree(config_dict, node, force_current=True)
         if self.enforce_authorization and self.component_build_authorizer:
             self.component_build_authorizer(config_dict)
-        return super().build_component(config_dict)
+        return self._build_component(config_dict)
+
+    def _build_component(self, config_dict):
+        previous_config = getattr(self._build_state, "config", None)
+        self._build_state.config = config_dict
+        try:
+            return super().build_component(config_dict)
+        finally:
+            self._build_state.config = previous_config
+
+    def build_nested_component(self, config_dict, arg_name):
+        parent_config = getattr(self._build_state, "config", None)
+        if parent_config is not None and parent_config.get("args", {}).get(arg_name) is config_dict:
+            # The complete tree was approved before construction. Keep that
+            # approval for its nested arguments; independent builds still check.
+            return self._build_component(config_dict)
+        return self.build_component(config_dict)
 
 
 class MultiProcessExecutor(Executor):
