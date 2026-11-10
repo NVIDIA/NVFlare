@@ -46,7 +46,8 @@ Python API: read with ``get_catalog``
    results = get_catalog(env, datasets={"site-1": ["omop"]}, output_path="catalog_results.json")
 
 ``get_catalog`` submits the read, waits for it, and returns the parsed
-``catalog_results.json``. It works in any recipe environment: ``SimEnv``, ``PocEnv`` or
+``catalog_results.json``. Of the job's downloaded workspace it keeps only that file; when the read fails, the whole
+workspace is kept for diagnosis. It works in any recipe environment: ``SimEnv``, ``PocEnv`` or
 ``ProdEnv``.
 
 .. list-table::

@@ -219,7 +219,8 @@ jq '.datasets[] | {site, dataset, tables: .metadata.tables}' \
 ```
 
 Each read returns the complete answer; the latest read is the current catalog.
-Simulator logs are under `/tmp/nvflare/federated-catalog/simulation/get_catalog/`.
+After a completed read, only `catalog_results.json` is kept in the simulation workspace. When a read fails, the
+whole workspace is kept, with the simulator logs under `/tmp/nvflare/federated-catalog/simulation/get_catalog/`.
 
 ## Change what a site shares
 
