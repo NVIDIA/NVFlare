@@ -19,8 +19,10 @@ import pytest
 
 from nvflare.private.fed.resource_stats import collector
 from nvflare.private.fed.resource_stats import cpu_consumed as cpu_module
+from nvflare.private.fed.resource_stats import task_rollup
 from nvflare.private.fed.resource_stats.collector import ExecutionResourceCollector
 from nvflare.private.fed.resource_stats.cpu_consumed import CpuConsumedAccountant
+from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 
 
 @pytest.fixture(autouse=True)
@@ -216,3 +218,22 @@ def test_gpu_snapshot_precedes_cpu_and_duration_baselines(monkeypatch, gpu_value
         assert snapshot["issues"] == [{"metric": "resource_capacity", "code": "observation_incomplete"}]
     assert instance.stop() == snapshot
     assert events == ["gpu", "clock", "cpu", "cpu", "clock"]
+
+
+@pytest.mark.parametrize("limit", ["_MAX_SCOPES", "_MAX_STATE_BYTES", "_MAX_PENDING_BYTES"])
+def test_rejected_worker_omits_containing_duration_but_keeps_observed_work(tmp_path, monkeypatch, limit):
+    ticks = iter((0, 10_000_000_000))
+    job = collector.JobResourceCollector(
+        tmp_path, clock_ns=lambda: next(ticks), capacity_probe=lambda: {"cpu": {"units": 2}}
+    )
+    job.enable_task_collection()
+    monkeypatch.setattr(task_rollup, limit, 0)
+    assert not job._task_reducer.register(TaskAttemptIdentity("job", "site", "task", "train", "attempt"))
+    report = job.finish(message_traffic={"sent_bytes": 5, "received_bytes": 9})
+    assert "duration_seconds" not in report
+    assert report["resource_time"]["cpu"] == {"unit_seconds": 20}
+    assert report["resource_utilization"]["message_traffic"] == {
+        "sent_bytes": 5,
+        "received_bytes": 9,
+        "status": "partial",
+    }

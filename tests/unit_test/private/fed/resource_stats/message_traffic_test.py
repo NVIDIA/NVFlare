@@ -202,3 +202,15 @@ def test_retire_job_traffic_continues_after_one_peer_cannot_be_removed():
     retire_job_traffic(cell, "job-1")
 
     assert cell.pop_traffic_stats.call_count == 2
+
+
+@pytest.mark.parametrize("sent,received", [(50, 100), (100, 100), (50, 200)])
+def test_older_incomplete_snapshot_cannot_downgrade_settled_traffic(sent, received):
+    cell = _cell()
+    register_external_trainer(cell, "trainer")
+    record_external_trainer_traffic(cell, "trainer", {"sent_bytes": 100, "received_bytes": 200})
+    assert not record_external_trainer_traffic(
+        cell, "trainer", {"sent_bytes": sent, "received_bytes": received}, incomplete=True
+    )
+    retire_external_trainer(cell, "trainer")
+    assert snapshot_message_traffic(cell) == {"sent_bytes": 103, "received_bytes": 205}

@@ -263,6 +263,7 @@ def test_key_limit_freezes_without_evicting_or_recounting_existing_sources(monke
     assert len(reducer._scopes) == 1
     assert reducer.snapshot()["cpu_consumed"]["cpu_seconds"] == 8
     assert reducer.snapshot()["cpu_consumed"]["status"] == "partial"
+    assert not reducer.snapshot()["duration_contained"]
 
 
 def test_pending_budget_is_shared_and_is_released_after_fold(monkeypatch):
@@ -272,6 +273,7 @@ def test_pending_budget_is_shared_and_is_released_after_fold(monkeypatch):
     assert reducer.register(first)
     assert not reducer.register(second)
     reducer.settle(first, _store(_report(first)), started=True, settled=True)
+    assert not reducer.snapshot()["duration_contained"]
     assert reducer.register(second)
     assert reducer._pending_bytes == task_rollup.MAX_SIDECAR_BYTES
     assert reducer.snapshot()["cpu_consumed"]["status"] == "partial"
@@ -286,6 +288,9 @@ def test_serialized_ledger_limit_rejects_growth_before_storing_a_contribution(mo
     assert reducer._scopes[task_rollup._key(identity)].record is None
     assert reducer.snapshot()["cpu_consumed"]["status"] == "unavailable"
     assert reducer._pending_bytes == 0
+    assert reducer.snapshot()["duration_contained"]  # Missing values do not imply an unsettled worker.
+    assert not reducer.register(_identity("later"))
+    assert not reducer.snapshot()["duration_contained"]
 
 
 def test_overflow_preserves_valid_dimensions_and_the_previous_cpu_subtotal():

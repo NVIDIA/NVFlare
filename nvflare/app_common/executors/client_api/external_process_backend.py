@@ -176,6 +176,8 @@ class _TrainerSession(CellSession):
         self._stop_lock = threading.Lock()
         self._cleanup_lock = threading.Lock()
         self._cleaned = False
+        # A settled result snapshot does not cover a later task on this trainer.
+        self.traffic_pending_task_id: Optional[str] = None
 
 
 # Kept as a private compatibility alias for existing backend tests/extensions.
@@ -604,6 +606,8 @@ class ExternalProcessBackend(CellBackendBase):
             trainer._next_shutdown_retry = now + _SHUTDOWN_RETRY_INTERVAL
             if trainer.session_id is None or not self._process_group_alive(trainer):
                 return
+            with self._task_lock:
+                traffic_task_id = trainer.traffic_pending_task_id
             request = new_cell_message({}, {MsgKey.SESSION_ID: trainer.session_id, MsgKey.REASON: "shutdown requested"})
             try:
                 if wait_timeout > 0:
@@ -622,12 +626,15 @@ class ExternalProcessBackend(CellBackendBase):
                     body = reply.payload
                     if isinstance(body, dict):
                         source_live = body.get(MsgKey.RESULT_SOURCE_LIVE)
-                        record_external_trainer_traffic(
+                        traffic_complete = record_external_trainer_traffic(
                             self._cell,
                             trainer.trainer_fqcn,
                             body.get(MsgKey.MESSAGE_TRAFFIC),
                             incomplete=source_live is True,
                         )
+                        with self._task_lock:
+                            if traffic_complete and trainer.traffic_pending_task_id == traffic_task_id:
+                                trainer.traffic_pending_task_id = None
                         if source_live is True:
                             trainer.result_source_live.set()
                             # Keep probing: this acknowledgement describes the current
@@ -810,7 +817,7 @@ class ExternalProcessBackend(CellBackendBase):
             # A reaped owned process group cannot remain a result source. Keep
             # this launch-scoped truth consistent even when its final SHUTDOWN
             # acknowledgement was lost during Cell/F3 teardown.
-            traffic_incomplete = trainer.result_source_live.is_set() or trainer.result_failure_notified
+            traffic_incomplete = trainer.traffic_pending_task_id is not None
             trainer.result_source_live.clear()
             trainer.result_accepted.clear()
             trainer.result_source_task_id = None
@@ -1105,6 +1112,7 @@ class ExternalProcessBackend(CellBackendBase):
 
         with self._task_lock:
             self._current_task = task
+            trainer.traffic_pending_task_id = task.task_id
         try:
             task_message = {
                 MsgKey.SESSION_ID: trainer.session_id,
@@ -1236,7 +1244,9 @@ class ExternalProcessBackend(CellBackendBase):
 
     def _on_trainer_message_traffic(self, session: CellSession, traffic) -> None:
         if isinstance(session, _TrainerSession):
-            record_external_trainer_traffic(self._cell, session.trainer_fqcn, traffic)
+            complete = record_external_trainer_traffic(self._cell, session.trainer_fqcn, traffic)
+            if complete and session.traffic_pending_task_id == session.result_source_task_id:
+                session.traffic_pending_task_id = None
 
     @staticmethod
     def _collect_result_source_refs(value, source_fqcn: str, visited=None) -> set[str]:

@@ -356,6 +356,7 @@ class JobResourceCollector(ExecutionResourceCollector):
         prior_observation_incomplete: bool = False,
     ):
         self.run_dir = Path(run_dir)
+        self._prior_observation_incomplete = prior_observation_incomplete
         raw_node_count = os.environ.get(_SLURM_NODE_COUNT_ENV)
         try:
             self._multi_node_incomplete = raw_node_count is not None and int(raw_node_count) != 1
@@ -407,6 +408,9 @@ class JobResourceCollector(ExecutionResourceCollector):
             message_traffic if message_traffic is not None else _unavailable("observation_incomplete"),
             issues,
         )
+        if self._prior_observation_incomplete and traffic.get("status") != "unavailable":
+            traffic["status"] = "partial"
+            issues.append({"metric": "message_traffic", "code": "observation_incomplete"})
         if self._task_reducer is not None or self._task_collection_failed:
             worker_totals = {
                 name: {"status": "unavailable"} for name in ("resource_time", "cpu_consumed", "message_traffic")

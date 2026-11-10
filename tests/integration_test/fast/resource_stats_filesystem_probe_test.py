@@ -76,6 +76,8 @@ def test_completed_observations_are_read_and_helper_is_reaped(tmp_path):
         result = probe.result()
         assert result["retained_content"] == {"bytes": 3}
         assert int(result["workspace_filesystem"]["capacity_bytes"]) > 0
+        # Let normal interpreter exit flush subprocess coverage before cleanup.
+        assert probe._process.wait(timeout=10) == 0
     finally:
         probe.close()
     assert probe._process.returncode is not None

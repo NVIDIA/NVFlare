@@ -49,7 +49,7 @@ def register_external_trainer(job_cell, trainer_fqcn):
 
 
 def record_external_trainer_traffic(job_cell, trainer_fqcn, traffic, *, incomplete=False):
-    """Accept cumulative totals only after the existing session checks succeed."""
+    """Accept authenticated cumulative totals; return whether this update is complete."""
     try:
         issues = []
         checked = _read_usage(scoped_measurement("message_traffic", traffic, issues), ("sent_bytes", "received_bytes"))
@@ -67,12 +67,17 @@ def record_external_trainer_traffic(job_cell, trainer_fqcn, traffic, *, incomple
             if previous is not None:
                 # A retried or delayed notification must not count a source twice
                 # or overwrite newer cumulative counts with older values.
+                if all(new <= old for old, new in zip(previous[:2], values[:2])) and any(
+                    new < old for old, new in zip(previous[:2], values[:2])
+                ):
+                    return False
                 advances = all(new >= old for old, new in zip(previous[:2], values[:2])) and any(
                     new > old for old, new in zip(previous[:2], values[:2])
                 )
                 incomplete = values[2] or (previous[2] and not advances)
                 values = tuple(max(old, new) for old, new in zip(previous[:2], values[:2])) + (incomplete,)
             state.pending[trainer_fqcn] = values
+            return not values[2]
     except Exception:
         try:
             with _LOCK:

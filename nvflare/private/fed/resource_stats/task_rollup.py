@@ -164,6 +164,7 @@ class TaskResourceReducer:
         self._totals = {"resource_time": None, "cpu_consumed": None, "message_traffic": None, "issues": []}
         self._incomplete = False
         self._frozen = False
+        self._containment_lost = False
 
     def _fits(self, entry_bytes, totals):
         return entry_bytes + len(_encoded(totals).encode("ascii")) + 1024 <= _MAX_STATE_BYTES
@@ -187,14 +188,17 @@ class TaskResourceReducer:
                     self._incomplete = True
                 return previous.identity == identity and previous.reserved and previous.disposition == "unresolved"
             if self._frozen:
+                self._containment_lost = True
                 return False
             scope = _Scope(identity)
             size = _scope_size(scope)
             if len(self._scopes) >= _MAX_SCOPES or not self._fits(self._state_bytes + size, self._totals):
                 self._freeze()
+                self._containment_lost = True
                 return False
             if self._pending_bytes + MAX_SIDECAR_BYTES > _MAX_PENDING_BYTES:
                 self._incomplete = True
+                self._containment_lost = True
                 return False
             self._scopes[key] = scope
             self._state_bytes += size
@@ -345,7 +349,10 @@ class TaskResourceReducer:
         """Return worker-only subtotals; None means no contribution and no gap."""
         with self._lock:
             result = deepcopy(self._totals)
-            contained = all(scope.disposition != "unresolved" for scope in self._scopes.values())
+            # Rejected registrations may still execute without a tracked settlement.
+            contained = not self._containment_lost and all(
+                scope.disposition != "unresolved" for scope in self._scopes.values()
+            )
             incomplete = self._incomplete or not contained
         issues = result["issues"]
         if incomplete:

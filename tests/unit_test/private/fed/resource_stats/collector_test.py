@@ -594,3 +594,22 @@ def test_retained_scan_is_unavailable_without_safe_directory_operations(tmp_path
     (tmp_path / "file.bin").write_bytes(b"xxx")
     monkeypatch.setattr(collector, "_RETAINED_DIR_FD_SUPPORTED", False)
     assert observe_retained_content(tmp_path) == {"status": "unavailable", "issues": ["unsupported"]}
+
+
+@pytest.mark.parametrize(
+    "traffic",
+    [
+        {"sent_bytes": 0, "received_bytes": 0},
+        {"sent_bytes": 5, "received_bytes": 9},
+        {"status": "unavailable", "issues": ["observation_incomplete"]},
+    ],
+)
+def test_prior_observation_gap_preserves_traffic_subtotals_and_independent_files(tmp_path, traffic):
+    job = JobResourceCollector(tmp_path, prior_observation_incomplete=True, capacity_probe=lambda: {})
+    report = job.finish(message_traffic=traffic)
+    expected = {key: value for key, value in traffic.items() if key != "issues"}
+    expected["status"] = "unavailable" if traffic.get("status") == "unavailable" else "partial"
+    assert report["resource_utilization"]["message_traffic"] == expected
+    assert report["issues"].count({"metric": "message_traffic", "code": "observation_incomplete"}) == 1
+    assert report["resource_utilization"]["retained_content"] == {"bytes": 0}
+    assert "status" not in report["workspace_filesystem"]
