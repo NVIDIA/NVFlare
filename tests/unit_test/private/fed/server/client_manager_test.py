@@ -48,6 +48,18 @@ def _make_request(client_name: str) -> MagicMock:
     return request
 
 
+def _make_auth_request(client_name: str, recovery_id=None) -> MagicMock:
+    request = MagicMock()
+    headers = {
+        CellMessageHeaderKeys.CLIENT_NAME: client_name,
+        CellMessageHeaderKeys.CLIENT_TYPE: ClientType.REGULAR,
+        CellMessageHeaderKeys.CLIENT_IP: "127.0.0.1",
+        CellMessageHeaderKeys.RECOVERY_ID: recovery_id,
+    }
+    request.get_header.side_effect = lambda key: headers.get(key)
+    return request
+
+
 def _make_fl_ctx(secure_mode: bool, client_name: str) -> MagicMock:
     reg = ClientRegSession(client_name)
     fl_ctx = MagicMock()
@@ -324,6 +336,57 @@ def test_stale_token_does_not_replace_active_site_session():
     assert fl_ctx.get_prop(FLContextKey.COMMUNICATION_ERROR) == "Client ID already registered as a client: site-a"
     assert fl_ctx.get_prop(FLContextKey.UNAUTHENTICATED) is None
     assert manager.clients == {active.token: active}
+
+
+def test_lost_recovery_reply_returns_same_active_session():
+    manager = ClientManager(project_name="project")
+    recovery_id = "a" * 32
+    request = _make_auth_request("site-a", recovery_id)
+    first = Client("site-a", "first-token")
+    first.set_fqcn("site-a")
+    retry = Client("site-a", "retry-token")
+    retry.set_fqcn("site-a")
+
+    with patch.object(manager, "login_client", side_effect=[first, retry]):
+        assert manager.authenticate(request, FLContext()) is first
+        assert manager.authenticate(request, FLContext()) is first
+
+    assert manager.clients == {first.token: first}
+
+
+def test_recovery_retry_cannot_replace_newer_session():
+    manager = ClientManager(project_name="project")
+    recovery_id = "a" * 32
+    recovery_request = _make_auth_request("site-a", recovery_id)
+    first = Client("site-a", "first-token")
+    newer = Client("site-a", "newer-token")
+    retry = Client("site-a", "retry-token")
+    for client in (first, newer, retry):
+        client.set_fqcn("site-a")
+    fl_ctx = FLContext()
+
+    with patch.object(manager, "login_client", side_effect=[first, newer, retry]):
+        assert manager.authenticate(recovery_request, FLContext()) is first
+        assert manager.authenticate(_make_auth_request("site-a"), FLContext()) is newer
+        assert manager.authenticate(recovery_request, fl_ctx) is None
+
+    assert "another active session" in fl_ctx.get_prop(FLContextKey.UNAUTHENTICATED)
+    assert manager.clients == {newer.token: newer}
+
+
+def test_dormant_client_retention_is_bounded_by_active_limit():
+    manager = ClientManager(project_name="project", max_num_clients=2)
+    for name in ("site-a", "site-b", "site-c"):
+        client = Client(name, f"{name}-token")
+        client.set_fqcn(name)
+        manager.clients[client.token] = client
+        manager.name_to_clients[name] = client
+        manager.remove_client(client.token, allow_reactivation=True)
+
+    assert list(manager.reactivatable_clients) == ["site-b-token", "site-c-token"]
+    fl_ctx = FLContext()
+    assert manager.heartbeat("site-a-token", "site-a", "site-a", fl_ctx) is False
+    assert fl_ctx.get_prop(FLContextKey.UNAUTHENTICATED) == CLIENT_REGISTRATION_REQUIRED
 
 
 def test_admin_typed_registration_does_not_remove_regular_site():

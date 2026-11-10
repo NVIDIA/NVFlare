@@ -111,7 +111,17 @@ def add_server_path_reply_authentication_headers(
         add_authentication_headers(msg, client_name, auth_token, token_signature, ssid)
 
 
-def set_add_auth_headers_filters(cell: Cell, client_name: str, auth_token: str, token_signature: str, ssid=None):
+def _add_current_request_auth(msg: Message, credentials_provider):
+    add_authentication_headers(msg, *credentials_provider())
+
+
+def _add_current_reply_auth(msg: Message, credentials_provider):
+    add_server_path_reply_authentication_headers(msg, *credentials_provider())
+
+
+def set_add_auth_headers_filters(
+    cell: Cell, client_name: str, auth_token: str, token_signature: str, ssid=None, credentials_provider=None
+):
     """Set filters for adding auth headers to outgoing requests and server-path replies.
 
     Args:
@@ -120,6 +130,7 @@ def set_add_auth_headers_filters(cell: Cell, client_name: str, auth_token: str, 
         auth_token: authentication token
         token_signature: token signature
         ssid: SSID, optional
+        credentials_provider: optional callable returning current (name, token, signature, ssid).
 
     Returns: None
 
@@ -135,21 +146,29 @@ def set_add_auth_headers_filters(cell: Cell, client_name: str, auth_token: str, 
     if ssid:
         check_str("ssid", ssid)
 
-    cell.core_cell.add_outgoing_reply_filter(
-        channel="*",
-        topic="*",
-        cb=add_server_path_reply_authentication_headers,
-        client_name=client_name,
-        auth_token=auth_token,
-        token_signature=token_signature,
-        ssid=ssid,
-    )
-    cell.core_cell.add_outgoing_request_filter(
-        channel="*",
-        topic="*",
-        cb=add_authentication_headers,
-        client_name=client_name,
-        auth_token=auth_token,
-        token_signature=token_signature,
-        ssid=ssid,
-    )
+    if credentials_provider:
+        cell.core_cell.add_outgoing_reply_filter(
+            channel="*", topic="*", cb=_add_current_reply_auth, credentials_provider=credentials_provider
+        )
+        cell.core_cell.add_outgoing_request_filter(
+            channel="*", topic="*", cb=_add_current_request_auth, credentials_provider=credentials_provider
+        )
+    else:
+        cell.core_cell.add_outgoing_reply_filter(
+            channel="*",
+            topic="*",
+            cb=add_server_path_reply_authentication_headers,
+            client_name=client_name,
+            auth_token=auth_token,
+            token_signature=token_signature,
+            ssid=ssid,
+        )
+        cell.core_cell.add_outgoing_request_filter(
+            channel="*",
+            topic="*",
+            cb=add_authentication_headers,
+            client_name=client_name,
+            auth_token=auth_token,
+            token_signature=token_signature,
+            ssid=ssid,
+        )

@@ -15,6 +15,8 @@
 import threading
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
@@ -37,6 +39,26 @@ def test_get_site_config_for_registration_ignores_non_dict_config():
     communicator = Communicator(client_config={"client_name": "site-1", ClientRegMsgKey.SITE_CONFIG: ["bad"]})
 
     assert communicator._get_site_config_for_registration(FLContext()) is None
+
+
+def test_auth_filter_uses_current_credentials_without_duplicate_registration():
+    communicator = Communicator(client_config={"client_name": "site-1"}, cell=MagicMock())
+    with (
+        patch.object(communicator_module, "set_add_auth_headers_filters") as install,
+        patch.object(communicator_module, "set_scope_property"),
+    ):
+        communicator.set_auth("site-1", "first-token", "first-signature", "first-ssid")
+        communicator.set_auth("site-1", "new-token", "new-signature", "new-ssid")
+        with pytest.raises(TypeError):
+            communicator.set_auth("site-1", None, "bad-signature", "bad-ssid")
+
+    install.assert_called_once()
+    assert install.call_args.kwargs["credentials_provider"]() == (
+        "site-1",
+        "new-token",
+        "new-signature",
+        "new-ssid",
+    )
 
 
 def test_unknown_heartbeat_registration_recovers_after_server_restart():

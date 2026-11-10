@@ -13,14 +13,44 @@
 # limitations under the License.
 
 import logging
+from unittest.mock import MagicMock
 
 import pytest
 
 from nvflare.apis.fl_constant import ServerCommandNames
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.private.defs import CellMessageHeaderKeys
-from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, validate_auth_headers
+from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, Authenticator, validate_auth_headers
+
+
+def test_recovery_registration_sends_stable_attempt_id():
+    cell = MagicMock()
+    cell.send_request.return_value = Message(
+        headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK},
+        payload={CellMessageHeaderKeys.TOKEN: "token", CellMessageHeaderKeys.TOKEN_SIGNATURE: "signature"},
+    )
+    authenticator = Authenticator(
+        cell=cell,
+        project_name="project",
+        client_name="site-a",
+        client_type="regular",
+        expected_sp_identity=None,
+        secure_mode=False,
+        root_cert_file=None,
+        private_key_file=None,
+        cert_file=None,
+        msg_timeout=1,
+        retry_interval=0,
+        recovery_id="a" * 32,
+    )
+
+    authenticator.authenticate(FLContext(), Signal())
+
+    request = cell.send_request.call_args.kwargs["request"]
+    assert request.get_header(CellMessageHeaderKeys.RECOVERY_ID) == "a" * 32
 
 
 class _TokenVerifier:

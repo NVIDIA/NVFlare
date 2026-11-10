@@ -83,6 +83,7 @@ class Authenticator:
         retry_interval: float,
         timeout=None,
         site_config=None,
+        recovery_id=None,
     ):
         """Authenticator is to be used to register a client to the Server.
 
@@ -100,6 +101,7 @@ class Authenticator:
             retry_interval: interval between tries
             timeout: overall timeout for the authentication.
             site_config: optional validated site config to report to the server during registration.
+            recovery_id: identifier reused when retrying a lost recovery registration reply.
         """
         self.cell = cell
         self.project_name = project_name
@@ -114,6 +116,7 @@ class Authenticator:
         self.secure_mode = secure_mode
         self.timeout = timeout
         self.site_config = site_config
+        self.recovery_id = recovery_id
         self.logger = get_obj_logger(self)
 
     def _challenge_server(self):
@@ -252,6 +255,8 @@ class Authenticator:
             CellMessageHeaderKeys.FEDERATION_PROTOCOL_VERSION: private_defs.FEDERATION_PROTOCOL_VERSION,
             CellMessageHeaderKeys.NVFLARE_VERSION: nvflare.__version__,
         }
+        if self.recovery_id:
+            headers[CellMessageHeaderKeys.RECOVERY_ID] = self.recovery_id
         login_message = new_cell_message(headers, shareable)
 
         self.logger.debug("Trying to register with server ...")

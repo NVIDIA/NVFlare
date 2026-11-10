@@ -89,7 +89,7 @@ def test_close_waits_for_recovery_registration_before_logout():
     release_registration = threading.Event()
     logged_out_token = []
 
-    def register(*_args):
+    def register(*_args, **_kwargs):
         registration_started.set()
         assert release_registration.wait(WAIT_TIMEOUT)
         return "new-token", "new-signature", "new-ssid"
@@ -97,7 +97,7 @@ def test_close_waits_for_recovery_registration_before_logout():
     client.logout_client.side_effect = lambda _fl_ctx: logged_out_token.append(client.token)
     with patch.object(client.communicator, "client_registration", side_effect=register):
         with ThreadGroup(release_registration) as workers:
-            workers.start(client.communicator._register_after_lost_session, engine, "project")
+            workers.start(client.communicator._register_after_lost_session, engine, "project", "a" * 32)
             assert registration_started.wait(WAIT_TIMEOUT)
             workers.start(client.close)
             assert client._shutdown_lock.blocked.wait(WAIT_TIMEOUT), "close did not wait for registration"

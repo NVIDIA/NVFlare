@@ -13,6 +13,7 @@
 # limitations under the License.
 import threading
 import time
+import uuid
 from typing import List, Optional
 
 from nvflare.apis.event_type import EventType
@@ -33,6 +34,7 @@ from nvflare.fuel.f3.cellnet.utils import format_size
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.validation_utils import check_str
 from nvflare.private.defs import (
     CLIENT_REGISTRATION_REQUIRED,
     CellChannel,
@@ -87,6 +89,8 @@ class Communicator:
         self.token = None
         self.token_signature = None
         self.ssid = None
+        self._auth_credentials = None
+        self._auth_filter_cell = None
         self.client_name = None
         self.token_verifier = None
         self.abort_signal = Signal()
@@ -105,21 +109,35 @@ class Communicator:
         self._peer_ctx = tmp_ctx
 
     """
-    To call set_add_auth_headers_filters, both cell and token must be available.
-    The set_cell is called when cell becomes available, set_auth is called when token becomes available.
-    In CP, set_cell happens before set_auth, hence we call set_add_auth_headers_filters in set_auth for CP.
-    In CJ, set_auth happens before set_cell, hence we call set_add_auth_headers_filters in set_cell for CJ.
+    Install auth filters when both cell and credentials are available. The filters
+    read the current credential tuple so recovery can rotate credentials without
+    retaining old filters or tokens.
     """
 
+    def _get_auth_credentials(self):
+        return self._auth_credentials
+
+    def _install_auth_filters(self):
+        if self.cell and self._auth_credentials and self._auth_filter_cell is not self.cell:
+            set_add_auth_headers_filters(
+                self.cell, *self._auth_credentials, credentials_provider=self._get_auth_credentials
+            )
+            self._auth_filter_cell = self.cell
+
     def set_auth(self, client_name, token, token_signature, ssid):
+        if client_name:
+            check_str("client_name", client_name)
+        check_str("auth_token", token)
+        check_str("token_signature", token_signature)
+        if ssid:
+            check_str("ssid", ssid)
+        self._auth_credentials = (client_name, token, token_signature, ssid)
         self.ssid = ssid
         self.token_signature = token_signature
         self.token = token
         self.client_name = client_name
 
-        if self.cell:
-            # for CP
-            set_add_auth_headers_filters(self.cell, client_name, token, token_signature, ssid)
+        self._install_auth_filters()
 
         # put auth properties in data bus so that they can be used elsewhere
         set_scope_property(scope_name=client_name, key=FLMetaKey.AUTH_TOKEN, value=token)
@@ -127,9 +145,7 @@ class Communicator:
 
     def set_cell(self, cell):
         self.cell = cell
-        if self.token:
-            # for CJ
-            set_add_auth_headers_filters(self.cell, self.client_name, self.token, self.token_signature, self.ssid)
+        self._install_auth_filters()
 
         # set CB to receive task messages from children
         cell.register_request_cb(
@@ -244,7 +260,7 @@ class Communicator:
             return None
         return site_config
 
-    def client_registration(self, client_name, project_name, fl_ctx: FLContext):
+    def client_registration(self, client_name, project_name, fl_ctx: FLContext, recovery_id=None):
         """Register the client with the FLARE Server.
 
         Note that the client no longer needs to be directly connected with the Server!
@@ -339,6 +355,7 @@ class Communicator:
             msg_timeout=self.maint_msg_timeout,
             retry_interval=self.client_register_interval,
             site_config=site_config,
+            recovery_id=recovery_id,
         )
 
         token, signature, ssid, token_verifier = authenticator.authenticate(shared_fl_ctx, self.abort_signal)
@@ -585,12 +602,12 @@ class Communicator:
         wait_times = int(interval / 2)
         num_heartbeats_sent = 0
         heartbeats_log_interval = 10
-        registration_pending = False
+        recovery_id = None
         while not self.heartbeat_done:
             try:
-                if registration_pending:
-                    self._register_after_lost_session(engine, task_name)
-                    registration_pending = False
+                if recovery_id:
+                    self._register_after_lost_session(engine, task_name, recovery_id)
+                    recovery_id = None
                     continue
                 engine.fire_event(EventType.BEFORE_CLIENT_HEARTBEAT, fl_ctx)
                 shareable = Shareable()
@@ -618,7 +635,7 @@ class Communicator:
                     if return_code == ReturnCode.UNAUTHENTICATED:
                         unauthenticated = result.get_header(MessageHeaderKey.ERROR)
                         if unauthenticated == CLIENT_REGISTRATION_REQUIRED:
-                            registration_pending = True
+                            recovery_id = uuid.uuid4().hex
                             continue
                         raise FLCommunicationError("error:client_quit " + unauthenticated)
 
@@ -646,7 +663,7 @@ class Communicator:
                 self.logger.info(f"Failed to send heartbeat. Will try again. Exception: {secure_format_exception(e)}")
                 time.sleep(5)
 
-    def _register_after_lost_session(self, engine: ClientEngineInternalSpec, project_name: str):
+    def _register_after_lost_session(self, engine: ClientEngineInternalSpec, project_name: str, recovery_id: str):
         """Re-run normal registration after a server restart loses the client token map."""
         client = engine.client
         with client._shutdown_lock:
@@ -654,7 +671,9 @@ class Communicator:
                 return
             with engine.new_context() as fl_ctx:
                 engine.fire_event(EventType.BEFORE_CLIENT_REGISTER, fl_ctx)
-                token, signature, ssid = self.client_registration(client.client_name, project_name, fl_ctx)
+                token, signature, ssid = self.client_registration(
+                    client.client_name, project_name, fl_ctx, recovery_id=recovery_id
+                )
                 if not token:
                     raise FLCommunicationError("fresh client registration returned no token")
                 client.token, client.token_signature, client.ssid = token, signature, ssid

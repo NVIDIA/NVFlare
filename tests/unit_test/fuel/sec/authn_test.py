@@ -108,6 +108,20 @@ def _make_routed_message(
     return Message(headers=headers)
 
 
+def test_dynamic_auth_filters_use_current_credentials():
+    cell = _make_running_cell(_unique_fqcn("site"))
+    credentials = [cell.get_fqcn(), "first-token", "first-signature", "first-ssid"]
+    set_add_auth_headers_filters(cell, *credentials, credentials_provider=lambda: tuple(credentials))
+    credentials[1:] = ["new-token", "new-signature", "new-ssid"]
+    request = _make_routed_message("server", MessageType.REQ, origin=cell.get_fqcn())
+
+    cell.core_cell._filter_outgoing_request("probe", "ping", request)
+
+    assert request.get_header(CellMessageAuthHeaderKey.TOKEN) == "new-token"
+    assert request.get_header(CellMessageAuthHeaderKey.TOKEN_SIGNATURE) == "new-signature"
+    assert request.get_header(CellMessageAuthHeaderKey.SSID) == "new-ssid"
+
+
 def test_auth_filter_does_not_add_client_credentials_to_peer_replies():
     victim_name = _unique_fqcn("victim")
     victim = _make_running_cell(victim_name)

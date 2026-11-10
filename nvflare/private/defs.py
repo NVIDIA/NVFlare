@@ -149,6 +149,7 @@ class CellMessageHeaderKeys:
     TOKEN = CellMessageAuthHeaderKey.TOKEN
     TOKEN_SIGNATURE = CellMessageAuthHeaderKey.TOKEN_SIGNATURE
     CLIENT_IP = "client_ip"
+    RECOVERY_ID = "recovery_id"
     PROJECT_NAME = "project_name"
     SSID = CellMessageAuthHeaderKey.SSID
     UNAUTHENTICATED = "unauthenticated"

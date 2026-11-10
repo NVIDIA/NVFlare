@@ -41,6 +41,8 @@ from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.utils.identity_utils import get_org_from_cert, load_crt_bytes, load_crt_chain_bytes
 from nvflare.security.logging import secure_format_exception
 
+_RECOVERY_ID_PROP = "_registration_recovery_id"
+
 
 class ClientManager:
     def __init__(self, project_name=None, min_num_clients=2, max_num_clients=10):
@@ -143,7 +145,7 @@ class ClientManager:
                 self.logger.error(f"failed to persist disabled-client state for {client_name}: {ex}")
                 raise
             for token, client in removed_clients:
-                self.reactivatable_clients[token] = client
+                self._remember_reactivatable_client(token, client)
         removed_tokens = [token for token, _client in removed_clients]
         self.logger.info(f"Client {client_name} disabled. Removed {len(removed_tokens)} active token(s).")
         return removed_tokens
@@ -173,8 +175,23 @@ class ClientManager:
         for c in clients.values():
             self.name_to_clients[c.name] = c
 
+    def _remember_reactivatable_client(self, token: str, client: Client):
+        """Keep at most one dormant session per site and at most one per active-client slot."""
+        for old_token, old_client in list(self.reactivatable_clients.items()):
+            if old_client.name == client.name:
+                self.reactivatable_clients.pop(old_token)
+        self.reactivatable_clients[token] = client
+        while len(self.reactivatable_clients) > self.max_num_clients:
+            self.reactivatable_clients.pop(next(iter(self.reactivatable_clients)))
+
     def authenticate(self, request, fl_ctx: FLContext) -> Optional[Client]:
         client_type = request.get_header(CellMessageHeaderKeys.CLIENT_TYPE)
+        recovery_id = request.get_header(CellMessageHeaderKeys.RECOVERY_ID)
+        if recovery_id is not None and (
+            client_type != ClientType.REGULAR or not isinstance(recovery_id, str) or len(recovery_id) != 32
+        ):
+            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Invalid registration recovery ID", sticky=False)
+            return None
         client = self.login_client(request, fl_ctx, client_type)
         if not client:
             return None
@@ -184,7 +201,30 @@ class ClientManager:
 
         # new client join
         with self.lock:
+            if client.name in self.disabled_clients:
+                fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, f"Client '{client.name}' is disabled", sticky=False)
+                return None
             if client_type == ClientType.REGULAR:
+                active = [(token, existing) for token, existing in self.clients.items() if existing.name == client.name]
+                if recovery_id and active:
+                    if len(active) != 1 or active[0][1].get_prop(_RECOVERY_ID_PROP) != recovery_id:
+                        fl_ctx.set_prop(
+                            FLContextKey.UNAUTHENTICATED,
+                            f"Client '{client.name}' already has another active session",
+                            sticky=False,
+                        )
+                        return None
+                    existing = active[0][1]
+                    self._set_client_props(existing, client.get_fqcn(), fl_ctx)
+                    return existing
+                if len(self.clients) - len(active) >= self.max_num_clients:
+                    fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Maximum number of clients reached", sticky=False)
+                    self.logger.info(f"Maximum number of clients reached. Reject client: {client.name} login.")
+                    return None
+                for token, _existing in active:
+                    self.clients.pop(token)
+                if recovery_id:
+                    client.set_prop(_RECOVERY_ID_PROP, recovery_id)
                 for token, inactive in list(self.reactivatable_clients.items()):
                     if inactive.name == client.name:
                         self.reactivatable_clients.pop(token)
@@ -217,7 +257,7 @@ class ClientManager:
             if client:
                 self.name_to_clients.pop(client.name, None)
                 if allow_reactivation and client.name not in self.disabled_clients:
-                    self.reactivatable_clients[token] = client
+                    self._remember_reactivatable_client(token, client)
                 self.logger.info("Client Name:{} left.  Total clients: {}".format(client.name, len(self.clients)))
             else:
                 if not allow_reactivation:
@@ -346,25 +386,11 @@ class ClientManager:
                 self.logger.warning(f"Reject disabled client registration: {client_name}")
                 return None
 
-            if client_type == ClientType.REGULAR:
-                clients_to_be_removed = [token for token, client in self.clients.items() if client.name == client_name]
-                for item in clients_to_be_removed:
-                    client = self.clients.pop(item, None)
-                    if client:
-                        self.name_to_clients.pop(client.name, None)
-                    self.logger.info(f"Client: {client_name} already registered. Re-login the client with a new token.")
-
         client = Client(client_name, str(uuid.uuid4()))
         client.set_prop(ClientPropKey.ORG, client_org)
         client_fqcn = request.get_header(MessageHeaderKey.ORIGIN)
         self._set_client_props(client, client_fqcn, fl_ctx)
         self.logger.debug(f"authenticated client {client_name}: {client_fqcn=}")
-
-        if client_type == ClientType.REGULAR and len(self.clients) >= self.max_num_clients:
-            # only impose the limit to REGULAR clients
-            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Maximum number of clients reached", sticky=False)
-            self.logger.info(f"Maximum number of clients reached. Reject client: {client_name} login.")
-            return None
 
         if client_type == ClientType.RELAY:
             self.num_relays += 1
