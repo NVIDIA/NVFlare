@@ -258,10 +258,10 @@ resource_stats/
   resource_summary.json
 ```
 
-Publication uses descriptor-relative, no-follow directory operations where
-supported and rejects symlinked or replaced reserved directories rather than
-following a job-provided path. On platforms without these operations, it rejects
-existing symlinks but cannot claim equivalent protection against path races.
+Publication requires descriptor-relative, no-follow directory operations and
+rejects symlinked or replaced reserved directories rather than following a
+job-provided path. If these operations are unavailable, reporting is unavailable;
+job execution continues.
 
 Publication writes only accepted participant bytes through temporary files and
 atomic rename, then writes `resource_summary.json` last as the bundle commit

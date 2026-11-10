@@ -22,7 +22,6 @@ import os
 import secrets
 import shutil
 import stat
-import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -193,9 +192,8 @@ class ResourceStatsCoordinator:
         run_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         if reset_existing:
             cls._reset_resource_directory(run_dir)
-        directory_fd, _ = cls._open_resource_directory(run_dir, include_participants=True)
-        if directory_fd is not None:
-            os.close(directory_fd)
+        directory_fd = cls._open_resource_directory(run_dir, include_participants=True)
+        os.close(directory_fd)
 
     def disable_clients(self, job_id: str, client_names: Iterable[str]) -> None:
         state = self._get_job_state(job_id)
@@ -398,27 +396,6 @@ class ResourceStatsCoordinator:
             if self._jobs.get(job_id) is state:
                 self._jobs.pop(job_id, None)
 
-    @staticmethod
-    def _atomic_write(path: Path, data: bytes) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                dir=path.parent, prefix=f".{path.name}-", suffix=".tmp", delete=False
-            ) as stream:
-                temp_path = Path(stream.name)
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temp_path, path)
-            ResourceStatsCoordinator._fsync_directory(path.parent)
-        finally:
-            if temp_path is not None:
-                try:
-                    temp_path.unlink()
-                except FileNotFoundError:
-                    pass
-
     @classmethod
     def _atomic_write_resource(
         cls,
@@ -427,10 +404,7 @@ class ResourceStatsCoordinator:
         data: bytes,
         include_participants: bool = False,
     ) -> None:
-        directory_fd, directory_path = cls._open_resource_directory(run_dir, include_participants)
-        if directory_fd is None:
-            cls._atomic_write(directory_path / file_name, data)
-            return
+        directory_fd = cls._open_resource_directory(run_dir, include_participants)
         try:
             cls._atomic_write_at(directory_fd, file_name, data)
         finally:
@@ -482,19 +456,12 @@ class ResourceStatsCoordinator:
                     pass
 
     @classmethod
-    def _open_resource_directory(cls, run_dir: Path, include_participants: bool = False) -> tuple[int | None, Path]:
+    def _open_resource_directory(cls, run_dir: Path, include_participants: bool = False) -> int:
         """Open each server-owned path component without following symlinks."""
 
         run_dir = Path(run_dir)
-        target_path = run_dir / RESOURCE_STATS_DIR
-        if include_participants:
-            target_path /= PARTICIPANTS_DIR
         if not _SECURE_DIR_FD:
-            cls._ensure_plain_directory(run_dir, create=False)
-            cls._ensure_plain_directory(run_dir / RESOURCE_STATS_DIR, create=True)
-            if include_participants:
-                cls._ensure_plain_directory(target_path, create=True)
-            return None, target_path
+            raise OSError("resource publication requires directory-relative filesystem operations")
 
         opened = []
         try:
@@ -511,18 +478,13 @@ class ResourceStatsCoordinator:
                 opened.append(next_fd)
                 current_fd = next_fd
             result_fd = opened.pop()
-            return result_fd, target_path
+            return result_fd
         finally:
             for descriptor in reversed(opened):
                 os.close(descriptor)
 
     @staticmethod
-    def _ensure_plain_directory(path: Path, create: bool) -> None:
-        if create:
-            try:
-                path.mkdir(mode=0o700)
-            except FileExistsError:
-                pass
+    def _ensure_plain_directory(path: Path) -> None:
         try:
             mode = path.lstat().st_mode
         except FileNotFoundError as exc:
@@ -532,7 +494,7 @@ class ResourceStatsCoordinator:
 
     @classmethod
     def _reset_resource_directory(cls, run_dir: Path) -> None:
-        cls._ensure_plain_directory(run_dir, create=False)
+        cls._ensure_plain_directory(run_dir)
         stats_path = run_dir / RESOURCE_STATS_DIR
         try:
             mode = stats_path.lstat().st_mode
@@ -547,17 +509,7 @@ class ResourceStatsCoordinator:
 
     @classmethod
     def _remove_empty_staging_directory(cls, run_dir: Path) -> None:
-        stats_fd, stats_path = cls._open_resource_directory(run_dir)
-        if stats_fd is None:
-            staging_path = stats_path / "staging"
-            try:
-                mode = staging_path.lstat().st_mode
-            except FileNotFoundError:
-                return
-            if not stat.S_ISDIR(mode) or stat.S_ISLNK(mode) or any(staging_path.iterdir()):
-                raise OSError("resource staging path is not an empty plain directory")
-            staging_path.rmdir()
-            return
+        stats_fd = cls._open_resource_directory(run_dir)
         try:
             try:
                 staging_fd = os.open("staging", _DIRECTORY_OPEN_FLAGS, dir_fd=stats_fd)
@@ -575,50 +527,39 @@ class ResourceStatsCoordinator:
 
     @classmethod
     def _read_resource_file(cls, run_dir: Path, file_name: str, max_bytes: int) -> dict[str, Any]:
-        directory_fd, directory_path = cls._open_resource_directory(run_dir)
-        if directory_fd is None:
-            with (directory_path / file_name).open("rb") as stream:
-                data = stream.read(max_bytes + 1)
-        else:
+        directory_fd = cls._open_resource_directory(run_dir)
+        try:
+            file_fd = os.open(
+                file_name,
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+                dir_fd=directory_fd,
+            )
             try:
-                file_fd = os.open(
-                    file_name,
-                    os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
-                    dir_fd=directory_fd,
-                )
-                try:
-                    file_mode = os.fstat(file_fd).st_mode
-                    if not stat.S_ISREG(file_mode):
-                        raise OSError(f"resource member is not a regular file: {file_name}")
-                    chunks = []
-                    remaining = max_bytes + 1
-                    while remaining:
-                        chunk = os.read(file_fd, remaining)
-                        if not chunk:
-                            break
-                        chunks.append(chunk)
-                        remaining -= len(chunk)
-                    data = b"".join(chunks)
-                finally:
-                    os.close(file_fd)
+                file_mode = os.fstat(file_fd).st_mode
+                if not stat.S_ISREG(file_mode):
+                    raise OSError(f"resource member is not a regular file: {file_name}")
+                chunks = []
+                remaining = max_bytes + 1
+                while remaining:
+                    chunk = os.read(file_fd, remaining)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    remaining -= len(chunk)
+                data = b"".join(chunks)
             finally:
-                os.close(directory_fd)
+                os.close(file_fd)
+        finally:
+            os.close(directory_fd)
         if len(data) > max_bytes:
             raise ValueError(f"resource member exceeds its size limit: {file_name}")
         return read_resource_report(data, KIND_RESOURCE_SUMMARY)
 
     @classmethod
     def _verify_final_inventory(cls, run_dir: Path, accepted_names: set[str]) -> None:
-        stats_fd, stats_path = cls._open_resource_directory(run_dir)
+        stats_fd = cls._open_resource_directory(run_dir)
         expected_stats = {PARTICIPANTS_DIR, RESOURCE_SUMMARY_FILE}
         expected_participants = {f"{name}.json" for name in accepted_names}
-        if stats_fd is None:
-            if {path.name for path in stats_path.iterdir()} != expected_stats:
-                raise OSError("resource statistics directory contains unexpected entries")
-            participant_path = stats_path / PARTICIPANTS_DIR
-            if {path.name for path in participant_path.iterdir()} != expected_participants:
-                raise OSError("resource participant directory contains unexpected entries")
-            return
         try:
             if set(os.listdir(stats_fd)) != expected_stats:
                 raise OSError("resource statistics directory contains unexpected entries")
@@ -634,22 +575,3 @@ class ResourceStatsCoordinator:
                 os.close(participant_fd)
         finally:
             os.close(stats_fd)
-
-    @staticmethod
-    def _fsync_directory(path: Path) -> None:
-        """Best-effort persistence of an atomic rename's directory entry."""
-
-        descriptor = None
-        try:
-            descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-            os.fsync(descriptor)
-        except OSError:
-            # Some supported platforms do not permit opening/fsyncing a directory.
-            # The file itself was fsynced and atomically replaced before this point.
-            pass
-        finally:
-            if descriptor is not None:
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass

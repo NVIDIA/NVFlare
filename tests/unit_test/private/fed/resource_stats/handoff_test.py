@@ -29,12 +29,7 @@ def _link(path, target, *, directory):
         pytest.skip("symlinks are unavailable on this platform")
 
 
-@pytest.mark.parametrize("fallback", [False, True])
-def test_atomic_writer_round_trip_and_replacement_without_leftover_temp_files(
-    make_handoff, tmp_path, monkeypatch, fallback
-):
-    if fallback:
-        monkeypatch.setattr(module, "_SECURE_HANDOFF_WRITE_DIR_FD", False)
+def test_atomic_writer_round_trip_and_replacement_without_leftover_temp_files(make_handoff, tmp_path, monkeypatch):
     run = tmp_path / "run"
     original = make_handoff()
     original["workspace_filesystem"] = {"status": "unavailable"}
@@ -117,12 +112,9 @@ def test_reader_preserves_native_numeric_values_at_the_parent_boundary(make_hand
 
 
 @pytest.mark.parametrize("component", ["run", "resource_stats", "staging"])
-@pytest.mark.parametrize("fallback", [False, True])
 def test_writer_rejects_preexisting_directory_symlink_without_outside_writes(
-    make_handoff, tmp_path, monkeypatch, component, fallback
+    make_handoff, tmp_path, monkeypatch, component
 ):
-    if fallback:
-        monkeypatch.setattr(module, "_SECURE_HANDOFF_WRITE_DIR_FD", False)
     run = tmp_path / "run"
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -141,10 +133,7 @@ def test_writer_rejects_preexisting_directory_symlink_without_outside_writes(
     assert list(outside.iterdir()) == [sentinel]
 
 
-@pytest.mark.parametrize("fallback", [False, True])
-def test_final_file_symlink_is_replaced_not_followed(make_handoff, tmp_path, monkeypatch, fallback):
-    if fallback:
-        monkeypatch.setattr(module, "_SECURE_HANDOFF_WRITE_DIR_FD", False)
+def test_final_file_symlink_is_replaced_not_followed(make_handoff, tmp_path, monkeypatch):
     run = tmp_path / "run"
     path = module.terminal_handoff_path(run)
     path.parent.mkdir(parents=True)
@@ -167,11 +156,11 @@ def test_open_directory_cannot_be_redirected_to_outside_after_check(make_handoff
     open_directory = module._open_handoff_directory
 
     def replaced_directory(*args, **kwargs):
-        descriptor, path = open_directory(*args, **kwargs)
-        assert descriptor is not None
+        descriptor = open_directory(*args, **kwargs)
+        path = module.terminal_handoff_path(run).parent
         path.rename(path.with_name("original-staging"))
         _link(path, outside, directory=True)
-        return descriptor, path
+        return descriptor
 
     monkeypatch.setattr(module, "_open_handoff_directory", replaced_directory)
     module.write_terminal_handoff(run, make_handoff())
@@ -181,12 +170,7 @@ def test_open_directory_cannot_be_redirected_to_outside_after_check(make_handoff
     assert [path.name for path in original.iterdir()] == [module.TERMINAL_HANDOFF_FILE]
 
 
-@pytest.mark.parametrize("fallback", [False, True])
-def test_replace_failure_preserves_previous_file_and_cleans_temporary_file(
-    make_handoff, tmp_path, monkeypatch, fallback
-):
-    if fallback:
-        monkeypatch.setattr(module, "_SECURE_HANDOFF_WRITE_DIR_FD", False)
+def test_replace_failure_preserves_previous_file_and_cleans_temporary_file(make_handoff, tmp_path, monkeypatch):
     run = tmp_path / "run"
     path = module.write_terminal_handoff(run, make_handoff())
     old = path.read_bytes()
@@ -271,12 +255,7 @@ def test_bad_metric_tags_preserve_independent_handoff_values(make_handoff, tmp_p
         assert result["resource_utilization"][name] == original["resource_utilization"][name]
 
 
-@pytest.mark.parametrize("fallback", [False, True])
-def test_generation_paths_preserve_replacement_against_late_writer_and_old_cleanup(
-    make_handoff, tmp_path, monkeypatch, fallback
-):
-    if fallback:
-        monkeypatch.setattr(module, "_SECURE_HANDOFF_DIR_FD", False)
+def test_generation_paths_preserve_replacement_against_late_writer_and_old_cleanup(make_handoff, tmp_path, monkeypatch):
     old = module.write_terminal_handoff(tmp_path, make_handoff(), launch_generation="old-launch")
     current = make_handoff()
     current["workspace_filesystem"] = {"capacity_bytes": 8192}
@@ -412,3 +391,17 @@ def test_reader_contains_invalid_partial_cause_to_its_metric(make_handoff, tmp_p
     assert checked["resource_utilization"]["cpu_consumed"] == {"status": "unavailable"}
     assert checked["resource_capacity"] == payload["resource_capacity"]
     assert checked["issues"] == [{"metric": "cpu_consumed", "code": "malformed_source"}]
+
+
+@pytest.mark.parametrize("capability", ["_SECURE_HANDOFF_DIR_FD", "_SECURE_HANDOFF_WRITE_DIR_FD"])
+def test_missing_filesystem_primitives_never_use_path_based_writes(make_handoff, tmp_path, monkeypatch, capability):
+    path = module.write_terminal_handoff(tmp_path, make_handoff())
+    original = path.read_bytes()
+    monkeypatch.setattr(module, capability, False)
+    with pytest.raises(OSError, match="directory-relative"):
+        module.write_terminal_handoff(tmp_path, make_handoff())
+    assert path.read_bytes() == original
+    if capability == "_SECURE_HANDOFF_DIR_FD":
+        assert module.read_terminal_handoff(tmp_path) is None
+        module.remove_terminal_handoff(tmp_path)
+        assert path.read_bytes() == original

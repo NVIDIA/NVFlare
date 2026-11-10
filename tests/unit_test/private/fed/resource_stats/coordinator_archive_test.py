@@ -14,6 +14,7 @@
 
 import io
 import json
+import stat
 import threading
 from contextlib import nullcontext
 from pathlib import Path
@@ -495,14 +496,19 @@ def test_accept_rejects_report_that_would_exceed_per_job_payload_cap(tmp_path):
     assert statuses["site-2"] == "missing"
 
 
-def test_atomic_write_fsyncs_parent_directory_after_replace(tmp_path):
+def test_atomic_write_fsyncs_file_before_rename_and_directory_after(tmp_path, monkeypatch):
     target = tmp_path / "resource_stats" / "participant.json"
+    events = []
+    fsync = coordinator_module.os.fsync
 
-    with patch.object(ResourceStatsCoordinator, "_fsync_directory") as fsync_directory:
-        ResourceStatsCoordinator._atomic_write(target, b"report")
+    def record_fsync(descriptor):
+        events.append((stat.S_ISDIR(coordinator_module.os.fstat(descriptor).st_mode), target.exists()))
+        fsync(descriptor)
 
+    monkeypatch.setattr(coordinator_module.os, "fsync", record_fsync)
+    ResourceStatsCoordinator._atomic_write_resource(tmp_path, target.name, b"report")
     assert target.read_bytes() == b"report"
-    fsync_directory.assert_called_once_with(Path(target.parent))
+    assert events == [(False, False), (True, True)]
 
 
 def test_finalizing_one_job_does_not_block_report_for_another_job(tmp_path):
@@ -614,3 +620,15 @@ def test_finalization_cutoff_remains_atomic_for_reports_to_same_job(tmp_path):
     assert report_results == [RESOURCE_REPORT_TOO_LATE]
     site = next(entry for entry in finalize_results[0]["participants"] if entry["participant_name"] == "site-1")
     assert site["status"] == "missing"
+
+
+def test_missing_filesystem_primitives_leave_no_registered_report(tmp_path, monkeypatch):
+    monkeypatch.setattr(coordinator_module, "_SECURE_DIR_FD", False)
+    coordinator = ResourceStatsCoordinator()
+    with pytest.raises(OSError, match="directory-relative"):
+        coordinator.start_job("job-1", ["site-1"], tmp_path)
+    assert (
+        coordinator.accept_resource_report("job-1", "site-1", canonical_json_bytes(_participant()))
+        == RESOURCE_REPORT_NOT_EXPECTED
+    )
+    assert not (tmp_path / "resource_stats").exists()

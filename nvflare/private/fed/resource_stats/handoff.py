@@ -17,9 +17,8 @@
 The child writes capacity, CPU work, file sizes, and traffic observations.
 The parent validates each measurement while reading the handoff. Identity
 comes from parent-owned lifecycle state, never from the child file.
-Directory-relative operations protect against path redirection on supported
-platforms. Other platforms reject pre-existing directory symlinks but do not
-claim race-proof traversal.
+Directory-relative operations protect against path redirection. Without these
+operations, handoff publication is unavailable.
 """
 
 from __future__ import annotations
@@ -29,7 +28,6 @@ import math
 import os
 import secrets
 import stat
-import tempfile
 from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
@@ -91,27 +89,15 @@ def terminal_handoff_path(run_dir: str | Path, *, launch_generation: str | None 
     return Path(run_dir) / RESOURCE_STATS_DIR / STAGING_DIR / _handoff_filename(launch_generation)
 
 
-def _open_handoff_directory(
-    run_dir: str | Path, *, include_staging: bool, create: bool = False
-) -> tuple[int | None, Path]:
+def _open_handoff_directory(run_dir: str | Path, *, include_staging: bool, create: bool = False) -> int:
     """Open every parent component without following an untrusted symlink."""
 
     root = Path(run_dir)
     components = (RESOURCE_STATS_DIR, STAGING_DIR) if include_staging else (RESOURCE_STATS_DIR,)
-    target = root.joinpath(*components)
+    if not _SECURE_HANDOFF_DIR_FD or (create and not _SECURE_HANDOFF_WRITE_DIR_FD):
+        raise OSError("resource handoff requires directory-relative filesystem operations")
     if create:
         root.mkdir(parents=True, exist_ok=True)
-    if not _SECURE_HANDOFF_DIR_FD or (create and not _SECURE_HANDOFF_WRITE_DIR_FD):
-        current = root
-        for component in (None, *components):
-            if component is not None:
-                current /= component
-                if create:
-                    current.mkdir(exist_ok=True)
-            mode = current.lstat().st_mode
-            if not stat.S_ISDIR(mode) or stat.S_ISLNK(mode):
-                raise OSError(f"resource handoff path is not a plain directory: {current}")
-        return None, target
 
     opened = []
     try:
@@ -127,7 +113,7 @@ def _open_handoff_directory(
             opened.append(next_fd)
             current_fd = next_fd
         result_fd = opened.pop()
-        return result_fd, target
+        return result_fd
     finally:
         for descriptor in reversed(opened):
             os.close(descriptor)
@@ -322,49 +308,36 @@ def write_terminal_handoff(
     if len(data) > MAX_TERMINAL_HANDOFF_BYTES:
         raise InvalidTerminalHandoff("terminal handoff exceeds its size limit")
     path = terminal_handoff_path(run_dir, launch_generation=launch_generation)
-    directory_fd, directory_path = _open_handoff_directory(run_dir, include_staging=True, create=True)
+    directory_fd = _open_handoff_directory(run_dir, include_staging=True, create=True)
     temp_path = None
     try:
-        if directory_fd is None:
-            # On platforms without directory-relative operations, reject
-            # existing directory symlinks above, then retain best-effort atomic
-            # publication. This fallback does not claim protection from races.
-            stream = tempfile.NamedTemporaryFile(dir=directory_path, prefix=".terminal-", suffix=".tmp", delete=False)
-            temp_path = Path(stream.name)
+        for _ in range(8):
+            temp_name = f".terminal-{secrets.token_hex(8)}.tmp"
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+            try:
+                fd = os.open(temp_name, flags, mode=0o600, dir_fd=directory_fd)
+            except FileExistsError:
+                continue
+            temp_path = temp_name
+            try:
+                stream = os.fdopen(fd, "wb")
+            except BaseException:
+                os.close(fd)
+                raise
+            break
         else:
-            for _ in range(8):
-                temp_name = f".terminal-{secrets.token_hex(8)}.tmp"
-                flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
-                try:
-                    fd = os.open(temp_name, flags, mode=0o600, dir_fd=directory_fd)
-                except FileExistsError:
-                    continue
-                temp_path = temp_name
-                try:
-                    stream = os.fdopen(fd, "wb")
-                except BaseException:
-                    os.close(fd)
-                    raise
-                break
-            else:
-                raise OSError("could not create a private resource handoff temporary file")
+            raise OSError("could not create a private resource handoff temporary file")
         with stream:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
-        if directory_fd is None:
-            os.replace(temp_path, path)
-        else:
-            os.replace(temp_path, filename, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+        os.replace(temp_path, filename, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
         return path
     finally:
         try:
             if temp_path is not None:
                 try:
-                    if directory_fd is None:
-                        temp_path.unlink()
-                    else:
-                        os.unlink(temp_path, dir_fd=directory_fd)
+                    os.unlink(temp_path, dir_fd=directory_fd)
                 except FileNotFoundError:
                     pass
         finally:
@@ -383,7 +356,7 @@ def read_terminal_handoff(run_dir: str | Path, *, expected_generation: str | Non
     directory_fd = None
     fd = None
     try:
-        directory_fd, directory_path = _open_handoff_directory(run_dir, include_staging=True)
+        directory_fd = _open_handoff_directory(run_dir, include_staging=True)
         # The job process owns this self-report, so treat the path as untrusted:
         # do not follow any path-component symlink and do not let a FIFO/device
         # block the parent.
@@ -391,13 +364,7 @@ def read_terminal_handoff(run_dir: str | Path, *, expected_generation: str | Non
         flags |= getattr(os, "O_CLOEXEC", 0)
         flags |= getattr(os, "O_NONBLOCK", 0)
         flags |= getattr(os, "O_NOFOLLOW", 0)
-        if directory_fd is None:
-            path = directory_path / filename
-            if not hasattr(os, "O_NOFOLLOW") and path.is_symlink():
-                return None
-            fd = os.open(path, flags)
-        else:
-            fd = os.open(filename, flags, dir_fd=directory_fd)
+        fd = os.open(filename, flags, dir_fd=directory_fd)
         file_stat = os.fstat(fd)
         if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_size > MAX_TERMINAL_HANDOFF_BYTES:
             return None
@@ -446,11 +413,8 @@ def remove_terminal_handoff(run_dir: str | Path, *, expected_generation: str | N
 
     directory_fd = None
     try:
-        directory_fd, directory_path = _open_handoff_directory(run_dir, include_staging=True)
-        if directory_fd is None:
-            (directory_path / filename).unlink()
-        else:
-            os.unlink(filename, dir_fd=directory_fd)
+        directory_fd = _open_handoff_directory(run_dir, include_staging=True)
+        os.unlink(filename, dir_fd=directory_fd)
     except FileNotFoundError:
         pass
     except OSError:
@@ -463,11 +427,8 @@ def remove_terminal_handoff(run_dir: str | Path, *, expected_generation: str | N
 
     stats_fd = None
     try:
-        stats_fd, stats_path = _open_handoff_directory(run_dir, include_staging=False)
-        if stats_fd is None:
-            (stats_path / STAGING_DIR).rmdir()
-        else:
-            os.rmdir(STAGING_DIR, dir_fd=stats_fd)
+        stats_fd = _open_handoff_directory(run_dir, include_staging=False)
+        os.rmdir(STAGING_DIR, dir_fd=stats_fd)
     except OSError:
         pass
     finally:
