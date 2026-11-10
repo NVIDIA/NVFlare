@@ -70,6 +70,10 @@ def test_aggregation_retains_missing_coverage_and_exact_integer_bytes():
         "memory": {"byte_seconds": 40},
         "gpu": {"instance_seconds": 5},
     }
+    expected = aggregate_resource_time(values)
+    assert aggregate_resource_time(values + [missing]) == {**expected, "status": "partial"}
+    assert aggregate_resource_time(values, complete=False) == {**expected, "status": "partial"}
+    assert aggregate_resource_time([missing]) == missing
     with pytest.raises(ValueError):
         aggregate_cpu_consumed([{"cpu_seconds": 1e308}, {"cpu_seconds": 1e308}])
 

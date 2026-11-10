@@ -25,8 +25,6 @@ from nvflare.private.fed.resource_stats.collector import (
     observe_retained_content,
 )
 from nvflare.private.fed.resource_stats.handoff import (
-    INTERNAL_HANDOFF_KIND,
-    INTERNAL_HANDOFF_VERSION,
     RESOURCE_STATS_DIR,
     STAGING_DIR,
     read_terminal_handoff,
@@ -235,49 +233,26 @@ def test_observe_retained_content_is_reported_zero_for_an_empty_directory(tmp_pa
     assert observe_retained_content(tmp_path) == {"bytes": 0}
 
 
-def test_observe_retained_content_is_unavailable_when_run_dir_does_not_exist(tmp_path):
-    assert observe_retained_content(tmp_path / "never-created") == {
-        "status": "unavailable",
-        "issues": ["observation_incomplete"],
-    }
+@pytest.mark.parametrize("existing_file", [False, True])
+def test_retained_content_is_unavailable_without_a_run_directory(tmp_path, existing_file):
+    run = tmp_path / "run"
+    if existing_file:
+        run.write_bytes(b"")
+    assert observe_retained_content(run) == {"status": "unavailable", "issues": ["observation_incomplete"]}
 
 
-def test_observe_retained_content_is_unavailable_when_run_dir_is_a_file(tmp_path):
-    run_dir = tmp_path / "not-a-directory"
-    run_dir.write_bytes(b"")
-
-    assert observe_retained_content(run_dir) == {"status": "unavailable", "issues": ["observation_incomplete"]}
-
-
-def test_observe_retained_content_ignores_a_symlinked_file_without_following_it(tmp_path):
-    outside = tmp_path.parent / "outside_the_run_dir.bin"
-    outside.write_bytes(b"o" * 10_000)
-    try:
-        run_dir = tmp_path / "run"
-        run_dir.mkdir()
-        link = run_dir / "linked.bin"
-        link.symlink_to(outside)
-
-        result = observe_retained_content(run_dir)
-
-        assert result == {"bytes": 0}
-    finally:
-        outside.unlink()
-
-
-def test_observe_retained_content_ignores_a_symlinked_directory_without_following_it(tmp_path):
-    outside = tmp_path.parent / "outside_the_run_dir"
-    outside.mkdir()
-    (outside / "large.bin").write_bytes(b"o" * 10_000)
-    try:
-        run_dir = tmp_path / "run"
-        run_dir.mkdir()
-        (run_dir / "linked-directory").symlink_to(outside, target_is_directory=True)
-
-        assert observe_retained_content(run_dir) == {"bytes": 0}
-    finally:
-        (outside / "large.bin").unlink()
-        outside.rmdir()
+@pytest.mark.parametrize("directory", [False, True])
+def test_retained_content_ignores_symlinked_entries(tmp_path, directory):
+    outside = tmp_path / "outside"
+    if directory:
+        outside.mkdir()
+        (outside / "large.bin").write_bytes(b"o" * 10_000)
+    else:
+        outside.write_bytes(b"o" * 10_000)
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "linked").symlink_to(outside, target_is_directory=directory)
+    assert observe_retained_content(run) == {"bytes": 0}
 
 
 def test_observe_retained_content_rejects_a_symlinked_run_directory(tmp_path):
@@ -330,18 +305,6 @@ def test_observe_retained_content_marks_an_iteration_error_partial(tmp_path, mon
         "status": "partial",
         "issues": ["observation_incomplete"],
         "bytes": 60,
-    }
-
-
-def test_observe_retained_content_is_unavailable_when_root_cannot_be_opened(tmp_path, monkeypatch):
-    def fail_before_yield(_root):
-        raise PermissionError("denied")
-
-    monkeypatch.setattr(collector.os, "scandir", fail_before_yield)
-
-    assert observe_retained_content(tmp_path) == {
-        "status": "unavailable",
-        "issues": ["observation_incomplete"],
     }
 
 
@@ -492,8 +455,8 @@ def test_missing_handoff_is_explicitly_unavailable():
     ]
 
 
-def test_final_handoff_preserves_partial_traffic_without_merging_parent_values(tmp_path):
-    handoff = _minimal_handoff()
+def test_final_handoff_preserves_partial_traffic_without_merging_parent_values(make_handoff, tmp_path):
+    handoff = make_handoff()
     handoff["resource_utilization"]["message_traffic"] = {"status": "partial", "sent_bytes": 5, "received_bytes": 9}
     handoff["issues"] = [issue for issue in handoff["issues"] if issue["metric"] != "message_traffic"] + [
         {"metric": "message_traffic", "code": "observation_incomplete"}
@@ -512,81 +475,9 @@ def test_final_handoff_preserves_partial_traffic_without_merging_parent_values(t
     ]
 
 
-@pytest.mark.parametrize("field", ["sent_bytes", "received_bytes"])
-def test_invalid_traffic_is_isolated_from_other_handoff_measurements(tmp_path, field):
-    handoff = _minimal_handoff()
-    handoff["workspace_filesystem"] = {"capacity_bytes": 1024}
-    handoff["issues"] = [issue for issue in handoff["issues"] if issue["metric"] != "workspace_filesystem"] + []
-    handoff["resource_utilization"]["message_traffic"] = {"sent_bytes": 5, "received_bytes": 7}
-    handoff["issues"] = [issue for issue in handoff["issues"] if issue["metric"] != "message_traffic"] + []
-    handoff["resource_utilization"]["message_traffic"][field] = str(2**128)
-    write_terminal_handoff(tmp_path, handoff)
-    report = assemble_participant_summary(
-        job_id="job-1", participant_name="site-1", child_handoff=read_terminal_handoff(tmp_path)
-    )
-    assert report["resource_utilization"]["message_traffic"] == {"status": "unavailable"}
-    assert [issue["code"] for issue in report["issues"] if issue["metric"] == "message_traffic"] == ["malformed_source"]
-    assert report["workspace_filesystem"] == {"capacity_bytes": 1024}
-
-
-def _minimal_handoff():
-    return {
-        "duration_seconds": 10,
-        "internal_version": INTERNAL_HANDOFF_VERSION,
-        "kind": INTERNAL_HANDOFF_KIND,
-        "resource_capacity": {"status": "unavailable"},
-        "resource_time": {"status": "unavailable"},
-        "workspace_filesystem": {"status": "unavailable"},
-        "resource_utilization": {
-            "cpu_consumed": {"status": "unavailable"},
-            "retained_content": {"status": "unavailable"},
-            "message_traffic": {"status": "unavailable"},
-        },
-        "issues": [
-            {"metric": "cpu_consumed", "code": "observation_incomplete"},
-            {"metric": "message_traffic", "code": "observation_incomplete"},
-            {"metric": "resource_capacity", "code": "observation_incomplete"},
-            {"metric": "resource_time", "code": "observation_incomplete"},
-            {"metric": "retained_content", "code": "unsupported"},
-            {"metric": "workspace_filesystem", "code": "observation_incomplete"},
-        ],
-    }
-
-
-def test_bad_cpu_consumed_handoff_does_not_erase_other_dimensions(tmp_path):
-    handoff = _minimal_handoff()
-    handoff["workspace_filesystem"] = {"capacity_bytes": 1024}
-    handoff["issues"] = [issue for issue in handoff["issues"] if issue["metric"] != "workspace_filesystem"] + []
-    handoff["resource_utilization"]["cpu_consumed"] = {"cpu_seconds": "NaN"}
-    handoff["issues"] = [issue for issue in handoff["issues"] if issue["metric"] != "cpu_consumed"] + []
-    write_terminal_handoff(tmp_path, handoff)
-    report = assemble_participant_summary(
-        job_id="job-1", participant_name="site-1", child_handoff=read_terminal_handoff(tmp_path)
-    )
-    assert report["resource_utilization"]["cpu_consumed"] == {"status": "unavailable"}
-    assert [issue["code"] for issue in report["issues"] if issue["metric"] == "cpu_consumed"] == ["malformed_source"]
-    assert report["workspace_filesystem"] == {"capacity_bytes": 1024}
-
-
-def test_terminal_handoff_requires_cpu_consumed(tmp_path):
-    handoff = _minimal_handoff()
-    del handoff["resource_utilization"]["cpu_consumed"]
-
-    write_terminal_handoff(tmp_path, handoff)
-    assert read_terminal_handoff(tmp_path) is None
-
-
-def test_terminal_handoff_rejects_old_runtime_count_basis(tmp_path):
-    old_handoff = _minimal_handoff()
-    old_handoff["internal_version"] = "1"
-
-    write_terminal_handoff(tmp_path, old_handoff)
-    assert read_terminal_handoff(tmp_path) is None
-
-
-def test_handoff_reader_rejects_symlink(tmp_path):
+def test_handoff_reader_rejects_symlink(make_handoff, tmp_path):
     target_run = tmp_path / "target"
-    target = write_terminal_handoff(target_run, _minimal_handoff())
+    target = write_terminal_handoff(target_run, make_handoff())
     link_run = tmp_path / "link"
     link = terminal_handoff_path(link_run)
     link.parent.mkdir(parents=True)
@@ -598,9 +489,9 @@ def test_handoff_reader_rejects_symlink(tmp_path):
     assert read_terminal_handoff(link_run) is None
 
 
-def test_handoff_parent_does_not_follow_intermediate_staging_symlink(tmp_path):
+def test_handoff_parent_does_not_follow_intermediate_staging_symlink(make_handoff, tmp_path):
     outside_run = tmp_path / "outside"
-    outside_handoff = write_terminal_handoff(outside_run, _minimal_handoff())
+    outside_handoff = write_terminal_handoff(outside_run, make_handoff())
     run_dir = tmp_path / "run"
     stats_dir = run_dir / RESOURCE_STATS_DIR
     stats_dir.mkdir(parents=True)
@@ -693,7 +584,7 @@ def test_retained_scan_closes_directory_when_scandir_fails(tmp_path, monkeypatch
 
     monkeypatch.setattr(collector.os, "open", tracked_open)
     monkeypatch.setattr(collector.os, "scandir", denied)
-    assert observe_retained_content(tmp_path)["status"] == "unavailable"
+    assert observe_retained_content(tmp_path) == {"status": "unavailable", "issues": ["observation_incomplete"]}
     assert len(descriptors) == 1
     with pytest.raises(OSError):
         os.fstat(descriptors[0])

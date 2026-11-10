@@ -23,18 +23,13 @@ from nvflare.private.fed.resource_stats.collector import ExecutionResourceCollec
 from nvflare.private.fed.resource_stats.cpu_consumed import CpuConsumedAccountant
 
 
-def _usage(*values):
-    snapshots = iter((tuple((float(item) for item in value)) for value in values))
-    return lambda: next(snapshots)
-
-
 @pytest.fixture(autouse=True)
 def isolate_accounting_owners(monkeypatch):
     monkeypatch.setattr(cpu_module, "_active", None)
 
 
-def test_execution_installs_its_own_managed_descendant_coverage(monkeypatch):
-    accountant = CpuConsumedAccountant(usage_reader=_usage(("0", "0"), ("2", "0")))
+def test_execution_installs_its_own_managed_descendant_coverage(usage_reader, monkeypatch):
+    accountant = CpuConsumedAccountant(usage_reader=usage_reader(("0", "0"), ("2", "0")))
     monkeypatch.setattr(collector, "CpuConsumedAccountant", lambda **_kwargs: accountant)
     instance = ExecutionResourceCollector(capacity_probe=lambda: {}, clock_ns=lambda: 0)
     cpu_module.mark_unwaited_managed_children()
@@ -44,20 +39,20 @@ def test_execution_installs_its_own_managed_descendant_coverage(monkeypatch):
     ]
 
 
-def test_coordinator_self_cpu_excludes_normally_reaped_worker_cpu():
-    accountant = CpuConsumedAccountant(usage_reader=_usage(("100", "40"), ("102", "52")), include_children=False)
+def test_coordinator_self_cpu_excludes_normally_reaped_worker_cpu(usage_reader):
+    accountant = CpuConsumedAccountant(usage_reader=usage_reader(("100", "40"), ("102", "52")), include_children=False)
     assert accountant.finish() == {"cpu_seconds": 2}
 
 
-def test_selecting_task_mode_retains_the_existing_cpu_baseline():
-    accountant = CpuConsumedAccountant(usage_reader=_usage(("100", "40"), ("102", "52")))
+def test_selecting_task_mode_retains_the_existing_cpu_baseline(usage_reader):
+    accountant = CpuConsumedAccountant(usage_reader=usage_reader(("100", "40"), ("102", "52")))
     accountant.exclude_children()
     assert accountant.finish() == {"cpu_seconds": 2}
 
 
-def test_execution_stop_is_one_snapshot_and_does_not_scan_files(monkeypatch):
+def test_execution_stop_is_one_snapshot_and_does_not_scan_files(usage_reader, monkeypatch):
     clock = iter([0, 10_000_000_000])
-    accountant = CpuConsumedAccountant(usage_reader=_usage(("0", "0"), ("2", "0")))
+    accountant = CpuConsumedAccountant(usage_reader=usage_reader(("0", "0"), ("2", "0")))
     monkeypatch.setattr(collector, "CpuConsumedAccountant", lambda **_kwargs: accountant)
 
     def unexpected_scan(_path):
@@ -75,8 +70,8 @@ def test_execution_stop_is_one_snapshot_and_does_not_scan_files(monkeypatch):
     assert instance.stop()["resource_capacity"]["cpu"] == {"units": 2}
 
 
-def test_bad_capacity_and_clock_do_not_erase_cpu_work(monkeypatch):
-    accountant = CpuConsumedAccountant(usage_reader=_usage(("0", "0"), ("2", "1")))
+def test_bad_capacity_and_clock_do_not_erase_cpu_work(usage_reader, monkeypatch):
+    accountant = CpuConsumedAccountant(usage_reader=usage_reader(("0", "0"), ("2", "1")))
     monkeypatch.setattr(collector, "CpuConsumedAccountant", lambda **_kwargs: accountant)
 
     def bad_probe():
@@ -89,8 +84,8 @@ def test_bad_capacity_and_clock_do_not_erase_cpu_work(monkeypatch):
     assert snapshot["cpu_consumed"] == {"cpu_seconds": 3}
 
 
-def test_task_mode_keeps_one_window_and_installs_reducer_before_workers(tmp_path, monkeypatch):
-    accountant = CpuConsumedAccountant(usage_reader=_usage(("0", "0"), ("2", "12")))
+def test_task_mode_keeps_one_window_and_installs_reducer_before_workers(usage_reader, tmp_path, monkeypatch):
+    accountant = CpuConsumedAccountant(usage_reader=usage_reader(("0", "0"), ("2", "12")))
     monkeypatch.setattr(collector, "CpuConsumedAccountant", lambda **_kwargs: accountant)
     monkeypatch.setattr(collector, "_active_collector", None)
     installed = []
@@ -110,9 +105,8 @@ def test_task_mode_keeps_one_window_and_installs_reducer_before_workers(tmp_path
     assert instance.stop()["cpu_consumed"] == {"cpu_seconds": 2}
 
 
-@pytest.mark.parametrize("task_based", [False, True])
-def test_task_statistics_setup_failure_is_best_effort(tmp_path, monkeypatch, task_based):
-    accountant = CpuConsumedAccountant(usage_reader=_usage(("0", "0"), ("2", "12")))
+def test_task_statistics_setup_failure_is_best_effort(usage_reader, tmp_path, monkeypatch):
+    accountant = CpuConsumedAccountant(usage_reader=usage_reader(("0", "0"), ("2", "12")))
     monkeypatch.setattr(collector, "CpuConsumedAccountant", lambda **_kwargs: accountant)
     monkeypatch.setattr(collector, "_active_collector", None)
 
@@ -124,11 +118,8 @@ def test_task_statistics_setup_failure_is_best_effort(tmp_path, monkeypatch, tas
     monkeypatch.setattr(collector, "observe_retained_content", lambda _path: {"bytes": 0})
     ticks = iter([0, 60_000_000_000])
     capacity = {"cpu": {"units": 2}, "memory": {"bytes": 1024}, "gpu": {"count": 0}}
-    instance = collector.JobResourceCollector(
-        tmp_path, task_based=task_based, capacity_probe=lambda: capacity, clock_ns=lambda: next(ticks)
-    )
-    if not task_based:
-        collector.configure_task_collection()
+    instance = collector.JobResourceCollector(tmp_path, capacity_probe=lambda: capacity, clock_ns=lambda: next(ticks))
+    collector.configure_task_collection()
     report = instance.finish(message_traffic={"sent_bytes": 7, "received_bytes": 11})
     assert report["resource_capacity"] == capacity
     assert "duration_seconds" not in report

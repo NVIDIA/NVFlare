@@ -110,30 +110,6 @@ def test_collector_cannot_extend_a_finalized_window(tmp_path):
         job.finish()
 
 
-@pytest.mark.parametrize("field", ["resource_capacity", "cpu_consumed"])
-@pytest.mark.parametrize("key", ["duration_seconds", "measured_seconds"])
-def test_nested_durations_are_rejected(monkeypatch, tmp_path, field, key):
-    _collect(monkeypatch, tmp_path)
-    handoff = read_terminal_handoff(tmp_path)
-    measurement = handoff if field == "resource_capacity" else handoff["resource_utilization"]
-    measurement[field][key] = "10"
-    write_terminal_handoff(tmp_path, handoff)
-    checked = read_terminal_handoff(tmp_path)
-    measurement = checked if field == "resource_capacity" else checked["resource_utilization"]
-    assert measurement[field] == {"status": "unavailable"}
-    assert {"metric": field, "code": "malformed_source"} in checked["issues"]
-
-
-def test_unused_capacity_timeline_is_rejected(monkeypatch, tmp_path):
-    _collect(monkeypatch, tmp_path)
-    handoff = read_terminal_handoff(tmp_path)
-    handoff["resource_capacity"] = {"intervals": [{"duration_seconds": 10, "cpu": {"units": 8}}]}
-    write_terminal_handoff(tmp_path, handoff)
-    checked = read_terminal_handoff(tmp_path)
-    assert checked["resource_capacity"] == {"status": "unavailable"}
-    assert checked["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 2}
-
-
 @pytest.mark.parametrize("duration", [None, True, "-1", "NaN", "1e3", "10"])
 def test_malformed_handoff_duration_does_not_erase_cpu_work(monkeypatch, tmp_path, duration):
     _collect(monkeypatch, tmp_path)

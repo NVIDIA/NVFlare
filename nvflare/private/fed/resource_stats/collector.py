@@ -354,7 +354,6 @@ class JobResourceCollector(ExecutionResourceCollector):
         clock_ns: Callable[[], int] = time.monotonic_ns,
         capacity_probe: CapacityProbe = probe_capacity,
         prior_observation_incomplete: bool = False,
-        task_based: bool = False,
     ):
         self.run_dir = Path(run_dir)
         raw_node_count = os.environ.get(_SLURM_NODE_COUNT_ENV)
@@ -367,18 +366,11 @@ class JobResourceCollector(ExecutionResourceCollector):
             clock_ns=clock_ns,
             capacity_probe=capacity_probe,
             prior_observation_incomplete=prior_observation_incomplete,
-            include_children=not task_based,
             known_attribution_incomplete=self._multi_node_incomplete,
         )
         self._task_reducer = None
         self._task_collection_failed = False
-        if task_based:
-            try:
-                self.enable_task_collection()
-            except Exception:
-                self._task_collection_failed = True
-        else:
-            install_task_resource_reducer(None)
+        install_task_resource_reducer(None)
         global _active_collector
         _active_collector = self
 

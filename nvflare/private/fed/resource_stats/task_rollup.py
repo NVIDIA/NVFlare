@@ -28,9 +28,9 @@ from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 from .handoff import _read_capacity, _read_fields, _read_issues, _read_number, _read_usage
 from .measurements import (
     SCHEMA_VERSION,
+    _sum_numbers,
     aggregate_cpu_consumed,
     aggregate_message_traffic,
-    aggregate_resource_time,
     aggregate_scope_issues,
     capacity_to_resource_time,
     ordered_issues,
@@ -230,13 +230,12 @@ class TaskResourceReducer:
         values = [value for value in (previous, contribution) if value is not None]
         result = {}
         incomplete = any("status" in value for value in values)
-        for dimension in ("cpu", "memory", "gpu"):
-            sources = [{"status": "partial", dimension: value[dimension]} for value in values if dimension in value]
-            if not sources:
+        for dimension, field in (("cpu", "unit_seconds"), ("memory", "byte_seconds"), ("gpu", "instance_seconds")):
+            amounts = [value[dimension][field] for value in values if dimension in value]
+            if not amounts:
                 continue
             try:
-                combined = aggregate_resource_time(sources)[dimension]
-                result[dimension] = combined
+                result[dimension] = {field: _sum_numbers(amounts)}
             except (OverflowError, ValueError):
                 # An overflowing dimension cannot erase other usable subtotals.
                 if previous is not None and dimension in previous:

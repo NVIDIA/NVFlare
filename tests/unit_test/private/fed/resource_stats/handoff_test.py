@@ -22,50 +22,6 @@ import pytest
 from nvflare.private.fed.resource_stats import handoff as module
 
 
-def _handoff():
-    return {
-        "duration_seconds": 10,
-        "internal_version": module.INTERNAL_HANDOFF_VERSION,
-        "kind": module.INTERNAL_HANDOFF_KIND,
-        "resource_capacity": {"status": "unavailable"},
-        "resource_time": {"status": "unavailable"},
-        "workspace_filesystem": {"capacity_bytes": 1024},
-        "resource_utilization": {
-            "cpu_consumed": {"status": "unavailable"},
-            "retained_content": {"status": "unavailable"},
-            "message_traffic": {"status": "unavailable"},
-        },
-        "issues": [
-            {"metric": "cpu_consumed", "code": "observation_incomplete"},
-            {"metric": "message_traffic", "code": "observation_incomplete"},
-            {"metric": "resource_capacity", "code": "observation_incomplete"},
-            {"metric": "resource_time", "code": "observation_incomplete"},
-            {"metric": "retained_content", "code": "unsupported"},
-        ],
-    }
-
-
-def _complete_handoff():
-    return {
-        "duration_seconds": 10,
-        "internal_version": module.INTERNAL_HANDOFF_VERSION,
-        "kind": module.INTERNAL_HANDOFF_KIND,
-        "resource_capacity": {"cpu": {"units": 2}, "memory": {"bytes": 4096}, "gpu": {"count": 0}},
-        "resource_time": {
-            "cpu": {"unit_seconds": 20},
-            "memory": {"byte_seconds": 40960},
-            "gpu": {"instance_seconds": 0},
-        },
-        "workspace_filesystem": {"capacity_bytes": 1024},
-        "resource_utilization": {
-            "cpu_consumed": {"cpu_seconds": 2},
-            "retained_content": {"bytes": 128},
-            "message_traffic": {"sent_bytes": 512, "received_bytes": 128},
-        },
-        "issues": [],
-    }
-
-
 def _link(path, target, *, directory):
     try:
         path.symlink_to(target, target_is_directory=directory)
@@ -73,28 +29,21 @@ def _link(path, target, *, directory):
         pytest.skip("symlinks are unavailable on this platform")
 
 
-@pytest.mark.parametrize("version", ["1", "2", "3"])
-def test_live_handoff_rejects_prior_versions(tmp_path, version):
-    handoff = _handoff()
-    handoff["internal_version"] = version
-    module.write_terminal_handoff(tmp_path, handoff)
-    assert module.read_terminal_handoff(tmp_path) is None
-
-    handoff["resource_time"] = handoff.pop("resource_capacity")
-    module.write_terminal_handoff(tmp_path, handoff)
-    assert module.read_terminal_handoff(tmp_path) is None
-
-
 @pytest.mark.parametrize("fallback", [False, True])
-def test_atomic_writer_round_trip_and_replacement_without_leftover_temp_files(tmp_path, monkeypatch, fallback):
+def test_atomic_writer_round_trip_and_replacement_without_leftover_temp_files(
+    make_handoff, tmp_path, monkeypatch, fallback
+):
     if fallback:
         monkeypatch.setattr(module, "_SECURE_HANDOFF_WRITE_DIR_FD", False)
     run = tmp_path / "run"
-    path = module.write_terminal_handoff(run, _handoff())
-    assert module.read_terminal_handoff(run) == _handoff()
-    updated = _handoff()
+    original = make_handoff()
+    original["workspace_filesystem"] = {"status": "unavailable"}
+    original["issues"].append({"metric": "workspace_filesystem", "code": "observation_incomplete"})
+    path = module.write_terminal_handoff(run, original)
+    assert module.read_terminal_handoff(run) == original
+    updated = make_handoff()
     updated["workspace_filesystem"] = {"capacity_bytes": 2048}
-    updated["issues"] = [issue for issue in updated["issues"] if issue["metric"] != "workspace_filesystem"] + []
+    updated["issues"] = [issue for issue in updated["issues"] if issue["metric"] != "workspace_filesystem"]
     module.write_terminal_handoff(run, updated)
     assert module.read_terminal_handoff(run) == updated
     assert list(path.parent.iterdir()) == [path]
@@ -103,8 +52,8 @@ def test_atomic_writer_round_trip_and_replacement_without_leftover_temp_files(tm
 @pytest.mark.parametrize(
     "measurement", ["resource_capacity", "cpu_consumed", "workspace_filesystem", "retained_content", "message_traffic"]
 )
-def test_reader_isolates_a_malformed_measurement_without_erasing_other_values(tmp_path, measurement):
-    original = _complete_handoff()
+def test_reader_isolates_a_malformed_measurement_without_erasing_other_values(make_handoff, tmp_path, measurement):
+    original = make_handoff(complete=True)
     path = module.write_terminal_handoff(tmp_path, original)
     malformed = deepcopy(original)
     source = (
@@ -128,8 +77,8 @@ def test_reader_isolates_a_malformed_measurement_without_erasing_other_values(tm
 
 
 @pytest.mark.parametrize("change", ["extra_field", "missing_field", "wrong_kind", "wrong_version"])
-def test_reader_still_rejects_a_malformed_envelope(tmp_path, change):
-    handoff = _complete_handoff()
+def test_reader_still_rejects_a_malformed_envelope(make_handoff, tmp_path, change):
+    handoff = make_handoff(complete=True)
     path = module.write_terminal_handoff(tmp_path, handoff)
     if change == "extra_field":
         handoff["participant_name"] = "untrusted-child-name"
@@ -144,8 +93,8 @@ def test_reader_still_rejects_a_malformed_envelope(tmp_path, change):
     assert module.read_terminal_handoff(tmp_path) is None
 
 
-def test_reader_contains_plain_decoder_value_error(tmp_path, monkeypatch):
-    path = module.write_terminal_handoff(tmp_path, _complete_handoff())
+def test_reader_contains_plain_decoder_value_error(make_handoff, tmp_path, monkeypatch):
+    path = module.write_terminal_handoff(tmp_path, make_handoff(complete=True))
     payload = path.read_text()
     # Python's integer decoder can raise ValueError independently of JSON syntax.
     # Control that boundary without depending on a process-wide digit limit.
@@ -157,20 +106,20 @@ def test_reader_contains_plain_decoder_value_error(tmp_path, monkeypatch):
     assert decoder.call_args.args[0] == payload
 
 
-def test_reader_preserves_native_numeric_values_at_the_parent_boundary(tmp_path):
-    handoff = _complete_handoff()
+def test_reader_preserves_native_numeric_values_at_the_parent_boundary(make_handoff, tmp_path):
+    handoff = make_handoff(complete=True)
     path = module.write_terminal_handoff(tmp_path, handoff)
     handoff["duration_seconds"] = 10.0
     handoff["resource_capacity"]["cpu"]["units"] = 2.0
     handoff["resource_utilization"]["cpu_consumed"]["cpu_seconds"] = 2.0
     path.write_bytes(module.canonical_json_bytes(handoff))
-    assert module.read_terminal_handoff(tmp_path) == _complete_handoff()
+    assert module.read_terminal_handoff(tmp_path) == make_handoff(complete=True)
 
 
 @pytest.mark.parametrize("component", ["run", "resource_stats", "staging"])
 @pytest.mark.parametrize("fallback", [False, True])
 def test_writer_rejects_preexisting_directory_symlink_without_outside_writes(
-    tmp_path, monkeypatch, component, fallback
+    make_handoff, tmp_path, monkeypatch, component, fallback
 ):
     if fallback:
         monkeypatch.setattr(module, "_SECURE_HANDOFF_WRITE_DIR_FD", False)
@@ -187,13 +136,13 @@ def test_writer_rejects_preexisting_directory_symlink_without_outside_writes(
     link.parent.mkdir(parents=True, exist_ok=True)
     _link(link, outside, directory=True)
     with pytest.raises(OSError):
-        module.write_terminal_handoff(run, _handoff())
+        module.write_terminal_handoff(run, make_handoff())
     assert sentinel.read_bytes() == b"outside sentinel"
     assert list(outside.iterdir()) == [sentinel]
 
 
 @pytest.mark.parametrize("fallback", [False, True])
-def test_final_file_symlink_is_replaced_not_followed(tmp_path, monkeypatch, fallback):
+def test_final_file_symlink_is_replaced_not_followed(make_handoff, tmp_path, monkeypatch, fallback):
     if fallback:
         monkeypatch.setattr(module, "_SECURE_HANDOFF_WRITE_DIR_FD", False)
     run = tmp_path / "run"
@@ -202,14 +151,14 @@ def test_final_file_symlink_is_replaced_not_followed(tmp_path, monkeypatch, fall
     sentinel = tmp_path / "outside.json"
     sentinel.write_bytes(b"outside sentinel")
     _link(path, sentinel, directory=False)
-    module.write_terminal_handoff(run, _handoff())
+    module.write_terminal_handoff(run, make_handoff())
     assert sentinel.read_bytes() == b"outside sentinel"
     assert not path.is_symlink()
-    assert module.read_terminal_handoff(run) == _handoff()
+    assert module.read_terminal_handoff(run) == make_handoff()
 
 
 @pytest.mark.skipif(not module._SECURE_HANDOFF_WRITE_DIR_FD, reason="requires directory-relative safe writes")
-def test_open_directory_cannot_be_redirected_to_outside_after_check(tmp_path, monkeypatch):
+def test_open_directory_cannot_be_redirected_to_outside_after_check(make_handoff, tmp_path, monkeypatch):
     run = tmp_path / "run"
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -225,7 +174,7 @@ def test_open_directory_cannot_be_redirected_to_outside_after_check(tmp_path, mo
         return descriptor, path
 
     monkeypatch.setattr(module, "_open_handoff_directory", replaced_directory)
-    module.write_terminal_handoff(run, _handoff())
+    module.write_terminal_handoff(run, make_handoff())
     assert sentinel.read_bytes() == b"outside sentinel"
     assert list(outside.iterdir()) == [sentinel]
     original = run / module.RESOURCE_STATS_DIR / "original-staging"
@@ -233,11 +182,13 @@ def test_open_directory_cannot_be_redirected_to_outside_after_check(tmp_path, mo
 
 
 @pytest.mark.parametrize("fallback", [False, True])
-def test_replace_failure_preserves_previous_file_and_cleans_temporary_file(tmp_path, monkeypatch, fallback):
+def test_replace_failure_preserves_previous_file_and_cleans_temporary_file(
+    make_handoff, tmp_path, monkeypatch, fallback
+):
     if fallback:
         monkeypatch.setattr(module, "_SECURE_HANDOFF_WRITE_DIR_FD", False)
     run = tmp_path / "run"
-    path = module.write_terminal_handoff(run, _handoff())
+    path = module.write_terminal_handoff(run, make_handoff())
     old = path.read_bytes()
 
     def fail_replace(*args, **kwargs):
@@ -245,15 +196,15 @@ def test_replace_failure_preserves_previous_file_and_cleans_temporary_file(tmp_p
 
     monkeypatch.setattr(os, "replace", fail_replace)
     with pytest.raises(OSError, match="simulated replace failure"):
-        module.write_terminal_handoff(run, _handoff())
+        module.write_terminal_handoff(run, make_handoff())
     assert path.read_bytes() == old
     assert list(path.parent.iterdir()) == [path]
 
 
 @pytest.mark.skipif(not module._SECURE_HANDOFF_WRITE_DIR_FD, reason="requires directory-relative safe writes")
-def test_temporary_name_collisions_are_bounded_and_do_not_overwrite_existing_file(tmp_path, monkeypatch):
+def test_temporary_name_collisions_are_bounded_and_do_not_overwrite_existing_file(make_handoff, tmp_path, monkeypatch):
     run = tmp_path / "run"
-    path = module.write_terminal_handoff(run, _handoff())
+    path = module.write_terminal_handoff(run, make_handoff())
     collision = path.parent / ".terminal-existing.tmp"
     collision.write_bytes(b"keep existing file")
     tokens = []
@@ -264,16 +215,16 @@ def test_temporary_name_collisions_are_bounded_and_do_not_overwrite_existing_fil
 
     monkeypatch.setattr(module.secrets, "token_hex", fixed_token)
     with pytest.raises(OSError, match="could not create"):
-        module.write_terminal_handoff(run, _handoff())
+        module.write_terminal_handoff(run, make_handoff())
     assert len(tokens) == 8
     assert collision.read_bytes() == b"keep existing file"
-    assert module.read_terminal_handoff(run) == _handoff()
+    assert module.read_terminal_handoff(run) == make_handoff()
 
 
 @pytest.mark.skipif(not module._SECURE_HANDOFF_WRITE_DIR_FD, reason="requires directory-relative safe writes")
-def test_fdopen_failure_closes_descriptors_and_cleans_temporary_file(tmp_path, monkeypatch):
+def test_fdopen_failure_closes_descriptors_and_cleans_temporary_file(make_handoff, tmp_path, monkeypatch):
     run = tmp_path / "run"
-    path = module.write_terminal_handoff(run, _handoff())
+    path = module.write_terminal_handoff(run, make_handoff())
     descriptors = []
     original_open = os.open
 
@@ -288,7 +239,7 @@ def test_fdopen_failure_closes_descriptors_and_cleans_temporary_file(tmp_path, m
     monkeypatch.setattr(os, "open", record_open)
     monkeypatch.setattr(os, "fdopen", fail_fdopen)
     with pytest.raises(OSError, match="simulated fdopen failure"):
-        module.write_terminal_handoff(run, _handoff())
+        module.write_terminal_handoff(run, make_handoff())
     assert descriptors
     for descriptor in descriptors:
         with pytest.raises(OSError):
@@ -300,8 +251,8 @@ def test_fdopen_failure_closes_descriptors_and_cleans_temporary_file(tmp_path, m
     "tags",
     [[{"metric": "message_traffic", "code": "unknown"}], [{"metric": "message_traffic", "unexpected": True}], []],
 )
-def test_bad_metric_tags_preserve_independent_handoff_values(tmp_path, tags):
-    original = _complete_handoff()
+def test_bad_metric_tags_preserve_independent_handoff_values(make_handoff, tmp_path, tags):
+    original = make_handoff(complete=True)
     path = module.write_terminal_handoff(tmp_path, original)
     malformed = deepcopy(original)
     malformed["resource_utilization"]["message_traffic"]["status"] = "partial"
@@ -321,16 +272,18 @@ def test_bad_metric_tags_preserve_independent_handoff_values(tmp_path, tags):
 
 
 @pytest.mark.parametrize("fallback", [False, True])
-def test_generation_paths_preserve_replacement_against_late_writer_and_old_cleanup(tmp_path, monkeypatch, fallback):
+def test_generation_paths_preserve_replacement_against_late_writer_and_old_cleanup(
+    make_handoff, tmp_path, monkeypatch, fallback
+):
     if fallback:
         monkeypatch.setattr(module, "_SECURE_HANDOFF_DIR_FD", False)
-    old = module.write_terminal_handoff(tmp_path, _handoff(), launch_generation="old-launch")
-    current = _handoff()
+    old = module.write_terminal_handoff(tmp_path, make_handoff(), launch_generation="old-launch")
+    current = make_handoff()
     current["workspace_filesystem"] = {"capacity_bytes": 8192}
     new = module.write_terminal_handoff(tmp_path, current, launch_generation="new-launch")
 
     # A delayed old process cannot overwrite the current launch's report.
-    module.write_terminal_handoff(tmp_path, _handoff(), launch_generation="old-launch")
+    module.write_terminal_handoff(tmp_path, make_handoff(), launch_generation="old-launch")
     assert module.read_terminal_handoff(tmp_path, expected_generation="new-launch") == {
         **current,
         "launch_generation": "new-launch",
@@ -346,18 +299,18 @@ def test_generation_paths_preserve_replacement_against_late_writer_and_old_clean
 
 
 @pytest.mark.parametrize("field_generation", [None, "old-launch"])
-def test_bound_read_rejects_missing_or_mismatched_envelope_generation(tmp_path, field_generation):
+def test_bound_read_rejects_missing_or_mismatched_envelope_generation(make_handoff, tmp_path, field_generation):
     path = module.terminal_handoff_path(tmp_path, launch_generation="new-launch")
     path.parent.mkdir(parents=True)
-    handoff = _handoff()
+    handoff = make_handoff()
     if field_generation is not None:
         handoff["launch_generation"] = field_generation
     path.write_bytes(module.canonical_json_bytes(handoff))
     assert module.read_terminal_handoff(tmp_path, expected_generation="new-launch") is None
 
 
-def test_bound_runtime_helpers_never_fall_back_to_unbound_diagnostic_file(tmp_path):
-    path = module.write_terminal_handoff(tmp_path, _handoff())
+def test_bound_runtime_helpers_never_fall_back_to_unbound_diagnostic_file(make_handoff, tmp_path):
+    path = module.write_terminal_handoff(tmp_path, make_handoff())
     assert module.read_terminal_handoff(tmp_path, expected_generation="new-launch") is None
     assert module.read_terminal_handoff(tmp_path, expected_generation="") is None
     module.remove_terminal_handoff(tmp_path, expected_generation="new-launch")
@@ -366,9 +319,9 @@ def test_bound_runtime_helpers_never_fall_back_to_unbound_diagnostic_file(tmp_pa
 
 
 @pytest.mark.parametrize("generation", ["", "../outside", "a/b", ".", "x" * 129, 17, "é"])
-def test_generation_tokens_cannot_redirect_or_expand_private_paths(tmp_path, generation):
+def test_generation_tokens_cannot_redirect_or_expand_private_paths(make_handoff, tmp_path, generation):
     with pytest.raises(module.InvalidTerminalHandoff, match="launch generation"):
-        module.write_terminal_handoff(tmp_path, _handoff(), launch_generation=generation)
+        module.write_terminal_handoff(tmp_path, make_handoff(), launch_generation=generation)
     assert module.read_terminal_handoff(tmp_path, expected_generation=generation) is None
     module.remove_terminal_handoff(tmp_path, expected_generation=generation)
     assert not (tmp_path / "resource_stats").exists()
@@ -386,6 +339,20 @@ def test_launch_option_keeps_exact_token_before_generic_type_coercion():
 @pytest.mark.parametrize(
     "metric,value",
     [
+        ("cpu_consumed", {"cpu_seconds": "NaN"}),
+        ("cpu_consumed", {"cpu_seconds": 2, "duration_seconds": 10}),
+        ("cpu_consumed", {"cpu_seconds": 2, "measured_seconds": 10}),
+        (
+            "resource_capacity",
+            {"cpu": {"units": 2}, "memory": {"bytes": 4096}, "gpu": {"count": 0}, "duration_seconds": 10},
+        ),
+        (
+            "resource_capacity",
+            {"cpu": {"units": 2}, "memory": {"bytes": 4096}, "gpu": {"count": 0}, "measured_seconds": 10},
+        ),
+        ("resource_capacity", {"intervals": [{"duration_seconds": 10, "cpu": {"units": 8}}]}),
+        ("message_traffic", {"sent_bytes": "10", "received_bytes": 0}),
+        ("message_traffic", {"sent_bytes": 0, "received_bytes": "10"}),
         ("cpu_consumed", {"cpu_seconds": True}),
         ("cpu_consumed", {"cpu_seconds": "2"}),
         ("cpu_consumed", {"cpu_seconds": -1}),
@@ -397,8 +364,8 @@ def test_launch_option_keeps_exact_token_before_generic_type_coercion():
         ("resource_capacity", {"cpu": {"units": 2}, "memory": {"bytes": 0}, "gpu": {"count": True}}),
     ],
 )
-def test_reader_rejects_bad_numeric_fields_without_erasing_sibling_metrics(tmp_path, metric, value):
-    payload = _complete_handoff()
+def test_reader_rejects_bad_measurements_without_erasing_sibling_metrics(make_handoff, tmp_path, metric, value):
+    payload = make_handoff(complete=True)
     target = payload if metric == "resource_capacity" else payload["resource_utilization"]
     target[metric] = value
     module.write_terminal_handoff(tmp_path, payload)
@@ -408,12 +375,12 @@ def test_reader_rejects_bad_numeric_fields_without_erasing_sibling_metrics(tmp_p
     target = checked if metric == "resource_capacity" else checked["resource_utilization"]
     assert target[metric] == {"status": "unavailable"}
     assert {"metric": metric, "code": "malformed_source"} in checked["issues"]
-    assert checked["resource_time"] == _complete_handoff()["resource_time"]
+    assert checked["resource_time"] == make_handoff(complete=True)["resource_time"]
     assert checked["workspace_filesystem"] == {"capacity_bytes": 1024}
 
 
-def test_reader_preserves_zero_capacity_and_exact_integer_bytes(tmp_path):
-    payload = _complete_handoff()
+def test_reader_preserves_zero_capacity_and_exact_integer_bytes(make_handoff, tmp_path):
+    payload = make_handoff(complete=True)
     payload["resource_capacity"]["memory"]["bytes"] = 0
     payload["resource_utilization"]["retained_content"]["bytes"] = 10**50
     module.write_terminal_handoff(tmp_path, payload)
@@ -421,8 +388,8 @@ def test_reader_preserves_zero_capacity_and_exact_integer_bytes(tmp_path):
     assert module.read_terminal_handoff(tmp_path) == payload
 
 
-def test_reader_contains_nonfinite_json_number_without_erasing_other_metrics(tmp_path):
-    payload = _complete_handoff()
+def test_reader_contains_nonfinite_json_number_without_erasing_other_metrics(make_handoff, tmp_path):
+    payload = make_handoff(complete=True)
     payload["resource_utilization"]["cpu_consumed"]["cpu_seconds"] = 1.0
     path = module.write_terminal_handoff(tmp_path, payload)
     path.write_text(json.dumps(payload).replace('"cpu_seconds": 1.0', '"cpu_seconds": 1e999'))
@@ -434,8 +401,8 @@ def test_reader_contains_nonfinite_json_number_without_erasing_other_metrics(tmp
 
 
 @pytest.mark.parametrize("bad", ["unknown", "unsupported"])
-def test_reader_contains_invalid_partial_cause_to_its_metric(tmp_path, bad):
-    payload = _complete_handoff()
+def test_reader_contains_invalid_partial_cause_to_its_metric(make_handoff, tmp_path, bad):
+    payload = make_handoff(complete=True)
     payload["resource_utilization"]["cpu_consumed"]["status"] = "partial"
     payload["issues"] = [{"metric": "cpu_consumed", "code": bad}]
     module.write_terminal_handoff(tmp_path, payload)

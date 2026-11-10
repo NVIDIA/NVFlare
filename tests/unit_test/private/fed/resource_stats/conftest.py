@@ -16,7 +16,7 @@
 
 import pytest
 
-from nvflare.private.fed.resource_stats import collector, filesystem_probe
+from nvflare.private.fed.resource_stats import collector, filesystem_probe, handoff
 
 
 @pytest.fixture(autouse=True)
@@ -28,3 +28,43 @@ def direct_filesystem_observations(monkeypatch):
         }
 
     monkeypatch.setattr(filesystem_probe, "observe_filesystem_isolated", observe)
+
+
+@pytest.fixture
+def make_handoff():
+    def make(*, complete=False):
+        record = {
+            "duration_seconds": 10,
+            "internal_version": handoff.INTERNAL_HANDOFF_VERSION,
+            "kind": handoff.INTERNAL_HANDOFF_KIND,
+            "resource_capacity": {"cpu": {"units": 2}, "memory": {"bytes": 4096}, "gpu": {"count": 0}},
+            "resource_time": {
+                "cpu": {"unit_seconds": 20},
+                "memory": {"byte_seconds": 40960},
+                "gpu": {"instance_seconds": 0},
+            },
+            "workspace_filesystem": {"capacity_bytes": 1024},
+            "resource_utilization": {
+                "cpu_consumed": {"cpu_seconds": 2},
+                "retained_content": {"bytes": 128},
+                "message_traffic": {"sent_bytes": 512, "received_bytes": 128},
+            },
+            "issues": [],
+        }
+        if not complete:
+            for container, names in (
+                (record, ("resource_capacity", "resource_time")),
+                (record["resource_utilization"], ("cpu_consumed", "retained_content", "message_traffic")),
+            ):
+                for name in names:
+                    container[name] = {"status": "unavailable"}
+                    record["issues"].append({"metric": name, "code": "observation_incomplete"})
+            record["issues"].sort(key=lambda issue: issue["metric"])
+        return record
+
+    return make
+
+
+@pytest.fixture
+def usage_reader():
+    return lambda *values: iter(tuple(float(item) for item in value) for value in values).__next__
