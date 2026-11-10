@@ -19,9 +19,9 @@ constructed. Their interfaces may change.
 The loss, reference forward passes and audit model evaluation support CPU and CUDA.
 Keep the target/reference models and their input tensors on the intended device.
 For GPU audits, configure ``PTMemorizationAuditor(device="cuda:0")`` (or the same
-argument on its application subclass); its default is CPU. The current SDK has
-been validated with Pythia-70M on H100, including numerical parity and a complete
-federated workflow.
+argument on its application subclass); its default is CPU. SDK revision
+``778d632e`` was validated with Pythia-70M on H100, including numerical parity
+and a complete federated workflow.
 
 Loss and diagnostics
 --------------------
@@ -94,11 +94,14 @@ include model configuration, context construction, and scoring settings in the
 scoring identity. Cached values are local tensors loaded with ``weights_only=True``.
 Treat them as potentially sensitive artifacts.
 
-Keep the reference immutable. Ordinary in-place parameter/buffer changes are detected;
-construct a new scorer after a change. Mutating ``.data`` bypasses PyTorch version
-tracking and is unsupported. Arbitrary changes to forward behavior also require a
-new scoring identity. A fixed-order precomputation, indexed by shuffled training
-batches, avoids cache misses caused solely by different batch groupings.
+Keep the reference immutable. Ordinary in-place changes, storage replacement and
+dtype/device conversions are detected; set precision and placement before creating
+the scorer and construct a new scorer after any change. In-place writes through
+``.data`` or external storage aliases bypass version tracking and are unsupported.
+Arbitrary changes to forward behavior also require a new scoring identity. A fixed-order precomputation, indexed by shuffled training
+batches, avoids cache misses caused solely by different batch groupings. The
+optional cache has no built-in quota or eviction: manage disk usage and retention
+locally, or omit ``cache_dir`` for online scoring without input hashing.
 
 Auditing and integration
 ------------------------
@@ -151,9 +154,10 @@ The `SDK validation report
 <https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/huggingface/SDK_VALIDATION.md>`_
 records the measured workload and explicitly limits extrapolation.
 
-Audit deadlines are cooperative. Initialization, hashing and blocked CUDA calls can
-outlive them. Hard resource/deadline limits require a separate supervised worker and
-explicit cleanup. The audit filter remains report-only: failure does not prevent
+The adapter checks deadlines between audit phases, and application evaluators
+must check between batches. Deadlines remain cooperative: initialization, hashing
+and blocked CUDA calls already in progress can outlive them. Hard resource/deadline
+limits require a separate supervised worker and explicit cleanup. The audit filter remains report-only: failure does not prevent
 transmission, and this example adds no release-approval mechanism.
 
 The example's ``check_coverage.py`` checks expected site/round identities, completed
@@ -189,7 +193,8 @@ includes every strength and seed, zero-noise controls, CE results, unattainable
 leakage targets, scalar tables, costs, reference provenance, and PNG/PDF figures.
 TRAP has no formal DP guarantee, and this search does not establish optimal DP
 performance. The measurements used the frozen research implementation before the
-SDK refactor. The separate H100 workflow validates the current SDK; it does not
+SDK refactor. The separate H100 workflow validates its recorded SDK revision;
+subsequent fixes are identified in the validation report. It does not
 rerun that efficacy study.
 
 The :doc:`design document <../design/federated_memorization_reduction>` describes the

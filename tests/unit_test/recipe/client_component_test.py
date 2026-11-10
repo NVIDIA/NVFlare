@@ -104,3 +104,24 @@ def test_experimental_audit_components_preserve_exported_paths_and_arguments(tmp
         assert type(restored) is cls
         for key, value in args.items():
             assert getattr(restored, key) == value
+
+
+@pytest.mark.parametrize("conflict", ["occupied-id", "existing-object-alias"])
+def test_component_id_conflict_rejected_before_registering_any_site(conflict):
+    job = FedJob(name="components", min_clients=2)
+    for site in ("site-1", "site-2"):
+        job._deploy_map[site] = FedApp(ClientAppConfig())
+    recipe = Recipe(job)
+    snapshot = AuditModelSnapshot()
+    previous = AuditModelSnapshot() if conflict == "occupied-id" else snapshot
+    previous_id = "snapshot" if conflict == "occupied-id" else "previous_snapshot"
+    job.to(previous, "site-2", id=previous_id)
+
+    with pytest.raises(ValueError, match="component ID"):
+        recipe.add_client_component(snapshot, "snapshot")
+
+    assert job._deploy_map["site-1"].app_config.components == {}
+    assert job._deploy_map["site-2"].app_config.components == {previous_id: previous}
+    # Re-registering the same object with its actual ID is harmless.
+    recipe.add_client_component(previous, previous_id, clients=["site-2"])
+    assert job._deploy_map["site-2"].app_config.components == {previous_id: previous}

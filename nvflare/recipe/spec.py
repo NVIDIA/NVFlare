@@ -332,12 +332,13 @@ class Recipe(ABC):
         with self._job.temporary_exec_params(server_exec_params, client_exec_params):
             yield
 
-    def _add_to_client_apps(self, obj, clients: Optional[List[str]] = None, **kwargs):
+    def _add_to_client_apps(self, obj, clients: Optional[List[str]] = None, require_exact_id=False, **kwargs):
         """Add an object to client apps, preserving existing per-site structure.
 
         Args:
             obj: Object to add to clients.
             clients: Optional list of specific client names. If None, applies to all clients.
+            require_exact_id: Reject component ID collisions or aliases instead of accepting a generated ID.
             **kwargs: Extra options forwarded to `job.to()`/`job.to_clients()`.
 
         Raises:
@@ -375,11 +376,7 @@ class Recipe(ABC):
             and JobTargetType.get_target_type(target) == JobTargetType.CLIENT
         ]
         if clients is None:
-            if existing_client_sites:
-                for site in existing_client_sites:
-                    self._job.to(obj, site, **kwargs)
-            else:
-                self._job.to_clients(obj, **kwargs)
+            targets = existing_client_sites or [ALL_SITES]
         else:
             if ALL_SITES in deploy_map:
                 # The generated job has one client app deployed to all clients. Exporting
@@ -401,8 +398,31 @@ class Recipe(ABC):
                         f"unknown client site(s) {unknown}: this recipe has per-site client apps "
                         f"only for {sorted(existing_client_sites)}"
                     )
-            for client in clients:
-                self._job.to(obj, client, **kwargs)
+            targets = clients
+
+        if require_exact_id:
+            component_id = kwargs["id"]
+            # Preflight every selected app before registering in any of them.
+            # FedJob otherwise silently renames collisions or reuses an object's
+            # earlier ID; either breaks consumers of the requested fixed ID.
+            for target in targets:
+                app = deploy_map.get(target)
+                if app is None:
+                    continue
+                existing_id = app._oid_to_cid.get(id(obj))
+                if existing_id == component_id:
+                    continue
+                if existing_id is not None or component_id in app._used_ids:
+                    raise ValueError(
+                        f"component ID {component_id!r} conflicts with an existing registration in {target}"
+                    )
+
+        for target in targets:
+            assigned_id = (
+                self._job.to_clients(obj, **kwargs) if target == ALL_SITES else self._job.to(obj, target, **kwargs)
+            )
+            if require_exact_id and assigned_id != component_id:
+                raise ValueError(f"component ID {component_id!r} was not honored in {target}: got {assigned_id!r}")
 
     def finalize(self):
         """Called to finalize the setup of the recipe.
@@ -415,9 +435,10 @@ class Recipe(ABC):
     def add_client_component(self, component: FLComponent, component_id: str, clients: Optional[List[str]] = None):
         """Register a supporting component in the selected client applications.
 
-        Use a unique component ID when a filter or executor resolves this component
-        by ID. Omit clients to use all existing client applications; explicit site
-        selection follows the same topology rules as client filters.
+        The exact component ID is required: collisions and registration of the
+        same object under a different ID raise ValueError. Omit clients to use all
+        existing client applications; explicit site selection follows the same
+        topology rules as client filters.
         Component constructor arguments are exported in job configuration and must
         not contain secrets. This method does not register a task executor/filter.
         """
@@ -425,7 +446,7 @@ class Recipe(ABC):
             raise TypeError("component must be an FLComponent")
         if not isinstance(component_id, str) or not component_id.strip():
             raise ValueError("component_id must be a nonempty string")
-        self._add_to_client_apps(component, clients=clients, id=component_id)
+        self._add_to_client_apps(component, clients=clients, require_exact_id=True, id=component_id)
 
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None

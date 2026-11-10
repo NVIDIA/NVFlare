@@ -100,9 +100,11 @@ requires an explicit threat model. Unknown pretraining exposure remains a limita
 `FrozenReferenceScorer` freezes parameters, enforces evaluation mode, and returns
 observed-token log probabilities and their mask. It must remain separate from the
 target optimizer and transmitted target state. Construct a new scorer when the
-reference changes. Ordinary in-place parameter/buffer changes and tensor
-replacement are detected; `.data` mutation and arbitrary forward-code changes are
-unsupported.
+reference changes. Ordinary in-place parameter/buffer changes, tensor/storage
+replacement, and dtype/device conversions are detected. Finalize precision and
+placement before constructing the scorer. In-place writes through `.data` or
+external storage aliases bypass version tracking and remain unsupported, as do
+arbitrary forward-code changes.
 
 Optional cache keys bind checkpoint tensor contents, tokenizer and scoring
 identities, tokenized inputs, labels and supplied tensor model inputs. The caller's
@@ -110,8 +112,11 @@ scoring identity must cover model configuration, context construction, precision
 and other settings affecting inference. Entries are written atomically and read
 with `weights_only=True`. The cache is trusted local storage, not an authenticated
 artifact exchange. It is batch-addressed: regrouping records can produce misses.
-Cached scores and tensor fingerprints may be sensitive and need site-controlled
-access, retention and deletion policies.
+It has no built-in size limit or eviction policy; use a site-managed quota and
+retention policy, fixed-order precomputation, or online scoring without a cache.
+Online scoring does not hash inputs for cache lookup. Cached scores and tensor
+fingerprints may be sensitive and need site-controlled access, retention and
+deletion policies.
 
 ## Dependency on the ModelFilter foundation
 
@@ -150,16 +155,23 @@ server <- encryption <- report-only audit <- outgoing transformations/update
 Register the snapshot store and auditor by component ID through Recipe/FedJob.
 `Recipe.add_client_component(component, component_id, clients=None)` adds a public
 registration surface for supporting FLComponents, reusing the existing client-app
-topology checks. IDs must be unique in each selected app; constructor arguments
-are exported and must not contain secrets. Direct FedJob users can use
+topology checks. The exact requested ID must be available in every selected app;
+collisions and existing-object aliases are rejected before registration. Repeating
+the same object/ID is allowed. Constructor arguments are exported and must not
+contain secrets. Direct FedJob users can use
 `job.to_clients(component, id=...)`.
 The snapshot key contains job ID, task ID and round. The output filter consumes and
 clears it on every output path, including skipped rounds, empty or unsupported
 results, failed task replies, and conversion/reporting failures. A stale or missing
-baseline is unsupported.
+baseline is unsupported. Both observer callbacks return `None`, preserving model
+contents, metadata and transport history without model re-encoding; observation
+status is recorded in the separate audit report.
 Start/end-run events clear the store. Initial support is sequential training tasks
 with one full model or a complete parameter difference. Collections, partial
 updates, incompatible names/shapes and missing round identities are unsupported.
+The input filter captures every selected training task, including rounds skipped
+by the output audit schedule. Budget that full-state copy even with sparse audits;
+the filters currently have independent placement and no shared capture schedule.
 
 Capture after incoming transformations. Audit after outgoing clipping/noise when
 the intent is to measure the transmitted update, and before encryption. Executor
@@ -182,8 +194,11 @@ and nonmember records. Both cohorts must be nonempty and scores finite. Higher
 scores indicate membership; AUROC counts ties as half, and `nAUC = 2*abs(AUROC-0.5)`
 also exposes inverted separation. With a baseline, the adapter additionally scores
 per-record candidate-minus-baseline changes. Equal cohort lengths are checked;
-identical record ordering is the subclass's responsibility. A deadline is
-cooperative and cannot interrupt a blocked framework/CUDA call.
+identical record ordering is the subclass's responsibility. The adapter checks its
+budget between reconstruction, construction/loading, candidate evaluation, and
+baseline evaluation. Subclasses must also check between batches. A deadline is
+cooperative and cannot interrupt an operation already in progress or a blocked
+framework/CUDA call.
 
 Periodic client audits concern that client model at that filter stage. They do not
 establish leakage from the selected global checkpoint, unseen attacks, reference
@@ -256,12 +271,13 @@ The draft tests loss values/gradients/masking/accumulation, cache identity and
 mutation rejection, audit scheduling, stale baselines, RNG isolation, unsupported
 inputs and local report behavior. The separate foundation owns model-filter
 representation and round-trip tests.
-The current SDK passed 42 focused tests on H100, including both CUDA tests, and a
-two-client/two-round Pythia workflow with four completed client audits and separate
+SDK revision `778d632e` passed 42 focused tests on H100, including both CUDA tests,
+and a two-client/two-round Pythia workflow with four completed client audits and separate
 final global-checkpoint evaluation. Reference scores, loss and all 76 parameter
 gradients matched independent calculations with zero measured error. The
 [validation report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/huggingface/SDK_VALIDATION.md)
-records the measured memory/runtime scope. A download-free tiny model example is
+records the measured memory/runtime scope and identifies subsequent fixes validated
+locally; those later revisions have not rerun the GPU workflow. A tiny model example is
 also available as a wiring smoke check. Current-main Client API materialization
 tests cover the reused runtime paths.
 
@@ -283,7 +299,8 @@ The [Pythia-70M benchmark report](https://github.com/NVIDIA/NVFlare/blob/main/re
 provides all 525 fits and 210 final evaluations, complete strength/seed tables,
 negative outcomes, privacy and compute accounting, and eight PNG/PDF figure pairs.
 It uses the frozen research implementation preceding this SDK refactor; the
-separate H100 workflow and unit tests validate the current integration.
+separate H100 workflow validates its recorded SDK revision; later fixes have
+focused local regression coverage.
 
 TRAP passed 60/84 paired accuracy-and-leakage screens, falling to 24/84 when the
 separate CE criterion was also required. The tested DP settings passed 0/84 in this

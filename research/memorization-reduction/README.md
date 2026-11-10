@@ -3,7 +3,7 @@
 The TRAP components support **CPU and CUDA**. This research project composes
 `PTTRAPLoss`, `FrozenReferenceScorer` and report-only memorization filters with
 standard federated training. The [Hugging Face workflow](huggingface/README.md)
-is the representative GPU example; the current SDK has been validated on **H100**.
+is the representative GPU example, validated on **H100** at SDK revision `778d632e`.
 TRAP provides no differential privacy guarantee.
 
 The TRAP method is introduced by Muhammed Ustaomeroglu et al. (2026) in
@@ -22,7 +22,8 @@ SDK completed two-client/two-round Pythia training, four paired client audits an
 separate final global-checkpoint evaluation. Reference scores, loss and all 76
 parameter-gradient tensors matched independent calculations with zero measured
 error. The [SDK validation report](huggingface/SDK_VALIDATION.md) records numerical
-checks, memory/runtime measurements and the bounded workload scope.
+checks, memory/runtime measurements and the bounded workload scope. It also records
+subsequent fixes with local regression coverage, without claiming a new GPU run.
 
 The audit adapter requires complete model state, including persistent buffers.
 Adapter-only/LoRA updates need application-specific reconstruction and auditing.

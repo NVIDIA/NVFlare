@@ -112,10 +112,14 @@ Host RSS is explicitly a **process-lifetime** high-water mark. Measurements incl
 synchronization at phase boundaries; they do not measure whole-node power, total
 GPU use, or isolate all shared runtime overhead. Budget headroom and measure your
 actual model, optimizer, precision, client concurrency and audit cadence before use.
+The input snapshot filter copies every selected training round, even when the output
+audit schedule skips that round. The HF adapter constructs its reference separately
+for candidate and baseline evaluation; this repeats loading/fingerprinting but does
+not retain the reference between audits. Include both costs when adapting the example.
 
-The auditor's 120-second deadline is cooperative. It is checked between batches and
-after evaluation; model construction, fingerprinting or a blocked CUDA operation
-can exceed it. `validate.py` deliberately requests a tiny budget and records observed
+The auditor's 120-second deadline is cooperative. The SDK checks between audit
+phases and this adapter checks between batches; model construction, fingerprinting
+or a CUDA operation already in progress can exceed it. `validate.py` deliberately requests a tiny budget and records observed
 latency to demonstrate that limitation. A deployment needing a hard limit needs an
 external worker/process supervisor and resource controls, with explicit cleanup.
 

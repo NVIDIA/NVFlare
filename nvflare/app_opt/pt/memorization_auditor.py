@@ -38,6 +38,11 @@ def membership_auc(members, nonmembers):
     return float(np.mean((left + right) / (2 * len(nonmembers))))
 
 
+def _check_deadline(deadline):
+    if time.monotonic() > deadline:
+        raise TimeoutError("Audit deadline exceeded")
+
+
 class PTMemorizationAuditor(MemorizationAuditor):
     """Experimental PyTorch audit adapter with reconstruction and RNG isolation.
 
@@ -72,6 +77,7 @@ class PTMemorizationAuditor(MemorizationAuditor):
 
     @torch.no_grad()
     def audit(self, model, baseline, fl_ctx):
+        deadline = time.monotonic() + self.max_seconds
         if model.params_type not in (ParamsType.FULL, ParamsType.DIFF) or not isinstance(model.params, dict):
             raise UnsupportedAudit("Only full parameter dictionaries and matching differences are supported")
         if baseline is not None:
@@ -89,7 +95,7 @@ class PTMemorizationAuditor(MemorizationAuditor):
             candidate = {k: torch.as_tensor(baseline.params[k]) + torch.as_tensor(v) for k, v in model.params.items()}
         else:
             candidate = {k: torch.as_tensor(v) for k, v in model.params.items()}
-        deadline = time.monotonic() + self.max_seconds
+        _check_deadline(deadline)
         python_state, numpy_state = random.getstate(), np.random.get_state()
         device = torch.device(self.device)
         devices = (
@@ -97,11 +103,16 @@ class PTMemorizationAuditor(MemorizationAuditor):
         )
         try:
             with torch.random.fork_rng(devices=devices):
-                module = self.build_model().to(device).eval().requires_grad_(False)
+                module = self.build_model()
+                _check_deadline(deadline)
+                module = module.to(device).eval().requires_grad_(False)
                 if module.state_dict().keys() != candidate.keys():
                     raise UnsupportedAudit("Partial or mismatched model state")
+                _check_deadline(deadline)
                 module.load_state_dict(candidate, strict=True)
+                _check_deadline(deadline)
                 result = self.evaluate(module, deadline)
+                _check_deadline(deadline)
                 report = {
                     "model_fingerprint": tensor_digest(candidate),
                     "scorer": f"{type(self).__module__}.{type(self).__name__}",
@@ -115,8 +126,11 @@ class PTMemorizationAuditor(MemorizationAuditor):
                 if not report["sample_counts"]:
                     raise UnsupportedAudit("No membership scores evaluated")
                 if baseline is not None:
+                    _check_deadline(deadline)
                     module.load_state_dict({k: torch.as_tensor(v) for k, v in baseline.params.items()}, strict=True)
+                    _check_deadline(deadline)
                     before = self.evaluate(module, deadline)
+                    _check_deadline(deadline)
                     report["baseline_fingerprint"] = tensor_digest(baseline.params)
                     for name, scores in result["scores"].items():
                         previous = before["scores"][name]
@@ -125,8 +139,7 @@ class PTMemorizationAuditor(MemorizationAuditor):
                         delta = {k: np.asarray(scores[k]) - np.asarray(previous[k]) for k in ("members", "nonmembers")}
                         auc = membership_auc(delta["members"], delta["nonmembers"])
                         report["metrics"].update({f"{name}/change_auc": auc, f"{name}/change_nauc": 2 * abs(auc - 0.5)})
-                if time.monotonic() > deadline:
-                    raise TimeoutError("Audit deadline exceeded")
+                _check_deadline(deadline)
                 return report
         finally:
             random.setstate(python_state)

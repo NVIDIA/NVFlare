@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import random
-import time
 
 import numpy as np
 import pytest
@@ -22,7 +21,9 @@ import torch
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.memorization_auditor import UnsupportedAudit
+from nvflare.app_opt.pt import memorization_auditor
 from nvflare.app_opt.pt.memorization_auditor import PTMemorizationAuditor, membership_auc
+from tests.timing_utils import isolate_time
 
 
 class TinyAuditor(PTMemorizationAuditor):
@@ -75,11 +76,37 @@ def test_auc_orientation_and_ties():
         membership_auc([float("nan")], [1])
 
 
-def test_timeout_and_partial_updates():
-    auditor = TinyAuditor(max_seconds=0.001)
-    auditor.evaluate = lambda *args: (time.sleep(0.01) or {"scores": {"x": {"members": [1], "nonmembers": [0]}}})
-    model = FLModel(params={"weight": torch.tensor([[1.0]])})
+@pytest.mark.parametrize("expire_after", ["construction", "candidate"])
+def test_expired_budget_does_not_start_next_audit_phase(monkeypatch, expire_after):
+    now = [0.0]
+    clock = isolate_time(monkeypatch, memorization_auditor)
+    monkeypatch.setattr(clock, "monotonic", lambda: now[0])
+    auditor = TinyAuditor(max_seconds=1.0)
+    build, evaluate = auditor.build_model, auditor.evaluate
+    evaluations = []
+
+    def build_model():
+        module = build()
+        if expire_after == "construction":
+            now[0] = 2.0
+        return module
+
+    def evaluate_model(module, deadline):
+        evaluations.append(module)
+        result = evaluate(module, deadline)
+        now[0] = 2.0
+        return result
+
+    monkeypatch.setattr(auditor, "build_model", build_model)
+    monkeypatch.setattr(auditor, "evaluate", evaluate_model)
+    model = FLModel(params={"weight": torch.tensor([[1.0]])}, current_round=0)
+    rng = torch.get_rng_state()
     with pytest.raises(TimeoutError):
-        auditor.audit(model, None, FLContext())
+        auditor.audit(model, model, FLContext())
+    assert len(evaluations) == (0 if expire_after == "construction" else 1)
+    assert torch.equal(torch.get_rng_state(), rng)
+
+
+def test_partial_updates_are_unsupported():
     with pytest.raises(UnsupportedAudit):
         TinyAuditor().audit(FLModel(params={"other": torch.tensor([1.0])}), None, FLContext())

@@ -73,7 +73,7 @@ class AuditSnapshotFilter(ModelFilter):
         if not isinstance(snapshot, AuditModelSnapshot):
             raise TypeError("snapshot_id must name an AuditModelSnapshot")
         snapshot.capture(model, fl_ctx)
-        return model
+        return None
 
     def process(self, shareable, fl_ctx):
         try:
@@ -132,6 +132,8 @@ class MemorizationAuditFilter(ModelFilter):
                     dxo = from_shareable(shareable)
                 except ValueError:
                     report["reason"] = "non_model_result"
+                except Exception as exc:
+                    report.update(status="failed", reason=type(exc).__name__)
                 else:
                     params = dxo.data.get("params") if dxo.data_kind == DataKind.FL_MODEL else dxo.data
                     if dxo.data_kind == DataKind.COLLECTION:
@@ -190,7 +192,7 @@ class MemorizationAuditFilter(ModelFilter):
             report.update(status="failed", reason=type(exc).__name__, metrics={})
         report["elapsed_seconds"] = time.monotonic() - begin
         self._report(report, fl_ctx)
-        return model
+        return None
 
     def _report(self, report, fl_ctx):
         self._reporter.report(report, fl_ctx)

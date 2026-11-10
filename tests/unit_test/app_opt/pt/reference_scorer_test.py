@@ -71,3 +71,29 @@ def test_replaced_tensor_cannot_reuse_cached_scores_when_object_id_is_recycled(t
     with pytest.raises(ValueError, match="Reference changed"):
         scorer.score(inputs, inputs)
     assert scorer.cache_hits == 0
+
+
+@pytest.mark.parametrize("change", ["dtype", "storage"])
+def test_reference_conversion_or_storage_replacement_rejects_cached_scores(tmp_path, change):
+    model = TinyLM()
+    scorer = FrozenReferenceScorer(model, "tokenizer", "context", tmp_path)
+    inputs = torch.tensor([[1, 2, 3]])
+    scorer.score(inputs, inputs)
+    if change == "dtype":
+        model.half()
+    else:
+        model.embed.weight.data = torch.zeros_like(model.embed.weight)
+
+    with pytest.raises(ValueError, match="Reference changed"):
+        scorer.score(inputs, inputs)
+    assert scorer.cache_hits == 0 and model.calls == 1
+
+
+def test_online_scoring_does_not_hash_inputs(monkeypatch):
+    model = TinyLM()
+    scorer = FrozenReferenceScorer(model, "tokenizer", "context")
+    monkeypatch.setattr(reference_scorer, "tensor_digest", lambda *_: pytest.fail("online inputs were hashed"))
+    inputs = torch.tensor([[1, 2, 3]])
+    scores, mask = scorer.score(inputs, inputs)
+    assert torch.isfinite(scores).all() and mask.all()
+    assert model.calls == 1

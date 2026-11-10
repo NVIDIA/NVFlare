@@ -7,9 +7,15 @@ accompany this report and bind the Python sources at that commit. A subsequent
 coverage-checker fix handles SDK failure reports with unknown site/round identities;
 an in-process regression generates an actual filter report and checks JSON diagnostics
 and exit status 1. That fix was validated locally, without rerunning the H100 workflow.
-The SDK classes and numerical/runtime code are unchanged. The historical
-[525-fit benchmark](../TRAP_DP_RESULTS.md) used the earlier research implementation;
-this run separately exercises the SDK classes shipped in the PR. Neither establishes
+A later review also tightened exact component-ID registration and reference
+mutation detection, contained non-ValueError DXO decoding failures, made observer
+callbacks avoid model re-encoding, skipped input hashing when caching is off, and
+added deadline checks between audit phases. These changes have focused local
+regression coverage; the H100 workflow has not been
+rerun after them. The measurements below belong to the pinned revision, not the
+updated implementation. The TRAP equation and audit metric formulas are unchanged.
+The historical [525-fit benchmark](../TRAP_DP_RESULTS.md) used the earlier research
+implementation; this run separately exercises the SDK classes at the pinned revision. Neither establishes
 general production readiness.
 
 ## Workload and runtime

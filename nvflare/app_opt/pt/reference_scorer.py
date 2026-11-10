@@ -41,8 +41,10 @@ class FrozenReferenceScorer:
     Keep this object separate from the target module and its optimizer. Supply a
     tokenizer fingerprint and context/scoring identity covering tokenization and
     model configuration. The reference must remain immutable after construction;
-    ordinary in-place weight changes are rejected. Recreate the scorer to change
-    the reference. Cached scores are potentially sensitive local artifacts.
+    ordinary in-place changes, dtype/device conversions and storage replacement
+    are rejected. In-place writes through .data or external storage aliases bypass
+    version tracking and are unsupported. Recreate the scorer after any change.
+    Cached scores are potentially sensitive local artifacts.
     """
 
     @experimental("FrozenReferenceScorer API may change")
@@ -66,7 +68,7 @@ class FrozenReferenceScorer:
 
     def _model_versions(self):
         return [
-            (name, id(t), t._version)
+            (name, id(t), t._version, t.device, t.dtype, tuple(t.shape), t.stride(), t.data_ptr())
             for name, t in list(self.model.named_parameters()) + list(self.model.named_buffers())
         ]
 
@@ -76,8 +78,10 @@ class FrozenReferenceScorer:
             raise ValueError("Reference changed; construct a new FrozenReferenceScorer")
         self.model.eval()
         inputs = {"input_ids": input_ids, **model_inputs}
-        key = hashlib.sha256((self.identity + tensor_digest({**inputs, "labels": labels})).encode()).hexdigest()
-        path = self.cache_dir / f"{key}.pt" if self.cache_dir else None
+        path = None
+        if self.cache_dir is not None:
+            key = hashlib.sha256((self.identity + tensor_digest({**inputs, "labels": labels})).encode()).hexdigest()
+            path = self.cache_dir / f"{key}.pt"
         if path and path.exists():
             cached = torch.load(path, map_location=input_ids.device, weights_only=True)
             self.cache_hits += 1

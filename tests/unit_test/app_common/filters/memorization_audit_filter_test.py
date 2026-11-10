@@ -60,11 +60,15 @@ def test_schedule_snapshot_preservation_and_retry_report(tmp_path, round_number,
             params={"w": 2}, metrics={"accuracy": 0.7}, meta={"NUM_STEPS_CURRENT_ROUND": 2}, current_round=round_number
         )
     )
+    incoming_before = json.dumps(incoming, sort_keys=True)
+    outgoing_before = json.dumps(outgoing, sort_keys=True)
     filt = MemorizationAuditFilter("auditor", "snapshot", frequency=2)
     for _ in range(2):
         AuditSnapshotFilter("snapshot").process(incoming, fl_ctx)
         result = filt.process(outgoing, fl_ctx)
         assert result is outgoing
+        assert json.dumps(incoming, sort_keys=True) == incoming_before
+        assert json.dumps(outgoing, sort_keys=True) == outgoing_before
         assert components["snapshot"].pop(FLModel(current_round=round_number), fl_ctx) is None
         model = FLModelUtils.from_shareable(result)
         assert model.params == {"w": 2}
@@ -181,3 +185,23 @@ def test_baseline_released_even_when_early_report_cannot_be_written(tmp_path):
 
     assert components["snapshot"].pop(baseline, fl_ctx) is None
     assert not list(tmp_path.rglob("*.json"))
+
+
+def test_tensor_dxo_decode_failure_reports_and_preserves_result(tmp_path):
+    torch = pytest.importorskip("torch")
+    fl_ctx, components = context(tmp_path)
+    baseline = FLModel(params={"w": 1}, current_round=0)
+    components["snapshot"].capture(baseline, fl_ctx)
+    components["auditor"].audit = Mock()
+    outgoing = DXO(DataKind.WEIGHTS, {"w": 2}).to_shareable()
+    malformed = torch.ones(2)
+    outgoing["DXO"] = malformed
+
+    assert MemorizationAuditFilter("auditor", "snapshot").process(outgoing, fl_ctx) is outgoing
+
+    assert outgoing["DXO"] is malformed
+    report = json.loads(next(tmp_path.rglob("*.json")).read_text())
+    assert report["status"] == "failed" and report["reason"] == "RuntimeError"
+    assert not report["metrics"]
+    assert components["snapshot"].pop(baseline, fl_ctx) is None
+    components["auditor"].audit.assert_not_called()
