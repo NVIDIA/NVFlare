@@ -31,9 +31,9 @@ reference-based penalty and the supporting audit interfaces.
 
 The [benchmark report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/TRAP_DP_RESULTS.md)
 includes the completed GB300 research study. The November 6 H100 validation covers
-SDK revision `778d632e`; subsequent changes have focused local regression coverage
-and have not rerun that GPU workflow. The separate benchmark evidence and its
-limits are summarized below. TRAP is not differential privacy, and this proposal
+SDK revision `778d632e`; subsequent changes have focused local regression and
+simulator coverage and have not rerun that GPU workflow. The separate benchmark
+evidence and its limits are summarized below. TRAP is not differential privacy, and this proposal
 adds neither a DP mechanism nor a privacy accountant.
 
 ## Components and ownership
@@ -124,8 +124,7 @@ deletion policies.
 The general `ModelFilter` interface, its focused tests, and generic documentation
 were merged into `main` in [PR #5683](https://github.com/NVIDIA/NVFlare/pull/5683)
 ([issue #5682](https://github.com/NVIDIA/NVFlare/issues/5682)). This proposal builds
-on that merged implementation. Callback metrics handling is local to `ModelFilter`;
-`FLModelUtils` and `ModelLearnerExecutor` retain their upstream behavior.
+on that merged implementation.
 
 Auditing subclasses use the callback contract documented in
 [Model Filters](../programming_guide/filters.rst#model-filters).
@@ -139,8 +138,7 @@ and nested constructor-argument export; no Recipe or shared runtime changes are 
 On current main, `ClientRunner` materializes lazy input references for active input
 filters, and `ClientAPIExecutor` materializes external/attached-process results for
 active output filters or declared local consumers. This draft uses those existing
-paths and does not restore the removed launcher/pass-through configuration API.
-The audit runs in the client runtime, not in the trainer's live module.
+paths. The audit runs in the client runtime using an independent evaluation model.
 
 ## Audit lifecycle and observation
 
@@ -169,9 +167,8 @@ registered event handlers, so they must not depend on component lifecycle events
 `ClientRunner` passes the same task `FLContext` through input filters, the executor,
 and output filters. `AuditSnapshotFilter` deep-copies the incoming full model into
 a private Python attribute on the original context object, outside `FLContext.props`.
-The filters retain no model state themselves; there is no snapshot component, ID
-lookup, job/task/round storage key or run-event cleanup. One paired filter chain
-per task context is supported.
+The task context owns the snapshot lifetime; the filters retain no model state
+between tasks. One paired filter chain per task context is supported.
 
 This boundary matters for `MultiProcessExecutor`: private/non-sticky *properties*
 are still serialized by `get_serializable_data()` for task and event relays.
@@ -335,9 +332,11 @@ final global-checkpoint evaluation. Reference scores, loss and all 76 parameter
 gradients matched independent calculations with zero measured error. The
 [validation report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/huggingface/SDK_VALIDATION.md)
 records the measured memory/runtime scope and identifies subsequent fixes validated
-locally; those later revisions have not rerun the GPU workflow. A tiny model example is
-also available as a wiring smoke check. Current-main Client API materialization
-tests cover the reused runtime paths.
+locally; those later revisions have not rerun the GPU workflow. The tiny model
+simulator passed at `62873bbcc` on November 10 after the baseline moved to a context
+attribute: two clients, two rounds and all four completed paired audits through
+the real ClientRunner. This smoke does not launch `MultiProcessExecutor` workers.
+Current-main Client API materialization tests cover the reused runtime paths.
 
 Before removing experimental status, review the API and security contracts and
 publish paired utility/leakage measurements, all defense strengths and individual
@@ -349,7 +348,11 @@ that empirical mitigation has a formal DP guarantee.
 
 Open review questions include API maturity/naming, audit coverage reporting,
 deployment-specific reference provisioning and storage retention, and whether a
-future isolated audit worker is needed for hard time/memory bounds.
+future isolated audit worker is needed for hard time/memory bounds. The baseline
+uses a feature-private Python attribute because context properties are serialized.
+Maintainers should review whether a general process-local context slot warrants
+a separate framework API; this feature relies only on the same-context lifecycle
+described above.
 
 ## Benchmark evidence
 
@@ -358,7 +361,7 @@ provides all 525 fits and 210 final evaluations, complete strength/seed tables,
 negative outcomes, privacy and compute accounting, and eight PNG/PDF figure pairs.
 It uses the frozen research implementation preceding this SDK refactor; the
 separate H100 workflow validates its recorded SDK revision; later fixes have
-focused local regression coverage.
+focused local regression and simulator coverage.
 
 TRAP passed 60/84 paired accuracy-and-leakage screens, falling to 24/84 when the
 separate CE criterion was also required. The tested DP settings passed 0/84 in this

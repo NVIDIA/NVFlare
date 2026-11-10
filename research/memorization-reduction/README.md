@@ -64,10 +64,16 @@ overlap. Real deployments must establish reference provenance, use representativ
 cohorts, choose attack scores and budget memory/compute. The example's random-token
 data and short training are intentionally unsuitable for scientific conclusions.
 
-The minimal smoke example was also checked on CPU on November 3, 2026
-([original revision](https://github.com/holgerroth/NVFlare/commit/70f1d4acddece1c4a0e2e7ca807c8e23f83a0c3e)):
-four completed reports and successful export. The H100 validation above is the
-representative SDK execution evidence.
+The minimal smoke example passed again on November 10, 2026 at
+[`62873bbcc`](https://github.com/holgerroth/NVFlare/commit/62873bbcc7882d0d1fce7266cf8086024e904416),
+after the baseline moved to a context attribute. The unchanged `python job.py` ran
+two clients for two rounds on macOS arm64, Python 3.12.9 and PyTorch 2.11.0.
+All four paired reports completed with the expected site/round identities and
+32 members/32 nonmembers. Baseline fingerprints agreed between clients within
+each round and changed between rounds; a global checkpoint was written and all
+three server/client error logs were empty. This exercises the real ClientRunner
+input/output filter lifecycle. It does not launch `MultiProcessExecutor` workers
+or repeat the H100 validation above.
 
 ## Project layout and shared components
 

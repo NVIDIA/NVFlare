@@ -33,7 +33,23 @@ The historical [525-fit benchmark](../TRAP_DP_RESULTS.md) used the earlier resea
 implementation; this run separately exercises the SDK classes at the pinned revision. Neither establishes
 general production readiness.
 
-## Workload and runtime
+## Current API simulator smoke
+
+On November 10, 2026, the unchanged parent `../job.py` passed at SDK revision
+[`62873bbcc`](https://github.com/holgerroth/NVFlare/commit/62873bbcc7882d0d1fce7266cf8086024e904416)
+with the context-attribute baseline: two real simulator clients, two rounds and
+all four completed paired audits. Expected site/round identities, 32 members and
+32 nonmembers per report, finite metrics, shared per-round baseline fingerprints,
+a changed baseline in round 1, the saved global checkpoint and empty error logs
+were checked. The command was `python job.py` from the parent research directory,
+using macOS arm64, Python 3.12.9 and PyTorch 2.11.0. `PYTHONPATH` selected the
+checkout; the simulator workspace and CPU thread limits were set externally.
+A five-minute watchdog did not fire.
+This verifies the real ClientRunner filter lifecycle after the baseline change.
+It does not exercise `MultiProcessExecutor` workers or update the H100 numerical,
+runtime or memory measurements below.
+
+## Workload and runtime (H100)
 
 One NVIDIA H100 NVL (96 GB nominal), with two simulator clients sharing the device.
 The isolated container had eight CPUs, a 24-GiB host-memory limit and 4-GiB shared
