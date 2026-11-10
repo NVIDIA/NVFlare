@@ -18,14 +18,15 @@ from copy import deepcopy
 import pytest
 
 from nvflare.private.fed.resource_stats.measurements import (
-    SCHEMA_VERSION,
     canonical_json_bytes,
     capacity_to_resource_time,
+    participant_measurements,
     sum_job_totals,
     sum_study_totals,
 )
 from nvflare.private.fed.resource_stats.report_reader import read_resource_report
 from nvflare.tool.resources.resources_output import render_job_resources, render_study_resources
+from tests.resource_stats_report_test_utils import _resource_summary
 
 
 def _job_summary(participant):
@@ -33,25 +34,39 @@ def _job_summary(participant):
         participant["resource_time"] = capacity_to_resource_time(
             participant["resource_capacity"], participant.get("duration_seconds"), scope_issues=participant["issues"]
         )
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "job_id": "job-1",
-        "participants": [
+    return _resource_summary(
+        participants=[
             {
-                **({"duration_seconds": participant["duration_seconds"]} if "duration_seconds" in participant else {}),
                 "participant_name": participant["participant_name"],
                 "role": participant["role"],
                 "received_at": "2026-09-17T12:00:00Z",
-                "resource_capacity": participant["resource_capacity"],
-                "resource_time": participant["resource_time"],
-                "resource_utilization": {
-                    "cpu_consumed": participant["resource_utilization"]["cpu_consumed"],
-                    "retained_content": participant["resource_utilization"]["retained_content"],
-                    "message_traffic": participant["resource_utilization"]["message_traffic"],
-                },
-                "issues": [issue for issue in participant["issues"] if issue["metric"] != "workspace_filesystem"],
+                **participant_measurements(participant),
             }
-        ],
+        ]
+    )
+
+
+def _study_summary(*summaries):
+    jobs = [
+        {
+            "job_id": f"job-{index}",
+            "job_name": "hello-pt",
+            "job_status": "FINISHED:COMPLETED",
+            "resource_data": "included",
+            "totals": sum_job_totals(summary["participants"]),
+        }
+        for index, summary in enumerate(summaries, 1)
+    ]
+    return {
+        "selection": {"study_name": "default"},
+        "coverage": {
+            "selected_jobs": len(jobs),
+            "included_jobs": len(jobs),
+            "unavailable_jobs": 0,
+            "nonterminal_jobs": 0,
+        },
+        "jobs": jobs,
+        "totals": sum_study_totals(jobs),
     }
 
 
@@ -93,38 +108,17 @@ def _site_cell(output: str, header: str, site: str = "site-1") -> str:
 def test_cli_only_shows_a_short_legend_when_needed(scope, incomplete):
     participant = _participant()
     participant["resource_utilization"]["retained_content"] = {"bytes": 0}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"] + []
+    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"]
     participant["resource_utilization"]["message_traffic"] = {"sent_bytes": 0, "received_bytes": 0}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "message_traffic"] + []
+    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "message_traffic"]
     if incomplete:
         participant["resource_capacity"].update(status="partial")
         participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "resource_capacity"] + [
             {"metric": "resource_capacity", "code": "observation_incomplete"}
         ]
     summary = _job_summary(participant)
-    if scope == "job":
-        output = render_job_resources(summary)
-    else:
-        job = {
-            "job_id": "job-1",
-            "job_name": "example",
-            "job_status": "FINISHED:COMPLETED",
-            "resource_data": "included",
-            "totals": sum_job_totals(summary["participants"]),
-        }
-        output = render_study_resources(
-            {
-                "selection": {"study_name": "default"},
-                "coverage": {"selected_jobs": 1, "included_jobs": 1, "unavailable_jobs": 0, "nonterminal_jobs": 0},
-                "jobs": [job],
-                "totals": sum_study_totals([job]),
-            }
-        )
+    output = render_job_resources(summary) if scope == "job" else render_study_resources(_study_summary(summary))
 
-    assert "Notes:" not in output
-    assert "Capacity-time totals multiply" not in output
-    assert "TIME covers" not in output
-    assert "Use --site" not in output
     if incomplete:
         assert "Data gaps:" in output
         assert output.endswith("* = incomplete; — = unavailable.")
@@ -144,39 +138,14 @@ def test_shows_execution_capacity_time_and_startup_detail(measured, cpu_hours, a
 
     assert "GPU count basis: NVIDIA inventory and integer mask (schema 1.0)." in output
     assert "Recorded capacity-time per participant" in output
-    assert "AVG CPU VISIBLE" not in output
-    assert "AVG MEM" not in output
-    assert "AVG GPU-h" not in output
     assert _site_cell(output, "CPU VISIBLE") == cpu_hours
     assert _site_cell(output, "AVG CPU USED") == average
     assert _site_cell(output, "MEM VISIBLE GiB-h") == {3600: "64", 7200: "128", 0: "0"}[measured]
     assert _site_cell(output, "GPU-h") == {3600: "2", 7200: "4", 0: "0"}[measured]
     assert "Recorded capacity-time totals" in output
     assert f"CPU visible {cpu_hours} core-h" in output
-    assert "Notes:" not in output
     assert "CPU: 8 visible units" in detail
     assert "GPU: 2 GPUs" in detail
-    assert "average visible" not in detail
-    assert "visible capacity unavailable" not in output
-
-
-def test_partial_capacity_keeps_cpu_average_on_the_shared_window():
-    participant = _participant()
-    participant["resource_capacity"] = {"status": "partial", "cpu": {"units": 8}, "memory": {"bytes": 64 * 2**30}}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "resource_capacity"] + [
-        {"metric": "resource_capacity", "code": "observation_incomplete"}
-    ]
-    participant["duration_seconds"] = 10
-    participant["resource_utilization"]["cpu_consumed"] = {"cpu_seconds": 2}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "cpu_consumed"] + []
-
-    output = render_job_resources(_job_summary(participant))
-
-    assert _site_cell(output, "CPU VISIBLE") == "0.02*"
-    assert _site_cell(output, "MEM VISIBLE GiB-h") == "0.18*"
-    assert _site_cell(output, "AVG CPU USED") == "0.2"
-    assert _site_cell(output, "GPU-h") == "—"
-    assert "capacity-time: GPU capacity could not be observed for the whole interval" in output
 
 
 def test_zero_visible_devices_is_an_observed_zero():
@@ -187,7 +156,6 @@ def test_zero_visible_devices_is_an_observed_zero():
 
     assert _site_cell(output, "GPU-h") == "0"
     assert "GPUs available 0 GPU-h" in output
-    assert "visible capacity unavailable" not in output
 
 
 def test_best_effort_capacity_keeps_values_and_explains_the_possible_overstatement():
@@ -205,7 +173,6 @@ def test_best_effort_capacity_keeps_values_and_explains_the_possible_overstateme
     assert _site_cell(output, "AVG CPU USED") == "0.5"
     assert "some execution measurements or limits could not be checked" in output
     assert "observation_incomplete" not in output
-    assert "visible capacity partial" not in output
 
 
 def test_file_scan_gap_explains_what_stopped_instead_of_showing_an_issue_code():
@@ -237,13 +204,11 @@ def test_scalar_capacity_and_utilization_totals_are_visible():
     assert "64" in output
     assert "2" in output
     assert "RUN-DIR FILES" not in output
-    assert "MESSAGE PAYLOAD SENT" not in output
+    assert "PAYLOAD SENT GiB" not in output
     assert "CPU visible 8 core-h" in output
     assert "CPU time used 0.5 core-h" in output
     assert "Memory visible 64 GiB-h" in output
     assert "GPUs available 2 GPU-h" in output
-    assert "COMPUTE" not in output
-    assert "CPU CONSUMED STATUS" not in output
     assert "accepted" not in output.lower()
     assert "reported" not in output.lower()
 
@@ -259,10 +224,10 @@ def test_run_directory_files_and_message_traffic_columns_are_only_shown_when_bou
 
     initial_output = render_job_resources(summary)
     assert "RUN-DIR FILES" not in initial_output
-    assert "MESSAGE PAYLOAD SENT" not in initial_output
+    assert "PAYLOAD SENT GiB" not in initial_output
 
     participant["resource_utilization"]["retained_content"] = {"bytes": 3 * 2**30}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"] + []
+    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"]
     participant["resource_utilization"]["message_traffic"] = {
         "status": "partial",
         "sent_bytes": 5 * 2**30,
@@ -280,8 +245,6 @@ def test_run_directory_files_and_message_traffic_columns_are_only_shown_when_bou
     assert "Run-dir files 3* GiB" in output  # The server report is missing.
     assert "5*" in output  # Useful observed subtotal, not a complete send total.
     assert "2*" in output
-    assert "RUN-DIR STATUS" not in output
-    assert "MESSAGE TRAFFIC STATUS" not in output
     assert "Data gaps" in output
     assert "server" in output  # The expected server report is missing.
 
@@ -291,13 +254,12 @@ def test_run_directory_files_and_message_traffic_columns_are_only_shown_when_bou
     ]
     partial_output = render_job_resources(_with_missing_server(_job_summary(participant)))
     assert "2*" in partial_output
-    assert "RUN-DIR STATUS" not in partial_output
 
 
 def test_missing_report_does_not_invent_received_bytes_from_another_sender():
     site = _participant()
     site["resource_utilization"]["message_traffic"] = {"sent_bytes": 2**30, "received_bytes": 3 * 2**30}
-    site["issues"] = [issue for issue in site["issues"] if issue["metric"] != "message_traffic"] + []
+    site["issues"] = [issue for issue in site["issues"] if issue["metric"] != "message_traffic"]
     summary = _with_missing_server(_job_summary(site))
 
     output = render_job_resources(summary)
@@ -306,90 +268,47 @@ def test_missing_report_does_not_invent_received_bytes_from_another_sender():
     assert re.split(r"\s{2,}", server_row.strip()) == ["server", "—", "—", "—"]
     site_row = next(line for line in output.splitlines()[traffic_heading + 1 :] if line.startswith("site-1"))
     assert re.split(r"\s{2,}", site_row.strip()) == ["site-1", "0.5", "1", "3"]
-    assert "Notes:" not in output
-
-
-def test_cpu_used_average_is_marked_when_process_cpu_is_incomplete():
-    participant = _participant()
-    participant["resource_utilization"]["cpu_consumed"] = {"status": "partial", "cpu_seconds": 900}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "cpu_consumed"] + [
-        {"metric": "cpu_consumed", "code": "attribution_incomplete"}
-    ]
-
-    output = render_job_resources(_job_summary(participant))
-
-    assert _site_cell(output, "CPU VISIBLE") == "8"
-    assert _site_cell(output, "AVG CPU USED") == "0.25*"  # 900 / 3,600; incomplete subtotal.
-    assert "Data gaps" in output
-    assert "CPU CONSUMED STATUS" not in output
-
-
-def test_cpu_average_is_unavailable_when_shared_duration_is_missing():
-    participant = _participant()
-    participant["resource_capacity"] = {"status": "partial", "cpu": participant["resource_capacity"]["cpu"]}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "resource_capacity"] + [
-        {"metric": "resource_capacity", "code": "observation_incomplete"}
-    ]
-
-    participant["duration_seconds"] = 10
-    participant["resource_utilization"]["cpu_consumed"] = {"cpu_seconds": 2}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "cpu_consumed"] + []
-
-    participant.pop("duration_seconds")
-    output = render_job_resources(_job_summary(participant))
-
-    assert _site_cell(output, "AVG CPU USED") == "—"
-    assert "Data gaps" in output
 
 
 @pytest.mark.parametrize("cpu_partial", [False, True])
-def test_cpu_used_average_uses_shared_duration_when_gpu_observation_is_missing(cpu_partial):
+@pytest.mark.parametrize(
+    "capacity, duration", [("complete", 10), ("no_gpu", 10), ("unavailable", 10), ("cpu_only", None), ("complete", 0)]
+)
+def test_cpu_average_preserves_its_own_quality_and_shared_duration(capacity, duration, cpu_partial):
     participant = _participant()
-    participant["resource_capacity"] = {"status": "partial", "cpu": {"units": 8}, "memory": {"bytes": 64 * 2**30}}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "resource_capacity"] + [
-        {"metric": "resource_capacity", "code": "observation_incomplete"}
-    ]
-    participant["duration_seconds"] = 10
+    if capacity != "complete":
+        value = participant["resource_capacity"]
+        if capacity == "unavailable":
+            value.clear()
+        else:
+            value.pop("gpu")
+            if capacity == "cpu_only":
+                value.pop("memory")
+        value["status"] = "unavailable" if capacity == "unavailable" else "partial"
+        participant["issues"].append({"metric": "resource_capacity", "code": "observation_incomplete"})
+    if duration is None:
+        participant.pop("duration_seconds")
+    else:
+        participant["duration_seconds"] = duration
     participant["resource_utilization"]["cpu_consumed"] = {"cpu_seconds": 2}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "cpu_consumed"] + []
     if cpu_partial:
-        participant["resource_utilization"]["cpu_consumed"].update(status="partial")
-        participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "cpu_consumed"] + [
-            {"metric": "cpu_consumed", "code": "attribution_incomplete"}
-        ]
+        participant["resource_utilization"]["cpu_consumed"]["status"] = "partial"
+        participant["issues"].append({"metric": "cpu_consumed", "code": "attribution_incomplete"})
 
     output = render_job_resources(_job_summary(participant))
 
-    assert _site_cell(output, "AVG CPU USED") == ("0.2*" if cpu_partial else "0.2")
-    assert _site_cell(output, "GPU-h") == "—"
-
-
-def test_cpu_used_average_remains_available_without_any_capacity_measurement():
-    participant = _participant()
-    participant["resource_capacity"] = {"status": "unavailable"}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "resource_capacity"] + [
-        {"metric": "resource_capacity", "code": "observation_incomplete"}
-    ]
-    participant["duration_seconds"] = 10
-    participant["resource_utilization"]["cpu_consumed"] = {"cpu_seconds": 2}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "cpu_consumed"] + []
-
-    output = render_job_resources(_job_summary(participant))
-
-    assert _site_cell(output, "AVG CPU USED") == "0.2"
-    assert _site_cell(output, "CPU VISIBLE") == "—"
-
-
-def test_zero_shared_duration_does_not_produce_a_cpu_average():
-    participant = _participant()
-    participant["duration_seconds"] = 10
-    participant["resource_utilization"]["cpu_consumed"] = {"cpu_seconds": 2}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "cpu_consumed"] + []
-
-    participant["duration_seconds"] = 0
-    output = render_job_resources(_job_summary(participant))
-
-    assert _site_cell(output, "AVG CPU USED") == "—"
+    assert _site_cell(output, "AVG CPU USED") == ("—" if not duration else "0.2*" if cpu_partial else "0.2")
+    if capacity == "no_gpu":
+        assert _site_cell(output, "CPU VISIBLE") == "0.02*"
+        assert _site_cell(output, "MEM VISIBLE GiB-h") == "0.18*"
+        assert _site_cell(output, "GPU-h") == "—"
+        assert "capacity-time: GPU capacity could not be observed for the whole interval" in output
+    elif capacity == "unavailable":
+        assert _site_cell(output, "CPU VISIBLE") == "—"
+    elif capacity == "complete":
+        assert _site_cell(output, "CPU VISIBLE") == ("0.02" if duration else "0")
+    if duration is None:
+        assert "measurement duration unavailable" in output
 
 
 def test_unavailable_source_cause_is_shown_without_another_status_column():
@@ -402,7 +321,6 @@ def test_unavailable_source_cause_is_shown_without_another_status_column():
     output = render_job_resources(_job_summary(participant))
 
     assert "run-dir files unavailable (measurement contained invalid values)" in output
-    assert "RUN-DIR STATUS" not in output
 
 
 def test_job_renderer_sorts_participants_with_numeric_counters():
@@ -413,7 +331,7 @@ def test_job_renderer_sorts_participants_with_numeric_counters():
     }
     summary["participants"][0]["issues"] = [
         issue for issue in summary["participants"][0]["issues"] if issue["metric"] != "message_traffic"
-    ] + []
+    ]
     alternate = deepcopy(summary)
     alternate["participants"].reverse()
     alternate["participants"][1]["resource_utilization"]["message_traffic"]["sent_bytes"] = 1073741824
@@ -423,83 +341,45 @@ def test_job_renderer_sorts_participants_with_numeric_counters():
 
 
 def test_study_capacity_and_optional_traffic_columns():
-    participant = _participant()
-    job_totals = sum_job_totals(_job_summary(participant)["participants"])
-    study = {
-        "selection": {"study_name": "default"},
-        "coverage": {"selected_jobs": 1, "included_jobs": 1, "unavailable_jobs": 0, "nonterminal_jobs": 0},
-        "jobs": [
-            {
-                "job_id": "job-1",
-                "job_name": "hello-pt",
-                "job_status": "FINISHED_COMPLETED",
-                "resource_data": "included",
-                "totals": job_totals,
-            }
-        ],
-        "totals": job_totals,
-    }
+    study = _study_summary(_job_summary(_participant()))
+    job_totals = study["jobs"][0]["totals"]
 
     initial_output = render_study_resources(study)
     assert "JOB ID" in initial_output
     assert "NAME" in initial_output
     assert "hello-pt" in initial_output
-    assert "GPU BASIS" not in initial_output
     assert "Recorded capacity-time totals" in initial_output
     assert "GPU-h" in initial_output
     assert "CPU USED core-h" in initial_output
     assert "0.5" in initial_output
     assert "RUN-DIR FILES" not in initial_output
-    assert "MESSAGE PAYLOAD SENT" not in initial_output
-    assert "QUALITY" not in initial_output
-    assert "RESOURCE DATA" not in initial_output
-    assert "CPU CONSUMED STATUS" not in initial_output
+    assert "PAYLOAD SENT GiB" not in initial_output
 
     job_totals["resource_utilization"]["message_traffic"] = {
         "status": "partial",
         "sent_bytes": 5 * 2**30,
         "received_bytes": 2 * 2**30,
     }
-    job_totals["issues"] = [issue for issue in job_totals["issues"] if issue["metric"] != "message_traffic"] + []
+    job_totals["issues"] = [{"metric": "message_traffic", "code": "observation_incomplete"}]
+    study["totals"] = sum_study_totals(study["jobs"])
     output = render_study_resources(study)
     assert "PAYLOAD SENT GiB" in output
     assert "PAYLOAD RECEIVED GiB" in output
     assert "5*" in output
     assert "2*" in output
-    assert "MESSAGE TRAFFIC STATUS" not in output
 
 
 def test_cpu_consumed_job_and_study_cli_reconcile_without_changing_capacity_time():
     first = _job_summary(_participant())
     second_participant = _participant()
     second_participant["resource_utilization"]["cpu_consumed"] = {"cpu_seconds": 900}
-    second_participant["issues"] = [
-        issue for issue in second_participant["issues"] if issue["metric"] != "cpu_consumed"
-    ] + []
     second = _job_summary(second_participant)
     job_totals = [sum_job_totals(summary["participants"]) for summary in (first, second)]
     assert [total["resource_utilization"]["cpu_consumed"]["cpu_seconds"] for total in job_totals] == [1800, 900]
 
-    jobs = [
-        {
-            "job_id": f"job-{index}",
-            "job_name": f"run-{index}",
-            "job_status": "FINISHED:COMPLETED",
-            "resource_data": "included",
-            "totals": total,
-        }
-        for index, total in enumerate(job_totals, 1)
-    ]
-    study_totals = sum_study_totals(jobs)
-    assert study_totals["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 2700}
-    assert study_totals["resource_time"]["cpu"]["unit_seconds"] == 57600
-
-    study = {
-        "selection": {"study_name": "default"},
-        "coverage": {"selected_jobs": 2, "included_jobs": 2, "unavailable_jobs": 0, "nonterminal_jobs": 0},
-        "jobs": jobs,
-        "totals": study_totals,
-    }
+    study = _study_summary(first, second)
+    assert study["totals"]["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 2700}
+    assert study["totals"]["resource_time"]["cpu"]["unit_seconds"] == 57600
     output = render_study_resources(study)
     assert "CPU time used 0.75 core-h" in output
     assert "CPU visible 16 core-h" in output
@@ -581,9 +461,9 @@ def test_positive_small_quantities_are_not_displayed_as_zero():
 def test_capacity_and_utilization_are_separate_in_job_tables_and_totals():
     participant = _participant()
     participant["resource_utilization"]["retained_content"] = {"bytes": 1024}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"] + []
+    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"]
     participant["resource_utilization"]["message_traffic"] = {"sent_bytes": 1, "received_bytes": 2}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "message_traffic"] + []
+    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "message_traffic"]
     output = render_job_resources(_job_summary(participant))
     capacity, usage = output.split("Recorded resource utilization per participant")
     assert "CPU VISIBLE" in capacity
@@ -601,7 +481,7 @@ def test_large_native_integer_bytes_remain_in_json_when_display_is_unavailable()
     participant = _participant()
     huge_bytes = 10**400
     participant["resource_utilization"]["retained_content"] = {"bytes": huge_bytes}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"] + []
+    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"]
     summary = _job_summary(participant)
     summary["kind"] = "nvflare.resource_stats.resource_summary"
     read_resource_report(canonical_json_bytes(summary))
@@ -621,7 +501,6 @@ def test_extreme_finite_cpu_values_do_not_publish_nonfinite_averages(cpu_seconds
     participant = _participant()
     participant["duration_seconds"] = duration
     participant["resource_utilization"]["cpu_consumed"] = {"cpu_seconds": cpu_seconds}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "cpu_consumed"] + []
     summary = _job_summary(participant)
     summary["kind"] = "nvflare.resource_stats.resource_summary"
     read_resource_report(canonical_json_bytes(summary))

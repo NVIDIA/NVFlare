@@ -24,7 +24,10 @@ from nvflare.private.fed.resource_stats.measurements import (
     aggregate_scope_issues,
     capacity_to_resource_time,
     scoped_measurement,
+    sum_job_totals,
+    sum_study_totals,
 )
+from tests.resource_stats_report_test_utils import _accepted_entry
 
 
 @pytest.mark.parametrize("memory_bytes", [0, 1024])
@@ -114,4 +117,45 @@ def test_aggregate_scope_issues_map_source_failures_and_retain_attribution():
         {"metric": "cpu_consumed", "code": "attribution_incomplete"},
         {"metric": "cpu_consumed", "code": "observation_incomplete"},
         {"metric": "message_traffic", "code": "observation_incomplete"},
+    ]
+
+
+def test_study_totals_include_only_jobs_with_data():
+    totals = sum_job_totals([_accepted_entry()])
+    jobs = [
+        {"resource_data": "included", "totals": totals},
+        {"resource_data": "unavailable"},
+        {"resource_data": "nonterminal"},
+    ]
+    assert sum_study_totals(jobs) == totals
+    assert totals["resource_time"]["gpu"] == {"instance_seconds": 2}
+    assert totals["resource_utilization"]["message_traffic"] == {"sent_bytes": 3, "received_bytes": 4}
+
+
+def test_empty_study_has_unavailable_totals_without_invented_zeros():
+    assert sum_study_totals([]) == {
+        "resource_time": {"status": "unavailable"},
+        "resource_utilization": {
+            field: {"status": "unavailable"} for field in ("cpu_consumed", "retained_content", "message_traffic")
+        },
+        "issues": [
+            {"metric": metric, "code": "observation_incomplete"}
+            for metric in ("cpu_consumed", "message_traffic", "resource_time", "retained_content")
+        ],
+    }
+
+
+def test_study_preserves_partial_subtotals_and_orders_distinct_causes():
+    totals = sum_job_totals([_accepted_entry()])
+    totals["resource_time"]["status"] = "partial"
+    totals["issues"] = [
+        {"metric": "resource_time", "code": code}
+        for code in ("observation_incomplete", "attribution_incomplete", "observation_incomplete")
+    ]
+    result = sum_study_totals([{"resource_data": "included", "totals": totals}])
+    assert result["resource_time"] == totals["resource_time"]
+    assert result["resource_utilization"] == totals["resource_utilization"]
+    assert result["issues"] == [
+        {"metric": "resource_time", "code": "attribution_incomplete"},
+        {"metric": "resource_time", "code": "observation_incomplete"},
     ]

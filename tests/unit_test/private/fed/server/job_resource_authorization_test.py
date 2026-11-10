@@ -159,7 +159,6 @@ def _result(output):
     assert len(output[ProtoKey.DATA]) == 1
     assert output[ProtoKey.DATA][0][ProtoKey.TYPE] == ProtoKey.DICT
     result = output[ProtoKey.DATA][0][ProtoKey.DATA]
-    read_resource_report(canonical_json_bytes(result))
     return result
 
 

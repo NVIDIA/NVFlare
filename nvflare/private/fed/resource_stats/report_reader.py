@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Read bounded participant, job and study reports at their receiving boundaries."""
+"""Read bounded participant and job reports at their receiving boundaries."""
 
 import json
 import re
 from datetime import datetime
 
 from .handoff import _read_capacity, _read_fields, _read_issues, _read_number, _read_usage, _read_workspace
-from .measurements import SCHEMA_VERSION, sum_job_totals, sum_study_totals
+from .measurements import SCHEMA_VERSION, sum_job_totals
 
 KIND_PARTICIPANT_SUMMARY = "nvflare.resource_stats.participant_summary"
 KIND_RESOURCE_SUMMARY = "nvflare.resource_stats.resource_summary"
@@ -28,13 +28,11 @@ MAX_STUDY_SUMMARY_BYTES = 64 * 1024 * 1024
 MAX_STUDY_JOBS = 10_000
 MAX_JOB_NAME_LENGTH = 255
 JOB_STATUS_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._:/+-]{0,63}$")
-STUDY_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$")
 MAX_PARTICIPANT_SUMMARY_BYTES = 1024 * 1024
 MAX_RESOURCE_SUMMARY_BYTES = 64 * 1024 * 1024
 MAX_RECORD_BYTES = {
     KIND_PARTICIPANT_SUMMARY: MAX_PARTICIPANT_SUMMARY_BYTES,
     KIND_RESOURCE_SUMMARY: MAX_RESOURCE_SUMMARY_BYTES,
-    KIND_STUDY_SUMMARY: MAX_STUDY_SUMMARY_BYTES,
 }
 MAX_PARTICIPANTS = 10_000
 MAX_JSON_DEPTH = 32
@@ -147,85 +145,6 @@ def _read_resource_summary(record):
     return {**record, "participants": participants}
 
 
-def _read_totals(value):
-    value = _read_fields(value, {"resource_time", "resource_utilization", "issues"})
-    utilization = _read_fields(value["resource_utilization"], {"cpu_consumed", "retained_content", "message_traffic"})
-    resource_time = _read_capacity(value["resource_time"], elapsed=True)
-    usage = {
-        "cpu_consumed": _read_usage(utilization["cpu_consumed"], {"cpu_seconds"}, integer=False),
-        "retained_content": _read_usage(utilization["retained_content"], {"bytes"}),
-        "message_traffic": _read_usage(utilization["message_traffic"], {"sent_bytes", "received_bytes"}),
-    }
-    issues = _read_issues(value["issues"], {"resource_time": resource_time, **usage})
-    if any(item["code"] not in {"observation_incomplete", "attribution_incomplete"} for item in issues):
-        raise ValueError("aggregate issues must describe derived quality")
-    return {"resource_time": resource_time, "resource_utilization": usage, "issues": issues}
-
-
-def _read_study_jobs(jobs):
-    if not isinstance(jobs, list) or len(jobs) > MAX_STUDY_JOBS:
-        raise ValueError("study requires a bounded job list")
-    result = []
-    identities = set()
-    for job in jobs:
-        if not isinstance(job, dict):
-            raise ValueError("study job must be an object")
-        state = job.get("resource_data")
-        if state not in ("included", "unavailable", "nonterminal"):
-            raise ValueError("invalid study resource-data state")
-        job = _read_fields(
-            job,
-            {"job_id", "job_name", "job_status", "resource_data"} | ({"totals"} if state == "included" else set()),
-        )
-        identity = _read_identifier(job["job_id"], JOB_ID_PATTERN)
-        if identity in identities:
-            raise ValueError("study job IDs must be unique")
-        identities.add(identity)
-        if not isinstance(job["job_name"], str) or not 1 <= len(job["job_name"]) <= MAX_JOB_NAME_LENGTH:
-            raise ValueError("invalid study job display name")
-        status = _read_identifier(job["job_status"], JOB_STATUS_PATTERN)
-        terminal = status.startswith("FINISHED:") or status in {
-            "FINISHED_OK",
-            "FINISHED_EXCEPTION",
-            "ABORTED",
-            "ABANDONED",
-            "FAILED",
-        }
-        if terminal == (state == "nonterminal"):
-            raise ValueError("study job status and resource-data state disagree")
-        if state == "included":
-            job = {**job, "totals": _read_totals(job["totals"])}
-        result.append(job)
-    return sorted(result, key=lambda job: job["job_id"])
-
-
-def _read_study_summary(record):
-    record = _read_fields(record, {"schema_version", "kind", "selection", "generated_at", "coverage", "jobs", "totals"})
-    selection = _read_fields(record["selection"], {"study_name"})
-    _read_identifier(selection["study_name"], STUDY_NAME_PATTERN)
-    _read_timestamp(record["generated_at"])
-    jobs = _read_study_jobs(record["jobs"])
-    expected = {
-        "selected_jobs": len(jobs),
-        **{
-            name: sum(job["resource_data"] == state for job in jobs)
-            for name, state in (
-                ("included_jobs", "included"),
-                ("unavailable_jobs", "unavailable"),
-                ("nonterminal_jobs", "nonterminal"),
-            )
-        },
-    }
-    coverage = _read_fields(record["coverage"], set(expected))
-    for name, count in expected.items():
-        if _read_number(coverage[name], integer=True) != count:
-            raise ValueError("study coverage does not match selected jobs")
-    totals = _read_totals(record["totals"])
-    if totals != sum_study_totals(jobs):
-        raise ValueError("study totals must equal included-job sums")
-    return {**record, "jobs": jobs, "totals": totals}
-
-
 def _json_depth(value):
     pending = [(value, 1)]
     while pending:
@@ -278,6 +197,5 @@ def read_resource_report(data, expected_kind=None):
     readers = {
         KIND_PARTICIPANT_SUMMARY: _read_participant_summary,
         KIND_RESOURCE_SUMMARY: _read_resource_summary,
-        KIND_STUDY_SUMMARY: _read_study_summary,
     }
     return readers[kind](record)
