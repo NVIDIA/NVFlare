@@ -1,0 +1,6 @@
+.env
+.sdk/
+startup-kits/
+workspace*/
+/catalog_results.json
+!demo/catalog_results.json

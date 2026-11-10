@@ -16,6 +16,7 @@ Data Scientist Guide
    recipe_api
    available_recipes
    recipe_metrics_artifacts
+   federated_data_catalog
    reproducible_simulation
    ../timeout_troubleshooting
    flare_api

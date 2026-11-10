@@ -1,0 +1,10 @@
+**
+!*.py
+!*.md
+!*.txt
+!*.ipynb
+!.sdk/
+!.sdk/**
+!project.yml
+!config/
+!config/**

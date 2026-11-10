@@ -1,0 +1,98 @@
+name: flare-catalog-services
+x-flare: &flare
+  image: nvflare-catalog-demo:local
+  build: &flare-build
+    context: .
+    dockerfile: Dockerfile
+    args:
+      NVFLARE_PACKAGE: ${CATALOG_SDK_PACKAGE:?Run python example_setup.py first}
+      NVFL_BASE_VERSION: ${CATALOG_SDK_BASE_VERSION:?Run python example_setup.py first}
+  init: true
+  stop_grace_period: 45s
+  tmpfs: ["/workspace"]
+  pre_stop:
+    - command:
+        - bash
+        - -c
+        - |
+          printf 'y\n' | /startup-kit/startup/stop_fl.sh
+services:
+  nvflare-server:
+    <<: *flare
+    environment:
+      NVFL_WORKSPACE: /workspace
+    ports: ["127.0.0.1:8002:8002", "127.0.0.1:8003:8003"]
+    volumes:
+      - type: bind
+        source: ${CATALOG_KITS:?Run python example_setup.py first}/nvflare-server
+        target: /startup-kit
+        read_only: true
+        bind: {create_host_path: false}
+      - jobs-storage:/tmp/nvflare/jobs-storage
+      - snapshot-storage:/tmp/nvflare/snapshot-storage
+  nvflare-site-1:
+    <<: *flare
+    environment:
+      NVFL_WORKSPACE: /workspace
+      NVFLARE_DATASET_CONFIG: /site-config/datasets.yaml
+    volumes:
+      - type: bind
+        source: ${CATALOG_KITS:?Run python example_setup.py first}/site-1
+        target: /startup-kit
+        read_only: true
+        bind: {create_host_path: false}
+      - site-1-data:/data:ro
+      - ./config/site-1/datasets.yaml:/site-config/datasets.yaml:ro
+    depends_on:
+      site-1-seed: {condition: service_completed_successfully}
+  site-1-seed:
+    image: nvflare-catalog-demo:local
+    build: *flare-build
+    entrypoint: ["python", "prepare_data.py", "site-1"]
+    environment:
+      UNITY_CATALOG_URL: http://unity-catalog:8080/api/2.1/unity-catalog
+    volumes: ["site-1-data:/data"]
+    depends_on:
+      unity-catalog: {condition: service_started}
+  nvflare-site-2:
+    <<: *flare
+    environment:
+      NVFL_WORKSPACE: /workspace
+      NVFLARE_DATASET_CONFIG: /site-config/datasets.yaml
+      # The metadata reader's demo credentials, named by the secrets of site-2's omop dataset.
+      CATALOG_DB_USER: catalog_reader
+      CATALOG_DB_PASSWORD: local-demo-reader
+    volumes:
+      - type: bind
+        source: ${CATALOG_KITS:?Run python example_setup.py first}/site-2
+        target: /startup-kit
+        read_only: true
+        bind: {create_host_path: false}
+      - ./config/site-2/datasets.yaml:/site-config/datasets.yaml:ro
+    post_start:
+      # The bootstrap password is given to the seeding command only, not to the FLARE client or its jobs.
+      - command: ["python", "prepare_data.py", "site-2"]
+        environment:
+          POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-demo-bootstrap}
+    depends_on:
+      postgres: {condition: service_healthy}
+  unity-catalog:
+    image: unitycatalog/unitycatalog:v0.7.0
+    volumes: ["site-1-data:/home/unitycatalog/demo-data:ro"]
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: omop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-demo-bootstrap}
+    volumes: ["omop-data:/var/lib/postgresql/data"]
+    healthcheck:
+      # pg_isready also succeeds for a missing database or an invalid password.
+      test: ["CMD-SHELL", 'PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h 127.0.0.1 -U postgres -d omop -c "SELECT 1" >/dev/null']
+      interval: 2s
+      timeout: 2s
+      retries: 30
+volumes:
+  site-1-data:
+  omop-data:
+  jobs-storage:
+  snapshot-storage:
