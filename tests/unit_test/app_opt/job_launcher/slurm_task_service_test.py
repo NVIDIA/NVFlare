@@ -447,6 +447,27 @@ def test_closed_job_rejects_a_new_attempt_at_the_cp_service(owned):
     assert owned.adapter.submit.call_count == 1
 
 
+def test_proxy_settlement_wait_refreshes_cp_evidence_before_long_poll_interval(owned):
+    owned.backend.manager.config = replace(owned.backend.manager.config, poll_interval=10.0)
+    owned.client.poll_interval = 10.0
+    remote = _launch(owned)
+    native = owned.owner.attempts[("task-1", "attempt-1")].handle
+    assert native._next_query_at > time.monotonic()
+    owned.adapter.active_by_id.return_value = _query()
+    owned.adapter.task_accounting.return_value = _accounting()
+    assert remote.wait_for_settlement(timeout=2.5).succeeded
+    owned.adapter.cancel.assert_not_called()
+
+
+def test_proxy_settlement_timeout_does_not_sleep_past_deadline(owned):
+    owned.client.poll_interval = 10.0
+    remote = _launch(owned)
+    started = time.monotonic()
+    with pytest.raises(TimeoutError, match="settlement unconfirmed"):
+        remote.wait_for_settlement(timeout=0.05)
+    assert time.monotonic() - started < 0.5
+
+
 @pytest.mark.parametrize("full_history", [False, True])
 def test_closed_admission_settles_cancellation_of_a_rejected_launch(owned, full_history):
     if full_history:

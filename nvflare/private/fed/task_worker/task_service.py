@@ -68,6 +68,7 @@ class _Attempt:
     handle: object = None
     cancel: bool = False
     completed: bool = False
+    settlement_wait_until: float = 0.0
     status: TaskExecutionStatus = field(default_factory=lambda: TaskExecutionStatus(TaskExecutionPhase.QUEUED))
     execution_id: str = "pending"
 
@@ -111,6 +112,9 @@ class _Job:
 
     def _cj_is_dead(self, handle):
         raise NotImplementedError()
+
+    def _poll_attempt(self, attempt):
+        return attempt.handle.poll()
 
     def observe_cj(self):
         with self.lock:
@@ -158,7 +162,7 @@ class _Job:
                 try:
                     if cancel:
                         attempt.handle.request_cancel()
-                    status = attempt.handle.poll()
+                    status = self._poll_attempt(attempt)
                     with self.lock:
                         previous = attempt.status
                         attempt.status = status
@@ -177,10 +181,13 @@ class _Job:
                     logger.warning("CP task observation failed for %s: %s", self.job_id, type(error).__name__)
             with self.lock:
                 done = self.released and all(a.status.settled for a in self.attempts.values())
+                settlement_waiting = any(
+                    a.settlement_wait_until > time.monotonic() and not a.status.settled for a in self.attempts.values()
+                )
             if done:
                 self.on_done()
                 return
-            self.wake.wait(self.backend.poll_interval)
+            self.wake.wait(min(self.backend.poll_interval, 1.0) if settlement_waiting else self.backend.poll_interval)
             self.wake.clear()
 
 
@@ -193,6 +200,7 @@ class CPTaskService:
     job_class = _Job
     max_cancel_fences = 128
     allow_complete = False
+    allow_settlement_poll = False
     closed_unknown_cancel_ok = False
     worker_module = "nvflare.private.fed.app.client.task_worker_process"
     unfinished_task_error = "job already owns an unsettled task"
@@ -291,6 +299,8 @@ class CPTaskService:
             if action == "launch":
                 fields |= {"bootstrap", "cwd"}
             actions = {"launch", "poll", "cancel"} | ({"complete"} if self.allow_complete else set())
+            if self.allow_settlement_poll:
+                actions.add("settle")
             if set(data) != fields or action not in actions:
                 raise ValueError("unsupported task control fields or action")
             for key in ("task_id", "attempt_id"):
@@ -362,6 +372,9 @@ class CPTaskService:
                     # allocation for native cleanup; never claim settlement.
                     attempt.completed = True
                     attempt.cancel |= not attempt.status.settled
+                if self.allow_settlement_poll and action in ("settle", "cancel"):
+                    # Fast native queries only while CJ is actively waiting.
+                    attempt.settlement_wait_until = time.monotonic() + 2.0
                 result = _status_dict(attempt.status)
                 if self.allow_complete:
                     result["cancel_requested"] = bool(result["cancel_requested"] or attempt.cancel or job.closed)
@@ -469,10 +482,13 @@ class CPRemoteTaskHandle(TaskHandleSpec):
         return self._status
 
     def poll(self):
+        return self._poll_action("cancel" if self._cancel_requested else "poll")
+
+    def _poll_action(self, action):
         try:
             return self.observe(
                 self.client.call(
-                    "cancel" if self._cancel_requested else "poll",
+                    action,
                     task_id=self.request.task_id,
                     attempt_id=self.request.attempt_id,
                 )
@@ -491,13 +507,21 @@ class CPRemoteTaskHandle(TaskHandleSpec):
 
     def wait_for_settlement(self, timeout=None):
         deadline = None if timeout is None else time.monotonic() + timeout
+        interval = self._settlement_poll_interval()
         while True:
-            status = self.poll()
+            status = self._poll_for_settlement()
             if status.settled:
                 return status
-            if deadline is not None and time.monotonic() >= deadline:
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if remaining is not None and remaining <= 0:
                 raise TimeoutError("CP task settlement unconfirmed; cleanup remains owned by CP")
-            time.sleep(self.client.poll_interval)
+            time.sleep(interval if remaining is None else min(interval, remaining))
+
+    def _poll_for_settlement(self):
+        return self.poll()
+
+    def _settlement_poll_interval(self):
+        return self.client.poll_interval
 
     def cancel(self):
         self._cancel_requested = True

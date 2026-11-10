@@ -168,7 +168,10 @@ class SlurmTaskCliAdapter(_SlurmCliAdapter):
             if returned_id in records:
                 raise SlurmProtocolError("duplicate Slurm task accounting identity")
             if allocation:
-                if uid.strip() != str(self.uid) or name.strip() != job_name or comment != marker:
+                # Some sites do not persist job comments in sacct. The full
+                # attempt-derived name and UID still bind the accounting row;
+                # reject a different comment when one is available.
+                if uid.strip() != str(self.uid) or name.strip() != job_name or comment not in ("", marker):
                     raise SlurmProtocolError("Slurm task accounting ownership mismatch")
             elif uid.strip() not in ("", str(self.uid)):
                 # Some Slurm versions omit allocation-only fields on step rows.

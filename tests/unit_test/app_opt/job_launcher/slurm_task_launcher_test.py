@@ -162,6 +162,33 @@ def test_missing_accounting_never_becomes_release_evidence(backend, accounting):
     assert Path(handle.job_dir, "batch.sh").exists()
 
 
+@pytest.mark.parametrize("accounting", [LookupStatus.NOT_FOUND, LookupStatus.UNAVAILABLE, "invalid"])
+def test_missing_accounting_after_observed_allocation_enters_bounded_settlement(backend, accounting):
+    launcher, adapter, request = backend
+    adapter.active_by_id.return_value = _query("RUNNING")
+    handle = launcher.launch_task(request)
+    assert handle.poll().phase == TaskExecutionPhase.RUNNING
+    adapter.active_by_id.return_value = _query()
+    if accounting == "invalid":
+        adapter.task_accounting.side_effect = SlurmProtocolError("ownership mismatch")
+    else:
+        adapter.task_accounting.return_value = QueryResult(accounting)
+    status = handle.poll()
+    assert status.phase == TaskExecutionPhase.TERMINAL and not status.settled
+    assert handle.nvflare_job_id in launcher.manager._handles
+    if accounting == "invalid":
+        assert "ownership mismatch" in status.failure_reason
+    else:
+        assert "accounting is missing or unavailable" in status.failure_reason
+
+
+def test_unseen_allocation_missing_from_queue_stays_queued(backend):
+    launcher, adapter, request = backend
+    adapter.task_accounting.return_value = QueryResult(LookupStatus.NOT_FOUND)
+    status = launcher.launch_task(request).poll()
+    assert status.phase == TaskExecutionPhase.QUEUED and not status.settled
+
+
 @pytest.mark.parametrize("state", ["NODE_FAIL", "CANCELLED"])
 @pytest.mark.parametrize(
     "initial,nodes", [("RUNNING", None), (None, None), (None, 1), ("PENDING", None), ("RUNNING", 0)]
@@ -432,6 +459,18 @@ def test_accounting_checks_identity_and_every_step():
     assert records[0].allocated_nodes == 1 and records[2].allocated_nodes is None
     argv = runner.call_args.args[0]
     assert "-X" not in argv and "--duplicates" in argv and "--local" in argv
+
+
+def test_accounting_accepts_unstored_comment_but_checks_uid_and_attempt_name():
+    adapter, _ = _cli(f"42|name|{os.getuid()}||COMPLETED|0:0|0:0|1\n")
+    assert adapter.task_accounting("42", "name", "marker", 1).records[0].job_id == "42"
+
+
+@pytest.mark.parametrize("name,uid", [("wrong", os.getuid()), ("name", 9999999)])
+def test_unstored_comment_does_not_weaken_accounting_identity(name, uid):
+    adapter, _ = _cli(f"42|{name}|{uid}||COMPLETED|0:0|0:0|1\n")
+    with pytest.raises(SlurmProtocolError, match="ownership mismatch"):
+        adapter.task_accounting("42", "name", "marker", 1)
 
 
 @pytest.mark.parametrize(

@@ -164,11 +164,13 @@ active-descriptor survival and fsync locally. This does **not** establish
 cross-host coherence. Qualification must repeat these checks across hosts,
 then read a real committed result and checkpoint after allocation teardown.
 
-Slurm accounting and step records must be available. The site must already
-store job comments (``AccountingStoreFlags=job_comment``) for exact accounting
-ownership checks. Duplicate accounting identities are rejected rather than
-choosing a potentially requeued or recycled job ID. Accounting permission,
-retention and update latency must cover each task's full settlement window.
+Slurm accounting and step records must be available. Task accounting checks
+the submitter UID and attempt-derived job name; when the site stores job
+comments (``AccountingStoreFlags=job_comment``), a different comment is also
+rejected. Live queue and marker recovery still require the exact job comment.
+Duplicate accounting identities are rejected rather than choosing a potentially
+requeued or recycled job ID. Accounting permission, retention and update latency
+must cover each task's full settlement window.
 
 The site must enforce ``proctrack/cgroup`` and ``task/cgroup`` with the
 required CPU/memory/device constraints. All worker descendants must remain

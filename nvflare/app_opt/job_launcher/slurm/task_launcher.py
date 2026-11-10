@@ -309,6 +309,7 @@ class SlurmTaskHandle(TaskHandleSpec):
         self._submitted_at = manager._monotonic()
         self._last_evidence = None
         self._last_queue = None
+        self._observed_allocation = False
         self._cancel_sent_at = float("-inf")
         self._cancel_acknowledged = False
         self._next_query_at = float("-inf")
@@ -385,9 +386,10 @@ class SlurmTaskHandle(TaskHandleSpec):
                 return self._observe()
             except Exception as e:
                 # A failed/invalid query is never evidence of released resources.
-                return self._status(
-                    self._last_status.phase, failure=f"Slurm task observation failed: {type(e).__name__}"
-                )
+                phase = self._last_status.phase
+                if self._observed_allocation and self._last_queue[0] == LookupStatus.NOT_FOUND.value:
+                    phase = TaskExecutionPhase.TERMINAL
+                return self._status(phase, failure=f"Slurm task observation failed: {type(e).__name__}: {e}")
 
     def _observe(self):
         config = self.manager.config
@@ -407,6 +409,7 @@ class SlurmTaskHandle(TaskHandleSpec):
         if active.status == LookupStatus.UNAVAILABLE:
             return self._status(self._last_status.phase, failure="Slurm queue is unavailable")
         if active.status == LookupStatus.FOUND:
+            self._observed_allocation = True
             record = active.records[0]
             if record.state not in _QUEUED:
                 self._observed_execution = True
@@ -433,7 +436,8 @@ class SlurmTaskHandle(TaskHandleSpec):
             self.job_id, self.job_name, self.manager._marker(self.nvflare_job_id), timeout=config.query_timeout
         )
         if accounting.status != LookupStatus.FOUND:
-            return self._status(self._last_status.phase, failure="Slurm task accounting is missing or unavailable")
+            phase = TaskExecutionPhase.TERMINAL if self._observed_allocation else self._last_status.phase
+            return self._status(phase, failure="Slurm task accounting is missing or unavailable")
         records = accounting.records
         evidence = tuple(
             (
@@ -502,9 +506,7 @@ class SlurmTaskHandle(TaskHandleSpec):
         while True:
             # An explicit settlement wait must not consume its entire budget
             # behind a prior poll's throttle while terminal accounting catches up.
-            with self.operation_lock:
-                self._next_query_at = float("-inf")
-                status = self.poll()
+            status = self.poll_fresh()
             if status.settled:
                 return status
             remaining = None if deadline is None else deadline - self.manager._monotonic()
@@ -512,6 +514,12 @@ class SlurmTaskHandle(TaskHandleSpec):
                 raise TimeoutError(f"Slurm task settlement is unconfirmed: {self.execution_id}")
             time.sleep(interval if remaining is None else min(interval, remaining))
             interval = min(self.poll_interval, interval * 2.0)
+
+    def poll_fresh(self):
+        """Refresh native evidence during a bounded settlement wait."""
+        with self.operation_lock:
+            self._next_query_at = float("-inf")
+            return self.poll()
 
     def request_cancel(self):
         with self.operation_lock:

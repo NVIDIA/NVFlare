@@ -15,6 +15,7 @@
 """Slurm-specific CP ownership and shared-workspace policy for task control."""
 
 import os
+import time
 
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.task_launcher_spec import TaskLauncherError
@@ -41,6 +42,11 @@ class _Job(_BaseJob):
     def _cj_is_dead(self, handle):
         return handle.poll() != JobReturnCode.UNKNOWN
 
+    def _poll_attempt(self, attempt):
+        return (
+            attempt.handle.poll_fresh() if attempt.settlement_wait_until > time.monotonic() else attempt.handle.poll()
+        )
+
 
 class SlurmTaskService(CPTaskService):
     channel = _CHANNEL
@@ -48,6 +54,7 @@ class SlurmTaskService(CPTaskService):
     service_key = "slurm"
     job_class = _Job
     allow_complete = True
+    allow_settlement_poll = True
     closed_unknown_cancel_ok = True
     unfinished_task_error = "job already owns an unfinished task"
 
@@ -57,6 +64,12 @@ class SlurmTaskService(CPTaskService):
 
 class SlurmRemoteTaskHandle(CPRemoteTaskHandle):
     pending_id = "slurm:pending"
+
+    def _poll_for_settlement(self):
+        return self._poll_action("cancel" if self._cancel_requested else "settle")
+
+    def _settlement_poll_interval(self):
+        return min(self.client.poll_interval, 1.0)
 
     def result_received(self):
         self.observe(self.client.result_received(self.request.task_id, self.request.attempt_id))
