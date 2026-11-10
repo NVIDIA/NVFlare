@@ -116,6 +116,8 @@ class StreamFuture:
     def __init__(self, stream_id: int, headers: Optional[dict] = None, task_handle: StreamTaskSpec = None):
         self.stream_id = stream_id
         self.headers = headers
+        # Receiver-owned transport provenance; never populated from wire headers.
+        self.receiving_endpoint = None
         self.waiter = threading.Event()
         self.lock = threading.Lock()
         self.error: Optional[StreamError] = None

@@ -32,7 +32,7 @@ import yaml
 from ..artifacts.bundle import approve_bundle, load_signing_key, verify_bundle
 from ..artifacts.packaging import package_bundle
 from ..common.errors import BuildError, require
-from ..common.evidence import require_approved_tdx_tcb, serial_evidence, verify_reference
+from ..common.evidence import require_approved_snp_tcb, require_approved_tdx_tcb, serial_evidence, verify_reference
 from ..common.firewall import firewall_rules
 from ..common.gpu_policy import render
 from ..common.io import digest_file, read_json, write_json
@@ -510,6 +510,8 @@ def finalize_locked(directory, evidence=None, gpu=None):
     references = read_json(directory / "reference_values.json")
     if manifest["platform"] == "intel_tdx" and reference_evidence is not None:
         require_approved_tdx_tcb(reference_evidence, references)
+    if manifest["platform"] == "amd_sev_snp" and reference_evidence is not None:
+        require_approved_snp_tcb(reference_evidence, references)
     key_map = {
         "snp.measurement": "snp_launch_measurement",
         "mr_td": "mr_td",

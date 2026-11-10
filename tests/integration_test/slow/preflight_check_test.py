@@ -18,7 +18,6 @@ import re
 import shlex
 import subprocess
 import sys
-import time
 from io import BytesIO
 
 import pytest
@@ -34,9 +33,6 @@ TEST_CASES = [
         "admin_name": "super@test.org",
     },
 ]
-
-
-SERVER_START_TIME = 15
 
 
 def _parse_preflight_output(output: bytes) -> dict[str, str]:
@@ -209,7 +205,6 @@ class TestPreflightCheck:
         site_launcher, _ = setup_system
         try:
             site_launcher.start_servers()
-            time.sleep(SERVER_START_TIME)
 
             for client_name, client_props in site_launcher.client_properties.items():
                 output = _run_preflight_check_command(package_path=client_props.root_dir)
@@ -232,7 +227,6 @@ class TestPreflightCheck:
         site_launcher, admin_folder_root = setup_system
         try:
             site_launcher.start_servers()
-            time.sleep(SERVER_START_TIME)
 
             # preflight-check on admin console
             output = _run_preflight_check_command(package_path=admin_folder_root)

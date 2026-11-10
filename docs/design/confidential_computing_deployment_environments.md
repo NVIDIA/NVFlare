@@ -156,10 +156,10 @@ attestation_services:
     proof_iat_leeway_seconds: 180
     workload_constraints:
       server:
-        cpu_tee: tdx
+        cpu_tee: intel_tdx
         tdx_mr_td: <approved-96-character-lowercase-hex-value>
       site-1:
-        cpu_tee: snp
+        cpu_tee: amd_sev_snp
         init_data: <approved-64-character-lowercase-hex-value>
 
     retry:

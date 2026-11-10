@@ -19,6 +19,7 @@ import os
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 import uuid
 from unittest.mock import MagicMock
@@ -91,17 +92,20 @@ _TRAINER_SCRIPT = textwrap.dedent(
 
     config_file = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != "--deny-network" else None
     flare.init(config_file=config_file)
-    while flare.is_running():
-        model = flare.receive()
-        if model is None:
-            break
-        weights = np.asarray(model.params[NPConstants.NUMPY_KEY])
-        flare.send(
-            flare.FLModel(
-                params={NPConstants.NUMPY_KEY: weights + 1},
-                current_round=model.current_round,
+    try:
+        while flare.is_running():
+            model = flare.receive()
+            if model is None:
+                break
+            weights = np.asarray(model.params[NPConstants.NUMPY_KEY])
+            flare.send(
+                flare.FLModel(
+                    params={NPConstants.NUMPY_KEY: weights + 1},
+                    current_round=model.current_round,
+                )
             )
-        )
+    finally:
+        flare.shutdown()
     """
 )
 
@@ -343,6 +347,23 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
             )
 
         backend = AttachBackend()
+        unsuccessful_open = threading.Event()
+        initial_session = None
+        if startup_order == "cj-first":
+
+            def fail_first_session_open(send_request):
+                def send(*args, **kwargs):
+                    if kwargs.get("topic") == Topic.SESSION_OPEN and not unsuccessful_open.is_set():
+                        unsuccessful_open.set()
+                        return make_reply(ReturnCode.TIMEOUT)
+                    return send_request(*args, **kwargs)
+
+                return send
+
+            # Network security and protected local routing choose different
+            # senders. Observe the same protocol boundary through either one.
+            for sender in (cj, cj.core_cell):
+                monkeypatch.setattr(sender, "send_request", fail_first_session_open(sender.send_request))
         # Protected shared-file exercises secure Attach without granting the
         # trainer socket access or delegating the site's authentication token.
         # Clear network cases remain explicit non-secure development routes.
@@ -362,21 +383,19 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
             trainer = start_trainer()
         backend.initialize(context, fl_ctx)
         if startup_order == "cj-first":
-            # Make the first SESSION_OPEN fail before the trainer Cell exists.
-            # Attach must keep retrying with the same session until the trainer
-            # starts or attach_timeout expires.
-            time.sleep(1.0)
-            assert not backend._get_session().ready.is_set()
+            # Force one retryable failure before trainer startup. A real request
+            # can remain in flight until the peer starts, depending on transport.
+            # All subsequent rendezvous and task traffic uses the real route.
+            assert unsuccessful_open.wait(10.0), "CJ did not attempt SESSION_OPEN before trainer startup"
+            initial_session = backend._get_session()
+            assert not initial_session.ready.is_set()
             assert backend._session_thread.is_alive()
             trainer = start_trainer()
 
-        if secure_job:
-            # A secure Attach session must establish over the protected route
-            # even though the trainer receives no server authentication token.
-            deadline = time.monotonic() + 20.0
-            while not backend._get_session().ready.is_set() and time.monotonic() < deadline:
-                time.sleep(0.05)
-            assert backend._get_session().ready.is_set()
+        session = backend._get_session()
+        assert session.ready.wait(20.0), "trainer did not establish its Attach session"
+        if initial_session is not None:
+            assert session is initial_session, "rendezvous retry replaced the original session"
 
         created_transaction_cells = _record_download_transactions(monkeypatch)
 

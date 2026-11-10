@@ -32,7 +32,7 @@ from unittest.mock import MagicMock, Mock, mock_open, patch
 
 from cvm.build.config import SOURCE
 from cvm.common.contracts import HEADER_BYTES, STORAGE_PROFILE
-from cvm.common.errors import BuildError
+from cvm.common.errors import BuildError, StartupPhaseError
 from cvm.common.evidence import serial_evidence, verify_reference
 from cvm.common.io import read_json, write_json
 from cvm.runtime import bootstrap, storage, supervisor
@@ -40,6 +40,41 @@ from cvm.runtime.systemd import notify
 
 
 class BootstrapTests(unittest.TestCase):
+    def test_startup_failures_expose_only_fixed_phase_identifiers(self):
+        for phase in (
+            "configuration",
+            "network",
+            "time_sync",
+            "verity",
+            "attestation",
+            "key_release",
+            "vault_identity",
+            "payload_authentication",
+            "supervision",
+        ):
+            with self.subTest(phase=phase):
+                with self.assertRaises(StartupPhaseError) as error:
+                    with bootstrap.startup_phase(phase):
+                        raise BuildError("sensitive dynamic diagnostic")
+                self.assertEqual(error.exception.phase, phase)
+
+                with (
+                    patch.object(sys, "argv", ["bootstrap", "bootstrap"]),
+                    patch.object(bootstrap, "bootstrap", side_effect=error.exception),
+                    patch.object(bootstrap, "notify"),
+                    patch.object(bootstrap, "emit"),
+                    patch.object(bootstrap.os, "get_blocking", return_value=True),
+                    patch.object(bootstrap.os, "set_blocking"),
+                    patch.object(bootstrap.os, "write") as write,
+                    self.assertRaises(SystemExit) as stopped,
+                ):
+                    bootstrap.main()
+                self.assertEqual(stopped.exception.code, 1)
+                self.assertEqual(write.call_args.args[0], 2)
+                message = write.call_args.args[1].decode("ascii")
+                self.assertIn(f"phase={phase}", message)
+                self.assertNotIn("sensitive", message)
+
     def test_attached_vault_skips_only_the_reference_report_probe(self):
         with (
             patch.object(bootstrap.Path, "exists", return_value=False),
@@ -437,7 +472,13 @@ class BootstrapTests(unittest.TestCase):
         image = json.dumps([{"Id": app["image_id"], "Config": {}}]).encode()
         handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
         try:
-            for requested, status, expected in ((True, 143, 0), (False, 7, 7), (False, -9, 137)):
+            for requested, status, expected in (
+                (True, 143, 0),
+                (True, 0, 0),
+                (False, 0, None),
+                (False, 7, 7),
+                (False, -9, 137),
+            ):
                 stops = []
 
                 def wait():
@@ -466,7 +507,11 @@ class BootstrapTests(unittest.TestCase):
                     patch.object(bootstrap, "memory_file", return_value=contextlib.nullcontext(17)),
                     patch.object(bootstrap.subprocess, "run", side_effect=lambda argv, **k: stops.append(argv)),
                 ):
-                    self.assertEqual(bootstrap.application(), expected)
+                    if expected is None:
+                        with self.assertRaisesRegex(BuildError, "Application exited unexpectedly.*status 0"):
+                            bootstrap.application()
+                    else:
+                        self.assertEqual(bootstrap.application(), expected)
                 self.assertEqual(
                     [argv[:4] for argv in stops],
                     [["/usr/bin/docker", "--host", "unix:///var/run/docker.sock", "stop"]] if requested else [],

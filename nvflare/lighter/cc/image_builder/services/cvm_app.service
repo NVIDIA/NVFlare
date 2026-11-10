@@ -12,7 +12,8 @@ EnvironmentFile=/run/cvm/platform.env
 ExecStart=/usr/bin/python3 -m cvm.runtime.bootstrap application
 # SIGTERM reaches only the wrapper above. It stops the container itself and
 # exits 0 for a requested stop, so an orderly shutdown or quarantine does not
-# look like a workload failure; an unexpected container exit keeps its status.
+# look like a workload failure. An unexpected nonzero exit keeps its status;
+# an unexpected zero exit is reported as a wrapper failure and powers off too.
 KillMode=mixed
 TimeoutStopSec=60
 Restart=no

@@ -58,6 +58,7 @@ class TestProject:
 
         assert response.status_code == 200
         assert response.json["project"]
+        assert "cc_mode" not in response.json["project"]
 
     def test_get_orgs(self, client, auth_header):
         response = client.get(FLARE_DASHBOARD_NAMESPACE + "/api/v1/organizations", headers=auth_header)

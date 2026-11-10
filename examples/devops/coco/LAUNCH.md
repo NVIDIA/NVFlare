@@ -85,8 +85,16 @@ works on the assigned worker. Use the reported reason to choose the next check:
 | `FailedCreatePodSandBox` or runtime-handler error | Check the assigned worker's existing kubelet/containerd logs. On a systemd worker, use `sudo journalctl -u kubelet -u containerd --since "15 minutes ago" --no-pager`. |
 | `ErrImagePull`, `ImagePullBackOff`, or image decryption/signature failure | Check the event's registry/image error and the Pod's digest against the generated release output; check the endpoint and CA/bundle in `provision/cc_project.yml`. For denied image-key access, use the Trustee checks below. |
 | Trustee appraisal or resource-policy denial | On the Trustee administration machine, run the reference helpers from [Trustee](TRUSTEE.md) with `--verify-only`. Inspect the existing deployment's KBS/AS/RVPS logging destination for the release's resource paths, CPU/GPU appraisal, and policy decision; compare `release-authorization.json` with `CURRENT_RESOURCE_POLICY_FILE`. |
-| Pod is Ready but NVFlare registration or peer proofs fail | On the trusted FL administrator machine, use the [normal admin session](https://nvflare.readthedocs.io/en/2.9/user_guide/data_scientist_guide/flare_api.html) and `sess.get_system_info()`. Check the ordinary trusted server's workspace `log.txt` beside `startup/` for connection and CC validation failures. |
+| Pod is Ready but NVFlare registration or peer proofs fail | On the trusted FL administrator machine, use the [normal admin session](https://nvflare.readthedocs.io/en/latest/user_guide/data_scientist_guide/flare_api.html) and `sess.get_system_info()`. Check the ordinary trusted server's workspace `log.txt` beside `startup/` for connection and CC validation failures. |
 
 Keep capture/build records and Trustee/NVFlare logs on trusted machines.
 Do not enable guest exec or print raw AA token responses, keys, or sensitive
 application logs for cluster IT.
+
+Once NVFlare is running, retrieve client job logs through the authenticated
+FL administrator session with `get_job_log JOB_ID all` and
+`download_job_components JOB_ID`. These streams work inside the sealed
+container and respect the site's `allow_log_streaming` opt-out; they do not
+enable `kubectl logs` or guest exec. Follow the
+[shared CC log-retrieval guide](../../../docs/user_guide/confidential_computing/operations.rst#retrieve-job-logs-and-early-boot-diagnostics)
+for live logs, completed components, and early-boot diagnostic sources.

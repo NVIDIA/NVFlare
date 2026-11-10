@@ -12,10 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
 import hashlib
+import io
 import json
 import shlex
 import shutil
+import tarfile
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -23,14 +27,16 @@ from unittest.mock import Mock, patch
 import pytest
 import yaml
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.confidential_computing.aci_authorizer import ACI_NAMESPACE, ACIAuthorizer
 from nvflare.app_opt.confidential_computing.az_cvm_authorizer import AZ_CVM_NAMESPACE, AZCVMAuthorizer
 from nvflare.app_opt.confidential_computing.cc_manager import CCManager
-from nvflare.lighter.cc_provision.config import load_participant_config, load_project_config
+from nvflare.lighter.cc.vault_adapter import VaultAdapter
+from nvflare.lighter.cc_provision.config import _warn_jwt_expiry, load_participant_config, load_project_config
 from nvflare.lighter.cc_provision.deployment import CPUTEE, GPUTEE, CCDeploymentMode, WorkloadSourceType
+from nvflare.lighter.cc_provision.impl.azure_cc import AzureCCDeployment
 from nvflare.lighter.cc_provision.impl.bare_metal_cvm import BareMetalCVMDeployment
 from nvflare.lighter.cc_provision.impl.cc import CC_PACKAGER_PATH, CCBuilder
 from nvflare.lighter.cc_provision.impl.cc_packager import CCPackager
@@ -43,7 +49,7 @@ from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
-from nvflare.lighter.utils import verify_folder_signature
+from nvflare.lighter.utils import verify_content, verify_folder_signature
 
 
 def _write(path, value):
@@ -101,6 +107,201 @@ def _resources(ctx, participant):
     return path
 
 
+def _aci_config(tmp_path, policy=b"package policy\n\n# exact approved bytes\n"):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    (tmp_path / "approved-policy.txt").write_bytes(policy)
+    (tmp_path / "deployment-private.pem").write_bytes(
+        key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    )
+    return {
+        "schema_version": 1,
+        "cc_deployment_mode": "azure_cc",
+        "cpu_tee": "amd_sev_snp",
+        "gpu_tee": "none",
+        "attestation": {"service": "azure_maa"},
+        "workload": {"source": {"type": "external"}},
+        "azure_cc": {
+            "deployment_target": "confidential_container",
+            "cce_policy_file": "approved-policy.txt",
+            "startup_kit_signing_key_file": "deployment-private.pem",
+        },
+    }, key
+
+
+def test_aci_preparation_snapshots_exact_policy_and_signing_key(tmp_path):
+    policy = b"package policy\r\n# retained whitespace\n  \n"
+    config, key = _aci_config(tmp_path, policy)
+    project = _azure_project(tmp_path, participant=config)
+    ctx = ProvisionContext(str(tmp_path / "workspace"), project)
+    _resources(ctx, project.get_server())
+    builder = CCBuilder()
+    builder.initialize(project, ctx)
+    (tmp_path / "approved-policy.txt").write_bytes(b"changed after approval")
+    (tmp_path / "deployment-private.pem").write_bytes(b"changed after approval")
+    builder.build(project, ctx)
+
+    plan = builder.plans[project.get_server().name]
+    assert plan.internal["cce_policy"] == policy
+    assert plan.internal["expected_policy_hash"] == hashlib.sha256(policy).hexdigest()
+    local = Path(ctx.get_local_dir(project.get_server()))
+    assert (local / "approved_cce_policy.txt").read_bytes() == policy
+    # Packaging must use both snapshots instead of reopening mutable inputs.
+    private_kit = tmp_path / "signed-kit"
+    (private_kit / "local").mkdir(parents=True)
+    (private_kit / "local/approved_cce_policy.txt").write_bytes(policy)
+    result = AzureCCDeployment().package(plan, private_kit, tmp_path / "delivery", ctx)
+    archive = (tmp_path / "delivery/startup-kit.tar").read_bytes()
+    signature = (tmp_path / "delivery/startup-kit.sig").read_bytes()
+    verify_content(archive, signature, key.public_key())
+    assert (tmp_path / "delivery/approved_cce_policy.txt").read_bytes() == policy
+    assert all(
+        artifact.metadata["policy_sha256"] == hashlib.sha256(policy).hexdigest() for artifact in result.artifacts
+    )
+
+
+def test_aci_hash_propagates_to_server_and_client_verifiers(tmp_path):
+    config, _ = _aci_config(tmp_path)
+    project = _azure_project(tmp_path, participant=config)
+    client_config = {**config, "azure_cc": {"deployment_target": "confidential_vm"}}
+    _write(tmp_path / "cc_client.yml", client_config)
+    project.add_client("site-1", "example", {PropKey.CC_CONFIG: "cc_client.yml"})
+    ctx = ProvisionContext(str(tmp_path / "workspace"), project)
+    for participant in [project.get_server(), *project.get_clients()]:
+        _resources(ctx, participant)
+    builder = CCBuilder()
+    builder.initialize(project, ctx)
+    builder.build(project, ctx)
+    expected = hashlib.sha256((tmp_path / "approved-policy.txt").read_bytes()).hexdigest()
+    for participant in [project.get_server(), *project.get_clients()]:
+        local = Path(ctx.get_local_dir(participant))
+        manager = json.loads((local / "cc_manager__p_resources.json").read_text())["components"][0]
+        aci_id = manager["args"]["required_site_verifier_ids"]["server"][0]
+        client_id = manager["args"]["required_site_verifier_ids"]["site-1"][0]
+        assert aci_id.startswith("aci_authorizer_")
+        assert client_id.startswith("az_cvm_authorizer_")
+        spec = json.loads((local / f"{aci_id}__p_resources.json").read_text())["components"][0]
+        assert spec["args"]["expected_policy_hash"] == expected
+        assert "signing_key" not in spec["args"]
+
+
+def test_aci_server_and_coco_client_preserve_distinct_required_verifiers(tmp_path):
+    project = _coco_project(tmp_path)
+    config, _ = _aci_config(tmp_path)
+    _write(tmp_path / "cc_server.yml", config)
+    project.get_server().set_prop(PropKey.CC_CONFIG, "cc_server.yml")
+    project_config = yaml.safe_load((tmp_path / "cc_project.yml").read_text())
+    project_config["attestation_services"]["azure_maa"] = {
+        "type": "azure_maa",
+        "endpoint": "https://sharedeus2.eus2.attest.azure.net",
+        "token_expiration_seconds": 100,
+        "check_frequency_seconds": 60,
+    }
+    _write(tmp_path / "cc_project.yml", project_config)
+    ctx = ProvisionContext(str(tmp_path / "workspace"), project)
+    for participant in [project.get_server(), *project.get_clients()]:
+        _resources(ctx, participant)
+    builder = CCBuilder()
+    builder.initialize(project, ctx)
+    # The client launch-file rewrite is independent of checker distribution.
+    with patch.object(CoCoDeployment, "configure_startup_kit"):
+        builder.build(project, ctx)
+    for participant in [project.get_server(), *project.get_clients()]:
+        local = Path(ctx.get_local_dir(participant))
+        manager = json.loads((local / "cc_manager__p_resources.json").read_text())["components"][0]
+        required = manager["args"]["required_site_verifier_ids"]
+        assert required["server"][0].startswith("aci_authorizer_")
+        assert required["server"] != required["site-1"]
+        spec = json.loads((local / f'{required["server"][0]}__p_resources.json').read_text())["components"][0]
+        assert (
+            spec["args"]["expected_policy_hash"]
+            == hashlib.sha256((tmp_path / "approved-policy.txt").read_bytes()).hexdigest()
+        )
+
+
+@pytest.mark.parametrize("field", ["cce_policy_file", "startup_kit_signing_key_file"])
+def test_aci_requires_policy_and_signing_key_configuration(tmp_path, field):
+    config, _ = _aci_config(tmp_path)
+    del config["azure_cc"][field]
+    project = _azure_project(tmp_path, participant=config)
+    with pytest.raises(ValueError, match=field):
+        CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+
+
+@pytest.mark.parametrize("policy", [b"", b" \n\t"])
+def test_aci_rejects_empty_policy(tmp_path, policy):
+    config, _ = _aci_config(tmp_path, policy)
+    project = _azure_project(tmp_path, participant=config)
+    with pytest.raises(ValueError, match="nonempty decoded policy"):
+        CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+
+
+def test_aci_rejects_invalid_private_key_without_disclosing_contents(tmp_path):
+    config, _ = _aci_config(tmp_path)
+    (tmp_path / "deployment-private.pem").write_text("not-a-private-key-secret")
+    project = _azure_project(tmp_path, participant=config)
+    with pytest.raises(ValueError, match="startup_kit_signing_key_file") as exc:
+        CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+    assert "not-a-private-key-secret" not in str(exc.value)
+
+
+@pytest.mark.parametrize("server_aci", [True, False])
+def test_aci_rejects_client_or_multiple_aci_deployments(tmp_path, server_aci):
+    config, _ = _aci_config(tmp_path)
+    server_config = config if server_aci else {**config, "azure_cc": {"deployment_target": "confidential_vm"}}
+    project = _azure_project(tmp_path, participant=server_config)
+    _write(tmp_path / "cc_client.yml", config)
+    project.add_client("site-1", "example", {PropKey.CC_CONFIG: "cc_client.yml"})
+    with pytest.raises(ValueError, match="Only one ACI deployment.*server"):
+        CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+
+
+def test_aci_end_to_end_provisioning_delivers_signed_external_archive(tmp_path, monkeypatch):
+    from nvflare.app_opt.confidential_computing import aci_bootstrap
+
+    config, key = _aci_config(tmp_path)
+    policy = (tmp_path / "approved-policy.txt").read_bytes()
+    project = _azure_project(tmp_path, participant=config)
+    provisioner = Provisioner(
+        str(tmp_path / "output"),
+        [WorkspaceBuilder(), StaticFileBuilder(), CertBuilder(), CCBuilder(), SignatureBuilder()],
+        CCPackager(),
+    )
+    ctx = provisioner.provision(project)
+    assert ctx[CtxKey.PROVISION_SUCCESS] is True
+    output = Path(ctx[CtxKey.CURRENT_PROD_DIR])
+    delivery = output / "server.example.com"
+    contents = (delivery / "startup-kit.tar").read_bytes()
+    verify_content(contents, (delivery / "startup-kit.sig").read_bytes(), key.public_key())
+    with tarfile.open(fileobj=io.BytesIO(contents), mode="r:") as archive:
+        assert archive.extractfile("local/approved_cce_policy.txt").read() == policy
+        assert archive.getmember("signature.json").isfile()
+        assert archive.getmember("startup/rootCA.pem").isfile()
+        assert not any("deployment-private" in name for name in archive.getnames())
+    manifest = json.loads((output / "cc_manifests/server.example.com.json").read_text())
+    assert [item["type"] for item in manifest["artifacts"]] == [
+        "azure_aci_startup_archive",
+        "azure_aci_startup_signature",
+        "azure_cce_policy",
+    ]
+    assert "signing_key" not in json.dumps(manifest)
+    assert str(tmp_path) not in json.dumps(manifest)
+    for item in manifest["artifacts"]:
+        assert hashlib.sha256((output / item["path"]).read_bytes()).hexdigest() == item["sha256"]
+        assert item["policy_sha256"] == hashlib.sha256(policy).hexdigest()
+    public_key = tmp_path / "deployment-public.pem"
+    public_key.write_bytes(
+        key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    )
+    workspaces = tmp_path / "bootstrap-workspaces"
+    workspaces.mkdir()
+    monkeypatch.setattr(aci_bootstrap, "INPUT_DIR", delivery)
+    monkeypatch.setattr(aci_bootstrap, "PUBLIC_KEY_FILE", public_key)
+    monkeypatch.setattr(aci_bootstrap, "WORKSPACE_DIR", workspaces)
+    workspace = aci_bootstrap.prepare_workspace()
+    assert (workspace / "local/approved_cce_policy.txt").read_bytes() == policy
+    assert aci_bootstrap._server_command(workspace)[-1] == "org=example"
+
+
 def _coco_project(tmp_path):
     for name in ("ca.pem", "admin.jwt", "registry-ca.pem", "username", "password"):
         (tmp_path / name).write_text("fixture")
@@ -137,7 +338,7 @@ def _coco_project(tmp_path):
                     "proof_iat_leeway_seconds": 90,
                     "workload_constraints": {
                         "site-1": {
-                            "cpu_tee": "snp",
+                            "cpu_tee": "amd_sev_snp",
                             "init_data": "a" * 64,
                         }
                     },
@@ -207,12 +408,14 @@ def test_unified_azure_config_creates_immutable_plan(tmp_path):
     [(AZCVMAuthorizer, AZ_CVM_NAMESPACE), (ACIAuthorizer, ACI_NAMESPACE)],
 )
 def test_azure_authorizers_accept_endpoint_scoped_namespace(authorizer_class, default_namespace):
-    assert authorizer_class().get_namespace() == default_namespace
+    kwargs = {"expected_policy_hash": "ab" * 32} if authorizer_class is ACIAuthorizer else {}
+    assert authorizer_class(**kwargs).get_namespace() == default_namespace
     assert (
-        authorizer_class(namespace=f"{default_namespace}-endpoint").get_namespace() == f"{default_namespace}-endpoint"
+        authorizer_class(namespace=f"{default_namespace}-endpoint", **kwargs).get_namespace()
+        == f"{default_namespace}-endpoint"
     )
     with pytest.raises(ValueError, match="namespace"):
-        authorizer_class(namespace="")
+        authorizer_class(namespace="", **kwargs)
 
 
 def test_builder_writes_azure_authorizer_manager_and_allow_list(tmp_path):
@@ -378,7 +581,9 @@ def test_shared_trustee_policy_is_validated_and_applied_to_coco(tmp_path):
     plan = builder.plans["site-1"]
     args = builder.deployments[plan.mode].authorizer(plan, issuer=False)["args"]
     assert args["proof_iat_leeway_seconds"] == 90
-    assert args["workload_constraints"] == {"site-1": {"cpu_tee": "snp", "init_data": "a" * 64, "gpu_required": True}}
+    assert args["workload_constraints"] == {
+        "site-1": {"cpu_tee": "amd_sev_snp", "init_data": "a" * 64, "gpu_required": True}
+    }
     with pytest.raises(TypeError):
         builder.plans["site-1"].internal["workload_constraints"]["site-1"]["gpu_required"] = False
 
@@ -389,12 +594,25 @@ def test_shared_trustee_policy_is_validated_and_applied_to_coco(tmp_path):
         CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "invalid"), project))
 
     config["attestation_services"]["trustee"]["workload_constraints"]["site-1"] = {
-        "cpu_tee": "snp",
+        "cpu_tee": "amd_sev_snp",
         "gpu_required": False,
     }
     _write(tmp_path / "cc_project.yml", config)
     with pytest.raises(ValueError, match="derived from each participant's gpu_tee"):
         CCBuilder().initialize(project, ProvisionContext(str(tmp_path / "duplicated-gpu-policy"), project))
+
+
+def test_workload_constraints_keep_the_common_cpu_tee_name(tmp_path):
+    project = _coco_project(tmp_path)
+    path = tmp_path / "cc_project.yml"
+    config = yaml.safe_load(path.read_text())
+    config["attestation_services"]["trustee"]["workload_constraints"]["site-1"]["cpu_tee"] = "amd_sev_snp"
+    _write(path, config)
+
+    builder = CCBuilder()
+    builder.initialize(project, ProvisionContext(str(tmp_path / "workspace"), project))
+
+    assert builder.plans["site-1"].internal["workload_constraints"]["site-1"]["cpu_tee"] == "amd_sev_snp"
 
 
 def test_gpu_tee_defaults_missing_client_capacity_to_one(tmp_path):
@@ -452,7 +670,7 @@ def test_empty_class_allow_list_adds_no_classes(tmp_path):
         "attestation": {"service": "azure_maa"},
         "class_allow_list": [],
         "workload": {"source": {"type": "external"}},
-        "azure_cc": {"deployment_target": "confidential_container"},
+        "azure_cc": {"deployment_target": "confidential_vm"},
     }
     project = _azure_project(tmp_path, participant=config)
     ctx = ProvisionContext(str(tmp_path / "workspace"), project)
@@ -598,6 +816,21 @@ def test_config_loaders_expose_declaring_paths(tmp_path):
     assert normalized["config_path"] == tmp_path / "cc_server.yml"
 
 
+@pytest.mark.parametrize("alias,canonical", [("tdx", CPUTEE.INTEL_TDX), ("snp", CPUTEE.AMD_SEV_SNP)])
+def test_participant_cpu_tee_upgrade_alias_is_normalized(tmp_path, alias, canonical):
+    _coco_project(tmp_path)
+    participant_path = tmp_path / "cc_site.yml"
+    participant = yaml.safe_load(participant_path.read_text())
+    participant["cpu_tee"] = alias
+    participant["gpu_tee"] = "none"
+    _write(participant_path, participant)
+
+    project_config = load_project_config(tmp_path / "cc_project.yml")
+    normalized = load_participant_config(participant_path, project_config)
+
+    assert normalized["cpu_tee"] is canonical
+
+
 def test_coco_does_not_require_admin_token_with_unused_cvm_tools_or_service(tmp_path):
     _coco_project(tmp_path)
     config_path = tmp_path / "cc_project.yml"
@@ -644,6 +877,37 @@ def test_optional_admin_token_still_requires_existing_file(tmp_path):
         load_project_config(tmp_path / "cc_project.yml")
 
 
+def test_project_config_warns_before_parseable_admin_token_expiry(tmp_path):
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": 1060}).encode()).rstrip(b"=").decode()
+    token = tmp_path / "admin.jwt"
+    token.write_text(f"header.{payload}.signature")
+    with pytest.warns(RuntimeWarning, match="expires within"):
+        _warn_jwt_expiry(token, 120, now=1000)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _warn_jwt_expiry(token, 120, now=1000)
+        _warn_jwt_expiry(token, 30, now=1000)
+
+
+def test_project_config_rejects_expired_admin_token(tmp_path):
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": 999}).encode()).rstrip(b"=").decode()
+    token = tmp_path / "admin.jwt"
+    token.write_text(f"header.{payload}.signature")
+    with pytest.raises(ValueError, match="has expired"):
+        _warn_jwt_expiry(token, 120, now=1000)
+
+
+@pytest.mark.parametrize("value", [-1, 1.5, "604800", True])
+def test_project_config_rejects_invalid_expiry_warning_window(tmp_path, value):
+    _coco_project(tmp_path)
+    path = tmp_path / "cc_project.yml"
+    config = yaml.safe_load(path.read_text())
+    config["attestation_services"]["trustee"]["expiry_warning_seconds"] = value
+    _write(path, config)
+    with pytest.raises(ValueError, match="expiry_warning_seconds"):
+        load_project_config(path)
+
+
 def test_project_config_retains_home_expanded_security_paths(tmp_path, monkeypatch):
     _coco_project(tmp_path)
     home = tmp_path / "home"
@@ -676,6 +940,7 @@ def test_project_config_retains_home_expanded_security_paths(tmp_path, monkeypat
     service = project_config["attestation_services"]["trustee"]
     assert service["ca_cert_file"] == str(credentials / "ca.pem")
     assert service["admin_token_file"] == str(credentials / "admin.jwt")
+    assert service["expiry_warning_seconds"] == 7 * 86400
     assert service["attestation_signing_public_key_file"] == str(credentials / "as.pem")
     assert project_config["approval"]["public_key_files"] == [str(credentials / "approval.pub")]
     assert project_config["container_registries"]["workloads"]["ca_cert_file"] == str(credentials / "registry-ca.pem")
@@ -706,7 +971,7 @@ def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
         (tmp_path / name).write_text("fixture")
     project_config = {
         "_config_path": tmp_path / "cc_project.yml",
-        "approval": {"public_key_files": ["approval.pub"]},
+        "approval": {"public_key_files": [str(tmp_path / "approval.pub")]},
         "build_tools": {"bare_metal_cvm": {"cvm_builder_dir": "builder"}},
     }
     mode = {
@@ -735,8 +1000,9 @@ def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
                     config_path=tmp_path / "cc_project.yml",
                     values={
                         "kbs_endpoint": endpoint,
-                        "ca_cert_file": "ca.pem",
-                        "admin_token_file": "admin.jwt",
+                        "ca_cert_file": str(tmp_path / "ca.pem"),
+                        "admin_token_file": str(tmp_path / "admin.jwt"),
+                        "expiry_warning_seconds": 604800,
                         "token_expiration_seconds": 100,
                     },
                 ),
@@ -752,6 +1018,11 @@ def test_bare_metal_adapter_uses_content_addressed_project_config(tmp_path):
     assert "trustee-one.example" in paths[0].read_text()
     assert "trustee-two.example" in paths[1].read_text()
     assert all(path.stat().st_mode & 0o077 == 0 for path in paths)
+    # The adapter is patched above; validate the generated file with the real project-config check.
+    real_adapter = SimpleNamespace(_path=lambda value: Path(value))
+    for path in paths:
+        assert yaml.safe_load(path.read_text())["trustee"]["expiry_warning_seconds"] == 604800
+        assert VaultAdapter._project_config(real_adapter, str(path)) == path.resolve()
     settings = adapter.call_args.args[0]
     assert settings["attestation_credentials"] is True
     assert settings["max_token_age_seconds"] == 100
@@ -785,6 +1056,7 @@ def test_bare_metal_rejects_maximum_age_without_delivery_headroom(
                 "kbs_endpoint": "https://trustee.example:8443",
                 "ca_cert_file": "ca.pem",
                 "admin_token_file": "admin.jwt",
+                "expiry_warning_seconds": 604800,
                 "token_expiration_seconds": maximum_token_age,
             }
         ),
@@ -949,10 +1221,19 @@ def test_common_packager_retains_private_stage_when_prod_number_is_reused(tmp_pa
         retained.append({p.relative_to(private): p.read_bytes() for p in private.rglob("*") if p.is_file()})
 
 
-def test_coco_end_to_end_provisioning_uses_declared_source_registry_and_common_manifest(tmp_path):
+@pytest.mark.parametrize(
+    "allow_log_streaming,project_default,expected_streaming",
+    [(True, False, True), (False, True, False), (None, False, False), (None, None, True)],
+)
+def test_coco_end_to_end_provisioning_uses_declared_source_registry_and_common_manifest(
+    tmp_path, allow_log_streaming, project_default, expected_streaming
+):
     from tests.unit_test.lighter.cc_provision.impl.test_coco import coco_pod
 
     project = _coco_project(tmp_path)
+    if project_default is not None:
+        project.set_prop(PropKey.ALLOW_LOG_STREAMING, project_default)
+    project.get_clients()[0].set_prop(PropKey.ALLOW_LOG_STREAMING, allow_log_streaming)
 
     def runner(command, **kwargs):
         request = json.loads(Path(command[1]).read_text())
@@ -999,3 +1280,16 @@ def test_coco_end_to_end_provisioning_uses_declared_source_registry_and_common_m
     resources = json.loads((private_kit / "local" / ProvFileName.RESOURCES_JSON_DEFAULT).read_text())
     resource_manager = next(component for component in resources["components"] if component["id"] == "resource_manager")
     assert resource_manager["args"]["num_of_gpus"] == 1
+    assert resources["allow_log_streaming"] is expected_streaming
+    streamers = [component for component in resources["components"] if component["path"].endswith(".SiteLogStreamer")]
+    assert {component["args"].get("log_file_name", "log.txt") for component in streamers} == {
+        "log.txt",
+        "error_log.txt",
+    }
+    assert (private_kit / "startup/sub_start.sh").read_text().startswith("#!/usr/bin/env bash\nexec >/dev/null 2>&1\n")
+    assert verify_folder_signature(
+        str(private_kit),
+        str(private_kit / "startup/rootCA.pem"),
+        single_signer=True,
+        signature_file=ProvFileName.SIGNATURE_JSON,
+    )

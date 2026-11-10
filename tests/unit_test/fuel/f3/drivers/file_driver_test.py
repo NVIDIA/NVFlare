@@ -79,8 +79,8 @@ def _make_comm(name: str, state: _State) -> Communicator:
 
 
 def _wait_until(condition, timeout=15.0) -> bool:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         if condition():
             return True
         time.sleep(0.05)

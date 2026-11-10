@@ -25,12 +25,25 @@ OPTION = "agent.guest_components_rest_api"
 REQUIRED = OPTION + "=all"
 CAPABILITY = "guest-local-aa-token/v1"
 PROFILE_SCHEMA_V4 = "coco-approved-workload-launch/v4"
-RUNTIME_TARGETS = {
-    "kata-qemu-nvidia-gpu-snp": ("snp", "nvidia"),
-    "kata-qemu-snp": ("snp", "none"),
-    "kata-qemu-nvidia-gpu-tdx": ("tdx", "nvidia"),
-    "kata-qemu-tdx": ("tdx", "none"),
+CPU_TEE_ALIASES = {
+    "snp": "amd_sev_snp",
+    "amd_sev_snp": "amd_sev_snp",
+    "tdx": "intel_tdx",
+    "intel_tdx": "intel_tdx",
 }
+RUNTIME_TARGETS = {
+    "kata-qemu-nvidia-gpu-snp": ("amd_sev_snp", "nvidia"),
+    "kata-qemu-snp": ("amd_sev_snp", "none"),
+    "kata-qemu-nvidia-gpu-tdx": ("intel_tdx", "nvidia"),
+    "kata-qemu-tdx": ("intel_tdx", "none"),
+}
+
+
+def normalize_cpu_tee(value):
+    """Read legacy persisted TEE names while keeping new output canonical."""
+    if not isinstance(value, str) or value not in CPU_TEE_ALIASES:
+        raise ValueError("Unsupported CPU TEE")
+    return CPU_TEE_ALIASES[value]
 
 
 def runtime_target(runtime):
@@ -43,7 +56,9 @@ def runtime_target(runtime):
         "gpu": gpu,
         "gpu_count": 1 if gpu == "nvidia" else 0,
         "config_name": "configuration-" + runtime.removeprefix("kata-") + ".toml",
-        "node_label": "amd.feature.node.kubernetes.io/snp" if tee == "snp" else "intel.feature.node.kubernetes.io/tdx",
+        "node_label": (
+            "amd.feature.node.kubernetes.io/snp" if tee == "amd_sev_snp" else "intel.feature.node.kubernetes.io/tdx"
+        ),
     }
 
 
@@ -53,7 +68,11 @@ def require_runtime_target(profile, runtime):
     legacy = "cpu_tee" not in profile and "gpu" not in profile
     if legacy and runtime == "kata-qemu-nvidia-gpu-snp":
         return target
-    if profile.get("cpu_tee") != target["cpu_tee"] or profile.get("gpu") != target["gpu"]:
+    try:
+        cpu_tee = normalize_cpu_tee(profile.get("cpu_tee"))
+    except ValueError:
+        raise ValueError("Approved CPU/GPU target differs from RuntimeClass") from None
+    if cpu_tee != target["cpu_tee"] or profile.get("gpu") != target["gpu"]:
         raise ValueError("Approved CPU/GPU target differs from RuntimeClass")
     return target
 
@@ -63,9 +82,9 @@ def require_confidential_config(qemu, runtime):
     target = runtime_target(runtime)
     if qemu.get("confidential_guest") is not True:
         raise ValueError("Kata configuration must enable confidential_guest")
-    if qemu.get("sev_snp_guest", False) is not (target["cpu_tee"] == "snp"):
+    if qemu.get("sev_snp_guest", False) is not (target["cpu_tee"] == "amd_sev_snp"):
         raise ValueError("Kata sev_snp_guest does not match approved CPU TEE")
-    if target["cpu_tee"] == "tdx" and qemu.get("machine_type") != "q35":
+    if target["cpu_tee"] == "intel_tdx" and qemu.get("machine_type") != "q35":
         raise ValueError("The approved TDX profile requires QEMU q35")
     return target
 

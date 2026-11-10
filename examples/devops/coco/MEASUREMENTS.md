@@ -49,7 +49,7 @@ evidence signatures/collateral and the configured platform constraints.
 The installed runtime's kernel parameters must already contain exactly one
 `agent.guest_components_rest_api=all` option so the guest exposes its AA token API.
 The platform owner configures this externally; capture checks it without changing
-the runtime. The former runtime-configuration CLI is no longer supported.
+the runtime.
 
 The selected worker needs Python 3.11+ with PyYAML, Bash, kubectl, skopeo,
 OpenSSL, iproute2's `ip`, containerd's `ctr`, and the separate CRI client `crictl`.
@@ -123,7 +123,7 @@ python3 trusted_system/prepare-collector.py \
   "$PUBLISH_CONFIG" "$HOME/coco-private/new-collector"
 ~~~
 
-Set `CPU_TEE=snp` or `tdx`, the registry repository and CA/bundle, and an existing
+Set `CPU_TEE=amd_sev_snp` or `intel_tdx`, the registry repository and CA/bundle, and an existing
 private Skopeo authfile in `COLLECTOR_REGISTRY_AUTH_FILE`. The helper uses that
 CA/bundle automatically for publication; no separate Skopeo trust setup is needed.
 

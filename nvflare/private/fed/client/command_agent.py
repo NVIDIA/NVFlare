@@ -18,6 +18,8 @@ from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
+from nvflare.fuel.f3.cellnet.defs import MessagePropKey
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, new_cell_message
 from nvflare.private.fed.app.callback_admission import CallbackAdmission
@@ -67,6 +69,17 @@ class CommandAgent(object):
             self._callback_admission.leave()
 
     def _execute_command(self, request: CellMessage) -> CellMessage:
+
+        parent = FQCN.get_parent(self.federated_client.cell.get_fqcn())
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        endpoint = request.get_prop(MessagePropKey.ENDPOINT)
+        if not endpoint or not (
+            origin == parent
+            and endpoint.name == parent
+            or origin == FQCN.ROOT_SERVER
+            and endpoint.name in (FQCN.ROOT_SERVER, parent)
+        ):
+            return make_cellnet_reply(ReturnCode.UNAUTHENTICATED, "command must originate from server or parent")
 
         command_name = request.get_header(MessageHeaderKey.TOPIC)
         data = request.payload

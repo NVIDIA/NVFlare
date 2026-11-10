@@ -39,7 +39,12 @@ from nvflare.app_opt.confidential_computing.coco_authorizer import (
     TRUST_VECTOR,
     CoCoAuthorizer,
 )
-from nvflare.app_opt.confidential_computing.trustee_claims import normalized_init_data
+from nvflare.app_opt.confidential_computing.trustee_claims import (
+    CPU_TEE_EVIDENCE_TYPES,
+    cpu_evidence_type_for_tee,
+    cpu_tee_for_evidence_type,
+    normalized_init_data,
+)
 
 
 def test_approved_trust_vectors_match_trustee_policy_contract():
@@ -50,6 +55,15 @@ def test_approved_trust_vectors_match_trustee_policy_contract():
     }
     assert TRUST_VECTOR == expected
     assert CPU_TRUST_VECTORS == {"snp": expected, "tdx": expected}
+
+
+def test_cpu_tee_names_translate_only_at_the_trustee_wire_boundary():
+    assert CPU_TEE_EVIDENCE_TYPES == {"intel_tdx": "tdx", "amd_sev_snp": "snp"}
+    for cpu_tee, cpu_type in CPU_TEE_EVIDENCE_TYPES.items():
+        assert cpu_evidence_type_for_tee(cpu_tee) == cpu_type
+        assert cpu_tee_for_evidence_type(cpu_type) == cpu_tee
+    assert cpu_evidence_type_for_tee("tdx") == "tdx"
+    assert cpu_evidence_type_for_tee("snp") == "snp"
 
 
 @pytest.fixture(params=[("rsa", "snp"), ("ec", "snp"), ("rsa", "tdx"), ("ec", "tdx")])
@@ -258,8 +272,8 @@ def test_tdx_cannot_satisfy_snp_measurement_constraint(material):
         {"site-1": {"tdx_rtmr_1": None}},
         {"site-1": {"tdx_rtmr_4": "a" * 96}},
         {"site-1": {"measurement": "a" * 96, "tdx_mr_td": "a" * 96}},
-        {"site-1": {"cpu_tee": "tdx", "measurement": "a" * 96}},
-        {"site-1": {"cpu_tee": "snp", "tdx_rtmr_1": "a" * 96}},
+        {"site-1": {"cpu_tee": "intel_tdx", "measurement": "a" * 96}},
+        {"site-1": {"cpu_tee": "amd_sev_snp", "tdx_rtmr_1": "a" * 96}},
     ],
 )
 def test_malformed_workload_constraints_fail_at_construction(material, pins):
@@ -268,12 +282,32 @@ def test_malformed_workload_constraints_fail_at_construction(material, pins):
         generate(workload_constraints=pins)
 
 
-@pytest.mark.parametrize("cpu_tee", ["snp", "tdx"])
-def test_cpu_tee_constraint_pins_signed_platform(material, cpu_tee):
+def test_unhashable_cpu_tee_constraint_uses_configuration_error(material):
+    _, _, _, generate, _ = material
+    with pytest.raises(ValueError, match="Invalid workload cpu_tee pin"):
+        generate(workload_constraints={"site-1": {"cpu_tee": ["snp"]}})
+
+
+@pytest.mark.parametrize("alias,canonical", [("tdx", "intel_tdx"), ("snp", "amd_sev_snp")])
+def test_legacy_cpu_tee_constraint_alias_is_normalized_at_construction(material, alias, canonical):
+    _, _, verifier, _, _ = material
+    public_key = verifier.trustee_key.public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
+    checked = CoCoAuthorizer(
+        trustee_public_key=public_key,
+        audience=verifier.audience,
+        workload_constraints={"site-1": {"cpu_tee": alias}},
+    )
+    assert checked.workload_constraints == {"site-1": {"cpu_tee": canonical}}
+
+
+@pytest.mark.parametrize("cpu_tee,cpu_type", [("amd_sev_snp", "snp"), ("intel_tdx", "tdx")])
+def test_cpu_tee_constraint_pins_signed_platform(material, cpu_tee, cpu_type):
     claims, _, verifier, generate, _ = material
     evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
     verifier.workload_constraints = {"site-1": {"cpu_tee": cpu_tee}}
-    assert verifier.verify_for_site(generate(), "site-1") is (cpu_tee in evidence)
+    assert verifier.verify_for_site(generate(), "site-1") is (cpu_type in evidence)
 
 
 @pytest.mark.parametrize("gpu_required", [False, True])
@@ -303,11 +337,15 @@ def test_typed_constraints_are_accepted_at_construction(material):
     claims, _, _, generate, _ = material
     evidence = claims["submods"]["cpu0"]["ear.veraison.annotated-evidence"]
     if "snp" in evidence:
-        pins = {"cpu_tee": "snp", "init_data": "a" * 64, "measurement": evidence["snp"]["measurement"]}
+        pins = {
+            "cpu_tee": "amd_sev_snp",
+            "init_data": "a" * 64,
+            "measurement": evidence["snp"]["measurement"],
+        }
     else:
         body = evidence["tdx"]["quote"]["body"]
         pins = {
-            "cpu_tee": "tdx",
+            "cpu_tee": "intel_tdx",
             "init_data": "a" * 64,
             **{f"tdx_{name}": body[name] for name in ("mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3")},
         }
@@ -326,7 +364,7 @@ def test_tdx_typed_measurement_constraints(material, gpu, change):
     body = evidence["tdx"]["quote"]["body"]
     verifier.workload_constraints = {
         "site-1": {
-            "cpu_tee": "tdx",
+            "cpu_tee": "intel_tdx",
             "init_data": "a" * 64,
             **{f"tdx_{name}": body[name] for name in ("mr_td", "rtmr_0", "rtmr_1", "rtmr_2", "rtmr_3")},
         }

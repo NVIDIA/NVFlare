@@ -449,10 +449,19 @@ class VaultAdapter:
                 credential = path.parent / credential
             _require(credential.is_file(), f"Missing approval public key: {credential}")
         service = config["trustee"]
+        trustee_required = {"url", "ca", "admin_token_file"}
         _require(
-            isinstance(service, dict) and set(service) == {"url", "ca", "admin_token_file"},
-            "Project trustee requires url, ca and admin_token_file",
+            isinstance(service, dict)
+            and trustee_required <= set(service)
+            and set(service) <= trustee_required | {"expiry_warning_seconds"},
+            "Project trustee requires url, ca and admin_token_file; expiry_warning_seconds is optional",
         )
+        if "expiry_warning_seconds" in service:
+            warning_window = service["expiry_warning_seconds"]
+            _require(
+                type(warning_window) is int and warning_window >= 0,
+                "Project trustee expiry_warning_seconds must be a nonnegative integer",
+            )
         endpoint = service["url"]
         _require(isinstance(endpoint, str), "Project trustee requires an HTTPS endpoint")
         parsed = urlparse(endpoint)

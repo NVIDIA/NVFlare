@@ -51,11 +51,13 @@ plaintext startup kits on the trusted worker.
 Launch and run a job
 ====================
 
-Materialize each delivery on the matching TEE host and run
-``sudo ./launch_cvm.sh``. Start the ordinary NVFlare administrator console,
-verify that the expected server and clients are connected and attested, and
-submit a job whose code and dependencies are already in the application image.
-Stop each delivery with ``sudo ./shutdown_cvm.sh``.
+On each matching TEE host, use ``cvmctl run`` to authenticate, materialize, and
+launch the delivery in one operation. Use ``cvmctl pull`` followed by its
+printed absolute ``launch_cvm.sh`` command only when staging and launch are
+separate operations. Start the ordinary NVFlare administrator console, verify
+that the expected server and clients are connected and attested, and submit a
+job whose code and dependencies are already in the application image. Stop each
+delivery with ``sudo ./shutdown_cvm.sh``.
 
 Successful candidate testing is not production approval. Production approval
 must cover the exact generic CVM bundle, application archive, Trustee policy,

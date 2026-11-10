@@ -1,10 +1,9 @@
 # Troubleshoot Intel TDX attestation
 
-This guide records two attestation failures investigated on 2026-09-18 and the
-recoveries verified on hardware. The tested components were Intel QGS/DCAP
-1.27.101.1 and unmodified CoCo Trustee v0.22.0. Use it alongside the host
-prerequisites in [BUILD_GUIDE.md](BUILD_GUIDE.md#1-prepare-the-build-host) and the
-backend configuration in [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#4-configure-upstream-kbs).
+Use this guide to diagnose Intel QGS/DCAP quote generation, collateral
+selection and Trustee appraisal. Follow the host prerequisites in
+[BUILD_GUIDE.md](BUILD_GUIDE.md#1-prepare-the-build-host) and backend setup
+in [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md#5-configure-upstream-kbs).
 
 ## Identify the failing stage
 
@@ -32,29 +31,29 @@ alone is not evidence that TDX is disabled.
 
 ### Recognize the failure
 
-The incident used Intel production PCS directly through QCNL, with a 168-hour
-PCK cache lifetime. Quote generation worked until the active cached PCK response
-expired at approximately 02:57 UTC on 2026-09-18. Repeated guest requests then
-failed with provider error `0xb011` and TDX quote error `0x11001`.
+With direct Intel PCS through QCNL, quote generation can fail after a
+cached PCK response expires. Look for PCS HTTP 400 together with provider
+error `0xb011` and TDX quote error `0x11001`. Confirm the complete failure
+sequence before applying the recovery below.
 
 The DCAP 1.27 cached quote path intentionally passes no encrypted PPID during
 quote sizing/generation. QCNL represents that missing value as 384 zero bytes
 and excludes the field from its cache key, so a cached lookup can succeed. After
-cache expiry, it instead sent the placeholder to PCS, which returned HTTP 400.
-The platform's actual PPID was not observed to be zero. See the pinned
+cache expiry, it can send the placeholder to PCS and receive HTTP 400.
+This does not imply that the platform's actual PPID is zero. See the pinned
 [TDX quote path](https://github.com/intel/confidential-computing.tee.dcap/blob/DCAP_1.27/QuoteGeneration/quote_wrapper/tdx_quote/td_ql_logic.cpp#L1679-L1692)
 and [QCNL request construction](https://github.com/intel/confidential-computing.tee.dcap/blob/DCAP_1.27/QuoteGeneration/qcnl/certification_service.cpp#L199-L220).
 
-QGS keeps quoting contexts per worker thread. This provider failure did not
+QGS keeps quoting contexts per worker thread. This provider failure does not
 trigger its reinitialization path, which retries for an attestation key that
-has not been initialized. Restarting QGS discarded the old contexts; subsequent
-initialization obtained a real encrypted PPID and refreshed the PCK response.
+has not been initialized. Restarting QGS discards the cached contexts so
+initialization can obtain a real encrypted PPID and refresh the PCK response.
 See [QGS context initialization and retry handling](https://github.com/intel/confidential-computing.tee.dcap/blob/DCAP_1.27/QuoteGeneration/quote_wrapper/qgs/qgs_ql_logic.cpp#L113-L212).
 
 ### Recover and verify
 
 1. Confirm the combined cache-expiry/HTTP-400/provider-error sequence. An error
-   code alone does not identify this incident. Preserve sanitized timestamps,
+   code alone does not identify this failure. Preserve sanitized timestamps,
    component versions and result codes before restarting.
 2. Coordinate a brief interruption to quote generation, including guests with
    periodic attestation deadlines. Restart the host QGS service:
@@ -112,33 +111,21 @@ Do not delete all QGS caches, alter cache timestamps, disable TLS verification,
 or bypass appraisal. A QGS restart recovers quote generation; it does not change
 the firmware baseline used by Trustee.
 
-### Recorded recovery and recurrence
+### Monitor for recurrence
 
-QGS restarted at 11:40:14 UTC on 2026-09-18. A test TD requested a fresh quote at
-11:43:56 UTC. At 11:43:57 UTC, PCS returned HTTP 200, QCNL refreshed the active
-PCK entry, and quote initialization, sizing and generation succeeded. The new
-64-byte challenge matched the report and quote; Intel DCAP returned `OK`, with
-unexpired collateral, successful QE identity verification and no advisories.
-The diagnostic TD shut down afterward. No BIOS, TDX configuration, platform
-registration or unrelated cache entries were changed.
-
-Restarting QGS is a verified recovery for this incident, not a permanent software
-fix. With the tested seven-day lifetime, the refreshed entry was expected to
-expire around 2026-09-25 11:43:57 UTC. Other deployments must use their actual
-cache lifetime and refresh time.
-
-Monitor the combined failure sequence and use a fresh challenge-bound quote
-probe for health checks. If it recurs, retain sanitized evidence for an Intel
-DCAP/QGS issue report. Evaluate a release that explicitly fixes this path or a
-maintained PCCS/provisioned-cache deployment, and reproduce the cache-expiry
-test before treating the issue as resolved.
+A QGS restart refreshes quoting contexts; it is not a firmware update or a
+permanent fix for the underlying cache-refresh path. Monitor the actual
+cache lifetime and the combined failure sequence. Use a fresh,
+challenge-bound quote probe for health checks. If the failure recurs,
+retain sanitized diagnostics for an Intel DCAP/QGS issue report and
+review a maintained PCCS or provisioned-cache deployment.
 
 ## TCB channel selection
 
 ### Why an unchanged host can start reporting OutOfDate
 
-The older verifier used Intel QCNL's default `standard` channel. Upstream Trustee
-v0.22.0 defaults to `early` and fetches collateral itself. Changing only the
+Host QCNL and the Trustee verifier have separate collateral settings.
+Upstream Trustee v0.22.0 defaults to `early` and fetches collateral itself. Changing only the
 host's `/etc/sgx_default_qcnl.conf` therefore does not configure this Trustee
 verifier. The default is visible in
 [Trustee's pinned DCAP configuration](https://github.com/confidential-containers/trustee/blob/512fed65642015b849f38fb13bfdec7806639987/deps/verifier/src/intel_dcap/mod.rs#L25-L51).
@@ -148,25 +135,15 @@ applies newer TCB recovery requirements. A platform can pass one baseline while
 being out of date under the other. Select the channel as a deployment security
 policy, following [Intel's TCB recovery guidance](https://www.intel.com/content/www/us/en/developer/articles/technical/software-security-guidance/best-practices/trusted-computing-base-recovery.html).
 
-On 2026-09-18, the same signed quote was verified twice with the same installed
-Intel DCAP library, changing only the requested collateral channel:
-
-| Channel | TCB evaluation data number | DCAP result | Collateral expiration status |
-| --- | ---: | --- | --- |
-| `standard` | 20 | `OK` (`0x0`) | 0: not expired |
-| `early` | 22 | `OutOfDate` (`0xa002`) | 0: not expired |
-
-Both verification API calls returned success. API success means the verification
-operation completed; inspect the separate quote result to determine TCB status.
-The host remained on BIOS 1.8.0, microcode `0x2b000661` and TDX module 1.5.34.
-These counters and firmware versions record the experiment, not a permanent
-allowlist or a recommendation for other hosts. The baselines advance over time.
+A successful verification API call means the operation completed; inspect
+the quote result and collateral-expiration status separately to determine
+whether the platform satisfies the selected TCB baseline.
 
 ### Configure the intended baseline explicitly
 
 The checked-in [KBS configuration](trustee/kbs.json) selects `standard`. Merge
-this object into the existing CoCo KBS configuration, preserving its other AS
-settings and any `nvidia_verifier` configuration:
+this object into the selected standalone or CoCo KBS configuration, preserving
+its other AS settings and any `nvidia_verifier` configuration:
 
 ```json
 {
@@ -182,7 +159,7 @@ settings and any `nvidia_verifier` configuration:
 }
 ```
 
-Apply the change through the existing CoCo deployment's configuration and rollout
+Apply the change through the selected deployment's configuration and rollout
 process. Verify that the running KBS instance loaded the intended configuration,
 then request a fresh quote through that backend. Record the selected channel
 alongside the deployed policy and reference approvals.
@@ -196,8 +173,7 @@ mitigations, and passing `standard` does not establish compliance with `early`.
 ### Check the policy claim and complete the application test
 
 The raw Intel DCAP result `OK` is exposed by Trustee v0.22.0 as the claim
-`input.tdx.tcb_status == "UpToDate"`. The older policy's literal `"OK"` does not
-match the new claim. The current
+`input.tdx.tcb_status == "UpToDate"`. The
 [CPU policy](config/attestation_policy.rego) requires `UpToDate`, unexpired
 collateral, approved measurements/TCB, and acceptable configuration. It continues
 to reject `OutOfDate`; do not add a permissive fallback to make a test pass.
@@ -216,10 +192,3 @@ Validate recovery through the complete path:
 3. Confirm vault-key release, successful vault unlock and application startup.
 4. Check a real application connection, then periodic attestation when qualifying
    a production deployment.
-
-A fresh TDX server test on 2026-09-18 passed initial attestation, vault unlock,
-NVFlare startup and a secure admin connection with upstream Trustee and the
-explicit `standard` setting. The run also passed 158 unit/policy tests and 12
-HTTPS integration tests. It was a focused candidate test: AMD/GPU execution,
-periodic attestation and the full production hardware acceptance matrix were
-not rerun in that validation.

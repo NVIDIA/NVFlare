@@ -9,3 +9,5 @@ workload:
     type: external
 azure_cc:
   deployment_target: confidential_container
+  cce_policy_file: ./approved-cce-policy.txt
+  startup_kit_signing_key_file: ./deployment-private-key.pem

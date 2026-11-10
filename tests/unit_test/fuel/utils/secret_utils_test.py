@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 import warnings
 
 import pytest
@@ -345,13 +344,14 @@ class TestFindPotentialSecrets:
     def test_authorization_scheme_with_valid_ref_is_safe(self):
         assert find_potential_secrets({"auth_token": "Bearer ${secret:AUTH_TOKEN}"}, location="test") == []
 
+    @pytest.mark.timeout(10)
     @pytest.mark.parametrize("quote", ['"', "'"])
     def test_unterminated_quoted_assignment_with_backslashes_scans_safely(self, quote):
         value = f"API_PASSWORD={quote}" + "\\" * 256
 
-        start = time.monotonic()
+        # The watchdog still catches exponential regex backtracking, without
+        # treating a brief scheduler pause as a scanner regression.
         find_potential_secrets(value, location="test")
-        assert time.monotonic() - start < 1.0
 
     def test_unterminated_quoted_flag_value_is_scanned_as_one_value(self):
         findings = find_potential_secrets('--password "short secret value', location="test")

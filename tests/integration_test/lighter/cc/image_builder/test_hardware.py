@@ -74,6 +74,14 @@ ACCEPTANCE_CHECKS = {
 }
 
 
+# Acceptance waits include enough margin for the measured guest's bounded
+# shutdown path plus scheduler/device latency. GPU appraisal and teardown have
+# a larger allowance; these values do not change the guest's fail-closed limits.
+ACCEPTANCE_STOP_SECONDS = 120
+CPU_FAIL_CLOSED_SECONDS = 90
+GPU_FAIL_CLOSED_SECONDS = 120
+
+
 def applicable_acceptance_checks(manifest):
     """Select the corruption evidence case that applies to the measured profile."""
     selected = dict(ACCEPTANCE_CHECKS)
@@ -129,8 +137,11 @@ class HardwareTests(unittest.TestCase):
         if self.process is not None:
             if self.process.poll() is None:
                 self.process.terminate()
-            self.process.wait(timeout=45)
+            self.process.wait(timeout=ACCEPTANCE_STOP_SECONDS)
             self.process = None
+
+    def fail_closed_timeout(self):
+        return GPU_FAIL_CLOSED_SECONDS if self.manifest["contract"]["gpu"] == "nvidia_cc" else CPU_FAIL_CLOSED_SECONDS
 
     def boot(self, *, reverse_scsi=False, bundle=None):
         bundle = Path(bundle or self.bundle)
@@ -576,7 +587,7 @@ class HardwareTests(unittest.TestCase):
         state = self.ready()
         started = time.monotonic()
         self.assertEqual(json.loads(self.request("/kill-monitor", "POST")), {"injected_monitor_crash": True})
-        self.process.wait(timeout=60)
+        self.process.wait(timeout=self.fail_closed_timeout())
         self.assert_powered_off()
         self.result(
             monitor_crash_powered_off=True, fail_closed_seconds=round(time.monotonic() - started, 3), state=state
@@ -646,7 +657,7 @@ class HardwareTests(unittest.TestCase):
             self.assertEqual(stream.read(4096), changed)
         started = time.monotonic()
         self.assertEqual(json.loads(self.request("/scan", "POST")), {"requested_authenticated_scan": True})
-        self.process.wait(timeout=60)
+        self.process.wait(timeout=self.fail_closed_timeout())
         self.assert_powered_off()
         self.result(
             post_scan_corruption_powered_off=True,
@@ -709,7 +720,7 @@ class HardwareTests(unittest.TestCase):
         state = self.ready()
         started = time.monotonic()
         self.assertEqual(json.loads(self.request("/scan", "POST")), {"requested_authenticated_scan": True})
-        self.process.wait(timeout=60)
+        self.process.wait(timeout=self.fail_closed_timeout())
         self.assert_powered_off()
         self.result(
             prescan_disabled=True,

@@ -38,6 +38,7 @@ def import_references(bundle, store, state, expires):
         store.mkdir(parents=True, exist_ok=True, mode=0o700)
         record_path = store / reference_id
         records = []
+        record_expiration = expires
         if record_path.exists():
             current = read_json(record_path)
             require(
@@ -46,6 +47,8 @@ def import_references(bundle, store, state, expires):
             current_values = current["value"].get("values", {})
             current_expirations = current["value"].get("expirations", {})
             require(set(current_values) == set(current_expirations), "Incomplete RVPS profile record")
+            record_expiration = current.get("expiration")
+            require(isinstance(record_expiration, str) and record_expiration, "Invalid RVPS record expiration")
             records = [
                 {
                     "version": "0.1.0",
@@ -64,7 +67,7 @@ def import_references(bundle, store, state, expires):
             {
                 "version": "0.1.0",
                 "name": reference_id,
-                "expiration": expires,
+                "expiration": record_expiration,
                 "value": {
                     "values": {record["name"]: record["value"] for record in merged},
                     "expirations": reference_expirations(merged),

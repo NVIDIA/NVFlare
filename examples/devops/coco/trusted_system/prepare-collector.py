@@ -39,8 +39,9 @@ def prepare(config, directory):
     ]
     env = helper["read_config"](Path(config).resolve(strict=True), keys)
     tee = env.get("CPU_TEE")
-    if tee not in ("snp", "tdx"):
-        raise ValueError("Select CPU_TEE=snp or CPU_TEE=tdx for the public collector")
+    tee = {"snp": "amd_sev_snp", "tdx": "intel_tdx"}.get(tee, tee)
+    if tee not in ("amd_sev_snp", "intel_tdx"):
+        raise ValueError("Select CPU_TEE=amd_sev_snp or CPU_TEE=intel_tdx for the public collector")
     directory = Path(directory).absolute()
     if directory.exists():
         raise ValueError("Use a new collector publication output directory")
@@ -48,11 +49,11 @@ def prepare(config, directory):
     directory.mkdir(parents=True, mode=0o700)
     build = directory / "build"
     build.mkdir(mode=0o700)
-    dockerfile = "Dockerfile.tdx" if tee == "tdx" else "Dockerfile"
-    collector = "collect-tdx-evidence.py" if tee == "tdx" else "collect-snp-evidence.sh"
+    dockerfile = "Dockerfile.tdx" if tee == "intel_tdx" else "Dockerfile"
+    collector = "collect-tdx-evidence.py" if tee == "intel_tdx" else "collect-snp-evidence.sh"
     for source, name in ((dockerfile, "Dockerfile"), (collector, collector)):
         shutil.copyfile(HERE / "rehearsal-collector" / source, build / name)
-    if tee == "snp":
+    if tee == "amd_sev_snp":
         binary = build / "snpguest"
         subprocess.run(
             [
@@ -85,7 +86,7 @@ def prepare(config, directory):
         "image_id": image_id,
         "sources": {name: helper["digest"](build / name) for name in ("Dockerfile", collector)},
     }
-    if tee == "snp":
+    if tee == "amd_sev_snp":
         metadata["snpguest_sha256"] = SNP_GUEST_SHA256
     path = directory / "collector-image.json"
     with path.open("x") as stream:

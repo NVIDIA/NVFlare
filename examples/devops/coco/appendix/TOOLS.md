@@ -10,15 +10,17 @@ takes precedence.
 
 Run this section after creating `inputs.env` in the main appendix. Load it in
 each terminal. On fresh hosts, install the shared command-line tools and clone
-the public NVFlare 2.9 source:
+the public NVFlare source. Set `NVFLARE_REF` to the approved release tag
+or commit used by the provisioner and workload images:
 
 ~~~bash
 source "$HOME/coco-private/inputs.env"
 sudo apt-get update
 sudo apt-get install -y git curl ca-certificates openssl jq skopeo zstd \
   python3 python3-venv python3-pip python3-yaml iproute2
-git clone --branch 2.9 --single-branch https://github.com/NVIDIA/NVFlare.git \
-  "$HOME/NVFlare"
+: "${NVFLARE_REF:?Set the approved NVFlare release tag or commit}"
+git clone https://github.com/NVIDIA/NVFlare.git "$HOME/NVFlare"
+git -C "$HOME/NVFlare" checkout --detach "$NVFLARE_REF"
 python3 -m venv "$HOME/coco-venv"
 "$HOME/coco-venv/bin/python" -m pip install "$HOME/NVFlare"
 source "$HOME/coco-venv/bin/activate"
@@ -241,7 +243,7 @@ editor "$HOME/coco-private/collector-publication.env"
 Set these values in that configuration (absolute paths, with this host's values):
 
 ~~~bash
-CPU_TEE="snp" # or tdx, matching Host B
+CPU_TEE="amd_sev_snp" # or intel_tdx, matching Host B
 COLLECTOR_REGISTRY_REPOSITORY="registry.coco.lab/coco/collector"
 COLLECTOR_REGISTRY_CA="$HOME/coco-prerequisites/public/ca.pem"
 COLLECTOR_REGISTRY_AUTH_FILE="$HOME/coco-prerequisites/private/registry-auth.json"

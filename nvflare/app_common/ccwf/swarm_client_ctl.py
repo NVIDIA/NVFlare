@@ -605,16 +605,15 @@ class SwarmClientController(ClientSideController):
 
         # Handle self locally to avoid synchronous self-message deadlock.
         # When sending to self via broadcast_and_wait, the message is processed synchronously
-        # on the same thread (via _send_direct_message in core_cell.py). If TensorStreamer
-        # is enabled, this causes deadlock because wait_for_tensors() blocks the thread
-        # waiting for streaming data that can't arrive on the blocked thread.
+        # on the same thread (via _send_direct_message in core_cell.py). If the handler blocks
+        # waiting for data that can't arrive on the blocked thread, this causes deadlock.
         # Instead, queue the task locally via set_learn_task (non-blocking, processed by _do_learn thread).
         should_queue_locally = self.me in targets
         remote_targets = [t for t in targets if t != self.me]
 
         # Queue locally FIRST with a deep copy. Deep copy is needed because:
         # 1. set_learn_task stores a reference, _do_learn processes it later on another thread
-        # 2. send_learn_task may modify task_data in-place (e.g., TensorStreamer replacing tensors with REF IDs)
+        # 2. send_learn_task may modify task_data in-place
         # 3. Without deep copy, there's a race condition between modification and processing
         if should_queue_locally:
             self.log_info(fl_ctx, f"queuing learn task locally for round {for_round}")

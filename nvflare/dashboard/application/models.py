@@ -67,7 +67,9 @@ class Project(db.Model):
         table_dict = {
             c.name: getattr(self, c.name)
             for c in self.__table__.columns
-            if c.name not in ["id", "root_cert", "root_key"]
+            # Keep the legacy cc_mode column for database compatibility, but do
+            # not expose a control that creates no unified CC configuration.
+            if c.name not in ["id", "root_cert", "root_key", "cc_mode"]
         }
         _fix_props(self, table_dict, "project_props")
         _fix_props(self, table_dict, "server_props")

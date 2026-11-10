@@ -131,6 +131,11 @@ NVFlare provides several optional dependency groups that you can install based o
 
 * **CONFIG** - OmegaConf configuration support:
 
+  OmegaConf-based configuration is deprecated in 2.9.1 and will be removed in
+  2.10.0. Use JSON for new runtime and job configuration; see
+  :ref:`configurations` for the migration guidance. The extra remains available
+  in 2.9.1 for compatibility.
+
   .. code-block:: shell
 
      $ pip install nvflare[CONFIG]

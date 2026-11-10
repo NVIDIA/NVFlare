@@ -21,8 +21,9 @@ import textwrap
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import numpy as np
 import pytest
@@ -151,7 +152,9 @@ def external_process_env(tmp_path, monkeypatch):
         launch_once=False,
         launch_timeout=10.0,
         heartbeat_interval=0.1,
-        heartbeat_timeout=2.0,
+        # These cases detect explicit abort and process death. A heartbeat
+        # expiry under scheduler contention must not trigger either scenario.
+        heartbeat_timeout=0.0,
         task_wait_timeout=10.0,
         result_wait_timeout=10.0,
         shutdown_timeout=1.0,
@@ -208,7 +211,8 @@ def _accepted_lazy_result(env):
     return result, trainer
 
 
-def _start_paused_download(env, result, monkeypatch):
+@contextmanager
+def _paused_download(env, result, monkeypatch):
     first_chunk_served = threading.Event()
     release_first_chunk = threading.Event()
     download_done = threading.Event()
@@ -243,39 +247,47 @@ def _start_paused_download(env, result, monkeypatch):
 
     thread = threading.Thread(target=materialize, name="accepted_result_receiver")
     thread.start()
-    assert first_chunk_served.wait(10.0), "receiver never acquired the accepted result source"
-    return SimpleNamespace(
-        abort=download_abort,
-        done=download_done,
-        errors=download_errors,
-        release=release_first_chunk,
-        thread=thread,
-    )
+    try:
+        assert first_chunk_served.wait(10.0), "receiver never acquired the accepted result source"
+        yield SimpleNamespace(
+            abort=download_abort,
+            done=download_done,
+            errors=download_errors,
+            release=release_first_chunk,
+            thread=thread,
+        )
+    finally:
+        download_abort.trigger("test cleanup")
+        release_first_chunk.set()
+        thread.join(timeout=10.0)
+        assert not thread.is_alive(), "accepted-result receiver survived test cleanup"
 
 
 @pytest.mark.timeout(30)
 def test_run_abort_reaps_real_trainer_during_accepted_result_download(external_process_env, monkeypatch, caplog):
     env = external_process_env
     result, trainer = _accepted_lazy_result(env)
-    download = _start_paused_download(env, result, monkeypatch)
+    request_shutdown = Mock(wraps=env.backend._request_trainer_shutdown)
+    monkeypatch.setattr(env.backend, "_request_trainer_shutdown", request_shutdown)
+    with _paused_download(env, result, monkeypatch) as download:
+        caplog.clear()
+        env.run_abort_signal.trigger("job aborted")
+        env.backend.abort(env.fl_ctx)
+        download.abort.trigger("job aborted")
+        download.release.set()
+        env.backend.finalize(env.fl_ctx)
 
-    started = time.monotonic()
-    env.run_abort_signal.trigger("job aborted")
-    env.backend.abort(env.fl_ctx)
-    download.abort.trigger("job aborted")
-    download.release.set()
-    env.backend.finalize(env.fl_ctx)
-    elapsed = time.monotonic() - started
-
-    download.thread.join(timeout=5.0)
-    assert download.done.is_set(), "accepted-result receiver remained blocked after abort"
-    assert download.errors, "aborted materialization unexpectedly completed successfully"
-    assert elapsed < 5.0
+        download.thread.join(timeout=5.0)
+        assert download.done.is_set(), "accepted-result receiver remained blocked after abort"
+        assert download.errors, "aborted materialization unexpectedly completed successfully"
     assert trainer.process.poll() is not None
     assert not env.backend._process_group_alive(trainer)
     assert not trainer.result_source_live.is_set()
     assert env.backend._result_reapers == set()
     assert env.backend._active_launch is None
+    # Abort must bypass the normal shutdown-ack wait, even on a busy host.
+    wait_timeouts = [call.kwargs["wait_timeout"] for call in request_shutdown.call_args_list]
+    assert set(wait_timeouts) == {0.0}, wait_timeouts
     assert "DOWNLOAD_RETRY" not in caplog.text
     env.executor.system_panic.assert_not_called()
 
@@ -285,19 +297,16 @@ def test_run_abort_reaps_real_trainer_during_accepted_result_download(external_p
 def test_real_trainer_death_interrupts_exact_accepted_result_download(external_process_env, monkeypatch, caplog):
     env = external_process_env
     result, trainer = _accepted_lazy_result(env)
-    download = _start_paused_download(env, result, monkeypatch)
+    with _paused_download(env, result, monkeypatch) as download:
+        caplog.clear()
+        os.killpg(trainer.pgid, signal.SIGKILL)
+        assert _wait_until(lambda: trainer.result_failure_notified, timeout=5.0)
+        assert trainer.result_failure_delivery_done.wait(5.0)
+        download.release.set()
+        download.thread.join(timeout=5.0)
 
-    started = time.monotonic()
-    os.killpg(trainer.pgid, signal.SIGKILL)
-    assert _wait_until(lambda: trainer.result_failure_notified, timeout=5.0)
-    assert trainer.result_failure_delivery_done.wait(5.0)
-    download.release.set()
-    download.thread.join(timeout=5.0)
-    elapsed = time.monotonic() - started
-
-    assert download.done.is_set(), "source-loss notification did not release the exact receiver"
-    assert download.errors, "materialization unexpectedly completed after its source died"
-    assert elapsed < 10.0
+        assert download.done.is_set(), "source-loss notification did not release the exact receiver"
+        assert download.errors, "materialization unexpectedly completed after its source died"
     assert _wait_until(lambda: env.executor.system_panic.call_count == 1, timeout=5.0)
     assert env.run_abort_signal.triggered
     assert trainer.process.poll() == -signal.SIGKILL

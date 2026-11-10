@@ -47,6 +47,21 @@ class TestJobManager(unittest.TestCase):
             content = self.job_manager.get_content(meta, self.fl_ctx)
             assert content == data
 
+    def test_authoritative_job_presence(self):
+        with mock.patch.object(self.job_manager, "_get_job_store", return_value=FilesystemStorage()):
+            _, meta = self._create_job()
+            job_id = meta[JobMetaKey.JOB_ID.value]
+            assert self.job_manager.job_exists(job_id, self.fl_ctx) is True
+            self.job_manager.delete(job_id, self.fl_ctx)
+            assert self.job_manager.job_exists(job_id, self.fl_ctx) is False
+
+    def test_job_presence_propagates_storage_permission_failure(self):
+        with mock.patch.object(self.job_manager, "_get_job_store", return_value=FilesystemStorage()):
+            _, meta = self._create_job()
+            with mock.patch("nvflare.app_common.storages.filesystem_storage.os.stat", side_effect=PermissionError):
+                with self.assertRaises(PermissionError):
+                    self.job_manager.job_exists(meta[JobMetaKey.JOB_ID.value], self.fl_ctx)
+
     def test_get_app_rejects_escaping_job_folder_name(self):
         with mock.patch("nvflare.apis.impl.job_def_manager.SimpleJobDefManager._get_job_store") as mock_store:
             mock_store.return_value = FilesystemStorage()
@@ -106,15 +121,25 @@ class TestJobManager(unittest.TestCase):
 
     def test_set_abnormal_status_records_duration_from_canonical_start(self):
         store = mock.MagicMock()
-        start_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=1)
+        end_time = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        start_time = end_time - datetime.timedelta(seconds=1)
         store.get_meta.return_value = {JobMetaKey.START_TIME.value: start_time.isoformat()}
 
-        with mock.patch.object(self.job_manager, "_get_job_store", return_value=store):
+        with (
+            mock.patch.object(self.job_manager, "_get_job_store", return_value=store),
+            mock.patch("nvflare.apis.impl.job_def_manager.datetime") as clock,
+        ):
+            clock.datetime.fromisoformat.side_effect = datetime.datetime.fromisoformat
+            # Honor tz like the real clock so naive/aware mixing still raises.
+            clock.datetime.now.side_effect = lambda tz=None: (
+                end_time.astimezone(tz) if tz else end_time.replace(tzinfo=None)
+            )
+            clock.timezone.utc = datetime.timezone.utc
             self.job_manager.set_status("job-1", RunStatus.FINISHED_ABNORMAL, self.fl_ctx)
 
         meta = store.update_meta.call_args.kwargs["meta"]
         duration = datetime.timedelta(seconds=float(meta[JobMetaKey.DURATION.value].split(":")[-1]))
-        assert datetime.timedelta(seconds=0.9) <= duration <= datetime.timedelta(seconds=2)
+        assert duration == datetime.timedelta(seconds=1)
 
     def test_set_abnormal_status_records_duration(self):
         store = mock.MagicMock()

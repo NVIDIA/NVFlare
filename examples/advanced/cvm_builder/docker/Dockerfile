@@ -6,8 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PIP_NO_CACHE_DIR=1
 ENV PYTHONPATH=/local/custom
 
-RUN pip install -U pip &&\
-    pip install nvflare~=2.9.0
+COPY nvflare_wheels/*.whl /tmp/nvflare_wheels/
+RUN python -m pip install /tmp/nvflare_wheels/*.whl
 COPY code/ /local/custom
 COPY requirements.txt .
 RUN pip install -r requirements.txt

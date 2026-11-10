@@ -1,21 +1,16 @@
 > Current implementation targets CoCo v0.23.0 / the upstream Trustee v0.22.0
 > service plus a reviewed selector-capable standalone client build.
-> A September 21 native-CVM run at `95bf53889` passed with a TDX server,
-> an SNP/H800 client, upstream Trustee and periodic CPU/GPU appraisal; see
-> [VALIDATION.md](VALIDATION.md). Subsequent token-freshness changes require new
-> measured artifacts. Positive workload results do not complete the destructive
-> storage, GPU-denial or full deployment acceptance matrix. Production approval
-> remains gated on the complete matrix for the exact released profile.
+> The checked-in `cpu-2026.09-r5` profile remains `production_ready: false`.
+> The [acceptance requirements](VALIDATION.md) apply to each exact
+> manifest. Production approval requires
+> complete evidence for the exact released profile and target deployment.
 
 # NVIDIA Confidential Computing Reference Architecture Conformance
 
-Review date: September 17, 2026
-Original review: commit `eaff81ca0b7a09f6a128aa9bd9f14c76586088ed`.
-September 15 follow-up validation is recorded below. The September 17 composite
-GPU authorization and PR boundary tests are recorded in [VALIDATION.md](VALIDATION.md).
-
-Reference: NVIDIA *Deploying Proprietary Models in Confidential Compute —
-Self-Hosted VMs*, last updated June 4, 2026
+This document maps implementation controls and deployment requirements
+to NVIDIA's [self-hosted VM reference architecture](https://docs.nvidia.com/enterprise-reference-architectures/deploying-proprietary-models-confidential-compute-self-hosted-vms/latest/index.html)
+and its [Kubernetes companion](https://docs.nvidia.com/enterprise-reference-architectures/deploying-proprietary-models-confidential-compute-self-hosted-kubernetes/latest/index.html).
+An implementation mapping is not production approval of a hardware profile.
 
 ## Purpose and scope
 
@@ -42,11 +37,32 @@ The RA's Dell server and eight-GPU configuration is a worked example rather than
 a universal hardware mandate. An alternate platform can conform when its exact
 hardware and software profile is documented, validated, and approved.
 
+## Deployment mapping
+
+The unified provisioning interface selects `cc_deployment_mode` in each
+participant's `cc_config`. Common attestation services are defined once in
+`cc_project.yml`; choosing that interface does not make the underlying trust
+boundaries interchangeable.
+
+| Deployment mode | Reference architecture and enforcement boundary | Configuration and evidence |
+|---|---|---|
+| `bare_metal_cvm` | The standalone VM RA is the applicable comparison. Trustee authorizes the vault key using CPU and, when required, GPU evidence; the measured root authenticates the application vault before starting its workload. | [Common provisioning schema](../../../../docs/user_guide/confidential_computing/deployment.rst), [security architecture](../../../../docs/user_guide/confidential_computing/on_premises/security_architecture.rst), and the controls below. |
+| `coco` | The Kubernetes RA is the applicable comparison. Kata's confidential runtime, image protection, agent policy, and attestation-controlled key release form the Pod boundary. | [CoCo security architecture](../../../../docs/user_guide/confidential_computing/coco_security_architecture.rst) and its deployment-specific acceptance. CVM Builder receipts do not qualify a Kata Pod. |
+| `azure_cc` | Azure's confidential runtime and attestation contract need their own provider-specific assessment. | [Azure deployment guide](../../../../docs/user_guide/confidential_computing/azure/index.rst). A unified startup kit is not a standalone VM or CoCo RA conformance claim. |
+
+Bare-metal CVMs and CoCo can share the same upstream Trustee instance in one
+trusted administrative domain. Each CVM CPU/GPU profile has immutable policy
+selectors and a separate RVPS namespace; installing a CVM profile must preserve
+CoCo's existing defaults and records. See [TRUSTEE_GUIDE.md](TRUSTEE_GUIDE.md).
+The repository's CoCo/Trustee pins are its integration contract, not a
+claim that it implements every component/version in the newer Kubernetes RA's
+reference stack. Validate the exact deployed combination before release.
+
 ## Status legend
 
 | Status | Meaning |
 |---|---|
-| Meets | The implementation contains the required control and there is applicable test evidence. |
+| Meets | The implementation contains the required control; deployment-specific acceptance is still required. |
 | Conditional | The control is present when the documented profile or deployment procedure is followed. |
 | Gap | The implementation does not yet provide the required control for an applicable profile. |
 | Evidence pending | The control exists, but current end-to-end hardware evidence is incomplete. |
@@ -62,38 +78,16 @@ vault storage, fail-closed workload startup and periodic re-attestation.
 The CPU-only NVFlare profile does not have a GPU conformance gap; it follows the
 CPU-CVM trust path and is outside the cited RA's GPU-inference scope.
 
-The GPU-enabled profile now gates vault keys on a composite CPU/GPU EAR at
-Trustee. Its implementation is covered by policy, signed-token and HTTPS tests,
-plus positive SNP/H800 workload and periodic-appraisal evidence at `95bf53889`.
-Physical negative-case acceptance and acceptance of subsequent source changes
-remain pending. Full conformance
-also depends on the exact production hardware/BOM and remaining deployment
-requirements below.
+The GPU-enabled profile gates vault keys on a composite CPU/GPU EAR at
+Trustee. Production acceptance must cover positive release, denial cases,
+periodic appraisal and the exact hardware/software profile.
 
-Additional work is required to make a production conformance claim: record the
-exact approved deployment profile, restrict network traffic by endpoint as well
-as port, complete the operational audit fields and export path, make OCI signature
-verification an enforced delivery step, and run the complete acceptance matrix on
-freshly built production artifacts.
-
-## September 15 validation follow-up
-
-Fresh CPU-only TDX and H800/SNP candidates were built and round-tripped through
-the lab OCI registry. Diagnostics confirmed H800 passthrough after reserving a
-256 GiB PCIe window and successful remote NVIDIA cryptographic appraisal through
-the pinned C++ `nvattest` client. The current policy handles two schema claims
-omitted by NRAS without making report/RIM signature, certificate, nonce, version
-or measurement checks optional.
-
-The complete current hardware matrices remain pending. They exposed cold-boot
-NTS connectivity and chrony initialization issues; the initialization regression tests now pass on both Linux hosts. All 13
-applicable final TDX hardware cases and its zero-argument offline OCI launch
-passed. SNP GPU hardware acceptance remains blocked by another Kata workload
-holding the physical GPU.
-See [VALIDATION.md](VALIDATION.md) for completed test counts, timed build stages,
-and the exact limits of the evidence. The [Trustee setup guide](TRUSTEE_GUIDE.md)
-adds deployment instructions without changing the CPU-only key-release policy
-or establishing hardware acceptance of the new composite key-release path.
+Production conformance still requires an exact approved deployment profile/BOM,
+configured endpoint restrictions, a privacy-safe audit/export procedure, and the
+complete acceptance matrix on freshly built artifacts. Endpoint CIDR controls
+and authenticated OCI materialization are implemented; they are not missing
+features. Operators must supply the actual network allowlists and trusted
+publisher/approval keys, then validate those controls at the target site.
 
 ## Required capabilities
 
@@ -105,7 +99,7 @@ and
 | RA capability | CPU-only profile | GPU-enabled profile | Implementation evidence and remaining work |
 |---|---|---|---|
 | Launch the workload in a measured CVM | Meets | Evidence pending | SNP and TDX launch assets and shape are pinned in `cvm/host/launcher.py`; reference evidence is collected in `cvm/build/cvm.py` and acceptance receipts are verified in `cvm/artifacts/bundle.py`. Current source changes require fresh hardware acceptance before production approval. |
-| Collect fresh evidence for the CPU TEE, guest image, launch configuration, firmware, and applicable GPU | Meets | Conditional | `cvm/runtime/attestation.py` obtains a fresh KBS challenge, binds it to an ephemeral key, validates the signed EAR, and checks the selected CPU profile. The upstream CoCo client collects NVIDIA evidence bound to RCAR runtime data; Trustee verifies NRAS signatures and applies the generated GPU policy. Positive GPU appraisal and CUDA jobs passed at `95bf53889`; later source changes require a fresh GPU run and physical negative acceptance remains pending. |
+| Collect fresh evidence for the CPU TEE, guest image, launch configuration, firmware, and applicable GPU | Meets | Conditional | `cvm/runtime/attestation.py` obtains a fresh KBS challenge, binds it to an ephemeral key, validates the signed EAR, and checks the selected CPU profile. The upstream CoCo client collects NVIDIA evidence bound to RCAR runtime data; Trustee verifies NRAS signatures and applies the generated GPU policy. Acceptance must demonstrate positive GPU appraisal and physical negative-case denial for the exact released profile. |
 | Release a protected key only after fresh evidence matches policy | Meets | **Evidence pending** | `authorized_key()` uses a composite RCAR transaction. The CPU quote covers GPU evidence; KBS requires the configured NVIDIA GPU submods before releasing a GPU vault key. CPU-only rules are unchanged. Physical negative acceptance remains pending. |
 | Keep keys out of host-visible storage and normal VM-management paths | Meets | Meets | KBS response decryption uses an ephemeral private key; plaintext keys are held in sealed memory file descriptors and passed to `cryptsetup` through `/proc/self/fd`. No plaintext key is written to a disk or command line. |
 | Keep confidential model artifacts encrypted outside the CVM | Conditional | Conditional | The vault is LUKS2-encrypted and authenticated. `/user_config`, `/user_data`, and `/applog` are intentionally clear sidecars. Confidential model weights, credentials, and proprietary application material must be placed in the vault rather than those sidecars. The builder rejects obvious private keys in public inputs but cannot infer the confidentiality of arbitrary data. |
@@ -125,7 +119,7 @@ and
 | TLS and service authentication | Conditional | KBS and GPU appraisal URLs require HTTPS, and KBS trust is pinned. The generic application container is responsible for its own HTTPS listener, peer authentication, and authorization. A production RA deployment must document those controls. |
 | Encrypted storage and binding | Meets | The vault uses detached LUKS2 metadata, AES-XTS data encryption, HMAC-SHA256 authentication, a frozen inspected header and exact device/mapping validation. The default profile scans the full authenticated mapping before startup; measured `vault_prescan: false` profiles detect corruption on read and require separate monitor/poweroff acceptance. The unencrypted measured root contains generic software and public policy rather than application secrets. |
 | Clear sidecars | Conditional | `/user_config` and `/user_data` are operator-supplied, unencrypted, and read-only in QEMU, the guest, and the container. `/applog` is intentionally unencrypted and writable for operator-readable output. They conform only when their contents are classified as nonconfidential and logs contain no secrets, proprietary payloads, or sensitive evidence. |
-| Artifact identity and integrity | Conditional | OCI materialization verifies content digests and registry pulls require digest references. `cvmctl pull` now authenticates the publisher through `--archive-sha256` or `--cosign-key` and requires an explicit `--allow-unverified` to skip it; generic bundle approvals are Ed25519-signed by the acceptance authority. A production release process must still control who holds those keys and record the verified digest with the approval. |
+| Artifact identity and integrity | Conditional | OCI materialization verifies content digests and registry pulls require digest references. `cvmctl pull` authenticates the publisher through `--archive-sha256` or `--cosign-verification-key` and requires an explicit `--allow-unverified` to skip it; `cvmctl run` has no unauthenticated override. Generic bundle approvals are Ed25519-signed by the acceptance authority. A production release process must still control who holds those keys and record the verified digest with the approval. |
 | Image and key lifecycle | Conditional | The generic CVM build and application vault are independently versioned. Approval receipts, KBS resource installation, retirement/revocation, OCI digests, and rebuild/update procedures implement the RA lifecycle model. Current measured artifacts must be rebuilt and reapproved after source changes. |
 | Operational signals | Conditional | Local audit records are privacy-safe, but the RA also expects a policy decision, verifier, useful safe failure reason, and operational correlation. Export, retention, alerting, clock monitoring, and SIEM integration remain deployment work. |
 
@@ -141,9 +135,9 @@ and
 
 The RA's
 [Appendix E acceptance tests](https://docs.nvidia.com/enterprise-reference-architectures/deploying-proprietary-models-confidential-compute-self-hosted-vms/latest/appendix-e.html)
-are the minimum production evidence set. `VALIDATION.md` records the existing
-software and lab results; the table below identifies what remains for the current
-source revision.
+are the minimum production evidence set. `VALIDATION.md` describes the
+exact-manifest acceptance and approval requirements; the table below identifies
+the evidence required for the deployed configuration.
 
 | RA acceptance test | Status for current implementation | Required evidence |
 |---|---|---|
@@ -152,7 +146,7 @@ source revision.
 | Tampered launch parameters | Evidence pending | Test changed vCPU count, CPU model, memory/launch shape, firmware, and measured boot inputs as applicable; show appraisal or binding denial before key release. |
 | GPU CC mode disabled or invalid GPU evidence | **Evidence pending for a GPU profile** | Composite authorization is implemented. Run missing/tampered/replayed GPU and CC-disabled hardware cases and prove no key release, no vault mapper, no allow record and bounded poweroff. CPU-only profiles do not run this test. |
 | Expired or revoked collateral | Conditional | JWT lifetime, appraisal status, trust vector, and collateral claims are checked in software tests. Add a real expired/revoked attestation collateral case on the production verifier path. |
-| KBS/KMS outage | Meets, refresh after rebuild | The recorded TDX KBS DROP test powered the guest off within the acceptance limit. Repeat on the final production artifacts and both selected CPU platforms. |
+| KBS/KMS outage | Deployment acceptance required | Exercise unavailable or unresponsive KBS endpoints on the final production artifacts and each selected CPU platform; verify bounded containment and the profile's required recovery or poweroff behavior. |
 | Key disable or revocation | Conditional | Native KBS deletion and bundle-policy retirement deny future retrieval. Native uploads can recreate deleted keys; demonstrate upload fencing and preservation of deletions/current policy across backup restore, then repeat periodic denial on final artifacts. |
 | Administrator bypass attempts | Evidence pending | Existing tests cover SSH/service/socket/core-dump hardening. Add console, QEMU monitor, host attach, memory-dump, and direct vault-access attempts expected by the deployed management stack. |
 | Artifact and key rotation | Conditional | Versioned builds, vaults, resource paths, approval, retirement, and OCI digests support rotation. Demonstrate an old-artifact denial and new-artifact success on the final release. |
@@ -178,9 +172,7 @@ to **Meets** requires exact-profile hardware evidence for
 `gpu_negative_key_denial`, `gpu_positive_key_release`, `gpu_policy_selection`,
 `cross_class_denial` and `periodic_gpu_denial`, including CC-disabled, tampered,
 replayed and missing-device cases. Verify no allow record or vault mapper before
-key denial and bounded poweroff. The September 21 positive hardware run at
-`95bf53889` exercises this composite path, but does not establish those negative
-cases or qualify the subsequent token-freshness changes.
+key denial and bounded poweroff. Complete the hardware acceptance matrix for the exact production artifacts before approval.
 
 ### C2 — Bind approval to an exact production profile and BOM
 
@@ -193,15 +185,18 @@ the record's digest to the approved CVM profile or approval receipt. The RA's
 [Appendix F](https://docs.nvidia.com/enterprise-reference-architectures/deploying-proprietary-models-confidential-compute-self-hosted-vms/latest/appendix-f.html)
 provides the expected BOM categories.
 
-### C3 — Restrict traffic to approved endpoints and callers
+### C3 — Configure the implemented endpoint controls
 
 Severity: Medium.
 
-Define and enforce source address rules for inbound application traffic and
-destination address or proxy rules for KBS, verifier, artifact, DNS, and time
-services. Until the guest schema supports address constraints, document the
-external firewall or gateway that supplies this control and include it in site
-acceptance.
+The authenticated application schema supports `allowed_in_cidrs` and
+`allowed_out_cidrs`, enforced together with TCP port allowlists by
+`cvm/common/firewall.py` and `cvm/runtime/bootstrap.py`. An empty CIDR list permits
+any address on an allowed port, so production operators must supply the site
+allowlists. DNS is restricted to discovered resolvers. Bootstrap egress and NTS
+traffic have their own rules; the application CIDRs alone are not a restriction
+on every bootstrap/time-service connection. Use an external firewall or gateway
+where tighter endpoint control is required and include that boundary in acceptance.
 
 ### C4 — Complete privacy-safe operational records
 
@@ -214,14 +209,19 @@ evidence body, model data, user data, or private configuration appears in logs.
 The suggested interface fields are in
 [Appendix C](https://docs.nvidia.com/enterprise-reference-architectures/deploying-proprietary-models-confidential-compute-self-hosted-vms/latest/appendix-c.html).
 
-### C5 — Enforce signed OCI provenance
+### C5 — Operate the implemented publisher-authentication controls
 
 Severity: Medium.
 
-Keep digest verification and digest-pinned registry references. Make signature
-and provenance verification mandatory in the artifact materialization command or
-in a release-channel control that cannot be skipped. Record the verified digest
-and signer identity with the approval.
+`cvmctl run` requires publisher authentication: a trusted `--archive-sha256`
+for an offline archive or `--cosign-verification-key` for a signed registry
+artifact. Digest-pinned references and content checks protect artifact integrity;
+the independently trusted hash or signing key establishes publisher identity.
+`cvmctl pull --allow-unverified` is an explicit evaluation-only escape hatch,
+not a production distribution procedure. Generic approvals are separately signed
+with Ed25519 and bound to the manifest. Production operators must distribute
+trusted publisher hashes/keys and approval keys through an authenticated channel,
+control signing authority, and record the digest/signer with release evidence.
 
 ### C6 — Complete fresh hardware acceptance
 
@@ -254,9 +254,9 @@ validation and approval.
 
 ## Review limitations
 
-This is a source, design, and recorded-evidence review. It does not certify a
+This is a source and design assessment. It does not certify a
 deployment, a particular NVIDIA GPU/driver/firmware combination, the external
 Trustee configuration, network perimeter controls, log retention, or an artifact
-registry. `VALIDATION.md` remains the record of executed tests. Production
+registry. `VALIDATION.md` defines production acceptance requirements. Production
 conformance is established only by the signed configuration/BOM and acceptance
 evidence for the exact delivered artifacts and target site.

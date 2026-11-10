@@ -31,10 +31,13 @@ def test_working_tree_validation_checks_new_guides_and_pending_deletions(tmp_pat
     repo = tmp_path / "repo"
     source = repo / "examples/devops/coco"
     shutil.copytree(SOURCE, source)
-    # The source-checkout guide links to the canonical Trustee documentation.
-    reference = Path("nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md")
-    (repo / reference).parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(SOURCE.parents[2] / reference, repo / reference)
+    # Source-checkout guides link to canonical Trustee and operations docs.
+    for reference in (
+        Path("nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md"),
+        Path("docs/user_guide/confidential_computing/operations.rst"),
+    ):
+        (repo / reference).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / reference, repo / reference)
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     obsolete = source / "obsolete.md"
     obsolete.write_text("Retired guide\n")

@@ -20,23 +20,12 @@ storage design; its guarantees must not be imported into this CoCo deployment.
 
 .. important::
 
-   **Implementation scope:** ``2.9`` revision
-   `0b2d5dd39 <https://github.com/NVIDIA/NVFlare/commit/0b2d5dd39>`_ includes
-   `PR #5344 <https://github.com/NVIDIA/NVFlare/pull/5344>`_, extending the
-   SNP-plus-GPU framework to all four explicit SNP/TDX CPU-only/GPU targets.
-   This architecture change documents that implementation; it adds no runtime
-   support itself.
-   The September 29, 2026 real-quote test was rejected because both launch and
-   current TCB were ``OutOfDate``; that failure remains part of the record.
-   On October 4, 2026, a separate mixed functional deployment passed with an
-   ordinary trusted server, a CPU-only TDX client, and an SNP plus NVIDIA GPU
-   client. Authorized Kata guests launched encrypted images, obtained release
-   resources, registered with required peer proofs, and completed a finite
-   job with both clients. The job used CPU arithmetic; GPU appraisal was
-   required for the SNP client. That result does not qualify TDX plus GPU,
-   sustained renewal, confidentiality denial tests, or the complete negative
-   test matrix. See :ref:`acceptance and evidence limits <coco_security_acceptance>`.
-   Implemented targets and passing offline tests are not hardware acceptance.
+   Select the CPU/GPU target explicitly and review its guest, Trustee,
+   workload, and network policies before deployment. The implementation
+   supports all four SNP/TDX CPU-only/GPU targets, but production approval
+   requires acceptance for the exact target and protected-participant
+   topology. Configuration support does not establish hardware acceptance.
+   See :ref:`deployment acceptance requirements <coco_security_acceptance>`.
 
 .. contents:: Find a security answer
    :local:
@@ -62,7 +51,7 @@ There are **two separate authorization decisions**:
 * **Workload authorization:** Trustee's Key Broker Service (KBS) releases
   resources only when attestation and release-specific policy permit it. The
   guest verifies the image and enforces its agent policy before running it.
-* **Federation participation:** NVFlare's CCManager and CoCoAuthorizer verify
+* **Federation participation:** NVFlare's CCManager and TrusteeAuthorizer verify
   proofs from the configured protected participants. This does not replace KBS
   authorization, image protection, application review, or normal FL identity
   authentication.
@@ -89,22 +78,22 @@ Target profiles and implementation scope
      - ``kata-qemu-snp``
      - ``cpu_tee: amd_sev_snp``; ``gpu_tee: none``
      - CPU only
-     - Implemented in ``2.9``
+     - Implemented
    * - SNP with NVIDIA GPU
      - ``kata-qemu-nvidia-gpu-snp``
      - ``cpu_tee: amd_sev_snp``; ``gpu_tee: nvidia_cc``
      - CPU and GPU
-     - Implemented in ``2.9``
+     - Implemented
    * - TDX, CPU-only
      - ``kata-qemu-tdx``
      - ``cpu_tee: intel_tdx``; ``gpu_tee: none``
      - CPU only
-     - Implemented in ``2.9``
+     - Implemented
    * - TDX with NVIDIA GPU
      - ``kata-qemu-nvidia-gpu-tdx``
      - ``cpu_tee: intel_tdx``; ``gpu_tee: nvidia_cc``
      - CPU and GPU
-     - Implemented in ``2.9``
+     - Implemented
 
 CPU-only is an intentional deployment mode,
 not a fallback after GPU attestation fails. CPU-only profiles need no NVIDIA GPU
@@ -238,7 +227,7 @@ Assets and visibility
        token-signing public key.
    * - Guest attested private key
      - AA and authorized guest code; used for resource decryption and the
-       CoCoAuthorizer possession proof.
+       TrusteeAuthorizer possession proof.
      - The raw AA token response must never be exported. This is not a claim
        that application-accessible key material is hardware-nonexportable.
    * - Pod, InitData, policy, digests, manifests, encrypted blobs, reference values
@@ -523,7 +512,7 @@ secrets and storage outside the hostile compute administrators' control.
 Before sending data, the owner-controlled service must authenticate the
 recipient and authorize its site, authorized workload, dataset scope and expiry.
 A participant certificate proves an identity, not that authorized code is
-executing. CoCoAuthorizer's peer proof is also **not an exact-image workload
+executing. TrusteeAuthorizer's peer proof is also **not an exact-image workload
 authorization or a dataset ACL**. Implement and review the service's proof and
 credential-delivery protocol; do not export the raw AA response or its private
 key, and do not put dataset credentials in public Pod YAML or host-managed
@@ -639,12 +628,12 @@ Host-controlled and guest-local interfaces
        guest-component APIs, including AA's ``/aa/token``; CDH also has a
        guest-local socket interface.
      - **Assets:** raw AA response and its guest private key, EARs, and released
-       resources. CoCoAuthorizer restricts its AA call to guest loopback,
+       resources. TrusteeAuthorizer restricts its AA call to guest loopback,
        disables proxies/redirects, and bounds the response. KBS separately
        authorizes protected resource requests.
      - These caller checks are not isolation from a compromised application
        inside the guest. Review all enabled REST/socket endpoints and their
-       reachability, not only the URL used by CoCoAuthorizer. Do not export
+       reachability, not only the URL used by TrusteeAuthorizer. Do not export
        them through a Service, host port, proxy, or diagnostic output; do not
        assume a host-controlled network policy protects them.
 
@@ -851,8 +840,7 @@ the platform under test.
 TDX verification
 ----------------
 
-The collection/export and RVPS/AS policy implementation is included in
-``2.9``. Evaluate acceptance for the selected target, runtime revision, and
+The integration includes TDX collection/export and RVPS/AS policy support. Evaluate acceptance for the selected target, runtime revision, and
 deployment using the recorded :ref:`acceptance evidence and limits
 <coco_security_acceptance>`.
 
@@ -941,7 +929,7 @@ Preparing an immutable release
 
 The trusted workload owner runs ``nvflare provision -p project.yaml`` with
 explicit CC settings for each protected participant. The CoCo builder generates
-CCManager/CoCoAuthorizer configuration and prepares the startup kit before
+CCManager/TrusteeAuthorizer configuration and prepares the startup kit before
 signature generation. The packager incorporates that signed kit into a reviewed
 container build and creates a separate protected release for each participant.
 
@@ -1314,7 +1302,9 @@ NVFlare peer attestation and its limits
 Generation and verification protocol
 ------------------------------------
 
-Inside a protected client or server, CoCoAuthorizer calls the guest-local AA
+Unified CoCo provisioning selects ``TrusteeAuthorizer`` with the CoCo guest
+provider. It uses the ``CoCoAuthorizer`` proof implementation described here.
+Inside a protected client or server, that provider calls the guest-local AA
 token API. For a new attestation token, AA interacts with Trustee; it may also
 return a cached token. The authorizer disables environment proxies and
 redirects for this sensitive local request and bounds its response size.
@@ -1342,8 +1332,19 @@ The recipient validates the inner EAR with the pinned AS key, extracts the
 attested public key, and validates the outer proof with that key. It checks the
 project audience and, through ``verify_for_site()``, the signed subject against
 the **independently authenticated FL peer**. Incoming JWT key URLs/certificates
-are not accepted as new trust roots. Proof possession prevents merely forwarding
-an EAR without its associated key from satisfying these checks.
+are not accepted as new trust roots. Creating an outer proof requires the
+private key corresponding to the attested public key; copying an EAR alone
+does not create that signature. A complete, already signed proof can still be
+presented wherever its site, audience, time, workload-policy, and local replay
+checks permit it.
+
+The proof contains no verifier-specific recipient or CC challenge and is not
+bound to a particular TLS session. Signed site identity and proof-key possession
+must therefore not be described as connection-specific attestation. Normal FL
+authentication and protection of FL/proof private keys remain required. Routed
+Cell traffic may cross a server or relay, so the immediate TLS peer need not be
+the logical participant named in the proof. See
+:ref:`cc_peer_attestation_limits` for the shared CVM/CoCo boundaries.
 
 Verification is local: it does not contact Trustee, query RVPS, need a GPU,
 or require a Kata guest. The ordinary server can therefore verify a CoCo
@@ -1390,10 +1391,15 @@ or command. Workload-specific key authorization remains KBS's job.
 
 ``workload_constraints`` can pin each protected site's InitData digest,
 SNP measurement, CPU TEE and TDX MRTD/RTMR values. With constraints enabled,
-unlisted sites or missing/mismatched required claims fail. The legacy
-``measurement`` key means SNP, never TDX. The canonical InitData constraint is
+unlisted sites or missing/mismatched required claims fail. The InitData constraint is
 SHA-256, with strict TDX padding normalization. These restrictions narrow
 accepted peers but do not replace AS appraisal or KBS resource authorization.
+
+Unified provisioning derives each site's ``gpu_required`` constraint from its
+selected profile. It does not derive InitData or measurement pins automatically.
+Supply those additional pins from the trusted approval workflow when the
+deployment's policy requires them; do not learn expected values from a peer's
+presented proof.
 
 The outer audience is project-specific (generated as ``nvflare-trustee:<project>``).
 It is different from the optional inner ``ear_audience`` constraint. By default
@@ -1401,6 +1407,8 @@ there is no independent expected EAR audience or AS policy identifier. A
 successful proof is not by itself proof that one particular application is
 authorized for that project; protect FL credentials, service policy and, when
 required, site-specific workload constraints accordingly.
+
+.. _coco_peer_proof_freshness:
 
 Freshness, clocks, and replay
 -----------------------------
@@ -1679,7 +1687,7 @@ acceptance record, with relevant software, policy and configuration revisions:
 
 Service log lines are diagnostic observations, not necessarily cryptographic
 correlation of all events to one attestation session. An empty log is not proof
-that secret output is impossible. A standalone CoCoAuthorizer success is not
+that secret output is impossible. A standalone TrusteeAuthorizer success is not
 proof of encrypted image release, full registration, protected-server behavior,
 or completion of a federated job. Record each result separately; absent tests
 remain unverified. Never describe all four runtime variants as hardware-proven
@@ -1891,7 +1899,8 @@ and complement this security model's acceptance requirements.
 
 Implementation sources for reviewers:
 
-* :github_nvflare_link:`CoCoAuthorizer <nvflare/app_opt/confidential_computing/coco_authorizer.py>` and
+* :github_nvflare_link:`TrusteeAuthorizer <nvflare/app_opt/confidential_computing/trustee_authorizer.py>`,
+  its :github_nvflare_link:`shared peer-proof implementation <nvflare/app_opt/confidential_computing/coco_authorizer.py>`, and
   :github_nvflare_link:`CCManager <nvflare/app_opt/confidential_computing/cc_manager.py>`
 * :github_nvflare_link:`CoCo provisioning <nvflare/lighter/cc_provision/impl/coco.py>` and
   :github_nvflare_link:`packaging <nvflare/lighter/cc_provision/impl/coco_packager.py>`

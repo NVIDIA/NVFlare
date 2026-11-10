@@ -35,6 +35,7 @@ from nvflare.fuel.flare_api.api_spec import (
 from nvflare.fuel.flare_api.flare_api import Session, new_session
 from nvflare.fuel.hci.client.api import APIStatus, ResultKey
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
+from tests.timing_utils import isolate_time
 
 
 @pytest.mark.parametrize("job_name", ["fox training poc", ".hidden-job", "-flaggy-job"])
@@ -591,3 +592,11 @@ class TestSessionRestart:
         sess = _make_session_with_meta({})
         with pytest.raises(ValueError, match="restart target_type must be one of"):
             sess.restart("relay")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.fuel.flare_api.flare_api",
+    )

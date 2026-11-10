@@ -10,12 +10,35 @@ participation. For environment selection and prerequisites, start with
 :ref:`cc_getting_started`; provisioning configuration belongs in
 :ref:`cc_deployment`.
 
-This description follows the **2.9 implementation and its design contracts**.
+This description follows the implementation and its design contracts.
 Implemented checks are distinguished from deployment requirements: administrators
 must supply trusted endpoints, approvals, data-access policy, and output controls.
 The configuration does not create those trust relationships automatically.
 Hardware acceptance remains profile- and revision-specific; see
 :ref:`cc_getting_started` for the validation records.
+
+Architecture reading guide
+--------------------------
+
+.. list-table:: Choose the architecture page for the question
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Page
+     - Use it for
+     - Deployment scope
+   * - This cross-mode architecture
+     - Shared actors, trust boundaries, attestation, key release, participant
+       proofs, data paths, and protection limits.
+     - Standalone CVM, CoCo, and the distinct Azure integration.
+   * - :ref:`CVM Builder security architecture <cc_architecture>`
+     - Generic-root and application-vault construction, storage, launch, and
+       Trustee binding.
+     - Standalone ``bare_metal_cvm`` deployments.
+   * - :ref:`CoCo security architecture <coco_security_architecture>`
+     - Kata/CoCo Pod launch inputs, encrypted images, agent policy, Kubernetes
+       handoffs, and remaining qualification gaps.
+     - Kubernetes ``coco`` deployments.
 
 .. contents:: On this page
    :local:
@@ -215,6 +238,8 @@ controls do not prove that every YAML field or exact application image digest
 is enforced. See :ref:`coco_security_attack_surface` for the remaining identity
 and guest-integrity limitations.
 
+.. _cc_peer_attestation_limits:
+
 Attestation and workload authorization
 --------------------------------------
 
@@ -229,13 +254,32 @@ Boot-time secret release and federation participation are separate decisions:
   CoCo provisioning generates ``TrusteeAuthorizer`` components that use the same
   identity-bound peer-proof format through different guest integrations.
 
+Trustee peer proofs bind a signed logical site name and project audience to an
+attested proof key. The verifier matches that site name to the independently
+authenticated FL participant. This is logical identity binding: the proof is
+not bound to a particular TLS session and does not contain a verifier-issued
+CC challenge. An already signed proof remains subject to its time, audience,
+site, workload-policy, and local replay checks; those checks do not make it a
+fresh response for each receiving verifier or connection.
+
+Keep normal FL authentication enabled and protect its private keys. FL's
+provisioned-PKI challenge exchange can authenticate a logical participant
+through bridges or proxies; the immediate TLS peer may be an intermediary.
+The intermediary's TLS certificate is not a substitute for authenticating the
+logical participant. Protect application traffic to the intended trusted
+endpoint as described below.
+
 Identity binding here describes the Trustee-backed CVM and CoCo proofs.
 Azure authorizers retain their `Microsoft Azure Attestation`_ token semantics;
 do not assume the same signed site-identity binding for Azure or an equivalent
 binding requirement in a mixed federation that includes Azure.
 
 Peer checks are point-in-time and periodic, not continuous hardware monitoring
-or a fresh appraisal before every operation. A valid peer proof is not a dataset
+or a fresh appraisal before every operation. A newly signed proof can contain
+a cached, still-acceptable appraisal. Replay tracking is local to each verifier
+process, resets on restart, and is not shared with other verifiers. See
+:ref:`the peer-proof freshness limits <coco_peer_proof_freshness>` for details.
+A valid peer proof is not a dataset
 access-control policy or, by itself, proof of an exact running application image.
 A server rejects a client registration whose CC evidence fails validation.
 If a client rejects the server's CC evidence after registration, the client
@@ -394,7 +438,9 @@ workload and use exact, reviewed ``class_allow_list`` entries for additional
 components. Code or policy changes require a new approved release.
 
 Validate the executor and persistence behavior for the selected deployment.
-External-process execution has failed in sealed CoCo deployments; see the
+The packaged CoCo runtime does not support external-process execution;
+bare-metal examples use a reviewed in-process executor fixed in the measured
+image. See the
 :github_nvflare_link:`in-process executor guidance
 <examples/devops/coco/provision/README.md#prepare-the-workload-and-project>`.
 An approved executor is not a substitute for reviewing application behavior
@@ -447,6 +493,13 @@ evidence that a particular deployment has passed those tests.
   :github_nvflare_link:`guest bootstrap <nvflare/lighter/cc/image_builder/cvm/runtime/bootstrap.py>`,
   and :github_nvflare_link:`attestation and authorized-key retrieval
   <nvflare/lighter/cc/image_builder/cvm/runtime/attestation.py>`.
+* **NVIDIA reference architecture mapping:**
+  :github_nvflare_link:`conformance assessment
+  <nvflare/lighter/cc/image_builder/CONFORMANCE.md>` maps standalone CVM controls
+  to the self-hosted VM reference architecture and distinguishes the Kubernetes
+  and Azure deployment boundaries. It records implemented controls, operator
+  requirements, and outstanding exact-profile acceptance; it is not a blanket
+  conformance certificate for federated training or every supported mode.
 * **CVM network enforcement:**
   :github_nvflare_link:`guest firewall rules <nvflare/lighter/cc/image_builder/cvm/common/firewall.py>`,
   :github_nvflare_link:`startup-kit network derivation <nvflare/lighter/cc/vault_adapter.py>`,
@@ -476,8 +529,11 @@ acceptance records.
   <https://docs.nvidia.com/confidential-computing/index.html>`_: NVIDIA
   platform trust boundaries, deployment modalities, and attestation resources.
 * `NVIDIA Confidential Containers Reference Architecture
-  <https://docs.nvidia.com/confidential-computing/containers/overview>`_:
-  GPU-enabled CoCo architecture, components, and security considerations.
+  <https://docs.nvidia.com/enterprise-reference-architectures/deploying-proprietary-models-confidential-compute-self-hosted-kubernetes/latest/index.html>`_:
+  GPU-accelerated inference on self-hosted Kubernetes, including fresh CPU/GPU
+  evidence, measured guest and workload policy, and protected key release.
+  Its reference implementation's component versions do not replace NVFlare's
+  tested CoCo/Trustee pins or qualify an untested deployment combination.
 * `NVIDIA Confidential VM Reference Architecture
   <https://docs.nvidia.com/enterprise-reference-architectures/deploying-proprietary-models-confidential-compute-self-hosted-vms/latest/scope.html>`_:
   GPU-accelerated inference on self-hosted CVMs. Its scope excludes training

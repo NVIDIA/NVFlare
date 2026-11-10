@@ -20,6 +20,13 @@ but their image formats, launch controls, and key-release bindings differ.
 The authoritative engineering documents live with the builder in the NVFlare source
 tree; see `Reference guides`_ for links to each one.
 
+.. figure:: ../../../../nvflare/lighter/cc/image_builder/images/cvm_runtime_boundary.png
+   :width: 100%
+   :align: center
+   :alt: The untrusted host attaches measured boot files, clear sidecars and an encrypted vault. Trustee releases the vault key directly into the confidential guest.
+
+   Runtime trust boundary and storage roles.
+
 Trust model
 ===========
 
@@ -100,7 +107,9 @@ These follow from the trust model and are requirements, not recommendations.
 
 - **One Trustee instance per administration domain.** Use a dedicated Trustee
   instance, resource storage and publisher state for each independently
-  administered project or tenant and security profile. The KBS endpoint and trust
+  administered project or tenant. CoCo and multiple CVM security profiles may
+  share that instance within one trust domain; their policy selectors and
+  reference-value namespaces remain distinct. The KBS endpoint and trust
   roots are measured build inputs inherited by every vault. Bundle-scoped resource
   roles restrict paths inside a trusted administration domain; they do not isolate
   mutually untrusted tenants that share a generic bundle. Do not issue these
@@ -141,8 +150,16 @@ in four steps.
 
 Any startup verification failure -- verity, attestation, key release, vault identity
 or payload authentication -- prevents workload startup and halts the guest. An
-integrity or attestation failure detected after startup stops the workload and
-powers off the guest.
+integrity failure after startup powers off the guest. Periodic appraisal failures
+follow the profile-specific containment rules below.
+
+.. figure:: ../../../../nvflare/lighter/cc/image_builder/images/cvm_boot_sequence.png
+   :width: 100%
+   :align: center
+   :alt: Eight gates lead from measured launch through vault admission to application startup. Continuous integrity and appraisal supervision enforce failure containment.
+
+   Verified boot and workload admission. Integrity monitoring starts before the
+   vault scan; periodic appraisal continues while the workload runs.
 
 Attestation layers
 ==================
@@ -160,10 +177,12 @@ vault and, when configured, its GPUs are authorized to run together.
 
 The CVM supervisor repeats the same hardware appraisal and verifies current key
 authorization every five minutes. A periodic failure stops the workload, closes the
-vault so its key leaves the kernel, and retries fresh appraisal and key retrieval
-within a bounded quarantine window. A successful retry reopens the same vault and
-restarts the workload; expiry of the window or a quarantine failure powers off the
-guest. This layer is owned by CVM Builder and the Trustee deployment and is
+vault so its key leaves the kernel. CPU-only profiles retry fresh appraisal and
+key retrieval within a bounded quarantine window. A successful retry reopens the
+same vault and restarts the workload; expiry of the window or a quarantine failure
+powers off the guest. GPU profiles revoke readiness and power off after
+containment; they do not enter the CPU-only recovery loop. This layer is owned by
+CVM Builder and the Trustee deployment and is
 configured through the builder profile rather than through NVFlare job
 configuration.
 
@@ -273,7 +292,7 @@ rather than user documentation, and they are versioned with the code:
 - :github_nvflare_link:`CONFORMANCE.md <nvflare/lighter/cc/image_builder/CONFORMANCE.md>` -
   the conformance criteria each profile must meet, and their current status
 - :github_nvflare_link:`VALIDATION.md <nvflare/lighter/cc/image_builder/VALIDATION.md>` -
-  the recorded hardware validation log and the remaining production gates
+  exact-manifest production acceptance and approval requirements
 - :github_nvflare_link:`GPU_BUILD.md <nvflare/lighter/cc/image_builder/GPU_BUILD.md>` and
   :github_nvflare_link:`TDX_TROUBLESHOOTING.md <nvflare/lighter/cc/image_builder/TDX_TROUBLESHOOTING.md>` -
   platform-specific build and troubleshooting notes
