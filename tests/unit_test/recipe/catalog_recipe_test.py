@@ -170,6 +170,23 @@ class TestGetCatalogResults:
         assert json.loads(out.read_text()) == doc
         assert run.calls == [(5, False)]
 
+    def test_a_completed_read_keeps_only_the_result(self, tmp_path):
+        job = tmp_path / "job-1"
+        doc = write_results(job / "workspace" / "app_server")
+        (job / "workspace" / "log.txt").write_text("log")
+        (job / "meta.json").write_text("{}")
+        CatalogRecipe().get_catalog_results(FakeRun(str(job)))
+        assert [p.name for p in job.iterdir()] == ["catalog_results.json"]
+        assert json.loads((job / "catalog_results.json").read_text()) == doc
+
+    def test_a_failed_read_keeps_the_whole_workspace(self, tmp_path):
+        job = tmp_path / "job-1"
+        write_results(job / "workspace")
+        (job / "workspace" / "log.txt").write_text("log")
+        with pytest.raises(CatalogReadError):
+            CatalogRecipe().get_catalog_results(FakeRun(str(job), RunStatus.FINISHED_ABORTED.value))
+        assert (job / "workspace" / "log.txt").is_file()
+
     def test_a_job_that_did_not_complete_raises(self, tmp_path):
         write_results(tmp_path)
         with pytest.raises(CatalogReadError) as e:
