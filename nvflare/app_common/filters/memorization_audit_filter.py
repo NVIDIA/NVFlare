@@ -28,21 +28,35 @@ from nvflare.fuel.utils.experimental import experimental
 _BASELINE = "memorization_audit.baseline"
 
 
+def _validate_schedule(start_round, frequency):
+    if type(start_round) is not int or start_round < 0 or type(frequency) is not int or frequency < 1:
+        raise ValueError("start_round must be nonnegative and frequency positive")
+
+
+def _audit_due(round_number, start_round, frequency):
+    return round_number >= start_round and (round_number - start_round) % frequency == 0
+
+
 class AuditSnapshotFilter(ModelFilter):
     """Copy the incoming full model into the task's private, non-sticky context.
 
     Place after input transformations. The paired output filter consumes this
     baseline from the same FLContext; neither filter retains it between tasks.
+    Match start_round/frequency to the output filter to avoid copies on skipped rounds.
     """
 
     @experimental("AuditSnapshotFilter API may change")
-    def __init__(self):
+    def __init__(self, start_round: int = 0, frequency: int = 1):
         super().__init__([DataKind.WEIGHTS, DataKind.FL_MODEL])
+        _validate_schedule(start_round, frequency)
+        self.start_round = start_round
+        self.frequency = frequency
 
     def process_model(self, model, fl_ctx):
         if model.params_type != ParamsType.FULL or model.current_round is None:
             raise UnsupportedAudit("Baseline requires full parameters and a round identity")
-        fl_ctx.set_prop(_BASELINE, deepcopy(model), private=True, sticky=False)
+        if _audit_due(model.current_round, self.start_round, self.frequency):
+            fl_ctx.set_prop(_BASELINE, deepcopy(model), private=True, sticky=False)
         return None
 
     def process(self, shareable, fl_ctx):
@@ -78,8 +92,7 @@ class MemorizationAuditFilter(ModelFilter):
         summary_metrics: list[str] | None = None,
     ):
         super().__init__([DataKind.WEIGHTS, DataKind.WEIGHT_DIFF, DataKind.FL_MODEL])
-        if type(start_round) is not int or start_round < 0 or type(frequency) is not int or frequency < 1:
-            raise ValueError("start_round must be nonnegative and frequency positive")
+        _validate_schedule(start_round, frequency)
         if Path(report_dir).is_absolute() or ".." in Path(report_dir).parts:
             raise ValueError("report_dir must be relative to the job workspace")
         if not isinstance(auditor, MemorizationAuditor):
@@ -136,12 +149,14 @@ class MemorizationAuditFilter(ModelFilter):
             fl_ctx.remove_prop(_BASELINE)
             if model.current_round is None:
                 raise UnsupportedAudit("missing_round")
-            if model.current_round < self.start_round or (model.current_round - self.start_round) % self.frequency:
+            if not _audit_due(model.current_round, self.start_round, self.frequency):
                 report["reason"] = "schedule"
             elif model.params is None:
                 raise UnsupportedAudit("missing_parameters")
             elif baseline is None:
                 raise UnsupportedAudit("missing_baseline")
+            elif baseline.current_round != model.current_round:
+                raise UnsupportedAudit("baseline_round_mismatch")
             else:
                 result = self.auditor.audit(model, baseline, fl_ctx)
                 json.dumps(result, allow_nan=False)

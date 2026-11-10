@@ -193,7 +193,7 @@ must not depend on event callbacks.
         AuditSnapshotFilter, MemorizationAuditFilter,
     )
 
-    recipe.add_client_input_filter(AuditSnapshotFilter(), tasks=["train"])
+    recipe.add_client_input_filter(AuditSnapshotFilter(frequency=10), tasks=["train"])
     recipe.add_client_output_filter(
         MemorizationAuditFilter(auditor=my_auditor, frequency=10),
         tasks=["train"],
@@ -205,7 +205,10 @@ the output filter. The baseline is neither transmitted as public metadata nor
 inherited by later task contexts, and neither filter retains it. Install one paired
 input/output chain per task context. Missing baselines report ``unsupported``;
 for unpaired full-model or final global evaluation, call the auditor directly with
-``baseline=None``.
+``baseline=None``. The filter checks baseline/candidate round equality before
+calling any auditor. Match ``start_round`` and ``frequency`` on both filters to
+avoid baseline copies on skipped rounds; their defaults audit every round. An
+output round missing a capture still reports ``unsupported / missing_baseline``.
 
 The initial implementation supports sequential training tasks with a single full model
 or complete weight difference. It explicitly rejects collections and partial model updates

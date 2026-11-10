@@ -175,7 +175,9 @@ key or run-event cleanup. One paired filter chain per task context is supported.
 The output filter consumes and removes the property on every output path, including
 skipped rounds, empty or unsupported results, failed task replies, and conversion/
 reporting failures. A missing baseline is unsupported, never silently an unpaired
-audit. If execution exits before output filtering, the baseline lives only as long
+audit. Before invoking any auditor, the filter also requires baseline and candidate
+rounds to match. Direct auditor calls remain responsible for validating their inputs.
+If execution exits before output filtering, the baseline lives only as long
 as that task context is retained. Direct auditor calls still accept `baseline=None`
 for unpaired full-model/global evaluation.
 
@@ -184,9 +186,11 @@ transport history without model re-encoding; observation status is recorded in t
 separate audit report. Initial support is sequential training tasks with one full
 model or a complete parameter difference. Collections, partial updates, incompatible
 names/shapes and missing round identities are unsupported.
-The input filter captures every selected training task, including rounds skipped
-by the output audit schedule. Budget that full-state copy even with sparse audits;
-the filters currently have independent placement and no shared capture schedule.
+Both filters accept `start_round` and `frequency` (defaults: 0 and 1). Configure the
+same values on each to copy baselines only on audited rounds. The input filter
+clears any previous context baseline before checking its schedule. The two chains
+are configured independently; an output round without a captured baseline reports
+`unsupported / missing_baseline` rather than silently becoming an unpaired audit.
 
 Capture after incoming transformations. Audit after outgoing clipping/noise when
 the intent is to measure the transmitted update, and before encryption. Executor

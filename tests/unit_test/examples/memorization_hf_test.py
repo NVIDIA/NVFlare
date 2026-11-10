@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 import importlib.util
 import json
 import re
 import sys
+import weakref
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -25,6 +27,7 @@ import pytest
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.filters.memorization_audit_filter import MemorizationAuditFilter
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -145,3 +148,57 @@ def test_offline_global_report_has_valid_workspace(tmp_path, monkeypatch):
         "final-evaluation",
         "global-evaluation",
     )
+
+
+@pytest.mark.parametrize("fail_baseline", [False, True])
+def test_audit_loads_one_reference_and_releases_it(tmp_path, monkeypatch, fail_baseline):
+    torch = pytest.importorskip("torch")
+    subject = load("hf_model")
+
+    class TinyModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.embedding = torch.nn.Embedding(4, 4)
+
+        def forward(self, input_ids, **kwargs):
+            return SimpleNamespace(logits=self.embedding(input_ids))
+
+    cohorts = {"site-1": {"members": [{"prompt": "a", "answer": "b"}], "nonmembers": [{"prompt": "b", "answer": "a"}]}}
+    (tmp_path / "cohorts.json").write_text(json.dumps(cohorts))
+    tokenizer = SimpleNamespace(eos_token_id=0, encode=lambda text, **kwargs: [ord(c) - ord("a") + 1 for c in text])
+    monkeypatch.setattr(subject, "tokenizer_for", lambda assets: tokenizer)
+    references = []
+
+    def load_reference(assets, device):
+        reference = subject.FrozenReferenceScorer(TinyModel(), "tiny-tokenizer", "test")
+        references.append(weakref.ref(reference))
+        return reference
+
+    monkeypatch.setattr(subject, "reference_for", load_reference)
+    original_logits = subject.logits
+    target_batches = 0
+
+    def evaluate_logits(module, tokens):
+        nonlocal target_batches
+        target_batches += 1
+        if fail_baseline and target_batches == 3:
+            raise RuntimeError("baseline evaluation failed")
+        return original_logits(module, tokens)
+
+    monkeypatch.setattr(subject, "logits", evaluate_logits)
+    auditor = subject.DossierAuditor(str(tmp_path), device="cpu")
+    monkeypatch.setattr(auditor, "build_model", TinyModel)
+    state = TinyModel().state_dict()
+    baseline = FLModel(params=state, current_round=0)
+    candidate = FLModel(params={k: v + 0.01 for k, v in state.items()}, current_round=0)
+    context = FLContextManager(identity_name="site-1").new_context()
+    if fail_baseline:
+        with pytest.raises(RuntimeError, match="baseline evaluation failed"):
+            auditor.audit(candidate, baseline, context)
+    else:
+        report = auditor.audit(candidate, baseline, context)
+        assert "tra/change_auc" in report["metrics"]
+        assert report["sample_counts"]["tra"] == {"members": 1, "nonmembers": 1}
+    assert len(references) == 1
+    gc.collect()
+    assert references[0]() is None

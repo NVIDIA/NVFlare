@@ -20,7 +20,11 @@ lifetime tests do not establish GPU runtime or memory parity. Current `validate.
 checks ownership through the public input/output filters and includes output-filter
 reporting in the full-audit measurement; the historical measurements below used
 the removed snapshot store and direct auditor calls. The TRAP equation and audit
-metric formulas are unchanged.
+metric formulas are unchanged. Later local follow-up also adds matching input
+snapshot schedules, checks paired round identity in the generic filter, and loads
+one reference per HF audit for both evaluation phases, releasing it at exit. The
+H100 workflow has not been rerun for these changes; the timings and memory figures
+below do not measure their effects.
 The historical [525-fit benchmark](../TRAP_DP_RESULTS.md) used the earlier research
 implementation; this run separately exercises the SDK classes at the pinned revision. Neither establishes
 general production readiness.

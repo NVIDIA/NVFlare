@@ -175,15 +175,24 @@ class DossierAuditor(PTMemorizationAuditor):
     def audit(self, model, baseline, fl_ctx):
         self.active_cohort = self.cohort or fl_ctx.get_identity_name()
         resources = {}
-        with measurement(resources, self.device):
-            report = super().audit(model, baseline, fl_ctx)
-        report["resources"] = resources
-        return report
+        self._audit_assets = None
+        try:
+            with measurement(resources, self.device):
+                report = super().audit(model, baseline, fl_ctx)
+            report["resources"] = resources
+            return report
+        finally:
+            self._audit_assets = None
 
     def evaluate(self, module, deadline):
-        data = json.loads((Path(self.assets_dir) / "cohorts.json").read_text())[self.active_cohort]
-        tokenizer = tokenizer_for(self.assets_dir)
-        reference = reference_for(self.assets_dir, self.device)
+        # Initialize inside the PT auditor's RNG-isolated evaluation phase, then
+        # reuse for the baseline. The outer audit releases assets even on failure.
+        if self._audit_assets is None:
+            data = json.loads((Path(self.assets_dir) / "cohorts.json").read_text())[self.active_cohort]
+            tokenizer = tokenizer_for(self.assets_dir)
+            reference = reference_for(self.assets_dir, self.device)
+            self._audit_assets = (data, tokenizer, reference)
+        data, tokenizer, reference = self._audit_assets
         scores = {name: {split: [] for split in ("members", "nonmembers")} for name in ("likelihood", "tra")}
         total_loss, correct, count = 0.0, 0, 0
         for split in ("members", "nonmembers"):

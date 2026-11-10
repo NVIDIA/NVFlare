@@ -120,10 +120,13 @@ Host RSS is explicitly a **process-lifetime** high-water mark. Measurements incl
 synchronization at phase boundaries; they do not measure whole-node power, total
 GPU use, or isolate all shared runtime overhead. Budget headroom and measure your
 actual model, optimizer, precision, client concurrency and audit cadence before use.
-The input snapshot filter copies every selected training round, even when the output
-audit schedule skips that round. The HF adapter constructs its reference separately
-for candidate and baseline evaluation; this repeats loading/fingerprinting but does
-not retain the reference between audits. Include both costs when adapting the example.
+This example audits every round. For sparse audits, set matching `start_round` and
+`frequency` on both `AuditSnapshotFilter` and `MemorizationAuditFilter`; the input
+filter then skips the baseline copy on unaudited rounds. The HF adapter loads its
+reference once inside the auditor's RNG-isolated evaluation and reuses it for the
+candidate and baseline phases. It releases the reference at audit exit, including
+failures; budget its residency across both phases. These later changes have local
+regression coverage, not new H100 runtime or memory measurements.
 
 The auditor's 120-second deadline is cooperative. The SDK checks between audit
 phases and this adapter checks between batches; model construction, fingerprinting
