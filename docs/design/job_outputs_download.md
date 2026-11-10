@@ -113,26 +113,29 @@ long run.
   replacing it.
 - Hand-written jobs may add the key to `meta.json` or leave it out.
 
-### Admin command: `download_job_outputs`
+### Admin command: `download_job` with an `outputs_only` option
 
-A new admin command, `download_job_outputs <job_id>`. It uses `authorize_job`,
-like `download_job`, and is added to `COMMAND_CATEGORIES` under
-`CommandCategory.DOWNLOAD_JOB`. Existing `download_job` grants in provisioned
-policies therefore apply unchanged.
+The existing `download_job <job_id>` command gains an optional `outputs_only`
+option. There is no new command, so authorization, the permission category and
+the command list are unchanged.
 
-It is a new command, not an argument on `download_job`, for three reasons:
+The option travels as a command property, not as a command argument:
 
-- The admin client's folder pull treats a second argument as the local folder
-  name and never sends it to the server.
-- On the server, `authorize_job` validates extra arguments as targets.
-- An older server must be detectable. The admin client holds the server's
-  command list from login, so it can tell whether the command exists before
-  sending it.
+- The admin protocol already sends optional per-command properties with a
+  command, and the server places them on the connection. `app_command` passes
+  its data this way.
+- An older server ignores a property it does not use and returns the full
+  download. A command argument would instead be rejected: the server's
+  `authorize_job` validates extra arguments as targets.
+- The admin client's folder pull already uses a second argument as the local
+  folder name. The only client change is that it forwards the command's
+  properties to the server.
 
-The server:
+The client sends `{"outputs_only": true}`. Without it, `download_job` is
+unchanged. With it, the server:
 
-1. Requires the job to be finished, as `download_job` does.
-2. Prepares the full `download_job` content when:
+1. Requires the job to be finished, as today.
+2. Prepares the full download when:
    - the job did not finish successfully, or
    - the job's metadata has no `job_outputs`.
 3. Otherwise copies the `workspace` component into the transfer folder, and
@@ -149,17 +152,20 @@ The server:
 
    A missing entry is not an error. For example, the best model exists only
    when the workflow tracked one.
-5. Includes `meta.json`, so the caller still has the job status and timing.
+5. Includes `meta.json`, as today, so the caller still has the job status and
+   timing.
 
 The download mode travels in the manifest, not in the command reply, because
 the admin client's folder pull returns only the local location to the caller.
+A download that asked for outputs only and has no manifest came from an older
+server.
 
 Extraction matches each archive member's normalized name against the declared
 entries and rejects symlink entries. It never writes outside the transfer
 folder.
 
 A completed job whose workspace could not be archived gets the same internal
-error from `download_job_outputs` as from `download_job`.
+error with or without `outputs_only`.
 
 Outputs-only layout, with the same relative paths as a full download:
 
@@ -178,7 +184,7 @@ Outputs-only layout, with the same relative paths as a full download:
 
 | API | Change |
 | --- | --- |
-| `Session.download_job_result(job_id, destination=None, outputs_only=False)` | When `outputs_only=True` and the server offers `download_job_outputs`, sends it. Otherwise sends `download_job` and logs one line that the whole job was downloaded. |
+| `Session.download_job_result(job_id, destination=None, outputs_only=False)` | When `outputs_only=True`, sends `download_job` with the `outputs_only` property. When the download has no `outputs_manifest.json`, the server is older: it logs one line that the whole job was downloaded. |
 | `ExecEnv.get_job_result(job_id, timeout=0.0, outputs_only=False)` | POC and production environments pass `outputs_only` to the session. The simulator runs locally and returns its workspace unchanged. |
 | `Run.get_result(timeout=0.0, clean_up=True, outputs_only=False)` | Passes `outputs_only` to the environment only when it is `True`, so existing custom `ExecEnv` subclasses with the two-argument signature keep working. |
 | `nvflare job download <job_id> --outputs-only` | Passes `outputs_only=True`. JSON output adds `outputs_only` and `missing_job_outputs` from the manifest. `artifacts` and `missing_artifacts` describe what was downloaded. For example, client logs are listed as missing in an outputs-only download. |
@@ -194,16 +200,16 @@ summary and the CLI's artifact discovery find the model and metrics either way.
 | Existing jobs and job folders | No `job_outputs`. Every download is unchanged. |
 | Existing scripts | `outputs_only` defaults to `False`. Unchanged. |
 | Existing custom `ExecEnv` subclasses | `Run` does not pass the new argument unless the caller asks for an outputs-only download. |
-| New client, old server | The server does not list the command, so the client sends `download_job`. The caller gets the whole job, with a notice. |
-| Old client, new server | The old client never sends the new command. Unchanged. |
+| New client, old server | The server ignores the property and returns the whole job. The client sees no manifest and logs a notice. |
+| Old client, new server | The old client never sends the property. Unchanged. |
 | Code that references `JobMetaKey.RESULT_LOCATION` or calls `set_results_uri` | Must drop the reference. Neither ever held or produced a value. |
 | A job with `job_outputs` on an old server | The old server stores the key and ignores it. Downloads are full. |
 | Failed or aborted job with `outputs_only=True` | The whole job, including logs. The manifest says it was not filtered and why. |
 
 ## Security
 
-- Authorization uses the existing `download_job` category, so no new data
-  becomes reachable. Outputs-only download returns a subset of what
+- The command, its authorization and its permission category are unchanged,
+  so no new data becomes reachable. Outputs-only download returns a subset of what
   `download_job` already returns.
 - The server validates paths at submission and again at extraction, and
   rejects symlink entries in the archive.
@@ -220,16 +226,17 @@ Unit tests:
 - `set_recipe_meta` accepts the key and applies the same checks. Recipe
   declarations are normalized, and `add_cross_site_evaluation` appends to them.
 - Cloned jobs keep `job_outputs`.
-- `download_job_outputs`:
+- `download_job` with `outputs_only`:
   - writes a filtered `workspace.zip` with only the declared entries, at their
     original paths;
   - reports missing entries in the manifest;
   - rejects symlink entries;
   - falls back to the whole job for undeclared or failed jobs, with the reason
     in the manifest;
-  - is authorized by an existing `download_job` grant.
-- `Session.download_job_result(outputs_only=True)` falls back when the server
-  does not offer `download_job_outputs`.
+  - is unchanged without the property.
+- The admin client forwards command properties on a folder pull.
+- `Session.download_job_result(outputs_only=True)` reports a full download when
+  the server returns no manifest.
 - `Run.get_result()` works with an `ExecEnv` that implements the two-argument
   `get_job_result`.
 - Built-in recipes declare files that match the names they pass to their
@@ -243,7 +250,7 @@ and other workspace files are absent.
 
 1. Metadata key, validation, cloning and `set_recipe_meta` support, and removal
    of `result_location` and `set_results_uri`.
-2. Server command, client API, recipe `Run` and CLI flag.
+2. `download_job` option, client API, recipe `Run` and CLI flag.
 3. Built-in recipe declarations, starting with PyTorch FedAvg, federated
    statistics and cross-site evaluation.
 
