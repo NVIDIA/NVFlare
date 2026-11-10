@@ -54,7 +54,9 @@ def _read_timestamp(value):
     ):
         raise ValueError("resource report requires a UTC timestamp")
     try:
-        datetime.fromisoformat(value[:-1] + "+00:00")
+        # The regex checks fractional syntax; validate calendar/time without
+        # Python 3.10's restriction to three or six fractional digits.
+        datetime.fromisoformat(value[:19])
     except ValueError as error:
         raise ValueError("resource report requires a valid UTC timestamp") from error
     return value

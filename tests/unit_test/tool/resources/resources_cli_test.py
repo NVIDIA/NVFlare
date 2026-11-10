@@ -21,7 +21,7 @@ from unittest.mock import Mock
 import pytest
 
 from nvflare import cli
-from nvflare.fuel.flare_api.api_spec import AuthorizationError
+from nvflare.fuel.flare_api.api_spec import AuthorizationError, JobNotDone
 from nvflare.tool import cli_output, cli_schema, cli_session
 from nvflare.tool.resources import resources_cli, resources_output
 
@@ -112,6 +112,7 @@ def test_top_level_schema_needs_no_session(monkeypatch, capsys, prefix):
 @pytest.mark.parametrize("selection", [[], ["--site", "site-1"], ["--study", "s", "--site", "site-1"]])
 def test_top_level_json_selection_errors_are_envelopes(monkeypatch, capsys, selection):
 
+    monkeypatch.setenv("NVFLARE_DEV", "1")
     monkeypatch.setattr(cli_output, "_output_format", "txt")
     monkeypatch.setattr(sys, "argv", ["nvflare", "resources", *selection, "--format", "json"])
     monkeypatch.setattr(
@@ -120,7 +121,7 @@ def test_top_level_json_selection_errors_are_envelopes(monkeypatch, capsys, sele
     with pytest.raises(SystemExit) as result:
         cli.run("nvflare")
     assert result.value.code == 4
-    assert json.loads(capsys.readouterr().out)["error_code"] == "INVALID_ARGUMENT"
+    assert json.loads(capsys.readouterr().out)["error_code"] == "INVALID_ARGS"
 
 
 @pytest.mark.parametrize("selection", [["--job", "job-1", "--site", "site-1"], ["--study", "study-1"]])
@@ -174,3 +175,47 @@ def test_bare_human_command_shows_help_and_old_job_path_is_removed(monkeypatch, 
     monkeypatch.setattr(sys, "argv", ["nvflare", "job", "resources"])
     with pytest.raises(SystemExit):
         cli.run("nvflare")
+
+
+@pytest.mark.parametrize("output_format", ["txt", "json"])
+@pytest.mark.parametrize(
+    "selection,error,code,message",
+    [
+        (["--job", "job-1"], JobNotDone(), "JOB_NOT_FINALIZED", "has not been finalized"),
+        (
+            ["--job", "job-1"],
+            RuntimeError("missing archive"),
+            "RESOURCE_DATA_UNAVAILABLE",
+            "Resource data is unavailable",
+        ),
+        (
+            ["--study", "study-1"],
+            RuntimeError("missing archive"),
+            "RESOURCE_DATA_UNAVAILABLE",
+            "Resource data is unavailable",
+        ),
+    ],
+)
+def test_expected_query_errors_keep_message_and_hint_in_dev_mode(
+    monkeypatch, capsys, output_format, selection, error, code, message
+):
+    session = Mock()
+    session.get_job_resources.side_effect = error
+    session.get_study_resources.side_effect = error
+    monkeypatch.setenv("NVFLARE_DEV", "1")
+    monkeypatch.setattr(cli_output, "_output_format", "txt")
+    monkeypatch.setattr(sys, "argv", ["nvflare", "resources", *selection, "--format", output_format])
+    monkeypatch.setattr(resources_cli, "_resources_session", lambda *a, **kw: nullcontext(session))
+    with pytest.raises(SystemExit) as result:
+        cli.run("nvflare")
+    assert result.value.code == 4
+    output = capsys.readouterr()
+    if output_format == "json":
+        payload = json.loads(output.out)
+        assert payload["error_code"] == code
+        assert message in payload["message"]
+        assert payload["hint"]
+    else:
+        assert message in output.err
+        assert f"Code: {code} (exit 4)" in output.err
+        assert "Hint: " in output.err

@@ -61,11 +61,11 @@ def handle_resources_cmd(cmd_args):
     requested_study = getattr(cmd_args, "study", None)
     site = getattr(cmd_args, "site", None)
     if site and not job_id:
-        cli_output.output_error("INVALID_ARGUMENT", exit_code=4, detail="--site requires --job")
+        cli_output.output_error("INVALID_ARGS", exit_code=4, detail="--site requires --job")
         return
     if not job_id and not requested_study:
         if cli_output.is_json_mode():
-            cli_output.output_error("INVALID_ARGUMENT", exit_code=4, detail="Select --job or --study.")
+            cli_output.output_error("INVALID_ARGS", exit_code=4, detail="Select --job or --study.")
         else:
             parser.print_help()
         return
