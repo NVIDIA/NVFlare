@@ -84,6 +84,10 @@ class UnityCatalogConnector(CatalogConnector):
         try:
             with requests.Session() as session:
                 session.auth = _keep_request_headers
+                if parsed.scheme == "http":
+                    # Plain HTTP is allowed only to the local host. Ignore proxy settings from the environment, or a
+                    # bearer token would be sent in cleartext to an HTTP proxy.
+                    session.trust_env = False
 
                 def get(path, params=None):
                     budget.request()

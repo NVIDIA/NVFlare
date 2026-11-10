@@ -92,6 +92,10 @@ class ParquetConnector(CatalogConnector):
             try:
                 for path in directory.iterdir():
                     check()
+                    # Hidden and underscore-prefixed entries are not data: Delta Lake's _delta_log, Spark's
+                    # _temporary and _SUCCESS, Hive's .hive-staging, and editor or OS files.
+                    if path.name.startswith((".", "_")):
+                        continue
                     yield path
             except OSError:
                 # unreadable, or removed during the walk; never the raw error, which names a local path
@@ -124,4 +128,8 @@ class ParquetConnector(CatalogConnector):
                 if parts:
                     tables.append((child.name, parts))
         check()
+        names = [name for name, _ in tables]
+        if len(set(names)) != len(names):
+            # e.g. a.parquet beside a partitioned a/; publishing either would hide the other
+            raise ConnectorError("a file and a directory in the dataset map to the same table name")
         return sorted(tables)

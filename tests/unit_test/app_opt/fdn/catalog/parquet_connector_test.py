@@ -172,7 +172,28 @@ class TestBudgets:
         assert e.value.budget
 
 
+class TestLayout:
+    def test_delta_spark_and_hidden_entries_are_not_tables_or_parts(self, root):
+        write(root / "_delta_log" / "00000000000000000010.checkpoint.parquet", txn=pa.array(["x"]))
+        write(root / "visit" / "_temporary" / "0" / "part-9.parquet", other=pa.array([1], pa.int64()))
+        write(root / "visit" / ".hive-staging" / "part-8.parquet", other=pa.array([1], pa.int64()))
+        write(root / ".hidden.parquet", other=pa.array([1], pa.int64()))
+        (root / "visit" / "_SUCCESS").write_text("")
+        catalog = read(root)
+        assert [t.name for t in catalog.tables] == ["person", "visit"]
+        assert [c.name for c in catalog.tables[1].columns] == ["visit_id"]
+
+    def test_a_file_and_a_directory_with_the_same_table_name_fail_with_a_clear_error(self, root):
+        write(root / "visit.parquet", visit_id=pa.array([3], pa.int64()))
+        with pytest.raises(ConnectorError, match="same table name") as e:
+            read(root)
+        assert not e.value.budget and str(root) not in str(e.value)
+
+
 class TestPublishedFields:
+    def test_parquet_is_tabular_like_the_other_connectors(self, root):
+        assert read(root).modalities == ("tabular",)
+
     def test_only_observed_structure_is_published(self, root):
         (root / "catalog.json").write_text(
             json.dumps({"display_name": "Declared", "semantic_profile": {"standard": "X"}})

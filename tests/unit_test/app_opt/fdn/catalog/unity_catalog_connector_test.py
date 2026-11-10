@@ -295,3 +295,27 @@ def test_a_netrc_login_never_replaces_the_configured_bearer_token(tmp_path, monk
     monkeypatch.setattr(requests.Session, "send", send)
     uc_read(LIMITS, {"catalog": "main", "schema": "default"}, name="ds", token_env="UC_TOKEN")
     assert sent == ["Bearer site-token"]
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1"])
+def test_plain_http_ignores_proxy_settings_so_the_token_stays_local(monkeypatch, host):
+    """Uses the real Session and stops where the request would be sent: an HTTP proxy from the environment must not
+    receive the bearer token over cleartext HTTP."""
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.example:3128")
+    monkeypatch.setenv("http_proxy", "http://proxy.example:3128")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    monkeypatch.setenv("UNITY_CATALOG_URL", f"http://{host}:8080/api/2.1/unity-catalog")
+    monkeypatch.setenv("UC_TOKEN", "site-token")
+    proxies = []
+
+    def send(self, request, **kwargs):
+        proxies.append(kwargs.get("proxies") or {})
+        response = requests.Response()
+        response.status_code = 200
+        response._content = b'{"tables": []}'
+        return response
+
+    monkeypatch.setattr(requests.Session, "send", send)
+    uc_read(LIMITS, {"catalog": "main", "schema": "default"}, name="ds", token_env="UC_TOKEN")
+    assert proxies and all(not p.get("http") for p in proxies)
