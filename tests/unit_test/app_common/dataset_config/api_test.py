@@ -89,6 +89,16 @@ class TestSnapshot:
         with pytest.raises(TypeError):
             omop.options["x"] = 1
 
+    def test_yaml_sets_are_read_only(self):
+        data = yaml.safe_load(
+            "format_version: 1\n"
+            "studies: {oncology: {datasets: {d: {type: sql, uri: 'postgresql://h/db', options: {tables: !!set {visits: null}}}}}}\n"
+        )
+        tables = parse(data).get_dataset("d").options["tables"]
+        assert tables == {"visits"}
+        with pytest.raises(AttributeError):
+            tables.clear()
+
     def test_secret_is_read_at_call_time(self, monkeypatch):
         config = parse(CONFIG)
         monkeypatch.delenv("EHR_DB_PASSWORD", raising=False)
@@ -113,6 +123,12 @@ class TestValidation:
             {"format_version": 2},
             {"format_version": True},
             {"format_version": 1, "extra": 1},
+            {"format_version": 1, "extra": 1, 7: 0},
+            {"format_version": 1, "studies": {"oncology": {"datasets": {}, "extra": 0, 7: 0}}},
+            {
+                "format_version": 1,
+                "studies": {"oncology": {"datasets": {"d": {"type": "x", "uri": "file:///x", "extra": 1, 7: 0}}}},
+            },
             {"format_version": 1, "studies": {"Bad Name": {}}},
             {"format_version": 1, "studies": {"oncology": {"description": "x"}}},
             with_dataset(uri="file:///x"),
