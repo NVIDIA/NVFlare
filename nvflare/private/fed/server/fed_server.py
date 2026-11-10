@@ -314,15 +314,15 @@ class BaseServer(ABC):
             if client.last_connect_time < time.time() - self.heart_beat_timeout:
                 delete.append(token)
         for token in delete:
-            client = self.logout_client(token)
+            client = self.logout_client(token, allow_reactivation=True)
             self.logger.info(
                 "Remove the dead Client. Name: {}.  Total clients: {}".format(
                     client.name, len(self.client_manager.get_clients())
                 )
             )
 
-    def logout_client(self, token):
-        client = self.client_manager.remove_client(token)
+    def logout_client(self, token, allow_reactivation=False):
+        client = self.client_manager.remove_client(token, allow_reactivation=allow_reactivation)
         self.remove_client_data(token)
         if self.admin_server:
             self.admin_server.client_dead(token)

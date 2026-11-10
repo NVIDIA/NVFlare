@@ -34,6 +34,7 @@ from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import (
+    CLIENT_REGISTRATION_REQUIRED,
     CellChannel,
     CellChannelTopic,
     CellMessageHeaderKeys,
@@ -584,8 +585,13 @@ class Communicator:
         wait_times = int(interval / 2)
         num_heartbeats_sent = 0
         heartbeats_log_interval = 10
+        registration_pending = False
         while not self.heartbeat_done:
             try:
+                if registration_pending:
+                    self._register_after_lost_session(engine, task_name)
+                    registration_pending = False
+                    continue
                 engine.fire_event(EventType.BEFORE_CLIENT_HEARTBEAT, fl_ctx)
                 shareable = Shareable()
                 shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
@@ -611,6 +617,9 @@ class Communicator:
                     return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
                     if return_code == ReturnCode.UNAUTHENTICATED:
                         unauthenticated = result.get_header(MessageHeaderKey.ERROR)
+                        if unauthenticated == CLIENT_REGISTRATION_REQUIRED:
+                            registration_pending = True
+                            continue
                         raise FLCommunicationError("error:client_quit " + unauthenticated)
 
                     num_heartbeats_sent += 1
@@ -636,6 +645,21 @@ class Communicator:
             except Exception as e:
                 self.logger.info(f"Failed to send heartbeat. Will try again. Exception: {secure_format_exception(e)}")
                 time.sleep(5)
+
+    def _register_after_lost_session(self, engine: ClientEngineInternalSpec, project_name: str):
+        """Re-run normal registration after a server restart loses the client token map."""
+        client = engine.client
+        with client._shutdown_lock:
+            if self.heartbeat_done:
+                return
+            with engine.new_context() as fl_ctx:
+                engine.fire_event(EventType.BEFORE_CLIENT_REGISTER, fl_ctx)
+                token, signature, ssid = self.client_registration(client.client_name, project_name, fl_ctx)
+                if not token:
+                    raise FLCommunicationError("fresh client registration returned no token")
+                client.token, client.token_signature, client.ssid = token, signature, ssid
+                fl_ctx.set_prop(FLContextKey.CLIENT_TOKEN, token)
+                engine.fire_event(EventType.AFTER_CLIENT_REGISTER, fl_ctx)
 
     def _clean_up_runs(self, engine, abort_runs):
         # abort_runs = list(set(response.abort_jobs))

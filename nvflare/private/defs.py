@@ -170,6 +170,9 @@ class ClientType:
     ADMIN = "admin"
 
 
+CLIENT_REGISTRATION_REQUIRED = "regular client registration required"
+
+
 AUTH_CLIENT_NAME_FOR_SJ = "server_job"
 
 

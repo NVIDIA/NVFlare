@@ -23,7 +23,13 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
-from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, ClientType, InternalFLContextKey
+from nvflare.private.defs import (
+    CLIENT_REGISTRATION_REQUIRED,
+    CellMessageHeaderKeys,
+    ClientRegSession,
+    ClientType,
+    InternalFLContextKey,
+)
 from nvflare.private.fed.server.client_manager import ClientManager
 
 
@@ -245,6 +251,90 @@ def test_disabled_client_heartbeat_does_not_reactivate():
     assert reactivated is False
     assert "token-a" not in manager.clients
     fl_ctx.set_prop.assert_called_with(FLContextKey.UNAUTHENTICATED, "Client 'site-a' is disabled", sticky=False)
+
+
+def test_admin_token_cannot_be_promoted_by_heartbeat():
+    manager = ClientManager(project_name="project")
+    client = Client("site-a", "admin-token")
+    client.set_fqcn("site-a")
+    request = _make_request("site-a")
+    request.get_header.side_effect = lambda key: {
+        CellMessageHeaderKeys.CLIENT_TYPE: ClientType.ADMIN,
+        CellMessageHeaderKeys.CLIENT_IP: "127.0.0.1",
+    }.get(key)
+    fl_ctx = FLContext()
+
+    with patch.object(manager, "login_client", return_value=client):
+        assert manager.authenticate(request, fl_ctx) is client
+
+    assert not manager.clients
+    assert manager.heartbeat("admin-token", "site-a", "site-a", fl_ctx) is False
+    assert fl_ctx.get_prop(FLContextKey.UNAUTHENTICATED) == CLIENT_REGISTRATION_REQUIRED
+    assert not manager.clients
+
+
+def test_timed_out_regular_client_reactivates_only_with_registered_identity():
+    manager = ClientManager(project_name="project")
+    client = Client("site-a", "regular-token")
+    client.set_fqcn("site-a")
+    client.set_site_config({"format_version": 1})
+    manager.set_clients({client.token: client})
+    fl_ctx = FLContext()
+
+    assert manager.remove_client(client.token, allow_reactivation=True) is client
+    assert manager.heartbeat(client.token, "site-b", "site-a", fl_ctx) is False
+    assert manager.heartbeat(client.token, "site-a", "other-site", fl_ctx) is False
+    assert not manager.clients
+
+    fl_ctx.remove_prop(FLContextKey.UNAUTHENTICATED)
+    assert manager.heartbeat(client.token, "site-a", "site-a", fl_ctx) is True
+    assert manager.clients[client.token] is client
+    assert client.get_site_config() == {"format_version": 1}
+    assert not manager.reactivatable_clients
+
+
+def test_retired_token_is_rejected_but_disabled_regular_client_can_rejoin_when_enabled():
+    manager = ClientManager(project_name="project")
+    client = Client("site-a", "regular-token")
+    client.set_fqcn("site-a")
+    manager.set_clients({client.token: client})
+    fl_ctx = FLContext()
+
+    manager.remove_client(client.token)
+    assert manager.heartbeat(client.token, "site-a", "site-a", fl_ctx) is False
+    assert client.token not in manager.clients
+
+    manager.set_clients({client.token: client})
+    manager.disable_client(client.name)
+    assert manager.heartbeat(client.token, "site-a", "site-a", fl_ctx) is False
+    manager.enable_client(client.name)
+    fl_ctx.remove_prop(FLContextKey.UNAUTHENTICATED)
+    assert manager.heartbeat(client.token, "site-a", "site-a", fl_ctx) is True
+    assert manager.clients[client.token] is client
+
+
+def test_stale_token_does_not_replace_active_site_session():
+    manager = ClientManager(project_name="project")
+    active = Client("site-a", "active-token")
+    active.set_fqcn("site-a")
+    manager.set_clients({active.token: active})
+    fl_ctx = FLContext()
+
+    assert manager.heartbeat("stale-token", "site-a", "site-a", fl_ctx) is False
+    assert fl_ctx.get_prop(FLContextKey.COMMUNICATION_ERROR) == "Client ID already registered as a client: site-a"
+    assert fl_ctx.get_prop(FLContextKey.UNAUTHENTICATED) is None
+    assert manager.clients == {active.token: active}
+
+
+def test_admin_typed_registration_does_not_remove_regular_site():
+    manager = ClientManager(project_name="project")
+    existing = Client("site-a", "regular-token")
+    manager.set_clients({existing.token: existing})
+
+    admin = manager.authenticated_client(_make_request("site-a"), _make_fl_ctx(False, "site-a"), ClientType.ADMIN)
+
+    assert admin is not None
+    assert manager.clients == {existing.token: existing}
 
 
 def test_set_client_props_sets_site_config():

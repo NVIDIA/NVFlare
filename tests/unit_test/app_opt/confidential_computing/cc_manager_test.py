@@ -36,6 +36,7 @@ from nvflare.app_opt.confidential_computing.tdx_authorizer import TDX_NAMESPACE,
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.private.defs import ClientType
 from tests.timing_utils import isolate_time
 
 
@@ -590,6 +591,18 @@ class TestCCManager:
         context.get_peer_context().set_prop(CC_INFO, payload)
         with pytest.raises(NotAuthenticated):
             manager.handle_event(EventType.CLIENT_REGISTER_RECEIVED, context)
+
+    def test_admin_typed_protected_site_still_requires_attestation(self, cc_test_env):
+        manager, _, verifier = cc_test_env
+        _, context = _create_peer_cc_context("client1", INVALID_TOKEN)
+        context.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.CLIENT_TYPE: ClientType.ADMIN,
+            FLContextKey.CLIENT_NAME: "client1",
+        }.get(key, default)
+
+        with pytest.raises(NotAuthenticated, match="CC info validation failed"):
+            manager.handle_event(EventType.CLIENT_REGISTER_RECEIVED, context)
+        verifier.verify_for_site.assert_called_once_with(INVALID_TOKEN, "client1")
 
     def test_ordinary_client_needs_no_attestation(self, cc_test_env):
         manager, _, verifier = cc_test_env

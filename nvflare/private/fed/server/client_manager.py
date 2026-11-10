@@ -30,7 +30,13 @@ from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, ClientType, InternalFLContextKey
+from nvflare.private.defs import (
+    CLIENT_REGISTRATION_REQUIRED,
+    CellMessageHeaderKeys,
+    ClientRegSession,
+    ClientType,
+    InternalFLContextKey,
+)
 from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.utils.identity_utils import get_org_from_cert, load_crt_bytes, load_crt_chain_bytes
 from nvflare.security.logging import secure_format_exception
@@ -50,6 +56,7 @@ class ClientManager:
         self.min_num_clients = min_num_clients
         self.max_num_clients = max_num_clients
         self.clients = dict()  # token => Client
+        self.reactivatable_clients = dict()  # timed-out regular token => Client
         self.name_to_clients = dict()  # name => Client
         self.disabled_clients = set()
         self.disabled_clients_file = None
@@ -135,6 +142,8 @@ class ClientManager:
                     self.name_to_clients[client.name] = client
                 self.logger.error(f"failed to persist disabled-client state for {client_name}: {ex}")
                 raise
+            for token, client in removed_clients:
+                self.reactivatable_clients[token] = client
         removed_tokens = [token for token, _client in removed_clients]
         self.logger.info(f"Client {client_name} disabled. Removed {len(removed_tokens)} active token(s).")
         return removed_tokens
@@ -159,6 +168,7 @@ class ClientManager:
 
     def set_clients(self, clients: dict):
         self.clients = clients
+        self.reactivatable_clients = {}
         self.name_to_clients = {}
         for c in clients.values():
             self.name_to_clients[c.name] = c
@@ -175,6 +185,9 @@ class ClientManager:
         # new client join
         with self.lock:
             if client_type == ClientType.REGULAR:
+                for token, inactive in list(self.reactivatable_clients.items()):
+                    if inactive.name == client.name:
+                        self.reactivatable_clients.pop(token)
                 self.name_to_clients[client.name] = client
                 self.clients.update({client.token: client})
                 client_kind = "client"
@@ -190,7 +203,7 @@ class ClientManager:
             )
         return client
 
-    def remove_client(self, token):
+    def remove_client(self, token, allow_reactivation=False):
         """Remove a registered client's active token entry.
 
         Args:
@@ -203,8 +216,12 @@ class ClientManager:
             client = self.clients.pop(token, None)
             if client:
                 self.name_to_clients.pop(client.name, None)
+                if allow_reactivation and client.name not in self.disabled_clients:
+                    self.reactivatable_clients[token] = client
                 self.logger.info("Client Name:{} left.  Total clients: {}".format(client.name, len(self.clients)))
             else:
+                if not allow_reactivation:
+                    self.reactivatable_clients.pop(token, None)
                 self.logger.warning("remove_client: unknown token")
             return client
 
@@ -329,12 +346,13 @@ class ClientManager:
                 self.logger.warning(f"Reject disabled client registration: {client_name}")
                 return None
 
-            clients_to_be_removed = [token for token, client in self.clients.items() if client.name == client_name]
-            for item in clients_to_be_removed:
-                client = self.clients.pop(item, None)
-                if client:
-                    self.name_to_clients.pop(client.name, None)
-                self.logger.info(f"Client: {client_name} already registered. Re-login the client with a new token.")
+            if client_type == ClientType.REGULAR:
+                clients_to_be_removed = [token for token, client in self.clients.items() if client.name == client_name]
+                for item in clients_to_be_removed:
+                    client = self.clients.pop(item, None)
+                    if client:
+                        self.name_to_clients.pop(client.name, None)
+                    self.logger.info(f"Client: {client_name} already registered. Re-login the client with a new token.")
 
         client = Client(client_name, str(uuid.uuid4()))
         client.set_prop(ClientPropKey.ORG, client_org)
@@ -383,7 +401,7 @@ class ClientManager:
             fl_ctx: FLContext
 
         Returns:
-            If a new client needs to be created.
+            Whether a timed-out regular client was reactivated.
         """
         with self.lock:
             if client_name in self.disabled_clients:
@@ -393,10 +411,24 @@ class ClientManager:
 
             client = self.clients.get(token)
             if client:
+                if client.name != client_name or client.get_fqcn() != client_fqcn:
+                    fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, CLIENT_REGISTRATION_REQUIRED, sticky=False)
+                    return False
                 client.last_connect_time = time.time()
                 self.logger.debug(f"Receive heartbeat from Client:{client_name}")
                 return False
             else:
+                client = self.reactivatable_clients.get(token)
+                if not client or client.name != client_name or client.get_fqcn() != client_fqcn:
+                    if client_name in self.name_to_clients:
+                        fl_ctx.set_prop(
+                            FLContextKey.COMMUNICATION_ERROR,
+                            "Client ID already registered as a client: {}".format(client_name),
+                            sticky=False,
+                        )
+                        return False
+                    fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, CLIENT_REGISTRATION_REQUIRED, sticky=False)
+                    return False
                 for _token, _client in self.clients.items():
                     if _client.name == client_name:
                         fl_ctx.set_prop(
@@ -409,7 +441,7 @@ class ClientManager:
                         )
                         return False
 
-                client = Client(client_name, token)
+                self.reactivatable_clients.pop(token)
                 self._set_client_props(client, client_fqcn, fl_ctx)
                 self.clients.update({token: client})
                 self.name_to_clients[client.name] = client

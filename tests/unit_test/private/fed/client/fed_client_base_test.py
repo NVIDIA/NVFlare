@@ -14,8 +14,10 @@
 
 import threading
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+from nvflare.apis.fl_context import FLContext
+from nvflare.private.fed.client.communicator import Communicator
 from nvflare.private.fed.client.fed_client_base import FederatedClientBase
 from tests.timing_utils import WAIT_TIMEOUT, ObservedLock, ThreadGroup
 
@@ -23,7 +25,7 @@ from tests.timing_utils import WAIT_TIMEOUT, ObservedLock, ThreadGroup
 def _make_client():
     client = FederatedClientBase.__new__(FederatedClientBase)
     client._shutdown_lock = threading.Lock()
-    client.communicator = SimpleNamespace(heartbeat_done=False)
+    client.communicator = SimpleNamespace(heartbeat_done=False, abort_signal=MagicMock())
     client.cell = MagicMock()
     client.engine = None
     client.client_name = "site-1"
@@ -72,3 +74,35 @@ def test_close_waits_for_terminal_request_before_logout():
         client.logout_client.assert_not_called()
     assert client.communicator.heartbeat_done is True
     client.logout_client.assert_called_once()
+
+
+def test_close_waits_for_recovery_registration_before_logout():
+    client = _make_client()
+    client._shutdown_lock = ObservedLock(client._shutdown_lock)
+    client.communicator = Communicator(client_config={"client_name": "site-1"})
+    client.token = "old-token"
+    client.client_name = "site-1"
+    engine = MagicMock(client=client)
+    engine.new_context.return_value = FLContext()
+    client.engine = engine
+    registration_started = threading.Event()
+    release_registration = threading.Event()
+    logged_out_token = []
+
+    def register(*_args):
+        registration_started.set()
+        assert release_registration.wait(WAIT_TIMEOUT)
+        return "new-token", "new-signature", "new-ssid"
+
+    client.logout_client.side_effect = lambda _fl_ctx: logged_out_token.append(client.token)
+    with patch.object(client.communicator, "client_registration", side_effect=register):
+        with ThreadGroup(release_registration) as workers:
+            workers.start(client.communicator._register_after_lost_session, engine, "project")
+            assert registration_started.wait(WAIT_TIMEOUT)
+            workers.start(client.close)
+            assert client._shutdown_lock.blocked.wait(WAIT_TIMEOUT), "close did not wait for registration"
+            assert client.communicator.abort_signal.triggered
+            client.logout_client.assert_not_called()
+
+    assert client.communicator.heartbeat_done is True
+    assert logged_out_token == ["new-token"]

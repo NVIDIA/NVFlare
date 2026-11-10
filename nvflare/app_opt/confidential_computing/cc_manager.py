@@ -204,9 +204,12 @@ class CCManager(FLComponent):
                 self._shutdown_system(f"CC info validation failed: {verdict.error}", fl_ctx)
         elif event_type == EventType.CLIENT_REGISTER_RECEIVED:
             # Server side: validate client's token and prepare server's token
-            # Skip CC processing for admin clients
+            # An admin-typed request cannot bypass CC checks for a protected site name.
             client_type = fl_ctx.get_prop(FLContextKey.CLIENT_TYPE)
-            if client_type == ClientType.ADMIN:
+            if (
+                client_type == ClientType.ADMIN
+                and fl_ctx.get_prop(FLContextKey.CLIENT_NAME) not in self.cc_enabled_sites
+            ):
                 self.logger.info(f"Skipping CC validation for admin client (type={client_type})")
                 return
 

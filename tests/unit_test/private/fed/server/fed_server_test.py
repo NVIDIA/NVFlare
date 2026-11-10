@@ -655,6 +655,10 @@ class TestFederatedServer:
         assert request.get_prop(MessagePropKey.COMMON_NAME) is None
         assert server._validate_auth_headers(request) is None
         if name == "site-a":
+            registered = Client(name, "delegated")
+            registered.set_fqcn(origin)
+            server.client_manager.set_clients({registered.token: registered})
+            server.client_manager.remove_client(registered.token, allow_reactivation=True)
             assert server.client_manager.heartbeat("delegated", name, origin, FLContext()) is True
             assert server.client_manager.clients["delegated"].get_fqcn() == origin
         request.set_header(MessageHeaderKey.ORIGIN, "server")
@@ -1065,6 +1069,34 @@ class TestFederatedServer:
             assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
             assert "disabled" in result.get_header(MessageHeaderKey.ERROR)
             assert "token" not in server.client_manager.clients
+
+    def test_unregistered_admin_token_heartbeat_is_rejected(self):
+        with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
+            server = FederatedServer(
+                project_name="project_name",
+                min_num_clients=1,
+                max_num_clients=10,
+                cmd_modules=None,
+                heart_beat_timeout=600,
+                args=MagicMock(),
+                secure_train=False,
+                snapshot_persistor=MagicMock(),
+            )
+            server.server_state = HotState()
+            request = new_cell_message(
+                {
+                    CellMessageHeaderKeys.TOKEN: "admin-token",
+                    CellMessageHeaderKeys.CLIENT_NAME: "site-1",
+                    MessageHeaderKey.ORIGIN: "site-1",
+                },
+                Shareable(),
+            )
+
+            reply = server.client_heartbeat(request)
+
+            assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+            assert "admin-token" not in server.client_manager.clients
+            assert "admin-token" not in server.tokens
 
     def test_process_job_failure_stops_run_for_reported_unsafe_client_failure(self):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):

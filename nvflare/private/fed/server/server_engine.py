@@ -672,7 +672,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         return {"clients": results}
 
     def _remove_dead_client(self, token):
-        _ = self.server.client_manager.remove_client(token)
+        _ = self.server.client_manager.remove_client(token, allow_reactivation=True)
         self.server.remove_client_data(token)
         if self.server.admin_server:
             self.server.admin_server.client_dead(token)

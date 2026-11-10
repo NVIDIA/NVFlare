@@ -429,10 +429,12 @@ class FederatedClientBase:
 
     def close(self):
         """Quit the remote federated server, close the local session."""
+        # Interrupt a pending registration before waiting for it to release the shutdown lock.
+        self.communicator.heartbeat_done = True
+        self.communicator.abort_signal.trigger(True)
         with self._shutdown_lock:
             # Serialize token retirement/logout after any in-flight terminal
             # report that still uses this authenticated client session.
-            self.communicator.heartbeat_done = True
             self.terminate()
 
             if self.engine:
