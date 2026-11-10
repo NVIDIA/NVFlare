@@ -583,8 +583,12 @@ class _SlurmTaskBackend(TaskLauncherSpec):
         gpu_count=0,
         environment=None,
         worker_listener_host=None,
+        cj_runtime="slurm",
     ):
         super().__init__()
+        if cj_runtime not in ("slurm", "docker"):
+            raise ValueError("Slurm task cj_runtime must be 'slurm' or 'docker'")
+        self.cj_runtime = cj_runtime
         if shared_filesystem is not True or cgroup_enforced is not True:
             raise ValueError("Slurm tasks require coherent shared paths and enforced Slurm cgroup tracking")
         config = SlurmConfig(
@@ -624,6 +628,17 @@ class _SlurmTaskBackend(TaskLauncherSpec):
         self._binding = None
         self._binding_lock = threading.Lock()
         self._initialization_lock = threading.Lock()
+        if cj_runtime == "docker":
+            if not worker_listener_host:
+                raise ValueError("Docker CJ requires an explicit worker_listener_host on the gateway")
+            host = self.get_worker_listener_host()
+            try:
+                loopback = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                name = host.rstrip(".").lower()
+                loopback = name == "localhost" or name.endswith(".localhost")
+            if loopback:
+                raise ValueError("Docker CJ worker_listener_host must be reachable from compute nodes")
 
     def get_worker_listener_host(self):
         """Advertise this CJ's host to workers in independent Slurm allocations."""
@@ -820,7 +835,9 @@ class SlurmTaskLauncher(_SlurmTaskBackend):
         from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskClient
 
         if event_type == EventType.START_RUN:
-            if os.environ.get(SLURM_CHILD_PROCESS_ENV) != "1" or not os.environ.get("SLURM_JOB_ID", "").isdigit():
+            if self.cj_runtime == "slurm" and (
+                os.environ.get(SLURM_CHILD_PROCESS_ENV) != "1" or not os.environ.get("SLURM_JOB_ID", "").isdigit()
+            ):
                 raise TaskLauncherError("Slurm task proxy requires a Slurm Client Job allocation")
             super().handle_event(event_type, fl_ctx)
             self._client = SlurmTaskClient(

@@ -3,7 +3,7 @@ Slurm task execution
 
 This guide is for site operators enabling disposable CPU or GPU workers.
 Start with :ref:`slurm_job_launcher` for provisioning, parent placement,
-networking and ordinary job-lifetime execution. Both lifetimes use
+networking and ordinary job-lifetime execution. The Slurm CJ profile uses
 ``nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher``.
 The deployed application's ``execution_lifetime`` selects the behavior:
 
@@ -96,13 +96,122 @@ allocations: ``time`` is preserved for each allocation, and ``pending_timeout``
 is bounded by the respective trusted site limit. Splitting CPU, memory and
 GPU budgets does not discard the job timing policy.
 
+Docker CJs on a gateway
+~~~~~~~~~~~~~~~~~~~~~~~
+
+For clusters whose compute nodes all have GPUs, CP can keep each task-mode CJ
+in a CPU-only Docker container on its own gateway host. Only compute workers
+use Slurm allocations. This is a separate, opt-in site profile; the ordinary
+Docker and Slurm job launchers keep their existing behavior.
+
+After preparing the client workspace, replace its job-launcher component in
+the active ``local/resources.json`` with the component below. Keep the other
+site components. Configure the task launcher in that same file with
+``cj_runtime: "docker"`` and an explicit ``worker_listener_host``:
+
+.. code-block:: json
+
+    {
+      "components": [
+        {
+          "id": "job_launcher",
+          "path": "nvflare.app_opt.job_launcher.slurm.docker_launcher.ClientDockerSlurmJobLauncher",
+          "args": {
+            "workspace": "/shared/private/site-1",
+            "cj_image": "registry.example/nvflare-coordinator:tested",
+            "parent_host": "gateway.example",
+            "cj_python_path": "/usr/local/bin/python",
+            "cj_cpu_cores": 1,
+            "cj_memory_mb": 1024
+          }
+        }
+      ],
+      "task_execution": {
+        "launcher": {
+          "path": "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+          "args": {
+            "workspace_path": "/shared/private/site-1",
+            "cj_runtime": "docker",
+            "shared_filesystem": true,
+            "cgroup_enforced": true,
+            "worker_listener_host": "gateway.example",
+            "python_path": "/shared/env/bin/python",
+            "cpu_cores": 4,
+            "memory_mb": 4096,
+            "gpu_count": 1,
+            "sbatch_directives": {"account": "site-account", "partition": "gpu"}
+          }
+        }
+      }
+    }
+
+This initial profile requires:
+
+* A Linux gateway, a local Docker daemon with CPU/memory limit support, the
+  Docker Python SDK on CP, and a nonroot CP UID. CP needs permission to use
+  Docker and all four Slurm commands. Docker CJs need neither interface.
+  The launcher requires a Unix-socket daemon endpoint and checks its Linux
+  CPU-quota and memory-limit capabilities before creating the container.
+  Do not submit CP with ``parent.slurm`` when placing it on the gateway;
+  run the prepared ``startup/start_slurm.sh`` as a persistent gateway service.
+* Exactly one ``ClientDockerSlurmJobLauncher`` in the canonical site file.
+  This launcher accepts only applications with ``execution_lifetime="task"``.
+  Job Docker options, including image/entrypoint/device overrides, are rejected.
+  The coordinator image is site owned, contains this NVFlare version and the
+  dependencies needed by federation filters and result handling, and does not
+  embed scheduler or site credentials. Study environment/setup still belongs
+  to the Slurm workers; study container images, mounts and secrets remain
+  unsupported by the shared-path Slurm task profile.
+* The same canonical absolute workspace path on CP, the Docker daemon host,
+  and compute hosts, with coherent atomic file operations. If CP itself is a
+  container, mount the workspace at that path in CP too. CJ receives a tmpfs
+  root at that path, read-only ``local`` and permitted startup files, and only
+  its own job directory as a persistent writable bind. Other job directories,
+  startup private keys, scheduler sockets and the Docker socket are not mounted.
+  Do not place scheduler credentials in ``local`` or permitted startup files.
+  The existing per-job certificate requirement applies in secure mode.
+* Linux host networking for each CJ. ``parent_host`` must reach CP's TCP or
+  mTLS TCP internal listener; ``worker_listener_host`` must reach this gateway
+  from compute hosts. CJ opens its own dynamic listener port, so the gateway
+  firewall must permit those worker connections. Bridge networking, Docker
+  Desktop, shared-file parent transport and automatic host discovery are
+  unsupported in this profile. Host networking does not isolate network access;
+  qualify it under the site's network and job-code trust policy.
+
+``cj_resource_spec`` overrides the site's coordinator CPU and memory defaults;
+compute resources never size this container. Docker preserves fractional CPU
+shares as nanocpu quotas; a budget below one nanocpu is rejected. CJ GPU and
+per-GPU memory requests are rejected. Slurm tasks still require whole CPU cores
+and integer GPU counts. No fractional GPU behavior is added.
+
+CP installs the per-job Slurm backend before creating the Docker CJ and gives
+CJ a job-scoped Cell capability. CJ sends only staged task identities and paths;
+CP binds resources, invokes ``sbatch/squeue/sacct/scancel``, and retains cleanup
+after CJ loss, cancellation or a lost reply. The Docker CJ needs no
+``SLURM_JOB_ID`` or Slurm child marker. The existing Slurm CJ profile still
+requires them. Application success and scheduler-confirmed release remain
+separate outcomes. Automatic CJ recovery is disabled, and parent-crash
+recovery/adoption is unsupported: reconcile retained allocations before
+restarting CP or resubmitting. Native workers retain the shared-UID trust
+requirements described below; the Docker CJ filesystem view does not isolate
+native worker code from other files accessible to that UID.
+
+Qualify a new deployment with a small multi-round CUDA task job. Verify Docker
+reports no device requests and the independent CPU/memory limits, CJ can read
+only its job subtree and per-job credentials, and the worker can reach CJ's
+listener. Retain task allocation/step accounting and demonstrate zero owned
+GPU allocations between rounds, followed by a successful allocation on released
+capacity. Also check queued/running cancellation and CJ loss. Mocked Docker API
+tests do not establish these deployment properties.
+
 Storage and recovery
 ---------------------
 
-The current bare profile shares the site workspace under one UID. It requires
-trusted job code and does not enforce CP-private storage, per-job filesystem
-isolation or scheduler-credential isolation. The launcher warns at startup;
-mTLS does not add filesystem isolation.
+Native Slurm allocations share the site workspace under one UID. They require
+trusted job code and do not enforce CP-private storage, per-job filesystem
+isolation or scheduler-credential isolation. The Slurm CJ launcher warns at
+startup; mTLS does not add filesystem isolation. The gateway Docker profile
+isolates the CJ filesystem view but keeps this native-worker trust requirement.
 
 Keep required checkpoints and application state in the persistent job directory.
 The common artifact store promotes opaque checkpoint state from verified

@@ -871,6 +871,7 @@ class DockerJobLauncher(JobLauncherSpec):
             container=container,
             watch_exit=True,
         )
+        self._job_created(job_handle, fl_ctx)
 
         try:
             if not job_handle.enter_states([DockerStatus.RUNNING]):
@@ -881,6 +882,9 @@ class DockerJobLauncher(JobLauncherSpec):
 
         # Always return a handle — caller detects failure via poll()
         return job_handle
+
+    def _job_created(self, job_handle, fl_ctx):
+        """Allow a site runtime to attach ownership before waiting for startup."""
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
