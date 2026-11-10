@@ -771,6 +771,7 @@ def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
 ):
     class NativeLauncher(TaskLauncherSpec):
         launch_mode = mode
+        cj_runtime = "slurm"
 
         def launch_task(self, request):
             raise NotImplementedError()

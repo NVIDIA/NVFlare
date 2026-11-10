@@ -182,6 +182,9 @@ class TaskExecutionPolicy:
     def validate_job_launcher(self, launcher):
         """Fail closed before starting a CJ on an incompatible site runtime."""
         module_name, class_name = _NATIVE_JOB_LAUNCHERS[self.launcher.launch_mode]
+        if self.launcher.launch_mode == "slurm" and self.launcher.cj_runtime == "docker":
+            module_name = "nvflare.app_opt.job_launcher.slurm.docker_launcher"
+            class_name = "ClientDockerSlurmJobLauncher"
         expected = getattr(importlib.import_module(module_name), class_name)
         if type(launcher) is not expected:
             raise ValueError("task lifetime requires the site's supported Kubernetes or Slurm client-job launcher")
