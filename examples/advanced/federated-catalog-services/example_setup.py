@@ -21,7 +21,8 @@ use it in your own deployment:
   2. nvflare config add <admin> <kit> / config use     register the admin kit, so `nvflare` commands can connect
   3. .env and .sdk/                                select startup kits and the matching container SDK
 
-Rerunning setup reuses existing kits and writes .env again.
+Rerunning setup reuses existing kits and writes .env again. Kits created for a different SDK are refused;
+add --reprovision to replace them.
 """
 
 import argparse
@@ -40,6 +41,7 @@ from packaging.version import InvalidVersion, Version
 
 ROOT = Path(__file__).resolve().parent
 STEPS = 3
+KIT_SDK_FILE = ".example-sdk"  # beside the kits: the container SDK they were created for
 
 
 def shown(path):
@@ -78,7 +80,10 @@ def installed_sdk_package():
     override = os.environ.get("NVFLARE_PACKAGE")
     if override:
         if "\n" in override or "\r" in override:
-            raise ValueError("NVFLARE_PACKAGE must be a single-line package requirement or an existing host wheel path")
+            raise ValueError(
+                "NVFLARE_PACKAGE contains a line break. Put the wheel path or package requirement on one line, "
+                "for example: export NVFLARE_PACKAGE=/tmp/nvflare-sdk-wheels/<wheel>.whl[catalog]"
+            )
         wheel = re.fullmatch(r"(.+\.whl)(\[[^\[\]]+\])?", override)
         if wheel:
             source = Path(wheel[1]).expanduser().resolve(strict=True)
@@ -151,9 +156,19 @@ def main():
     )
     if args.reprovision or not generations():
         run_command("nvflare", "provision", "-p", project_file, "-w", workspace, "--force")
+        kits = generations()[-1]
+        (kits / KIT_SDK_FILE).write_text(sdk_package)
     else:
-        print("  Kits already exist; reusing them. Add --reprovision to create new ones.", flush=True)
-    kits = generations()[-1]
+        kits = generations()[-1]
+        recorded = (kits / KIT_SDK_FILE).read_text() if (kits / KIT_SDK_FILE).is_file() else None
+        if recorded != sdk_package:
+            # Kits carry the server and site components of the SDK that created them; mixing SDKs fails jobs.
+            raise ValueError(
+                f"The startup kits in {shown(kits)} were created for a different NVFlare SDK "
+                f"({recorded or 'unknown'}); this setup selects {sdk_package}. "
+                "Rerun with --reprovision to create matching kits."
+            )
+        print("  Kits already exist for this SDK; reusing them. Add --reprovision to create new ones.", flush=True)
     for participant in participants:
         if not (kits / participant["name"] / "startup").is_dir():
             raise ValueError(f"Incomplete kit generation {kits}; rerun with --reprovision")
