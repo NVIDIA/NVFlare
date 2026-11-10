@@ -930,7 +930,7 @@ def test_multi_process_initialization_failure_signals_fatal_error(monkeypatch, f
     assert len(fatal_events) == 1
 
 
-@pytest.mark.parametrize("site_policy", ["allow", "error", "exception"])
+@pytest.mark.parametrize("site_policy", ["allow", "parent_only", "error", "exception"])
 def test_rank_runtime_build_enforces_parent_site_checks(tmp_path, site_policy):
     config_file = tmp_path / "config.json"
     config_file.write_text("{}")
@@ -950,7 +950,10 @@ def test_rank_runtime_build_enforces_parent_site_checks(tmp_path, site_policy):
             assert ctx.get_prop(FLContextKey.CONFIG_CTX) is conf.config_ctx
             checked_paths.append(ctx.get_prop(FLContextKey.COMPONENT_NODE).path())
             if ctx.get_prop(FLContextKey.COMPONENT_CONFIG)["path"] == _component_path(NestedComponent):
-                if site_policy == "error":
+                if site_policy == "parent_only":
+                    if ctx.get_prop(FLContextKey.COMPONENT_NODE).path() != "runtime_component.args.child":
+                        ctx.set_prop(FLContextKey.COMPONENT_BUILD_ERROR, "child requires parent", sticky=False)
+                elif site_policy == "error":
                     ctx.set_prop(FLContextKey.COMPONENT_BUILD_ERROR, "site veto", sticky=False)
                 elif site_policy == "exception":
                     raise UnsafeComponentError("site veto")
@@ -971,12 +974,13 @@ def test_rank_runtime_build_enforces_parent_site_checks(tmp_path, site_policy):
     rank.cell.send_request.side_effect = authorize_in_parent
     builder = WorkerComponentBuilder(fl_ctx=fl_ctx, workspace=fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT))
     builder.component_build_authorizer = rank._authorize_component_build
+    child_config = {"path": _component_path(NestedComponent)}
     component_config = {
         "path": _component_path(ContainerComponent),
-        "args": {"child": {"path": _component_path(NestedComponent)}},
+        "args": {"child": child_config},
     }
     ContainerComponent.instantiated = NestedComponent.instantiated = False
-    if site_policy == "allow":
+    if site_policy in ("allow", "parent_only"):
         result = builder.build_component(component_config)
         assert isinstance(result.child, NestedComponent)
     else:
@@ -984,7 +988,63 @@ def test_rank_runtime_build_enforces_parent_site_checks(tmp_path, site_policy):
             builder.build_component(component_config)
         assert not ContainerComponent.instantiated
         assert not NestedComponent.instantiated
-    assert checked_paths[:2] == ["runtime_component", "runtime_component.args.child"]
+    assert checked_paths == ["runtime_component", "runtime_component.args.child"]
+    rank.cell.send_request.assert_called_once()
+    if site_policy == "parent_only":
+        # The nested approval must not carry over to an independent build of the same dict.
+        NestedComponent.instantiated = False
+        with pytest.raises(ComponentNotAuthorized, match="child requires parent"):
+            builder.build_component(child_config)
+        assert not NestedComponent.instantiated
+        assert checked_paths == [
+            "runtime_component",
+            "runtime_component.args.child",
+            "runtime_component",
+        ]
+
+
+def test_worker_nested_build_preserves_approval_through_multiple_levels():
+    _set_class_allow_list(_test_component_allow_list())
+    builder = WorkerComponentBuilder()
+    builder.component_build_authorizer = Mock()
+    config = {
+        "path": _component_path(ContainerComponent),
+        "args": {
+            "child": {
+                "path": _component_path(MiddleComponent),
+                "args": {"child": {"path": _component_path(NestedComponent)}},
+            }
+        },
+    }
+
+    result = builder.build_component(config)
+
+    assert isinstance(result.child.child, NestedComponent)
+    builder.component_build_authorizer.assert_called_once_with(config)
+
+
+def test_worker_constructor_runtime_build_requires_independent_approval(monkeypatch):
+    _set_class_allow_list(_test_component_allow_list())
+    builder = WorkerComponentBuilder()
+    runtime_config = {"path": _component_path(NestedComponent)}
+    monkeypatch.setattr(BuildDuringInitComponent, "configurator", builder)
+    monkeypatch.setattr(BuildDuringInitComponent, "runtime_component_config", runtime_config)
+
+    def authorize(config):
+        if config is runtime_config:
+            raise ComponentNotAuthorized("independent build denied")
+
+    builder.component_build_authorizer = Mock(side_effect=authorize)
+    NestedComponent.instantiated = False
+    with pytest.raises(ComponentNotAuthorized, match="independent build denied"):
+        builder.build_component({"path": _component_path(BuildDuringInitComponent)})
+    assert not NestedComponent.instantiated
+    assert builder.component_build_authorizer.call_count == 2
+
+    # A failed constructor must not leave an active parent approval behind.
+    with pytest.raises(ComponentNotAuthorized, match="independent build denied"):
+        builder.build_nested_component(runtime_config, "child")
+    assert builder.component_build_authorizer.call_count == 3
 
 
 def test_rank_runtime_build_rejects_unavailable_parent_authorization():
