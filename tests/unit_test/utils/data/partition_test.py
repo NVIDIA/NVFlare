@@ -17,7 +17,7 @@
 import numpy as np
 import pytest
 
-from nvflare.data.utility.partition import (
+from nvflare.utils.data.partition import (
     PartitionResult,
     dirichlet_label_partition,
     iid_partition,
