@@ -94,9 +94,10 @@ GPUResourceManager and GPUResourceConsumer
 ==========================================
 
 With the default ``ignore_host=False``, GPUResourceManager validates the configured GPU count and memory
-against the host using nvidia-smi at initialization. When ``CUDA_VISIBLE_DEVICES`` contains GPU IDs,
-the startup check is restricted to those GPUs. With ``ignore_host=True``, it skips host discovery and
-trusts the configured capacity. Exclusive host-independent pools can use a nonempty numeric
+against the host using nvidia-smi at initialization. An integer ``CUDA_VISIBLE_DEVICES`` mask restricts
+the startup check and pool to the selected GPUs. Masks that the integer selector cannot interpret
+fall back to the host inventory. With ``ignore_host=True``, it skips host discovery and trusts the
+configured capacity. Exclusive host-independent pools can use a nonempty numeric
 ``CUDA_VISIBLE_DEVICES`` mask to select GPU IDs.
 
 The manager tracks reservations against that configured capacity; it does not continuously measure

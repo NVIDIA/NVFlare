@@ -23,7 +23,6 @@ Task Fetch Timeout
 
 - Large model weights take too long to transfer
 - Network latency exceeds default timeout
-- Tensor streaming timeout exceeds task fetch timeout
 
 **Solution**: Set ``get_task_timeout`` in client config:
 
@@ -225,7 +224,7 @@ Most Commonly Adjusted Timeouts
      - When to Increase
    * - get_task_timeout
      - None
-     - Large models, slow networks, tensor streaming
+     - Large models, slow networks
    * - submit_task_result_timeout
      - None
      - Large result payloads
@@ -284,18 +283,17 @@ Via Recipe API
 Via Configuration Files
 -----------------------
 
-**application_config.json** (job-level; the last two keys are server startup/dead-job safety flags):
+**config_fed_client.json** (top-level job settings):
 
 .. code-block:: json
 
    {
      "get_task_timeout": 300.0,
-     "submit_task_result_timeout": 300.0,
-     "strict_start_job_reply_check": false,
-     "sync_client_jobs_require_previous_report": true
+     "submit_task_result_timeout": 300.0
    }
 
-Server-side safety flags guidance (see :ref:`server_startup_dead_job_safety_flags` for full details):
+Set the server-parent (SP) safety flags through SP's environment or Python startup
+``--set`` arguments (see :ref:`server_startup_dead_job_safety_flags`):
 
 - ``strict_start_job_reply_check`` (default ``false``): in non-strict mode, start-job timeouts are silently
   excluded from the active set with no ``min_sites``/``required_sites`` enforcement; set to ``true`` to make

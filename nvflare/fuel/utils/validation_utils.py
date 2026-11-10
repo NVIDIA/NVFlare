@@ -42,14 +42,14 @@ class DefaultValuePolicy:
 
 
 def check_positive_int(name, value):
-    if not isinstance(value, int):
+    if isinstance(value, bool) or not isinstance(value, int):
         raise TypeError(f"{name} must be an int, but got {type(value)}.")
     if value <= 0:
         raise ValueError(f"{name} must > 0, but got {value}")
 
 
 def check_non_negative_int(name, value):
-    if not isinstance(value, int):
+    if isinstance(value, bool) or not isinstance(value, int):
         raise TypeError(f"{name} must be an int, but got {type(value)}.")
     if value < 0:
         raise ValueError(f"{name} must >= 0, but got {value}")

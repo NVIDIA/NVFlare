@@ -18,12 +18,14 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.hci.proto import ReplyKeyword
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
-from nvflare.private.defs import CellChannel, RequestHeader, new_cell_message
+from nvflare.private.defs import CellChannel, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.site_security import SiteSecurity
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -107,6 +109,26 @@ class FedAdminAgent(object):
 
         assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
         topic = req.topic
+
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        endpoint = request.get_prop(MessagePropKey.ENDPOINT)
+        from_server = (
+            origin == FQCN.ROOT_SERVER
+            and endpoint
+            and endpoint.name in (FQCN.ROOT_SERVER, FQCN.get_parent(self.cell.get_fqcn()))
+        )
+        # The only client-originated command is a job child's status notification
+        # to its own CP. Do not trust authorization headers supplied by a peer.
+        from_job = (
+            topic == TrainingTopic.NOTIFY_JOB_STATUS
+            and origin
+            and FQCN.is_parent(self.cell.get_fqcn(), origin)
+            and req.get_header(RequestHeader.JOB_ID) == FQCN.split(origin)[-1]
+            and endpoint
+            and endpoint.name == origin
+        )
+        if not from_server and not from_job:
+            return new_cell_message({}, error_reply("request must originate from server"))
 
         # create audit record
         if self.auditor:

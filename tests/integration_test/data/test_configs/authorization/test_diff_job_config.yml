@@ -225,7 +225,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "meta.[json|conf|yml] not existing for job old_app, possible in legacy job format.  Please upgrade the job structure."
+              "data": "meta.json not existing for job old_app, possible in legacy job format.  Please upgrade the job structure."
             }
           ]
       - "trigger":
