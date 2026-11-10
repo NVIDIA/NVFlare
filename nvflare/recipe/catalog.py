@@ -117,6 +117,9 @@ class CatalogRecipe(Recipe):
     def get_catalog_results(self, run, output_path: str | None = None, timeout: float = 0.0) -> dict:
         """Wait for the job, download its result and return the parsed catalog_results.json.
 
+        When the read completes, the downloaded job workspace is reduced to its catalog_results.json; a failed
+        job's workspace is kept whole for diagnosis.
+
         Args:
             run: the Run returned by ``execute``.
             output_path: also copy catalog_results.json here.
@@ -136,9 +139,29 @@ class CatalogRecipe(Recipe):
             results = check_catalog_results(json.loads(found[0].read_text(encoding="utf-8")))
         except (OSError, ValueError, PayloadError) as e:
             raise CatalogReadError(f"catalog results are unreadable: {type(e).__name__}", run.job_id, status) from None
+        kept = _keep_only_the_result(Path(result_dir), found[0])
         if output_path is not None:
-            shutil.copyfile(found[0], output_path)
+            shutil.copyfile(kept, output_path)
         return results
+
+
+def _keep_only_the_result(result_dir: Path, results_file: Path) -> Path:
+    """Reduce a completed job's downloaded workspace to its catalog_results.json; return the kept file.
+
+    The download holds the whole job workspace (configuration, logs, other artifacts). A completed read needs only
+    the result; a failed one is left whole for diagnosis.
+    """
+    kept = result_dir / RESULTS_FILE
+    if results_file != kept:
+        os.replace(results_file, kept)
+    for entry in result_dir.iterdir():
+        if entry == kept:
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+    return kept
 
 
 def get_catalog(
