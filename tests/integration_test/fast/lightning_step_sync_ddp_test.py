@@ -27,6 +27,8 @@ torch = pytest.importorskip("torch")
 pl = pytest.importorskip("pytorch_lightning")
 
 gloo_available = torch.distributed.is_available() and torch.distributed.is_gloo_available()
+nccl_available = torch.distributed.is_available() and torch.distributed.is_nccl_available()
+two_gpus = torch.cuda.is_available() and torch.cuda.device_count() >= 2
 running_under_xdist = bool(os.environ.get("PYTEST_XDIST_WORKER"))
 
 
@@ -67,7 +69,7 @@ class _FakeFlare:
         self._current = None
 
 
-def _worker(rank, port, result_queue):
+def _worker(rank, port, result_queue, accelerator):
     import torch.nn.functional as F
     from pytorch_lightning.plugins.environments import LightningEnvironment
     from pytorch_lightning.strategies import DDPStrategy
@@ -83,7 +85,7 @@ def _worker(rank, port, result_queue):
             self.seen = []
 
         def training_step(self, batch, batch_idx):
-            self.seen.append(float(self.fc.weight.detach()[0, 0]))
+            self.seen.append((self.fc.weight.device.type, float(self.fc.weight.detach()[0, 0])))
             inputs, labels = batch
             return F.cross_entropy(self.fc(inputs), labels)
 
@@ -106,10 +108,11 @@ def _worker(rank, port, result_queue):
             for name in ("receive", "is_train", "is_evaluate", "is_submit_model", "send", "clear"):
                 stack.enter_context(patch(f"{api}.{name}", new=getattr(fake, name)))
 
+            backend = "nccl" if accelerator == "gpu" else "gloo"
             trainer = pl.Trainer(
-                accelerator="cpu",
+                accelerator=accelerator,
                 devices=2,
-                strategy=DDPStrategy(timeout=timedelta(seconds=60)),
+                strategy=DDPStrategy(process_group_backend=backend, timeout=timedelta(seconds=60)),
                 plugins=[LightningEnvironment()],
                 max_epochs=1,
                 logger=False,
@@ -137,16 +140,25 @@ def _worker(rank, port, result_queue):
         result_queue.put({"rank": rank, "ok": False, "error": repr(e)})
 
 
-@pytest.mark.skipif(not gloo_available, reason="torch.distributed gloo is required")
-@pytest.mark.skipif(running_under_xdist, reason="nested torch.multiprocessing gloo tests are unstable under xdist")
-def test_step_sync_under_ddp_pauses_all_ranks_together_and_only_rank_zero_exchanges():
+@pytest.mark.skipif(running_under_xdist, reason="nested torch.multiprocessing DDP tests are unstable under xdist")
+@pytest.mark.parametrize(
+    "accelerator",
+    [
+        pytest.param("cpu", marks=pytest.mark.skipif(not gloo_available, reason="torch.distributed gloo is required")),
+        pytest.param(
+            "gpu",
+            marks=pytest.mark.skipif(not (nccl_available and two_gpus), reason="NCCL and two GPUs are required"),
+        ),
+    ],
+)
+def test_step_sync_under_ddp_pauses_all_ranks_together_and_only_rank_zero_exchanges(accelerator):
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
 
     ctx = torch.multiprocessing.get_context("spawn")
     result_queue = ctx.Queue()
-    procs = [ctx.Process(target=_worker, args=(rank, port, result_queue)) for rank in range(2)]
+    procs = [ctx.Process(target=_worker, args=(rank, port, result_queue, accelerator)) for rank in range(2)]
     try:
         for proc in procs:
             proc.start()
@@ -167,4 +179,5 @@ def test_step_sync_under_ddp_pauses_all_ranks_together_and_only_rank_zero_exchan
     assert rank0["sent_steps"] == [2, 2]
     assert rank1["events"] == []
     assert rank0["seen"] == rank1["seen"]
-    assert [rank0["seen"][0], rank0["seen"][2]] == [0.0, 1.0]
+    assert {device for device, _ in rank0["seen"]} == {"cuda" if accelerator == "gpu" else "cpu"}
+    assert [rank0["seen"][0][1], rank0["seen"][2][1]] == [0.0, 1.0]
