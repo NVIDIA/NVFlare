@@ -1,0 +1,18 @@
+# site-1 dataset configuration. Compose mounts it read-only into the site container and names it in
+# NVFLARE_DATASET_CONFIG.
+format_version: 1
+studies:
+  default:
+    datasets:
+      omop:                       # the omop schema registered in the site's Unity Catalog server
+        type: unity-catalog
+        uri: http://unity-catalog:8080/api/2.1/unity-catalog   # API root; authorization is off in this demo
+        options: {catalog: flare_demo, schema: omop}
+        usage:
+          catalog:
+            share: true
+            exclude_columns:        # source values could identify a patient or a local code
+              person: [person_source_value]
+              condition_occurrence: [condition_source_value]
+              drug_exposure: [drug_source_value]
+              measurement: [measurement_source_value]
