@@ -9,8 +9,74 @@ This guide covers API and configuration changes when upgrading between FLARE rel
 Upgrading from 2.9.0 to 2.9.1
 =============================
 
-All deployments should review the configuration-format deprecations,
-checkpoint path restrictions, and Dashboard change below.
+Review the tensor-streaming API removal, control-request authorization,
+dependency requirements, configuration-format deprecations, checkpoint path
+restrictions, and Dashboard change below. Azure Container Instances (ACI)
+deployments also require reprovisioning with an approved policy and signed
+external startup kit.
+
+.. _tensor_transfer_migration_291:
+
+Migrate Push-Based Tensor Streaming to Tensor Downloader
+--------------------------------------------------------
+
+The ``nvflare.app_opt.tensor_stream`` package, ``TensorServerStreamer``,
+``TensorClientStreamer``, ``Recipe.enable_tensor_streaming()``, and the
+``examples/advanced/tensor-stream`` example are removed in 2.9.1. Existing
+exported jobs referencing those classes cannot load them on 2.9.1.
+
+Action:
+
+- Remove ``recipe.enable_tensor_streaming()`` calls and explicit streamer
+  components from server and client job configurations, then export and
+  resubmit the updated job.
+- Use :ref:`tensor_downloader` for pull-based transfer. Standard PyTorch
+  workflows register the tensor decomposer automatically; Client API jobs
+  exchanging PyTorch tensors should use ``params_exchange_format="pytorch"``.
+  Custom integrations should follow the registration guidance in that guide.
+- Keep applicable Tensor Downloader settings such as
+  ``tensor_streaming_per_request_timeout`` and ``tensor_min_download_timeout``.
+  These settings and ``enable_tensor_disk_offload`` remain supported; their
+  names do not refer to the removed push-based streamer components.
+
+Control Requests Must Follow Authenticated Caller and Job Boundaries
+--------------------------------------------------------------------
+
+2.9.1 checks control requests against the transport endpoint, upstream route,
+and job identity. Supported administration and job APIs need no call-site
+changes. Custom code that sends internal CellNet control messages must obey
+these restrictions:
+
+- Client administration originates from the server through the configured
+  upstream path. A client job may notify only its own parent of its status.
+  Client-job commands originate from the server or the job's parent.
+- Server-job controls originate from the parent server. Client traffic
+  forwarded through that parent does not gain server-control authority.
+- Full participant data and run-status updates on the server-parent channel
+  are restricted to the matching server job. A same-job client recovery query
+  receives an empty participant map when the server job exists, or ``None``
+  when it does not; it no longer receives participant credentials. Cross-job
+  queries are rejected.
+- Server-job and workspace-transfer credentials are scoped to their matching
+  job identities. Changing claimed origin headers does not grant access to
+  another job or to the parent-server identity.
+
+Action: use supported admin and job APIs for lifecycle operations, and update
+custom internal integrations or test harnesses that relied on peer-supplied
+identity headers, cross-job access, or participant tokens returned to a client.
+Upgrade the server, clients, relays, and job runtime images to receive the
+checks at each affected boundary.
+
+Updated Security Dependencies
+------------------------------
+
+2.9.1 requires ``certifi>=2026.10.19`` and ``uv>=0.13.6,<0.14.0`` following
+the eMudhra/emSign CA incident. Normal dependency resolution applies these
+requirements when installing or upgrading NVFlare.
+
+Action: update dependency locks, constraints, offline mirrors, and container
+images to satisfy both requirements, including environments previously built
+without ``uv``. Do not retain older versions through a dependency-free upgrade.
 
 .. _configuration_format_migration_291:
 
@@ -73,6 +139,47 @@ the :github_nvflare_link:`Trustee deployment guide
 <nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>` for the current backend and
 the migration boundary.
 
+.. _aci_migration_291:
+
+Azure Container Instances Require an Approved Policy and Signed External Kit
+----------------------------------------------------------------------------
+
+For ``azure_cc`` with ``deployment_target: confidential_container``, 2.9.1
+supports one protected ACI server with confidential-VM or Confidential
+Containers clients. Existing ACI deployments must be reprovisioned. Evidence
+signature validation alone no longer suffices: the signed policy fingerprint
+must match the exact CCE policy approved during provisioning, and the evidence
+must identify the supported hardware, Azure compliant container environment,
+and debugging disabled.
+
+Action:
+
+1. Create a separate deployment-signing key and build the fixed server image
+   with its public key and the startup verification program. Keep the final
+   startup kit outside the policy-measured image.
+2. Generate and decode the CCE policy for that image. Set ``cce_policy_file``
+   and ``startup_kit_signing_key_file`` in the participant's ``azure_cc`` block;
+   relative paths resolve against the participant configuration file.
+3. Reprovision the project. This approves the exact policy bytes and configures
+   every ACI verifier with their SHA-256 fingerprint (``expected_policy_hash``).
+   Redistribute the affected kits so peers check the same approved policy.
+4. Deploy with the packaged policy, ``startup-kit.tar``, and ``startup-kit.sig``.
+   Deliver the archive and signature through the read-only Azure secret volume
+   using private deployment parameters. Do not rebuild the image or regenerate
+   the policy after provisioning.
+
+See :ref:`confidential_azure_container_instances_deployment` for the complete
+workflow and positive and negative deployment checks. A policy change requires
+reprovisioning and redistribution; a deployment-signing key change also requires
+rebuilding the fixed image and regenerating its policy. Previously signed
+archives remain valid: reprovisioning alone does not revoke credentials or old
+archives. Follow the guide's recovery procedure after a compromise.
+
+This change does not alter confidential-VM configuration. The separate legacy
+``AZCVMAuthorizer`` still does not require a statement identifying the evidence
+as an Azure compliant confidential VM; see the deployment guide for that
+limitation and the distinction from ACI and CoCo verification.
+
 Confidential Computing Job Policy
 ---------------------------------
 
@@ -114,6 +221,28 @@ rejected with HTTP 400, and client-kit generation ignores previously stored
 affected.
 
 Action: API integrations that send ``props`` must omit it.
+
+Aggregation, Multiprocess Execution, and Log Retention
+-------------------------------------------------------
+
+In-time FedAvg now terminates the workflow on an accumulation exception instead
+of saving a model that may contain part of a rejected contribution. Investigate
+the failed contribution and restart from the previous valid checkpoint rather
+than expecting the round to continue after this error.
+
+Multiprocess sub-workers now initialize the required services and consult the
+parent site's existing component authorization callback for runtime builds.
+Custom components must satisfy that site policy; unavailable authorization or
+initialization failures stop execution.
+
+Default client-log staging retains active logs across job cleanup and removes
+managed staged logs on explicit job deletion after active streams drain.
+Failed deletion of an existing job permits later uploads again without a server
+restart once job presence is confirmed. Custom job managers and storage
+providers need authoritative ``job_exists`` and ``object_exists`` support for
+automatic deletion recovery; unavailable presence checks preserve the logs and
+deletion intent. Retention for a custom receiver ``dest_dir`` remains
+operator-managed. See :doc:`/programming_guide/live_log_streaming`.
 
 Examples
 --------
