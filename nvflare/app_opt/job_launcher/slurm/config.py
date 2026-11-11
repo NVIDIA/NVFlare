@@ -303,7 +303,9 @@ def resolve_slurm_parent_executables(value: dict) -> dict:
                 f"required Slurm executable '{name}' is not an executable regular file on the parent runtime host: "
                 f"{candidate}"
             )
-        result[name] = resolved
+        # Pin directory aliases at bootstrap, but retain the command filename:
+        # multicall tools dispatch on argv[0] (e.g. sbatch -> a site wrapper).
+        result[name] = os.path.join(os.path.realpath(os.path.dirname(candidate)), os.path.basename(candidate))
     return result
 
 
