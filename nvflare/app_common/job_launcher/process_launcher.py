@@ -126,7 +126,9 @@ class ProcessJobLauncher(JobLauncherSpec):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
+        return self._launch_job(job_meta, fl_ctx, self._job_environment(job_meta, fl_ctx))
 
+    def _job_environment(self, job_meta, fl_ctx):
         new_env = os.environ.copy()
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         runtime_file = study_runtime_file_path(workspace_obj.get_root_dir())
@@ -150,7 +152,11 @@ class ProcessJobLauncher(JobLauncherSpec):
             add_custom_dir_to_path(app_custom_folder, new_env)
 
         new_env.update(get_credential_env(fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS) or {}))
+        return new_env
 
+    def _launch_job(self, job_meta, fl_ctx, new_env):
+        workspace_obj = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        job_id = job_meta.get(JobConstants.JOB_ID)
         command = self.get_command(job_meta, fl_ctx)
         argv = shlex.split(command, True)
 

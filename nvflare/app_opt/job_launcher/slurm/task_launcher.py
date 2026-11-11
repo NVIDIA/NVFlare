@@ -586,8 +586,8 @@ class _SlurmTaskBackend(TaskLauncherSpec):
         cj_runtime="slurm",
     ):
         super().__init__()
-        if cj_runtime not in ("slurm", "docker"):
-            raise ValueError("Slurm task cj_runtime must be 'slurm' or 'docker'")
+        if cj_runtime not in ("slurm", "docker", "process"):
+            raise ValueError("Slurm task cj_runtime must be 'slurm', 'docker' or 'process'")
         self.cj_runtime = cj_runtime
         if shared_filesystem is not True or cgroup_enforced is not True:
             raise ValueError("Slurm tasks require coherent shared paths and enforced Slurm cgroup tracking")
@@ -628,9 +628,9 @@ class _SlurmTaskBackend(TaskLauncherSpec):
         self._binding = None
         self._binding_lock = threading.Lock()
         self._initialization_lock = threading.Lock()
-        if cj_runtime == "docker":
+        if cj_runtime in ("docker", "process"):
             if not worker_listener_host:
-                raise ValueError("Docker CJ requires an explicit worker_listener_host on the gateway")
+                raise ValueError(f"{cj_runtime} CJ requires an explicit worker_listener_host on the gateway")
             host = self.get_worker_listener_host()
             try:
                 loopback = ipaddress.ip_address(host).is_loopback
@@ -638,7 +638,7 @@ class _SlurmTaskBackend(TaskLauncherSpec):
                 name = host.rstrip(".").lower()
                 loopback = name == "localhost" or name.endswith(".localhost")
             if loopback:
-                raise ValueError("Docker CJ worker_listener_host must be reachable from compute nodes")
+                raise ValueError(f"{cj_runtime} CJ worker_listener_host must be reachable from compute nodes")
 
     def get_worker_listener_host(self):
         """Advertise this CJ's host to workers in independent Slurm allocations."""
