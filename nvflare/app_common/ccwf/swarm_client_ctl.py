@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -99,6 +99,7 @@ class Gatherer(FLComponent):
         self.wait_time_after_min_resps_received = wait_time_after_min_resps_received
         self.min_resps_received_time = None
         self.lock = threading.Lock()
+        self.closed = False
         self.perm_lock = threading.Lock()
         self.current_best_client = task_data.get_header(Constant.CLIENT)
         self.current_best_global_metric = task_data.get_header(Constant.METRIC)
@@ -116,6 +117,10 @@ class Gatherer(FLComponent):
     def gather(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> Shareable:
         with self.lock:
             try:
+                if self.closed:
+                    # A submission may retain this gatherer after the monitor closes it.
+                    # Do not leave a late contribution in the aggregator for the next round.
+                    return make_reply(ReturnCode.OK)
                 return self._do_gather(client_name, result, fl_ctx)
             except:
                 self.log_error(fl_ctx, f"exception gathering: {secure_format_traceback()}")
@@ -222,6 +227,13 @@ class Gatherer(FLComponent):
         return make_reply(ReturnCode.OK)
 
     def aggregate(self):
+        with self.lock:
+            # Wait for in-flight acceptance, then prevent stale submissions from
+            # modifying the aggregator after this round has been consumed.
+            self.closed = True
+            return self._aggregate()
+
+    def _aggregate(self):
         fl_ctx = self.fl_ctx
         self.log_info(fl_ctx, f"Start aggregation for round {self.for_round}")
         self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
@@ -261,6 +273,11 @@ class Gatherer(FLComponent):
         return aggr_result
 
     def is_done(self):
+        with self.lock:
+            # reply_time is published before acceptance and its event handlers finish.
+            return self._is_done()
+
+    def _is_done(self):
         unfinished = 0
         for c, s in self.trainer_statuses.items():
             if not s.reply_time:
