@@ -974,18 +974,11 @@ def cmd_job_clone(cmd_args):
 
 def _outputs_manifest_summary(download_path: Optional[str]):
     """(whether the download was filtered, the declared outputs it lacks) from its outputs_manifest.json."""
-    from nvflare.apis.job_def import OUTPUTS_MANIFEST_FILE
+    from nvflare.fuel.flare_api.flare_api import read_outputs_manifest
 
-    manifest_path = os.path.join(download_path, OUTPUTS_MANIFEST_FILE) if download_path else ""
-    if not manifest_path or not os.path.isfile(manifest_path):
-        return False, None  # an older server returned the whole job
-    try:
-        with open(manifest_path, encoding="utf-8") as f:
-            manifest = json.load(f)
-    except (OSError, ValueError):
-        return False, None
-    if not isinstance(manifest, dict) or manifest.get("outputs_only") is not True:
-        return False, None
+    manifest = read_outputs_manifest(download_path) if download_path else None
+    if manifest is None or manifest.get("outputs_only") is not True:
+        return False, None  # the whole job was downloaded
     missing = manifest.get("missing")
     return True, missing if isinstance(missing, list) else []
 
@@ -1091,7 +1084,14 @@ def cmd_job_download(cmd_args):
 
     path = str(path or destination)
     download_path = _local_download_path(path)
+    outputs_notice = None
+    if getattr(cmd_args, "outputs_only", False) is True and download_path:
+        from nvflare.fuel.flare_api.flare_api import outputs_download_notice
+
+        outputs_notice = outputs_download_notice(download_path, cmd_args.job_id)
     if not json_mode:
+        if outputs_notice:
+            print_human(outputs_notice)
         print_human(f"Job result downloaded to: {download_path or path}")
     payload = {
         "job_id": cmd_args.job_id,
@@ -1109,6 +1109,7 @@ def cmd_job_download(cmd_args):
         payload["missing_artifacts"] = None
     if getattr(cmd_args, "outputs_only", False) is True:
         payload["outputs_only"], payload["missing_job_outputs"] = _outputs_manifest_summary(download_path)
+        payload["outputs_only_notice"] = outputs_notice
     if json_mode:
         output_ok(payload)
 

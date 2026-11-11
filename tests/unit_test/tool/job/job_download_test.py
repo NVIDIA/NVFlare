@@ -97,6 +97,29 @@ class TestJobDownload:
 
         assert envelope["data"]["outputs_only"] is False
         assert envelope["data"]["missing_job_outputs"] is None
+        assert "the whole job abc123" in envelope["data"]["outputs_only_notice"]
+
+    def test_download_outputs_only_tells_a_human_why_the_whole_job_came_back(self, tmp_path, capsys, monkeypatch):
+        from nvflare.tool.job.job_cli import cmd_job_download
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        download_path = tmp_path / "results"
+        download_path.mkdir()
+        (download_path / "outputs_manifest.json").write_text(
+            json.dumps({"outputs_only": False, "reason": "the job did not complete successfully (status X)"})
+        )
+        args = self._make_args(output_dir=tmp_path / "dest")
+        args.outputs_only = True
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
+        mock_sess.download_job_result.return_value = str(download_path)
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            cmd_job_download(args)
+
+        assert (
+            "Downloaded the whole job abc123 because the job did not complete successfully" in capsys.readouterr().out
+        )
 
     def test_parser_accepts_outputs_only(self):
         import argparse

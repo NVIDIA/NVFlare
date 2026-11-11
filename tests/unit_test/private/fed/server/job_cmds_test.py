@@ -2218,6 +2218,7 @@ def test_download_job_outputs_only_returns_declared_outputs_and_keeps_stored_arc
     [
         (_finished_job(status=RunStatus.FINISHED_EXECUTION_EXCEPTION.value), "did not complete successfully"),
         (_finished_job(outputs=None), "declares no job_outputs"),
+        (_finished_job(outputs=("models/never_saved.pt", "plots/")), "none of the job's declared outputs were found"),
     ],
 )
 def test_download_job_outputs_only_falls_back_to_the_whole_job(monkeypatch, tmp_path, job, reason):

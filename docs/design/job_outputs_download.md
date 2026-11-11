@@ -275,8 +275,10 @@ unchanged. With it, the server:
 
 1. Requires the job to be finished, as today.
 2. Prepares the full download when:
-   - the job did not finish successfully, or
-   - the job's metadata has no `job_outputs`.
+   - the job did not finish successfully,
+   - the job's metadata has no `job_outputs`, or
+   - none of the declared outputs exist in the workspace archive (checked
+     after filtering in step 3).
 3. Otherwise prepares the `workspace` component in the transfer folder under a
    temporary name, with the job store's existing `get_storage_for_download`.
    It works with any `StorageSpec` without loading the archive into memory.
@@ -296,7 +298,8 @@ unchanged. With it, the server:
    - `found` and `missing`: the declared entries, when it was filtered.
 
    A missing entry is not an error. For example, the best model exists only
-   when the workflow tracked one.
+   when the workflow tracked one. When every entry is missing, the download
+   falls back to the whole job, as in step 2.
 5. Includes `meta.json`, as today, so the caller still has the job status and
    timing.
 
@@ -329,10 +332,10 @@ Outputs-only layout, with the same relative paths as a full download:
 
 | API | Change |
 | --- | --- |
-| `Session.download_job_result(job_id, destination=None, outputs_only=False)` | When `outputs_only=True`, sends `download_job` with the `outputs_only` property. When the download has no `outputs_manifest.json`, the server is older: it logs one line that the whole job was downloaded. |
-| `ExecEnv.get_job_result(job_id, timeout=0.0, outputs_only=False)` | POC and production environments pass `outputs_only` to the session. The simulator runs locally and returns its workspace unchanged. |
+| `Session.download_job_result(job_id, destination=None, outputs_only=False)` | When `outputs_only=True`, sends `download_job` with the `outputs_only` property. When the whole job came back, it logs one line that says so and why: the manifest's `reason`, or, with no `outputs_manifest.json`, that the server is older. |
+| `ExecEnv.get_job_result(job_id, timeout=0.0, outputs_only=False)` | POC and production environments pass `outputs_only` to the session and print the same notice when the whole job came back. The simulator runs locally and returns its workspace unchanged. |
 | `Run.get_result(timeout=0.0, clean_up=True, outputs_only=False)` | Passes `outputs_only` to the environment only when it is `True`, so existing custom `ExecEnv` subclasses with the two-argument signature keep working. |
-| `nvflare job download <job_id> --outputs-only` | Passes `outputs_only=True`. JSON output adds `outputs_only` and `missing_job_outputs` from the manifest. `artifacts` and `missing_artifacts` describe what was downloaded. For example, client logs are listed as missing in an outputs-only download. |
+| `nvflare job download <job_id> --outputs-only` | Passes `outputs_only=True`. Text output prints the notice when the whole job came back. JSON output adds `outputs_only` and `missing_job_outputs` from the manifest, and `outputs_only_notice`. `artifacts` and `missing_artifacts` describe what was downloaded. For example, client logs are listed as missing in an outputs-only download. |
 
 The returned path is the downloaded `<job_id>` folder in both modes. Result
 files are at the same relative path under `workspace/` in both modes, so the run
@@ -350,6 +353,7 @@ summary and the CLI's artifact discovery find the model and metrics either way.
 | Code that references `JobMetaKey.RESULT_LOCATION` or calls `set_results_uri` | Must drop the reference. Neither ever held or produced a value. |
 | A job with `job_outputs` on an old server | The old server stores the key and ignores it. Downloads are full. |
 | Failed or aborted job with `outputs_only=True` | The whole job, including logs. The manifest says it was not filtered and why. |
+| Completed job that produced none of its declared outputs | The whole job. The manifest gives the reason, and the client shows it. |
 
 ## Security
 

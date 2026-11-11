@@ -20,7 +20,7 @@ import time
 from typing import Dict, Optional
 
 from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
-from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
+from nvflare.fuel.flare_api.flare_api import Session, new_secure_session, outputs_download_notice
 from nvflare.fuel.flare_api.job_status import job_status_outcome
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.fuel.utils.log_utils import (
@@ -202,6 +202,10 @@ class SessionManager:
             if rc == MonitorReturnCode.JOB_FINISHED:
                 _print_output("Downloading job results...", flush=True)
                 result = sess.download_job_result(job_id, outputs_only=outputs_only)
+                if outputs_only and result:
+                    notice = outputs_download_notice(result, job_id)
+                    if notice:
+                        _print_output(notice)
                 if result and job_status_outcome(cb_run_counter.get("status")) in ("failed", "aborted"):
                     try:
                         collect_client_errors(sess, job_id, result)

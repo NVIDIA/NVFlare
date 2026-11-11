@@ -130,6 +130,28 @@ def _validate_target_strs(targets: List[str]) -> None:
     process_targets_into_str(targets)
 
 
+def read_outputs_manifest(location: str) -> Optional[dict]:
+    """The ``outputs_manifest.json`` of a downloaded job, or None when the download has none (an older server)."""
+    path = os.path.join(location, OUTPUTS_MANIFEST_FILE)
+    try:
+        with open(path, encoding="utf-8") as f:
+            manifest = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return manifest if isinstance(manifest, dict) else None
+
+
+def outputs_download_notice(location: str, job_id: str) -> Optional[str]:
+    """What to tell the user when an outputs-only download returned the whole job; None when it was filtered."""
+    manifest = read_outputs_manifest(location)
+    if manifest is None:
+        return f"The server does not support outputs-only downloads; downloaded the whole job {job_id}."
+    if manifest.get("outputs_only") is True:
+        return None
+    reason = manifest.get("reason") or "the server returned the whole job"
+    return f"Downloaded the whole job {job_id} because {reason}."
+
+
 class Session(SessionSpec):
     def __init__(
         self,
@@ -516,11 +538,10 @@ class Session(SessionSpec):
         result = self._do_command(AdminCommandNames.DOWNLOAD_JOB + " " + job_id, props=props)
         meta = result[ResultKey.META]
         location = meta.get(MetaKey.LOCATION)
-        if outputs_only and location and not os.path.exists(os.path.join(location, OUTPUTS_MANIFEST_FILE)):
-            # an older server ignores the property
-            get_obj_logger(self).info(
-                f"The server does not support outputs-only downloads; the whole job {job_id} was downloaded."
-            )
+        if outputs_only and location:
+            notice = outputs_download_notice(location, job_id)
+            if notice:
+                get_obj_logger(self).info(notice)
 
         if destination and location and os.path.exists(location):
             destination = os.path.abspath(destination)

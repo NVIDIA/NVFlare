@@ -927,6 +927,27 @@ class TestDownloadJobResultOutputsOnly:
 
         assert "does not support outputs-only downloads" in caplog.text
 
+    def test_tells_the_user_why_the_whole_job_was_downloaded(self, tmp_path, caplog):
+        location = tmp_path / self._JOB_ID
+        location.mkdir()
+        (location / "outputs_manifest.json").write_text(
+            '{"outputs_only": false, "reason": "none of the job\'s declared outputs were found: plots/"}'
+        )
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result({MetaKey.LOCATION: str(location)})):
+            with caplog.at_level("INFO"):
+                session.download_job_result(self._JOB_ID, outputs_only=True)
+
+        assert f"Downloaded the whole job {self._JOB_ID} because none of the job's declared outputs were found" in (
+            caplog.text
+        )
+
+    def test_says_nothing_when_the_download_was_filtered(self, tmp_path, caplog):
+        with caplog.at_level("INFO"):
+            self._download(tmp_path, with_manifest=True, outputs_only=True)
+
+        assert "whole job" not in caplog.text
+
     def test_rejects_a_non_bool_outputs_only(self, tmp_path):
         from nvflare.fuel.flare_api.api_spec import InvalidArgumentError
 

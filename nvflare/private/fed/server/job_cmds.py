@@ -1800,8 +1800,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def _prepare_outputs_download(self, job_def_manager, job_id: str, meta: dict, job_download_dir: str, comps, fl_ctx):
         """Prepare an outputs-only download: meta.json, the declared outputs of the workspace, and a manifest.
 
-        The whole job is prepared instead when the job did not complete, declares no outputs, or has no workspace
-        archive; the manifest then says why. Either way the manifest tells the client what it received.
+        The whole job is prepared instead when the job did not complete, declares no outputs, has no workspace
+        archive, or produced none of its declared outputs; the manifest then says why. Either way the manifest tells
+        the client what it received.
         """
         job_dir = os.path.join(job_download_dir, job_id)
         reason, outputs = outputs_only_refusal(meta)
@@ -1812,10 +1813,16 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             prepared_name = f".{WORKSPACE_ZIP}.{uuid.uuid4().hex}.prepared"
             job_def_manager.get_storage_for_download(job_id, job_download_dir, WORKSPACE, prepared_name, fl_ctx)
             prepared = os.path.join(job_dir, prepared_name)
-            if os.path.lexists(prepared):
-                found, missing = filter_workspace_archive(prepared, os.path.join(job_dir, WORKSPACE_ZIP), outputs)
-            else:
+            filtered = os.path.join(job_dir, WORKSPACE_ZIP)
+            if not os.path.lexists(prepared):
                 reason = "the job has no workspace archive"
+            else:
+                found, missing = filter_workspace_archive(prepared, filtered, outputs)
+                if not found:
+                    # nothing declared was produced: an empty download would help no one
+                    os.remove(filtered)
+                    reason = f"none of the job's declared outputs were found: {', '.join(outputs)}"
+                    found = missing = None
         if reason:
             for ct, file_name in comps:
                 job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
