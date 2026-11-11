@@ -370,7 +370,7 @@ def _run_dir_with_model(tmp_path):
     return run_dir
 
 
-def _capture_archives(job_manager, run_dir):
+def _capture_archives(job_manager):
     archived = {}
 
     def _save_job_outputs(job_id, folders, ctx):
@@ -378,7 +378,7 @@ def _capture_archives(job_manager, run_dir):
         return "/store/job-1/outputs"
 
     def _save_workspace(job_id, folders, ctx):
-        archived["workspace"] = _files(run_dir)
+        archived["workspace"] = [f for folder in folders for f in _files(folder)]
         return "/store/job-1/workspace"
 
     job_manager.save_job_outputs.side_effect = _save_job_outputs
@@ -386,17 +386,21 @@ def _capture_archives(job_manager, run_dir):
     return archived
 
 
+def _no_link_folders_left(tmp_path):
+    return sorted(p.name for p in tmp_path.iterdir() if p.name.startswith(".")) == []
+
+
 def test_save_workspace_stores_declared_outputs_once_apart_from_the_rest(tmp_path):
     run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
     _job_with_outputs(job_manager, ["app_server/FL_global_model.pt", "metrics/"])
-    archived = _capture_archives(job_manager, run_dir)
+    archived = _capture_archives(job_manager)
 
     runner._save_workspace(fl_ctx)
 
     assert archived == {"outputs": ["app_server/FL_global_model.pt"], "workspace": ["log.txt"]}
     assert not run_dir.exists()
-    assert not (tmp_path / ".job-1_outputs").exists()  # the staging folder is gone
+    assert _no_link_folders_left(tmp_path)
 
 
 @pytest.mark.parametrize("outputs", [None, ["plots/"]])
@@ -405,7 +409,7 @@ def test_save_workspace_keeps_everything_in_the_workspace_when_nothing_declared_
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
     runner.log_info = MagicMock()
     _job_with_outputs(job_manager, outputs)
-    archived = _capture_archives(job_manager, run_dir)
+    archived = _capture_archives(job_manager)
 
     runner._save_workspace(fl_ctx)
 
@@ -414,11 +418,11 @@ def test_save_workspace_keeps_everything_in_the_workspace_when_nothing_declared_
 
 
 @pytest.mark.parametrize("failure", ["raises", "not_saved"])
-def test_save_workspace_puts_outputs_back_when_they_are_not_stored(tmp_path, failure):
+def test_save_workspace_keeps_outputs_in_the_workspace_when_they_are_not_stored(tmp_path, failure):
     run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
     _job_with_outputs(job_manager, ["app_server/FL_global_model.pt"])
-    archived = _capture_archives(job_manager, run_dir)
+    archived = _capture_archives(job_manager)
     if failure == "raises":
         job_manager.save_job_outputs.side_effect = OSError("disk full")
     else:
@@ -427,10 +431,30 @@ def test_save_workspace_puts_outputs_back_when_they_are_not_stored(tmp_path, fai
 
     runner._save_workspace(fl_ctx)
 
-    # the model stays in the workspace archive, so nothing is lost
+    # nothing was moved, so the model is simply archived with the rest
     assert archived["workspace"] == ["app_server/FL_global_model.pt", "log.txt"]
-    assert not run_dir.exists()
-    assert not (tmp_path / ".job-1_outputs").exists()
+    assert _no_link_folders_left(tmp_path)
+
+
+def test_a_retry_after_a_failed_workspace_save_stores_the_same_outputs_again(tmp_path):
+    run_dir = _run_dir_with_model(tmp_path)
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    runner.log_exception = MagicMock()
+    _job_with_outputs(job_manager, ["app_server/FL_global_model.pt", "log.txt"])
+    stored_outputs = []
+    job_manager.save_job_outputs.side_effect = (
+        lambda job_id, folders, ctx: stored_outputs.append([f for folder in folders for f in _files(folder)])
+        or "/store/job-1/outputs"
+    )
+    job_manager.save_workspace.side_effect = [OSError("store unavailable"), "/store/job-1/workspace"]
+
+    with pytest.raises(OSError):
+        runner._save_workspace(fl_ctx)
+    assert (run_dir / "app_server" / "FL_global_model.pt").exists()  # untouched by the failed attempt
+    assert _no_link_folders_left(tmp_path)
+    runner._save_workspace(fl_ctx)
+
+    assert stored_outputs == [["app_server/FL_global_model.pt", "log.txt"]] * 2  # never just the log
 
 
 def test_save_workspace_archives_only_existing_deduplicated_sources(tmp_path):

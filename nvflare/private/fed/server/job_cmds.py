@@ -1788,9 +1788,18 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 self._clean_up_download(conn, tx_id)
                 conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
 
+    def _has_outputs_component(self, job_def_manager, job_id, fl_ctx) -> bool:
+        """Whether the job's declared outputs are stored apart from its workspace. A store that cannot list its
+        components is treated as having none, so downloads work as before."""
+        try:
+            return OUTPUTS in (job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx) or [])
+        except Exception as e:
+            self.logger.warning(f"cannot list the components of job {job_id}: {secure_format_exception(e)}")
+            return False
+
     def _get_default_job_components(self, job_def_manager, job_id, fl_ctx):
         comps = [(DATA, JOB_ZIP), (META, META_JSON), (WORKSPACE, WORKSPACE_ZIP)]
-        if OUTPUTS in (job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx) or []):
+        if self._has_outputs_component(job_def_manager, job_id, fl_ctx):
             # the job's declared outputs are stored apart from the rest of its workspace
             comps.append((OUTPUTS, OUTPUTS_ZIP))
         return comps
@@ -1826,7 +1835,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             "the job has no archived outputs: none of its declared outputs were produced, "
             "or it finished before outputs were archived"
         )
-        if not reason and OUTPUTS not in (job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx) or []):
+        if not reason and not self._has_outputs_component(job_def_manager, job_id, fl_ctx):
             reason = no_outputs  # a job store may raise for a component that does not exist
         if not reason:
             outputs_zip = os.path.join(job_download_dir, job_id, WORKSPACE_ZIP)

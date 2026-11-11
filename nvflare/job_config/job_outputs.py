@@ -34,7 +34,7 @@ SERVER_APP_FOLDER = "app_" + SERVER_SITE_NAME  # the server app folder inside a 
 _DECLARED = "_declared_job_outputs"
 _SUPPORTING = "_declared_supporting_job_outputs"
 _UNKNOWN = "_job_outputs_unknown"
-_ACCOUNTED = "_job_outputs_accounted_components"  # ids of components whose files were recorded
+_ACCOUNTED = "_job_outputs_accounted_components"  # components whose files were recorded
 
 # components their builder created before the job existed, with the files they save
 _TAGGED_COMPONENTS = weakref.WeakKeyDictionary()
@@ -76,14 +76,15 @@ def account_component(job, component) -> None:
     """
     accounted = getattr(job, _ACCOUNTED, None)
     if accounted is None:
-        accounted = set()
+        accounted = []
         setattr(job, _ACCOUNTED, accounted)
-    accounted.add(id(component))
+    if not is_accounted(job, component):
+        accounted.append(component)  # a reference, so no other object can be mistaken for it
 
 
 def is_accounted(job, component) -> bool:
     """Whether ``component``'s files are covered by the job's record."""
-    return id(component) in (getattr(job, _ACCOUNTED, None) or ())
+    return any(c is component for c in (getattr(job, _ACCOUNTED, None) or ()))
 
 
 def mark_job_outputs_unknown(job) -> None:

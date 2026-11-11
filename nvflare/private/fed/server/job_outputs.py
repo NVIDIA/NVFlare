@@ -15,22 +15,28 @@
 """The job's declared outputs (``job_outputs``): stored apart from the rest of the workspace when the job ends.
 
 When a job ends, the server stores its run folder as the workspace archive and deletes the folder. For a job that
-declares outputs, the declared files are first moved out of the run folder into a staging folder and stored as a
-separate outputs archive, so every file is stored once: the outputs in one archive, everything else in the other.
+declares outputs, the server first builds two folders of hard links next to each workspace folder: one naming the
+declared output files, one naming everything else. It stores the first as the outputs archive and the second as the
+workspace archive, so every file is stored once. The run folder itself is never changed until both are stored, so a
+retry or a crash loses nothing: the link folders are only extra names for the same files.
+
 An outputs-only download sends the outputs archive the way a full download sends the workspace archive, and a full
 download sends both, unzipped into the same ``workspace/`` folder.
 """
 
 import os
 import shutil
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey, RunStatus, job_output_matches, validate_job_outputs
 
-# Files the server's log commands read from the workspace archive. A declared one is copied into the outputs, not
-# moved, so the log commands keep working. "log.json" is job_cmds.JSON_LOG_FILE_NAME.
+# Files the server's log commands read from the workspace archive. A declared one is linked into both folders, so
+# the log commands keep working. "log.json" is job_cmds.JSON_LOG_FILE_NAME.
 _LOG_FILE_NAMES = {WorkspaceConstants.LOG_FILE_NAME, WorkspaceConstants.ERROR_LOG_FILE_NAME, "log.json"}
+
+_OUTPUTS_LINKS = ".outputs_links"
+_WORKSPACE_LINKS = ".workspace_links"
 
 
 def declared_outputs(meta: dict) -> List[str]:
@@ -57,64 +63,71 @@ def outputs_only_refusal(meta: dict) -> Tuple[Optional[str], List[str]]:
     return None, outputs
 
 
-class StagedOutputs:
-    """Declared output files staged for the outputs archive, and how to put them back."""
+def _link_folder(source_dir: str, suffix: str) -> str:
+    # beside the source folder, so a hard link stays on the source folder's filesystem
+    source_dir = os.path.abspath(source_dir)
+    return os.path.join(os.path.dirname(source_dir), f".{os.path.basename(source_dir)}{suffix}")
 
-    def __init__(self, staging_dir: str):
-        self.staging_dir = staging_dir
+
+class SplitWorkspace:
+    """Hard-link folders naming a job's declared outputs and the rest of its workspace."""
+
+    def __init__(self, source_dirs: List[str]):
+        self.output_dirs = [_link_folder(d, _OUTPUTS_LINKS) for d in source_dirs]
+        self.rest_dirs = [_link_folder(d, _WORKSPACE_LINKS) for d in source_dirs]
         self.found: List[str] = []  # the declared entries found, in declaration order
-        self._staged: Dict[str, Tuple[str, bool]] = {}  # archive path -> (source file, moved)
 
-    def restore(self):
-        """Put moved files back where they came from, for when the outputs archive could not be stored."""
-        for member, (source, moved) in self._staged.items():
-            staged = os.path.join(self.staging_dir, member)
-            if moved and os.path.exists(staged):
-                os.makedirs(os.path.dirname(source), exist_ok=True)
-                shutil.move(staged, source)
-        self._staged.clear()
-        self.found = []
-
-    def stage(self, member: str, source: str):
-        staged = os.path.join(self.staging_dir, member)
-        earlier = self._staged.get(member)
-        if earlier and earlier[1]:
-            # a later workspace folder replaces an earlier one's file, as when the archive is unzipped: the earlier
-            # file goes back to its folder, so it stays in the workspace archive
-            shutil.move(staged, earlier[0])
-        os.makedirs(os.path.dirname(staged), exist_ok=True)
-        moved = os.path.basename(member) not in _LOG_FILE_NAMES
-        if moved:
-            shutil.move(source, staged)  # a rename on the same filesystem
-        else:
-            shutil.copyfile(source, staged)
-        self._staged[member] = (source, moved)
+    def remove(self):
+        """Remove the link folders. Only links are removed; the files keep their names in the workspace folders."""
+        for d in self.output_dirs + self.rest_dirs:
+            shutil.rmtree(d, ignore_errors=True)
 
 
-def stage_job_outputs(source_dirs: List[str], outputs: List[str], staging_dir: str) -> StagedOutputs:
-    """Move the declared outputs found in ``source_dirs`` into ``staging_dir``, at their workspace paths.
+def _link(source: str, target: str):
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    if os.path.islink(source):
+        os.symlink(os.readlink(source), target)  # kept as it is, as the workspace archive would read it
+    else:
+        os.link(source, target)  # another name for the same file: nothing is copied
 
-    The source folders are those archived as the job's workspace, so the paths match a full download: each folder's
-    files sit at the archive root, and a later folder's file replaces an earlier one at the same path. Symlinks are
-    skipped. Log files the server's log commands read are copied rather than moved. On failure, staged files are put
-    back before the error is raised.
+
+def split_job_outputs(source_dirs: List[str], outputs: List[str]) -> Optional[SplitWorkspace]:
+    """Build hard-link folders that split ``source_dirs`` into the declared outputs and the rest.
+
+    Each source folder gets two link folders beside it, with the same relative paths, so storing the link folders
+    gives the same archive paths as storing the source folders. Symlinks are not outputs: they stay with the rest.
+    The log files the server's log commands read are named in both folders. The source folders are not changed.
+
+    Returns:
+        The split, or None when no declared output exists or the links cannot be made (for example across
+        filesystems); the caller then stores the source folders whole, as without declared outputs.
     """
-    staged = StagedOutputs(staging_dir)
+    split = SplitWorkspace(source_dirs)
+    split.remove()  # left over from an interrupted attempt: links only
+    found = set()
     try:
-        for source_dir in source_dirs:
-            for root, _dirs, files in os.walk(source_dir):
-                if os.path.abspath(root).startswith(os.path.abspath(staging_dir)):
-                    continue
+        for source_dir, output_dir, rest_dir in zip(source_dirs, split.output_dirs, split.rest_dirs):
+            os.makedirs(output_dir)
+            os.makedirs(rest_dir)
+            for root, dirs, files in os.walk(source_dir):
+                relative_root = os.path.relpath(root, source_dir)
+                for name in dirs:
+                    os.makedirs(os.path.join(rest_dir, relative_root, name), exist_ok=True)
                 for name in files:
-                    full_path = os.path.join(root, name)
-                    if os.path.islink(full_path):
-                        continue  # a link could point outside the run folder
-                    member = os.path.relpath(full_path, source_dir).replace(os.sep, "/")
-                    if job_output_matches(member, outputs):
-                        staged.stage(member, full_path)
-    except BaseException:
-        staged.restore()
-        raise
-    found = {job_output_matches(member, outputs) for member in staged._staged}
-    staged.found = [entry for entry in outputs if entry in found]
-    return staged
+                    source = os.path.join(root, name)
+                    relative = os.path.normpath(os.path.join(relative_root, name))
+                    member = relative.replace(os.sep, "/")
+                    entry = "" if os.path.islink(source) else job_output_matches(member, outputs)
+                    if entry:
+                        found.add(entry)
+                        _link(source, os.path.join(output_dir, relative))
+                    if not entry or name in _LOG_FILE_NAMES:
+                        _link(source, os.path.join(rest_dir, relative))
+    except OSError:
+        split.remove()
+        return None
+    split.found = [entry for entry in outputs if entry in found]
+    if not split.found:
+        split.remove()
+        return None
+    return split

@@ -46,7 +46,7 @@ from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
-from nvflare.private.fed.server.job_outputs import declared_outputs, stage_job_outputs
+from nvflare.private.fed.server.job_outputs import declared_outputs, split_job_outputs
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
@@ -670,9 +670,13 @@ class JobRunner(FLComponent):
 
             engine = fl_ctx.get_engine()
             job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-            # the declared outputs leave the run folder first, so each file is stored once
-            self._save_job_outputs(job_manager, job_id, ws_dirs, fl_ctx)
-            location = job_manager.save_workspace(job_id, ws_dirs, fl_ctx)
+            # the declared outputs are stored apart from the rest, so each file is stored once
+            split = self._save_job_outputs(job_manager, job_id, ws_dirs, fl_ctx)
+            try:
+                location = job_manager.save_workspace(job_id, split.rest_dirs if split else ws_dirs, fl_ctx)
+            finally:
+                if split:
+                    split.remove()  # links only: the workspace folders are untouched
             if finished_state:
                 # Latch the successful archive publication before cleanup so a cleanup retry cannot rewrite it from
                 # sources that an earlier cleanup attempt may have partially removed.
@@ -688,36 +692,36 @@ class JobRunner(FLComponent):
                 self.log_warning(fl_ctx, f"Workspace archive source disappeared before cleanup for job {job_id}: {d}")
 
     def _save_job_outputs(self, job_manager, job_id: str, ws_dirs: list, fl_ctx: FLContext):
-        """Move the job's declared outputs out of its workspace folders and store them as the outputs archive.
+        """Store the job's declared outputs as their own archive, and return the split for the workspace archive.
 
-        Runs before the workspace archive is saved, so each file is stored once: a full download sends both archives
-        and an outputs-only download sends the outputs archive, both without work before the server replies. When
-        the outputs archive is not stored (an error, or a job store that does not save it), the files are put back
-        and the workspace archive holds everything, as before.
+        The outputs and the rest of the workspace are named by two folders of hard links beside the workspace
+        folders, so each file is stored once and the workspace folders are never changed. A retry rebuilds the
+        links from the same files and stores the same outputs again; a crash leaves only extra links behind.
+
+        Returns:
+            The split, whose rest folders the workspace archive is built from; or None, in which case the workspace
+            folders are archived whole, as without declared outputs.
         """
-        staged = None
+        split = None
         try:
             job = job_manager.get_job(job_id, fl_ctx)
             outputs = declared_outputs(job.meta) if job else []
             if not outputs:
-                return
-            staging_dir = os.path.join(os.path.dirname(os.path.abspath(ws_dirs[0])), f".{job_id}_outputs")
-            shutil.rmtree(staging_dir, ignore_errors=True)
-            staged = stage_job_outputs(ws_dirs, outputs, staging_dir)
-            if not staged.found:
-                self.log_info(fl_ctx, f"None of the declared outputs of job {job_id} were produced")
-                return
-            if job_manager.save_job_outputs(job_id, [staging_dir], fl_ctx):
-                self.log_debug(fl_ctx, f"Outputs {staged.found} of job {job_id} saved")
-            else:
-                staged.restore()  # not stored: they stay in the workspace archive
+                return None
+            split = split_job_outputs(ws_dirs, outputs)
+            if not split:
+                self.log_info(fl_ctx, f"The outputs of job {job_id} are kept in its workspace archive")
+                return None
+            if not job_manager.save_job_outputs(job_id, split.output_dirs, fl_ctx):
+                split.remove()  # not stored: they stay in the workspace archive
+                return None
+            self.log_debug(fl_ctx, f"Outputs {split.found} of job {job_id} saved")
+            return split
         except Exception as e:
             self.log_warning(fl_ctx, f"Cannot save the outputs of job {job_id}: {secure_format_exception(e)}")
-            if staged:
-                staged.restore()
-        finally:
-            if staged:
-                shutil.rmtree(staged.staging_dir, ignore_errors=True)
+            if split:
+                split.remove()
+            return None
 
     def run(self, fl_ctx: FLContext):
         """Starts job runner."""

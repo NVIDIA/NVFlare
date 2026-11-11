@@ -2301,6 +2301,22 @@ def test_download_job_without_outputs_only_is_unchanged_for_a_job_without_output
     assert reply_meta is None
 
 
+def test_full_download_works_when_the_store_cannot_list_components(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job()])
+    _use_store(engine, tmp_path, _WORKSPACE)
+
+    def broken_list(jid, fl_ctx):
+        raise StorageException("listing unsupported")
+
+    engine.job_def_manager.list_components = broken_list
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert reply_meta is None
+
+
 def test_full_download_sends_both_archives_into_the_workspace_folder(monkeypatch, tmp_path):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     engine = _FakeListEngine([_finished_job()])

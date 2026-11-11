@@ -17,7 +17,7 @@ import os
 import pytest
 
 from nvflare.apis.job_def import JobMetaKey, RunStatus
-from nvflare.private.fed.server.job_outputs import declared_outputs, outputs_only_refusal, stage_job_outputs
+from nvflare.private.fed.server.job_outputs import declared_outputs, outputs_only_refusal, split_job_outputs
 
 
 def _run_folder(root, files):
@@ -34,8 +34,8 @@ def _files(root):
     )
 
 
-class TestStageJobOutputs:
-    def test_moves_only_declared_files_out_of_the_workspace_at_their_paths(self, tmp_path):
+class TestSplitJobOutputs:
+    def test_links_declared_files_and_the_rest_without_changing_the_workspace(self, tmp_path):
         run_dir = _run_folder(
             tmp_path / "run",
             {
@@ -45,72 +45,88 @@ class TestStageJobOutputs:
                 "log.txt": b"log",
             },
         )
-        staging = tmp_path / "staging"
+        before = _files(run_dir)
 
-        staged = stage_job_outputs(
-            [str(run_dir)], ["app_server/FL_global_model.pt", "metrics/", "plots/"], str(staging)
-        )
+        split = split_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt", "metrics/", "plots/"])
 
-        assert staged.found == ["app_server/FL_global_model.pt", "metrics/"]
-        assert _files(staging) == ["app_server/FL_global_model.pt", "metrics/metrics_summary.json"]
-        # moved, not copied: each file is stored once
-        assert _files(run_dir) == ["app_server/config/config_fed_server.json", "log.txt"]
+        assert split.found == ["app_server/FL_global_model.pt", "metrics/"]
+        assert _files(split.output_dirs[0]) == ["app_server/FL_global_model.pt", "metrics/metrics_summary.json"]
+        assert _files(split.rest_dirs[0]) == ["app_server/config/config_fed_server.json", "log.txt"]
+        assert _files(run_dir) == before  # nothing moved
+        model = run_dir / "app_server" / "FL_global_model.pt"
+        linked = os.path.join(split.output_dirs[0], "app_server", "FL_global_model.pt")
+        assert os.stat(linked).st_ino == os.stat(model).st_ino  # the same file, not a copy
 
-    def test_copies_log_files_the_log_commands_read(self, tmp_path):
-        run_dir = _run_folder(tmp_path / "run", {"log.txt": b"log", "error_log.txt": b"err"})
-        staging = tmp_path / "staging"
+    def test_remove_deletes_only_links(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model"})
+        split = split_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt"])
 
-        stage_job_outputs([str(run_dir)], ["log.txt", "error_log.txt"], str(staging))
+        split.remove()
 
-        assert _files(staging) == ["error_log.txt", "log.txt"]
-        assert _files(run_dir) == ["error_log.txt", "log.txt"]
-
-    def test_restore_puts_moved_files_back(self, tmp_path):
-        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model", "log.txt": b"log"})
-        staging = tmp_path / "staging"
-        staged = stage_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt", "log.txt"], str(staging))
-
-        staged.restore()
-
-        assert _files(run_dir) == ["app_server/FL_global_model.pt", "log.txt"]
+        assert not any(os.path.exists(d) for d in split.output_dirs + split.rest_dirs)
         assert (run_dir / "app_server" / "FL_global_model.pt").read_bytes() == b"model"
 
-    def test_a_later_workspace_folder_replaces_an_earlier_ones_file(self, tmp_path):
-        run_dir = _run_folder(tmp_path / "run", {"models/server.npy": b"run"})
-        result_root = _run_folder(tmp_path / "result", {"models/server.npy": b"result"})
-        staging = tmp_path / "staging"
+    def test_log_files_the_log_commands_read_stay_in_the_workspace_too(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"log.txt": b"log", "error_log.txt": b"err", "plots/a.png": b""})
 
-        stage_job_outputs([str(run_dir), str(result_root)], ["models/server.npy"], str(staging))
+        split = split_job_outputs([str(run_dir)], ["log.txt", "error_log.txt", "plots/"])
 
-        assert (staging / "models" / "server.npy").read_bytes() == b"result"
-        assert (run_dir / "models" / "server.npy").read_bytes() == b"run"  # back in the workspace
+        assert _files(split.output_dirs[0]) == ["error_log.txt", "log.txt", "plots/a.png"]
+        assert _files(split.rest_dirs[0]) == ["error_log.txt", "log.txt"]
 
-    def test_stages_nothing_when_no_declared_output_exists(self, tmp_path):
-        run_dir = _run_folder(tmp_path / "run", {"log.txt": b"log"})
-
-        staged = stage_job_outputs([str(run_dir)], ["metrics/"], str(tmp_path / "staging"))
-
-        assert staged.found == []
-        assert _files(run_dir) == ["log.txt"]
-
-    def test_skips_symlinks(self, tmp_path):
+    def test_symlinks_stay_with_the_rest(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"metrics/metrics_summary.json": b"{}"})
         secret = tmp_path / "secret.txt"
         secret.write_text("secret")
         os.symlink(secret, run_dir / "metrics" / "link.txt")
-        staging = tmp_path / "staging"
 
-        stage_job_outputs([str(run_dir)], ["metrics/"], str(staging))
+        split = split_job_outputs([str(run_dir)], ["metrics/"])
 
-        assert _files(staging) == ["metrics/metrics_summary.json"]
+        assert _files(split.output_dirs[0]) == ["metrics/metrics_summary.json"]
+        assert os.readlink(os.path.join(split.rest_dirs[0], "metrics", "link.txt")) == str(secret)
+
+    def test_each_workspace_folder_is_split_beside_itself(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model"})
+        result_root = _run_folder(tmp_path / "result", {"models/server.npy": b"npy", "notes.txt": b""})
+
+        split = split_job_outputs([str(run_dir), str(result_root)], ["app_server/FL_global_model.pt", "models/"])
+
+        assert [_files(d) for d in split.output_dirs] == [["app_server/FL_global_model.pt"], ["models/server.npy"]]
+        assert [_files(d) for d in split.rest_dirs] == [[], ["notes.txt"]]
+        assert all(os.path.dirname(d) == str(tmp_path) for d in split.output_dirs + split.rest_dirs)
+
+    def test_returns_none_when_no_declared_output_exists(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"log.txt": b"log"})
+
+        assert split_job_outputs([str(run_dir)], ["metrics/"]) is None
+        assert sorted(os.listdir(tmp_path)) == ["run"]  # no link folders left
+
+    def test_returns_none_and_leaves_no_links_when_linking_fails(self, tmp_path, monkeypatch):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model"})
+
+        def cross_device(*args, **kwargs):
+            raise OSError(18, "Invalid cross-device link")
+
+        monkeypatch.setattr(os, "link", cross_device)
+
+        assert split_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt"]) is None
+        assert sorted(os.listdir(tmp_path)) == ["run"]
+
+    def test_links_left_by_an_interrupted_attempt_are_replaced(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model"})
+        first = split_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt"])  # never removed
+
+        second = split_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt"])
+
+        assert first.output_dirs == second.output_dirs
+        assert _files(second.output_dirs[0]) == ["app_server/FL_global_model.pt"]
 
     def test_a_folder_entry_does_not_match_a_sibling_with_the_same_prefix(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"metrics2/a.json": b"", "metrics/b.json": b""})
-        staging = tmp_path / "staging"
 
-        stage_job_outputs([str(run_dir)], ["metrics/"], str(staging))
+        split = split_job_outputs([str(run_dir)], ["metrics/"])
 
-        assert _files(staging) == ["metrics/b.json"]
+        assert _files(split.output_dirs[0]) == ["metrics/b.json"]
 
 
 class TestOutputsOnlyRefusal:
