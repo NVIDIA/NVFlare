@@ -225,6 +225,51 @@ conflicts locally. 9. Reviewer and contributor may have discussions
 back and forth until all comments addressed. All conversations must be
 resolved for PR to pass. 10. Wait for the pull request to be merged.
 
+Pull request description guidance
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Every pull request must explain what changes, why the change is needed, and
+how it was validated.
+Include validation commands and results, and state anything that could not
+be verified.
+Scale the detail to the scope and impact of the change, rather than the
+number of changed lines.
+Use the relevant categories below; a pull request may span more than one
+category.
+Link existing design documents where useful and summarize the key decisions
+in the PR description.
+
+- **Small bug fix:** Describe the problem, root cause, fix approach, and
+  regression test or verification.
+
+- **Complex bug fix:** Include a reproduction scenario, root cause, overall
+  fix approach, changes across affected modules, compatibility risks, and
+  regression coverage.
+
+- **Feature enhancement:** Explain the motivation, design, workflow, risks,
+  validation, and documentation updates. Include architecture and
+  alternatives considered with their tradeoffs where relevant.
+
+- **FL algorithm implementation:** Include paper references where applicable,
+  the main research idea, implementation design and workflow, and deviations
+  from the paper. Apply the relevant feature enhancement guidance, including
+  architecture, alternatives, and risks. Describe the experiment setup,
+  results, and limitations, and provide a runnable example and User Guide.
+
+- **FL algorithm / research example:** Include paper references where
+  applicable, the main research idea, and experiment approach. Provide a
+  README covering dependencies, setup, data preparation, execution commands,
+  expected results, and limitations.
+
+- **Documentation, refactoring, dependency, or tooling change:** Briefly
+  describe the purpose, affected areas, and relevant validation. Explain
+  behavior or compatibility changes, if any.
+
+Benchmarks are optional for algorithm implementations and research examples
+unless needed to support performance claims.
+Include architecture and alternatives sections where relevant to the
+change; a small fix does not need a separate design document.
+
 Reviewing pull requests
 -----------------------
 
