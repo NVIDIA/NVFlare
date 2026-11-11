@@ -58,6 +58,8 @@ class TestRunClass:
         env.get_job_status.return_value = None
 
         assert Run(exec_env=env, job_id=self.job_id).get_result(clean_up=False) == str(tmp_path)
+        # asking for outputs only still returns the whole job rather than losing the result
+        assert Run(exec_env=env, job_id=self.job_id).get_result(clean_up=False, outputs_only=True) == str(tmp_path)
 
     def test_get_job_id(self):
         """Test get_job_id method."""

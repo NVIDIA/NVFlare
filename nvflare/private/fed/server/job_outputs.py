@@ -21,7 +21,7 @@ import shutil
 import stat
 import uuid
 from typing import List, Optional, Tuple
-from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
+from zipfile import ZIP_STORED, ZipFile, ZipInfo
 
 from nvflare.apis.job_def import JobMetaKey, RunStatus, job_output_matches, validate_job_outputs
 
@@ -70,14 +70,15 @@ def filter_workspace_archive(prepared: str, destination: str, outputs: List[str]
     found = set()
     temporary = os.path.join(os.path.dirname(destination), f".{os.path.basename(destination)}.{uuid.uuid4().hex}.tmp")
     try:
-        with ZipFile(prepared, "r") as source, ZipFile(temporary, "w", ZIP_DEFLATED) as target:
+        # Members are stored, not recompressed: this runs inside the admin command, and checkpoints compress poorly.
+        with ZipFile(prepared, "r") as source, ZipFile(temporary, "w", ZIP_STORED) as target:
             for info in source.infolist():
                 name = _member_name(info)
                 entry = job_output_matches(name, outputs) if name else ""
                 if not entry:
                     continue
                 member = ZipInfo(name, date_time=info.date_time)
-                member.compress_type = ZIP_DEFLATED
+                member.compress_type = ZIP_STORED
                 member.external_attr = info.external_attr
                 with source.open(info) as reader, target.open(member, "w", force_zip64=True) as writer:
                     shutil.copyfileobj(reader, writer, _COPY_BUFFER)

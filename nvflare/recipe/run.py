@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import os
 import threading
 import time
@@ -22,6 +23,14 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.recipe._failure_summary import failure_summary
 from nvflare.recipe._run_summary import _print_output, result_summary, run_context, summary_header
 from nvflare.recipe.spec import ExecEnv
+
+
+def _accepts_outputs_only(get_job_result) -> bool:
+    try:
+        params = inspect.signature(get_job_result).parameters
+    except (TypeError, ValueError):
+        return True
+    return "outputs_only" in params or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
 class Run:
@@ -109,9 +118,13 @@ class Run:
 
             result = None
             try:
-                if outputs_only:
+                if outputs_only and _accepts_outputs_only(self.exec_env.get_job_result):
                     result = self.exec_env.get_job_result(self.job_id, timeout=timeout, outputs_only=True)
                 else:
+                    if outputs_only:
+                        self.logger.info(
+                            "This execution environment does not support outputs_only; getting the whole job."
+                        )
                     # an ExecEnv written before outputs_only takes only these arguments
                     result = self.exec_env.get_job_result(self.job_id, timeout=timeout)
                 self._cached_result = result

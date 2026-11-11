@@ -22,7 +22,7 @@ imported to inspect a job. A component this module does not know adds nothing, a
 """
 
 import posixpath
-from typing import Callable, Dict, Iterable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from nvflare.apis.job_def import MAX_JOB_OUTPUTS, SERVER_SITE_NAME, JobMetaKey, validate_job_outputs
 
@@ -33,38 +33,39 @@ def _in_app(name: str) -> str:
     return posixpath.join(_SERVER_APP_DIR, name) if name else ""
 
 
-def _pt_persistor(obj) -> List[str]:
+def _pt_persistor(obj, ids) -> List[str]:
     return [
         _in_app(getattr(obj, "global_model_file_name", "")),
         _in_app(getattr(obj, "best_global_model_file_name", "")),
     ]
 
 
-def _save_name_persistor(obj) -> List[str]:
+def _save_name_persistor(obj, ids) -> List[str]:
     return [_in_app(getattr(obj, "save_name", ""))]
 
 
-def _np_persistor(obj) -> List[str]:
+def _np_persistor(obj, ids) -> List[str]:
     # saved under the result root, whose files sit at the archive root
     return [posixpath.join(getattr(obj, "model_dir", "") or "", getattr(obj, "model_name", ""))]
 
 
-def _metrics_writer(obj) -> List[str]:
+def _metrics_writer(obj, ids) -> List[str]:
     return [_folder(getattr(obj, "results_dir", ""))]
 
 
-def _stats_writer(obj) -> List[str]:
+def _stats_writer(obj, ids) -> List[str]:
     return [getattr(obj, "output_path", "")]
 
 
-def _fedavg_controller(obj) -> List[str]:
-    # Without a persistor, FedAvg saves the model itself, relative to the run folder.
-    if getattr(obj, "_persistor_id", None):
+def _fedavg_controller(obj, ids) -> List[str]:
+    # When its persistor_id names no component, FedAvg runs without a persistor and saves the model itself,
+    # relative to the run folder.
+    if getattr(obj, "_persistor_id", None) in ids:
         return []
     return [getattr(obj, "save_filename", None) or ""]
 
 
-def _cross_site_eval(obj) -> List[str]:
+def _cross_site_eval(obj, ids) -> List[str]:
     return [_folder(getattr(obj, "_cross_val_dir", ""))]
 
 
@@ -73,7 +74,7 @@ def _folder(path: str) -> str:
 
 
 # fully qualified class name -> the outputs one instance of it writes
-_PRODUCERS: Dict[str, Callable[[object], List[str]]] = {
+_PRODUCERS: Dict[str, Callable[[object, set], List[str]]] = {
     "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor": _pt_persistor,
     "nvflare.app_opt.tf.model_persistor.TFModelPersistor": _save_name_persistor,
     "nvflare.app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor": _save_name_persistor,
@@ -87,7 +88,7 @@ _PRODUCERS: Dict[str, Callable[[object], List[str]]] = {
 }
 
 
-def _producer(obj) -> Optional[Callable[[object], List[str]]]:
+def _producer(obj) -> Optional[Callable[[object, set], List[str]]]:
     for cls in type(obj).__mro__:  # a subclass writes where its base class does
         producer = _PRODUCERS.get(f"{cls.__module__}.{cls.__qualname__}")
         if producer:
@@ -111,14 +112,28 @@ def _normalize(path) -> str:
     return entry
 
 
-def outputs_of(components: Iterable[object]) -> List[str]:
-    """The ``job_outputs`` entries the given server components write, without duplicates or covered entries."""
+def _is_model_persistor(obj) -> bool:
+    from nvflare.app_common.abstract.model_persistor import ModelPersistor
+
+    return isinstance(obj, ModelPersistor)
+
+
+def outputs_of(components: Dict[str, object]) -> List[str]:
+    """The ``job_outputs`` entries the given server components (id -> component) write.
+
+    Returns no entries when a model persistor is not one this module knows: its model file is unknown, and a
+    declaration without it would leave the model out of an outputs-only download. The job then downloads whole
+    unless the user declares its outputs. Duplicates and files inside a declared folder are left out.
+    """
+    ids = set(components)
     entries: List[str] = []
-    for obj in components:
+    for obj in components.values():
         producer = _producer(obj)
         if not producer:
+            if _is_model_persistor(obj):
+                return []
             continue
-        for path in producer(obj):
+        for path in producer(obj, ids):
             entry = _normalize(path)
             if entry and entry not in entries:
                 entries.append(entry)
@@ -128,14 +143,14 @@ def outputs_of(components: Iterable[object]) -> List[str]:
     return outputs[:MAX_JOB_OUTPUTS]
 
 
-def server_components(job) -> List[object]:
-    """The components and controllers of a FedJob's server app, before export."""
+def server_components(job) -> Dict[str, object]:
+    """The components and controllers of a FedJob's server app, by id, before export."""
     server_app = getattr(job, "_deploy_map", {}).get(SERVER_SITE_NAME)
     if server_app is None:
-        return []
+        return {}
     app_config = server_app.app_config
-    components = list(app_config.components.values())
-    components.extend(w.controller for w in getattr(app_config, "workflows", []))
+    components = dict(app_config.components)
+    components.update({w.id: w.controller for w in getattr(app_config, "workflows", [])})
     return components
 
 

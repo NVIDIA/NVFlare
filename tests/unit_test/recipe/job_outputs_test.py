@@ -18,6 +18,7 @@ import pytest
 import torch.nn as nn
 
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.app_common.statistics.json_stats_file_persistor import JsonStatsFileWriter
 from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
@@ -97,27 +98,47 @@ class TestComponentOutputs:
             (JsonStatsFileWriter(output_path="./output"), ["output"]),
             (JsonStatsFileWriter(output_path="statistics/adult_stats.json"), ["statistics/adult_stats.json"]),
             (FedAvg(persistor_id="", save_filename="final.pt"), ["final.pt"]),
-            (FedAvg(persistor_id="persistor"), []),
         ],
     )
     def test_each_component_declares_the_files_its_arguments_name(self, component, expected):
-        assert outputs_of([component]) == expected
+        assert outputs_of({"c": component}) == expected
 
     def test_xgboost_persistor_declares_its_model(self):
         model_persistor = pytest.importorskip("nvflare.app_opt.xgboost.tree_based.model_persistor")
 
-        assert outputs_of([model_persistor.XGBModelPersistor(save_name="xgb.json")]) == ["app_server/xgb.json"]
+        assert outputs_of({"p": model_persistor.XGBModelPersistor(save_name="xgb.json")}) == ["app_server/xgb.json"]
 
     @pytest.mark.parametrize("output_path", ["../outside.json", ".", "/abs/stats.json"])
     def test_an_undeclarable_path_is_skipped_not_raised(self, output_path):
-        assert outputs_of([JsonStatsFileWriter(output_path=output_path)]) == []
+        assert outputs_of({"w": JsonStatsFileWriter(output_path=output_path)}) == []
 
     def test_unknown_components_and_duplicates_add_nothing(self):
-        components = [object(), MetricsArtifactWriter(), MetricsArtifactWriter()]
+        components = {"other": object(), "m1": MetricsArtifactWriter(), "m2": MetricsArtifactWriter()}
 
         assert outputs_of(components) == ["metrics/"]
 
     def test_a_file_inside_a_declared_folder_is_not_repeated(self):
-        components = [JsonStatsFileWriter(output_path="metrics/stats.json"), MetricsArtifactWriter()]
+        components = {"w": JsonStatsFileWriter(output_path="metrics/stats.json"), "m": MetricsArtifactWriter()}
 
         assert outputs_of(components) == ["metrics/"]
+
+    def test_fedavg_declares_its_own_save_only_when_its_persistor_is_not_configured(self):
+        controller = FedAvg(persistor_id="persistor", save_filename="final.pt")
+
+        assert outputs_of({"controller": controller}) == ["final.pt"]
+        assert outputs_of({"controller": controller, "persistor": PTFileModelPersistor()}) == [
+            "app_server/FL_global_model.pt",
+            "app_server/best_FL_global_model.pt",
+        ]
+
+    def test_an_unknown_model_persistor_leaves_the_job_undeclared(self):
+        class CustomPersistor(ModelPersistor):
+            def load_model(self, fl_ctx):
+                return None
+
+            def save_model(self, model, fl_ctx):
+                pass
+
+        components = {"persistor": CustomPersistor(), "metrics_artifact_writer": MetricsArtifactWriter()}
+
+        assert outputs_of(components) == []

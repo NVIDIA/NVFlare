@@ -120,9 +120,10 @@ set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/FL_global_model.pt"
 ```
 
 A recipe declares the files of the built-in components it configures, including
-a built-in persistor passed as `model_persistor`. A custom persistor class, or a
-job that writes its own files, is not known to the recipe, so the job declares
-those files the same way. Paths are relative to the server run folder:
+a built-in persistor passed as `model_persistor`. With a custom persistor class
+the recipe does not know the model's file name, so it declares nothing, and the
+job downloads whole until its outputs are declared. A job that writes its own
+files declares them the same way. Paths are relative to the server run folder:
 
 ```python
 set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/report.json", "plots/"])
@@ -229,7 +230,7 @@ long run.
   | `PTFileModelPersistor` | `app_server/<global_model_file_name>`, `app_server/<best_global_model_file_name>` |
   | `TFModelPersistor`, `JoblibModelParamPersistor`, `XGBModelPersistor` | `app_server/<save_name>` |
   | `NPModelPersistor` | `<model_dir>/<model_name>` |
-  | `FedAvg` without a persistor | `<save_filename>` |
+  | `FedAvg` whose `persistor_id` names no component | `<save_filename>` |
   | `MetricsArtifactWriter` | `<results_dir>/` |
   | `JsonStatsFileWriter` | `<output_path>` |
   | `CrossSiteModelEval`, `CrossSiteEval` | `<cross_val_dir>/` |
@@ -240,6 +241,9 @@ long run.
   `output`. A path that would not pass validation is skipped, and a file inside
   a declared folder is not listed again. A recipe never fails because of its
   own declaration.
+- A model persistor whose class is not in the table makes the recipe declare
+  nothing: a declaration without the model would leave it out of an
+  outputs-only download.
 - Because the declaration is made at export or run time, a component added
   after the recipe is built, such as by `add_cross_site_evaluation`, is
   included.
@@ -277,8 +281,8 @@ unchanged. With it, the server:
    It works with any `StorageSpec` without loading the archive into memory.
    The prepared file may not be a copy: `FilesystemStorage` creates a symlink
    to the stored archive. So the server:
-   - reads the prepared file and writes the declared entries to a separate
-     temporary file;
+   - reads the prepared file and writes the declared entries, stored without
+     recompression, to a separate temporary file;
    - unlinks the prepared file, which never modifies the stored archive;
    - renames the filtered file to `workspace.zip`.
 
