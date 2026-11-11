@@ -955,6 +955,13 @@ class TestDownloadJobResultOutputsOnly:
         assert path == str(location)
         assert notice.startswith(f"Downloaded the whole job {self._JOB_ID} because")
 
+    def test_warns_when_a_full_download_lacks_the_jobs_stored_outputs(self, tmp_path, caplog):
+        missing = {MetaKey.OUTPUTS_MISSING: "the job's outputs archive cannot be read from the job store"}
+        with caplog.at_level("WARNING"):
+            self._download(tmp_path, missing)
+
+        assert f"The download of job {self._JOB_ID} is incomplete" in caplog.text
+
     def test_rejects_a_non_bool_outputs_only(self, tmp_path):
         from nvflare.fuel.flare_api.api_spec import InvalidArgumentError
 

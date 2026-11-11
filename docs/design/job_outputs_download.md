@@ -306,8 +306,10 @@ their own `outputs` component and the rest as `workspace`:
    same folder contract `save_workspace` uses, so any job store that archives
    a workspace archives the outputs the same way.
 3. **Link the rest.** From a fresh walk, build a second folder of hard links
-   naming everything else, so a file created or replaced while the outputs
-   were stored is archived as it is now. The log files the server's log
+   naming everything but the files linked as outputs, so a file created while
+   the outputs were stored, declared or not, is archived as it is now. If a
+   stored output was replaced or removed meanwhile, the outputs archive would
+   be out of date, so the workspace is stored whole instead. The log files the server's log
    commands read (`log.txt`, `log.json`, `error_log.txt`) are named here too,
    so those commands keep working when a job declares them. Symlinks are
    recreated pointing at what they resolve to in the untouched workspace, so a
@@ -332,7 +334,9 @@ The workspace folders stay intact until both archives are stored:
   nothing declared was produced, a link cannot be made (for example a link
   folder on a different filesystem), a folder cannot be read, or the outputs
   are not stored. If an earlier attempt had recorded the split, the record is
-  cleared, so downloads do not use that older outputs archive.
+  cleared, so downloads do not use that older outputs archive. If clearing the
+  record fails, the archival fails and is retried, rather than leave the older
+  outputs archive authoritative.
 
 `job_outputs_stored` is written only by the server; a submitted job's value is
 removed at submission.
@@ -350,8 +354,10 @@ outputs exist as files, so they can be separated without copying.
 
 A full download of a job whose meta records `job_outputs_stored` sends
 `workspace.zip` and `outputs.zip`, both linked from the store, so the server
-still replies at once. If the outputs archive cannot be prepared, the download
-fails with an error rather than return a workspace without the outputs. Its reply carries `unzip_into: {"outputs.zip": "workspace"}`, and the
+still replies at once. If the outputs archive cannot be read from the store,
+the rest of the job is still downloaded, and the reply's `outputs_missing` says
+the workspace lacks the declared outputs; the client shows it as a warning
+("The download of job ... is incomplete: ..."). Its reply carries `unzip_into: {"outputs.zip": "workspace"}`, and the
 admin client unzips `outputs.zip` into `workspace/` after `workspace.zip`. The
 result is the same `workspace/` folder as before this change. The client
 accepts only a plain folder name there, never a path. A job without the
@@ -373,9 +379,10 @@ unchanged. With it, the server:
    `workspace.zip`, with the job store's existing `get_storage_for_download`,
    exactly as a full download prepares the `workspace` component.
    `FilesystemStorage` links the stored archive, so the server replies at once
-   and streams the file afterwards. If the outputs archive cannot be prepared,
-   the download fails: the whole job would lack the outputs too. The admin
-   client unzips it into
+   and streams the file afterwards. If the outputs archive cannot be read, the
+   server prepares the whole job instead, with that reason and with
+   `outputs_missing`, since the whole job lacks them too. The admin client
+   unzips it into
    `workspace/` as usual.
 4. Reports the result in its reply to `download_job`, beside the file list:
    - `outputs_only`: whether only the declared outputs were sent;
@@ -532,7 +539,11 @@ Unit tests:
   job's meta, cleared by a later fallback, and skipped for job stores without
   `save_job_outputs`; a submitted record is removed.
 - Downloads decide from the meta record; a split job whose outputs archive
-  cannot be prepared fails rather than downloading partly.
+  cannot be read downloads the rest with `outputs_missing`, and an
+  outputs-only request returns the whole job with that reason.
+- A declared file written after the outputs are linked is kept in the
+  workspace; a stored output replaced or removed meanwhile stores the
+  workspace whole; a failed record clear fails the archival so it is retried.
 - `download_job` with `outputs_only`:
   - links the stored `outputs` archive as `workspace.zip`, as a full download
     links the workspace;

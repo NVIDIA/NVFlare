@@ -2272,25 +2272,36 @@ def test_download_job_outputs_only_never_asks_a_store_for_a_missing_outputs_comp
     assert reply_meta[MetaKey.OUTPUTS_ONLY] is False
 
 
-@pytest.mark.parametrize("outputs_only", [True, False])
-def test_a_split_job_whose_outputs_archive_cannot_be_prepared_fails_rather_than_downloading_partly(
-    monkeypatch, tmp_path, outputs_only
-):
-    # its workspace archive lacks the outputs, so any download without them would be silently incomplete
+def test_a_full_download_without_the_outputs_archive_returns_the_rest_and_says_so(monkeypatch, tmp_path):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     engine = _FakeListEngine([_finished_job(stored=True)])
     _use_store(engine, tmp_path, {"log.txt": b"log"})  # the outputs component is gone
-    conn = _MockConnection(
-        app_ctx=engine,
-        props={ConnProps.DOWNLOAD_DIR: str(tmp_path / "tx"), ConnProps.CMD_PROPS: {"outputs_only": outputs_only}},
-    )
-    module = JobCommandModule()
-    module.download_folder = MagicMock()
 
-    module.download_job(conn, ["download_job", "job-1"])
+    prepared, reply_meta = _download(engine, tmp_path)
 
-    assert conn.errors and conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.INTERNAL_ERROR
-    module.download_folder.assert_not_called()
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert "does not include its declared outputs" in reply_meta[MetaKey.OUTPUTS_MISSING]
+
+
+def test_an_outputs_only_download_without_the_outputs_archive_returns_the_whole_job_and_says_so(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    _use_store(engine, tmp_path, {"log.txt": b"log"})
+    prepare = engine.job_def_manager.get_storage_for_download
+
+    def strict_prepare(jid, download_dir, component, download_file, fl_ctx):
+        if component == "outputs":
+            raise StorageException("no such component")  # a store that raises for a missing component
+        prepare(jid, download_dir, component, download_file, fl_ctx)
+
+    engine.job_def_manager.get_storage_for_download = strict_prepare
+
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert reply_meta[MetaKey.OUTPUTS_ONLY] is False
+    assert "cannot be read from the job store" in reply_meta[MetaKey.OUTPUTS_ONLY_REASON]
+    assert reply_meta[MetaKey.OUTPUTS_MISSING]
 
 
 @pytest.mark.parametrize("cmd_props", [None, {}, {"outputs_only": "yes"}])

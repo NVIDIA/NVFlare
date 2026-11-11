@@ -501,6 +501,23 @@ def test_a_fallback_clears_the_record_even_when_the_job_cannot_be_read(tmp_path)
     job_manager.update_meta.assert_called_once_with("job-1", {"job_outputs_stored": False}, fl_ctx)
 
 
+def test_a_failed_record_clear_fails_the_archival_so_it_is_retried(tmp_path, monkeypatch):
+    run_dir = _run_dir_with_model(tmp_path)
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    runner.log_info = MagicMock()
+    job_manager.get_job.return_value = MagicMock(
+        meta={"job_outputs": ["app_server/FL_global_model.pt"], "job_outputs_stored": True}
+    )
+    job_manager.update_meta.side_effect = RuntimeError("meta store unavailable")
+    monkeypatch.setattr(os, "link", MagicMock(side_effect=OSError(18, "Invalid cross-device link")))
+
+    with pytest.raises(RuntimeError):
+        runner._save_workspace(fl_ctx)
+
+    job_manager.save_workspace.assert_not_called()
+    assert (run_dir / "app_server" / "FL_global_model.pt").exists()  # nothing lost; the retry starts over
+
+
 def test_a_job_store_without_save_job_outputs_skips_the_split(tmp_path):
     from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 

@@ -557,6 +557,7 @@ def test_pull_folder_passes_the_servers_outputs_only_report_to_the_caller(tmp_pa
             MetaKey.SOURCE_FQCN: "server",
             MetaKey.OUTPUTS_ONLY: False,
             MetaKey.OUTPUTS_ONLY_REASON: "the job declares no job_outputs",
+            MetaKey.OUTPUTS_MISSING: "the job's outputs archive cannot be read from the job store",
         },
     }
     api.do_command.return_value = {ProtoKey.STATUS: APIStatus.SUCCESS}
@@ -570,6 +571,7 @@ def test_pull_folder_passes_the_servers_outputs_only_report_to_the_caller(tmp_pa
 
     assert result[ProtoKey.META][MetaKey.OUTPUTS_ONLY] is False
     assert result[ProtoKey.META][MetaKey.OUTPUTS_ONLY_REASON] == "the job declares no job_outputs"
+    assert result[ProtoKey.META][MetaKey.OUTPUTS_MISSING].startswith("the job's outputs archive")
     assert MetaKey.FILES not in result[ProtoKey.META]
 
 

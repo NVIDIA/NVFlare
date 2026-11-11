@@ -130,8 +130,12 @@ def _validate_target_strs(targets: List[str]) -> None:
     process_targets_into_str(targets)
 
 
-def _outputs_download_notice(meta: dict, job_id: str) -> Optional[str]:
-    """What to tell the user when an outputs-only download returned the whole job; None when it was filtered."""
+def _outputs_download_notice(meta: dict, job_id: str, outputs_only: bool) -> Optional[str]:
+    """What to tell the user about a download: an outputs-only request that returned the whole job, or a download
+    that lacks the job's stored outputs. None when there is nothing to tell."""
+    missing = meta.get(MetaKey.OUTPUTS_MISSING)
+    if not outputs_only:
+        return f"The download of job {job_id} is incomplete: {missing}." if missing else None
     if MetaKey.OUTPUTS_ONLY not in meta:
         return f"The server does not support outputs-only downloads; downloaded the whole job {job_id}."
     if meta.get(MetaKey.OUTPUTS_ONLY) is True:
@@ -512,13 +516,14 @@ class Session(SessionSpec):
             outputs_only (bool): download only the outputs the job declared (``job_outputs`` in its meta), at the
                 same paths under ``workspace/`` as a full download. The server returns the whole job when the job
                 did not complete, declares no outputs or produced none of them; a notice saying why is logged.
+                A notice is also logged for any download that lacks the job's stored outputs.
 
         Returns: folder path to the location of the job result
 
         """
         location, notice = self._download_job_result(job_id, destination, outputs_only)
         if notice:
-            get_obj_logger(self).info(notice)
+            get_obj_logger(self).warning(notice)
         return location
 
     def _download_job_result(self, job_id: str, destination: str = None, outputs_only: bool = False):
@@ -533,7 +538,7 @@ class Session(SessionSpec):
         result = self._do_command(AdminCommandNames.DOWNLOAD_JOB + " " + job_id, props=props)
         meta = result[ResultKey.META]
         location = meta.get(MetaKey.LOCATION)
-        notice = _outputs_download_notice(meta, job_id) if outputs_only and location else None
+        notice = _outputs_download_notice(meta, job_id, outputs_only) if location else None
 
         if destination and location and os.path.exists(location):
             destination = os.path.abspath(destination)

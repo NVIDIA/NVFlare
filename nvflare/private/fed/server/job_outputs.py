@@ -78,16 +78,18 @@ class SplitWorkspace:
         self.output_dirs = [_link_folder(d, _OUTPUTS_LINKS) for d in source_dirs]
         self.rest_dirs = [_link_folder(d, _WORKSPACE_LINKS) for d in source_dirs]
         self.found: List[str] = []  # the declared entries found, in declaration order
-        self._linked = [set() for _ in source_dirs]  # relative paths named in each outputs folder
+        self._linked = [{} for _ in source_dirs]  # relative path -> (device, inode) named in each outputs folder
 
     def link_rest(self):
         """Name everything but the declared outputs in the rest folders, from a fresh walk of the workspace.
 
         Called after the outputs are stored, so a file created or replaced meanwhile is archived as it is now. Only
         the files named in the outputs folders are left out, so a declared file created meanwhile is kept here.
-        Raises OSError when a link cannot be made or a folder cannot be read.
+        Raises OSError when a link cannot be made, a folder cannot be read, or a stored output was replaced or
+        removed meanwhile; the stored outputs archive would then be out of date, so the workspace is stored whole.
         """
         for source_dir, rest_dir, linked in zip(self.source_dirs, self.rest_dirs, self._linked):
+            seen = set()
             shutil.rmtree(rest_dir, ignore_errors=True)
             os.makedirs(rest_dir)
             for root, dirs, files in _walk(source_dir):
@@ -101,9 +103,15 @@ class SplitWorkspace:
                 for name in files:
                     source = os.path.join(root, name)
                     relative = os.path.normpath(os.path.join(relative_root, name))
-                    if relative in linked and name not in _LOG_FILE_NAMES:
-                        continue  # stored in the outputs archive
+                    if relative in linked:
+                        seen.add(relative)
+                        if _identity(source) != linked[relative]:
+                            raise OSError(f"output {relative} changed after it was stored")
+                        if name not in _LOG_FILE_NAMES:
+                            continue  # stored in the outputs archive
                     _link(source, os.path.join(rest_dir, relative))
+            if seen != set(linked):
+                raise OSError("an output was removed after it was stored")
 
     def remove(self) -> List[str]:
         """Remove the link folders and return those that could not be removed. Only links are removed; the files
@@ -121,6 +129,11 @@ def _walk(source_dir: str):
         raise error  # an unreadable folder: store the workspace whole rather than lose its files
 
     return os.walk(source_dir, onerror=_raise)
+
+
+def _identity(path: str) -> Tuple[int, int]:
+    info = os.stat(path)
+    return info.st_dev, info.st_ino
 
 
 def _output_entry(source: str, relative: str, outputs: List[str]) -> str:
@@ -166,7 +179,7 @@ def link_job_outputs(source_dirs: List[str], outputs: List[str]) -> Optional[Spl
                     if entry:
                         found.add(entry)
                         _link(source, os.path.join(output_dir, relative))
-                        linked.add(relative)
+                        linked[relative] = _identity(source)
     except OSError:
         split.remove()
         return None

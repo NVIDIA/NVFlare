@@ -170,6 +170,18 @@ class TestSplitJobOutputs:
         # not in the stored outputs archive, so it must be in the workspace archive
         assert _files(split.rest_dirs[0]) == ["metrics/round_metrics.jsonl"]
 
+    @pytest.mark.parametrize("change", ["replaced", "removed"])
+    def test_a_stored_output_changed_afterwards_rejects_the_split(self, tmp_path, change):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"old"})
+        split = link_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt"])
+        model = run_dir / "app_server" / "FL_global_model.pt"
+        model.unlink()
+        if change == "replaced":
+            model.write_bytes(b"new")  # a new file at the same path
+
+        with pytest.raises(OSError):  # the stored outputs archive is out of date: store the workspace whole
+            split.link_rest()
+
     def test_an_unreadable_folder_falls_back_to_the_whole_workspace(self, tmp_path, monkeypatch):
         run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model"})
         real_walk = os.walk

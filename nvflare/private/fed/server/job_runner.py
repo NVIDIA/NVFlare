@@ -737,10 +737,9 @@ class JobRunner(FLComponent):
         # use that older outputs archive. When the job could not be read, clear it anyway.
         if job is not None and job.meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is not True:
             return
-        try:
-            job_manager.update_meta(job_id, {JobMetaKey.JOB_OUTPUTS_STORED.value: False}, fl_ctx)
-        except Exception as e:
-            self.log_warning(fl_ctx, f"Cannot update the outputs record of job {job_id}: {secure_format_exception(e)}")
+        # Not caught: if the record cannot be cleared, the archival fails and is retried, rather than leave an older
+        # outputs archive authoritative over this whole workspace.
+        job_manager.update_meta(job_id, {JobMetaKey.JOB_OUTPUTS_STORED.value: False}, fl_ctx)
 
     def _remove_links(self, split, job_id: str, fl_ctx: FLContext):
         failed = split.remove()
