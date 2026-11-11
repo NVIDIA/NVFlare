@@ -199,6 +199,9 @@ class WeightedAggregationHelper(object):
                 failures during arithmetic or materialization are not rolled back.
 
         Note:
+            Integral PyTorch tensors accumulate in floating point so weighted sums
+            and averaging do not use integral in-place arithmetic.
+
             Contributions accumulate in call (result-arrival) order: each weighted contribution is
             added into a running per-key total (in place on backends that support it). Floating-point
             rounding is therefore order dependent (non-associative), so identical inputs can yield
@@ -228,9 +231,9 @@ class WeightedAggregationHelper(object):
                     if self._is_pytorch_tensor(v):
                         if self.weigh_by_local_iter:
                             # Weigh by local iter: create weighted copy (multiply by weight)
-                            self.total[k] = v.mul(weight)
+                            self.total[k] = v.mul(float(weight))
                         else:
-                            self.total[k] = v.clone()
+                            self.total[k] = v.mul(1.0)
                     else:
                         # Fallback for non-PyTorch tensors
                         if self.weigh_by_local_iter:
