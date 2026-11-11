@@ -389,6 +389,14 @@ summary and the CLI's artifact discovery find the model and metrics either way.
 | Download the whole job and filter on the client | Rejected. It saves nothing on transfer, which is the point of the feature. |
 | **Archive the declared outputs at job end, from the files on disk** | **Chosen.** It is the last moment the outputs exist as files, so they are zipped directly, once. An outputs-only download then links a stored archive and streams it, the same process as a full download. Cost: the declared outputs are stored twice. |
 
+The archive is built by the server in a local temporary file and handed to the
+job store as a file, the same contract `update_object` already supports. Having
+the store zip the selected files into its own location, as `FilesystemStorage`
+does for the workspace, was rejected: it only saves a copy when a filesystem
+store sits on a different filesystem from the workspace, and an object store
+such as S3 would still build the zip locally and upload it, while every store
+implementation would need a new content type.
+
 ### Where the declaration comes from
 
 | Option | Outcome |
