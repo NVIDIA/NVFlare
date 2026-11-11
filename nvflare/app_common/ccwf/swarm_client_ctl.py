@@ -231,9 +231,8 @@ class Gatherer(FLComponent):
             # Wait for in-flight acceptance, then prevent stale submissions from
             # modifying the aggregator after this round has been consumed.
             self.closed = True
-            return self._aggregate()
-
-    def _aggregate(self):
+        # The closed guard excludes further contributions. Run aggregation and
+        # extension callbacks without holding the gather lock.
         fl_ctx = self.fl_ctx
         self.log_info(fl_ctx, f"Start aggregation for round {self.for_round}")
         self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
@@ -273,9 +272,14 @@ class Gatherer(FLComponent):
         return aggr_result
 
     def is_done(self):
-        with self.lock:
-            # reply_time is published before acceptance and its event handlers finish.
+        # Keep the monitor responsive to shutdown while acceptance is busy.
+        # reply_time alone does not mean acceptance and its event handlers finished.
+        if not self.lock.acquire(blocking=False):
+            return False
+        try:
             return self._is_done()
+        finally:
+            self.lock.release()
 
     def _is_done(self):
         unfinished = 0

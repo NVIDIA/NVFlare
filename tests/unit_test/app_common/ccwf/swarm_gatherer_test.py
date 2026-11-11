@@ -24,8 +24,9 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.ccwf.swarm_client_ctl import Gatherer
-from tests.timing_utils import ManualClock, ObservedLock, ThreadGroup, wait_for
+from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.ccwf.swarm_client_ctl import Gatherer, SwarmClientController
+from tests.timing_utils import ManualClock, ObservedLock, ThreadGroup, join_thread, wait_for
 
 
 def _make_gatherer(aggregator=None, trainers=None, min_responses=2, timeout=0):
@@ -52,7 +53,7 @@ def _make_gatherer(aggregator=None, trainers=None, min_responses=2, timeout=0):
     return gatherer
 
 
-def _submit(gatherer, site, value):
+def _submit(gatherer, site, value, expected_rc=ReturnCode.OK):
     result = DXO(DataKind.WEIGHTS, {"weight": value}).to_shareable()
     result.set_header(AppConstants.CURRENT_ROUND, gatherer.for_round)
     result.add_cookie(AppConstants.CONTRIBUTION_ROUND, gatherer.for_round)
@@ -60,7 +61,7 @@ def _submit(gatherer, site, value):
     fl_ctx = FLContext()
     fl_ctx.put(ReservedKey.ENGINE, Mock(), private=True, sticky=False)
     reply = gatherer.gather(site, result, fl_ctx)
-    assert reply.get_return_code() == ReturnCode.OK
+    assert reply.get_return_code() == expected_rc
     return reply
 
 
@@ -79,6 +80,8 @@ def test_completion_waits_for_inflight_acceptance(completion, monkeypatch):
     release = threading.Event()
     finished = threading.Event()
     results = []
+    checked = threading.Event()
+    decisions = []
     accept = gatherer.aggregator.accept
 
     def blocked_accept(result, fl_ctx):
@@ -88,20 +91,33 @@ def test_completion_waits_for_inflight_acceptance(completion, monkeypatch):
 
     def finish():
         try:
-            if completion != "aggregate":
-                assert gatherer.is_done()
             results.append(from_shareable(gatherer.aggregate()).data["weight"])
         finally:
             finished.set()
+
+    def check_done():
+        try:
+            decisions.append(gatherer.is_done())
+        finally:
+            checked.set()
 
     with ThreadGroup(release) as threads, patch.object(gatherer.aggregator, "accept", side_effect=blocked_accept):
         threads.start(_submit, gatherer, "site-2", 2.0)
         assert accepting.wait(5)
         clock.advance(10)
-        threads.start(finish)
-        wait_for(lambda: gatherer.lock.blocked.is_set() or finished.is_set())
-        assert gatherer.lock.blocked.is_set()
-        assert not finished.is_set()
+        if completion == "aggregate":
+            threads.start(finish)
+            wait_for(lambda: gatherer.lock.blocked.is_set() or finished.is_set())
+            assert gatherer.lock.blocked.is_set()
+            assert not finished.is_set()
+        else:
+            threads.start(check_done)
+            assert checked.wait(5)
+            assert decisions == [False]
+            assert gatherer.lock.blocked.is_set()
+    if completion != "aggregate":
+        assert gatherer.is_done()
+        finish()
     assert finished.is_set()
     assert results == [1.5]
 
@@ -134,9 +150,8 @@ def test_stale_submission_cannot_contaminate_next_round():
         threads.start(finish)
         assert aggregating.wait(5)
         threads.start(stale_submit)
-        wait_for(lambda: gatherer.lock.blocked.is_set() or submitted.is_set())
-        assert gatherer.lock.blocked.is_set()
-        assert not submitted.is_set()
+        assert submitted.wait(5)
+        assert not gatherer.lock.blocked.is_set()
     assert results == [1.5]
     assert submitted.is_set()
 
@@ -147,3 +162,90 @@ def test_stale_submission_cannot_contaminate_next_round():
     assert _submit(next_round, "site-1", 3.0).get_return_code() == ReturnCode.OK
     assert _submit(next_round, "site-2", 5.0).get_return_code() == ReturnCode.OK
     assert from_shareable(next_round.aggregate()).data["weight"] == 4.0
+
+
+def test_monitor_can_stop_while_acceptance_is_blocked(monkeypatch):
+    clock = ManualClock()
+    monkeypatch.setattr("nvflare.app_common.ccwf.swarm_client_ctl.time", clock)
+    gatherer = _make_gatherer()
+    _submit(gatherer, "site-1", 1.0)
+    controller = SwarmClientController()
+    controller.gatherer = gatherer
+    controller._end_gather = Mock()
+    accepting = threading.Event()
+    release_accept = threading.Event()
+    polling = threading.Event()
+    release_poll = threading.Event()
+    accept = gatherer.aggregator.accept
+
+    def blocked_accept(result, fl_ctx):
+        accepting.set()
+        release_accept.wait()
+        return accept(result, fl_ctx)
+
+    def monitor_sleep(_):
+        polling.set()
+        release_poll.wait()
+
+    monkeypatch.setattr(clock, "sleep", monitor_sleep)
+    with (
+        ThreadGroup(release_accept, release_poll) as threads,
+        patch.object(gatherer.aggregator, "accept", side_effect=blocked_accept),
+    ):
+        try:
+            threads.start(_submit, gatherer, "site-2", 2.0)
+            assert accepting.wait(5)
+            monitor = threads.start(controller._monitor_gather)
+            assert polling.wait(5)
+            assert gatherer.lock.blocked.is_set()
+            controller.asked_to_stop = True
+            release_poll.set()
+            join_thread(monitor)
+            assert not release_accept.is_set()
+            controller._end_gather.assert_not_called()
+        finally:
+            controller.asked_to_stop = True
+
+
+def test_aggregation_callbacks_run_without_gather_lock():
+    gatherer = _make_gatherer()
+    _submit(gatherer, "site-1", 1.0)
+    _submit(gatherer, "site-2", 2.0)
+    events = []
+
+    def on_aggregate(event_type, *args, **kwargs):
+        if event_type not in [AppEventType.BEFORE_AGGREGATION, AppEventType.AFTER_AGGREGATION]:
+            return
+        assert gatherer.lock.acquire(blocking=False)
+        gatherer.lock.release()
+        assert gatherer.is_done()
+        # A callback can safely acknowledge a late result without changing the model.
+        _submit(gatherer, "site-1", 100.0)
+        events.append(event_type)
+
+    gatherer.fire_event.side_effect = on_aggregate
+    gatherer.fire_event_with_data.side_effect = on_aggregate
+    assert from_shareable(gatherer.aggregate()).data["weight"] == 1.5
+    assert events == [AppEventType.BEFORE_AGGREGATION, AppEventType.AFTER_AGGREGATION]
+
+
+@pytest.mark.parametrize("error", [False, True])
+def test_unsuccessful_acceptance_does_not_leave_lock_held(error):
+    gatherer = _make_gatherer()
+    _submit(gatherer, "site-1", 1.0)
+    submission = Shareable()
+    submission.set_header(AppConstants.CURRENT_ROUND, 0)
+    assert gatherer.can_accept_submission("site-2", submission, FLContext()) == ReturnCode.OK
+    expected_rc = ReturnCode.EXECUTION_EXCEPTION if error else ReturnCode.OK
+    with patch.object(
+        gatherer.aggregator, "accept", side_effect=RuntimeError("accept failed") if error else None
+    ) as accept:
+        accept.return_value = False
+        _submit(gatherer, "site-2", 2.0, expected_rc)
+
+    assert gatherer.lock.acquire(blocking=False)
+    gatherer.lock.release()
+    assert not gatherer.trainer_statuses["site-2"].busy
+    # Preserve existing response accounting for failed/rejected results.
+    assert gatherer.is_done()
+    assert from_shareable(gatherer.aggregate()).data["weight"] == 1.0
