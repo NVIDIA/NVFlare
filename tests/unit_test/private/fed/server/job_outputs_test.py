@@ -207,6 +207,23 @@ class TestSplitJobOutputs:
         with pytest.raises(OSError):  # the stored outputs archive is out of date: store the workspace whole
             split.link_rest()
 
+    @pytest.mark.parametrize("change", ["appended", "rotated"])
+    def test_a_declared_server_log_written_meanwhile_keeps_the_split(self, tmp_path, change):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"m", "log.txt": b"old"})
+        split = link_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt", "log.txt"])
+        log = run_dir / "log.txt"
+        if change == "appended":
+            with open(log, "ab") as f:
+                f.write(b" more")
+        else:
+            log.rename(run_dir / "log.txt.1")
+            log.write_bytes(b"new")
+
+        split.link_rest()  # no fallback: the server writing its own log is expected
+
+        with open(os.path.join(split.rest_dirs[0], "log.txt"), "rb") as f:
+            assert f.read() == (b"old more" if change == "appended" else b"new")
+
     def test_an_unreadable_folder_falls_back_to_the_whole_workspace(self, tmp_path, monkeypatch):
         run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model"})
         real_walk = os.walk

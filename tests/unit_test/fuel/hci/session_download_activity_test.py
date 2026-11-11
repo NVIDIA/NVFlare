@@ -580,7 +580,11 @@ def test_pull_folder_unzips_a_mapped_archive_into_the_named_folder(tmp_path):
     module = FileTransferModule(str(tmp_path), str(tmp_path))
     tx_folder = tmp_path / "job-1__tx-1"
     tx_folder.mkdir()
-    archives = {"workspace.zip": {"log.txt": b"log"}, "outputs.zip": {"app_server/FL_global_model.pt": b"model"}}
+    archives = {
+        "workspace.zip": {"log.txt": b"current log"},
+        # a declared log is in both archives; the outputs archive's copy is from when the outputs were stored
+        "outputs.zip": {"app_server/FL_global_model.pt": b"model", "log.txt": b"older log"},
+    }
     for name, members in archives.items():
         with zipfile.ZipFile(tx_folder / name, "w") as z:
             for member, data in members.items():
@@ -611,6 +615,8 @@ def test_pull_folder_unzips_a_mapped_archive_into_the_named_folder(tmp_path):
     assert sorted(
         os.path.relpath(os.path.join(d, f), workspace) for d, _, files in os.walk(workspace) for f in files
     ) == [os.path.join("app_server", "FL_global_model.pt"), "log.txt"]
+    with open(os.path.join(workspace, "log.txt"), "rb") as f:
+        assert f.read() == b"current log"  # the workspace archive's copy wins
 
 
 def test_unzip_targets_keep_only_plain_folder_names():

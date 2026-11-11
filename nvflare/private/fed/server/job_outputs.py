@@ -105,13 +105,17 @@ class SplitWorkspace:
                     source = os.path.join(root, name)
                     relative = os.path.normpath(os.path.join(relative_root, name))
                     if relative in linked:
+                        if name in _LOG_FILE_NAMES:
+                            # the server may still write its logs: the workspace archive gets the current one, and
+                            # the client unzips it over the outputs archive's copy
+                            _link(source, os.path.join(rest_dir, relative))
+                            continue
                         seen.add(relative)
                         if _identity(source) != linked[relative]:
                             raise OSError(f"output {relative} changed after it was stored")
-                        if name not in _LOG_FILE_NAMES:
-                            continue  # stored in the outputs archive
+                        continue  # stored in the outputs archive
                     _link(source, os.path.join(rest_dir, relative))
-            if seen != set(linked):
+            if seen != {r for r in linked if os.path.basename(r) not in _LOG_FILE_NAMES}:
                 raise OSError("an output was removed after it was stored")
 
     def remove(self) -> List[str]:
