@@ -14,11 +14,13 @@
 
 import json
 import threading
+from unittest.mock import Mock
 
 import pytest
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
@@ -26,7 +28,11 @@ from nvflare.app_common.executors.multi_process_executor import MultiProcessExec
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST, ComponentPathAuthorizer
 from nvflare.fuel.common.excepts import ComponentNotAuthorized
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
-from nvflare.fuel.utils import class_utils
+from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cell_reply
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.utils import class_utils, fobs
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.fed.app.client.sub_worker_process import SubWorkerExecutor
@@ -901,3 +907,212 @@ def test_sub_worker_initialize_rejects_unsafe_component_payload_before_build(tmp
         sub_worker._initialize(data)
 
     assert ContainerComponent.instantiated is False
+
+
+@pytest.mark.parametrize("failure_phase", ["components", "executor_id", "launcher"])
+def test_multi_process_initialization_failure_signals_fatal_error(monkeypatch, failure_phase):
+    executor = _TestMultiProcessExecutor(executor_id="trainer", components=[])
+    executor.components["trainer"] = executor
+    engine = Mock()
+    fl_ctx = FLContext()
+    monkeypatch.setattr(fl_ctx, "get_engine", lambda: engine)
+    if failure_phase == "components":
+        monkeypatch.setattr(executor, "_build_components", Mock(side_effect=RuntimeError("constructor failed")))
+    elif failure_phase == "executor_id":
+        executor.components.clear()
+    else:
+        monkeypatch.setattr(executor, "get_multi_process_command", Mock(side_effect=RuntimeError("startup failed")))
+
+    with pytest.raises((RuntimeError, ValueError)):
+        executor.handle_event(EventType.START_RUN, fl_ctx)
+
+    fatal_events = [call for call in engine.fire_event.call_args_list if call.args[0] == EventType.FATAL_SYSTEM_ERROR]
+    assert len(fatal_events) == 1
+
+
+@pytest.mark.parametrize("site_policy", ["allow", "parent_only", "error", "exception"])
+def test_rank_runtime_build_enforces_parent_site_checks(tmp_path, site_policy):
+    config_file = tmp_path / "config.json"
+    config_file.write_text("{}")
+    (tmp_path / "meta.json").write_text(json.dumps({"site_policy": "present"}))
+    resources_file = tmp_path / "resources.json"
+    resources_file.write_text(json.dumps({CLASS_ALLOW_LIST: _test_component_allow_list()}))
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, FakeWorkspace(str(tmp_path / "meta.json"), str(resources_file)))
+    fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "job1")
+    conf = _NestedComponentConfigurator(str(config_file))
+    checked_paths = []
+
+    class SiteChecker(FLComponent):
+        def handle_event(self, event_type, ctx):
+            assert event_type == EventType.BEFORE_BUILD_COMPONENT
+            assert ctx.get_prop(FLContextKey.JOB_META) == {"site_policy": "present"}
+            assert ctx.get_prop(FLContextKey.CONFIG_CTX) is conf.config_ctx
+            checked_paths.append(ctx.get_prop(FLContextKey.COMPONENT_NODE).path())
+            if ctx.get_prop(FLContextKey.COMPONENT_CONFIG)["path"] == _component_path(NestedComponent):
+                if site_policy == "parent_only":
+                    if ctx.get_prop(FLContextKey.COMPONENT_NODE).path() != "runtime_component.args.child":
+                        ctx.set_prop(FLContextKey.COMPONENT_BUILD_ERROR, "child requires parent", sticky=False)
+                elif site_policy == "error":
+                    ctx.set_prop(FLContextKey.COMPONENT_BUILD_ERROR, "site veto", sticky=False)
+                elif site_policy == "exception":
+                    raise UnsafeComponentError("site veto")
+
+    conf.set_component_build_authorizer(authorize_build_component, fl_ctx=fl_ctx, event_handlers=[SiteChecker()])
+    parent = _TestMultiProcessExecutor.__new__(_TestMultiProcessExecutor)
+    parent.engine = Mock(conf=conf)
+    rank = SubWorkerExecutor.__new__(SubWorkerExecutor)
+    rank.args = Mock(client_name="site-1", job_id="job1")
+    rank.cell = Mock()
+
+    def authorize_in_parent(**kwargs):
+        assert kwargs["topic"] == EventType.BEFORE_BUILD_COMPONENT
+        # The authorization request contains config data, not handler or Node objects.
+        request = CellMessage({}, fobs.loads(fobs.dumps(kwargs["request"].payload)))
+        return parent._authorize_rank_component(request)
+
+    rank.cell.send_request.side_effect = authorize_in_parent
+    builder = WorkerComponentBuilder(fl_ctx=fl_ctx, workspace=fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT))
+    builder.component_build_authorizer = rank._authorize_component_build
+    child_config = {"path": _component_path(NestedComponent)}
+    component_config = {
+        "path": _component_path(ContainerComponent),
+        "args": {"child": child_config},
+    }
+    ContainerComponent.instantiated = NestedComponent.instantiated = False
+    if site_policy in ("allow", "parent_only"):
+        result = builder.build_component(component_config)
+        assert isinstance(result.child, NestedComponent)
+    else:
+        with pytest.raises(ComponentNotAuthorized, match="site veto"):
+            builder.build_component(component_config)
+        assert not ContainerComponent.instantiated
+        assert not NestedComponent.instantiated
+    assert checked_paths == ["runtime_component", "runtime_component.args.child"]
+    rank.cell.send_request.assert_called_once()
+    if site_policy == "parent_only":
+        # The nested approval must not carry over to an independent build of the same dict.
+        NestedComponent.instantiated = False
+        with pytest.raises(ComponentNotAuthorized, match="child requires parent"):
+            builder.build_component(child_config)
+        assert not NestedComponent.instantiated
+        assert checked_paths == [
+            "runtime_component",
+            "runtime_component.args.child",
+            "runtime_component",
+        ]
+
+
+def test_worker_nested_build_preserves_approval_through_multiple_levels():
+    _set_class_allow_list(_test_component_allow_list())
+    builder = WorkerComponentBuilder()
+    builder.component_build_authorizer = Mock()
+    config = {
+        "path": _component_path(ContainerComponent),
+        "args": {
+            "child": {
+                "path": _component_path(MiddleComponent),
+                "args": {"child": {"path": _component_path(NestedComponent)}},
+            }
+        },
+    }
+
+    result = builder.build_component(config)
+
+    assert isinstance(result.child.child, NestedComponent)
+    builder.component_build_authorizer.assert_called_once_with(config)
+
+
+def test_worker_constructor_runtime_build_requires_independent_approval(monkeypatch):
+    _set_class_allow_list(_test_component_allow_list())
+    builder = WorkerComponentBuilder()
+    runtime_config = {"path": _component_path(NestedComponent)}
+    monkeypatch.setattr(BuildDuringInitComponent, "configurator", builder)
+    monkeypatch.setattr(BuildDuringInitComponent, "runtime_component_config", runtime_config)
+
+    def authorize(config):
+        if config is runtime_config:
+            raise ComponentNotAuthorized("independent build denied")
+
+    builder.component_build_authorizer = Mock(side_effect=authorize)
+    NestedComponent.instantiated = False
+    with pytest.raises(ComponentNotAuthorized, match="independent build denied"):
+        builder.build_component({"path": _component_path(BuildDuringInitComponent)})
+    assert not NestedComponent.instantiated
+    assert builder.component_build_authorizer.call_count == 2
+
+    # A failed constructor must not leave an active parent approval behind.
+    with pytest.raises(ComponentNotAuthorized, match="independent build denied"):
+        builder.build_nested_component(runtime_config, "child")
+    assert builder.component_build_authorizer.call_count == 3
+
+
+def test_rank_runtime_build_rejects_unavailable_parent_authorization():
+    rank = SubWorkerExecutor.__new__(SubWorkerExecutor)
+    rank.args = Mock(client_name="site-1", job_id="job1")
+    rank.cell = Mock()
+    rank.cell.send_request.return_value = make_cell_reply(CellReturnCode.TIMEOUT, "site checker unavailable")
+    with pytest.raises(ComponentNotAuthorized, match="site checker unavailable"):
+        rank._authorize_component_build({"path": _component_path(NestedComponent)})
+
+    parent = _TestMultiProcessExecutor.__new__(_TestMultiProcessExecutor)
+    parent.engine = Mock(conf=None)
+    reply = parent._authorize_rank_component(CellMessage({}, {"path": _component_path(NestedComponent)}))
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.INVALID_REQUEST
+
+
+def test_concurrent_rank_authorizations_keep_separate_contexts(tmp_path):
+    config_file = tmp_path / "config.json"
+    config_file.write_text("{}")
+    (tmp_path / "meta.json").write_text("{}")
+    resources_file = tmp_path / "resources.json"
+    resources_file.write_text(json.dumps({CLASS_ALLOW_LIST: _test_component_allow_list()}))
+    base_ctx = FLContext()
+    base_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, FakeWorkspace(str(tmp_path / "meta.json"), str(resources_file)))
+    base_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "job1")
+    first_entered = threading.Event()
+    release_first = threading.Event()
+
+    class SiteChecker(FLComponent):
+        def handle_event(self, event_type, ctx):
+            if ctx.get_prop(FLContextKey.COMPONENT_CONFIG)["id"] == "denied":
+                first_entered.set()
+                release_first.wait()
+            # Read after the other rank has finished its authorization.
+            if ctx.get_prop(FLContextKey.COMPONENT_CONFIG)["id"] == "denied":
+                ctx.set_prop(FLContextKey.COMPONENT_BUILD_ERROR, "site veto", sticky=False)
+
+    conf = _NestedComponentConfigurator(str(config_file))
+    conf.set_component_build_authorizer(authorize_build_component, fl_ctx=base_ctx, event_handlers=[SiteChecker()])
+    parent = _TestMultiProcessExecutor.__new__(_TestMultiProcessExecutor)
+    parent.engine = Mock(conf=conf)
+    replies = []
+    errors = []
+
+    def authorize_denied_component():
+        try:
+            replies.append(
+                parent._authorize_rank_component(
+                    CellMessage({}, {"id": "denied", "path": _component_path(NestedComponent)})
+                )
+            )
+        except BaseException as ex:
+            errors.append(ex)
+
+    thread = threading.Thread(target=authorize_denied_component)
+    thread.start()
+    try:
+        assert first_entered.wait(5), "first rank did not enter the site checker"
+        allowed = parent._authorize_rank_component(
+            CellMessage({}, {"id": "allowed", "path": _component_path(NestedComponent)})
+        )
+        assert allowed.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
+    finally:
+        release_first.set()
+        thread.join(5)
+    assert not thread.is_alive()
+    assert not errors
+    assert replies[0].get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.INVALID_REQUEST
+    assert "site veto" in replies[0].get_header(MessageHeaderKey.ERROR)
+    assert base_ctx.get_prop(FLContextKey.COMPONENT_CONFIG) is None
+    assert base_ctx.get_prop(FLContextKey.COMPONENT_BUILD_ERROR) is None
