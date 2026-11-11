@@ -160,6 +160,16 @@ class TestSplitJobOutputs:
         with open(os.path.join(split.rest_dirs[0], "log.txt")) as f:
             assert f.read() == "new"
 
+    def test_a_declared_file_written_after_the_outputs_are_linked_is_kept_with_the_rest(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"metrics/metrics_summary.json": b"{}"})
+        split = link_job_outputs([str(run_dir)], ["metrics/"])
+        (run_dir / "metrics" / "round_metrics.jsonl").write_text("late")  # flushed while the outputs were stored
+
+        split.link_rest()
+
+        # not in the stored outputs archive, so it must be in the workspace archive
+        assert _files(split.rest_dirs[0]) == ["metrics/round_metrics.jsonl"]
+
     def test_an_unreadable_folder_falls_back_to_the_whole_workspace(self, tmp_path, monkeypatch):
         run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model"})
         real_walk = os.walk

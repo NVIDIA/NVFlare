@@ -489,6 +489,18 @@ def test_a_fallback_after_an_earlier_split_clears_the_record(tmp_path, monkeypat
     job_manager.update_meta.assert_called_once_with("job-1", {"job_outputs_stored": False}, fl_ctx)
 
 
+def test_a_fallback_clears_the_record_even_when_the_job_cannot_be_read(tmp_path):
+    run_dir = _run_dir_with_model(tmp_path)
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    job_manager.get_job.side_effect = RuntimeError("store unavailable")
+    archived = _capture_archives(job_manager)
+
+    runner._save_workspace(fl_ctx)
+
+    assert archived == {"workspace": ["app_server/FL_global_model.pt", "log.txt"]}
+    job_manager.update_meta.assert_called_once_with("job-1", {"job_outputs_stored": False}, fl_ctx)
+
+
 def test_a_job_store_without_save_job_outputs_skips_the_split(tmp_path):
     from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 

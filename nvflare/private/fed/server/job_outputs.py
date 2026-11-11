@@ -78,14 +78,16 @@ class SplitWorkspace:
         self.output_dirs = [_link_folder(d, _OUTPUTS_LINKS) for d in source_dirs]
         self.rest_dirs = [_link_folder(d, _WORKSPACE_LINKS) for d in source_dirs]
         self.found: List[str] = []  # the declared entries found, in declaration order
+        self._linked = [set() for _ in source_dirs]  # relative paths named in each outputs folder
 
     def link_rest(self):
         """Name everything but the declared outputs in the rest folders, from a fresh walk of the workspace.
 
-        Called after the outputs are stored, so a file created or replaced meanwhile is archived as it is now.
+        Called after the outputs are stored, so a file created or replaced meanwhile is archived as it is now. Only
+        the files named in the outputs folders are left out, so a declared file created meanwhile is kept here.
         Raises OSError when a link cannot be made or a folder cannot be read.
         """
-        for source_dir, rest_dir in zip(self.source_dirs, self.rest_dirs):
+        for source_dir, rest_dir, linked in zip(self.source_dirs, self.rest_dirs, self._linked):
             shutil.rmtree(rest_dir, ignore_errors=True)
             os.makedirs(rest_dir)
             for root, dirs, files in _walk(source_dir):
@@ -99,8 +101,8 @@ class SplitWorkspace:
                 for name in files:
                     source = os.path.join(root, name)
                     relative = os.path.normpath(os.path.join(relative_root, name))
-                    if _output_entry(source, relative, self.outputs) and name not in _LOG_FILE_NAMES:
-                        continue
+                    if relative in linked and name not in _LOG_FILE_NAMES:
+                        continue  # stored in the outputs archive
                     _link(source, os.path.join(rest_dir, relative))
 
     def remove(self) -> List[str]:
@@ -153,7 +155,7 @@ def link_job_outputs(source_dirs: List[str], outputs: List[str]) -> Optional[Spl
     split.remove()  # left over from an interrupted attempt: links only
     found = set()
     try:
-        for source_dir, output_dir in zip(source_dirs, split.output_dirs):
+        for source_dir, output_dir, linked in zip(source_dirs, split.output_dirs, split._linked):
             os.makedirs(output_dir)
             for root, _dirs, files in _walk(source_dir):
                 relative_root = os.path.relpath(root, source_dir)
@@ -164,6 +166,7 @@ def link_job_outputs(source_dirs: List[str], outputs: List[str]) -> Optional[Spl
                     if entry:
                         found.add(entry)
                         _link(source, os.path.join(output_dir, relative))
+                        linked.add(relative)
     except OSError:
         split.remove()
         return None

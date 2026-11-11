@@ -734,8 +734,8 @@ class JobRunner(FLComponent):
 
     def _clear_job_outputs_stored(self, job_manager, job, job_id: str, fl_ctx: FLContext):
         # an earlier attempt stored outputs apart; this attempt archives the workspace whole, so downloads must not
-        # use that older outputs archive
-        if job is None or job.meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is not True:
+        # use that older outputs archive. When the job could not be read, clear it anyway.
+        if job is not None and job.meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is not True:
             return
         try:
             job_manager.update_meta(job_id, {JobMetaKey.JOB_OUTPUTS_STORED.value: False}, fl_ctx)
