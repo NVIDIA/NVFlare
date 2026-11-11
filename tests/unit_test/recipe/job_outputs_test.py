@@ -76,14 +76,17 @@ class TestRecipeDeclarations:
 
         assert "cross_site_val/" in _exported_outputs(recipe, tmp_path / "second")
 
+    @pytest.mark.parametrize("dest_dir", [None, ".", "./"])
     @pytest.mark.parametrize("as_folder", [False, True])
-    def test_a_checkpoint_folder_in_the_shipped_environment_is_declared(self, tmp_path, train_script, as_folder):
+    def test_a_checkpoint_folder_in_the_shipped_environment_is_declared(
+        self, tmp_path, train_script, as_folder, dest_dir
+    ):
         config = tmp_path / "server_config"
         config.mkdir()
         (config / "environment.json").write_text(json.dumps({"APP_CKPT_DIR": "model"}))
         recipe = _fedavg(train_script)
         source = config if as_folder else config / "environment.json"
-        recipe._job.add_file_to_server(str(source), app_folder_type="config")
+        recipe._job.add_file_to_server(str(source), dest_dir=dest_dir, app_folder_type="config")
 
         outputs = _exported_outputs(recipe, tmp_path)
 
@@ -215,3 +218,11 @@ class TestComponentOutputs:
 
         assert "metrics_summary.json" in outputs and "round_metrics.jsonl" in outputs
         assert "app_server/FL_global_model.pt" in outputs
+
+    def test_an_environment_file_in_a_config_subfolder_is_not_the_apps(self, tmp_path, train_script):
+        env_file = tmp_path / "environment.json"
+        env_file.write_text(json.dumps({"APP_CKPT_DIR": "model"}))
+        recipe = _fedavg(train_script)
+        recipe._job.add_file_to_server(str(env_file), dest_dir="extra", app_folder_type="config")
+
+        assert "app_server/FL_global_model.pt" in _exported_outputs(recipe, tmp_path / "out")

@@ -91,8 +91,8 @@ def server_environment(job):
         return None
     path = None
     for src_path, dest_dir, app_folder_type in getattr(server_app.app_config, "file_sources", []):
-        if app_folder_type != "config" or dest_dir:
-            continue  # only a file placed directly in the app's config folder is read
+        if app_folder_type != "config" or (dest_dir and os.path.normpath(dest_dir) != "."):
+            continue  # only a file placed directly in the app's config folder ("." included) is read
         if os.path.isdir(src_path):
             candidate = os.path.join(src_path, _ENVIRONMENT_FILE)
             if os.path.isfile(candidate):
