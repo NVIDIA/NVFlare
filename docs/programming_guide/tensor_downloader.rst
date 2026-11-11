@@ -156,17 +156,49 @@ Example: Using PTFedAvg Controller Directly
 Configuration
 -------------
 
-The Tensor Downloader behavior can be configured via chunk size settings in your job configuration files.
+The Tensor Downloader behavior can be configured via chunk size and timeout settings in your job
+configuration files.
 
 **Configuration Parameters:**
 
 - ``tensor_download_chunk_size``: Chunk size for PyTorch tensor downloads (default: 2097152 = 2MB)
 - ``np_download_chunk_size``: Chunk size for NumPy array downloads (default: 2097152 = 2MB)
+- ``tensor_streaming_per_request_timeout``: Timeout in seconds for each PyTorch tensor download request
+  (default: 600)
+- ``np_streaming_per_request_timeout``: Timeout in seconds for each NumPy download request (default: 600)
+- ``tensor_min_download_timeout`` and ``np_min_download_timeout``: Minimum lifetime in seconds of a
+  download transaction
+
+The settings are prefixed by payload type. The unprefixed ``streaming_per_request_timeout`` is not read by
+the Tensor Downloader.
+
+**Which process reads which setting.** A transfer has a sender and a receiver, and each setting is read by
+only one of them:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - Setting
+     - Read by
+   * - ``tensor_download_chunk_size``, ``np_download_chunk_size``
+     - The sender, which serializes the payload and creates the download. Setting a chunk size to 0 disables
+       the download for payloads that process sends.
+   * - ``tensor_min_download_timeout``, ``np_min_download_timeout``
+     - The sender, which creates the download transaction.
+   * - ``tensor_streaming_per_request_timeout``, ``np_streaming_per_request_timeout``
+     - The receiver, which issues the download requests.
+
+The server sends the global model to clients, and clients send updates to the server, so both directions
+occur in a normal job. To apply a setting in both directions, set it on the server and on the clients:
+``add_server_config()`` and ``add_client_config()`` for recipes, or ``to_server()`` and ``to_clients()``
+for the Job API. A setting placed only on the server affects transfers the server sends (chunk sizes) or
+receives (request timeouts), not the client side of the exchange.
 
 Using Recipe API (Recommended)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-For users working with recipes, use the ``add_server_config()`` method:
+For users working with recipes, use ``add_server_config()`` and ``add_client_config()``:
 
 .. code-block:: python
 
@@ -179,12 +211,17 @@ For users working with recipes, use the ``add_server_config()`` method:
         train_script="train.py",
     )
 
-    # Configure chunk sizes and streaming timeout (server-side only)
-    recipe.add_server_config({
+    config = {
         "np_download_chunk_size": 2097152,
         "tensor_download_chunk_size": 2097152,
-        "streaming_per_request_timeout": 600
-    })
+        "np_streaming_per_request_timeout": 600,
+        "tensor_streaming_per_request_timeout": 600,
+    }
+
+    # Server to clients: the server chunks, the clients time requests.
+    recipe.add_server_config(config)
+    # Clients to server: the clients chunk, the server times requests.
+    recipe.add_client_config(config)
 
 Using Job API
 ^^^^^^^^^^^^^
@@ -197,12 +234,16 @@ For users working directly with the Job API:
 
     job = FedJob(name="my_job")
 
-    # Add config to server (these are server-side only settings)
-    job.to_server({
+    config = {
         "np_download_chunk_size": 2097152,
         "tensor_download_chunk_size": 2097152,
-        "streaming_per_request_timeout": 600
-    })
+        "np_streaming_per_request_timeout": 600,
+        "tensor_streaming_per_request_timeout": 600,
+    }
+
+    # Apply to the server and to all clients to cover both transfer directions
+    job.to_server(config)
+    job.to_clients(config)
 
 Tuning for Large Models
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -222,16 +263,19 @@ acceptance, so configure it for the complete delivery path.
 uses the shared transfer idle policy. See :ref:`timeout_troubleshooting` and
 :doc:`/programming_guide/timeouts`.
 
-**Example config_fed_server.conf with chunk size tuning:**
+**Example config_fed_server.conf with chunk size tuning** (the same settings belong in
+``config_fed_client`` to cover transfers that the clients send and receive):
 
 .. code-block::
 
     format_version = 2
     
-    # Chunk sizes for streaming large models (2MB default)
+    # Chunk sizes for streaming large models (2MB default), read by the sending process
     np_download_chunk_size = 2097152
     tensor_download_chunk_size = 2097152
-    streaming_per_request_timeout = 600
+    # Per-request timeouts, read by the receiving process
+    np_streaming_per_request_timeout = 600
+    tensor_streaming_per_request_timeout = 600
     
     task_data_filters = []
     task_result_filters = []
@@ -274,17 +318,19 @@ set the chunk sizes to zero.
 
 .. code-block:: python
 
-    # Disable streaming (server-side setting)
-    recipe.add_server_config({
-        "np_download_chunk_size": 0,
-        "tensor_download_chunk_size": 0
-    })
+    # Disable streaming: chunk sizes are read by the sender, so set them on the
+    # server (server to clients) and on the clients (clients to server)
+    config = {"np_download_chunk_size": 0, "tensor_download_chunk_size": 0}
+    recipe.add_server_config(config)
+    recipe.add_client_config(config)
 
 **Using Job API:**
 
 .. code-block:: python
 
-    job.to_server({"np_download_chunk_size": 0, "tensor_download_chunk_size": 0})
+    config = {"np_download_chunk_size": 0, "tensor_download_chunk_size": 0}
+    job.to_server(config)
+    job.to_clients(config)
 
 **Using config files directly:**
 

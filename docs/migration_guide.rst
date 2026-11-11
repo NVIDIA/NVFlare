@@ -9,19 +9,34 @@ This guide covers API and configuration changes when upgrading between FLARE rel
 Upgrading from 2.9.0 to 2.9.1
 =============================
 
-Review the changes below before upgrading:
+Review the changes below before upgrading.
 
-- Removed tensor-streaming APIs and their timeout settings.
-- Control-request authorization, including server-job heartbeat restrictions.
-- Site component authorization and initialization failures in multiprocess
-  sub-workers, which can stop a job.
-- In-time FedAvg termination on accumulation exceptions.
-- Client-log staging paths, sender checks, and deletion recovery.
-- Updated security dependencies, configuration-format deprecations,
-  checkpoint path restrictions, and the Dashboard client API change.
+**Required actions**, if your jobs, deployments, or custom integrations use the
+affected feature:
+
+- Removed tensor-streaming APIs and their timeout settings. See
+  :ref:`tensor_transfer_migration_291`.
+- Control-request authorization for custom code that sends internal CellNet
+  control messages. Supported administration and job APIs need no changes.
+- Client-log staging paths for custom log collectors and storage providers.
+- Checkpoint path restrictions for ``PTFileModelPersistor`` and the Dashboard
+  client API change.
+- Updated security dependencies: refresh locked environments and package
+  mirrors.
 - For confidential computing, provisioning changes and the rejection of
   launcher-defined bring-your-own-code (BYOC) jobs. Azure Container Instances
   (ACI) deployments also require an approved policy and signed external kit.
+
+**Behavior changes and fixes** that need no action unless noted:
+
+- Site component authorization and initialization failures in multiprocess
+  sub-workers can now stop a job.
+- In-time FedAvg stops on an accumulation exception and keeps the previous
+  checkpoint.
+- Client-log sender checks and deletion recovery are stricter, and recipe
+  client log streaming in server jobs works again.
+- Configuration-format deprecations (HOCON and YAML): plan to move to JSON
+  before 2.10.0.
 
 .. _tensor_transfer_migration_291:
 
@@ -33,27 +48,161 @@ The ``nvflare.app_opt.tensor_stream`` package, ``TensorServerStreamer``,
 ``examples/advanced/tensor-stream`` example are removed in 2.9.1. Existing
 exported jobs referencing those classes cannot load them on 2.9.1.
 
-Action:
+Nothing replaces the enable call. For standard PyTorch recipes, delete
+``recipe.enable_tensor_streaming(...)``: the Tensor Downloader (see
+:ref:`tensor_downloader`) is used automatically, with no per-recipe or per-task
+opt-in.
 
-- Remove ``recipe.enable_tensor_streaming()`` calls and explicit streamer
-  components from server and client job configurations, then export and
-  resubmit the updated job.
-- Use :ref:`tensor_downloader` for pull-based transfer. Standard PyTorch
-  workflows register the tensor decomposer automatically; Client API jobs
-  exchanging PyTorch tensors should use ``params_exchange_format="pytorch"``.
-  Custom integrations should follow the registration guidance in that guide.
-- Keep applicable Tensor Downloader settings such as
-  ``tensor_streaming_per_request_timeout`` and ``tensor_min_download_timeout``.
-  These settings and ``enable_tensor_disk_offload`` remain supported; their
-  names do not refer to the removed push-based streamer components.
-- Remove the former ``tensor_send_timeout`` and
-  ``wait_send_task_data_all_clients_timeout`` arguments along with the removed
-  method. There is no direct equivalent for these push-based timeouts or the
-  streamer's automatic ``MIN_GET_TASK_TIMEOUT`` adjustment. Tune Tensor
-  Downloader's per-request and minimum download timeouts for the pull-based
-  transfer, and review Client API task waits separately; see
-  :doc:`/programming_guide/timeouts`. Do not copy the old values assuming the
-  same semantics.
+.. code-block:: python
+
+    # 2.9.0
+    recipe = FedAvgRecipe(
+        name="my-job",
+        min_clients=2,
+        num_rounds=10,
+        model=MyLargeModel(),
+        train_script="client.py",
+        server_expected_format=ExchangeFormat.PYTORCH,
+    )
+    recipe.enable_tensor_streaming(
+        format="pytorch",
+        tasks=["train"],
+        tensor_send_timeout=30.0,
+        wait_send_task_data_all_clients_timeout=300.0,
+    )
+
+    # 2.9.1: delete the enable call. Keep server_expected_format only if you
+    # want PyTorch tensors on the wire; see "Memory-saving use cases" below.
+    recipe = FedAvgRecipe(
+        name="my-job",
+        min_clients=2,
+        num_rounds=10,
+        model=MyLargeModel(),
+        train_script="client.py",
+        server_expected_format=ExchangeFormat.PYTORCH,
+    )
+
+Jobs that were already exported contain the streamer components
+(``nvflare.app_opt.tensor_stream.server.TensorServerStreamer`` on the server and
+``nvflare.app_opt.tensor_stream.client.TensorClientStreamer`` on the clients).
+Remove them from the server and client configurations, then re-export and
+resubmit the job.
+
+Old use case and migration action
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Previous use
+     - 2.9.1 action
+   * - ``recipe.enable_tensor_streaming(...)``
+     - Delete the call. There is no replacement.
+   * - ``TensorServerStreamer`` or ``TensorClientStreamer`` in an exported job
+     - Remove the components, then re-export and resubmit.
+   * - ``format="pytorch"``
+     - Set ``server_expected_format=ExchangeFormat.PYTORCH`` on the recipe. For
+       direct Client API configuration, set both formats (see below).
+   * - ``tasks=[...]``
+     - No per-task option. See "Scope" below.
+   * - Reduce server memory for large models
+     - Keep the PyTorch wire format and set
+       ``enable_tensor_disk_offload=True`` (see below).
+   * - ``tensor_send_timeout`` or ``wait_send_task_data_all_clients_timeout``
+     - Remove. There is no one-to-one mapping (see below).
+   * - ``get_task_timeout`` overrides added to satisfy the streamer
+     - Remove them if they exist only for that coupling.
+   * - ``examples/advanced/tensor-stream`` (GPT-2)
+     - No direct replacement. Use the
+       :github_nvflare_link:`Hello HuggingFace example
+       <examples/hello-world/hello-huggingface>`, which uses PyTorch tensors
+       with ``enable_tensor_disk_offload=True`` for large models.
+
+Memory-saving use cases
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Two separate mechanisms cover what tensor streaming was used for:
+
+- The automatic Tensor Downloader reduces memory during transfer, because
+  tensors are pulled in chunks and the payload is not serialized into one
+  buffer.
+- ``enable_tensor_disk_offload=True`` additionally lowers server aggregation
+  memory: incoming tensors are staged in temporary files and materialized
+  lazily. It is available on the PyTorch recipes that expose the argument
+  (for example FedAvg, FedProx, Scaffold, FedCE, and Swarm) and applies only to
+  PyTorch tensors. It needs ``server_expected_format=ExchangeFormat.PYTORCH``;
+  with the default ``NUMPY`` format the recipes warn that nothing is offloaded.
+
+.. code-block:: python
+
+    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+    from nvflare.client.config import ExchangeFormat
+
+    recipe = FedAvgRecipe(
+        name="my-job",
+        min_clients=2,
+        num_rounds=10,
+        model=MyLargeModel(),
+        train_script="client.py",
+        server_expected_format=ExchangeFormat.PYTORCH,  # keep tensors as PyTorch on the wire
+        enable_tensor_disk_offload=True,  # stage incoming tensors on the server's disk
+    )
+
+For direct ``ClientAPIExecutor`` or ``ScriptRunner`` configuration,
+``params_exchange_format`` is the representation the training script sees from
+``flare.receive()`` and passes to ``flare.send()``, and ``server_expected_format``
+is what the server expects. The PyTorch tensor decomposer is registered for the
+wire only when ``server_expected_format`` is ``"pytorch"`` (or the pair is
+``"raw"`` with ``"pytorch"``). Setting only ``params_exchange_format="pytorch"``
+leaves ``server_expected_format`` at its default ``"numpy"``, so tensors are
+converted to NumPy on the wire. Set both to ``"pytorch"`` to keep tensors.
+
+Timeout behavior
+^^^^^^^^^^^^^^^^
+
+The old push streamer made the server wait until every client had received the
+task tensors, and advertised a minimum ``get_task_timeout`` of
+``wait_send_task_data_all_clients_timeout + 60`` seconds. Both the all-clients
+barrier and that automatic minimum are gone. Remove ``get_task_timeout`` or
+related overrides that you added only for that coupling.
+
+Other waits still apply and must be sized for the actual delivery path: the
+Tensor Downloader's per-request and minimum download timeouts, and the Client
+API ``task_wait_timeout`` and ``result_wait_timeout``. There is no one-to-one
+mapping from ``tensor_send_timeout`` or
+``wait_send_task_data_all_clients_timeout``; do not copy the old values assuming
+the same semantics. See :doc:`/programming_guide/timeouts` and the
+:ref:`tensor_downloader` configuration section, which says which process reads
+each setting.
+
+Scope and custom integrations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+There is no per-task ``tasks=`` opt-in and no ``format=`` argument. Downloader
+behavior follows serialization: any task payload that contains a type with a
+registered download decomposer is transferred by download. PyTorch tensors use
+``TensorDecomposer`` (settings prefixed ``tensor_``) and NumPy arrays use the
+built-in ``NumpyArrayDecomposer`` (settings prefixed ``np_``). TensorFlow-specific
+payloads use normal serialization.
+
+Standard PyTorch recipes, ``PTFedAvg``, ``PTFileModelPersistor``, and Client API
+jobs that declare the PyTorch wire format register ``TensorDecomposer``
+themselves. A custom job or component that sends or receives PyTorch tensors
+outside those paths must register it in every process that serializes or
+deserializes them, typically from the component's initialization:
+
+.. code-block:: python
+
+    from nvflare.app_opt.pt.decomposers import TensorDecomposer
+    from nvflare.fuel.utils import fobs
+
+    fobs.register(TensorDecomposer)
+
+Register it in the server job process (for a custom controller or persistor) and
+in each client process that handles the tensors (the executor, or the external
+trainer process). See the Low-Level API section of :ref:`tensor_downloader` for
+custom decomposers.
 
 Control Requests Must Follow Authenticated Caller and Job Boundaries
 --------------------------------------------------------------------

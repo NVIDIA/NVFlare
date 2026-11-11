@@ -190,6 +190,10 @@ Bug Fixes
   previous checkpoint.
 - Asynchronous gRPC startup accepts the ``agrpc``/``agrpcs`` scheme pair for
   direct and relayed clients.
+- Recipe client log streaming (``enable_log_streaming``) works again in server
+  jobs. The server-job auxiliary handler now passes the authenticated sender to
+  the log receiver, so incoming client log chunks are no longer rejected for a
+  missing client identity.
 - Multiprocess sub-workers receive the required initialization services and
   report initialization failures as fatal instead of continuing with missing
   state.
