@@ -73,7 +73,7 @@ def test_completion_waits_for_inflight_acceptance(completion, monkeypatch):
     gatherer = _make_gatherer(
         trainers=trainers,
         min_responses=1 if completion == "minimum" else 2,
-        timeout=5 if completion == "timeout" else 0,
+        timeout=5 if completion in ["timeout", "aggregate"] else 0,
     )
     assert _submit(gatherer, "site-1", 1.0).get_return_code() == ReturnCode.OK
     accepting = threading.Event()
@@ -100,6 +100,11 @@ def test_completion_waits_for_inflight_acceptance(completion, monkeypatch):
             decisions.append(gatherer.is_done())
         finally:
             checked.set()
+
+    if completion == "aggregate":
+        # A successful poll does not exclude an acceptance starting before closure.
+        clock.advance(10)
+        assert gatherer.is_done()
 
     with ThreadGroup(release) as threads, patch.object(gatherer.aggregator, "accept", side_effect=blocked_accept):
         threads.start(_submit, gatherer, "site-2", 2.0)
@@ -249,3 +254,88 @@ def test_unsuccessful_acceptance_does_not_leave_lock_held(error):
     # Preserve existing response accounting for failed/rejected results.
     assert gatherer.is_done()
     assert from_shareable(gatherer.aggregate()).data["weight"] == 1.0
+
+
+@pytest.mark.parametrize("submit_before_close", [True, False])
+def test_submission_ordered_before_or_after_round_closure(submit_before_close, monkeypatch):
+    clock = ManualClock()
+    monkeypatch.setattr("nvflare.app_common.ccwf.swarm_client_ctl.time", clock)
+    gatherer = _make_gatherer(timeout=5)
+    _submit(gatherer, "site-1", 1.0)
+    clock.advance(10)
+    assert gatherer.is_done()
+
+    if submit_before_close:
+        _submit(gatherer, "site-2", 2.0)
+    result = from_shareable(gatherer.aggregate()).data["weight"]
+    if not submit_before_close:
+        _submit(gatherer, "site-2", 2.0)
+    assert result == (1.5 if submit_before_close else 1.0)
+
+    next_round = _make_gatherer(aggregator=gatherer.aggregator)
+    next_round.for_round = 1
+    _submit(next_round, "site-1", 3.0)
+    _submit(next_round, "site-2", 5.0)
+    assert from_shareable(next_round.aggregate()).data["weight"] == 4.0
+
+
+@pytest.mark.parametrize("policy,deadline", [("minimum", 1), ("timeout", 5)])
+def test_completion_deadlines_are_preserved(policy, deadline, monkeypatch):
+    clock = ManualClock()
+    monkeypatch.setattr("nvflare.app_common.ccwf.swarm_client_ctl.time", clock)
+    gatherer = _make_gatherer(min_responses=1 if policy == "minimum" else 2, timeout=5 if policy == "timeout" else 0)
+    _submit(gatherer, "site-1", 1.0)
+    assert not gatherer.is_done()
+    clock.advance(deadline)
+    assert not gatherer.is_done()
+    clock.advance(0.01)
+    assert gatherer.is_done()
+    assert from_shareable(gatherer.aggregate()).data["weight"] == 1.0
+
+
+def test_multiple_submissions_remain_serialized():
+    gatherer = _make_gatherer(trainers=["site-1", "site-2", "site-3"], min_responses=3)
+    _submit(gatherer, "site-1", 1.0)
+    accepting = threading.Event()
+    release = threading.Event()
+    third_accepted = threading.Event()
+    accept = gatherer.aggregator.accept
+
+    def blocked_accept(result, fl_ctx):
+        if result.get_peer_prop(ReservedKey.IDENTITY_NAME, None) == "site-2":
+            accepting.set()
+            release.wait()
+        else:
+            third_accepted.set()
+        return accept(result, fl_ctx)
+
+    with patch.object(gatherer.aggregator, "accept", side_effect=blocked_accept), ThreadGroup(release) as threads:
+        threads.start(_submit, gatherer, "site-2", 2.0)
+        assert accepting.wait(5)
+        threads.start(_submit, gatherer, "site-3", 3.0)
+        assert gatherer.lock.blocked.wait(5)
+        assert not third_accepted.is_set()
+    assert third_accepted.is_set()
+    assert gatherer.is_done()
+    assert from_shareable(gatherer.aggregate()).data["weight"] == 2.0
+
+
+@pytest.mark.parametrize("event", [AppEventType.BEFORE_AGGREGATION, AppEventType.AFTER_AGGREGATION])
+def test_aggregation_callback_failure_keeps_old_gatherer_closed(event):
+    gatherer = _make_gatherer()
+    _submit(gatherer, "site-1", 1.0)
+    _submit(gatherer, "site-2", 2.0)
+
+    def fail_callback(event_type, *args, **kwargs):
+        if event_type == event:
+            raise RuntimeError("aggregation callback failed")
+
+    gatherer.fire_event.side_effect = fail_callback
+    gatherer.fire_event_with_data.side_effect = fail_callback
+    with pytest.raises(RuntimeError, match="aggregation callback failed"):
+        gatherer.aggregate()
+    assert gatherer.lock.acquire(blocking=False)
+    gatherer.lock.release()
+    with patch.object(gatherer.aggregator, "accept") as accept:
+        _submit(gatherer, "site-1", 100.0)
+        accept.assert_not_called()
