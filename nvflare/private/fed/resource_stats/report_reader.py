@@ -47,8 +47,9 @@ def _read_identifier(value, pattern):
 
 
 def _read_timestamp(value):
+    # Newer ISO parsers accept 24:00:00; report hours must stay within 00-23.
     if not isinstance(value, str) or not re.fullmatch(
-        r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z", value
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z", value
     ):
         raise ValueError("resource report requires a UTC timestamp")
     try:
