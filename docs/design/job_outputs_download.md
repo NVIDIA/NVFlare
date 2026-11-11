@@ -235,7 +235,7 @@ long run.
   | `TFModelPersistor`, `JoblibModelParamPersistor`, `XGBModelPersistor` | `app_server/<save_name>` |
   | `NPModelPersistor` | `<model_dir>/<model_name>`, with `.npy` added when missing, as `np.save` does |
   | `FedAvg` whose `persistor_id` names no component | `<save_filename>` |
-  | `MetricsArtifactWriter` | `<results_dir>/` |
+  | `MetricsArtifactWriter` | `<results_dir>/`, or its summary and round files by name when `results_dir` is the run folder itself |
   | `JsonStatsFileWriter` | `<output_path>` |
   | `CrossSiteModelEval`, `CrossSiteEval` | `<cross_val_dir>/` |
 

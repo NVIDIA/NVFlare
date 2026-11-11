@@ -15,6 +15,7 @@
 import json
 import math
 import os
+import posixpath
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -77,8 +78,12 @@ class MetricsArtifactWriter(Widget):
         self._reset()
 
     def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
-        """The metrics folder, relative to the run folder."""
-        return [f"{self.results_dir.rstrip('/')}/"] if self.results_dir else []
+        """The metrics folder, relative to the run folder, or its two files when the folder is the run folder."""
+        folder = posixpath.normpath(self.results_dir.replace("\\", "/")) if self.results_dir else "."
+        if folder == ".":
+            # a folder entry for the run folder itself would select the whole workspace; name the files instead
+            return [name for name in (self.summary_file_name, self.round_file_name) if name]
+        return [f"{folder}/"]
 
     def _reset(self):
         self._first_round = None

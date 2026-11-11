@@ -120,6 +120,10 @@ class TestComponentOutputs:
             (NPModelPersistor(), ["models/server.npy"]),
             (NPModelPersistor(model_dir="out", model_name="final"), ["out/final.npy"]),  # np.save adds .npy
             (MetricsArtifactWriter(results_dir="my_metrics"), ["my_metrics/"]),
+            (MetricsArtifactWriter(results_dir="./my_metrics/"), ["my_metrics/"]),
+            # metrics written straight into the run folder are named one by one
+            (MetricsArtifactWriter(results_dir="."), ["metrics_summary.json", "round_metrics.jsonl"]),
+            (MetricsArtifactWriter(results_dir=""), ["metrics_summary.json", "round_metrics.jsonl"]),
             (JsonStatsFileWriter(output_path="./output"), ["output"]),
             (JsonStatsFileWriter(output_path="statistics/adult_stats.json"), ["statistics/adult_stats.json"]),
             (FedAvg(persistor_id="", save_filename="final.pt"), ["final.pt"]),
@@ -200,3 +204,14 @@ class TestComponentOutputs:
         assert outputs_of({"p": model_persistor.TFModelPersistor(save_name="tf.weights.h5")}) == [
             "app_server/tf.weights.h5"
         ]
+
+    def test_metrics_in_the_run_folder_are_kept_beside_the_model(self):
+        components = {
+            "persistor": PTFileModelPersistor(),
+            "metrics_artifact_writer": MetricsArtifactWriter(results_dir="."),
+        }
+
+        outputs = outputs_of(components)
+
+        assert "metrics_summary.json" in outputs and "round_metrics.jsonl" in outputs
+        assert "app_server/FL_global_model.pt" in outputs
