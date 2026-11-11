@@ -76,6 +76,30 @@ class TestRecipeDeclarations:
 
         assert "cross_site_val/" in _exported_outputs(recipe, tmp_path / "second")
 
+    @pytest.mark.parametrize("as_folder", [False, True])
+    def test_a_checkpoint_folder_in_the_shipped_environment_is_declared(self, tmp_path, train_script, as_folder):
+        config = tmp_path / "server_config"
+        config.mkdir()
+        (config / "environment.json").write_text(json.dumps({"APP_CKPT_DIR": "model"}))
+        recipe = _fedavg(train_script)
+        source = config if as_folder else config / "environment.json"
+        recipe._job.add_file_to_server(str(source), app_folder_type="config")
+
+        outputs = _exported_outputs(recipe, tmp_path)
+
+        assert "app_server/model/FL_global_model.pt" in outputs
+        assert "app_server/model/best_FL_global_model.pt" in outputs
+        assert "app_server/FL_global_model.pt" not in outputs
+
+    @pytest.mark.parametrize("environment", ["not json", json.dumps({"APP_CKPT_DIR": "/abs/ckpt"})])
+    def test_an_unresolvable_checkpoint_folder_leaves_the_job_undeclared(self, tmp_path, train_script, environment):
+        env_file = tmp_path / "environment.json"
+        env_file.write_text(environment)
+        recipe = _fedavg(train_script)
+        recipe._job.add_file_to_server(str(env_file), app_folder_type="config")
+
+        assert _exported_outputs(recipe, tmp_path / "out") is None
+
     def test_set_recipe_meta_replaces_the_declaration(self, tmp_path, train_script):
         recipe = _fedavg(train_script)
         set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/FL_global_model.pt"])
@@ -94,6 +118,7 @@ class TestComponentOutputs:
             ),
             (JoblibModelParamPersistor(save_name="model.joblib"), ["app_server/model.joblib"]),
             (NPModelPersistor(), ["models/server.npy"]),
+            (NPModelPersistor(model_dir="out", model_name="final"), ["out/final.npy"]),  # np.save adds .npy
             (MetricsArtifactWriter(results_dir="my_metrics"), ["my_metrics/"]),
             (JsonStatsFileWriter(output_path="./output"), ["output"]),
             (JsonStatsFileWriter(output_path="statistics/adult_stats.json"), ["statistics/adult_stats.json"]),

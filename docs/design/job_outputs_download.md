@@ -227,9 +227,9 @@ long run.
 
   | Component | Declared output |
   | --- | --- |
-  | `PTFileModelPersistor` | `app_server/<global_model_file_name>`, `app_server/<best_global_model_file_name>` |
+  | `PTFileModelPersistor` | `app_server/<global_model_file_name>`, `app_server/<best_global_model_file_name>`; under `app_server/<APP_CKPT_DIR>/` when the job ships a `config/environment.json` that sets it |
   | `TFModelPersistor`, `JoblibModelParamPersistor`, `XGBModelPersistor` | `app_server/<save_name>` |
-  | `NPModelPersistor` | `<model_dir>/<model_name>` |
+  | `NPModelPersistor` | `<model_dir>/<model_name>`, with `.npy` added when missing, as `np.save` does |
   | `FedAvg` whose `persistor_id` names no component | `<save_filename>` |
   | `MetricsArtifactWriter` | `<results_dir>/` |
   | `JsonStatsFileWriter` | `<output_path>` |
@@ -241,9 +241,10 @@ long run.
   `output`. A path that would not pass validation is skipped, and a file inside
   a declared folder is not listed again. A recipe never fails because of its
   own declaration.
-- A model persistor whose class is not in the table makes the recipe declare
-  nothing: a declaration without the model would leave it out of an
-  outputs-only download.
+- A model persistor whose class is not in the table, or a checkpoint folder
+  that cannot be resolved (an unreadable `environment.json`, or a folder
+  outside the app), makes the recipe declare nothing: a declaration without the
+  model would leave it out of an outputs-only download.
 - Because the declaration is made at export or run time, a component added
   after the recipe is built, such as by `add_cross_site_evaluation`, is
   included.
