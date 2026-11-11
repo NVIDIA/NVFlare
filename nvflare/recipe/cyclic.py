@@ -23,6 +23,7 @@ from nvflare.app_common.workflows.cyclic_ctl import CyclicController
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.fuel.utils.secret_utils import warn_on_unsupported_secret_refs_outside_keys
+from nvflare.job_config.job_outputs import declare_metrics_outputs
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 
@@ -235,7 +236,9 @@ class CyclicRecipe(Recipe):
         check_positive_number("task_check_period", server_config.get("task_check_period"))
         controller = CyclicController(**server_config)
         job.to(controller, "server")
-        job.to_server(MetricsArtifactWriter(), id="metrics_artifact_writer")
+        metrics_writer = MetricsArtifactWriter()
+        job.to_server(metrics_writer, id="metrics_artifact_writer")
+        declare_metrics_outputs(job, metrics_writer)
 
         shareable_generator = FullModelShareableGenerator()
         job.to_server(shareable_generator, id="shareable_generator")

@@ -12,27 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Declare a recipe job's outputs from the server components it configures.
+"""Turn the outputs a recipe recorded while building its job into the job's ``job_outputs``.
 
-A result-producing server component reports the files it writes through ``get_job_outputs(app_env, component_ids)``:
-paths relative to the job's run folder, the root of its workspace archive, or None when it cannot tell. Each
-component keeps that knowledge next to the code that writes the files; this module only asks. A component without
-the method writes no outputs. When any component returns None, such as a model persistor that does not know its
-own file, the job declares nothing and downloads whole, so a declared list never leaves the model out.
+The recipe, its model wrapper or its job class records each result file it configures, in the module that knows the
+file (see :mod:`nvflare.job_config.job_outputs`). This module holds no framework knowledge: it applies the record when
+the recipe is exported or run, so components added after the recipe was built are included.
 """
 
-import json
-import logging
 import os
 import posixpath
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from nvflare.apis.job_def import MAX_JOB_OUTPUTS, SERVER_SITE_NAME, JobMetaKey, validate_job_outputs
-
-logger = logging.getLogger(__name__)
+from nvflare.job_config.job_outputs import recorded_job_outputs
 
 _ENVIRONMENT_FILE = "environment.json"  # the server app's config/environment.json
-_UNREADABLE = object()  # an environment file the job ships but that cannot be read before export
 
 
 def _normalize(path) -> str:
@@ -51,80 +45,51 @@ def _normalize(path) -> str:
     return entry
 
 
-def outputs_of(components: Dict[str, object], app_env: Optional[dict] = None) -> List[str]:
-    """The ``job_outputs`` entries the given server components (id -> component) write.
+def outputs_from(paths: List[str]) -> List[str]:
+    """The ``job_outputs`` entries for recorded paths.
 
-    A path that would not pass validation is skipped, and a component whose method fails, or a list longer than
-    MAX_JOB_OUTPUTS, leaves the job undeclared: a recipe never fails because of its own declaration, and a declared
-    list never silently leaves an output out. Duplicates and files inside a declared folder are left out.
+    A path that would not pass validation is skipped, so a recipe never fails because of its own declaration.
+    Duplicates and files inside a declared folder are left out. More than MAX_JOB_OUTPUTS entries declare nothing,
+    since a truncated list could leave the model out.
     """
-    component_ids = set(components)
     entries: List[str] = []
-    for obj in components.values():
-        get_job_outputs = getattr(obj, "get_job_outputs", None)
-        if not callable(get_job_outputs):
-            continue
-        try:
-            paths = get_job_outputs(app_env, component_ids)
-        except Exception as e:
-            # optional metadata never stops a recipe from running or exporting
-            logger.debug(f"cannot get the job outputs of {type(obj).__name__}: {e}")
-            return []
-        if paths is None:
-            return []  # this component's files are unknown
-        for path in paths:
-            entry = _normalize(path)
-            if entry and entry not in entries:
-                entries.append(entry)
+    for path in paths:
+        entry = _normalize(path)
+        if entry and entry not in entries:
+            entries.append(entry)
     folders = [e for e in entries if e.endswith("/")]
     # a file inside a declared folder is already selected by the folder
     outputs = [e for e in entries if e.endswith("/") or not any(e.startswith(f) for f in folders)]
-    if len(outputs) > MAX_JOB_OUTPUTS:
-        return []  # a truncated list could leave the model out
-    return outputs
+    return [] if len(outputs) > MAX_JOB_OUTPUTS else outputs
 
 
-def server_components(job) -> Dict[str, object]:
-    """The components and controllers of a FedJob's server app, by id, before export."""
+def ships_server_environment(job) -> bool:
+    """Whether the job ships a ``config/environment.json`` for its server app.
+
+    Such a file can move where server components write (for example a checkpoint folder), so the recorded paths may
+    not hold.
+    """
     server_app = getattr(job, "_deploy_map", {}).get(SERVER_SITE_NAME)
     if server_app is None:
-        return {}
-    app_config = server_app.app_config
-    components = dict(app_config.components)
-    components.update({w.id: w.controller for w in getattr(app_config, "workflows", [])})
-    return components
-
-
-def server_environment(job):
-    """The server app's ``config/environment.json`` as shipped with the job: a dict, None, or _UNREADABLE."""
-    server_app = getattr(job, "_deploy_map", {}).get(SERVER_SITE_NAME)
-    if server_app is None:
-        return None
-    path = None
+        return False
     for src_path, dest_dir, app_folder_type in getattr(server_app.app_config, "file_sources", []):
         if app_folder_type != "config" or (dest_dir and os.path.normpath(dest_dir) != "."):
             continue  # only a file placed directly in the app's config folder ("." included) is read
         if os.path.isdir(src_path):
-            candidate = os.path.join(src_path, _ENVIRONMENT_FILE)
-            if os.path.isfile(candidate):
-                path = candidate  # a later source overwrites an earlier one at export
+            if os.path.isfile(os.path.join(src_path, _ENVIRONMENT_FILE)):
+                return True
         elif os.path.basename(src_path) == _ENVIRONMENT_FILE:
-            path = src_path
-    if path is None:
-        return None
-    try:
-        with open(path, encoding="utf-8") as f:
-            environment = json.load(f)
-    except (OSError, ValueError):
-        return _UNREADABLE
-    return environment if isinstance(environment, dict) else _UNREADABLE
+            return True
+    return False
 
 
 def declare_job_outputs(job, previous: Optional[list]) -> Optional[list]:
-    """Set the job's ``job_outputs`` from its server components and return the value set.
+    """Set the job's ``job_outputs`` from what its builder recorded, and return the value set.
 
     A value the user set with ``set_recipe_meta`` is kept unchanged. ``previous`` is the value an earlier call set,
-    so a recipe that is run or exported again recomputes its own declaration and still keeps a user's value.
+    so a recipe that is run or exported again recomputes its own declaration and still keeps a user's value. When
+    some outputs are unknown, or the job ships a server environment file, nothing is declared and the job downloads
+    whole.
     """
     job_config = job.job
     key = JobMetaKey.JOB_OUTPUTS.value
@@ -132,9 +97,8 @@ def declare_job_outputs(job, previous: Optional[list]) -> Optional[list]:
     current = meta_props.get(key)
     if current is not None and current is not previous:
         return None  # set by the user
-    app_env = server_environment(job)
-    # an environment file that cannot be read may move a model; declare nothing rather than guess
-    outputs = [] if app_env is _UNREADABLE else outputs_of(server_components(job), app_env)
+    paths, unknown = recorded_job_outputs(job)
+    outputs = [] if unknown or ships_server_environment(job) else outputs_from(paths)
     if not outputs:
         if current is not None:
             meta_props.pop(key, None)

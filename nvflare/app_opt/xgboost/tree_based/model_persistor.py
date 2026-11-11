@@ -14,13 +14,10 @@
 
 import json
 import os
-import posixpath
-from typing import List, Optional, Set
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import SERVER_APP_FOLDER
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants
@@ -32,10 +29,6 @@ class XGBModelPersistor(ModelPersistor):
         super().__init__()
         self.save_name = save_name
         self.load_as_dict = load_as_dict
-
-    def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
-        """The model file, saved in the server app folder."""
-        return [posixpath.join(SERVER_APP_FOLDER, self.save_name)] if self.save_name else []
 
     def _initialize(self, fl_ctx: FLContext):
         # get save path from FLContext

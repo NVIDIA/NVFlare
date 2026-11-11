@@ -21,6 +21,7 @@ from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWr
 from nvflare.app_common.workflows.lr.fedavg import FedAvgLR
 from nvflare.app_common.workflows.lr.np_persistor import LRModelPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.job_config.job_outputs import declare_metrics_outputs, declare_np_persistor_outputs
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import validate_ckpt
@@ -146,7 +147,10 @@ class FedAvgLrRecipe(Recipe):
             source_ckpt_file_full_name=ckpt_path,
         )
         persistor_id = job.to_server(persistor, id="lr_persistor")
-        job.to_server(MetricsArtifactWriter(), id="metrics_artifact_writer")
+        declare_np_persistor_outputs(job, persistor)
+        metrics_writer = MetricsArtifactWriter()
+        job.to_server(metrics_writer, id="metrics_artifact_writer")
+        declare_metrics_outputs(job, metrics_writer)
 
         # Send custom controller to server
         controller = FedAvgLR(

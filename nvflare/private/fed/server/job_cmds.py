@@ -54,6 +54,7 @@ from nvflare.apis.storage import (
     JOB_ZIP,
     META,
     META_JSON,
+    OUTPUTS,
     WORKSPACE,
     WORKSPACE_ZIP,
     DataTypes,
@@ -74,7 +75,7 @@ from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
-from nvflare.private.fed.server.job_outputs import filter_workspace_archive, outputs_only_refusal
+from nvflare.private.fed.server.job_outputs import outputs_only_refusal
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import extract_participants
@@ -1061,7 +1062,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         with engine.new_context() as fl_ctx:
             list_of_data = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
             if list_of_data:
-                system_components = {"workspace", "meta", "scheduled", "data"}
+                system_components = {WORKSPACE, META, "scheduled", DATA, OUTPUTS}
                 filtered_data = [item for item in list_of_data if item not in system_components]
                 if filtered_data:
                     data_str = ", ".join(filtered_data)
@@ -1801,40 +1802,25 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def _prepare_outputs_download(
         self, job_def_manager, job_id: str, meta: dict, job_download_dir: str, comps, fl_ctx
     ) -> Optional[str]:
-        """Prepare an outputs-only download: meta.json and the declared outputs of the workspace.
+        """Prepare an outputs-only download: meta.json and the job's outputs archive as workspace.zip.
 
-        The whole job is prepared instead when the job did not complete, declares no outputs, has no workspace
-        archive, or produced none of its declared outputs.
+        The outputs archive was built when the job ended, so it is prepared like the workspace archive in a full
+        download, with no work before the reply. The whole job is prepared instead when the job did not complete,
+        declares no outputs, or has no outputs archive (none of its outputs were produced, or it finished before
+        outputs were archived).
 
         Returns:
-            None for a filtered download, else why the whole job was prepared.
+            None for an outputs-only download, else why the whole job was prepared.
         """
-        job_dir = os.path.join(job_download_dir, job_id)
-        reason, outputs = outputs_only_refusal(meta)
+        reason, _ = outputs_only_refusal(meta)
         if not reason:
             job_def_manager.get_storage_for_download(job_id, job_download_dir, META, META_JSON, fl_ctx)
-            # prepared under a temporary name: it may be a symlink to the stored archive
-            prepared_name = f".{WORKSPACE_ZIP}.{uuid.uuid4().hex}.prepared"
-            job_def_manager.get_storage_for_download(job_id, job_download_dir, WORKSPACE, prepared_name, fl_ctx)
-            prepared = os.path.join(job_dir, prepared_name)
-            filtered = os.path.join(job_dir, WORKSPACE_ZIP)
-            if not os.path.lexists(prepared):
-                reason = "the job has no workspace archive"
-            else:
-                try:
-                    found = filter_workspace_archive(prepared, filtered, outputs)
-                except Exception as e:
-                    # e.g. an unreadable archive or a full disk: the whole job still downloads as it always has
-                    self.logger.warning(f"cannot filter the workspace of job {job_id}: {secure_format_exception(e)}")
-                    for path in (prepared, filtered):
-                        if os.path.lexists(path):
-                            os.remove(path)
-                    reason = "the job's workspace archive could not be filtered"
-                else:
-                    if not found:
-                        # nothing declared was produced: an empty download would help no one
-                        os.remove(filtered)
-                        reason = f"none of the job's declared outputs were found: {', '.join(outputs)}"
+            job_def_manager.get_storage_for_download(job_id, job_download_dir, OUTPUTS, WORKSPACE_ZIP, fl_ctx)
+            if not os.path.lexists(os.path.join(job_download_dir, job_id, WORKSPACE_ZIP)):
+                reason = (
+                    "the job has no archived outputs: none of its declared outputs were produced, "
+                    "or it finished before outputs were archived"
+                )
         if reason:
             for ct, file_name in comps:
                 job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
@@ -1854,7 +1840,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             return [
                 (item, item)
                 for item in all_components
-                if item not in {WORKSPACE, META, "scheduled", DATA} and StorageSpec.is_valid_component(item)
+                if item not in {WORKSPACE, META, "scheduled", DATA, OUTPUTS} and StorageSpec.is_valid_component(item)
             ]
         else:
             return None

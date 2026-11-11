@@ -15,7 +15,7 @@
 import os
 import shutil
 import time
-from typing import List, Optional, Set, Union
+from typing import Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
@@ -127,10 +127,6 @@ class CrossSiteModelEval(Controller):
         self._cross_val_models_dir = None
         self._cross_val_results_dir = None
         self._model_locator = None
-
-    def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
-        """The cross-site evaluation folder, relative to the run folder."""
-        return [f"{self._cross_val_dir.rstrip('/')}/"] if self._cross_val_dir else []
 
     def start_controller(self, fl_ctx: FLContext):
         # If the list of participating clients is not provided, include all clients currently available.

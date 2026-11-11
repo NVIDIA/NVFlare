@@ -21,6 +21,7 @@ from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWr
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.job_config.api import FedJob, validate_object_for_job
+from nvflare.job_config.job_outputs import declare_metrics_outputs
 
 
 class BaseFedJob(FedJob):
@@ -119,6 +120,7 @@ class BaseFedJob(FedJob):
         else:
             metrics_artifact_writer = MetricsArtifactWriter()
         self.to_server(id="metrics_artifact_writer", obj=metrics_artifact_writer)
+        declare_metrics_outputs(self, metrics_artifact_writer)
 
         # Convert to fed event
         if convert_to_fed_event:

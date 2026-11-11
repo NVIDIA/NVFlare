@@ -17,17 +17,25 @@ import json
 import pytest
 import torch.nn as nn
 
-from nvflare.apis.job_def import JobMetaKey
-from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.apis.job_def import MAX_JOB_OUTPUTS, JobMetaKey
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
-from nvflare.app_common.statistics.json_stats_file_persistor import JsonStatsFileWriter
 from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
-from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.app_opt.pt.job_config.model import declare_pt_persistor_outputs
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
+from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
+from nvflare.job_config.api import FedJob
+from nvflare.job_config.job_outputs import (
+    as_folder,
+    declare_metrics_outputs,
+    declare_np_persistor_outputs,
+    recorded_job_outputs,
+    tag_component_outputs,
+)
 from nvflare.recipe import add_cross_site_evaluation, set_recipe_meta
-from nvflare.recipe._job_outputs import outputs_of
+from nvflare.recipe._job_outputs import outputs_from
+from nvflare.recipe.fedstats import FedStatsRecipe
+from nvflare.recipe.utils import setup_custom_persistor
 
 
 class _Net(nn.Module):
@@ -46,8 +54,9 @@ def train_script(tmp_path):
     return str(script)
 
 
-def _fedavg(train_script):
-    return FedAvgRecipe(name="hello-pt", min_clients=2, train_script=train_script, model=_Net())
+def _fedavg(train_script, **kwargs):
+    kwargs.setdefault("model", _Net())
+    return FedAvgRecipe(name="hello-pt", min_clients=2, train_script=train_script, **kwargs)
 
 
 def _exported_outputs(recipe, tmp_path):
@@ -63,6 +72,38 @@ class TestRecipeDeclarations:
 
         assert sorted(outputs) == ["app_server/FL_global_model.pt", "app_server/best_FL_global_model.pt", "metrics/"]
 
+    def test_sklearn_fedavg_declares_the_persistor_it_creates(self, tmp_path, train_script):
+        recipe = SklearnFedAvgRecipe(name="sk", min_clients=2, train_script=train_script)
+
+        assert sorted(_exported_outputs(recipe, tmp_path)) == ["app_server/model_param.joblib", "metrics/"]
+
+    @pytest.mark.parametrize(
+        "stats_output_path, expected",
+        [("./output", ["output"]), ("statistics/adults.json", ["statistics/adults.json"])],
+    )
+    def test_fedstats_declares_its_normalized_output_path(self, tmp_path, stats_output_path, expected):
+        from nvflare.app_common.abstract.statistics_spec import Statistics
+
+        class _Generator(Statistics):
+            def initialize(self, fl_ctx):
+                pass
+
+            def features(self):
+                return {}
+
+            def count(self, dataset_name, feature_name):
+                return 0
+
+        recipe = FedStatsRecipe(
+            name="stats",
+            stats_output_path=stats_output_path,
+            sites=["site-1"],
+            statistic_configs={"count": {}},
+            stats_generator=_Generator(),
+        )
+
+        assert _exported_outputs(recipe, tmp_path) == expected
+
     def test_cross_site_evaluation_adds_its_folder(self, tmp_path, train_script):
         recipe = _fedavg(train_script)
         add_cross_site_evaluation(recipe)
@@ -76,33 +117,6 @@ class TestRecipeDeclarations:
 
         assert "cross_site_val/" in _exported_outputs(recipe, tmp_path / "second")
 
-    @pytest.mark.parametrize("dest_dir", [None, ".", "./"])
-    @pytest.mark.parametrize("as_folder", [False, True])
-    def test_a_checkpoint_folder_in_the_shipped_environment_is_declared(
-        self, tmp_path, train_script, as_folder, dest_dir
-    ):
-        config = tmp_path / "server_config"
-        config.mkdir()
-        (config / "environment.json").write_text(json.dumps({"APP_CKPT_DIR": "model"}))
-        recipe = _fedavg(train_script)
-        source = config if as_folder else config / "environment.json"
-        recipe._job.add_file_to_server(str(source), dest_dir=dest_dir, app_folder_type="config")
-
-        outputs = _exported_outputs(recipe, tmp_path)
-
-        assert "app_server/model/FL_global_model.pt" in outputs
-        assert "app_server/model/best_FL_global_model.pt" in outputs
-        assert "app_server/FL_global_model.pt" not in outputs
-
-    @pytest.mark.parametrize("environment", ["not json", json.dumps({"APP_CKPT_DIR": "/abs/ckpt"})])
-    def test_an_unresolvable_checkpoint_folder_leaves_the_job_undeclared(self, tmp_path, train_script, environment):
-        env_file = tmp_path / "environment.json"
-        env_file.write_text(environment)
-        recipe = _fedavg(train_script)
-        recipe._job.add_file_to_server(str(env_file), app_folder_type="config")
-
-        assert _exported_outputs(recipe, tmp_path / "out") is None
-
     def test_set_recipe_meta_replaces_the_declaration(self, tmp_path, train_script):
         recipe = _fedavg(train_script)
         set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/FL_global_model.pt"])
@@ -110,114 +124,25 @@ class TestRecipeDeclarations:
 
         assert _exported_outputs(recipe, tmp_path) == ["app_server/FL_global_model.pt"]
 
+    def test_a_users_own_persistor_leaves_the_job_undeclared(self, tmp_path, train_script):
+        recipe = _fedavg(train_script, model=None, model_persistor=PTFileModelPersistor(model=_Net()))
 
-class TestComponentOutputs:
-    @pytest.mark.parametrize(
-        "component, expected",
-        [
-            (
-                PTFileModelPersistor(global_model_file_name="m.pt", best_global_model_file_name="best.pt"),
-                ["app_server/m.pt", "app_server/best.pt"],
-            ),
-            (JoblibModelParamPersistor(save_name="model.joblib"), ["app_server/model.joblib"]),
-            (NPModelPersistor(), ["models/server.npy"]),
-            (NPModelPersistor(model_dir="out", model_name="final"), ["out/final.npy"]),  # np.save adds .npy
-            (MetricsArtifactWriter(results_dir="my_metrics"), ["my_metrics/"]),
-            (MetricsArtifactWriter(results_dir="./my_metrics/"), ["my_metrics/"]),
-            # metrics written straight into the run folder are named one by one
-            (MetricsArtifactWriter(results_dir="."), ["metrics_summary.json", "round_metrics.jsonl"]),
-            (MetricsArtifactWriter(results_dir=""), ["metrics_summary.json", "round_metrics.jsonl"]),
-            (JsonStatsFileWriter(output_path="./output"), ["output"]),
-            (JsonStatsFileWriter(output_path="statistics/adult_stats.json"), ["statistics/adult_stats.json"]),
-            (FedAvg(persistor_id="", save_filename="final.pt"), ["final.pt"]),
-        ],
-    )
-    def test_each_component_declares_the_files_its_arguments_name(self, component, expected):
-        assert outputs_of({"c": component}) == expected
+        assert _exported_outputs(recipe, tmp_path) is None
 
-    def test_xgboost_persistor_declares_its_model(self):
-        model_persistor = pytest.importorskip("nvflare.app_opt.xgboost.tree_based.model_persistor")
+    @pytest.mark.parametrize("dest_dir", [None, ".", "./"])
+    @pytest.mark.parametrize("as_folder_source", [False, True])
+    def test_a_shipped_server_environment_leaves_the_job_undeclared(
+        self, tmp_path, train_script, as_folder_source, dest_dir
+    ):
+        # environment.json can move where components write, such as PTFileModelPersistor's checkpoint folder
+        config = tmp_path / "server_config"
+        config.mkdir()
+        (config / "environment.json").write_text(json.dumps({"APP_CKPT_DIR": "model"}))
+        recipe = _fedavg(train_script)
+        source = config if as_folder_source else config / "environment.json"
+        recipe._job.add_file_to_server(str(source), dest_dir=dest_dir, app_folder_type="config")
 
-        assert outputs_of({"p": model_persistor.XGBModelPersistor(save_name="xgb.json")}) == ["app_server/xgb.json"]
-
-    @pytest.mark.parametrize("output_path", ["../outside.json", ".", "/abs/stats.json"])
-    def test_an_undeclarable_path_is_skipped_not_raised(self, output_path):
-        assert outputs_of({"w": JsonStatsFileWriter(output_path=output_path)}) == []
-
-    def test_unknown_components_and_duplicates_add_nothing(self):
-        components = {"other": object(), "m1": MetricsArtifactWriter(), "m2": MetricsArtifactWriter()}
-
-        assert outputs_of(components) == ["metrics/"]
-
-    def test_a_file_inside_a_declared_folder_is_not_repeated(self):
-        components = {"w": JsonStatsFileWriter(output_path="metrics/stats.json"), "m": MetricsArtifactWriter()}
-
-        assert outputs_of(components) == ["metrics/"]
-
-    def test_fedavg_declares_its_own_save_only_when_its_persistor_is_not_configured(self):
-        controller = FedAvg(persistor_id="persistor", save_filename="final.pt")
-
-        assert outputs_of({"controller": controller}) == ["final.pt"]
-        assert outputs_of({"controller": controller, "persistor": PTFileModelPersistor()}) == [
-            "app_server/FL_global_model.pt",
-            "app_server/best_FL_global_model.pt",
-        ]
-
-    def test_an_unknown_model_persistor_leaves_the_job_undeclared(self):
-        class CustomPersistor(ModelPersistor):
-            def load_model(self, fl_ctx):
-                return None
-
-            def save_model(self, model, fl_ctx):
-                pass
-
-        components = {"persistor": CustomPersistor(), "metrics_artifact_writer": MetricsArtifactWriter()}
-
-        assert outputs_of(components) == []
-
-    def test_a_component_that_cannot_tell_its_files_leaves_the_job_undeclared(self):
-        class Unsure:
-            def get_job_outputs(self, app_env, component_ids):
-                return None
-
-        assert outputs_of({"unsure": Unsure(), "metrics_artifact_writer": MetricsArtifactWriter()}) == []
-
-    def test_a_component_without_the_method_writes_no_outputs(self):
-        assert outputs_of({"plain": object(), "metrics_artifact_writer": MetricsArtifactWriter()}) == ["metrics/"]
-
-    @pytest.mark.parametrize(
-        "app_env, expected",
-        [
-            (
-                {"APP_CKPT_DIR": "model"},
-                ["app_server/model/FL_global_model.pt", "app_server/model/best_FL_global_model.pt"],
-            ),
-            ({"APP_CKPT_DIR": "/abs/model"}, []),
-            ({"APP_CKPT_DIR": "../model"}, []),
-            ({"APP_CKPT_DIR": 3}, []),
-            ({}, ["app_server/FL_global_model.pt", "app_server/best_FL_global_model.pt"]),
-        ],
-    )
-    def test_pytorch_persistor_follows_the_checkpoint_folder(self, app_env, expected):
-        assert outputs_of({"persistor": PTFileModelPersistor()}, app_env) == expected
-
-    def test_tensorflow_persistor_declares_its_model(self):
-        model_persistor = pytest.importorskip("nvflare.app_opt.tf.model_persistor")
-
-        assert outputs_of({"p": model_persistor.TFModelPersistor(save_name="tf.weights.h5")}) == [
-            "app_server/tf.weights.h5"
-        ]
-
-    def test_metrics_in_the_run_folder_are_kept_beside_the_model(self):
-        components = {
-            "persistor": PTFileModelPersistor(),
-            "metrics_artifact_writer": MetricsArtifactWriter(results_dir="."),
-        }
-
-        outputs = outputs_of(components)
-
-        assert "metrics_summary.json" in outputs and "round_metrics.jsonl" in outputs
-        assert "app_server/FL_global_model.pt" in outputs
+        assert _exported_outputs(recipe, tmp_path / "out") is None
 
     def test_an_environment_file_in_a_config_subfolder_is_not_the_apps(self, tmp_path, train_script):
         env_file = tmp_path / "environment.json"
@@ -227,24 +152,98 @@ class TestComponentOutputs:
 
         assert "app_server/FL_global_model.pt" in _exported_outputs(recipe, tmp_path / "out")
 
+
+class TestDeclarationHelpers:
+    def test_pytorch_persistor_declares_its_file_names(self):
+        job = FedJob(name="j")
+        declare_pt_persistor_outputs(job, PTFileModelPersistor(global_model_file_name="m.pt"))
+
+        assert recorded_job_outputs(job) == (["app_server/m.pt", "app_server/best_FL_global_model.pt"], False)
+
+    def test_a_pytorch_persistor_subclass_is_unknown(self):
+        class _Elsewhere(PTFileModelPersistor):
+            pass
+
+        job = FedJob(name="j")
+        declare_pt_persistor_outputs(job, _Elsewhere())
+
+        assert recorded_job_outputs(job) == ([], True)
+
+    def test_tensorflow_wrapper_declares_its_persistor(self):
+        model = pytest.importorskip("nvflare.app_opt.tf.job_config.model")
+        tf = pytest.importorskip("tensorflow")
+        job = FedJob(name="j")
+        job.to_server(model.TFModel(model=tf.keras.Sequential([tf.keras.layers.Dense(1)])))
+
+        assert recorded_job_outputs(job) == (["app_server/tf_model.weights.h5"], False)
+
     @pytest.mark.parametrize(
-        "cross_val_dir, expected", [("cross_site_val", ["cross_site_val/"]), ("my_cse", ["my_cse/", "cross_site_val/"])]
+        "writer, expected",
+        [
+            (MetricsArtifactWriter(), ["metrics/"]),
+            (MetricsArtifactWriter(results_dir="./my_metrics/"), ["my_metrics/"]),
+            (MetricsArtifactWriter(results_dir="."), ["metrics_summary.json", "round_metrics.jsonl"]),
+            (MetricsArtifactWriter(results_dir=""), ["metrics_summary.json", "round_metrics.jsonl"]),
+        ],
     )
-    def test_cross_site_eval_declares_where_its_report_is_written(self, cross_val_dir, expected):
-        from nvflare.app_common.workflows.cross_site_eval import CrossSiteEval
+    def test_metrics_writer_declares_its_folder_or_its_files(self, writer, expected):
+        job = FedJob(name="j")
+        declare_metrics_outputs(job, writer)
 
-        assert outputs_of({"cse": CrossSiteEval(cross_val_dir=cross_val_dir)}) == expected
+        assert recorded_job_outputs(job) == (expected, False)
 
-    def test_a_failing_declaration_leaves_the_job_undeclared_instead_of_failing(self):
-        class Broken:
-            def get_job_outputs(self, app_env, component_ids):
-                raise AttributeError("not initialized")
+    def test_another_metrics_component_is_unknown(self):
+        class _OwnWriter(MetricsArtifactWriter):
+            pass
 
-        assert outputs_of({"broken": Broken(), "metrics_artifact_writer": MetricsArtifactWriter()}) == []
+        job = FedJob(name="j")
+        declare_metrics_outputs(job, _OwnWriter())
 
-    def test_more_outputs_than_allowed_leave_the_job_undeclared(self):
-        from nvflare.apis.job_def import MAX_JOB_OUTPUTS
+        assert recorded_job_outputs(job) == ([], True)
 
-        components = {f"w{i}": JsonStatsFileWriter(output_path=f"stats/{i}.json") for i in range(MAX_JOB_OUTPUTS + 1)}
+    @pytest.mark.parametrize(
+        "persistor, expected",
+        [
+            (NPModelPersistor(), ["models/server.npy"]),
+            (NPModelPersistor(model_dir="out", model_name="final"), ["out/final.npy"]),  # np.save adds .npy
+        ],
+    )
+    def test_numpy_persistor_declares_its_npy_file(self, persistor, expected):
+        job = FedJob(name="j")
+        declare_np_persistor_outputs(job, persistor)
 
-        assert outputs_of(components) == []
+        assert recorded_job_outputs(job) == (expected, False)
+
+    def test_a_persistor_the_recipe_tagged_is_declared_when_added(self):
+        persistor = PTFileModelPersistor()
+        tag_component_outputs(persistor, "app_server/model.joblib")
+        job = FedJob(name="j")
+
+        setup_custom_persistor(job=job, model_persistor=persistor)
+
+        assert recorded_job_outputs(job) == (["app_server/model.joblib"], False)
+
+    def test_an_untagged_persistor_is_unknown_when_added(self):
+        job = FedJob(name="j")
+
+        setup_custom_persistor(job=job, model_persistor=PTFileModelPersistor())
+
+        assert recorded_job_outputs(job) == ([], True)
+
+    @pytest.mark.parametrize("path, expected", [("metrics", "metrics/"), ("./m/", "m/"), (".", None), ("", None)])
+    def test_as_folder(self, path, expected):
+        assert as_folder(path) == expected
+
+
+class TestOutputsFrom:
+    def test_normalizes_and_removes_duplicates_and_covered_files(self):
+        paths = ["./output", "metrics/", "metrics/metrics_summary.json", "output", "app_server/FL_global_model.pt"]
+
+        assert outputs_from(paths) == ["output", "metrics/", "app_server/FL_global_model.pt"]
+
+    @pytest.mark.parametrize("path", ["../outside.json", ".", "/abs/stats.json", ""])
+    def test_an_undeclarable_path_is_skipped(self, path):
+        assert outputs_from([path, "metrics/"]) == ["metrics/"]
+
+    def test_more_outputs_than_allowed_declare_nothing(self):
+        assert outputs_from([f"stats/{i}.json" for i in range(MAX_JOB_OUTPUTS + 1)]) == []

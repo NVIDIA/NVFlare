@@ -23,6 +23,7 @@ from nvflare.app_common.np.np_validator import NPValidator
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
 from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets
 from nvflare.job_config.api import FedJob
+from nvflare.job_config.job_outputs import as_folder, declare_job_outputs
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import validate_ckpt
@@ -177,6 +178,7 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 
         job.to_server(ValidationJsonGenerator())
+        declare_job_outputs(job, as_folder(AppConstants.CROSS_VAL_DIR))  # the report and the results
 
         # Add validators to clients for validation tasks
         if eval_script is not None:

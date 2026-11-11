@@ -46,6 +46,7 @@ from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
+from nvflare.private.fed.server.job_outputs import archive_job_outputs, declared_outputs
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
@@ -676,6 +677,8 @@ class JobRunner(FLComponent):
                 finished_state.workspace_archive_written = True
                 finished_state.workspace_archive_sources = tuple(ws_dirs)
             self.log_debug(fl_ctx, f"Workspace {ws_dirs} saved to {location}")
+            # the last moment the outputs exist as files: the sources are removed below
+            self._save_job_outputs(job_manager, job_id, ws_dirs, fl_ctx)
 
         # Only remove sources after the complete set has been archived successfully.
         for d in ws_dirs:
@@ -683,6 +686,32 @@ class JobRunner(FLComponent):
                 shutil.rmtree(d)
             except FileNotFoundError:
                 self.log_warning(fl_ctx, f"Workspace archive source disappeared before cleanup for job {job_id}: {d}")
+
+    def _save_job_outputs(self, job_manager, job_id: str, ws_dirs: list, fl_ctx: FLContext):
+        """Archive the job's declared outputs from its workspace folders, for outputs-only downloads.
+
+        They are zipped directly from the files, so an outputs-only download later sends a stored archive just as a
+        full download does. Any failure is logged and leaves the job without an outputs archive; outputs-only
+        downloads of it then return the whole job.
+        """
+        archive = None
+        try:
+            job = job_manager.get_job(job_id, fl_ctx)
+            outputs = declared_outputs(job.meta) if job else []
+            if not outputs:
+                return
+            archive = os.path.join(os.path.dirname(os.path.abspath(ws_dirs[0])), f".{job_id}_outputs.zip")
+            found = archive_job_outputs(ws_dirs, outputs, archive)
+            if not found:
+                self.log_info(fl_ctx, f"None of the declared outputs of job {job_id} were produced")
+                return
+            job_manager.save_job_outputs(job_id, archive, fl_ctx)
+            self.log_debug(fl_ctx, f"Outputs {found} of job {job_id} saved")
+        except Exception as e:
+            self.log_warning(fl_ctx, f"Cannot save the outputs of job {job_id}: {secure_format_exception(e)}")
+        finally:
+            if archive and os.path.exists(archive):
+                os.remove(archive)
 
     def run(self, fl_ctx: FLContext):
         """Starts job runner."""

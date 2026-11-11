@@ -20,6 +20,7 @@ from nvflare.app_common.aggregators.collect_and_assemble_model_aggregator import
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor, validate_model_path
 from nvflare.app_opt.sklearn.svm_assembler import SVMAssembler
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.job_config.job_outputs import in_server_app, tag_component_outputs
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe
 
@@ -165,6 +166,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             initial_params={"kernel": self.kernel},
             model_path=model_path,
         )
+        tag_component_outputs(persistor, in_server_app(persistor.save_name))
 
         # Create SVMAssembler (will be added to job after super().__init__)
         self._svm_assembler = SVMAssembler(kernel=self.kernel)

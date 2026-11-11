@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Set
+from typing import Dict
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.model_desc import ModelDescriptor
@@ -90,24 +90,6 @@ class ModelPersistor(LearnablePersistor, ABC):
 
         """
         pass
-
-    def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
-        """The files this persistor saves, as job outputs (``job_outputs`` in the job's meta).
-
-        Recipes call this before export to declare which server workspace files make up the job's result, so an
-        outputs-only download can return just those files.
-
-        Args:
-            app_env: the server app's ``config/environment.json`` shipped with the job, or None.
-            component_ids: the IDs of the server app's components.
-
-        Returns:
-            Paths relative to the job's run folder (``app_server/...`` for the server app folder; a trailing ``/``
-            for a folder), or None when the location is not known. This default returns None, so a job with a
-            persistor that does not override it declares no outputs and downloads whole: a declaration that left
-            out the model would hide it from an outputs-only download.
-        """
-        return None
 
     def get_model_inventory(self, fl_ctx: FLContext) -> Dict[str, ModelDescriptor]:
         """Get the model inventory of the ModelPersister.

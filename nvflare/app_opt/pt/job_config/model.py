@@ -21,6 +21,23 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_opt.pt import PTFileModelPersistor
 from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.job_config.api import validate_object_for_job
+from nvflare.job_config.job_outputs import declare_job_outputs, in_server_app, mark_job_outputs_unknown
+
+
+def declare_pt_persistor_outputs(job, persistor) -> None:
+    """Record the model files a PTFileModelPersistor saves in the server app folder, as the job's outputs.
+
+    Only the PTFileModelPersistor class itself is known; a subclass or another persistor may save elsewhere, so the
+    job's outputs are then marked unknown and the job downloads whole.
+    """
+    if type(persistor) is PTFileModelPersistor:
+        declare_job_outputs(
+            job,
+            in_server_app(persistor.global_model_file_name),
+            in_server_app(persistor.best_global_model_file_name),
+        )
+    else:
+        mark_job_outputs_unknown(job)
 
 
 class PTModel:
@@ -89,6 +106,7 @@ class PTModel:
         if isinstance(self.model, nn.Module):
             persistor = self._create_persistor_for_module()
             persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
+            declare_pt_persistor_outputs(job, persistor)
 
             locator = self.locator if self.locator else PTFileModelLocator(pt_persistor_id=persistor_id)
             locator_id = job.add_component(comp_id="locator", obj=locator, ctx=ctx)
@@ -102,6 +120,7 @@ class PTModel:
             # which would simplify the internal implementation for dict-based models.
             persistor = self._create_persistor_for_dict_config()
             persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
+            declare_pt_persistor_outputs(job, persistor)
 
             locator = self.locator if self.locator else PTFileModelLocator(pt_persistor_id=persistor_id)
             locator_id = job.add_component(comp_id="locator", obj=locator, ctx=ctx)

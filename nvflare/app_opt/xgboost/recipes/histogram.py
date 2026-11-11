@@ -23,6 +23,7 @@ from nvflare.app_opt.tracking.tb.tb_writer import TBWriter
 from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
 from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
 from nvflare.job_config.api import FedJob
+from nvflare.job_config.job_outputs import declare_metrics_outputs
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import _apply_legacy_constructor_config, _validate_per_site_targets
 
@@ -188,7 +189,9 @@ class XGBHorizontalRecipe(Recipe):
         """Configure the federated job for XGBoost histogram-based training."""
         # Create FedJob
         job = FedJob(name=self.name, min_clients=self.min_clients)
-        job.to_server(MetricsArtifactWriter(), id="metrics_artifact_writer")
+        metrics_writer = MetricsArtifactWriter()
+        job.to_server(metrics_writer, id="metrics_artifact_writer")
+        declare_metrics_outputs(job, metrics_writer)
 
         # Configure controller and executor (histogram-based V2)
         controller_kwargs = {

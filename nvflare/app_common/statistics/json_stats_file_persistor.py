@@ -13,7 +13,6 @@
 # limitations under the License.
 import json
 import os
-from typing import List, Optional, Set
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_constant import FLContextKey
@@ -39,10 +38,6 @@ class JsonStatsFileWriter(StatisticsWriter):
 
         self.output_path = output_path
         self.json_encoder_path = json_encoder_path
-
-    def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
-        """The statistics file, relative to the run folder."""
-        return [self.output_path] if self.output_path else []
 
     def save(
         self,

@@ -19,6 +19,7 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor, validate_model_path
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
+from nvflare.job_config.job_outputs import in_server_app, tag_component_outputs
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 
 
@@ -156,6 +157,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             initial_params=model_params or {},
             model_path=model_path,
         )
+        tag_component_outputs(persistor, in_server_app(persistor.save_name))
 
         # Call the unified FedAvgRecipe with sklearn-specific settings
         super().__init__(

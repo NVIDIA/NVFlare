@@ -16,6 +16,7 @@ import json
 import os
 from contextlib import nullcontext
 from unittest.mock import ANY, MagicMock, call, patch
+from zipfile import ZipFile
 
 import pytest
 
@@ -350,6 +351,63 @@ def test_save_workspace_skips_duplicate_missing_sources(tmp_path):
         call(fl_ctx, f"Skipping unavailable workspace archive source for job job-1: {missing}"),
         call(fl_ctx, "No workspace archive sources are available for finished job job-1"),
     ]
+
+
+def _job_with_outputs(job_manager, outputs):
+    job_manager.get_job.return_value = MagicMock(meta={"job_outputs": outputs})
+
+
+def test_save_workspace_archives_declared_outputs_from_the_files_before_removing_them(tmp_path):
+    run_dir = tmp_path / "run"
+    (run_dir / "app_server").mkdir(parents=True)
+    (run_dir / "app_server" / "FL_global_model.pt").write_bytes(b"model")
+    (run_dir / "log.txt").write_text("log")
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    _job_with_outputs(job_manager, ["app_server/FL_global_model.pt", "metrics/"])
+    saved = {}
+
+    def _save_job_outputs(job_id, archive, ctx):
+        with ZipFile(archive) as z:
+            saved[job_id] = sorted(z.namelist())
+
+    job_manager.save_job_outputs.side_effect = _save_job_outputs
+
+    runner._save_workspace(fl_ctx)
+
+    assert saved == {"job-1": ["app_server/FL_global_model.pt"]}
+    assert not run_dir.exists()
+    assert not list(tmp_path.glob(".job-1_outputs.zip*"))  # the temporary archive is gone
+
+
+@pytest.mark.parametrize("outputs", [None, ["plots/"]])
+def test_save_workspace_saves_no_outputs_archive_when_nothing_declared_was_produced(tmp_path, outputs):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "log.txt").write_text("log")
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    runner.log_info = MagicMock()
+    _job_with_outputs(job_manager, outputs)
+
+    runner._save_workspace(fl_ctx)
+
+    job_manager.save_job_outputs.assert_not_called()
+    assert not run_dir.exists()
+
+
+def test_save_workspace_still_completes_when_the_outputs_archive_fails(tmp_path):
+    run_dir = tmp_path / "run"
+    (run_dir / "metrics").mkdir(parents=True)
+    (run_dir / "metrics" / "metrics_summary.json").write_text("{}")
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    _job_with_outputs(job_manager, ["metrics/"])
+    job_manager.save_job_outputs.side_effect = OSError("disk full")
+
+    runner._save_workspace(fl_ctx)
+
+    job_manager.save_workspace.assert_called_once()
+    assert any("Cannot save the outputs of job job-1" in str(c) for c in runner.log_warning.call_args_list)
+    assert not run_dir.exists()
+    assert not list(tmp_path.glob(".job-1_outputs.zip*"))
 
 
 def test_save_workspace_archives_only_existing_deduplicated_sources(tmp_path):

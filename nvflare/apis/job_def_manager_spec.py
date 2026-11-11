@@ -308,6 +308,21 @@ class JobDefManagerSpec(FLComponent, ABC):
         """
         pass
 
+    def save_job_outputs(self, jid: str, data: str, fl_ctx: FLContext) -> str | None:
+        """Save the archive of the job's declared outputs (``job_outputs``) to the job storage.
+
+        An outputs-only download sends this archive. Optional: an implementation that does not save it returns None,
+        and outputs-only downloads of its jobs return the whole job.
+
+        Args:
+            jid (str): Job ID
+            data: name of the archive file
+            fl_ctx (FLContext): FLContext information
+
+        Returns: location where the archive is saved at, or None
+        """
+        return None
+
     @abstractmethod
     def save_workspace(self, jid: str, data: bytes | str | list[str], fl_ctx: FLContext) -> str:
         """Save the job workspace to the job storage.

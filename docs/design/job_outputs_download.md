@@ -14,9 +14,11 @@ outputs-only download. It is opt-in in both directions:
 - A caller that does not ask for an outputs-only download receives the whole job,
   as today.
 
-No persistor, controller or job layout changes are needed. Output files keep
-the same relative paths as in a full download, so code that reads them works
-with either download.
+No persistor, controller or job layout changes are needed. When a job that
+declares outputs ends, the server also stores those outputs as a separate
+archive, and an outputs-only download sends it the same way a full download
+sends the workspace. Output files keep the same relative paths as in a full
+download, so code that reads them works with either download.
 
 ## Current State
 
@@ -40,8 +42,9 @@ already at stable, known paths:
 | Federated statistics | Statistics | The recipe's `stats_output_path`, relative to the run folder |
 | Cross-site evaluation | Evaluation report | `cross_site_val/cross_val_results.json` |
 
-All these file names are set by component arguments, so the components a
-recipe configures already name them. Histogram-based and vertical XGBoost
+All these file names are set by component arguments, so the code that
+configures each component (the recipe, its model wrapper or its job class)
+already knows them. Histogram-based and vertical XGBoost
 save their models on the clients, so they have no server-side model.
 
 ## Goals
@@ -56,7 +59,7 @@ save their models on the clients, so they have no server-side model.
 
 - No change to where persistors or controllers write files.
 - No change to the stored `workspace` archive or to the existing `download_job`
-  command.
+  command. The declared outputs are stored as an additional archive.
 - No result files from client sites. Only the server workspace is covered.
 - No change to the default download. Making outputs-only the default is a
   separate, later decision.
@@ -119,11 +122,11 @@ from nvflare.recipe import set_recipe_meta
 set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/FL_global_model.pt"])
 ```
 
-A recipe declares the files of the built-in components it configures, including
-a built-in persistor passed as `model_persistor`. With a custom persistor class
-the recipe does not know the model's file name, so it declares nothing, and the
-job downloads whole until its outputs are declared. A job that writes its own
-files declares them the same way. Paths are relative to the server run folder:
+A recipe declares the files of the components it creates. With a persistor the
+user passes as `model_persistor`, the recipe does not know the model's file
+name, so it declares nothing, and the job downloads whole until its outputs
+are declared. A job that writes its own files declares them the same way.
+Paths are relative to the server run folder:
 
 ```python
 set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/report.json", "plots/"])
@@ -132,11 +135,11 @@ set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/report.json", "plot
 ### When the whole job comes back
 
 The server sends the whole job when the job did not complete, declares no
-outputs, or produced none of them. The caller then sees one line that says why,
-for example:
+outputs, or has no outputs archive, for example because it produced none of its
+declared outputs. The caller then sees one line that says why, for example:
 
 ```text
-Downloaded the whole job 3f2a... because none of the job's declared outputs were found: app_server/report.json
+Downloaded the whole job 3f2a... because the job has no archived outputs: none of its declared outputs were produced, or it finished before outputs were archived
 ```
 
 The downloaded folder has the same layout either way, so code that reads
@@ -213,50 +216,42 @@ long run.
 - `JOB_OUTPUTS` is added to `USER_SETTABLE_JOB_META_KEYS`, so
   `set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, [...])` works and checks the
   same rules on the client. A user's value replaces the built-in list.
-- Recipes derive the key from their server components when they are exported
-  or run (`Recipe.export` and `Recipe.run`), so no recipe has its own
-  declaration code. Each result-producing component reports the files it
-  writes through one method, kept next to the code that writes them:
+- The code that adds a result-producing server component records that
+  component's files on the job, in the component's framework module, through
+  helpers in `nvflare/job_config/job_outputs.py`. No component class changes.
 
-  ```python
-  def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
-  ```
-
-  `app_env` is the server app's `config/environment.json` shipped with the job
-  (or None), and `component_ids` are the server app's component IDs. The method
-  returns paths relative to the run folder, or None when the component cannot
-  tell. The recipe module only collects the server components, calls the
-  method where it exists, and normalizes the result; it holds no framework
-  knowledge. The built-in components declare:
-
-  | Component | Declared output |
+  | Where | Records |
   | --- | --- |
-  | `PTFileModelPersistor` | `app_server/<global_model_file_name>`, `app_server/<best_global_model_file_name>`; under `app_server/<APP_CKPT_DIR>/` when the app's `environment.json` sets it |
-  | `TFModelPersistor`, `JoblibModelParamPersistor`, `XGBModelPersistor` | `app_server/<save_name>` |
-  | `NPModelPersistor` | `<model_dir>/<model_name>`, with `.npy` added when missing, as `np.save` does |
-  | `FedAvg` whose `persistor_id` names no component | `<save_filename>` |
-  | `MetricsArtifactWriter` | `<results_dir>/`, or its summary and round files by name when `results_dir` is the run folder itself |
-  | `JsonStatsFileWriter` | `<output_path>` |
-  | `CrossSiteModelEval` | `<cross_val_dir>/` |
-  | `CrossSiteEval` | `<cross_val_dir>/` and `cross_site_val/`, where it writes its JSON report |
+  | PyTorch model wrapper (`PTModel`) and PyTorch FedOpt recipe | `app_server/<global_model_file_name>`, `app_server/<best_global_model_file_name>` of the `PTFileModelPersistor` they create |
+  | TensorFlow model wrapper (`TFModel`) | `app_server/<save_name>` of its `TFModelPersistor` |
+  | Scikit-learn recipes | `app_server/<save_name>` of the `JoblibModelParamPersistor` they create |
+  | XGBoost bagging recipe | `app_server/<save_name>` of its `XGBModelPersistor` |
+  | NumPy FedAvg and logistic regression recipes | `<model_dir>/<model_name>` of their NumPy persistor, with `.npy` added when missing, as `np.save` does |
+  | `BaseFedJob` and the recipes that add a `MetricsArtifactWriter` | `<results_dir>/`, or the summary and round files by name when `results_dir` is the run folder itself |
+  | `StatsJob` (federated statistics) | `<output_path>` |
+  | `add_cross_site_evaluation`, `add_final_global_evaluation`, NumPy cross-site evaluation recipe | `cross_site_val/` |
 
-  Each path is normalized with `posixpath.normpath`, so
-  `stats_output_path="./output"` is declared as `output`. A path that would not
-  pass validation is skipped, and a file inside a declared folder is not listed
-  again. A recipe never fails because of its own declaration.
-- `ModelPersistor.get_job_outputs` returns None by default, so a job with a
-  persistor that does not override it declares nothing. A component whose
-  method raises, or more than `MAX_JOB_OUTPUTS` entries, also leaves the job
-  undeclared: a recipe never fails because of its declaration, and a truncated
-  list could leave the model out. So does any component
-  that returns None, such as `PTFileModelPersistor` with a checkpoint folder
-  outside the app, and a job whose `environment.json` cannot be read. A
-  declaration without the model would leave it out of an outputs-only
+- Only the exact component class the code knows is recorded. A persistor the
+  user passes as `model_persistor`, a subclass, or another metrics component
+  may save elsewhere, so it marks the job's outputs unknown. A recipe that
+  creates a persistor and passes it on as `model_persistor` (the scikit-learn
+  recipes) tags it with its files first.
+- `Recipe.export` and `Recipe.run` turn the record into `job_outputs`, so a
+  component added after the recipe is built, such as by
+  `add_cross_site_evaluation`, is included. Each path is normalized with
+  `posixpath.normpath`, so `stats_output_path="./output"` is declared as
+  `output`. A path that would not pass validation is skipped, and a file inside
+  a declared folder is not listed again. A recipe never fails because of its
+  own declaration.
+- Nothing is declared, and the job downloads whole, when:
+  - some outputs are unknown;
+  - the job ships a `config/environment.json` for the server app, which can
+    move where components write (for example a PyTorch checkpoint folder); or
+  - there are more than `MAX_JOB_OUTPUTS` entries.
+
+  A declaration without the model would leave it out of an outputs-only
   download.
-- Because the declaration is made at export or run time, a component added
-  after the recipe is built, such as by `add_cross_site_evaluation`, is
-  included.
-- A value set with `set_recipe_meta` replaces the derived list and is kept as
+- A value set with `set_recipe_meta` replaces the recorded list and is kept as
   set, including when components are added later.
 - Hand-written jobs may add the key to `meta.json` or leave it out.
 
@@ -278,6 +273,41 @@ The option travels as a command property, not as a command argument:
   folder name. The only client change is that it forwards the command's
   properties to the server.
 
+### Outputs archive at job end
+
+When a job ends, `JobRunner._save_workspace` zips the run folder (with any
+separate result, log and audit roots) into the `workspace` job-store component
+and then deletes the folder. Right after the workspace archive is saved, and
+before the folder is deleted, the server also zips the job's declared outputs
+into an `outputs` job-store component:
+
+- The files are read directly from the run folder, so nothing is unzipped or
+  re-zipped. Paths match the workspace archive: each folder's files sit at the
+  archive root, and a later folder's file replaces an earlier one at the same
+  path.
+- Symlinks are skipped.
+- Nothing is stored when no declared output was produced.
+- A failure is logged and leaves the job without an outputs archive. It never
+  affects the workspace archive or the job's cleanup.
+
+`JobDefManagerSpec.save_job_outputs` stores the archive. It is optional: its
+default saves nothing, so other job-store implementations keep working and
+their outputs-only downloads return the whole job.
+
+**Why at job end.** By the time anyone downloads, the result files exist only
+as entries inside the stored workspace archive; the run folder is gone. A full
+download replies at once, because the server only links the stored archive into
+the transfer folder and streams it after replying. Building a subset at
+download time would mean copying the declared entries out of the workspace
+archive before replying, which for a multi-GB model can exceed how long the
+admin client waits for a reply (5 seconds unless a command timeout is set). Job
+end is the last moment the outputs exist as files, so they can be zipped
+directly, once. An outputs-only download is then the same process as a full
+download: link a stored archive, reply, stream. The cost is that the declared
+outputs are stored twice, once in each archive.
+
+### Serving an outputs-only download
+
 The client sends `{"outputs_only": true}`. Without it, `download_job` is
 unchanged. With it, the server:
 
@@ -285,28 +315,20 @@ unchanged. With it, the server:
 2. Prepares the full download when:
    - the job did not finish successfully,
    - the job's metadata has no `job_outputs`, or
-   - none of the declared outputs exist in the workspace archive, or the
-     archive cannot be filtered (checked in step 3).
-3. Otherwise prepares the `workspace` component in the transfer folder under a
-   temporary name, with the job store's existing `get_storage_for_download`.
-   It works with any `StorageSpec` without loading the archive into memory.
-   The prepared file may not be a copy: `FilesystemStorage` creates a symlink
-   to the stored archive. So the server:
-   - reads the prepared file and writes the declared entries, stored without
-     recompression, to a separate temporary file;
-   - unlinks the prepared file, which never modifies the stored archive;
-   - renames the filtered file to `workspace.zip`.
-
-   The stored archive is never written, so later full downloads are
-   unaffected. The admin client unzips the filtered archive into `workspace/`
-   as it does today, and a large folder entry is still one transfer.
+   - the job has no `outputs` component: none of its declared outputs were
+     produced, it finished before outputs were archived, or archiving failed.
+3. Otherwise prepares `meta.json` and the `outputs` component as
+   `workspace.zip`, with the job store's existing `get_storage_for_download`,
+   exactly as a full download prepares the `workspace` component.
+   `FilesystemStorage` links the stored archive, so the server replies at once
+   and streams the file afterwards. The admin client unzips it into
+   `workspace/` as it does today.
 4. Reports the result in its reply to `download_job`, beside the file list:
-   - `outputs_only`: whether the download was filtered;
-   - `outputs_only_reason`: why it was not, when it was not.
+   - `outputs_only`: whether only the declared outputs were sent;
+   - `outputs_only_reason`: why not, when not.
 
    A missing entry is not an error. For example, the best model exists only
-   when the workflow tracked one. When every entry is missing, the download
-   falls back to the whole job, as in step 2.
+   when the workflow tracked one.
 5. Includes `meta.json`, as today, so the caller still has the job status and
    timing.
 
@@ -314,12 +336,8 @@ The admin client's folder pull passes these two reply fields through to its
 caller, next to the local location. A reply to an outputs-only request without
 `outputs_only` came from an older server. No file is added to the download.
 
-Extraction matches each archive member's normalized name against the declared
-entries and rejects symlink entries. It never writes outside the transfer
-folder.
-
-A completed job that has no workspace archive gets the whole job, as a full
-download does, and the reply gives the reason.
+The `outputs` component is a system component: it is not listed or downloaded
+as an additional job component.
 
 Outputs-only layout, with the same relative paths as a full download:
 
@@ -346,6 +364,55 @@ The returned path is the downloaded `<job_id>` folder in both modes. Result
 files are at the same relative path under `workspace/` in both modes, so the run
 summary and the CLI's artifact discovery find the model and metrics either way.
 
+## Alternatives Considered
+
+### Producing the outputs-only download
+
+| Option | Outcome |
+| --- | --- |
+| Filter the stored workspace archive on each request: copy the declared entries into a new archive, then reply | Rejected. The copy runs before the server replies, and for a multi-GB model it can exceed the admin client's reply wait (5 seconds unless a command timeout is set). The download fails on exactly the large-model jobs it is for, and the path differs from a full download. |
+| Filter on request, but make the client wait longer for this one reply | Rejected. It hides the cost rather than removing it, the copy still grows with the model, and outputs-only downloads still take a different path from full downloads. |
+| Reply first, then prepare the files | Rejected. It needs a rework of how folder downloads start, for one command. |
+| Download the whole job and filter on the client | Rejected. It saves nothing on transfer, which is the point of the feature. |
+| **Archive the declared outputs at job end, from the files on disk** | **Chosen.** It is the last moment the outputs exist as files, so they are zipped directly, once. An outputs-only download then links a stored archive and streams it, the same process as a full download. Cost: the declared outputs are stored twice. |
+
+### Where the declaration comes from
+
+| Option | Outcome |
+| --- | --- |
+| A table in the common recipe module mapping component class names to their file rules | Rejected. Framework knowledge, such as PyTorch's checkpoint folder, would live in a framework-neutral module and drift silently when a class is renamed or moved. |
+| A `get_job_outputs` method on each result-producing component | Rejected. It changes the components' interfaces, and a subclass that saves elsewhere inherits a declaration naming the base class's files, so its real model would be dropped. |
+| **The code that creates each component records that component's files, in its framework module** | **Chosen.** No component interface changes. The knowledge sits where the file names are chosen, only the exact component class is recorded, and anything unknown leaves the job undeclared. |
+
+### When some outputs cannot be known
+
+Declare nothing, so the job downloads whole, rather than declare a partial
+list. A partial list, such as metrics without a user persistor's model, would
+filter the model out silently. The same applies to a shipped server
+`environment.json`, which can move where components write, and to a list
+longer than `MAX_JOB_OUTPUTS`.
+
+### Telling the caller what it received
+
+| Option | Outcome |
+| --- | --- |
+| An `outputs_manifest.json` file in the download, listing found and missing outputs | Rejected. It adds a file to the user's result that nobody acts on. The only actionable case is a whole-job fallback, and its reason is enough. |
+| **Two fields in the `download_job` reply, passed through by the folder pull** | **Chosen.** No extra file. The client turns a whole-job result into one line with the reason, and a missing field identifies an older server. |
+
+### Requesting the download
+
+| Option | Outcome |
+| --- | --- |
+| A new admin command | Rejected. An older server would reject it, and it would need its own authorization and permission category. |
+| An extra `download_job` argument | Rejected. The server validates extra arguments as targets, so an older server would reject it. |
+| **A `download_job` command property** | **Chosen.** An older server ignores it and returns the whole job, and the command's authorization is unchanged. |
+
+### When nothing declared was produced
+
+Return the whole job with a reason, rather than an empty download: an empty
+`workspace/` helps no one, and the reason tells the user to check the job or
+its declaration.
+
 ## Compatibility
 
 | Case | Behavior |
@@ -359,14 +426,16 @@ summary and the CLI's artifact discovery find the model and metrics either way.
 | A job with `job_outputs` on an old server | The old server stores the key and ignores it. Downloads are full. |
 | Failed or aborted job with `outputs_only=True` | The whole job, including logs. The client shows why the whole job came back. |
 | Completed job that produced none of its declared outputs | The whole job. The client shows why. |
+| Job that finished before the server stored outputs archives | No `outputs` component. Outputs-only downloads return the whole job, with the reason. |
+| Job store implementation without `save_job_outputs` | The default saves nothing. Outputs-only downloads return the whole job. |
 
 ## Security
 
 - The command, its authorization and its permission category are unchanged,
   so no new data becomes reachable. Outputs-only download returns a subset of what
   `download_job` already returns.
-- The server validates paths at submission and again at extraction, and
-  rejects symlink entries in the archive.
+- The server validates paths at submission and again before archiving, reads
+  only files under the job's workspace folders, and skips symlinks.
 - `job_outputs` names files, not contents. It must not contain secrets, the
   same as other job metadata.
 
@@ -379,19 +448,24 @@ Unit tests:
   oversized lists.
 - `set_recipe_meta` accepts the key and applies the same checks, and its value
   replaces the derived declaration.
-- Each built-in component declares the paths its arguments name; paths are
-  normalized, invalid ones skipped. A component added by
-  `add_cross_site_evaluation`, even after an earlier export, is declared.
+- Each declaration point records the files of the component it creates; a
+  persistor the user passes, a subclass, or a shipped server
+  `environment.json` leaves the job undeclared; paths are normalized and
+  invalid ones skipped. A component added by `add_cross_site_evaluation`, even
+  after an earlier export, is declared.
 - Cloned jobs keep `job_outputs`.
+- At job end, the declared outputs are archived from the files at their
+  workspace paths, merged across workspace folders, without symlinks; nothing
+  is stored when none was produced; a failure leaves the workspace archive and
+  cleanup unaffected.
 - `download_job` with `outputs_only`:
-  - writes a filtered `workspace.zip` with only the declared entries, at their
-    original paths;
-  - leaves the stored archive unchanged when the prepared file is a symlink to
-    it, so a later full download still has every file;
-  - rejects symlink entries;
-  - falls back to the whole job for undeclared or failed jobs, or when no
-    declared output exists, and reports the reason in its reply;
+  - links the stored `outputs` archive as `workspace.zip`, as a full download
+    links the workspace;
+  - falls back to the whole job for undeclared or failed jobs, or a job
+    without an outputs archive, and reports the reason in its reply;
   - is unchanged without the property.
+- The `outputs` component is a valid storage component and is not listed as
+  an additional job component.
 - The admin client forwards command properties on a folder pull and passes the
   reply's `outputs_only` fields back.
 - `Session.download_job_result(outputs_only=True)` reports a whole-job download
@@ -411,6 +485,7 @@ and other workspace files are absent.
 | Key, validation, constants | `nvflare/apis/job_def.py` (`JobMetaKey.JOB_OUTPUTS`, `validate_job_outputs`, `job_output_matches`) |
 | Submission check | `JobMetaValidator._validate_job_outputs` |
 | Cloning | `CLONED_META_KEYS` in `job_cmds.py` |
-| Recipe declaration | `get_job_outputs` on each result-producing component (default on `ModelPersistor`); `nvflare/recipe/_job_outputs.py` collects them, called by `Recipe.export` and `Recipe.run` |
-| Outputs-only download | `JobCommandModule.download_job` and `nvflare/private/fed/server/job_outputs.py` |
+| Recipe declaration | Helpers in `nvflare/job_config/job_outputs.py`, called where each component is created; `nvflare/recipe/_job_outputs.py` applies the record in `Recipe.export` and `Recipe.run` |
+| Outputs archive | `JobRunner._save_job_outputs`, `archive_job_outputs` in `nvflare/private/fed/server/job_outputs.py`, `JobDefManagerSpec.save_job_outputs`, storage component `outputs` |
+| Outputs-only download | `JobCommandModule.download_job` |
 | Client | `FileTransferModule.pull_folder`, `Session.download_job_result`, `ExecEnv.get_job_result`, `Run.get_result`, `nvflare job download --outputs-only` |

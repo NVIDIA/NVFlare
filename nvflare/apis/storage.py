@@ -20,6 +20,7 @@ META = "meta"
 META_JSON = "meta.json"
 WORKSPACE = "workspace"
 WORKSPACE_ZIP = "workspace.zip"
+OUTPUTS = "outputs"  # the job's declared outputs, archived from the run folder when the job ends
 
 
 class DataTypes(Enum):
@@ -258,7 +259,7 @@ class StorageSpec(ABC):
         Args:
             component_name: component name
         """
-        valid_components = {DATA, META, WORKSPACE, *VALID_COMPONENT_PREFIXES}
+        valid_components = {DATA, META, WORKSPACE, OUTPUTS, *VALID_COMPONENT_PREFIXES}
         if component_name in valid_components:
             return True
         if any(component_name.startswith(prefix + "_") for prefix in VALID_COMPONENT_PREFIXES):

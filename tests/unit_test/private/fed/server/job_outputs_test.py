@@ -12,37 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import hashlib
 import os
-import stat
-from zipfile import ZipFile, ZipInfo
+from zipfile import ZipFile
 
 import pytest
 
 from nvflare.apis.job_def import JobMetaKey, RunStatus
-from nvflare.private.fed.server.job_outputs import filter_workspace_archive, outputs_only_refusal
-
-WORKSPACE_FILES = {
-    "app_server/FL_global_model.pt": b"model",
-    "app_server/config/config_fed_server.json": b"{}",
-    "metrics/metrics_summary.json": b"{}",
-    "metrics/round_metrics.jsonl": b"",
-    "log.txt": b"server log",
-}
+from nvflare.private.fed.server.job_outputs import archive_job_outputs, declared_outputs, outputs_only_refusal
 
 
-def _stored_archive(path, files=WORKSPACE_FILES, extra=None):
-    with ZipFile(path, "w") as z:
-        for name, data in files.items():
-            z.writestr(name, data)
-        for info, data in extra or []:
-            z.writestr(info, data)
-    return path
-
-
-def _digest(path):
-    with open(path, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
+def _run_folder(root, files):
+    for name, data in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    return root
 
 
 def _members(path):
@@ -50,15 +34,25 @@ def _members(path):
         return sorted(z.namelist())
 
 
-class TestFilterWorkspaceArchive:
-    def test_keeps_only_declared_entries_at_their_paths(self, tmp_path):
-        prepared = _stored_archive(tmp_path / "prepared.zip")
-        destination = tmp_path / "workspace.zip"
+class TestArchiveJobOutputs:
+    def test_zips_only_declared_files_at_their_workspace_paths(self, tmp_path):
+        run_dir = _run_folder(
+            tmp_path / "run",
+            {
+                "app_server/FL_global_model.pt": b"model",
+                "app_server/config/config_fed_server.json": b"{}",
+                "metrics/metrics_summary.json": b"{}",
+                "metrics/round_metrics.jsonl": b"",
+                "log.txt": b"log",
+            },
+        )
+        destination = tmp_path / "outputs.zip"
 
-        found = filter_workspace_archive(
-            str(prepared), str(destination), ["app_server/FL_global_model.pt", "metrics/", "cross_site_val/"]
+        found = archive_job_outputs(
+            [str(run_dir)], ["app_server/FL_global_model.pt", "metrics/", "cross_site_val/"], str(destination)
         )
 
+        assert found == ["app_server/FL_global_model.pt", "metrics/"]
         assert _members(destination) == [
             "app_server/FL_global_model.pt",
             "metrics/metrics_summary.json",
@@ -66,58 +60,48 @@ class TestFilterWorkspaceArchive:
         ]
         with ZipFile(destination) as z:
             assert z.read("app_server/FL_global_model.pt") == b"model"
-        assert found == ["app_server/FL_global_model.pt", "metrics/"]
-        assert not prepared.exists()
 
-    def test_never_writes_the_stored_archive_a_symlink_points_to(self, tmp_path):
-        # FilesystemStorage prepares a download as a symlink to the stored archive
-        store = tmp_path / "store"
-        store.mkdir()
-        stored = _stored_archive(store / "workspace")
-        before = _digest(stored)
-        prepared = tmp_path / "prepared.zip"
-        os.symlink(stored, prepared)
+    def test_merges_workspace_folders_at_the_archive_root_like_the_workspace_archive(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"run"})
+        result_root = _run_folder(tmp_path / "result", {"models/server.npy": b"npy"})
+        destination = tmp_path / "outputs.zip"
 
-        filter_workspace_archive(str(prepared), str(tmp_path / "workspace.zip"), ["metrics/"])
-
-        assert stored.exists() and _digest(stored) == before
-        assert len(_members(stored)) == len(WORKSPACE_FILES)  # a later full download still has every file
-        assert not os.path.lexists(prepared)
-
-    def test_rejects_symlink_and_escaping_members(self, tmp_path):
-        link = ZipInfo("metrics/link")
-        link.external_attr = (stat.S_IFLNK | 0o777) << 16
-        prepared = _stored_archive(
-            tmp_path / "prepared.zip",
-            files={"metrics/metrics_summary.json": b"{}"},
-            extra=[(link, "/etc/passwd"), (ZipInfo("metrics/../../escape.txt"), b"x"), (ZipInfo("/abs"), b"x")],
+        found = archive_job_outputs(
+            [str(run_dir), str(result_root)], ["app_server/FL_global_model.pt", "models/server.npy"], str(destination)
         )
-        destination = tmp_path / "workspace.zip"
 
-        filter_workspace_archive(str(prepared), str(destination), ["metrics/", "escape.txt", "abs"])
+        assert found == ["app_server/FL_global_model.pt", "models/server.npy"]
+        assert _members(destination) == ["app_server/FL_global_model.pt", "models/server.npy"]
+
+    def test_writes_nothing_when_no_declared_output_exists(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"log.txt": b"log"})
+        destination = tmp_path / "outputs.zip"
+
+        assert archive_job_outputs([str(run_dir)], ["metrics/"], str(destination)) == []
+        assert not destination.exists()
+
+    def test_skips_symlinks(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"metrics/metrics_summary.json": b"{}"})
+        secret = tmp_path / "secret.txt"
+        secret.write_text("secret")
+        os.symlink(secret, run_dir / "metrics" / "link.txt")
+        destination = tmp_path / "outputs.zip"
+
+        archive_job_outputs([str(run_dir)], ["metrics/"], str(destination))
 
         assert _members(destination) == ["metrics/metrics_summary.json"]
 
     def test_a_folder_entry_does_not_match_a_sibling_with_the_same_prefix(self, tmp_path):
-        prepared = _stored_archive(tmp_path / "prepared.zip", files={"metrics2/a.json": b"", "metrics/b.json": b""})
-        destination = tmp_path / "workspace.zip"
+        run_dir = _run_folder(tmp_path / "run", {"metrics2/a.json": b"", "metrics/b.json": b""})
+        destination = tmp_path / "outputs.zip"
 
-        filter_workspace_archive(str(prepared), str(destination), ["metrics/"])
+        archive_job_outputs([str(run_dir)], ["metrics/"], str(destination))
 
         assert _members(destination) == ["metrics/b.json"]
 
-    def test_failure_leaves_no_partial_file(self, tmp_path):
-        prepared = tmp_path / "prepared.zip"
-        prepared.write_bytes(b"not a zip")
-
-        with pytest.raises(Exception):
-            filter_workspace_archive(str(prepared), str(tmp_path / "workspace.zip"), ["metrics/"])
-
-        assert sorted(p.name for p in tmp_path.iterdir()) == ["prepared.zip"]
-
 
 class TestOutputsOnlyRefusal:
-    def test_completed_job_with_outputs_is_filtered(self):
+    def test_completed_job_with_outputs_is_served_its_outputs(self):
         meta = {
             JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED.value,
             JobMetaKey.JOB_OUTPUTS.value: ["metrics/", "metrics/"],
@@ -139,3 +123,8 @@ class TestOutputsOnlyRefusal:
     def test_other_jobs_get_the_whole_download(self, meta, reason):
         refusal, outputs = outputs_only_refusal(meta)
         assert reason in refusal and outputs == []
+
+
+@pytest.mark.parametrize("value", [None, [], ["../x"], "metrics/"])
+def test_declared_outputs_is_empty_for_missing_or_invalid_values(value):
+    assert declared_outputs({JobMetaKey.JOB_OUTPUTS.value: value}) == []

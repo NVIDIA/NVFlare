@@ -16,7 +16,6 @@ import json
 import os
 import shutil
 import time
-from typing import List, Optional, Set
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
@@ -67,11 +66,6 @@ class CrossSiteEval(ModelController):
         self._results_dir = AppConstants.CROSS_VAL_DIR
         self._json_val_results = {}
         self._json_file_name = "cross_val_results.json"
-
-    def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
-        """The cross-site evaluation folder and the folder of its JSON report, relative to the run folder."""
-        folders = [f"{d.rstrip('/')}/" for d in (self._cross_val_dir, self._results_dir) if d]
-        return list(dict.fromkeys(folders))
 
     def initialize(self, fl_ctx):
         super().initialize(fl_ctx)

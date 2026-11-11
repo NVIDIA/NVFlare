@@ -20,6 +20,7 @@ from nvflare.app_common.aggregators.collect_and_assemble_model_aggregator import
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor, validate_model_path
 from nvflare.app_opt.sklearn.kmeans_assembler import KMeansAssembler
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.job_config.job_outputs import in_server_app, tag_component_outputs
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe
 
@@ -174,6 +175,7 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             initial_params={"n_clusters": n_clusters},
             model_path=model_path,
         )
+        tag_component_outputs(persistor, in_server_app(persistor.save_name))
 
         # K-Means uses custom assembler for mini-batch aggregation
         assembler = KMeansAssembler()

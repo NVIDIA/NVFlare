@@ -23,6 +23,7 @@ from nvflare.app_common.statistics.json_stats_file_persistor import JsonStatsFil
 from nvflare.app_common.statistics.min_count_cleanser import MinCountCleanser
 from nvflare.app_common.statistics.min_max_cleanser import AddNoiseToMinMax
 from nvflare.app_common.workflows.statistics_controller import StatisticsController
+from nvflare.job_config.job_outputs import declare_job_outputs
 
 
 class StatsJob(FedJob):
@@ -57,6 +58,7 @@ class StatsJob(FedJob):
         # define stat writer to output Json file
         stats_writer = self.get_stats_output_writer()
         self.to(stats_writer, server_name, id=self.writer_id)
+        declare_job_outputs(self, self.output_path)  # relative to the run folder
 
     def setup_clients(self, sites: List[str]):
         # Client side job config

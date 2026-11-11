@@ -19,6 +19,7 @@ import tensorflow as tf
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_opt.tf.model_persistor import TFModelPersistor
 from nvflare.job_config.api import validate_object_for_job
+from nvflare.job_config.job_outputs import declare_job_outputs, in_server_app, mark_job_outputs_unknown
 
 
 class TFModel:
@@ -94,6 +95,11 @@ class TFModel:
             )
 
         persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
+        # only the TFModelPersistor class itself is known; another persistor may save elsewhere
+        if type(persistor) is TFModelPersistor:
+            declare_job_outputs(job, in_server_app(persistor.save_name))
+        else:
+            mark_job_outputs_unknown(job)
         return persistor_id
 
     def _create_persistor_for_model(self) -> ModelPersistor:

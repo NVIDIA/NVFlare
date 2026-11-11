@@ -13,14 +13,12 @@
 # limitations under the License.
 
 import os
-import posixpath
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, Optional, Union
 
 import tensorflow as tf
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import SERVER_APP_FOLDER
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.model_desc import ModelDescriptor
@@ -59,10 +57,6 @@ class TFModelPersistor(ModelPersistor):
         self.source_ckpt_file_full_name = source_ckpt_file_full_name
         # Note: We don't validate existence here because the checkpoint path may be
         # a server-side path that doesn't exist on the job submission machine.
-
-    def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
-        """The model file, saved in the server app folder."""
-        return [posixpath.join(SERVER_APP_FOLDER, self.save_name)] if self.save_name else []
 
     def _initialize(self, fl_ctx: FLContext):
         workspace = fl_ctx.get_engine().get_workspace()

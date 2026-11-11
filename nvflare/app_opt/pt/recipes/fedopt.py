@@ -25,6 +25,7 @@ from nvflare.app_opt.pt import PTFileModelPersistor
 from nvflare.app_opt.pt.fedopt import PTFedOptModelShareableGenerator
 from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
+from nvflare.app_opt.pt.job_config.model import declare_pt_persistor_outputs
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.script_runner import ScriptRunner
@@ -273,6 +274,7 @@ class FedOptRecipe(Recipe):
             allow_numpy_conversion=self.server_expected_format != ExchangeFormat.PYTORCH,
         )
         persistor_id = job.to_server(persistor, id="persistor")
+        declare_pt_persistor_outputs(job, persistor)
 
         locator = PTFileModelLocator(pt_persistor_id=persistor_id)
         job.to_server(locator, id="locator")
