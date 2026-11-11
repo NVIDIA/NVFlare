@@ -14,112 +14,22 @@
 
 """Declare a recipe job's outputs from the server components it configures.
 
-Each built-in result-producing server component writes to a path set by its own arguments. This module reads those
-arguments and turns them into ``job_outputs`` entries: paths relative to the server run folder, which is the root of
-the job's workspace archive. Components are matched by class name, so no framework (PyTorch, TensorFlow, XGBoost) is
-imported to inspect a job. A component this module does not know adds nothing, and a path that would not pass
-:func:`nvflare.apis.job_def.validate_job_outputs` is skipped: a recipe never fails because of its own declaration.
+A result-producing server component reports the files it writes through ``get_job_outputs(app_env, component_ids)``:
+paths relative to the job's run folder, the root of its workspace archive, or None when it cannot tell. Each
+component keeps that knowledge next to the code that writes the files; this module only asks. A component without
+the method writes no outputs. When any component returns None, such as a model persistor that does not know its
+own file, the job declares nothing and downloads whole, so a declared list never leaves the model out.
 """
 
 import json
 import os
 import posixpath
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from nvflare.apis.job_def import MAX_JOB_OUTPUTS, SERVER_SITE_NAME, JobMetaKey, validate_job_outputs
 
-_SERVER_APP_DIR = "app_" + SERVER_SITE_NAME  # the server app folder inside the run folder
-_ENVIRONMENT_FILE = "environment.json"  # the app's config/environment.json, read by PTFileModelPersistor
+_ENVIRONMENT_FILE = "environment.json"  # the server app's config/environment.json
 _UNREADABLE = object()  # an environment file the job ships but that cannot be read before export
-
-
-class _Undeclarable(Exception):
-    """A component's output paths cannot be determined, so the job declares nothing."""
-
-
-class _JobContext:
-    def __init__(self, ids, environment=None):
-        self.ids = set(ids)  # the server component IDs
-        self.environment = environment  # the server app's environment.json: a dict, None, or _UNREADABLE
-
-
-def _in_app(name: str) -> str:
-    return posixpath.join(_SERVER_APP_DIR, name) if name else ""
-
-
-def _pt_persistor(obj, ctx: _JobContext) -> List[str]:
-    names = [getattr(obj, "global_model_file_name", ""), getattr(obj, "best_global_model_file_name", "")]
-    # The app's environment.json can name a checkpoint folder (APP_CKPT_DIR) inside the app folder.
-    if ctx.environment is _UNREADABLE:
-        raise _Undeclarable()
-    folder = (ctx.environment or {}).get(getattr(obj, "ckpt_dir_env_key", "APP_CKPT_DIR"))
-    if not folder:
-        return [_in_app(n) for n in names]
-    if not isinstance(folder, str):
-        raise _Undeclarable()
-    paths = [_in_app(posixpath.join(folder, n)) for n in names if n]
-    if not all(_normalize(p) for p in paths):
-        raise _Undeclarable()  # e.g. an absolute folder outside the app
-    return paths
-
-
-def _save_name_persistor(obj, ctx: _JobContext) -> List[str]:
-    return [_in_app(getattr(obj, "save_name", ""))]
-
-
-def _np_persistor(obj, ctx: _JobContext) -> List[str]:
-    # saved under the result root, whose files sit at the archive root; np.save adds ".npy" when it is missing
-    name = getattr(obj, "model_name", "") or ""
-    if name and not name.endswith(".npy"):
-        name += ".npy"
-    return [posixpath.join(getattr(obj, "model_dir", "") or "", name)]
-
-
-def _metrics_writer(obj, ctx: _JobContext) -> List[str]:
-    return [_folder(getattr(obj, "results_dir", ""))]
-
-
-def _stats_writer(obj, ctx: _JobContext) -> List[str]:
-    return [getattr(obj, "output_path", "")]
-
-
-def _fedavg_controller(obj, ctx: _JobContext) -> List[str]:
-    # When its persistor_id names no component, FedAvg runs without a persistor and saves the model itself,
-    # relative to the run folder.
-    if getattr(obj, "_persistor_id", None) in ctx.ids:
-        return []
-    return [getattr(obj, "save_filename", None) or ""]
-
-
-def _cross_site_eval(obj, ctx: _JobContext) -> List[str]:
-    return [_folder(getattr(obj, "_cross_val_dir", ""))]
-
-
-def _folder(path: str) -> str:
-    return f"{path.rstrip('/')}/" if path else ""
-
-
-# fully qualified class name -> the outputs one instance of it writes
-_PRODUCERS: Dict[str, Callable[[object, _JobContext], List[str]]] = {
-    "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor": _pt_persistor,
-    "nvflare.app_opt.tf.model_persistor.TFModelPersistor": _save_name_persistor,
-    "nvflare.app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor": _save_name_persistor,
-    "nvflare.app_opt.xgboost.tree_based.model_persistor.XGBModelPersistor": _save_name_persistor,
-    "nvflare.app_common.np.np_model_persistor.NPModelPersistor": _np_persistor,
-    "nvflare.app_common.widgets.metrics_artifact_writer.MetricsArtifactWriter": _metrics_writer,
-    "nvflare.app_common.statistics.json_stats_file_persistor.JsonStatsFileWriter": _stats_writer,
-    "nvflare.app_common.workflows.fedavg.FedAvg": _fedavg_controller,
-    "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval": _cross_site_eval,
-    "nvflare.app_common.workflows.cross_site_eval.CrossSiteEval": _cross_site_eval,
-}
-
-
-def _producer(obj) -> Optional[Callable[[object, _JobContext], List[str]]]:
-    for cls in type(obj).__mro__:  # a subclass writes where its base class does
-        producer = _PRODUCERS.get(f"{cls.__module__}.{cls.__qualname__}")
-        if producer:
-            return producer
-    return None
 
 
 def _normalize(path) -> str:
@@ -138,34 +48,21 @@ def _normalize(path) -> str:
     return entry
 
 
-def _is_model_persistor(obj) -> bool:
-    from nvflare.app_common.abstract.model_persistor import ModelPersistor
-
-    return isinstance(obj, ModelPersistor)
-
-
-def outputs_of(components: Dict[str, object], environment=None) -> List[str]:
+def outputs_of(components: Dict[str, object], app_env: Optional[dict] = None) -> List[str]:
     """The ``job_outputs`` entries the given server components (id -> component) write.
 
-    ``environment`` is the server app's ``environment.json`` (a dict, or None when the job ships none).
-
-    Returns no entries when a model's location cannot be determined: a model persistor this module does not know,
-    or a checkpoint folder it cannot resolve. A declaration without the model would leave it out of an
-    outputs-only download, so the job then downloads whole unless the user declares its outputs. Duplicates and
-    files inside a declared folder are left out.
+    A path that would not pass validation is skipped, so a recipe never fails because of its own declaration.
+    Duplicates and files inside a declared folder are left out.
     """
-    ctx = _JobContext(components, environment)
+    component_ids = set(components)
     entries: List[str] = []
     for obj in components.values():
-        producer = _producer(obj)
-        if not producer:
-            if _is_model_persistor(obj):
-                return []
+        get_job_outputs = getattr(obj, "get_job_outputs", None)
+        if not callable(get_job_outputs):
             continue
-        try:
-            paths = producer(obj, ctx)
-        except _Undeclarable:
-            return []
+        paths = get_job_outputs(app_env, component_ids)
+        if paths is None:
+            return []  # this component's files are unknown
         for path in paths:
             entry = _normalize(path)
             if entry and entry not in entries:
@@ -224,7 +121,9 @@ def declare_job_outputs(job, previous: Optional[list]) -> Optional[list]:
     current = meta_props.get(key)
     if current is not None and current is not previous:
         return None  # set by the user
-    outputs = outputs_of(server_components(job), server_environment(job))
+    app_env = server_environment(job)
+    # an environment file that cannot be read may move a model; declare nothing rather than guess
+    outputs = [] if app_env is _UNREADABLE else outputs_of(server_components(job), app_env)
     if not outputs:
         if current is not None:
             meta_props.pop(key, None)

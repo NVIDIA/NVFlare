@@ -16,7 +16,7 @@ import json
 import math
 import os
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
@@ -75,6 +75,10 @@ class MetricsArtifactWriter(Widget):
         self.max_int_bit_length = limits.get("max_int_bit_length", 1023)
 
         self._reset()
+
+    def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
+        """The metrics folder, relative to the run folder."""
+        return [f"{self.results_dir.rstrip('/')}/"] if self.results_dir else []
 
     def _reset(self):
         self._first_round = None

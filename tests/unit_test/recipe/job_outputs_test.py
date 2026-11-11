@@ -167,3 +167,36 @@ class TestComponentOutputs:
         components = {"persistor": CustomPersistor(), "metrics_artifact_writer": MetricsArtifactWriter()}
 
         assert outputs_of(components) == []
+
+    def test_a_component_that_cannot_tell_its_files_leaves_the_job_undeclared(self):
+        class Unsure:
+            def get_job_outputs(self, app_env, component_ids):
+                return None
+
+        assert outputs_of({"unsure": Unsure(), "metrics_artifact_writer": MetricsArtifactWriter()}) == []
+
+    def test_a_component_without_the_method_writes_no_outputs(self):
+        assert outputs_of({"plain": object(), "metrics_artifact_writer": MetricsArtifactWriter()}) == ["metrics/"]
+
+    @pytest.mark.parametrize(
+        "app_env, expected",
+        [
+            (
+                {"APP_CKPT_DIR": "model"},
+                ["app_server/model/FL_global_model.pt", "app_server/model/best_FL_global_model.pt"],
+            ),
+            ({"APP_CKPT_DIR": "/abs/model"}, []),
+            ({"APP_CKPT_DIR": "../model"}, []),
+            ({"APP_CKPT_DIR": 3}, []),
+            ({}, ["app_server/FL_global_model.pt", "app_server/best_FL_global_model.pt"]),
+        ],
+    )
+    def test_pytorch_persistor_follows_the_checkpoint_folder(self, app_env, expected):
+        assert outputs_of({"persistor": PTFileModelPersistor()}, app_env) == expected
+
+    def test_tensorflow_persistor_declares_its_model(self):
+        model_persistor = pytest.importorskip("nvflare.app_opt.tf.model_persistor")
+
+        assert outputs_of({"p": model_persistor.TFModelPersistor(save_name="tf.weights.h5")}) == [
+            "app_server/tf.weights.h5"
+        ]

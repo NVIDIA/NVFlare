@@ -13,13 +13,15 @@
 # limitations under the License.
 
 import os
-from typing import Any, Dict, Optional
+import posixpath
+from typing import Any, Dict, List, Optional, Set
 
 from joblib import dump, load
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import SERVER_APP_FOLDER
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants
@@ -72,6 +74,10 @@ class JoblibModelParamPersistor(ModelPersistor):
         self.initial_params = initial_params or {}
         self.save_name = save_name
         self.model_path = model_path
+
+    def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
+        """The model file, saved in the server app folder."""
+        return [posixpath.join(SERVER_APP_FOLDER, self.save_name)] if self.save_name else []
 
     def _initialize(self, fl_ctx: FLContext):
         # get save path from FLContext

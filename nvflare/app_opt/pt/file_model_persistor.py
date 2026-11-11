@@ -15,17 +15,19 @@
 import errno
 import json
 import os
+import posixpath
 import re
 import stat
 import uuid
 from collections import OrderedDict
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 import torch
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import SERVER_APP_FOLDER
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileName, EnvironmentKey
@@ -136,6 +138,14 @@ class PTFileModelPersistor(ModelPersistor):
         # Note: We don't validate existence here because the checkpoint path may be
         # a server-side path that doesn't exist on the job submission machine.
         # Existence is validated at runtime in load_model() when the job executes.
+
+    def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
+        """The global and best model files, in the app folder or the checkpoint folder its environment.json sets."""
+        folder = (app_env or {}).get(self.ckpt_dir_env_key) or ""
+        if not isinstance(folder, str) or posixpath.isabs(folder) or ".." in folder.replace("\\", "/").split("/"):
+            return None  # the checkpoint folder cannot be placed inside the app folder
+        names = [n for n in (self.global_model_file_name, self.best_global_model_file_name) if n]
+        return [posixpath.join(SERVER_APP_FOLDER, folder, n) for n in names]
 
     def _initialize(self, fl_ctx: FLContext):
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)

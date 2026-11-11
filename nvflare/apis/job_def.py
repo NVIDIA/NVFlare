@@ -20,6 +20,7 @@ from nvflare.apis.fl_context import FLContext
 # this is treated as all online sites in job deploy_map
 ALL_SITES = "@ALL"
 SERVER_SITE_NAME = "server"
+SERVER_APP_FOLDER = "app_" + SERVER_SITE_NAME  # the server app folder inside a job's run folder
 DEFAULT_STUDY = "default"
 
 

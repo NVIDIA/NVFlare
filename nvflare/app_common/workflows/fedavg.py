@@ -15,7 +15,7 @@
 import os
 import time
 from threading import Lock
-from typing import Any, Dict, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 from nvflare.apis.controller_spec import TaskCompletionStatus
 from nvflare.apis.fl_constant import FLMetaKey
@@ -158,6 +158,12 @@ class FedAvg(BaseFedAvg):
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
         self._site_metric_weights: Dict[str, Dict[str, Any]] = {}
+
+    def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
+        """The model file FedAvg saves itself when its persistor_id names no component, relative to the run folder."""
+        if self._persistor_id in component_ids or not self.save_filename:
+            return []
+        return [self.save_filename]
 
     def run(self) -> None:
         disk_offload_context = None

@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import os
-from typing import Optional
+import posixpath
+from typing import List, Optional, Set
 
 import numpy as np
 
@@ -72,6 +73,13 @@ class NPModelPersistor(ModelPersistor):
         self.source_ckpt_file_full_name = source_ckpt_file_full_name
         # Note: We don't validate existence here because the checkpoint path may be
         # a server-side path that doesn't exist on the job submission machine.
+
+    def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
+        """The model file, saved under the result root (the archive root); np.save adds ".npy" when it is missing."""
+        name = self.model_name or ""
+        if name and not name.endswith(".npy"):
+            name += ".npy"
+        return [posixpath.join(self.model_dir or "", name)] if name else []
 
     def _get_initial_model_as_numpy(self) -> np.ndarray:
         """Return the fallback initial model as a numpy array.

@@ -215,12 +215,23 @@ long run.
   same rules on the client. A user's value replaces the built-in list.
 - Recipes derive the key from their server components when they are exported
   or run (`Recipe.export` and `Recipe.run`), so no recipe has its own
-  declaration code. Each built-in result-producing component maps to the paths
-  its arguments name:
+  declaration code. Each result-producing component reports the files it
+  writes through one method, kept next to the code that writes them:
+
+  ```python
+  def get_job_outputs(self, app_env: Optional[dict], component_ids: Set[str]) -> Optional[List[str]]:
+  ```
+
+  `app_env` is the server app's `config/environment.json` shipped with the job
+  (or None), and `component_ids` are the server app's component IDs. The method
+  returns paths relative to the run folder, or None when the component cannot
+  tell. The recipe module only collects the server components, calls the
+  method where it exists, and normalizes the result; it holds no framework
+  knowledge. The built-in components declare:
 
   | Component | Declared output |
   | --- | --- |
-  | `PTFileModelPersistor` | `app_server/<global_model_file_name>`, `app_server/<best_global_model_file_name>`; under `app_server/<APP_CKPT_DIR>/` when the job ships a `config/environment.json` that sets it |
+  | `PTFileModelPersistor` | `app_server/<global_model_file_name>`, `app_server/<best_global_model_file_name>`; under `app_server/<APP_CKPT_DIR>/` when the app's `environment.json` sets it |
   | `TFModelPersistor`, `JoblibModelParamPersistor`, `XGBModelPersistor` | `app_server/<save_name>` |
   | `NPModelPersistor` | `<model_dir>/<model_name>`, with `.npy` added when missing, as `np.save` does |
   | `FedAvg` whose `persistor_id` names no component | `<save_filename>` |
@@ -228,16 +239,16 @@ long run.
   | `JsonStatsFileWriter` | `<output_path>` |
   | `CrossSiteModelEval`, `CrossSiteEval` | `<cross_val_dir>/` |
 
-  Components are matched by class name, including subclasses, so no framework
-  is imported to inspect a job. Each path is normalized with
-  `posixpath.normpath`, so `stats_output_path="./output"` is declared as
-  `output`. A path that would not pass validation is skipped, and a file inside
-  a declared folder is not listed again. A recipe never fails because of its
-  own declaration.
-- A model persistor whose class is not in the table, or a checkpoint folder
-  that cannot be resolved (an unreadable `environment.json`, or a folder
-  outside the app), makes the recipe declare nothing: a declaration without the
-  model would leave it out of an outputs-only download.
+  Each path is normalized with `posixpath.normpath`, so
+  `stats_output_path="./output"` is declared as `output`. A path that would not
+  pass validation is skipped, and a file inside a declared folder is not listed
+  again. A recipe never fails because of its own declaration.
+- `ModelPersistor.get_job_outputs` returns None by default, so a job with a
+  persistor that does not override it declares nothing. So does any component
+  that returns None, such as `PTFileModelPersistor` with a checkpoint folder
+  outside the app, and a job whose `environment.json` cannot be read. A
+  declaration without the model would leave it out of an outputs-only
+  download.
 - Because the declaration is made at export or run time, a component added
   after the recipe is built, such as by `add_cross_site_evaluation`, is
   included.
@@ -396,6 +407,6 @@ and other workspace files are absent.
 | Key, validation, constants | `nvflare/apis/job_def.py` (`JobMetaKey.JOB_OUTPUTS`, `validate_job_outputs`, `job_output_matches`) |
 | Submission check | `JobMetaValidator._validate_job_outputs` |
 | Cloning | `CLONED_META_KEYS` in `job_cmds.py` |
-| Recipe declaration | `nvflare/recipe/_job_outputs.py`, called by `Recipe.export` and `Recipe.run` |
+| Recipe declaration | `get_job_outputs` on each result-producing component (default on `ModelPersistor`); `nvflare/recipe/_job_outputs.py` collects them, called by `Recipe.export` and `Recipe.run` |
 | Outputs-only download | `JobCommandModule.download_job` and `nvflare/private/fed/server/job_outputs.py` |
 | Client | `FileTransferModule.pull_folder`, `Session.download_job_result`, `ExecEnv.get_job_result`, `Run.get_result`, `nvflare job download --outputs-only` |
