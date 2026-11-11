@@ -127,7 +127,7 @@ def test_completion_waits_for_inflight_acceptance(completion, monkeypatch):
     assert results == [1.5]
 
 
-def test_stale_submission_cannot_contaminate_next_round():
+def test_stale_submission_cannot_contaminate_next_round(caplog):
     gatherer = _make_gatherer()
     assert _submit(gatherer, "site-1", 1.0).get_return_code() == ReturnCode.OK
     assert _submit(gatherer, "site-2", 2.0).get_return_code() == ReturnCode.OK
@@ -151,17 +151,26 @@ def test_stale_submission_cannot_contaminate_next_round():
         finally:
             submitted.set()
 
-    with ThreadGroup(release) as threads, patch.object(gatherer.aggregator, "aggregate", side_effect=blocked_aggregate):
+    caplog.set_level("INFO", logger=gatherer.logger.name)
+    with (
+        patch.object(gatherer.aggregator, "aggregate", side_effect=blocked_aggregate),
+        patch.object(gatherer.aggregator, "accept", wraps=gatherer.aggregator.accept) as late_accept,
+        ThreadGroup(release) as threads,
+    ):
         threads.start(finish)
         assert aggregating.wait(5)
         threads.start(stale_submit)
         assert submitted.wait(5)
         assert not gatherer.lock.blocked.is_set()
+        late_accept.assert_not_called()
     assert results == [1.5]
     assert submitted.is_set()
 
     # Also cover a caller that resumes only after the old round has closed.
-    assert _submit(gatherer, "site-1", 100.0).get_return_code() == ReturnCode.OK
+    with patch.object(gatherer.aggregator, "accept", wraps=gatherer.aggregator.accept) as late_accept:
+        assert _submit(gatherer, "site-1", 100.0).get_return_code() == ReturnCode.OK
+        late_accept.assert_not_called()
+    assert "dropped result from late site-1 for closed round 0" in caplog.text
     next_round = _make_gatherer(aggregator=gatherer.aggregator)
     next_round.for_round = 1
     assert _submit(next_round, "site-1", 3.0).get_return_code() == ReturnCode.OK
@@ -285,9 +294,9 @@ def test_completion_deadlines_are_preserved(policy, deadline, monkeypatch):
     monkeypatch.setattr("nvflare.app_common.ccwf.swarm_client_ctl.time", clock)
     gatherer = _make_gatherer(min_responses=1 if policy == "minimum" else 2, timeout=5 if policy == "timeout" else 0)
     _submit(gatherer, "site-1", 1.0)
-    assert not gatherer.is_done()
+    assert gatherer.is_done() is False
     clock.advance(deadline)
-    assert not gatherer.is_done()
+    assert gatherer.is_done() is False
     clock.advance(0.01)
     assert gatherer.is_done()
     assert from_shareable(gatherer.aggregate()).data["weight"] == 1.0
@@ -339,3 +348,51 @@ def test_aggregation_callback_failure_keeps_old_gatherer_closed(event):
     with patch.object(gatherer.aggregator, "accept") as accept:
         _submit(gatherer, "site-1", 100.0)
         accept.assert_not_called()
+
+
+@pytest.mark.parametrize("already_permitted", [False, True])
+def test_closed_gatherer_rejects_upload_permission(already_permitted):
+    gatherer = _make_gatherer()
+    _submit(gatherer, "site-1", 1.0)
+    _submit(gatherer, "site-2", 2.0)
+    request = Shareable()
+    request.set_header(AppConstants.CURRENT_ROUND, 0)
+    if already_permitted:
+        assert gatherer.can_accept_submission("site-2", request, FLContext()) == ReturnCode.OK
+    gatherer.aggregate()
+    assert gatherer.can_accept_submission("site-2", request, FLContext()) == ReturnCode.MODEL_UNRECOGNIZED
+    assert gatherer.trainer_statuses["site-2"].busy == already_permitted
+
+
+def test_permission_check_remains_responsive_during_acceptance():
+    gatherer = _make_gatherer()
+    _submit(gatherer, "site-1", 1.0)
+    request = Shareable()
+    request.set_header(AppConstants.CURRENT_ROUND, 0)
+    assert gatherer.can_accept_submission("site-2", request, FLContext()) == ReturnCode.OK
+    accepting = threading.Event()
+    release = threading.Event()
+    checked = threading.Event()
+    replies = []
+    accept = gatherer.aggregator.accept
+
+    def blocked_accept(result, fl_ctx):
+        accepting.set()
+        release.wait()
+        return accept(result, fl_ctx)
+
+    def check_permission():
+        try:
+            replies.append(gatherer.can_accept_submission("site-1", request, FLContext()))
+        finally:
+            checked.set()
+
+    with patch.object(gatherer.aggregator, "accept", side_effect=blocked_accept), ThreadGroup(release) as threads:
+        threads.start(_submit, gatherer, "site-2", 2.0)
+        assert accepting.wait(5)
+        threads.start(check_permission)
+        assert checked.wait(5)
+        assert replies == [ReturnCode.SERVICE_UNAVAILABLE]
+        assert not gatherer.lock.blocked.is_set()
+    assert gatherer.can_accept_submission("site-1", request, FLContext()) == ReturnCode.OK
+    assert from_shareable(gatherer.aggregate()).data["weight"] == 1.5

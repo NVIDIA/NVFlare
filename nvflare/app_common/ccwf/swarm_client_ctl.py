@@ -120,6 +120,7 @@ class Gatherer(FLComponent):
                 if self.closed:
                     # A submission may retain this gatherer after the monitor closes it.
                     # Do not leave a late contribution in the aggregator for the next round.
+                    self.log_info(fl_ctx, f"dropped result from late {client_name} for closed round {self.for_round}")
                     return make_reply(ReturnCode.OK)
                 return self._do_gather(client_name, result, fl_ctx)
             except:
@@ -133,6 +134,11 @@ class Gatherer(FLComponent):
 
     def can_accept_submission(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> str:
         with self.perm_lock:
+            if self.closed:
+                self.log_debug(
+                    fl_ctx, f"reject submission request from late {client_name} for closed round {self.for_round}"
+                )
+                return ReturnCode.MODEL_UNRECOGNIZED
             result_round = result.get_header(AppConstants.CURRENT_ROUND)
             client_status = self.trainer_statuses.get(client_name)
             if not client_status:
@@ -230,7 +236,9 @@ class Gatherer(FLComponent):
         with self.lock:
             # Wait for in-flight acceptance, then prevent stale submissions from
             # modifying the aggregator after this round has been consumed.
-            self.closed = True
+            # Publish closure under both readers' locks, in gather -> permission order.
+            with self.perm_lock:
+                self.closed = True
         # The closed guard excludes further contributions. Run aggregation and
         # extension callbacks without holding the gather lock.
         fl_ctx = self.fl_ctx
@@ -306,6 +314,8 @@ class Gatherer(FLComponent):
                 f"since received minimum responses",
             )
             return True
+
+        return False
 
 
 class SwarmClientController(ClientSideController):
