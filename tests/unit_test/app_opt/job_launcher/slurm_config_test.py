@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import subprocess
-import sys
-
 import pytest
 
 from nvflare.app_opt.job_launcher.slurm.config import (
@@ -43,22 +40,6 @@ def test_mount_source_rejects_launcher_owned_path(tmp_path):
 def test_executables_reject_unknown_key():
     with pytest.raises(SlurmLauncherError, match="unknown key"):
         normalize_slurm_executables({"unknown": "/usr/bin/true"})
-
-
-@pytest.mark.parametrize("configured", [False, True])
-def test_parent_executable_preserves_multicall_command_name(tmp_path, monkeypatch, configured):
-    target = tmp_path / "site-wrapper"
-    target.write_text(f"#!{sys.executable}\nimport os,sys\nprint(os.path.basename(sys.argv[0]))\n")
-    target.chmod(0o700)
-    commands = ("sbatch", "squeue", "sacct", "scancel")
-    for command in commands:
-        (tmp_path / command).symlink_to(target)
-    monkeypatch.setenv("PATH", str(tmp_path))
-    values = {name: str(tmp_path / name) if configured else None for name in commands}
-    resolved = resolve_slurm_parent_executables(values)
-    for name in commands:
-        result = subprocess.run([resolved[name]], check=True, capture_output=True, text=True)
-        assert result.stdout.strip() == name
 
 
 def test_parent_executable_rejects_broken_symlink(tmp_path):

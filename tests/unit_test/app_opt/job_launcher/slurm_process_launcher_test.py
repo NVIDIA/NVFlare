@@ -72,6 +72,9 @@ def profile(tmp_path, monkeypatch):
     adapter.poll.return_value = None
     spawn = Mock(return_value=adapter)
     monkeypatch.setattr("nvflare.app_common.job_launcher.process_launcher.spawn_process", spawn)
+    monkeypatch.setattr(
+        "nvflare.app_common.job_launcher.process_launcher.os.killpg", Mock(side_effect=ProcessLookupError)
+    )
     meta = {"job_id": "job-1", "launcher_spec": {"site-1": {"slurm": {"gpus_per_node": 4}}}}
     try:
         yield SimpleNamespace(**locals())
