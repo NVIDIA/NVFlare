@@ -38,7 +38,6 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.job_def import (
     ALL_SITES,
     DEFAULT_STUDY,
-    OUTPUTS_MANIFEST_FILE,
     OUTPUTS_ONLY_PROP,
     SERVER_SITE_NAME,
     Job,
@@ -75,11 +74,7 @@ from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
-from nvflare.private.fed.server.job_outputs import (
-    filter_workspace_archive,
-    outputs_only_refusal,
-    write_outputs_manifest,
-)
+from nvflare.private.fed.server.job_outputs import filter_workspace_archive, outputs_only_refusal
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import extract_participants
@@ -1764,8 +1759,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 return
 
             try:
+                reply_meta = None
                 if outputs_only:
-                    self._prepare_outputs_download(job_def_manager, job_id, job.meta, job_download_dir, comps, fl_ctx)
+                    reason = self._prepare_outputs_download(
+                        job_def_manager, job_id, job.meta, job_download_dir, comps, fl_ctx
+                    )
+                    # tells the client whether it got the declared outputs or, and why, the whole job
+                    reply_meta = {MetaKey.OUTPUTS_ONLY: reason is None, MetaKey.OUTPUTS_ONLY_REASON: reason}
                 else:
                     for ct, file_name in comps:
                         job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
@@ -1774,6 +1774,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     conn,
                     tx_id=tx_id,
                     folder_name=job_id,
+                    reply_meta=reply_meta,
                 )
             except Exception as e:
                 secure_log_traceback()
@@ -1797,16 +1798,19 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             conn, args, self._get_default_job_components, require_finished=True, outputs_only=outputs_only
         )
 
-    def _prepare_outputs_download(self, job_def_manager, job_id: str, meta: dict, job_download_dir: str, comps, fl_ctx):
-        """Prepare an outputs-only download: meta.json, the declared outputs of the workspace, and a manifest.
+    def _prepare_outputs_download(
+        self, job_def_manager, job_id: str, meta: dict, job_download_dir: str, comps, fl_ctx
+    ) -> Optional[str]:
+        """Prepare an outputs-only download: meta.json and the declared outputs of the workspace.
 
         The whole job is prepared instead when the job did not complete, declares no outputs, has no workspace
-        archive, or produced none of its declared outputs; the manifest then says why. Either way the manifest tells
-        the client what it received.
+        archive, or produced none of its declared outputs.
+
+        Returns:
+            None for a filtered download, else why the whole job was prepared.
         """
         job_dir = os.path.join(job_download_dir, job_id)
         reason, outputs = outputs_only_refusal(meta)
-        found = missing = None
         if not reason:
             job_def_manager.get_storage_for_download(job_id, job_download_dir, META, META_JSON, fl_ctx)
             # prepared under a temporary name: it may be a symlink to the stored archive
@@ -1817,16 +1821,14 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             if not os.path.lexists(prepared):
                 reason = "the job has no workspace archive"
             else:
-                found, missing = filter_workspace_archive(prepared, filtered, outputs)
-                if not found:
+                if not filter_workspace_archive(prepared, filtered, outputs):
                     # nothing declared was produced: an empty download would help no one
                     os.remove(filtered)
                     reason = f"none of the job's declared outputs were found: {', '.join(outputs)}"
-                    found = missing = None
         if reason:
             for ct, file_name in comps:
                 job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
-        write_outputs_manifest(os.path.join(job_dir, OUTPUTS_MANIFEST_FILE), reason, found, missing)
+        return reason
 
     def download_job_components(self, conn: Connection, args: List[str]):
         """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.

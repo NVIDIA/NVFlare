@@ -898,45 +898,41 @@ def test_job_log_interface_matches_implementation_signature():
 class TestDownloadJobResultOutputsOnly:
     _JOB_ID = "123e4567-e89b-42d3-a456-426614174000"
 
-    def _download(self, tmp_path, with_manifest, **kwargs):
+    def _download(self, tmp_path, reply=None, **kwargs):
         location = tmp_path / self._JOB_ID
-        location.mkdir()
-        if with_manifest:
-            (location / "outputs_manifest.json").write_text('{"outputs_only": true, "found": [], "missing": []}')
+        location.mkdir(exist_ok=True)
+        meta = {MetaKey.LOCATION: str(location), **(reply or {})}
         session = _make_session()
-        with patch.object(
-            session, "_do_command", return_value=_ok_meta_result({MetaKey.LOCATION: str(location)})
-        ) as cmd:
+        with patch.object(session, "_do_command", return_value=_ok_meta_result(meta)) as cmd:
             path = session.download_job_result(self._JOB_ID, **kwargs)
-        return session, cmd, path
+        return cmd, path
+
+    _FILTERED = {MetaKey.OUTPUTS_ONLY: True, MetaKey.OUTPUTS_ONLY_REASON: None}
+    _WHOLE = {
+        MetaKey.OUTPUTS_ONLY: False,
+        MetaKey.OUTPUTS_ONLY_REASON: "none of the job's declared outputs were found: plots/",
+    }
 
     def test_sends_outputs_only_as_a_command_property(self, tmp_path):
-        _, cmd, path = self._download(tmp_path, with_manifest=True, outputs_only=True)
+        cmd, path = self._download(tmp_path, self._FILTERED, outputs_only=True)
 
         cmd.assert_called_once_with(f"{AdminCommandNames.DOWNLOAD_JOB} {self._JOB_ID}", props={"outputs_only": True})
         assert path == str(tmp_path / self._JOB_ID)
 
     def test_default_download_sends_no_property(self, tmp_path):
-        _, cmd, _ = self._download(tmp_path, with_manifest=False)
+        cmd, _ = self._download(tmp_path)
 
         cmd.assert_called_once_with(f"{AdminCommandNames.DOWNLOAD_JOB} {self._JOB_ID}", props=None)
 
     def test_reports_an_older_server_that_returned_the_whole_job(self, tmp_path, caplog):
         with caplog.at_level("INFO"):
-            self._download(tmp_path, with_manifest=False, outputs_only=True)
+            self._download(tmp_path, outputs_only=True)
 
         assert "does not support outputs-only downloads" in caplog.text
 
     def test_tells_the_user_why_the_whole_job_was_downloaded(self, tmp_path, caplog):
-        location = tmp_path / self._JOB_ID
-        location.mkdir()
-        (location / "outputs_manifest.json").write_text(
-            '{"outputs_only": false, "reason": "none of the job\'s declared outputs were found: plots/"}'
-        )
-        session = _make_session()
-        with patch.object(session, "_do_command", return_value=_ok_meta_result({MetaKey.LOCATION: str(location)})):
-            with caplog.at_level("INFO"):
-                session.download_job_result(self._JOB_ID, outputs_only=True)
+        with caplog.at_level("INFO"):
+            self._download(tmp_path, self._WHOLE, outputs_only=True)
 
         assert f"Downloaded the whole job {self._JOB_ID} because none of the job's declared outputs were found" in (
             caplog.text
@@ -944,9 +940,20 @@ class TestDownloadJobResultOutputsOnly:
 
     def test_says_nothing_when_the_download_was_filtered(self, tmp_path, caplog):
         with caplog.at_level("INFO"):
-            self._download(tmp_path, with_manifest=True, outputs_only=True)
+            self._download(tmp_path, self._FILTERED, outputs_only=True)
 
         assert "whole job" not in caplog.text
+
+    def test_internal_download_returns_the_notice(self, tmp_path):
+        location = tmp_path / self._JOB_ID
+        location.mkdir()
+        session = _make_session()
+        reply = _ok_meta_result({MetaKey.LOCATION: str(location), **self._WHOLE})
+        with patch.object(session, "_do_command", return_value=reply):
+            path, notice = session._download_job_result(self._JOB_ID, outputs_only=True)
+
+        assert path == str(location)
+        assert notice.startswith(f"Downloaded the whole job {self._JOB_ID} because")
 
     def test_rejects_a_non_bool_outputs_only(self, tmp_path):
         from nvflare.fuel.flare_api.api_spec import InvalidArgumentError

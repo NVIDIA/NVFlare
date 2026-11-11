@@ -972,17 +972,6 @@ def cmd_job_clone(cmd_args):
     output_ok({"source_job_id": cmd_args.job_id, "new_job_id": new_job_id})
 
 
-def _outputs_manifest_summary(download_path: Optional[str]):
-    """(whether the download was filtered, the declared outputs it lacks) from its outputs_manifest.json."""
-    from nvflare.fuel.flare_api.flare_api import read_outputs_manifest
-
-    manifest = read_outputs_manifest(download_path) if download_path else None
-    if manifest is None or manifest.get("outputs_only") is not True:
-        return False, None  # the whole job was downloaded
-    missing = manifest.get("missing")
-    return True, missing if isinstance(missing, list) else []
-
-
 def cmd_job_download(cmd_args):
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotDone, JobNotFound, NoConnection
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
@@ -1015,6 +1004,8 @@ def cmd_job_download(cmd_args):
         f"Use 'nvflare job wait {cmd_args.job_id} --study {study}' or "
         f"'nvflare job monitor {cmd_args.job_id} --study {study}' before downloading results."
     )
+    outputs_only = getattr(cmd_args, "outputs_only", False) is True
+    outputs_notice = None
     try:
         with _job_session_for_args(cmd_args, study=study) as sess:
             meta = sess.get_job_meta(cmd_args.job_id)
@@ -1043,9 +1034,9 @@ def cmd_job_download(cmd_args):
                     os.remove(expected_download_path)
             if not json_mode:
                 print_human(f"Downloading job {cmd_args.job_id} from study {study} ...")
-            outputs_only = getattr(cmd_args, "outputs_only", False) is True
             if outputs_only:
-                path = sess.download_job_result(cmd_args.job_id, destination, outputs_only=True)
+                # the notice says why the whole job came back, when it did
+                path, outputs_notice = sess._download_job_result(cmd_args.job_id, destination, outputs_only=True)
             else:
                 path = sess.download_job_result(cmd_args.job_id, destination)
     except JobNotFound:
@@ -1084,11 +1075,6 @@ def cmd_job_download(cmd_args):
 
     path = str(path or destination)
     download_path = _local_download_path(path)
-    outputs_notice = None
-    if getattr(cmd_args, "outputs_only", False) is True and download_path:
-        from nvflare.fuel.flare_api.flare_api import outputs_download_notice
-
-        outputs_notice = outputs_download_notice(download_path, cmd_args.job_id)
     if not json_mode:
         if outputs_notice:
             print_human(outputs_notice)
@@ -1107,8 +1093,8 @@ def cmd_job_download(cmd_args):
         payload["artifact_discovery"] = "skipped"
         payload["artifacts"] = None
         payload["missing_artifacts"] = None
-    if getattr(cmd_args, "outputs_only", False) is True:
-        payload["outputs_only"], payload["missing_job_outputs"] = _outputs_manifest_summary(download_path)
+    if outputs_only:
+        payload["outputs_only"] = outputs_notice is None  # whether only the declared outputs were downloaded
         payload["outputs_only_notice"] = outputs_notice
     if json_mode:
         output_ok(payload)

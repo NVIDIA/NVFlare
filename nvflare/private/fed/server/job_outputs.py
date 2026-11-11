@@ -14,7 +14,6 @@
 
 """Prepare an outputs-only job download: the declared ``job_outputs`` of the server workspace archive."""
 
-import json
 import os
 import posixpath
 import shutil
@@ -57,7 +56,7 @@ def _member_name(info: ZipInfo) -> str:
     return name
 
 
-def filter_workspace_archive(prepared: str, destination: str, outputs: List[str]) -> Tuple[List[str], List[str]]:
+def filter_workspace_archive(prepared: str, destination: str, outputs: List[str]) -> List[str]:
     """Write the declared entries of the ``prepared`` workspace archive to ``destination``.
 
     ``prepared`` is what the job store prepared for download. It may be a symlink to the stored archive, so it is
@@ -65,7 +64,7 @@ def filter_workspace_archive(prepared: str, destination: str, outputs: List[str]
     their relative paths.
 
     Returns:
-        The declared entries found in the archive and those missing from it, each in declaration order.
+        The declared entries found in the archive, in declaration order.
     """
     found = set()
     temporary = os.path.join(os.path.dirname(destination), f".{os.path.basename(destination)}.{uuid.uuid4().hex}.tmp")
@@ -89,14 +88,4 @@ def filter_workspace_archive(prepared: str, destination: str, outputs: List[str]
         if os.path.exists(temporary):
             os.remove(temporary)
         raise
-    return [e for e in outputs if e in found], [e for e in outputs if e not in found]
-
-
-def write_outputs_manifest(path: str, reason: Optional[str], found: List[str] = None, missing: List[str] = None):
-    """Write the manifest that tells the client whether its download was filtered."""
-    if reason:
-        manifest = {"outputs_only": False, "reason": reason}
-    else:
-        manifest = {"outputs_only": True, "found": found or [], "missing": missing or []}
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, indent=2)
+    return [e for e in outputs if e in found]

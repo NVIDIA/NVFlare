@@ -408,18 +408,8 @@ def test_admin_session_closes_after_unexpected_monitor_return_code():
     session.close.assert_called_once_with()
 
 
-@pytest.mark.parametrize(
-    "manifest, notice",
-    [
-        (None, "does not support outputs-only downloads"),
-        (
-            '{"outputs_only": false, "reason": "the job declares no job_outputs"}',
-            "because the job declares no job_outputs",
-        ),
-        ('{"outputs_only": true, "found": ["metrics/"], "missing": []}', None),
-    ],
-)
-def test_outputs_only_result_tells_the_user_when_the_whole_job_came_back(tmp_path, capsys, manifest, notice):
+@pytest.mark.parametrize("notice", [None, "Downloaded the whole job job-id because the job declares no job_outputs."])
+def test_outputs_only_result_prints_why_the_whole_job_came_back(tmp_path, capsys, notice):
     session = MagicMock()
 
     def monitor(*args, **kwargs):
@@ -427,15 +417,14 @@ def test_outputs_only_result_tells_the_user_when_the_whole_job_came_back(tmp_pat
         return MonitorReturnCode.JOB_FINISHED
 
     session.monitor_job.side_effect = monitor
-    if manifest is not None:
-        (tmp_path / "outputs_manifest.json").write_text(manifest)
-    session.download_job_result.return_value = str(tmp_path)
+    session._download_job_result.return_value = (str(tmp_path), notice)
     manager = SessionManager({})
     manager._get_session = MagicMock(return_value=session)
 
     assert manager.get_job_result("job-id", outputs_only=True) == str(tmp_path)
 
-    session.download_job_result.assert_called_once_with("job-id", outputs_only=True)
+    session._download_job_result.assert_called_once_with("job-id", outputs_only=True)
+    session.download_job_result.assert_not_called()
     output = capsys.readouterr().out
     if notice:
         assert notice in output

@@ -261,10 +261,15 @@ class FileTransferModule(CommandModule):
             tx_path = self._tx_path(tx_id, folder_name)
             destination_path = os.path.join(self.download_dir, destination_name)
             location = self._rename_folder(tx_path, destination_path)
+            result_meta = {MetaKey.LOCATION: location}
+            # what the server reported about the content, e.g. whether an outputs-only download was filtered
+            for key in (MetaKey.OUTPUTS_ONLY, MetaKey.OUTPUTS_ONLY_REASON):
+                if key in meta:
+                    result_meta[key] = meta[key]
             return {
                 ProtoKey.STATUS: APIStatus.SUCCESS,
                 ProtoKey.DETAILS: f"content downloaded to {location}",
-                ProtoKey.META: {MetaKey.LOCATION: location},
+                ProtoKey.META: result_meta,
             }
         else:
             shutil.rmtree(self._tx_path(tx_id, folder_name), ignore_errors=True)

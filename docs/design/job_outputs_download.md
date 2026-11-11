@@ -129,25 +129,18 @@ files declares them the same way. Paths are relative to the server run folder:
 set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/report.json", "plots/"])
 ```
 
-### Checking what was downloaded
+### When the whole job comes back
 
-`outputs_manifest.json` says whether the download was filtered and which
-declared outputs were missing:
+The server sends the whole job when the job did not complete, declares no
+outputs, or produced none of them. The caller then sees one line that says why,
+for example:
 
-```python
-import json
-
-manifest_path = os.path.join(path, "outputs_manifest.json")
-if not os.path.exists(manifest_path):
-    print("The server returned the whole job.")  # older server
-else:
-    with open(manifest_path) as f:
-        manifest = json.load(f)
-    if not manifest["outputs_only"]:
-        print(f"The whole job was downloaded: {manifest['reason']}")
-    elif manifest["missing"]:
-        print(f"Not produced by this run: {manifest['missing']}")
+```text
+Downloaded the whole job 3f2a... because none of the job's declared outputs were found: app_server/report.json
 ```
+
+The downloaded folder has the same layout either way, so code that reads
+`workspace/app_server/FL_global_model.pt` works with both.
 
 ### Default behavior
 
@@ -292,10 +285,9 @@ unchanged. With it, the server:
    The stored archive is never written, so later full downloads are
    unaffected. The admin client unzips the filtered archive into `workspace/`
    as it does today, and a large folder entry is still one transfer.
-4. Always writes `outputs_manifest.json` with:
+4. Reports the result in its reply to `download_job`, beside the file list:
    - `outputs_only`: whether the download was filtered;
-   - `reason`: why the download was not filtered, when it was not;
-   - `found` and `missing`: the declared entries, when it was filtered.
+   - `outputs_only_reason`: why it was not, when it was not.
 
    A missing entry is not an error. For example, the best model exists only
    when the workflow tracked one. When every entry is missing, the download
@@ -303,24 +295,22 @@ unchanged. With it, the server:
 5. Includes `meta.json`, as today, so the caller still has the job status and
    timing.
 
-The download mode travels in the manifest, not in the command reply, because
-the admin client's folder pull returns only the local location to the caller.
-A download that asked for outputs only and has no manifest came from an older
-server.
+The admin client's folder pull passes these two reply fields through to its
+caller, next to the local location. A reply to an outputs-only request without
+`outputs_only` came from an older server. No file is added to the download.
 
 Extraction matches each archive member's normalized name against the declared
 entries and rejects symlink entries. It never writes outside the transfer
 folder.
 
 A completed job that has no workspace archive gets the whole job, as a full
-download does, and the manifest gives the reason.
+download does, and the reply gives the reason.
 
 Outputs-only layout, with the same relative paths as a full download:
 
 ```text
 <job_id>/
   meta.json
-  outputs_manifest.json
   workspace/
     app_server/FL_global_model.pt
     app_server/best_FL_global_model.pt
@@ -332,10 +322,10 @@ Outputs-only layout, with the same relative paths as a full download:
 
 | API | Change |
 | --- | --- |
-| `Session.download_job_result(job_id, destination=None, outputs_only=False)` | When `outputs_only=True`, sends `download_job` with the `outputs_only` property. When the whole job came back, it logs one line that says so and why: the manifest's `reason`, or, with no `outputs_manifest.json`, that the server is older. |
+| `Session.download_job_result(job_id, destination=None, outputs_only=False)` | When `outputs_only=True`, sends `download_job` with the `outputs_only` property. When the whole job came back, it logs one line that says so and why: the reply's `outputs_only_reason`, or, when the reply has no `outputs_only`, that the server is older. |
 | `ExecEnv.get_job_result(job_id, timeout=0.0, outputs_only=False)` | POC and production environments pass `outputs_only` to the session and print the same notice when the whole job came back. The simulator runs locally and returns its workspace unchanged. |
 | `Run.get_result(timeout=0.0, clean_up=True, outputs_only=False)` | Passes `outputs_only` to the environment only when it is `True`, so existing custom `ExecEnv` subclasses with the two-argument signature keep working. |
-| `nvflare job download <job_id> --outputs-only` | Passes `outputs_only=True`. Text output prints the notice when the whole job came back. JSON output adds `outputs_only` and `missing_job_outputs` from the manifest, and `outputs_only_notice`. `artifacts` and `missing_artifacts` describe what was downloaded. For example, client logs are listed as missing in an outputs-only download. |
+| `nvflare job download <job_id> --outputs-only` | Passes `outputs_only=True`. Text output prints the notice when the whole job came back. JSON output adds `outputs_only` (whether the download was filtered) and `outputs_only_notice`. `artifacts` and `missing_artifacts` describe what was downloaded. For example, client logs are listed as missing in an outputs-only download. |
 
 The returned path is the downloaded `<job_id>` folder in both modes. Result
 files are at the same relative path under `workspace/` in both modes, so the run
@@ -348,12 +338,12 @@ summary and the CLI's artifact discovery find the model and metrics either way.
 | Existing jobs and job folders | No `job_outputs`. Every download is unchanged. |
 | Existing scripts | `outputs_only` defaults to `False`. Unchanged. |
 | Existing custom `ExecEnv` subclasses | `Run` does not pass the new argument unless the caller asks for an outputs-only download. |
-| New client, old server | The server ignores the property and returns the whole job. The client sees no manifest and logs a notice. |
+| New client, old server | The server ignores the property and returns the whole job. The reply has no `outputs_only`, and the client shows a notice. |
 | Old client, new server | The old client never sends the property. Unchanged. |
 | Code that references `JobMetaKey.RESULT_LOCATION` or calls `set_results_uri` | Must drop the reference. Neither ever held or produced a value. |
 | A job with `job_outputs` on an old server | The old server stores the key and ignores it. Downloads are full. |
-| Failed or aborted job with `outputs_only=True` | The whole job, including logs. The manifest says it was not filtered and why. |
-| Completed job that produced none of its declared outputs | The whole job. The manifest gives the reason, and the client shows it. |
+| Failed or aborted job with `outputs_only=True` | The whole job, including logs. The client shows why the whole job came back. |
+| Completed job that produced none of its declared outputs | The whole job. The client shows why. |
 
 ## Security
 
@@ -383,14 +373,14 @@ Unit tests:
     original paths;
   - leaves the stored archive unchanged when the prepared file is a symlink to
     it, so a later full download still has every file;
-  - reports missing entries in the manifest;
   - rejects symlink entries;
-  - falls back to the whole job for undeclared or failed jobs, with the reason
-    in the manifest;
+  - falls back to the whole job for undeclared or failed jobs, or when no
+    declared output exists, and reports the reason in its reply;
   - is unchanged without the property.
-- The admin client forwards command properties on a folder pull.
-- `Session.download_job_result(outputs_only=True)` reports a full download when
-  the server returns no manifest.
+- The admin client forwards command properties on a folder pull and passes the
+  reply's `outputs_only` fields back.
+- `Session.download_job_result(outputs_only=True)` reports a whole-job download
+  with its reason, and an older server whose reply has no `outputs_only`.
 - `Run.get_result()` works with an `ExecEnv` that implements the two-argument
   `get_job_result`.
 - The PyTorch FedAvg recipe exports the expected `job_outputs`.

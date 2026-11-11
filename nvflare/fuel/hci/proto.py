@@ -76,6 +76,8 @@ class MetaKey(object):
     TX_ID = "tx_id"
     FOLDER_NAME = "folder_name"
     LOCATION = "location"
+    OUTPUTS_ONLY = "outputs_only"  # download_job: whether an outputs-only request was filtered
+    OUTPUTS_ONLY_REASON = "outputs_only_reason"  # download_job: why it was not
     SOURCE_FQCN = "source_fqcn"
 
 

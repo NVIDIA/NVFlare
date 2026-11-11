@@ -505,6 +505,73 @@ def test_pull_folder_forwards_command_props_to_the_server(tmp_path, props):
     api.server_execute.assert_called_once_with("download_job job-1", props=props)
 
 
+@pytest.mark.parametrize("reply_meta", [None, {MetaKey.OUTPUTS_ONLY: True, MetaKey.OUTPUTS_ONLY_REASON: None}])
+def test_download_folder_adds_reply_meta_beside_the_file_list(monkeypatch, tmp_path, reply_meta):
+    source_folder = tmp_path / "download" / "command-tx" / "job-1"
+    source_folder.mkdir(parents=True)
+    (source_folder / "meta.json").write_text("{}")
+
+    class _Downloader:
+        def __init__(self, **kwargs):
+            self.tx_id = "stream-tx"
+            self.delete_transaction = MagicMock()
+
+        def add_object(self, obj, ref_id=None):
+            return "ref-1"
+
+    monkeypatch.setattr("nvflare.fuel.hci.server.binary_transfer.ObjectDownloader", _Downloader)
+    session_mgr = MagicMock(idle_timeout=60.0, monitor_interval=5.0)
+    session_mgr.bind_download.return_value = True
+    engine = MagicMock()
+    engine.get_cell.return_value.get_fqcn.return_value = "server"
+    conn = Connection(
+        props={
+            ConnProps.DOWNLOAD_DIR: str(tmp_path / "download"),
+            ConnProps.ENGINE: engine,
+            ConnProps.ADMIN_SERVER: SimpleNamespace(timeout=10.0, sess_mgr=session_mgr),
+            ConnProps.SESSION: SimpleNamespace(sess_id="session-1"),
+        }
+    )
+    conn.append_string = MagicMock()
+
+    BinaryTransfer().download_folder(conn, "command-tx", "job-1", reply_meta=reply_meta)
+
+    meta = conn.append_string.call_args.kwargs["meta"]
+    assert meta[MetaKey.FILES] and meta[MetaKey.TX_ID] == "command-tx"
+    for key, value in (reply_meta or {}).items():
+        assert meta[key] == value
+    if reply_meta is None:
+        assert MetaKey.OUTPUTS_ONLY not in meta
+
+
+def test_pull_folder_passes_the_servers_outputs_only_report_to_the_caller(tmp_path):
+    module = FileTransferModule(str(tmp_path), str(tmp_path))
+    (tmp_path / "job-1__tx-1").mkdir()
+    api = MagicMock()
+    api.server_execute.return_value = {
+        ProtoKey.STATUS: APIStatus.SUCCESS,
+        ProtoKey.META: {
+            MetaKey.FILES: [["meta.json", "ref-1"]],
+            MetaKey.TX_ID: "tx-1",
+            MetaKey.SOURCE_FQCN: "server",
+            MetaKey.OUTPUTS_ONLY: False,
+            MetaKey.OUTPUTS_ONLY_REASON: "the job declares no job_outputs",
+        },
+    }
+    api.do_command.return_value = {ProtoKey.STATUS: APIStatus.SUCCESS}
+    command_entry = MagicMock()
+    command_entry.full_command_name.return_value = "download_job"
+    ctx = MagicMock()
+    ctx.get_command_entry.return_value = command_entry
+    ctx.get_api.return_value = api
+
+    result = module.pull_folder(["download_job", "job-1"], ctx)
+
+    assert result[ProtoKey.META][MetaKey.OUTPUTS_ONLY] is False
+    assert result[ProtoKey.META][MetaKey.OUTPUTS_ONLY_REASON] == "the job declares no job_outputs"
+    assert MetaKey.FILES not in result[ProtoKey.META]
+
+
 def test_logout_after_expiry_does_not_use_stopped_messenger():
     api = AdminAPI.__new__(AdminAPI)
     api.closed = True

@@ -25,7 +25,7 @@ from nvflare.apis.fl_constant import (
     WorkspaceConstants,
 )
 from nvflare.apis.fl_exception import FLCommunicationError
-from nvflare.apis.job_def import DEFAULT_STUDY, OUTPUTS_MANIFEST_FILE, OUTPUTS_ONLY_PROP, JobMetaKey
+from nvflare.apis.job_def import DEFAULT_STUDY, OUTPUTS_ONLY_PROP, JobMetaKey
 from nvflare.apis.utils.format_check import name_check
 from nvflare.apis.utils.job_submit_token import validate_submit_token
 from nvflare.apis.workspace import Workspace
@@ -130,25 +130,13 @@ def _validate_target_strs(targets: List[str]) -> None:
     process_targets_into_str(targets)
 
 
-def read_outputs_manifest(location: str) -> Optional[dict]:
-    """The ``outputs_manifest.json`` of a downloaded job, or None when the download has none (an older server)."""
-    path = os.path.join(location, OUTPUTS_MANIFEST_FILE)
-    try:
-        with open(path, encoding="utf-8") as f:
-            manifest = json.load(f)
-    except (OSError, ValueError):
-        return None
-    return manifest if isinstance(manifest, dict) else None
-
-
-def outputs_download_notice(location: str, job_id: str) -> Optional[str]:
+def _outputs_download_notice(meta: dict, job_id: str) -> Optional[str]:
     """What to tell the user when an outputs-only download returned the whole job; None when it was filtered."""
-    manifest = read_outputs_manifest(location)
-    if manifest is None:
+    if MetaKey.OUTPUTS_ONLY not in meta:
         return f"The server does not support outputs-only downloads; downloaded the whole job {job_id}."
-    if manifest.get("outputs_only") is True:
+    if meta.get(MetaKey.OUTPUTS_ONLY) is True:
         return None
-    reason = manifest.get("reason") or "the server returned the whole job"
+    reason = meta.get(MetaKey.OUTPUTS_ONLY_REASON) or "the server returned the whole job"
     return f"Downloaded the whole job {job_id} because {reason}."
 
 
@@ -523,12 +511,19 @@ class Session(SessionSpec):
                 If not specified, result is left in the download_dir from the admin config.
             outputs_only (bool): download only the outputs the job declared (``job_outputs`` in its meta), at the
                 same paths under ``workspace/`` as a full download. The server returns the whole job when the job
-                did not complete or declares no outputs; ``outputs_manifest.json`` in the result says which
-                happened and lists missing outputs.
+                did not complete, declares no outputs or produced none of them; a notice saying why is logged.
 
         Returns: folder path to the location of the job result
 
         """
+        location, notice = self._download_job_result(job_id, destination, outputs_only)
+        if notice:
+            get_obj_logger(self).info(notice)
+        return location
+
+    def _download_job_result(self, job_id: str, destination: str = None, outputs_only: bool = False):
+        """Download the job's result; returns its location and, for an outputs-only request that returned the
+        whole job, a notice saying why (else None)."""
         import shutil
 
         self._validate_job_id(job_id)
@@ -538,19 +533,16 @@ class Session(SessionSpec):
         result = self._do_command(AdminCommandNames.DOWNLOAD_JOB + " " + job_id, props=props)
         meta = result[ResultKey.META]
         location = meta.get(MetaKey.LOCATION)
-        if outputs_only and location:
-            notice = outputs_download_notice(location, job_id)
-            if notice:
-                get_obj_logger(self).info(notice)
+        notice = _outputs_download_notice(meta, job_id) if outputs_only and location else None
 
         if destination and location and os.path.exists(location):
             destination = os.path.abspath(destination)
             os.makedirs(destination, exist_ok=True)
             final_path = os.path.join(destination, os.path.basename(location))
             shutil.move(location, final_path)
-            return final_path
+            return final_path, notice
 
-        return location
+        return location, notice
 
     def list_job_components(self, job_id: str) -> List[str]:
         """Get the list of additional job components for the specified job.

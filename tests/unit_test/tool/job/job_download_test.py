@@ -67,59 +67,48 @@ class TestJobDownload:
         assert data["artifacts"] == {}
         assert set(data["missing_artifacts"]) == {"global_model", "metrics_summary", "client_logs"}
 
-    def test_download_outputs_only_requests_filtered_download_and_reports_missing_outputs(self, tmp_path, capsys):
-        download_path = tmp_path / "results"
-        download_path.mkdir()
-        (download_path / "outputs_manifest.json").write_text(
-            json.dumps({"outputs_only": True, "found": ["metrics/"], "missing": ["cross_site_val/"]})
-        )
-        args = self._make_args(output_dir=tmp_path / "dest")
-        args.outputs_only = True
-
-        mock_sess, envelope = self._download_json(args, download_path, capsys)
-
-        assert mock_sess.download_job_result.call_args.kwargs == {"outputs_only": True}
-        assert envelope["data"]["outputs_only"] is True
-        assert envelope["data"]["missing_job_outputs"] == ["cross_site_val/"]
-
-    @pytest.mark.parametrize(
-        "manifest", [None, {"outputs_only": False, "reason": "the job declares no job_outputs"}], ids=["old", "whole"]
-    )
-    def test_download_outputs_only_reports_a_whole_job_download(self, tmp_path, capsys, manifest):
-        download_path = tmp_path / "results"
-        download_path.mkdir()
-        if manifest is not None:
-            (download_path / "outputs_manifest.json").write_text(json.dumps(manifest))
-        args = self._make_args(output_dir=tmp_path / "dest")
-        args.outputs_only = True
-
-        _, envelope = self._download_json(args, download_path, capsys)
-
-        assert envelope["data"]["outputs_only"] is False
-        assert envelope["data"]["missing_job_outputs"] is None
-        assert "the whole job abc123" in envelope["data"]["outputs_only_notice"]
-
-    def test_download_outputs_only_tells_a_human_why_the_whole_job_came_back(self, tmp_path, capsys, monkeypatch):
+    def _download_outputs_only(self, tmp_path, capsys, notice):
         from nvflare.tool.job.job_cli import cmd_job_download
 
-        monkeypatch.setattr(cli_output, "_output_format", "txt")
         download_path = tmp_path / "results"
         download_path.mkdir()
-        (download_path / "outputs_manifest.json").write_text(
-            json.dumps({"outputs_only": False, "reason": "the job did not complete successfully (status X)"})
-        )
         args = self._make_args(output_dir=tmp_path / "dest")
         args.outputs_only = True
         mock_sess = MagicMock()
         mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
-        mock_sess.download_job_result.return_value = str(download_path)
+        mock_sess._download_job_result.return_value = (str(download_path), notice)
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             cmd_job_download(args)
 
-        assert (
-            "Downloaded the whole job abc123 because the job did not complete successfully" in capsys.readouterr().out
-        )
+        return mock_sess, capsys.readouterr()
+
+    def test_download_outputs_only_requests_a_filtered_download(self, tmp_path, capsys):
+        mock_sess, captured = self._download_outputs_only(tmp_path, capsys, notice=None)
+
+        assert mock_sess._download_job_result.call_args.kwargs == {"outputs_only": True}
+        mock_sess.download_job_result.assert_not_called()
+        data = json.loads(captured.out)["data"]
+        assert data["outputs_only"] is True
+        assert data["outputs_only_notice"] is None
+        assert "missing_job_outputs" not in data
+
+    def test_download_outputs_only_reports_a_whole_job_download(self, tmp_path, capsys):
+        notice = "Downloaded the whole job abc123 because the job declares no job_outputs."
+
+        _, captured = self._download_outputs_only(tmp_path, capsys, notice=notice)
+
+        data = json.loads(captured.out)["data"]
+        assert data["outputs_only"] is False
+        assert data["outputs_only_notice"] == notice
+
+    def test_download_outputs_only_tells_a_human_why_the_whole_job_came_back(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        notice = "Downloaded the whole job abc123 because the job did not complete successfully (status X)."
+
+        _, captured = self._download_outputs_only(tmp_path, capsys, notice=notice)
+
+        assert notice in captured.out
 
     def test_parser_accepts_outputs_only(self):
         import argparse

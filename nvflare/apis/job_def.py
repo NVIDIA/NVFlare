@@ -109,8 +109,6 @@ MAX_JOB_OUTPUTS = 100
 
 # download_job command property asking the server for only the job's declared outputs
 OUTPUTS_ONLY_PROP = "outputs_only"
-# written beside meta.json in every download that asked for outputs only
-OUTPUTS_MANIFEST_FILE = "outputs_manifest.json"
 
 
 def validate_job_outputs(value) -> list:

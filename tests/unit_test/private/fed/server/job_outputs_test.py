@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import hashlib
-import json
 import os
 import stat
 from zipfile import ZipFile, ZipInfo
@@ -21,11 +20,7 @@ from zipfile import ZipFile, ZipInfo
 import pytest
 
 from nvflare.apis.job_def import JobMetaKey, RunStatus
-from nvflare.private.fed.server.job_outputs import (
-    filter_workspace_archive,
-    outputs_only_refusal,
-    write_outputs_manifest,
-)
+from nvflare.private.fed.server.job_outputs import filter_workspace_archive, outputs_only_refusal
 
 WORKSPACE_FILES = {
     "app_server/FL_global_model.pt": b"model",
@@ -60,7 +55,7 @@ class TestFilterWorkspaceArchive:
         prepared = _stored_archive(tmp_path / "prepared.zip")
         destination = tmp_path / "workspace.zip"
 
-        found, missing = filter_workspace_archive(
+        found = filter_workspace_archive(
             str(prepared), str(destination), ["app_server/FL_global_model.pt", "metrics/", "cross_site_val/"]
         )
 
@@ -72,7 +67,6 @@ class TestFilterWorkspaceArchive:
         with ZipFile(destination) as z:
             assert z.read("app_server/FL_global_model.pt") == b"model"
         assert found == ["app_server/FL_global_model.pt", "metrics/"]
-        assert missing == ["cross_site_val/"]
         assert not prepared.exists()
 
     def test_never_writes_the_stored_archive_a_symlink_points_to(self, tmp_path):
@@ -145,18 +139,3 @@ class TestOutputsOnlyRefusal:
     def test_other_jobs_get_the_whole_download(self, meta, reason):
         refusal, outputs = outputs_only_refusal(meta)
         assert reason in refusal and outputs == []
-
-
-def test_manifest_records_mode_and_entries(tmp_path):
-    filtered = tmp_path / "filtered.json"
-    whole = tmp_path / "whole.json"
-
-    write_outputs_manifest(str(filtered), None, ["metrics/"], ["cross_site_val/"])
-    write_outputs_manifest(str(whole), "the job declares no job_outputs")
-
-    assert json.loads(filtered.read_text()) == {
-        "outputs_only": True,
-        "found": ["metrics/"],
-        "missing": ["cross_site_val/"],
-    }
-    assert json.loads(whole.read_text()) == {"outputs_only": False, "reason": "the job declares no job_outputs"}

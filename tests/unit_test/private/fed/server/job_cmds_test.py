@@ -15,7 +15,6 @@
 import datetime
 import gc
 import io
-import json
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -2173,15 +2172,17 @@ def _download(engine, tmp_path, cmd_props=None):
     conn = _MockConnection(app_ctx=engine, props=props)
     module = JobCommandModule()
     prepared = {}
+    reply = {}
 
-    def download_folder(conn, tx_id, folder_name):
+    def download_folder(conn, tx_id, folder_name, reply_meta=None):
         folder = tmp_path / "tx" / tx_id / folder_name
         prepared.update({p.name: p for p in folder.iterdir()})
+        reply["meta"] = reply_meta
 
     module.download_folder = download_folder
     module.download_job(conn, ["download_job", "job-1"])
     assert conn.errors == []
-    return prepared
+    return prepared, reply["meta"]
 
 
 _WORKSPACE = {"app_server/FL_global_model.pt": b"model", "metrics/metrics_summary.json": b"{}", "log.txt": b"log"}
@@ -2199,16 +2200,12 @@ def test_download_job_outputs_only_returns_declared_outputs_and_keeps_stored_arc
     engine = _FakeListEngine([_finished_job()])
     store, engine.job_def_manager.get_storage_for_download = _symlink_store(tmp_path, "job-1", _WORKSPACE)
 
-    prepared = _download(engine, tmp_path, {"outputs_only": True})
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
 
-    assert sorted(prepared) == ["meta.json", "outputs_manifest.json", "workspace.zip"]
+    assert sorted(prepared) == ["meta.json", "workspace.zip"]
     with ZipFile(prepared["workspace.zip"]) as z:
         assert z.namelist() == ["app_server/FL_global_model.pt"]
-    assert json.loads(prepared["outputs_manifest.json"].read_text()) == {
-        "outputs_only": True,
-        "found": ["app_server/FL_global_model.pt"],
-        "missing": ["plots/"],
-    }
+    assert reply_meta == {MetaKey.OUTPUTS_ONLY: True, MetaKey.OUTPUTS_ONLY_REASON: None}
     with ZipFile(store / "workspace") as z:  # the stored archive is unchanged for later full downloads
         assert sorted(z.namelist()) == sorted(_WORKSPACE)
 
@@ -2226,13 +2223,12 @@ def test_download_job_outputs_only_falls_back_to_the_whole_job(monkeypatch, tmp_
     engine = _FakeListEngine([job])
     _, engine.job_def_manager.get_storage_for_download = _symlink_store(tmp_path, "job-1", _WORKSPACE)
 
-    prepared = _download(engine, tmp_path, {"outputs_only": True})
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
 
-    assert sorted(prepared) == ["job.zip", "meta.json", "outputs_manifest.json", "workspace.zip"]
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
     with ZipFile(prepared["workspace.zip"]) as z:
         assert sorted(z.namelist()) == sorted(_WORKSPACE)
-    manifest = json.loads(prepared["outputs_manifest.json"].read_text())
-    assert manifest["outputs_only"] is False and reason in manifest["reason"]
+    assert reply_meta[MetaKey.OUTPUTS_ONLY] is False and reason in reply_meta[MetaKey.OUTPUTS_ONLY_REASON]
 
 
 @pytest.mark.parametrize("cmd_props", [None, {}, {"outputs_only": "yes"}])
@@ -2241,9 +2237,10 @@ def test_download_job_without_outputs_only_is_unchanged(monkeypatch, tmp_path, c
     engine = _FakeListEngine([_finished_job()])
     _, engine.job_def_manager.get_storage_for_download = _symlink_store(tmp_path, "job-1", _WORKSPACE)
 
-    prepared = _download(engine, tmp_path, cmd_props)
+    prepared, reply_meta = _download(engine, tmp_path, cmd_props)
 
     assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert reply_meta is None
 
 
 def test_clone_job_keeps_job_outputs(monkeypatch):
