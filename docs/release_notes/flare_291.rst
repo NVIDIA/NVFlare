@@ -137,8 +137,13 @@ Security and Hardening
   builds if authorization fails or is unavailable.
 - **Client log streaming.** Log ownership is bound to the authenticated sender;
   invalid path components and symlinks are rejected. Default managed staging
-  keeps active logs available across job cleanup and coordinates stream
-  publication with explicit job deletion.
+  moves from the system temporary directory to
+  ``{workspace.get_log_root()}/.client_log_streams/{job_id}/{client_name}/{log_file_name}``,
+  keeps active logs available across job cleanup, and uses durable deletion
+  intent to coordinate stream publication with explicit job deletion. Custom
+  log collectors must follow the new path, and custom storage providers need
+  authoritative presence checks for deletion recovery; see the
+  :ref:`migration_guide`.
 - **Dependency updates.** Package requirements now include
   ``certifi>=2026.10.19`` and ``uv>=0.13.6,<0.14.0`` following the
   eMudhra/emSign CA incident. Refresh locked dependencies and installed
@@ -183,9 +188,6 @@ Bug Fixes
 - In-time FedAvg aggregation stops on an accumulation exception before
   updating or saving a partially accumulated global model, preserving the
   previous checkpoint.
-- Recipe client log streaming works again through the server-job auxiliary
-  dispatcher. Failed job deletion no longer blocks subsequent client log
-  uploads for an existing job until the server restarts.
 - Asynchronous gRPC startup accepts the ``agrpc``/``agrpcs`` scheme pair for
   direct and relayed clients.
 - Multiprocess sub-workers receive the required initialization services and
@@ -236,6 +238,14 @@ See the :ref:`migration_guide` for details.
 - Jobs using the removed push-based tensor-streaming components or recipe
   method must migrate to Tensor Downloader.
 - Custom integrations using internal control channels must follow the caller,
-  route, and job restrictions; supported admin and job APIs retain their flows.
+  route, and job restrictions, including the server-parent heartbeat check;
+  supported admin and job APIs retain their flows.
+- Multiprocess sub-workers enforce the site's component authorization for
+  runtime builds. A veto, unavailable authorization, or initialization failure
+  stops execution.
+- In-time FedAvg now terminates on an accumulation exception and preserves
+  the previous checkpoint instead of saving a partially accumulated model.
+- Custom live-log collectors must follow the new managed staging location;
+  custom log producers must preserve the authenticated sender identity.
 - Dependency locks and offline package mirrors must satisfy the updated
   ``certifi`` and ``uv`` requirements.

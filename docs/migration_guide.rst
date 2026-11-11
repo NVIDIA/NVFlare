@@ -9,11 +9,19 @@ This guide covers API and configuration changes when upgrading between FLARE rel
 Upgrading from 2.9.0 to 2.9.1
 =============================
 
-Review the tensor-streaming API removal, control-request authorization,
-dependency requirements, configuration-format deprecations, checkpoint path
-restrictions, and Dashboard change below. Azure Container Instances (ACI)
-deployments also require reprovisioning with an approved policy and signed
-external startup kit.
+Review the changes below before upgrading:
+
+- Removed tensor-streaming APIs and their timeout settings.
+- Control-request authorization, including server-job heartbeat restrictions.
+- Site component authorization and initialization failures in multiprocess
+  sub-workers, which can stop a job.
+- In-time FedAvg termination on accumulation exceptions.
+- Client-log staging paths, sender checks, and deletion recovery.
+- Updated security dependencies, configuration-format deprecations,
+  checkpoint path restrictions, and the Dashboard client API change.
+- For confidential computing, provisioning changes and the rejection of
+  launcher-defined bring-your-own-code (BYOC) jobs. Azure Container Instances
+  (ACI) deployments also require an approved policy and signed external kit.
 
 .. _tensor_transfer_migration_291:
 
@@ -38,6 +46,14 @@ Action:
   ``tensor_streaming_per_request_timeout`` and ``tensor_min_download_timeout``.
   These settings and ``enable_tensor_disk_offload`` remain supported; their
   names do not refer to the removed push-based streamer components.
+- Remove the former ``tensor_send_timeout`` and
+  ``wait_send_task_data_all_clients_timeout`` arguments along with the removed
+  method. There is no direct equivalent for these push-based timeouts or the
+  streamer's automatic ``MIN_GET_TASK_TIMEOUT`` adjustment. Tune Tensor
+  Downloader's per-request and minimum download timeouts for the pull-based
+  transfer, and review Client API task waits separately; see
+  :doc:`/programming_guide/timeouts`. Do not copy the old values assuming the
+  same semantics.
 
 Control Requests Must Follow Authenticated Caller and Job Boundaries
 --------------------------------------------------------------------
@@ -57,6 +73,9 @@ these restrictions:
   receives an empty participant map when the server job exists, or ``None``
   when it does not; it no longer receives participant credentials. Cross-job
   queries are rejected.
+- Server-parent ``HEARTBEAT`` requests are accepted only from the matching
+  server job or the simulator's own parent-server heartbeat. Other identities
+  receive ``UNAUTHENTICATED``.
 - Server-job and workspace-transfer credentials are scoped to their matching
   job identities. Changing claimed origin headers does not grant access to
   another job or to the parent-server identity.
@@ -235,14 +254,29 @@ parent site's existing component authorization callback for runtime builds.
 Custom components must satisfy that site policy; unavailable authorization or
 initialization failures stop execution.
 
-Default client-log staging retains active logs across job cleanup and removes
-managed staged logs on explicit job deletion after active streams drain.
-Failed deletion of an existing job permits later uploads again without a server
-restart once job presence is confirmed. Custom job managers and storage
-providers need authoritative ``job_exists`` and ``object_exists`` support for
-automatic deletion recovery; unavailable presence checks preserve the logs and
-deletion intent. Retention for a custom receiver ``dest_dir`` remains
-operator-managed. See :doc:`/programming_guide/live_log_streaming`.
+When ``JobLogReceiver.dest_dir`` is unset, default client-log staging moves
+from the system temporary directory in 2.9.0 to
+``{workspace.get_log_root()}/.client_log_streams/{job_id}/{client_name}/{log_file_name}``
+in 2.9.1. Update scripts that tail or collect live logs from the old temporary
+location. Without a workspace, the receiver uses a private temporary directory.
+An explicit ``dest_dir`` continues to select
+``{dest_dir}/{job_id}/{client_name}/{log_file_name}``; its retention remains
+operator-managed.
+
+2.9.1 also requires the stream owner to match the authenticated sender and
+rejects invalid path components and symlinks. Custom log producers must retain
+the authenticated identity through dispatch; peer-supplied identity fields do
+not establish ownership.
+
+Default managed staging retains active logs across job cleanup. Explicit job
+deletion now records durable deletion intent before changing the job store,
+removes closed managed logs, and lets active streams drain before discarding
+them. Recovery checks authoritative job presence: a confirmed existing job
+clears interrupted deletion intent and permits uploads, confirmed absence
+permits cleanup, and unavailable checks preserve both logs and intent. Custom
+job managers and storage providers need authoritative ``job_exists`` and
+``object_exists`` support for automatic recovery. See
+:doc:`/programming_guide/live_log_streaming`.
 
 Examples
 --------
