@@ -28,7 +28,7 @@ works with either download.
 | --- | --- |
 | Job end | `JobRunner._save_workspace` archives the run, result, log and audit folders into the `workspace` job-store component. Each folder's files are stored relative to that folder, so all of them sit at the archive root. By default the four folders are the same run folder. |
 | Admin command | `download_job <job_id>` copies the `data`, `meta` and `workspace` components into a transfer folder. The admin client downloads them and unzips them into `<job_id>/job/`, `<job_id>/meta.json` and `<job_id>/workspace/`. |
-| Client API | `Session.download_job_result(job_id, destination=None)` sends `download_job`. Recipe `Run.get_result()` and `nvflare job download` call it. |
+| FLARE API, Recipe API and CLI | The FLARE API's `Session.download_job_result(job_id, destination=None)` sends `download_job`. The Recipe API's `Run.get_result()` and the `nvflare job download` command call it. |
 
 The server app folder is `app_server/` in the run folder. The common results are
 already at stable, known paths:
@@ -218,7 +218,7 @@ long run.
 
 - `JOB_OUTPUTS` is added to `USER_SETTABLE_JOB_META_KEYS`, so
   `set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, [...])` works and checks the
-  same rules on the client. A user's value replaces the built-in list.
+  same rules before submission. A user's value replaces the built-in list.
 - The code that adds a result-producing server component records that
   component's files on the job, in the component's framework module, through
   helpers in `nvflare/job_config/job_outputs.py`. No component class changes.
@@ -357,20 +357,20 @@ A full download of a job whose meta records `job_outputs_stored` sends
 `workspace.zip` and `outputs.zip`, both linked from the store, so the server
 still replies at once. If the outputs archive cannot be read from the store,
 the rest of the job is still downloaded, and the reply's `outputs_note` says
-the workspace lacks the declared outputs; the client shows it as a warning
+the workspace lacks the declared outputs; the FLARE API logs it as a warning
 ("Job ...: the job's outputs archive cannot be read ...").
 
 The reply also carries `unzip_into: {"outputs.zip": "workspace"}`, and the
 admin client unzips `outputs.zip` into `workspace/` first and `workspace.zip`
 after it. The only files in both archives are server logs a job declares as
 outputs, and the workspace archive's copy is the newer one. The result is the
-same `workspace/` folder as before this change. The client
+same `workspace/` folder as before this change. The admin client
 accepts only a plain folder name there, never a path. A job without the
 record downloads exactly as before.
 
 ### Serving an outputs-only download
 
-The client sends `{"outputs_only": true}`. Without it, `download_job` is
+The FLARE API sends `{"outputs_only": true}`. Without it, `download_job` is
 unchanged. With it, the server:
 
 1. Requires the job to be finished, as today.
@@ -400,7 +400,7 @@ unchanged. With it, the server:
    timing.
 
 The admin client's folder pull passes `outputs_note` through to its caller,
-next to the local location, and the client shows it as `Job <job_id>: <note>.`
+next to the local location, and the FLARE API shows it as `Job <job_id>: <note>.`
 No file is added to the download. The reply does not echo whether the request
 was outputs-only: the caller knows what it asked for, and the note says when
 the result differs.
@@ -420,14 +420,18 @@ Outputs-only layout, with the same relative paths as a full download:
     metrics/round_metrics.jsonl
 ```
 
-### Client API
+### FLARE API, Recipe API and CLI
+
+These are the admin-side APIs for downloading a job's result. They are separate
+from the Client API (`flare.init()`, `flare.receive()`, `flare.send()`) that
+training code uses on the sites, which this design does not change.
 
 | API | Change |
 | --- | --- |
-| `Session.download_job_result(job_id, destination=None, outputs_only=False)` | When `outputs_only=True`, sends `download_job` with the `outputs_only` property. When the reply carries an `outputs_note`, in either mode, logs it as a warning. |
-| `ExecEnv.get_job_result(job_id, timeout=0.0, outputs_only=False)` | POC and production environments pass `outputs_only` to the session and print the same notice when the whole job came back. The simulator runs locally and returns its workspace unchanged. |
-| `Run.get_result(timeout=0.0, clean_up=True, outputs_only=False)` | Passes `outputs_only` to the environment only when it is `True`, so existing custom `ExecEnv` subclasses with the two-argument signature keep working. |
-| `nvflare job download <job_id> --outputs-only` | Passes `outputs_only=True`. Text output prints the notice when the whole job came back. JSON output adds `outputs_only` (whether only the declared outputs were downloaded) and `outputs_note`. `artifacts` and `missing_artifacts` describe what was downloaded. For example, client logs are listed as missing in an outputs-only download. |
+| FLARE API: `Session.download_job_result(job_id, destination=None, outputs_only=False)` | When `outputs_only=True`, sends `download_job` with the `outputs_only` property. When the reply carries an `outputs_note`, in either mode, logs it as a warning. |
+| Recipe API: `ExecEnv.get_job_result(job_id, timeout=0.0, outputs_only=False)` | POC and production environments pass `outputs_only` to the session and print the same notice when the whole job came back. The simulator runs locally and returns its workspace unchanged. |
+| Recipe API: `Run.get_result(timeout=0.0, clean_up=True, outputs_only=False)` | Passes `outputs_only` to the environment only when it is `True`, so existing custom `ExecEnv` subclasses with the two-argument signature keep working. |
+| CLI: `nvflare job download <job_id> --outputs-only` | Passes `outputs_only=True`. Text output prints the notice when the whole job came back. JSON output adds `outputs_only` (whether only the declared outputs were downloaded) and `outputs_note`. `artifacts` and `missing_artifacts` describe what was downloaded. For example, client logs are listed as missing in an outputs-only download. |
 
 The returned path is the downloaded `<job_id>` folder in both modes. Result
 files are at the same relative path under `workspace/` in both modes, so the run
@@ -440,9 +444,9 @@ summary and the CLI's artifact discovery find the model and metrics either way.
 | Option | Outcome |
 | --- | --- |
 | Filter the stored workspace archive on each request: copy the declared entries into a new archive, then reply | Rejected. The copy runs before the server replies, and for a multi-GB model it can exceed the admin client's reply wait (5 seconds unless a command timeout is set). The download fails on exactly the large-model jobs it is for, and the path differs from a full download. |
-| Filter on request, but make the client wait longer for this one reply | Rejected. It hides the cost rather than removing it, the copy still grows with the model, and outputs-only downloads still take a different path from full downloads. |
+| Filter on request, but make the admin client wait longer for this one reply | Rejected. It hides the cost rather than removing it, the copy still grows with the model, and outputs-only downloads still take a different path from full downloads. |
 | Reply first, then prepare the files | Rejected. It needs a rework of how folder downloads start, for one command. |
-| Download the whole job and filter on the client | Rejected. It saves nothing on transfer, which is the point of the feature. |
+| Download the whole job and filter it on the admin side | Rejected. It saves nothing on transfer, which is the point of the feature. |
 | Archive the declared outputs at job end as a second copy, keeping the workspace archive whole | Rejected. Downloads reply at once, but every declared output, usually the model, is stored twice, and job end reads and writes it a second time. For large models that doubles their storage. |
 | Move the declared outputs out of the run folder, archive them, then archive the rest | Rejected. Between the move and the workspace archive, a staging folder holds the only copy of the model: a retry after a failed workspace save, a crash, a failed move back, or a copy across filesystems could lose it. |
 | **Store the declared outputs at job end apart from the rest, through two folders of hard links** | **Chosen.** Hard links name the outputs and the rest without copying or moving anything, and the run folder stays intact until both archives are stored, so a retry or crash loses nothing. Each file is stored once and written once, as before. An outputs-only download links the outputs archive, and a full download links both, so both reply at once. The admin client merges the two archives into `workspace/`. When links cannot be made, the workspace is stored whole. |
@@ -473,8 +477,8 @@ longer than `MAX_JOB_OUTPUTS`.
 | Option | Outcome |
 | --- | --- |
 | An `outputs_manifest.json` file in the download, listing found and missing outputs | Rejected. It adds a file to the user's result that nobody acts on. The only actionable case is a whole-job fallback, and its reason is enough. |
-| Separate reply fields for the mode, the whole-job reason and missing outputs | Rejected. The caller knows the mode it asked for, so echoing it back adds nothing, and the client only ever shows the reasons as one line. |
-| **One `outputs_note` field in the `download_job` reply, passed through by the folder pull** | **Chosen.** No extra file. The note is present only when the download is not what was asked for, and the client shows it as is. |
+| Separate reply fields for the mode, the whole-job reason and missing outputs | Rejected. The caller knows the mode it asked for, so echoing it back adds nothing, and the FLARE API only ever shows the reasons as one line. |
+| **One `outputs_note` field in the `download_job` reply, passed through by the folder pull** | **Chosen.** No extra file. The note is present only when the download is not what was asked for, and the FLARE API shows it as is. |
 
 ### Requesting the download
 
@@ -501,8 +505,8 @@ its declaration.
 | Old client, new server | Not supported: the admin client and the server run the same version. An older client's full download of a job with an `outputs` component would unzip `outputs.zip` into its own folder rather than into `workspace/`. |
 | Code that references `JobMetaKey.RESULT_LOCATION` or calls `set_results_uri` | Must drop the reference. Neither ever held or produced a value. |
 | A job with `job_outputs` on an old server | The old server stores the key and ignores it. Downloads are full. |
-| Failed or aborted job with `outputs_only=True` | The whole job, including logs. The client shows why the whole job came back. |
-| Completed job that produced none of its declared outputs | The whole job. The client shows why. |
+| Failed or aborted job with `outputs_only=True` | The whole job, including logs. The FLARE API, Recipe API and CLI show why the whole job came back. |
+| Completed job that produced none of its declared outputs | The whole job, with the reason shown. |
 | Job that finished before this change | No `outputs` component: its workspace archive holds everything. Full downloads are unchanged, and outputs-only downloads return the whole job, with the reason. |
 | Job store implementation without `save_job_outputs` | The default saves nothing, so the declared outputs stay in the workspace archive. Outputs-only downloads return the whole job. |
 | Tools that read the stored `workspace` component directly | A job that declares outputs has them in the `outputs` component, not in `workspace`. The server's log commands are unaffected: log files stay in `workspace` too. |
@@ -572,7 +576,7 @@ Unit tests:
   - is unchanged without the property for a job without an `outputs`
     component.
 - A full download of a job with an `outputs` component links both archives
-  and tells the client to unzip `outputs.zip` into `workspace/`; the client
+  and tells the admin client to unzip `outputs.zip` into `workspace/`; the admin client
   merges them and accepts only plain folder names.
 - The `outputs` component is a valid storage component and is not listed as
   an additional job component.
@@ -599,4 +603,4 @@ and other workspace files are absent.
 | Outputs storage | `JobRunner._save_job_outputs`, `split_job_outputs` in `nvflare/private/fed/server/job_outputs.py`, `JobDefManagerSpec.save_job_outputs`, storage component `outputs` |
 | Full download | `JobCommandModule._get_default_job_components` (adds `outputs.zip`), reply key `unzip_into`, `FileTransferModule.pull_folder` |
 | Outputs-only download | `JobCommandModule.download_job` |
-| Client | `FileTransferModule.pull_folder`, `Session.download_job_result`, `ExecEnv.get_job_result`, `Run.get_result`, `nvflare job download --outputs-only` |
+| Admin client and APIs | Admin client: `FileTransferModule.pull_folder`. FLARE API: `Session.download_job_result`. Recipe API: `ExecEnv.get_job_result`, `Run.get_result`. CLI: `nvflare job download --outputs-only` |
