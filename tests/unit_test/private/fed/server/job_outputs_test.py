@@ -138,6 +138,27 @@ class TestSplitJobOutputs:
         with open(latest, "rb") as f:  # what the workspace archive reads, as before the split
             assert f.read() == b"model"
 
+    def test_a_relative_symlink_through_a_linked_folder_reads_the_same_file(self, tmp_path):
+        run_dir = _run_folder(
+            tmp_path / "run",
+            {
+                "app_server/FL_global_model.pt": b"m",
+                "models/model.bin": b"top",
+                "models/snapshots/model.bin": b"snapshot",
+                "models/snapshots/v1/weights.bin": b"",
+            },
+        )
+        os.symlink("snapshots/v1", run_dir / "models" / "current")
+        # "current/.." is "snapshots", not "models": normalizing the path would change the file it reads
+        os.symlink("../models/current/../model.bin", run_dir / "app_server" / "latest.bin")
+        with open(run_dir / "app_server" / "latest.bin", "rb") as f:
+            original = f.read()
+
+        split = split_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt"])
+
+        with open(os.path.join(split.rest_dirs[0], "app_server", "latest.bin"), "rb") as f:
+            assert f.read() == original == b"snapshot"
+
     def test_a_symlinked_folder_stays_a_link(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"data/a.csv": b"a", "app_server/FL_global_model.pt": b"m"})
         os.symlink("data", run_dir / "data_link")
@@ -170,14 +191,18 @@ class TestSplitJobOutputs:
         # not in the stored outputs archive, so it must be in the workspace archive
         assert _files(split.rest_dirs[0]) == ["metrics/round_metrics.jsonl"]
 
-    @pytest.mark.parametrize("change", ["replaced", "removed"])
+    @pytest.mark.parametrize("change", ["replaced", "removed", "appended"])
     def test_a_stored_output_changed_afterwards_rejects_the_split(self, tmp_path, change):
         run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"old"})
         split = link_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt"])
         model = run_dir / "app_server" / "FL_global_model.pt"
-        model.unlink()
-        if change == "replaced":
-            model.write_bytes(b"new")  # a new file at the same path
+        if change == "appended":
+            with open(model, "ab") as f:  # the same file, more content (e.g. metrics written in append mode)
+                f.write(b"more")
+        else:
+            model.unlink()
+            if change == "replaced":
+                model.write_bytes(b"new")  # a new file at the same path
 
         with pytest.raises(OSError):  # the stored outputs archive is out of date: store the workspace whole
             split.link_rest()

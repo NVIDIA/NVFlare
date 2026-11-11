@@ -962,6 +962,18 @@ class TestDownloadJobResultOutputsOnly:
 
         assert f"The download of job {self._JOB_ID} is incomplete" in caplog.text
 
+    def test_an_outputs_only_notice_also_reports_missing_outputs(self, tmp_path, caplog):
+        reply = {
+            MetaKey.OUTPUTS_ONLY: False,
+            MetaKey.OUTPUTS_ONLY_REASON: "the job did not complete successfully (status FINISHED:ABORTED)",
+            MetaKey.OUTPUTS_MISSING: "the job's outputs archive cannot be read from the job store",
+        }
+        with caplog.at_level("WARNING"):
+            self._download(tmp_path, reply, outputs_only=True)
+
+        assert "because the job did not complete successfully" in caplog.text
+        assert "is incomplete: the job's outputs archive cannot be read" in caplog.text
+
     def test_rejects_a_non_bool_outputs_only(self, tmp_path):
         from nvflare.fuel.flare_api.api_spec import InvalidArgumentError
 

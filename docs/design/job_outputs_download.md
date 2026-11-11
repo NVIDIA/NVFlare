@@ -498,6 +498,18 @@ its declaration.
 | Job store implementation without `save_job_outputs` | The default saves nothing, so the declared outputs stay in the workspace archive. Outputs-only downloads return the whole job. |
 | Tools that read the stored `workspace` component directly | A job that declares outputs has them in the `outputs` component, not in `workspace`. The server's log commands are unaffected: log files stay in `workspace` too. |
 
+Known limitations:
+
+- A declared output that is replaced, written to, removed or rotated between
+  storing the outputs and linking the rest makes the server store the
+  workspace whole, as before this change. The check compares each file's
+  identity, size and modification time, so an overwrite that keeps all three
+  is not detected; nothing should write a declared output after the job has
+  finished. A rotated `log.txt` that a job declares as an output is
+  the likely case. Storing the workspace whole is required here: the log is in
+  both archives, and a full download would otherwise lay the older copy from
+  the outputs archive over the newer one.
+
 ## Security
 
 - The command, its authorization and its permission category are unchanged,

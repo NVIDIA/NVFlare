@@ -78,15 +78,16 @@ class SplitWorkspace:
         self.output_dirs = [_link_folder(d, _OUTPUTS_LINKS) for d in source_dirs]
         self.rest_dirs = [_link_folder(d, _WORKSPACE_LINKS) for d in source_dirs]
         self.found: List[str] = []  # the declared entries found, in declaration order
-        self._linked = [{} for _ in source_dirs]  # relative path -> (device, inode) named in each outputs folder
+        self._linked = [{} for _ in source_dirs]  # relative path -> identity, for each outputs folder
 
     def link_rest(self):
         """Name everything but the declared outputs in the rest folders, from a fresh walk of the workspace.
 
         Called after the outputs are stored, so a file created or replaced meanwhile is archived as it is now. Only
         the files named in the outputs folders are left out, so a declared file created meanwhile is kept here.
-        Raises OSError when a link cannot be made, a folder cannot be read, or a stored output was replaced or
-        removed meanwhile; the stored outputs archive would then be out of date, so the workspace is stored whole.
+        Raises OSError when a link cannot be made, a folder cannot be read, or a stored output was replaced,
+        written to or removed meanwhile; the stored outputs archive would then be out of date, so the workspace is
+        stored whole.
         """
         for source_dir, rest_dir, linked in zip(self.source_dirs, self.rest_dirs, self._linked):
             seen = set()
@@ -131,9 +132,10 @@ def _walk(source_dir: str):
     return os.walk(source_dir, onerror=_raise)
 
 
-def _identity(path: str) -> Tuple[int, int]:
+def _identity(path: str) -> Tuple[int, int, int, int]:
+    # the file and its content as stored: a replacement changes the inode, an append or overwrite the size or time
     info = os.stat(path)
-    return info.st_dev, info.st_ino
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns
 
 
 def _output_entry(source: str, relative: str, outputs: List[str]) -> str:
@@ -147,7 +149,11 @@ def _link(source: str, target: str):
         # point at what the original resolves to, in the untouched workspace, so it reads the same as before
         destination = os.readlink(source)
         if not os.path.isabs(destination):
-            destination = os.path.normpath(os.path.join(os.path.dirname(source), destination))
+            # joined, never normalized: "a/../b" through a linked folder "a" must resolve as the original does
+            folder = os.path.dirname(source)
+            if not os.path.isabs(folder):
+                folder = os.path.join(os.getcwd(), folder)
+            destination = os.path.join(folder, destination)
         os.symlink(destination, target)
     else:
         os.link(source, target)  # another name for the same file: nothing is copied

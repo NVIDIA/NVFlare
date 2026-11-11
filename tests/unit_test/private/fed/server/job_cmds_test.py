@@ -2283,6 +2283,27 @@ def test_a_full_download_without_the_outputs_archive_returns_the_rest_and_says_s
     assert "does not include its declared outputs" in reply_meta[MetaKey.OUTPUTS_MISSING]
 
 
+def test_a_partly_prepared_outputs_archive_is_dropped_and_reported_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    _use_store(engine, tmp_path, {"log.txt": b"log"}, _OUTPUTS)
+    prepare = engine.job_def_manager.get_storage_for_download
+
+    def copying_store_that_fails(jid, download_dir, component, download_file, fl_ctx):
+        if component == "outputs":
+            target = Path(download_dir) / jid / download_file
+            target.write_bytes(b"PK\x03\x04 partial")  # a copy cut short
+            raise StorageException("connection reset")
+        prepare(jid, download_dir, component, download_file, fl_ctx)
+
+    engine.job_def_manager.get_storage_for_download = copying_store_that_fails
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert reply_meta[MetaKey.OUTPUTS_MISSING]
+
+
 def test_an_outputs_only_download_without_the_outputs_archive_returns_the_whole_job_and_says_so(monkeypatch, tmp_path):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     engine = _FakeListEngine([_finished_job(stored=True)])

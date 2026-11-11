@@ -1811,11 +1811,14 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             if ct != OUTPUTS:
                 job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
                 continue
+            prepared = os.path.join(job_download_dir, job_id, file_name)
             try:
                 job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
             except Exception as e:
                 self.logger.warning(f"cannot prepare the outputs of job {job_id}: {secure_format_exception(e)}")
-            if not os.path.lexists(os.path.join(job_download_dir, job_id, file_name)):
+                if os.path.lexists(prepared):
+                    os.remove(prepared)  # possibly partial: it would fail to unzip and take the rest with it
+            if not os.path.lexists(prepared):
                 return _OUTPUTS_ARCHIVE_MISSING
         return None
 

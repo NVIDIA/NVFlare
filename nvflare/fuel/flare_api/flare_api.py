@@ -134,14 +134,17 @@ def _outputs_download_notice(meta: dict, job_id: str, outputs_only: bool) -> Opt
     """What to tell the user about a download: an outputs-only request that returned the whole job, or a download
     that lacks the job's stored outputs. None when there is nothing to tell."""
     missing = meta.get(MetaKey.OUTPUTS_MISSING)
+    incomplete = f"The download of job {job_id} is incomplete: {missing}." if missing else None
     if not outputs_only:
-        return f"The download of job {job_id} is incomplete: {missing}." if missing else None
+        return incomplete
     if MetaKey.OUTPUTS_ONLY not in meta:
         return f"The server does not support outputs-only downloads; downloaded the whole job {job_id}."
     if meta.get(MetaKey.OUTPUTS_ONLY) is True:
         return None
     reason = meta.get(MetaKey.OUTPUTS_ONLY_REASON) or "the server returned the whole job"
-    return f"Downloaded the whole job {job_id} because {reason}."
+    whole_job = f"Downloaded the whole job {job_id} because {reason}."
+    # the reason may be unrelated (a failed job), so say separately that the outputs are missing
+    return f"{whole_job} {incomplete}" if incomplete and missing not in reason else whole_job
 
 
 class Session(SessionSpec):
