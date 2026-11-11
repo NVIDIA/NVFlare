@@ -34,6 +34,7 @@ from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets, warn_on_u
 from nvflare.job_config.api import FedJob, validate_target_name
 from nvflare.job_config.fed_job_config import FedJobConfig
 from nvflare.job_config.job_outputs import (
+    account_component,
     as_folder,
     declare_job_outputs,
     mark_job_outputs_unknown,
@@ -894,6 +895,7 @@ def setup_custom_persistor(*, job, model_persistor=None) -> str:
         mark_job_outputs_unknown(job)
     else:
         declare_job_outputs(job, *tagged)  # a persistor the recipe itself created
+        account_component(job, model_persistor)
     return extract_persistor_id(job.to_server(model_persistor, id="persistor"))
 
 

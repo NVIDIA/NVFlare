@@ -21,7 +21,12 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_opt.pt import PTFileModelPersistor
 from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.job_config.api import validate_object_for_job
-from nvflare.job_config.job_outputs import declare_job_outputs, in_server_app, mark_job_outputs_unknown
+from nvflare.job_config.job_outputs import (
+    account_component,
+    declare_job_outputs,
+    in_server_app,
+    mark_job_outputs_unknown,
+)
 
 
 def declare_pt_persistor_outputs(job, persistor) -> None:
@@ -36,6 +41,7 @@ def declare_pt_persistor_outputs(job, persistor) -> None:
             in_server_app(persistor.global_model_file_name),
             in_server_app(persistor.best_global_model_file_name),
         )
+        account_component(job, persistor)
     else:
         mark_job_outputs_unknown(job)
 

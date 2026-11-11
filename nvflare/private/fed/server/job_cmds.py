@@ -1813,14 +1813,23 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             None for an outputs-only download, else why the whole job was prepared.
         """
         reason, _ = outputs_only_refusal(meta)
+        no_outputs = (
+            "the job has no archived outputs: none of its declared outputs were produced, "
+            "or it finished before outputs were archived"
+        )
+        if not reason and OUTPUTS not in (job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx) or []):
+            reason = no_outputs  # a job store may raise for a component that does not exist
         if not reason:
-            job_def_manager.get_storage_for_download(job_id, job_download_dir, META, META_JSON, fl_ctx)
-            job_def_manager.get_storage_for_download(job_id, job_download_dir, OUTPUTS, WORKSPACE_ZIP, fl_ctx)
-            if not os.path.lexists(os.path.join(job_download_dir, job_id, WORKSPACE_ZIP)):
-                reason = (
-                    "the job has no archived outputs: none of its declared outputs were produced, "
-                    "or it finished before outputs were archived"
-                )
+            outputs_zip = os.path.join(job_download_dir, job_id, WORKSPACE_ZIP)
+            try:
+                job_def_manager.get_storage_for_download(job_id, job_download_dir, META, META_JSON, fl_ctx)
+                job_def_manager.get_storage_for_download(job_id, job_download_dir, OUTPUTS, WORKSPACE_ZIP, fl_ctx)
+            except Exception as e:
+                self.logger.warning(f"cannot prepare the outputs of job {job_id}: {secure_format_exception(e)}")
+                if os.path.lexists(outputs_zip):
+                    os.remove(outputs_zip)
+            if not os.path.lexists(outputs_zip):
+                reason = no_outputs
         if reason:
             for ct, file_name in comps:
                 job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)

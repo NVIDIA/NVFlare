@@ -153,6 +153,42 @@ class TestRecipeDeclarations:
         assert "app_server/FL_global_model.pt" in _exported_outputs(recipe, tmp_path / "out")
 
 
+class TestFailingSafe:
+    def test_a_fedavg_recipe_without_a_persistor_declares_the_model_the_controller_saves(self, tmp_path, train_script):
+        from nvflare.recipe.fedavg import FedAvgRecipe as BaseFedAvgRecipe
+
+        model = {"class_path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 1}}
+        recipe = BaseFedAvgRecipe(name="dict-model", min_clients=2, train_script=train_script, model=model)
+
+        # FedAvg saves the model itself, relative to the run folder
+        assert sorted(_exported_outputs(recipe, tmp_path)) == ["FL_global_model.pt", "metrics/"]
+
+    def test_only_metrics_recorded_means_the_main_result_is_unknown(self, tmp_path):
+        # a custom job: metrics recorded by BaseFedJob, a model saved by a controller nobody recorded
+        from nvflare.app_common.workflows.fedavg import FedAvg
+        from nvflare.job_config.base_fed_job import BaseFedJob
+        from nvflare.recipe.spec import Recipe
+
+        job = BaseFedJob(name="custom", min_clients=1)
+        job.to_server(FedAvg(num_clients=1, num_rounds=1, persistor_id="", save_filename="final.pt"))
+
+        assert _exported_outputs(Recipe(job), tmp_path) is None
+
+    def test_a_persistor_added_without_a_declaration_leaves_the_job_undeclared(self, tmp_path, train_script):
+        recipe = _fedavg(train_script)
+        recipe._job.to_server(NPModelPersistor(), id="extra_persistor")
+
+        assert _exported_outputs(recipe, tmp_path) is None
+
+    def test_a_rejected_recorded_path_leaves_the_job_undeclared(self):
+        job = FedJob(name="j")
+        declare_np_persistor_outputs(job, NPModelPersistor(model_dir="/data/out"))
+        declare_metrics_outputs(job, MetricsArtifactWriter())
+        paths, unknown = recorded_job_outputs(job)
+
+        assert not unknown and outputs_from(paths) == []
+
+
 class TestDeclarationHelpers:
     def test_pytorch_persistor_declares_its_file_names(self):
         job = FedJob(name="j")
@@ -188,9 +224,10 @@ class TestDeclarationHelpers:
     )
     def test_metrics_writer_declares_its_folder_or_its_files(self, writer, expected):
         job = FedJob(name="j")
+        declare_np_persistor_outputs(job, NPModelPersistor())  # a main result beside the metrics
         declare_metrics_outputs(job, writer)
 
-        assert recorded_job_outputs(job) == (expected, False)
+        assert recorded_job_outputs(job) == (["models/server.npy"] + expected, False)
 
     def test_another_metrics_component_is_unknown(self):
         class _OwnWriter(MetricsArtifactWriter):
@@ -214,14 +251,15 @@ class TestDeclarationHelpers:
 
         assert recorded_job_outputs(job) == (expected, False)
 
-    def test_a_persistor_the_recipe_tagged_is_declared_when_added(self):
+    def test_a_persistor_the_recipe_tagged_is_declared_from_its_settings_when_added(self):
         persistor = PTFileModelPersistor()
-        tag_component_outputs(persistor, "app_server/model.joblib")
+        tag_component_outputs(persistor, lambda p: [f"app_server/{p.global_model_file_name}"])
+        persistor.global_model_file_name = "renamed.pt"  # changed after tagging
         job = FedJob(name="j")
 
         setup_custom_persistor(job=job, model_persistor=persistor)
 
-        assert recorded_job_outputs(job) == (["app_server/model.joblib"], False)
+        assert recorded_job_outputs(job) == (["app_server/renamed.pt"], False)
 
     def test_an_untagged_persistor_is_unknown_when_added(self):
         job = FedJob(name="j")
@@ -242,8 +280,8 @@ class TestOutputsFrom:
         assert outputs_from(paths) == ["output", "metrics/", "app_server/FL_global_model.pt"]
 
     @pytest.mark.parametrize("path", ["../outside.json", ".", "/abs/stats.json", ""])
-    def test_an_undeclarable_path_is_skipped(self, path):
-        assert outputs_from([path, "metrics/"]) == ["metrics/"]
+    def test_an_undeclarable_path_declares_nothing(self, path):
+        assert outputs_from([path, "metrics/"]) == []
 
     def test_more_outputs_than_allowed_declare_nothing(self):
         assert outputs_from([f"stats/{i}.json" for i in range(MAX_JOB_OUTPUTS + 1)]) == []

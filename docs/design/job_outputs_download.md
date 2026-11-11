@@ -227,15 +227,21 @@ long run.
   | Scikit-learn recipes | `app_server/<save_name>` of the `JoblibModelParamPersistor` they create |
   | XGBoost bagging recipe | `app_server/<save_name>` of its `XGBModelPersistor` |
   | NumPy FedAvg and logistic regression recipes | `<model_dir>/<model_name>` of their NumPy persistor, with `.npy` added when missing, as `np.save` does |
-  | `BaseFedJob` and the recipes that add a `MetricsArtifactWriter` | `<results_dir>/`, or the summary and round files by name when `results_dir` is the run folder itself |
+  | Base `FedAvgRecipe` without a persistor | `<save_filename>`, which the `FedAvg` controller saves itself, relative to the run folder |
+  | `BaseFedJob` and the recipes that add a `MetricsArtifactWriter` | `<results_dir>/`, or the summary and round files by name when `results_dir` is the run folder itself, as supporting outputs |
   | `StatsJob` (federated statistics) | `<output_path>` |
   | `add_cross_site_evaluation`, `add_final_global_evaluation`, NumPy cross-site evaluation recipe | `cross_site_val/` |
 
-- Only the exact component class the code knows is recorded. A persistor the
-  user passes as `model_persistor`, a subclass, or another metrics component
-  may save elsewhere, so it marks the job's outputs unknown. A recipe that
-  creates a persistor and passes it on as `model_persistor` (the scikit-learn
-  recipes) tags it with its files first.
+- Only the exact component class the code knows is recorded, and the
+  persistor it records is marked as accounted for. A persistor the user passes
+  as `model_persistor`, a subclass, or another metrics component may save
+  elsewhere, so it marks the job's outputs unknown. A recipe that creates a
+  persistor and passes it on as `model_persistor` (the scikit-learn recipes)
+  tags it with a function that names its files; the function runs when the
+  persistor is added, so later setting changes are reflected, and a copy of
+  the persistor carries no tag.
+- Metrics are supporting outputs. A job whose record holds only metrics has a
+  main result, such as a model, that nothing recorded.
 - `Recipe.export` and `Recipe.run` turn the record into `job_outputs`, so a
   component added after the recipe is built, such as by
   `add_cross_site_evaluation`, is included. Each path is normalized with
@@ -244,7 +250,12 @@ long run.
   a declared folder is not listed again. A recipe never fails because of its
   own declaration.
 - Nothing is declared, and the job downloads whole, when:
-  - some outputs are unknown;
+  - some outputs are unknown, or only supporting outputs were recorded;
+  - a model persistor on the server was added without a declaration of its
+    files. This check runs at export over the job's server components and
+    uses only the framework-neutral `ModelPersistor` base class, so a missed
+    declaration fails safe;
+  - a recorded path is invalid, such as an absolute folder;
   - the job ships a `config/environment.json` for the server app, which can
     move where components write (for example a PyTorch checkpoint folder); or
   - there are more than `MAX_JOB_OUTPUTS` entries.
@@ -317,11 +328,13 @@ unchanged. With it, the server:
    - the job's metadata has no `job_outputs`, or
    - the job has no `outputs` component: none of its declared outputs were
      produced, it finished before outputs were archived, or archiving failed.
-3. Otherwise prepares `meta.json` and the `outputs` component as
-   `workspace.zip`, with the job store's existing `get_storage_for_download`,
+3. Otherwise checks the job's component list, so a job store that raises
+   for a missing component is never asked for one, and prepares `meta.json`
+   and the `outputs` component as `workspace.zip`, with the job store's existing `get_storage_for_download`,
    exactly as a full download prepares the `workspace` component.
    `FilesystemStorage` links the stored archive, so the server replies at once
-   and streams the file afterwards. The admin client unzips it into
+   and streams the file afterwards. If preparing the outputs fails, the server
+   prepares the whole job instead. The admin client unzips it into
    `workspace/` as it does today.
 4. Reports the result in its reply to `download_job`, beside the file list:
    - `outputs_only`: whether only the declared outputs were sent;
@@ -382,7 +395,7 @@ summary and the CLI's artifact discovery find the model and metrics either way.
 | --- | --- |
 | A table in the common recipe module mapping component class names to their file rules | Rejected. Framework knowledge, such as PyTorch's checkpoint folder, would live in a framework-neutral module and drift silently when a class is renamed or moved. |
 | A `get_job_outputs` method on each result-producing component | Rejected. It changes the components' interfaces, and a subclass that saves elsewhere inherits a declaration naming the base class's files, so its real model would be dropped. |
-| **The code that creates each component records that component's files, in its framework module** | **Chosen.** No component interface changes. The knowledge sits where the file names are chosen, only the exact component class is recorded, and anything unknown leaves the job undeclared. |
+| **The code that creates each component records that component's files, in its framework module** | **Chosen.** No component interface changes. The knowledge sits where the file names are chosen, only the exact component class is recorded, and anything unknown leaves the job undeclared. A record is opt-in, so a missed declaration could leave a file out; the export-time check for unaccounted model persistors, and treating metrics alone as no result, make that fail safe. |
 
 ### When some outputs cannot be known
 

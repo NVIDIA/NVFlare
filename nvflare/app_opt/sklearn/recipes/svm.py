@@ -166,7 +166,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             initial_params={"kernel": self.kernel},
             model_path=model_path,
         )
-        tag_component_outputs(persistor, in_server_app(persistor.save_name))
+        tag_component_outputs(persistor, lambda p: [in_server_app(p.save_name)])
 
         # Create SVMAssembler (will be added to job after super().__init__)
         self._svm_assembler = SVMAssembler(kernel=self.kernel)

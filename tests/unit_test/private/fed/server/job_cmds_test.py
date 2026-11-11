@@ -33,6 +33,7 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.job_def import JobMetaKey, RunStatus, SubmitRecordKey, SubmitRecordState
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.storage import StorageException
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -2168,6 +2169,14 @@ def _symlink_store(tmp_path, job_id, workspace_files, outputs_files=None):
     return store, get_storage_for_download
 
 
+def _use_store(engine, tmp_path, workspace_files, outputs_files=None):
+    store, engine.job_def_manager.get_storage_for_download = _symlink_store(
+        tmp_path, "job-1", workspace_files, outputs_files
+    )
+    engine.job_def_manager.list_components = lambda jid, fl_ctx: sorted(p.name for p in store.iterdir())
+    return store
+
+
 def _download(engine, tmp_path, cmd_props=None):
     props = {ConnProps.DOWNLOAD_DIR: str(tmp_path / "tx")}
     if cmd_props is not None:
@@ -2204,7 +2213,7 @@ _OUTPUTS = {"app_server/FL_global_model.pt": b"model"}
 def test_download_job_outputs_only_serves_the_stored_outputs_archive_like_a_full_download(monkeypatch, tmp_path):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     engine = _FakeListEngine([_finished_job()])
-    store, engine.job_def_manager.get_storage_for_download = _symlink_store(tmp_path, "job-1", _WORKSPACE, _OUTPUTS)
+    store = _use_store(engine, tmp_path, _WORKSPACE, _OUTPUTS)
 
     prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
 
@@ -2227,7 +2236,7 @@ def test_download_job_outputs_only_serves_the_stored_outputs_archive_like_a_full
 def test_download_job_outputs_only_falls_back_to_the_whole_job(monkeypatch, tmp_path, job, reason):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     engine = _FakeListEngine([job])
-    _, engine.job_def_manager.get_storage_for_download = _symlink_store(tmp_path, "job-1", _WORKSPACE)
+    _use_store(engine, tmp_path, _WORKSPACE)
 
     prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
 
@@ -2237,11 +2246,51 @@ def test_download_job_outputs_only_falls_back_to_the_whole_job(monkeypatch, tmp_
     assert reply_meta[MetaKey.OUTPUTS_ONLY] is False and reason in reply_meta[MetaKey.OUTPUTS_ONLY_REASON]
 
 
+def test_download_job_outputs_only_never_asks_a_store_for_a_missing_outputs_component(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job()])
+    _use_store(engine, tmp_path, _WORKSPACE)
+    prepare = engine.job_def_manager.get_storage_for_download
+
+    def strict_prepare(jid, download_dir, component, download_file, fl_ctx):
+        if component == "outputs":
+            raise StorageException("no such component")  # a store that raises for a missing component
+        prepare(jid, download_dir, component, download_file, fl_ctx)
+
+    engine.job_def_manager.get_storage_for_download = strict_prepare
+
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert reply_meta[MetaKey.OUTPUTS_ONLY] is False
+
+
+def test_download_job_outputs_only_falls_back_when_preparing_the_outputs_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job()])
+    _use_store(engine, tmp_path, _WORKSPACE, _OUTPUTS)
+    prepare = engine.job_def_manager.get_storage_for_download
+
+    def failing_prepare(jid, download_dir, component, download_file, fl_ctx):
+        if component == "outputs":
+            raise StorageException("store unavailable")
+        prepare(jid, download_dir, component, download_file, fl_ctx)
+
+    engine.job_def_manager.get_storage_for_download = failing_prepare
+
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    with ZipFile(prepared["workspace.zip"]) as z:
+        assert sorted(z.namelist()) == sorted(_WORKSPACE)
+    assert reply_meta[MetaKey.OUTPUTS_ONLY] is False
+
+
 @pytest.mark.parametrize("cmd_props", [None, {}, {"outputs_only": "yes"}])
 def test_download_job_without_outputs_only_is_unchanged(monkeypatch, tmp_path, cmd_props):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     engine = _FakeListEngine([_finished_job()])
-    _, engine.job_def_manager.get_storage_for_download = _symlink_store(tmp_path, "job-1", _WORKSPACE, _OUTPUTS)
+    _use_store(engine, tmp_path, _WORKSPACE, _OUTPUTS)
 
     prepared, reply_meta = _download(engine, tmp_path, cmd_props)
 

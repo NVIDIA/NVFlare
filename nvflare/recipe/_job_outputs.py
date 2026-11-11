@@ -24,7 +24,7 @@ import posixpath
 from typing import List, Optional
 
 from nvflare.apis.job_def import MAX_JOB_OUTPUTS, SERVER_SITE_NAME, JobMetaKey, validate_job_outputs
-from nvflare.job_config.job_outputs import recorded_job_outputs
+from nvflare.job_config.job_outputs import is_accounted, recorded_job_outputs
 
 _ENVIRONMENT_FILE = "environment.json"  # the server app's config/environment.json
 
@@ -48,19 +48,35 @@ def _normalize(path) -> str:
 def outputs_from(paths: List[str]) -> List[str]:
     """The ``job_outputs`` entries for recorded paths.
 
-    A path that would not pass validation is skipped, so a recipe never fails because of its own declaration.
-    Duplicates and files inside a declared folder are left out. More than MAX_JOB_OUTPUTS entries declare nothing,
-    since a truncated list could leave the model out.
+    A recorded path that would not pass validation (absolute, or outside the run folder) declares nothing: the file
+    it names cannot be selected, and a shorter list would leave it out. The same holds for more than
+    MAX_JOB_OUTPUTS entries. A recipe never fails because of its own declaration. Duplicates and files inside a
+    declared folder are left out.
     """
     entries: List[str] = []
     for path in paths:
         entry = _normalize(path)
-        if entry and entry not in entries:
+        if not entry:
+            return []
+        if entry not in entries:
             entries.append(entry)
     folders = [e for e in entries if e.endswith("/")]
     # a file inside a declared folder is already selected by the folder
     outputs = [e for e in entries if e.endswith("/") or not any(e.startswith(f) for f in folders)]
     return [] if len(outputs) > MAX_JOB_OUTPUTS else outputs
+
+
+def _has_unaccounted_persistor(job) -> bool:
+    """Whether a model persistor on the server was added without a declaration of its files."""
+    from nvflare.app_common.abstract.model_persistor import ModelPersistor
+
+    server_app = getattr(job, "_deploy_map", {}).get(SERVER_SITE_NAME)
+    if server_app is None:
+        return False
+    return any(
+        isinstance(obj, ModelPersistor) and not is_accounted(job, obj)
+        for obj in server_app.app_config.components.values()
+    )
 
 
 def ships_server_environment(job) -> bool:
@@ -87,9 +103,9 @@ def declare_job_outputs(job, previous: Optional[list]) -> Optional[list]:
     """Set the job's ``job_outputs`` from what its builder recorded, and return the value set.
 
     A value the user set with ``set_recipe_meta`` is kept unchanged. ``previous`` is the value an earlier call set,
-    so a recipe that is run or exported again recomputes its own declaration and still keeps a user's value. When
-    some outputs are unknown, or the job ships a server environment file, nothing is declared and the job downloads
-    whole.
+    so a recipe that is run or exported again recomputes its own declaration and still keeps a user's value. Nothing
+    is declared, and the job downloads whole, when some outputs are unknown, a model persistor was added without a
+    declaration of its files, a recorded path is invalid, or the job ships a server environment file.
     """
     job_config = job.job
     key = JobMetaKey.JOB_OUTPUTS.value
@@ -98,7 +114,10 @@ def declare_job_outputs(job, previous: Optional[list]) -> Optional[list]:
     if current is not None and current is not previous:
         return None  # set by the user
     paths, unknown = recorded_job_outputs(job)
-    outputs = [] if unknown or ships_server_environment(job) else outputs_from(paths)
+    if unknown or ships_server_environment(job) or _has_unaccounted_persistor(job):
+        outputs = []
+    else:
+        outputs = outputs_from(paths)
     if not outputs:
         if current is not None:
             meta_props.pop(key, None)

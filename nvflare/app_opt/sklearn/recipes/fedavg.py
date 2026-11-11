@@ -157,7 +157,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             initial_params=model_params or {},
             model_path=model_path,
         )
-        tag_component_outputs(persistor, in_server_app(persistor.save_name))
+        tag_component_outputs(persistor, lambda p: [in_server_app(p.save_name)])
 
         # Call the unified FedAvgRecipe with sklearn-specific settings
         super().__init__(
