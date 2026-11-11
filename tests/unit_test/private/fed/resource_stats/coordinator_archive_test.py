@@ -36,34 +36,29 @@ from nvflare.private.fed.resource_stats.coordinator import (
     RESOURCE_SUMMARY_FILE,
     ResourceStatsCoordinator,
 )
-from nvflare.private.fed.resource_stats.measurements import SCHEMA_VERSION, canonical_json_bytes
+from nvflare.private.fed.resource_stats.measurements import canonical_json_bytes
+from tests.resource_stats_report_test_utils import _participant_summary
 
 
 def _participant(job_id="job-1", participant_name="site-1", reported_at="2026-09-17T12:00:00Z"):
-    return {
-        "duration_seconds": 2,
-        "schema_version": SCHEMA_VERSION,
-        "kind": "nvflare.resource_stats.participant_summary",
-        "job_id": job_id,
-        "participant_name": participant_name,
-        "reported_at": reported_at,
-        "resource_capacity": {"status": "unavailable"},
-        "resource_time": {"status": "unavailable"},
-        "workspace_filesystem": {"status": "unavailable"},
-        "resource_utilization": {
-            "cpu_consumed": {"status": "unavailable"},
-            "retained_content": {"status": "unavailable"},
-            "message_traffic": {"status": "unavailable"},
-        },
-        "issues": [
-            {"metric": "cpu_consumed", "code": "observation_incomplete"},
-            {"metric": "message_traffic", "code": "observation_incomplete"},
-            {"metric": "resource_capacity", "code": "observation_incomplete"},
-            {"metric": "resource_time", "code": "observation_incomplete"},
-            {"metric": "retained_content", "code": "unsupported"},
-            {"metric": "workspace_filesystem", "code": "observation_incomplete"},
-        ],
+    record = _participant_summary(job_id, participant_name, reported_at)
+    for field in ("resource_capacity", "resource_time", "workspace_filesystem"):
+        record[field] = {"status": "unavailable"}
+    record["resource_utilization"] = {
+        field: {"status": "unavailable"} for field in ("cpu_consumed", "retained_content", "message_traffic")
     }
+    record["issues"] = [
+        {"metric": metric, "code": "unsupported" if metric == "retained_content" else "observation_incomplete"}
+        for metric in (
+            "cpu_consumed",
+            "message_traffic",
+            "resource_capacity",
+            "resource_time",
+            "retained_content",
+            "workspace_filesystem",
+        )
+    ]
+    return record
 
 
 def _workspace_zip(run_dir):

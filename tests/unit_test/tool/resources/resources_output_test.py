@@ -136,7 +136,6 @@ def test_shows_execution_capacity_time_and_startup_detail(measured, cpu_hours, a
     output = render_job_resources(summary, job_name="hello-pt")
     detail = render_job_resources(summary, participant)
 
-    assert "GPU count basis: NVIDIA inventory and integer mask (schema 1.0)." in output
     assert "Recorded capacity-time per participant" in output
     assert _site_cell(output, "CPU VISIBLE") == cpu_hours
     assert _site_cell(output, "AVG CPU USED") == average
@@ -194,7 +193,6 @@ def test_scalar_capacity_and_utilization_totals_are_visible():
     output = render_job_resources(_job_summary(participant), job_name="hello-pt")
 
     assert output.startswith("Recorded resources for job hello-pt (ID: job-1).")
-    assert "GPU count basis: NVIDIA inventory and integer mask (schema 1.0)." in output
     assert "CPU VISIBLE" in output
     assert "AVG CPU USED" in output
     assert "MEM VISIBLE GiB-h" in output
@@ -302,7 +300,7 @@ def test_cpu_average_preserves_its_own_quality_and_shared_duration(capacity, dur
         assert _site_cell(output, "CPU VISIBLE") == "0.02*"
         assert _site_cell(output, "MEM VISIBLE GiB-h") == "0.18*"
         assert _site_cell(output, "GPU-h") == "—"
-        assert "capacity-time: GPU capacity could not be observed for the whole interval" in output
+        assert "capacity-time: GPU capacity observations are missing" in output
     elif capacity == "unavailable":
         assert _site_cell(output, "CPU VISIBLE") == "—"
     elif capacity == "complete":

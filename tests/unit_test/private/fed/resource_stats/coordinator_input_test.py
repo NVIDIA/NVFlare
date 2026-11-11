@@ -28,34 +28,27 @@ from nvflare.private.fed.resource_stats.coordinator import (
     RESOURCE_REPORT_INVALID,
     ResourceStatsCoordinator,
 )
-from nvflare.private.fed.resource_stats.measurements import (
-    SCHEMA_VERSION,
-    canonical_json_bytes,
-    capacity_to_resource_time,
-)
+from nvflare.private.fed.resource_stats.measurements import canonical_json_bytes, capacity_to_resource_time
 from nvflare.private.fed.resource_stats.report_reader import read_resource_report
+from tests.resource_stats_report_test_utils import _participant_summary
 
 
 def _participant():
-    record = {
-        "duration_seconds": 10,
-        "schema_version": SCHEMA_VERSION,
-        "kind": "nvflare.resource_stats.participant_summary",
-        "job_id": "job-1",
-        "participant_name": "site-1",
-        "reported_at": "2026-10-08T12:00:00Z",
-        "resource_capacity": {"status": "partial", "cpu": {"units": 3}},
-        "workspace_filesystem": {"capacity_bytes": 1024},
-        "resource_utilization": {
+    record = _participant_summary(reported_at="2026-10-08T12:00:00Z")
+    record.update(
+        duration_seconds=10,
+        resource_capacity={"status": "partial", "cpu": {"units": 3}},
+        workspace_filesystem={"capacity_bytes": 1024},
+        resource_utilization={
             "cpu_consumed": {"cpu_seconds": 2},
             "retained_content": {"bytes": 2},
             "message_traffic": {"sent_bytes": 2, "received_bytes": 3},
         },
-        "issues": [
+        issues=[
             {"metric": "resource_capacity", "code": "attribution_incomplete"},
             {"metric": "resource_capacity", "code": "observation_incomplete"},
         ],
-    }
+    )
     record["resource_time"] = capacity_to_resource_time(
         record["resource_capacity"], record["duration_seconds"], scope_issues=record["issues"]
     )

@@ -38,12 +38,12 @@ from nvflare.fuel.hci.server.authz import AuthzFilter
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.reg import ServerCommandRegister
 from nvflare.fuel.sec.authz import AuthorizationService
-from nvflare.private.fed.resource_stats.measurements import SCHEMA_VERSION, canonical_json_bytes
-from nvflare.private.fed.resource_stats.report_reader import KIND_RESOURCE_SUMMARY, read_resource_report
+from nvflare.private.fed.resource_stats.measurements import canonical_json_bytes, capacity_to_resource_time
 from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import JobCommandModule
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.security.security import FLAuthorizer
+from tests.resource_stats_report_test_utils import _accepted_entry, _resource_summary
 
 
 @pytest.fixture
@@ -83,33 +83,16 @@ def _job(number, *, submitter="alice", org="org-a", status=RunStatus.FINISHED_CO
 
 
 def _summary(job_id):
-    summary = {
-        "schema_version": SCHEMA_VERSION,
-        "kind": KIND_RESOURCE_SUMMARY,
-        "job_id": job_id,
-        "participants": [
-            {
-                "duration_seconds": 1,
-                "participant_name": "server",
-                "role": "server",
-                "received_at": "2026-10-08T12:00:00Z",
-                "resource_capacity": {"cpu": {"units": 2}, "memory": {"bytes": 1024}, "gpu": {"count": 0}},
-                "resource_time": {
-                    "cpu": {"unit_seconds": 2},
-                    "memory": {"byte_seconds": 1024},
-                    "gpu": {"instance_seconds": 0},
-                },
-                "resource_utilization": {
-                    "cpu_consumed": {"cpu_seconds": 0},
-                    "retained_content": {"bytes": 3},
-                    "message_traffic": {"sent_bytes": 0, "received_bytes": 0},
-                },
-                "issues": [],
-            }
-        ],
+    entry = _accepted_entry("server", "server", "2026-10-08T12:00:00Z")
+    entry["duration_seconds"] = 1
+    entry["resource_capacity"] = {"cpu": {"units": 2}, "memory": {"bytes": 1024}, "gpu": {"count": 0}}
+    entry["resource_time"] = capacity_to_resource_time(entry["resource_capacity"], 1)
+    entry["resource_utilization"] = {
+        "cpu_consumed": {"cpu_seconds": 0},
+        "retained_content": {"bytes": 3},
+        "message_traffic": {"sent_bytes": 0, "received_bytes": 0},
     }
-    read_resource_report(canonical_json_bytes(summary))
-    return summary
+    return _resource_summary(job_id, [entry])
 
 
 def _connection(jobs, *, role="owner", unavailable=(), study="default"):

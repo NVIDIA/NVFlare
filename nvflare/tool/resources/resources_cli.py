@@ -125,6 +125,7 @@ def def_resources_cli_parser(sub_cmd):
         "resources",
         help="show recorded resources for a job or study",
         description="Read finalized resource reports for a job or accessible jobs in a study.",
+        epilog="GPU counts use NVIDIA inventory filtered by integer CUDA_VISIBLE_DEVICES indices.",
     )
     p.add_argument("--job", dest="job_id", type=str, help="job ID; uses the default study unless --study is set")
     p.add_argument("--study", type=str, help="study containing the job, or study to summarize (accessible jobs only)")

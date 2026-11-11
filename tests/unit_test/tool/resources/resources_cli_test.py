@@ -171,7 +171,10 @@ def test_bare_human_command_shows_help_and_old_job_path_is_removed(monkeypatch, 
     monkeypatch.setattr(cli_output, "_output_format", "txt")
     monkeypatch.setattr(sys, "argv", ["nvflare", "resources"])
     cli.run("nvflare")
-    assert "--job" in capsys.readouterr().out
+    help_text = capsys.readouterr().out
+    assert "--job" in help_text
+    assert "GPU counts use NVIDIA inventory" in help_text
+    assert "CUDA_VISIBLE_DEVICES" in help_text
     monkeypatch.setattr(sys, "argv", ["nvflare", "job", "resources"])
     with pytest.raises(SystemExit):
         cli.run("nvflare")

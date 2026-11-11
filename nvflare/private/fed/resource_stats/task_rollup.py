@@ -132,6 +132,7 @@ class _Scope:
 
 def _scope_size(scope):
     # Count the serialized ledger, not an asserted bound on Python heap usage.
+    # _encoded escapes non-ASCII characters, so character and byte counts agree.
     return (
         len(
             _encoded(
@@ -142,7 +143,7 @@ def _scope_size(scope):
                     "record": scope.record,
                     "reserved": False,
                 }
-            ).encode("ascii")
+            )
         )
         + 2
     )
@@ -167,7 +168,7 @@ class TaskResourceReducer:
         self._containment_lost = False
 
     def _fits(self, entry_bytes, totals):
-        return entry_bytes + len(_encoded(totals).encode("ascii")) + 1024 <= _MAX_STATE_BYTES
+        return entry_bytes + len(_encoded(totals)) + 1024 <= _MAX_STATE_BYTES
 
     def _freeze(self):
         self._frozen = True
@@ -306,6 +307,7 @@ class TaskResourceReducer:
                 invalid = True
         with self._lock:
             scope = self._scopes[key]
+            previous_size = _scope_size(scope)
             candidate = replace(scope)
             if scope.disposition != "unresolved":
                 if record is not None and (scope.record is None or json.loads(scope.record) != record):
@@ -319,13 +321,13 @@ class TaskResourceReducer:
                 candidate.disposition = "reported"
                 candidate.record = _encoded(record)
                 totals = self._updated_totals(record)
-                size = self._state_bytes - _scope_size(scope) + _scope_size(candidate)
+                size = self._state_bytes - previous_size + _scope_size(candidate)
                 if self._fits(size, totals):
                     self._totals = totals
                 else:
                     self._freeze()
                     candidate = replace(candidate, record=None, disposition="invalid")
-            self._state_bytes += _scope_size(candidate) - _scope_size(scope)
+            self._state_bytes += _scope_size(candidate) - previous_size
             self._scopes[key] = candidate
         retired = started is False
         if started is not False:

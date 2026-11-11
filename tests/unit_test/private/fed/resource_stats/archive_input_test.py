@@ -26,42 +26,40 @@ import pytest
 from nvflare.private.fed.resource_stats import archive_reader
 from nvflare.private.fed.resource_stats.archive_reader import WorkspaceResourceStatsError, WorkspaceResourceStatsReader
 from nvflare.private.fed.resource_stats.measurements import (
-    SCHEMA_VERSION,
     canonical_json_bytes,
     capacity_to_resource_time,
     participant_measurements,
 )
 from nvflare.private.fed.resource_stats.report_reader import read_resource_report
+from tests.resource_stats_report_test_utils import _participant_summary, _resource_summary
 
 
 def _reports():
-    participant = {
-        "duration_seconds": 10,
-        "schema_version": SCHEMA_VERSION,
-        "kind": "nvflare.resource_stats.participant_summary",
-        "job_id": "job-1",
-        "participant_name": "site-1",
-        "reported_at": "2026-09-17T12:00:00Z",
-        "resource_capacity": {"status": "partial", "cpu": {"units": 3}, "memory": {"bytes": 4096}, "gpu": {"count": 2}},
-        "workspace_filesystem": {"capacity_bytes": 4096},
-        "resource_utilization": {
+    participant = _participant_summary()
+    participant.update(
+        duration_seconds=10,
+        resource_capacity={
+            "status": "partial",
+            "cpu": {"units": 3},
+            "memory": {"bytes": 4096},
+            "gpu": {"count": 2},
+        },
+        workspace_filesystem={"capacity_bytes": 4096},
+        resource_utilization={
             "cpu_consumed": {"cpu_seconds": 2},
             "retained_content": {"bytes": 20},
             "message_traffic": {"sent_bytes": 0, "received_bytes": 0},
         },
-        "issues": [
+        issues=[
             {"metric": "resource_capacity", "code": "attribution_incomplete"},
             {"metric": "resource_capacity", "code": "observation_incomplete"},
         ],
-    }
+    )
     participant["resource_time"] = capacity_to_resource_time(
         participant["resource_capacity"], participant["duration_seconds"], scope_issues=participant["issues"]
     )
-    summary = {
-        "schema_version": SCHEMA_VERSION,
-        "kind": "nvflare.resource_stats.resource_summary",
-        "job_id": "job-1",
-        "participants": [
+    summary = _resource_summary(
+        participants=[
             {
                 "participant_name": "site-1",
                 "role": "client",
@@ -69,8 +67,8 @@ def _reports():
                 **participant_measurements(participant),
             },
             {"participant_name": "server", "role": "server", "status": "missing"},
-        ],
-    }
+        ]
+    )
     return read_resource_report(canonical_json_bytes(summary)), participant
 
 
