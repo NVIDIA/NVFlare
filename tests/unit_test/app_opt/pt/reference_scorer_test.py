@@ -57,6 +57,34 @@ def test_cache_equivalence_and_input_tokenizer_context_invalidation(tmp_path):
     assert model.calls == 5
 
 
+def test_cached_optional_none_matches_online_and_has_distinct_key(tmp_path, monkeypatch):
+    model = TinyLM()
+    inputs = torch.tensor([[1, 2, 3]])
+    forwarded = []
+    forward = model.forward
+
+    def record_inputs(input_ids, **kwargs):
+        forwarded.append(kwargs)
+        return forward(input_ids, **kwargs)
+
+    monkeypatch.setattr(model, "forward", record_inputs)
+    online = FrozenReferenceScorer(model, "tokenizer", "context")
+    expected, expected_mask = online.score(inputs, inputs, attention_mask=None)
+    cached = FrozenReferenceScorer(model, "tokenizer", "context", tmp_path)
+    for _ in range(2):
+        scores, mask = cached.score(inputs, inputs, attention_mask=None)
+        torch.testing.assert_close(scores, expected)
+        assert torch.equal(mask, expected_mask)
+    assert forwarded == [{"attention_mask": None}, {"attention_mask": None}]
+    assert cached.cache_hits == 1 and cached.cache_misses == 1
+
+    # Explicit None, omitted inputs and tensor-valued masks must not share entries.
+    cached.score(inputs, inputs)
+    cached.score(inputs, inputs, attention_mask=torch.ones_like(inputs))
+    assert model.calls == 4
+    assert cached.cache_hits == 1 and cached.cache_misses == 3
+
+
 def test_replaced_tensor_cannot_reuse_cached_scores_when_object_id_is_recycled(tmp_path, monkeypatch):
     # Force an ID collision to reproduce allocator reuse deterministically.
     monkeypatch.setattr(reference_scorer, "id", lambda tensor: 0, raising=False)

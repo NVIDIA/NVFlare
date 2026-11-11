@@ -80,7 +80,13 @@ class FrozenReferenceScorer:
         inputs = {"input_ids": input_ids, **model_inputs}
         path = None
         if self.cache_dir is not None:
-            key = hashlib.sha256((self.identity + tensor_digest({**inputs, "labels": labels})).encode()).hexdigest()
+            cache_inputs = {**inputs, "labels": labels}
+            none_inputs = sorted(name for name, value in cache_inputs.items() if value is None)
+            key_data = self.identity + tensor_digest({k: v for k, v in cache_inputs.items() if v is not None})
+            if none_inputs:
+                # Explicit None differs from omission; preserve tensor-only cache keys.
+                key_data += json.dumps(none_inputs)
+            key = hashlib.sha256(key_data.encode()).hexdigest()
             path = self.cache_dir / f"{key}.pt"
         if path and path.exists():
             cached = torch.load(path, map_location=input_ids.device, weights_only=True)
