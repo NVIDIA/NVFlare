@@ -204,6 +204,11 @@ is not supported. Optimizer state carries over between rounds only with job life
 (``launch_once=False``) each round starts a fresh optimizer, so step mode gives no benefit over
 ``max_steps=N`` there.
 
+When the script runs in an external process, set ``shutdown_timeout`` (for example 30 seconds) in the
+recipe or ``ScriptRunner``. In step mode the script is still inside ``fit()`` when the job ends, and with
+the default of 0 the process is terminated at once, so the DataLoader workers are killed, a traceback is
+logged, and code after ``fit()`` does not run. With a timeout, ``fit()`` returns and the script ends normally.
+
 Any callback in ``trainer.callbacks`` can define these hooks, in both modes:
 
 * ``on_fl_receive(trainer, pl_module, fl_model)``: before the received model is loaded. Edits to

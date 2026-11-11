@@ -98,6 +98,10 @@ In step mode:
   With task lifetime (`launch_once=False`) each task runs the script again: `fit()` trains one round, the next
   receive returns no task, and the script exits. Every round starts with a fresh optimizer, so step mode gives no
   benefit over `max_steps=N` there; use job lifetime to keep optimizer state across rounds.
+- With an external process, the script is still inside `fit()`, waiting in a receive, when the job ends. With the
+  default `shutdown_timeout=0`, END_RUN terminates the trainer process group without waiting for an orderly exit, so
+  DataLoader workers are killed and a traceback is logged. With `shutdown_timeout` set, the SHUTDOWN request makes the
+  receive return no task, `fit()` returns and the script ends normally. In-process mode is not affected.
 - `train_with_evaluation=True` in the job config raises `ValueError` when `patch()` runs.
 - A site that stops on its own (`EarlyStopping`, `max_time`, `trainer.should_stop`) sends its open round, which may be
   shorter than N steps, and leaves. A round with no optimizer step yet is not sent: it would carry the received model
