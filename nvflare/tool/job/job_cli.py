@@ -1095,7 +1095,7 @@ def cmd_job_download(cmd_args):
         payload["missing_artifacts"] = None
     if outputs_only:
         payload["outputs_only"] = outputs_notice is None  # whether only the declared outputs were downloaded
-        payload["outputs_only_notice"] = outputs_notice
+        payload["outputs_note"] = outputs_notice
     if json_mode:
         output_ok(payload)
 

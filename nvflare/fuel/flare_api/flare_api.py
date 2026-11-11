@@ -130,21 +130,11 @@ def _validate_target_strs(targets: List[str]) -> None:
     process_targets_into_str(targets)
 
 
-def _outputs_download_notice(meta: dict, job_id: str, outputs_only: bool) -> Optional[str]:
-    """What to tell the user about a download: an outputs-only request that returned the whole job, or a download
-    that lacks the job's stored outputs. None when there is nothing to tell."""
-    missing = meta.get(MetaKey.OUTPUTS_MISSING)
-    incomplete = f"The download of job {job_id} is incomplete: {missing}." if missing else None
-    if not outputs_only:
-        return incomplete
-    if MetaKey.OUTPUTS_ONLY not in meta:
-        return f"The server does not support outputs-only downloads; downloaded the whole job {job_id}."
-    if meta.get(MetaKey.OUTPUTS_ONLY) is True:
-        return None
-    reason = meta.get(MetaKey.OUTPUTS_ONLY_REASON) or "the server returned the whole job"
-    whole_job = f"Downloaded the whole job {job_id} because {reason}."
-    # the reason may be unrelated (a failed job), so say separately that the outputs are missing
-    return f"{whole_job} {incomplete}" if incomplete and missing not in reason else whole_job
+def _outputs_download_notice(meta: dict, job_id: str) -> Optional[str]:
+    """What to tell the user when a download is not what was asked for: an outputs-only request that returned the
+    whole job, or a job whose stored outputs are missing from the download. None otherwise."""
+    note = meta.get(MetaKey.OUTPUTS_NOTE)
+    return f"Job {job_id}: {note}." if note else None
 
 
 class Session(SessionSpec):
@@ -541,7 +531,7 @@ class Session(SessionSpec):
         result = self._do_command(AdminCommandNames.DOWNLOAD_JOB + " " + job_id, props=props)
         meta = result[ResultKey.META]
         location = meta.get(MetaKey.LOCATION)
-        notice = _outputs_download_notice(meta, job_id, outputs_only) if location else None
+        notice = _outputs_download_notice(meta, job_id) if location else None
 
         if destination and location and os.path.exists(location):
             destination = os.path.abspath(destination)

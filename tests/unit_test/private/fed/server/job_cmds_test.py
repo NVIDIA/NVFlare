@@ -2229,7 +2229,7 @@ def test_download_job_outputs_only_serves_the_stored_outputs_archive_like_a_full
     assert prepared["workspace.zip"].resolve() == (store / "outputs").resolve()
     with ZipFile(prepared["workspace.zip"]) as z:
         assert z.namelist() == ["app_server/FL_global_model.pt"]
-    assert reply_meta == {MetaKey.OUTPUTS_ONLY: True, MetaKey.OUTPUTS_ONLY_REASON: None}
+    assert reply_meta is None  # what was asked for: nothing to report
 
 
 @pytest.mark.parametrize(
@@ -2250,7 +2250,8 @@ def test_download_job_outputs_only_falls_back_to_the_whole_job(monkeypatch, tmp_
     assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
     with ZipFile(prepared["workspace.zip"]) as z:
         assert sorted(z.namelist()) == sorted(_WORKSPACE)
-    assert reply_meta[MetaKey.OUTPUTS_ONLY] is False and reason in reply_meta[MetaKey.OUTPUTS_ONLY_REASON]
+    assert reply_meta[MetaKey.OUTPUTS_NOTE].startswith("the whole job was downloaded because")
+    assert reason in reply_meta[MetaKey.OUTPUTS_NOTE]
 
 
 def test_download_job_outputs_only_never_asks_a_store_for_a_missing_outputs_component(monkeypatch, tmp_path):
@@ -2269,7 +2270,7 @@ def test_download_job_outputs_only_never_asks_a_store_for_a_missing_outputs_comp
     prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
 
     assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
-    assert reply_meta[MetaKey.OUTPUTS_ONLY] is False
+    assert reply_meta[MetaKey.OUTPUTS_NOTE]
 
 
 def test_a_full_download_without_the_outputs_archive_returns_the_rest_and_says_so(monkeypatch, tmp_path):
@@ -2280,7 +2281,7 @@ def test_a_full_download_without_the_outputs_archive_returns_the_rest_and_says_s
     prepared, reply_meta = _download(engine, tmp_path)
 
     assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
-    assert "does not include its declared outputs" in reply_meta[MetaKey.OUTPUTS_MISSING]
+    assert "does not include its declared outputs" in reply_meta[MetaKey.OUTPUTS_NOTE]
 
 
 def test_a_partly_prepared_outputs_archive_is_dropped_and_reported_missing(monkeypatch, tmp_path):
@@ -2301,7 +2302,7 @@ def test_a_partly_prepared_outputs_archive_is_dropped_and_reported_missing(monke
     prepared, reply_meta = _download(engine, tmp_path)
 
     assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
-    assert reply_meta[MetaKey.OUTPUTS_MISSING]
+    assert "does not include its declared outputs" in reply_meta[MetaKey.OUTPUTS_NOTE]
 
 
 def test_an_outputs_only_download_without_the_outputs_archive_returns_the_whole_job_and_says_so(monkeypatch, tmp_path):
@@ -2320,9 +2321,9 @@ def test_an_outputs_only_download_without_the_outputs_archive_returns_the_whole_
     prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
 
     assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
-    assert reply_meta[MetaKey.OUTPUTS_ONLY] is False
-    assert "cannot be read from the job store" in reply_meta[MetaKey.OUTPUTS_ONLY_REASON]
-    assert reply_meta[MetaKey.OUTPUTS_MISSING]
+    note = reply_meta[MetaKey.OUTPUTS_NOTE]
+    assert note.startswith("the whole job was downloaded because the job's outputs archive cannot be read")
+    assert note.count("cannot be read from the job store") == 1  # not repeated
 
 
 @pytest.mark.parametrize("cmd_props", [None, {}, {"outputs_only": "yes"}])

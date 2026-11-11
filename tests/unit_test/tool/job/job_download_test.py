@@ -90,21 +90,20 @@ class TestJobDownload:
         mock_sess.download_job_result.assert_not_called()
         data = json.loads(captured.out)["data"]
         assert data["outputs_only"] is True
-        assert data["outputs_only_notice"] is None
-        assert "missing_job_outputs" not in data
+        assert data["outputs_note"] is None
 
     def test_download_outputs_only_reports_a_whole_job_download(self, tmp_path, capsys):
-        notice = "Downloaded the whole job abc123 because the job declares no job_outputs."
+        notice = "Job abc123: the whole job was downloaded because the job declares no job_outputs."
 
         _, captured = self._download_outputs_only(tmp_path, capsys, notice=notice)
 
         data = json.loads(captured.out)["data"]
         assert data["outputs_only"] is False
-        assert data["outputs_only_notice"] == notice
+        assert data["outputs_note"] == notice
 
     def test_download_outputs_only_tells_a_human_why_the_whole_job_came_back(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
-        notice = "Downloaded the whole job abc123 because the job did not complete successfully (status X)."
+        notice = "Job abc123: the whole job was downloaded because the job did not complete successfully (status X)."
 
         _, captured = self._download_outputs_only(tmp_path, capsys, notice=notice)
 

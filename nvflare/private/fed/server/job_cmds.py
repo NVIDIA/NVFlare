@@ -92,6 +92,17 @@ class _SubmitTokenJobDeleted(Exception):
         self.record = record
 
 
+def _outputs_note(whole_job_reason: Optional[str], missing: Optional[str]) -> Optional[str]:
+    """One note for the caller: why an outputs-only request returned the whole job, and that stored outputs are
+    missing from the download. None when the download is what was asked for."""
+    parts = []
+    if whole_job_reason:
+        parts.append(f"the whole job was downloaded because {whole_job_reason}")
+    if missing and missing != whole_job_reason:
+        parts.append(missing)
+    return "; ".join(parts) or None
+
+
 _OUTPUTS_ARCHIVE_MISSING = (
     "the job's outputs archive cannot be read from the job store, so the downloaded workspace does not include "
     "its declared outputs"
@@ -1773,12 +1784,14 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     reason, missing = self._prepare_outputs_download(
                         job_def_manager, job_id, job.meta, job_download_dir, comps, fl_ctx
                     )
-                    # tells the client whether it got the declared outputs or, and why, the whole job
-                    reply_meta.update({MetaKey.OUTPUTS_ONLY: reason is None, MetaKey.OUTPUTS_ONLY_REASON: reason})
                 else:
-                    missing = self._prepare_whole_job(job_def_manager, job_id, job_download_dir, comps, fl_ctx)
-                if missing:
-                    reply_meta[MetaKey.OUTPUTS_MISSING] = missing
+                    reason, missing = None, self._prepare_whole_job(
+                        job_def_manager, job_id, job_download_dir, comps, fl_ctx
+                    )
+                note = _outputs_note(reason, missing)
+                if note:
+                    # the download is not what the caller asked for; the client shows why
+                    reply_meta[MetaKey.OUTPUTS_NOTE] = note
 
                 if os.path.lexists(os.path.join(job_download_dir, job_id, OUTPUTS_ZIP)):
                     # the outputs belong in the workspace folder, beside the rest of it

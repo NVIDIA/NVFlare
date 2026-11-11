@@ -907,14 +907,12 @@ class TestDownloadJobResultOutputsOnly:
             path = session.download_job_result(self._JOB_ID, **kwargs)
         return cmd, path
 
-    _FILTERED = {MetaKey.OUTPUTS_ONLY: True, MetaKey.OUTPUTS_ONLY_REASON: None}
     _WHOLE = {
-        MetaKey.OUTPUTS_ONLY: False,
-        MetaKey.OUTPUTS_ONLY_REASON: "none of the job's declared outputs were found: plots/",
+        MetaKey.OUTPUTS_NOTE: "the whole job was downloaded because none of the job's declared outputs were found"
     }
 
     def test_sends_outputs_only_as_a_command_property(self, tmp_path):
-        cmd, path = self._download(tmp_path, self._FILTERED, outputs_only=True)
+        cmd, path = self._download(tmp_path, outputs_only=True)
 
         cmd.assert_called_once_with(f"{AdminCommandNames.DOWNLOAD_JOB} {self._JOB_ID}", props={"outputs_only": True})
         assert path == str(tmp_path / self._JOB_ID)
@@ -924,23 +922,17 @@ class TestDownloadJobResultOutputsOnly:
 
         cmd.assert_called_once_with(f"{AdminCommandNames.DOWNLOAD_JOB} {self._JOB_ID}", props=None)
 
-    def test_reports_an_older_server_that_returned_the_whole_job(self, tmp_path, caplog):
-        with caplog.at_level("INFO"):
-            self._download(tmp_path, outputs_only=True)
-
-        assert "does not support outputs-only downloads" in caplog.text
-
-    def test_tells_the_user_why_the_whole_job_was_downloaded(self, tmp_path, caplog):
-        with caplog.at_level("INFO"):
+    def test_shows_the_servers_note(self, tmp_path, caplog):
+        with caplog.at_level("WARNING"):
             self._download(tmp_path, self._WHOLE, outputs_only=True)
 
-        assert f"Downloaded the whole job {self._JOB_ID} because none of the job's declared outputs were found" in (
+        assert f"Job {self._JOB_ID}: the whole job was downloaded because none of the job's declared outputs" in (
             caplog.text
         )
 
-    def test_says_nothing_when_the_download_was_filtered(self, tmp_path, caplog):
+    def test_says_nothing_when_the_download_is_what_was_asked_for(self, tmp_path, caplog):
         with caplog.at_level("INFO"):
-            self._download(tmp_path, self._FILTERED, outputs_only=True)
+            self._download(tmp_path, outputs_only=True)
 
         assert "whole job" not in caplog.text
 
@@ -953,26 +945,14 @@ class TestDownloadJobResultOutputsOnly:
             path, notice = session._download_job_result(self._JOB_ID, outputs_only=True)
 
         assert path == str(location)
-        assert notice.startswith(f"Downloaded the whole job {self._JOB_ID} because")
+        assert notice.startswith(f"Job {self._JOB_ID}: the whole job was downloaded because")
 
     def test_warns_when_a_full_download_lacks_the_jobs_stored_outputs(self, tmp_path, caplog):
-        missing = {MetaKey.OUTPUTS_MISSING: "the job's outputs archive cannot be read from the job store"}
+        missing = {MetaKey.OUTPUTS_NOTE: "the job's outputs archive cannot be read from the job store"}
         with caplog.at_level("WARNING"):
             self._download(tmp_path, missing)
 
-        assert f"The download of job {self._JOB_ID} is incomplete" in caplog.text
-
-    def test_an_outputs_only_notice_also_reports_missing_outputs(self, tmp_path, caplog):
-        reply = {
-            MetaKey.OUTPUTS_ONLY: False,
-            MetaKey.OUTPUTS_ONLY_REASON: "the job did not complete successfully (status FINISHED:ABORTED)",
-            MetaKey.OUTPUTS_MISSING: "the job's outputs archive cannot be read from the job store",
-        }
-        with caplog.at_level("WARNING"):
-            self._download(tmp_path, reply, outputs_only=True)
-
-        assert "because the job did not complete successfully" in caplog.text
-        assert "is incomplete: the job's outputs archive cannot be read" in caplog.text
+        assert f"Job {self._JOB_ID}: the job's outputs archive cannot be read" in caplog.text
 
     def test_rejects_a_non_bool_outputs_only(self, tmp_path):
         from nvflare.fuel.flare_api.api_spec import InvalidArgumentError

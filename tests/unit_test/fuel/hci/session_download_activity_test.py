@@ -506,7 +506,7 @@ def test_pull_folder_forwards_command_props_to_the_server(tmp_path, props):
     api.server_execute.assert_called_once_with("download_job job-1", props=props)
 
 
-@pytest.mark.parametrize("reply_meta", [None, {MetaKey.OUTPUTS_ONLY: True, MetaKey.OUTPUTS_ONLY_REASON: None}])
+@pytest.mark.parametrize("reply_meta", [None, {MetaKey.OUTPUTS_NOTE: "the whole job was downloaded because x"}])
 def test_download_folder_adds_reply_meta_beside_the_file_list(monkeypatch, tmp_path, reply_meta):
     source_folder = tmp_path / "download" / "command-tx" / "job-1"
     source_folder.mkdir(parents=True)
@@ -542,7 +542,7 @@ def test_download_folder_adds_reply_meta_beside_the_file_list(monkeypatch, tmp_p
     for key, value in (reply_meta or {}).items():
         assert meta[key] == value
     if reply_meta is None:
-        assert MetaKey.OUTPUTS_ONLY not in meta
+        assert MetaKey.OUTPUTS_NOTE not in meta
 
 
 def test_pull_folder_passes_the_servers_outputs_only_report_to_the_caller(tmp_path):
@@ -555,9 +555,7 @@ def test_pull_folder_passes_the_servers_outputs_only_report_to_the_caller(tmp_pa
             MetaKey.FILES: [["meta.json", "ref-1"]],
             MetaKey.TX_ID: "tx-1",
             MetaKey.SOURCE_FQCN: "server",
-            MetaKey.OUTPUTS_ONLY: False,
-            MetaKey.OUTPUTS_ONLY_REASON: "the job declares no job_outputs",
-            MetaKey.OUTPUTS_MISSING: "the job's outputs archive cannot be read from the job store",
+            MetaKey.OUTPUTS_NOTE: "the whole job was downloaded because the job declares no job_outputs",
         },
     }
     api.do_command.return_value = {ProtoKey.STATUS: APIStatus.SUCCESS}
@@ -569,9 +567,10 @@ def test_pull_folder_passes_the_servers_outputs_only_report_to_the_caller(tmp_pa
 
     result = module.pull_folder(["download_job", "job-1"], ctx)
 
-    assert result[ProtoKey.META][MetaKey.OUTPUTS_ONLY] is False
-    assert result[ProtoKey.META][MetaKey.OUTPUTS_ONLY_REASON] == "the job declares no job_outputs"
-    assert result[ProtoKey.META][MetaKey.OUTPUTS_MISSING].startswith("the job's outputs archive")
+    assert (
+        result[ProtoKey.META][MetaKey.OUTPUTS_NOTE]
+        == "the whole job was downloaded because the job declares no job_outputs"
+    )
     assert MetaKey.FILES not in result[ProtoKey.META]
 
 

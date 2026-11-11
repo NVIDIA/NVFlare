@@ -76,10 +76,10 @@ class MetaKey(object):
     TX_ID = "tx_id"
     FOLDER_NAME = "folder_name"
     LOCATION = "location"
-    OUTPUTS_ONLY = "outputs_only"  # download_job: whether an outputs-only request was filtered
-    OUTPUTS_ONLY_REASON = "outputs_only_reason"  # download_job: why it was not
+    # download_job: what the caller should know about the download, when it is not what was asked for: an
+    # outputs-only request that returned the whole job, or a job whose stored outputs are missing from it
+    OUTPUTS_NOTE = "outputs_note"
     UNZIP_INTO = "unzip_into"  # folder download: downloaded zip file name -> folder to unzip it into
-    OUTPUTS_MISSING = "outputs_missing"  # download_job: why the job's stored outputs are not in the download
     SOURCE_FQCN = "source_fqcn"
 
 
