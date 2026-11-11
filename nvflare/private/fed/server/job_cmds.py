@@ -38,6 +38,8 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.job_def import (
     ALL_SITES,
     DEFAULT_STUDY,
+    OUTPUTS_MANIFEST_FILE,
+    OUTPUTS_ONLY_PROP,
     SERVER_SITE_NAME,
     Job,
     JobMetaKey,
@@ -73,6 +75,11 @@ from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
+from nvflare.private.fed.server.job_outputs import (
+    filter_workspace_archive,
+    outputs_only_refusal,
+    write_outputs_manifest,
+)
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import extract_participants
@@ -95,7 +102,7 @@ CLONED_META_KEYS = {
     JobMetaKey.RESOURCE_SPEC.value,
     JobMetaKey.CJ_RESOURCE_SPEC.value,
     JobMetaKey.CONTENT_LOCATION.value,
-    JobMetaKey.RESULT_LOCATION.value,
+    JobMetaKey.JOB_OUTPUTS.value,
     JobMetaKey.APPROVALS.value,
     JobMetaKey.MIN_CLIENTS.value,
     JobMetaKey.MANDATORY_CLIENTS.value,
@@ -1706,7 +1713,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_download_dir = self.tx_path(conn, tx_id)
         shutil.rmtree(job_download_dir, ignore_errors=True)
 
-    def _download_job_comps(self, conn: Connection, args: List[str], get_comps_f, require_finished: bool = False):
+    def _download_job_comps(
+        self, conn: Connection, args: List[str], get_comps_f, require_finished: bool = False, outputs_only: bool = False
+    ):
         """
         Job download uses binary protocol for more efficient download.
         - Retrieve job data from job store. This puts job files (meta, data, and workspace) in a transfer folder
@@ -1755,8 +1764,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 return
 
             try:
-                for ct, file_name in comps:
-                    job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
+                if outputs_only:
+                    self._prepare_outputs_download(job_def_manager, job_id, job.meta, job_download_dir, comps, fl_ctx)
+                else:
+                    for ct, file_name in comps:
+                        job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
 
                 self.download_folder(
                     conn,
@@ -1779,7 +1791,35 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         - Returns job file names, a TX ID, and a command name for downloading files to the admin client
         - Admin client downloads received file names one by one. It signals the end of download in the last command.
         """
-        self._download_job_comps(conn, args, self._get_default_job_components, require_finished=True)
+        cmd_props = conn.get_prop(ConnProps.CMD_PROPS)
+        outputs_only = isinstance(cmd_props, dict) and cmd_props.get(OUTPUTS_ONLY_PROP) is True
+        self._download_job_comps(
+            conn, args, self._get_default_job_components, require_finished=True, outputs_only=outputs_only
+        )
+
+    def _prepare_outputs_download(self, job_def_manager, job_id: str, meta: dict, job_download_dir: str, comps, fl_ctx):
+        """Prepare an outputs-only download: meta.json, the declared outputs of the workspace, and a manifest.
+
+        The whole job is prepared instead when the job did not complete, declares no outputs, or has no workspace
+        archive; the manifest then says why. Either way the manifest tells the client what it received.
+        """
+        job_dir = os.path.join(job_download_dir, job_id)
+        reason, outputs = outputs_only_refusal(meta)
+        found = missing = None
+        if not reason:
+            job_def_manager.get_storage_for_download(job_id, job_download_dir, META, META_JSON, fl_ctx)
+            # prepared under a temporary name: it may be a symlink to the stored archive
+            prepared_name = f".{WORKSPACE_ZIP}.{uuid.uuid4().hex}.prepared"
+            job_def_manager.get_storage_for_download(job_id, job_download_dir, WORKSPACE, prepared_name, fl_ctx)
+            prepared = os.path.join(job_dir, prepared_name)
+            if os.path.lexists(prepared):
+                found, missing = filter_workspace_archive(prepared, os.path.join(job_dir, WORKSPACE_ZIP), outputs)
+            else:
+                reason = "the job has no workspace archive"
+        if reason:
+            for ct, file_name in comps:
+                job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
+        write_outputs_manifest(os.path.join(job_dir, OUTPUTS_MANIFEST_FILE), reason, found, missing)
 
     def download_job_components(self, conn: Connection, args: List[str]):
         """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.

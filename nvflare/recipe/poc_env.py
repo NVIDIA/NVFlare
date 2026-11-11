@@ -703,17 +703,18 @@ class PocEnv(ExecEnv):
         """
         self._get_session_manager().abort_job(job_id)
 
-    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+    def get_job_result(self, job_id: str, timeout: float = 0.0, outputs_only: bool = False) -> Optional[str]:
         """Get the result workspace of a job.
 
         Args:
             job_id: The job ID to get results for.
             timeout: The timeout for the job to complete. Defaults to 0.0 (no timeout).
+            outputs_only: download only the job's declared outputs. Defaults to False.
 
         Returns:
             Optional[str]: The result workspace path if job completed, None otherwise.
         """
-        return self._get_session_manager().get_job_result(job_id, timeout)
+        return self._get_session_manager().get_job_result(job_id, timeout, outputs_only=outputs_only)
 
     def _get_admin_startup_kit_path(self) -> str:
         """Get the path to the admin startup kit for POC.

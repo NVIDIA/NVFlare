@@ -33,13 +33,15 @@ already at stable, known paths:
 | --- | --- | --- |
 | PyTorch training | Global model, best model | `app_server/FL_global_model.pt`, `app_server/best_FL_global_model.pt` |
 | TensorFlow training | Global model | `app_server/tf_model.weights.h5` |
-| Scikit-learn, XGBoost bagging | Global model | `app_server/<persistor file name>` |
+| Scikit-learn, XGBoost bagging | Global model | `app_server/<persistor file name>`, such as `app_server/model_param.joblib` |
+| NumPy training | Global model | `models/server.npy` (the persistor writes it under the result root, which is merged at the archive root) |
+| FedAvg without a persistor | Global model | The controller's `save_filename`, relative to the run folder |
 | Training metrics | Metrics artifact | `metrics/metrics_summary.json`, `metrics/round_metrics.jsonl` |
 | Federated statistics | Statistics | The recipe's `stats_output_path`, relative to the run folder |
 | Cross-site evaluation | Evaluation report | `cross_site_val/cross_val_results.json` |
 
-All these file names are set by recipe or component arguments, so the code that
-configures the job already knows them. Histogram-based and vertical XGBoost
+All these file names are set by component arguments, so the components a
+recipe configures already name them. Histogram-based and vertical XGBoost
 save their models on the clients, so they have no server-side model.
 
 ## Goals
@@ -117,10 +119,10 @@ from nvflare.recipe import set_recipe_meta
 set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/FL_global_model.pt"])
 ```
 
-A recipe declares only the files whose names it configures. With a custom
-`model_persistor`, the recipe does not know the model's file name, so the job
-declares it the same way. So does a job that writes its own files. Paths are
-relative to the server run folder:
+A recipe declares the files of the built-in components it configures, including
+a built-in persistor passed as `model_persistor`. A custom persistor class, or a
+job that writes its own files, is not known to the recipe, so the job declares
+those files the same way. Paths are relative to the server run folder:
 
 ```python
 set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/report.json", "plots/"])
@@ -217,13 +219,32 @@ long run.
 - `JOB_OUTPUTS` is added to `USER_SETTABLE_JOB_META_KEYS`, so
   `set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, [...])` works and checks the
   same rules on the client. A user's value replaces the built-in list.
-- Built-in recipes set it from the file names they pass to their components.
-  They normalize each name with `posixpath.normpath` first, so a documented
-  input such as `stats_output_path="./output"` is declared as `output`. A recipe
-  never fails because of its own declaration.
-- Utilities that add a result-producing component after the recipe is built,
-  such as `add_cross_site_evaluation`, append to the existing list rather than
-  replacing it.
+- Recipes derive the key from their server components when they are exported
+  or run (`Recipe.export` and `Recipe.run`), so no recipe has its own
+  declaration code. Each built-in result-producing component maps to the paths
+  its arguments name:
+
+  | Component | Declared output |
+  | --- | --- |
+  | `PTFileModelPersistor` | `app_server/<global_model_file_name>`, `app_server/<best_global_model_file_name>` |
+  | `TFModelPersistor`, `JoblibModelParamPersistor`, `XGBModelPersistor` | `app_server/<save_name>` |
+  | `NPModelPersistor` | `<model_dir>/<model_name>` |
+  | `FedAvg` without a persistor | `<save_filename>` |
+  | `MetricsArtifactWriter` | `<results_dir>/` |
+  | `JsonStatsFileWriter` | `<output_path>` |
+  | `CrossSiteModelEval`, `CrossSiteEval` | `<cross_val_dir>/` |
+
+  Components are matched by class name, including subclasses, so no framework
+  is imported to inspect a job. Each path is normalized with
+  `posixpath.normpath`, so `stats_output_path="./output"` is declared as
+  `output`. A path that would not pass validation is skipped, and a file inside
+  a declared folder is not listed again. A recipe never fails because of its
+  own declaration.
+- Because the declaration is made at export or run time, a component added
+  after the recipe is built, such as by `add_cross_site_evaluation`, is
+  included.
+- A value set with `set_recipe_meta` replaces the derived list and is kept as
+  set, including when components are added later.
 - Hand-written jobs may add the key to `meta.json` or leave it out.
 
 ### Admin command: `download_job` with an `outputs_only` option
@@ -283,8 +304,8 @@ Extraction matches each archive member's normalized name against the declared
 entries and rejects symlink entries. It never writes outside the transfer
 folder.
 
-A completed job whose workspace could not be archived gets the same internal
-error with or without `outputs_only`.
+A completed job that has no workspace archive gets the whole job, as a full
+download does, and the manifest gives the reason.
 
 Outputs-only layout, with the same relative paths as a full download:
 
@@ -342,8 +363,11 @@ Unit tests:
 - `job_outputs` validation: valid entries, folder entries, and rejection of
   absolute paths, `..`, `.`, backslashes, empty segments, non-strings and
   oversized lists.
-- `set_recipe_meta` accepts the key and applies the same checks. Recipe
-  declarations are normalized, and `add_cross_site_evaluation` appends to them.
+- `set_recipe_meta` accepts the key and applies the same checks, and its value
+  replaces the derived declaration.
+- Each built-in component declares the paths its arguments name; paths are
+  normalized, invalid ones skipped. A component added by
+  `add_cross_site_evaluation`, even after an earlier export, is declared.
 - Cloned jobs keep `job_outputs`.
 - `download_job` with `outputs_only`:
   - writes a filtered `workspace.zip` with only the declared entries, at their
@@ -360,20 +384,19 @@ Unit tests:
   the server returns no manifest.
 - `Run.get_result()` works with an `ExecEnv` that implements the two-argument
   `get_job_result`.
-- Built-in recipes declare files that match the names they pass to their
-  components.
+- The PyTorch FedAvg recipe exports the expected `job_outputs`.
 
-Integration test: run a PyTorch FedAvg job in POC, download it with
+Integration test, to follow: run a PyTorch FedAvg job in POC, download it with
 `outputs_only=True`, and check that the model file is present at its usual path
 and other workspace files are absent.
 
-## Rollout
+## Implementation
 
-1. Metadata key, validation, cloning and `set_recipe_meta` support, and removal
-   of `result_location` and `set_results_uri`.
-2. `download_job` option, client API, recipe `Run` and CLI flag.
-3. Built-in recipe declarations, starting with PyTorch FedAvg, federated
-   statistics and cross-site evaluation.
-
-Each step is usable alone. Until a recipe declares its files, an outputs-only
-request for its jobs returns the whole job.
+| Part | Location |
+| --- | --- |
+| Key, validation, constants | `nvflare/apis/job_def.py` (`JobMetaKey.JOB_OUTPUTS`, `validate_job_outputs`, `job_output_matches`) |
+| Submission check | `JobMetaValidator._validate_job_outputs` |
+| Cloning | `CLONED_META_KEYS` in `job_cmds.py` |
+| Recipe declaration | `nvflare/recipe/_job_outputs.py`, called by `Recipe.export` and `Recipe.run` |
+| Outputs-only download | `JobCommandModule.download_job` and `nvflare/private/fed/server/job_outputs.py` |
+| Client | `FileTransferModule.pull_folder`, `Session.download_job_result`, `ExecEnv.get_job_result`, `Run.get_result`, `nvflare job download --outputs-only` |

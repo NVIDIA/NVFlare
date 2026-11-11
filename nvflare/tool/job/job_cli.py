@@ -972,6 +972,24 @@ def cmd_job_clone(cmd_args):
     output_ok({"source_job_id": cmd_args.job_id, "new_job_id": new_job_id})
 
 
+def _outputs_manifest_summary(download_path: Optional[str]):
+    """(whether the download was filtered, the declared outputs it lacks) from its outputs_manifest.json."""
+    from nvflare.apis.job_def import OUTPUTS_MANIFEST_FILE
+
+    manifest_path = os.path.join(download_path, OUTPUTS_MANIFEST_FILE) if download_path else ""
+    if not manifest_path or not os.path.isfile(manifest_path):
+        return False, None  # an older server returned the whole job
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+    except (OSError, ValueError):
+        return False, None
+    if not isinstance(manifest, dict) or manifest.get("outputs_only") is not True:
+        return False, None
+    missing = manifest.get("missing")
+    return True, missing if isinstance(missing, list) else []
+
+
 def cmd_job_download(cmd_args):
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotDone, JobNotFound, NoConnection
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
@@ -985,6 +1003,7 @@ def cmd_job_download(cmd_args):
             "nvflare job download <job_id> -o /path/to/results",
             "nvflare job download <job_id> --study cancer",
             "nvflare job download <job_id> --force",
+            "nvflare job download <job_id> --outputs-only",
         ],
         sys.argv[1:],
         output_modes=_JSON_OUTPUT_MODES,
@@ -1031,7 +1050,11 @@ def cmd_job_download(cmd_args):
                     os.remove(expected_download_path)
             if not json_mode:
                 print_human(f"Downloading job {cmd_args.job_id} from study {study} ...")
-            path = sess.download_job_result(cmd_args.job_id, destination)
+            outputs_only = getattr(cmd_args, "outputs_only", False) is True
+            if outputs_only:
+                path = sess.download_job_result(cmd_args.job_id, destination, outputs_only=True)
+            else:
+                path = sess.download_job_result(cmd_args.job_id, destination)
     except JobNotFound:
         output_error(
             "JOB_NOT_FOUND",
@@ -1084,6 +1107,8 @@ def cmd_job_download(cmd_args):
         payload["artifact_discovery"] = "skipped"
         payload["artifacts"] = None
         payload["missing_artifacts"] = None
+    if getattr(cmd_args, "outputs_only", False) is True:
+        payload["outputs_only"], payload["missing_job_outputs"] = _outputs_manifest_summary(download_path)
     if json_mode:
         output_ok(payload)
 
@@ -1220,6 +1245,12 @@ def define_download_job_parser(job_subparser):
     )
     p.add_argument("--study", type=str, default="default", help="study containing the job")
     p.add_argument("--force", action="store_true", help="replace an existing local download directory")
+    p.add_argument(
+        "--outputs-only",
+        dest="outputs_only",
+        action="store_true",
+        help="download only the outputs the job declares (job_outputs); the whole job when it declares none or failed",
+    )
     add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_DOWNLOAD] = p

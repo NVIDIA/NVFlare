@@ -443,6 +443,17 @@ class TestRecipeMetaHelper:
         with pytest.raises(ValueError, match=rf"{key.value}.*cannot be set through set_recipe_meta"):
             set_recipe_meta(recipe, key, "value")
 
+    def test_set_recipe_meta_accepts_job_outputs_with_server_rules(self):
+        recipe = self._make_recipe("test_recipe_meta_job_outputs", min_clients=1)
+        set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/report.json", "plots/", "plots/"])
+        assert recipe._job.job.meta_props[JobMetaKey.JOB_OUTPUTS.value] == ["app_server/report.json", "plots/"]
+
+    @pytest.mark.parametrize("value", [["../escape"], ["/abs"], "plots/", [1]])
+    def test_set_recipe_meta_rejects_invalid_job_outputs(self, value):
+        recipe = self._make_recipe("test_recipe_meta_bad_job_outputs", min_clients=1)
+        with pytest.raises((TypeError, ValueError)):
+            set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, value)
+
     def test_set_recipe_meta_stores_caller_independent_copy(self):
         recipe = self._make_recipe("test_recipe_meta_copy", min_clients=1)
         launcher_spec = {"site-1": {"docker": {"image": "nvflare:latest"}}}

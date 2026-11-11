@@ -488,6 +488,23 @@ def test_pull_folder_failure_removes_transaction_directory(tmp_path):
     assert not tx_path.exists()
 
 
+@pytest.mark.parametrize("props", [None, {"outputs_only": True}])
+def test_pull_folder_forwards_command_props_to_the_server(tmp_path, props):
+    module = FileTransferModule(str(tmp_path), str(tmp_path))
+    api = MagicMock()
+    api.server_execute.return_value = {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.META: {}}
+    command_entry = MagicMock()
+    command_entry.full_command_name.return_value = "download_job"
+    ctx = MagicMock()
+    ctx.get_command_entry.return_value = command_entry
+    ctx.get_api.return_value = api
+    ctx.get_command_props.return_value = props
+
+    module.pull_folder(["download_job", "job-1"], ctx)
+
+    api.server_execute.assert_called_once_with("download_job job-1", props=props)
+
+
 def test_logout_after_expiry_does_not_use_stopped_messenger():
     api = AdminAPI.__new__(AdminAPI)
     api.closed = True

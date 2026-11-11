@@ -208,7 +208,8 @@ class FileTransferModule(CommandModule):
         parts = [cmd_entry.full_command_name(), folder_name]
         command = join_args(parts)
         api = ctx.get_api()
-        result = api.server_execute(command)
+        # forward the command's properties (e.g. download_job's outputs_only) to the server
+        result = api.server_execute(command, props=ctx.get_command_props())
         if result.get(ProtoKey.STATUS) != APIStatus.SUCCESS:
             return result
 

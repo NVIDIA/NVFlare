@@ -15,6 +15,7 @@
 import datetime
 import gc
 import io
+import json
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -2142,6 +2143,134 @@ def test_download_job_packages_all_default_components_for_finished_job(monkeypat
     assert conn.errors == []
     assert engine.job_def_manager.get_storage_for_download.call_count == 3
     module.download_folder.assert_called_once()
+
+
+def _symlink_store(tmp_path, job_id, workspace_files):
+    """A job store that prepares downloads as symlinks to its stored components, as FilesystemStorage does."""
+    store = tmp_path / "store" / job_id
+    store.mkdir(parents=True)
+    (store / "data").write_bytes(b"job zip")
+    (store / "meta").write_text("{}")
+    with ZipFile(store / "workspace", "w") as z:
+        for name, data in workspace_files.items():
+            z.writestr(name, data)
+
+    def get_storage_for_download(jid, download_dir, component, download_file, fl_ctx):
+        target_dir = Path(download_dir) / jid
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / download_file
+        if target.exists() or target.is_symlink():
+            target.unlink()
+        target.symlink_to(store / component)
+
+    return store, get_storage_for_download
+
+
+def _download(engine, tmp_path, cmd_props=None):
+    props = {ConnProps.DOWNLOAD_DIR: str(tmp_path / "tx")}
+    if cmd_props is not None:
+        props[ConnProps.CMD_PROPS] = cmd_props
+    conn = _MockConnection(app_ctx=engine, props=props)
+    module = JobCommandModule()
+    prepared = {}
+
+    def download_folder(conn, tx_id, folder_name):
+        folder = tmp_path / "tx" / tx_id / folder_name
+        prepared.update({p.name: p for p in folder.iterdir()})
+
+    module.download_folder = download_folder
+    module.download_job(conn, ["download_job", "job-1"])
+    assert conn.errors == []
+    return prepared
+
+
+_WORKSPACE = {"app_server/FL_global_model.pt": b"model", "metrics/metrics_summary.json": b"{}", "log.txt": b"log"}
+
+
+def _finished_job(status=RunStatus.FINISHED_COMPLETED.value, outputs=("app_server/FL_global_model.pt", "plots/")):
+    meta = {JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: status}
+    if outputs is not None:
+        meta[JobMetaKey.JOB_OUTPUTS.value] = list(outputs)
+    return _FakeListedJob(meta)
+
+
+def test_download_job_outputs_only_returns_declared_outputs_and_keeps_stored_archive(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job()])
+    store, engine.job_def_manager.get_storage_for_download = _symlink_store(tmp_path, "job-1", _WORKSPACE)
+
+    prepared = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["meta.json", "outputs_manifest.json", "workspace.zip"]
+    with ZipFile(prepared["workspace.zip"]) as z:
+        assert z.namelist() == ["app_server/FL_global_model.pt"]
+    assert json.loads(prepared["outputs_manifest.json"].read_text()) == {
+        "outputs_only": True,
+        "found": ["app_server/FL_global_model.pt"],
+        "missing": ["plots/"],
+    }
+    with ZipFile(store / "workspace") as z:  # the stored archive is unchanged for later full downloads
+        assert sorted(z.namelist()) == sorted(_WORKSPACE)
+
+
+@pytest.mark.parametrize(
+    "job, reason",
+    [
+        (_finished_job(status=RunStatus.FINISHED_EXECUTION_EXCEPTION.value), "did not complete successfully"),
+        (_finished_job(outputs=None), "declares no job_outputs"),
+    ],
+)
+def test_download_job_outputs_only_falls_back_to_the_whole_job(monkeypatch, tmp_path, job, reason):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([job])
+    _, engine.job_def_manager.get_storage_for_download = _symlink_store(tmp_path, "job-1", _WORKSPACE)
+
+    prepared = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "outputs_manifest.json", "workspace.zip"]
+    with ZipFile(prepared["workspace.zip"]) as z:
+        assert sorted(z.namelist()) == sorted(_WORKSPACE)
+    manifest = json.loads(prepared["outputs_manifest.json"].read_text())
+    assert manifest["outputs_only"] is False and reason in manifest["reason"]
+
+
+@pytest.mark.parametrize("cmd_props", [None, {}, {"outputs_only": "yes"}])
+def test_download_job_without_outputs_only_is_unchanged(monkeypatch, tmp_path, cmd_props):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job()])
+    _, engine.job_def_manager.get_storage_for_download = _symlink_store(tmp_path, "job-1", _WORKSPACE)
+
+    prepared = _download(engine, tmp_path, cmd_props)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+
+
+def test_clone_job_keeps_job_outputs(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    source_job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "source-job",
+            JobMetaKey.JOB_NAME.value: "source",
+            JobMetaKey.JOB_OUTPUTS.value: ["metrics/"],
+        }
+    )
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            JobCommandModule.JOB: source_job,
+            JobCommandModule.JOB_ID: "source-job",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+    JobCommandModule().clone_job(conn, ["clone_job", "source-job"])
+
+    assert conn.errors == []
+    assert engine.job_def_manager.cloned_meta[JobMetaKey.JOB_OUTPUTS.value] == ["metrics/"]
 
 
 def test_get_job_log_returns_server_log(monkeypatch, tmp_path):

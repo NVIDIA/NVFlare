@@ -97,12 +97,15 @@ class ExecEnv(ABC):
         pass
 
     @abstractmethod
-    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+    def get_job_result(self, job_id: str, timeout: float = 0.0, outputs_only: bool = False) -> Optional[str]:
         """Get the result workspace of a job.
 
         Args:
             job_id: The job ID to get results for.
             timeout: The timeout for the job to complete. Defaults to 0.0 (no timeout).
+            outputs_only: download only the job's declared outputs, where the environment downloads the result.
+                ``Run`` passes this argument only when it is True, so an environment written before it existed
+                keeps working.
 
         Returns:
             Optional[str]: The result workspace path if job completed, None if still running or stopped early.
@@ -402,6 +405,17 @@ class Recipe(ABC):
             for client in clients:
                 self._job.to(obj, client, **kwargs)
 
+    def _declare_job_outputs(self) -> None:
+        """Declare the job's outputs (``job_outputs`` in ``meta.json``) from its server components.
+
+        The built-in model persistors, metrics writer, statistics writer and cross-site evaluation each write to a
+        path set by their own arguments; those paths become the job's outputs, which an outputs-only download
+        returns. A value set with ``set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ...)`` replaces the declaration.
+        """
+        from nvflare.recipe._job_outputs import declare_job_outputs
+
+        self._declared_job_outputs = declare_job_outputs(self._job, getattr(self, "_declared_job_outputs", None))
+
     def finalize(self):
         """Called to finalize the setup of the recipe.
 
@@ -657,6 +671,7 @@ class Recipe(ABC):
         self._validate_before_use()
         self._ensure_client_apps_prepared()
         self.finalize()
+        self._declare_job_outputs()
         self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             if env is not None:
@@ -680,6 +695,7 @@ class Recipe(ABC):
         self._validate_before_use()
         self._ensure_client_apps_prepared()
         self.finalize()
+        self._declare_job_outputs()
         self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             self.process_env(env)

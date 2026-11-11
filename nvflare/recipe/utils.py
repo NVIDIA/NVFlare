@@ -21,7 +21,13 @@ from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DataKind
-from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, USER_SETTABLE_JOB_META_KEYS, JobMetaKey
+from nvflare.apis.job_def import (
+    ALL_SITES,
+    SERVER_SITE_NAME,
+    USER_SETTABLE_JOB_META_KEYS,
+    JobMetaKey,
+    validate_job_outputs,
+)
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets, warn_on_unsupported_secret_refs
 from nvflare.job_config.api import FedJob, validate_target_name
@@ -194,6 +200,9 @@ def _normalize_recipe_meta_value(key: JobMetaKey, key_str: str, value: Any) -> A
         if not isinstance(value, str):
             raise TypeError(f"recipe meta value for key {key_str!r} must be a str, got {type(value).__name__}")
         return value
+    if key is JobMetaKey.JOB_OUTPUTS:
+        # the same rules the server applies at submission
+        return validate_job_outputs(list(value) if isinstance(value, tuple) else value)
     # All other user-settable keys are dict-shaped.
     if key in _SITE_KEYED_META_KEYS:
         try:
@@ -230,6 +239,8 @@ def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
     would be silently overwritten.
 
     The value shape depends on the key: ``SCOPE`` takes a string;
+    ``JOB_OUTPUTS`` takes a list of server workspace paths (see
+    :func:`nvflare.apis.job_def.validate_job_outputs`) and replaces the outputs a built-in recipe declared;
     ``RESOURCE_SPEC``, ``CJ_RESOURCE_SPEC`` and ``JOB_LAUNCHER_SPEC`` take a dict keyed by site name
     with dict values; ``CUSTOM_PROPS`` takes a dict. Dict values must be
     completely JSON-serializable, cannot contain non-finite floats, and have

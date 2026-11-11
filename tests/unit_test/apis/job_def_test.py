@@ -12,7 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.job_def import DEFAULT_STUDY, get_job_meta_study, is_valid_job_id
+import pytest
+
+from nvflare.apis.job_def import (
+    DEFAULT_STUDY,
+    MAX_JOB_OUTPUTS,
+    get_job_meta_study,
+    is_valid_job_id,
+    job_output_matches,
+    validate_job_outputs,
+)
 
 
 class TestJobDef:
@@ -25,3 +34,38 @@ class TestJobDef:
 
     def test_get_job_meta_study_defaults_legacy_jobs(self):
         assert get_job_meta_study({}) == DEFAULT_STUDY
+
+
+class TestJobOutputs:
+    def test_accepts_files_and_folders_and_removes_duplicates(self):
+        outputs = ["app_server/FL_global_model.pt", "metrics/", "app_server/FL_global_model.pt", "output"]
+        assert validate_job_outputs(outputs) == ["app_server/FL_global_model.pt", "metrics/", "output"]
+
+    @pytest.mark.parametrize(
+        "entry",
+        ["", "/abs/path", "C:/model.pt", "a\\b", "../escape", "a/../b", "./a", "a/./b", "a//b", "/", "a/b//"],
+    )
+    def test_rejects_unsafe_entries(self, entry):
+        with pytest.raises(ValueError):
+            validate_job_outputs([entry])
+
+    @pytest.mark.parametrize("value", ["metrics/", {"a": 1}, None, ["ok", 3]])
+    def test_rejects_non_string_lists(self, value):
+        with pytest.raises(TypeError):
+            validate_job_outputs(value)
+
+    def test_rejects_oversized_lists(self):
+        with pytest.raises(ValueError, match="at most"):
+            validate_job_outputs([f"f{i}" for i in range(MAX_JOB_OUTPUTS + 1)])
+
+    @pytest.mark.parametrize(
+        "member, expected",
+        [
+            ("metrics/metrics_summary.json", "metrics/"),
+            ("metrics2/x.json", ""),
+            ("app_server/FL_global_model.pt", "app_server/FL_global_model.pt"),
+            ("app_server/FL_global_model.pt.bak", ""),
+        ],
+    )
+    def test_matches_exact_files_and_folder_prefixes(self, member, expected):
+        assert job_output_matches(member, ["metrics/", "app_server/FL_global_model.pt"]) == expected

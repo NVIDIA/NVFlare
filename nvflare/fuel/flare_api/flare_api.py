@@ -25,7 +25,7 @@ from nvflare.apis.fl_constant import (
     WorkspaceConstants,
 )
 from nvflare.apis.fl_exception import FLCommunicationError
-from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
+from nvflare.apis.job_def import DEFAULT_STUDY, OUTPUTS_MANIFEST_FILE, OUTPUTS_ONLY_PROP, JobMetaKey
 from nvflare.apis.utils.format_check import name_check
 from nvflare.apis.utils.job_submit_token import validate_submit_token
 from nvflare.apis.workspace import Workspace
@@ -492,13 +492,17 @@ class Session(SessionSpec):
         jobs_list = meta.get(MetaKey.JOBS, [])
         return jobs_list
 
-    def download_job_result(self, job_id: str, destination: str = None) -> str:
+    def download_job_result(self, job_id: str, destination: str = None, outputs_only: bool = False) -> str:
         """Download result of the job.
 
         Args:
             job_id (str): ID of the job
             destination (str): optional directory to move the downloaded result into.
                 If not specified, result is left in the download_dir from the admin config.
+            outputs_only (bool): download only the outputs the job declared (``job_outputs`` in its meta), at the
+                same paths under ``workspace/`` as a full download. The server returns the whole job when the job
+                did not complete or declares no outputs; ``outputs_manifest.json`` in the result says which
+                happened and lists missing outputs.
 
         Returns: folder path to the location of the job result
 
@@ -506,9 +510,17 @@ class Session(SessionSpec):
         import shutil
 
         self._validate_job_id(job_id)
-        result = self._do_command(AdminCommandNames.DOWNLOAD_JOB + " " + job_id)
+        if not isinstance(outputs_only, bool):
+            raise InvalidArgumentError(f"outputs_only must be bool but got {type(outputs_only)}")
+        props = {OUTPUTS_ONLY_PROP: True} if outputs_only else None
+        result = self._do_command(AdminCommandNames.DOWNLOAD_JOB + " " + job_id, props=props)
         meta = result[ResultKey.META]
         location = meta.get(MetaKey.LOCATION)
+        if outputs_only and location and not os.path.exists(os.path.join(location, OUTPUTS_MANIFEST_FILE)):
+            # an older server ignores the property
+            get_obj_logger(self).info(
+                f"The server does not support outputs-only downloads; the whole job {job_id} was downloaded."
+            )
 
         if destination and location and os.path.exists(location):
             destination = os.path.abspath(destination)

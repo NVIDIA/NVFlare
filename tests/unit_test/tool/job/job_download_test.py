@@ -67,6 +67,57 @@ class TestJobDownload:
         assert data["artifacts"] == {}
         assert set(data["missing_artifacts"]) == {"global_model", "metrics_summary", "client_logs"}
 
+    def test_download_outputs_only_requests_filtered_download_and_reports_missing_outputs(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        download_path.mkdir()
+        (download_path / "outputs_manifest.json").write_text(
+            json.dumps({"outputs_only": True, "found": ["metrics/"], "missing": ["cross_site_val/"]})
+        )
+        args = self._make_args(output_dir=tmp_path / "dest")
+        args.outputs_only = True
+
+        mock_sess, envelope = self._download_json(args, download_path, capsys)
+
+        assert mock_sess.download_job_result.call_args.kwargs == {"outputs_only": True}
+        assert envelope["data"]["outputs_only"] is True
+        assert envelope["data"]["missing_job_outputs"] == ["cross_site_val/"]
+
+    @pytest.mark.parametrize(
+        "manifest", [None, {"outputs_only": False, "reason": "the job declares no job_outputs"}], ids=["old", "whole"]
+    )
+    def test_download_outputs_only_reports_a_whole_job_download(self, tmp_path, capsys, manifest):
+        download_path = tmp_path / "results"
+        download_path.mkdir()
+        if manifest is not None:
+            (download_path / "outputs_manifest.json").write_text(json.dumps(manifest))
+        args = self._make_args(output_dir=tmp_path / "dest")
+        args.outputs_only = True
+
+        _, envelope = self._download_json(args, download_path, capsys)
+
+        assert envelope["data"]["outputs_only"] is False
+        assert envelope["data"]["missing_job_outputs"] is None
+
+    def test_parser_accepts_outputs_only(self):
+        import argparse
+
+        from nvflare.tool.job.job_cli import def_job_cli_parser
+
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers(dest="cmd"))
+
+        assert root.parse_args(["job", "download", "abc123", "--outputs-only"]).outputs_only is True
+        assert root.parse_args(["job", "download", "abc123"]).outputs_only is False
+
+    def test_download_without_outputs_only_is_unchanged(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        download_path.mkdir()
+
+        mock_sess, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert mock_sess.download_job_result.call_args.kwargs == {}
+        assert "outputs_only" not in envelope["data"]
+
     def test_download_human_output_omits_artifact_contract_payload(self, tmp_path, capsys, monkeypatch):
         """Plain text mode reports a concise download result without dumping JSON contract fields."""
         from nvflare.tool.job.job_cli import cmd_job_download

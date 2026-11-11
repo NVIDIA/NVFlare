@@ -133,6 +133,19 @@ class TestJobMetaValidator:
     def setup_class(cls):
         cls.validator = JobMetaValidator()
 
+    def test_validate_job_outputs_normalizes_a_valid_declaration(self):
+        meta = {JobMetaKey.JOB_OUTPUTS.value: ["metrics/", "metrics/", "app_server/FL_global_model.pt"]}
+        JobMetaValidator._validate_job_outputs("unit_test", meta)
+        assert meta[JobMetaKey.JOB_OUTPUTS.value] == ["metrics/", "app_server/FL_global_model.pt"]
+
+    @pytest.mark.parametrize("outputs", [["../escape"], "metrics/", [1]])
+    def test_validate_job_outputs_rejects_the_job_at_submission(self, outputs):
+        with pytest.raises(ValueError, match="invalid job_outputs for job unit_test"):
+            JobMetaValidator._validate_job_outputs("unit_test", {JobMetaKey.JOB_OUTPUTS.value: outputs})
+
+    def test_validate_job_outputs_is_optional(self):
+        JobMetaValidator._validate_job_outputs("unit_test", {})
+
     @pytest.mark.parametrize("meta", META_WITH_VALID_DEPLOY_MAP)
     def test_validate_valid_deploy_map(self, meta):
         site_list = JobMetaValidator._validate_deploy_map("unit_test", meta)
