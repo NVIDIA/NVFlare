@@ -1821,10 +1821,20 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             if not os.path.lexists(prepared):
                 reason = "the job has no workspace archive"
             else:
-                if not filter_workspace_archive(prepared, filtered, outputs):
-                    # nothing declared was produced: an empty download would help no one
-                    os.remove(filtered)
-                    reason = f"none of the job's declared outputs were found: {', '.join(outputs)}"
+                try:
+                    found = filter_workspace_archive(prepared, filtered, outputs)
+                except Exception as e:
+                    # e.g. an unreadable archive or a full disk: the whole job still downloads as it always has
+                    self.logger.warning(f"cannot filter the workspace of job {job_id}: {secure_format_exception(e)}")
+                    for path in (prepared, filtered):
+                        if os.path.lexists(path):
+                            os.remove(path)
+                    reason = "the job's workspace archive could not be filtered"
+                else:
+                    if not found:
+                        # nothing declared was produced: an empty download would help no one
+                        os.remove(filtered)
+                        reason = f"none of the job's declared outputs were found: {', '.join(outputs)}"
         if reason:
             for ct, file_name in comps:
                 job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)

@@ -2231,6 +2231,19 @@ def test_download_job_outputs_only_falls_back_to_the_whole_job(monkeypatch, tmp_
     assert reply_meta[MetaKey.OUTPUTS_ONLY] is False and reason in reply_meta[MetaKey.OUTPUTS_ONLY_REASON]
 
 
+def test_download_job_outputs_only_falls_back_when_the_archive_cannot_be_filtered(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job()])
+    store, engine.job_def_manager.get_storage_for_download = _symlink_store(tmp_path, "job-1", _WORKSPACE)
+    (store / "workspace").write_bytes(b"not a zip archive")
+
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert reply_meta[MetaKey.OUTPUTS_ONLY] is False
+    assert "could not be filtered" in reply_meta[MetaKey.OUTPUTS_ONLY_REASON]
+
+
 @pytest.mark.parametrize("cmd_props", [None, {}, {"outputs_only": "yes"}])
 def test_download_job_without_outputs_only_is_unchanged(monkeypatch, tmp_path, cmd_props):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)

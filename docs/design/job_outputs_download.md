@@ -237,14 +237,18 @@ long run.
   | `FedAvg` whose `persistor_id` names no component | `<save_filename>` |
   | `MetricsArtifactWriter` | `<results_dir>/`, or its summary and round files by name when `results_dir` is the run folder itself |
   | `JsonStatsFileWriter` | `<output_path>` |
-  | `CrossSiteModelEval`, `CrossSiteEval` | `<cross_val_dir>/` |
+  | `CrossSiteModelEval` | `<cross_val_dir>/` |
+  | `CrossSiteEval` | `<cross_val_dir>/` and `cross_site_val/`, where it writes its JSON report |
 
   Each path is normalized with `posixpath.normpath`, so
   `stats_output_path="./output"` is declared as `output`. A path that would not
   pass validation is skipped, and a file inside a declared folder is not listed
   again. A recipe never fails because of its own declaration.
 - `ModelPersistor.get_job_outputs` returns None by default, so a job with a
-  persistor that does not override it declares nothing. So does any component
+  persistor that does not override it declares nothing. A component whose
+  method raises, or more than `MAX_JOB_OUTPUTS` entries, also leaves the job
+  undeclared: a recipe never fails because of its declaration, and a truncated
+  list could leave the model out. So does any component
   that returns None, such as `PTFileModelPersistor` with a checkpoint folder
   outside the app, and a job whose `environment.json` cannot be read. A
   declaration without the model would leave it out of an outputs-only
@@ -281,8 +285,8 @@ unchanged. With it, the server:
 2. Prepares the full download when:
    - the job did not finish successfully,
    - the job's metadata has no `job_outputs`, or
-   - none of the declared outputs exist in the workspace archive (checked
-     after filtering in step 3).
+   - none of the declared outputs exist in the workspace archive, or the
+     archive cannot be filtered (checked in step 3).
 3. Otherwise prepares the `workspace` component in the transfer folder under a
    temporary name, with the job store's existing `get_storage_for_download`.
    It works with any `StorageSpec` without loading the archive into memory.

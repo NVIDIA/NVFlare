@@ -226,3 +226,25 @@ class TestComponentOutputs:
         recipe._job.add_file_to_server(str(env_file), dest_dir="extra", app_folder_type="config")
 
         assert "app_server/FL_global_model.pt" in _exported_outputs(recipe, tmp_path / "out")
+
+    @pytest.mark.parametrize(
+        "cross_val_dir, expected", [("cross_site_val", ["cross_site_val/"]), ("my_cse", ["my_cse/", "cross_site_val/"])]
+    )
+    def test_cross_site_eval_declares_where_its_report_is_written(self, cross_val_dir, expected):
+        from nvflare.app_common.workflows.cross_site_eval import CrossSiteEval
+
+        assert outputs_of({"cse": CrossSiteEval(cross_val_dir=cross_val_dir)}) == expected
+
+    def test_a_failing_declaration_leaves_the_job_undeclared_instead_of_failing(self):
+        class Broken:
+            def get_job_outputs(self, app_env, component_ids):
+                raise AttributeError("not initialized")
+
+        assert outputs_of({"broken": Broken(), "metrics_artifact_writer": MetricsArtifactWriter()}) == []
+
+    def test_more_outputs_than_allowed_leave_the_job_undeclared(self):
+        from nvflare.apis.job_def import MAX_JOB_OUTPUTS
+
+        components = {f"w{i}": JsonStatsFileWriter(output_path=f"stats/{i}.json") for i in range(MAX_JOB_OUTPUTS + 1)}
+
+        assert outputs_of(components) == []

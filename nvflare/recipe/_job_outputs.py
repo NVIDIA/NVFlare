@@ -22,11 +22,14 @@ own file, the job declares nothing and downloads whole, so a declared list never
 """
 
 import json
+import logging
 import os
 import posixpath
 from typing import Dict, List, Optional
 
 from nvflare.apis.job_def import MAX_JOB_OUTPUTS, SERVER_SITE_NAME, JobMetaKey, validate_job_outputs
+
+logger = logging.getLogger(__name__)
 
 _ENVIRONMENT_FILE = "environment.json"  # the server app's config/environment.json
 _UNREADABLE = object()  # an environment file the job ships but that cannot be read before export
@@ -51,8 +54,9 @@ def _normalize(path) -> str:
 def outputs_of(components: Dict[str, object], app_env: Optional[dict] = None) -> List[str]:
     """The ``job_outputs`` entries the given server components (id -> component) write.
 
-    A path that would not pass validation is skipped, so a recipe never fails because of its own declaration.
-    Duplicates and files inside a declared folder are left out.
+    A path that would not pass validation is skipped, and a component whose method fails, or a list longer than
+    MAX_JOB_OUTPUTS, leaves the job undeclared: a recipe never fails because of its own declaration, and a declared
+    list never silently leaves an output out. Duplicates and files inside a declared folder are left out.
     """
     component_ids = set(components)
     entries: List[str] = []
@@ -60,7 +64,12 @@ def outputs_of(components: Dict[str, object], app_env: Optional[dict] = None) ->
         get_job_outputs = getattr(obj, "get_job_outputs", None)
         if not callable(get_job_outputs):
             continue
-        paths = get_job_outputs(app_env, component_ids)
+        try:
+            paths = get_job_outputs(app_env, component_ids)
+        except Exception as e:
+            # optional metadata never stops a recipe from running or exporting
+            logger.debug(f"cannot get the job outputs of {type(obj).__name__}: {e}")
+            return []
         if paths is None:
             return []  # this component's files are unknown
         for path in paths:
@@ -70,7 +79,9 @@ def outputs_of(components: Dict[str, object], app_env: Optional[dict] = None) ->
     folders = [e for e in entries if e.endswith("/")]
     # a file inside a declared folder is already selected by the folder
     outputs = [e for e in entries if e.endswith("/") or not any(e.startswith(f) for f in folders)]
-    return outputs[:MAX_JOB_OUTPUTS]
+    if len(outputs) > MAX_JOB_OUTPUTS:
+        return []  # a truncated list could leave the model out
+    return outputs
 
 
 def server_components(job) -> Dict[str, object]:
