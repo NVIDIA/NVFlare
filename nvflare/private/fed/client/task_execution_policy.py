@@ -185,6 +185,9 @@ class TaskExecutionPolicy:
         if self.launcher.launch_mode == "slurm" and self.launcher.cj_runtime == "docker":
             module_name = "nvflare.app_opt.job_launcher.slurm.docker_launcher"
             class_name = "ClientDockerSlurmJobLauncher"
+        elif self.launcher.launch_mode == "slurm" and self.launcher.cj_runtime == "process":
+            module_name = "nvflare.app_common.job_launcher.client_process_launcher"
+            class_name = "ClientProcessJobLauncher"
         expected = getattr(importlib.import_module(module_name), class_name)
         if type(launcher) is not expected:
             raise ValueError("task lifetime requires the site's supported Kubernetes or Slurm client-job launcher")

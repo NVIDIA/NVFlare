@@ -118,6 +118,9 @@ class DummyWorkspace:
     def get_app_dir(self, job_id):
         return os.path.join(self.root_dir, job_id, "app")
 
+    def get_client_app_config_file_path(self, job_id):
+        return os.path.join(self.get_app_dir(job_id), "config", "config_fed_client.json")
+
     def get_app_custom_dir(self, job_id):
         self.calls.append(job_id)
         return self.custom_path

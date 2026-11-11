@@ -96,6 +96,55 @@ allocations: ``time`` is preserved for each allocation, and ``pending_timeout``
 is bounded by the respective trusted site limit. Splitting CPU, memory and
 GPU budgets does not discard the job timing policy.
 
+Process CJ on a login or service host
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A trusted site can keep both CP and CJ on a login or service host while
+running task workers in Slurm. Configure the existing
+``nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher``
+as the site's only client job launcher and set the site's task launcher
+``cj_runtime`` to ``process``::
+
+    {
+      "components": [
+        {
+          "id": "job_launcher",
+          "path": "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
+        }
+      ],
+      "task_execution": {
+        "launcher": {
+          "path": "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+          "args": {
+            "cj_runtime": "process",
+            "workspace_path": "/shared/site-1",
+            "shared_filesystem": true,
+            "cgroup_enforced": true,
+            "worker_listener_host": "gateway.example",
+            "python_path": "/shared/runtime/bin/python",
+            "cpu_cores": 2,
+            "memory_mb": 4096,
+            "gpu_count": 1
+          }
+        }
+      }
+    }
+
+Merge these entries into the canonical site's ``local/resources.json``.
+The application selects ``execution_lifetime: task`` as usual. CP starts
+the real CJ process and retains Slurm submission, monitoring and cleanup;
+CJ's ``SlurmTaskLauncher`` requests each worker through CP. Configure
+``sbatch_directives`` and scheduler executables on the task launcher for
+the local cluster. The explicit listener host must be reachable from
+compute nodes. CP, CJ and workers require the same canonical shared
+workspace and the same installed NVFlare version.
+
+This profile runs trusted code under the site's UID. It provides no
+container isolation or enforced CPU/memory budget for CJ; nonzero
+``cj_resource_spec`` budgets are rejected. Slurm still admits and tracks
+each task allocation. The default ``cj_runtime: slurm`` profile is
+unchanged and continues to require a Slurm CJ allocation.
+
 Docker CJs on a gateway
 ~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -1246,7 +1246,9 @@ def test_shared_admission_rejects_unsupported_task_cj_before_launch(tmp_path, bu
     launcher.launch_job = Mock(side_effect=AssertionError("unsupported task CJ must not start"))
     # Canonical site-policy validation has its own tests. Exercise the real
     # selected-launcher check at the shared parent admission boundary here.
-    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode="slurm" if backend == "slurm_server" else "k8s"))
+    policy = TaskExecutionPolicy(
+        SimpleNamespace(launch_mode="slurm" if backend == "slurm_server" else "k8s", cj_runtime="slurm")
+    )
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
         with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
             with pytest.raises(ValueError, match="supported Kubernetes or Slurm client-job launcher"):
@@ -1296,7 +1298,7 @@ def test_shared_admission_reaches_matching_native_cj_launcher(tmp_path, mode, mo
     config_dir = Path(workspace.get_app_config_dir("job-1"))
     config_dir.mkdir(parents=True)
     (config_dir / "config_fed_client.json").write_text('{"execution_lifetime":"task"}')
-    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode=mode))
+    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode=mode, cj_runtime="slurm"))
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
         with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
             with pytest.raises(RuntimeError, match="native launch boundary reached"):
