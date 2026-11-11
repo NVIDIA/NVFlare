@@ -457,6 +457,64 @@ def test_a_retry_after_a_failed_workspace_save_stores_the_same_outputs_again(tmp
     assert stored_outputs == [["app_server/FL_global_model.pt", "log.txt"]] * 2  # never just the log
 
 
+def test_save_workspace_records_that_the_outputs_are_stored_apart(tmp_path):
+    run_dir = _run_dir_with_model(tmp_path)
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    _job_with_outputs(job_manager, ["app_server/FL_global_model.pt"])
+    _capture_archives(job_manager)
+
+    runner._save_workspace(fl_ctx)
+
+    job_manager.update_meta.assert_called_once_with("job-1", {"job_outputs_stored": True}, fl_ctx)
+
+
+def test_a_fallback_after_an_earlier_split_clears_the_record(tmp_path, monkeypatch):
+    run_dir = _run_dir_with_model(tmp_path)
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    runner.log_info = MagicMock()
+    job_manager.get_job.return_value = MagicMock(
+        meta={"job_outputs": ["app_server/FL_global_model.pt"], "job_outputs_stored": True}
+    )
+    archived = _capture_archives(job_manager)
+
+    def cross_device(*args, **kwargs):
+        raise OSError(18, "Invalid cross-device link")
+
+    monkeypatch.setattr(os, "link", cross_device)
+
+    runner._save_workspace(fl_ctx)
+
+    # the whole workspace is stored, and downloads must not use the older outputs archive
+    assert archived == {"workspace": ["app_server/FL_global_model.pt", "log.txt"]}
+    job_manager.update_meta.assert_called_once_with("job-1", {"job_outputs_stored": False}, fl_ctx)
+
+
+def test_a_job_store_without_save_job_outputs_skips_the_split(tmp_path):
+    from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
+
+    run_dir = _run_dir_with_model(tmp_path)
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+
+    class _OlderStore:
+        save_job_outputs = JobDefManagerSpec.save_job_outputs
+
+        def __init__(self):
+            self.get_job = MagicMock()
+            self.archived = None
+
+        def save_workspace(self, job_id, folders, ctx):
+            self.archived = [f for folder in folders for f in _files(folder)]
+            return "/store/job-1/workspace"
+
+    store = _OlderStore()
+    fl_ctx.get_engine.return_value.get_component.return_value = store
+
+    runner._save_workspace(fl_ctx)
+
+    store.get_job.assert_not_called()  # no walk, no links
+    assert store.archived == ["app_server/FL_global_model.pt", "log.txt"]
+
+
 def test_save_workspace_archives_only_existing_deduplicated_sources(tmp_path):
     run_dir = tmp_path / "run"
     result_root = tmp_path / "result"

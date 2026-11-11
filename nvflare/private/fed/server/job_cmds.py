@@ -1618,6 +1618,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
                 # Submit-token is server-owned submission metadata. User job metadata must not expose it.
                 meta.pop(SubmitRecordKey.SUBMIT_TOKEN.value, None)
+                # set by the server when the job ends, never by a submitter
+                meta.pop(JobMetaKey.JOB_OUTPUTS_STORED.value, None)
 
                 job_def_manager = engine.job_def_manager
                 if not isinstance(job_def_manager, JobDefManagerSpec):
@@ -1768,10 +1770,12 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     )
                     # tells the client whether it got the declared outputs or, and why, the whole job
                     reply_meta.update({MetaKey.OUTPUTS_ONLY: reason is None, MetaKey.OUTPUTS_ONLY_REASON: reason})
+                    if reason:
+                        self._check_outputs_prepared(job_id, job_download_dir, comps)
                 else:
                     for ct, file_name in comps:
                         job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
-
+                    self._check_outputs_prepared(job_id, job_download_dir, comps)
                 if os.path.lexists(os.path.join(job_download_dir, job_id, OUTPUTS_ZIP)):
                     # the outputs belong in the workspace folder, beside the rest of it
                     reply_meta[MetaKey.UNZIP_INTO] = {OUTPUTS_ZIP: WORKSPACE_ZIP[: -len(".zip")]}
@@ -1788,18 +1792,21 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 self._clean_up_download(conn, tx_id)
                 conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
 
-    def _has_outputs_component(self, job_def_manager, job_id, fl_ctx) -> bool:
-        """Whether the job's declared outputs are stored apart from its workspace. A store that cannot list its
-        components is treated as having none, so downloads work as before."""
-        try:
-            return OUTPUTS in (job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx) or [])
-        except Exception as e:
-            self.logger.warning(f"cannot list the components of job {job_id}: {secure_format_exception(e)}")
-            return False
+    @staticmethod
+    def _outputs_stored_apart(meta: Optional[dict]) -> bool:
+        """Whether the job's declared outputs are stored apart from its workspace, as recorded at job end."""
+        return isinstance(meta, dict) and meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is True
+
+    @staticmethod
+    def _check_outputs_prepared(job_id: str, job_download_dir: str, comps):
+        # a split job's workspace lacks its outputs, so a download without them would be silently incomplete
+        if (OUTPUTS, OUTPUTS_ZIP) in comps and not os.path.lexists(os.path.join(job_download_dir, job_id, OUTPUTS_ZIP)):
+            raise RuntimeError(f"the outputs archive of job {job_id} is missing from the job store")
 
     def _get_default_job_components(self, job_def_manager, job_id, fl_ctx):
         comps = [(DATA, JOB_ZIP), (META, META_JSON), (WORKSPACE, WORKSPACE_ZIP)]
-        if self._has_outputs_component(job_def_manager, job_id, fl_ctx):
+        job = job_def_manager.get_job(job_id, fl_ctx)
+        if job and self._outputs_stored_apart(job.meta):
             # the job's declared outputs are stored apart from the rest of its workspace
             comps.append((OUTPUTS, OUTPUTS_ZIP))
         return comps
@@ -1822,35 +1829,28 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     ) -> Optional[str]:
         """Prepare an outputs-only download: meta.json and the job's outputs archive as workspace.zip.
 
-        The outputs archive was built when the job ended, so it is prepared like the workspace archive in a full
+        The outputs archive was stored when the job ended, so it is prepared like the workspace archive in a full
         download, with no work before the reply. The whole job is prepared instead when the job did not complete,
-        declares no outputs, or has no outputs archive (none of its outputs were produced, or it finished before
-        outputs were archived).
+        declares no outputs, or did not store its outputs apart. When the job did store them apart but the archive
+        cannot be prepared, the download fails: the whole job would lack them too.
 
         Returns:
             None for an outputs-only download, else why the whole job was prepared.
         """
         reason, _ = outputs_only_refusal(meta)
-        no_outputs = (
-            "the job has no archived outputs: none of its declared outputs were produced, "
-            "or it finished before outputs were archived"
-        )
-        if not reason and not self._has_outputs_component(job_def_manager, job_id, fl_ctx):
-            reason = no_outputs  # a job store may raise for a component that does not exist
+        if not reason and not self._outputs_stored_apart(meta):
+            reason = (
+                "the job's outputs were not stored apart: none of its declared outputs were produced, "
+                "it finished before this feature, or they were kept in its workspace archive"
+            )
         if not reason:
-            outputs_zip = os.path.join(job_download_dir, job_id, WORKSPACE_ZIP)
-            try:
-                job_def_manager.get_storage_for_download(job_id, job_download_dir, META, META_JSON, fl_ctx)
-                job_def_manager.get_storage_for_download(job_id, job_download_dir, OUTPUTS, WORKSPACE_ZIP, fl_ctx)
-            except Exception as e:
-                self.logger.warning(f"cannot prepare the outputs of job {job_id}: {secure_format_exception(e)}")
-                if os.path.lexists(outputs_zip):
-                    os.remove(outputs_zip)
-            if not os.path.lexists(outputs_zip):
-                reason = no_outputs
-        if reason:
-            for ct, file_name in comps:
-                job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
+            job_def_manager.get_storage_for_download(job_id, job_download_dir, META, META_JSON, fl_ctx)
+            job_def_manager.get_storage_for_download(job_id, job_download_dir, OUTPUTS, WORKSPACE_ZIP, fl_ctx)
+            if not os.path.lexists(os.path.join(job_download_dir, job_id, WORKSPACE_ZIP)):
+                raise RuntimeError(f"the outputs archive of job {job_id} is missing from the job store")
+            return None
+        for ct, file_name in comps:
+            job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
         return reason
 
     def download_job_components(self, conn: Connection, args: List[str]):

@@ -267,6 +267,9 @@ long run.
   download.
 - A value set with `set_recipe_meta` replaces the recorded list and is kept as
   set, including when components are added later.
+- Paths are recorded when a component is added. Changing a persistor's or
+  writer's file settings after adding it to the job is not supported for the
+  declaration; set `job_outputs` with `set_recipe_meta` in that case.
 - Hand-written jobs may add the key to `meta.json` or leave it out.
 
 ### Admin command: `download_job` with an `outputs_only` option
@@ -294,19 +297,26 @@ separate result, log and audit roots) into the `workspace` job-store component
 and then deletes the folder. For a job that declares outputs, it stores them as
 their own `outputs` component and the rest as `workspace`:
 
-1. **Split with hard links.** Beside each workspace folder, build two folders
-   of hard links with the same relative paths: one naming the declared output
-   files, one naming everything else. A hard link is another name for the same
-   file, so nothing is copied and the workspace folders are not changed.
-   Symlinks stay with the rest. The log files the server's log commands read
-   (`log.txt`, `log.json`, `error_log.txt`) are named in both, so those
-   commands keep working when a job declares them.
+1. **Link the outputs.** Beside each workspace folder, build a folder of hard
+   links naming the declared output files at their relative paths. A hard link
+   is another name for the same file, so nothing is copied and the workspace
+   folders are not changed. A symlink is never an output.
 2. **Store the outputs.** `JobDefManagerSpec.save_job_outputs(job_id,
-   output_link_folders)` archives the output links as the `outputs`
-   component, with the same folder contract `save_workspace` uses, so any job
-   store that archives a workspace archives the outputs the same way.
-3. **Store the rest.** `save_workspace` archives the rest link folders.
-4. Remove the link folders, then delete the workspace folders, as today.
+   output_link_folders)` archives them as the `outputs` component, with the
+   same folder contract `save_workspace` uses, so any job store that archives
+   a workspace archives the outputs the same way.
+3. **Link the rest.** From a fresh walk, build a second folder of hard links
+   naming everything else, so a file created or replaced while the outputs
+   were stored is archived as it is now. The log files the server's log
+   commands read (`log.txt`, `log.json`, `error_log.txt`) are named here too,
+   so those commands keep working when a job declares them. Symlinks are
+   recreated pointing at what they resolve to in the untouched workspace, so a
+   link to a declared output still reads it, and a linked folder stays a link.
+4. **Record the split.** Set `job_outputs_stored: true` in the job's meta.
+   Downloads rely on this record, not on listing the store's components.
+5. **Store the rest.** `save_workspace` archives the rest link folders.
+6. Remove the link folders, then delete the workspace folders, as today. A
+   link folder that cannot be removed is logged.
 
 Each file is read and written once, as before this change, so job end takes no
 longer and nothing is stored twice.
@@ -317,11 +327,15 @@ The workspace folders stay intact until both archives are stored:
   and stores the same outputs again.
 - A crash leaves only link folders, which are extra names for the same files;
   the next attempt replaces them.
-- When the links cannot be made (for example a link folder on a different
-  filesystem), nothing declared was produced, or the outputs are not stored
-  (an error, or `save_job_outputs` returning None, its default, so job-store
-  implementations without it keep working), the workspace folders are
-  archived whole, as before this change.
+- The workspace folders are archived whole, as before this change, when the
+  job store does not implement `save_job_outputs` (checked before any walk),
+  nothing declared was produced, a link cannot be made (for example a link
+  folder on a different filesystem), a folder cannot be read, or the outputs
+  are not stored. If an earlier attempt had recorded the split, the record is
+  cleared, so downloads do not use that older outputs archive.
+
+`job_outputs_stored` is written only by the server; a submitted job's value is
+removed at submission.
 
 **Why at job end.** By the time anyone downloads, the result files exist only
 inside stored archives; the run folder is gone. A download replies at once
@@ -334,13 +348,14 @@ outputs exist as files, so they can be separated without copying.
 
 ### Full download
 
-A full download of a job with an `outputs` component sends `workspace.zip` and
-`outputs.zip`, both linked from the store, so the server still replies at
-once. Its reply carries `unzip_into: {"outputs.zip": "workspace"}`, and the
+A full download of a job whose meta records `job_outputs_stored` sends
+`workspace.zip` and `outputs.zip`, both linked from the store, so the server
+still replies at once. If the outputs archive cannot be prepared, the download
+fails with an error rather than return a workspace without the outputs. Its reply carries `unzip_into: {"outputs.zip": "workspace"}`, and the
 admin client unzips `outputs.zip` into `workspace/` after `workspace.zip`. The
 result is the same `workspace/` folder as before this change. The client
-accepts only a plain folder name there, never a path. A job without an
-`outputs` component downloads exactly as before.
+accepts only a plain folder name there, never a path. A job without the
+record downloads exactly as before.
 
 ### Serving an outputs-only download
 
@@ -351,15 +366,16 @@ unchanged. With it, the server:
 2. Prepares the full download when:
    - the job did not finish successfully,
    - the job's metadata has no `job_outputs`, or
-   - the job has no `outputs` component: none of its declared outputs were
-     produced, it finished before this change, or storing them failed.
-3. Otherwise checks the job's component list, so a job store that raises
-   for a missing component is never asked for one, and prepares `meta.json`
-   and the `outputs` component as `workspace.zip`, with the job store's existing `get_storage_for_download`,
+   - the job's meta does not record `job_outputs_stored`: none of its
+     declared outputs were produced, it finished before this change, or they
+     were kept in its workspace archive.
+3. Otherwise prepares `meta.json` and the `outputs` component as
+   `workspace.zip`, with the job store's existing `get_storage_for_download`,
    exactly as a full download prepares the `workspace` component.
    `FilesystemStorage` links the stored archive, so the server replies at once
-   and streams the file afterwards. If preparing the outputs fails, the server
-   prepares the whole job instead. The admin client unzips it into
+   and streams the file afterwards. If the outputs archive cannot be prepared,
+   the download fails: the whole job would lack the outputs too. The admin
+   client unzips it into
    `workspace/` as usual.
 4. Reports the result in its reply to `download_job`, beside the file list:
    - `outputs_only`: whether only the declared outputs were sent;
@@ -510,7 +526,13 @@ Unit tests:
   nothing declared was produced, links cannot be made, or `save_job_outputs`
   fails or saves nothing. A retry after a failed workspace save stores the same
   outputs again, and leftover links from an interrupted attempt are replaced.
-- A full download works when the job store cannot list components.
+- The rest is linked from a fresh walk after the outputs are stored; relative
+  symlinks to outputs still resolve and linked folders stay links; an
+  unreadable folder stores the workspace whole; the split is recorded in the
+  job's meta, cleared by a later fallback, and skipped for job stores without
+  `save_job_outputs`; a submitted record is removed.
+- Downloads decide from the meta record; a split job whose outputs archive
+  cannot be prepared fails rather than downloading partly.
 - `download_job` with `outputs_only`:
   - links the stored `outputs` archive as `workspace.zip`, as a full download
     links the workspace;

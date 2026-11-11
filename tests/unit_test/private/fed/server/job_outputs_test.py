@@ -17,7 +17,7 @@ import os
 import pytest
 
 from nvflare.apis.job_def import JobMetaKey, RunStatus
-from nvflare.private.fed.server.job_outputs import declared_outputs, outputs_only_refusal, split_job_outputs
+from nvflare.private.fed.server.job_outputs import declared_outputs, link_job_outputs, outputs_only_refusal
 
 
 def _run_folder(root, files):
@@ -26,6 +26,13 @@ def _run_folder(root, files):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
     return root
+
+
+def split_job_outputs(source_dirs, outputs):
+    split = link_job_outputs(source_dirs, outputs)
+    if split:
+        split.link_rest()
+    return split
 
 
 def _files(root):
@@ -120,6 +127,52 @@ class TestSplitJobOutputs:
 
         assert first.output_dirs == second.output_dirs
         assert _files(second.output_dirs[0]) == ["app_server/FL_global_model.pt"]
+
+    def test_a_relative_symlink_to_an_output_still_resolves_in_the_workspace(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/model.pt": b"model"})
+        os.symlink("model.pt", run_dir / "app_server" / "latest.pt")
+
+        split = split_job_outputs([str(run_dir)], ["app_server/model.pt"])
+
+        latest = os.path.join(split.rest_dirs[0], "app_server", "latest.pt")
+        with open(latest, "rb") as f:  # what the workspace archive reads, as before the split
+            assert f.read() == b"model"
+
+    def test_a_symlinked_folder_stays_a_link(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"data/a.csv": b"a", "app_server/FL_global_model.pt": b"m"})
+        os.symlink("data", run_dir / "data_link")
+
+        split = split_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt"])
+
+        linked = os.path.join(split.rest_dirs[0], "data_link")
+        assert os.path.islink(linked) and os.listdir(linked) == ["a.csv"]
+
+    def test_a_file_written_after_the_outputs_are_linked_is_kept_with_the_rest(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model", "log.txt": b"old"})
+        split = link_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt"])
+        (run_dir / "late.txt").write_text("late")  # e.g. written while the outputs were uploading
+        (run_dir / "log.txt").unlink()
+        (run_dir / "log.txt").write_text("new")  # replaced: a new file
+
+        split.link_rest()
+
+        assert _files(split.rest_dirs[0]) == ["late.txt", "log.txt"]
+        with open(os.path.join(split.rest_dirs[0], "log.txt")) as f:
+            assert f.read() == "new"
+
+    def test_an_unreadable_folder_falls_back_to_the_whole_workspace(self, tmp_path, monkeypatch):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model"})
+        real_walk = os.walk
+
+        def failing_walk(top, onerror=None, **kwargs):
+            if onerror:
+                onerror(PermissionError(13, "Permission denied", str(top)))
+            return real_walk(top, **kwargs)
+
+        monkeypatch.setattr(os, "walk", failing_walk)
+
+        assert link_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt"]) is None
+        assert sorted(os.listdir(tmp_path)) == ["run"]
 
     def test_a_folder_entry_does_not_match_a_sibling_with_the_same_prefix(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"metrics2/a.json": b"", "metrics/b.json": b""})

@@ -78,6 +78,7 @@ class JobMetaKey(str, Enum):
     STUDY = "study"
     JOB_LAUNCHER_SPEC = "launcher_spec"
     JOB_OUTPUTS = "job_outputs"  # server workspace paths that make up the job's result
+    JOB_OUTPUTS_STORED = "job_outputs_stored"  # set by the server: the outputs are stored apart from the workspace
 
     def __repr__(self):
         return self.value

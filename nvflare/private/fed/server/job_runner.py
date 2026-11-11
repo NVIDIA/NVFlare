@@ -34,6 +34,7 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
+from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
@@ -46,7 +47,7 @@ from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
-from nvflare.private.fed.server.job_outputs import declared_outputs, split_job_outputs
+from nvflare.private.fed.server.job_outputs import declared_outputs, link_job_outputs
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
@@ -676,7 +677,7 @@ class JobRunner(FLComponent):
                 location = job_manager.save_workspace(job_id, split.rest_dirs if split else ws_dirs, fl_ctx)
             finally:
                 if split:
-                    split.remove()  # links only: the workspace folders are untouched
+                    self._remove_links(split, job_id, fl_ctx)
             if finished_state:
                 # Latch the successful archive publication before cleanup so a cleanup retry cannot rewrite it from
                 # sources that an earlier cleanup attempt may have partially removed.
@@ -694,34 +695,57 @@ class JobRunner(FLComponent):
     def _save_job_outputs(self, job_manager, job_id: str, ws_dirs: list, fl_ctx: FLContext):
         """Store the job's declared outputs as their own archive, and return the split for the workspace archive.
 
-        The outputs and the rest of the workspace are named by two folders of hard links beside the workspace
-        folders, so each file is stored once and the workspace folders are never changed. A retry rebuilds the
-        links from the same files and stores the same outputs again; a crash leaves only extra links behind.
+        The outputs and the rest of the workspace are named by folders of hard links beside the workspace folders,
+        so each file is stored once and the workspace folders are never changed. The outputs are linked and stored
+        first; the rest is then linked from a fresh walk, so a file created or replaced meanwhile is archived as it
+        is. The job's meta records that the outputs are stored apart (``job_outputs_stored``), which downloads rely
+        on. A retry rebuilds the links from the same files; a crash leaves only extra links behind.
 
         Returns:
             The split, whose rest folders the workspace archive is built from; or None, in which case the workspace
             folders are archived whole, as without declared outputs.
         """
+        if getattr(type(job_manager), "save_job_outputs", None) is JobDefManagerSpec.save_job_outputs:
+            return None  # the job store does not store outputs apart
         split = None
+        job = None
         try:
             job = job_manager.get_job(job_id, fl_ctx)
             outputs = declared_outputs(job.meta) if job else []
             if not outputs:
                 return None
-            split = split_job_outputs(ws_dirs, outputs)
+            split = link_job_outputs(ws_dirs, outputs)
             if not split:
                 self.log_info(fl_ctx, f"The outputs of job {job_id} are kept in its workspace archive")
-                return None
-            if not job_manager.save_job_outputs(job_id, split.output_dirs, fl_ctx):
-                split.remove()  # not stored: they stay in the workspace archive
-                return None
-            self.log_debug(fl_ctx, f"Outputs {split.found} of job {job_id} saved")
-            return split
+            elif not job_manager.save_job_outputs(job_id, split.output_dirs, fl_ctx):
+                self.log_info(fl_ctx, f"The job store did not save the outputs of job {job_id} apart")
+            else:
+                split.link_rest()
+                # downloads rely on this record, not on listing components, to know the workspace lacks the outputs
+                job_manager.update_meta(job_id, {JobMetaKey.JOB_OUTPUTS_STORED.value: True}, fl_ctx)
+                self.log_debug(fl_ctx, f"Outputs {split.found} of job {job_id} saved")
+                return split
         except Exception as e:
             self.log_warning(fl_ctx, f"Cannot save the outputs of job {job_id}: {secure_format_exception(e)}")
-            if split:
-                split.remove()
-            return None
+        if split:
+            self._remove_links(split, job_id, fl_ctx)
+        self._clear_job_outputs_stored(job_manager, job, job_id, fl_ctx)
+        return None
+
+    def _clear_job_outputs_stored(self, job_manager, job, job_id: str, fl_ctx: FLContext):
+        # an earlier attempt stored outputs apart; this attempt archives the workspace whole, so downloads must not
+        # use that older outputs archive
+        if job is None or job.meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is not True:
+            return
+        try:
+            job_manager.update_meta(job_id, {JobMetaKey.JOB_OUTPUTS_STORED.value: False}, fl_ctx)
+        except Exception as e:
+            self.log_warning(fl_ctx, f"Cannot update the outputs record of job {job_id}: {secure_format_exception(e)}")
+
+    def _remove_links(self, split, job_id: str, fl_ctx: FLContext):
+        failed = split.remove()
+        if failed:
+            self.log_warning(fl_ctx, f"Cannot remove output link folders of job {job_id}: {failed}")
 
     def run(self, fl_ctx: FLContext):
         """Starts job runner."""

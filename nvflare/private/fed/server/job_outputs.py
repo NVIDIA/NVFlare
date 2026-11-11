@@ -72,57 +72,98 @@ def _link_folder(source_dir: str, suffix: str) -> str:
 class SplitWorkspace:
     """Hard-link folders naming a job's declared outputs and the rest of its workspace."""
 
-    def __init__(self, source_dirs: List[str]):
+    def __init__(self, source_dirs: List[str], outputs: List[str]):
+        self.source_dirs = list(source_dirs)
+        self.outputs = outputs
         self.output_dirs = [_link_folder(d, _OUTPUTS_LINKS) for d in source_dirs]
         self.rest_dirs = [_link_folder(d, _WORKSPACE_LINKS) for d in source_dirs]
         self.found: List[str] = []  # the declared entries found, in declaration order
 
-    def remove(self):
-        """Remove the link folders. Only links are removed; the files keep their names in the workspace folders."""
+    def link_rest(self):
+        """Name everything but the declared outputs in the rest folders, from a fresh walk of the workspace.
+
+        Called after the outputs are stored, so a file created or replaced meanwhile is archived as it is now.
+        Raises OSError when a link cannot be made or a folder cannot be read.
+        """
+        for source_dir, rest_dir in zip(self.source_dirs, self.rest_dirs):
+            shutil.rmtree(rest_dir, ignore_errors=True)
+            os.makedirs(rest_dir)
+            for root, dirs, files in _walk(source_dir):
+                relative_root = os.path.relpath(root, source_dir)
+                for name in dirs:
+                    folder = os.path.join(root, name)
+                    if os.path.islink(folder):
+                        _link(folder, os.path.join(rest_dir, relative_root, name))  # a linked folder stays a link
+                    else:
+                        os.makedirs(os.path.join(rest_dir, relative_root, name), exist_ok=True)
+                for name in files:
+                    source = os.path.join(root, name)
+                    relative = os.path.normpath(os.path.join(relative_root, name))
+                    if _output_entry(source, relative, self.outputs) and name not in _LOG_FILE_NAMES:
+                        continue
+                    _link(source, os.path.join(rest_dir, relative))
+
+    def remove(self) -> List[str]:
+        """Remove the link folders and return those that could not be removed. Only links are removed; the files
+        keep their names in the workspace folders."""
+        failed = []
         for d in self.output_dirs + self.rest_dirs:
             shutil.rmtree(d, ignore_errors=True)
+            if os.path.lexists(d):
+                failed.append(d)
+        return failed
+
+
+def _walk(source_dir: str):
+    def _raise(error):
+        raise error  # an unreadable folder: store the workspace whole rather than lose its files
+
+    return os.walk(source_dir, onerror=_raise)
+
+
+def _output_entry(source: str, relative: str, outputs: List[str]) -> str:
+    # a symlink is never an output: it stays with the rest
+    return "" if os.path.islink(source) else job_output_matches(relative.replace(os.sep, "/"), outputs)
 
 
 def _link(source: str, target: str):
     os.makedirs(os.path.dirname(target), exist_ok=True)
     if os.path.islink(source):
-        os.symlink(os.readlink(source), target)  # kept as it is, as the workspace archive would read it
+        # point at what the original resolves to, in the untouched workspace, so it reads the same as before
+        destination = os.readlink(source)
+        if not os.path.isabs(destination):
+            destination = os.path.normpath(os.path.join(os.path.dirname(source), destination))
+        os.symlink(destination, target)
     else:
         os.link(source, target)  # another name for the same file: nothing is copied
 
 
-def split_job_outputs(source_dirs: List[str], outputs: List[str]) -> Optional[SplitWorkspace]:
-    """Build hard-link folders that split ``source_dirs`` into the declared outputs and the rest.
+def link_job_outputs(source_dirs: List[str], outputs: List[str]) -> Optional[SplitWorkspace]:
+    """Name the declared outputs found in ``source_dirs`` in hard-link folders beside them.
 
-    Each source folder gets two link folders beside it, with the same relative paths, so storing the link folders
-    gives the same archive paths as storing the source folders. Symlinks are not outputs: they stay with the rest.
-    The log files the server's log commands read are named in both folders. The source folders are not changed.
+    Each source folder gets an outputs link folder with the same relative paths, so storing the link folders gives
+    the same archive paths as storing the source folders. The source folders are not changed. Call
+    ``SplitWorkspace.link_rest`` once the outputs are stored.
 
     Returns:
         The split, or None when no declared output exists or the links cannot be made (for example across
         filesystems); the caller then stores the source folders whole, as without declared outputs.
     """
-    split = SplitWorkspace(source_dirs)
+    split = SplitWorkspace(source_dirs, outputs)
     split.remove()  # left over from an interrupted attempt: links only
     found = set()
     try:
-        for source_dir, output_dir, rest_dir in zip(source_dirs, split.output_dirs, split.rest_dirs):
+        for source_dir, output_dir in zip(source_dirs, split.output_dirs):
             os.makedirs(output_dir)
-            os.makedirs(rest_dir)
-            for root, dirs, files in os.walk(source_dir):
+            for root, _dirs, files in _walk(source_dir):
                 relative_root = os.path.relpath(root, source_dir)
-                for name in dirs:
-                    os.makedirs(os.path.join(rest_dir, relative_root, name), exist_ok=True)
                 for name in files:
                     source = os.path.join(root, name)
                     relative = os.path.normpath(os.path.join(relative_root, name))
-                    member = relative.replace(os.sep, "/")
-                    entry = "" if os.path.islink(source) else job_output_matches(member, outputs)
+                    entry = _output_entry(source, relative, outputs)
                     if entry:
                         found.add(entry)
                         _link(source, os.path.join(output_dir, relative))
-                    if not entry or name in _LOG_FILE_NAMES:
-                        _link(source, os.path.join(rest_dir, relative))
     except OSError:
         split.remove()
         return None
