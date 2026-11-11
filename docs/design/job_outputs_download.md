@@ -308,8 +308,9 @@ their own `outputs` component and the rest as `workspace`:
 3. **Link the rest.** From a fresh walk, build a second folder of hard links
    naming everything but the files linked as outputs, so a file created while
    the outputs were stored, declared or not, is archived as it is now. If a
-   stored output was replaced or removed meanwhile, the outputs archive would
-   be out of date, so the workspace is stored whole instead. The log files the server's log
+   stored output was replaced, written to or removed meanwhile, the outputs
+   archive would be out of date, so the workspace is stored whole instead. The
+   server's logs are exempt and always linked here as they are now. The log files the server's log
    commands read (`log.txt`, `log.json`, `error_log.txt`) are named here too,
    so those commands keep working when a job declares them. Symlinks are
    recreated pointing at what they resolve to in the untouched workspace, so a
@@ -357,9 +358,13 @@ A full download of a job whose meta records `job_outputs_stored` sends
 still replies at once. If the outputs archive cannot be read from the store,
 the rest of the job is still downloaded, and the reply's `outputs_note` says
 the workspace lacks the declared outputs; the client shows it as a warning
-("The download of job ... is incomplete: ..."). Its reply carries `unzip_into: {"outputs.zip": "workspace"}`, and the
-admin client unzips `outputs.zip` into `workspace/` after `workspace.zip`. The
-result is the same `workspace/` folder as before this change. The client
+("Job ...: the job's outputs archive cannot be read ...").
+
+The reply also carries `unzip_into: {"outputs.zip": "workspace"}`, and the
+admin client unzips `outputs.zip` into `workspace/` first and `workspace.zip`
+after it. The only files in both archives are server logs a job declares as
+outputs, and the workspace archive's copy is the newer one. The result is the
+same `workspace/` folder as before this change. The client
 accepts only a plain folder name there, never a path. A job without the
 record downloads exactly as before.
 
@@ -504,15 +509,14 @@ its declaration.
 
 Known limitations:
 
-- A declared output that is replaced, written to, removed or rotated between
-  storing the outputs and linking the rest makes the server store the
-  workspace whole, as before this change. The check compares each file's
+- A declared output that is replaced, written to or removed between storing
+  the outputs and linking the rest makes the server store the workspace whole,
+  as before this change. Results published into the workspace by a container
+  job launcher are the case this guards. The check compares each file's
   identity, size and modification time, so an overwrite that keeps all three
-  is not detected; nothing should write a declared output after the job has
-  finished. A rotated `log.txt` that a job declares as an output is
-  the likely case. Storing the workspace whole is required here: the log is in
-  both archives, and a full download would otherwise lay the older copy from
-  the outputs archive over the newer one.
+  is not detected. The server's own logs are exempt: they may still be
+  written, so the workspace archive holds the current copy and a full download
+  keeps it.
 
 ## Security
 
