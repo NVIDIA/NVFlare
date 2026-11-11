@@ -180,11 +180,11 @@ class FileTransferModule(CommandModule):
         return result
 
     @staticmethod
-    def _unzip_file(api, file_path):
-        # unzip the file
+    def _unzip_file(api, file_path, into: str = None):
+        # unzip the file into the folder named after it, or into the folder "into" beside it
         start = time.time()
         base_name = os.path.basename(file_path)
-        dir_name, _ = os.path.splitext(file_path)
+        dir_name = os.path.join(os.path.dirname(file_path), into) if into else os.path.splitext(file_path)[0]
         api.debug(f"unzipping file {file_path} to {dir_name}")
         os.makedirs(dir_name, exist_ok=True)
         unzip_all_from_file(file_path, dir_name)
@@ -195,6 +195,23 @@ class FileTransferModule(CommandModule):
             EventType.AFTER_DOWNLOAD_FILE,
             f"unzipped {base_name} in {time.time() - start} seconds",
         )
+
+    @staticmethod
+    def _unzip_targets(value) -> dict:
+        """The server's mapping of downloaded zip file name -> folder to unzip it into, keeping only plain names."""
+        if not isinstance(value, dict):
+            return {}
+
+        def plain(name):
+            return (
+                isinstance(name, str)
+                and name not in ("", ".", "..")
+                and os.path.basename(name) == name
+                and "/" not in name
+                and "\\" not in name
+            )
+
+        return {k: v for k, v in value.items() if plain(k) and plain(v)}
 
     def pull_folder(self, args, ctx: CommandContext):
         cmd_entry = ctx.get_command_entry()
@@ -246,10 +263,12 @@ class FileTransferModule(CommandModule):
                     files_to_unzip.append(file_to_unzip)
 
         if not error:
-            # unzip downloaded zip files
+            # unzip downloaded zip files; a file the server maps to another file's folder is unzipped after it
+            unzip_into = self._unzip_targets(meta.get(MetaKey.UNZIP_INTO))
+            files_to_unzip.sort(key=lambda f: os.path.basename(f) in unzip_into)
             for f in files_to_unzip:
                 try:
-                    self._unzip_file(api, f)
+                    self._unzip_file(api, f, unzip_into.get(os.path.basename(f)))
                 except Exception as ex:
                     # Clean up temp folder on failure
                     shutil.rmtree(self._tx_path(tx_id, folder_name), ignore_errors=True)

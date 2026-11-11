@@ -20,7 +20,8 @@ META = "meta"
 META_JSON = "meta.json"
 WORKSPACE = "workspace"
 WORKSPACE_ZIP = "workspace.zip"
-OUTPUTS = "outputs"  # the job's declared outputs, archived from the run folder when the job ends
+OUTPUTS = "outputs"  # the job's declared outputs, stored apart from the rest of the workspace when the job ends
+OUTPUTS_ZIP = "outputs.zip"  # the outputs archive in a full download, unzipped into the workspace folder
 
 
 class DataTypes(Enum):

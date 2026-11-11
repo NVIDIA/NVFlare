@@ -55,6 +55,7 @@ from nvflare.apis.storage import (
     META,
     META_JSON,
     OUTPUTS,
+    OUTPUTS_ZIP,
     WORKSPACE,
     WORKSPACE_ZIP,
     DataTypes,
@@ -1760,22 +1761,26 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 return
 
             try:
-                reply_meta = None
+                reply_meta = {}
                 if outputs_only:
                     reason = self._prepare_outputs_download(
                         job_def_manager, job_id, job.meta, job_download_dir, comps, fl_ctx
                     )
                     # tells the client whether it got the declared outputs or, and why, the whole job
-                    reply_meta = {MetaKey.OUTPUTS_ONLY: reason is None, MetaKey.OUTPUTS_ONLY_REASON: reason}
+                    reply_meta.update({MetaKey.OUTPUTS_ONLY: reason is None, MetaKey.OUTPUTS_ONLY_REASON: reason})
                 else:
                     for ct, file_name in comps:
                         job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
+
+                if os.path.lexists(os.path.join(job_download_dir, job_id, OUTPUTS_ZIP)):
+                    # the outputs belong in the workspace folder, beside the rest of it
+                    reply_meta[MetaKey.UNZIP_INTO] = {OUTPUTS_ZIP: WORKSPACE_ZIP[: -len(".zip")]}
 
                 self.download_folder(
                     conn,
                     tx_id=tx_id,
                     folder_name=job_id,
-                    reply_meta=reply_meta,
+                    reply_meta=reply_meta or None,
                 )
             except Exception as e:
                 secure_log_traceback()
@@ -1784,7 +1789,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
 
     def _get_default_job_components(self, job_def_manager, job_id, fl_ctx):
-        return [(DATA, JOB_ZIP), (META, META_JSON), (WORKSPACE, WORKSPACE_ZIP)]
+        comps = [(DATA, JOB_ZIP), (META, META_JSON), (WORKSPACE, WORKSPACE_ZIP)]
+        if OUTPUTS in (job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx) or []):
+            # the job's declared outputs are stored apart from the rest of its workspace
+            comps.append((OUTPUTS, OUTPUTS_ZIP))
+        return comps
 
     def download_job(self, conn: Connection, args: List[str]):
         """

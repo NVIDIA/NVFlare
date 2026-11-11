@@ -13,12 +13,11 @@
 # limitations under the License.
 
 import os
-from zipfile import ZipFile
 
 import pytest
 
 from nvflare.apis.job_def import JobMetaKey, RunStatus
-from nvflare.private.fed.server.job_outputs import archive_job_outputs, declared_outputs, outputs_only_refusal
+from nvflare.private.fed.server.job_outputs import declared_outputs, outputs_only_refusal, stage_job_outputs
 
 
 def _run_folder(root, files):
@@ -29,75 +28,89 @@ def _run_folder(root, files):
     return root
 
 
-def _members(path):
-    with ZipFile(path) as z:
-        return sorted(z.namelist())
+def _files(root):
+    return sorted(
+        os.path.relpath(os.path.join(d, f), root).replace(os.sep, "/") for d, _, files in os.walk(root) for f in files
+    )
 
 
-class TestArchiveJobOutputs:
-    def test_zips_only_declared_files_at_their_workspace_paths(self, tmp_path):
+class TestStageJobOutputs:
+    def test_moves_only_declared_files_out_of_the_workspace_at_their_paths(self, tmp_path):
         run_dir = _run_folder(
             tmp_path / "run",
             {
                 "app_server/FL_global_model.pt": b"model",
                 "app_server/config/config_fed_server.json": b"{}",
                 "metrics/metrics_summary.json": b"{}",
-                "metrics/round_metrics.jsonl": b"",
                 "log.txt": b"log",
             },
         )
-        destination = tmp_path / "outputs.zip"
+        staging = tmp_path / "staging"
 
-        found = archive_job_outputs(
-            [str(run_dir)], ["app_server/FL_global_model.pt", "metrics/", "cross_site_val/"], str(destination)
+        staged = stage_job_outputs(
+            [str(run_dir)], ["app_server/FL_global_model.pt", "metrics/", "plots/"], str(staging)
         )
 
-        assert found == ["app_server/FL_global_model.pt", "metrics/"]
-        assert _members(destination) == [
-            "app_server/FL_global_model.pt",
-            "metrics/metrics_summary.json",
-            "metrics/round_metrics.jsonl",
-        ]
-        with ZipFile(destination) as z:
-            assert z.read("app_server/FL_global_model.pt") == b"model"
+        assert staged.found == ["app_server/FL_global_model.pt", "metrics/"]
+        assert _files(staging) == ["app_server/FL_global_model.pt", "metrics/metrics_summary.json"]
+        # moved, not copied: each file is stored once
+        assert _files(run_dir) == ["app_server/config/config_fed_server.json", "log.txt"]
 
-    def test_merges_workspace_folders_at_the_archive_root_like_the_workspace_archive(self, tmp_path):
-        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"run"})
-        result_root = _run_folder(tmp_path / "result", {"models/server.npy": b"npy"})
-        destination = tmp_path / "outputs.zip"
+    def test_copies_log_files_the_log_commands_read(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"log.txt": b"log", "error_log.txt": b"err"})
+        staging = tmp_path / "staging"
 
-        found = archive_job_outputs(
-            [str(run_dir), str(result_root)], ["app_server/FL_global_model.pt", "models/server.npy"], str(destination)
-        )
+        stage_job_outputs([str(run_dir)], ["log.txt", "error_log.txt"], str(staging))
 
-        assert found == ["app_server/FL_global_model.pt", "models/server.npy"]
-        assert _members(destination) == ["app_server/FL_global_model.pt", "models/server.npy"]
+        assert _files(staging) == ["error_log.txt", "log.txt"]
+        assert _files(run_dir) == ["error_log.txt", "log.txt"]
 
-    def test_writes_nothing_when_no_declared_output_exists(self, tmp_path):
+    def test_restore_puts_moved_files_back(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model", "log.txt": b"log"})
+        staging = tmp_path / "staging"
+        staged = stage_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt", "log.txt"], str(staging))
+
+        staged.restore()
+
+        assert _files(run_dir) == ["app_server/FL_global_model.pt", "log.txt"]
+        assert (run_dir / "app_server" / "FL_global_model.pt").read_bytes() == b"model"
+
+    def test_a_later_workspace_folder_replaces_an_earlier_ones_file(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"models/server.npy": b"run"})
+        result_root = _run_folder(tmp_path / "result", {"models/server.npy": b"result"})
+        staging = tmp_path / "staging"
+
+        stage_job_outputs([str(run_dir), str(result_root)], ["models/server.npy"], str(staging))
+
+        assert (staging / "models" / "server.npy").read_bytes() == b"result"
+        assert (run_dir / "models" / "server.npy").read_bytes() == b"run"  # back in the workspace
+
+    def test_stages_nothing_when_no_declared_output_exists(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"log.txt": b"log"})
-        destination = tmp_path / "outputs.zip"
 
-        assert archive_job_outputs([str(run_dir)], ["metrics/"], str(destination)) == []
-        assert not destination.exists()
+        staged = stage_job_outputs([str(run_dir)], ["metrics/"], str(tmp_path / "staging"))
+
+        assert staged.found == []
+        assert _files(run_dir) == ["log.txt"]
 
     def test_skips_symlinks(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"metrics/metrics_summary.json": b"{}"})
         secret = tmp_path / "secret.txt"
         secret.write_text("secret")
         os.symlink(secret, run_dir / "metrics" / "link.txt")
-        destination = tmp_path / "outputs.zip"
+        staging = tmp_path / "staging"
 
-        archive_job_outputs([str(run_dir)], ["metrics/"], str(destination))
+        stage_job_outputs([str(run_dir)], ["metrics/"], str(staging))
 
-        assert _members(destination) == ["metrics/metrics_summary.json"]
+        assert _files(staging) == ["metrics/metrics_summary.json"]
 
     def test_a_folder_entry_does_not_match_a_sibling_with_the_same_prefix(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"metrics2/a.json": b"", "metrics/b.json": b""})
-        destination = tmp_path / "outputs.zip"
+        staging = tmp_path / "staging"
 
-        archive_job_outputs([str(run_dir)], ["metrics/"], str(destination))
+        stage_job_outputs([str(run_dir)], ["metrics/"], str(staging))
 
-        assert _members(destination) == ["metrics/b.json"]
+        assert _files(staging) == ["metrics/b.json"]
 
 
 class TestOutputsOnlyRefusal:

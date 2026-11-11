@@ -16,7 +16,6 @@ import json
 import os
 from contextlib import nullcontext
 from unittest.mock import ANY, MagicMock, call, patch
-from zipfile import ZipFile
 
 import pytest
 
@@ -357,57 +356,81 @@ def _job_with_outputs(job_manager, outputs):
     job_manager.get_job.return_value = MagicMock(meta={"job_outputs": outputs})
 
 
-def test_save_workspace_archives_declared_outputs_from_the_files_before_removing_them(tmp_path):
+def _files(root):
+    return sorted(
+        os.path.relpath(os.path.join(d, f), root).replace(os.sep, "/") for d, _, files in os.walk(root) for f in files
+    )
+
+
+def _run_dir_with_model(tmp_path):
     run_dir = tmp_path / "run"
     (run_dir / "app_server").mkdir(parents=True)
     (run_dir / "app_server" / "FL_global_model.pt").write_bytes(b"model")
     (run_dir / "log.txt").write_text("log")
-    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
-    _job_with_outputs(job_manager, ["app_server/FL_global_model.pt", "metrics/"])
-    saved = {}
+    return run_dir
 
-    def _save_job_outputs(job_id, archive, ctx):
-        with ZipFile(archive) as z:
-            saved[job_id] = sorted(z.namelist())
+
+def _capture_archives(job_manager, run_dir):
+    archived = {}
+
+    def _save_job_outputs(job_id, folders, ctx):
+        archived["outputs"] = [f for folder in folders for f in _files(folder)]
+        return "/store/job-1/outputs"
+
+    def _save_workspace(job_id, folders, ctx):
+        archived["workspace"] = _files(run_dir)
+        return "/store/job-1/workspace"
 
     job_manager.save_job_outputs.side_effect = _save_job_outputs
+    job_manager.save_workspace.side_effect = _save_workspace
+    return archived
+
+
+def test_save_workspace_stores_declared_outputs_once_apart_from_the_rest(tmp_path):
+    run_dir = _run_dir_with_model(tmp_path)
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    _job_with_outputs(job_manager, ["app_server/FL_global_model.pt", "metrics/"])
+    archived = _capture_archives(job_manager, run_dir)
 
     runner._save_workspace(fl_ctx)
 
-    assert saved == {"job-1": ["app_server/FL_global_model.pt"]}
+    assert archived == {"outputs": ["app_server/FL_global_model.pt"], "workspace": ["log.txt"]}
     assert not run_dir.exists()
-    assert not list(tmp_path.glob(".job-1_outputs.zip*"))  # the temporary archive is gone
+    assert not (tmp_path / ".job-1_outputs").exists()  # the staging folder is gone
 
 
 @pytest.mark.parametrize("outputs", [None, ["plots/"]])
-def test_save_workspace_saves_no_outputs_archive_when_nothing_declared_was_produced(tmp_path, outputs):
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    (run_dir / "log.txt").write_text("log")
+def test_save_workspace_keeps_everything_in_the_workspace_when_nothing_declared_was_produced(tmp_path, outputs):
+    run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
     runner.log_info = MagicMock()
     _job_with_outputs(job_manager, outputs)
+    archived = _capture_archives(job_manager, run_dir)
 
     runner._save_workspace(fl_ctx)
 
     job_manager.save_job_outputs.assert_not_called()
-    assert not run_dir.exists()
+    assert archived == {"workspace": ["app_server/FL_global_model.pt", "log.txt"]}
 
 
-def test_save_workspace_still_completes_when_the_outputs_archive_fails(tmp_path):
-    run_dir = tmp_path / "run"
-    (run_dir / "metrics").mkdir(parents=True)
-    (run_dir / "metrics" / "metrics_summary.json").write_text("{}")
+@pytest.mark.parametrize("failure", ["raises", "not_saved"])
+def test_save_workspace_puts_outputs_back_when_they_are_not_stored(tmp_path, failure):
+    run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
-    _job_with_outputs(job_manager, ["metrics/"])
-    job_manager.save_job_outputs.side_effect = OSError("disk full")
+    _job_with_outputs(job_manager, ["app_server/FL_global_model.pt"])
+    archived = _capture_archives(job_manager, run_dir)
+    if failure == "raises":
+        job_manager.save_job_outputs.side_effect = OSError("disk full")
+    else:
+        job_manager.save_job_outputs.side_effect = None
+        job_manager.save_job_outputs.return_value = None  # a job store that does not save it
 
     runner._save_workspace(fl_ctx)
 
-    job_manager.save_workspace.assert_called_once()
-    assert any("Cannot save the outputs of job job-1" in str(c) for c in runner.log_warning.call_args_list)
+    # the model stays in the workspace archive, so nothing is lost
+    assert archived["workspace"] == ["app_server/FL_global_model.pt", "log.txt"]
     assert not run_dir.exists()
-    assert not list(tmp_path.glob(".job-1_outputs.zip*"))
+    assert not (tmp_path / ".job-1_outputs").exists()
 
 
 def test_save_workspace_archives_only_existing_deduplicated_sources(tmp_path):

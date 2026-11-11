@@ -308,18 +308,20 @@ class JobDefManagerSpec(FLComponent, ABC):
         """
         pass
 
-    def save_job_outputs(self, jid: str, data: str, fl_ctx: FLContext) -> str | None:
-        """Save the archive of the job's declared outputs (``job_outputs``) to the job storage.
+    def save_job_outputs(self, jid: str, data: list[str], fl_ctx: FLContext) -> str | None:
+        """Save the job's declared outputs (``job_outputs``) to the job storage, as their own archive.
 
-        An outputs-only download sends this archive. Optional: an implementation that does not save it returns None,
-        and outputs-only downloads of its jobs return the whole job.
+        The server moves the declared files out of the job's workspace into a folder before it saves the workspace,
+        so each file is stored once. A full download sends both archives; an outputs-only download sends this one.
+        Optional: an implementation that does not save it returns None, and the server then keeps the files in the
+        workspace archive.
 
         Args:
             jid (str): Job ID
-            data: name of the archive file
+            data: folders whose files make up the archive, each at its path relative to the folder
             fl_ctx (FLContext): FLContext information
 
-        Returns: location where the archive is saved at, or None
+        Returns: location where the archive is saved at, or None when it is not saved
         """
         return None
 

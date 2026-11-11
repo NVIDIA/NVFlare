@@ -363,6 +363,9 @@ class _FakeListJobDefManager:
     def __init__(self, jobs):
         self.jobs = jobs
 
+    def list_components(self, jid, fl_ctx):
+        return []
+
     def get_all_jobs(self, fl_ctx):
         return self.jobs
 
@@ -2272,7 +2275,7 @@ def test_download_job_outputs_only_falls_back_when_preparing_the_outputs_fails(m
     prepare = engine.job_def_manager.get_storage_for_download
 
     def failing_prepare(jid, download_dir, component, download_file, fl_ctx):
-        if component == "outputs":
+        if component == "outputs" and download_file == "workspace.zip":  # the outputs-only request
             raise StorageException("store unavailable")
         prepare(jid, download_dir, component, download_file, fl_ctx)
 
@@ -2280,22 +2283,35 @@ def test_download_job_outputs_only_falls_back_when_preparing_the_outputs_fails(m
 
     prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
 
-    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert sorted(prepared) == ["job.zip", "meta.json", "outputs.zip", "workspace.zip"]
     with ZipFile(prepared["workspace.zip"]) as z:
         assert sorted(z.namelist()) == sorted(_WORKSPACE)
     assert reply_meta[MetaKey.OUTPUTS_ONLY] is False
 
 
 @pytest.mark.parametrize("cmd_props", [None, {}, {"outputs_only": "yes"}])
-def test_download_job_without_outputs_only_is_unchanged(monkeypatch, tmp_path, cmd_props):
+def test_download_job_without_outputs_only_is_unchanged_for_a_job_without_outputs(monkeypatch, tmp_path, cmd_props):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     engine = _FakeListEngine([_finished_job()])
-    _use_store(engine, tmp_path, _WORKSPACE, _OUTPUTS)
+    _use_store(engine, tmp_path, _WORKSPACE)
 
     prepared, reply_meta = _download(engine, tmp_path, cmd_props)
 
     assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
     assert reply_meta is None
+
+
+def test_full_download_sends_both_archives_into_the_workspace_folder(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job()])
+    store = _use_store(engine, tmp_path, {"log.txt": b"log"}, _OUTPUTS)
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "outputs.zip", "workspace.zip"]
+    # both stored archives are linked, with no work before the reply
+    assert prepared["outputs.zip"].resolve() == (store / "outputs").resolve()
+    assert reply_meta == {MetaKey.UNZIP_INTO: {"outputs.zip": "workspace"}}
 
 
 def test_clone_job_keeps_job_outputs(monkeypatch):

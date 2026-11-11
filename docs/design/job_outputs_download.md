@@ -15,10 +15,12 @@ outputs-only download. It is opt-in in both directions:
   as today.
 
 No persistor, controller or job layout changes are needed. When a job that
-declares outputs ends, the server also stores those outputs as a separate
-archive, and an outputs-only download sends it the same way a full download
-sends the workspace. Output files keep the same relative paths as in a full
-download, so code that reads them works with either download.
+declares outputs ends, the server stores those outputs apart from the rest of
+the workspace, so each file is stored once. An outputs-only download sends the
+outputs archive, and a full download sends both archives, unzipped into the
+same `workspace/` folder. Either way the server replies at once. Output files
+keep the same relative paths as in a full download, so code that reads them
+works with either download.
 
 ## Current State
 
@@ -59,7 +61,8 @@ save their models on the clients, so they have no server-side model.
 
 - No change to where persistors or controllers write files.
 - No change to the stored `workspace` archive or to the existing `download_job`
-  command. The declared outputs are stored as an additional archive.
+  command's results. A job that declares outputs stores them apart from the
+  rest of its workspace, and a full download returns the same files as before.
 - No result files from client sites. Only the server workspace is covered.
 - No change to the default download. Making outputs-only the default is a
   separate, later decision.
@@ -284,38 +287,56 @@ The option travels as a command property, not as a command argument:
   folder name. The only client change is that it forwards the command's
   properties to the server.
 
-### Outputs archive at job end
+### Storing the outputs at job end
 
-When a job ends, `JobRunner._save_workspace` zips the run folder (with any
+When a job ends, `JobRunner._save_workspace` archives the run folder (with any
 separate result, log and audit roots) into the `workspace` job-store component
-and then deletes the folder. Right after the workspace archive is saved, and
-before the folder is deleted, the server also zips the job's declared outputs
-into an `outputs` job-store component:
+and then deletes the folder. For a job that declares outputs, it first stores
+them as their own `outputs` component:
 
-- The files are read directly from the run folder, so nothing is unzipped or
-  re-zipped. Paths match the workspace archive: each folder's files sit at the
-  archive root, and a later folder's file replaces an earlier one at the same
-  path.
-- Symlinks are skipped.
-- Nothing is stored when no declared output was produced.
-- A failure is logged and leaves the job without an outputs archive. It never
-  affects the workspace archive or the job's cleanup.
+1. **Stage.** Move the declared output files out of the workspace folders into
+   a staging folder beside them, at their workspace paths. On the same
+   filesystem a move is a rename, so nothing is copied. Symlinks are skipped.
+   A later workspace folder's file replaces an earlier one's at the same path,
+   as unzipping the workspace does; the earlier file stays in the workspace.
+   The log files the server's log commands read (`log.txt`, `log.json`,
+   `error_log.txt`) are copied rather than moved, so those commands keep
+   working when a job declares them.
+2. **Store the outputs.** `JobDefManagerSpec.save_job_outputs(job_id,
+   [staging_folder])` archives the staging folder as the `outputs` component,
+   with the same folder contract `save_workspace` uses, so any job store that
+   archives a workspace archives the outputs the same way.
+3. **Store the rest.** `save_workspace` archives the workspace folders, which
+   no longer contain the declared outputs.
+4. Delete the staging folder and the workspace folders, as today.
 
-`JobDefManagerSpec.save_job_outputs` stores the archive. It is optional: its
-default saves nothing, so other job-store implementations keep working and
-their outputs-only downloads return the whole job.
+Each file is read and written once, as before this change, so job end takes no
+longer and nothing is stored twice.
+
+When nothing declared was produced, nothing is staged and the workspace holds
+everything, as before. When the outputs are not stored, because
+`save_job_outputs` fails or returns None (its default, so job-store
+implementations without it keep working), the staged files are moved back
+before the workspace is archived, so nothing is lost.
 
 **Why at job end.** By the time anyone downloads, the result files exist only
-as entries inside the stored workspace archive; the run folder is gone. A full
-download replies at once, because the server only links the stored archive into
-the transfer folder and streams it after replying. Building a subset at
-download time would mean copying the declared entries out of the workspace
-archive before replying, which for a multi-GB model can exceed how long the
-admin client waits for a reply (5 seconds unless a command timeout is set). Job
-end is the last moment the outputs exist as files, so they can be zipped
-directly, once. An outputs-only download is then the same process as a full
-download: link a stored archive, reply, stream. The cost is that the declared
-outputs are stored twice, once in each archive.
+inside stored archives; the run folder is gone. A download replies at once
+because the server only links stored archives into the transfer folder and
+streams them after replying. Building a subset on request would mean copying
+the declared entries out of the workspace archive before replying, which for a
+multi-GB model can exceed how long the admin client waits for a reply (5
+seconds unless a command timeout is set). Job end is the last moment the
+outputs exist as files, so they can be separated without copying.
+
+### Full download
+
+A full download of a job with an `outputs` component sends `workspace.zip` and
+`outputs.zip`, both linked from the store, so the server still replies at
+once. Its reply carries `unzip_into: {"outputs.zip": "workspace"}`, and the
+admin client unzips `outputs.zip` into `workspace/` after `workspace.zip`. The
+result is the same `workspace/` folder as before this change. The client
+accepts only a plain folder name there, never a path. A job without an
+`outputs` component downloads exactly as before.
 
 ### Serving an outputs-only download
 
@@ -327,7 +348,7 @@ unchanged. With it, the server:
    - the job did not finish successfully,
    - the job's metadata has no `job_outputs`, or
    - the job has no `outputs` component: none of its declared outputs were
-     produced, it finished before outputs were archived, or archiving failed.
+     produced, it finished before this change, or storing them failed.
 3. Otherwise checks the job's component list, so a job store that raises
    for a missing component is never asked for one, and prepares `meta.json`
    and the `outputs` component as `workspace.zip`, with the job store's existing `get_storage_for_download`,
@@ -335,7 +356,7 @@ unchanged. With it, the server:
    `FilesystemStorage` links the stored archive, so the server replies at once
    and streams the file afterwards. If preparing the outputs fails, the server
    prepares the whole job instead. The admin client unzips it into
-   `workspace/` as it does today.
+   `workspace/` as usual.
 4. Reports the result in its reply to `download_job`, beside the file list:
    - `outputs_only`: whether only the declared outputs were sent;
    - `outputs_only_reason`: why not, when not.
@@ -387,15 +408,13 @@ summary and the CLI's artifact discovery find the model and metrics either way.
 | Filter on request, but make the client wait longer for this one reply | Rejected. It hides the cost rather than removing it, the copy still grows with the model, and outputs-only downloads still take a different path from full downloads. |
 | Reply first, then prepare the files | Rejected. It needs a rework of how folder downloads start, for one command. |
 | Download the whole job and filter on the client | Rejected. It saves nothing on transfer, which is the point of the feature. |
-| **Archive the declared outputs at job end, from the files on disk** | **Chosen.** It is the last moment the outputs exist as files, so they are zipped directly, once. An outputs-only download then links a stored archive and streams it, the same process as a full download. Cost: the declared outputs are stored twice. |
+| Archive the declared outputs at job end as a second copy, keeping the workspace archive whole | Rejected. Downloads reply at once, but every declared output, usually the model, is stored twice, and job end reads and writes it a second time. For large models that doubles their storage. |
+| **Store the declared outputs at job end apart from the rest of the workspace** | **Chosen.** The outputs are moved, not copied, out of the run folder and archived on their own; the workspace archive holds everything else. Each file is stored once and written once, as before. An outputs-only download links the outputs archive, and a full download links both, so both reply at once. The admin client merges the two archives into `workspace/`. |
 
-The archive is built by the server in a local temporary file and handed to the
-job store as a file, the same contract `update_object` already supports. Having
-the store zip the selected files into its own location, as `FilesystemStorage`
-does for the workspace, was rejected: it only saves a copy when a filesystem
-store sits on a different filesystem from the workspace, and an object store
-such as S3 would still build the zip locally and upload it, while every store
-implementation would need a new content type.
+The server gathers the outputs into a staging folder and hands the folder to the
+job store, the same folder contract `save_workspace` uses. Each store archives
+it the way it archives a workspace, so a filesystem store and an object store
+such as S3 need no new content type, and the server builds no zip of its own.
 
 ### Where the declaration comes from
 
@@ -442,21 +461,24 @@ its declaration.
 | Existing scripts | `outputs_only` defaults to `False`. Unchanged. |
 | Existing custom `ExecEnv` subclasses | `Run` does not pass the new argument unless the caller asks for an outputs-only download. |
 | New client, old server | The server ignores the property and returns the whole job. The reply has no `outputs_only`, and the client shows a notice. |
-| Old client, new server | The old client never sends the property. Unchanged. |
+| Old client, new server | Not supported: the admin client and the server run the same version. An older client's full download of a job with an `outputs` component would unzip `outputs.zip` into its own folder rather than into `workspace/`. |
 | Code that references `JobMetaKey.RESULT_LOCATION` or calls `set_results_uri` | Must drop the reference. Neither ever held or produced a value. |
 | A job with `job_outputs` on an old server | The old server stores the key and ignores it. Downloads are full. |
 | Failed or aborted job with `outputs_only=True` | The whole job, including logs. The client shows why the whole job came back. |
 | Completed job that produced none of its declared outputs | The whole job. The client shows why. |
-| Job that finished before the server stored outputs archives | No `outputs` component. Outputs-only downloads return the whole job, with the reason. |
-| Job store implementation without `save_job_outputs` | The default saves nothing. Outputs-only downloads return the whole job. |
+| Job that finished before this change | No `outputs` component: its workspace archive holds everything. Full downloads are unchanged, and outputs-only downloads return the whole job, with the reason. |
+| Job store implementation without `save_job_outputs` | The default saves nothing, so the declared outputs stay in the workspace archive. Outputs-only downloads return the whole job. |
+| Tools that read the stored `workspace` component directly | A job that declares outputs has them in the `outputs` component, not in `workspace`. The server's log commands are unaffected: log files are copied, not moved. |
 
 ## Security
 
 - The command, its authorization and its permission category are unchanged,
   so no new data becomes reachable. Outputs-only download returns a subset of what
   `download_job` already returns.
-- The server validates paths at submission and again before archiving, reads
+- The server validates paths at submission and again before staging, moves
   only files under the job's workspace folders, and skips symlinks.
+- The admin client unzips a downloaded archive only into a plain folder name
+  from the server's reply, never a path.
 - `job_outputs` names files, not contents. It must not contain secrets, the
   same as other job metadata.
 
@@ -475,16 +497,22 @@ Unit tests:
   invalid ones skipped. A component added by `add_cross_site_evaluation`, even
   after an earlier export, is declared.
 - Cloned jobs keep `job_outputs`.
-- At job end, the declared outputs are archived from the files at their
-  workspace paths, merged across workspace folders, without symlinks; nothing
-  is stored when none was produced; a failure leaves the workspace archive and
-  cleanup unaffected.
+- At job end, the declared outputs are moved out of the workspace at their
+  paths, without symlinks, with log files copied, and a later workspace
+  folder's file replacing an earlier one's; they are stored as `outputs` and
+  the workspace archive holds the rest; nothing is staged when none was
+  produced; when `save_job_outputs` fails or saves nothing, the files are put
+  back and the workspace archive holds everything.
 - `download_job` with `outputs_only`:
   - links the stored `outputs` archive as `workspace.zip`, as a full download
     links the workspace;
   - falls back to the whole job for undeclared or failed jobs, or a job
     without an outputs archive, and reports the reason in its reply;
-  - is unchanged without the property.
+  - is unchanged without the property for a job without an `outputs`
+    component.
+- A full download of a job with an `outputs` component links both archives
+  and tells the client to unzip `outputs.zip` into `workspace/`; the client
+  merges them and accepts only plain folder names.
 - The `outputs` component is a valid storage component and is not listed as
   an additional job component.
 - The admin client forwards command properties on a folder pull and passes the
@@ -507,6 +535,7 @@ and other workspace files are absent.
 | Submission check | `JobMetaValidator._validate_job_outputs` |
 | Cloning | `CLONED_META_KEYS` in `job_cmds.py` |
 | Recipe declaration | Helpers in `nvflare/job_config/job_outputs.py`, called where each component is created; `nvflare/recipe/_job_outputs.py` applies the record in `Recipe.export` and `Recipe.run` |
-| Outputs archive | `JobRunner._save_job_outputs`, `archive_job_outputs` in `nvflare/private/fed/server/job_outputs.py`, `JobDefManagerSpec.save_job_outputs`, storage component `outputs` |
+| Outputs storage | `JobRunner._save_job_outputs`, `stage_job_outputs` in `nvflare/private/fed/server/job_outputs.py`, `JobDefManagerSpec.save_job_outputs`, storage component `outputs` |
+| Full download | `JobCommandModule._get_default_job_components` (adds `outputs.zip`), reply key `unzip_into`, `FileTransferModule.pull_folder` |
 | Outputs-only download | `JobCommandModule.download_job` |
 | Client | `FileTransferModule.pull_folder`, `Session.download_job_result`, `ExecEnv.get_job_result`, `Run.get_result`, `nvflare job download --outputs-only` |

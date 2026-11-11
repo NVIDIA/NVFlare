@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import hashlib
+import os
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -570,6 +571,53 @@ def test_pull_folder_passes_the_servers_outputs_only_report_to_the_caller(tmp_pa
     assert result[ProtoKey.META][MetaKey.OUTPUTS_ONLY] is False
     assert result[ProtoKey.META][MetaKey.OUTPUTS_ONLY_REASON] == "the job declares no job_outputs"
     assert MetaKey.FILES not in result[ProtoKey.META]
+
+
+def test_pull_folder_unzips_a_mapped_archive_into_the_named_folder(tmp_path):
+    import zipfile
+
+    module = FileTransferModule(str(tmp_path), str(tmp_path))
+    tx_folder = tmp_path / "job-1__tx-1"
+    tx_folder.mkdir()
+    archives = {"workspace.zip": {"log.txt": b"log"}, "outputs.zip": {"app_server/FL_global_model.pt": b"model"}}
+    for name, members in archives.items():
+        with zipfile.ZipFile(tx_folder / name, "w") as z:
+            for member, data in members.items():
+                z.writestr(member, data)
+    api = MagicMock()
+    api.server_execute.return_value = {
+        ProtoKey.STATUS: APIStatus.SUCCESS,
+        ProtoKey.META: {
+            MetaKey.FILES: [["workspace.zip", "ref-1"], ["outputs.zip", "ref-2"]],
+            MetaKey.TX_ID: "tx-1",
+            MetaKey.SOURCE_FQCN: "server",
+            MetaKey.UNZIP_INTO: {"outputs.zip": "workspace", "bad.zip": "../escape"},
+        },
+    }
+    api.do_command.side_effect = [
+        {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.APP_DATA: str(tx_folder / "outputs.zip")},
+        {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.APP_DATA: str(tx_folder / "workspace.zip")},
+    ]
+    command_entry = MagicMock()
+    command_entry.full_command_name.return_value = "download_job"
+    ctx = MagicMock()
+    ctx.get_command_entry.return_value = command_entry
+    ctx.get_api.return_value = api
+
+    result = module.pull_folder(["download_job", "job-1"], ctx)
+
+    workspace = os.path.join(result[ProtoKey.META][MetaKey.LOCATION], "workspace")
+    assert sorted(
+        os.path.relpath(os.path.join(d, f), workspace) for d, _, files in os.walk(workspace) for f in files
+    ) == [os.path.join("app_server", "FL_global_model.pt"), "log.txt"]
+
+
+def test_unzip_targets_keep_only_plain_folder_names():
+    targets = FileTransferModule._unzip_targets(
+        {"outputs.zip": "workspace", "a.zip": "../up", "b.zip": "x/y", "../c.zip": "workspace", "d.zip": ""}
+    )
+
+    assert targets == {"outputs.zip": "workspace"}
 
 
 def test_logout_after_expiry_does_not_use_stopped_messenger():
