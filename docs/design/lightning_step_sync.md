@@ -132,7 +132,9 @@ Rules:
    callback can stop with `trainer.should_stop` before another batch trains. If `trainer.should_stop` is already set
    when the round is sent (by the training step or a callback that runs earlier), the callback does not receive, so
    `fit()` returns without waiting for the server's next task. If a callback that runs later clears `trainer.should_stop` again, the next
-   batch start receives instead, and stops if no train task comes. The received model is loaded at the next
+   batch start receives instead. If no train task comes, that batch must not train: a callback cannot skip a batch,
+   so the callback makes the module's `on_train_batch_start` return `-1` once, and Lightning ends the epoch before
+   the batch runs. The received model is loaded at the next
    batch start, so in-fit validation between the two still evaluates the local model. The cost: a validation that
    falls right after a sync waits for the server's aggregation instead of overlapping it, which adds up to the
    shorter of the two per such sync. Lightning gives a callback no hook between batch end and its stop check that

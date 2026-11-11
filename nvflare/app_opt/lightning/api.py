@@ -523,6 +523,7 @@ class _StepSyncFLCallback(_FLCallbackBase):
                 self._receive_next_round(trainer)
             received, self._received_model = self._received_model, None
             if received is None:
+                _skip_rest_of_epoch(pl_module)
                 return
             input_model = self._load_received_model(trainer, pl_module, received)
         self._start_round(trainer, pl_module, input_model)
@@ -585,6 +586,21 @@ class _StepSyncFLCallback(_FLCallbackBase):
             key: value.detach().to("cpu", copy=True) if isinstance(value, Tensor) else copy.deepcopy(value)
             for key, value in pl_module.state_dict().items()
         }
+
+
+def _skip_rest_of_epoch(pl_module):
+    instance_hooks = vars(pl_module)
+    had_instance_hook = "on_train_batch_start" in instance_hooks
+    previous = instance_hooks.get("on_train_batch_start")
+
+    def skip(*args, **kwargs):
+        if had_instance_hook:
+            pl_module.on_train_batch_start = previous
+        else:
+            del pl_module.on_train_batch_start
+        return -1
+
+    pl_module.on_train_batch_start = skip
 
 
 def _has_fl_hooks(trainer, *names: str) -> bool:

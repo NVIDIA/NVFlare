@@ -2076,9 +2076,13 @@ def test_step_sync_receives_at_batch_start_when_a_later_callback_clears_the_stop
         trainer = _pl_trainer(max_epochs=1, callbacks=[StopAtStep(2)])
         lightning_patch(trainer, sync_every_n_steps=2)
         trainer.callbacks.append(ClearStopAtStep(2))
-        trainer.fit(RecordingNet(), train_dataloaders=_loader(8))
+        module = RecordingNet()
+        trainer.fit(module, train_dataloaders=_loader(8))
 
     assert fake.steps() == expected_steps
+    assert trainer.global_step == sum(expected_steps)
+    assert all(torch.equal(module.state_dict()[key], value) for key, value in fake.sent_snapshots[-1].items())
+    assert "on_train_batch_start" not in vars(module)
 
 
 @pytest.mark.timeout(60)
