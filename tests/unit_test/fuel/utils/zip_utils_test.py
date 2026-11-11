@@ -187,6 +187,27 @@ class TestZipUtils:
 
         assert (output_dir / "nested" / "file.txt").read_bytes() == b"payload"
 
+    @pytest.mark.parametrize("via_symlink", [False, True])
+    def test_unzip_single_file_does_not_write_through_existing_hard_link(self, tmp_path, via_symlink):
+        archive_bytes = io.BytesIO()
+        with ZipFile(archive_bytes, "w") as archive:
+            archive.writestr("file.txt", b"payload")
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        outside_file = tmp_path / "outside.txt"
+        outside_file.write_bytes(b"original")
+        link_path = output_dir / ("linked.txt" if via_symlink else "file.txt")
+        os.link(outside_file, link_path)
+        if via_symlink:
+            (output_dir / "file.txt").symlink_to(link_path)
+
+        with pytest.raises(ValueError, match="hard link"):
+            unzip_single_file_from_bytes(archive_bytes.getvalue(), str(output_dir), "file.txt")
+
+        assert (output_dir / "file.txt").read_bytes() == b"original"
+        assert outside_file.read_bytes() == b"original"
+
     def test_unzip_single_file_rejects_unsafe_path_before_creating_output(self, tmp_path):
         output_dir = tmp_path / "output"
         with pytest.raises(ValueError, match="unsafe"):

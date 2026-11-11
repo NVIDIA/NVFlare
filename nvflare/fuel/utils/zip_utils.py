@@ -196,6 +196,15 @@ def unzip_single_file_from_bytes(zip_data: bytes, output_dir_name: str, file_pat
         info = z.getinfo(file_path)
         if _is_symlink_entry(info):
             raise ValueError(f"unsafe symlink entry in zip: {file_path!r}")
+        # Writing through a hard link could modify a file outside this directory.
+        destination = os.path.join(output_dir_name, file_path)
+        try:
+            destination_stat = os.stat(destination)
+        except FileNotFoundError:
+            pass
+        else:
+            if stat.S_ISREG(destination_stat.st_mode) and destination_stat.st_nlink > 1:
+                raise ValueError(f"unsafe hard link destination: {destination!r}")
         z.extract(file_path, path=output_dir_name)
 
 
