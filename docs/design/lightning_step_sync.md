@@ -2,7 +2,7 @@
 
 Status: Implemented (PR #5700)
 Author: Ruda Porto Filgueiras
-Date: 2026-11-05
+Date: 2026-11-05, updated 2026-11-12
 
 ## Objective
 
@@ -29,8 +29,17 @@ At each sync, training pauses, sends the local model, loads the next global mode
 same optimizer, LR scheduler, AMP scaler and data position. Three hooks at the sync point let user code extend the
 payload or react to a new global model without forking `FLCallback`.
 
-Compared with today's only way to get short rounds, one `fit()` per round, this uses less host memory and less time
-per round, and the same GPU memory (see [Memory](#memory)).
+Rounds of N steps are already possible with `Trainer(max_steps=N)` and one `fit()` per round. Step mode does not
+aggregate more often; it makes frequent aggregation correct and cheap:
+
+- **Data coverage.** Each round continues through the data. With one `fit()` per round, every round starts reading at
+  the first batch, so data that is not reshuffled every epoch (streaming, `IterableDataset`, very large datasets)
+  trains on the same first N batches each round.
+- **Optimizer and LR schedule.** They carry on unchanged, with nothing to configure. Fit-per-round needs
+  `RestoreState` and a schedule sized for the whole run.
+- **Per-round cost.** No `fit()` start-up per round; this matters when it is expensive, for example with DataLoader
+  workers.
+- **Host memory.** No `RestoreState` copy of the optimizer state. GPU memory is the same (see [Memory](#memory)).
 
 ## Background
 
@@ -66,7 +75,9 @@ Step-bounded rounds also hit a round-length bug (#5453), fixed in #5454.
 
 - `train_with_evaluation` in step mode (see [`train_with_evaluation`](#train_with_evaluation)).
 - Step sync across several `fit()` calls.
-- Sharded strategies (FSDP, DeepSpeed); they are not supported by the patched path today either.
+- Sharded strategies and strategies that keep a separate master copy of the weights (FSDP, DeepSpeed, Megatron). They
+  are not supported by the patched path today either, and step mode adds a risk for them: it loads the global model
+  into the module during `fit()`, and the load may not reach the optimizer's copy of the weights.
 - Workload-specific behaviour: receive heartbeats, restart sentinels, payload dtype normalisation. The hooks let user
   code add these.
 
@@ -106,8 +117,8 @@ In step mode:
 - A site that stops on its own (`EarlyStopping`, `max_time`, `trainer.should_stop`) sends its open round, which may be
   shorter than N steps, and leaves. A round with no optimizer step yet is not sent: it would carry the received model
   unchanged, which FedAvg counts with weight 1 (it treats `NUM_STEPS_CURRENT_ROUND <= 0` as 1), and SCAFFOLD cannot
-  compute a control update from zero steps. The callback logs a warning instead. The server then handles the missing site as it handles any client that stops
-  responding.
+  compute a control update from zero steps. The callback logs a warning instead. The server then handles the missing
+  site as it handles any client that stops responding.
 - Every site reports `NUM_STEPS_CURRENT_ROUND = N`, so FedAvg weights sites equally per round, whatever their dataset
   size. Use `aggregation_weight` on the server for unequal weights.
 
@@ -132,23 +143,26 @@ Rules:
    batch that ran the optimizer step. A batch that takes the round past N steps (manual optimization with several
    optimizer steps per batch) raises `RuntimeError`, because the round can no longer end at N; N must then be a
    multiple of the steps per batch.
-2. **Receive at batch end, load at batch start.** The send and the next receive both happen at batch end, so the
-   callback can stop with `trainer.should_stop` before another batch trains. If `trainer.should_stop` is already set
-   when the round is sent (by the training step or a callback that runs earlier), the callback does not receive, so
-   `fit()` returns without waiting for the server's next task. If a callback that runs later clears `trainer.should_stop` again, the next
-   batch start receives instead. If no train task comes, that batch must not train: a callback cannot skip a batch,
-   so the callback makes the module's `on_train_batch_start` return `-1` once, and Lightning ends the epoch before
-   the batch runs. The received model is loaded at the next
-   batch start, so in-fit validation between the two still evaluates the local model. The cost: a validation that
-   falls right after a sync waits for the server's aggregation instead of overlapping it, which adds up to the
-   shorter of the two per such sync. Lightning gives a callback no hook between batch end and its stop check that
-   says whether validation runs next, so the receive cannot be moved after it without copying Lightning's private
-   scheduling logic.
+2. **Receive at batch end, load at batch start.**
+   - The send and the next receive both happen at batch end, so the callback can stop with `trainer.should_stop`
+     before another batch trains. The received model is loaded at the next batch start, so in-fit validation between
+     the two still evaluates the local model.
+   - The cost: a validation that falls right after a sync waits for the server's aggregation instead of overlapping
+     it, which adds up to the shorter of the two per such sync. Lightning gives a callback no hook between batch end
+     and its stop check that says whether validation runs next, so the receive cannot be moved after it without
+     copying Lightning's private scheduling logic.
+   - If `trainer.should_stop` is already set when the round is sent (by the training step or a callback that runs
+     earlier), the callback does not receive, so `fit()` returns without waiting for the server's next task.
+   - If a callback that runs later clears `trainer.should_stop` again, the next batch start receives instead. If no
+     train task comes, that batch must not train. A callback cannot skip a batch, so the callback makes the module's
+     `on_train_batch_start` return `-1` once, and Lightning ends the epoch before the batch runs. Raising
+     `StopIteration` from the callback would also work but relies on `TrainingEpochLoop.run` catching it, which
+     Lightning does not document; a supported way for callbacks is requested in Lightning-AI/pytorch-lightning#22151.
 3. **The server's horizon.** `on_train_start` sets `fit_loop.max_epochs` and `epoch_loop.max_steps` to `-1`, and
    clears `min_epochs` and `min_steps`, which would otherwise keep Lightning from honouring the stop, so only the
    server ends a normal run. `on_train_end` and `on_exception` put the four limits back, so a later `fit()` on the
-   same trainer starts from the user's values. Optimizers and schedulers are configured before `on_train_start`, so a schedule
-   sized from the trainer's original limits keeps that shape. Step-counting schedulers (warmup and decay,
+   same trainer starts from the user's values. Optimizers and schedulers are configured before `on_train_start`, so
+   a schedule sized from the trainer's original limits keeps that shape. Step-counting schedulers (warmup and decay,
    `StepLR`) are unaffected; a scheduler sized from the run length (`OneCycleLR`, cosine with `T_max` from
    `estimated_stepping_batches`) must be sized for `num_rounds * sync_every_n_steps`. The callback cannot fix
    this, since the scheduler exists before the first receive, so it records the trainer's step budget at
@@ -164,9 +178,7 @@ Rules:
      step is lost. As for any `should_stop` (`EarlyStopping`), Lightning then runs one validation pass if a
      validation dataloader is set and that batch was not already a validation batch. It evaluates the last local
      model and does not reach the server. Skipping it would mean changing `trainer.limit_val_batches` during
-     `fit()`, which would also drop a scheduled validation on the same batch. Raising `StopIteration` from
-     `on_train_batch_start`, used before, avoided that pass but relied on `TrainingEpochLoop.run` catching it,
-     which is not a documented contract, and left the batch counters inconsistent.
+     `fit()`, which would also drop a scheduled validation on the same batch.
    - A non-train task (evaluate, submit model): stop the same way, without loading it or clearing the Client API
      cache. The task stays pending. A train-only job needs no code after `fit()`: the script exits, and the pending
      task is handled as for any client that leaves. A job that also sends evaluate tasks (cross-site evaluation)
@@ -190,8 +202,8 @@ Rules:
    at the same batch. Rank 0 sends and receives; the received model is broadcast with `trainer.strategy.broadcast`,
    as `FLCallback._receive_model` does today.
 8. **Payload.** Rank 0 sends a CPU copy of `pl_module.state_dict()` (`v.detach().to("cpu", copy=True)`), because
-   training continues on the device after the send. The module stays on its device. Fit-per-round mode keeps `pl_module.cpu()`, so existing users see no change in where the
-   module lives after `fit()`.
+   training continues on the device after the send. The module stays on its device. Fit-per-round mode keeps
+   `pl_module.cpu()`, so existing users see no change in where the module lives after `fit()`.
 9. **Algorithms.** Each sync runs the existing `_AlgorithmHandlerManager.finish_round` (SCAFFOLD control diff, step
    count) before the send, and each receive runs `start_round`.
 10. **Metadata.** `__fl_meta__` is read at every send, as at the end of `fit()` today, with the same conflict check
@@ -224,8 +236,8 @@ Three hooks, defined as methods on any `pl.Callback` in `trainer.callbacks`, cal
 - Hooks get a copy of the received model, so edits change what is loaded, not the model the Client API keeps as
   the baseline for DIFF transfers. When a callback defines `on_fl_receive` or `on_fl_model_loaded`, `meta` is
   deep-copied, so in-place edits of nested values (such as SCAFFOLD's control tensors) are safe. `params` is copied
-  one level deep, except that with DIFF transfers rank 0 clones the tensors, so in-place edits are safe too. That clone costs
-  M host memory per sync and is only paid when a hook could change the DIFF baseline.
+  one level deep, except that with DIFF transfers rank 0 clones the tensors, so in-place edits are safe too. That
+  clone costs M host memory per sync and is only paid when a hook could change the DIFF baseline.
 - A model received by `trainer.validate()` before `fit()` runs the receive hooks once; `fit()` reuses it.
 
 ```python
@@ -296,13 +308,16 @@ _StepSyncFLCallback  N steps: on_train_start lifts the trainer's limits, on_trai
 
 ## Memory
 
-Compared with one `fit()` per round, step mode uses less host memory and less time per round, and the same GPU
-memory:
+Compared with one `fit()` per round, step mode uses less host memory, the same GPU memory, and less time per round
+only when a new `fit()` is expensive to start:
 
 - **Host memory:** no `RestoreState` copy of the optimizer state, which today is held per rank for the whole job.
   Adam keeps two state tensors per weight, so for Adam that copy is about twice the size of the weights, on every
   rank.
 - **Time:** no move of the module and the optimizer state to CPU and back, and no per-`fit()` setup, at each round.
+  In a simulator run with a 19M-parameter model and 20 rounds of 20 steps, this made no measurable difference with
+  `num_workers=0`. With `num_workers=2`, each new `fit()` restarted the DataLoader workers, and fit-per-round took
+  about four times as long.
 - **GPU memory:** the optimizer state is on the GPU during training in both modes. The temporary broadcast buffer
   described below exists in both modes, but step mode allocates it at every sync instead of once per `fit()`.
 
@@ -340,16 +355,10 @@ Rank 0 loads the received weights, then every parameter and buffer is broadcast 
 
 It stays the documented fallback if the broadcast's GPU memory causes out-of-memory errors.
 
-## Example
-
-```python
-trainer = Trainer(strategy="ddp", devices=2, val_check_interval=50)
-flare.patch(trainer, sync_every_n_steps=50)
-trainer.fit(model, datamodule=dm)
-```
+## User Documentation
 
 The Lightning section of `docs/user_guide/data_scientist_guide/client_api_usage.rst` documents the parameter, the
-`num_rounds` rule and the hooks.
+`num_rounds` rule, the hooks, the evaluate loop after `fit()` and `shutdown_timeout` for an external process.
 
 ## Testing Plan
 
@@ -364,6 +373,10 @@ enforces NVFlare's exchange order: a send without a preceding receive fails.
 | Optimizer, LR scheduler and data order carry over across syncs | same optimizer object and momentum buffers, `lr_scheduler.last_epoch`, uninterrupted sample sequence |
 | The server decides how many rounds run, past the trainer's `max_epochs` and `max_steps` | rounds crossing epochs, epochs shorter than N, `max_steps` below the run |
 | A trainer that stops itself sends its open round | `should_stop` mid-round |
+| A round with no optimizer step is not sent | stop before the first step of a round |
+| A trainer already stopping on a sync batch does not wait for the next task | `should_stop` set by an earlier callback |
+| A later callback clearing `should_stop` neither crashes nor trains an unsent batch | `global_step` and final weights equal the sent round |
+| Task lifetime: one task per process sends one round and returns | a single train task, then no task |
 | The server's end stops `fit()` even when the trainer sets `min_steps` or `min_epochs` | server finishing below both minimums |
 | Passing the trainer's own step budget logs one scheduler warning | warning count past `max_epochs` |
 | In-fit validation runs between send and receive | call order of send, validation and receive |
@@ -373,10 +386,17 @@ enforces NVFlare's exchange order: a send without a preceding receive fails.
 | Hooks are called in order, once per received model, in both modes; edits take effect | recording callback; a hook that adds to `meta` and one that edits the received params |
 | Invalid `sync_every_n_steps`, `train_with_evaluation` in step mode, and a conflicting existing callback are rejected | `ValueError` from `patch()` |
 | Fit-per-round mode is unchanged | the existing tests; a test pins `FLCallback`'s constructor and methods |
-| Under DDP, all ranks pause at the same step, hold identical weights after each sync, only rank 0 sends, no hang | 2-rank CPU gloo test in `tests/integration_test/fast/lightning_step_sync_ddp_test.py`, run serially by `ci/run_process_contracts.py` |
+| Under DDP, all ranks pause at the same step, hold identical weights after each sync, only rank 0 sends, no hang | 2-rank test in `tests/integration_test/fast/lightning_step_sync_ddp_test.py`, run serially by `ci/run_process_contracts.py`: CPU with gloo, and GPU with NCCL when two GPUs are available |
+| Under DDP, the evaluate loop after `fit()` validates on all ranks and leaves on any other task | the same test, with a pending evaluate task and then a `submit_model` task |
 
 ## Follow-ups
 
 - A `--sync_every_n_steps` flag in `examples/advanced/multi-gpu/lightning/client.py`, and a simulator run that records
   peak GPU memory per sync.
 - Global-model validation per sync, to support `train_with_evaluation` in step mode, if there is demand.
+- A warning in the fit-per-round docs that `max_steps` rounds without per-epoch reshuffling train on the same first
+  N batches every round.
+- Fit-per-round sends a round without optimizer steps, which FedAvg weights as 1 (#5748).
+- A supported way for a callback to skip the current batch (Lightning-AI/pytorch-lightning#22151).
+- Strategies with a separate master copy of the weights (FSDP, DeepSpeed, Megatron): load the global model through
+  the strategy.
