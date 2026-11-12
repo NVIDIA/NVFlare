@@ -611,8 +611,13 @@ class _TaskCJHandle(JobHandleSpec):
         self.owner.release()
         self.owner.thread.join(self.cleanup_timeout)
         if self.owner.thread.is_alive():
+            with self.owner.lock:
+                pending = [a.execution_id for a in self.owner.attempts.values() if not a.status.settled]
             logging.getLogger(__name__).warning(
-                "Slurm CJ recovery skipped for job %s: worker cleanup unconfirmed", self.owner.job_id
+                "Slurm CJ recovery skipped for job %s: worker allocations %s not settled within %ss",
+                self.owner.job_id,
+                pending,
+                self.cleanup_timeout,
             )
             return False
         return True

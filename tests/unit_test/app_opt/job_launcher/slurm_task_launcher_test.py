@@ -798,7 +798,7 @@ def test_foreign_cluster_queries_and_cancellation_never_use_local_identity():
     assert not hasattr(adapter, "_cleanup_cluster")
 
 
-@pytest.mark.parametrize("state", ["TIMEOUT", "PREEMPTED", "OUT_OF_MEMORY", "FAILED", "NODE_FAIL"])
+@pytest.mark.parametrize("state", ["TIMEOUT", "PREEMPTED", "OUT_OF_MEMORY", "NODE_FAIL", "BOOT_FAIL"])
 def test_settled_loss_of_running_allocation_is_retryable(backend, state):
     launcher, adapter, request = backend
     adapter.task_accounting.return_value = _accounting(state=state)
@@ -846,3 +846,51 @@ def test_external_cancellation_and_other_states_are_not_retryable(backend, state
     adapter.task_accounting.return_value = _accounting(state=state)
     status = launcher.launch_task(request).poll()
     assert status.settled and not status.cancel_requested and not status.retryable
+
+
+def test_failed_allocation_is_retryable_only_when_killed_by_signal(backend):
+    launcher, adapter, request = backend
+    adapter.task_accounting.return_value = _accounting(state="FAILED", exit_status=1)
+    assert not launcher.launch_task(request).poll().retryable
+
+
+def test_signal_killed_allocation_is_retryable(backend):
+    launcher, adapter, request = backend
+    adapter.task_accounting.return_value = _accounting(state="FAILED", exit_signal=9)
+    assert launcher.launch_task(request).poll().retryable
+
+
+def test_cp_cancel_followed_by_timeout_is_not_retryable(backend):
+    launcher, adapter, request = backend
+    handle = launcher.launch_task(request)
+    handle.request_cancel()
+    adapter.task_accounting.return_value = _accounting(state="TIMEOUT")
+    status = handle.poll()
+    assert status.settled and status.cancel_requested and not status.retryable
+
+
+@pytest.mark.usefixtures("isolated_fobs")
+def test_verified_result_takes_precedence_over_retryable_loss(backend):
+    _, adapter, _ = backend
+    adapter.task_accounting.return_value = _accounting(state="TIMEOUT")
+    identity, store, arguments = _supervisor_case(backend)
+    outcome = TaskSupervisor().run(**arguments)
+    assert outcome.result is not None
+
+
+@pytest.mark.usefixtures("isolated_fobs")
+def test_application_failure_takes_precedence_over_retryable_loss(backend):
+    _, adapter, _ = backend
+    adapter.task_accounting.return_value = _accounting(state="TIMEOUT")
+    identity, store, arguments = _supervisor_case(backend, write_result=False)
+    submit = adapter.submit.side_effect
+
+    def fail_then_submit(argv, timeout):
+        store.record_failure(
+            identity, worker_pid=1, worker_ppid=1, started_at=0.0, failed_at=1.0, error_type="ValueError", message="bad"
+        )
+        return submit(argv, timeout)
+
+    adapter.submit.side_effect = fail_then_submit
+    with pytest.raises(RuntimeError, match="failed: ValueError"):
+        TaskSupervisor().run(**arguments)
