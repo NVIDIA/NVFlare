@@ -46,7 +46,7 @@ class _GatewayContainerLauncher(ClientDockerJobLauncher):
             raise ValueError("gateway Docker CJ requires a local Unix-socket Docker daemon")
         info = client.info()
         if info.get("OSType") != "linux" or not all(
-            info.get(key) is True for key in ("MemoryLimit", "CPUCfsPeriod", "CPUCfsQuota")
+            info.get(key) is True for key in ("MemoryLimit", "CpuCfsPeriod", "CpuCfsQuota")
         ):
             raise ValueError("gateway Docker daemon must enforce Linux CPU quotas and memory limits")
         return client

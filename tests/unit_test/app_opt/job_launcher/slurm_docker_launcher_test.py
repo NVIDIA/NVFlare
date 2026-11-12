@@ -79,7 +79,7 @@ def profile(tmp_path, monkeypatch):
     launcher = ClientDockerSlurmJobLauncher(**site["components"][0]["args"])
     dc = Mock()
     dc.api.base_url = "http+docker://localhost"
-    dc.info.return_value = {"OSType": "linux", "MemoryLimit": True, "CPUCfsPeriod": True, "CPUCfsQuota": True}
+    dc.info.return_value = {"OSType": "linux", "MemoryLimit": True, "CpuCfsPeriod": True, "CpuCfsQuota": True}
     launcher._docker_client = dc
     native = Mock(spec=docker_module.DockerJobHandle)
     native.poll.return_value = JobReturnCode.UNKNOWN
@@ -333,7 +333,7 @@ def test_only_canonical_docker_slurm_launcher_passes_policy(profile):
         policy.validate_job_launcher(docker_module.ClientDockerJobLauncher(workspace=str(profile.root)))
 
 
-@pytest.mark.parametrize("unsupported", ["remote", "windows", "MemoryLimit", "CPUCfsQuota", "CPUCfsPeriod"])
+@pytest.mark.parametrize("unsupported", ["remote", "windows", "MemoryLimit", "CpuCfsQuota", "CpuCfsPeriod"])
 def test_unsupported_daemon_is_rejected_before_container_creation(profile, unsupported):
     p = profile
     if unsupported == "remote":
@@ -342,6 +342,14 @@ def test_unsupported_daemon_is_rejected_before_container_creation(profile, unsup
         p.dc.info.return_value["OSType"] = "windows"
     else:
         p.dc.info.return_value[unsupported] = False
+    with pytest.raises(ValueError, match="daemon"):
+        p.launcher.launch_job(p.meta, p.context)
+    p.dc.containers.run.assert_not_called()
+
+
+def test_nonstandard_cpu_capability_keys_cannot_satisfy_daemon_check(profile):
+    p = profile
+    p.dc.info.return_value = {"OSType": "linux", "MemoryLimit": True, "CPUCfsPeriod": True, "CPUCfsQuota": True}
     with pytest.raises(ValueError, match="daemon"):
         p.launcher.launch_job(p.meta, p.context)
     p.dc.containers.run.assert_not_called()
