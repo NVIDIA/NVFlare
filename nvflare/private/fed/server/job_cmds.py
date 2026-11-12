@@ -1826,16 +1826,25 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             if ct != OUTPUTS:
                 job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
                 continue
-            prepared = os.path.join(job_download_dir, job_id, file_name)
-            try:
-                job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
-            except Exception as e:
-                self.logger.warning(f"cannot prepare the outputs of job {job_id}: {secure_format_exception(e)}")
-                if os.path.lexists(prepared):
-                    os.remove(prepared)  # possibly partial: it would fail to unzip and take the rest with it
-            if not os.path.lexists(prepared):
+            if not self._prepare_outputs_archive(job_def_manager, job_id, job_download_dir, [(ct, file_name)], fl_ctx):
                 return _OUTPUTS_ARCHIVE_MISSING
         return None
+
+    def _prepare_outputs_archive(self, job_def_manager, job_id: str, job_download_dir: str, comps, fl_ctx) -> bool:
+        """Prepare ``comps``, the last of which is the job's outputs archive, and return whether it was prepared.
+
+        When preparing fails, a possibly partial outputs archive is removed: it would fail to unzip and take the
+        rest of the download with it.
+        """
+        prepared = os.path.join(job_download_dir, job_id, comps[-1][1])
+        try:
+            for ct, file_name in comps:
+                job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
+        except Exception as e:
+            self.logger.warning(f"cannot prepare the outputs of job {job_id}: {secure_format_exception(e)}")
+            if os.path.lexists(prepared):
+                os.remove(prepared)
+        return os.path.lexists(prepared)
 
     def _get_default_job_components(self, job_def_manager, job_id, fl_ctx):
         comps = [(DATA, JOB_ZIP), (META, META_JSON), (WORKSPACE, WORKSPACE_ZIP)]
@@ -1876,15 +1885,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 "it finished before this feature, or they were kept in its workspace archive"
             )
         if not reason:
-            outputs_zip = os.path.join(job_download_dir, job_id, WORKSPACE_ZIP)
-            try:
-                job_def_manager.get_storage_for_download(job_id, job_download_dir, META, META_JSON, fl_ctx)
-                job_def_manager.get_storage_for_download(job_id, job_download_dir, OUTPUTS, WORKSPACE_ZIP, fl_ctx)
-            except Exception as e:
-                self.logger.warning(f"cannot prepare the outputs of job {job_id}: {secure_format_exception(e)}")
-                if os.path.lexists(outputs_zip):
-                    os.remove(outputs_zip)
-            if os.path.lexists(outputs_zip):
+            comps_to_send = [(META, META_JSON), (OUTPUTS, WORKSPACE_ZIP)]
+            if self._prepare_outputs_archive(job_def_manager, job_id, job_download_dir, comps_to_send, fl_ctx):
                 return None, None
             reason = _OUTPUTS_ARCHIVE_MISSING
         return reason, self._prepare_whole_job(job_def_manager, job_id, job_download_dir, comps, fl_ctx)

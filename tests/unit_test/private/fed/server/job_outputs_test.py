@@ -242,7 +242,7 @@ class TestSplitJobOutputs:
             split.link_rest()
 
     @pytest.mark.parametrize("change", ["appended", "rotated"])
-    def test_a_declared_server_log_written_meanwhile_keeps_the_split(self, tmp_path, change):
+    def test_a_declared_log_written_meanwhile_rejects_the_split(self, tmp_path, change):
         run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"m", "log.txt": b"old"})
         split = link_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt", "log.txt"])
         log = run_dir / "log.txt"
@@ -253,10 +253,26 @@ class TestSplitJobOutputs:
             log.rename(run_dir / "log.txt.1")
             log.write_bytes(b"new")
 
-        split.link_rest()  # no fallback: the server writing its own log is expected
+        # the outputs archive holds the old copy, so an outputs-only download would be out of date
+        with pytest.raises(OSError):
+            split.link_rest()
 
-        with open(os.path.join(split.rest_dirs[0], "log.txt"), "rb") as f:
-            assert f.read() == (b"old more" if change == "appended" else b"new")
+    def test_a_user_file_named_like_a_log_in_a_declared_folder_is_checked_like_any_output(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"metrics/log.json": b"{}"})
+        split = link_job_outputs([str(run_dir)], ["metrics/"])
+        (run_dir / "metrics" / "log.json").unlink()
+
+        with pytest.raises(OSError):
+            split.link_rest()
+
+    def test_an_unchanged_declared_log_is_in_both_archives(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"m", "log.txt": b"log"})
+        split = link_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt", "log.txt"])
+
+        split.link_rest()
+
+        assert "log.txt" in _files(split.output_dirs[0])
+        assert _files(split.rest_dirs[0]) == ["log.txt"]  # where the log commands read it
 
     def test_an_unreadable_folder_falls_back_to_the_whole_workspace(self, tmp_path, monkeypatch):
         run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model"})

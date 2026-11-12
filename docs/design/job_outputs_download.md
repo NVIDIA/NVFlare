@@ -315,9 +315,10 @@ their own `outputs` component and the rest as `workspace`:
    wins. The client unzips the outputs archive first, so a path that is an
    output in one folder and not in another (for example a symlink) could change
    which copy a full download keeps; the workspace is then stored whole too.
-   The server's logs are exempt and always linked here as they are now. The log files the server's log
-   commands read (`log.txt`, `log.json`, `error_log.txt`) are named here too,
-   so those commands keep working when a job declares them. Symlinks are
+   The log files the server's log commands read (`log.txt`, `log.json`,
+   `error_log.txt`) are named here too when a job declares them, so those
+   commands keep working; like any other output, a declared log that changed
+   after it was stored makes the workspace stored whole. Symlinks are
    recreated pointing at what they resolve to in the untouched workspace, so a
    link to a declared output still reads it, and a linked folder stays a link.
 4. **Record the split.** Set `job_outputs_stored: true` in the job's meta.
@@ -526,9 +527,8 @@ Known limitations:
   as before this change. Results published into the workspace by a container
   job launcher are the case this guards. The check compares each file's
   identity, size and modification time, so an overwrite that keeps all three
-  is not detected. The server's own logs are exempt: they may still be
-  written, so the workspace archive holds the current copy and a full download
-  keeps it.
+  is not detected. Declared log files get the same check, so a job that
+  declares a log the server still writes at job end is stored whole.
 
 ## Security
 

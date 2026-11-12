@@ -31,8 +31,9 @@ from typing import List, Optional, Tuple
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey, RunStatus, job_output_matches, validate_job_outputs
 
-# Files the server's log commands read from the workspace archive. A declared one is linked into both folders, so
-# the log commands keep working. "log.json" is job_cmds.JSON_LOG_FILE_NAME.
+# Files the server's log commands read from the workspace archive, at any depth. A declared one is linked into both
+# folders, so the log commands keep working; like any output, it must not change once stored.
+# "log.json" is job_cmds.JSON_LOG_FILE_NAME.
 _LOG_FILE_NAMES = {WorkspaceConstants.LOG_FILE_NAME, WorkspaceConstants.ERROR_LOG_FILE_NAME, "log.json"}
 
 _OUTPUTS_LINKS = ".outputs_links"
@@ -80,6 +81,27 @@ class SplitWorkspace:
         self.found: List[str] = []  # the declared entries found, in declaration order
         self._linked = [{} for _ in source_dirs]  # relative path -> identity, for each outputs folder
 
+    def link_outputs(self):
+        """Name the declared output files found in the workspace folders in the outputs folders.
+
+        Records each linked file's identity, and the declared entries found, in declaration order. Raises OSError
+        when a link cannot be made or a folder cannot be read.
+        """
+        found = set()
+        for source_dir, output_dir, linked in zip(self.source_dirs, self.output_dirs, self._linked):
+            os.makedirs(output_dir)
+            for root, _dirs, files in _walk(source_dir):
+                relative_root = os.path.relpath(root, source_dir)
+                for name in files:
+                    source = os.path.join(root, name)
+                    relative = os.path.normpath(os.path.join(relative_root, name))
+                    entry = _output_entry(source, relative, self.outputs)
+                    if entry:
+                        found.add(entry)
+                        _link(source, os.path.join(output_dir, relative))
+                        linked[relative] = _identity(source)
+        self.found = [entry for entry in self.outputs if entry in found]
+
     def link_rest(self):
         """Name everything but the declared outputs in the rest folders, from a fresh walk of the workspace.
 
@@ -108,21 +130,19 @@ class SplitWorkspace:
                     source = os.path.join(root, name)
                     relative = os.path.normpath(os.path.join(relative_root, name))
                     if relative in linked:
-                        if name in _LOG_FILE_NAMES:
-                            # the server may still write its logs: the workspace archive gets the current one, and
-                            # the client unzips it over the outputs archive's copy
-                            _link(source, os.path.join(rest_dir, relative))
-                            continue
                         seen.add(relative)
                         if _identity(source) != linked[relative]:
                             raise OSError(f"output {relative} changed after it was stored")
+                        if name in _LOG_FILE_NAMES:
+                            # kept in the workspace archive too, where the log commands read it
+                            _link(source, os.path.join(rest_dir, relative))
                         continue  # stored in the outputs archive
                     if relative in stored:
                         raise OSError(f"{relative} is an output in one workspace folder and not in another")
                     if _output_entry(source, relative, self.outputs):
                         raise OSError(f"output {relative} was created after the outputs were stored")
                     _link(source, os.path.join(rest_dir, relative))
-            if seen != {r for r in linked if os.path.basename(r) not in _LOG_FILE_NAMES}:
+            if seen != set(linked):
                 raise OSError("an output was removed after it was stored")
 
     def remove(self) -> List[str]:
@@ -183,24 +203,11 @@ def link_job_outputs(source_dirs: List[str], outputs: List[str]) -> Optional[Spl
     """
     split = SplitWorkspace(source_dirs, outputs)
     split.remove()  # left over from an interrupted attempt: links only
-    found = set()
     try:
-        for source_dir, output_dir, linked in zip(source_dirs, split.output_dirs, split._linked):
-            os.makedirs(output_dir)
-            for root, _dirs, files in _walk(source_dir):
-                relative_root = os.path.relpath(root, source_dir)
-                for name in files:
-                    source = os.path.join(root, name)
-                    relative = os.path.normpath(os.path.join(relative_root, name))
-                    entry = _output_entry(source, relative, outputs)
-                    if entry:
-                        found.add(entry)
-                        _link(source, os.path.join(output_dir, relative))
-                        linked[relative] = _identity(source)
+        split.link_outputs()
     except OSError:
         split.remove()
         return None
-    split.found = [entry for entry in outputs if entry in found]
     if not split.found:
         split.remove()
         return None
