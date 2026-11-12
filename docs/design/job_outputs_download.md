@@ -309,8 +309,12 @@ their own `outputs` component and the rest as `workspace`:
    naming everything but the files linked as outputs, so a file created while
    the outputs were stored, declared or not, is archived as it is now. If a
    stored output was replaced, written to or removed meanwhile, the outputs
-   archive would be out of date, so the workspace is stored whole instead. The
-   server's logs are exempt and always linked here as they are now. The log files the server's log
+   archive would be out of date, so the workspace is stored whole instead.
+   The workspace folders share archive paths, and the later folder's copy
+   wins. The client unzips the outputs archive first, so a path that is an
+   output in one folder and not in another (for example a symlink) could change
+   which copy a full download keeps; the workspace is then stored whole too.
+   The server's logs are exempt and always linked here as they are now. The log files the server's log
    commands read (`log.txt`, `log.json`, `error_log.txt`) are named here too,
    so those commands keep working when a job declares them. Symlinks are
    recreated pointing at what they resolve to in the untouched workspace, so a
