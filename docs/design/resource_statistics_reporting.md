@@ -222,6 +222,10 @@ acknowledgement protocol. Older peers may omit the report or its reply status;
 this indicates absent statistics rather than an outcome failure. An older archive
 without the bundle is unavailable, not a zero measurement.
 
+The client removes its persisted attempt marker and in-memory launch entry after
+an `accepted` or `duplicate` acknowledgement. Unacknowledged attempts retain their
+history so a later execution does not claim complete coverage of lost work.
+
 ## Server ledger and archive publication
 
 The coordinator maintains state and a lock for each job, plus a registry lock
@@ -237,6 +241,16 @@ OPEN: accept one record per trusted slot
   -> FINALIZED: participant files and summary marker written
   -> ARCHIVED: existing workspace archive saved
 ```
+
+After the server job process exits, aborted and failed jobs allow up to 30 seconds
+for outstanding client outcomes, capped by a shorter configured
+`client_outcome_wait_timeout`. Client cancellation starts before this wait. The
+completion loop continues processing other jobs and closes the report as soon as
+all expected outcomes arrive. At expiry, absent reports remain gaps; they do not
+change the abort or failure outcome. Final status, archive availability, and release
+of the scheduler's job slot follow closure, so a queued job can wait for this grace
+when the concurrency limit is reached. Successful jobs retain the normal outcome
+wait policy.
 
 At closure, each roster entry contains either an accepted value or a gap. An
 accepted entry contains `participant_name`, server-owned `role` and `received_at`,

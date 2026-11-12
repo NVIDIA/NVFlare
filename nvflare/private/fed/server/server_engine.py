@@ -328,6 +328,8 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
         fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
         self.job_runner.bind_server_resource_generation(job_id, generation)
+        # Override only this context, leaving the parent's sticky arguments intact.
+        fl_ctx.remove_prop(FLContextKey.ARGS, force_removal=True)
         fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=False)
         try:
             job_handle = job_launcher.launch_job(job_meta, fl_ctx)

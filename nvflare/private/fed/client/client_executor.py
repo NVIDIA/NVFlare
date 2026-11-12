@@ -1037,7 +1037,20 @@ class JobExecutor(ClientExecutor):
                         self.logger.error(f"could not report terminal outcome of job {job_id}")
                     elif isinstance(reply.payload, dict):
                         report_status = reply.payload.get(JobOutcomeMsgKey.RESOURCE_REPORT_STATUS)
-                        if report_status and report_status not in ("accepted", "duplicate"):
+                        if report_status in ("accepted", "duplicate"):
+                            # Preserve crash/retry evidence until the server acknowledges the report.
+                            try:
+                                marker = Workspace._join_under_root(
+                                    workspace, _CPU_ATTEMPT_DIR, Workspace._check_job_id(job_id)
+                                )
+                                os.unlink(marker)
+                            except FileNotFoundError:
+                                pass
+                            except OSError as e:
+                                self.logger.warning(f"could not remove resource attempt marker for {job_id}: {e}")
+                            with self.lock:
+                                self._cpu_seen_job_launches.discard(job_id)
+                        elif report_status:
                             _log_resource_warning(
                                 self.logger,
                                 f"resource statistics for job {job_id} were not accepted: {report_status}",

@@ -230,7 +230,11 @@ results are ignored. The runtime owns observer termination and cleanup. A
 late-starting observer is also abandoned, and the helper monitors its owner
 process and control pipe. Job termination and resource release do not wait
 indefinitely for the observer. These bounds apply to optional filesystem
-observations, not to handoff or archive I/O.
+observations, not to handoff or archive I/O. A scan can enter a stalled mounted
+subtree while the run-directory root remains accessible. The separate process
+allows termination of that observation; a daemon-thread timeout would leave its
+filesystem call running inside the job process. If startup consumes the observation
+budget, unfinished measurements are unavailable.
 
 ## Message payload accounting
 

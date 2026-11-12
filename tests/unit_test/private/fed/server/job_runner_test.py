@@ -40,6 +40,7 @@ from nvflare.private.fed.resource_stats.measurements import capacity_to_resource
 from nvflare.private.fed.server.job_runner import JobRunner, _FinishedJobState
 from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.utils.job_cert_utils import write_job_cert
+from tests.resource_stats_report_test_utils import _participant_summary
 
 
 def _patch_job_runner_sleep(side_effect):
@@ -928,7 +929,7 @@ def test_fail_run_ignores_job_already_finalized():
     assert "job-1" not in engine.exception_run_processes
 
 
-def test_fail_run_releases_client_outcome_barrier():
+def test_fail_run_preserves_reporting_roster_and_cancels_immediately():
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
     runner._stop_run = MagicMock()
@@ -950,68 +951,109 @@ def test_fail_run_releases_client_outcome_barrier():
 
     assert runner.fail_run("job-1", ProcessExitCode.EXCEPTION, fl_ctx) == ""
 
-    assert "job-1" not in runner._pending_client_outcomes
-    assert "job-1" not in runner._client_outcome_deadlines
+    assert runner._pending_client_outcomes["job-1"] == {"site-1", "site-2"}
+    assert runner._client_outcome_deadlines["job-1"] == 123.0
     runner._stop_run.assert_called_once_with("job-1", fl_ctx)
 
 
-@pytest.mark.parametrize(
-    "failure_process",
-    [
-        {
-            RunProcessKey.PARTICIPANTS: {},
-            RunProcessKey.PROCESS_RETURN_CODE: ProcessExitCode.EXCEPTION,
-        },
-        {
-            RunProcessKey.PARTICIPANTS: {},
-            RunProcessKey.PROCESS_FINISHED: True,
-            RunProcessKey.PROCESS_EXE_ERROR: True,
-        },
-    ],
-    ids=["failure-return-code", "execution-error-without-return-code"],
-)
-def test_job_complete_process_releases_client_outcome_barrier_after_server_failure(failure_process):
-    runner = JobRunner(workspace_root="/tmp")
+@pytest.mark.parametrize("failure", ["server-exit", "server-error", "launcher-abort", "user-abort"])
+@pytest.mark.parametrize("report_arrives", [False, True])
+@pytest.mark.parametrize("configured_wait", [5.0, 900.0])
+def test_failed_jobs_allow_reports_until_bounded_grace(tmp_path, failure, report_arrives, configured_wait):
+    runner = JobRunner(workspace_root=str(tmp_path))
+    runner.client_outcome_wait_timeout = configured_wait
     runner.logger = MagicMock()
     runner.fire_event = MagicMock()
     runner.log_debug = MagicMock()
     runner.log_info = MagicMock()
     runner.abort_client_run = MagicMock()
     runner._save_workspace = MagicMock()
-    runner.ask_to_stop = False
+    runner._accept_server_resource_report = MagicMock()
+    run_dir = tmp_path / "job-1"
+    runner.resource_stats.start_job("job-1", ["site-1"], run_dir)
+    runner.resource_stats.finalize_job = MagicMock(wraps=runner.resource_stats.finalize_job)
 
     engine = MagicMock()
     engine.run_processes = {}
     engine.client_manager.clients = {}
-    engine.exception_run_processes = {"job-1": failure_process}
-
-    job_manager = MagicMock()
-    engine.get_component.return_value = job_manager
-
+    failure_process = {RunProcessKey.PARTICIPANTS: {}}
+    if failure == "server-error":
+        failure_process.update({RunProcessKey.PROCESS_FINISHED: True, RunProcessKey.PROCESS_EXE_ERROR: True})
+    else:
+        failure_process[RunProcessKey.PROCESS_RETURN_CODE] = (
+            JobReturnCode.ABORTED if failure == "launcher-abort" else ProcessExitCode.EXCEPTION
+        )
+    engine.exception_run_processes = {} if failure == "user-abort" else {"job-1": failure_process}
     completion_ctx = MagicMock()
     engine.new_context.return_value = nullcontext(completion_ctx)
-
-    job = MagicMock(job_id="job-1", run_aborted=False)
+    job = MagicMock(job_id="job-1", run_aborted=failure == "user-abort")
     runner.running_jobs = {"job-1": job}
     runner._pending_client_outcomes = {"job-1": {"site-1"}}
-    runner._client_outcome_deadlines = {"job-1": 123.0}
+    runner._client_outcome_deadlines = {"job-1": 900.0}
+    deadline = min(configured_wait, 30.0)
+    passes = 0
 
-    def _stop_after_first_pass(_):
-        runner.ask_to_stop = True
+    def advance(_):
+        nonlocal passes
+        passes += 1
+        if passes == 1:
+            runner._save_workspace.assert_not_called()
+            runner.resource_stats.finalize_job.assert_not_called()
+            assert runner._client_outcome_deadlines["job-1"] == deadline
+            if failure != "user-abort":
+                runner.abort_client_run.assert_called_once_with("job-1", [], completion_ctx)
+            if report_arrives:
+                report = {"participant_summary": json.dumps(_participant_summary()).encode()}
+                assert runner.accept_client_resource_report("job-1", "site-1", report) == "accepted"
+                runner.resolve_client_outcome("job-1", "site-1")
+                clock.monotonic.return_value = 1.0
+            else:
+                clock.monotonic.return_value = deadline - 1
+        elif passes == 2 and not report_arrives:
+            runner._save_workspace.assert_not_called()
+            assert runner._client_outcome_deadlines["job-1"] == deadline
+            clock.monotonic.return_value = deadline
+        else:
+            runner.ask_to_stop = True
 
-    with _patch_job_runner_sleep(_stop_after_first_pass):
+    with _patch_job_runner_sleep(advance) as clock:
         runner._job_complete_process(engine)
 
+    expected = RunStatus.FINISHED_ABORTED if "abort" in failure else RunStatus.FINISHED_EXECUTION_EXCEPTION
+    engine.get_component.return_value.set_status.assert_called_once_with("job-1", expected, completion_ctx)
     runner._save_workspace.assert_called_once_with(completion_ctx, ANY, "job-1")
-    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_EXECUTION_EXCEPTION, completion_ctx)
-    runner.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, completion_ctx)
-    engine.remove_exception_process.assert_called_once_with("job-1")
+    runner.resource_stats.finalize_job.assert_called_once_with("job-1")
+    summary = json.loads((run_dir / "resource_stats" / "resource_summary.json").read_text())
+    entry = next(p for p in summary["participants"] if p["participant_name"] == "site-1")
+    if report_arrives:
+        assert "status" not in entry
+        assert entry["resource_utilization"]["cpu_consumed"]["cpu_seconds"] == 1.5
+    else:
+        assert entry["status"] == "missing"
     assert "job-1" not in runner.running_jobs
-    assert "job-1" not in runner._pending_client_outcomes
     assert "job-1" not in runner._client_outcome_deadlines
-    runner.logger.info.assert_called_once_with(
-        "Server failure for job (job-1); skipping client outcome wait for: ['site-1']"
-    )
+
+
+def test_reporting_grace_does_not_block_another_jobs_completion():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.running_jobs = {name: MagicMock(job_id=name, run_aborted=True) for name in ("waiting", "ready")}
+    runner._pending_client_outcomes = {"waiting": {"site-1"}}
+    runner._save_workspace = MagicMock()
+    runner._fire_job_lifecycle_event = MagicMock()
+    runner.log_debug = MagicMock()
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+    ctx = MagicMock()
+    engine.new_context.return_value = nullcontext(ctx)
+
+    with _patch_job_runner_sleep(lambda _: setattr(runner, "ask_to_stop", True)):
+        runner._job_complete_process(engine)
+
+    runner._save_workspace.assert_called_once_with(ctx, ANY, "ready")
+    engine.get_component.return_value.set_status.assert_called_once_with("ready", RunStatus.FINISHED_ABORTED, ctx)
+    assert set(runner.running_jobs) == {"waiting"}
+    assert runner._client_outcome_deadlines["waiting"] == 30.0
 
 
 def test_job_complete_process_keeps_client_outcome_barrier_for_clean_unknown_return_code():
@@ -1083,6 +1125,7 @@ def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code
     job_manager.set_status.assert_not_called()
     runner.ask_to_stop = False
     job.run_aborted = True
+    runner.resolve_client_outcome("job-1", "site-1")
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 

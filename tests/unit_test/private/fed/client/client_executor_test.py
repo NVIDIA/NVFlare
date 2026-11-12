@@ -1386,11 +1386,24 @@ def test_wait_child_process_reports_terminal_outcome_to_server(return_code, reas
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
 
 
-def test_wait_child_process_destroys_job_credential_when_worker_exits(tmp_path):
+@pytest.mark.parametrize("report_status", ["accepted", "duplicate", "invalid", "too_late", None])
+def test_wait_child_process_retires_credentials_and_acknowledged_attempt_marker(tmp_path, report_status):
     client = MagicMock()
     client.client_name = "site-1"
     client.send_request_before_shutdown.return_value.get_header.return_value = ReturnCode.OK
+    client.send_request_before_shutdown.return_value.payload = {JobOutcomeMsgKey.RESOURCE_REPORT_STATUS: report_status}
     job_executor = JobExecutor(client=client, startup="startup")
+    job_executor._cpu_seen_job_launches.add("job-1")
+    marker = tmp_path / _CPU_ATTEMPT_DIR / "job-1"
+    marker.parent.mkdir()
+    marker.touch()
+
+    def check_marker_before_ack(**_):
+        assert marker.exists()
+        assert "job-1" in job_executor._cpu_seen_job_launches
+        return client.send_request_before_shutdown.return_value
+
+    client.send_request_before_shutdown.side_effect = check_marker_before_ack
     job_handle = MagicMock()
     job_handle.poll.return_value = JobReturnCode.SUCCESS
     job_executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: job_handle}}
@@ -1411,6 +1424,10 @@ def test_wait_child_process_destroys_job_credential_when_worker_exits(tmp_path):
 
     assert find_job_cert(str(run_dir)) is None
     assert (run_dir / "app_site-1").is_dir()
+
+    acknowledged = report_status in {"accepted", "duplicate"}
+    assert marker.exists() is not acknowledged
+    assert ("job-1" in job_executor._cpu_seen_job_launches) is not acknowledged
 
 
 def test_wait_child_process_destroys_job_credential_when_wait_raises(tmp_path):

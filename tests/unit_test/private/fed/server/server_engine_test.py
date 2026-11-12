@@ -29,7 +29,7 @@ from nvflare.apis.fl_constant import (
     ServerCommandNames,
     SiteType,
 )
-from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.workspace import Workspace
@@ -76,9 +76,9 @@ def test_start_runner_process_uses_deployed_byoc_decision(
         cell=cell,
         server_state=SimpleNamespace(host="localhost", service_port=8002, ssid="ssid"),
     )
-    fl_ctx = FLContext()
+    context_manager = FLContextManager(private_stickers={FLContextKey.ARGS: args})
+    fl_ctx = context_manager.new_context()
     fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
-    fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=False)
     fl_ctx.set_prop(FLContextKey.SITE_OBJ, site, private=True, sticky=False)
 
     engine = ServerEngine.__new__(ServerEngine)
@@ -104,6 +104,7 @@ def test_start_runner_process_uses_deployed_byoc_decision(
         _, generation = engine.job_runner.bind_server_resource_generation.call_args.args
         assert f"resource_launch_generation={generation}" in fl_ctx.get_prop(FLContextKey.ARGS).set
         assert "resource_launch_generation=stale" not in fl_ctx.get_prop(FLContextKey.ARGS).set
+        assert context_manager.new_context().get_prop(FLContextKey.ARGS) is args
         if launch_failure == "stale-error":
             engine.job_runner.bind_server_resource_generation(job_id, "newer-launch")
         if launch_failure in {"error", "stale-error"}:
@@ -124,6 +125,7 @@ def test_start_runner_process_uses_deployed_byoc_decision(
         else:
             engine._start_runner_process(job, {}, None, fl_ctx, restored_attempt=restored_attempt)
 
+    assert context_manager.new_context().get_prop(FLContextKey.ARGS) is args
     assert fl_ctx.get_prop(FLContextKey.ARGS) is args
     assert args.set == ["resource_launch_generation=stale"]
     if launch_failure:
