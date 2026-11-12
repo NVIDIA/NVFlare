@@ -838,3 +838,11 @@ def test_supervisor_interrupts_cj_when_allocation_is_lost_without_result(backend
     with pytest.raises(TaskExecutionInterrupted, match=state):
         supervisor.run(**arguments)
     assert not supervisor.owns_execution
+
+
+@pytest.mark.parametrize("state", ["CANCELLED", "REVOKED", "DEADLINE"])
+def test_external_cancellation_and_other_states_are_not_retryable(backend, state):
+    launcher, adapter, request = backend
+    adapter.task_accounting.return_value = _accounting(state=state)
+    status = launcher.launch_task(request).poll()
+    assert status.settled and not status.cancel_requested and not status.retryable

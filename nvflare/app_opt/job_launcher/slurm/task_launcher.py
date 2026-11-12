@@ -83,6 +83,7 @@ class _JobBinding:
 
 
 _QUEUED = {"PENDING", "CONFIGURING"}
+_RETRYABLE_LOSS_STATES = {"TIMEOUT", "PREEMPTED", "OUT_OF_MEMORY", "NODE_FAIL", "FAILED"}
 _GPU_ENV = ("CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL", "ROCR_VISIBLE_DEVICES")
 _ALLOCATION_ENV = (
     "SLURM_JOB_ID",
@@ -493,7 +494,7 @@ class SlurmTaskHandle(TaskHandleSpec):
             termination_signal=(bad.exit_signal or bad.derived_exit_signal or None) if bad else None,
             failure=f"Slurm task {bad.job_id}: {bad.state}" if bad else None,
             # Settled loss of an allocation that ran (timeout, preemption, OOM, crash).
-            retryable=bad is not None and not never_allocated and not self.cancel_requested,
+            retryable=allocation.state in _RETRYABLE_LOSS_STATES and not never_allocated and not self.cancel_requested,
         )
 
     def wait_for_settlement(self, timeout=None):
