@@ -401,7 +401,7 @@ def test_ping_response_runs_when_application_frame_workers_are_saturated():
 
 def test_async_tcp_slow_frame_progress_prevents_receive_idle_timeout(monkeypatch):
     monkeypatch.setattr(heartbeat_monitor, "HEARTBEAT_TICK", 0.01)
-    monkeypatch.setattr(CommConfigurator, "get_heartbeat_interval", lambda self, default: 100.0)
+    monkeypatch.setattr(CommConfigurator, "get_heartbeat_interval", lambda self, default: 0.05)
     monkeypatch.setattr(CommConfigurator, "get_sfm_receive_idle_timeout", lambda self, default: 0.25)
 
     server = Communicator(Endpoint("server"))
@@ -439,8 +439,10 @@ def test_async_tcp_slow_frame_progress_prevents_receive_idle_timeout(monkeypatch
 
         server_conn = next(iter(server.conn_manager.sfm_conns.values()))
         client_conn = next(iter(client.conn_manager.sfm_conns.values()))
-        server.conn_manager.heartbeat_monitor._check_heartbeat = lambda: None
-        client.conn_manager.heartbeat_monitor._check_heartbeat = lambda: None
+        # This test sends in one direction, so the sender has no inbound application traffic
+        # while its write is in progress. Keep its monitor running but leave enough idle time
+        # there to isolate the receiver-side progress timeout under test.
+        client.conn_manager.heartbeat_monitor.receive_idle_timeout = 100.0
         server_conn.conn.writer.get_extra_info("socket").setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
 
         original_progress = server_conn.conn.frame_receiver.on_receive_progress
