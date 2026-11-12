@@ -54,7 +54,7 @@ class FakeSfmConn:
         self.sfm_endpoint = object()
         self.receive_idle_timeout_triggered = False
         self.conn = FakeConnObj(send_heartbeat_supported=send_heartbeat_supported)
-        self.send_heartbeat = MagicMock()
+        self.send_heartbeat_async = MagicMock()
 
     def get_send_stall_seconds(self):
         return self._stall_sec
@@ -70,7 +70,7 @@ def test_heartbeat_can_remove_connection_while_iterating():
     connections = {"test": conn}
     monitor = HeartbeatMonitor(connections)
     monitor.curr_time = monitor.interval + 1
-    conn.send_heartbeat.side_effect = lambda *_: connections.clear()
+    conn.send_heartbeat_async.side_effect = lambda *_: connections.clear()
     monitor._check_heartbeat()
     assert not connections
 
@@ -164,7 +164,7 @@ class TestSfmStallMonitor:
         monitor._check_heartbeat()
 
         sfm_conn.conn.close.assert_called_once()
-        sfm_conn.send_heartbeat.assert_not_called()
+        sfm_conn.send_heartbeat_async.assert_not_called()
 
     def test_monitor_does_not_close_connection_before_handshake(self, monkeypatch):
         sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=0.0)
@@ -229,7 +229,7 @@ class TestSfmStallMonitor:
         monitor._check_heartbeat()
 
         sfm_conn.conn.close.assert_called_once()
-        sfm_conn.send_heartbeat.assert_not_called()
+        sfm_conn.send_heartbeat_async.assert_not_called()
 
     def test_monitor_closes_only_after_consecutive_guard_threshold(self, monkeypatch):
         sfm_conn = FakeSfmConn(stall_sec=20.0, last_activity=0.0)
@@ -281,7 +281,7 @@ class TestSfmStallMonitor:
         monitor._check_heartbeat()
 
         sfm_conn.conn.close.assert_not_called()
-        sfm_conn.send_heartbeat.assert_not_called()
+        sfm_conn.send_heartbeat_async.assert_not_called()
 
     def test_monitor_sends_ping_when_idle_and_not_stalled(self, monkeypatch):
         sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=0.0, send_heartbeat_supported=True)
@@ -296,7 +296,7 @@ class TestSfmStallMonitor:
         monitor.curr_time = 100.0
         monitor._check_heartbeat()
 
-        sfm_conn.send_heartbeat.assert_called_once_with(Types.PING)
+        sfm_conn.send_heartbeat_async.assert_called_once_with(Types.PING)
         sfm_conn.conn.close.assert_not_called()
 
     def test_monitor_skips_ping_when_driver_disables_heartbeat(self, monkeypatch):
@@ -312,7 +312,7 @@ class TestSfmStallMonitor:
         monitor.curr_time = 100.0
         monitor._check_heartbeat()
 
-        sfm_conn.send_heartbeat.assert_not_called()
+        sfm_conn.send_heartbeat_async.assert_not_called()
 
     def test_monitor_keeps_default_heartbeat_when_capabilities_are_unspecified(self, monkeypatch):
         sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=0.0, send_heartbeat_supported=None)
@@ -327,7 +327,7 @@ class TestSfmStallMonitor:
         monitor.curr_time = 100.0
         monitor._check_heartbeat()
 
-        sfm_conn.send_heartbeat.assert_called_once_with(Types.PING)
+        sfm_conn.send_heartbeat_async.assert_called_once_with(Types.PING)
 
     def test_monitor_has_no_stall_warning_in_normal_non_stalled_flow(self, monkeypatch, caplog):
         sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=0.0)
