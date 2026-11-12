@@ -47,7 +47,8 @@ class ClientProcessJobLauncher(ProcessJobLauncher):
         data = ConfigService.load_config_dict(workspace.get_resources_file_path())
         backend = _SlurmTaskBackend(**component_args(data["task_execution"]["launcher"]))
         backend.bind_job(job_id, fl_ctx.get_identity_name(), workspace, job_meta)
-        environment = self._job_environment(job_meta, fl_ctx)
+        # The CP-owned Slurm backend already resolved study policy for workers.
+        environment = self._job_environment(job_meta, fl_ctx, include_study_runtime=False)
         for name in list(environment):
             if name.startswith(("SLURM_", "SBATCH_", "SQUEUE_", "SACCT_", "SCANCEL_")):
                 environment.pop(name)

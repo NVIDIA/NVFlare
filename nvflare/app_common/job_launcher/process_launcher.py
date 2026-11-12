@@ -128,11 +128,11 @@ class ProcessJobLauncher(JobLauncherSpec):
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
         return self._launch_job(job_meta, fl_ctx, self._job_environment(job_meta, fl_ctx))
 
-    def _job_environment(self, job_meta, fl_ctx):
+    def _job_environment(self, job_meta, fl_ctx, *, include_study_runtime=True):
         new_env = os.environ.copy()
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         runtime_file = study_runtime_file_path(workspace_obj.get_root_dir())
-        if os.path.exists(runtime_file):
+        if include_study_runtime and os.path.exists(runtime_file):
             runtime_map = load_study_runtime_file(runtime_file, launcher_mode="process", logger=self.logger)
             study = get_job_meta_study(job_meta)
             runtime = resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
