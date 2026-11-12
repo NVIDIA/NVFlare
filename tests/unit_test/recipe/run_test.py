@@ -61,6 +61,15 @@ class TestRunClass:
         # asking for outputs only still returns the whole job rather than losing the result
         assert Run(exec_env=env, job_id=self.job_id).get_result(clean_up=False, outputs_only=True) == str(tmp_path)
 
+    def test_get_result_gets_the_whole_job_when_the_environment_cannot_be_inspected(self, tmp_path):
+        self.mock_env.get_job_result.return_value = str(tmp_path)
+        self.mock_env.get_job_status.return_value = None
+
+        with patch("nvflare.recipe.run.inspect.signature", side_effect=ValueError("no signature")):
+            assert self.run.get_result(clean_up=False, outputs_only=True) == str(tmp_path)
+
+        self.mock_env.get_job_result.assert_called_once_with(self.job_id, timeout=0.0)
+
     def test_get_job_id(self):
         """Test get_job_id method."""
         assert self.run.get_job_id() == self.job_id

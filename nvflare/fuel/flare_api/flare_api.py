@@ -130,10 +130,15 @@ def _validate_target_strs(targets: List[str]) -> None:
     process_targets_into_str(targets)
 
 
-def _outputs_download_notice(meta: dict, job_id: str) -> Optional[str]:
+_OLD_SERVER_NOTE = "the whole job was downloaded because the server does not support outputs-only downloads"
+
+
+def _outputs_download_notice(meta: dict, job_id: str, outputs_only: bool = False) -> Optional[str]:
     """What to tell the user when a download is not what was asked for: an outputs-only request that returned the
     whole job, or a job whose stored outputs are missing from the download. None otherwise."""
     note = meta.get(MetaKey.OUTPUTS_NOTE)
+    if not note and outputs_only and meta.get(MetaKey.OUTPUTS_ONLY) is not True:
+        note = _OLD_SERVER_NOTE  # a server that ignores the request says nothing about it
     return f"Job {job_id}: {note}." if note else None
 
 
@@ -531,7 +536,7 @@ class Session(SessionSpec):
         result = self._do_command(AdminCommandNames.DOWNLOAD_JOB + " " + job_id, props=props)
         meta = result[ResultKey.META]
         location = meta.get(MetaKey.LOCATION)
-        notice = _outputs_download_notice(meta, job_id) if location else None
+        notice = _outputs_download_notice(meta, job_id, outputs_only) if location else None
 
         if destination and location and os.path.exists(location):
             destination = os.path.abspath(destination)

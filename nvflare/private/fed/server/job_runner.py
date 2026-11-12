@@ -709,6 +709,7 @@ class JobRunner(FLComponent):
             return None  # the job store does not store outputs apart
         split = None
         job = None
+        recorded = False  # whether the record may have been set, even if setting it raised
         try:
             job = job_manager.get_job(job_id, fl_ctx)
             outputs = declared_outputs(job.meta) if job else []
@@ -722,6 +723,7 @@ class JobRunner(FLComponent):
             else:
                 split.link_rest()
                 # downloads rely on this record, not on listing components, to know the workspace lacks the outputs
+                recorded = True
                 job_manager.update_meta(job_id, {JobMetaKey.JOB_OUTPUTS_STORED.value: True}, fl_ctx)
                 self.log_debug(fl_ctx, f"Outputs {split.found} of job {job_id} saved")
                 return split
@@ -729,13 +731,14 @@ class JobRunner(FLComponent):
             self.log_warning(fl_ctx, f"Cannot save the outputs of job {job_id}: {secure_format_exception(e)}")
         if split:
             self._remove_links(split, job_id, fl_ctx)
-        self._clear_job_outputs_stored(job_manager, job, job_id, fl_ctx)
+        self._clear_job_outputs_stored(job_manager, job, job_id, fl_ctx, recorded)
         return None
 
-    def _clear_job_outputs_stored(self, job_manager, job, job_id: str, fl_ctx: FLContext):
-        # an earlier attempt stored outputs apart; this attempt archives the workspace whole, so downloads must not
-        # use that older outputs archive. When the job could not be read, clear it anyway.
-        if job is not None and job.meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is not True:
+    def _clear_job_outputs_stored(self, job_manager, job, job_id: str, fl_ctx: FLContext, recorded: bool = False):
+        # an earlier attempt stored outputs apart, or this one may have recorded it before failing; this attempt
+        # archives the workspace whole, so downloads must not use that outputs archive. When the job could not be
+        # read, clear it anyway.
+        if not recorded and job is not None and job.meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is not True:
             return
         # Not caught: if the record cannot be cleared, the archival fails and is retried, rather than leave an older
         # outputs archive authoritative over this whole workspace.

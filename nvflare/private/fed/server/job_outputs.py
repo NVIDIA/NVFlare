@@ -84,10 +84,10 @@ class SplitWorkspace:
         """Name everything but the declared outputs in the rest folders, from a fresh walk of the workspace.
 
         Called after the outputs are stored, so a file created or replaced meanwhile is archived as it is now. Only
-        the files named in the outputs folders are left out, so a declared file created meanwhile is kept here.
-        Raises OSError when a link cannot be made, a folder cannot be read, or a stored output was replaced,
-        written to or removed meanwhile; the stored outputs archive would then be out of date, so the workspace is
-        stored whole. It also raises when a path stored as an output in one workspace folder is in another folder's
+        the files named in the outputs folders are left out. Raises OSError when a link cannot be made, a folder
+        cannot be read, a stored output was replaced, written to or removed meanwhile, or a declared output was
+        created meanwhile; the stored outputs archive would then be out of date, so the workspace is stored whole.
+        It also raises when a path stored as an output in one workspace folder is in another folder's
         rest: the workspace folders share archive paths, the later folder's copy wins, and the client unzips the
         outputs archive before the workspace archive, so the split could change which copy a full download keeps.
         """
@@ -119,6 +119,8 @@ class SplitWorkspace:
                         continue  # stored in the outputs archive
                     if relative in stored:
                         raise OSError(f"{relative} is an output in one workspace folder and not in another")
+                    if _output_entry(source, relative, self.outputs):
+                        raise OSError(f"output {relative} was created after the outputs were stored")
                     _link(source, os.path.join(rest_dir, relative))
             if seen != {r for r in linked if os.path.basename(r) not in _LOG_FILE_NAMES}:
                 raise OSError("an output was removed after it was stored")

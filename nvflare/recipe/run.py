@@ -29,7 +29,7 @@ def _accepts_outputs_only(get_job_result) -> bool:
     try:
         params = inspect.signature(get_job_result).parameters
     except (TypeError, ValueError):
-        return True
+        return False  # cannot tell: get the whole job rather than risk a TypeError that loses the result
     return "outputs_only" in params or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 

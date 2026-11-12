@@ -283,7 +283,7 @@ class FileTransferModule(CommandModule):
             location = self._rename_folder(tx_path, destination_path)
             result_meta = {MetaKey.LOCATION: location}
             # what the server reported about the content, e.g. whether an outputs-only download was filtered
-            for key in (MetaKey.OUTPUTS_NOTE,):
+            for key in (MetaKey.OUTPUTS_ONLY, MetaKey.OUTPUTS_NOTE):
                 if key in meta:
                     result_meta[key] = meta[key]
             return {

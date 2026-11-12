@@ -501,6 +501,21 @@ def test_a_fallback_clears_the_record_even_when_the_job_cannot_be_read(tmp_path)
     job_manager.update_meta.assert_called_once_with("job-1", {"job_outputs_stored": False}, fl_ctx)
 
 
+def test_a_record_that_may_have_been_set_before_failing_is_cleared(tmp_path):
+    run_dir = _run_dir_with_model(tmp_path)
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    _job_with_outputs(job_manager, ["app_server/FL_global_model.pt"])  # the meta read before the attempt: not set
+    archived = _capture_archives(job_manager)
+    # the store saved the record, then raised (e.g. a timeout after the write)
+    job_manager.update_meta.side_effect = [RuntimeError("timed out"), None]
+
+    runner._save_workspace(fl_ctx)
+
+    # the workspace is stored whole, so the record must not say the outputs are stored apart
+    assert archived["workspace"] == ["app_server/FL_global_model.pt", "log.txt"]
+    assert job_manager.update_meta.call_args_list[-1].args == ("job-1", {"job_outputs_stored": False}, fl_ctx)
+
+
 def test_a_failed_record_clear_fails_the_archival_so_it_is_retried(tmp_path, monkeypatch):
     run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))

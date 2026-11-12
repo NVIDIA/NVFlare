@@ -1788,6 +1788,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     reason, missing = None, self._prepare_whole_job(
                         job_def_manager, job_id, job_download_dir, comps, fl_ctx
                     )
+                if outputs_only and not reason:
+                    reply_meta[MetaKey.OUTPUTS_ONLY] = True
                 note = _outputs_note(reason, missing)
                 if note:
                     # the download is not what the caller asked for; the client shows why

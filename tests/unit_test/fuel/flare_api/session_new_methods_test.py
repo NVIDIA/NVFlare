@@ -911,8 +911,10 @@ class TestDownloadJobResultOutputsOnly:
         MetaKey.OUTPUTS_NOTE: "the whole job was downloaded because none of the job's declared outputs were found"
     }
 
+    _OUTPUTS = {MetaKey.OUTPUTS_ONLY: True}
+
     def test_sends_outputs_only_as_a_command_property(self, tmp_path):
-        cmd, path = self._download(tmp_path, outputs_only=True)
+        cmd, path = self._download(tmp_path, self._OUTPUTS, outputs_only=True)
 
         cmd.assert_called_once_with(f"{AdminCommandNames.DOWNLOAD_JOB} {self._JOB_ID}", props={"outputs_only": True})
         assert path == str(tmp_path / self._JOB_ID)
@@ -932,9 +934,31 @@ class TestDownloadJobResultOutputsOnly:
 
     def test_says_nothing_when_the_download_is_what_was_asked_for(self, tmp_path, caplog):
         with caplog.at_level("INFO"):
-            self._download(tmp_path, outputs_only=True)
+            self._download(tmp_path, self._OUTPUTS, outputs_only=True)
 
         assert "whole job" not in caplog.text
+
+    def test_a_server_that_ignores_outputs_only_is_reported_as_a_whole_job_download(self, tmp_path):
+        location = tmp_path / self._JOB_ID
+        location.mkdir()
+        session = _make_session()
+        reply = _ok_meta_result({MetaKey.LOCATION: str(location)})  # an older server: no marker, no note
+        with patch.object(session, "_do_command", return_value=reply):
+            _, notice = session._download_job_result(self._JOB_ID, outputs_only=True)
+
+        assert notice == (
+            f"Job {self._JOB_ID}: the whole job was downloaded because the server does not support "
+            "outputs-only downloads."
+        )
+
+    def test_a_full_download_without_the_marker_says_nothing(self, tmp_path):
+        location = tmp_path / self._JOB_ID
+        location.mkdir()
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result({MetaKey.LOCATION: str(location)})):
+            _, notice = session._download_job_result(self._JOB_ID)
+
+        assert notice is None
 
     def test_internal_download_returns_the_notice(self, tmp_path):
         location = tmp_path / self._JOB_ID

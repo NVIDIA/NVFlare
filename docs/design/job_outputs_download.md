@@ -307,9 +307,10 @@ their own `outputs` component and the rest as `workspace`:
    a workspace archives the outputs the same way.
 3. **Link the rest.** From a fresh walk, build a second folder of hard links
    naming everything but the files linked as outputs, so a file created while
-   the outputs were stored, declared or not, is archived as it is now. If a
-   stored output was replaced, written to or removed meanwhile, the outputs
-   archive would be out of date, so the workspace is stored whole instead.
+   the outputs were stored is archived as it is now. If a stored output was
+   replaced, written to or removed meanwhile, or a declared output was created
+   meanwhile, the outputs archive would be out of date, so the workspace is
+   stored whole instead.
    The workspace folders share archive paths, and the later folder's copy
    wins. The client unzips the outputs archive first, so a path that is an
    output in one folder and not in another (for example a symlink) could change
@@ -396,18 +397,21 @@ unchanged. With it, the server:
 4. When the download is not what was asked for, says why in one reply field
    beside the file list, `outputs_note`: why an outputs-only request returned
    the whole job, and that stored outputs are missing, when they are. When the
-   download is what was asked for, the reply has no note.
+   download is what was asked for, the reply has no note. An outputs-only
+   download also sets `outputs_only: true` in the reply.
 
    A missing entry is not an error. For example, the best model exists only
    when the workflow tracked one.
 5. Includes `meta.json`, as today, so the caller still has the job status and
    timing.
 
-The admin client's folder pull passes `outputs_note` through to its caller,
-next to the local location, and the FLARE API shows it as `Job <job_id>: <note>.`
-No file is added to the download. The reply does not echo whether the request
-was outputs-only: the caller knows what it asked for, and the note says when
-the result differs.
+The admin client's folder pull passes `outputs_only` and `outputs_note`
+through to its caller, next to the local location, and the FLARE API shows the
+note as `Job <job_id>: <note>.` No file is added to the download. A server
+without this feature ignores the `outputs_only` property and sends neither
+field, so the FLARE API reports an outputs-only request whose reply lacks
+`outputs_only: true` as a whole-job download, and never assumes the filter was
+applied.
 
 The `outputs` component is a system component: it is not listed or downloaded
 as an additional job component.
@@ -569,9 +573,8 @@ Unit tests:
 - Downloads decide from the meta record; a split job whose outputs archive
   cannot be read downloads the rest with an `outputs_note`, and an
   outputs-only request returns the whole job with that reason.
-- A declared file written after the outputs are linked is kept in the
-  workspace; a stored output replaced or removed meanwhile stores the
-  workspace whole; a failed record clear fails the archival so it is retried.
+- A declared file written after the outputs are linked, or a stored output
+  replaced or removed meanwhile, stores the workspace whole; a failed record clear fails the archival so it is retried.
 - `download_job` with `outputs_only`:
   - links the stored `outputs` archive as `workspace.zip`, as a full download
     links the workspace;
@@ -585,9 +588,10 @@ Unit tests:
 - The `outputs` component is a valid storage component and is not listed as
   an additional job component.
 - The admin client forwards command properties on a folder pull and passes the
-  reply's `outputs_note` back.
+  reply's `outputs_only` and `outputs_note` back.
 - `Session.download_job_result` shows an `outputs_note` in either mode and
-  says nothing when there is none.
+  says nothing when there is none; an outputs-only reply without
+  `outputs_only: true` (an older server) is reported as the whole job.
 - `Run.get_result()` works with an `ExecEnv` that implements the two-argument
   `get_job_result`.
 - The PyTorch FedAvg recipe exports the expected `job_outputs`.

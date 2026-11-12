@@ -556,6 +556,7 @@ def test_pull_folder_passes_the_servers_outputs_only_report_to_the_caller(tmp_pa
             MetaKey.TX_ID: "tx-1",
             MetaKey.SOURCE_FQCN: "server",
             MetaKey.OUTPUTS_NOTE: "the whole job was downloaded because the job declares no job_outputs",
+            MetaKey.OUTPUTS_ONLY: False,
         },
     }
     api.do_command.return_value = {ProtoKey.STATUS: APIStatus.SUCCESS}
@@ -571,6 +572,7 @@ def test_pull_folder_passes_the_servers_outputs_only_report_to_the_caller(tmp_pa
         result[ProtoKey.META][MetaKey.OUTPUTS_NOTE]
         == "the whole job was downloaded because the job declares no job_outputs"
     )
+    assert result[ProtoKey.META][MetaKey.OUTPUTS_ONLY] is False
     assert MetaKey.FILES not in result[ProtoKey.META]
 
 

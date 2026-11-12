@@ -207,15 +207,23 @@ class TestSplitJobOutputs:
         with open(os.path.join(split.rest_dirs[0], "log.txt")) as f:
             assert f.read() == "new"
 
-    def test_a_declared_file_written_after_the_outputs_are_linked_is_kept_with_the_rest(self, tmp_path):
+    def test_a_declared_file_written_after_the_outputs_are_linked_rejects_the_split(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"metrics/metrics_summary.json": b"{}"})
         split = link_job_outputs([str(run_dir)], ["metrics/"])
         (run_dir / "metrics" / "round_metrics.jsonl").write_text("late")  # flushed while the outputs were stored
 
+        # the stored outputs archive lacks it, so an outputs-only download would miss it: store the workspace whole
+        with pytest.raises(OSError):
+            split.link_rest()
+
+    def test_an_undeclared_symlink_matching_the_declaration_written_late_keeps_the_split(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"metrics/metrics_summary.json": b"{}"})
+        split = link_job_outputs([str(run_dir)], ["metrics/"])
+        os.symlink("metrics_summary.json", run_dir / "metrics" / "latest.json")  # a symlink is never an output
+
         split.link_rest()
 
-        # not in the stored outputs archive, so it must be in the workspace archive
-        assert _files(split.rest_dirs[0]) == ["metrics/round_metrics.jsonl"]
+        assert os.path.islink(os.path.join(split.rest_dirs[0], "metrics", "latest.json"))
 
     @pytest.mark.parametrize("change", ["replaced", "removed", "appended"])
     def test_a_stored_output_changed_afterwards_rejects_the_split(self, tmp_path, change):

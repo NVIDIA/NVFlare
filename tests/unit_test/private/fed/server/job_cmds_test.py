@@ -2229,7 +2229,7 @@ def test_download_job_outputs_only_serves_the_stored_outputs_archive_like_a_full
     assert prepared["workspace.zip"].resolve() == (store / "outputs").resolve()
     with ZipFile(prepared["workspace.zip"]) as z:
         assert z.namelist() == ["app_server/FL_global_model.pt"]
-    assert reply_meta is None  # what was asked for: nothing to report
+    assert reply_meta == {MetaKey.OUTPUTS_ONLY: True}  # what was asked for: only the marker, no note
 
 
 @pytest.mark.parametrize(
@@ -2252,6 +2252,7 @@ def test_download_job_outputs_only_falls_back_to_the_whole_job(monkeypatch, tmp_
         assert sorted(z.namelist()) == sorted(_WORKSPACE)
     assert reply_meta[MetaKey.OUTPUTS_NOTE].startswith("the whole job was downloaded because")
     assert reason in reply_meta[MetaKey.OUTPUTS_NOTE]
+    assert MetaKey.OUTPUTS_ONLY not in reply_meta
 
 
 def test_download_job_outputs_only_never_asks_a_store_for_a_missing_outputs_component(monkeypatch, tmp_path):
