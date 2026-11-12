@@ -25,6 +25,7 @@ import pytest
 
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.task_launcher_spec import (
+    TaskExecutionInterrupted,
     TaskExecutionPhase,
     TaskLauncherError,
     TaskLaunchError,
@@ -795,3 +796,45 @@ def test_foreign_cluster_queries_and_cancellation_never_use_local_identity():
         assert "--clusters=other" in call.args[0]
         assert "--local" not in call.args[0]
     assert not hasattr(adapter, "_cleanup_cluster")
+
+
+@pytest.mark.parametrize("state", ["TIMEOUT", "PREEMPTED", "OUT_OF_MEMORY", "FAILED", "NODE_FAIL"])
+def test_settled_loss_of_running_allocation_is_retryable(backend, state):
+    launcher, adapter, request = backend
+    adapter.task_accounting.return_value = _accounting(state=state)
+    status = launcher.launch_task(request).poll()
+    assert status.settled and status.retryable
+
+
+def test_successful_allocation_is_not_retryable(backend):
+    launcher, _, request = backend
+    status = launcher.launch_task(request).poll()
+    assert status.succeeded and not status.retryable
+
+
+def test_unallocated_failure_is_not_retryable(backend):
+    launcher, adapter, request = backend
+    adapter.task_accounting.return_value = _accounting(state="FAILED", step=None, allocated_nodes=0)
+    status = launcher.launch_task(request).poll()
+    assert status.settled and not status.retryable
+
+
+def test_cancelled_allocation_is_not_retryable(backend):
+    launcher, adapter, request = backend
+    handle = launcher.launch_task(request)
+    handle.request_cancel()
+    adapter.task_accounting.return_value = _accounting(state="CANCELLED")
+    status = handle.poll()
+    assert status.settled and status.cancel_requested and not status.retryable
+
+
+@pytest.mark.usefixtures("isolated_fobs")
+@pytest.mark.parametrize("state", ["TIMEOUT", "PREEMPTED"])
+def test_supervisor_interrupts_cj_when_allocation_is_lost_without_result(backend, state):
+    _, adapter, _ = backend
+    adapter.task_accounting.return_value = _accounting(state=state)
+    identity, store, arguments = _supervisor_case(backend, write_result=False)
+    supervisor = TaskSupervisor()
+    with pytest.raises(TaskExecutionInterrupted, match=state):
+        supervisor.run(**arguments)
+    assert not supervisor.owns_execution
