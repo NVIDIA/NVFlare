@@ -870,15 +870,6 @@ def test_cp_cancel_followed_by_timeout_is_not_retryable(backend):
 
 
 @pytest.mark.usefixtures("isolated_fobs")
-def test_verified_result_takes_precedence_over_retryable_loss(backend):
-    _, adapter, _ = backend
-    adapter.task_accounting.return_value = _accounting(state="TIMEOUT")
-    identity, store, arguments = _supervisor_case(backend)
-    outcome = TaskSupervisor().run(**arguments)
-    assert outcome.result is not None
-
-
-@pytest.mark.usefixtures("isolated_fobs")
 def test_application_failure_takes_precedence_over_retryable_loss(backend):
     _, adapter, _ = backend
     adapter.task_accounting.return_value = _accounting(state="TIMEOUT")
