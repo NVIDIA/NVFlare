@@ -75,24 +75,30 @@ The unit test file names follow the `[module_name]_test.py` pattern.
 The bash script `runtest.sh` will run unit tests also.
 
 #### Building the documentation
-To build the docs, first make sure you have all requirements
+
+Use a dedicated documentation environment to preserve training dependencies.
+From the repository root, create and activate a new environment, then build:
 
 ```bash
-python3 -m pip install -U pip
-python3 -m pip install nvflare[dev]
-```
-
-To build the docs, please run. 
-
-```bash
+python3.10 -m venv .venv-docs
+source .venv-docs/bin/activate
 ./build_doc.sh --html
 ```
 
-Once built, you can view the docs in `docs/_build folder`. To clean the docs, please run
+The script installs the documentation dependencies. Linux x86_64 with Python 3.10
+uses the same pinned CPU framework environment as Read the Docs; other supported
+environments use the documentation extra. Keep this environment separate from
+the development or training environment.
+
+Open `docs/_build/index.html` to read the generated HTML. To clean generated files:
 
 ```bash
 ./build_doc.sh --clean
 ```
+
+The production dependency pins are in `docs/constraints.txt`. Update them in a
+fresh documentation environment and verify the full HTML and Markdown build
+before committing new versions.
 
 #### Signing your work
 NVIDIA FLARE enforces the [Developer Certificate of Origin](https://developercertificate.org/) (DCO) on all pull requests.
