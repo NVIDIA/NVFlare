@@ -27,6 +27,8 @@ import pytest
 
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, RunnerTask, WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.fuel.utils import gpu_utils
+from nvflare.private.fed.app.simulator import simulator_runner as simulator_runner_module
 from nvflare.private.fed.app.simulator import simulator_worker
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner, SimulatorRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
@@ -62,6 +64,82 @@ def test_exported_task_app_is_rejected_before_simulator_services_start(tmp_path,
 
     create_server.assert_not_called()
     create_client.assert_not_called()
+
+
+@pytest.fixture
+def simulator_gpu_setup(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(simulator_runner_module, "SimulatorDeployer", Mock())
+    runner = SimulatorRunner("job", str(tmp_path / "workspace"), n_clients=2, gpu="0,1", threads=3)
+    meta = {JobMetaKey.DEPLOY_MAP: {"app": ["site-1", "site-2"]}}
+    monkeypatch.setattr(runner, "validate_job_data", Mock(return_value=(b"job", "job", meta)))
+    monkeypatch.setattr(runner, "_deploy_apps", Mock())
+    server = Mock()
+    server.get_cell.return_value = MockCell()
+    monkeypatch.setattr(runner.deployer, "create_fl_server", Mock(return_value=(None, server)))
+    for name in (
+        "nvflare_fobs_initialize",
+        "init_security_content_service",
+        "dynamic_log_config",
+        "custom_fobs_initialize",
+        "register_ext_decomposers",
+        "Workspace",
+    ):
+        monkeypatch.setattr(simulator_runner_module, name, Mock())
+    monkeypatch.setattr(simulator_runner_module.AuthorizationService, "initialize", Mock())
+    monkeypatch.setattr(simulator_runner_module.AuditService, "the_auditor", None)
+    monkeypatch.setattr(gpu_utils, "has_nvidia_smi", lambda: False)
+    query = Mock(side_effect=AssertionError("unexpected nvidia-smi execution"))
+    monkeypatch.setattr(gpu_utils.subprocess, "run", query)
+    return runner, query
+
+
+def test_simulator_gpu_setup_accepts_explicit_groups_without_nvidia_smi(simulator_gpu_setup):
+    runner, query = simulator_gpu_setup
+
+    assert runner.setup()
+
+    assert split_gpus(runner.args.gpu) == ["0", "1"]
+    assert runner.args.threads == 1
+    assert runner.client_names == ["site-1", "site-2"]
+    runner.deployer.create_fl_server.assert_called_once_with(runner.args)
+    runner._deploy_apps.assert_called_once()
+    query.assert_not_called()
+
+
+def test_simulator_gpu_setup_still_fails_for_a_present_but_broken_provider(simulator_gpu_setup, monkeypatch, caplog):
+    runner, query = simulator_gpu_setup
+    monkeypatch.setattr(gpu_utils, "has_nvidia_smi", lambda: True)
+    query.side_effect = None
+    query.return_value = Mock(returncode=9, stdout="", stderr="query failed")
+
+    assert runner.setup() is False
+
+    assert "Failed to call nvidia-smi" in caplog.text
+    runner.deployer.create_fl_server.assert_not_called()
+    query.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "output,error",
+    [("index\n0\n1\n", None), ("index\n0\n", "These GPUs are not available"), ("index\n", "GPU inventory")],
+)
+def test_simulator_gpu_setup_preserves_available_inventory_validation(
+    simulator_gpu_setup, monkeypatch, caplog, output, error
+):
+    runner, query = simulator_gpu_setup
+    monkeypatch.setattr(gpu_utils, "has_nvidia_smi", lambda: True)
+    query.side_effect = None
+    query.return_value = Mock(returncode=0, stdout=output, stderr="")
+
+    assert runner.setup() is (error is None)
+
+    query.assert_called_once()
+    if error is None:
+        runner.deployer.create_fl_server.assert_called_once()
+    else:
+        assert error in caplog.text
+        runner.deployer.create_fl_server.assert_not_called()
 
 
 class TestSimulatorRunner:

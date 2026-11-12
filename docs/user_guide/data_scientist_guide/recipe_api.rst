@@ -560,6 +560,14 @@ statistics, PSI, and survival analysis. Warnings and errors remain visible:
 
    python job.py --log_config progress
 
+Named logging levels and custom JSON configuration files are also accepted.
+Simulation validates its effective logging selector immediately before deployment,
+before creating a workspace or starting processes. Invalid command-line or inherited
+environment selectors produce usage errors; invalid explicit ``SimEnv(log_config=...)``
+values raise ``ValueError`` at deployment. Help and export-only workflows do not
+validate runtime logging. Scripts may prepare a logging JSON file or repair an
+inherited ``FL_LOG_LEVEL`` after importing Recipe and before deployment.
+
 Detailed diagnostic records remain in ``log.txt`` and ``log.json``. To show full
 diagnostics on the console, run:
 

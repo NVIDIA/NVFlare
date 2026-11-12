@@ -15,9 +15,14 @@
 
 from __future__ import annotations
 
+import copy
+import logging
+import math
 import os
+import secrets
 import shlex
 from abc import abstractmethod
+from dataclasses import replace
 from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
@@ -25,7 +30,14 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobProcessArgs,
+    JobReturnCode,
+    add_launcher,
+    publish_job_handle,
+)
 from nvflare.apis.utils.format_check import check_job_id
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.config import (
@@ -63,14 +75,18 @@ from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.secret_utils import has_secret_refs
+from nvflare.job_config.defs import ExecutionLifetime
+from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.fed.utils.job_cert_utils import JobCertError, require_job_cert
 from nvflare.utils.job_launcher_utils import (
+    get_cj_resource_spec,
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
     get_portable_resource_spec,
     get_server_job_args,
     portable_memory_to_mib,
+    validate_cj_execution_lifetime,
 )
 
 
@@ -93,6 +109,8 @@ def _resolve_resources(
     sandbox: str,
     site_pending_timeout: float,
     spec: dict,
+    *,
+    allow_zero_gpus=False,
 ) -> JobResources:
     spec = _mapping_or_empty(spec, f"Slurm spec for site '{site_name}'")
     unknown = set(spec) - _JOB_SLURM_KEYS
@@ -110,7 +128,8 @@ def _resolve_resources(
         value = spec.get(name)
         return None if value is None else _require_int(value, name)
 
-    gpus_per_node = optional_int("gpus_per_node")
+    raw_gpus = spec.get("gpus_per_node")
+    gpus_per_node = None if raw_gpus is None else _require_int(raw_gpus, "gpus_per_node", 0 if allow_zero_gpus else 1)
     portable = get_portable_resource_spec(job_meta, site_name)
     portable_total = portable.get("num_of_gpus")
     if portable_total is not None:
@@ -119,7 +138,7 @@ def _resolve_resources(
         raise SlurmLauncherError("num_of_gpus must equal nodes * gpus_per_node when both are specified")
     if nodes > 1 and portable_total and gpus_per_node is None:
         raise SlurmLauncherError("multi-node GPU jobs require explicit gpus_per_node")
-    if nodes == 1 and gpus_per_node is None and portable_total:
+    if gpus_per_node is None and portable_total is not None and (portable_total or allow_zero_gpus):
         gpus_per_node = portable_total
 
     cpus_per_node = optional_int("cpus_per_node")
@@ -275,6 +294,52 @@ def _file_attach_mount(workspace: Workspace, workspace_path: str) -> Optional[Bi
     return BindMount(source, destination, "rw")
 
 
+def load_slurm_study_runtime(config, study, logger):
+    runtime_file = study_runtime_file_path(config.workspace_path)
+    legacy_file = os.path.join(config.workspace_path, "local", "study_data.yaml")
+    runtime_exists = os.path.exists(runtime_file)
+    if os.path.exists(legacy_file):
+        message = (
+            f"study runtime file '{runtime_file}' cannot be combined with legacy '{legacy_file}'"
+            if runtime_exists
+            else f"legacy study data file '{legacy_file}' is unsupported by Slurm; migrate to study_runtime.yaml"
+        )
+        raise SlurmLauncherError(message)
+    if not runtime_exists:
+        return StudyRuntime(study=study or "")
+    try:
+        runtime_map = load_study_runtime_file(runtime_file, launcher_mode="slurm", logger=logger)
+        return resolve_study_runtime(runtime_map, study, runtime_file, logger=logger)
+    except ValueError as e:
+        raise SlurmLauncherError(str(e)) from e
+
+
+def effective_slurm_study_values(config, runtime, job_image=None):
+    slurm = runtime.slurm
+    sandbox = slurm.get("sandbox", config.sandbox)
+    if job_image is not None:
+        job_image = _require_string(job_image, "job-owned Slurm image")
+    if sandbox == "none" and (job_image or runtime.container_image or runtime.datasets or runtime.secret_mounts):
+        raise SlurmLauncherError(
+            "effective sandbox 'none' does not support job/study container, datasets, or secret_mounts"
+        )
+    image = (
+        None
+        if sandbox == "none"
+        else normalize_slurm_image(
+            job_image or runtime.container_image or config.image,
+            sandbox,
+            require_file=True,
+            label="effective image",
+        )
+    )
+    python_path = slurm.get("python_path", config.python_path)
+    setup = slurm.get("setup", config.setup)
+    directives = dict(config.sbatch_directives)
+    directives.update({key: slurm[key] for key in ("partition", "account", "qos") if key in slurm})
+    return sandbox, image, python_path, setup, directives
+
+
 class SlurmJobLauncher(JobLauncherSpec):
     """Common lifecycle and launch-plan construction for client and server jobs."""
 
@@ -338,50 +403,10 @@ class SlurmJobLauncher(JobLauncherSpec):
         """Select and structure the worker arguments for this launcher type."""
 
     def _load_study_runtime(self, study: Optional[str]) -> StudyRuntime:
-        runtime_file = study_runtime_file_path(self.config.workspace_path)
-        legacy_file = os.path.join(self.config.workspace_path, "local", "study_data.yaml")
-        runtime_exists = os.path.exists(runtime_file)
-        if os.path.exists(legacy_file):
-            message = (
-                f"study runtime file '{runtime_file}' cannot be combined with legacy '{legacy_file}'"
-                if runtime_exists
-                else f"legacy study data file '{legacy_file}' is unsupported by Slurm; migrate to study_runtime.yaml"
-            )
-            raise SlurmLauncherError(message)
-        if not runtime_exists:
-            return StudyRuntime(study=study or "")
-        try:
-            runtime_map = load_study_runtime_file(runtime_file, launcher_mode="slurm", logger=self.logger)
-            return resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
-        except ValueError as e:
-            raise SlurmLauncherError(str(e)) from e
+        return load_slurm_study_runtime(self.config, study, self.logger)
 
-    def _effective_study_values(
-        self, runtime: StudyRuntime, job_image: Optional[str] = None
-    ) -> tuple[str, Optional[str], str, str, dict]:
-        slurm = runtime.slurm
-        sandbox = slurm.get("sandbox", self.config.sandbox)
-        if job_image is not None:
-            job_image = _require_string(job_image, "job-owned Slurm image")
-        if sandbox == "none" and (job_image or runtime.container_image or runtime.datasets or runtime.secret_mounts):
-            raise SlurmLauncherError(
-                "effective sandbox 'none' does not support job/study container, datasets, or secret_mounts"
-            )
-        image = (
-            None
-            if sandbox == "none"
-            else normalize_slurm_image(
-                job_image or runtime.container_image or self.config.image,
-                sandbox,
-                require_file=True,
-                label="effective image",
-            )
-        )
-        python_path = slurm.get("python_path", self.config.python_path)
-        setup = slurm.get("setup", self.config.setup)
-        directives = dict(self.config.sbatch_directives)
-        directives.update({key: slurm[key] for key in ("partition", "account", "qos") if key in slurm})
-        return sandbox, image, python_path, setup, directives
+    def _effective_study_values(self, runtime: StudyRuntime, job_image: Optional[str] = None):
+        return effective_slurm_study_values(self.config, runtime, job_image)
 
     def _study_environment(self, runtime: StudyRuntime) -> tuple[dict, dict]:
         environment = dict(runtime.env)
@@ -431,7 +456,9 @@ class SlurmJobLauncher(JobLauncherSpec):
         custom_paths = (workspace.get_app_custom_dir(job_id), workspace.get_site_custom_dir())
         return os.pathsep.join(dict.fromkeys(path for path in custom_paths if path and os.path.isdir(path)))
 
-    def _build_launch_plan(self, job_meta: dict, fl_ctx: FLContext) -> LaunchPlan:
+    allow_zero_gpus = False
+
+    def _build_launch_plan(self, job_meta: dict, fl_ctx: FLContext, *, runtime=None) -> LaunchPlan:
         if not isinstance(job_meta, dict):
             raise SlurmLauncherError("job_meta must be a mapping")
         job_id = job_meta.get(JobConstants.JOB_ID)
@@ -480,7 +507,7 @@ class SlurmJobLauncher(JobLauncherSpec):
         study = job_meta.get(JobMetaKey.STUDY.value)
         if study is not None:
             study = _require_string(study, "study name")
-        runtime = self._load_study_runtime(study)
+        runtime = self._load_study_runtime(study) if runtime is None else runtime
         job_spec = _mapping_or_empty(
             get_job_launcher_spec(job_meta, site_name, "slurm"), f"Slurm spec for site '{site_name}'"
         )
@@ -494,6 +521,7 @@ class SlurmJobLauncher(JobLauncherSpec):
             sandbox,
             self.config.pending_timeout,
             spec=job_spec,
+            allow_zero_gpus=self.allow_zero_gpus,
         )
         additional_node_command, node_app_dir = _resolve_additional_node_command(
             job_spec,
@@ -557,13 +585,201 @@ class SlurmJobLauncher(JobLauncherSpec):
             self.manager.shutdown()
 
 
+_GPU_ENV = ("CUDA_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "NVIDIA_VISIBLE_DEVICES")
+
+
+class _TaskCJHandle(JobHandleSpec):
+    """Preserve CJ outcome while bounding the wait for parent-owned cleanup."""
+
+    def __init__(self, handle, owner, cleanup_timeout=30.0):
+        self.handle = handle
+        self.owner = owner
+        self.cleanup_timeout = cleanup_timeout
+
+    def terminate(self):
+        self.owner.release()
+        return self.handle.terminate()
+
+    def _terminate_for_heartbeat_cleanup(self):
+        self.owner.release()
+        return self.handle._terminate_for_heartbeat_cleanup()
+
+    def poll(self):
+        code = self.handle.poll()
+        if code != JobReturnCode.UNKNOWN:
+            self.owner.release()
+        return code
+
+    def wait(self):
+        self.handle.wait()
+        self.owner.release()
+        self.owner.thread.join(self.cleanup_timeout)
+        if self.owner.thread.is_alive():
+            with self.owner.lock:
+                pending = [a.execution_id for a in self.owner.attempts.values() if not a.status.settled]
+            logging.getLogger(__name__).warning(
+                "Slurm task cleanup unconfirmed for job %s allocations %s; CP retains cleanup",
+                self.owner.job_id,
+                pending,
+            )
+
+
 class ClientSlurmJobLauncher(SlurmJobLauncher):
+    """Launch a resident compute CJ or a coordinator with disposable workers."""
+
     EXE_MODULE = "nvflare.private.fed.app.client.worker_process"
     SUPPORTS_ADDITIONAL_NODE_COMMAND = True
     SUPPORTS_CLIENT_API_ATTACH = True
 
     def get_module_args(self, job_args: dict) -> tuple:
         return _module_args(job_args, get_client_job_args(include_exe_module=False, include_set_options=True))
+
+    def __init__(self, *, cj_cpu_cores=1, cj_memory_mb=1024, cj_gpu_count=0, task_shutdown_timeout=30.0, **kwargs):
+        super().__init__(**kwargs)
+        self.task_shutdown_timeout = _require_positive_number(task_shutdown_timeout, "task_shutdown_timeout")
+        from nvflare.apis.task_launcher_spec import TaskResourceRequest
+
+        request = TaskResourceRequest(cj_cpu_cores, cj_memory_mb, cj_gpu_count)
+        if request.cpu_cores is None or not float(request.cpu_cores).is_integer():
+            raise ValueError("Slurm CJ CPU request must be whole cores")
+        self.cj_resources = JobResources(
+            cpus_per_node=int(request.cpu_cores),
+            mem_per_node=request.memory_mb,
+            gpus_per_node=request.gpu_count,
+            pending_timeout=self.config.pending_timeout,
+        )
+
+    def _cj_resources_for_job(self, job_meta, site_name):
+        requested = get_cj_resource_spec(job_meta, site_name)
+        if requested.get("mem_per_gpu_in_GiB", 0):
+            raise ValueError("Slurm CJ allocations cannot enforce per-GPU memory requirements")
+        # Slurm admits whole cores. Allocate at least the requested CPU share.
+        cpus = math.ceil(requested.get("num_of_cpus", self.cj_resources.cpus_per_node))
+        memory = (
+            portable_memory_to_mib(requested["memory"]) if "memory" in requested else self.cj_resources.mem_per_node
+        )
+        return replace(
+            self.cj_resources,
+            cpus_per_node=cpus,
+            mem_per_node=memory,
+            gpus_per_node=requested.get("num_of_gpus", self.cj_resources.gpus_per_node),
+        )
+
+    def _prepare_launch(self, job_meta, fl_ctx):
+        if not isinstance(job_meta, dict):
+            raise SlurmLauncherError("job_meta must be a mapping")
+        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        if not isinstance(workspace, Workspace):
+            raise SlurmLauncherError(f"missing {FLContextKey.WORKSPACE_OBJECT} in FLContext")
+        if os.path.realpath(workspace.get_root_dir()) != self.config.workspace_path:
+            raise SlurmLauncherError("FLContext workspace does not match configured Slurm workspace_path")
+        job_id = job_meta.get(JobConstants.JOB_ID)
+        try:
+            check_job_id(job_id)
+        except ValueError as error:
+            raise SlurmLauncherError("invalid job ID") from error
+        config = (
+            ConfigService.load_config_dict(workspace.get_client_app_config_file_path(job_id), raise_exception=False)
+            or {}
+        )
+        lifetime = get_client_execution_lifetime(config)
+        validate_cj_execution_lifetime(job_meta, fl_ctx.get_identity_name(), lifetime)
+        if lifetime == ExecutionLifetime.JOB:
+            return super()._build_launch_plan(job_meta, fl_ctx), None
+        from nvflare.app_opt.job_launcher.slurm.task_launcher import _SlurmTaskBackend
+        from nvflare.app_opt.job_launcher.slurm.task_policy import TASK_LAUNCHER_PATH, component_args, component_path
+
+        data = ConfigService.load_config_dict(workspace.get_resources_file_path())
+        launcher_config = data.get("task_execution", {}).get("launcher", {})
+        if component_path(launcher_config) != TASK_LAUNCHER_PATH:
+            raise ValueError("Slurm CPU CJ requires the exact site SlurmTaskLauncher")
+        task_launcher = _SlurmTaskBackend(**component_args(launcher_config))
+        task_launcher.validate_site_config(data)
+        runtime = self._load_study_runtime(job_meta.get(JobMetaKey.STUDY.value))
+        task_launcher.bind_job(job_id, fl_ctx.get_identity_name(), workspace, job_meta, runtime=runtime)
+        cj_resources = self._cj_resources_for_job(job_meta, fl_ctx.get_identity_name())
+        # The original metadata stays intact on disk and in the CJ. This copy
+        # is solely the physical CJ allocation, never the compute request.
+        cj_meta = copy.deepcopy(job_meta)
+        cj_meta[JobMetaKey.RESOURCE_SPEC.value] = {}
+        compute = get_job_launcher_spec(job_meta, fl_ctx.get_identity_name(), "slurm")
+        timing = {key: compute[key] for key in ("time", "pending_timeout") if key in compute}
+        if "pending_timeout" in timing:
+            timing["pending_timeout"] = min(timing["pending_timeout"], self.config.pending_timeout)
+        cj_meta[JobMetaKey.JOB_LAUNCHER_SPEC.value] = {fl_ctx.get_identity_name(): {"slurm": timing}}
+        plan = super()._build_launch_plan(cj_meta, fl_ctx, runtime=runtime)
+        if plan.sandbox != "none" or plan.image:
+            raise ValueError("Slurm task CJ requires the bare shared-filesystem profile")
+        environment = dict(plan.study_env)
+        if cj_resources.gpus_per_node == 0:
+            environment.update({name: "none" if name == "NVIDIA_VISIBLE_DEVICES" else "" for name in _GPU_ENV})
+        return (
+            replace(
+                plan,
+                clear_gres=True,
+                resources=replace(
+                    cj_resources, time_limit=plan.resources.time_limit, pending_timeout=plan.resources.pending_timeout
+                ),
+                study_env=environment,
+                additional_node_command=(),
+                node_app_dir=None,
+                execution_lifetime=ExecutionLifetime.TASK,
+            ),
+            task_launcher,
+        )
+
+    def _build_launch_plan(self, job_meta, fl_ctx):
+        return self._prepare_launch(job_meta, fl_ctx)[0]
+
+    def launch_job(self, job_meta, fl_ctx):
+        if self.manager is None:
+            raise SlurmLauncherError("nested Slurm job launch is unavailable inside a Slurm child process")
+        plan, backend = self._prepare_launch(job_meta, fl_ctx)
+        if backend is None:
+            return self.manager.launch(plan)
+        from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN, SlurmTaskService
+
+        cell = fl_ctx.get_engine().get_cell()
+        service = SlurmTaskService.get_or_create(cell)
+        self._task_service = service
+        token = secrets.token_hex(32)
+        owner = service.add_job(backend, plan.job_id, plan.site_name, token)
+        plan = replace(
+            plan,
+            study_secret_env={
+                **plan.study_secret_env,
+                ENV_TASK_OWNER: cell.get_fqcn(),
+                ENV_TASK_TOKEN: token,
+            },
+        )
+        try:
+            handle = self.manager.launch(plan)
+        except BaseException:
+            owner.release()
+            raise
+        owner.attach_cj(handle)
+        result = _TaskCJHandle(handle, owner, self.task_shutdown_timeout)
+        try:
+            publish_job_handle(result, fl_ctx)
+        except BaseException:
+            result.terminate()
+            result.wait()
+            raise
+        return result
+
+    def handle_event(self, event_type, fl_ctx):
+        if event_type == EventType.SYSTEM_BOOTSTRAP and self.manager is not None and self.config.sandbox == "none":
+            self.log_warning(
+                fl_ctx,
+                "Slurm bare profile requires trusted job code: jobs share the site's UID and "
+                "workspace and can access site private keys and scheduler credentials. Secure transport "
+                "does not provide filesystem or credential isolation.",
+            )
+        super().handle_event(event_type, fl_ctx)
+        if event_type == EventType.SYSTEM_END:
+            service = getattr(self, "_task_service", None)
+            if service is not None:
+                service.shutdown(timeout=self.task_shutdown_timeout)
 
 
 class ServerSlurmJobLauncher(SlurmJobLauncher):

@@ -16,6 +16,16 @@ host* runs ``sbatch`` to place a client parent in Slurm. The *runtime parent
 host* runs the CP or SP, and the *compute nodes* run its CJ or SJ allocations.
 A login or service host is a runtime parent host outside a Slurm allocation.
 
+``ClientSlurmJobLauncher`` supports both execution lifetimes. Job lifetime
+keeps computation in CJ; task lifetime uses an independently budgeted CJ and
+separate worker allocations. Configure the client once and select lifetime in
+the deployed application. See `Slurm task execution <slurm_task_launcher.html>`_
+for task-specific resources, shared-storage requirements and cleanup reporting.
+Server job launching is unchanged. The client's scheduler directives route CJ
+in either lifetime. If resident GPU jobs and CPU coordinators require different
+partitions or QoS, select the appropriate existing site/study settings for each
+run. Worker routing is configured separately in the task backend.
+
 Choose an execution backend with ``job_launcher.sandbox``:
 
 .. list-table::

@@ -236,26 +236,56 @@ def test_task_profile_rejects_nested_compute_before_application_import(tmp_path,
     assert "never_imported" not in sys.modules
 
 
-def test_result_deadline_pauses_only_during_framework_staging(tmp_path, monkeypatch):
+@pytest.mark.parametrize("worker_origin,cj_origin", [(100.0, 100.0), (100.0, 10000.0), (10000.0, 100.0)])
+def test_result_deadline_pauses_only_during_framework_staging(tmp_path, monkeypatch, worker_origin, cj_origin):
     from nvflare.private.fed.client import client_api_task_runner as runner
     from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 
     identity = TaskAttemptIdentity("job", "site", "task", "train", "attempt")
     store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
     store.create_attempt(identity)
-    clock = [100.0]
+    clock = [worker_origin]
+    observed = {}
+    isolate_time(monkeypatch, runner)
     monkeypatch.setattr(runner.time, "monotonic", lambda: clock[0])
     runner._mark_progress(store, identity, "result_wait_started.json")
-    clock[0] = 102
+    clock[0] = cj_origin
+    assert runner.result_wait_deadline(store, identity, 10, 30, observed_progress=observed) == cj_origin + 10
+    clock[0] = worker_origin + 2
     runner._mark_progress(store, identity, "result_staging_started.json")
-    clock[0] = 200
-    assert runner.result_wait_deadline(store, identity, 10, 30) is None
+    clock[0] = cj_origin + 100
+    assert runner.result_wait_deadline(store, identity, 10, 30, observed_progress=observed) is None
+    clock[0] = worker_origin + 100
     runner._mark_progress(store, identity, "script_result_sent.json")
-    assert runner.result_wait_deadline(store, identity, 10, 30) == 208
-    clock[0] = 209
-    assert runner.result_wait_deadline(store, identity, 10, 30) < clock[0]
+    clock[0] = cj_origin + 100
+    assert runner.result_wait_deadline(store, identity, 10, 30, observed_progress=observed) == cj_origin + 108
+    clock[0] = cj_origin + 109
+    assert runner.result_wait_deadline(store, identity, 10, 30, observed_progress=observed) < clock[0]
     runner._mark_progress(store, identity, "script_finalized.json")
-    assert runner.result_wait_deadline(store, identity, 10, 30) is None
+    assert runner.result_wait_deadline(store, identity, 10, 30, observed_progress=observed) is None
+
+
+@pytest.mark.parametrize("worker_clock,cj_clock", [(100.0, 10000.0), (10000.0, 100.0)])
+def test_result_finalization_uses_observer_clock_and_does_not_reset_on_poll(
+    tmp_path, monkeypatch, worker_clock, cj_clock
+):
+    from nvflare.private.fed.client import client_api_task_runner as runner
+    from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
+
+    identity = TaskAttemptIdentity("job", "site", "task", "train", "attempt")
+    store = FileTaskArtifactStore(str(tmp_path / "artifacts"))
+    store.create_attempt(identity)
+    clock = [worker_clock]
+    isolate_time(monkeypatch, runner)
+    monkeypatch.setattr(runner.time, "monotonic", lambda: clock[0])
+    runner._mark_progress(store, identity, "script_result_sent.json")
+    clock[0] = cj_clock
+    observed = {}
+    deadline = runner.result_wait_deadline(store, identity, None, 30, observed_progress=observed)
+    assert deadline == cj_clock + 30
+    clock[0] += 31
+    assert runner.result_wait_deadline(store, identity, None, 30, observed_progress=observed) == deadline
+    assert deadline < clock[0]
 
 
 @pytest.mark.parametrize("scoped", [False, True])
