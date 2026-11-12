@@ -201,8 +201,11 @@ these settings do not reach it. That process still sends results and pulls task 
 chunk sizes and request timeouts unless you set them in its environment. A setting is read from the
 environment variable ``NVFLARE_`` followed by the setting name in upper case, for example
 ``NVFLARE_TENSOR_DOWNLOAD_CHUNK_SIZE`` or ``NVFLARE_TENSOR_STREAMING_PER_REQUEST_TIMEOUT``. Set these in the
-environment the trainer is launched with, for example by prefixing the launch ``command``. When the training
-script runs in the client job process (the default in-process mode), the job configuration applies.
+environment the trainer is launched with: either export the variable before starting the client, since the
+trainer inherits its environment, or use the launch ``command``, for example
+``command="env NVFLARE_TENSOR_DOWNLOAD_CHUNK_SIZE=0 python3 -u"``. The command is run without a shell, so a bare
+``NAME=value`` prefix does not work; use ``env``. When the training script runs in the client job process
+(the default in-process mode), the job configuration applies.
 
 Using Recipe API (Recommended)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
