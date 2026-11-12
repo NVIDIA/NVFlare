@@ -16,8 +16,9 @@ from typing import Optional, Union
 
 import torch
 
+from nvflare.apis.job_outputs import register_output_resolver
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_common.workflows.fedavg import FedAvg, fedavg_job_outputs
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.fuel.utils import fobs
 
@@ -155,3 +156,7 @@ class PTFedAvg(FedAvg):
 
 # Backward compatibility alias
 PTFedAvgEarlyStopping = PTFedAvg
+
+
+# saves the model as FedAvg does
+register_output_resolver(PTFedAvg, fedavg_job_outputs)

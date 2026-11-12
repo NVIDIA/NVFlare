@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import os
+import posixpath
 from typing import Optional
 
 import numpy as np
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_outputs import register_output_resolver
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
@@ -112,3 +114,17 @@ class NPModelPersistor(ModelPersistor):
 
         np.save(model_path, model_learnable[ModelLearnableKey.WEIGHTS][NPConstants.NUMPY_KEY])
         self.log_info(fl_ctx, f"Saved numpy model to: {model_path}")
+
+
+def np_persistor_job_outputs(persistor: NPModelPersistor):
+    """The model file an NPModelPersistor saves: ``<model_dir>/<model_name>`` in the run folder, with the ".npy"
+    that np.save adds when missing."""
+    model_name = persistor.model_name or ""
+    if not model_name:
+        return []
+    if not model_name.endswith(".npy"):
+        model_name += ".npy"
+    return [posixpath.join(persistor.model_dir or "", model_name)]
+
+
+register_output_resolver(NPModelPersistor, np_persistor_job_outputs)

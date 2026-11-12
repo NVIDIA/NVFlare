@@ -23,12 +23,14 @@ from enum import Enum
 from tempfile import TemporaryDirectory, mkdtemp
 from typing import Dict, List
 
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_job_name, check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
+from nvflare.job_config.job_outputs import resolve_job_outputs
 from nvflare.job_config.task_execution import (
     get_client_execution_lifetime,
     prepare_task_execution,
@@ -134,6 +136,15 @@ class FedJobConfig:
 
         self.resource_specs[site_name] = resource_spec
 
+    def _resolve_job_outputs(self) -> List[str]:
+        """The job's outputs, named by its server components (see ``nvflare.job_config.job_outputs``)."""
+        # the server runs the app deployed to it, or the one deployed to all sites
+        app_name = self.deploy_map.get(SERVER_SITE_NAME) or self.deploy_map.get(ALL_SITES)
+        fed_app = self.fed_apps.get(app_name) if app_name else None
+        if not fed_app or not fed_app.server_app:
+            return []
+        return resolve_job_outputs(fed_app.server_app)
+
     def _prepare_meta(self):
         """Validate and serialize job metadata before replacing an existing export."""
         self._validate_meta_props(self.meta_props)
@@ -148,6 +159,11 @@ class FedJobConfig:
 
         if self.meta_props:
             meta_json.update(self.meta_props)
+
+        if JobMetaKey.JOB_OUTPUTS.value not in meta_json:  # a value the user set is kept as set
+            outputs = self._resolve_job_outputs()
+            if outputs:
+                meta_json[JobMetaKey.JOB_OUTPUTS.value] = outputs
 
         task_sites = {
             site

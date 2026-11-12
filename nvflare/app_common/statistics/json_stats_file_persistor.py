@@ -17,6 +17,7 @@ import os
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_outputs import register_output_resolver
 from nvflare.apis.storage import StorageException
 from nvflare.app_common.abstract.statistics_writer import StatisticsWriter
 from nvflare.app_common.utils.json_utils import ObjectEncoder
@@ -123,3 +124,7 @@ class JsonStatsFileWriter(StatisticsWriter):
         if not isinstance(job_meta, dict):
             return False
         return bool(job_meta.get(AppValidationKey.BYOC))
+
+
+# the statistics file, relative to the run folder
+register_output_resolver(JsonStatsFileWriter, lambda writer: [writer.output_path])

@@ -26,6 +26,7 @@ import torch
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
+from nvflare.apis.job_outputs import in_server_app, register_output_resolver
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.model import ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
@@ -298,3 +299,7 @@ class DiskFedAvgPersistor(ModelPersistor):
         os.replace(current, saved)
         for ref in weights.values():
             ref.file_path = saved
+
+
+# the saved model, in the server app folder (APP_ROOT)
+register_output_resolver(DiskFedAvgPersistor, lambda persistor: [in_server_app(SAVED_MODEL)])

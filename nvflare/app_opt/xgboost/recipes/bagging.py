@@ -23,12 +23,6 @@ from nvflare.app_opt.xgboost.tree_based.bagging_aggregator import XGBBaggingAggr
 from nvflare.app_opt.xgboost.tree_based.model_persistor import XGBModelPersistor
 from nvflare.app_opt.xgboost.tree_based.shareable_generator import XGBModelShareableGenerator
 from nvflare.job_config.api import FedJob
-from nvflare.job_config.job_outputs import (
-    account_component,
-    declare_job_outputs,
-    declare_metrics_outputs,
-    in_server_app,
-)
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import _apply_legacy_constructor_config, _validate_per_site_targets
 
@@ -238,9 +232,7 @@ class XGBBaggingRecipe(Recipe):
         """Configure the federated job for XGBoost tree-based training."""
         # Create FedJob
         job = FedJob(name=self.name, min_clients=self.min_clients)
-        metrics_writer = MetricsArtifactWriter()
-        job.to_server(metrics_writer, id="metrics_artifact_writer")
-        declare_metrics_outputs(job, metrics_writer)
+        job.to_server(MetricsArtifactWriter(), id="metrics_artifact_writer")
 
         # Configure server components
         if self.training_mode == "cyclic":
@@ -272,8 +264,6 @@ class XGBBaggingRecipe(Recipe):
 
         persistor = XGBModelPersistor(save_name=self.save_name)
         job.to_server(persistor, id="persistor")
-        declare_job_outputs(job, in_server_app(persistor.save_name))
-        account_component(job, persistor)
 
         shareable_generator = XGBModelShareableGenerator()
         job.to_server(shareable_generator, id="shareable_generator")

@@ -14,7 +14,7 @@ outputs-only download. It is opt-in in both directions:
 - A caller that does not ask for an outputs-only download receives the whole job,
   as today.
 
-No persistor, controller or job layout changes are needed. When a job that
+No change to how persistors or controllers work, or to the job layout. When a job that
 declares outputs ends, the server stores those outputs apart from the rest of
 the workspace, so each file is stored once. An outputs-only download sends the
 outputs archive, and a full download sends both archives, unzipped into the
@@ -44,9 +44,8 @@ already at stable, known paths:
 | Federated statistics | Statistics | The recipe's `stats_output_path`, relative to the run folder |
 | Cross-site evaluation | Evaluation report | `cross_site_val/cross_val_results.json` |
 
-All these file names are set by component arguments, so the code that
-configures each component (the recipe, its model wrapper or its job class)
-already knows them. Histogram-based and vertical XGBoost
+All these file names are set by each component's own arguments, so each
+component class can name them from an instance. Histogram-based and vertical XGBoost
 save their models on the clients, so they have no server-side model.
 
 ## Goals
@@ -71,7 +70,9 @@ save their models on the clients, so they have no server-side model.
 
 ### Built-in recipes: nothing to declare
 
-Built-in recipes declare their outputs. The caller only asks for them:
+A job built from built-in components declares its outputs: when its
+`meta.json` is generated, each server component names the files it writes. The
+caller only asks for them:
 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
@@ -95,8 +96,8 @@ path = run.get_result(outputs_only=True)
 model_path = os.path.join(path, "workspace", "app_server", "FL_global_model.pt")
 ```
 
-Federated statistics work the same way. The recipe declares its
-`stats_output_path`, normalized:
+Federated statistics work the same way. The statistics writer declares the
+recipe's `stats_output_path`, normalized:
 
 ```python
 from nvflare.recipe.fedstats import FedStatsRecipe
@@ -115,7 +116,7 @@ stats_path = os.path.join(path, "workspace", "output")
 
 ### Choosing the outputs
 
-`set_recipe_meta` replaces the built-in list. For example, to keep only the
+`set_recipe_meta` replaces the list the job's components name. For example, to keep only the
 final model:
 
 ```python
@@ -125,10 +126,19 @@ from nvflare.recipe import set_recipe_meta
 set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/FL_global_model.pt"])
 ```
 
-A recipe declares the files of the components it creates. With a persistor the
-user passes as `model_persistor`, the recipe does not know the model's file
-name, so it declares nothing, and the job downloads whole until its outputs
-are declared. A job that writes its own files declares them the same way.
+A built-in persistor passed as `model_persistor` is declared from its own
+settings. A persistor class of the user's own, or a subclass of a built-in one,
+may save anywhere, so the job declares nothing and downloads whole until its
+outputs are declared. The user lists them with `set_recipe_meta`, or names the
+class's files once, beside the class:
+
+```python
+from nvflare.apis.job_outputs import register_output_resolver
+
+register_output_resolver(MyPersistor, lambda persistor: [f"app_server/{persistor.file_name}"])
+```
+
+A job that writes other files of its own lists them with `set_recipe_meta`.
 Paths are relative to the server run folder:
 
 ```python
@@ -172,7 +182,9 @@ path = sess.download_job_result(job_id, outputs_only=True)
 nvflare job download <job_id> --outputs-only
 ```
 
-A hand-written job adds `job_outputs` to its `meta.json`, as shown below.
+A `FedJob` built without a recipe declares its outputs the same way when it is
+exported. A hand-written job adds `job_outputs` to its `meta.json`, as shown
+below.
 
 ## Design
 
@@ -218,58 +230,55 @@ long run.
 
 - `JOB_OUTPUTS` is added to `USER_SETTABLE_JOB_META_KEYS`, so
   `set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, [...])` works and checks the
-  same rules before submission. A user's value replaces the built-in list.
-- The code that adds a result-producing server component records that
-  component's files on the job, in the component's framework module, through
-  helpers in `nvflare/job_config/job_outputs.py`. No component class changes.
+  same rules before submission. A user's value replaces the list the job's components name.
+- Each result-producing server component class names its files with a
+  resolver registered beside the class, in the class's own module, through
+  `register_output_resolver` in `nvflare/apis/job_outputs.py`. A resolver is a
+  function of an instance that returns its paths from the instance's own
+  arguments. No component class or interface changes. The registry depends
+  only on `nvflare.apis`, so a component at any layer can register.
 
-  | Where | Records |
+  | Class | Names |
   | --- | --- |
-  | PyTorch model wrapper (`PTModel`) and PyTorch FedOpt recipe | `app_server/<global_model_file_name>`, `app_server/<best_global_model_file_name>` of the `PTFileModelPersistor` they create |
-  | TensorFlow model wrapper (`TFModel`) | `app_server/<save_name>` of its `TFModelPersistor` |
-  | Scikit-learn recipes | `app_server/<save_name>` of the `JoblibModelParamPersistor` they create |
-  | XGBoost bagging recipe | `app_server/<save_name>` of its `XGBModelPersistor` |
-  | NumPy FedAvg and logistic regression recipes | `<model_dir>/<model_name>` of their NumPy persistor, with `.npy` added when missing, as `np.save` does |
-  | Base `FedAvgRecipe` without a persistor | `<save_filename>`, which the `FedAvg` controller saves itself, relative to the run folder |
-  | `BaseFedJob` and the recipes that add a `MetricsArtifactWriter` | `<results_dir>/`, or the summary and round files by name when `results_dir` is the run folder itself, as supporting outputs |
-  | `StatsJob` (federated statistics) | `<output_path>` |
-  | `add_cross_site_evaluation`, `add_final_global_evaluation`, NumPy cross-site evaluation recipe | `cross_site_val/` |
+  | `PTFileModelPersistor` | `app_server/<global_model_file_name>`, `app_server/<best_global_model_file_name>` |
+  | `DiskFedAvgPersistor` | `app_server/FL_global_model.safetensors` |
+  | `TFModelPersistor`, `JoblibModelParamPersistor`, `XGBModelPersistor` | `app_server/<save_name>` |
+  | `NPModelPersistor`, `LRModelPersistor` | `<model_dir>/<model_name>`, with `.npy` added when missing, as `np.save` does |
+  | `FedAvg`, and `PTFedAvg` and the PyTorch and TensorFlow `FedOpt`, which save the same way | `<save_filename>`, which the controller saves itself, only when it has no persistor |
+  | `CrossSiteModelEval` | `<cross_val_dir>/` |
+  | `JsonStatsFileWriter` | `<output_path>` |
+  | `MetricsArtifactWriter` | `<results_dir>/`, or the summary and round files by name when `results_dir` is the run folder itself, as supporting outputs |
 
-- Only the exact component class the code knows is recorded, and the
-  persistor it records is marked as accounted for. A persistor the user passes
-  as `model_persistor`, a subclass, or another metrics component may save
-  elsewhere, so it marks the job's outputs unknown. A recipe that creates a
-  persistor and passes it on as `model_persistor` (the scikit-learn recipes)
-  tags it with a function that names its files; the function runs when the
-  persistor is added, so later setting changes are reflected, and a copy of
-  the persistor carries no tag.
-- Metrics are supporting outputs. A job whose record holds only metrics has a
-  main result, such as a model, that nothing recorded.
-- `Recipe.export` and `Recipe.run` turn the record into `job_outputs`, so a
-  component added after the recipe is built, such as by
-  `add_cross_site_evaluation`, is included. Each path is normalized with
+- When `meta.json` is generated, `FedJobConfig` calls `resolve_job_outputs`
+  in `nvflare/job_config/job_outputs.py`. It walks the server app's components
+  and workflow controllers and looks up each one's exact class. Every recipe
+  and every `FedJob` export goes through it, so a component added at any time,
+  such as by `add_cross_site_evaluation`, and a setting changed after a
+  component was added are both reflected. Each path is normalized with
   `posixpath.normpath`, so `stats_output_path="./output"` is declared as
-  `output`. A path that would not pass validation is skipped, and a file inside
-  a declared folder is not listed again. A recipe never fails because of its
-  own declaration.
+  `output`, and a file inside a declared folder is not listed again. A job
+  never fails to export because of its own declaration.
 - Nothing is declared, and the job downloads whole, when:
-  - some outputs are unknown, or only supporting outputs were recorded;
-  - a model persistor on the server was added without a declaration of its
-    files. This check runs at export over the job's server components and
-    uses only the framework-neutral `ModelPersistor` base class, so a missed
-    declaration fails safe;
-  - a recorded path is invalid, such as an absolute folder;
+  - a model persistor on the server has no resolver, such as a user's own
+    persistor;
+  - a component's class has no resolver but a base class has one: the
+    subclass may write elsewhere than its base;
+  - only supporting outputs, such as metrics, were named: the main result is
+    unknown;
+  - a resolver raises;
+  - a path would not pass validation, such as an absolute folder;
   - the job ships a `config/environment.json` for the server app, which can
     move where components write (for example a PyTorch checkpoint folder); or
   - there are more than `MAX_JOB_OUTPUTS` entries.
 
   A declaration without the model would leave it out of an outputs-only
   download.
-- A value set with `set_recipe_meta` replaces the recorded list and is kept as
-  set, including when components are added later.
-- Paths are recorded when a component is added. Changing a persistor's or
-  writer's file settings after adding it to the job is not supported for the
-  declaration; set `job_outputs` with `set_recipe_meta` in that case.
+- A value set with `set_recipe_meta`, or in a `FedJob`'s `meta_props`, is kept
+  as set, and the walk is skipped.
+- A unit test lists every `ModelPersistor` subclass in `nvflare` and requires
+  each to register a resolver or to appear on a short list of persistors that
+  declare nothing on purpose. A new built-in persistor without one fails the
+  test instead of silently making jobs download whole.
 - Hand-written jobs may add the key to `meta.json` or leave it out.
 
 ### Admin command: `download_job` with an `outputs_only` option
@@ -469,9 +478,12 @@ such as S3 need no new content type, and the server builds no zip of its own.
 
 | Option | Outcome |
 | --- | --- |
-| A table in the common recipe module mapping component class names to their file rules | Rejected. Framework knowledge, such as PyTorch's checkpoint folder, would live in a framework-neutral module and drift silently when a class is renamed or moved. |
-| A `get_job_outputs` method on each result-producing component | Rejected. It changes the components' interfaces, and a subclass that saves elsewhere inherits a declaration naming the base class's files, so its real model would be dropped. |
-| **The code that creates each component records that component's files, in its framework module** | **Chosen.** No component interface changes. The knowledge sits where the file names are chosen, only the exact component class is recorded, and anything unknown leaves the job undeclared. A record is opt-in, so a missed declaration could leave a file out; the export-time check for unaccounted model persistors, and treating metrics alone as no result, make that fail safe. |
+| The code that adds each component (a recipe, a model wrapper, a job class) records the component's files on the job | Rejected. The same knowledge is applied at every place a class is used, so each new recipe must remember it; extra state is needed to catch a forgotten record; paths are captured when the component is added; and a `FedJob` built without that code declares nothing. |
+| A `get_job_outputs` method on each result-producing component | Rejected. It changes the components' interface, and a subclass that saves elsewhere inherits a declaration naming the base class's files, so its real model would be dropped. |
+| A table of class rules in one framework-neutral module, or a rule file per framework | Rejected. A rule kept apart from its class drifts when an argument is renamed; a neutral table holds framework knowledge, and loading per-framework rule files can import optional frameworks such as PyTorch. |
+| An explicit list only, written by the user or by each recipe | Rejected as the only source. Users would need internal paths, and a wrong list silently filters the model out. It stays as the override. |
+| Components report the files they write while the job runs | Rejected. It changes runtime component code, and the outputs would be known only at job end, not in `meta.json`. |
+| **A resolver registered beside each component class, applied to the job's server components when `meta.json` is generated** | **Chosen.** One rule per class, next to the arguments it reads, applied to every instance with its final settings, for recipes and plain `FedJob`s alike. No interface changes, and exact-class lookup means a subclass or an unknown persistor declares nothing. |
 
 ### When some outputs cannot be known
 
@@ -509,8 +521,9 @@ its declaration.
 | --- | --- |
 | Existing jobs and job folders | No `job_outputs`. Every download is unchanged. |
 | Existing scripts | `outputs_only` defaults to `False`. Unchanged. |
+| Jobs built with `FedJob` | A job whose server components all name their files now gets `job_outputs` in its `meta.json`, and its outputs are stored apart at job end. Full downloads return the same files. |
 | Existing custom `ExecEnv` subclasses | `Run` does not pass the new argument unless the caller asks for an outputs-only download. |
-| New client, old server | Not supported: the admin client and the server run the same version. An older server ignores the property and returns the whole job without a note. |
+| New client, old server | Not supported: the admin client and the server run the same version. An older server ignores the property and returns the whole job; the FLARE API reports it as a whole-job download. |
 | Old client, new server | Not supported: the admin client and the server run the same version. An older client's full download of a job with an `outputs` component would unzip `outputs.zip` into its own folder rather than into `workspace/`. |
 | Code that references `JobMetaKey.RESULT_LOCATION` or calls `set_results_uri` | Must drop the reference. Neither ever held or produced a value. |
 | A job with `job_outputs` on an old server | The old server stores the key and ignores it. Downloads are full. |
@@ -552,11 +565,18 @@ Unit tests:
   oversized lists.
 - `set_recipe_meta` accepts the key and applies the same checks, and its value
   replaces the derived declaration.
-- Each declaration point records the files of the component it creates; a
-  persistor the user passes, a subclass, or a shipped server
-  `environment.json` leaves the job undeclared; paths are normalized and
-  invalid ones skipped. A component added by `add_cross_site_evaluation`, even
-  after an earlier export, is declared.
+- Each registered resolver names its class's files from non-default
+  arguments; resolution is by exact class.
+- The walk collects main and supporting outputs from components and
+  controllers and reflects settings changed after a component was added; a
+  persistor without a resolver, a subclass of a resolved class, metrics alone,
+  an invalid path or a shipped server `environment.json` declares nothing; a
+  user's own registered persistor is declared; paths are normalized.
+- Every built-in `ModelPersistor` registers a resolver or is listed as
+  declaring nothing on purpose.
+- Built-in recipes, including one given a built-in persistor and one with a
+  component added by `add_cross_site_evaluation` after an earlier export,
+  export the expected `job_outputs`, as does a plain `FedJob`.
 - Cloned jobs keep `job_outputs`.
 - At job end, hard-link folders name the declared outputs and the rest at
   their paths, beside each workspace folder, without changing it: the same
@@ -594,7 +614,6 @@ Unit tests:
   `outputs_only: true` (an older server) is reported as the whole job.
 - `Run.get_result()` works with an `ExecEnv` that implements the two-argument
   `get_job_result`.
-- The PyTorch FedAvg recipe exports the expected `job_outputs`.
 
 Integration test, to follow: run a PyTorch FedAvg job in POC, download it with
 `outputs_only=True`, and check that the model file is present at its usual path
@@ -607,7 +626,7 @@ and other workspace files are absent.
 | Key, validation, constants | `nvflare/apis/job_def.py` (`JobMetaKey.JOB_OUTPUTS`, `validate_job_outputs`, `job_output_matches`) |
 | Submission check | `JobMetaValidator._validate_job_outputs` |
 | Cloning | `CLONED_META_KEYS` in `job_cmds.py` |
-| Recipe declaration | Helpers in `nvflare/job_config/job_outputs.py`, called where each component is created; `nvflare/recipe/_job_outputs.py` applies the record in `Recipe.export` and `Recipe.run` |
+| Declaration | `register_output_resolver` in `nvflare/apis/job_outputs.py`, called beside each component class; `resolve_job_outputs` in `nvflare/job_config/job_outputs.py`, called by `FedJobConfig` when `meta.json` is generated |
 | Outputs storage | `JobRunner._save_job_outputs`, `split_job_outputs` in `nvflare/private/fed/server/job_outputs.py`, `JobDefManagerSpec.save_job_outputs`, storage component `outputs` |
 | Full download | `JobCommandModule._get_default_job_components` (adds `outputs.zip`), reply key `unzip_into`, `FileTransferModule.pull_folder` |
 | Outputs-only download | `JobCommandModule.download_job` |

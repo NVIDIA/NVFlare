@@ -12,138 +12,110 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Record the outputs a job's builder knows it configures.
+"""Resolve a job's ``job_outputs`` from its server components when its ``meta.json`` is generated.
 
-The code that adds a result-producing server component to a job (a recipe, a model wrapper, a job class) names that
-component's files, so it records them here, in the component's own module. A recipe turns the record into the job's
-``job_outputs`` when it is exported or run. Paths are relative to the job's run folder; ``app_server/`` is the server
-app folder, and a trailing ``/`` names a folder.
-
-Code that adds a component whose files it does not know, such as a user's own model persistor, marks the outputs
-unknown. The job then declares nothing and downloads whole, so a declaration never leaves the model out.
+Each server component and workflow controller is looked up by its exact class in the resolvers registered with
+:func:`nvflare.apis.job_outputs.register_output_resolver`, and its paths are read from its own arguments. Nothing is
+declared, and the job downloads whole, when a model's location is unknown; a declaration without the model would
+leave it out of an outputs-only download.
 """
 
+import os
 import posixpath
-import weakref
-from typing import Callable, List, Optional, Tuple
+from typing import List
 
-from nvflare.apis.job_def import SERVER_SITE_NAME
+from nvflare.apis.job_def import MAX_JOB_OUTPUTS, validate_job_outputs
+from nvflare.apis.job_outputs import get_output_resolution, has_resolver_ancestor
 
-SERVER_APP_FOLDER = "app_" + SERVER_SITE_NAME  # the server app folder inside a job's run folder
-
-_DECLARED = "_declared_job_outputs"
-_SUPPORTING = "_declared_supporting_job_outputs"
-_UNKNOWN = "_job_outputs_unknown"
-_ACCOUNTED = "_job_outputs_accounted_components"  # components whose files were recorded
-
-# components their builder created before the job existed, with the files they save
-_TAGGED_COMPONENTS = weakref.WeakKeyDictionary()
+_ENVIRONMENT_FILE = "environment.json"  # the server app's config/environment.json
 
 
-def in_server_app(name: Optional[str]) -> Optional[str]:
-    """The run-folder path of a file the server app saves in its own folder."""
-    return posixpath.join(SERVER_APP_FOLDER, name) if name else None
+def resolve_job_outputs(server_app) -> List[str]:
+    """The job's outputs, named by its server components; an empty list declares none.
 
+    Nothing is declared when:
 
-def as_folder(path: Optional[str]) -> Optional[str]:
-    """A folder entry for ``path``; None for the run folder itself, which a folder entry cannot name."""
-    if not path:
-        return None
-    normalized = posixpath.normpath(path.replace("\\", "/"))
-    return None if normalized == "." else f"{normalized}/"
+    - the server app ships a ``config/environment.json``, which can move where components write;
+    - a model persistor has no resolver, such as a user's own persistor;
+    - a component's class has none but a base class has one: the subclass may write elsewhere;
+    - only supporting outputs, such as metrics, were named: the main result is unknown;
+    - a resolver raises;
+    - a path would not pass validation, or there are more than ``MAX_JOB_OUTPUTS`` entries.
 
-
-def declare_job_outputs(job, *paths: Optional[str], supporting: bool = False) -> None:
-    """Record server workspace paths that are part of the job's result. Empty values are ignored.
-
-    ``supporting`` marks outputs that come with a result but are not one, such as training metrics. A job whose
-    record holds only supporting outputs declares nothing: its main result, such as a model saved by a controller,
-    was not recorded, and a declaration without it would leave it out of an outputs-only download.
+    Args:
+        server_app: the job's ``ServerAppConfig``.
     """
-    attribute = _SUPPORTING if supporting else _DECLARED
-    declared = getattr(job, attribute, None)
-    if declared is None:
-        declared = []
-        setattr(job, attribute, declared)
-    declared.extend(p for p in paths if p)
+    from nvflare.app_common.abstract.model_persistor import ModelPersistor
+
+    if ships_server_environment(server_app):
+        return []
+    main, supporting = [], []
+    objects = list(server_app.components.values()) + [w.controller for w in server_app.workflows]
+    for obj in objects:
+        resolution = get_output_resolution(obj)
+        if resolution is None:
+            if isinstance(obj, ModelPersistor) or has_resolver_ancestor(obj):
+                return []
+            continue  # writes no result files
+        try:
+            paths = [p for p in resolution.resolver(obj) or [] if p]
+        except Exception:
+            return []  # a resolver that fails never fails the export: the job downloads whole
+        (supporting if resolution.supporting else main).extend(paths)
+    if not main:
+        return []
+    return outputs_from(main + supporting)
 
 
-def account_component(job, component) -> None:
-    """Record that ``component``'s files are covered by the job's record.
+def outputs_from(paths: List[str]) -> List[str]:
+    """The ``job_outputs`` entries for resolved paths.
 
-    At export, a model persistor that no declaration accounted for makes the job declare nothing, so a missed
-    declaration fails safe to a whole-job download.
+    A path that would not pass validation (absolute, or outside the run folder) declares nothing: the file it names
+    cannot be selected, and a shorter list would leave it out. The same holds for more than MAX_JOB_OUTPUTS entries.
+    A job never fails to export because of its own declaration. Duplicates and files inside a declared folder are
+    left out.
     """
-    accounted = getattr(job, _ACCOUNTED, None)
-    if accounted is None:
-        accounted = []
-        setattr(job, _ACCOUNTED, accounted)
-    if not is_accounted(job, component):
-        accounted.append(component)  # a reference, so no other object can be mistaken for it
+    entries: List[str] = []
+    for path in paths:
+        entry = _normalize(path)
+        if not entry:
+            return []
+        if entry not in entries:
+            entries.append(entry)
+    folders = [e for e in entries if e.endswith("/")]
+    # a file inside a declared folder is already selected by the folder
+    outputs = [e for e in entries if e.endswith("/") or not any(e.startswith(f) for f in folders)]
+    return [] if len(outputs) > MAX_JOB_OUTPUTS else outputs
 
 
-def is_accounted(job, component) -> bool:
-    """Whether ``component``'s files are covered by the job's record."""
-    return any(c is component for c in (getattr(job, _ACCOUNTED, None) or ()))
+def ships_server_environment(server_app) -> bool:
+    """Whether the server app ships a ``config/environment.json``.
 
-
-def mark_job_outputs_unknown(job) -> None:
-    """Record that the job has a result-producing component whose files are not known."""
-    setattr(job, _UNKNOWN, True)
-
-
-def recorded_job_outputs(job) -> Tuple[List[str], bool]:
-    """The recorded paths, and whether some outputs are unknown.
-
-    Supporting outputs are included only beside a main result; on their own they mean the main result is unknown.
+    Such a file can move where server components write (for example a checkpoint folder), so the resolved paths may
+    not hold.
     """
-    main = list(getattr(job, _DECLARED, None) or [])
-    supporting = list(getattr(job, _SUPPORTING, None) or [])
-    unknown = bool(getattr(job, _UNKNOWN, False))
-    if supporting and not main:
-        return [], True
-    return main + supporting, unknown
+    for src_path, dest_dir, app_folder_type in getattr(server_app, "file_sources", []):
+        if app_folder_type != "config" or (dest_dir and os.path.normpath(dest_dir) != "."):
+            continue  # only a file placed directly in the app's config folder ("." included) is read
+        if os.path.isdir(src_path):
+            if os.path.isfile(os.path.join(src_path, _ENVIRONMENT_FILE)):
+                return True
+        elif os.path.basename(src_path) == _ENVIRONMENT_FILE:
+            return True
+    return False
 
 
-def tag_component_outputs(component, outputs: Callable[[object], List[Optional[str]]]) -> None:
-    """Record how to name the files a component saves, for a component created before its job, such as a recipe's
-    persistor passed on as ``model_persistor``.
-
-    ``outputs`` is called with the component when it is added to the job (see ``setup_custom_persistor``), so the
-    paths reflect its settings at that time. A copy of the component carries no tag, which leaves the job undeclared.
-    """
-    _TAGGED_COMPONENTS[component] = outputs
-
-
-def tagged_component_outputs(component) -> Optional[List[str]]:
-    """The files a tagged component saves, or None when its builder tagged none."""
+def _normalize(path) -> str:
+    """A path in the form validate_job_outputs accepts, or an empty string when it cannot be one."""
+    if not isinstance(path, str) or not path:
+        return ""
+    folder = path.endswith("/")
+    normalized = posixpath.normpath(path.replace("\\", "/"))  # "./output" -> "output"
+    if normalized in (".", "") or normalized.startswith("../") or normalized == "..":
+        return ""
+    entry = f"{normalized}/" if folder else normalized
     try:
-        outputs = _TAGGED_COMPONENTS.get(component)
-    except TypeError:  # not weak-referenceable or not hashable
-        return None
-    return None if outputs is None else [p for p in outputs(component) if p]
-
-
-def declare_metrics_outputs(job, writer) -> None:
-    """Record the files a MetricsArtifactWriter writes: its results folder, or its two files when that folder is the
-    run folder itself. Another metrics component may write elsewhere, so the outputs are then marked unknown."""
-    from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
-
-    if type(writer) is not MetricsArtifactWriter:
-        mark_job_outputs_unknown(job)
-        return
-    folder = as_folder(writer.results_dir)
-    if folder:
-        declare_job_outputs(job, folder, supporting=True)
-    else:
-        declare_job_outputs(job, writer.summary_file_name, writer.round_file_name, supporting=True)
-
-
-def declare_np_persistor_outputs(job, persistor) -> None:
-    """Record the model file an NPModelPersistor saves: ``<model_dir>/<model_name>`` under the result root, with the
-    ".npy" that np.save adds when missing."""
-    account_component(job, persistor)
-    model_name = persistor.model_name or ""
-    if model_name and not model_name.endswith(".npy"):
-        model_name += ".npy"
-    declare_job_outputs(job, posixpath.join(persistor.model_dir or "", model_name) if model_name else None)
+        validate_job_outputs([entry])
+    except (TypeError, ValueError):
+        return ""
+    return entry

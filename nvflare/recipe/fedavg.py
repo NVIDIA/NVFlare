@@ -27,7 +27,6 @@ from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.base_fed_job import BaseFedJob
-from nvflare.job_config.job_outputs import declare_job_outputs, declare_np_persistor_outputs
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import _apply_legacy_constructor_config, _validate_per_site_targets
@@ -409,9 +408,6 @@ class FedAvgRecipe(Recipe):
             model_aggregator=model_aggregator,
         )
         job.to_server(controller)
-        if not persistor_id:
-            # without a persistor, FedAvg saves the model itself, relative to the run folder
-            declare_job_outputs(job, self.save_filename)
 
         Recipe.__init__(self, job)
         job.set_execution_lifetime(execution_lifetime)
@@ -599,7 +595,6 @@ class FedAvgRecipe(Recipe):
             source_ckpt_file_full_name=ckpt_path,
         )
         persistor_id = extract_persistor_id(job.to_server(persistor, id="persistor"))
-        declare_np_persistor_outputs(job, persistor)
         if persistor_id and hasattr(job, "comp_ids"):
             job.comp_ids["persistor_id"] = persistor_id
         return persistor_id

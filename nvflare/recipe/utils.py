@@ -28,18 +28,10 @@ from nvflare.apis.job_def import (
     JobMetaKey,
     validate_job_outputs,
 )
-from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets, warn_on_unsupported_secret_refs
 from nvflare.job_config.api import FedJob, validate_target_name
 from nvflare.job_config.fed_job_config import FedJobConfig
-from nvflare.job_config.job_outputs import (
-    account_component,
-    as_folder,
-    declare_job_outputs,
-    mark_job_outputs_unknown,
-    tagged_component_outputs,
-)
 from nvflare.recipe.spec import Recipe
 
 TRACKING_REGISTRY = {
@@ -248,7 +240,7 @@ def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
 
     The value shape depends on the key: ``SCOPE`` takes a string;
     ``JOB_OUTPUTS`` takes a list of server workspace paths (see
-    :func:`nvflare.apis.job_def.validate_job_outputs`) and replaces the outputs a built-in recipe declared;
+    :func:`nvflare.apis.job_def.validate_job_outputs`) and replaces the outputs named by the job's components;
     ``RESOURCE_SPEC``, ``CJ_RESOURCE_SPEC`` and ``JOB_LAUNCHER_SPEC`` take a dict keyed by site name
     with dict values; ``CUSTOM_PROPS`` takes a dict. Dict values must be
     completely JSON-serializable, cannot contain non-finite floats, and have
@@ -547,7 +539,6 @@ def add_final_global_evaluation(
             participating_clients=participating_clients,
         )
     )
-    declare_job_outputs(recipe._job, as_folder(AppConstants.CROSS_VAL_DIR))  # the report and the results
     recipe._cse_added = True
 
 
@@ -754,7 +745,6 @@ def add_cross_site_evaluation(
         participating_clients=participating_clients,
     )
     recipe._job.to_server(eval_controller)
-    declare_job_outputs(recipe._job, as_folder(AppConstants.CROSS_VAL_DIR))  # the report and the results
 
     # Let recipe handle framework-specific validator setup if needed
     # NumPy recipes implement add_cse_validator_if_needed() to add NPValidator automatically
@@ -889,13 +879,6 @@ def resolve_initial_ckpt(initial_ckpt: Optional[str], prepared_initial_ckpt: Opt
 def setup_custom_persistor(*, job, model_persistor=None) -> str:
     if model_persistor is None:
         return ""
-    tagged = tagged_component_outputs(model_persistor)
-    if tagged is None:
-        # the recipe does not know where a user's persistor saves the model, so the job declares no outputs
-        mark_job_outputs_unknown(job)
-    else:
-        declare_job_outputs(job, *tagged)  # a persistor the recipe itself created
-        account_component(job, model_persistor)
     return extract_persistor_id(job.to_server(model_persistor, id="persistor"))
 
 

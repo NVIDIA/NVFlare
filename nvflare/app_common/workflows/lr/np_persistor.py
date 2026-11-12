@@ -17,7 +17,8 @@ from typing import Optional
 
 import numpy as np
 
-from nvflare.app_common.np.np_model_persistor import NPModelPersistor
+from nvflare.apis.job_outputs import register_output_resolver
+from nvflare.app_common.np.np_model_persistor import NPModelPersistor, np_persistor_job_outputs
 
 
 class LRModelPersistor(NPModelPersistor):
@@ -78,3 +79,6 @@ class LRModelPersistor(NPModelPersistor):
     def _get_initial_model_as_numpy(self) -> np.ndarray:
         """Fallback initializer used by NPModelPersistor when no saved model exists."""
         return self.model.copy()
+
+
+register_output_resolver(LRModelPersistor, np_persistor_job_outputs)

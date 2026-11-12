@@ -24,6 +24,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_outputs import as_folder, register_output_resolver
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
@@ -887,3 +888,15 @@ class MetricsArtifactWriter(Widget):
         if reason:
             return None
         return normalized
+
+
+def metrics_job_outputs(writer: MetricsArtifactWriter):
+    """The metrics files: the results folder, or the two files when that folder is the run folder itself."""
+    if not writer.write_artifacts:
+        return []
+    folder = as_folder(writer.results_dir)
+    return [folder] if folder else [writer.summary_file_name, writer.round_file_name]
+
+
+# metrics come with a result but are not one
+register_output_resolver(MetricsArtifactWriter, metrics_job_outputs, supporting=True)

@@ -20,6 +20,7 @@ from joblib import dump, load
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_outputs import in_server_app, register_output_resolver
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants
@@ -147,3 +148,7 @@ class JoblibModelParamPersistor(ModelPersistor):
                 # save 'weights' which contains model parameters
                 model = model_learnable[ModelLearnableKey.WEIGHTS]
                 dump(model, self.save_path, compress=1)
+
+
+# the model file it saves in the server app folder
+register_output_resolver(JoblibModelParamPersistor, lambda persistor: [in_server_app(persistor.save_name)])
