@@ -96,6 +96,14 @@ def test_resource_resolution_combines_portable_gpu_total():
     assert resources.nodes == 1
 
 
+@pytest.mark.parametrize("nodes", [1, 2])
+@pytest.mark.parametrize("gpu_count", [None, 0])
+def test_resident_portable_zero_preserves_unspecified_gres(nodes, gpu_count):
+    meta = {} if gpu_count is None else {"resource_spec": {"@default": {"num_of_gpus": gpu_count}}}
+    resources = _resolve_resources(meta, "site-1", "none", 600, spec={"nodes": nodes})
+    assert resources.gpus_per_node is None
+
+
 def test_resource_resolution_uses_slurm_node_topology():
     job_meta = {JobMetaKey.RESOURCE_SPEC.value: {"site-1": {"num_of_gpus": 16}}}
 
@@ -790,3 +798,8 @@ def test_manager_bootstrap_keeps_existing_job_artifacts(tmp_path):
 
     assert launcher.manager.jobs_dir == str(control / "jobs")
     assert secret.read_text(encoding="utf-8") == "export TEST_SECRET=value\n"
+
+
+def test_resident_explicit_native_zero_is_still_rejected():
+    with pytest.raises(SlurmLauncherError, match="gpus_per_node"):
+        _resolve_resources({}, "site-1", "none", 600, spec={"gpus_per_node": 0})
