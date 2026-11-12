@@ -25,7 +25,7 @@ import sys
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Dict, List, Optional, OrderedDict, Tuple
+from typing import Any, Dict, List, Optional, OrderedDict, Sequence, Tuple
 
 import yaml
 
@@ -502,11 +502,20 @@ def _prepare_poc_docker_deployments(poc_workspace: str, project_config: Dict):
         if p_type not in ("server", "client"):
             continue
         kit_dir = os.path.join(prod_dir, participant["name"])
-        _prepare_poc_docker_kit(kit_dir, docker_config, poc_workspace)
+        site_studies = _poc_site_studies(project_config, participant["name"])
+        _prepare_poc_docker_kit(kit_dir, docker_config, poc_workspace, site_studies)
     return True
 
 
-def _write_poc_docker_study_runtime(kit_dir: Path, poc_workspace: str) -> None:
+def _poc_site_studies(project_config: Dict, site: str) -> List[str]:
+    return [
+        study
+        for study, study_def in (project_config.get("studies") or {}).items()
+        if any(site in sites for sites in (study_def.get("site_orgs") or {}).values())
+    ]
+
+
+def _write_poc_docker_study_runtime(kit_dir: Path, poc_workspace: str, site_studies: Sequence[str] = ()) -> None:
     legacy_file = kit_dir / "local" / "study_data.yaml"
     if legacy_file.exists():
         raise CLIException(
@@ -544,12 +553,14 @@ def _write_poc_docker_study_runtime(kit_dir: Path, poc_workspace: str) -> None:
         POC_DOCKER_DATA_DATASET,
         {"source": os.path.realpath(os.path.join(poc_workspace, "data")), "mode": "rw"},
     )
+    for study in site_studies:
+        studies.setdefault(study, {})
 
     with study_runtime_file.open("wt", encoding="utf-8") as f:
         yaml.safe_dump(study_runtime, f, default_flow_style=False, sort_keys=False)
 
 
-def _prepare_poc_docker_kit(kit_dir: str, docker_config: Dict, poc_workspace: str):
+def _prepare_poc_docker_kit(kit_dir: str, docker_config: Dict, poc_workspace: str, site_studies: Sequence[str] = ()):
     from nvflare.tool.deploy import deploy_common, docker_deploy
 
     kit_path = Path(kit_dir)
@@ -557,7 +568,7 @@ def _prepare_poc_docker_kit(kit_dir: str, docker_config: Dict, poc_workspace: st
         docker_deploy.validate_config(docker_config)
         kit_info = deploy_common.validate_kit(kit_path)
         docker_deploy.prepare(kit_info, kit_path, docker_config)
-        _write_poc_docker_study_runtime(kit_path, poc_workspace)
+        _write_poc_docker_study_runtime(kit_path, poc_workspace, site_studies)
         if kit_info.role == deploy_common.ROLE_CLIENT:
             _patch_poc_docker_client_target(kit_path)
     except SystemExit as e:
@@ -1114,7 +1125,12 @@ def _provision_poc_participant_only(
             "server",
             "client",
         ):
-            _prepare_poc_docker_kit(target_kit, get_poc_docker_runtime_config(project_config), poc_workspace)
+            _prepare_poc_docker_kit(
+                target_kit,
+                get_poc_docker_runtime_config(project_config),
+                poc_workspace,
+                _poc_site_studies(project_config, participant_name),
+            )
         return target_kit
     finally:
         if temp_prod_dir and os.path.isdir(temp_prod_dir):
