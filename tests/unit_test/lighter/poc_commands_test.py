@@ -459,7 +459,7 @@ class TestPOCCommands:
         project_config = {
             "name": "example_project",
             "participants": [{"name": name, "type": "client", "org": "nvidia"} for name in ("site-1", "site-2")],
-            "studies": {"study-a": {"site_orgs": {"nvidia": ["site-1"]}}},
+            "studies": {"study-a": {"site_orgs": {"nvidia": ["site-1"]}}, "study-b": None},
             "poc_runtime": {"runtime": "docker", "docker_image": "nvflare/site:latest"},
         }
         prod_dir = tmp_path / "prod_00"

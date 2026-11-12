@@ -511,7 +511,7 @@ def _poc_site_studies(project_config: Dict, site: str) -> List[str]:
     return [
         study
         for study, study_def in (project_config.get("studies") or {}).items()
-        if any(site in sites for sites in (study_def.get("site_orgs") or {}).values())
+        if any(site in sites for sites in ((study_def or {}).get("site_orgs") or {}).values())
     ]
 
 
