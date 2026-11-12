@@ -46,6 +46,7 @@ class HeartbeatMonitor(Thread):
             1, config.get_sfm_send_stall_consecutive_checks(DEFAULT_SEND_STALL_CONSECUTIVE_CHECKS)
         )
         self.stall_counts = {}
+        self.last_heartbeat = {}
         if self.interval < HEARTBEAT_TICK:
             log.warning(f"Heartbeat interval is too small ({self.interval} < {HEARTBEAT_TICK})")
 
@@ -111,10 +112,16 @@ class HeartbeatMonitor(Thread):
             if not sends_heartbeat:
                 continue
 
-            if self.curr_time - last_activity > self.interval:
+            # Incoming DATA may occupy the peer's outgoing stream longer than
+            # its receive deadline. Keep the reverse direction alive even while
+            # local receive progress is fresh; PING/PONG cannot overtake DATA.
+            last_heartbeat = self.last_heartbeat.setdefault(conn_key, last_activity)
+            if self.curr_time - last_heartbeat > self.interval:
                 sfm_conn.send_heartbeat_async(Types.PING)
+                self.last_heartbeat[conn_key] = self.curr_time
                 log.debug(f"Heartbeat sent to connection: {sfm_conn.conn}")
 
-        stale_keys = [k for k in self.stall_counts.keys() if k not in active_keys]
-        for k in stale_keys:
-            self.stall_counts.pop(k, None)
+        for state in (self.stall_counts, self.last_heartbeat):
+            stale_keys = [k for k in state if k not in active_keys]
+            for k in stale_keys:
+                state.pop(k, None)

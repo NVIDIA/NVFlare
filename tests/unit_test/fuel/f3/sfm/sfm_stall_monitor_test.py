@@ -151,6 +151,79 @@ class TestSfmStallMonitor:
 
         assert monitor.receive_idle_timeout == 30
 
+    def test_one_way_transfer_keeps_both_normal_receive_deadlines(self, monkeypatch):
+        from nvflare.fuel.f3.sfm import sfm_conn as sfm_module
+
+        clock = ManualClock()
+        monkeypatch.setattr(sfm_module, "time", clock)
+        sender_transport = FakeConnObj()
+        sender_transport.name = "sender"
+        receiver_transport = FakeConnObj()
+        receiver_transport.name = "receiver"
+        sender = SfmConnection(sender_transport, Endpoint("sender"))
+        receiver = SfmConnection(receiver_transport, Endpoint("receiver"))
+        for conn in (sender, receiver):
+            conn.sfm_endpoint = object()
+            conn.record_receive_activity()
+        # Outbound control frames cannot overtake the sender's DATA frame.
+        sender.send_heartbeat_async = MagicMock()
+        # The reverse direction is free: its PING is inbound activity for the
+        # sender, even though the sender's PONG also waits behind DATA.
+        receiver.send_heartbeat_async = MagicMock(side_effect=lambda *_: sender.record_receive_activity())
+        monitors = [
+            self._make_monitor(
+                monkeypatch,
+                hb_interval=60,
+                stall_timeout=45.0,
+                close_enabled=False,
+                conns={conn.get_name(): conn},
+            )
+            for conn in (receiver, sender)
+        ]
+        assert all(monitor.receive_idle_timeout == 180 for monitor in monitors)
+        for monitor in monitors:
+            monitor.curr_time = clock.monotonic()
+            monitor._check_heartbeat()
+
+        # Forty chunks span 400 seconds, well beyond both unchanged 180-second
+        # deadlines. No live transport or worker is involved in this policy test.
+        for _ in range(40):
+            clock.advance(10)
+            receiver.record_receive_activity()
+            for monitor in monitors:
+                monitor.curr_time = clock.monotonic()
+                monitor._check_heartbeat()
+            assert not receiver.receive_idle_timeout_triggered
+            assert not sender.receive_idle_timeout_triggered, "healthy sender expired during one-way progress"
+        assert receiver.send_heartbeat_async.call_count >= 5
+        sender_transport.force_close.assert_not_called()
+        receiver_transport.force_close.assert_not_called()
+
+        # Keeping reverse heartbeats alive must not disable genuine silence
+        # detection. Neither side receives any bytes after this point.
+        receiver.send_heartbeat_async.side_effect = None
+        clock.advance(181)
+        for monitor in monitors:
+            monitor.curr_time = clock.monotonic()
+            monitor._check_heartbeat()
+        sender_transport.force_close.assert_called_once()
+        receiver_transport.force_close.assert_called_once()
+
+    def test_receive_activity_does_not_postpone_or_flood_heartbeats(self, monkeypatch):
+        conn = FakeSfmConn(stall_sec=0, last_activity=100)
+        conns = {"receiver": conn}
+        monitor = self._make_monitor(monkeypatch, hb_interval=60, stall_timeout=45, close_enabled=False, conns=conns)
+        for now, expected_sends in ((100, 0), (155, 0), (161, 1), (162, 1), (222, 2)):
+            conn.last_activity = now
+            monitor.curr_time = now
+            monitor._check_heartbeat()
+            assert conn.send_heartbeat_async.call_count == expected_sends
+        conn.conn.force_close.assert_not_called()
+        conns.clear()
+        monitor._check_heartbeat()
+        assert not monitor.last_heartbeat
+        assert not monitor.stall_counts
+
     def test_monitor_closes_ready_connection_after_receive_idle_timeout(self, monkeypatch):
         sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=100.0)
         monitor = self._make_monitor(

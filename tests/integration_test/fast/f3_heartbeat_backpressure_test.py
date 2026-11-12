@@ -429,6 +429,8 @@ def test_async_tcp_slow_frame_progress_prevents_receive_idle_timeout(monkeypatch
     server.register_monitor(Monitor())
     client.register_monitor(Monitor())
     server.register_message_receiver(534, Receiver())
+    sender = None
+    sender_errors = []
     try:
         _, url, _ = server.start_listener("atcp", {"host": "127.0.0.1", "port": port})
         server.start()
@@ -439,10 +441,9 @@ def test_async_tcp_slow_frame_progress_prevents_receive_idle_timeout(monkeypatch
 
         server_conn = next(iter(server.conn_manager.sfm_conns.values()))
         client_conn = next(iter(client.conn_manager.sfm_conns.values()))
-        # This test sends in one direction, so the sender has no inbound application traffic
-        # while its write is in progress. Keep its monitor running but leave enough idle time
-        # there to isolate the receiver-side progress timeout under test.
-        client.conn_manager.heartbeat_monitor.receive_idle_timeout = 100.0
+        # Both monitors retain the same deadline throughout the one-way send.
+        assert server.conn_manager.heartbeat_monitor.receive_idle_timeout == 0.25
+        assert client.conn_manager.heartbeat_monitor.receive_idle_timeout == 0.25
         server_conn.conn.writer.get_extra_info("socket").setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
 
         original_progress = server_conn.conn.frame_receiver.on_receive_progress
@@ -457,7 +458,14 @@ def test_async_tcp_slow_frame_progress_prevents_receive_idle_timeout(monkeypatch
             time.sleep(0.06)
 
         server_conn.conn.frame_receiver.on_receive_progress = slow_progress
-        sender = threading.Thread(target=client.send, args=(Endpoint("server"), 534, Message({}, payload)))
+
+        def send_payload():
+            try:
+                client.send(Endpoint("server"), 534, Message({}, payload))
+            except BaseException as ex:
+                sender_errors.append(ex)
+
+        sender = threading.Thread(target=send_payload)
         started = time.monotonic()
         sender.start()
 
@@ -468,14 +476,23 @@ def test_async_tcp_slow_frame_progress_prevents_receive_idle_timeout(monkeypatch
             observed_progress = progress_count
 
         assert not sender.is_alive(), "client send did not complete"
+        assert not sender_errors, sender_errors
         assert elapsed > 0.25, f"test transfer did not exceed the receive idle timeout ({elapsed:.3f}s)"
         assert observed_progress > 1, f"reader did not report incremental progress ({observed_progress})"
         assert server_conn.receive_idle_timeout_triggered is False, states
+        assert client_conn.receive_idle_timeout_triggered is False, states
         assert EndpointState.DISCONNECTED not in states, states
         assert client_conn.sfm_endpoint is not None
     finally:
-        client.stop()
-        server.stop()
+        try:
+            client.stop()
+        finally:
+            try:
+                server.stop()
+            finally:
+                if sender is not None and sender.ident is not None:
+                    sender.join(5)
+                    assert not sender.is_alive(), "client send survived transport shutdown"
 
 
 def test_blocked_ping_send_does_not_stop_other_connection_deadlines(monkeypatch):
