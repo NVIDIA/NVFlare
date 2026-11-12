@@ -102,8 +102,9 @@ Old use case and migration action
    * - ``TensorServerStreamer`` or ``TensorClientStreamer`` in an exported job
      - Remove the components, then re-export and resubmit.
    * - ``format="pytorch"``
-     - Set ``server_expected_format=ExchangeFormat.PYTORCH`` on the recipe. For
-       direct Client API configuration, set both formats (see below).
+     - Set ``server_expected_format=ExchangeFormat.PYTORCH`` on the recipe
+       (``aggregation_format`` for ``SwarmLearningRecipe``). For direct Client
+       API configuration, set both formats (see below).
    * - ``tasks=[...]``
      - No per-task option. See "Scope" below.
    * - Reduce server memory for large models
@@ -131,8 +132,10 @@ Two separate mechanisms cover what tensor streaming was used for:
   memory: incoming tensors are staged in temporary files and materialized
   lazily. It is available on the PyTorch recipes that expose the argument
   (for example FedAvg, FedProx, Scaffold, FedCE, and Swarm) and applies only to
-  PyTorch tensors. It needs ``server_expected_format=ExchangeFormat.PYTORCH``;
-  with the default ``NUMPY`` format the recipes warn that nothing is offloaded.
+  PyTorch tensors. It needs ``server_expected_format=ExchangeFormat.PYTORCH``
+  (``aggregation_format=ExchangeFormat.PYTORCH`` for ``SwarmLearningRecipe``,
+  which has no ``server_expected_format`` argument); with the default ``NUMPY``
+  format the recipes warn that nothing is offloaded.
 
 .. code-block:: python
 

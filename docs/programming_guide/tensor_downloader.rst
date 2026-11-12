@@ -195,6 +195,15 @@ occur in a normal job. To apply a setting in both directions, set it on the serv
 for the Job API. A setting placed only on the server affects transfers the server sends (chunk sizes) or
 receives (request timeouts), not the client side of the exchange.
 
+``add_client_config()`` and ``to_clients()`` configure the client job process. In ``external_process`` mode the
+training script runs in a separate trainer process that does not load the job's application configuration, so
+these settings do not reach it. That process still sends results and pulls task data, so it keeps the default
+chunk sizes and request timeouts unless you set them in its environment. A setting is read from the
+environment variable ``NVFLARE_`` followed by the setting name in upper case, for example
+``NVFLARE_TENSOR_DOWNLOAD_CHUNK_SIZE`` or ``NVFLARE_TENSOR_STREAMING_PER_REQUEST_TIMEOUT``. Set these in the
+environment the trainer is launched with, for example by prefixing the launch ``command``. When the training
+script runs in the client job process (the default in-process mode), the job configuration applies.
+
 Using Recipe API (Recommended)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -323,6 +332,10 @@ set the chunk sizes to zero.
     config = {"np_download_chunk_size": 0, "tensor_download_chunk_size": 0}
     recipe.add_server_config(config)
     recipe.add_client_config(config)
+
+In ``external_process`` mode also set ``NVFLARE_NP_DOWNLOAD_CHUNK_SIZE=0`` and
+``NVFLARE_TENSOR_DOWNLOAD_CHUNK_SIZE=0`` in the trainer's environment, because the job configuration does not
+reach the trainer process (see above). Otherwise downloads stay enabled for the results the trainer sends.
 
 **Using Job API:**
 
