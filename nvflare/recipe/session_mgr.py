@@ -177,41 +177,44 @@ class SessionManager:
     def get_job_status(self, job_id: str) -> Optional[str]:
         """Get the status of the job."""
         sess = self._get_session()
-        status = sess.get_job_status(job_id)
-        sess.close()
-        return status
+        try:
+            return sess.get_job_status(job_id)
+        finally:
+            sess.close()
 
     def abort_job(self, job_id: str) -> None:
         """Abort the running job."""
         sess = self._get_session()
-        msg = sess.abort_job(job_id)
-        _print_output(f"Job {job_id} aborted successfully with message: {msg}")
-        sess.close()
+        try:
+            msg = sess.abort_job(job_id)
+            _print_output(f"Job {job_id} aborted successfully with message: {msg}")
+        finally:
+            sess.close()
 
     def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
         """Get the result workspace of the job."""
         sess = self._get_session()
-        cb_run_counter = {"count": 0}
-        if os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE) == LogMode.PROGRESS:
-            cb_run_counter["progress"] = {"seen": set()}
-        rc = sess.monitor_job(job_id, timeout=timeout, cb=_job_monitor_callback, cb_run_counter=cb_run_counter)
-        if rc == MonitorReturnCode.JOB_FINISHED:
-            _print_output("Downloading job results...", flush=True)
-            result = sess.download_job_result(job_id)
-            if result and job_status_outcome(cb_run_counter.get("status")) in ("failed", "aborted"):
-                try:
-                    collect_client_errors(sess, job_id, result)
-                except Exception as ex:
-                    get_module_logger().debug("Could not retrieve client error logs for %s: %s", job_id, ex)
+        try:
+            cb_run_counter = {"count": 0}
+            if os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE) == LogMode.PROGRESS:
+                cb_run_counter["progress"] = {"seen": set()}
+            rc = sess.monitor_job(job_id, timeout=timeout, cb=_job_monitor_callback, cb_run_counter=cb_run_counter)
+            if rc == MonitorReturnCode.JOB_FINISHED:
+                _print_output("Downloading job results...", flush=True)
+                result = sess.download_job_result(job_id)
+                if result and job_status_outcome(cb_run_counter.get("status")) in ("failed", "aborted"):
+                    try:
+                        collect_client_errors(sess, job_id, result)
+                    except Exception as ex:
+                        get_module_logger().debug("Could not retrieve client error logs for %s: %s", job_id, ex)
+                return result
+            elif rc == MonitorReturnCode.TIMEOUT:
+                _print_output(f"Monitoring job {job_id} timed out after {timeout} seconds. No results were downloaded.")
+                return None
+            elif rc == MonitorReturnCode.ENDED_BY_CB:
+                _print_output("Job monitoring was stopped early by callback. No results were downloaded.")
+                return None
+            else:
+                raise RuntimeError(f"Unexpected monitor return code: {rc}")
+        finally:
             sess.close()
-            return result
-        elif rc == MonitorReturnCode.TIMEOUT:
-            _print_output(f"Monitoring job {job_id} timed out after {timeout} seconds. No results were downloaded.")
-            sess.close()
-            return None
-        elif rc == MonitorReturnCode.ENDED_BY_CB:
-            _print_output("Job monitoring was stopped early by callback. No results were downloaded.")
-            sess.close()
-            return None
-        else:
-            raise RuntimeError(f"Unexpected monitor return code: {rc}")

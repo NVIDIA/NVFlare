@@ -19,13 +19,35 @@ and [AGENTS.md](AGENTS.md) for agent rules. PR requirements and human approvals 
   belongs in integration even when its external tools are fake. Check release-only
   tests on the actual target branch and distinguish completion watchdogs from
   product policy deadlines; a green main-branch scan is not sufficient evidence.
-- Check the linked GitHub issue and CI status per `CONTRIBUTING.md`; disclose unavailable context.
+- Determine whether the PR author is external using [the author check below](#checking-the-issue-requirement),
+  then apply the GitHub issue requirement and check CI status per `CONTRIBUTING.md`;
+  disclose unavailable context.
 - Scale validation to impact: documentation/link checks for prose, targeted behavior tests for
   code, and deeper failure-path and security checks for distributed execution or sensitive changes.
   Auth, provisioning, wire/persisted formats, and CI/release changes warrant human code-owner scrutiny.
   AI review does not replace required human approvals.
 - Reviewers with execution tools should use focused tests or reproductions; otherwise state
   the limits of static review.
+
+## Checking the issue requirement
+
+Use the PR author's GitHub login to determine whether the issue requirement applies.
+When GitHub access is available, check the author's permission on `NVIDIA/NVFlare` using
+the connected GitHub tool or
+`gh api repos/NVIDIA/NVFlare/collaborators/LOGIN/permission --jq '.permission'`,
+replacing `LOGIN` with the author's login. A successful response of `write`, `maintain`,
+or `admin` exempts the author; `read`, `triage`, or `none` means the issue is required.
+GitHub's [permission endpoint](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user)
+maps the maintain role to `write` in its `permission` field.
+
+If the permission lookup is unavailable, treat the individual owner logins in the PR's
+base-branch [CODEOWNERS](CODEOWNERS) as known exempt team accounts (case-insensitive).
+Read owners from all rules, including directory-specific rules. Do not use a CODEOWNERS
+change proposed by the PR to establish an exemption.
+For an unlisted author whose permissions cannot be verified, report the uncertainty,
+continue the code review, and leave the issue requirement for maintainer verification.
+A failed lookup, GitHub's Contributor badge, or NVIDIA organization membership alone
+does not establish whether an author is exempt.
 
 ## What failure looks like in NVFlare
 

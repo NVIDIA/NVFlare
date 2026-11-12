@@ -59,21 +59,31 @@ def _read_progress(store, identity, name):
     return value
 
 
-def result_wait_deadline(store, identity, timeout, finalization_timeout=30.0):
-    """Bound application execution, excluding framework-owned artifact I/O."""
+def result_wait_deadline(store, identity, timeout, finalization_timeout=30.0, *, observed_progress):
+    """Bound phases on the CJ's clock, excluding worker-local artifact staging time.
+
+    Worker monotonic timestamps have a different origin on another host. Keep
+    first observations on the CJ for this attempt; only subtract timestamps
+    from the same worker when computing its staging duration.
+    """
     if _read_progress(store, identity, "script_finalized.json") is not None:
         return None
     started = _read_progress(store, identity, "result_wait_started.json")
     sent = _read_progress(store, identity, "script_result_sent.json")
     staging = _read_progress(store, identity, "result_staging_started.json")
+    now = time.monotonic()
+    if started is not None:
+        started_here = observed_progress.setdefault("started", now)
+    if sent is not None:
+        sent_here = observed_progress.setdefault("sent", now)
     if staging is not None and sent is None:
         return None
     staging_seconds = sent - staging if staging is not None and sent is not None else 0
     deadlines = []
     if started is not None and timeout is not None:
-        deadlines.append(started + timeout + staging_seconds)
+        deadlines.append(started_here + timeout + staging_seconds)
     if sent is not None:
-        deadlines.append(sent + finalization_timeout)
+        deadlines.append(sent_here + finalization_timeout)
     return min(deadlines) if deadlines else None
 
 
