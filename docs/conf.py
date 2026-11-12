@@ -94,7 +94,7 @@ if not _skip_api:
         ]
     )
 
-# Quantization imports these helpers only inside method bodies.
+# Let autodoc import quantization modules without installing bitsandbytes.
 autodoc_mock_imports = ["bitsandbytes"]
 autoclass_content = "both"
 add_module_names = False
