@@ -87,8 +87,11 @@ class SplitWorkspace:
         the files named in the outputs folders are left out, so a declared file created meanwhile is kept here.
         Raises OSError when a link cannot be made, a folder cannot be read, or a stored output was replaced,
         written to or removed meanwhile; the stored outputs archive would then be out of date, so the workspace is
-        stored whole.
+        stored whole. It also raises when a path stored as an output in one workspace folder is in another folder's
+        rest: the workspace folders share archive paths, the later folder's copy wins, and the client unzips the
+        outputs archive before the workspace archive, so the split could change which copy a full download keeps.
         """
+        stored = {r for linked in self._linked for r in linked if os.path.basename(r) not in _LOG_FILE_NAMES}
         for source_dir, rest_dir, linked in zip(self.source_dirs, self.rest_dirs, self._linked):
             seen = set()
             shutil.rmtree(rest_dir, ignore_errors=True)
@@ -114,6 +117,8 @@ class SplitWorkspace:
                         if _identity(source) != linked[relative]:
                             raise OSError(f"output {relative} changed after it was stored")
                         continue  # stored in the outputs archive
+                    if relative in stored:
+                        raise OSError(f"{relative} is an output in one workspace folder and not in another")
                     _link(source, os.path.join(rest_dir, relative))
             if seen != {r for r in linked if os.path.basename(r) not in _LOG_FILE_NAMES}:
                 raise OSError("an output was removed after it was stored")

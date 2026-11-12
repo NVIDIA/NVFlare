@@ -102,6 +102,32 @@ class TestSplitJobOutputs:
         assert [_files(d) for d in split.rest_dirs] == [[], ["notes.txt"]]
         assert all(os.path.dirname(d) == str(tmp_path) for d in split.output_dirs + split.rest_dirs)
 
+    @pytest.mark.parametrize("symlink_in", ["run", "result"])
+    def test_an_output_path_also_kept_with_another_folders_rest_rejects_the_split(self, tmp_path, symlink_in):
+        # the workspace folders share archive paths: the split must not change which copy a full download keeps
+        run_dir = _run_folder(tmp_path / "run", {"app_server/x.json": b"{}"})
+        result_root = _run_folder(tmp_path / "result", {})
+        initial = tmp_path / "initial.npy"
+        initial.write_bytes(b"initial")
+        trained, linked = (result_root, run_dir) if symlink_in == "run" else (run_dir, result_root)
+        _run_folder(trained, {"models/server.npy": b"trained"})
+        (linked / "models").mkdir(parents=True)
+        os.symlink(initial, linked / "models" / "server.npy")  # a symlink is never an output
+        split = link_job_outputs([str(run_dir), str(result_root)], ["models/"])
+
+        assert split.found == ["models/"]
+        with pytest.raises(OSError):  # store the workspace whole
+            split.link_rest()
+
+    def test_the_same_output_path_in_two_folders_keeps_the_split(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"models/server.npy": b"initial"})
+        result_root = _run_folder(tmp_path / "result", {"models/server.npy": b"trained"})
+
+        split = split_job_outputs([str(run_dir), str(result_root)], ["models/"])
+
+        # both in the outputs archive, in folder order, so the later folder's copy still wins
+        assert [_files(d) for d in split.output_dirs] == [["models/server.npy"], ["models/server.npy"]]
+
     def test_returns_none_when_no_declared_output_exists(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"log.txt": b"log"})
 
