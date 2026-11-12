@@ -56,14 +56,22 @@ def rewrite_docs_links(site_dir: Path, branch: str, docs_version: str) -> int:
 
     Matches ``<branch>/`` and ``<branch>.<patch>/``, plus the unexpanded
     ``${gh_branch}/`` and ``{gh_branch}/`` left in pages built from a quoting bug.
+    Version-root URLs may omit the trailing slash or end in a query/fragment.
+    Unreadable files are left unchanged with a warning so other pages still update.
     """
-    link = re.compile(rf"{re.escape(DOCS_URL_PREFIX)}(?:{re.escape(branch)}(?:\.\d+)?|\$?\{{gh_branch\}})/")
-    replacement = f"{DOCS_URL_PREFIX}{docs_version}/"
+    link = re.compile(
+        rf"{re.escape(DOCS_URL_PREFIX)}(?:{re.escape(branch)}(?:\.\d+)?|\$?\{{gh_branch\}})" r"(?=/|[?#\"'`\s<>]|$)"
+    )
+    replacement = f"{DOCS_URL_PREFIX}{docs_version}"
     changed = 0
     for path in site_dir.rglob("*"):
         if not path.is_file() or path.suffix not in REWRITTEN_SUFFIXES:
             continue
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as e:
+            print(f"::warning::Could not read {path} ({e}); file left unchanged")
+            continue
         updated = link.sub(replacement, text)
         if updated != text:
             path.write_text(updated, encoding="utf-8")

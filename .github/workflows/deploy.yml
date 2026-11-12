@@ -30,17 +30,28 @@ jobs:
   build:
     if: ${{ github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
-    # One deploy per branch at a time; different branches deploy independently.
+    # All writers share the lock, including refreshes on other branches.
+    # Queue pending jobs instead of canceling another branch's deployment.
     concurrency:
-      group: gh-pages-deploy-${{ github.ref }}
+      group: gh-pages-publication
+      queue: max
       cancel-in-progress: false
     steps:
-      - name: Update version_path for non-main branches
-        if: ${{ github.ref_type == 'branch' && github.ref_name != 'main'}}
-        run: echo version_path=/version/${{ github.ref_name }}/ >> $GITHUB_ENV
+      - name: Validate branch and set version_path
+        env:
+          GH_BRANCH: ${{ github.ref_name }}
+          GH_REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [ "$GH_REF_TYPE" != branch ] || { [ "$GH_BRANCH" != main ] && ! [[ "$GH_BRANCH" =~ ^[0-9]+\.[0-9]+$ ]]; }; then
+            echo "::error::Deployments require main or an X.Y release branch"
+            exit 1
+          fi
+          if [ "$GH_BRANCH" != main ]; then
+            echo "version_path=/version/$GH_BRANCH/" >> "$GITHUB_ENV"
+          fi
 
       - name: Checkout your repository
-        uses: NVIDIA/spark-rapids-common/checkout@main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -61,10 +72,12 @@ jobs:
 
       - name: Point documentation links to the branch's latest release
         if: ${{ github.ref_type == 'branch' && github.ref_name != 'main'}}
+        env:
+          GH_BRANCH: ${{ github.ref_name }}
         run: >-
           python3 .github/scripts/point_web_docs_to_release.py
-          --branch "${{ github.ref_name }}"
-          --site-dir "${{ env.site_path }}/dist"
+          --branch "$GH_BRANCH"
+          --site-dir "$site_path/dist"
 
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4.8.0
@@ -75,19 +88,20 @@ jobs:
           clean-exclude: version
 
   refresh-docs-links:
-    # Runs after a manual build so both never push gh-pages at the same time.
+    # Run after this run's build; the shared lock also excludes other runs.
     needs: build
     if: ${{ always() && github.event_name != 'push' }}
     runs-on: ubuntu-latest
     concurrency:
-      group: gh-pages-refresh-docs-links
+      group: gh-pages-publication
+      queue: max
       cancel-in-progress: false
     steps:
       - name: Checkout your repository
-        uses: NVIDIA/spark-rapids-common/checkout@main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Checkout gh-pages
-        uses: NVIDIA/spark-rapids-common/checkout@main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: gh-pages
           path: gh-pages
@@ -95,6 +109,7 @@ jobs:
       - name: Point each deployed release branch to its latest release docs
         run: |
           for site_dir in gh-pages/version/*/; do
+            [ -d "$site_dir" ] || continue
             python3 .github/scripts/point_web_docs_to_release.py \
               --branch "$(basename "$site_dir")" --site-dir "$site_dir"
           done
@@ -109,9 +124,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "Point release branch pages to their latest release docs"
-          # A branch deploy may push gh-pages meanwhile; rebase onto it and retry.
-          for attempt in 1 2 3; do
-            git push origin gh-pages && exit 0
-            git pull --rebase origin gh-pages
-          done
-          exit 1
+          # Build and refresh jobs hold the same lock from checkout through push.
+          # Fail on an unexpected external writer rather than rebasing generated HTML.
+          git push origin HEAD:gh-pages
