@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.app_common.resource_managers import gpu_resource_manager as gpu_manager_module
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from tests.timing_utils import isolate_time
 
@@ -26,6 +27,12 @@ GPU_MEM_KEY = "mem_per_gpu_in_GiB"
 
 def test_exclusive_pool_uses_process_mode_mask_without_host_access(monkeypatch):
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1,3,5,7")
+    monkeypatch.setattr(
+        gpu_manager_module, "get_host_gpu_ids", Mock(side_effect=AssertionError("unexpected host query"))
+    )
+    monkeypatch.setattr(
+        gpu_manager_module, "get_host_gpu_memory_total", Mock(side_effect=AssertionError("unexpected host query"))
+    )
     manager = GPUResourceManager(4, 0, ignore_host=True, exclusive=True)
     ctx = FLContext()
     first_req = {NUM_GPU_KEY: 2}
@@ -58,7 +65,7 @@ def test_exclusive_memory_admission(budget, requested, enough):
         assert manager.check_resources(requirement, ctx)[0]
 
 
-@pytest.mark.parametrize("mask", ["GPU-selected-device", "MIG-GPU-selected-device/1/0", "0,GPU-selected-device"])
+@pytest.mark.parametrize("mask", ["GPU-selected-device", "0,GPU-selected-device"])
 def test_host_independent_pool_rejects_unsupported_masks(monkeypatch, mask):
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
     with pytest.raises(ValueError, match="integer GPU indices"):
@@ -68,6 +75,12 @@ def test_host_independent_pool_rejects_unsupported_masks(monkeypatch, mask):
 @pytest.mark.parametrize("mask", ["", "GPU-selected-device", "1,3"])
 def test_ignore_host_keeps_legacy_unmasked_pool(monkeypatch, mask):
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
+    monkeypatch.setattr(
+        gpu_manager_module, "get_host_gpu_ids", Mock(side_effect=AssertionError("unexpected host query"))
+    )
+    monkeypatch.setattr(
+        gpu_manager_module, "get_host_gpu_memory_total", Mock(side_effect=AssertionError("unexpected host query"))
+    )
     manager = GPUResourceManager(2, 16, ignore_host=True)
     assert list(manager.resources) == [0, 1]
 
@@ -128,6 +141,23 @@ def mock_get_host_gpu_ids():
 
 
 class TestGPUResourceManager:
+    @pytest.mark.parametrize("exclusive", [False, True])
+    @pytest.mark.parametrize("mask", ["GPU-selected-device", "0,unsupported"])
+    def test_host_backed_pool_falls_back_to_host_inventory(self, monkeypatch, mask, exclusive):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
+
+        manager = GPUResourceManager(4, 16, exclusive=exclusive)
+
+        assert list(manager.resources) == [0, 1, 2, 3]
+
+    @pytest.mark.parametrize("mask,expected", [("2,0,2", [2, 0]), ("2,99,0", [2]), ("2,,0", [2])])
+    def test_host_backed_pool_uses_shared_integer_order_and_truncation(self, monkeypatch, mask, expected):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
+
+        manager = GPUResourceManager(len(expected), 16)
+
+        assert list(manager.resources) == expected
+
     def test_init_respects_cuda_visible_devices_for_memory_check(self, monkeypatch):
         monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
         with (
@@ -154,8 +184,9 @@ class TestGPUResourceManager:
 
         assert list(gpu_resource_manager.resources) == [4]
 
-    def test_init_checks_selected_visible_gpu_memory(self, monkeypatch):
-        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3")
+    @pytest.mark.parametrize("mask,num_gpus", [("3", 1), ("GPU-selected-device", 4)])
+    def test_init_checks_selected_visible_gpu_memory(self, monkeypatch, mask, num_gpus):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
         with (
             patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_ids") as mock_ids,
             patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_memory_total") as mock_mem,
@@ -164,7 +195,7 @@ class TestGPUResourceManager:
             mock_mem.return_value = [81920, 81920, 81920, 4096, 81920]
 
             with pytest.raises(ValueError, match="4096"):
-                GPUResourceManager(num_of_gpus=1, mem_per_gpu_in_GiB=16)
+                GPUResourceManager(num_of_gpus=num_gpus, mem_per_gpu_in_GiB=16)
 
     def test_init_reports_selected_gpu_id_for_insufficient_memory(self, monkeypatch):
         monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3")
@@ -190,8 +221,9 @@ class TestGPUResourceManager:
             with pytest.raises(RuntimeError, match="GPU ID 3"):
                 GPUResourceManager(num_of_gpus=1, mem_per_gpu_in_GiB=16)
 
-    def test_init_checks_visible_gpu_count(self, monkeypatch):
-        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    @pytest.mark.parametrize("mask,requested,available", [("0", 2, 1), ("GPU-selected-device", 5, 4)])
+    def test_init_checks_visible_gpu_count(self, monkeypatch, mask, requested, available):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
         with (
             patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_ids") as mock_ids,
             patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_memory_total") as mock_mem,
@@ -199,8 +231,8 @@ class TestGPUResourceManager:
             mock_ids.return_value = [0, 1, 2, 3]
             mock_mem.return_value = [32768, 32768, 32768, 32768]
 
-            with pytest.raises(ValueError, match="exceeds available GPUs: 1"):
-                GPUResourceManager(num_of_gpus=2, mem_per_gpu_in_GiB=16)
+            with pytest.raises(ValueError, match=f"exceeds available GPUs: {available}"):
+                GPUResourceManager(num_of_gpus=requested, mem_per_gpu_in_GiB=16)
 
     def test_init_stops_at_invalid_cuda_visible_device_index(self, monkeypatch):
         monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,2,-1,1")

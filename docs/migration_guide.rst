@@ -27,6 +27,19 @@ Verify with ``nvflare system version``. Leftover 2.9 peers are rejected before
 endpoint attachment and cannot replace a 2.10 connection. This procedure
 includes a server outage and does not resume running jobs across the upgrade.
 
+.. _multi_process_executor_migration:
+
+Multi-process Executor Deprecation
+---------------------------------
+
+``MultiProcessExecutor`` and ``PTMultiProcessExecutor`` are deprecated in 2.10
+while their imports and configuration remain available. For PyTorch DDP training,
+use job-based Client API with ``launch_external_process=True`` and ``torchrun``,
+as in the :github_nvflare_link:`multi-GPU example <examples/advanced/multi-gpu/pt>`.
+Only global rank zero exchanges models with FLARE; the script synchronizes
+models and shutdown across ranks. Applications relying on the legacy wrapper's
+arbitrary FL events or component graph must adapt those explicitly before migrating.
+
 Upgrading from 2.7.2 to 2.8.0
 =============================
 
@@ -148,11 +161,13 @@ Define jobs with the Job Recipe API instead. Use ``nvflare recipe list`` and
 HOCON and OmegaConf Config Support Removed
 ------------------------------------------
 
-FLARE reads configuration files only as JSON (``.json``, with ``.json.default``
+FLARE's generic configuration loader reads only JSON (``.json``, with ``.json.default``
 as the fallback). HOCON (``.conf``) and OmegaConf (``.yml``/``.yaml``) job and
 site configs are no longer recognized, and ``pyhocon`` is no longer a
 dependency. The ``CONFIG`` and ``core_opt`` install extras are removed.
-Provisioning and Kubernetes YAML files are not affected.
+Provisioning, Kubernetes, ``local/study_runtime.yaml``, and integration test
+scenario YAML files are not affected; they use separate PyYAML readers.
+See :ref:`configurations` for the formats used by each configuration type.
 
 Impact:
 

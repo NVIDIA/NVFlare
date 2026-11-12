@@ -25,8 +25,10 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus, RunnerTask, WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.fuel.utils import gpu_utils
+from nvflare.private.fed.app.simulator import simulator_runner as simulator_runner_module
 from nvflare.private.fed.app.simulator import simulator_worker
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner, SimulatorRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
@@ -62,6 +64,82 @@ def test_exported_task_app_is_rejected_before_simulator_services_start(tmp_path,
 
     create_server.assert_not_called()
     create_client.assert_not_called()
+
+
+@pytest.fixture
+def simulator_gpu_setup(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(simulator_runner_module, "SimulatorDeployer", Mock())
+    runner = SimulatorRunner("job", str(tmp_path / "workspace"), n_clients=2, gpu="0,1", threads=3)
+    meta = {JobMetaKey.DEPLOY_MAP: {"app": ["site-1", "site-2"]}}
+    monkeypatch.setattr(runner, "validate_job_data", Mock(return_value=(b"job", "job", meta)))
+    monkeypatch.setattr(runner, "_deploy_apps", Mock())
+    server = Mock()
+    server.get_cell.return_value = MockCell()
+    monkeypatch.setattr(runner.deployer, "create_fl_server", Mock(return_value=(None, server)))
+    for name in (
+        "nvflare_fobs_initialize",
+        "init_security_content_service",
+        "dynamic_log_config",
+        "custom_fobs_initialize",
+        "register_ext_decomposers",
+        "Workspace",
+    ):
+        monkeypatch.setattr(simulator_runner_module, name, Mock())
+    monkeypatch.setattr(simulator_runner_module.AuthorizationService, "initialize", Mock())
+    monkeypatch.setattr(simulator_runner_module.AuditService, "the_auditor", None)
+    monkeypatch.setattr(gpu_utils, "has_nvidia_smi", lambda: False)
+    query = Mock(side_effect=AssertionError("unexpected nvidia-smi execution"))
+    monkeypatch.setattr(gpu_utils.subprocess, "run", query)
+    return runner, query
+
+
+def test_simulator_gpu_setup_accepts_explicit_groups_without_nvidia_smi(simulator_gpu_setup):
+    runner, query = simulator_gpu_setup
+
+    assert runner.setup()
+
+    assert split_gpus(runner.args.gpu) == ["0", "1"]
+    assert runner.args.threads == 1
+    assert runner.client_names == ["site-1", "site-2"]
+    runner.deployer.create_fl_server.assert_called_once_with(runner.args)
+    runner._deploy_apps.assert_called_once()
+    query.assert_not_called()
+
+
+def test_simulator_gpu_setup_still_fails_for_a_present_but_broken_provider(simulator_gpu_setup, monkeypatch, caplog):
+    runner, query = simulator_gpu_setup
+    monkeypatch.setattr(gpu_utils, "has_nvidia_smi", lambda: True)
+    query.side_effect = None
+    query.return_value = Mock(returncode=9, stdout="", stderr="query failed")
+
+    assert runner.setup() is False
+
+    assert "Failed to call nvidia-smi" in caplog.text
+    runner.deployer.create_fl_server.assert_not_called()
+    query.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "output,error",
+    [("index\n0\n1\n", None), ("index\n0\n", "These GPUs are not available"), ("index\n", "GPU inventory")],
+)
+def test_simulator_gpu_setup_preserves_available_inventory_validation(
+    simulator_gpu_setup, monkeypatch, caplog, output, error
+):
+    runner, query = simulator_gpu_setup
+    monkeypatch.setattr(gpu_utils, "has_nvidia_smi", lambda: True)
+    query.side_effect = None
+    query.return_value = Mock(returncode=0, stdout=output, stderr="")
+
+    assert runner.setup() is (error is None)
+
+    query.assert_called_once()
+    if error is None:
+        runner.deployer.create_fl_server.assert_called_once()
+    else:
+        assert error in caplog.text
+        runner.deployer.create_fl_server.assert_not_called()
 
 
 class TestSimulatorRunner:
@@ -144,6 +222,17 @@ class TestSimulatorRunner:
         assert runner._get_server_run_status() == expected_status
 
         fl_ctx.get_prop.assert_called_once_with(FLContextKey.FATAL_SYSTEM_ERROR, False)
+
+    @pytest.mark.parametrize("server_workflow_done,expected_status", [(False, 2), (True, 0)])
+    def test_client_fatal_error_sets_simulator_status(self, server_workflow_done, expected_status):
+        runner = SimulatorRunner(job_folder="", workspace="")
+        runner.server = MagicMock()
+        fl_ctx = runner.server.engine.new_context.return_value.__enter__.return_value
+        fl_ctx.get_prop.return_value = False
+        runner.client_fatal_error = True
+        runner.server_workflow_done = server_workflow_done
+
+        assert runner._get_server_run_status() == expected_status
 
     @pytest.mark.parametrize(
         "gpus, expected_gpus",
@@ -279,7 +368,7 @@ class TestSimulatorRunner:
         process = Mock()
         process.poll.return_value = None
         conn = Mock()
-        conn.recv.side_effect = [True, None]  # stop_run, then end_run_client
+        conn.recv.side_effect = [True, None, False]  # stop_run, end_run_client, fatal_error
 
         with patch("nvflare.private.fed.app.simulator.simulator_runner.sys.executable", executable):
             with patch("nvflare.private.fed.app.simulator.simulator_runner.get_open_ports", return_value=[12345]):
@@ -294,6 +383,51 @@ class TestSimulatorRunner:
         assert launched[launched.index("-o") + 1] == os.path.join(workspace, "site-1")
         assert launched[launched.index("--logging_config") + 1] == log_config
         assert launched[launched.index("--simulator_root") + 1] == workspace
+
+    @pytest.mark.parametrize("fatal_error,expected", [(False, []), (True, ["site-1"])])
+    def test_do_one_task_records_client_fatal_error(self, tmp_path, fatal_error, expected):
+        workspace = str(tmp_path)
+        for folder in ("startup", "local"):
+            (tmp_path / "site-1" / folder).mkdir(parents=True)
+        args = Namespace(workspace=workspace, log_config=None)
+        args.set = []
+        runner = SimulatorClientRunner(str(tmp_path / "custom"), args, [], None, Namespace(workspace=workspace), {})
+        client = Mock()
+        client.client_name = "site-1"
+        client.token = "token"
+        process = Mock()
+        process.poll.return_value = None
+        conn = Mock()
+        conn.recv.side_effect = [True, "site-1", fatal_error]  # stop_run, end_run_client, fatal_error
+
+        with patch("nvflare.private.fed.app.simulator.simulator_runner.get_open_ports", return_value=[12345]):
+            with patch.object(runner, "_create_connection", return_value=conn):
+                with patch(
+                    "nvflare.private.fed.app.simulator.simulator_runner.popen_in_new_session", return_value=process
+                ):
+                    runner.do_one_task(client, num_of_threads=0, gpu=None, lock=threading.Lock())
+
+        assert runner.fatal_clients == expected
+
+    @pytest.mark.parametrize("task_name", [RunnerTask.END_RUN, RunnerTask.TASK_EXEC])
+    def test_worker_reports_client_fatal_error(self, task_name):
+        worker = simulator_worker.ClientTaskWorker()
+        client = MagicMock()
+        client.client_name = "site-1"
+        client_runner = Mock()
+        client_runner.fetch_and_run_one_task.return_value = (1.0, True)
+        client_runner.run_abort_signal.triggered = True
+        fl_ctx = client.run_manager.new_context.return_value.__enter__.return_value
+        fl_ctx.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.RUNNER: client_runner,
+            FLContextKey.FATAL_SYSTEM_ERROR: True,
+        }.get(key, default)
+
+        with patch.object(worker, "fire_event"):
+            _, stop_run, _, fatal_error = worker.do_one_task(client, Namespace(task_name=task_name))
+
+        assert stop_run
+        assert fatal_error
 
     def test_worker_create_connection_does_not_require_authkey(self):
         conn = Mock()

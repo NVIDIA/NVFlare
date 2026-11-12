@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import json
 import os
 import time
@@ -24,6 +25,7 @@ from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import RunStatus
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST
+from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, validate_log_config
 from nvflare.job_config.api import FedJob
 from nvflare.recipe._failure_summary import failure_summary
 from nvflare.recipe._run_summary import _print_output, run_context, summary_header
@@ -83,6 +85,7 @@ class SimEnv(ExecEnv):
                 If not provided, the number of threads will be set to the number of clients.
             gpu_config (str, optional): GPU configuration string. Defaults to None.
             log_config (str, optional): Log configuration string. Defaults to None.
+                Validated at deployment so imports, script setup and export-only use need no logging file.
             workspace_root (str, optional): Root directory for simulation workspace. Defaults to WORKSPACE_ROOT.
                 The process-level NVFLARE_SIMULATOR_WORKSPACE_ROOT orchestration setting takes precedence when set.
             extra: extra env config info
@@ -116,6 +119,25 @@ class SimEnv(ExecEnv):
         self.last_run_failed = False
         self._job_statuses: dict[str, str] = {}
 
+    def _validate_log_config(self):
+        """Check the effective selector at deployment, after script setup and outside export-only paths."""
+        config = self.log_config if self.log_config is not None else (os.environ.get(FL_LOG_LEVEL) or None)
+        if config is None:
+            return
+        try:
+            validated = validate_log_config(config)
+        except ValueError as exc:
+            # CLI/environment inputs get a usage error; an invalid explicit API
+            # argument remains a ValueError for the calling application to handle.
+            source = "--log_config" if self._log_config_override is not None else None
+            if self.log_config is None:
+                source = FL_LOG_LEVEL
+            if source:
+                argparse.ArgumentParser(add_help=False).error(f"{source}: {exc}")
+            raise
+        if self.log_config is not None:
+            self.log_config = validated
+
     def deploy(self, job: FedJob):
         job_id = job.name
         self._job_statuses.pop(job_id, None)
@@ -124,6 +146,7 @@ class SimEnv(ExecEnv):
         started_at = time.time()
         started_timer = time.monotonic()
         try:
+            self._validate_log_config()
             # Validate scripts exist locally for simulation
             non_local_scripts = collect_non_local_scripts(job)
             if non_local_scripts:
