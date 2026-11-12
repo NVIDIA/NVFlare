@@ -269,11 +269,19 @@ and scheduler control records for investigation; it does not invalidate an
 already verified result or checkpoint.
 
 Resident ``job`` lifetime retains the common automatic CJ recovery policy.
-``max_cj_restart_failures: 0`` disables it. The budget counts consecutive failed
-starts and resets at READY, rather than being a lifetime or per-job cap.
-Task-mode CJ recovery remains disabled: independent worker allocations can
-outlive CJ. CP continues cleanup while alive; CP crash/restart adoption is not
-implemented. Persistent files alone do not authorize automatic physical retry.
+The native Slurm ``task`` profile also permits replacement after confirmed CJ
+exit and settlement of all CP-owned worker allocations. The shared supervisor
+interrupts CJ on eligible worker loss, and the replacement restores
+application-owned checkpoint state. See :doc:`/design/client_job_recovery` for
+the common policy. Set ``NVFLARE_MAX_CJ_RESTART_FAILURES=0`` on CP, or pass
+``max_cj_restart_failures=0`` through its Python ``--set`` arguments, to disable
+recovery. The budget counts consecutive failed starts and resets at READY,
+rather than being a lifetime or per-job cap.
+
+The gateway ``process`` and ``docker`` task profiles keep automatic CJ recovery
+disabled in this initial implementation. CP continues cleanup while alive;
+CP crash/restart adoption is not implemented for any Slurm profile. Persistent
+files alone do not authorize automatic physical retry.
 
 Live worker connections and credentials
 ---------------------------------------

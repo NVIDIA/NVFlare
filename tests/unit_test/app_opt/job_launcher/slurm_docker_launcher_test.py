@@ -161,7 +161,7 @@ def test_gateway_container_uses_cj_budget_and_isolated_canonical_paths(profile, 
     assert command[command.index("-p") + 1] == "tcp://gateway.example:8102"
     assert str(p.root) in command and str(p.root / "startup") in command
     assert p.meta == original
-    assert not handle.can_restart()  # Physical CJ exit cannot prove task cleanup.
+    assert not handle.can_restart()  # Gateway recovery is disabled for this initial profile.
     handle.terminate()
     assert owner.released and owner.closed
     p.native.terminate.assert_called_once_with()
@@ -273,6 +273,14 @@ def test_live_owner_fences_a_second_cj_launch(profile):
     assert p.dc.containers.run.call_count == 1
     assert not handle.owner.closed
     assert not handle.can_restart()
+
+
+def test_gateway_restart_policy_preserves_owner_even_after_physical_exit(profile):
+    p = profile
+    handle = p.launcher.launch_job(p.meta, p.context)
+    assert not handle.can_restart()
+    p.native.can_restart.assert_not_called()
+    assert not handle.owner.released
 
 
 def test_heartbeat_cleanup_stops_docker_cj_and_seals_task_owner(profile):

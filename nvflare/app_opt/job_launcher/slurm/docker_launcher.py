@@ -62,7 +62,7 @@ class _GatewayContainerLauncher(ClientDockerJobLauncher):
 
     def _job_created(self, job_handle, fl_ctx):
         self.owner.attach_cj(job_handle)
-        self.task_handle = _TaskCJHandle(job_handle, self.owner, self.cleanup_timeout)
+        self.task_handle = _TaskCJHandle(job_handle, self.owner, self.cleanup_timeout, allow_restart=False)
         try:
             publish_job_handle(self.task_handle, fl_ctx)
         except BaseException:

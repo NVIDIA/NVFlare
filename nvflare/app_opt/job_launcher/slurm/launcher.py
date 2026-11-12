@@ -591,10 +591,11 @@ _GPU_ENV = ("CUDA_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES
 class _TaskCJHandle(JobHandleSpec):
     """Preserve CJ outcome while bounding the wait for parent-owned cleanup."""
 
-    def __init__(self, handle, owner, cleanup_timeout=30.0):
+    def __init__(self, handle, owner, cleanup_timeout=30.0, *, allow_restart=True):
         self.handle = handle
         self.owner = owner
         self.cleanup_timeout = cleanup_timeout
+        self._allow_restart = allow_restart
 
     def terminate(self):
         self.owner.release()
@@ -607,7 +608,7 @@ class _TaskCJHandle(JobHandleSpec):
 
     def can_restart(self):
         """Replace the CJ only after CP-owned workers have all settled."""
-        if self.handle.can_restart() is not True:
+        if not self._allow_restart or self.handle.can_restart() is not True:
             return False
         self.owner.release()
         self.owner.thread.join(self.cleanup_timeout)
