@@ -64,7 +64,7 @@ class ClientProcessJobLauncher(ProcessJobLauncher):
             owner.release()
             raise
         owner.attach_cj(native)
-        handle = _TaskCJHandle(native, owner, policy.finalization_timeout)
+        handle = _TaskCJHandle(native, owner, policy.finalization_timeout, allow_restart=False)
         try:
             publish_job_handle(handle, fl_ctx)
         except BaseException:

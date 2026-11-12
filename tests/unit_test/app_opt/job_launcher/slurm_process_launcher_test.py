@@ -110,6 +110,14 @@ def test_process_cj_has_cp_owner_and_gpu_free_environment(profile, monkeypatch):
     assert not owner.thread.is_alive()
 
 
+def test_process_cj_recovery_remains_disabled_after_physical_exit(profile):
+    p = profile
+    handle = p.launcher.launch_job(p.meta, p.context)
+    p.adapter.poll.return_value = 0
+    assert handle.handle.can_restart() is True
+    assert not handle.can_restart()
+
+
 @pytest.mark.parametrize("failure", ["spawn", "publish"])
 def test_launch_failures_release_cp_ownership(profile, failure):
     p = profile
