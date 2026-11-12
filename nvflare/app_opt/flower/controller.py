@@ -18,6 +18,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tie.controller import TieController
 from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.app_opt.flower.applet import FlowerServerApplet
+from nvflare.app_opt.flower.http_transport import DEFAULT_MAX_MESSAGE_BYTES
 from nvflare.fuel.utils.validation_utils import check_positive_number
 
 from .defs import Constant
@@ -39,8 +40,8 @@ class FlowerController(TieController):
         job_status_check_interval: float = TieConstant.JOB_STATUS_CHECK_INTERVAL,
         max_client_op_interval: float = TieConstant.MAX_CLIENT_OP_INTERVAL,
         progress_timeout: float = TieConstant.WORKFLOW_PROGRESS_TIMEOUT,
-        int_client_grpc_options=None,
         run_config: Optional[dict] = None,
+        max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES,
         allow_runtime_dependency_installation: bool = False,
         flower_app_path: Optional[str] = None,
     ):
@@ -59,9 +60,9 @@ class FlowerController(TieController):
             job_status_check_interval: how often to check job status
             max_client_op_interval: max time allowed for missing client requests
             progress_timeout: max time allowed for missing overall progress
-            int_client_grpc_options: internal grpc client options
             run_config: optional dict for flwr run --run-config arguments
-            allow_runtime_dependency_installation: whether to allow dynamic dependency installation (only flwr>=1.29)
+            max_message_bytes: maximum HTTP request or response body size in bytes. Defaults to 512 MiB.
+            allow_runtime_dependency_installation: whether to allow dynamic dependency installation
             flower_app_path: absolute path to pre-deployed Flower app on the server (clients receive via FAB)
         """
         TieController.__init__(
@@ -85,17 +86,17 @@ class FlowerController(TieController):
         self.superlink_ready_timeout = superlink_ready_timeout
         self.superlink_grace_period = superlink_grace_period
         self.superlink_min_query_interval = superlink_min_query_interval
-        self.int_client_grpc_options = int_client_grpc_options
         self.monitor_interval = monitor_interval
         self.run_config = run_config
+        self.max_message_bytes = max_message_bytes
         self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
         self.flower_app_path = flower_app_path
 
     def get_connector(self, fl_ctx: FLContext):
-        from nvflare.app_opt.flower.connectors.grpc_server_connector import GrpcServerConnector
+        from nvflare.app_opt.flower.connectors.http_server_connector import HttpServerConnector
 
-        return GrpcServerConnector(
-            int_client_grpc_options=self.int_client_grpc_options,
+        return HttpServerConnector(
+            max_message_bytes=self.max_message_bytes,
             monitor_interval=self.monitor_interval,
         )
 
@@ -109,6 +110,14 @@ class FlowerController(TieController):
             allow_runtime_dependency_installation=self.allow_runtime_dependency_installation,
             flower_app_path=self.flower_app_path,
         )
+
+    def _process_client_done(self, topic, request, fl_ctx):
+        # Generic TIE tolerates nonzero app-client exits. For Flower, a failed
+        # SuperNode or uncertain Fleet transaction must fail the enclosing job.
+        exit_code = request.get(TieConstant.MSG_KEY_EXIT_CODE, 0)
+        if exit_code:
+            self._trigger_stop(fl_ctx, f"Flower client stopped with exit code {exit_code}")
+        return super()._process_client_done(topic, request, fl_ctx)
 
     def get_client_config_params(self, fl_ctx: FLContext) -> dict:
         return {

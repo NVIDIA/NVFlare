@@ -14,6 +14,7 @@
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tie.executor import TieExecutor
 from nvflare.app_opt.flower.applet import FlowerClientApplet
+from nvflare.app_opt.flower.http_transport import DEFAULT_MAX_MESSAGE_BYTES
 from nvflare.fuel.utils.validation_utils import check_object_type
 
 from .defs import Constant
@@ -24,10 +25,11 @@ class FlowerExecutor(TieExecutor):
         self,
         start_task_name=Constant.START_TASK_NAME,
         configure_task_name=Constant.CONFIG_TASK_NAME,
-        per_msg_timeout=10.0,
-        tx_timeout=100.0,
+        per_msg_timeout=2.0,
+        tx_timeout=25.0,
         client_shutdown_timeout=5.0,
         extra_env: dict = None,
+        max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES,
         allow_runtime_dependency_installation: bool = False,
     ):
         """FlowerExecutor constructor
@@ -39,7 +41,8 @@ class FlowerExecutor(TieExecutor):
             tx_timeout: transaction timeout for ReliableMessage
             client_shutdown_timeout: how long to wait for graceful shutdown of the client
             extra_env: extra env variables to be passed to client applet
-            allow_runtime_dependency_installation: whether to allow dynamic dependency installation (only flwr>=1.29)
+            max_message_bytes: maximum HTTP request or response body size in bytes. Defaults to 512 MiB.
+            allow_runtime_dependency_installation: whether to allow dynamic dependency installation
         """
         TieExecutor.__init__(
             self,
@@ -50,19 +53,20 @@ class FlowerExecutor(TieExecutor):
         if extra_env:
             check_object_type("extra_env", extra_env, dict)
 
-        self.int_server_grpc_options = None
         self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
         self.client_shutdown_timeout = client_shutdown_timeout
         self.num_rounds = None
         self.extra_env = extra_env
+        self.max_message_bytes = max_message_bytes
         self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
 
     def get_connector(self, fl_ctx: FLContext):
-        from nvflare.app_opt.flower.connectors.grpc_client_connector import GrpcClientConnector
+        from nvflare.app_opt.flower.connectors.http_client_connector import HttpClientConnector
 
-        return GrpcClientConnector(
-            int_server_grpc_options=self.int_server_grpc_options,
+        return HttpClientConnector(
+            max_message_bytes=self.max_message_bytes,
+            client_shutdown_timeout=self.client_shutdown_timeout,
             per_msg_timeout=self.per_msg_timeout,
             tx_timeout=self.tx_timeout,
         )
@@ -82,7 +86,6 @@ class FlowerExecutor(TieExecutor):
 
     def _log_states(self, fl_ctx: FLContext):
         self.log_info(fl_ctx, "States are:")
-        self.log_info(fl_ctx, f"    {self.int_server_grpc_options=}")
         self.log_info(fl_ctx, f"    {self.per_msg_timeout=}")
         self.log_info(fl_ctx, f"    {self.tx_timeout=}")
         self.log_info(fl_ctx, f"    {self.client_shutdown_timeout=}")

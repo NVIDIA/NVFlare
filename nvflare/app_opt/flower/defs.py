@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from nvflare.app_common.tie.defs import Constant as TieConstant
-from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
 
 
 class Constant:
@@ -31,10 +30,6 @@ class Constant:
     # keys of config parameters
     CONF_KEY_NUM_ROUNDS = "num_rounds"
 
-    PARAM_KEY_HEADERS = "flower.headers"
-    PARAM_KEY_CONTENT = "flower.content"
-    PARAM_KEY_MSG_NAME = "flower.name"
-
     # default component config values
     CONFIG_TASK_TIMEOUT = TieConstant.CONFIG_TASK_TIMEOUT
     START_TASK_TIMEOUT = TieConstant.START_TASK_TIMEOUT
@@ -45,19 +40,9 @@ class Constant:
     MAX_CLIENT_OP_INTERVAL = TieConstant.MAX_CLIENT_OP_INTERVAL
     WORKFLOW_PROGRESS_TIMEOUT = TieConstant.WORKFLOW_PROGRESS_TIMEOUT
 
-    APP_CTX_SERVERAPP_API_ADDR = "flower_serverapp_api_addr"
-    APP_CTX_FLEET_API_ADDR = "flower_fleet_api_addr"
-    APP_CTX_EXEC_API_ADDR = "flower_exec_api_addr"
-
     APP_CTX_CLIENTAPP_API_ADDR = "flower_clientapp_api_addr"
     APP_CTX_SUPERLINK_ADDR = "flower_superlink_addr"
 
     APP_CTX_CLIENT_NAME = "flower_client_name"
     APP_CTX_NUM_ROUNDS = "flower_num_rounds"
     APP_CTX_FL_CONTEXT = TieConstant.APP_CTX_FL_CONTEXT
-
-
-GRPC_DEFAULT_OPTIONS = [
-    ("grpc.max_send_message_length", MAX_FRAME_SIZE),
-    ("grpc.max_receive_message_length", MAX_FRAME_SIZE),
-]

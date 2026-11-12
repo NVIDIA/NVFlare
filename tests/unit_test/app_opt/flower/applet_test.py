@@ -169,5 +169,95 @@ def test_client_applet_passes_exact_metrics_bootstrap_without_credentials(_valid
 
     assert cmd_desc.env[ANALYTICS_BOOTSTRAP_ENV] == "/workspace/run_job/app_site-1/config/analytics_bootstrap.json"
     assert cmd_desc.env["MY_VAR"] == "value"
+    argv = shlex.split(cmd_desc.cmd)
+    assert "--grpc-adapter" not in argv
+    assert "--clientappio-api-address" not in argv
+    assert argv[argv.index("--host") + 1] == "127.0.0.1"
+    assert argv[argv.index("--port") + 1] == "9094"
+    assert "--allow-runtime-dependency-installation" not in argv
     assert "auth_token" not in repr(cmd_desc.env).lower()
     assert "bearer" not in repr(cmd_desc.env).lower()
+
+
+@patch("nvflare.app_opt.flower.applet._validate_flower_executable")
+def test_list_targets_exact_run_with_option(_validate_executable):
+    command = shlex.split(_make_server_applet()._flower_command("list", "12345678901234567890"))
+    assert command[1:] == ["list", "--run-id", "12345678901234567890", "nvflare", "--format", "json"]
+
+
+@pytest.mark.parametrize("applet_type", [FlowerServerApplet, FlowerClientApplet])
+@patch("nvflare.app_opt.flower.applet._validate_flwr_runtime", side_effect=RuntimeError("unsupported Flower"))
+def test_deployed_runtime_rejects_version_before_start(_validate, applet_type):
+    applet = _make_server_applet() if applet_type is FlowerServerApplet else FlowerClientApplet()
+    with pytest.raises(RuntimeError, match="unsupported Flower"):
+        applet.start({})
+
+
+@pytest.mark.parametrize("runtime_deps", [False, True])
+@patch("nvflare.app_opt.flower.applet._validate_flower_executable")
+@patch("nvflare.app_opt.flower.applet._validate_flwr_runtime")
+@patch("nvflare.app_opt.flower.applet._wait_for_superlink")
+@patch("nvflare.app_opt.flower.applet.start_process")
+@patch("nvflare.app_opt.flower.applet.run_command", return_value='{"success": true, "run-id": "123"}')
+def test_server_http_launcher_and_dependency_policy(_run, start, ready, _version, _executable, runtime_deps, tmp_path):
+    workspace = MagicMock(spec=Workspace)
+    workspace.get_run_dir.return_value = str(tmp_path)
+    workspace.get_app_custom_dir.return_value = str(tmp_path / "custom")
+    engine = MagicMock()
+    engine.get_workspace.return_value = workspace
+    ctx = FLContext()
+    ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    ctx.set_prop(ReservedKey.RUN_NUM, "job", private=True, sticky=False)
+    applet = FlowerServerApplet("", 10, allow_runtime_dependency_installation=runtime_deps)
+    applet.start({FlowerConstant.APP_CTX_SUPERLINK_ADDR: "127.0.0.1:19092", FlowerConstant.APP_CTX_FL_CONTEXT: ctx})
+    descriptor = start.call_args.args[0]
+    argv = shlex.split(descriptor.cmd)
+    assert argv[1:6] == ["--insecure", "--host", "127.0.0.1", "--port", "19092"]
+    expected_flag = (
+        "--allow-runtime-dependency-installation" if runtime_deps else "--disable-runtime-dependency-installation"
+    )
+    assert argv[6:] == [expected_flag]
+    assert descriptor.env["FLWR_HOME"] == str(tmp_path / "flwr_home")
+    ready.assert_called_once_with("127.0.0.1:19092", start.return_value, 10)
+    assert applet.run_id == "123"
+
+
+@pytest.mark.parametrize(
+    "status,expected",
+    [
+        ("running", (False, 0)),
+        ("finished:completed", (True, 0)),
+        ("finished:failed", (True, 1)),
+        ("finished:stopped", (True, 1)),
+    ],
+)
+def test_flower_completion_status(status, expected):
+    from nvflare.app_common.tie.defs import Constant
+
+    applet = _make_server_applet()
+    applet.run_id = "123"
+    applet._flower_command = MagicMock(return_value="list command")
+    applet._run_flower_command = MagicMock(return_value={"runs": [{"status": status}]})
+    stopped, code = applet._query_for_run_status()
+    assert stopped == expected[0]
+    assert code == (Constant.EXIT_CODE_FAILED if expected[1] else 0)
+    applet._flower_command.assert_called_once_with("list", "123")
+
+
+@patch("nvflare.app_opt.flower.applet.run_command", return_value="ServerApp training summary\n")
+def test_server_log_is_saved_before_superlink_stops(run_command, tmp_path):
+    applet = _make_server_applet()
+    applet.run_id = "123"
+    applet.run_dir = str(tmp_path)
+    applet.flower_run_finished = True
+    manager = MagicMock()
+    manager.poll.return_value = None
+    applet._superlink_process_mgr = manager
+
+    def stop():
+        assert (tmp_path / "server_app_log.txt").read_text() == "ServerApp training summary\n"
+
+    manager.stop.side_effect = stop
+    applet.stop()
+    assert shlex.split(run_command.call_args.args[0].cmd)[1:] == ["log", "123", "nvflare", "--show"]
+    manager.stop.assert_called_once()

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 # Tested with:
-#   flwr==1.27.0
+#   flwr==1.43.0
 #   NVFlare supplied by the parent environment (release, local wheel, or editable install)
 #   torch==2.11.0
 #   torchvision==0.26.0
@@ -15,8 +15,7 @@ version = "1.0.0"
 description = ""
 license = "Apache-2.0"
 dependencies = [
-    # Flower 1.40+ removes the gRPC-adapter transport used by NVFlare.
-    "flwr>=1.26,<1.40",
+    "flwr>=1.43,<1.44",
     "torch",
     "torchvision",
     "tensorboard"

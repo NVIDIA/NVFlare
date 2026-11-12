@@ -1,26 +1,96 @@
+.. _flower_http_design:
+
 ***************
 Detailed Design
 ***************
 
-Flower uses gRPC as the communication protocol. To use FLARE  as the communicator, we route Flower's gRPC
-messages through FLARE. To do so, we change the server-endpoint of each Flower client to a local gRPC
-server (LGS) within the FLARE client.
+The integration supports Flower 1.43's unary protobuf-over-HTTP Fleet API.
+The Recipe, TIE Controller/Executor, app deployment, and analytics relay retain
+the existing architecture. The local transport adapters and Flower process
+launchers use HTTP::
 
-.. image:: ../../../resources/FLARE_as_flower_communicator.png
+    Flower SuperNode
+      <-> loopback HTTP endpoint in NVFlare client
+      <-> NVFlare ReliableMessage
+      <-> NVFlare server connector
+      <-> loopback HTTP Flower SuperLink
 
-As shown in this diagram, there is a Local GRPC server (LGS) for each site that serves as the
-server-endpoint for the Flower client on the site. Similarly, there is a Local GRPC Client (LGC) on the
-FLARE Server that interacts with the Flower Server. The message path between the Flower Client and the Flower
-Server is as follows:
+Each job has its own SuperLink, and each participating site has its own SuperNode
+and local Fleet endpoint. Flower ports bind only to ``127.0.0.1``. HTTP on these
+local connections does not replace NVFlare's transport or TLS between sites.
+As with the previous integration, the host and its local processes are trusted.
 
-   - The Flower client generates a gRPC message and sends it to the LGS in the FLARE Client
-   - FLARE Client forwards the message to the FLARE Server. This is a reliable FLARE message.
-   - FLARE Server uses the LGC to send the message to the Flower Server.
-   - Flower Server sends the response back to the LGC in the FLARE Server.
-   - FLARE Server sends the response back to the FLARE Client.
-   - FLARE Client sends the response back to the Flower Client via the LGS.
+Protocol boundary
+=================
 
-Please note that the Flower Client could be running as a separate process or within the same process as the FLARE Client.
+The bridge carries the HTTP method, exact relative route, required headers, and
+binary protobuf body in a Shareable. Responses preserve the status, content type,
+retry metadata, and binary body, including Flower error responses. Models and
+Flower message contents are not decoded or reserialized by the bridge.
 
-This will enable users to directly deploy Flower ServerApps and ClientsApps developed within the
-NVFlare Runtime Environment. No code changes are necessary!
+Both connectors validate the request. Only POST is accepted, and only these
+``/v1/fleet/`` routes are forwarded:
+
+* ``register-node``, ``activate-node``, ``deactivate-node``, ``unregister-node``
+* ``send-node-heartbeat``, ``pull-messages``, ``push-messages``
+* ``get-run``, ``get-fab``, ``push-object``, ``pull-object``
+* ``confirm-message-received``
+
+Absolute URLs, query strings, redirects, encoded request bodies, and arbitrary
+routes are not supported. The upstream destination is fixed by the connector.
+Control and Runtime APIs share Flower's listener but cannot be reached through
+this bridge. The server runs ``flwr run/list/stop --format json`` locally and saves the
+ServerApp log with ``flwr log --show`` before stopping SuperLink. The saved
+``server_app_log.txt`` is part of the server run workspace.
+
+The bridge preserves Flower's public-key, timestamp, signature, and runtime-version
+headers. A key is associated with the registering authenticated NVFlare site for
+the lifetime of that job. SuperLink still verifies the signature and the node
+identity inside the protobuf request. NVFlare job authorization is unchanged.
+
+Limits, concurrency, and failure
+================================
+
+``max_message_bytes`` defaults to 512 MiB per request or response and is passed by
+FlowerRecipe to both connectors. Flower transfers complete object protobufs;
+this bridge buffers them in memory. Size the host for simultaneous transfers
+and training. The local server admits at most 32 connections, with four bulk
+request workers and separate capacity for heartbeat and metadata requests.
+Excess requests receive a busy response or connection close.
+
+ReliableMessage owns retransmission and transaction deduplication between sites.
+The HTTP forwarding layer sends each accepted operation once; it does not follow
+redirects or add retries to SuperLink. Flower retains its own HTTP error/retry
+policy. An uncertain NVFlare transaction fails the client workflow instead of
+silently replaying a state-changing operation.
+
+``per_msg_timeout`` and ``tx_timeout`` default to 2 and 25 seconds. Larger values
+are capped at those limits to fit Flower's 30-second HTTP timeout. Heartbeats
+use caps of 0.5 and 3.5 seconds to fit Flower's 5-second heartbeat timeout.
+Deployments must be able to transfer a payload within these limits. Shutdown
+cancels forwarding, closes local sockets, joins workers, and terminates owned
+Flower processes, including detached SuperExec descendants.
+
+Compatibility and migration
+===========================
+
+Install ``flwr>=1.43,<1.44`` on every site. The Recipe and deployed applets check
+this range before starting Flower. Future minor versions require validation
+before widening the range. Flower itself requires matching minor versions for
+peer runtime metadata.
+
+The legacy ``GrpcClientConnector``, ``GrpcServerConnector``, gRPC helper modules,
+and their demo mocks are removed. Remove ``int_client_grpc_options`` from old
+FlowerController configurations. Regenerate exported jobs with the current
+FlowerRecipe. There is no automatic legacy transport fallback.
+
+Runtime dependency installation remains opt-in through
+``allow_runtime_dependency_installation``. The launcher explicitly disables the
+new SuperLink default. The server and each client have their own job-scoped
+``FLWR_HOME``; the caller's global Flower configuration is not used. With runtime
+installation enabled, Flower manages app environments and package-index access
+must be available. NVFlare must be importable from any app that uses its analytics
+API.
+
+Metrics continue through the separate analytics bootstrap and MetricRelay path.
+They are not embedded in Fleet request headers or routed through the Control API.
