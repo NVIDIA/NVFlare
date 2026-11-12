@@ -132,6 +132,14 @@ def test_real_worker_result_survives_mock_scheduler_settlement_and_receipt(backe
 
 
 @pytest.mark.usefixtures("isolated_fobs")
+def test_verified_result_takes_precedence_over_retryable_loss(backend):
+    _, adapter, _ = backend
+    adapter.task_accounting.return_value = _accounting(state="TIMEOUT")
+    _, _, arguments = _supervisor_case(backend)
+    assert TaskSupervisor().run(**arguments).result is not None
+
+
+@pytest.mark.usefixtures("isolated_fobs")
 def test_end_run_during_active_result_reader_retains_payloads(backend):
     identity, store, arguments = _supervisor_case(backend)
     supervisor = TaskSupervisor()
