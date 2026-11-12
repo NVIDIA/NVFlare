@@ -48,7 +48,11 @@ import json
 import os
 
 import numpy as np
-from data.cifar10_data_utils import SPLIT_ROOT, get_site_class_summary, load_cifar10_data
+from data.cifar10_data_utils import SPLIT_ROOT, load_cifar10_data
+
+from nvflare.utils.data.partition import dirichlet_label_partition
+
+_PARTITIONER_ID = "nvflare.utils.data.partition.dirichlet_label_partition"
 
 
 def partition_data(num_sites, alpha, seed):
@@ -64,39 +68,10 @@ def partition_data(num_sites, alpha, seed):
         site_idx: Dictionary mapping site index to list of data indices
         class_sum: Dictionary with class distribution summary for each site
     """
-    np.random.seed(seed)
-
     train_label = load_cifar10_data()
-
-    min_size = 0
-    K = 10  # Number of classes in CIFAR-10
-    N = train_label.shape[0]
-    site_idx = {}
-
-    # Split data using Dirichlet sampling
-    while min_size < 10:
-        idx_batch = [[] for _ in range(num_sites)]
-        # For each class in the dataset
-        for k in range(K):
-            idx_k = np.where(train_label == k)[0]
-            np.random.shuffle(idx_k)
-            proportions = np.random.dirichlet(np.repeat(alpha, num_sites))
-            # Balance
-            proportions = np.array([p * (len(idx_j) < N / num_sites) for p, idx_j in zip(proportions, idx_batch)])
-            proportions = proportions / proportions.sum()
-            proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
-            idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
-            min_size = min([len(idx_j) for idx_j in idx_batch])
-
-    # Shuffle
-    for j in range(num_sites):
-        np.random.shuffle(idx_batch[j])
-        site_idx[j] = idx_batch[j]
-
-    # Collect class summary
-    class_sum = get_site_class_summary(train_label, site_idx)
-
-    return site_idx, class_sum
+    result = dirichlet_label_partition(labels=train_label, num_sites=num_sites, alpha=alpha, seed=seed)
+    site_idx = {site: indices.tolist() for site, indices in result.site_indices.items()}
+    return site_idx, result.class_counts
 
 
 def split_and_save(num_sites, alpha, seed=0):
@@ -109,8 +84,8 @@ def split_and_save(num_sites, alpha, seed=0):
         seed: Random seed for reproducibility
     """
 
-    if alpha < 0.0:
-        raise ValueError(f"Alpha should be larger or equal 0.0 but was {alpha}!")
+    if alpha <= 0.0:
+        raise ValueError(f"Alpha should be larger than 0.0 but was {alpha}!")
 
     print(f"Partitioning CIFAR-10 dataset into {num_sites} sites with Dirichlet sampling under alpha {alpha}")
 
@@ -125,9 +100,11 @@ def split_and_save(num_sites, alpha, seed=0):
     # Write summary file
     sum_file_name = os.path.join(SPLIT_ROOT, "summary.txt")
     with open(sum_file_name, "w") as sum_file:
-        sum_file.write(f"Number of clients: {num_sites} \n")
-        sum_file.write(f"Dirichlet sampling parameter: {alpha} \n")
-        sum_file.write("Class counts for each client: \n")
+        sum_file.write(f"Number of clients: {num_sites}\n")
+        sum_file.write(f"Dirichlet sampling parameter: {alpha}\n")
+        sum_file.write(f"Seed: {seed}\n")
+        sum_file.write(f"Partitioner: {_PARTITIONER_ID}\n")
+        sum_file.write("Class counts for each client:\n")
         sum_file.write(json.dumps(class_sum, indent=2))
     print(f"Saved summary to: {sum_file_name}")
 
@@ -135,7 +112,7 @@ def split_and_save(num_sites, alpha, seed=0):
     site_file_path = os.path.join(SPLIT_ROOT, "site-")
     for site in range(num_sites):
         site_file_name = site_file_path + str(site + 1) + ".npy"
-        np.save(site_file_name, np.array(site_idx[site]))
+        np.save(site_file_name, np.asarray(site_idx[site], dtype=np.int64))
         print(f"Saved site {site + 1} data ({len(site_idx[site])} samples) to: {site_file_name}")
 
     print("\nData splitting completed successfully!")
