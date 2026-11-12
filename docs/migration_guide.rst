@@ -9,8 +9,245 @@ This guide covers API and configuration changes when upgrading between FLARE rel
 Upgrading from 2.9.0 to 2.9.1
 =============================
 
-All deployments should review the configuration-format deprecations,
-checkpoint path restrictions, and Dashboard change below.
+Review the changes below before upgrading.
+
+**Required actions**, if your jobs, deployments, or custom integrations use the
+affected feature:
+
+- Removed tensor-streaming APIs and their timeout settings. See
+  :ref:`tensor_transfer_migration_291`.
+- Control-request authorization for custom code that sends internal CellNet
+  control messages. Supported administration and job APIs need no changes.
+- Client-log staging paths for custom log collectors and storage providers.
+- Checkpoint path restrictions for ``PTFileModelPersistor`` and the Dashboard
+  client API change.
+- Updated security dependencies: refresh locked environments and package
+  mirrors.
+- For confidential computing, provisioning changes and the rejection of
+  launcher-defined bring-your-own-code (BYOC) jobs. Azure Container Instances
+  (ACI) deployments also require an approved policy and signed external kit.
+
+**Behavior changes and fixes** that need no action unless noted:
+
+- Site component authorization and initialization failures in multiprocess
+  sub-workers can now stop a job.
+- In-time FedAvg stops on an accumulation exception and keeps the previous
+  checkpoint.
+- Client-log sender checks and deletion recovery are stricter, and recipe
+  client log streaming in server jobs works again.
+- Configuration-format deprecations (HOCON and YAML): plan to move to JSON
+  before 2.10.0.
+
+.. _tensor_transfer_migration_291:
+
+Migrate Push-Based Tensor Streaming to Tensor Downloader
+--------------------------------------------------------
+
+The ``nvflare.app_opt.tensor_stream`` package, ``TensorServerStreamer``,
+``TensorClientStreamer``, ``Recipe.enable_tensor_streaming()``, and the
+``examples/advanced/tensor-stream`` example are removed in 2.9.1. Existing
+exported jobs referencing those classes cannot load them on 2.9.1.
+
+Nothing replaces the enable call. For standard PyTorch recipes, delete
+``recipe.enable_tensor_streaming(...)``: the Tensor Downloader (see
+:ref:`tensor_downloader`) is used automatically, with no per-recipe or per-task
+opt-in.
+
+.. code-block:: python
+
+    # 2.9.0
+    recipe = FedAvgRecipe(
+        name="my-job",
+        min_clients=2,
+        num_rounds=10,
+        model=MyLargeModel(),
+        train_script="client.py",
+        server_expected_format=ExchangeFormat.PYTORCH,
+    )
+    recipe.enable_tensor_streaming(
+        format="pytorch",
+        tasks=["train"],
+        tensor_send_timeout=30.0,
+        wait_send_task_data_all_clients_timeout=300.0,
+    )
+
+    # 2.9.1: delete the enable call. Keep server_expected_format only if you
+    # want PyTorch tensors on the wire; see "Memory-saving use cases" below.
+    recipe = FedAvgRecipe(
+        name="my-job",
+        min_clients=2,
+        num_rounds=10,
+        model=MyLargeModel(),
+        train_script="client.py",
+        server_expected_format=ExchangeFormat.PYTORCH,
+    )
+
+Jobs that were already exported contain the streamer components
+(``nvflare.app_opt.tensor_stream.server.TensorServerStreamer`` on the server and
+``nvflare.app_opt.tensor_stream.client.TensorClientStreamer`` on the clients).
+Remove them from the server and client configurations, then re-export and
+resubmit the job.
+
+Old use case and migration action
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Previous use
+     - 2.9.1 action
+   * - ``recipe.enable_tensor_streaming(...)``
+     - Delete the call. There is no replacement.
+   * - ``TensorServerStreamer`` or ``TensorClientStreamer`` in an exported job
+     - Remove the components, then re-export and resubmit.
+   * - ``format="pytorch"``
+     - Set ``server_expected_format=ExchangeFormat.PYTORCH`` on the recipe
+       (``aggregation_format`` for ``SwarmLearningRecipe``). For direct Client
+       API configuration, set both formats (see below).
+   * - ``tasks=[...]``
+     - No per-task option. See "Scope" below.
+   * - Reduce server memory for large models
+     - Keep the PyTorch wire format and set
+       ``enable_tensor_disk_offload=True`` (see below).
+   * - ``tensor_send_timeout`` or ``wait_send_task_data_all_clients_timeout``
+     - Remove. There is no one-to-one mapping (see below).
+   * - ``get_task_timeout`` overrides added to satisfy the streamer
+     - Remove them if they exist only for that coupling.
+   * - ``examples/advanced/tensor-stream`` (GPT-2)
+     - No direct replacement. Use the
+       :github_nvflare_link:`Hello HuggingFace example
+       <examples/hello-world/hello-huggingface>`, which uses PyTorch tensors
+       with ``enable_tensor_disk_offload=True`` for large models.
+
+Memory-saving use cases
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Two separate mechanisms cover what tensor streaming was used for:
+
+- The automatic Tensor Downloader reduces memory during transfer, because
+  tensors are pulled in chunks and the payload is not serialized into one
+  buffer.
+- ``enable_tensor_disk_offload=True`` additionally lowers server aggregation
+  memory: incoming tensors are staged in temporary files and materialized
+  lazily. It is available on the PyTorch recipes that expose the argument
+  (for example FedAvg, FedProx, Scaffold, FedCE, and Swarm) and applies only to
+  PyTorch tensors. It needs ``server_expected_format=ExchangeFormat.PYTORCH``
+  (``aggregation_format=ExchangeFormat.PYTORCH`` for ``SwarmLearningRecipe``,
+  which has no ``server_expected_format`` argument); with the default ``NUMPY``
+  format the recipes warn that nothing is offloaded.
+
+.. code-block:: python
+
+    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+    from nvflare.client.config import ExchangeFormat
+
+    recipe = FedAvgRecipe(
+        name="my-job",
+        min_clients=2,
+        num_rounds=10,
+        model=MyLargeModel(),
+        train_script="client.py",
+        server_expected_format=ExchangeFormat.PYTORCH,  # keep tensors as PyTorch on the wire
+        enable_tensor_disk_offload=True,  # stage incoming tensors on the server's disk
+    )
+
+For direct ``ClientAPIExecutor`` or ``ScriptRunner`` configuration,
+``params_exchange_format`` is the representation the training script sees from
+``flare.receive()`` and passes to ``flare.send()``, and ``server_expected_format``
+is what the server expects. The PyTorch tensor decomposer is registered for the
+wire only when ``server_expected_format`` is ``"pytorch"`` (or the pair is
+``"raw"`` with ``"pytorch"``). Setting only ``params_exchange_format="pytorch"``
+leaves ``server_expected_format`` at its default ``"numpy"``, so tensors are
+converted to NumPy on the wire. Set both to ``"pytorch"`` to keep tensors.
+
+Timeout behavior
+^^^^^^^^^^^^^^^^
+
+The old push streamer made the server wait until every client had received the
+task tensors, and advertised a minimum ``get_task_timeout`` of
+``wait_send_task_data_all_clients_timeout + 60`` seconds. Both the all-clients
+barrier and that automatic minimum are gone. Remove ``get_task_timeout`` or
+related overrides that you added only for that coupling.
+
+Other waits still apply and must be sized for the actual delivery path: the
+Tensor Downloader's per-request and minimum download timeouts, and the Client
+API ``task_wait_timeout`` and ``result_wait_timeout``. There is no one-to-one
+mapping from ``tensor_send_timeout`` or
+``wait_send_task_data_all_clients_timeout``; do not copy the old values assuming
+the same semantics. See :doc:`/programming_guide/timeouts` and the
+:ref:`tensor_downloader` configuration section, which says which process reads
+each setting.
+
+Scope and custom integrations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+There is no per-task ``tasks=`` opt-in and no ``format=`` argument. Downloader
+behavior follows serialization: any task payload that contains a type with a
+registered download decomposer is transferred by download. PyTorch tensors use
+``TensorDecomposer`` (settings prefixed ``tensor_``) and NumPy arrays use the
+built-in ``NumpyArrayDecomposer`` (settings prefixed ``np_``). TensorFlow-specific
+payloads use normal serialization.
+
+Standard PyTorch recipes, ``PTFedAvg``, ``PTFileModelPersistor``, and Client API
+jobs that declare the PyTorch wire format register ``TensorDecomposer``
+themselves. A custom job or component that sends or receives PyTorch tensors
+outside those paths must register it in every process that serializes or
+deserializes them, typically from the component's initialization:
+
+.. code-block:: python
+
+    from nvflare.app_opt.pt.decomposers import TensorDecomposer
+    from nvflare.fuel.utils import fobs
+
+    fobs.register(TensorDecomposer)
+
+Register it in the server job process (for a custom controller or persistor) and
+in each client process that handles the tensors (the executor, or the external
+trainer process). See the Low-Level API section of :ref:`tensor_downloader` for
+custom decomposers.
+
+Control Requests Must Follow Authenticated Caller and Job Boundaries
+--------------------------------------------------------------------
+
+2.9.1 checks control requests against the transport endpoint, upstream route,
+and job identity. Supported administration and job APIs need no call-site
+changes. Custom code that sends internal CellNet control messages must obey
+these restrictions:
+
+- Client administration originates from the server through the configured
+  upstream path. A client job may notify only its own parent of its status.
+  Client-job commands originate from the server or the job's parent.
+- Server-job controls originate from the parent server. Client traffic
+  forwarded through that parent does not gain server-control authority.
+- Full participant data and run-status updates on the server-parent channel
+  are restricted to the matching server job. A same-job client recovery query
+  receives an empty participant map when the server job exists, or ``None``
+  when it does not; it no longer receives participant credentials. Cross-job
+  queries are rejected.
+- Server-parent ``HEARTBEAT`` requests are accepted only from the matching
+  server job or the simulator's own parent-server heartbeat. Other identities
+  receive ``UNAUTHENTICATED``.
+- Server-job and workspace-transfer credentials are scoped to their matching
+  job identities. Changing claimed origin headers does not grant access to
+  another job or to the parent-server identity.
+
+Action: use supported admin and job APIs for lifecycle operations, and update
+custom internal integrations or test harnesses that relied on peer-supplied
+identity headers, cross-job access, or participant tokens returned to a client.
+Upgrade the server, clients, relays, and job runtime images to receive the
+checks at each affected boundary.
+
+Updated Security Dependencies
+------------------------------
+
+2.9.1 requires ``certifi>=2026.10.19`` and ``uv>=0.13.6,<0.14.0`` following
+the eMudhra/emSign CA incident. Normal dependency resolution applies these
+requirements when installing or upgrading NVFlare.
+
+Action: update dependency locks, constraints, offline mirrors, and container
+images to satisfy both requirements, including environments previously built
+without ``uv``. Do not retain older versions through a dependency-free upgrade.
 
 .. _configuration_format_migration_291:
 
@@ -73,6 +310,47 @@ the :github_nvflare_link:`Trustee deployment guide
 <nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>` for the current backend and
 the migration boundary.
 
+.. _aci_migration_291:
+
+Azure Container Instances Require an Approved Policy and Signed External Kit
+----------------------------------------------------------------------------
+
+For ``azure_cc`` with ``deployment_target: confidential_container``, 2.9.1
+supports one protected ACI server with confidential-VM or Confidential
+Containers clients. Existing ACI deployments must be reprovisioned. Evidence
+signature validation alone no longer suffices: the signed policy fingerprint
+must match the exact CCE policy approved during provisioning, and the evidence
+must identify the supported hardware, Azure compliant container environment,
+and debugging disabled.
+
+Action:
+
+1. Create a separate deployment-signing key and build the fixed server image
+   with its public key and the startup verification program. Keep the final
+   startup kit outside the policy-measured image.
+2. Generate and decode the CCE policy for that image. Set ``cce_policy_file``
+   and ``startup_kit_signing_key_file`` in the participant's ``azure_cc`` block;
+   relative paths resolve against the participant configuration file.
+3. Reprovision the project. This approves the exact policy bytes and configures
+   every ACI verifier with their SHA-256 fingerprint (``expected_policy_hash``).
+   Redistribute the affected kits so peers check the same approved policy.
+4. Deploy with the packaged policy, ``startup-kit.tar``, and ``startup-kit.sig``.
+   Deliver the archive and signature through the read-only Azure secret volume
+   using private deployment parameters. Do not rebuild the image or regenerate
+   the policy after provisioning.
+
+See :ref:`confidential_azure_container_instances_deployment` for the complete
+workflow and positive and negative deployment checks. A policy change requires
+reprovisioning and redistribution; a deployment-signing key change also requires
+rebuilding the fixed image and regenerating its policy. Previously signed
+archives remain valid: reprovisioning alone does not revoke credentials or old
+archives. Follow the guide's recovery procedure after a compromise.
+
+This change does not alter confidential-VM configuration. The separate legacy
+``AZCVMAuthorizer`` still does not require a statement identifying the evidence
+as an Azure compliant confidential VM; see the deployment guide for that
+limitation and the distinction from ACI and CoCo verification.
+
 Confidential Computing Job Policy
 ---------------------------------
 
@@ -114,6 +392,43 @@ rejected with HTTP 400, and client-kit generation ignores previously stored
 affected.
 
 Action: API integrations that send ``props`` must omit it.
+
+Aggregation, Multiprocess Execution, and Log Retention
+-------------------------------------------------------
+
+In-time FedAvg now terminates the workflow on an accumulation exception instead
+of saving a model that may contain part of a rejected contribution. Investigate
+the failed contribution and restart from the previous valid checkpoint rather
+than expecting the round to continue after this error.
+
+Multiprocess sub-workers now initialize the required services and consult the
+parent site's existing component authorization callback for runtime builds.
+Custom components must satisfy that site policy; unavailable authorization or
+initialization failures stop execution.
+
+When ``JobLogReceiver.dest_dir`` is unset, default client-log staging moves
+from the system temporary directory in 2.9.0 to
+``{workspace.get_log_root()}/.client_log_streams/{job_id}/{client_name}/{log_file_name}``
+in 2.9.1. Update scripts that tail or collect live logs from the old temporary
+location. Without a workspace, the receiver uses a private temporary directory.
+An explicit ``dest_dir`` continues to select
+``{dest_dir}/{job_id}/{client_name}/{log_file_name}``; its retention remains
+operator-managed.
+
+2.9.1 also requires the stream owner to match the authenticated sender and
+rejects invalid path components and symlinks. Custom log producers must retain
+the authenticated identity through dispatch; peer-supplied identity fields do
+not establish ownership.
+
+Default managed staging retains active logs across job cleanup. Explicit job
+deletion now records durable deletion intent before changing the job store,
+removes closed managed logs, and lets active streams drain before discarding
+them. Recovery checks authoritative job presence: a confirmed existing job
+clears interrupted deletion intent and permits uploads, confirmed absence
+permits cleanup, and unavailable checks preserve both logs and intent. Custom
+job managers and storage providers need authoritative ``job_exists`` and
+``object_exists`` support for automatic recovery. See
+:doc:`/programming_guide/live_log_streaming`.
 
 Examples
 --------

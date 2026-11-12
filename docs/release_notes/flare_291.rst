@@ -5,10 +5,10 @@ What's New in FLARE v2.9.1
 FLARE 2.9.1 updates the confidential computing deployment stack, which follows
 the NVIDIA confidential computing reference architecture. The first version
 was a technical preview in 2.7.0, and the stack remains a technical preview and
-entirely optional: nothing changes for deployments that do not use it. The
-other changes that can affect existing deployments are checkpoint path
-restrictions, a Dashboard restriction, configuration-format deprecations, and
-a few bug fixes.
+entirely optional. Changes affecting other deployments include stricter
+control-request authorization, checkpoint path and Dashboard restrictions,
+removal of the legacy push-based tensor-streaming API, updated security
+dependencies, configuration-format deprecations, and reliability fixes.
 
 Highlights:
 
@@ -16,8 +16,12 @@ Highlights:
   and AMD SEV-SNP, Confidential Containers (CoCo) on Kubernetes, and one
   unified provisioning interface for bare-metal CVMs, CoCo, and Azure
 - **Security hardening** — launcher-defined bring-your-own-code (BYOC) jobs
-  blocked in confidential computing, checkpoint path confinement, and Dashboard
-  client ``props`` rejected
+  blocked in confidential computing, approved Azure Container Instances (ACI)
+  policies and signed external startup kits enforced, control requests bound
+  to authenticated callers and jobs, checkpoint path confinement, and
+  Dashboard client ``props`` rejected
+- **Tensor transfer API** — legacy push-based tensor streaming removed; use
+  the pull-based Tensor Downloader for large-model transfer
 - **Configuration formats** — HOCON/PyHOCON and OmegaConf-based configuration
   are deprecated in 2.9.1 and will be removed in 2.10.0. Use JSON for runtime
   and job configuration.
@@ -90,6 +94,14 @@ Azure Confidential Computing
 Azure confidential VM and confidential container instance guides are
 refreshed. The Azure integration accepts AMD SEV-SNP without a GPU.
 
+For the supported single-ACI-server deployment, provisioning now binds signed
+attestation evidence to the exact administrator-approved Confidential Computing
+Enforcement (CCE) policy. The fixed server image verifies a separately delivered
+startup-kit archive using a deployment-signing key before checking the kit
+signatures and starting the server. Existing ACI deployments require
+reprovisioning; there is no signature-only fallback. See
+:ref:`aci_migration_291` for the required inputs and deployment order.
+
 Documentation
 -------------
 
@@ -112,10 +124,45 @@ Security and Hardening
   the application directory, including through symlinks. Absolute paths and
   paths that resolve outside the application directory are rejected. See the
   :ref:`migration_guide` for required configuration changes.
+- **Control-request authorization (all deployments).** Client administration
+  and job-control requests are checked against the actual sending endpoint
+  and allowed upstream route. Server-parent commands are scoped to the job
+  and caller role: only the matching server job can obtain full participant
+  data or update its run status. A same-job client recovery probe receives
+  existence information without participant credentials. Server-job controls
+  require the parent server, and job bootstrap credentials are bound to the
+  matching job or workspace-transfer identity.
+- **Multiprocess component authorization.** Runtime component construction in
+  sub-workers consults the parent site's authorization callback and rejects
+  builds if authorization fails or is unavailable.
+- **Client log streaming.** Log ownership is bound to the authenticated sender;
+  invalid path components and symlinks are rejected. Default managed staging
+  moves from the system temporary directory to
+  ``{workspace.get_log_root()}/.client_log_streams/{job_id}/{client_name}/{log_file_name}``,
+  keeps active logs available across job cleanup, and uses durable deletion
+  intent to coordinate stream publication with explicit job deletion. Custom
+  log collectors must follow the new path, and custom storage providers need
+  authoritative presence checks for deletion recovery; see the
+  :ref:`migration_guide`.
+- **Dependency updates.** Package requirements now include
+  ``certifi>=2026.10.19`` and ``uv>=0.13.6,<0.14.0`` following the
+  eMudhra/emSign CA incident. Refresh locked dependencies and installed
+  environments when upgrading.
 - **Dashboard.** Client creation and PATCH requests that contain ``props`` are
   rejected with HTTP 400, and client-kit generation ignores previously stored
   ``props``, so client properties can no longer supply provisioning paths that
   include server-local files in downloadable kits.
+
+Removed Tensor Streaming API
+============================
+
+The legacy push-based ``nvflare.app_opt.tensor_stream`` package, including
+``TensorServerStreamer`` and ``TensorClientStreamer``,
+``Recipe.enable_tensor_streaming()``, and the ``examples/advanced/tensor-stream``
+example are removed. Jobs referencing these components fail to load; recipe
+scripts calling the removed method fail as well. Migrate to the pull-based
+:ref:`tensor_downloader` as described in :ref:`tensor_transfer_migration_291`.
+Tensor Downloader, its timeout settings, and tensor disk offload remain supported.
 
 Deprecations
 ============
@@ -138,6 +185,18 @@ Bug Fixes
   registered the internal ``DriverParams`` enum.
 - Subprocesses start in a new session through a shared ``start_new_session``
   helper, replacing ``preexec_fn=os.setsid``.
+- In-time FedAvg aggregation stops on an accumulation exception before
+  updating or saving a partially accumulated global model, preserving the
+  previous checkpoint.
+- Asynchronous gRPC startup accepts the ``agrpc``/``agrpcs`` scheme pair for
+  direct and relayed clients.
+- Recipe client log streaming (``enable_log_streaming``) works again in server
+  jobs. The server-job auxiliary handler now passes the authenticated sender to
+  the log receiver, so incoming client log chunks are no longer rejected for a
+  missing client identity.
+- Multiprocess sub-workers receive the required initialization services and
+  report initialization failures as fatal instead of continuing with missing
+  state.
 - Confidential computing:
 
   - GPU CVMs treat quarantine as terminal after Ready-state revocation (the
@@ -178,3 +237,19 @@ See the :ref:`migration_guide` for details.
   deployments.
 - Confidential computing jobs can no longer carry launcher-defined BYOC
   content.
+- Existing ACI deployments must supply the prepared CCE policy and a separate
+  deployment-signing key, then reprovision and deliver the signed external kit.
+- Jobs using the removed push-based tensor-streaming components or recipe
+  method must migrate to Tensor Downloader.
+- Custom integrations using internal control channels must follow the caller,
+  route, and job restrictions, including the server-parent heartbeat check;
+  supported admin and job APIs retain their flows.
+- Multiprocess sub-workers enforce the site's component authorization for
+  runtime builds. A veto, unavailable authorization, or initialization failure
+  stops execution.
+- In-time FedAvg now terminates on an accumulation exception and preserves
+  the previous checkpoint instead of saving a partially accumulated model.
+- Custom live-log collectors must follow the new managed staging location;
+  custom log producers must preserve the authenticated sender identity.
+- Dependency locks and offline package mirrors must satisfy the updated
+  ``certifi`` and ``uv`` requirements.
