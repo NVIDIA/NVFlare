@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Keep filesystem policy tests inside one interpreter."""
+"""Shared resource reporting fixtures."""
 
 import pytest
 
-from nvflare.private.fed.resource_stats import collector, filesystem_probe, handoff
+from nvflare.private.fed.resource_stats import collector, handoff
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +27,7 @@ def direct_filesystem_observations(monkeypatch):
             "retained_content": collector.observe_retained_content(run_dir),
         }
 
-    monkeypatch.setattr(filesystem_probe, "observe_filesystem_isolated", observe)
+    monkeypatch.setattr(collector, "observe_filesystem", observe)
 
 
 @pytest.fixture

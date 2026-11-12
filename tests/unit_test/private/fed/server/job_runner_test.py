@@ -990,7 +990,7 @@ def test_failed_jobs_allow_reports_until_bounded_grace(tmp_path, failure, report
     runner.running_jobs = {"job-1": job}
     runner._pending_client_outcomes = {"job-1": {"site-1"}}
     runner._client_outcome_deadlines = {"job-1": 900.0}
-    deadline = min(configured_wait, 30.0)
+    deadline = min(configured_wait, 20.0)
     passes = 0
 
     def advance(_):
@@ -1053,7 +1053,7 @@ def test_reporting_grace_does_not_block_another_jobs_completion():
     runner._save_workspace.assert_called_once_with(ctx, ANY, "ready")
     engine.get_component.return_value.set_status.assert_called_once_with("ready", RunStatus.FINISHED_ABORTED, ctx)
     assert set(runner.running_jobs) == {"waiting"}
-    assert runner._client_outcome_deadlines["waiting"] == 30.0
+    assert runner._client_outcome_deadlines["waiting"] == 20.0
 
 
 def test_job_complete_process_keeps_client_outcome_barrier_for_clean_unknown_return_code():

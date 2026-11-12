@@ -242,7 +242,7 @@ OPEN: accept one record per trusted slot
   -> ARCHIVED: existing workspace archive saved
 ```
 
-After the server job process exits, aborted and failed jobs allow up to 30 seconds
+After the server job process exits, aborted and failed jobs allow up to 20 seconds
 for outstanding client outcomes, capped by a shorter configured
 `client_outcome_wait_timeout`. Client cancellation starts before this wait. The
 completion loop continues processing other jobs and closes the report as soon as

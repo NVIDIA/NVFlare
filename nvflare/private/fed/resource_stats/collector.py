@@ -20,13 +20,14 @@ import datetime
 import math
 import os
 import stat
+import threading
 import time
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Optional
 
-from . import filesystem_probe, handoff
+from . import handoff
 from .cpu_consumed import CpuConsumedAccountant, install_cpu_accountant
 from .handoff import _read_capacity, _read_issues
 from .measurements import (
@@ -229,6 +230,47 @@ def observe_retained_content(run_dir: str | Path) -> dict[str, Any]:
 
 def _unavailable(issue: str) -> dict[str, Any]:
     return {"status": "unavailable", "issues": [issue]}
+
+
+def observe_filesystem(run_dir, *, timeout=2.0):
+    """Bound the wait for optional observations; ignore results after the deadline.
+
+    A blocked syscall can outlive the wait in the daemon thread. The thread
+    starts no further observations after the deadline and is not joined at exit.
+    """
+    observers = (
+        ("workspace_filesystem", observe_workspace_filesystem),
+        ("retained_content", observe_retained_content),
+    )
+    values = {name: _unavailable("observation_incomplete") for name, _ in observers}
+    if timeout <= 0:
+        return values
+    deadline = time.monotonic() + timeout
+    lock = threading.Lock()
+    finished = threading.Event()
+
+    def observe():
+        try:
+            for name, observer in observers:
+                if time.monotonic() >= deadline:
+                    break
+                try:
+                    value = observer(run_dir)
+                except Exception:
+                    continue
+                with lock:
+                    if time.monotonic() < deadline:
+                        values[name] = value
+        finally:
+            finished.set()
+
+    try:
+        threading.Thread(target=observe, daemon=True, name="resource-filesystem").start()
+        finished.wait(max(0.0, deadline - time.monotonic()))
+    except RuntimeError:
+        pass  # Optional reporting must not prevent shutdown if a thread cannot start.
+    with lock:
+        return deepcopy(values)
 
 
 def _startup_capacity_snapshot(capacity_probe, prior_observation_incomplete):
@@ -436,7 +478,7 @@ class JobResourceCollector(ExecutionResourceCollector):
                 traffic = _fold_measurements("message_traffic", traffic, worker_totals["message_traffic"], issues)
             if not worker_totals["duration_contained"]:
                 timing = {}
-        filesystem = filesystem_probe.observe_filesystem_isolated(self.run_dir)
+        filesystem = observe_filesystem(self.run_dir)
         workspace = scoped_measurement("workspace_filesystem", filesystem["workspace_filesystem"], issues)
         retained = scoped_measurement("retained_content", filesystem["retained_content"], issues)
         measurements = {

@@ -14,6 +14,9 @@
 
 import json
 import os
+import threading
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -613,3 +616,130 @@ def test_prior_observation_gap_preserves_traffic_subtotals_and_independent_files
     assert report["issues"].count({"metric": "message_traffic", "code": "observation_incomplete"}) == 1
     assert report["resource_utilization"]["retained_content"] == {"bytes": 0}
     assert "status" not in report["workspace_filesystem"]
+
+
+UNAVAILABLE = {"status": "unavailable", "issues": ["observation_incomplete"]}
+# Other collector tests replace this function with synchronous observations.
+_OBSERVE_FILESYSTEM = collector.observe_filesystem
+
+
+@pytest.mark.parametrize("capacity_fails", [False, True])
+@pytest.mark.parametrize("retained", [{"bytes": 0}, {"bytes": 7, **UNAVAILABLE, "status": "partial"}, UNAVAILABLE])
+def test_completed_observations_preserve_zero_partial_and_independent_quality(monkeypatch, capacity_fails, retained):
+    capacity = (
+        Mock(side_effect=OSError("unavailable")) if capacity_fails else Mock(return_value={"capacity_bytes": 1024})
+    )
+    monkeypatch.setattr(collector, "observe_workspace_filesystem", capacity)
+    monkeypatch.setattr(collector, "observe_retained_content", lambda _: retained)
+    result = _OBSERVE_FILESYSTEM("run")
+    assert result == {
+        "workspace_filesystem": UNAVAILABLE if capacity_fails else {"capacity_bytes": 1024},
+        "retained_content": retained,
+    }
+
+
+@pytest.mark.parametrize("blocked_metric", ["workspace_filesystem", "retained_content"])
+def test_timeout_preserves_completed_values_and_ignores_late_results(monkeypatch, blocked_metric):
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+    threads = []
+    clock = isolate_time(monkeypatch, collector)
+    clock.monotonic = Mock(return_value=0.0)
+
+    def blocked(_):
+        entered.set()
+        release.wait()
+        return {"capacity_bytes": 999} if blocked_metric == "workspace_filesystem" else {"bytes": 999}
+
+    scan = Mock(side_effect=blocked) if blocked_metric == "retained_content" else Mock(return_value={"bytes": 7})
+    monkeypatch.setattr(collector, "observe_retained_content", scan)
+    monkeypatch.setattr(
+        collector,
+        "observe_workspace_filesystem",
+        blocked if blocked_metric == "workspace_filesystem" else lambda _: {"capacity_bytes": 1024},
+    )
+
+    def expire_after_entry(timeout):
+        assert timeout == 2.0
+        assert entered.wait(5), "observer did not enter the blocked call"
+        clock.monotonic.return_value = 2.0
+        return False
+
+    def thread(**kwargs):
+        result = threading.Thread(**kwargs)
+        threads.append(result)
+        return result
+
+    monkeypatch.setattr(
+        collector,
+        "threading",
+        SimpleNamespace(
+            Thread=thread,
+            Lock=threading.Lock,
+            Event=lambda: SimpleNamespace(wait=expire_after_entry, set=finished.set),
+        ),
+    )
+    try:
+        result = _OBSERVE_FILESYSTEM("run")
+        assert threads[0].daemon
+        assert not release.is_set()
+        expected = {"workspace_filesystem": UNAVAILABLE, "retained_content": UNAVAILABLE}
+        if blocked_metric == "retained_content":
+            expected["workspace_filesystem"] = {"capacity_bytes": 1024}
+        assert result == expected
+    finally:
+        release.set()
+        for worker in threads:
+            worker.join(5)
+            assert not worker.is_alive(), "observer did not stop after releasing the gate"
+    assert finished.is_set()
+    assert result == expected
+    if blocked_metric == "workspace_filesystem":
+        scan.assert_not_called()
+
+
+@pytest.mark.parametrize("failure", ["start", "expired", "scan"])
+def test_failed_or_expired_observation_remains_unavailable(monkeypatch, failure):
+    capacity = Mock(return_value={"capacity_bytes": 1024})
+    scan = Mock(side_effect=OSError("scan failed"))
+    monkeypatch.setattr(collector, "observe_workspace_filesystem", capacity)
+    monkeypatch.setattr(collector, "observe_retained_content", scan)
+    if failure == "start":
+        monkeypatch.setattr(
+            collector,
+            "threading",
+            SimpleNamespace(
+                Thread=Mock(side_effect=RuntimeError("cannot start")),
+                Lock=threading.Lock,
+                Event=threading.Event,
+            ),
+        )
+    result = _OBSERVE_FILESYSTEM("run", timeout=0 if failure == "expired" else 2)
+    assert result["retained_content"] == UNAVAILABLE
+    if failure == "scan":
+        assert result["workspace_filesystem"] == {"capacity_bytes": 1024}
+    else:
+        assert result["workspace_filesystem"] == UNAVAILABLE
+        capacity.assert_not_called()
+        scan.assert_not_called()
+
+
+def test_execution_clock_and_cpu_freeze_before_starting_the_single_observer(monkeypatch, tmp_path):
+    ticks = iter((0, 1_000_000_000))
+    job = collector.JobResourceCollector(
+        tmp_path,
+        clock_ns=lambda: next(ticks),
+        capacity_probe=lambda: {"cpu": {"units": 2}, "memory": {"bytes": 1024}, "gpu": {"count": 0}},
+    )
+    observed = []
+
+    def observe(run_dir):
+        assert job._snapshot["duration_seconds"] == 1
+        assert "cpu_seconds" in job._snapshot["cpu_consumed"]
+        observed.append(run_dir)
+        return {"workspace_filesystem": {"capacity_bytes": 4096}, "retained_content": {"bytes": 7}}
+
+    monkeypatch.setattr(collector, "observe_filesystem", observe)
+    result = job.finish(message_traffic={"sent_bytes": 0, "received_bytes": 0})
+    assert observed == [tmp_path]
+    assert result["resource_utilization"]["retained_content"] == {"bytes": 7}
+    assert result["issues"] == []

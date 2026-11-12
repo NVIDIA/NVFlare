@@ -72,7 +72,7 @@ from nvflare.private.fed.utils.job_cert_utils import (
 from nvflare.security.logging import secure_format_exception
 
 WORKSPACE_SAVE_RETRY_GRACE_TIME = 60
-FAILED_JOB_REPORT_GRACE_TIME = 30.0
+FAILED_JOB_REPORT_GRACE_TIME = 20.0
 
 
 @dataclass

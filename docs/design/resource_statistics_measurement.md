@@ -220,21 +220,16 @@ physical blocks, I/O bytes, or archive size. Separately, `statvfs` on the run
 directory observes visible filesystem capacity without walking mounts or adding
 capacities.
 
-Filesystem observations run in an isolated process behind a bounded finalization
-wait of two seconds, including helper startup, followed by at most 0.25 seconds
-of synchronous reaping. The cooperative scan deadline limits ordinary traversal;
-the outer wait also covers filesystem calls that do not return. At expiry,
-cleanup proceeds with any safely captured measurement and marks unfinished
-observations unavailable. A captured scan subtotal retains partial quality. Late
-results are ignored. The runtime owns observer termination and cleanup. A
-late-starting observer is also abandoned, and the helper monitors its owner
-process and control pipe. Job termination and resource release do not wait
-indefinitely for the observer. These bounds apply to optional filesystem
-observations, not to handoff or archive I/O. A scan can enter a stalled mounted
-subtree while the run-directory root remains accessible. The separate process
-allows termination of that observation; a daemon-thread timeout would leave its
-filesystem call running inside the job process. If startup consumes the observation
-budget, unfinished measurements are unavailable.
+Filesystem observations run once in a daemon thread after CPU accounting freezes.
+Finalization waits at most two seconds for both observations, preserving completed
+values and marking unfinished observations unavailable. A captured scan subtotal
+retains partial quality. Late results cannot change the report, and the thread
+starts no further observations after the deadline.
+
+The timeout bounds the reporting wait, not filesystem calls: a blocked syscall can
+remain in the daemon thread until it returns or the process exits. There is no
+subprocess startup, cancellation, or reaping. Handoff and archive I/O retain their
+existing behavior and are outside this observation budget.
 
 ## Message payload accounting
 
