@@ -61,6 +61,7 @@ class SfmConnection:
         self.local_endpoint = local_endpoint
         self.sfm_endpoint = None
         self.last_activity = 0
+        self.activity_lock = threading.Lock()
         self.receive_idle_timeout_triggered = False
         self.sequence = 0
         self.lock = threading.Lock()
@@ -71,6 +72,16 @@ class SfmConnection:
 
     def get_name(self) -> str:
         return self.conn.name
+
+    def record_receive_activity(self):
+        """Record transport progress without acquiring the send or sequence locks."""
+        with self.activity_lock:
+            self.last_activity = time.monotonic()
+
+    def get_last_activity(self):
+        """Return the last receive-progress time under the activity lock."""
+        with self.activity_lock:
+            return self.last_activity
 
     def next_sequence(self) -> int:
         """Get next sequence number for the connection.

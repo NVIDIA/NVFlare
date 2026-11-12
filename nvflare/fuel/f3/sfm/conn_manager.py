@@ -614,13 +614,16 @@ class SfmFrameReceiver(FrameReceiver):
         self.conn = conn
 
     def process_frame(self, frame: BytesAlike):
-        self.conn.last_activity = time.monotonic()
+        self.conn.record_receive_activity()
 
         try:
             self.conn_manager.process_frame(self.conn, frame)
         except Exception as ex:
             log.error(f"Error processing frame: {secure_format_exception(ex)}")
             log.debug(secure_format_traceback())
+
+    def on_receive_progress(self):
+        self.conn.record_receive_activity()
 
 
 class NullConnection(Connection):

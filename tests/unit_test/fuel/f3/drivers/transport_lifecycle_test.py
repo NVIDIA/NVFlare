@@ -27,9 +27,7 @@ import grpc
 import pytest
 from aiohttp import web
 
-from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.connection import ConnState
 from nvflare.fuel.f3.drivers import aio_grpc_driver, grpc_driver
 from nvflare.fuel.f3.drivers.aio_context import AioContext
@@ -38,12 +36,8 @@ from nvflare.fuel.f3.drivers.aio_tcp_driver import AioTcpDriver
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
 from nvflare.fuel.f3.drivers.file_driver import FileDriver
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
-from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
-from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.sfm import heartbeat_monitor
+from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager
-from nvflare.fuel.f3.sfm.constants import Types
-from nvflare.fuel.f3.sfm.prefix import Prefix
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
 

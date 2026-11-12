@@ -57,6 +57,10 @@ class FrameReceiver(ABC):
         """
         pass
 
+    def on_receive_progress(self):
+        """Called by byte-stream drivers as data arrives, before a full frame is available."""
+        pass
+
 
 class Connection(ABC):
     """FCI connection spec. A connection is used to transfer opaque frames"""
@@ -142,6 +146,12 @@ class Connection(ABC):
             self.frame_receiver.process_frame(frame)
         else:
             log.error(f"Frame receiver not registered for {self}")
+
+    def report_receive_progress(self):
+        """Notify the frame receiver that the transport received more bytes."""
+        callback = getattr(self.frame_receiver, "on_receive_progress", None)
+        if callback:
+            callback()
 
     def __str__(self):
 

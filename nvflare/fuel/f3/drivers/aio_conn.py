@@ -109,6 +109,7 @@ class AioConnection(Connection):
     async def _async_read_frame(self):
 
         prefix_buf = await self.reader.readexactly(PREFIX_LEN)
+        self.report_receive_progress()
         prefix = Prefix.from_bytes(prefix_buf)
 
         # Prefix only message
@@ -121,9 +122,18 @@ class AioConnection(Connection):
         if prefix.length > MAX_FRAME_SIZE:
             raise CommError(CommError.BAD_DATA, f"Frame exceeds limit ({prefix.length} > {MAX_FRAME_SIZE}")
 
-        remaining = await self.reader.readexactly(prefix.length - PREFIX_LEN)
+        frame = bytearray(prefix_buf)
+        expected = prefix.length - PREFIX_LEN
+        remaining = expected
+        while remaining:
+            chunk = await self.reader.read(remaining)
+            if not chunk:
+                raise IncompleteReadError(bytes(frame[PREFIX_LEN:]), expected)
+            frame.extend(chunk)
+            remaining -= len(chunk)
+            self.report_receive_progress()
 
-        return prefix_buf + remaining
+        return bytes(frame)
 
     def _get_aio_properties(self) -> dict:
 

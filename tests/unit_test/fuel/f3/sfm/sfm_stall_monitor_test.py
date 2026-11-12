@@ -59,6 +59,9 @@ class FakeSfmConn:
     def get_send_stall_seconds(self):
         return self._stall_sec
 
+    def get_last_activity(self):
+        return self.last_activity
+
 
 class MutableFakeSfmConn(FakeSfmConn):
     def set_stall(self, stall_sec):

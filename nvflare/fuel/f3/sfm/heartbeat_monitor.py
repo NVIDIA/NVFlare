@@ -74,17 +74,18 @@ class HeartbeatMonitor(Thread):
             driver = sfm_conn.conn.connector.driver
             caps = driver.capabilities()
             sends_heartbeat = not caps or caps.get(DriverCap.SEND_HEARTBEAT.value, False)
+            last_activity = sfm_conn.get_last_activity()
 
             if (
                 self.receive_idle_timeout > 0
                 and sends_heartbeat
                 and sfm_conn.sfm_endpoint is not None
-                and sfm_conn.last_activity > 0
-                and self.curr_time - sfm_conn.last_activity > self.receive_idle_timeout
+                and last_activity > 0
+                and self.curr_time - last_activity > self.receive_idle_timeout
             ):
                 if not sfm_conn.receive_idle_timeout_triggered:
                     sfm_conn.receive_idle_timeout_triggered = True
-                    idle_seconds = self.curr_time - sfm_conn.last_activity
+                    idle_seconds = self.curr_time - last_activity
                     log.warning(
                         f"Closing inactive connection {sfm_conn.conn}: "
                         f"no frame received for {idle_seconds:.1f}s "
@@ -110,7 +111,7 @@ class HeartbeatMonitor(Thread):
             if not sends_heartbeat:
                 continue
 
-            if self.curr_time - sfm_conn.last_activity > self.interval:
+            if self.curr_time - last_activity > self.interval:
                 sfm_conn.send_heartbeat_async(Types.PING)
                 log.debug(f"Heartbeat sent to connection: {sfm_conn.conn}")
 
