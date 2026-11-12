@@ -118,6 +118,26 @@ def test_process_cj_recovery_remains_disabled_after_physical_exit(profile):
     assert not handle.can_restart()
 
 
+def test_slurm_study_policy_applies_to_workers_without_process_reparsing(profile, monkeypatch):
+    p = profile
+    monkeypatch.delenv("GATEWAY_STUDY_WORKER_ONLY", raising=False)
+    setup = "export STUDY_WORKER_SETUP=1"
+    study = {
+        "env": {"GATEWAY_STUDY_WORKER_ONLY": "worker-only"},
+        "slurm": {"setup": setup, "partition": "study-gpu"},
+    }
+    (p.root / "local/study_runtime.yaml").write_text(json.dumps({"format_version": 2, "studies": {"training": study}}))
+    p.meta["study"] = "training"
+    handle = p.launcher.launch_job(p.meta, p.context)
+    p.spawn.assert_called_once()
+    _, coordinator_env = p.spawn.call_args.args
+    assert "GATEWAY_STUDY_WORKER_ONLY" not in coordinator_env
+    binding = handle.owner.backend._binding
+    assert dict(binding.environment)["GATEWAY_STUDY_WORKER_ONLY"] == "worker-only"
+    assert binding.config.setup == setup
+    assert binding.config.sbatch_directives["partition"] == "study-gpu"
+
+
 @pytest.mark.parametrize("failure", ["spawn", "publish"])
 def test_launch_failures_release_cp_ownership(profile, failure):
     p = profile
