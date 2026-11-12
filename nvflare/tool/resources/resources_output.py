@@ -35,7 +35,6 @@ _ISSUE_LABELS = {
 _MEASUREMENT_LABELS = {
     "resource_time": "capacity-time",
     "cpu_consumed": "CPU time used",
-    "retained_content": "run-dir files",
     "message_traffic": "message traffic",
 }
 
@@ -132,10 +131,6 @@ def _cpu_used(value: dict) -> str:
     return _marked(_average(consumed.get("cpu_seconds"), value.get("duration_seconds")), consumed.get("status"))
 
 
-def _has_retained_content(value: dict) -> bool:
-    return value.get("resource_utilization", {}).get("retained_content", {}).get("bytes") is not None
-
-
 def _has_message_traffic(value: dict) -> bool:
     return value.get("resource_utilization", {}).get("message_traffic", {}).get("sent_bytes") is not None
 
@@ -166,14 +161,9 @@ def _issue_detail(value: dict, field: str, scope_issues: list[dict]) -> str:
     elif field == "cpu_consumed":
         labels["observation_incomplete"] = "part of the CPU measurement interval is missing"
         labels["attribution_incomplete"] = "some child-process CPU time may be missing"
-    elif field == "retained_content":
-        labels["observation_incomplete"] = "the file scan stopped early or could not read every file"
-        labels["attribution_incomplete"] = "some files could not be assigned to this participant"
     elif field == "message_traffic":
         labels["observation_incomplete"] = "some message counters were unavailable"
         labels["attribution_incomplete"] = "some message traffic could not be assigned to this participant"
-    elif field == "workspace_filesystem":
-        labels["observation_incomplete"] = "the workspace filesystem capacity could not be read"
     return "; ".join(labels.get(issue, issue.replace("_", " ")) for issue in issues)
 
 
@@ -214,7 +204,7 @@ def _total_resource_quantities(totals: dict) -> list[str]:
     ]
 
 
-def _utilization_row(value: dict, show_retained: bool, show_message_traffic: bool, *, average_cpu=False) -> list[str]:
+def _utilization_row(value: dict, show_message_traffic: bool, *, average_cpu=False) -> list[str]:
     utilization = value.get("resource_utilization", {})
     consumed = utilization.get("cpu_consumed", {})
     row = [
@@ -224,9 +214,6 @@ def _utilization_row(value: dict, show_retained: bool, show_message_traffic: boo
             else _marked(_number(consumed.get("cpu_seconds"), _HOUR), consumed.get("status"))
         )
     ]
-    if show_retained:
-        retained = utilization.get("retained_content", {})
-        row.append(_marked(_number(retained.get("bytes"), _GIB), retained.get("status")))
     if show_message_traffic:
         traffic = utilization.get("message_traffic", {})
         row.extend(
@@ -236,15 +223,13 @@ def _utilization_row(value: dict, show_retained: bool, show_message_traffic: boo
     return row
 
 
-def _total_other_quantities(totals: dict, show_retained: bool, show_message_traffic: bool) -> list[str]:
+def _total_other_quantities(totals: dict, show_message_traffic: bool) -> list[str]:
     labels = [("CPU time used", "core-h")]
-    if show_retained:
-        labels.append(("Run-dir files", "GiB"))
     if show_message_traffic:
         labels.extend([("Payload sent", "GiB"), ("Payload received", "GiB")])
     return [
         _quantity(label, value, unit)
-        for (label, unit), value in zip(labels, _utilization_row(totals, show_retained, show_message_traffic))
+        for (label, unit), value in zip(labels, _utilization_row(totals, show_message_traffic))
     ]
 
 
@@ -262,7 +247,6 @@ def render_job_resources(summary: dict, participant: dict | None = None, *, job_
     accepted = sum(_accepted(entry) for entry in participants)
     selected = participant.get("participant_name") if participant else None
     visible_entries = [entry for entry in participants if not selected or entry["participant_name"] == selected]
-    show_retained = any(_accepted(entry) and _has_retained_content(entry) for entry in visible_entries)
     show_message_traffic = any(_accepted(entry) and _has_message_traffic(entry) for entry in visible_entries)
     title = f"job {_terminal_label(job_name)} (ID: {summary['job_id']})" if job_name else f"job ID {summary['job_id']}"
     lines = [f"Recorded resources for {title}."]
@@ -283,15 +267,11 @@ def render_job_resources(summary: dict, participant: dict | None = None, *, job_
     ]
     lines.extend(_table(["SITE", *metric_headers], rows))
     other_headers = ["SITE", "AVG CPU USED (cores)"]
-    if show_retained:
-        other_headers.append("RUN-DIR FILES GiB")
     if show_message_traffic:
         other_headers.extend(["PAYLOAD SENT GiB", "PAYLOAD RECEIVED GiB"])
     other_rows = []
     for entry in visible_entries:
-        values = _utilization_row(
-            entry if _accepted(entry) else {}, show_retained, show_message_traffic, average_cpu=True
-        )
+        values = _utilization_row(entry if _accepted(entry) else {}, show_message_traffic, average_cpu=True)
         other_rows.append([entry["participant_name"], *values])
     lines.extend(["", "Recorded resource utilization per participant", *_table(other_headers, other_rows)])
     job_totals = sum_job_totals(visible_entries)
@@ -302,14 +282,10 @@ def render_job_resources(summary: dict, participant: dict | None = None, *, job_
             "  " + " | ".join(_total_resource_quantities(job_totals)),
             "",
             "Recorded resource utilization totals",
-            "  " + " | ".join(_total_other_quantities(job_totals, show_retained, show_message_traffic)),
+            "  " + " | ".join(_total_other_quantities(job_totals, show_message_traffic)),
         ]
     )
     gaps = _data_gaps(visible_entries)
-    if selected and participant and "status" in participant.get("workspace_filesystem", {}):
-        workspace = participant["workspace_filesystem"]
-        detail = _issue_detail(workspace, "workspace_filesystem", participant.get("issues", []))
-        gaps.append(f"  {selected}: workspace-filesystem capacity unavailable" + (f" ({detail})" if detail else ""))
     if gaps:
         lines.extend(["", "Data gaps:", *gaps])
     show_legend = any("*" in line or _MISSING in line for line in lines)
@@ -324,12 +300,6 @@ def render_job_resources(summary: dict, participant: dict | None = None, *, job_
             ]
         )
         lines.extend(_startup_capacity(participant))
-        workspace = participant.get("workspace_filesystem", {})
-        if workspace and "status" not in workspace:
-            lines.append(
-                "Visible workspace-filesystem capacity at reporting time: "
-                f"{_number(workspace['capacity_bytes'], _GIB)} GiB"
-            )
     return "\n".join(lines)
 
 
@@ -341,9 +311,6 @@ def render_study_resources(summary: dict) -> str:
         f"{coverage['unavailable_jobs']} without | {coverage['nonterminal_jobs']} not finalized (excluded)",
         "",
     ]
-    show_retained = any(
-        job["resource_data"] == "included" and _has_retained_content(job["totals"]) for job in summary["jobs"]
-    )
     show_message_traffic = any(
         job["resource_data"] == "included" and _has_message_traffic(job["totals"]) for job in summary["jobs"]
     )
@@ -355,7 +322,7 @@ def render_study_resources(summary: dict) -> str:
             resource_time = totals["resource_time"]
             status = _metric_status(resource_time)
             row_metrics = [_marked(_capacity_time(totals, resource), status) for resource in ("gpu", "cpu", "memory")]
-            row_metrics.extend(_utilization_row(totals, show_retained, show_message_traffic))
+            row_metrics.extend(_utilization_row(totals, show_message_traffic))
             incomplete = [
                 f"{label} {'incomplete' if _metric_status(_measurement(totals, field)) == 'partial' else 'unavailable'}"
                 for field, label in _MEASUREMENT_LABELS.items()
@@ -364,7 +331,7 @@ def render_study_resources(summary: dict) -> str:
             if incomplete:
                 gaps.append(f"  {job['job_id']}: " + ", ".join(incomplete))
         else:
-            row_metrics = [_MISSING] * (4 + int(show_retained) + 2 * int(show_message_traffic))
+            row_metrics = [_MISSING] * (4 + 2 * int(show_message_traffic))
             reason = (
                 "no valid resource summary" if job["resource_data"] == "unavailable" else "not finalized (excluded)"
             )
@@ -376,8 +343,6 @@ def render_study_resources(summary: dict) -> str:
         "MEM VISIBLE GiB-h",
         "CPU USED core-h",
     ]
-    if show_retained:
-        metric_headers.append("RUN-DIR GiB")
     if show_message_traffic:
         metric_headers.extend(["PAYLOAD SENT GiB", "PAYLOAD RECEIVED GiB"])
     capacity_columns = 3
@@ -409,10 +374,7 @@ def render_study_resources(summary: dict) -> str:
                 "  " + " | ".join(_total_resource_quantities(totals)),
                 "",
                 "Recorded resource utilization totals",
-                "  "
-                + " | ".join(
-                    _total_other_quantities(totals, _has_retained_content(totals), _has_message_traffic(totals))
-                ),
+                "  " + " | ".join(_total_other_quantities(totals, _has_message_traffic(totals))),
             ]
         )
     else:

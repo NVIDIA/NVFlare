@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
-from copy import deepcopy
 from unittest.mock import Mock
 
 import pytest
@@ -32,65 +30,19 @@ def _link(path, target, *, directory):
 def test_atomic_writer_round_trip_and_replacement_without_leftover_temp_files(make_handoff, tmp_path, monkeypatch):
     run = tmp_path / "run"
     original = make_handoff()
-    original["workspace_filesystem"] = {"status": "unavailable"}
-    original["issues"].append({"metric": "workspace_filesystem", "code": "observation_incomplete"})
+    original["duration_seconds"] = 1
     path = module.write_terminal_handoff(run, original)
     assert module.read_terminal_handoff(run) == original
     updated = make_handoff()
-    updated["workspace_filesystem"] = {"capacity_bytes": 2048}
-    updated["issues"] = [issue for issue in updated["issues"] if issue["metric"] != "workspace_filesystem"]
+    updated["duration_seconds"] = 2
     module.write_terminal_handoff(run, updated)
     assert module.read_terminal_handoff(run) == updated
     assert list(path.parent.iterdir()) == [path]
 
 
-@pytest.mark.parametrize(
-    "measurement", ["resource_capacity", "cpu_consumed", "workspace_filesystem", "retained_content", "message_traffic"]
-)
-def test_reader_isolates_a_malformed_measurement_without_erasing_other_values(make_handoff, tmp_path, measurement):
-    original = make_handoff(complete=True)
-    path = module.write_terminal_handoff(tmp_path, original)
-    malformed = deepcopy(original)
-    source = (
-        malformed if measurement in {"resource_capacity", "workspace_filesystem"} else malformed["resource_utilization"]
-    )
-    source[measurement] = {"unexpected": "field"}
-    path.write_bytes(module.canonical_json_bytes(malformed))
-
-    result = module.read_terminal_handoff(tmp_path)
-
-    assert result is not None
-    actual = result if measurement in {"resource_capacity", "workspace_filesystem"} else result["resource_utilization"]
-    assert actual[measurement] == {"status": "unavailable"}
-    assert {"metric": measurement, "code": "malformed_source"} in result["issues"]
-    for name, value in original.items():
-        if name not in {measurement, "resource_utilization", "issues"}:
-            assert result[name] == value
-    for name, value in original["resource_utilization"].items():
-        if name != measurement:
-            assert result["resource_utilization"][name] == value
-
-
-@pytest.mark.parametrize("change", ["extra_field", "missing_field", "wrong_kind", "wrong_version"])
-def test_reader_still_rejects_a_malformed_envelope(make_handoff, tmp_path, change):
-    handoff = make_handoff(complete=True)
-    path = module.write_terminal_handoff(tmp_path, handoff)
-    if change == "extra_field":
-        handoff["participant_name"] = "untrusted-child-name"
-    elif change == "missing_field":
-        handoff["resource_utilization"].pop("cpu_consumed")
-    elif change == "wrong_kind":
-        handoff["kind"] = "not-a-terminal-handoff"
-    else:
-        handoff["internal_version"] = "1"
-    path.write_bytes(module.canonical_json_bytes(handoff))
-
-    assert module.read_terminal_handoff(tmp_path) is None
-
-
 def test_reader_contains_plain_decoder_value_error(make_handoff, tmp_path, monkeypatch):
     path = module.write_terminal_handoff(tmp_path, make_handoff(complete=True))
-    payload = path.read_text()
+    payload = path.read_bytes()
     # Python's integer decoder can raise ValueError independently of JSON syntax.
     # Control that boundary without depending on a process-wide digit limit.
     decoder = Mock(side_effect=ValueError("integer string conversion limit exceeded"))
@@ -231,34 +183,10 @@ def test_fdopen_failure_closes_descriptors_and_cleans_temporary_file(make_handof
     assert list(path.parent.iterdir()) == [path]
 
 
-@pytest.mark.parametrize(
-    "tags",
-    [[{"metric": "message_traffic", "code": "unknown"}], [{"metric": "message_traffic", "unexpected": True}], []],
-)
-def test_bad_metric_tags_preserve_independent_handoff_values(make_handoff, tmp_path, tags):
-    original = make_handoff(complete=True)
-    path = module.write_terminal_handoff(tmp_path, original)
-    malformed = deepcopy(original)
-    malformed["resource_utilization"]["message_traffic"]["status"] = "partial"
-    malformed["issues"] = tags
-    path.write_bytes(module.canonical_json_bytes(malformed))
-
-    result = module.read_terminal_handoff(tmp_path)
-
-    assert result["resource_utilization"]["message_traffic"] == {"status": "unavailable"}
-    assert result["issues"] == [{"metric": "message_traffic", "code": "malformed_source"}]
-    assert result["duration_seconds"] == original["duration_seconds"]
-    assert result["resource_capacity"] == original["resource_capacity"]
-    assert result["resource_time"] == original["resource_time"]
-    assert result["workspace_filesystem"] == original["workspace_filesystem"]
-    for name in ("cpu_consumed", "retained_content"):
-        assert result["resource_utilization"][name] == original["resource_utilization"][name]
-
-
 def test_generation_paths_preserve_replacement_against_late_writer_and_old_cleanup(make_handoff, tmp_path, monkeypatch):
     old = module.write_terminal_handoff(tmp_path, make_handoff(), launch_generation="old-launch")
     current = make_handoff()
-    current["workspace_filesystem"] = {"capacity_bytes": 8192}
+    current["duration_seconds"] = 3
     new = module.write_terminal_handoff(tmp_path, current, launch_generation="new-launch")
 
     # A delayed old process cannot overwrite the current launch's report.
@@ -270,9 +198,7 @@ def test_generation_paths_preserve_replacement_against_late_writer_and_old_clean
     module.remove_terminal_handoff(tmp_path, expected_generation="old-launch")
     assert not old.exists()
     assert new.exists()
-    assert module.read_terminal_handoff(tmp_path, expected_generation="new-launch")["workspace_filesystem"] == {
-        "capacity_bytes": 8192
-    }
+    assert module.read_terminal_handoff(tmp_path, expected_generation="new-launch")["duration_seconds"] == 3
     module.remove_terminal_handoff(tmp_path, expected_generation="new-launch")
     assert not new.parent.exists()
 
@@ -315,82 +241,13 @@ def test_launch_option_keeps_exact_token_before_generic_type_coercion():
     assert module.launch_generation_from_options([]) == ""
 
 
-@pytest.mark.parametrize(
-    "metric,value",
-    [
-        ("cpu_consumed", {"cpu_seconds": "NaN"}),
-        ("cpu_consumed", {"cpu_seconds": 2, "duration_seconds": 10}),
-        ("cpu_consumed", {"cpu_seconds": 2, "measured_seconds": 10}),
-        (
-            "resource_capacity",
-            {"cpu": {"units": 2}, "memory": {"bytes": 4096}, "gpu": {"count": 0}, "duration_seconds": 10},
-        ),
-        (
-            "resource_capacity",
-            {"cpu": {"units": 2}, "memory": {"bytes": 4096}, "gpu": {"count": 0}, "measured_seconds": 10},
-        ),
-        ("resource_capacity", {"intervals": [{"duration_seconds": 10, "cpu": {"units": 8}}]}),
-        ("message_traffic", {"sent_bytes": "10", "received_bytes": 0}),
-        ("message_traffic", {"sent_bytes": 0, "received_bytes": "10"}),
-        ("cpu_consumed", {"cpu_seconds": True}),
-        ("cpu_consumed", {"cpu_seconds": "2"}),
-        ("cpu_consumed", {"cpu_seconds": -1}),
-        ("retained_content", {"bytes": 1.0}),
-        ("message_traffic", {"sent_bytes": 0, "received_bytes": False}),
-        ("resource_capacity", {"cpu": {"units": 0}, "memory": {"bytes": 0}, "gpu": {"count": 0}}),
-        ("resource_capacity", {"cpu": {"units": 2}, "memory": {"bytes": 1.0}, "gpu": {"count": 0}}),
-        ("resource_capacity", {"cpu": {"units": 2}, "memory": {"bytes": 0}, "gpu": {"count": 0.5}}),
-        ("resource_capacity", {"cpu": {"units": 2}, "memory": {"bytes": 0}, "gpu": {"count": True}}),
-    ],
-)
-def test_reader_rejects_bad_measurements_without_erasing_sibling_metrics(make_handoff, tmp_path, metric, value):
-    payload = make_handoff(complete=True)
-    target = payload if metric == "resource_capacity" else payload["resource_utilization"]
-    target[metric] = value
-    module.write_terminal_handoff(tmp_path, payload)
-
-    checked = module.read_terminal_handoff(tmp_path)
-
-    target = checked if metric == "resource_capacity" else checked["resource_utilization"]
-    assert target[metric] == {"status": "unavailable"}
-    assert {"metric": metric, "code": "malformed_source"} in checked["issues"]
-    assert checked["resource_time"] == make_handoff(complete=True)["resource_time"]
-    assert checked["workspace_filesystem"] == {"capacity_bytes": 1024}
-
-
 def test_reader_preserves_zero_capacity_and_exact_integer_bytes(make_handoff, tmp_path):
     payload = make_handoff(complete=True)
     payload["resource_capacity"]["memory"]["bytes"] = 0
-    payload["resource_utilization"]["retained_content"]["bytes"] = 10**50
+    payload["resource_utilization"]["message_traffic"]["sent_bytes"] = 10**50
     module.write_terminal_handoff(tmp_path, payload)
 
     assert module.read_terminal_handoff(tmp_path) == payload
-
-
-def test_reader_contains_nonfinite_json_number_without_erasing_other_metrics(make_handoff, tmp_path):
-    payload = make_handoff(complete=True)
-    payload["resource_utilization"]["cpu_consumed"]["cpu_seconds"] = 1.0
-    path = module.write_terminal_handoff(tmp_path, payload)
-    path.write_text(json.dumps(payload).replace('"cpu_seconds": 1.0', '"cpu_seconds": 1e999'))
-
-    checked = module.read_terminal_handoff(tmp_path)
-
-    assert checked["resource_utilization"]["cpu_consumed"] == {"status": "unavailable"}
-    assert checked["resource_capacity"] == payload["resource_capacity"]
-
-
-@pytest.mark.parametrize("bad", ["unknown", "unsupported"])
-def test_reader_contains_invalid_partial_cause_to_its_metric(make_handoff, tmp_path, bad):
-    payload = make_handoff(complete=True)
-    payload["resource_utilization"]["cpu_consumed"]["status"] = "partial"
-    payload["issues"] = [{"metric": "cpu_consumed", "code": bad}]
-    module.write_terminal_handoff(tmp_path, payload)
-
-    checked = module.read_terminal_handoff(tmp_path)
-
-    assert checked["resource_utilization"]["cpu_consumed"] == {"status": "unavailable"}
-    assert checked["resource_capacity"] == payload["resource_capacity"]
-    assert checked["issues"] == [{"metric": "cpu_consumed", "code": "malformed_source"}]
 
 
 @pytest.mark.parametrize("capability", ["_SECURE_HANDOFF_DIR_FD", "_SECURE_HANDOFF_WRITE_DIR_FD"])

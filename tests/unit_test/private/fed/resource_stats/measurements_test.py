@@ -135,12 +135,14 @@ def test_study_totals_include_only_jobs_with_data():
 def test_empty_study_has_unavailable_totals_without_invented_zeros():
     assert sum_study_totals([]) == {
         "resource_time": {"status": "unavailable"},
-        "resource_utilization": {
-            field: {"status": "unavailable"} for field in ("cpu_consumed", "retained_content", "message_traffic")
-        },
+        "resource_utilization": {field: {"status": "unavailable"} for field in ("cpu_consumed", "message_traffic")},
         "issues": [
             {"metric": metric, "code": "observation_incomplete"}
-            for metric in ("cpu_consumed", "message_traffic", "resource_time", "retained_content")
+            for metric in (
+                "cpu_consumed",
+                "message_traffic",
+                "resource_time",
+            )
         ],
     }
 

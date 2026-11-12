@@ -38,10 +38,8 @@ def _participant():
     record.update(
         duration_seconds=10,
         resource_capacity={"status": "partial", "cpu": {"units": 3}},
-        workspace_filesystem={"capacity_bytes": 1024},
         resource_utilization={
             "cpu_consumed": {"cpu_seconds": 2},
-            "retained_content": {"bytes": 2},
             "message_traffic": {"sent_bytes": 2, "received_bytes": 3},
         },
         issues=[

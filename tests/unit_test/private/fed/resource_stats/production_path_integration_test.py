@@ -85,7 +85,6 @@ def _terminal_handoff(run_dir, *, seconds, cpu_units, memory_bytes, gpu_count, s
     elapsed_ns = int(seconds * 1_000_000_000)
     ticks = iter((start_ns, start_ns + elapsed_ns))
     collector = JobResourceCollector(
-        run_dir,
         clock_ns=lambda: next(ticks),
         capacity_probe=lambda: {
             "cpu": {"units": cpu_units},

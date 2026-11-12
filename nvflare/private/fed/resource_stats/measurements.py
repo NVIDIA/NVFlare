@@ -153,7 +153,6 @@ def _sum_totals(entries, *, complete):
             )
             for field, fields in (
                 ("cpu_consumed", {"cpu_seconds"}),
-                ("retained_content", {"bytes"}),
                 ("message_traffic", {"sent_bytes", "received_bytes"}),
             )
         },
@@ -186,7 +185,7 @@ def participant_measurements(record):
         for field in ("resource_capacity", "resource_time", "resource_utilization", "duration_seconds")
         if field in record
     }
-    result["issues"] = [dict(item) for item in record["issues"] if item["metric"] != "workspace_filesystem"]
+    result["issues"] = deepcopy(record["issues"])
     return result
 
 

@@ -89,7 +89,6 @@ def _summary(job_id):
     entry["resource_time"] = capacity_to_resource_time(entry["resource_capacity"], 1)
     entry["resource_utilization"] = {
         "cpu_consumed": {"cpu_seconds": 0},
-        "retained_content": {"bytes": 3},
         "message_traffic": {"sent_bytes": 0, "received_bytes": 0},
     }
     return _resource_summary(job_id, [entry])
@@ -158,7 +157,6 @@ def test_study_applies_single_job_policy_before_reading_or_exposing_denied_jobs(
 
     assert [row["job_id"] for row in result["jobs"]] == [allowed.job_id]
     assert result["coverage"] == {"selected_jobs": 1, "included_jobs": 1, "unavailable_jobs": 0, "nonterminal_jobs": 0}
-    assert result["totals"]["resource_utilization"]["retained_content"] == {"bytes": 3}
     assert [call.kwargs["jid"] for call in conn.app_ctx.job_def_manager.get_storage_for_download.call_args_list] == [
         allowed.job_id
     ]
@@ -176,7 +174,6 @@ def test_real_policy_uses_each_jobs_submitter_and_callers_certificate_role(polic
     result = _result(_dispatch(conn))
     assert [row["job_id"] for row in result["jobs"]] == [jobs[number - 1].job_id for number in expected]
     assert result["coverage"]["selected_jobs"] == len(expected)
-    assert result["totals"]["resource_utilization"]["retained_content"] == {"bytes": 3 * len(expected)}
     assert conn.get_prop(ConnProps.USER_ROLE) == role
     assert conn.get_prop(ConnProps.SUBMITTER_NAME) == "alice"
 
@@ -200,7 +197,6 @@ def test_all_denied_is_indistinguishable_from_an_empty_study(policy):
     empty.pop("generated_at")
     assert result == empty
     assert result["jobs"] == []
-    assert result["totals"]["resource_utilization"]["retained_content"]["status"] == "unavailable"
     conn.app_ctx.job_def_manager.get_storage_for_download.assert_not_called()
 
 
@@ -425,7 +421,7 @@ def test_invalid_job_totals_leave_one_unavailable_row_and_preserve_neighbor(poli
     original = job_cmds_module.sum_job_totals
 
     def derive(participants):
-        if participants[0]["resource_utilization"]["retained_content"]["bytes"] == 4:
+        if participants[0]["resource_utilization"]["message_traffic"]["sent_bytes"] == 4:
             raise ValueError("invalid measurement total")
         return original(participants)
 
@@ -434,7 +430,7 @@ def test_invalid_job_totals_leave_one_unavailable_row_and_preserve_neighbor(poli
     def summary(job_id):
         value = original_summary(job_id)
         if job_id == invalid.job_id:
-            value["participants"][0]["resource_utilization"]["retained_content"]["bytes"] = 4
+            value["participants"][0]["resource_utilization"]["message_traffic"]["sent_bytes"] = 4
         return value
 
     monkeypatch.setattr(job_cmds_module, "sum_job_totals", derive)
@@ -443,7 +439,6 @@ def test_invalid_job_totals_leave_one_unavailable_row_and_preserve_neighbor(poli
 
     assert [row["resource_data"] for row in result["jobs"]] == ["unavailable", "included"]
     assert result["coverage"]["unavailable_jobs"] == 1
-    assert result["totals"]["resource_utilization"]["retained_content"] == {"bytes": 3}
 
 
 def test_study_derivation_failure_returns_bounded_error_instead_of_escaping_handler(policy, monkeypatch):
@@ -469,7 +464,7 @@ def test_unserializable_derived_total_keeps_other_study_jobs(policy, monkeypatch
         value = original_summary(job_id)
         if job_id == invalid.job_id:
             first = value["participants"][0]
-            first["resource_utilization"]["retained_content"]["bytes"] = large_bytes
+            first["resource_utilization"]["message_traffic"]["sent_bytes"] = large_bytes
             second = deepcopy(first)
             second.update(participant_name="site-1", role="client")
             value["participants"].append(second)
@@ -480,4 +475,3 @@ def test_unserializable_derived_total_keeps_other_study_jobs(policy, monkeypatch
 
     assert [row["resource_data"] for row in result["jobs"]] == ["unavailable", "included"]
     assert result["coverage"]["unavailable_jobs"] == 1
-    assert result["totals"]["resource_utilization"]["retained_content"] == {"bytes": 3}

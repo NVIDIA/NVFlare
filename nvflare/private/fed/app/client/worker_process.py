@@ -70,7 +70,7 @@ def main(args):
     try:
         # Observe capacity within the existing job startup lifecycle. Keep
         # normal Python imports and dependency paths available throughout.
-        resource_collector = JobResourceCollector(workspace.get_run_dir(args.job_id))
+        resource_collector = JobResourceCollector()
     except Exception:
         # Resource reporting is observational and must never change the job outcome.
         pass

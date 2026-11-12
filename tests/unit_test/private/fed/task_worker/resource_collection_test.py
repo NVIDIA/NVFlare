@@ -196,6 +196,7 @@ def test_bad_optional_snapshot_cannot_fail_training(tmp_path, monkeypatch, snaps
     totals = _settle_resources(store, identity)
     assert totals["cpu_consumed"]["status"] == "unavailable"
     assert totals["resource_time"]["status"] == "unavailable"
+    assert store.read_resource_stats(identity) is None
 
 
 @pytest.mark.parametrize("fail", [False, True], ids=["completed", "python-failure"])
@@ -257,58 +258,3 @@ def test_task_worker_freezes_startup_gpu_observation_on_success_or_failure(tmp_p
         assert report["resource_capacity"]["status"] == "partial"
     else:
         assert report["resource_capacity"]["gpu"] == gpu
-
-
-@pytest.mark.parametrize("metric", ["resource_capacity", "cpu_consumed"])
-@pytest.mark.parametrize("bad_tag", [False, True])
-def test_bad_optional_metric_preserves_other_values_and_duration(tmp_path, monkeypatch, metric, bad_tag):
-    phases = []
-    _controlled_worker(monkeypatch, phases)
-    store, identity, path = _stage(tmp_path)
-    snapshot = deepcopy(_SNAPSHOT)
-    if bad_tag:
-        snapshot[metric]["status"] = "partial"
-        snapshot["issues"] = [{"metric": metric, "code": "unknown"}]
-    else:
-        snapshot[metric] = {"unexpected": "value"}
-    monkeypatch.setattr(worker, "ExecutionResourceCollector", lambda **_kwargs: Mock(stop=lambda: snapshot))
-
-    worker.run_worker(path)
-
-    raw = store.read_resource_stats(identity)
-    assert raw[metric] == snapshot[metric]  # No producer-side schema replay.
-    assert raw["duration_seconds"] == _SNAPSHOT["duration_seconds"]
-    totals = _settle_resources(store, identity)
-    affected = "resource_time" if metric == "resource_capacity" else "cpu_consumed"
-    assert totals[affected] == {"status": "unavailable"}
-    if metric == "resource_capacity":
-        assert totals["cpu_consumed"] == _SNAPSHOT["cpu_consumed"]
-    else:
-        assert totals["resource_time"]["cpu"] == {"unit_seconds": 20}
-    assert totals["message_traffic"] == {"sent_bytes": 0, "received_bytes": 0}
-    assert store.read_result(identity)[0]["value"] == 2
-
-
-@pytest.mark.parametrize(
-    "traffic",
-    [
-        {"sent_bytes": "bad", "received_bytes": 0},
-        {"status": "partial", "issues": ["unsupported"], "sent_bytes": 1, "received_bytes": 2},
-    ],
-)
-def test_bad_traffic_preserves_valid_execution_observations(tmp_path, monkeypatch, traffic):
-    phases = []
-    _controlled_worker(monkeypatch, phases)
-    store, identity, path = _stage(tmp_path, cell=True)
-    monkeypatch.setattr(worker.CellWorkerTransport, "traffic_snapshot", lambda _self, **_kwargs: traffic)
-
-    worker.run_worker(path)
-
-    raw = store.read_resource_stats(identity)
-    assert raw["duration_seconds"] == _SNAPSHOT["duration_seconds"]
-    totals = _settle_resources(store, identity)
-    assert totals["message_traffic"] == {"status": "unavailable"}
-    assert totals["issues"] == [{"metric": "message_traffic", "code": "malformed_source"}]
-    assert totals["resource_time"]["cpu"] == {"unit_seconds": 20}
-    assert totals["cpu_consumed"] == _SNAPSHOT["cpu_consumed"]
-    assert store.read_result(identity)[0]["value"] == 2

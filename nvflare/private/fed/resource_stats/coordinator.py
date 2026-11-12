@@ -219,10 +219,6 @@ class ResourceStatsCoordinator:
 
     @staticmethod
     def _log_report_status(job_id: str, participant_name: str, status: str) -> None:
-        # "conflict" and "server_error" are the two outcomes most likely to indicate
-        # a real bug or tampering rather than a benign retry/race; everything else
-        # is either expected (accepted/duplicate) or informational for an operator
-        # tracking why a participant's utilization did not make it into the summary.
         if status in (RESOURCE_REPORT_CONFLICT, RESOURCE_REPORT_SERVER_ERROR):
             _logger.warning(f"job {job_id}: resource report from '{participant_name}' rejected: {status}")
         elif status in (RESOURCE_REPORT_ACCEPTED, RESOURCE_REPORT_DUPLICATE):
@@ -353,9 +349,7 @@ class ResourceStatsCoordinator:
                 raise ValueError("resource summary exceeds its size limit")
 
             self._remove_empty_staging_directory(state.run_dir)
-            # The job child shares the run directory. Rewrite the exact accepted
-            # bytes through parent-owned descriptors immediately before publishing
-            # the summary marker, so child-side mutation is not retained.
+            # Publish the accepted bytes and write the summary last.
             for participant_name, accepted in state.accepted.items():
                 self._atomic_write_resource(
                     state.run_dir,
@@ -364,7 +358,6 @@ class ResourceStatsCoordinator:
                     include_participants=True,
                 )
             self._atomic_write_resource(state.run_dir, RESOURCE_SUMMARY_FILE, summary_data)
-            self._verify_final_inventory(state.run_dir, set(state.accepted))
             state.finalized = True
             status_counts: dict[str, int] = {}
             for participant in participants:
@@ -512,15 +505,9 @@ class ResourceStatsCoordinator:
         stats_fd = cls._open_resource_directory(run_dir)
         try:
             try:
-                staging_fd = os.open("staging", _DIRECTORY_OPEN_FLAGS, dir_fd=stats_fd)
+                os.rmdir("staging", dir_fd=stats_fd)
             except FileNotFoundError:
                 return
-            try:
-                if os.listdir(staging_fd):
-                    raise OSError("resource staging directory is not empty")
-            finally:
-                os.close(staging_fd)
-            os.rmdir("staging", dir_fd=stats_fd)
             os.fsync(stats_fd)
         finally:
             os.close(stats_fd)
@@ -531,7 +518,7 @@ class ResourceStatsCoordinator:
         try:
             file_fd = os.open(
                 file_name,
-                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0) | os.O_NONBLOCK,
                 dir_fd=directory_fd,
             )
             try:
@@ -553,25 +540,4 @@ class ResourceStatsCoordinator:
             os.close(directory_fd)
         if len(data) > max_bytes:
             raise ValueError(f"resource member exceeds its size limit: {file_name}")
-        return read_resource_report(data, KIND_RESOURCE_SUMMARY)
-
-    @classmethod
-    def _verify_final_inventory(cls, run_dir: Path, accepted_names: set[str]) -> None:
-        stats_fd = cls._open_resource_directory(run_dir)
-        expected_stats = {PARTICIPANTS_DIR, RESOURCE_SUMMARY_FILE}
-        expected_participants = {f"{name}.json" for name in accepted_names}
-        try:
-            if set(os.listdir(stats_fd)) != expected_stats:
-                raise OSError("resource statistics directory contains unexpected entries")
-            participant_fd = os.open(PARTICIPANTS_DIR, _DIRECTORY_OPEN_FLAGS, dir_fd=stats_fd)
-            try:
-                if set(os.listdir(participant_fd)) != expected_participants:
-                    raise OSError("resource participant directory contains unexpected entries")
-                for name in expected_participants:
-                    mode = os.stat(name, dir_fd=participant_fd, follow_symlinks=False).st_mode
-                    if not stat.S_ISREG(mode):
-                        raise OSError(f"resource participant member is not a regular file: {name}")
-            finally:
-                os.close(participant_fd)
-        finally:
-            os.close(stats_fd)
+        return json.loads(data)

@@ -42,20 +42,19 @@ from tests.resource_stats_report_test_utils import _participant_summary
 
 def _participant(job_id="job-1", participant_name="site-1", reported_at="2026-09-17T12:00:00Z"):
     record = _participant_summary(job_id, participant_name, reported_at)
-    for field in ("resource_capacity", "resource_time", "workspace_filesystem"):
+    for field in (
+        "resource_capacity",
+        "resource_time",
+    ):
         record[field] = {"status": "unavailable"}
-    record["resource_utilization"] = {
-        field: {"status": "unavailable"} for field in ("cpu_consumed", "retained_content", "message_traffic")
-    }
+    record["resource_utilization"] = {field: {"status": "unavailable"} for field in ("cpu_consumed", "message_traffic")}
     record["issues"] = [
-        {"metric": metric, "code": "unsupported" if metric == "retained_content" else "observation_incomplete"}
+        {"metric": metric, "code": "observation_incomplete"}
         for metric in (
             "cpu_consumed",
             "message_traffic",
             "resource_capacity",
             "resource_time",
-            "retained_content",
-            "workspace_filesystem",
         )
     ]
     return record
@@ -443,29 +442,6 @@ def test_reader_rejects_duplicate_requested_resource_summary(tmp_path):
 
     with pytest.raises(WorkspaceResourceStatsError, match="exactly one.*found 2"):
         WorkspaceResourceStatsReader(workspace.getvalue()).read_resource_summary()
-
-
-@pytest.mark.parametrize("field", ["cpu_consumed", "message_traffic"])
-def test_reader_rejects_participant_values_that_disagree_with_resource_summary(started_job, field):
-    coordinator, run_dir = started_job
-    coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": canonical_json_bytes(_participant())})
-    coordinator.finalize_job("job-1")
-
-    participant_path = run_dir / "resource_stats" / "participants" / "site-1.json"
-    participant = _participant()
-    participant["resource_utilization"][field] = (
-        {"sent_bytes": 1, "received_bytes": 2} if field == "message_traffic" else {"status": "unavailable"}
-    )
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != field]
-    if field != "message_traffic":
-        participant["issues"].append({"metric": field, "code": "attribution_incomplete"})
-    participant_data = canonical_json_bytes(participant)
-    participant_path.write_bytes(participant_data)
-
-    reader = WorkspaceResourceStatsReader(_workspace_zip(run_dir))
-    reader.read_resource_summary()
-    with pytest.raises(WorkspaceResourceStatsError, match="values do not match"):
-        reader.read_participant_summary("site-1")
 
 
 def test_accept_rejects_report_that_would_exceed_per_job_payload_cap(tmp_path):

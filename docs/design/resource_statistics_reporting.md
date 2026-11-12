@@ -14,7 +14,7 @@ versioned separately.
 
 | Kind | Required top-level fields, in addition to version and kind | Owner |
 | --- | --- | --- |
-| `participant_summary` | `job_id`, `participant_name`, `reported_at`, `resource_capacity`, `resource_time`, `resource_utilization`, `workspace_filesystem`, `issues`; optional `duration_seconds` | The participant's parent constructs identity and timestamp around the job process's observations. |
+| `participant_summary` | `job_id`, `participant_name`, `reported_at`, `resource_capacity`, `resource_time`, `resource_utilization`, `issues`; optional `duration_seconds` | The participant's parent constructs identity and timestamp around the job process's observations. |
 | `resource_summary` | `job_id`, `participants` | The root server builds the expected participant roster and copies accepted measurements into it. |
 | `study_summary` | `selection`, `generated_at`, `coverage`, `jobs`, `totals` | The authorized query derives a view of accessible jobs; it is not a stored report. |
 
@@ -56,10 +56,11 @@ The following example shows a complete participant record:
   },
   "resource_utilization": {
     "cpu_consumed": {"cpu_seconds": 2},
-    "retained_content": {"bytes": 1024},
-    "message_traffic": {"sent_bytes": 2048, "received_bytes": 4096}
+    "message_traffic": {
+      "sent_bytes": 2048,
+      "received_bytes": 4096
+    }
   },
-  "workspace_filesystem": {"capacity_bytes": 107374182400},
   "issues": []
 }
 ```
@@ -99,21 +100,21 @@ list. Aggregate explanations describe aggregate coverage; they do not copy all
 participant source details. The persisted job summary and study response add no
 duplicate root list around their existing rows or totals.
 
-The following abbreviated scope fragment shows a file scan that stopped early
-and retained its subtotal. Other measurements and record identity are omitted:
+The following abbreviated scope fragment shows incomplete CPU attribution
+with a usable subtotal. Other measurements and record identity are omitted:
 
 ```json
 {
   "resource_utilization": {
-    "retained_content": {
+    "cpu_consumed": {
       "status": "partial",
-      "bytes": 1024
+      "cpu_seconds": 12.5
     }
   },
   "issues": [
     {
-      "metric": "retained_content",
-      "code": "observation_incomplete"
+      "metric": "cpu_consumed",
+      "code": "attribution_incomplete"
     }
   ]
 }
@@ -121,17 +122,15 @@ and retained its subtotal. Other measurements and record identity are omitted:
 
 The issue codes are `observation_incomplete`, `attribution_incomplete`,
 `unsupported`, and `malformed_source`. Partial values use the first two codes;
-partial traffic measurements use `observation_incomplete`. Each validator accepts
-only codes meaningful for its measurement. Issues must not contain raw exception
+partial traffic measurements use `observation_incomplete`. Issues must not contain raw exception
 text or environment details.
 
 Quality is tracked independently for `resource_capacity`, `resource_time`, and
-each of `cpu_consumed`, `retained_content`, and `message_traffic`. Quality is not
+each of `cpu_consumed` and `message_traffic`. Quality is not
 attached to the `resource_utilization` container itself. Complete capacity and time
 objects contain CPU, memory, and GPU dimensions; partial objects retain the known
 dimensions. For example, an unavailable GPU probe does not discard known CPU or
-RAM values. Filesystem capacity appears only in participant detail and is either
-complete or unavailable; it has no partial subtotal. When no valid containing
+RAM values. When no valid containing
 participant window exists, `duration_seconds` is omitted, although CPU and
 capacity-time values may still be useful without an average.
 
@@ -145,11 +144,11 @@ or change the training outcome. The
 and [server handler](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/server/fed_server.py)
 remain the transport and authentication boundaries.
 
-The parent reads one bounded terminal handoff, validates individual measurements,
+The parent reads one bounded terminal handoff, checks its launch generation,
 adds the job and site identity, and serializes the participant record once.
-Invalid child measurements become `unavailable` with `malformed_source`;
-malformed identity or envelope data is not repaired to produce an accepted
-participant. Each launch owns a private
+Local producers and reducers do not repeat the server's measurement checks.
+Measurements remain self-reported; validating a local file cannot establish their
+authenticity. Each launch owns a private
 `resource_stats/staging/terminal_handoff.<generation>.json` file with internal
 version `"4"`. Its bounded generation token is checked before consumption and
 never enters public records. Cleanup removes only that generation's file, so an
@@ -175,7 +174,7 @@ Acceptance checks the input at the authenticated reporting boundary:
 2. Bind the request to the active job and expected, non-disabled sender slot.
 3. Decode UTF-8 JSON, rejecting duplicate keys, nonfinite constants, wrong
    kind/version, excess nesting, and unknown fields. Validate identifiers, units,
-   quality/value combinations, and finite numeric values; require body job/site
+   statuses, required numeric fields, and finite nonnegative values; require body job/site
    identity to match the bound slot.
 4. Normalize object keys and sort/deduplicate issue tags without converting
    numbers to strings. Recheck the canonical byte limit and compare with any accepted record.
@@ -184,8 +183,8 @@ Acceptance checks the input at the authenticated reporting boundary:
 
 Hardware descriptions are not collected. Reports must not emit hostnames,
 addresses, serials, UUIDs, PCI identifiers, CUDA visibility masks, raw CPU
-topology, or raw cgroup paths. Validation limits disclosure and rejects
-malformed input, but it cannot attest to the accuracy of a site's self-report.
+topology, or raw cgroup paths. The reader accepts only these report fields, but cannot attest to the accuracy
+of a site's self-report.
 
 ### Limits and retries
 
@@ -256,8 +255,7 @@ At closure, each roster entry contains either an accepted value or a gap. An
 accepted entry contains `participant_name`, server-owned `role` and `received_at`,
 optional `duration_seconds`, and copies of `resource_capacity`, `resource_time`,
 and `resource_utilization`, plus its scope-level `issues` list. It omits a success
-status. The `reported_at` and `workspace_filesystem` fields and filesystem-only
-issue tags remain only in participant detail. A gap contains the name, role, and
+status. The `reported_at` field remains only in participant detail. A gap contains the name, role, and
 `status: "missing"|"invalid"|"disabled"`, with no issue list; an invalid gap also
 has `received_at`. Here, `disabled` means the parent knows the participant was
 not launched; it is not a new collection opt-out feature. Missing measurements
@@ -279,7 +277,7 @@ job execution continues.
 
 Publication writes only accepted participant bytes through temporary files and
 atomic rename, then writes `resource_summary.json` last as the bundle commit
-marker. It verifies the reserved-directory inventory before the existing
+marker before the existing
 [job finalization path](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/server/job_runner.py)
 saves the normal `WORKSPACE` archive. The summary contains the self-contained
 roster and measurements, without a separately trusted totals cache. Repeated
@@ -319,7 +317,7 @@ neither a parallel storage database nor a sidecar-storage API. It reads the summ
 member and reads a participant detail only when requested and accepted in the
 roster. For each requested member, it requires exactly one matching ZIP member,
 rejects encrypted, directory, or oversized members, and bounds actual decoded
-reads. It also cross-checks detail identity and copied values against the summary
+reads. It checks detail identity against the summary slot
 without extracting or scanning unrelated workspace contents.
 
 Study queries process archives sequentially and remove each archive's temporary
@@ -337,7 +335,7 @@ slot while that query continues on the server.
 Job totals are derived from accepted entries independently for each measurement.
 They sum stored `resource_time` and utilization without multiplying startup
 capacity by participant duration again. All resource quantities are scalar totals.
-Startup capacity, filesystem capacity, and participant durations
+Startup capacity and participant durations
 are not summed. Any expected gap makes a usable job subtotal partial; if there are
 no usable contributors, the result is unavailable rather than zero. Average CPU
 use is a participant's CPU seconds divided by its positive containing duration,
@@ -387,6 +385,6 @@ normally when a peer does not send statistics.
 The server trusts authenticated identity and validates report structure, but it
 cannot verify the physical truth of reported numbers. Atomic files prevent partial
 publication; they do not provide hardware attestation or recovery after loss of
-the in-memory ledger. Final reports are immutable observations of completed work.
+the in-memory ledger. Published reports describe completed work.
 Scheduling, live monitoring, billing, restart adoption, and result or checkpoint
 acceptance remain outside this protocol.

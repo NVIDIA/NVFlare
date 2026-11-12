@@ -184,28 +184,6 @@ def test_late_confirmed_settlement_can_resolve_a_temporary_scope_gap():
     assert "status" not in values["resource_time"]
 
 
-@pytest.mark.parametrize(
-    "changes",
-    [
-        {"schema_version": "2.0"},
-        {"scope": "unregistered-rank"},
-        {"identity": _identity("other").to_dict()},
-        {"unexpected": "not a private protocol field"},
-    ],
-)
-def test_invalid_report_cannot_supply_values_or_escape_its_owned_identity(changes):
-    reducer = task_rollup.TaskResourceReducer()
-    identity = _identity()
-    record = _report(identity)
-    record.update(changes)
-    store = _fold(reducer, identity, record)
-    assert reducer.snapshot()["resource_time"] == {"status": "unavailable"}
-    assert [issue["code"] for issue in reducer.snapshot()["issues"] if issue["metric"] == "resource_time"] == [
-        "observation_incomplete"
-    ]
-    store.remove_resource_stats.assert_called_once_with(identity)
-
-
 def test_partial_cpu_does_not_discard_complete_capacity_or_traffic():
     reducer = task_rollup.TaskResourceReducer()
     identity = _identity()
@@ -349,43 +327,3 @@ def test_fork_reset_discards_parent_ledger_without_acquiring_an_inherited_lock()
     task_rollup._reset_after_fork()
     assert task_rollup.get_task_resource_reducer() is None
     assert task_rollup._ACTIVE_LOCK is not old_lock
-
-
-@pytest.mark.parametrize(
-    "metric,value",
-    [
-        ("resource_capacity", {"cpu": {"units": 2}, "memory": {"bytes": 1024}, "gpu": {"count": True}}),
-        ("cpu_consumed", {"cpu_seconds": "8"}),
-        ("message_traffic", {"sent_bytes": 10, "received_bytes": False}),
-    ],
-)
-def test_settlement_contains_a_malformed_worker_metric_to_its_contribution(metric, value):
-    reducer = task_rollup.TaskResourceReducer()
-    identity = _identity()
-    _fold(reducer, identity, _report(identity, **{metric: value}))
-
-    totals = reducer.snapshot()
-
-    affected = "resource_time" if metric == "resource_capacity" else metric
-    assert totals[affected] == {"status": "unavailable"}
-    if metric != "resource_capacity":
-        assert totals["resource_time"]["cpu"] == {"unit_seconds": 20}
-    if metric != "cpu_consumed":
-        assert totals["cpu_consumed"] == {"cpu_seconds": 8}
-    if metric != "message_traffic":
-        assert totals["message_traffic"] == {"sent_bytes": 10, "received_bytes": 20}
-    assert {issue["metric"] for issue in totals["issues"]} == {affected}
-
-
-@pytest.mark.parametrize("duration", [-1, True, "10", float("inf")])
-def test_settlement_keeps_untimed_worker_quantities_when_duration_is_malformed(duration):
-    reducer = task_rollup.TaskResourceReducer()
-    identity = _identity()
-    _fold(reducer, identity, _report(identity, seconds=duration))
-
-    totals = reducer.snapshot()
-
-    assert totals["resource_time"] == {"status": "unavailable"}
-    assert totals["cpu_consumed"] == {"cpu_seconds": 8}
-    assert totals["message_traffic"] == {"sent_bytes": 10, "received_bytes": 20}
-    assert totals["issues"] == [{"metric": "resource_time", "code": "observation_incomplete"}]

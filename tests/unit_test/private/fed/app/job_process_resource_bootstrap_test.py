@@ -57,7 +57,7 @@ def test_snapshot_preserves_workspace_download_and_custom_path_refresh(monkeypat
     events = []
     monkeypatch.setattr(module, "parse_vars", lambda _values: {})
     monkeypatch.setattr(module, "Workspace", _Workspace)
-    monkeypatch.setattr(module, "JobResourceCollector", lambda run_dir, **_kwargs: events.append(("snapshot", run_dir)))
+    monkeypatch.setattr(module, "JobResourceCollector", lambda **_kwargs: events.append(("snapshot", None)))
     monkeypatch.setattr(module, "download_workspace", lambda *_args, **_kwargs: events.append(("download", None)))
     monkeypatch.setattr(
         module,
@@ -135,7 +135,7 @@ def test_restored_server_marks_pre_restart_observation_incomplete(monkeypatch, b
     monkeypatch.setattr(
         runner_process,
         "JobResourceCollector",
-        lambda run_dir, **kwargs: collector_args.append((run_dir, kwargs)),
+        lambda **kwargs: collector_args.append(kwargs),
     )
     monkeypatch.setattr(runner_process, "download_workspace", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(runner_process, "refresh_custom_dir_import_path", lambda _path: None)
@@ -148,9 +148,4 @@ def test_restored_server_marks_pre_restart_observation_incomplete(monkeypatch, b
     with pytest.raises(_StopAfterBootstrap):
         runner_process.main(args)
 
-    assert collector_args == [
-        (
-            "/workspace/job-1",
-            {"prior_observation_incomplete": True},
-        )
-    ]
+    assert collector_args == [{"prior_observation_incomplete": True}]

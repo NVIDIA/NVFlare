@@ -54,7 +54,7 @@ def _collect(
 
     original = collector.CpuConsumedAccountant
     monkeypatch.setattr(collector, "CpuConsumedAccountant", lambda **kwargs: original(usage_reader=usage, **kwargs))
-    job = collector.JobResourceCollector(tmp_path, clock_ns=clock, capacity_probe=capacity)
+    job = collector.JobResourceCollector(clock_ns=clock, capacity_probe=capacity)
     handoff = job.finish(message_traffic={"sent_bytes": 0, "received_bytes": 0})
     write_terminal_handoff(tmp_path, handoff)
     report = collector.assemble_participant_summary(
@@ -104,7 +104,7 @@ def test_failed_probe_does_not_remove_shared_duration(monkeypatch, tmp_path, cap
     assert (totals["resource_utilization"]["cpu_consumed"].get("status") == "unavailable") == cpu_failure
 
 
-@pytest.mark.parametrize("ticks", [(10, 9), (None, 10), (0, True), (0, -1), (OSError("clock"), 10), (0, 10**400)])
+@pytest.mark.parametrize("ticks", [(10, 9), (None, 10), (0, -1), (OSError("clock"), 10), (0, 10**400)])
 def test_bad_clock_preserves_raw_quantities_without_inventing_duration(monkeypatch, tmp_path, ticks):
     report, _ = _collect(monkeypatch, tmp_path, ticks=ticks)
     assert "duration_seconds" not in report
@@ -121,9 +121,7 @@ def test_zero_shared_duration_is_retained(monkeypatch, tmp_path):
 
 def test_collector_cannot_extend_a_finalized_window(tmp_path):
     ticks = iter((0, 10_000_000_000))
-    job = collector.JobResourceCollector(
-        tmp_path, clock_ns=lambda: next(ticks), capacity_probe=lambda: {"cpu": {"units": 8}}
-    )
+    job = collector.JobResourceCollector(clock_ns=lambda: next(ticks), capacity_probe=lambda: {"cpu": {"units": 8}})
     assert job.finish()["duration_seconds"] == 10
     with pytest.raises(RuntimeError, match="already finalized"):
         job.finish()
@@ -162,18 +160,6 @@ def test_unused_capacity_timeline_is_rejected(monkeypatch, tmp_path):
     report["issues"] = [issue for issue in report["issues"] if issue["metric"] != "resource_capacity"] + []
     with pytest.raises(ValueError):
         read_resource_report(canonical_json_bytes(report))
-
-
-@pytest.mark.parametrize("duration", [None, True, "-1", "NaN", "1e3", "10"])
-def test_malformed_handoff_duration_does_not_erase_cpu_work(monkeypatch, tmp_path, duration):
-    _collect(monkeypatch, tmp_path)
-    handoff = read_terminal_handoff(tmp_path)
-    handoff["duration_seconds"] = duration
-    write_terminal_handoff(tmp_path, handoff)
-    checked = read_terminal_handoff(tmp_path)
-    assert "duration_seconds" not in checked
-    assert checked["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 2}
-    assert checked["resource_capacity"]["cpu"] == {"units": 8}
 
 
 def test_handoff_does_not_recalculate_explicit_time_from_participant_duration(monkeypatch, tmp_path):

@@ -52,15 +52,11 @@ def test_selecting_task_mode_retains_the_existing_cpu_baseline(usage_reader):
     assert accountant.finish() == {"cpu_seconds": 2}
 
 
-def test_execution_stop_is_one_snapshot_and_does_not_scan_files(usage_reader, monkeypatch):
+def test_execution_stop_is_one_snapshot(usage_reader, monkeypatch):
     clock = iter([0, 10_000_000_000])
     accountant = CpuConsumedAccountant(usage_reader=usage_reader(("0", "0"), ("2", "0")))
     monkeypatch.setattr(collector, "CpuConsumedAccountant", lambda **_kwargs: accountant)
 
-    def unexpected_scan(_path):
-        raise AssertionError("execution collectors must not scan files")
-
-    monkeypatch.setattr(collector, "observe_retained_content", unexpected_scan)
     instance = ExecutionResourceCollector(
         clock_ns=lambda: next(clock),
         capacity_probe=lambda: {"cpu": {"units": 2}, "memory": {"bytes": 1024}, "gpu": {"count": 0}},
@@ -79,7 +75,7 @@ def test_bad_capacity_and_clock_do_not_erase_cpu_work(usage_reader, monkeypatch)
     def bad_probe():
         raise OSError("unavailable")
 
-    instance = ExecutionResourceCollector(capacity_probe=bad_probe, clock_ns=lambda: -1)
+    instance = ExecutionResourceCollector(capacity_probe=bad_probe, clock_ns=bad_probe)
     snapshot = instance.stop()
     assert "duration_seconds" not in snapshot
     assert snapshot["resource_capacity"]["status"] == "unavailable"
@@ -94,7 +90,6 @@ def test_task_mode_keeps_one_window_and_installs_reducer_before_workers(usage_re
     monkeypatch.setattr(collector, "install_task_resource_reducer", installed.append)
     ticks = iter([0, 60_000_000_000])
     instance = collector.JobResourceCollector(
-        tmp_path,
         clock_ns=lambda: next(ticks),
         capacity_probe=lambda: {"cpu": {"units": 2}, "memory": {"bytes": 1024}, "gpu": {"count": 0}},
     )
@@ -116,11 +111,9 @@ def test_task_statistics_setup_failure_is_best_effort(usage_reader, tmp_path, mo
         raise OSError("optional statistics setup failed")
 
     monkeypatch.setattr(collector.TaskResourceReducer, "__init__", failed_reducer)
-    monkeypatch.setattr(collector, "observe_workspace_filesystem", lambda _path: {"capacity_bytes": 1024})
-    monkeypatch.setattr(collector, "observe_retained_content", lambda _path: {"bytes": 0})
     ticks = iter([0, 60_000_000_000])
     capacity = {"cpu": {"units": 2}, "memory": {"bytes": 1024}, "gpu": {"count": 0}}
-    instance = collector.JobResourceCollector(tmp_path, capacity_probe=lambda: capacity, clock_ns=lambda: next(ticks))
+    instance = collector.JobResourceCollector(capacity_probe=lambda: capacity, clock_ns=lambda: next(ticks))
     collector.configure_task_collection()
     report = instance.finish(message_traffic={"sent_bytes": 7, "received_bytes": 11})
     assert report["resource_capacity"] == capacity
@@ -146,7 +139,6 @@ def test_task_statistics_setup_failure_is_best_effort(usage_reader, tmp_path, mo
     assert [issue["code"] for issue in report["issues"] if issue["metric"] == "message_traffic"] == [
         "observation_incomplete"
     ]
-    assert report["resource_utilization"]["retained_content"] == {"bytes": 0}
 
 
 def test_final_worker_fold_keeps_cpu_and_gpu_when_memory_total_overflows():
@@ -223,9 +215,7 @@ def test_gpu_snapshot_precedes_cpu_and_duration_baselines(monkeypatch, gpu_value
 @pytest.mark.parametrize("limit", ["_MAX_SCOPES", "_MAX_STATE_BYTES", "_MAX_PENDING_BYTES"])
 def test_rejected_worker_omits_containing_duration_but_keeps_observed_work(tmp_path, monkeypatch, limit):
     ticks = iter((0, 10_000_000_000))
-    job = collector.JobResourceCollector(
-        tmp_path, clock_ns=lambda: next(ticks), capacity_probe=lambda: {"cpu": {"units": 2}}
-    )
+    job = collector.JobResourceCollector(clock_ns=lambda: next(ticks), capacity_probe=lambda: {"cpu": {"units": 2}})
     job.enable_task_collection()
     monkeypatch.setattr(task_rollup, limit, 0)
     assert not job._task_reducer.register(TaskAttemptIdentity("job", "site", "task", "train", "attempt"))

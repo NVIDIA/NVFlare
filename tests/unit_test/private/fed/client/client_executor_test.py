@@ -435,16 +435,13 @@ def test_build_participant_resource_report_binds_parent_identity_and_removes_han
         "kind": INTERNAL_HANDOFF_KIND,
         "resource_capacity": {"status": "unavailable"},
         "resource_time": capacity_to_resource_time({"status": "unavailable"}, 10),
-        "workspace_filesystem": {"capacity_bytes": 1099511627776},
         "resource_utilization": {
             "cpu_consumed": {"cpu_seconds": 12.5},
-            "retained_content": {"status": "unavailable"},
             "message_traffic": {"sent_bytes": 1200, "received_bytes": 800},
         },
         "issues": [
             {"metric": "resource_capacity", "code": "observation_incomplete"},
             {"metric": "resource_time", "code": "observation_incomplete"},
-            {"metric": "retained_content", "code": "unsupported"},
         ],
     }
     write_terminal_handoff(run_dir, handoff, launch_generation="test-launch")
@@ -460,7 +457,6 @@ def test_build_participant_resource_report_binds_parent_identity_and_removes_han
     report = json.loads(report_bytes)
     assert report["participant_name"] == "site-1"
     assert report["job_id"] == "job-1"
-    assert report["workspace_filesystem"]["capacity_bytes"] == 1099511627776
     assert report["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 12.5}
     assert report["resource_utilization"]["message_traffic"] == {"sent_bytes": 1200, "received_bytes": 800}
     assert not terminal_handoff_path(run_dir, launch_generation="test-launch").exists()
@@ -476,18 +472,14 @@ def test_client_relaunch_preserves_unavailable_observations_without_inventing_va
             "kind": INTERNAL_HANDOFF_KIND,
             "resource_capacity": {"status": "unavailable"},
             "resource_time": capacity_to_resource_time({"status": "unavailable"}, 10),
-            "workspace_filesystem": {"status": "unavailable"},
             "resource_utilization": {
                 "cpu_consumed": {"cpu_seconds": 12.5},
-                "retained_content": {"status": "unavailable"},
                 "message_traffic": {"status": "unavailable"},
             },
             "issues": [
                 {"metric": "message_traffic", "code": "observation_incomplete"},
                 {"metric": "resource_capacity", "code": "observation_incomplete"},
                 {"metric": "resource_time", "code": "observation_incomplete"},
-                {"metric": "retained_content", "code": "observation_incomplete"},
-                {"metric": "workspace_filesystem", "code": "observation_incomplete"},
             ],
         },
         launch_generation="test-launch",
@@ -529,10 +521,8 @@ def test_client_relaunch_marks_capacity_cpu_and_traffic_observations_incomplete(
             "kind": INTERNAL_HANDOFF_KIND,
             "resource_capacity": resource_capacity,
             "resource_time": capacity_to_resource_time(resource_capacity, 10, scope_issues=issues),
-            "workspace_filesystem": {"capacity_bytes": 1099511627776},
             "resource_utilization": {
                 "cpu_consumed": consumed,
-                "retained_content": {"bytes": 1024},
                 "message_traffic": message_traffic,
             },
             "issues": issues,
@@ -570,9 +560,6 @@ def test_client_relaunch_marks_capacity_cpu_and_traffic_observations_incomplete(
     assert report["resource_utilization"]["cpu_consumed"]["cpu_seconds"] == 12.5
     assert report["resource_utilization"]["message_traffic"]["sent_bytes"] == message_traffic["sent_bytes"]
     assert report["resource_utilization"]["message_traffic"]["received_bytes"] == message_traffic["received_bytes"]
-    assert report["workspace_filesystem"] == {"capacity_bytes": 1099511627776}
-    assert report["resource_utilization"]["retained_content"] == {"bytes": 1024}
-    assert not {"retained_content", "workspace_filesystem"} & {issue["metric"] for issue in report["issues"]}
     assert not terminal_handoff_path(run_dir, launch_generation="test-launch").exists()
 
 
@@ -587,10 +574,8 @@ def test_client_report_preserves_job_process_traffic_without_parent_counters(tmp
             "kind": INTERNAL_HANDOFF_KIND,
             "resource_capacity": {"status": "unavailable"},
             "resource_time": capacity_to_resource_time({"status": "unavailable"}, 10),
-            "workspace_filesystem": {"capacity_bytes": 1099511627776},
             "resource_utilization": {
                 "cpu_consumed": {"cpu_seconds": 12.5},
-                "retained_content": {"bytes": 1024},
                 "message_traffic": {"sent_bytes": 1200, "received_bytes": 800},
             },
             "issues": [
@@ -2057,10 +2042,8 @@ def test_recovery_never_substitutes_stale_report_when_retirement_fails(tmp_path,
                 "kind": INTERNAL_HANDOFF_KIND,
                 "resource_capacity": unavailable,
                 "resource_time": unavailable,
-                "workspace_filesystem": unavailable,
                 "resource_utilization": {
                     "cpu_consumed": {"cpu_seconds": index + 2},
-                    "retained_content": unavailable,
                     "message_traffic": unavailable,
                 },
                 "issues": [
@@ -2068,8 +2051,6 @@ def test_recovery_never_substitutes_stale_report_when_retirement_fails(tmp_path,
                     for metric in (
                         "resource_capacity",
                         "resource_time",
-                        "workspace_filesystem",
-                        "retained_content",
                         "message_traffic",
                     )
                 ],

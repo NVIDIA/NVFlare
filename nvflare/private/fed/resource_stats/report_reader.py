@@ -15,11 +15,11 @@
 """Read bounded participant and job reports at their receiving boundaries."""
 
 import json
+import math
 import re
 from datetime import datetime
 
-from .handoff import _read_capacity, _read_fields, _read_issues, _read_number, _read_usage, _read_workspace
-from .measurements import SCHEMA_VERSION, sum_job_totals
+from .measurements import SCHEMA_VERSION, ordered_issues, sum_job_totals
 
 KIND_PARTICIPANT_SUMMARY = "nvflare.resource_stats.participant_summary"
 KIND_RESOURCE_SUMMARY = "nvflare.resource_stats.resource_summary"
@@ -38,6 +38,80 @@ MAX_PARTICIPANTS = 10_000
 MAX_JSON_DEPTH = 32
 PARTICIPANT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}$")
 JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def _read_fields(value, required, optional=()):
+    if not isinstance(value, dict):
+        raise ValueError("measurement must be an object")
+    required, optional = set(required), set(optional)
+    if not required <= value.keys() or value.keys() - required - optional:
+        raise ValueError("measurement has missing or unexpected fields")
+    return value
+
+
+def _read_number(value, *, integer=False, positive=False):
+    if isinstance(value, bool) or not isinstance(value, int if integer else (int, float)):
+        raise ValueError("measurement must be an integer" if integer else "measurement must be a number")
+    if value < 0 or (positive and value == 0) or (isinstance(value, float) and not math.isfinite(value)):
+        raise ValueError(
+            "measurement must be finite and positive" if positive else "measurement must be finite and non-negative"
+        )
+    return value
+
+
+def _read_status(value, allowed=("partial", "unavailable")):
+    if not isinstance(value, dict):
+        raise ValueError("measurement must be an object")
+    status = value.get("status", "reported")
+    if "status" in value and status not in allowed:
+        raise ValueError("measurement has an invalid status")
+    return status
+
+
+def _read_capacity(value, *, elapsed=False):
+    status = _read_status(value)
+    dimensions = {"cpu", "memory", "gpu"}
+    _read_fields(value, dimensions if status == "reported" else {"status"}, dimensions if status == "partial" else ())
+    if status == "partial" and not dimensions & value.keys():
+        raise ValueError("partial capacity needs an observed dimension")
+    fields = (
+        {"cpu": "unit_seconds", "memory": "byte_seconds", "gpu": "instance_seconds"}
+        if elapsed
+        else {"cpu": "units", "memory": "bytes", "gpu": "count"}
+    )
+    for dimension, field in fields.items():
+        if dimension in value:
+            item = _read_fields(value[dimension], {field})
+            _read_number(
+                item[field], integer=not elapsed and dimension != "cpu", positive=not elapsed and dimension == "cpu"
+            )
+    return value
+
+
+def _read_usage(value, fields, *, integer=True):
+    status = _read_status(value)
+    required = set(fields) if status != "unavailable" else set()
+    if status != "reported":
+        required.add("status")
+    _read_fields(value, required)
+    if status != "unavailable":
+        for field in fields:
+            _read_number(value[field], integer=integer)
+    return value
+
+
+def _read_issues(issues, measurements):
+    """Read bounded report diagnostics and order distinct metric/code pairs."""
+    if not isinstance(issues, list):
+        raise ValueError("scope issues must be a list")
+    allowed_codes = {"observation_incomplete", "attribution_incomplete", "unsupported", "malformed_source"}
+    for item in issues:
+        _read_fields(item, {"metric", "code"})
+        if not isinstance(item["metric"], str) or item["metric"] not in measurements:
+            raise ValueError("scope issue names an unknown metric")
+        if not isinstance(item["code"], str) or item["code"] not in allowed_codes:
+            raise ValueError("scope issue has an unknown cause")
+    return ordered_issues(issues)
 
 
 def _read_identifier(value, pattern):
@@ -62,18 +136,15 @@ def _read_timestamp(value):
 
 
 def _read_measurements(record):
-    utilization = _read_fields(record["resource_utilization"], {"cpu_consumed", "retained_content", "message_traffic"})
+    utilization = _read_fields(record["resource_utilization"], {"cpu_consumed", "message_traffic"})
     values = {
         "resource_capacity": _read_capacity(record["resource_capacity"]),
         "resource_time": _read_capacity(record["resource_time"], elapsed=True),
         "resource_utilization": {
             "cpu_consumed": _read_usage(utilization["cpu_consumed"], {"cpu_seconds"}, integer=False),
-            "retained_content": _read_usage(utilization["retained_content"], {"bytes"}),
             "message_traffic": _read_usage(utilization["message_traffic"], {"sent_bytes", "received_bytes"}),
         },
     }
-    if "workspace_filesystem" in record:
-        values["workspace_filesystem"] = _read_workspace(record["workspace_filesystem"])
     scope = {name: value for name, value in values.items() if name != "resource_utilization"}
     values["issues"] = _read_issues(record["issues"], {**scope, **values["resource_utilization"]})
     if "duration_seconds" in record:
@@ -126,7 +197,6 @@ def _read_participant_summary(record):
             "resource_capacity",
             "resource_time",
             "resource_utilization",
-            "workspace_filesystem",
             "issues",
         },
         {"duration_seconds"},
@@ -176,8 +246,6 @@ def read_resource_report(data, expected_kind=None):
     """Decode one incoming report, checking its shape, bounds and arithmetic."""
     if not isinstance(data, bytes):
         raise ValueError("resource report input must be bytes")
-    if expected_kind is not None and (not isinstance(expected_kind, str) or expected_kind not in MAX_RECORD_BYTES):
-        raise ValueError("unsupported expected resource report kind")
     if len(data) > MAX_RECORD_BYTES.get(expected_kind, max(MAX_RECORD_BYTES.values())):
         raise ValueError("resource report exceeds the JSON byte limit")
     try:

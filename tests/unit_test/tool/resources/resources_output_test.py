@@ -76,15 +76,12 @@ def _participant():
         "participant_name": "site-1",
         "role": "client",
         "resource_capacity": {"cpu": {"units": 8}, "memory": {"bytes": 64 * 2**30}, "gpu": {"count": 2}},
-        "workspace_filesystem": {"capacity_bytes": 2 * 2**40},
         "resource_utilization": {
             "cpu_consumed": {"cpu_seconds": 1800},
-            "retained_content": {"status": "unavailable"},
             "message_traffic": {"status": "unavailable"},
         },
         "issues": [
             {"metric": "message_traffic", "code": "observation_incomplete"},
-            {"metric": "retained_content", "code": "observation_incomplete"},
         ],
     }
 
@@ -107,8 +104,6 @@ def _site_cell(output: str, header: str, site: str = "site-1") -> str:
 @pytest.mark.parametrize("incomplete", [False, True])
 def test_cli_only_shows_a_short_legend_when_needed(scope, incomplete):
     participant = _participant()
-    participant["resource_utilization"]["retained_content"] = {"bytes": 0}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"]
     participant["resource_utilization"]["message_traffic"] = {"sent_bytes": 0, "received_bytes": 0}
     participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "message_traffic"]
     if incomplete:
@@ -174,19 +169,6 @@ def test_best_effort_capacity_keeps_values_and_explains_the_possible_overstateme
     assert "observation_incomplete" not in output
 
 
-def test_file_scan_gap_explains_what_stopped_instead_of_showing_an_issue_code():
-    participant = _participant()
-    participant["resource_utilization"]["retained_content"] = {"status": "partial", "bytes": 2**30}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"] + [
-        {"metric": "retained_content", "code": "observation_incomplete"}
-    ]
-
-    output = render_job_resources(_job_summary(participant))
-
-    assert "run-dir files: the file scan stopped early or could not read every file" in output
-    assert "observation_incomplete" not in output
-
-
 def test_scalar_capacity_and_utilization_totals_are_visible():
     participant = _participant()
 
@@ -201,7 +183,6 @@ def test_scalar_capacity_and_utilization_totals_are_visible():
     assert "0.5" in output  # 1,800 consumed CPU seconds / 3,600 measured seconds.
     assert "64" in output
     assert "2" in output
-    assert "RUN-DIR FILES" not in output
     assert "PAYLOAD SENT GiB" not in output
     assert "CPU visible 8 core-h" in output
     assert "CPU time used 0.5 core-h" in output
@@ -216,16 +197,13 @@ def test_job_header_falls_back_to_id_when_name_metadata_is_not_supplied():
     assert output.startswith("Recorded resources for job ID job-1.")
 
 
-def test_run_directory_files_and_message_traffic_columns_are_only_shown_when_bound():
+def test_message_traffic_columns_are_only_shown_when_bound():
     participant = _participant()
     summary = _job_summary(participant)
 
     initial_output = render_job_resources(summary)
-    assert "RUN-DIR FILES" not in initial_output
     assert "PAYLOAD SENT GiB" not in initial_output
 
-    participant["resource_utilization"]["retained_content"] = {"bytes": 3 * 2**30}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"]
     participant["resource_utilization"]["message_traffic"] = {
         "status": "partial",
         "sent_bytes": 5 * 2**30,
@@ -237,19 +215,13 @@ def test_run_directory_files_and_message_traffic_columns_are_only_shown_when_bou
     summary = _with_missing_server(_job_summary(participant))
     output = render_job_resources(summary)
 
-    assert "RUN-DIR FILES GiB" in output
     assert "PAYLOAD SENT GiB" in output
     assert "PAYLOAD RECEIVED GiB" in output
-    assert "Run-dir files 3* GiB" in output  # The server report is missing.
     assert "5*" in output  # Useful observed subtotal, not a complete send total.
     assert "2*" in output
     assert "Data gaps" in output
     assert "server" in output  # The expected server report is missing.
 
-    participant["resource_utilization"]["retained_content"] = {"status": "partial", "bytes": 2 * 2**30}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"] + [
-        {"metric": "retained_content", "code": "observation_incomplete"}
-    ]
     partial_output = render_job_resources(_with_missing_server(_job_summary(participant)))
     assert "2*" in partial_output
 
@@ -311,14 +283,13 @@ def test_cpu_average_preserves_its_own_quality_and_shared_duration(capacity, dur
 
 def test_unavailable_source_cause_is_shown_without_another_status_column():
     participant = _participant()
-    participant["resource_utilization"]["retained_content"] = {"status": "unavailable"}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"] + [
-        {"metric": "retained_content", "code": "malformed_source"}
-    ]
+    participant["resource_utilization"]["message_traffic"] = {"status": "unavailable"}
+
+    participant["issues"] = [{"metric": "message_traffic", "code": "malformed_source"}]
 
     output = render_job_resources(_job_summary(participant))
 
-    assert "run-dir files unavailable (measurement contained invalid values)" in output
+    assert "message traffic unavailable (measurement contained invalid values)" in output
 
 
 def test_job_renderer_sorts_participants_with_numeric_counters():
@@ -350,7 +321,6 @@ def test_study_capacity_and_optional_traffic_columns():
     assert "GPU-h" in initial_output
     assert "CPU USED core-h" in initial_output
     assert "0.5" in initial_output
-    assert "RUN-DIR FILES" not in initial_output
     assert "PAYLOAD SENT GiB" not in initial_output
 
     job_totals["resource_utilization"]["message_traffic"] = {
@@ -458,8 +428,6 @@ def test_positive_small_quantities_are_not_displayed_as_zero():
 
 def test_capacity_and_utilization_are_separate_in_job_tables_and_totals():
     participant = _participant()
-    participant["resource_utilization"]["retained_content"] = {"bytes": 1024}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"]
     participant["resource_utilization"]["message_traffic"] = {"sent_bytes": 1, "received_bytes": 2}
     participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "message_traffic"]
     output = render_job_resources(_job_summary(participant))
@@ -478,17 +446,15 @@ def test_capacity_and_utilization_are_separate_in_job_tables_and_totals():
 def test_large_native_integer_bytes_remain_in_json_when_display_is_unavailable():
     participant = _participant()
     huge_bytes = 10**400
-    participant["resource_utilization"]["retained_content"] = {"bytes": huge_bytes}
-    participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "retained_content"]
+    participant["resource_utilization"]["message_traffic"] = {"sent_bytes": huge_bytes, "received_bytes": 0}
     summary = _job_summary(participant)
     summary["kind"] = "nvflare.resource_stats.resource_summary"
     read_resource_report(canonical_json_bytes(summary))
 
     output = render_job_resources(summary)
 
-    assert _site_cell(output, "RUN-DIR FILES") == "—"
-    assert "Run-dir files —" in output
-    assert summary["participants"][0]["resource_utilization"]["retained_content"]["bytes"] == huge_bytes
+    assert _site_cell(output, "PAYLOAD SENT") == "—"
+    assert summary["participants"][0]["resource_utilization"]["message_traffic"]["sent_bytes"] == huge_bytes
 
 
 @pytest.mark.parametrize(

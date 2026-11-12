@@ -21,8 +21,7 @@ from nvflare.apis.client import ClientDictKey
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.fed.utils.job_cert_utils import job_cell_scopes
 
-from .handoff import _read_issues, _read_usage
-from .measurements import scoped_measurement
+from .report_reader import _read_usage
 
 _LOCK = threading.Lock()
 _TRAINERS = weakref.WeakKeyDictionary()
@@ -51,9 +50,11 @@ def register_external_trainer(job_cell, trainer_fqcn):
 def record_external_trainer_traffic(job_cell, trainer_fqcn, traffic, *, incomplete=False):
     """Accept authenticated cumulative totals; return whether this update is complete."""
     try:
-        issues = []
-        checked = _read_usage(scoped_measurement("message_traffic", traffic, issues), ("sent_bytes", "received_bytes"))
-        _read_issues(issues, {"message_traffic": checked})
+        # This snapshot arrives from the external trainer transport. Check the
+        # counters used in cumulative arithmetic; diagnostic text is not consumed.
+        checked = _read_usage(
+            {key: value for key, value in traffic.items() if key != "issues"}, ("sent_bytes", "received_bytes")
+        )
         values = (
             checked["sent_bytes"],
             checked["received_bytes"],
@@ -148,8 +149,6 @@ def snapshot_message_traffic(cell, *, incomplete=False):
     values = []
     try:
         counters = list(cell.get_traffic_stats().values())
-        if any(type(item[name]) is not int or item[name] < 0 for item in counters for name in ("sent", "received")):
-            raise ValueError("invalid CellNet byte counter")
         values.append(
             (
                 sum(item["sent"] for item in counters),

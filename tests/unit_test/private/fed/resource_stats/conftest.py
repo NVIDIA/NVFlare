@@ -16,18 +16,7 @@
 
 import pytest
 
-from nvflare.private.fed.resource_stats import collector, handoff
-
-
-@pytest.fixture(autouse=True)
-def direct_filesystem_observations(monkeypatch):
-    def observe(run_dir):
-        return {
-            "workspace_filesystem": collector.observe_workspace_filesystem(run_dir),
-            "retained_content": collector.observe_retained_content(run_dir),
-        }
-
-    monkeypatch.setattr(collector, "observe_filesystem", observe)
+from nvflare.private.fed.resource_stats import handoff
 
 
 @pytest.fixture
@@ -43,10 +32,8 @@ def make_handoff():
                 "memory": {"byte_seconds": 40960},
                 "gpu": {"instance_seconds": 0},
             },
-            "workspace_filesystem": {"capacity_bytes": 1024},
             "resource_utilization": {
                 "cpu_consumed": {"cpu_seconds": 2},
-                "retained_content": {"bytes": 128},
                 "message_traffic": {"sent_bytes": 512, "received_bytes": 128},
             },
             "issues": [],
@@ -54,7 +41,7 @@ def make_handoff():
         if not complete:
             for container, names in (
                 (record, ("resource_capacity", "resource_time")),
-                (record["resource_utilization"], ("cpu_consumed", "retained_content", "message_traffic")),
+                (record["resource_utilization"], ("cpu_consumed", "message_traffic")),
             ):
                 for name in names:
                     container[name] = {"status": "unavailable"}

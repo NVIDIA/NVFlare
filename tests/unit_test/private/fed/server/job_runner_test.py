@@ -1671,10 +1671,8 @@ def test_server_handoff_is_bound_and_accepted_before_finalization(tmp_path, traf
                 "resource_time": capacity_to_resource_time(
                     {"cpu": {"units": 2}, "memory": {"bytes": 4096}, "gpu": {"count": 0}}, 10
                 ),
-                "workspace_filesystem": {"capacity_bytes": 1024},
                 "resource_utilization": {
                     "cpu_consumed": {"cpu_seconds": 0},
-                    "retained_content": {"bytes": 0},
                     "message_traffic": traffic,
                 },
                 "issues": [],
@@ -1834,10 +1832,8 @@ def test_server_missing_generation_or_report_never_uses_old_or_unbound_file(tmp_
         "kind": INTERNAL_HANDOFF_KIND,
         "resource_capacity": unavailable,
         "resource_time": unavailable,
-        "workspace_filesystem": unavailable,
         "resource_utilization": {
             "cpu_consumed": {"cpu_seconds": 99},
-            "retained_content": unavailable,
             "message_traffic": unavailable,
         },
         "issues": [
@@ -1845,8 +1841,6 @@ def test_server_missing_generation_or_report_never_uses_old_or_unbound_file(tmp_
             for metric in (
                 "resource_capacity",
                 "resource_time",
-                "workspace_filesystem",
-                "retained_content",
                 "message_traffic",
             )
         ],

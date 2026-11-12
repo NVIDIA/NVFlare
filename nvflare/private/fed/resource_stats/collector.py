@@ -19,17 +19,13 @@ from __future__ import annotations
 import datetime
 import math
 import os
-import stat
-import threading
 import time
 from collections.abc import Callable, Mapping
 from copy import deepcopy
-from pathlib import Path
 from typing import Any, Optional
 
 from . import handoff
 from .cpu_consumed import CpuConsumedAccountant, install_cpu_accountant
-from .handoff import _read_capacity, _read_issues
 from .measurements import (
     SCHEMA_VERSION,
     aggregate_cpu_consumed,
@@ -43,19 +39,6 @@ from .probes import cgroup_linux, gpu_nvidia
 from .task_rollup import TaskResourceReducer, install_task_resource_reducer
 
 _SLURM_NODE_COUNT_ENV = "NVFL_NNODES"
-
-# Fixed collection budgets, not operator settings. Time is checked between
-# entries; Python cannot interrupt a blocked filesystem syscall.
-_MAX_RETAINED_ENTRIES = 100_000
-_MAX_RETAINED_DEPTH = 64
-_MAX_RETAINED_SCAN_SECONDS = 1.0
-_RETAINED_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-_RETAINED_DIR_FD_SUPPORTED = (
-    hasattr(os, "O_DIRECTORY")
-    and hasattr(os, "O_NOFOLLOW")
-    and os.open in os.supports_dir_fd
-    and os.scandir in os.supports_fd
-)
 
 CapacitySnapshot = Mapping[str, Any]
 CapacityProbe = Callable[[], CapacitySnapshot]
@@ -117,178 +100,18 @@ def probe_capacity() -> dict[str, Any]:
     return capacity
 
 
-def observe_workspace_filesystem(workspace_path: str | Path) -> dict[str, Any]:
-    """Observe only the filesystem containing the existing job workspace."""
-
-    try:
-        stats = os.statvfs(os.fspath(workspace_path))
-        capacity = stats.f_blocks * stats.f_frsize
-    except (OSError, TypeError, ValueError):
-        return {"status": "unavailable", "issues": ["observation_incomplete"]}
-    if stats.f_frsize <= 0 or stats.f_blocks <= 0 or capacity <= 0:
-        return {"status": "unavailable", "issues": ["observation_incomplete"]}
-    return {"capacity_bytes": capacity}
-
-
-def observe_retained_content(run_dir: str | Path) -> dict[str, Any]:
-    """Observe the logical size of regular files in one job run directory.
-
-    Includes logs, configuration, and inputs; excludes the top-level
-    resource_stats directory. Symlinks and non-regular entries are skipped.
-    Depth-first streaming avoids materializing a large directory's entries.
-    A budget or traversal error yields an honest partial subtotal; failure
-    before any directory entry or empty directory can be observed is unavailable.
-    This remains a non-atomic self-report, including ordinary mounted subtrees.
-    """
-
-    if not _RETAINED_DIR_FD_SUPPORTED:
-        return {"status": "unavailable", "issues": ["unsupported"]}
-
-    deadline = time.monotonic() + _MAX_RETAINED_SCAN_SECONDS
-    try:
-        root_fd = os.open(run_dir, _RETAINED_DIR_FLAGS)
-        try:
-            root_entries = os.scandir(root_fd)
-        except BaseException:
-            os.close(root_fd)
-            raise
-    except OSError:
-        return {"status": "unavailable", "issues": ["observation_incomplete"]}
-
-    total = 0
-    entries_seen = 0
-    incomplete = False
-    observed = False
-    stack = [(root_entries, root_fd)]
-    try:
-        while stack:
-            if time.monotonic() >= deadline:
-                incomplete = True
-                break
-            iterator, directory_fd = stack[-1]
-            depth = len(stack) - 1
-            try:
-                entry = next(iterator)
-            except StopIteration:
-                observed = True
-                iterator.close()
-                os.close(directory_fd)
-                stack.pop()
-                continue
-            except OSError:
-                incomplete = True
-                iterator.close()
-                os.close(directory_fd)
-                stack.pop()
-                continue
-
-            if entries_seen >= _MAX_RETAINED_ENTRIES:
-                incomplete = True
-                break
-            entries_seen += 1
-            observed = True
-            try:
-                entry_stat = entry.stat(follow_symlinks=False)
-            except OSError:
-                incomplete = True
-                continue
-
-            if stat.S_ISREG(entry_stat.st_mode):
-                if entry_stat.st_size < 0:
-                    incomplete = True
-                    break
-                total += entry_stat.st_size
-            elif stat.S_ISDIR(entry_stat.st_mode):
-                if depth == 0 and entry.name == handoff.RESOURCE_STATS_DIR:
-                    continue
-                if depth >= _MAX_RETAINED_DEPTH:
-                    incomplete = True
-                    continue
-                try:
-                    # Resolve relative to the still-open parent. O_NOFOLLOW
-                    # rejects a directory replaced by a symlink after stat.
-                    child_fd = os.open(entry.name, _RETAINED_DIR_FLAGS, dir_fd=directory_fd)
-                    try:
-                        child_entries = os.scandir(child_fd)
-                    except BaseException:
-                        os.close(child_fd)
-                        raise
-                    stack.append((child_entries, child_fd))
-                except OSError:
-                    incomplete = True
-    finally:
-        for iterator, directory_fd in stack:
-            iterator.close()
-            os.close(directory_fd)
-
-    if incomplete:
-        if not observed:
-            return {"status": "unavailable", "issues": ["observation_incomplete"]}
-        return {"status": "partial", "issues": ["observation_incomplete"], "bytes": total}
-    return {"bytes": total}
-
-
 def _unavailable(issue: str) -> dict[str, Any]:
     return {"status": "unavailable", "issues": [issue]}
-
-
-def observe_filesystem(run_dir, *, timeout=2.0):
-    """Bound the wait for optional observations; ignore results after the deadline.
-
-    A blocked syscall can outlive the wait in the daemon thread. The thread
-    starts no further observations after the deadline and is not joined at exit.
-    """
-    observers = (
-        ("workspace_filesystem", observe_workspace_filesystem),
-        ("retained_content", observe_retained_content),
-    )
-    values = {name: _unavailable("observation_incomplete") for name, _ in observers}
-    if timeout <= 0:
-        return values
-    deadline = time.monotonic() + timeout
-    lock = threading.Lock()
-    finished = threading.Event()
-
-    def observe():
-        try:
-            for name, observer in observers:
-                if time.monotonic() >= deadline:
-                    break
-                try:
-                    value = observer(run_dir)
-                except Exception:
-                    continue
-                with lock:
-                    if time.monotonic() < deadline:
-                        values[name] = value
-        finally:
-            finished.set()
-
-    try:
-        threading.Thread(target=observe, daemon=True, name="resource-filesystem").start()
-        finished.wait(max(0.0, deadline - time.monotonic()))
-    except RuntimeError:
-        pass  # Optional reporting must not prevent shutdown if a thread cannot start.
-    with lock:
-        return deepcopy(values)
 
 
 def _startup_capacity_snapshot(capacity_probe, prior_observation_incomplete):
     """Keep one startup observation and its quality, without resampling."""
 
     try:
-        capacity = capacity_probe()
-        if not isinstance(capacity, Mapping):
-            raise TypeError("capacity probe must return a mapping")
-        result = deepcopy(dict(capacity))
-        if "status" not in result and not all(name in result for name in ("cpu", "memory", "gpu")):
-            result.update(status="partial", issues=["observation_incomplete"])
-        # This one adapter also contains malformed injected-provider output.
-        codes = result.pop("issues", [])
-        result = _read_capacity(result)
-        _read_issues([{"metric": "resource_capacity", "code": code} for code in codes], {"resource_capacity": result})
-        if codes:
-            result["issues"] = codes
+        result = deepcopy(dict(capacity_probe()))
+        if not all(name in result for name in ("cpu", "memory", "gpu")):
+            result["status"] = "partial" if any(name in result for name in ("cpu", "memory", "gpu")) else "unavailable"
+            result["issues"] = sorted(set(result.get("issues", [])) | {"observation_incomplete"})
     except Exception:
         return _unavailable("observation_incomplete")
     if prior_observation_incomplete:
@@ -349,9 +172,7 @@ class ExecutionResourceCollector:
 
     def _read_clock(self) -> int | None:
         try:
-            value = self._clock_ns()
-            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-                return value
+            return self._clock_ns()
         except Exception:
             pass
         return None
@@ -391,13 +212,11 @@ class JobResourceCollector(ExecutionResourceCollector):
 
     def __init__(
         self,
-        run_dir: str | Path,
         *,
         clock_ns: Callable[[], int] = time.monotonic_ns,
         capacity_probe: CapacityProbe = probe_capacity,
         prior_observation_incomplete: bool = False,
     ):
-        self.run_dir = Path(run_dir)
         self._prior_observation_incomplete = prior_observation_incomplete
         raw_node_count = os.environ.get(_SLURM_NODE_COUNT_ENV)
         try:
@@ -427,7 +246,7 @@ class JobResourceCollector(ExecutionResourceCollector):
             self._task_reducer = reducer
 
     def finish(self, *, message_traffic: Optional[Mapping[str, Any]] = None) -> dict[str, Any]:
-        """Build one terminal handoff, with one filesystem observation and scan."""
+        """Build one terminal handoff from the final execution measurements."""
 
         if self._finished:
             raise RuntimeError("resource collection is already finalized")
@@ -478,16 +297,11 @@ class JobResourceCollector(ExecutionResourceCollector):
                 traffic = _fold_measurements("message_traffic", traffic, worker_totals["message_traffic"], issues)
             if not worker_totals["duration_contained"]:
                 timing = {}
-        filesystem = observe_filesystem(self.run_dir)
-        workspace = scoped_measurement("workspace_filesystem", filesystem["workspace_filesystem"], issues)
-        retained = scoped_measurement("retained_content", filesystem["retained_content"], issues)
         measurements = {
             "resource_capacity": resource_capacity,
             "resource_time": resource_time,
             "cpu_consumed": cpu_consumed,
             "message_traffic": traffic,
-            "workspace_filesystem": workspace,
-            "retained_content": retained,
         }
         issues = aggregate_scope_issues(issues, measurements)
         return {
@@ -496,11 +310,9 @@ class JobResourceCollector(ExecutionResourceCollector):
             "kind": handoff.INTERNAL_HANDOFF_KIND,
             "resource_capacity": resource_capacity,
             "resource_time": resource_time,
-            "workspace_filesystem": workspace,
             "issues": issues,
             "resource_utilization": {
                 "cpu_consumed": cpu_consumed,
-                "retained_content": retained,
                 "message_traffic": traffic,
             },
         }
@@ -512,11 +324,7 @@ def assemble_participant_summary(
     participant_name: str,
     child_handoff: Optional[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """Assemble a handoff already checked by read_terminal_handoff.
-
-    The parent supplies identity; the handoff reader already checked each
-    measurement.
-    """
+    """Wrap this launch's observations with parent-owned job and participant identity."""
 
     issues = (
         list(child_handoff["issues"])
@@ -526,16 +334,14 @@ def assemble_participant_summary(
             for name in (
                 "resource_capacity",
                 "resource_time",
-                "workspace_filesystem",
                 "cpu_consumed",
-                "retained_content",
                 "message_traffic",
             )
         ]
     )
     measurements = {
         name: child_handoff[name] if child_handoff is not None else {"status": "unavailable"}
-        for name in ("resource_capacity", "resource_time", "workspace_filesystem")
+        for name in ("resource_capacity", "resource_time")
     }
     report = {
         "schema_version": SCHEMA_VERSION,
@@ -548,7 +354,7 @@ def assemble_participant_summary(
         "resource_utilization": (
             child_handoff["resource_utilization"]
             if child_handoff is not None
-            else {name: {"status": "unavailable"} for name in ("cpu_consumed", "retained_content", "message_traffic")}
+            else {name: {"status": "unavailable"} for name in ("cpu_consumed", "message_traffic")}
         ),
         **(
             {"duration_seconds": child_handoff["duration_seconds"]}

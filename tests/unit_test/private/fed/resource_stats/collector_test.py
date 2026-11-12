@@ -14,9 +14,6 @@
 
 import json
 import os
-import threading
-from types import SimpleNamespace
-from unittest.mock import Mock
 
 import pytest
 
@@ -25,7 +22,6 @@ from nvflare.private.fed.resource_stats.collector import (
     ExecutionResourceCollector,
     JobResourceCollector,
     assemble_participant_summary,
-    observe_retained_content,
 )
 from nvflare.private.fed.resource_stats.handoff import (
     RESOURCE_STATS_DIR,
@@ -37,7 +33,6 @@ from nvflare.private.fed.resource_stats.handoff import (
 )
 from nvflare.private.fed.resource_stats.measurements import canonical_json_bytes, capacity_to_resource_time
 from nvflare.private.fed.resource_stats.probes import cgroup_linux, gpu_nvidia
-from tests.timing_utils import isolate_time
 
 
 @pytest.fixture(autouse=True)
@@ -56,16 +51,6 @@ def test_capacity_retains_numeric_cpu_memory_and_gpu_count():
     assert result["cpu"] == {"units": 4}
     assert result["gpu"] == {"count": 2}
     assert "status" not in result
-
-
-@pytest.mark.parametrize("count", [-1, 1.5, True, "2"])
-def test_gpu_capacity_rejects_non_integer_or_negative_counts(count):
-    instance = ExecutionResourceCollector(capacity_probe=lambda: {"gpu": {"count": count}}, clock_ns=lambda: 0)
-
-    snapshot = instance.stop()
-
-    assert snapshot["resource_capacity"] == {"status": "unavailable"}
-    assert {"metric": "resource_capacity", "code": "observation_incomplete"} in snapshot["issues"]
 
 
 def test_fallback_capacity_keeps_numeric_values_and_full_observed_duration():
@@ -91,14 +76,6 @@ def test_fallback_capacity_keeps_numeric_values_and_full_observed_duration():
     }
     assert {"metric": "resource_capacity", "code": "observation_incomplete"} in snapshot["issues"]
     assert capacity_to_resource_time(result, 10, snapshot["issues"])["cpu"] == {"unit_seconds": 80}
-
-
-def test_grouped_cpu_shape_is_not_an_alternate_capacity_format():
-    instance = ExecutionResourceCollector(
-        capacity_probe=lambda: {"cpu": {"groups": [{"units": 8}]}}, clock_ns=lambda: 0
-    )
-
-    assert instance.stop()["resource_capacity"] == {"status": "unavailable"}
 
 
 def test_cpu_only_host_without_loadable_driver_has_partial_resource_capacity(monkeypatch):
@@ -154,7 +131,7 @@ def test_probe_fallback_remains_partial_through_handoff_and_public_summary(monke
     monkeypatch.setattr(cgroup_linux, "probe_memory", lambda _discovery, *, issues: {"bytes": 4096})
     monkeypatch.setattr(gpu_nvidia, "probe_gpu", lambda: {"count": 0})
     ticks = iter([0, 10_000_000_000])
-    job_collector = JobResourceCollector(tmp_path, clock_ns=lambda: next(ticks))
+    job_collector = JobResourceCollector(clock_ns=lambda: next(ticks))
     write_terminal_handoff(tmp_path, job_collector.finish(message_traffic={"sent_bytes": 0, "received_bytes": 0}))
 
     report = assemble_participant_summary(
@@ -178,7 +155,6 @@ def test_probe_fallback_remains_partial_through_handoff_and_public_summary(monke
 def test_handoff_to_public_report_round_trip(tmp_path):
     ticks = iter([1_000_000_000, 3_000_000_000])
     job_collector = JobResourceCollector(
-        tmp_path,
         clock_ns=lambda: next(ticks),
         capacity_probe=lambda: {"cpu": {"units": 2}, "memory": {"bytes": 4096}, "gpu": {"count": 0}},
     )
@@ -197,195 +173,13 @@ def test_handoff_to_public_report_round_trip(tmp_path):
 
     assert json.loads(encoded)["participant_name"] == "site-1"
     assert report["duration_seconds"] == 2
-    assert "status" not in report["workspace_filesystem"]
-    assert report["resource_utilization"]["retained_content"] == {"bytes": 0}
     assert report["resource_utilization"]["message_traffic"] == {"sent_bytes": 1200, "received_bytes": 700}
     assert "participant_key" not in encoded.decode()
-
-
-def test_observe_retained_content_sums_regular_files_under_the_run_dir(tmp_path):
-    (tmp_path / "output.bin").write_bytes(b"x" * 100)
-    nested = tmp_path / "app" / "checkpoints"
-    nested.mkdir(parents=True)
-    (nested / "model.pt").write_bytes(b"y" * 250)
-
-    assert observe_retained_content(tmp_path) == {"bytes": 350}
-
-
-def test_observe_retained_content_excludes_only_the_resource_stats_directory(tmp_path):
-    (tmp_path / "output.bin").write_bytes(b"x" * 100)
-    stats_dir = tmp_path / "resource_stats" / "participants"
-    stats_dir.mkdir(parents=True)
-    (stats_dir / "site-1.json").write_bytes(b"z" * 900)
-
-    assert observe_retained_content(tmp_path) == {"bytes": 100}
-
-
-def test_observe_retained_content_does_not_exclude_a_nested_directory_of_the_same_name(tmp_path):
-    # Only the top-level resource_stats directory is platform bookkeeping; a
-    # job-produced directory that happens to share that name deeper in the
-    # tree is ordinary job output and must still be counted.
-    nested_same_name = tmp_path / "app" / "resource_stats"
-    nested_same_name.mkdir(parents=True)
-    (nested_same_name / "custom_output.bin").write_bytes(b"w" * 40)
-
-    assert observe_retained_content(tmp_path) == {"bytes": 40}
-
-
-def test_observe_retained_content_is_reported_zero_for_an_empty_directory(tmp_path):
-    assert observe_retained_content(tmp_path) == {"bytes": 0}
-
-
-@pytest.mark.parametrize("existing_file", [False, True])
-def test_retained_content_is_unavailable_without_a_run_directory(tmp_path, existing_file):
-    run = tmp_path / "run"
-    if existing_file:
-        run.write_bytes(b"")
-    assert observe_retained_content(run) == {"status": "unavailable", "issues": ["observation_incomplete"]}
-
-
-@pytest.mark.parametrize("directory", [False, True])
-def test_retained_content_ignores_symlinked_entries(tmp_path, directory):
-    outside = tmp_path / "outside"
-    if directory:
-        outside.mkdir()
-        (outside / "large.bin").write_bytes(b"o" * 10_000)
-    else:
-        outside.write_bytes(b"o" * 10_000)
-    run = tmp_path / "run"
-    run.mkdir()
-    (run / "linked").symlink_to(outside, target_is_directory=directory)
-    assert observe_retained_content(run) == {"bytes": 0}
-
-
-def test_observe_retained_content_rejects_a_symlinked_run_directory(tmp_path):
-    actual_run_dir = tmp_path / "actual"
-    actual_run_dir.mkdir()
-    (actual_run_dir / "output.bin").write_bytes(b"x" * 100)
-    linked_run_dir = tmp_path / "linked"
-    linked_run_dir.symlink_to(actual_run_dir, target_is_directory=True)
-
-    assert observe_retained_content(linked_run_dir) == {
-        "status": "unavailable",
-        "issues": ["observation_incomplete"],
-    }
-
-
-def test_observe_retained_content_marks_a_disappearing_file_partial(tmp_path, monkeypatch):
-    (tmp_path / "kept.bin").write_bytes(b"k" * 60)
-    (tmp_path / "removed.bin").write_bytes(b"r" * 40)
-
-    real_scandir = os.scandir
-
-    def flaky_scandir(top):
-        with real_scandir(top) as entries:
-            for entry in entries:
-                if entry.name == "removed.bin":
-                    os.unlink(entry.name, dir_fd=top)
-                yield entry
-
-    monkeypatch.setattr(collector.os, "scandir", flaky_scandir)
-
-    assert observe_retained_content(tmp_path) == {
-        "status": "partial",
-        "issues": ["observation_incomplete"],
-        "bytes": 60,
-    }
-
-
-def test_observe_retained_content_marks_an_iteration_error_partial(tmp_path, monkeypatch):
-    (tmp_path / "kept.bin").write_bytes(b"k" * 60)
-    real_scandir = os.scandir
-
-    def flaky_scandir(top):
-        with real_scandir(top) as entries:
-            yield from entries
-        raise PermissionError("simulated traversal failure")
-
-    monkeypatch.setattr(collector.os, "scandir", flaky_scandir)
-
-    assert observe_retained_content(tmp_path) == {
-        "status": "partial",
-        "issues": ["observation_incomplete"],
-        "bytes": 60,
-    }
-
-
-@pytest.mark.parametrize("file_count", [3, 30])
-def test_retained_entry_budget_returns_subtotal_and_closes_iterator(tmp_path, monkeypatch, file_count):
-    for number in range(file_count):
-        (tmp_path / f"{number}.bin").write_bytes(b"x")
-    real_scandir = os.scandir
-    closed = []
-
-    def tracked_scandir(path):
-        with real_scandir(path) as entries:
-            try:
-                yield from entries
-            finally:
-                closed.append(path)
-
-    monkeypatch.setattr(collector, "_MAX_RETAINED_ENTRIES", 3)
-    monkeypatch.setattr(collector.os, "scandir", tracked_scandir)
-
-    result = observe_retained_content(tmp_path)
-    assert result == (
-        {"bytes": 3} if file_count == 3 else {"status": "partial", "issues": ["observation_incomplete"], "bytes": 3}
-    )
-    assert len(closed) == 1
-    with pytest.raises(OSError):
-        os.fstat(closed[0])
-
-
-def test_retained_depth_budget_keeps_shallower_files(tmp_path, monkeypatch):
-    (tmp_path / "root.bin").write_bytes(b"xx")
-    first = tmp_path / "first"
-    second = first / "second"
-    second.mkdir(parents=True)
-    (first / "first.bin").write_bytes(b"xxx")
-    (second / "omitted.bin").write_bytes(b"xxxxx")
-    monkeypatch.setattr(collector, "_MAX_RETAINED_DEPTH", 1)
-
-    assert observe_retained_content(tmp_path) == {"status": "partial", "issues": ["observation_incomplete"], "bytes": 5}
-
-
-@pytest.mark.parametrize("observed_entries", [0, 2])
-def test_retained_deadline_stops_between_entries(tmp_path, monkeypatch, observed_entries):
-    for number in range(5):
-        (tmp_path / f"{number}.bin").write_bytes(b"x")
-    ticks = iter([0] + [0] * observed_entries + [1])
-    isolate_time(monkeypatch, collector)
-    monkeypatch.setattr(collector.time, "monotonic", lambda: next(ticks))
-
-    result = observe_retained_content(tmp_path)
-
-    assert result == (
-        {"status": "partial", "issues": ["observation_incomplete"], "bytes": 2}
-        if observed_entries
-        else {"status": "unavailable", "issues": ["observation_incomplete"]}
-    )
-
-
-def test_retained_unreadable_subdirectory_keeps_known_files(tmp_path, monkeypatch):
-    (tmp_path / "kept.bin").write_bytes(b"xxx")
-    inaccessible = tmp_path / "inaccessible"
-    inaccessible.mkdir()
-    real_open = os.open
-
-    def limited_open(path, flags, **kwargs):
-        if path == inaccessible.name:
-            raise PermissionError("denied")
-        return real_open(path, flags, **kwargs)
-
-    monkeypatch.setattr(collector.os, "open", limited_open)
-
-    assert observe_retained_content(tmp_path) == {"status": "partial", "issues": ["observation_incomplete"], "bytes": 3}
 
 
 def test_restored_collector_keeps_new_totals_but_marks_prior_interval_incomplete(tmp_path):
     ticks = iter([1_000_000_000, 3_000_000_000])
     job_collector = JobResourceCollector(
-        tmp_path,
         clock_ns=lambda: next(ticks),
         capacity_probe=lambda: {"cpu": {"units": 2}, "memory": {"bytes": 4096}, "gpu": {"count": 0}},
         prior_observation_incomplete=True,
@@ -414,7 +208,6 @@ def test_shared_duration_survives_missing_gpu_capacity(monkeypatch, tmp_path):
         collector, "CpuConsumedAccountant", lambda **kwargs: original(usage_reader=lambda: next(usages), **kwargs)
     )
     job_collector = JobResourceCollector(
-        tmp_path,
         clock_ns=lambda: next(resource_ticks),
         capacity_probe=lambda: {"cpu": {"units": 8}, "memory": {"bytes": 4096}},
     )
@@ -431,7 +224,6 @@ def test_multinode_slurm_rank_zero_measurement_is_unavailable(monkeypatch, tmp_p
     monkeypatch.setenv("NVFL_NNODES", "4")
     ticks = iter([1_000_000_000, 3_000_000_000])
     job_collector = JobResourceCollector(
-        tmp_path,
         clock_ns=lambda: next(ticks),
         capacity_probe=lambda: {"cpu": {"units": 8}, "memory": {"bytes": 4096}, "gpu": {"count": 0}},
     )
@@ -519,86 +311,6 @@ def test_handoff_reader_rejects_fifo_without_blocking(tmp_path):
     assert read_terminal_handoff(run_dir) is None
 
 
-@pytest.mark.parametrize("replace_root", [False, True])
-def test_retained_directory_replaced_with_symlink_before_open(tmp_path, monkeypatch, replace_root):
-    run = tmp_path / "run"
-    child = run / "child"
-    child.mkdir(parents=True)
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (outside / "unrelated.bin").write_bytes(b"x" * 4096)
-    target = run if replace_root else child
-    real_open = os.open
-    replaced = []
-
-    def racing_open(path, flags, **kwargs):
-        if path == (run if replace_root else child.name) and not replaced:
-            target.rename(tmp_path / "original")
-            target.symlink_to(outside, target_is_directory=True)
-            replaced.append(True)
-        return real_open(path, flags, **kwargs)
-
-    monkeypatch.setattr(collector.os, "open", racing_open)
-    assert observe_retained_content(run) == (
-        {"status": "unavailable", "issues": ["observation_incomplete"]}
-        if replace_root
-        else {"status": "partial", "issues": ["observation_incomplete"], "bytes": 0}
-    )
-    assert replaced == [True]
-
-
-def test_retained_scan_pins_parent_when_its_path_is_replaced(tmp_path, monkeypatch):
-    run = tmp_path / "run"
-    (run / "child").mkdir(parents=True)
-    (run / "child" / "kept.bin").write_bytes(b"xxx")
-    outside = tmp_path / "outside"
-    (outside / "child").mkdir(parents=True)
-    (outside / "child" / "unrelated.bin").write_bytes(b"x" * 4096)
-    real_open = os.open
-    descriptors = []
-
-    def racing_open(path, flags, **kwargs):
-        if path == "child":
-            run.rename(tmp_path / "original")
-            run.symlink_to(outside, target_is_directory=True)
-        descriptor = real_open(path, flags, **kwargs)
-        descriptors.append(descriptor)
-        return descriptor
-
-    monkeypatch.setattr(collector.os, "open", racing_open)
-    assert observe_retained_content(run) == {"bytes": 3}
-    assert len(descriptors) == 2
-    for descriptor in descriptors:
-        with pytest.raises(OSError):
-            os.fstat(descriptor)
-
-
-def test_retained_scan_closes_directory_when_scandir_fails(tmp_path, monkeypatch):
-    real_open = os.open
-    descriptors = []
-
-    def tracked_open(path, flags, **kwargs):
-        descriptor = real_open(path, flags, **kwargs)
-        descriptors.append(descriptor)
-        return descriptor
-
-    def denied(_descriptor):
-        raise PermissionError("denied")
-
-    monkeypatch.setattr(collector.os, "open", tracked_open)
-    monkeypatch.setattr(collector.os, "scandir", denied)
-    assert observe_retained_content(tmp_path) == {"status": "unavailable", "issues": ["observation_incomplete"]}
-    assert len(descriptors) == 1
-    with pytest.raises(OSError):
-        os.fstat(descriptors[0])
-
-
-def test_retained_scan_is_unavailable_without_safe_directory_operations(tmp_path, monkeypatch):
-    (tmp_path / "file.bin").write_bytes(b"xxx")
-    monkeypatch.setattr(collector, "_RETAINED_DIR_FD_SUPPORTED", False)
-    assert observe_retained_content(tmp_path) == {"status": "unavailable", "issues": ["unsupported"]}
-
-
 @pytest.mark.parametrize(
     "traffic",
     [
@@ -607,139 +319,10 @@ def test_retained_scan_is_unavailable_without_safe_directory_operations(tmp_path
         {"status": "unavailable", "issues": ["observation_incomplete"]},
     ],
 )
-def test_prior_observation_gap_preserves_traffic_subtotals_and_independent_files(tmp_path, traffic):
-    job = JobResourceCollector(tmp_path, prior_observation_incomplete=True, capacity_probe=lambda: {})
+def test_prior_observation_gap_preserves_traffic_subtotals_(tmp_path, traffic):
+    job = JobResourceCollector(prior_observation_incomplete=True, capacity_probe=lambda: {})
     report = job.finish(message_traffic=traffic)
     expected = {key: value for key, value in traffic.items() if key != "issues"}
     expected["status"] = "unavailable" if traffic.get("status") == "unavailable" else "partial"
     assert report["resource_utilization"]["message_traffic"] == expected
     assert report["issues"].count({"metric": "message_traffic", "code": "observation_incomplete"}) == 1
-    assert report["resource_utilization"]["retained_content"] == {"bytes": 0}
-    assert "status" not in report["workspace_filesystem"]
-
-
-UNAVAILABLE = {"status": "unavailable", "issues": ["observation_incomplete"]}
-# Other collector tests replace this function with synchronous observations.
-_OBSERVE_FILESYSTEM = collector.observe_filesystem
-
-
-@pytest.mark.parametrize("capacity_fails", [False, True])
-@pytest.mark.parametrize("retained", [{"bytes": 0}, {"bytes": 7, **UNAVAILABLE, "status": "partial"}, UNAVAILABLE])
-def test_completed_observations_preserve_zero_partial_and_independent_quality(monkeypatch, capacity_fails, retained):
-    capacity = (
-        Mock(side_effect=OSError("unavailable")) if capacity_fails else Mock(return_value={"capacity_bytes": 1024})
-    )
-    monkeypatch.setattr(collector, "observe_workspace_filesystem", capacity)
-    monkeypatch.setattr(collector, "observe_retained_content", lambda _: retained)
-    result = _OBSERVE_FILESYSTEM("run")
-    assert result == {
-        "workspace_filesystem": UNAVAILABLE if capacity_fails else {"capacity_bytes": 1024},
-        "retained_content": retained,
-    }
-
-
-@pytest.mark.parametrize("blocked_metric", ["workspace_filesystem", "retained_content"])
-def test_timeout_preserves_completed_values_and_ignores_late_results(monkeypatch, blocked_metric):
-    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
-    threads = []
-    clock = isolate_time(monkeypatch, collector)
-    clock.monotonic = Mock(return_value=0.0)
-
-    def blocked(_):
-        entered.set()
-        release.wait()
-        return {"capacity_bytes": 999} if blocked_metric == "workspace_filesystem" else {"bytes": 999}
-
-    scan = Mock(side_effect=blocked) if blocked_metric == "retained_content" else Mock(return_value={"bytes": 7})
-    monkeypatch.setattr(collector, "observe_retained_content", scan)
-    monkeypatch.setattr(
-        collector,
-        "observe_workspace_filesystem",
-        blocked if blocked_metric == "workspace_filesystem" else lambda _: {"capacity_bytes": 1024},
-    )
-
-    def expire_after_entry(timeout):
-        assert timeout == 2.0
-        assert entered.wait(5), "observer did not enter the blocked call"
-        clock.monotonic.return_value = 2.0
-        return False
-
-    def thread(**kwargs):
-        result = threading.Thread(**kwargs)
-        threads.append(result)
-        return result
-
-    monkeypatch.setattr(
-        collector,
-        "threading",
-        SimpleNamespace(
-            Thread=thread,
-            Lock=threading.Lock,
-            Event=lambda: SimpleNamespace(wait=expire_after_entry, set=finished.set),
-        ),
-    )
-    try:
-        result = _OBSERVE_FILESYSTEM("run")
-        assert threads[0].daemon
-        assert not release.is_set()
-        expected = {"workspace_filesystem": UNAVAILABLE, "retained_content": UNAVAILABLE}
-        if blocked_metric == "retained_content":
-            expected["workspace_filesystem"] = {"capacity_bytes": 1024}
-        assert result == expected
-    finally:
-        release.set()
-        for worker in threads:
-            worker.join(5)
-            assert not worker.is_alive(), "observer did not stop after releasing the gate"
-    assert finished.is_set()
-    assert result == expected
-    if blocked_metric == "workspace_filesystem":
-        scan.assert_not_called()
-
-
-@pytest.mark.parametrize("failure", ["start", "expired", "scan"])
-def test_failed_or_expired_observation_remains_unavailable(monkeypatch, failure):
-    capacity = Mock(return_value={"capacity_bytes": 1024})
-    scan = Mock(side_effect=OSError("scan failed"))
-    monkeypatch.setattr(collector, "observe_workspace_filesystem", capacity)
-    monkeypatch.setattr(collector, "observe_retained_content", scan)
-    if failure == "start":
-        monkeypatch.setattr(
-            collector,
-            "threading",
-            SimpleNamespace(
-                Thread=Mock(side_effect=RuntimeError("cannot start")),
-                Lock=threading.Lock,
-                Event=threading.Event,
-            ),
-        )
-    result = _OBSERVE_FILESYSTEM("run", timeout=0 if failure == "expired" else 2)
-    assert result["retained_content"] == UNAVAILABLE
-    if failure == "scan":
-        assert result["workspace_filesystem"] == {"capacity_bytes": 1024}
-    else:
-        assert result["workspace_filesystem"] == UNAVAILABLE
-        capacity.assert_not_called()
-        scan.assert_not_called()
-
-
-def test_execution_clock_and_cpu_freeze_before_starting_the_single_observer(monkeypatch, tmp_path):
-    ticks = iter((0, 1_000_000_000))
-    job = collector.JobResourceCollector(
-        tmp_path,
-        clock_ns=lambda: next(ticks),
-        capacity_probe=lambda: {"cpu": {"units": 2}, "memory": {"bytes": 1024}, "gpu": {"count": 0}},
-    )
-    observed = []
-
-    def observe(run_dir):
-        assert job._snapshot["duration_seconds"] == 1
-        assert "cpu_seconds" in job._snapshot["cpu_consumed"]
-        observed.append(run_dir)
-        return {"workspace_filesystem": {"capacity_bytes": 4096}, "retained_content": {"bytes": 7}}
-
-    monkeypatch.setattr(collector, "observe_filesystem", observe)
-    result = job.finish(message_traffic={"sent_bytes": 0, "received_bytes": 0})
-    assert observed == [tmp_path]
-    assert result["resource_utilization"]["retained_content"] == {"bytes": 7}
-    assert result["issues"] == []

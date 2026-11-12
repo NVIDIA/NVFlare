@@ -3,7 +3,7 @@
 ## Purpose
 
 Resource statistics provides a final, best-effort account of the resources visible
-to a job, its recorded CPU work, retained file sizes, and message payloads. It
+to a job, its recorded CPU work and message payloads. It
 lets users inspect a participant or compare retained jobs without installing a
 monitoring service or changing their applications.
 
@@ -14,7 +14,7 @@ statistics does not select or enable backends.
 ## Relationship to JobStatsReporter
 
 Resource statistics automatically records startup capacity, capacity-time, CPU
-work, message payload traffic and retained file sizes. Use it for final
+work and message payload traffic. Use it for final
 participant reports and job/study comparisons; no application widget needs to
 be enabled.
 
@@ -65,8 +65,10 @@ The following abbreviated example for a resident job omits identity:
   },
   "resource_utilization": {
     "cpu_consumed": {"cpu_seconds": 2},
-    "retained_content": {"bytes": 1024},
-    "message_traffic": {"sent_bytes": 2048, "received_bytes": 4096}
+    "message_traffic": {
+      "sent_bytes": 2048,
+      "received_bytes": 4096
+    }
   },
   "issues": []
 }
@@ -75,7 +77,7 @@ The following abbreviated example for a resident job omits identity:
 The example describes one resident participant. CPU and RAM capacity are
 observed at job-process startup alongside the GPU count, using the
 execution's launcher-established environment. Work and traffic follow their respective
-collection boundaries, and retained content is scanned at finalization. In task
+collection boundaries. In task
 mode, capacity-time also includes worker windows, while participant startup
 capacity still describes the job process. Quantities use native finite JSON
 numbers; byte and device counts are integers.
@@ -90,16 +92,12 @@ numbers; byte and device counts are integers.
 | `resource_time.memory.byte_seconds` | The sum of each included execution's RAM capacity in bytes multiplied by its duration in seconds. Here, 2,147,483,648 bytes × 10 seconds = 21,474,836,480 byte-seconds. |
 | `resource_time.gpu.instance_seconds` | The sum of each included execution's GPU count multiplied by its duration, in GPU-seconds. The example records one GPU for 10 seconds. |
 | `resource_utilization.cpu_consumed.cpu_seconds` | Total user and system CPU work in seconds across included, disjoint process scopes and normally waited descendants, measured from CPU counters over their execution windows; arbitrary unwaited descendants are not guaranteed covered. One CPU working for two seconds and two CPUs working for one second both contribute two CPU-seconds. |
-| `resource_utilization.retained_content.bytes` | Logical length in bytes of regular files retained in the participant's run directory at finalization, measured by a bounded scan. Symlinks and the top-level report directory are excluded. It is not physical disk occupancy or peak storage. |
 | `resource_utilization.message_traffic.sent_bytes` and `received_bytes` | Payload bytes counted separately at the participant's job Cell and included worker and managed-trainer endpoints, from their observed traffic through their final snapshots. Control payloads and repeated transfers are included; shared parent traffic and network headers are excluded. |
 
-The workspace filesystem's visible capacity is also observed at finalization and
-appears in participant detail. It is not storage reserved for the job.
-
-`resource_utilization` groups recorded work, content, and traffic; it does not
+`resource_utilization` groups recorded CPU work and traffic; it does not
 claim GPU busy time or RAM utilization. Each metric retains its own
 status beside its value. One scope-level `issues` list identifies affected metrics
-and codes, so a partial file scan does not affect CPU results. A complete scope
+and codes, so partial traffic does not affect CPU results. A complete scope
 uses `issues: []`. Field names identify units.
 
 The collector computes capacity-time for each execution and combines it in
@@ -122,7 +120,6 @@ deduplicated network-byte total. Direct in-process delivery is excluded.
 ```text
 Job process: prepare workspace -> probe CPU/RAM and GPU inventory
              -> open counters -> run application -> freeze CPU/duration
-             -> scan files
 Parent:      consume terminal handoff -> release resources -> report outcome
 Server:      validate participant report -> finalize workspace archive
 User:        authorized job/site/study query -> derive totals -> render
@@ -156,8 +153,9 @@ coverage explanation; `unavailable` has no usable value. An unreadable limit
 does not erase another usable observation. A missing or failed `nvidia-smi`
 inventory is unavailable; an explicit empty GPU pool is zero.
 
-Reports are untrusted site self-reports. Validation checks sender/job identity,
-shape, numeric limits, and duplicates, but does not attest hardware. Equivalent
+Reports are site self-reports: job code can change measurements in memory or on
+disk. Server acceptance checks identity, input bounds, structure and arithmetic;
+these checks cannot establish measurement authenticity. Equivalent
 duplicates do not add measurements; conflicting replacements are rejected.
 Missing participants remain explicit gaps. A server crash before archive
 publication or a killed job process can lose statistics. Collection failures
@@ -170,16 +168,11 @@ accumulate earlier generations. If earlier observations are missing, affected
 capacity-time, CPU and traffic measurements are marked incomplete. The CPU
 average uses the terminal generation's containing duration as its denominator,
 when that duration is valid; it does not use elapsed time across restarts.
-Retained content comes from the final workspace scan. The parent accepts only a
-handoff bound to the terminal launch generation; missing terminal observations
+The parent accepts only a handoff bound to the terminal launch generation; missing terminal observations
 remain gaps even if an earlier generation's file survives. Scheduling retries
 alone do not establish that an earlier execution occurred.
 
-Filesystem observations run in isolation with a bounded finalization wait, so a
-blocked optional probe does not hold up job cleanup or resource release
-indefinitely. Captured measurements are preserved, unfinished observations
-become unavailable, and late results are ignored. Requested archive members and
-ZIP indexing have separate decoded-data and metadata-read bounds. Remote job
+Requested archive members and ZIP indexing have separate decoded-data and metadata-read bounds. Remote job
 stores may still transfer the whole workspace archive to answer a small query.
 Query latency and temporary storage can therefore depend on the archive size,
 not just the statistics size. Each server admits one archive-backed job or study
@@ -193,8 +186,8 @@ disk-space, and execution-time limitations.
 With `execution_lifetime="task"`, the resident Client Job coordinates workers
 whose resources and lifetimes can differ from its own. Statistics are collected
 inside each worker's actual environment and rolled into the participant's
-existing CPU-work, capacity-time, and traffic fields. Retained content is
-scanned once at finalization. There is no public task or worker list.
+existing CPU-work, capacity-time, and traffic fields. There is no public task
+or worker list.
 
 For example, a 60-second coordinator with zero GPUs and 2 CPU seconds launches
 one-GPU workers lasting 10 and 5 seconds, using 8 and 4 CPU seconds. The participant

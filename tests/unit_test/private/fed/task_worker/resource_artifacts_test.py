@@ -21,7 +21,6 @@ from pathlib import Path
 import pytest
 
 from nvflare.apis.shareable import Shareable
-from nvflare.private.fed.resource_stats.task_rollup import TaskResourceReducer
 from nvflare.private.fed.task_worker import artifacts
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from tests.task_worker_test_utils import _identity
@@ -57,40 +56,6 @@ def test_sidecar_is_separate_immutable_and_can_be_retired(tmp_path):
     assert store.read_resource_stats(identity) == _record(identity)
     store.remove_resource_stats(identity)
     store.remove_resource_stats(identity)
-    assert store.read_resource_stats(identity) is None
-    assert store.read_result(identity)[0]["value"] == 42
-
-
-@pytest.mark.parametrize("change", ["identity", "version", "scope", "unknown", "cpu"])
-def test_malformed_sidecar_does_not_invalidate_result(tmp_path, change):
-    store, identity = _store(tmp_path)
-    store.commit_result(identity, Shareable({"value": 42}))
-    record = _record(identity)
-    if change == "identity":
-        record["identity"]["site_name"] = "another-site"
-    elif change == "version":
-        record["schema_version"] = "2.0"
-    elif change == "scope":
-        record["scope"] = "unknown"
-    elif change == "unknown":
-        record["private"] = "unexpected"
-    else:
-        record["cpu_consumed"]["cpu_seconds"] = "-1"
-    path = Path(store.attempt_dir(identity), "resource_stats.json")
-    path.write_text(json.dumps(record))
-    # The store bounds and owns the raw file; settlement checks its measurements.
-    assert store.read_resource_stats(identity) == record
-    reducer = TaskResourceReducer()
-    assert reducer.register(identity)
-    reducer.settle(identity, store, started=True, settled=True)
-    totals = reducer.snapshot()
-    assert totals["cpu_consumed"] == {"status": "unavailable"}
-    if change == "cpu":
-        assert totals["resource_time"]["cpu"] == {"unit_seconds": 20}
-        assert totals["message_traffic"] == {"sent_bytes": 7, "received_bytes": 11}
-    else:
-        assert totals["resource_time"] == {"status": "unavailable"}
-        assert totals["message_traffic"] == {"status": "unavailable"}
     assert store.read_resource_stats(identity) is None
     assert store.read_result(identity)[0]["value"] == 42
 

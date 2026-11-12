@@ -34,10 +34,8 @@ def _participant_summary(job_id="job-1", participant_name="site-1", reported_at=
         "duration_seconds": 2,
         "resource_capacity": capacity,
         "resource_time": capacity_to_resource_time(capacity, 2),
-        "workspace_filesystem": {"capacity_bytes": 8192},
         "resource_utilization": {
             "cpu_consumed": {"cpu_seconds": 1.5},
-            "retained_content": {"bytes": 20},
             "message_traffic": {"sent_bytes": 3, "received_bytes": 4},
         },
     }

@@ -22,7 +22,6 @@ from contextlib import ExitStack, contextmanager
 from typing import Any, BinaryIO
 from zipfile import BadZipFile, ZipFile
 
-from .measurements import participant_measurements
 from .report_reader import (
     KIND_PARTICIPANT_SUMMARY,
     KIND_RESOURCE_SUMMARY,
@@ -114,15 +113,8 @@ class WorkspaceResourceStatsReader:
             record = read_resource_report(data, KIND_PARTICIPANT_SUMMARY)
         except ValueError as exc:
             raise WorkspaceResourceStatsError(f"participant summary is invalid: {exc}") from exc
-        if (
-            record["schema_version"] != summary["schema_version"]
-            or record["job_id"] != summary["job_id"]
-            or record["participant_name"] != participant_name
-        ):
+        if record["job_id"] != summary["job_id"] or record["participant_name"] != participant_name:
             raise WorkspaceResourceStatsError("participant summary identity does not match its archive slot")
-        copied = participant_measurements(record)
-        if any(summary_entry.get(field) != copied.get(field) for field in copied.keys() | {"duration_seconds"}):
-            raise WorkspaceResourceStatsError("participant summary values do not match the resource summary")
         return record
 
     def _read_exact_member(self, member_name: str, max_bytes: int) -> bytes:

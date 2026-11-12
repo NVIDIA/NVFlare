@@ -57,7 +57,6 @@ def test_task_worker_resource_report_reconciles_without_double_counting(tmp_path
     monkeypatch.setattr(cpu_consumed, "_active", None)
     monkeypatch.setattr(task_rollup, "_ACTIVE", None)
     job = JobResourceCollector(
-        tmp_path,
         capacity_probe=lambda: {"cpu": {"units": 1}, "memory": {"bytes": 1024}, "gpu": {"count": 0}},
     )
     collector.configure_task_collection()

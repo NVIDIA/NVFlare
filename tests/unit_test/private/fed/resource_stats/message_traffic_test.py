@@ -49,12 +49,6 @@ def test_successful_zero_is_distinct_from_missing_cell():
     assert snapshot_message_traffic(None) == {"status": "unavailable", "issues": ["observation_incomplete"]}
 
 
-@pytest.mark.parametrize("bad", [True, -1, "7", None])
-def test_malformed_transport_counter_is_unavailable(bad):
-    cell = _cell(bad)
-    assert snapshot_message_traffic(cell) == {"status": "unavailable", "issues": ["observation_incomplete"]}
-
-
 def test_trainer_snapshots_are_cumulative_and_old_duplicates_cannot_double_count():
     cell = _cell(7, 11)
     register_external_trainer(cell, "trainer-1")

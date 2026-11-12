@@ -414,9 +414,8 @@ class Session(SessionSpec):
         """Return the finalized resource-statistics report for one job.
 
         Reports participant-visible CPU and memory capacity, selected GPU counts,
-        CPU time consumed, run-directory file bytes, selected message traffic,
-        together with accumulated execution capacity-time. A site
-        query also includes its final workspace-filesystem capacity. Queries
+        CPU time consumed and selected message traffic,
+        together with accumulated execution capacity-time. Queries
         sum recorded capacity-time; capacity does not establish that
         the job used a GPU. Data is only available after
         the job has finished and the server has finalized its resource report;
@@ -424,8 +423,8 @@ class Session(SessionSpec):
 
         ``resource_capacity`` records the job-process startup CPU, RAM, and selected
         GPU inventory. ``resource_time`` sums each execution's capacity-time once.
-        ``resource_utilization`` groups ``cpu_consumed`` (CPU seconds),
-        ``retained_content`` (run-directory file bytes), and ``message_traffic``
+        ``resource_utilization`` groups ``cpu_consumed`` (CPU seconds)
+        and ``message_traffic``
         (sent and received CellNet payload bytes for the job and its managed
         trainers). Each measurement retains its own status; the containing
         scope owns one ``issues`` list.

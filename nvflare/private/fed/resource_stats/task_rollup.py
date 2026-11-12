@@ -19,21 +19,17 @@ from __future__ import annotations
 import json
 import os
 import threading
-from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, replace
 
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 
-from .handoff import _read_capacity, _read_fields, _read_issues, _read_number, _read_usage
 from .measurements import (
-    SCHEMA_VERSION,
     _sum_numbers,
     aggregate_cpu_consumed,
     aggregate_message_traffic,
     aggregate_scope_issues,
     capacity_to_resource_time,
-    ordered_issues,
 )
 
 MAX_SIDECAR_BYTES = 64 * 1024
@@ -67,57 +63,11 @@ def get_task_resource_reducer():
         return _ACTIVE
 
 
-def _read_worker_record(value, expected_identity):
-    fields = {"schema_version", "identity", "scope", "resource_capacity", "cpu_consumed", "message_traffic", "issues"}
-    _read_fields(value, fields, {"duration_seconds"})
-    if value["schema_version"] != SCHEMA_VERSION or value["scope"] != "worker":
-        raise ValueError("unsupported worker schema or scope")
-    identity = _read_fields(value["identity"], {"job_id", "site_name", "task_id", "task_name", "attempt_id"})
-    if identity != expected_identity or any(not isinstance(item, str) for item in identity.values()):
-        raise ValueError("worker identity does not match its owned execution")
-    names = ("resource_capacity", "cpu_consumed", "message_traffic")
-    by_metric = {name: [] for name in names}
-    if not isinstance(value["issues"], list):
-        raise ValueError("worker issues must be a list")
-    for issue in value["issues"]:
-        if (
-            not isinstance(issue, Mapping)
-            or not isinstance(issue.get("metric"), str)
-            or issue["metric"] not in by_metric
-        ):
-            raise ValueError("worker issue must name a known metric")
-        by_metric[issue["metric"]].append(issue)
-    result = {"schema_version": SCHEMA_VERSION, "identity": dict(expected_identity), "scope": "worker"}
-    issues = []
-    for name in names:
-        try:
-            if name == "resource_capacity":
-                measurement = _read_capacity(value[name])
-            else:
-                fields = ("cpu_seconds",) if name == "cpu_consumed" else ("sent_bytes", "received_bytes")
-                measurement = _read_usage(value[name], fields, integer=name != "cpu_consumed")
-            tags = _read_issues(by_metric[name], {name: measurement})
-        except ValueError:
-            measurement = {"status": "unavailable"}
-            tags = [{"metric": name, "code": "malformed_source"}]
-        result[name] = measurement
-        issues.extend(tags)
-    result["issues"] = ordered_issues(issues)
-    if "duration_seconds" in value:
-        try:
-            result["duration_seconds"] = _read_number(value["duration_seconds"])
-        except ValueError:
-            pass
-    return result
-
-
 def _encoded(value):
     return json.dumps(value, allow_nan=False, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 
 def _key(identity):
-    if not isinstance(identity, TaskAttemptIdentity):
-        raise TypeError("task resource identity must be a TaskAttemptIdentity")
     return (identity.job_id, identity.site_name, identity.task_id, identity.attempt_id, "worker")
 
 
@@ -215,9 +165,6 @@ class TaskResourceReducer:
             if scope.identity != identity:
                 self._incomplete = True
                 return
-            if not isinstance(execution_id, str) or not execution_id or len(execution_id) > 4096:
-                self._incomplete = True
-                return
             if scope.execution_id is not None and scope.execution_id != execution_id:
                 self._incomplete = True
                 return
@@ -301,8 +248,7 @@ class TaskResourceReducer:
         invalid = False
         if started is not False:
             try:
-                raw = store.read_resource_stats(identity)
-                record = _read_worker_record(raw, identity.to_dict()) if raw is not None else None
+                record = store.read_resource_stats(identity)
             except Exception:
                 invalid = True
         with self._lock:
@@ -318,14 +264,20 @@ class TaskResourceReducer:
                 candidate.disposition = "invalid" if invalid else "settled_missing"
                 self._incomplete = True
             else:
-                candidate.disposition = "reported"
-                candidate.record = _encoded(record)
-                totals = self._updated_totals(record)
-                size = self._state_bytes - previous_size + _scope_size(candidate)
-                if self._fits(size, totals):
-                    self._totals = totals
-                else:
-                    self._freeze()
+                try:
+                    candidate.disposition = "reported"
+                    candidate.record = _encoded(record)
+                    totals = self._updated_totals(record)
+                    size = self._state_bytes - previous_size + _scope_size(candidate)
+                    if self._fits(size, totals):
+                        self._totals = totals
+                    else:
+                        self._freeze()
+                        candidate = replace(candidate, record=None, disposition="invalid")
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    # A failed optional contribution leaves earlier totals intact
+                    # and still retires its file and reservation below.
+                    self._incomplete = True
                     candidate = replace(candidate, record=None, disposition="invalid")
             self._state_bytes += _scope_size(candidate) - previous_size
             self._scopes[key] = candidate

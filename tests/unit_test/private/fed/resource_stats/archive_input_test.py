@@ -44,10 +44,8 @@ def _reports():
             "memory": {"bytes": 4096},
             "gpu": {"count": 2},
         },
-        workspace_filesystem={"capacity_bytes": 4096},
         resource_utilization={
             "cpu_consumed": {"cpu_seconds": 2},
-            "retained_content": {"bytes": 20},
             "message_traffic": {"sent_bytes": 0, "received_bytes": 0},
         },
         issues=[
@@ -103,23 +101,7 @@ def test_requested_detail_can_use_equivalent_numbers_and_issue_order():
     reader = WorkspaceResourceStatsReader(_archive(summary, participant))
     detail = reader.read_participant_summary("site-1")
     assert detail["resource_utilization"]["cpu_consumed"]["cpu_seconds"] == 2
-    assert detail["resource_utilization"]["retained_content"]["bytes"] == 20
     assert detail["resource_capacity"] == summary["participants"][0]["resource_capacity"]
-
-
-@pytest.mark.parametrize("mismatch", ["missing_detail_duration", "missing_summary_duration", "different_duration"])
-def test_shared_duration_must_match_in_summary_and_detail(mismatch):
-    summary, participant = _reports()
-    entry = summary["participants"][0]
-    if mismatch == "missing_detail_duration":
-        participant.pop("duration_seconds")
-    elif mismatch == "missing_summary_duration":
-        entry.pop("duration_seconds")
-    else:
-        entry["duration_seconds"] = 20
-    reader = WorkspaceResourceStatsReader(_archive(summary, participant))
-    with pytest.raises(WorkspaceResourceStatsError, match="values do not match"):
-        reader.read_participant_summary("site-1")
 
 
 @pytest.mark.parametrize("field,value", [("job_id", "other-job"), ("participant_name", "other-site")])

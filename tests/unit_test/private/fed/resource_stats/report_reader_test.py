@@ -118,24 +118,17 @@ def test_job_totals_sum_explicit_time_and_keep_missing_report_coverage():
     assert "duration_seconds" not in totals
     assert totals["issues"] == [
         {"metric": metric, "code": "observation_incomplete"}
-        for metric in ("cpu_consumed", "message_traffic", "resource_time", "retained_content")
+        for metric in (
+            "cpu_consumed",
+            "message_traffic",
+            "resource_time",
+        )
     ]
     with pytest.raises(ValueError, match="unique"):
         read_resource_report(canonical_json_bytes(_resource_summary(participants=[first, first])))
 
 
-def test_workspace_issues_stay_in_detail_and_do_not_leak_into_job_rows():
-    record = _participant_summary()
-    record["workspace_filesystem"] = {"status": "unavailable"}
-    record["issues"] = [{"metric": "workspace_filesystem", "code": "unsupported"}]
-    read_resource_report(canonical_json_bytes(record))
-    values = participant_measurements(record)
-    assert values["issues"] == []
-    assert "workspace_filesystem" not in values
-    assert record["issues"] == [{"metric": "workspace_filesystem", "code": "unsupported"}]
-
-
-@pytest.mark.parametrize("change", ["missing", "nested", "wrong_metric", "complete"])
+@pytest.mark.parametrize("change", ["missing", "nested", "wrong_metric"])
 def test_participant_report_requires_one_consistent_scope_issue_list(change):
     record = _participant_summary()
     if change == "missing":
@@ -144,9 +137,7 @@ def test_participant_report_requires_one_consistent_scope_issue_list(change):
         record["resource_utilization"]["cpu_consumed"]["issues"] = []
     elif change == "wrong_metric":
         record["resource_utilization"]["cpu_consumed"] = {"status": "unavailable"}
-        record["issues"] = [{"metric": "resource_time", "code": "unsupported"}]
-    else:
-        record["issues"] = [{"metric": "cpu_consumed", "code": "observation_incomplete"}]
+        record["issues"] = [{"metric": "unknown_metric", "code": "unsupported"}]
     with pytest.raises(ValueError):
         read_resource_report(canonical_json_bytes(record))
 
@@ -220,3 +211,11 @@ def test_report_timestamps_reject_other_iso_forms_and_invalid_dates(field, times
     target[field] = timestamp
     with pytest.raises(ValueError, match="timestamp"):
         read_resource_report(canonical_json_bytes(record))
+
+
+@pytest.mark.parametrize("value", [True, -1, "2", 1.5, float("inf")])
+def test_incoming_byte_counters_require_nonnegative_integers(value):
+    record = _participant_summary()
+    record["resource_utilization"]["message_traffic"]["sent_bytes"] = value
+    with pytest.raises(ValueError):
+        read_resource_report(json.dumps(record).encode())

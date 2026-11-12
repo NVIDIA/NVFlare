@@ -77,7 +77,6 @@ def main(args):
         # Observe capacity within the existing job startup lifecycle. Keep
         # normal Python imports and dependency paths available throughout.
         resource_collector = JobResourceCollector(
-            workspace.get_run_dir(args.job_id),
             prior_observation_incomplete=bool(args.snapshot)
             or kv_list.get("resource_prior_attempt_incomplete") is True,
         )

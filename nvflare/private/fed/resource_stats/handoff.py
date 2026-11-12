@@ -12,28 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Checked read/write of the private, job-process-owned terminal handoff.
+"""Publish and read the private terminal handoff for one launch.
 
-The child writes capacity, CPU work, file sizes, and traffic observations.
-The parent validates each measurement while reading the handoff. Identity
-comes from parent-owned lifecycle state, never from the child file.
-Directory-relative operations protect against path redirection. Without these
-operations, handoff publication is unavailable.
+Measurements are self-reported. The parent supplies public identity and checks
+launch generation to exclude stale attempts. Directory-relative operations and
+bounded regular-file reads prevent job-owned paths from redirecting parent I/O.
 """
 
 from __future__ import annotations
 
 import json
-import math
 import os
 import secrets
 import stat
 from collections.abc import Mapping
-from copy import deepcopy
 from pathlib import Path
 from typing import Any, Optional
 
-from .measurements import canonical_json_bytes, ordered_issues
+from .measurements import canonical_json_bytes
 
 # The private handoff carries startup capacity and accumulated execution time.
 INTERNAL_HANDOFF_VERSION = "4"
@@ -119,181 +115,6 @@ def _open_handoff_directory(run_dir: str | Path, *, include_staging: bool, creat
             os.close(descriptor)
 
 
-def _read_fields(value, required, optional=()):
-    if not isinstance(value, Mapping) or any(not isinstance(key, str) for key in value):
-        raise ValueError("measurement must be an object with string keys")
-    required, optional = set(required), set(optional)
-    if not required <= value.keys() or value.keys() - required - optional:
-        raise ValueError("measurement has missing or unexpected fields")
-    return value
-
-
-def _read_number(value, *, integer=False, positive=False):
-    if isinstance(value, bool) or not isinstance(value, int if integer else (int, float)):
-        raise ValueError("measurement must be an integer" if integer else "measurement must be a number")
-    if value < 0 or (positive and value == 0) or (isinstance(value, float) and not math.isfinite(value)):
-        raise ValueError(
-            "measurement must be finite and positive" if positive else "measurement must be finite and non-negative"
-        )
-    return value
-
-
-def _read_status(value, allowed=("partial", "unavailable")):
-    if not isinstance(value, Mapping):
-        raise ValueError("measurement must be an object")
-    status = value.get("status", "reported")
-    if "status" in value and status not in allowed:
-        raise ValueError("measurement has an invalid status")
-    return status
-
-
-def _read_capacity(value, *, elapsed=False):
-    status = _read_status(value)
-    dimensions = {"cpu", "memory", "gpu"}
-    _read_fields(value, dimensions if status == "reported" else {"status"}, dimensions if status == "partial" else ())
-    if status == "partial" and not dimensions & value.keys():
-        raise ValueError("partial capacity needs an observed dimension")
-    fields = (
-        {"cpu": "unit_seconds", "memory": "byte_seconds", "gpu": "instance_seconds"}
-        if elapsed
-        else {"cpu": "units", "memory": "bytes", "gpu": "count"}
-    )
-    for dimension, field in fields.items():
-        if dimension in value:
-            item = _read_fields(value[dimension], {field})
-            _read_number(
-                item[field], integer=not elapsed and dimension != "cpu", positive=not elapsed and dimension == "cpu"
-            )
-    return deepcopy(value)
-
-
-def _read_usage(value, fields, *, integer=True):
-    status = _read_status(value)
-    required = set(fields) if status != "unavailable" else set()
-    if status != "reported":
-        required.add("status")
-    _read_fields(value, required)
-    if status != "unavailable":
-        for field in fields:
-            _read_number(value[field], integer=integer)
-    return deepcopy(value)
-
-
-def _read_workspace(value):
-    if _read_status(value, ("unavailable",)) == "reported":
-        _read_fields(value, {"capacity_bytes"})
-        _read_number(value["capacity_bytes"], integer=True, positive=True)
-    else:
-        _read_fields(value, {"status"})
-    return deepcopy(value)
-
-
-def _read_issues(issues, measurements):
-    """Check incoming scope diagnostics and their relation to accepted values."""
-    if not isinstance(issues, list):
-        raise ValueError("scope issues must be a list")
-    allowed_codes = {"observation_incomplete", "attribution_incomplete", "unsupported", "malformed_source"}
-    for item in issues:
-        _read_fields(item, {"metric", "code"})
-        if not isinstance(item["metric"], str) or item["metric"] not in measurements:
-            raise ValueError("scope issue names an unknown metric")
-        if not isinstance(item["code"], str) or item["code"] not in allowed_codes:
-            raise ValueError("scope issue has an unknown cause")
-    result = ordered_issues(issues)
-    for metric, value in measurements.items():
-        codes = {item["code"] for item in result if item["metric"] == metric}
-        status = value.get("status", "reported")
-        if status == "reported":
-            if codes:
-                raise ValueError("complete measurements cannot have issues")
-            continue
-        allowed = {"observation_incomplete", "attribution_incomplete"} if status == "partial" else allowed_codes
-        if metric == "message_traffic":
-            allowed = (
-                {"observation_incomplete"} if status == "partial" else {"observation_incomplete", "malformed_source"}
-            )
-        if not codes or codes - allowed:
-            raise ValueError("measurement status needs supported causes")
-    return result
-
-
-def _read_handoff(value: Mapping[str, Any]) -> dict[str, Any]:
-    required = {
-        "internal_version",
-        "kind",
-        "resource_capacity",
-        "resource_time",
-        "resource_utilization",
-        "workspace_filesystem",
-        "issues",
-    }
-    if (
-        not isinstance(value, Mapping)
-        or not required <= set(value)
-        or set(value) - required - {"duration_seconds", "launch_generation"}
-    ):
-        raise InvalidTerminalHandoff(f"terminal handoff fields must be {sorted(required)}")
-    if value["internal_version"] != INTERNAL_HANDOFF_VERSION or value["kind"] != INTERNAL_HANDOFF_KIND:
-        raise InvalidTerminalHandoff("terminal handoff has an unsupported version or kind")
-    utilization = value["resource_utilization"]
-    fields = {"cpu_consumed", "retained_content", "message_traffic"}
-    if not isinstance(utilization, Mapping) or set(utilization) != fields:
-        raise InvalidTerminalHandoff(
-            "resource_utilization must contain CPU work, retained content, and message traffic"
-        )
-    measurements = {
-        **{name: value[name] for name in ("resource_capacity", "resource_time", "workspace_filesystem")},
-        **utilization,
-    }
-    by_metric = {name: [] for name in measurements}
-    if not isinstance(value["issues"], list):
-        raise InvalidTerminalHandoff("terminal handoff issues must be a list")
-    for issue in value["issues"]:
-        if (
-            not isinstance(issue, Mapping)
-            or not isinstance(issue.get("metric"), str)
-            or issue["metric"] not in by_metric
-        ):
-            raise InvalidTerminalHandoff("terminal handoff issue must identify a known metric")
-        by_metric[issue["metric"]].append(issue)
-    issues = []
-    for name, measurement in measurements.items():
-        try:
-            if name in {"resource_capacity", "resource_time"}:
-                checked = _read_capacity(measurement, elapsed=name == "resource_time")
-            elif name == "workspace_filesystem":
-                checked = _read_workspace(measurement)
-            elif name == "cpu_consumed":
-                checked = _read_usage(measurement, ("cpu_seconds",), integer=False)
-            else:
-                quantity_fields = ("bytes",) if name == "retained_content" else ("sent_bytes", "received_bytes")
-                checked = _read_usage(measurement, quantity_fields)
-            tags = _read_issues(by_metric[name], {name: checked})
-        except ValueError:
-            checked = {"status": "unavailable"}
-            tags = [{"metric": name, "code": "malformed_source"}]
-        measurements[name] = checked
-        issues.extend(tags)
-    result = {
-        "internal_version": INTERNAL_HANDOFF_VERSION,
-        "kind": INTERNAL_HANDOFF_KIND,
-        **{name: measurements[name] for name in ("resource_capacity", "resource_time", "workspace_filesystem")},
-        "resource_utilization": {name: measurements[name] for name in sorted(fields)},
-        "issues": ordered_issues(issues),
-    }
-    if "launch_generation" in value:
-        _handoff_filename(value["launch_generation"])
-        if value["launch_generation"] is None:
-            raise InvalidTerminalHandoff("invalid launch generation")
-        result["launch_generation"] = value["launch_generation"]
-    if "duration_seconds" in value:
-        try:
-            result["duration_seconds"] = _read_number(value["duration_seconds"])
-        except ValueError:
-            pass  # Preserve untimed quantities; never invent an elapsed duration.
-    return result
-
-
 def write_terminal_handoff(
     run_dir: str | Path, handoff: Mapping[str, Any], *, launch_generation: str | None = None
 ) -> Path:
@@ -301,8 +122,6 @@ def write_terminal_handoff(
 
     filename = _handoff_filename(launch_generation)
     if launch_generation is not None:
-        if "launch_generation" in handoff and handoff["launch_generation"] != launch_generation:
-            raise InvalidTerminalHandoff("conflicting launch generation")
         handoff = {**handoff, "launch_generation": launch_generation}
     data = canonical_json_bytes(handoff)
     if len(data) > MAX_TERMINAL_HANDOFF_BYTES:
@@ -381,25 +200,14 @@ def read_terminal_handoff(run_dir: str | Path, *, expected_generation: str | Non
     if len(data) > MAX_TERMINAL_HANDOFF_BYTES:
         return None
 
-    def reject_duplicates(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise InvalidTerminalHandoff(f"duplicate terminal handoff key: {key}")
-            result[key] = value
-        return result
-
     try:
-        value = json.loads(
-            data.decode("utf-8"),
-            object_pairs_hook=reject_duplicates,
-            parse_constant=lambda value: (_ for _ in ()).throw(InvalidTerminalHandoff(value)),
-        )
-        checked = _read_handoff(value)
-        if expected_generation is not None and checked.get("launch_generation") != expected_generation:
+        value = json.loads(data)
+        if not isinstance(value, dict):
             return None
-        return checked
-    except (ValueError, RecursionError, TypeError):
+        if expected_generation is not None and value.get("launch_generation") != expected_generation:
+            return None
+        return value
+    except (ValueError, RecursionError):
         return None
 
 
@@ -418,8 +226,7 @@ def remove_terminal_handoff(run_dir: str | Path, *, expected_generation: str | N
     except FileNotFoundError:
         pass
     except OSError:
-        # Unsafe job-owned paths are left untouched.  The server's
-        # final inventory check will reject any remaining staging entry.
+        # Unsafe job-owned paths are left untouched.
         return
     finally:
         if directory_fd is not None:

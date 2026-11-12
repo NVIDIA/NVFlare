@@ -47,7 +47,6 @@ def _participant():
         ),
         "resource_utilization": {
             "cpu_consumed": aggregate_cpu_consumed([{"cpu_seconds": amount} for amount in (2, 8, 4)]),
-            "retained_content": {"bytes": 0},
             "message_traffic": aggregate_message_traffic(
                 [{"sent_bytes": 1, "received_bytes": 2}, {"sent_bytes": 3, "received_bytes": 4}]
             ),
@@ -102,8 +101,6 @@ def test_worker_gpu_time_and_selected_site_totals_remain_visible():
     other["participant_name"] = "site-2"
     other["resource_time"]["gpu"]["instance_seconds"] = 7200
     detail = deepcopy(participant)
-    detail["workspace_filesystem"] = {"capacity_bytes": 1024}
-    detail["issues"] = [issue for issue in detail["issues"] if issue["metric"] != "workspace_filesystem"] + []
     output = render_job_resources({"job_id": "job-1", "participants": [participant, other]}, detail)
     assert "Recorded capacity-time totals" in output
     assert "GPUs available 1 GPU-h" in output
@@ -141,7 +138,6 @@ def test_public_report_requires_time_but_has_no_worker_inventory():
         kind="nvflare.resource_stats.participant_summary",
         job_id="job-1",
         reported_at="2026-10-29T12:00:00Z",
-        workspace_filesystem={"capacity_bytes": 1024},
     )
     read_resource_report(canonical_json_bytes(record))
     record["workers"] = []
