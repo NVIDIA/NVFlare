@@ -755,7 +755,7 @@ class FileTaskArtifactStore:
         return reference
 
     def commit_checkpoint(self, completion, checkpoint_file, *, publication_guard=nullcontext, assignment=None):
-        """CJ promotes state only from the verified, physically settled result."""
+        """CJ promotes state from a verified immutable application completion."""
         config = completion.diagnostics.get("checkpoint")
         if config is None:
             return
