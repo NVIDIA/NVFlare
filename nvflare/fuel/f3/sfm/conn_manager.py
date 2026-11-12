@@ -506,18 +506,18 @@ class ConnManager(ConnMonitor):
 
         sfm_endpoint = self.sfm_endpoints.get(endpoint_name)
         if sfm_endpoint:
-            old_state = sfm_endpoint.endpoint.state
             sfm_endpoint.endpoint = endpoint
         else:
-            old_state = EndpointState.IDLE
             sfm_endpoint = SfmEndpoint(endpoint)
 
         sfm_endpoint.add_connection(sfm_conn)
         sfm_conn.sfm_endpoint = sfm_endpoint
         self.sfm_endpoints[endpoint_name] = sfm_endpoint
 
-        if endpoint.state != old_state:
-            self.notify_monitors(endpoint)
+        # A goodbye can remove the Cell route before the old transport reports
+        # DISCONNECTED. A replacement's handshake must republish its endpoint
+        # even when the previous connection still appeared READY.
+        self.notify_monitors(endpoint)
 
     def notify_monitors(self, endpoint: Endpoint):
 

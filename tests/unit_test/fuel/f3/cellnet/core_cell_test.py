@@ -29,12 +29,15 @@ from nvflare.fuel.f3.cellnet.core_cell import (
     _validate_url,
 )
 from nvflare.fuel.f3.cellnet.credential_manager import CredentialManager
-from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessageType, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessagePropKey, MessageType, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo
 from nvflare.fuel.f3.cellnet.registry import Registry
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.sfm.conn_manager import ConnManager
+from nvflare.fuel.f3.sfm.constants import HandshakeKeys
+from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
 
 
@@ -49,6 +52,54 @@ def _cell(fqcn="site-1"):
     cell.ext_listeners = {}
     cell.ALL_CELLS = {}
     return cell
+
+
+@pytest.mark.parametrize("goodbye", [False, True])
+def test_replacement_handshake_refreshes_route_before_old_disconnect(goodbye):
+    cell = _cell()
+    cell.agent_lock = threading.Lock()
+    cell.credential_manager = MagicMock()
+    cell.cell_connected_cb = None
+    cell.cell_disconnected_cb = None
+    manager = ConnManager.__new__(ConnManager)
+    manager.local_endpoint = Endpoint("site-1")
+    manager.monitors = [cell]
+    manager.sfm_endpoints = {}
+    manager.sfm_conns = {}
+    manager.lock = threading.Lock()
+
+    def handshake(name, incarnation):
+        connection = MagicMock(name=name)
+        connection.name = name
+        connection.connector.params = {}
+        connection.get_conn_properties.return_value = {}
+        sfm = SfmConnection(connection, manager.local_endpoint)
+        manager.sfm_conns[name] = sfm
+        manager.update_endpoint(sfm, {HandshakeKeys.ENDPOINT_NAME: "site-1.job", "incarnation": incarnation})
+        return sfm
+
+    old = handshake("old", 1)
+    if goodbye:
+        request = Message({MessageHeaderKey.ORIGIN: "site-1.job"})
+        request.set_prop(MessagePropKey.ENDPOINT, old.sfm_endpoint.endpoint)
+        cell._peer_goodbye(request)
+        assert "site-1.job" not in cell.agents
+
+    # A shared-file peer's close is observed asynchronously. Its transport is
+    # still READY when a new process authenticates with the same Cell name.
+    assert old.sfm_endpoint.endpoint.state == EndpointState.READY
+    replacement = handshake("replacement", 2)
+
+    route = cell._try_path(["site-1", "job"])
+    assert route is replacement.sfm_endpoint.endpoint
+    assert route.properties["incarnation"] == 2
+    assert cell.credential_manager.clear_cert_cache.call_count == 2
+    old.conn.close.assert_called_once()
+
+    # A late close from the evicted connection must not remove the new route.
+    manager.close_connection(old.conn)
+    assert cell._try_path(["site-1", "job"]) is route
+    assert replacement.sfm_endpoint.connections == [replacement]
 
 
 def test_target_message_round_trip_adds_routing_headers():
