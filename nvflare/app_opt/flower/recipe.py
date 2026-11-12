@@ -26,7 +26,7 @@ from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.recipe.spec import Recipe
 
 SUPPORTED_FLWR_MIN_VERSION = Version("1.43")
-SUPPORTED_FLWR_SPEC = "flwr>=1.43,<1.44"
+SUPPORTED_FLWR_SPEC = "flwr>=1.43"
 
 
 def _validate_flwr_version():
@@ -73,7 +73,7 @@ class FlowerRecipe(Recipe):
     to persist the relayed metrics.
 
     Flower CLI compatibility:
-        This recipe requires ``flwr>=1.43,<1.44``. The integration uses Flower
+        This recipe requires ``flwr>=1.43``. The integration uses Flower
         Configuration under ``$FLWR_HOME/config.toml`` and the newer
         HTTP Fleet API and SuperLink CLI workflow. Older Flower versions are not supported.
 

@@ -2,13 +2,13 @@
 Run Flower Application as FLARE Job
 ***********************************
 
-Install NVFlare and ``flwr>=1.43,<1.44`` in the server and client environments.
+Install NVFlare and ``flwr>=1.43`` in the server and client environments.
 Use the same Flower minor version throughout a job. The integration supports
 HTTP Fleet communication on POSIX hosts; it no longer supports the gRPC adapter.
 
 .. code-block:: shell
 
-    pip install 'flwr>=1.43,<1.44'
+    pip install 'flwr>=1.43'
 
 NVFlare writes a job-scoped ``$FLWR_HOME/config.toml`` and uses it to connect
 ``flwr run``, ``flwr list``, and ``flwr stop`` to the job's local SuperLink.

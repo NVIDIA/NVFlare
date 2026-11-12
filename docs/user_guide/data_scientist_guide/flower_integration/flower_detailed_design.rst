@@ -4,7 +4,8 @@
 Detailed Design
 ***************
 
-The integration supports Flower 1.43's unary protobuf-over-HTTP Fleet API.
+The integration uses Flower's unary protobuf-over-HTTP Fleet API and requires
+``flwr>=1.43``.
 The Recipe, TIE Controller/Executor, app deployment, and analytics relay retain
 the existing architecture. The local transport adapters and Flower process
 launchers use HTTP::
@@ -74,10 +75,10 @@ Flower processes, including detached SuperExec descendants.
 Compatibility and migration
 ===========================
 
-Install ``flwr>=1.43,<1.44`` on every site. The Recipe and deployed applets check
-this range before starting Flower. Future minor versions require validation
-before widening the range. Flower itself requires matching minor versions for
-peer runtime metadata.
+Install ``flwr>=1.43`` on every site. The Recipe and deployed applets check this
+minimum version before starting Flower. The integration was validated with
+Flower 1.43.0. Flower itself requires matching minor versions for peer runtime
+metadata.
 
 The legacy ``GrpcClientConnector``, ``GrpcServerConnector``, gRPC helper modules,
 and their demo mocks are removed. Remove ``int_client_grpc_options`` from old

@@ -38,7 +38,7 @@ The requirements file intentionally does not install NVFlare. This preserves the
 or editable installation that selected the example revision.
 
 > [!IMPORTANT]
-> This revision requires `flwr>=1.43,<1.44` on the server and every client, with the same
+> This revision requires `flwr>=1.43` on the server and every client, with the same
 > Flower minor version throughout the job. It uses Flower's HTTP Fleet API and requires
 > POSIX hosts (Linux or macOS). Older Flower versions and the gRPC adapter are no longer supported.
 > Use the matching NVFlare release branch and its example dependencies for older deployments.

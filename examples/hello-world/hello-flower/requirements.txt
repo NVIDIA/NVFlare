@@ -1,4 +1,4 @@
-flwr>=1.43,<1.44
+flwr>=1.43
 torch
 torchvision
 tensorboard

@@ -25,13 +25,11 @@ from nvflare.job_config.api import FedJob
 from nvflare.recipe import secret_ref
 
 
-@pytest.mark.parametrize(
-    "flwr_version", ["1.15.9", "1.16rc0", "1.26.0", "1.28.0", "1.40.0", "1.42.9", "1.43.0rc0", "1.44.0", "2.0.0"]
-)
+@pytest.mark.parametrize("flwr_version", ["1.15.9", "1.16rc0", "1.26.0", "1.28.0", "1.40.0", "1.42.9", "1.43.0rc0"])
 def test_flower_recipe_rejects_incompatible_flwr_version(flwr_version):
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job") as mock_flower_job:
-            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.43,<1\.44'"):
+            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.43'"):
                 FlowerRecipe(flower_content="mock_flower_content")
 
             mock_flower_job.assert_not_called()
@@ -40,13 +38,13 @@ def test_flower_recipe_rejects_incompatible_flwr_version(flwr_version):
 def test_flower_recipe_rejects_missing_flwr_package():
     with patch("nvflare.app_opt.flower.recipe.get_package_version", side_effect=PackageNotFoundError):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job") as mock_flower_job:
-            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.43,<1\.44'"):
+            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.43'"):
                 FlowerRecipe(flower_content="mock_flower_content")
 
             mock_flower_job.assert_not_called()
 
 
-@pytest.mark.parametrize("flwr_version", ["1.43.0", "1.43.1", "1.43.5"])
+@pytest.mark.parametrize("flwr_version", ["1.43.0", "1.43.1", "1.43.5", "1.44.0", "2.0.0"])
 def test_flower_recipe_accepts_compatible_flwr_version(flwr_version):
     fake_job = FedJob(name="test_flower", min_clients=1)
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):

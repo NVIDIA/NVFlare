@@ -45,7 +45,7 @@ the release, local wheel, or editable installation that selected the example rev
 
 .. important::
 
-   This revision requires ``flwr>=1.43,<1.44`` on the server and every client,
+   This revision requires ``flwr>=1.43`` on the server and every client,
    using the same Flower minor version. It supports the HTTP Fleet API on POSIX
    hosts (Linux or macOS). Older Flower versions and the gRPC adapter are no
    longer supported. Use the matching NVFlare release branch and example
