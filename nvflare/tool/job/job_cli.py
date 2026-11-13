@@ -1034,11 +1034,8 @@ def cmd_job_download(cmd_args):
                     os.remove(expected_download_path)
             if not json_mode:
                 print_human(f"Downloading job {cmd_args.job_id} from study {study} ...")
-            if outputs_only:
-                # the notice says why the whole job came back, when it did
-                path, outputs_notice = sess._download_job_result(cmd_args.job_id, destination, outputs_only=True)
-            else:
-                path = sess.download_job_result(cmd_args.job_id, destination)
+            # the notice says why the whole job came back, or that the job's stored outputs are missing from it
+            path, outputs_notice = sess._download_job_result(cmd_args.job_id, destination, outputs_only=outputs_only)
     except JobNotFound:
         output_error(
             "JOB_NOT_FOUND",
@@ -1095,6 +1092,7 @@ def cmd_job_download(cmd_args):
         payload["missing_artifacts"] = None
     if outputs_only:
         payload["outputs_only"] = outputs_notice is None  # whether only the job's outputs were downloaded
+    if outputs_only or outputs_notice:
         payload["outputs_note"] = outputs_notice
     if json_mode:
         output_ok(payload)
