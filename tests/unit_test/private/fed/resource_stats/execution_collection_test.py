@@ -24,6 +24,7 @@ from nvflare.private.fed.resource_stats import cpu_consumed as cpu_module
 from nvflare.private.fed.resource_stats import task_rollup
 from nvflare.private.fed.resource_stats.collector import ExecutionResourceCollector
 from nvflare.private.fed.resource_stats.cpu_consumed import CpuConsumedAccountant
+from nvflare.private.fed.resource_stats.measurements import merge_worker_measurement
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 
 
@@ -131,7 +132,7 @@ def test_final_worker_fold_keeps_cpu_and_gpu_when_memory_total_overflows():
     coordinator = {"cpu": {"unit_seconds": 1}, "memory": {"byte_seconds": 1e308}, "gpu": {"instance_seconds": 0}}
     workers = {"cpu": {"unit_seconds": 2}, "memory": {"byte_seconds": 1e308}, "gpu": {"instance_seconds": 15}}
     issues = []
-    result = collector._fold_measurements("resource_time", coordinator, workers, issues)
+    result = merge_worker_measurement("resource_time", coordinator, workers, issues)
     assert result == {
         "status": "partial",
         "cpu": {"unit_seconds": 3},

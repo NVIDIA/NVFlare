@@ -22,10 +22,10 @@ from contextlib import ExitStack, contextmanager
 from typing import Any, BinaryIO
 from zipfile import BadZipFile, ZipFile
 
+from .measurements import participant_measurements
 from .report_reader import (
     KIND_PARTICIPANT_SUMMARY,
     KIND_RESOURCE_SUMMARY,
-    MAX_PARTICIPANT_SUMMARY_BYTES,
     MAX_RESOURCE_SUMMARY_BYTES,
     read_resource_report,
 )
@@ -74,13 +74,7 @@ class WorkspaceResourceStatsReader:
         self._summary: dict[str, Any] | None = None
 
     def read_resource_summary(self) -> dict[str, Any]:
-        """Read the self-contained job rollup, independently of detail files.
-
-        Participant bodies are validated only when requested by
-        ``read_participant_summary``. Job and study queries avoid reading every
-        participant file from the archive and can use the summary even when
-        detail files are missing. Other archive members are not inspected.
-        """
+        """Read the sole stored resource record, including all participant measurements."""
 
         data = self._read_exact_member(RESOURCE_SUMMARY_MEMBER, MAX_RESOURCE_SUMMARY_BYTES)
         try:
@@ -92,19 +86,17 @@ class WorkspaceResourceStatsReader:
 
     def read_participant_summary(self, participant_name: str) -> dict[str, Any]:
         summary = self._summary or self.read_resource_summary()
-        if not any(
-            entry["participant_name"] == participant_name and "status" not in entry for entry in summary["participants"]
-        ):
-            raise WorkspaceResourceStatsError(f"participant has no accepted resource report: {participant_name}")
-        member = f"{RESOURCE_STATS_PREFIX}participants/{participant_name}.json"
-        data = self._read_exact_member(member, MAX_PARTICIPANT_SUMMARY_BYTES)
-        try:
-            record = read_resource_report(data, KIND_PARTICIPANT_SUMMARY)
-        except ValueError as exc:
-            raise WorkspaceResourceStatsError(f"participant summary is invalid: {exc}") from exc
-        if record["job_id"] != summary["job_id"] or record["participant_name"] != participant_name:
-            raise WorkspaceResourceStatsError("participant summary identity does not match its archive slot")
-        return record
+        for entry in summary["participants"]:
+            if entry["participant_name"] == participant_name and "status" not in entry:
+                return {
+                    "schema_version": summary["schema_version"],
+                    "kind": KIND_PARTICIPANT_SUMMARY,
+                    "job_id": summary["job_id"],
+                    "participant_name": participant_name,
+                    "reported_at": entry["reported_at"],
+                    **participant_measurements(entry),
+                }
+        raise WorkspaceResourceStatsError(f"participant has no accepted resource report: {participant_name}")
 
     def _read_exact_member(self, member_name: str, max_bytes: int) -> bytes:
         try:

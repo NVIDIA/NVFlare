@@ -35,7 +35,6 @@ MAX_TERMINAL_HANDOFF_BYTES = 1024 * 1024
 
 RESOURCE_STATS_DIR = "resource_stats"
 STAGING_DIR = "staging"
-TERMINAL_HANDOFF_FILE = "terminal_handoff.json"
 LAUNCH_GENERATION_OPTION = "resource_launch_generation"
 _DIRECTORY_OPEN_FLAGS = (
     os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
@@ -66,9 +65,7 @@ def launch_generation_from_options(options: list[str], *, option_name: str = LAU
     return ""
 
 
-def _handoff_filename(generation: str | None) -> str:
-    if generation is None:
-        return TERMINAL_HANDOFF_FILE  # Unbound diagnostic helpers only.
+def _handoff_filename(generation: str) -> str:
     if (
         not isinstance(generation, str)
         or not 1 <= len(generation) <= 128
@@ -78,7 +75,7 @@ def _handoff_filename(generation: str | None) -> str:
     return f"terminal_handoff.{generation}.json"
 
 
-def terminal_handoff_path(run_dir: str | Path, *, launch_generation: str | None = None) -> Path:
+def terminal_handoff_path(run_dir: str | Path, *, launch_generation: str) -> Path:
     return Path(run_dir) / RESOURCE_STATS_DIR / STAGING_DIR / _handoff_filename(launch_generation)
 
 
@@ -109,14 +106,11 @@ def _open_handoff_directory(run_dir: str | Path, *, include_staging: bool, creat
         raise
 
 
-def write_terminal_handoff(
-    run_dir: str | Path, handoff: Mapping[str, Any], *, launch_generation: str | None = None
-) -> Path:
+def write_terminal_handoff(run_dir: str | Path, handoff: Mapping[str, Any], *, launch_generation: str) -> Path:
     """Atomically write the child handoff under its existing job workspace."""
 
     filename = _handoff_filename(launch_generation)
-    if launch_generation is not None:
-        handoff = {**handoff, "launch_generation": launch_generation}
+    handoff = {**handoff, "launch_generation": launch_generation}
     data = canonical_json_bytes(handoff)
     if len(data) > MAX_TERMINAL_HANDOFF_BYTES:
         raise InvalidTerminalHandoff("terminal handoff exceeds its size limit")
@@ -144,7 +138,7 @@ def write_terminal_handoff(
             os.close(directory_fd)
 
 
-def read_terminal_handoff(run_dir: str | Path, *, expected_generation: str | None = None) -> Optional[dict[str, Any]]:
+def read_terminal_handoff(run_dir: str | Path, *, expected_generation: str) -> Optional[dict[str, Any]]:
     """Read only this launch's handoff; return ``None`` if absent or malformed."""
 
     try:
@@ -184,14 +178,14 @@ def read_terminal_handoff(run_dir: str | Path, *, expected_generation: str | Non
         value = json.loads(data)
         if not isinstance(value, dict):
             return None
-        if expected_generation is not None and value.get("launch_generation") != expected_generation:
+        if value.get("launch_generation") != expected_generation:
             return None
         return value
     except (ValueError, RecursionError):
         return None
 
 
-def remove_terminal_handoff(run_dir: str | Path, *, expected_generation: str | None = None) -> None:
+def remove_terminal_handoff(run_dir: str | Path, *, expected_generation: str) -> None:
     """Remove only the owned generation; never consume a replacement's report."""
 
     try:

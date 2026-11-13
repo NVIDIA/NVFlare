@@ -143,6 +143,47 @@ def aggregate_message_traffic(values, *, complete=True):
     return aggregate_usage(values, ("sent_bytes", "received_bytes"), complete=complete)
 
 
+def merge_resource_time(previous, contribution, issues):
+    """Keep independent dimension subtotals when another one exceeds bounds."""
+    values = [value for value in (previous, contribution) if value is not None]
+    result = {}
+    incomplete = any("status" in value for value in values)
+    for dimension, field in (("cpu", "unit_seconds"), ("memory", "byte_seconds"), ("gpu", "instance_seconds")):
+        amounts = [value[dimension][field] for value in values if dimension in value]
+        if not amounts:
+            continue
+        try:
+            result[dimension] = {field: _sum_numbers(amounts)}
+        except (OverflowError, ValueError):
+            # An overflowing dimension cannot erase other usable subtotals.
+            if previous is not None and dimension in previous:
+                result[dimension] = dict(previous[dimension])
+            incomplete = True
+            issues.append({"metric": "resource_time", "code": "observation_incomplete"})
+    if not result:
+        issues[:] = [issue for issue in issues if issue["metric"] != "resource_time"]
+        issues.append({"metric": "resource_time", "code": "observation_incomplete"})
+        return {"status": "unavailable"}
+    if incomplete or set(result) != {"cpu", "memory", "gpu"}:
+        result["status"] = "partial"
+    return result
+
+
+def merge_worker_measurement(metric, previous, contribution, issues):
+    """Add one worker contribution, retaining an earlier subtotal on failure."""
+    try:
+        if metric == "resource_time":
+            return merge_resource_time(previous, contribution, issues)
+        fields = ("cpu_seconds",) if metric == "cpu_consumed" else ("sent_bytes", "received_bytes")
+        return aggregate_usage([value for value in (previous, contribution) if value is not None], fields)
+    except Exception:
+        result = dict(previous) if previous is not None else {"status": "unavailable"}
+        if result.get("status") != "unavailable":
+            result["status"] = "partial"
+        issues.append({"metric": metric, "code": "observation_incomplete"})
+        return result
+
+
 def utc_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 

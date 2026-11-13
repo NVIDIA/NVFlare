@@ -448,7 +448,8 @@ class Session(SessionSpec):
 
         The default command wait is 300 seconds because reading the existing
         job archives can take time. Queries prefer WORKSPACE and read separately
-        stored OUTPUTS only for requested members absent from WORKSPACE.
+        stored OUTPUTS only when the summary is absent from WORKSPACE.
+        A selected participant report is reconstructed from that summary.
         An explicit session command timeout
         takes precedence. A timeout does not cancel the server's archive read.
 

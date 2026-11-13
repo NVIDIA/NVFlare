@@ -9,8 +9,7 @@ are obtained.
 
 The design defines three public record kinds. Each `kind` string in the table is
 prefixed by `nvflare.resource_stats.`, and every record has a `schema_version`
-field. The public schema version is `"1.0"`; private handoff metadata is
-versioned separately.
+field. The public schema version is `"1.0"`.
 
 | Kind | Required top-level fields, in addition to version and kind | Owner |
 | --- | --- | --- |
@@ -150,8 +149,8 @@ Local producers and reducers do not repeat the server's measurement checks.
 Measurements remain self-reported; validating a local file cannot establish their
 authenticity. Each launch owns a private
 `resource_stats/staging/terminal_handoff.<generation>.json` file. Its bounded
-generation token is checked before consumption and
-never enters public records. Cleanup removes only that generation's file, so an
+generation token is required for every handoff operation and never enters public
+records. Cleanup removes only that generation's file, so an
 older writer or failed launch cannot replace or remove a newer handoff. Private
 staging must be empty before public archival.
 
@@ -240,7 +239,7 @@ participant.
 ```text
 OPEN: accept one record per trusted slot
   -> CLOSED: freeze roster and accepted bytes; later changes are too_late
-  -> FINALIZED: participant files and summary marker written
+  -> FINALIZED: summary atomically published
   -> ARCHIVED: existing job archives saved
 ```
 
@@ -255,10 +254,10 @@ when the concurrency limit is reached. Successful jobs retain the normal outcome
 wait policy.
 
 At closure, each roster entry contains either an accepted value or a gap. An
-accepted entry contains `participant_name`, server-owned `role` and `received_at`,
-optional `duration_seconds`, and copies of `resource_capacity`, `resource_time`,
-and `resource_utilization`, plus its scope-level `issues` list. It omits a success
-status. The `reported_at` field remains only in participant detail. A gap contains the name, role, and
+accepted entry contains `participant_name`, the original `reported_at`,
+server-owned `role` and `received_at`, optional `duration_seconds`,
+`resource_capacity`, `resource_time`, `resource_utilization`, and its scope-level
+`issues` list. It omits a success status. A gap contains the name, role, and
 `status: "missing"|"invalid"|"disabled"`, with no issue list; an invalid gap also
 has `received_at`. Here, `disabled` means the parent knows the participant was
 not launched; it is not a new collection opt-out feature. Missing measurements
@@ -268,8 +267,6 @@ Publish under the server-owned run directory:
 
 ```text
 resource_stats/
-  participants/server.json
-  participants/site-1.json
   resource_summary.json
 ```
 
@@ -278,13 +275,11 @@ rejects symlinked or replaced reserved directories rather than following a
 job-provided path. If these operations are unavailable, reporting is unavailable;
 job execution continues.
 
-Publication writes only accepted participant bytes through temporary files and
-atomic rename, then writes `resource_summary.json` last as the bundle commit
-marker before the existing
+Publication atomically writes one `resource_summary.json` containing all accepted
+participant measurements and timestamps before the existing
 [job finalization path](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/server/job_runner.py)
 saves the job archives, with produced files in `OUTPUTS` when stored separately.
-The summary contains the self-contained
-roster and measurements, without a separately trusted totals cache. Repeated
+There are no separate participant files or stored totals. Repeated
 finalization reconstructs the summary from the frozen accepted records without
 rereading or republishing files. It does not verify that the published files still
 exist. Roster changes and newer measurements are rejected after closure.
@@ -318,17 +313,20 @@ server-side query finishes, including failure paths.
 
 Only finalized jobs have archive-backed data. Queries use
 `JobDefManagerSpec.get_storage_for_download` and prefer `WORKSPACE`. If the
-requested member is absent and `job_outputs_stored` is true, they stage `OUTPUTS`
-and look there. Each member is routed independently: the summary and participant
-detail can reside in different archives. Malformed, oversized, duplicate, or
-identity-invalid records are errors, not reasons to try another archive.
+summary is absent and `job_outputs_stored` is true, they stage `OUTPUTS` and look
+there. Malformed, oversized, duplicate, or identity-invalid summaries are errors,
+not reasons to try another archive.
 
-Job and study queries read only the summary; a participant detail is read only
-when requested and accepted in the roster. Each requested member must have one
-matching ZIP entry, be unencrypted and within its decoded-data limit. The reader
-checks detail identity against the summary slot without extracting unrelated
-contents. Staging is scoped to one job and cleaned up on success or failure;
-OUTPUTS is never fetched when WORKSPACE contains all requested members.
+All queries read only `resource_stats/resource_summary.json`. A site query builds
+`participant_summary` from the selected accepted entry, preserving `reported_at`
+and measurements, omitting `role` and `received_at`, and adding the summary's
+job identity, schema version, and participant record kind. The CLI/API response
+shape is unchanged. Separate participant files are neither written nor read.
+
+The summary must have one matching ZIP entry, be unencrypted and within its
+decoded-data limit. Unrelated archive members are ignored. Staging is scoped to
+one job and cleaned up on success or failure; OUTPUTS is never fetched when
+WORKSPACE contains the summary.
 
 Study queries process jobs sequentially. Filesystem storage stages a link to the
 stored archive, so the ZIP reader already seeks directly to the summary after
@@ -364,8 +362,9 @@ Unavailable and nonterminal jobs remain explicit coverage gaps, so the
 **included-jobs subtotal** is not a claim about all selected jobs.
 
 Nonfinite arithmetic results are rejected rather than clamped or represented as
-infinity. Collection preserves valid independent subtotals and marks gaps.
-Job and study queries mark an overflowing utilization total unavailable. An
+infinity. Resident and worker contributions use the same incremental merge: an
+overflow retains any earlier usable subtotal and marks the metric incomplete.
+Job and study queries instead mark an overflowing utilization total unavailable. An
 overflowing capacity-time dimension is omitted, leaving the other dimensions
 partial, or the measurement unavailable if none remain. The aggregate issue list
 identifies the affected metric with `observation_incomplete`. Source reports and

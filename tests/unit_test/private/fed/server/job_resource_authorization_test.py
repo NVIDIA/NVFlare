@@ -43,7 +43,7 @@ from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import JobCommandModule
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.security.security import FLAuthorizer
-from tests.resource_stats_report_test_utils import _accepted_entry, _resource_summary
+from tests.resource_stats_report_test_utils import _accepted_entry, _resource_archive, _resource_summary
 
 
 @pytest.fixture
@@ -104,10 +104,7 @@ def _connection(jobs, *, role="owner", unavailable=(), study="default"):
             raise StorageException("workspace not retained")
         archive_path = Path(download_dir) / jid / download_file
         archive_path.parent.mkdir(parents=True)
-        with ZipFile(archive_path, "w") as archive:
-            archive.writestr("resource_stats/resource_summary.json", canonical_json_bytes(_summary(jid)))
-            # Study queries validate the summary and inventory without reading participant bodies.
-            archive.writestr("resource_stats/participants/server.json", b"unused by study queries")
+        archive_path.write_bytes(_resource_archive(_summary(jid)))
 
     manager.get_storage_for_download.side_effect = stage
     engine = SimpleNamespace(job_def_manager=manager, new_context=FLContext, resource_query_lock=threading.Lock())

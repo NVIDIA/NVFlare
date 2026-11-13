@@ -161,10 +161,19 @@ def _read_participants(participants):
         if "status" not in entry:
             entry = _read_fields(
                 entry,
-                base | {"received_at", "resource_capacity", "resource_time", "resource_utilization", "issues"},
+                base
+                | {
+                    "received_at",
+                    "reported_at",
+                    "resource_capacity",
+                    "resource_time",
+                    "resource_utilization",
+                    "issues",
+                },
                 {"duration_seconds"},
             )
             _read_measurements(entry)
+            _read_timestamp(entry["reported_at"])
         elif status in ("missing", "disabled", "invalid"):
             entry = _read_fields(entry, base | {"status"} | ({"received_at"} if status == "invalid" else set()))
         else:

@@ -26,10 +26,9 @@ from typing import Any, Optional
 from .cpu_consumed import CpuConsumedAccountant, install_cpu_accountant
 from .measurements import (
     SCHEMA_VERSION,
-    aggregate_cpu_consumed,
-    aggregate_message_traffic,
     aggregate_scope_issues,
     capacity_to_resource_time,
+    merge_worker_measurement,
     ordered_issues,
     scoped_measurement,
     utc_timestamp,
@@ -108,26 +107,6 @@ def _startup_capacity_snapshot(capacity_probe, prior_observation_incomplete):
         result["status"] = "partial" if any(name in result for name in ("cpu", "memory", "gpu")) else "unavailable"
         result["issues"] = sorted(set(result.get("issues", [])) | {"observation_incomplete"})
     return result
-
-
-def _fold_measurements(name, current, contribution, issues=None):
-    issues = [] if issues is None else issues
-    aggregate = {
-        "resource_time": TaskResourceReducer.merge_resource_time,
-        "cpu_consumed": aggregate_cpu_consumed,
-        "message_traffic": aggregate_message_traffic,
-    }[name]
-    try:
-        return (
-            aggregate(current, contribution, issues) if name == "resource_time" else aggregate([current, contribution])
-        )
-    except Exception:
-        # Overflow or a broken optional source must not erase the valid subtotal.
-        result = deepcopy(current)
-        if result.get("status") != "unavailable":
-            result["status"] = "partial"
-        issues.append({"metric": name, "code": "observation_incomplete"})
-        return result
 
 
 class ExecutionResourceCollector:
@@ -278,13 +257,15 @@ class JobResourceCollector(ExecutionResourceCollector):
                     pass
             issues.extend(worker_totals["issues"])
             if worker_totals["resource_time"] is not None:
-                resource_time = _fold_measurements(
+                resource_time = merge_worker_measurement(
                     "resource_time", resource_time, worker_totals["resource_time"], issues
                 )
             if worker_totals["cpu_consumed"] is not None:
-                cpu_consumed = _fold_measurements("cpu_consumed", cpu_consumed, worker_totals["cpu_consumed"], issues)
+                cpu_consumed = merge_worker_measurement(
+                    "cpu_consumed", cpu_consumed, worker_totals["cpu_consumed"], issues
+                )
             if worker_totals["message_traffic"] is not None:
-                traffic = _fold_measurements("message_traffic", traffic, worker_totals["message_traffic"], issues)
+                traffic = merge_worker_measurement("message_traffic", traffic, worker_totals["message_traffic"], issues)
             if not worker_totals["duration_contained"]:
                 timing = {}
         measurements = {

@@ -1508,7 +1508,7 @@ def test_bad_server_handoff_preserves_client_reports_at_job_completion(tmp_path,
     assert entries["site-1"]["resource_utilization"] == _participant_summary()["resource_utilization"]
     assert "status" not in entries["site-1"]
     assert entries["server"]["status"] == "missing"
-    assert json.loads((run_dir / "resource_stats" / "participants" / "site-1.json").read_text()) == client
+    assert entries["site-1"]["reported_at"] == client["reported_at"]
     assert not path.exists()
     runner._save_workspace.assert_called_once_with(completion_ctx, ANY, "job-1")
     engine.get_component.return_value.set_status.assert_called_once_with(
@@ -2135,8 +2135,7 @@ def test_server_missing_generation_or_report_never_uses_old_or_unbound_file(tmp_
     runner.resource_stats.start_job("job-1", [], run_dir)
     if bound_generation:
         runner.bind_server_resource_generation("job-1", bound_generation)
-    # Populate both possible stale paths with a valid envelope that would be
-    # accepted by an unbound reader. Neither belongs to this execution.
+    # Neither the old generation nor the legacy filename belongs to this execution.
     unavailable = {"status": "unavailable"}
     handoff = {
         "duration_seconds": 10,
@@ -2156,7 +2155,8 @@ def test_server_missing_generation_or_report_never_uses_old_or_unbound_file(tmp_
         ],
     }
     old_path = write_terminal_handoff(run_dir, handoff, launch_generation="old-launch")
-    diagnostic_path = write_terminal_handoff(run_dir, handoff)
+    diagnostic_path = old_path.with_name("terminal_handoff.json")
+    diagnostic_path.write_text(json.dumps(handoff))
     fl_ctx = MagicMock()
     fl_ctx.get_workspace.return_value.get_run_dir.return_value = str(run_dir)
 

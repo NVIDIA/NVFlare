@@ -17,79 +17,25 @@
 import io
 import struct
 import zipfile
-from copy import deepcopy
 from unittest.mock import Mock
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZipFile
 
 import pytest
 
 from nvflare.private.fed.resource_stats import archive_reader
 from nvflare.private.fed.resource_stats.archive_reader import WorkspaceResourceStatsError, WorkspaceResourceStatsReader
-from nvflare.private.fed.resource_stats.measurements import canonical_json_bytes
-from nvflare.private.fed.resource_stats.report_reader import read_resource_report
-from tests.resource_stats_report_test_utils import _participant_summary, _resource_summary
-
-
-def _reports():
-    return _resource_summary(), _participant_summary()
-
-
-def _archive(summary, participant=None, extra=()):
-    stream = io.BytesIO()
-    with ZipFile(stream, "w", ZIP_DEFLATED) as archive:
-        archive.writestr("resource_stats/resource_summary.json", canonical_json_bytes(summary))
-        if participant is not None:
-            archive.writestr("resource_stats/participants/site-1.json", canonical_json_bytes(participant))
-        for name, data in extra:
-            archive.writestr(name, data)
-    return stream.getvalue()
-
-
-def test_summary_does_not_open_unrequested_participant_body():
-    summary, _ = _reports()
-    reader = WorkspaceResourceStatsReader(
-        _archive(summary, extra=[("resource_stats/participants/site-1.json", b"not JSON")])
-    )
-    assert reader.read_resource_summary() == summary
-    with pytest.raises(WorkspaceResourceStatsError, match="participant summary is invalid"):
-        reader.read_participant_summary("site-1")
-
-
-@pytest.mark.parametrize("field,value", [("job_id", "other-job"), ("participant_name", "other-site")])
-def test_requested_detail_identity_must_match_summary_and_slot(field, value):
-    summary, participant = _reports()
-    participant[field] = value
-    reader = WorkspaceResourceStatsReader(_archive(summary, participant))
-    assert reader.read_resource_summary() == summary
-    with pytest.raises(WorkspaceResourceStatsError, match="identity does not match"):
-        reader.read_participant_summary("site-1")
-
-
-def test_requested_detail_size_limit_is_checked_only_for_detail(monkeypatch):
-    summary, participant = _reports()
-    monkeypatch.setattr(archive_reader, "MAX_PARTICIPANT_SUMMARY_BYTES", 1)
-    reader = WorkspaceResourceStatsReader(_archive(summary, participant))
-    assert reader.read_resource_summary() == summary
-    with pytest.raises(WorkspaceResourceStatsError, match="size limit"):
-        reader.read_participant_summary("site-1")
-
-
-def test_detail_ignores_other_missing_participant_reports():
-    summary, participant = _reports()
-    other = deepcopy(summary["participants"][0])
-    other["participant_name"] = "site-2"
-    summary["participants"].append(other)
-    reader = WorkspaceResourceStatsReader(_archive(summary, participant))
-    assert reader.read_resource_summary() == read_resource_report(canonical_json_bytes(summary))
-    assert reader.read_participant_summary("site-1") == participant
-    with pytest.raises(WorkspaceResourceStatsError, match="found 0"):
-        reader.read_participant_summary("site-2")
+from tests.resource_stats_report_test_utils import (
+    _accepted_entry,
+    _participant_summary,
+    _resource_archive,
+    _resource_summary,
+)
 
 
 @pytest.mark.parametrize("source_kind", ["bytes", "path", "stream"])
 def test_archive_index_is_bounded_before_large_directory_read(tmp_path, monkeypatch, source_kind):
-    summary, _ = _reports()
-    raw = _archive(summary, extra=[(f"unrelated/{i}.txt", b"") for i in range(100)])
+    summary = _resource_summary()
+    raw = _resource_archive(summary, extra=[(f"unrelated/{i}.txt", b"") for i in range(100)])
     source = raw
     if source_kind == "path":
         source = tmp_path / "workspace.zip"
@@ -104,8 +50,8 @@ def test_archive_index_is_bounded_before_large_directory_read(tmp_path, monkeypa
 
 
 def test_archive_rejects_forged_directory_size_before_allocating(monkeypatch):
-    summary, _ = _reports()
-    raw = bytearray(b"x" * 4096 + _archive(summary))
+    summary = _resource_summary()
+    raw = bytearray(b"x" * 4096 + _resource_archive(summary))
     monkeypatch.setattr(archive_reader, "_MAX_ZIP_METADATA_BYTES", 1024)
     # The classic end record stores central-directory byte length at offset 12.
     struct.pack_into("<I", raw, len(raw) - 22 + 12, 2048)
@@ -123,20 +69,20 @@ def test_archive_rejects_forged_directory_size_before_allocating(monkeypatch):
 
 
 def test_member_body_uses_its_own_limit_after_index_construction(monkeypatch):
-    summary, _ = _reports()
+    summary = _resource_summary()
     # The JSON body is larger than the directory budget. Member limits remain
     # independent; the budget does not cap the size of the entire ZIP.
     monkeypatch.setattr(archive_reader, "_MAX_ZIP_METADATA_BYTES", 256)
-    stream = io.BytesIO(_archive(summary))
+    stream = io.BytesIO(_resource_archive(summary))
     assert WorkspaceResourceStatsReader(stream).read_resource_summary() == summary
     assert not stream.closed
 
 
 def test_commented_zip64_archive_and_repeated_detail_queries(monkeypatch):
-    summary, participant = _reports()
+    summary, participant = _resource_summary(), _participant_summary()
     # Exercise ZIP64 end records without a multi-gigabyte fixture.
     monkeypatch.setattr(zipfile, "ZIP64_LIMIT", 1)
-    raw = _archive(summary, participant)
+    raw = _resource_archive(summary)
     stream = io.BytesIO(raw)
     with ZipFile(stream, "a") as archive:
         archive.comment = b"workspace comment" * 100
@@ -148,8 +94,8 @@ def test_commented_zip64_archive_and_repeated_detail_queries(monkeypatch):
 
 
 def test_archive_comment_and_directory_share_metadata_budget(monkeypatch):
-    summary, _ = _reports()
-    stream = io.BytesIO(_archive(summary))
+    summary = _resource_summary()
+    stream = io.BytesIO(_resource_archive(summary))
     with ZipFile(stream, "a") as archive:
         archive.comment = b"x" * 2048
     monkeypatch.setattr(archive_reader, "_MAX_ZIP_METADATA_BYTES", 1024)
@@ -158,41 +104,39 @@ def test_archive_comment_and_directory_share_metadata_budget(monkeypatch):
     assert not stream.closed
 
 
-@pytest.mark.parametrize("member", ["resource_stats/resource_summary.json", "resource_stats/participants/site-1.json"])
 @pytest.mark.parametrize("failure", ["malformed", "oversized", "duplicate", "identity"])
-def test_invalid_workspace_record_never_falls_back_to_outputs(monkeypatch, member, failure):
-    summary, participant = _reports()
+def test_invalid_workspace_summary_never_falls_back_to_outputs(monkeypatch, failure):
+    summary = _resource_summary()
     if failure == "identity":
-        # Detail identity is checked by the reader; job summary identity is bound by the query.
-        if member.endswith("resource_summary.json"):
-            summary["job_id"] = "../invalid"
-        else:
-            participant["participant_name"] = "other-site"
-    stream = io.BytesIO(_archive(summary, participant))
+        summary["job_id"] = "../invalid"
+    raw = _resource_archive(summary)
     if failure == "duplicate":
-        with pytest.warns(UserWarning, match="Duplicate name"), ZipFile(stream, "a") as archive:
-            archive.writestr(member, b"{}")
+        with pytest.warns(UserWarning, match="Duplicate name"):
+            raw = _resource_archive(summary, extra=[("resource_stats/resource_summary.json", b"{}")])
     elif failure == "oversized":
-        limit = (
-            "MAX_RESOURCE_SUMMARY_BYTES"
-            if member.endswith("resource_summary.json")
-            else "MAX_PARTICIPANT_SUMMARY_BYTES"
-        )
-        monkeypatch.setattr(archive_reader, limit, 1)
+        monkeypatch.setattr(archive_reader, "MAX_RESOURCE_SUMMARY_BYTES", 1)
     elif failure == "malformed":
         stream = io.BytesIO()
         with ZipFile(stream, "w") as archive:
-            archive.writestr(
-                "resource_stats/resource_summary.json",
-                b"invalid" if member.endswith("resource_summary.json") else canonical_json_bytes(summary),
-            )
-            archive.writestr("resource_stats/participants/site-1.json", b"invalid")
-    fallback = Mock(return_value=_archive(*_reports()))
-    reader = WorkspaceResourceStatsReader(stream, outputs_archive=fallback)
+            archive.writestr("resource_stats/resource_summary.json", b"invalid")
+        raw = stream.getvalue()
+    fallback = Mock(return_value=_resource_archive())
     with pytest.raises(WorkspaceResourceStatsError):
-        (
-            reader.read_resource_summary()
-            if member.endswith("resource_summary.json")
-            else reader.read_participant_summary("site-1")
-        )
+        WorkspaceResourceStatsReader(raw, outputs_archive=fallback).read_resource_summary()
     fallback.assert_not_called()
+
+
+def test_site_query_projects_original_report_without_another_archive_read():
+    participant = _participant_summary(reported_at="2026-09-17T12:00:00.123456789Z")
+    summary = _resource_summary(participants=[_accepted_entry(record=participant)])
+    fallback = Mock(side_effect=AssertionError("unexpected OUTPUTS staging"))
+    reader = WorkspaceResourceStatsReader(
+        _resource_archive(summary, extra=[("resource_stats/participants/site-1.json", b"obsolete detail")]),
+        outputs_archive=fallback,
+    )
+    assert reader.read_resource_summary() == summary
+    reader._read_exact_member = Mock(side_effect=AssertionError("unexpected member read"))
+    assert reader.read_participant_summary("site-1") == participant
+    fallback.assert_not_called()
+    with pytest.raises(WorkspaceResourceStatsError, match="no accepted resource report"):
+        reader.read_participant_summary("unknown-site")

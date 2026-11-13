@@ -19,6 +19,9 @@ import pytest
 
 from nvflare.private.fed.resource_stats import handoff as module
 
+_GENERATION = "test-launch"
+_HANDOFF_FILE = f"terminal_handoff.{_GENERATION}.json"
+
 
 def _link(path, target, *, directory):
     try:
@@ -31,24 +34,30 @@ def test_atomic_writer_round_trip_and_replacement_without_leftover_temp_files(ma
     run = tmp_path / "run"
     original = make_handoff()
     original["duration_seconds"] = 1
-    path = module.write_terminal_handoff(run, original)
-    assert module.read_terminal_handoff(run) == original
+    path = module.write_terminal_handoff(run, original, launch_generation=_GENERATION)
+    assert module.read_terminal_handoff(run, expected_generation=_GENERATION) == {
+        **original,
+        "launch_generation": _GENERATION,
+    }
     updated = make_handoff()
     updated["duration_seconds"] = 2
-    module.write_terminal_handoff(run, updated)
-    assert module.read_terminal_handoff(run) == updated
+    module.write_terminal_handoff(run, updated, launch_generation=_GENERATION)
+    assert module.read_terminal_handoff(run, expected_generation=_GENERATION) == {
+        **updated,
+        "launch_generation": _GENERATION,
+    }
     assert list(path.parent.iterdir()) == [path]
 
 
 def test_reader_contains_plain_decoder_value_error(make_handoff, tmp_path, monkeypatch):
-    path = module.write_terminal_handoff(tmp_path, make_handoff(complete=True))
+    path = module.write_terminal_handoff(tmp_path, make_handoff(complete=True), launch_generation=_GENERATION)
     payload = path.read_bytes()
     # Python's integer decoder can raise ValueError independently of JSON syntax.
     # Control that boundary without depending on a process-wide digit limit.
     decoder = Mock(side_effect=ValueError("integer string conversion limit exceeded"))
     monkeypatch.setattr(module.json, "loads", decoder)
 
-    assert module.read_terminal_handoff(tmp_path) is None
+    assert module.read_terminal_handoff(tmp_path, expected_generation=_GENERATION) is None
     decoder.assert_called_once()
     assert decoder.call_args.args[0] == payload
 
@@ -60,7 +69,7 @@ def test_writer_rejects_preexisting_directory_symlink_without_outside_writes(
     run = tmp_path / "run"
     outside = tmp_path / "outside"
     outside.mkdir()
-    sentinel = outside / module.TERMINAL_HANDOFF_FILE
+    sentinel = outside / _HANDOFF_FILE
     sentinel.write_bytes(b"outside sentinel")
     link = {
         "run": run,
@@ -70,22 +79,25 @@ def test_writer_rejects_preexisting_directory_symlink_without_outside_writes(
     link.parent.mkdir(parents=True, exist_ok=True)
     _link(link, outside, directory=True)
     with pytest.raises(OSError):
-        module.write_terminal_handoff(run, make_handoff())
+        module.write_terminal_handoff(run, make_handoff(), launch_generation=_GENERATION)
     assert sentinel.read_bytes() == b"outside sentinel"
     assert list(outside.iterdir()) == [sentinel]
 
 
 def test_final_file_symlink_is_replaced_not_followed(make_handoff, tmp_path, monkeypatch):
     run = tmp_path / "run"
-    path = module.terminal_handoff_path(run)
+    path = module.terminal_handoff_path(run, launch_generation=_GENERATION)
     path.parent.mkdir(parents=True)
     sentinel = tmp_path / "outside.json"
     sentinel.write_bytes(b"outside sentinel")
     _link(path, sentinel, directory=False)
-    module.write_terminal_handoff(run, make_handoff())
+    module.write_terminal_handoff(run, make_handoff(), launch_generation=_GENERATION)
     assert sentinel.read_bytes() == b"outside sentinel"
     assert not path.is_symlink()
-    assert module.read_terminal_handoff(run) == make_handoff()
+    assert module.read_terminal_handoff(run, expected_generation=_GENERATION) == {
+        **make_handoff(),
+        "launch_generation": _GENERATION,
+    }
 
 
 @pytest.mark.skipif(not module._SECURE_HANDOFF_WRITE_DIR_FD, reason="requires directory-relative safe writes")
@@ -93,28 +105,28 @@ def test_open_directory_cannot_be_redirected_to_outside_after_check(make_handoff
     run = tmp_path / "run"
     outside = tmp_path / "outside"
     outside.mkdir()
-    sentinel = outside / module.TERMINAL_HANDOFF_FILE
+    sentinel = outside / _HANDOFF_FILE
     sentinel.write_bytes(b"outside sentinel")
     open_directory = module._open_handoff_directory
 
     def replaced_directory(*args, **kwargs):
         descriptor = open_directory(*args, **kwargs)
-        path = module.terminal_handoff_path(run).parent
+        path = module.terminal_handoff_path(run, launch_generation=_GENERATION).parent
         path.rename(path.with_name("original-staging"))
         _link(path, outside, directory=True)
         return descriptor
 
     monkeypatch.setattr(module, "_open_handoff_directory", replaced_directory)
-    module.write_terminal_handoff(run, make_handoff())
+    module.write_terminal_handoff(run, make_handoff(), launch_generation=_GENERATION)
     assert sentinel.read_bytes() == b"outside sentinel"
     assert list(outside.iterdir()) == [sentinel]
     original = run / module.RESOURCE_STATS_DIR / "original-staging"
-    assert [path.name for path in original.iterdir()] == [module.TERMINAL_HANDOFF_FILE]
+    assert [path.name for path in original.iterdir()] == [_HANDOFF_FILE]
 
 
 def test_replace_failure_preserves_previous_file_and_cleans_temporary_file(make_handoff, tmp_path, monkeypatch):
     run = tmp_path / "run"
-    path = module.write_terminal_handoff(run, make_handoff())
+    path = module.write_terminal_handoff(run, make_handoff(), launch_generation=_GENERATION)
     old = path.read_bytes()
 
     def fail_replace(*args, **kwargs):
@@ -122,7 +134,7 @@ def test_replace_failure_preserves_previous_file_and_cleans_temporary_file(make_
 
     monkeypatch.setattr(os, "replace", fail_replace)
     with pytest.raises(OSError, match="simulated replace failure"):
-        module.write_terminal_handoff(run, make_handoff())
+        module.write_terminal_handoff(run, make_handoff(), launch_generation=_GENERATION)
     assert path.read_bytes() == old
     assert list(path.parent.iterdir()) == [path]
 
@@ -130,20 +142,23 @@ def test_replace_failure_preserves_previous_file_and_cleans_temporary_file(make_
 @pytest.mark.skipif(not module._SECURE_HANDOFF_WRITE_DIR_FD, reason="requires directory-relative safe writes")
 def test_temporary_name_collisions_are_bounded_and_do_not_overwrite_existing_file(make_handoff, tmp_path, monkeypatch):
     run = tmp_path / "run"
-    path = module.write_terminal_handoff(run, make_handoff())
+    path = module.write_terminal_handoff(run, make_handoff(), launch_generation=_GENERATION)
     collision = path.parent / ".terminal-existing.tmp"
     collision.write_bytes(b"keep existing file")
     monkeypatch.setattr(module.secrets, "token_hex", lambda _length: "existing")
     with pytest.raises(FileExistsError):
-        module.write_terminal_handoff(run, make_handoff())
+        module.write_terminal_handoff(run, make_handoff(), launch_generation=_GENERATION)
     assert collision.read_bytes() == b"keep existing file"
-    assert module.read_terminal_handoff(run) == make_handoff()
+    assert module.read_terminal_handoff(run, expected_generation=_GENERATION) == {
+        **make_handoff(),
+        "launch_generation": _GENERATION,
+    }
 
 
 @pytest.mark.skipif(not module._SECURE_HANDOFF_WRITE_DIR_FD, reason="requires directory-relative safe writes")
 def test_fdopen_failure_closes_descriptors_and_cleans_temporary_file(make_handoff, tmp_path, monkeypatch):
     run = tmp_path / "run"
-    path = module.write_terminal_handoff(run, make_handoff())
+    path = module.write_terminal_handoff(run, make_handoff(), launch_generation=_GENERATION)
     descriptors = []
     original_open = os.open
 
@@ -158,7 +173,7 @@ def test_fdopen_failure_closes_descriptors_and_cleans_temporary_file(make_handof
     monkeypatch.setattr(os, "open", record_open)
     monkeypatch.setattr(os, "fdopen", fail_fdopen)
     with pytest.raises(OSError, match="simulated fdopen failure"):
-        module.write_terminal_handoff(run, make_handoff())
+        module.write_terminal_handoff(run, make_handoff(), launch_generation=_GENERATION)
     assert descriptors
     for descriptor in descriptors:
         with pytest.raises(OSError):
@@ -197,16 +212,7 @@ def test_bound_read_rejects_missing_or_mismatched_envelope_generation(make_hando
     assert module.read_terminal_handoff(tmp_path, expected_generation="new-launch") is None
 
 
-def test_bound_runtime_helpers_never_fall_back_to_unbound_diagnostic_file(make_handoff, tmp_path):
-    path = module.write_terminal_handoff(tmp_path, make_handoff())
-    assert module.read_terminal_handoff(tmp_path, expected_generation="new-launch") is None
-    assert module.read_terminal_handoff(tmp_path, expected_generation="") is None
-    module.remove_terminal_handoff(tmp_path, expected_generation="new-launch")
-    module.remove_terminal_handoff(tmp_path, expected_generation="")
-    assert path.exists()
-
-
-@pytest.mark.parametrize("generation", ["", "../outside", "a/b", ".", "x" * 129, 17, "é"])
+@pytest.mark.parametrize("generation", [None, "", "../outside", "a/b", ".", "x" * 129, 17, "é"])
 def test_generation_tokens_cannot_redirect_or_expand_private_paths(make_handoff, tmp_path, generation):
     with pytest.raises(module.InvalidTerminalHandoff, match="launch generation"):
         module.write_terminal_handoff(tmp_path, make_handoff(), launch_generation=generation)
@@ -226,13 +232,13 @@ def test_launch_option_keeps_exact_token_before_generic_type_coercion():
 
 @pytest.mark.parametrize("capability", ["_SECURE_HANDOFF_DIR_FD", "_SECURE_HANDOFF_WRITE_DIR_FD"])
 def test_missing_filesystem_primitives_never_use_path_based_writes(make_handoff, tmp_path, monkeypatch, capability):
-    path = module.write_terminal_handoff(tmp_path, make_handoff())
+    path = module.write_terminal_handoff(tmp_path, make_handoff(), launch_generation=_GENERATION)
     original = path.read_bytes()
     monkeypatch.setattr(module, capability, False)
     with pytest.raises(OSError, match="directory-relative"):
-        module.write_terminal_handoff(tmp_path, make_handoff())
+        module.write_terminal_handoff(tmp_path, make_handoff(), launch_generation=_GENERATION)
     assert path.read_bytes() == original
     if capability == "_SECURE_HANDOFF_DIR_FD":
-        assert module.read_terminal_handoff(tmp_path) is None
-        module.remove_terminal_handoff(tmp_path)
+        assert module.read_terminal_handoff(tmp_path, expected_generation=_GENERATION) is None
+        module.remove_terminal_handoff(tmp_path, expected_generation=_GENERATION)
         assert path.read_bytes() == original

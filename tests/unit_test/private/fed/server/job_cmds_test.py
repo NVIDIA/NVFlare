@@ -3148,25 +3148,13 @@ def _query_resource_archives(monkeypatch, tmp_path, workspace, outputs, *, store
 
 
 @pytest.mark.parametrize(
-    "summary_output,detail_output,stored,study",
-    [
-        (False, False, False, False),
-        (False, True, True, False),
-        (True, False, True, False),
-        (True, True, True, False),
-        (False, True, True, True),
-        (True, True, True, True),
-    ],
+    "summary_output,stored,study",
+    [(False, False, False), (False, True, False), (True, True, False), (False, True, True), (True, True, True)],
 )
-def test_resource_queries_route_members_independently(
-    monkeypatch, tmp_path, summary_output, detail_output, stored, study
-):
+def test_resource_queries_read_summary_once_for_job_and_site(monkeypatch, tmp_path, summary_output, stored, study):
     summary, participant = _resource_summary(), _participant_summary()
     workspace, outputs = {}, {}
     (outputs if summary_output else workspace)["resource_stats/resource_summary.json"] = canonical_json_bytes(summary)
-    (outputs if detail_output else workspace)["resource_stats/participants/site-1.json"] = (
-        b"not read by study queries" if study else canonical_json_bytes(participant)
-    )
     if not summary_output:
         outputs["resource_stats/resource_summary.json"] = b"must prefer workspace"
     conn, fetched = _query_resource_archives(monkeypatch, tmp_path, workspace, outputs, stored=stored, study=study)
@@ -3178,7 +3166,7 @@ def test_resource_queries_route_members_independently(
     else:
         assert result["resource_summary"] == summary
         assert result["participant_summary"] == participant
-    assert fetched == ["workspace"] + (["outputs"] if summary_output or (detail_output and not study) else [])
+    assert fetched == ["workspace"] + (["outputs"] if summary_output else [])
 
 
 @pytest.mark.parametrize("stored,study", [(True, False), (True, True), (False, False), (False, True)])
@@ -3203,7 +3191,6 @@ def test_resource_reports_survive_the_produced_outputs_split(monkeypatch, tmp_pa
     run = tmp_path / "run"
     files = {
         "resource_stats/resource_summary.json": canonical_json_bytes(_resource_summary()),
-        "resource_stats/participants/site-1.json": canonical_json_bytes(_participant_summary()),
         "log.txt": b"log",
     }
     for name, data in files.items():

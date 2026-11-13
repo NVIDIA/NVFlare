@@ -12,10 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Numeric resource reports shared by record and query tests."""
+"""Small resource records and real ZIP archives shared by reporting tests."""
+
+import io
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from nvflare.private.fed.resource_stats.measurements import (
     SCHEMA_VERSION,
+    canonical_json_bytes,
     capacity_to_resource_time,
     participant_measurements,
 )
@@ -41,12 +45,13 @@ def _participant_summary(job_id="job-1", participant_name="site-1", reported_at=
     }
 
 
-def _accepted_entry(participant_name="site-1", role="client", received_at="2026-09-17T12:00:00Z"):
-    record = _participant_summary(participant_name=participant_name)
+def _accepted_entry(participant_name="site-1", role="client", received_at="2026-09-17T12:00:00Z", *, record=None):
+    record = _participant_summary(participant_name=participant_name) if record is None else record
     return {
         "participant_name": participant_name,
         "role": role,
         "received_at": received_at,
+        "reported_at": record.get("reported_at", "2026-09-17T12:00:00Z"),
         **participant_measurements(record),
     }
 
@@ -58,3 +63,15 @@ def _resource_summary(job_id="job-1", participants=None):
         "job_id": job_id,
         "participants": [_accepted_entry()] if participants is None else participants,
     }
+
+
+def _resource_archive(summary=None, *, extra=()):
+    stream = io.BytesIO()
+    with ZipFile(stream, "w", ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "resource_stats/resource_summary.json",
+            canonical_json_bytes(_resource_summary() if summary is None else summary),
+        )
+        for name, data in extra:
+            archive.writestr(name, data)
+    return stream.getvalue()

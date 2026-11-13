@@ -90,14 +90,13 @@ def test_accept_is_idempotent_and_finalized_bundle_reads_from_workspace(started_
         coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": conflict})
         == RESOURCE_REPORT_CONFLICT
     )
-    participant_path = run_dir / "resource_stats" / "participants" / "site-1.json"
-    assert not participant_path.exists()
+    summary_path = run_dir / "resource_stats" / RESOURCE_SUMMARY_FILE
+    assert not summary_path.exists()
     assert not (run_dir / "resource_stats" / RESOURCE_SUMMARY_FILE).exists()
 
     # The accepted bytes live only in the parent ledger until finalization.
-    # Anything the job child places at the publication path is replaced by
-    # those exact accepted bytes before the summary marker is written.
-    participant_path.write_bytes(b"child-side mutation")
+    # Job-owned file contents cannot replace the accepted in-memory measurements.
+    summary_path.write_bytes(b"child-side mutation")
 
     coordinator.disable_clients("job-1", ["site-1"])
     summary = coordinator.finalize_job("job-1")
@@ -106,11 +105,10 @@ def test_accept_is_idempotent_and_finalized_bundle_reads_from_workspace(started_
         ("site-1", None),
         ("server", "missing"),
     ]
-    assert participant_path.read_bytes() == data
+    assert summary["participants"][0]["reported_at"] == _participant()["reported_at"]
     assert {
         path.relative_to(run_dir).as_posix() for path in (run_dir / "resource_stats").rglob("*") if path.is_file()
     } == {
-        "resource_stats/participants/site-1.json",
         "resource_stats/resource_summary.json",
     }
     assert (
@@ -129,7 +127,7 @@ def test_accept_is_idempotent_and_finalized_bundle_reads_from_workspace(started_
     assert not coordinator.has_job("job-1")
 
 
-def test_participant_write_failure_occurs_at_finalization_not_acceptance(started_job):
+def test_summary_write_failure_occurs_at_finalization_not_acceptance(started_job):
     coordinator, run_dir = started_job
     data = canonical_json_bytes(_participant())
 
@@ -141,18 +139,17 @@ def test_participant_write_failure_occurs_at_finalization_not_acceptance(started
         with pytest.raises(OSError, match="disk full"):
             coordinator.finalize_job("job-1")
 
-    assert not (run_dir / "resource_stats" / "participants" / "site-1.json").exists()
     assert not (run_dir / "resource_stats" / RESOURCE_SUMMARY_FILE).exists()
 
 
-def test_finalization_writes_resource_summary_last(tmp_path):
+def test_finalization_publishes_only_resource_summary(tmp_path):
     writes = []
 
     class RecordingCoordinator(ResourceStatsCoordinator):
         @classmethod
-        def _atomic_write_resource(cls, run_dir, file_name, data, include_participants=False):
-            writes.append((file_name, include_participants))
-            return super()._atomic_write_resource(run_dir, file_name, data, include_participants)
+        def _atomic_write_resource(cls, run_dir, file_name, data):
+            writes.append(file_name)
+            return super()._atomic_write_resource(run_dir, file_name, data)
 
     run_dir = tmp_path / "run_job-1"
     coordinator = RecordingCoordinator()
@@ -161,7 +158,7 @@ def test_finalization_writes_resource_summary_last(tmp_path):
 
     coordinator.finalize_job("job-1")
 
-    assert writes == [("site-1.json", True), (RESOURCE_SUMMARY_FILE, False)]
+    assert writes == [RESOURCE_SUMMARY_FILE]
 
 
 def test_workspace_reader_accepts_archive_path_and_open_file(tmp_path, published_job):
@@ -322,22 +319,6 @@ def test_reader_ignores_unrequested_members(published_job, member, payloads):
     assert reader.read_participant_summary("site-1") == _participant()
 
 
-@pytest.mark.parametrize("copies", [0, 2])
-def test_reader_checks_participant_member_count_only_when_requested(published_job, copies):
-    run_dir, summary = published_job
-    if copies == 0:
-        (run_dir / "resource_stats" / "participants" / "site-1.json").unlink()
-    workspace = io.BytesIO(_workspace_zip(run_dir))
-    if copies == 2:
-        with pytest.warns(UserWarning, match="Duplicate name"), ZipFile(workspace, "a", ZIP_DEFLATED) as archive:
-            archive.writestr("resource_stats/participants/site-1.json", "{}")
-
-    reader = WorkspaceResourceStatsReader(workspace.getvalue())
-    assert reader.read_resource_summary() == summary
-    with pytest.raises(WorkspaceResourceStatsError, match=f"exactly one.*found {copies}"):
-        reader.read_participant_summary("site-1")
-
-
 def test_reader_rejects_duplicate_requested_resource_summary(tmp_path):
     run_dir = tmp_path / "run_job-1"
     coordinator = ResourceStatsCoordinator()
@@ -399,12 +380,12 @@ def test_finalizing_one_job_does_not_block_report_for_another_job(tmp_path):
 
     class BlockingCoordinator(ResourceStatsCoordinator):
         @classmethod
-        def _atomic_write_resource(cls, run_dir, file_name, data, include_participants=False):
+        def _atomic_write_resource(cls, run_dir, file_name, data):
             if Path(run_dir) == run_a and file_name == RESOURCE_SUMMARY_FILE:
                 final_write_started.set()
                 if not allow_final_write.wait(timeout=5):
                     raise TimeoutError("test did not release the blocked finalization")
-            return super()._atomic_write_resource(run_dir, file_name, data, include_participants)
+            return super()._atomic_write_resource(run_dir, file_name, data)
 
     coordinator = BlockingCoordinator()
     coordinator.start_job("job-a", [], run_a)
@@ -453,12 +434,12 @@ def test_finalization_cutoff_remains_atomic_for_reports_to_same_job(tmp_path):
 
     class BlockingCoordinator(ResourceStatsCoordinator):
         @classmethod
-        def _atomic_write_resource(cls, run_dir, file_name, data, include_participants=False):
+        def _atomic_write_resource(cls, run_dir, file_name, data):
             if Path(run_dir) == target_run_dir and file_name == RESOURCE_SUMMARY_FILE:
                 final_write_started.set()
                 if not allow_final_write.wait(timeout=5):
                     raise TimeoutError("test did not release the blocked finalization")
-            return super()._atomic_write_resource(run_dir, file_name, data, include_participants)
+            return super()._atomic_write_resource(run_dir, file_name, data)
 
     coordinator = BlockingCoordinator()
     coordinator.start_job("job-1", ["site-1"], run_dir)

@@ -20,13 +20,12 @@ import pytest
 from nvflare.private.fed.resource_stats.measurements import (
     canonical_json_bytes,
     capacity_to_resource_time,
-    participant_measurements,
     sum_job_totals,
     sum_study_totals,
 )
 from nvflare.private.fed.resource_stats.report_reader import read_resource_report
 from nvflare.tool.resources.resources_output import render_job_resources, render_study_resources
-from tests.resource_stats_report_test_utils import _resource_summary
+from tests.resource_stats_report_test_utils import _accepted_entry, _resource_summary
 
 
 def _job_summary(participant):
@@ -35,14 +34,7 @@ def _job_summary(participant):
             participant["resource_capacity"], participant.get("duration_seconds"), scope_issues=participant["issues"]
         )
     return _resource_summary(
-        participants=[
-            {
-                "participant_name": participant["participant_name"],
-                "role": participant["role"],
-                "received_at": "2026-09-17T12:00:00Z",
-                **participant_measurements(participant),
-            }
-        ]
+        participants=[_accepted_entry(participant["participant_name"], participant["role"], record=participant)]
     )
 
 

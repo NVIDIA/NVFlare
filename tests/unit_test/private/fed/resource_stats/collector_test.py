@@ -69,12 +69,16 @@ def test_probe_fallback_remains_partial_through_handoff_and_public_summary(monke
     monkeypatch.setattr(gpu_nvidia, "probe_gpu", lambda: {"count": 0})
     ticks = iter([0, 10_000_000_000])
     job_collector = JobResourceCollector(clock_ns=lambda: next(ticks))
-    write_terminal_handoff(tmp_path, job_collector.finish(message_traffic={"sent_bytes": 0, "received_bytes": 0}))
+    write_terminal_handoff(
+        tmp_path,
+        job_collector.finish(message_traffic={"sent_bytes": 0, "received_bytes": 0}),
+        launch_generation="test-launch",
+    )
 
     report = assemble_participant_summary(
         job_id="job-1",
         participant_name="site-1",
-        child_handoff=read_terminal_handoff(tmp_path),
+        child_handoff=read_terminal_handoff(tmp_path, expected_generation="test-launch"),
     )
 
     assert report["resource_capacity"] == {
@@ -146,9 +150,11 @@ def test_final_handoff_preserves_partial_traffic_without_merging_parent_values(m
     handoff["issues"] = [issue for issue in handoff["issues"] if issue["metric"] != "message_traffic"] + [
         {"metric": "message_traffic", "code": "observation_incomplete"}
     ]
-    write_terminal_handoff(tmp_path, handoff)
+    write_terminal_handoff(tmp_path, handoff, launch_generation="test-launch")
     report = assemble_participant_summary(
-        job_id="job-1", participant_name="site-1", child_handoff=read_terminal_handoff(tmp_path)
+        job_id="job-1",
+        participant_name="site-1",
+        child_handoff=read_terminal_handoff(tmp_path, expected_generation="test-launch"),
     )
     assert report["resource_utilization"]["message_traffic"] == {
         "status": "partial",
@@ -162,21 +168,21 @@ def test_final_handoff_preserves_partial_traffic_without_merging_parent_values(m
 
 def test_handoff_reader_rejects_symlink(make_handoff, tmp_path):
     target_run = tmp_path / "target"
-    target = write_terminal_handoff(target_run, make_handoff())
+    target = write_terminal_handoff(target_run, make_handoff(), launch_generation="test-launch")
     link_run = tmp_path / "link"
-    link = terminal_handoff_path(link_run)
+    link = terminal_handoff_path(link_run, launch_generation="test-launch")
     link.parent.mkdir(parents=True)
     try:
         link.symlink_to(target)
     except (NotImplementedError, OSError):
         pytest.skip("symlinks are unavailable on this platform")
 
-    assert read_terminal_handoff(link_run) is None
+    assert read_terminal_handoff(link_run, expected_generation="test-launch") is None
 
 
 def test_handoff_parent_does_not_follow_intermediate_staging_symlink(make_handoff, tmp_path):
     outside_run = tmp_path / "outside"
-    outside_handoff = write_terminal_handoff(outside_run, make_handoff())
+    outside_handoff = write_terminal_handoff(outside_run, make_handoff(), launch_generation="test-launch")
     run_dir = tmp_path / "run"
     stats_dir = run_dir / RESOURCE_STATS_DIR
     stats_dir.mkdir(parents=True)
@@ -185,8 +191,8 @@ def test_handoff_parent_does_not_follow_intermediate_staging_symlink(make_handof
     except (NotImplementedError, OSError):
         pytest.skip("symlinks are unavailable on this platform")
 
-    assert read_terminal_handoff(run_dir) is None
-    remove_terminal_handoff(run_dir)
+    assert read_terminal_handoff(run_dir, expected_generation="test-launch") is None
+    remove_terminal_handoff(run_dir, expected_generation="test-launch")
 
     assert outside_handoff.exists()
 
@@ -194,11 +200,11 @@ def test_handoff_parent_does_not_follow_intermediate_staging_symlink(make_handof
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs are unavailable on this platform")
 def test_handoff_reader_rejects_fifo_without_blocking(tmp_path):
     run_dir = tmp_path / "fifo"
-    path = terminal_handoff_path(run_dir)
+    path = terminal_handoff_path(run_dir, launch_generation="test-launch")
     path.parent.mkdir(parents=True)
     os.mkfifo(path)
 
-    assert read_terminal_handoff(run_dir) is None
+    assert read_terminal_handoff(run_dir, expected_generation="test-launch") is None
 
 
 @pytest.mark.parametrize(

@@ -140,11 +140,12 @@ The parent supplies participant identity and attaches the report to the existing
 `REPORT_JOB_OUTCOME` request. It releases resources through the normal lifecycle
 even if statistics are missing, invalid, or delayed. An error during resource
 release is logged without suppressing the terminal outcome report. The server
-retains accepted reports until finalization, writes participant files and then
-`resource_summary.json` under `resource_stats/`, and includes them in the normal
-job archives. Queries prefer WORKSPACE and consult separately stored OUTPUTS
-only for missing members; summary and participant detail are routed independently.
-Queries use existing per-job authorization. There is no
+retains accepted reports until finalization, then atomically publishes
+`resource_stats/resource_summary.json` with each participant's measurements and
+original report timestamp stored once. Queries prefer WORKSPACE and consult
+separately stored OUTPUTS only when the summary is absent. A site query constructs
+the same participant response from the selected summary entry. Queries use
+existing per-job authorization. There is no
 separate statistics database, periodic sender, or live resource-monitoring
 service.
 

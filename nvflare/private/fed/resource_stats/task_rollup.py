@@ -24,13 +24,7 @@ from dataclasses import dataclass
 
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 
-from .measurements import (
-    _sum_numbers,
-    aggregate_cpu_consumed,
-    aggregate_message_traffic,
-    aggregate_scope_issues,
-    capacity_to_resource_time,
-)
+from .measurements import aggregate_scope_issues, capacity_to_resource_time, merge_worker_measurement
 
 MAX_SIDECAR_BYTES = 64 * 1024
 _MAX_SCOPES = 10_000
@@ -136,34 +130,6 @@ class TaskResourceReducer:
             self._pending_bytes += MAX_SIDECAR_BYTES
             return True
 
-    @staticmethod
-    def merge_resource_time(previous, contribution, issues=None):
-        """Keep independent dimension subtotals when another one exceeds bounds."""
-        values = [value for value in (previous, contribution) if value is not None]
-        result = {}
-        incomplete = any("status" in value for value in values)
-        for dimension, field in (("cpu", "unit_seconds"), ("memory", "byte_seconds"), ("gpu", "instance_seconds")):
-            amounts = [value[dimension][field] for value in values if dimension in value]
-            if not amounts:
-                continue
-            try:
-                result[dimension] = {field: _sum_numbers(amounts)}
-            except (OverflowError, ValueError):
-                # An overflowing dimension cannot erase other usable subtotals.
-                if previous is not None and dimension in previous:
-                    result[dimension] = deepcopy(previous[dimension])
-                incomplete = True
-                if issues is not None:
-                    issues.append({"metric": "resource_time", "code": "observation_incomplete"})
-        if not result:
-            if issues is not None:
-                issues[:] = [issue for issue in issues if issue["metric"] != "resource_time"]
-                issues.append({"metric": "resource_time", "code": "observation_incomplete"})
-            return dict(_UNAVAILABLE)
-        if incomplete or set(result) != {"cpu", "memory", "gpu"}:
-            result["status"] = "partial"
-        return result
-
     def _updated_totals(self, record):
         totals = {**self._totals, "issues": list(self._totals["issues"])}
         record_issues = list(record["issues"])
@@ -174,20 +140,12 @@ class TaskResourceReducer:
         issues.extend(
             issue for issue in record_issues if issue["metric"] in {"resource_time", "cpu_consumed", "message_traffic"}
         )
-        totals["resource_time"] = self.merge_resource_time(totals["resource_time"], resource_time, issues)
-        for field, aggregate in (
-            ("cpu_consumed", aggregate_cpu_consumed),
-            ("message_traffic", aggregate_message_traffic),
+        for metric, contribution in (
+            ("resource_time", resource_time),
+            ("cpu_consumed", record["cpu_consumed"]),
+            ("message_traffic", record["message_traffic"]),
         ):
-            sources = [record[field]]
-            if totals[field] is not None:
-                sources.insert(0, totals[field])
-            try:
-                totals[field] = aggregate(sources)
-            except (OverflowError, ValueError):
-                issues.append({"metric": field, "code": "observation_incomplete"})
-                previous = totals[field]
-                totals[field] = aggregate([previous], complete=False) if previous is not None else dict(_UNAVAILABLE)
+            totals[metric] = merge_worker_measurement(metric, totals[metric], contribution, issues)
         totals["issues"] = aggregate_scope_issues(
             issues, {field: value for field, value in totals.items() if field != "issues" and value is not None}
         )

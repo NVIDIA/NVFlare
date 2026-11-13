@@ -51,7 +51,6 @@ RESOURCE_REPORT_NOT_EXPECTED = "not_expected"
 RESOURCE_REPORT_SERVER_ERROR = "server_error"
 
 RESOURCE_STATS_DIR = "resource_stats"
-PARTICIPANTS_DIR = "participants"
 RESOURCE_SUMMARY_FILE = "resource_summary.json"
 # The schema permits many individually bounded reports, but the root process
 # must not retain an unbounded aggregate while it waits for job finalization.
@@ -192,7 +191,7 @@ class ResourceStatsCoordinator:
         run_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         if reset_existing:
             cls._reset_resource_directory(run_dir)
-        directory_fd = cls._open_resource_directory(run_dir, include_participants=True)
+        directory_fd = cls._open_resource_directory(run_dir)
         os.close(directory_fd)
 
     def disable_clients(self, job_id: str, client_names: Iterable[str]) -> None:
@@ -274,7 +273,7 @@ class ResourceStatsCoordinator:
             return RESOURCE_REPORT_ACCEPTED
 
     def finalize_job(self, job_id: str) -> dict[str, Any]:
-        """Close acceptance, write participant records, then publish the summary last."""
+        """Close acceptance and publish one self-contained summary of accepted reports."""
 
         state = self._get_job_state(job_id)
         if state is None:
@@ -293,6 +292,7 @@ class ResourceStatsCoordinator:
                         {
                             **base,
                             "received_at": accepted.received_at,
+                            "reported_at": record["reported_at"],
                             **participant_measurements(record),
                         }
                     )
@@ -322,14 +322,6 @@ class ResourceStatsCoordinator:
                 raise ValueError("resource summary exceeds its size limit")
 
             self._remove_empty_staging_directory(state.run_dir)
-            # Publish the accepted bytes and write the summary last.
-            for participant_name, accepted in state.accepted.items():
-                self._atomic_write_resource(
-                    state.run_dir,
-                    f"{participant_name}.json",
-                    accepted.data,
-                    include_participants=True,
-                )
             self._atomic_write_resource(state.run_dir, RESOURCE_SUMMARY_FILE, summary_data)
             state.finalized = True
             status_counts: dict[str, int] = {}
@@ -368,9 +360,8 @@ class ResourceStatsCoordinator:
         run_dir: Path,
         file_name: str,
         data: bytes,
-        include_participants: bool = False,
     ) -> None:
-        directory_fd = cls._open_resource_directory(run_dir, include_participants)
+        directory_fd = cls._open_resource_directory(run_dir)
         try:
             cls._atomic_write_at(directory_fd, file_name, data)
         finally:
@@ -395,7 +386,7 @@ class ResourceStatsCoordinator:
                 pass
 
     @classmethod
-    def _open_resource_directory(cls, run_dir: Path, include_participants: bool = False) -> int:
+    def _open_resource_directory(cls, run_dir: Path) -> int:
         """Open each server-owned path component without following symlinks."""
 
         run_dir = Path(run_dir)
@@ -404,19 +395,14 @@ class ResourceStatsCoordinator:
 
         current_fd = os.open(run_dir, _DIRECTORY_OPEN_FLAGS)
         try:
-            components = (RESOURCE_STATS_DIR, PARTICIPANTS_DIR) if include_participants else (RESOURCE_STATS_DIR,)
-            for component in components:
-                try:
-                    os.mkdir(component, 0o700, dir_fd=current_fd)
-                except FileExistsError:
-                    pass
-                next_fd = os.open(component, _DIRECTORY_OPEN_FLAGS, dir_fd=current_fd)
-                os.close(current_fd)
-                current_fd = next_fd
-            return current_fd
-        except BaseException:
+            try:
+                os.mkdir(RESOURCE_STATS_DIR, 0o700, dir_fd=current_fd)
+            except FileExistsError:
+                pass
+            result = os.open(RESOURCE_STATS_DIR, _DIRECTORY_OPEN_FLAGS, dir_fd=current_fd)
+            return result
+        finally:
             os.close(current_fd)
-            raise
 
     @staticmethod
     def _ensure_plain_directory(path: Path) -> None:
