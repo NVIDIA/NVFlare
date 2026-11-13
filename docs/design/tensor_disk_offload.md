@@ -161,7 +161,7 @@ Custom aggregators are responsible for:
 
 ## Temp File Lifecycle
 
-- Each workflow creates a job-scoped offload root (`nvflare_tensor_offload_server_<job>_*`
+- Each workflow creates a job-scoped offload root (`nvflare_tensor_offload_server_<job>+*`
   on the server, `nvflare_tensor_offload_<job>_*` for Swarm clients), with safetensors
   download directories beneath it.
 - Temp dir selection follows Python `tempfile` behavior (`TMPDIR` / OS default, typically `/tmp`).

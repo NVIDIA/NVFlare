@@ -344,7 +344,8 @@ def test_wait_for_complete_removes_tensor_offload_root_left_by_exited_job(tmp_pa
     job_engine = SimpleNamespace(run_manager=None, get_cell=lambda: cell)
     root_dir = Path(setup_tensor_disk_offload(engine=job_engine, enabled=True, job_id="job-1").root_dir)
     (root_dir / "chunk_0.safetensors").write_bytes(b"accepted update")
-    other_job_root = Path(setup_tensor_disk_offload(engine=job_engine, enabled=True, job_id="job-2").root_dir)
+    # Custom job ids can start with another job's id.
+    other_job_root = Path(setup_tensor_disk_offload(engine=job_engine, enabled=True, job_id="job-1_retry").root_dir)
     # A Swarm client of the same job can share this host and temp dir.
     client_root = tmp_path / "nvflare_tensor_offload_job-1_abc"
     client_root.mkdir()

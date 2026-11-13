@@ -47,8 +47,9 @@ def _get_cell(engine):
 
 
 def server_root_dir_prefix(job_id: str) -> str:
-    # "server" keeps the server parent's removal by job id from matching a client's root on a shared host.
-    return f"nvflare_tensor_offload_server_{job_id}_"
+    # The server parent removes roots by this prefix. "+" cannot occur in a job id, so the prefix of one job
+    # never matches the root of a job whose id merely starts with it, nor a client's root on a shared host.
+    return f"nvflare_tensor_offload_server_{job_id}+"
 
 
 def setup_tensor_disk_offload(
