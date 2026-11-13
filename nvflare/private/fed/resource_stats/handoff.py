@@ -31,9 +31,6 @@ from typing import Any, Optional
 
 from .measurements import canonical_json_bytes
 
-# The private handoff carries startup capacity and accumulated execution time.
-INTERNAL_HANDOFF_VERSION = "4"
-INTERNAL_HANDOFF_KIND = "nvflare.resource_stats.internal.terminal_handoff"
 MAX_TERMINAL_HANDOFF_BYTES = 1024 * 1024
 
 RESOURCE_STATS_DIR = "resource_stats"
@@ -95,10 +92,8 @@ def _open_handoff_directory(run_dir: str | Path, *, include_staging: bool, creat
     if create:
         root.mkdir(parents=True, exist_ok=True)
 
-    opened = []
+    current_fd = os.open(root, _DIRECTORY_OPEN_FLAGS)
     try:
-        current_fd = os.open(root, _DIRECTORY_OPEN_FLAGS)
-        opened.append(current_fd)
         for component in components:
             if create:
                 try:
@@ -106,13 +101,12 @@ def _open_handoff_directory(run_dir: str | Path, *, include_staging: bool, creat
                 except FileExistsError:
                     pass
             next_fd = os.open(component, _DIRECTORY_OPEN_FLAGS, dir_fd=current_fd)
-            opened.append(next_fd)
+            os.close(current_fd)
             current_fd = next_fd
-        result_fd = opened.pop()
-        return result_fd
-    finally:
-        for descriptor in reversed(opened):
-            os.close(descriptor)
+        return current_fd
+    except BaseException:
+        os.close(current_fd)
+        raise
 
 
 def write_terminal_handoff(
@@ -128,40 +122,26 @@ def write_terminal_handoff(
         raise InvalidTerminalHandoff("terminal handoff exceeds its size limit")
     path = terminal_handoff_path(run_dir, launch_generation=launch_generation)
     directory_fd = _open_handoff_directory(run_dir, include_staging=True, create=True)
-    temp_path = None
+    temp_name = f".terminal-{secrets.token_hex(16)}.tmp"
+    fd = None
     try:
-        for _ in range(8):
-            temp_name = f".terminal-{secrets.token_hex(8)}.tmp"
-            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
-            try:
-                fd = os.open(temp_name, flags, mode=0o600, dir_fd=directory_fd)
-            except FileExistsError:
-                continue
-            temp_path = temp_name
-            try:
-                stream = os.fdopen(fd, "wb")
-            except BaseException:
-                os.close(fd)
-                raise
-            break
-        else:
-            raise OSError("could not create a private resource handoff temporary file")
-        with stream:
+        fd = os.open(temp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode=0o600, dir_fd=directory_fd)
+        with os.fdopen(fd, "wb", closefd=False) as stream:
             stream.write(data)
             stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temp_path, filename, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+            os.fsync(fd)
+        os.replace(temp_name, filename, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
         return path
     finally:
         try:
-            if temp_path is not None:
+            if fd is not None:
+                os.close(fd)
                 try:
-                    os.unlink(temp_path, dir_fd=directory_fd)
+                    os.unlink(temp_name, dir_fd=directory_fd)
                 except FileNotFoundError:
                     pass
         finally:
-            if directory_fd is not None:
-                os.close(directory_fd)
+            os.close(directory_fd)
 
 
 def read_terminal_handoff(run_dir: str | Path, *, expected_generation: str | None = None) -> Optional[dict[str, Any]]:

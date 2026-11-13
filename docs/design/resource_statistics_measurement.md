@@ -140,11 +140,14 @@ observable failed or aborted work. The reducer retains accepted scope identities
 it does not deduplicate by task name, result identity, PID alone, or hardware UUID
 across sessions. Missing artifacts leave known subtotals with incomplete quality.
 The ledger cannot establish lifecycle ownership. Its retention is capped at
-10,000 scopes and 4 MiB of encoded state, with at most
+10,000 scopes and a 4 MiB budget for encoded identities, accepted records, and
+totals, with at most
 8 MiB of outstanding worker artifacts and 64 KiB per accepted artifact. On
 exhaustion, accepted subtotals are frozen and marked incomplete; replay keys are
 never evicted to admit duplicate work. These bounds limit serialized state, not
-total Python heap.
+total Python heap. Records stay decoded for duplicate comparison; their encoded
+size is charged once when retained. The launcher owns backend handles; the
+reducer tracks only the attempt identity, settlement, and artifact reservation.
 
 ## Duration, capacity-time, and aggregation
 
@@ -232,7 +235,10 @@ details.
 For example, unreadable worker GPU capacity makes capacity-time partial while
 valid CPU work and traffic can remain complete. A wholly missing worker report
 makes all three rollups incomplete. Neither case changes the coordinator's valid
-startup snapshot.
+startup snapshot. An unchecked cgroup limit can leave capacity overstated, so
+`partial` describes incomplete coverage, not a guaranteed numerical lower bound.
+A lost earlier execution marks the retained attempt's totals partial without
+replacing them with zero.
 
 Consider these disjoint executions, all within one 60-second participant window:
 

@@ -59,14 +59,6 @@ def _terminal_label(value: str) -> str:
     return "".join(escaped)
 
 
-def _accepted(entry: dict) -> bool:
-    return "status" not in entry
-
-
-def _metric_status(value: dict) -> str:
-    return value.get("status", "reported")
-
-
 def _number(value, divisor=1) -> str:
     if value is None:
         return _MISSING
@@ -79,10 +71,6 @@ def _number(value, divisor=1) -> str:
     if value > 0 and amount < 0.01:
         return "<0.01"
     return f"{amount:.2f}".rstrip("0").rstrip(".")
-
-
-def _count(value) -> str:
-    return _MISSING if value is None else str(value)
 
 
 def _duration(value) -> str:
@@ -120,7 +108,7 @@ def _capacity_time(value: dict, resource: str) -> str:
 
 
 def _capacity_row(value: dict) -> list[str]:
-    status = _metric_status(value.get("resource_time", {}))
+    status = value.get("resource_time", {}).get("status", "reported")
     return [_duration(value.get("duration_seconds"))] + [
         _marked(_capacity_time(value, resource), status) for resource in ("cpu", "memory", "gpu")
     ]
@@ -129,10 +117,6 @@ def _capacity_row(value: dict) -> list[str]:
 def _cpu_used(value: dict) -> str:
     consumed = value.get("resource_utilization", {}).get("cpu_consumed", {})
     return _marked(_average(consumed.get("cpu_seconds"), value.get("duration_seconds")), consumed.get("status"))
-
-
-def _has_message_traffic(value: dict) -> bool:
-    return value.get("resource_utilization", {}).get("message_traffic", {}).get("sent_bytes") is not None
 
 
 def _quantity(label: str, value: str, unit: str) -> str:
@@ -171,7 +155,7 @@ def _data_gaps(participants: list[dict]) -> list[str]:
     lines = []
     for entry in participants:
         name = entry["participant_name"]
-        if not _accepted(entry):
+        if "status" in entry:
             lines.append(f"  {name}: {entry['status']} report")
             continue
         gaps = []
@@ -179,7 +163,7 @@ def _data_gaps(participants: list[dict]) -> list[str]:
             gaps.append("measurement duration unavailable")
         for field, label in _MEASUREMENT_LABELS.items():
             value = _measurement(entry, field)
-            status = _metric_status(value)
+            status = value.get("status", "reported")
             if status == "reported":
                 continue
             detail = _issue_detail(value, field, entry.get("issues", []))
@@ -193,7 +177,7 @@ def _data_gaps(participants: list[dict]) -> list[str]:
 
 
 def _total_resource_quantities(totals: dict) -> list[str]:
-    status = _metric_status(totals["resource_time"])
+    status = totals["resource_time"].get("status", "reported")
     return [
         _quantity(label, _marked(_capacity_time(totals, resource), status), unit)
         for label, resource, unit in (
@@ -233,21 +217,34 @@ def _total_other_quantities(totals: dict, show_message_traffic: bool) -> list[st
     ]
 
 
+def _totals_lines(totals, show_message_traffic):
+    return [
+        "",
+        "Recorded capacity-time totals",
+        "  " + " | ".join(_total_resource_quantities(totals)),
+        "",
+        "Recorded resource utilization totals",
+        "  " + " | ".join(_total_other_quantities(totals, show_message_traffic)),
+    ]
+
+
 def _startup_capacity(participant: dict) -> list[str]:
     capacity = participant.get("resource_capacity", {})
     return [
         _quantity("CPU:", _number(capacity.get("cpu", {}).get("units")), "visible units"),
         _quantity("RAM:", _number(capacity.get("memory", {}).get("bytes"), _GIB), "GiB"),
-        _quantity("GPU:", _count(capacity.get("gpu", {}).get("count")), "GPUs"),
+        _quantity("GPU:", str(capacity.get("gpu", {}).get("count", _MISSING)), "GPUs"),
     ]
 
 
 def render_job_resources(summary: dict, participant: dict | None = None, *, job_name: str | None = None) -> str:
     participants = sorted(summary["participants"], key=lambda entry: (entry["role"], entry["participant_name"]))
-    accepted = sum(_accepted(entry) for entry in participants)
+    accepted = sum(("status" not in entry) for entry in participants)
     selected = participant.get("participant_name") if participant else None
     visible_entries = [entry for entry in participants if not selected or entry["participant_name"] == selected]
-    show_message_traffic = any(_accepted(entry) and _has_message_traffic(entry) for entry in visible_entries)
+    show_message_traffic = any(
+        ("status" not in entry) and "sent_bytes" in _measurement(entry, "message_traffic") for entry in visible_entries
+    )
     title = f"job {_terminal_label(job_name)} (ID: {summary['job_id']})" if job_name else f"job ID {summary['job_id']}"
     lines = [f"Recorded resources for {title}."]
     coverage = f"Participants with data: {accepted}/{len(participants)}"
@@ -257,7 +254,7 @@ def render_job_resources(summary: dict, participant: dict | None = None, *, job_
 
     rows = []
     for entry in visible_entries:
-        metrics = _capacity_row(entry) if _accepted(entry) else [_MISSING] * 4
+        metrics = _capacity_row(entry) if ("status" not in entry) else [_MISSING] * 4
         rows.append([entry["participant_name"], *metrics])
     metric_headers = [
         "TIME",
@@ -271,20 +268,11 @@ def render_job_resources(summary: dict, participant: dict | None = None, *, job_
         other_headers.extend(["PAYLOAD SENT GiB", "PAYLOAD RECEIVED GiB"])
     other_rows = []
     for entry in visible_entries:
-        values = _utilization_row(entry if _accepted(entry) else {}, show_message_traffic, average_cpu=True)
+        values = _utilization_row(entry if ("status" not in entry) else {}, show_message_traffic, average_cpu=True)
         other_rows.append([entry["participant_name"], *values])
     lines.extend(["", "Recorded resource utilization per participant", *_table(other_headers, other_rows)])
     job_totals = sum_job_totals(visible_entries)
-    lines.extend(
-        [
-            "",
-            "Recorded capacity-time totals",
-            "  " + " | ".join(_total_resource_quantities(job_totals)),
-            "",
-            "Recorded resource utilization totals",
-            "  " + " | ".join(_total_other_quantities(job_totals, show_message_traffic)),
-        ]
-    )
+    lines.extend(_totals_lines(job_totals, show_message_traffic))
     gaps = _data_gaps(visible_entries)
     if gaps:
         lines.extend(["", "Data gaps:", *gaps])
@@ -312,73 +300,53 @@ def render_study_resources(summary: dict) -> str:
         "",
     ]
     show_message_traffic = any(
-        job["resource_data"] == "included" and _has_message_traffic(job["totals"]) for job in summary["jobs"]
+        job["resource_data"] == "included" and "sent_bytes" in _measurement(job["totals"], "message_traffic")
+        for job in summary["jobs"]
     )
-    rows = []
+    capacity_rows, utilization_rows = [], []
     gaps = []
     for job in sorted(summary["jobs"], key=lambda job: job["job_id"]):
         if job["resource_data"] == "included":
             totals = job["totals"]
             resource_time = totals["resource_time"]
-            status = _metric_status(resource_time)
-            row_metrics = [_marked(_capacity_time(totals, resource), status) for resource in ("gpu", "cpu", "memory")]
-            row_metrics.extend(_utilization_row(totals, show_message_traffic))
+            status = resource_time.get("status", "reported")
+            capacity = [_marked(_capacity_time(totals, resource), status) for resource in ("gpu", "cpu", "memory")]
+            utilization = _utilization_row(totals, show_message_traffic)
             incomplete = [
-                f"{label} {'incomplete' if _metric_status(_measurement(totals, field)) == 'partial' else 'unavailable'}"
+                f"{label} {'incomplete' if _measurement(totals, field).get('status', 'reported') == 'partial' else 'unavailable'}"
                 for field, label in _MEASUREMENT_LABELS.items()
-                if _metric_status(_measurement(totals, field)) != "reported"
+                if _measurement(totals, field).get("status", "reported") != "reported"
             ]
             if incomplete:
                 gaps.append(f"  {job['job_id']}: " + ", ".join(incomplete))
         else:
-            row_metrics = [_MISSING] * (4 + 2 * int(show_message_traffic))
+            capacity = [_MISSING] * 3
+            utilization = [_MISSING] * (1 + 2 * int(show_message_traffic))
             reason = (
                 "no valid resource summary" if job["resource_data"] == "unavailable" else "not finalized (excluded)"
             )
             gaps.append(f"  {job['job_id']}: {reason}")
-        rows.append([job["job_id"], _terminal_label(job["job_name"]), job["job_status"], *row_metrics])
-    metric_headers = [
-        "GPU-h",
-        "CPU VISIBLE core-h",
-        "MEM VISIBLE GiB-h",
-        "CPU USED core-h",
-    ]
-    if show_message_traffic:
-        metric_headers.extend(["PAYLOAD SENT GiB", "PAYLOAD RECEIVED GiB"])
-    capacity_columns = 3
+        identity = [job["job_id"], _terminal_label(job["job_name"]), job["job_status"]]
+        capacity_rows.append([*identity, *capacity])
+        utilization_rows.append([*identity, *utilization])
     identity_headers = ["JOB ID", "NAME", "JOB STATUS"]
+    usage_headers = ["CPU USED core-h"]
+    if show_message_traffic:
+        usage_headers.extend(["PAYLOAD SENT GiB", "PAYLOAD RECEIVED GiB"])
     lines.extend(
         [
             "Recorded resource capacity-time per job",
-            *_table(
-                [*identity_headers, *metric_headers[:capacity_columns]],
-                [row[: 3 + capacity_columns] for row in rows],
-            ),
-        ]
-    )
-    lines.extend(
-        [
+            *_table([*identity_headers, "GPU-h", "CPU VISIBLE core-h", "MEM VISIBLE GiB-h"], capacity_rows),
             "",
             "Recorded resource utilization per job",
-            *_table(
-                [*identity_headers, *metric_headers[capacity_columns:]],
-                [row[:3] + row[3 + capacity_columns :] for row in rows],
-            ),
+            *_table([*identity_headers, *usage_headers], utilization_rows),
         ]
     )
-    lines.extend(["", "Recorded capacity-time totals"])
     if any(job["resource_data"] == "included" for job in summary["jobs"]):
         totals = summary["totals"]
-        lines.extend(
-            [
-                "  " + " | ".join(_total_resource_quantities(totals)),
-                "",
-                "Recorded resource utilization totals",
-                "  " + " | ".join(_total_other_quantities(totals, _has_message_traffic(totals))),
-            ]
-        )
+        lines.extend(_totals_lines(totals, "sent_bytes" in _measurement(totals, "message_traffic")))
     else:
-        lines.append("  No jobs with resource data")
+        lines.extend(["", "Recorded capacity-time totals", "  No jobs with resource data"])
     if gaps:
         lines.extend(["", "Data gaps:", *gaps])
     show_legend = any("*" in line or _MISSING in line for line in lines)

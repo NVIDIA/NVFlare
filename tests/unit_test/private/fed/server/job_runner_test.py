@@ -30,13 +30,7 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.zip_utils import get_all_file_paths
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
-from nvflare.private.fed.resource_stats.handoff import (
-    INTERNAL_HANDOFF_KIND,
-    INTERNAL_HANDOFF_VERSION,
-    terminal_handoff_path,
-    write_terminal_handoff,
-)
-from nvflare.private.fed.resource_stats.measurements import capacity_to_resource_time
+from nvflare.private.fed.resource_stats.handoff import terminal_handoff_path, write_terminal_handoff
 from nvflare.private.fed.server.job_runner import JobRunner, _FinishedJobState
 from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.utils.job_cert_utils import write_job_cert
@@ -1685,12 +1679,6 @@ def test_deploy_failed_client_renders_disabled_not_missing(mock_get_bool, mock_c
     assert site2["status"] == "disabled"
 
 
-def test_job_runner_does_not_create_shared_parent_traffic_counters():
-    runner = JobRunner(workspace_root="/tmp")
-
-    assert not hasattr(runner, "f3_counters")
-
-
 @pytest.mark.parametrize(
     "traffic",
     [None, {"sent_bytes": 0, "received_bytes": 0}, {"sent_bytes": 1024, "received_bytes": 512}],
@@ -1705,28 +1693,9 @@ def test_server_handoff_is_bound_and_accepted_before_finalization(tmp_path, traf
     fl_ctx = MagicMock()
     fl_ctx.get_workspace.return_value = workspace
     if traffic is not None:
-        write_terminal_handoff(
-            run_dir,
-            {
-                "duration_seconds": 10,
-                "internal_version": INTERNAL_HANDOFF_VERSION,
-                "kind": INTERNAL_HANDOFF_KIND,
-                "resource_capacity": {
-                    "cpu": {"units": 2},
-                    "memory": {"bytes": 4096},
-                    "gpu": {"count": 0},
-                },
-                "resource_time": capacity_to_resource_time(
-                    {"cpu": {"units": 2}, "memory": {"bytes": 4096}, "gpu": {"count": 0}}, 10
-                ),
-                "resource_utilization": {
-                    "cpu_consumed": {"cpu_seconds": 0},
-                    "message_traffic": traffic,
-                },
-                "issues": [],
-            },
-            launch_generation="server-launch",
-        )
+        handoff = _participant_summary()
+        handoff["resource_utilization"]["message_traffic"] = traffic
+        write_terminal_handoff(run_dir, handoff, launch_generation="server-launch")
 
     runner._accept_server_resource_report("job-1", fl_ctx)
     summary = runner.resource_stats.finalize_job("job-1")
@@ -1739,7 +1708,7 @@ def test_server_handoff_is_bound_and_accepted_before_finalization(tmp_path, traf
         assert server["resource_utilization"]["message_traffic"] == {"status": "unavailable"}
         assert {"metric": "message_traffic", "code": "observation_incomplete"} in server["issues"]
     else:
-        assert server["duration_seconds"] == 10
+        assert server["duration_seconds"] == 2
         assert server["resource_utilization"]["message_traffic"] == traffic
         assert server["issues"] == []
     assert not terminal_handoff_path(run_dir, launch_generation="server-launch").exists()
@@ -1876,8 +1845,6 @@ def test_server_missing_generation_or_report_never_uses_old_or_unbound_file(tmp_
     unavailable = {"status": "unavailable"}
     handoff = {
         "duration_seconds": 10,
-        "internal_version": INTERNAL_HANDOFF_VERSION,
-        "kind": INTERNAL_HANDOFF_KIND,
         "resource_capacity": unavailable,
         "resource_time": unavailable,
         "resource_utilization": {

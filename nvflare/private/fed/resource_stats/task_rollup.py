@@ -20,7 +20,7 @@ import json
 import os
 import threading
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 
@@ -74,29 +74,9 @@ def _key(identity):
 @dataclass
 class _Scope:
     identity: TaskAttemptIdentity
-    execution_id: str | None = None
-    disposition: str = "unresolved"
-    record: str | None = None
+    settled: bool = False
+    record: dict | None = None
     reserved: bool = True
-
-
-def _scope_size(scope):
-    # Count the serialized ledger, not an asserted bound on Python heap usage.
-    # _encoded escapes non-ASCII characters, so character and byte counts agree.
-    return (
-        len(
-            _encoded(
-                {
-                    "identity": scope.identity.to_dict(),
-                    "execution_id": scope.execution_id,
-                    "disposition": "settled_missing",
-                    "record": scope.record,
-                    "reserved": False,
-                }
-            )
-        )
-        + 2
-    )
 
 
 class TaskResourceReducer:
@@ -137,12 +117,12 @@ class TaskResourceReducer:
             if previous is not None:
                 if previous.identity != identity:
                     self._incomplete = True
-                return previous.identity == identity and previous.reserved and previous.disposition == "unresolved"
+                return previous.identity == identity and previous.reserved and not previous.settled
             if self._frozen:
                 self._containment_lost = True
                 return False
             scope = _Scope(identity)
-            size = _scope_size(scope)
+            size = len(_encoded(identity.to_dict()))
             if len(self._scopes) >= _MAX_SCOPES or not self._fits(self._state_bytes + size, self._totals):
                 self._freeze()
                 self._containment_lost = True
@@ -155,26 +135,6 @@ class TaskResourceReducer:
             self._state_bytes += size
             self._pending_bytes += MAX_SIDECAR_BYTES
             return True
-
-    def bind(self, identity, execution_id):
-        """Keep the runtime's accepted handle identity in its private owner row."""
-        with self._lock:
-            scope = self._scopes.get(_key(identity))
-            if scope is None:
-                return
-            if scope.identity != identity:
-                self._incomplete = True
-                return
-            if scope.execution_id is not None and scope.execution_id != execution_id:
-                self._incomplete = True
-                return
-            candidate = replace(scope, execution_id=execution_id)
-            size = self._state_bytes - _scope_size(scope) + _scope_size(candidate)
-            if not self._fits(size, self._totals):
-                self._freeze()
-                return
-            self._scopes[_key(identity)] = candidate
-            self._state_bytes = size
 
     @staticmethod
     def merge_resource_time(previous, contribution, issues=None):
@@ -205,7 +165,7 @@ class TaskResourceReducer:
         return result
 
     def _updated_totals(self, record):
-        totals = deepcopy(self._totals)
+        totals = {**self._totals, "issues": list(self._totals["issues"])}
         record_issues = list(record["issues"])
         resource_time = capacity_to_resource_time(
             record["resource_capacity"], record.get("duration_seconds"), record_issues
@@ -245,42 +205,34 @@ class TaskResourceReducer:
                 # normal cleanup proof can still supply its final contribution.
                 return
         record = None
-        invalid = False
         if started is not False:
             try:
                 record = store.read_resource_stats(identity)
             except Exception:
-                invalid = True
+                pass
         with self._lock:
             scope = self._scopes[key]
-            previous_size = _scope_size(scope)
-            candidate = replace(scope)
-            if scope.disposition != "unresolved":
-                if record is not None and (scope.record is None or json.loads(scope.record) != record):
+            if scope.settled:
+                if record is not None and scope.record != record:
                     self._incomplete = True
-            elif started is False:
-                candidate.disposition = "never_started"
-            elif record is None or self._frozen:
-                candidate.disposition = "invalid" if invalid else "settled_missing"
-                self._incomplete = True
             else:
-                try:
-                    candidate.disposition = "reported"
-                    candidate.record = _encoded(record)
-                    totals = self._updated_totals(record)
-                    size = self._state_bytes - previous_size + _scope_size(candidate)
-                    if self._fits(size, totals):
-                        self._totals = totals
+                scope.settled = True
+                if started is not False:
+                    if record is None or self._frozen:
+                        self._incomplete = True
                     else:
-                        self._freeze()
-                        candidate = replace(candidate, record=None, disposition="invalid")
-                except (KeyError, TypeError, ValueError, OverflowError):
-                    # A failed optional contribution leaves earlier totals intact
-                    # and still retires its file and reservation below.
-                    self._incomplete = True
-                    candidate = replace(candidate, record=None, disposition="invalid")
-            self._state_bytes += _scope_size(candidate) - previous_size
-            self._scopes[key] = candidate
+                        try:
+                            record_size = len(_encoded(record))
+                            totals = self._updated_totals(record)
+                            if self._fits(self._state_bytes + record_size, totals):
+                                scope.record = record
+                                self._state_bytes += record_size
+                                self._totals = totals
+                            else:
+                                self._freeze()
+                        except (KeyError, TypeError, ValueError, OverflowError):
+                            # Keep earlier totals and retire the optional file below.
+                            self._incomplete = True
         retired = started is False
         if started is not False:
             try:
@@ -304,9 +256,7 @@ class TaskResourceReducer:
         with self._lock:
             result = deepcopy(self._totals)
             # Rejected registrations may still execute without a tracked settlement.
-            contained = not self._containment_lost and all(
-                scope.disposition != "unresolved" for scope in self._scopes.values()
-            )
+            contained = not self._containment_lost and all(scope.settled for scope in self._scopes.values())
             incomplete = self._incomplete or not contained
         issues = result["issues"]
         if incomplete:

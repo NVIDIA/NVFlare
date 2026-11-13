@@ -16,16 +16,12 @@
 
 import pytest
 
-from nvflare.private.fed.resource_stats import handoff
-
 
 @pytest.fixture
 def make_handoff():
     def make(*, complete=False):
         record = {
             "duration_seconds": 10,
-            "internal_version": handoff.INTERNAL_HANDOFF_VERSION,
-            "kind": handoff.INTERNAL_HANDOFF_KIND,
             "resource_capacity": {"cpu": {"units": 2}, "memory": {"bytes": 4096}, "gpu": {"count": 0}},
             "resource_time": {
                 "cpu": {"unit_seconds": 20},

@@ -129,7 +129,7 @@ def def_resources_cli_parser(sub_cmd):
     )
     p.add_argument("--job", dest="job_id", type=str, help="job ID; uses the default study unless --study is set")
     p.add_argument("--study", type=str, help="study containing the job, or study to summarize (accessible jobs only)")
-    p.add_argument("--site", type=str, help="show one participant's final hardware and filesystem observation")
+    p.add_argument("--site", type=str, help="show one participant's measurements and startup capacity")
     cli_session.add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _resources_parser = p

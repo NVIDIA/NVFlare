@@ -35,7 +35,6 @@ MAX_RECORD_BYTES = {
     KIND_RESOURCE_SUMMARY: MAX_RESOURCE_SUMMARY_BYTES,
 }
 MAX_PARTICIPANTS = 10_000
-MAX_JSON_DEPTH = 32
 PARTICIPANT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}$")
 JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
@@ -137,19 +136,16 @@ def _read_timestamp(value):
 
 def _read_measurements(record):
     utilization = _read_fields(record["resource_utilization"], {"cpu_consumed", "message_traffic"})
-    values = {
-        "resource_capacity": _read_capacity(record["resource_capacity"]),
-        "resource_time": _read_capacity(record["resource_time"], elapsed=True),
-        "resource_utilization": {
-            "cpu_consumed": _read_usage(utilization["cpu_consumed"], {"cpu_seconds"}, integer=False),
-            "message_traffic": _read_usage(utilization["message_traffic"], {"sent_bytes", "received_bytes"}),
-        },
-    }
-    scope = {name: value for name, value in values.items() if name != "resource_utilization"}
-    values["issues"] = _read_issues(record["issues"], {**scope, **values["resource_utilization"]})
+    _read_capacity(record["resource_capacity"])
+    _read_capacity(record["resource_time"], elapsed=True)
+    _read_usage(utilization["cpu_consumed"], {"cpu_seconds"}, integer=False)
+    _read_usage(utilization["message_traffic"], {"sent_bytes", "received_bytes"})
+    record["issues"] = _read_issues(
+        record["issues"], {"resource_capacity", "resource_time", "cpu_consumed", "message_traffic"}
+    )
     if "duration_seconds" in record:
-        values["duration_seconds"] = _read_number(record["duration_seconds"])
-    return values
+        _read_number(record["duration_seconds"])
+    return record
 
 
 def _read_participants(participants):
@@ -168,7 +164,7 @@ def _read_participants(participants):
                 base | {"received_at", "resource_capacity", "resource_time", "resource_utilization", "issues"},
                 {"duration_seconds"},
             )
-            entry = {**entry, **_read_measurements(entry)}
+            _read_measurements(entry)
         elif status in ("missing", "disabled", "invalid"):
             entry = _read_fields(entry, base | {"status"} | ({"received_at"} if status == "invalid" else set()))
         else:
@@ -204,27 +200,14 @@ def _read_participant_summary(record):
     _read_identifier(record["job_id"], JOB_ID_PATTERN)
     _read_identifier(record["participant_name"], PARTICIPANT_NAME_PATTERN)
     _read_timestamp(record["reported_at"])
-    return {**record, **_read_measurements(record)}
+    return _read_measurements(record)
 
 
 def _read_resource_summary(record):
     record = _read_fields(record, {"schema_version", "kind", "job_id", "participants"})
     _read_identifier(record["job_id"], JOB_ID_PATTERN)
-    participants = _read_participants(record["participants"])
-    return {**record, "participants": participants}
-
-
-def _json_depth(value):
-    pending = [(value, 1)]
-    while pending:
-        item, depth = pending.pop()
-        if depth > MAX_JSON_DEPTH:
-            return depth
-        if isinstance(item, dict):
-            pending.extend((nested, depth + 1) for nested in item.values())
-        elif isinstance(item, list):
-            pending.extend((nested, depth + 1) for nested in item)
-    return 0
+    record["participants"] = _read_participants(record["participants"])
+    return record
 
 
 def _json_object(pairs):
@@ -259,8 +242,6 @@ def read_resource_report(data, expected_kind=None):
         raise ValueError("resource report does not match the expected record kind")
     if len(data) > MAX_RECORD_BYTES[kind]:
         raise ValueError("resource report exceeds its serialized size limit")
-    if _json_depth(record) > MAX_JSON_DEPTH:
-        raise ValueError("resource report exceeds maximum JSON depth")
     readers = {
         KIND_PARTICIPANT_SUMMARY: _read_participant_summary,
         KIND_RESOURCE_SUMMARY: _read_resource_summary,

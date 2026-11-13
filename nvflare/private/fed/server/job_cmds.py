@@ -739,34 +739,23 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 rows = []
                 cumulative_row_bytes = 0
                 for job_id, job_name, status in selected:
-                    if not _is_terminal_resource_job(status):
-                        row = {
-                            "job_id": job_id,
-                            "job_name": job_name,
-                            "job_status": status,
-                            "resource_data": "nonterminal",
-                        }
-                    else:
+                    row = {
+                        "job_id": job_id,
+                        "job_name": job_name,
+                        "job_status": status,
+                        "resource_data": "nonterminal",
+                    }
+                    if _is_terminal_resource_job(status):
                         try:
                             with self._staged_workspace_archive(job_def_manager, job_id, fl_ctx) as workspace_path:
                                 summary = WorkspaceResourceStatsReader(workspace_path).read_resource_summary()
                             if summary["job_id"] != job_id:
                                 raise WorkspaceResourceStatsError("resource summary job_id does not match selected job")
-                            row = {
-                                "job_id": job_id,
-                                "job_name": job_name,
-                                "job_status": status,
-                                "resource_data": "included",
-                                "totals": sum_job_totals(summary["participants"]),
-                            }
+                            row.update(resource_data="included", totals=sum_job_totals(summary["participants"]))
                             row_bytes = len(canonical_json_bytes(row))
                         except (OSError, StorageException, WorkspaceResourceStatsError, ValueError):
-                            row = {
-                                "job_id": job_id,
-                                "job_name": job_name,
-                                "job_status": status,
-                                "resource_data": "unavailable",
-                            }
+                            row.pop("totals", None)
+                            row["resource_data"] = "unavailable"
 
                     if row["resource_data"] != "included":
                         row_bytes = len(canonical_json_bytes(row))

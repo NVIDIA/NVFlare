@@ -17,7 +17,6 @@
 
 import json
 import math
-from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -189,13 +188,12 @@ def _sum_totals(entries, *, complete):
 
 
 def participant_measurements(record):
-    result = {
-        field: deepcopy(record[field])
-        for field in ("resource_capacity", "resource_time", "resource_utilization", "duration_seconds")
+    """Select measurement fields from an already owned, decoded report."""
+    return {
+        field: record[field]
+        for field in ("resource_capacity", "resource_time", "resource_utilization", "issues", "duration_seconds")
         if field in record
     }
-    result["issues"] = deepcopy(record["issues"])
-    return result
 
 
 def sum_job_totals(participants):

@@ -47,7 +47,6 @@ def test_resources_register_before_launch_and_fold_once_before_result_receipts(t
 
     attempt["launcher"].launch_task.side_effect = checked_launch
     outcome = supervisor.run(**attempt)
-    reducer.bind.assert_called_once_with(outcome.identity, "test:attempt-1")
     reducer.settle.assert_called_once_with(outcome.identity, attempt["store"], started=True, settled=True)
     assert supervisor.read_saved_result(outcome.identity)["value"] == 2
     supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)

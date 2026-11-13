@@ -66,7 +66,7 @@ def test_decoder_rejects_ambiguous_or_invalid_json(data):
         read_resource_report(data)
 
 
-def test_reader_enforces_size_kind_and_depth_limits(monkeypatch):
+def test_reader_enforces_size_kind_and_record_shape(monkeypatch):
     data = canonical_json_bytes(_participant_summary())
     with pytest.raises(ValueError, match="expected record kind"):
         read_resource_report(data, KIND_RESOURCE_SUMMARY)
@@ -76,10 +76,10 @@ def test_reader_enforces_size_kind_and_depth_limits(monkeypatch):
             read_resource_report(data, KIND_PARTICIPANT_SUMMARY)
     record = _participant_summary()
     nested = record
-    for _ in range(report_reader.MAX_JSON_DEPTH + 1):
+    for _ in range(33):
         nested["extra"] = {}
         nested = nested["extra"]
-    with pytest.raises(ValueError, match="depth"):
+    with pytest.raises(ValueError, match="unexpected fields"):
         read_resource_report(canonical_json_bytes(record))
 
 

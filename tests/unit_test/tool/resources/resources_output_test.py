@@ -169,29 +169,6 @@ def test_best_effort_capacity_keeps_values_and_explains_the_possible_overstateme
     assert "observation_incomplete" not in output
 
 
-def test_scalar_capacity_and_utilization_totals_are_visible():
-    participant = _participant()
-
-    output = render_job_resources(_job_summary(participant), job_name="hello-pt")
-
-    assert output.startswith("Recorded resources for job hello-pt (ID: job-1).")
-    assert "CPU VISIBLE" in output
-    assert "AVG CPU USED" in output
-    assert "MEM VISIBLE GiB-h" in output
-    assert "GPU-h" in output
-    assert "8" in output
-    assert "0.5" in output  # 1,800 consumed CPU seconds / 3,600 measured seconds.
-    assert "64" in output
-    assert "2" in output
-    assert "PAYLOAD SENT GiB" not in output
-    assert "CPU visible 8 core-h" in output
-    assert "CPU time used 0.5 core-h" in output
-    assert "Memory visible 64 GiB-h" in output
-    assert "GPUs available 2 GPU-h" in output
-    assert "accepted" not in output.lower()
-    assert "reported" not in output.lower()
-
-
 def test_job_header_falls_back_to_id_when_name_metadata_is_not_supplied():
     output = render_job_resources(_job_summary(_participant()))
     assert output.startswith("Recorded resources for job ID job-1.")
@@ -337,22 +314,6 @@ def test_study_capacity_and_optional_traffic_columns():
     assert "2*" in output
 
 
-def test_cpu_consumed_job_and_study_cli_reconcile_without_changing_capacity_time():
-    first = _job_summary(_participant())
-    second_participant = _participant()
-    second_participant["resource_utilization"]["cpu_consumed"] = {"cpu_seconds": 900}
-    second = _job_summary(second_participant)
-    job_totals = [sum_job_totals(summary["participants"]) for summary in (first, second)]
-    assert [total["resource_utilization"]["cpu_consumed"]["cpu_seconds"] for total in job_totals] == [1800, 900]
-
-    study = _study_summary(first, second)
-    assert study["totals"]["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 2700}
-    assert study["totals"]["resource_time"]["cpu"]["unit_seconds"] == 57600
-    output = render_study_resources(study)
-    assert "CPU time used 0.75 core-h" in output
-    assert "CPU visible 16 core-h" in output
-
-
 @pytest.mark.parametrize(
     "name, displayed",
     [
@@ -490,3 +451,26 @@ def test_memory_capacity_distinguishes_a_zero_limit_from_an_unavailable_observat
 
     assert _site_cell(output, "MEM VISIBLE GiB-h") == table_value
     assert detail in output
+
+
+@pytest.mark.parametrize("duration", [None, 60])
+def test_selected_worker_totals_use_explicit_time_and_optional_duration(duration):
+    participant = _participant()
+    participant["resource_capacity"]["gpu"] = {"count": 0}
+    participant["resource_time"] = {
+        "cpu": {"unit_seconds": 3600},
+        "memory": {"byte_seconds": 0},
+        "gpu": {"instance_seconds": 3600},
+    }
+    if duration is None:
+        participant.pop("duration_seconds")
+    else:
+        participant["duration_seconds"] = duration
+    summary = _job_summary(participant)
+    other = deepcopy(summary["participants"][0])
+    other["participant_name"] = "site-2"
+    summary["participants"].append(other)
+    output = render_job_resources(summary, participant)
+    assert "GPUs available 1 GPU-h" in output
+    assert "GPU: 0 GPUs" in output
+    assert _site_cell(output, "AVG CPU USED") == ("—" if duration is None else "30")

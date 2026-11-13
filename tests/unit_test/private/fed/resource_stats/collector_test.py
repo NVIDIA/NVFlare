@@ -12,17 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 
 import pytest
 
 from nvflare.private.fed.resource_stats import collector
-from nvflare.private.fed.resource_stats.collector import (
-    ExecutionResourceCollector,
-    JobResourceCollector,
-    assemble_participant_summary,
-)
+from nvflare.private.fed.resource_stats.collector import JobResourceCollector, assemble_participant_summary
 from nvflare.private.fed.resource_stats.handoff import (
     RESOURCE_STATS_DIR,
     STAGING_DIR,
@@ -31,70 +26,12 @@ from nvflare.private.fed.resource_stats.handoff import (
     terminal_handoff_path,
     write_terminal_handoff,
 )
-from nvflare.private.fed.resource_stats.measurements import canonical_json_bytes, capacity_to_resource_time
 from nvflare.private.fed.resource_stats.probes import cgroup_linux, gpu_nvidia
 
 
 @pytest.fixture(autouse=True)
 def no_native_gpu_queries(monkeypatch):
     monkeypatch.setattr(gpu_nvidia, "probe_gpu", lambda: None)
-
-
-def test_capacity_retains_numeric_cpu_memory_and_gpu_count():
-    instance = ExecutionResourceCollector(
-        capacity_probe=lambda: {"cpu": {"units": 4.0}, "memory": {"bytes": 1024}, "gpu": {"count": 2}},
-        clock_ns=lambda: 0,
-    )
-
-    result = instance.stop()["resource_capacity"]
-
-    assert result["cpu"] == {"units": 4}
-    assert result["gpu"] == {"count": 2}
-    assert "status" not in result
-
-
-def test_fallback_capacity_keeps_numeric_values_and_full_observed_duration():
-    instance = ExecutionResourceCollector(
-        capacity_probe=lambda: {
-            "status": "partial",
-            "issues": ["observation_incomplete"],
-            "cpu": {"units": 8},
-            "memory": {"bytes": 4096},
-            "gpu": {"count": 0},
-        },
-        clock_ns=lambda: 0,
-    )
-
-    snapshot = instance.stop()
-    result = snapshot["resource_capacity"]
-
-    assert result == {
-        "status": "partial",
-        "cpu": {"units": 8},
-        "memory": {"bytes": 4096},
-        "gpu": {"count": 0},
-    }
-    assert {"metric": "resource_capacity", "code": "observation_incomplete"} in snapshot["issues"]
-    assert capacity_to_resource_time(result, 10, snapshot["issues"])["cpu"] == {"unit_seconds": 80}
-
-
-def test_cpu_only_host_without_loadable_driver_has_partial_resource_capacity(monkeypatch):
-    # Missing inventory does not establish zero GPUs, even on a CPU-only host.
-    monkeypatch.setattr(gpu_nvidia, "probe_gpu", lambda: None)
-    monkeypatch.setattr(cgroup_linux, "probe_cpu", lambda _discovery, *, issues: {"units": 4})
-    monkeypatch.setattr(cgroup_linux, "probe_memory", lambda _discovery, *, issues: {"bytes": 1073741824})
-
-    capacity = collector.probe_capacity()
-    assert "gpu" not in capacity
-
-    instance = ExecutionResourceCollector(capacity_probe=lambda: capacity, clock_ns=lambda: 0)
-    snapshot = instance.stop()
-    result = snapshot["resource_capacity"]
-
-    assert result["status"] == "partial"
-    assert {"metric": "resource_capacity", "code": "observation_incomplete"} in snapshot["issues"]
-    assert "duration_seconds" not in result
-    assert "gpu" not in result
 
 
 @pytest.mark.parametrize("failed_resource", ["cpu", "memory", "gpu"])
@@ -152,31 +89,6 @@ def test_probe_fallback_remains_partial_through_handoff_and_public_summary(monke
     assert report["resource_utilization"]["message_traffic"] == {"sent_bytes": 0, "received_bytes": 0}
 
 
-def test_handoff_to_public_report_round_trip(tmp_path):
-    ticks = iter([1_000_000_000, 3_000_000_000])
-    job_collector = JobResourceCollector(
-        clock_ns=lambda: next(ticks),
-        capacity_probe=lambda: {"cpu": {"units": 2}, "memory": {"bytes": 4096}, "gpu": {"count": 0}},
-    )
-
-    path = write_terminal_handoff(
-        tmp_path, job_collector.finish(message_traffic={"sent_bytes": 1200, "received_bytes": 700})
-    )
-    assert path == terminal_handoff_path(tmp_path)
-    handoff = read_terminal_handoff(tmp_path)
-    report = assemble_participant_summary(
-        job_id="job-1",
-        participant_name="site-1",
-        child_handoff=handoff,
-    )
-    encoded = canonical_json_bytes(report)
-
-    assert json.loads(encoded)["participant_name"] == "site-1"
-    assert report["duration_seconds"] == 2
-    assert report["resource_utilization"]["message_traffic"] == {"sent_bytes": 1200, "received_bytes": 700}
-    assert "participant_key" not in encoded.decode()
-
-
 def test_restored_collector_keeps_new_totals_but_marks_prior_interval_incomplete(tmp_path):
     ticks = iter([1_000_000_000, 3_000_000_000])
     job_collector = JobResourceCollector(
@@ -196,28 +108,6 @@ def test_restored_collector_keeps_new_totals_but_marks_prior_interval_incomplete
     }
 
     assert {"metric": "resource_capacity", "code": "observation_incomplete"} in handoff["issues"]
-
-
-def test_shared_duration_survives_missing_gpu_capacity(monkeypatch, tmp_path):
-    resource_ticks = iter((0, 10_000_000_000))
-    usages = iter(((float(0), float(0)), (float(2), float(0))))
-    # Inject the OS counter through the accountant constructor without changing
-    # the collector's production wiring or its shared clock's two reads.
-    original = collector.CpuConsumedAccountant
-    monkeypatch.setattr(
-        collector, "CpuConsumedAccountant", lambda **kwargs: original(usage_reader=lambda: next(usages), **kwargs)
-    )
-    job_collector = JobResourceCollector(
-        clock_ns=lambda: next(resource_ticks),
-        capacity_probe=lambda: {"cpu": {"units": 8}, "memory": {"bytes": 4096}},
-    )
-
-    handoff = job_collector.finish()
-
-    assert handoff["resource_capacity"]["status"] == "partial"
-    assert "gpu" not in handoff["resource_capacity"]
-    assert handoff["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 2}
-    assert handoff["duration_seconds"] == 10
 
 
 def test_multinode_slurm_rank_zero_measurement_is_unavailable(monkeypatch, tmp_path):

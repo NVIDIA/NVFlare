@@ -55,7 +55,6 @@ def _store(record):
 
 def _fold(reducer, identity, record):
     assert reducer.register(identity)
-    reducer.bind(identity, "backend:" + identity.attempt_id)
     store = _store(record)
     reducer.settle(identity, store, started=True, settled=True)
     return store
@@ -227,7 +226,7 @@ def test_unregistered_or_mismatched_claims_never_add_a_new_execution():
     store.read_resource_stats.assert_not_called()
     assert reducer.snapshot()["resource_time"] is None
     assert reducer.register(identity)
-    reducer.bind(replace(identity, task_name="different"), "unexpected")
+    assert not reducer.register(replace(identity, task_name="different"))
     assert reducer.snapshot()["resource_time"]["status"] == "unavailable"
 
 
@@ -258,7 +257,7 @@ def test_pending_budget_is_shared_and_is_released_after_fold(monkeypatch):
 
 
 def test_serialized_ledger_limit_rejects_growth_before_storing_a_contribution(monkeypatch):
-    monkeypatch.setattr(task_rollup, "_MAX_STATE_BYTES", 2000)
+    monkeypatch.setattr(task_rollup, "_MAX_STATE_BYTES", 1700)
     reducer = task_rollup.TaskResourceReducer()
     identity = TaskAttemptIdentity("job", "site", "task", "t" * 300, "first")
     _fold(reducer, identity, _report(identity))

@@ -140,13 +140,6 @@ class TaskSupervisor:
                 pass
         return None
 
-    def _bind_resources(self, attempt):
-        try:
-            if self._resource_reducer is not None and attempt.handle is not None:
-                self._resource_reducer.bind(attempt.identity, attempt.handle.execution_id)
-        except Exception:
-            self._resource_call("mark_incomplete")
-
     @property
     def settlement_unconfirmed(self) -> bool:
         with self._state_lock:
@@ -302,12 +295,10 @@ class TaskSupervisor:
                 # Acquiring a handle is ownership, including post-spawn errors.
                 with self._state_lock:
                     attempt.handle = e.handle
-                self._bind_resources(attempt)
                 self._diagnostic(attempt, "launch_failed", execution_id=getattr(e.handle, "execution_id", None))
                 raise
             with self._state_lock:
                 attempt.handle = handle
-            self._bind_resources(attempt)
             self._diagnostic(attempt, "launched", execution_id=handle.execution_id, supervisor_pid=os.getpid())
             if handle.request.identity != launch_identity:
                 raise ValueError("launcher handle does not match owned task attempt identity")

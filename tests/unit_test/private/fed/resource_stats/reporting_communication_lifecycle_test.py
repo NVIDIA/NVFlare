@@ -35,15 +35,33 @@ class _StartupObserved(Exception):
     pass
 
 
-@pytest.mark.parametrize("module", [worker_process, runner_process])
-def test_collection_keeps_existing_workspace_and_import_order(module, tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "module,options,failed",
+    [
+        (worker_process, {}, False),
+        (worker_process, {}, True),
+        (runner_process, {}, False),
+        (runner_process, {}, True),
+        (runner_process, {"restore_snapshot": "snapshot-id"}, False),
+        (runner_process, {"resource_prior_attempt_incomplete": True}, False),
+    ],
+)
+def test_collection_keeps_existing_workspace_and_import_order(module, options, failed, tmp_path, monkeypatch):
     events = []
     args = SimpleNamespace(set=[], workspace=str(tmp_path), client_name="site-1", job_id="job-1")
     monkeypatch.setenv("PYTHONPATH", "existing-custom-import-path")
     original_path = sys.path[:]
-    monkeypatch.setattr(module, "parse_vars", lambda _: {})
+    monkeypatch.setattr(module, "parse_vars", lambda _: options)
     monkeypatch.setattr(module, "Workspace", MagicMock())
-    monkeypatch.setattr(module, "JobResourceCollector", lambda *_, **__: events.append("capacity"))
+
+    def collect(**kwargs):
+        events.append("capacity")
+        if module is runner_process:
+            assert kwargs == {"prior_observation_incomplete": bool(options)}
+        if failed:
+            raise OSError("optional observation unavailable")
+
+    monkeypatch.setattr(module, "JobResourceCollector", collect)
     monkeypatch.setattr(module, "download_workspace", lambda *_: events.append("download"))
     monkeypatch.setattr(module, "refresh_custom_dir_import_path", lambda *_: events.append("refresh"))
 

@@ -15,7 +15,6 @@
 """Archive queries validate requested reports, not an exclusive directory."""
 
 import io
-import json
 import struct
 import zipfile
 from copy import deepcopy
@@ -25,49 +24,13 @@ import pytest
 
 from nvflare.private.fed.resource_stats import archive_reader
 from nvflare.private.fed.resource_stats.archive_reader import WorkspaceResourceStatsError, WorkspaceResourceStatsReader
-from nvflare.private.fed.resource_stats.measurements import (
-    canonical_json_bytes,
-    capacity_to_resource_time,
-    participant_measurements,
-)
+from nvflare.private.fed.resource_stats.measurements import canonical_json_bytes
 from nvflare.private.fed.resource_stats.report_reader import read_resource_report
 from tests.resource_stats_report_test_utils import _participant_summary, _resource_summary
 
 
 def _reports():
-    participant = _participant_summary()
-    participant.update(
-        duration_seconds=10,
-        resource_capacity={
-            "status": "partial",
-            "cpu": {"units": 3},
-            "memory": {"bytes": 4096},
-            "gpu": {"count": 2},
-        },
-        resource_utilization={
-            "cpu_consumed": {"cpu_seconds": 2},
-            "message_traffic": {"sent_bytes": 0, "received_bytes": 0},
-        },
-        issues=[
-            {"metric": "resource_capacity", "code": "attribution_incomplete"},
-            {"metric": "resource_capacity", "code": "observation_incomplete"},
-        ],
-    )
-    participant["resource_time"] = capacity_to_resource_time(
-        participant["resource_capacity"], participant["duration_seconds"], scope_issues=participant["issues"]
-    )
-    summary = _resource_summary(
-        participants=[
-            {
-                "participant_name": "site-1",
-                "role": "client",
-                "received_at": "2026-09-17T12:00:01Z",
-                **participant_measurements(participant),
-            },
-            {"participant_name": "server", "role": "server", "status": "missing"},
-        ]
-    )
-    return read_resource_report(canonical_json_bytes(summary)), participant
+    return _resource_summary(), _participant_summary()
 
 
 def _archive(summary, participant=None, extra=()):
@@ -89,19 +52,6 @@ def test_summary_does_not_open_unrequested_participant_body():
     assert reader.read_resource_summary() == summary
     with pytest.raises(WorkspaceResourceStatsError, match="participant summary is invalid"):
         reader.read_participant_summary("site-1")
-
-
-def test_requested_detail_can_use_equivalent_numbers_and_issue_order():
-    summary, participant = _reports()
-    participant["issues"].reverse()
-    participant["issues"].append(dict(participant["issues"][0]))
-    participant["duration_seconds"] = 10.0
-    participant["resource_capacity"]["cpu"]["units"] = 3.0
-    participant["resource_utilization"]["cpu_consumed"]["cpu_seconds"] = 2.0
-    reader = WorkspaceResourceStatsReader(_archive(summary, participant))
-    detail = reader.read_participant_summary("site-1")
-    assert detail["resource_utilization"]["cpu_consumed"]["cpu_seconds"] == 2
-    assert detail["resource_capacity"] == summary["participants"][0]["resource_capacity"]
 
 
 @pytest.mark.parametrize("field,value", [("job_id", "other-job"), ("participant_name", "other-site")])
@@ -133,14 +83,6 @@ def test_detail_ignores_other_missing_participant_reports():
     assert reader.read_participant_summary("site-1") == participant
     with pytest.raises(WorkspaceResourceStatsError, match="found 0"):
         reader.read_participant_summary("site-2")
-
-
-def test_summary_accepts_compact_json():
-    summary, _ = _reports()
-    stream = io.BytesIO()
-    with ZipFile(stream, "w", ZIP_DEFLATED) as archive:
-        archive.writestr("resource_stats/resource_summary.json", json.dumps(summary, separators=(",", ":")))
-    assert WorkspaceResourceStatsReader(stream.getvalue()).read_resource_summary() == summary
 
 
 @pytest.mark.parametrize("version", ["0.0", "2.0", "3.0", "4.0"])

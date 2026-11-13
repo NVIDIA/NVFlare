@@ -2678,122 +2678,6 @@ def _invoke_resource_query(kind, conn):
         module.get_study_resources(conn, ["get_study_resources"])
 
 
-@pytest.mark.parametrize("first_kind", ["job", "study"])
-@pytest.mark.parametrize("second_kind", ["job", "study"])
-def test_resource_queries_reject_concurrent_requests_without_queuing(resource_query_engine, first_kind, second_kind):
-    engine, paths, _, stage = resource_query_engine()
-    entered = threading.Event()
-    release = threading.Event()
-    returned = threading.Event()
-
-    def blocked_stage(*args, **kwargs):
-        stage(*args, **kwargs)
-        entered.set()
-        release.wait()
-
-    def second_query():
-        try:
-            _invoke_resource_query(second_kind, second)
-        finally:
-            returned.set()
-
-    engine.job_def_manager.get_storage_for_download.side_effect = blocked_stage
-    first = _resource_query_connection(engine)
-    second = _resource_query_connection(engine)
-    with ThreadGroup(release) as threads:
-        threads.start(_invoke_resource_query, first_kind, first)
-        assert entered.wait(2), "first query did not enter archive staging"
-        threads.start(second_query)
-        assert engine.resource_query_lock.blocked.wait(1), "second query did not contend for the server slot"
-        assert returned.wait(1), "busy resource query was queued instead of rejected"
-        assert not release.is_set()
-        assert second.errors[0][0] == "resource query busy; retry later"
-        assert second.errors[0][1][MetaKey.STATUS] == MetaStatusValue.ERROR
-        assert second.dicts == []
-        assert engine.job_def_manager.get_storage_for_download.call_count == 1
-        assert paths[0].exists()
-    assert first.errors == []
-    assert first.dicts
-    assert all(not path.exists() for path in paths)
-    retry = _resource_query_connection(engine)
-    _invoke_resource_query(second_kind, retry)
-    assert retry.errors == []
-    assert retry.dicts
-    assert all(not path.exists() for path in paths)
-
-
-def test_resource_query_admission_is_independent_between_servers(resource_query_engine):
-    first_engine, first_paths, _, stage = resource_query_engine()
-    second_engine, second_paths, _, _ = resource_query_engine()
-    entered = threading.Event()
-    release = threading.Event()
-    returned = threading.Event()
-
-    def blocked_stage(*args, **kwargs):
-        stage(*args, **kwargs)
-        entered.set()
-        release.wait()
-
-    first_engine.job_def_manager.get_storage_for_download.side_effect = blocked_stage
-    first = _resource_query_connection(first_engine)
-    second = _resource_query_connection(second_engine)
-
-    def independent_query():
-        try:
-            _invoke_resource_query("study", second)
-        finally:
-            returned.set()
-
-    with ThreadGroup(release) as threads:
-        threads.start(_invoke_resource_query, "job", first)
-        assert entered.wait(2)
-        threads.start(independent_query)
-        assert returned.wait(1), "another server was blocked by the first server's query"
-        assert second.errors == []
-        assert second.dicts
-        assert not second_engine.resource_query_lock.blocked.is_set()
-        assert not release.is_set()
-    assert all(not path.exists() for path in first_paths + second_paths)
-
-
-def test_study_holds_slot_between_sequential_archive_staging(resource_query_engine, monkeypatch):
-    engine, paths, _, _ = resource_query_engine(("job-1", "job-2"))
-    entered = threading.Event()
-    release = threading.Event()
-    returned = threading.Event()
-    derived = []
-
-    def blocked_totals(participants):
-        derived.append(participants)
-        if len(derived) == 1:
-            assert len(paths) == 1 and not paths[0].exists()
-            entered.set()
-            release.wait()
-        return {"derived": True}
-
-    monkeypatch.setattr(job_cmds_module, "sum_job_totals", blocked_totals)
-    first = _resource_query_connection(engine)
-    second = _resource_query_connection(engine)
-
-    def competing_query():
-        try:
-            _invoke_resource_query("job", second)
-        finally:
-            returned.set()
-
-    with ThreadGroup(release) as threads:
-        threads.start(_invoke_resource_query, "study", first)
-        assert entered.wait(2), "study did not finish cleaning up the first staged archive"
-        threads.start(competing_query)
-        assert engine.resource_query_lock.blocked.wait(1)
-        assert returned.wait(1), "query was queued between archives in the same study"
-        assert second.errors[0][0] == "resource query busy; retry later"
-        assert engine.job_def_manager.get_storage_for_download.call_count == 1
-    assert first.errors == []
-    assert len(first.dicts[0][0]["jobs"]) == 2
-    assert len(paths) == 2 and all(not path.exists() for path in paths)
-
-
 @pytest.mark.parametrize(
     "kind,failure",
     [
@@ -2901,36 +2785,81 @@ def test_resource_query_context_failure_releases_slot_for_retry(resource_query_e
     assert all(not path.exists() for path in paths)
 
 
-def test_resource_query_slot_does_not_block_unrelated_commands(resource_query_engine):
-    engine, paths, _, stage = resource_query_engine()
-    engine.job_def_manager.list_components = MagicMock(return_value=["workspace"])
-    entered = threading.Event()
-    release = threading.Event()
-    returned = threading.Event()
-    first = _resource_query_connection(engine)
-    other = _resource_query_connection(engine)
+@pytest.mark.parametrize(
+    "scenario,first_kind,second_kind",
+    [
+        ("same_server", "job", "study"),
+        ("same_server", "study", "job"),
+        ("between_archives", "study", "job"),
+        ("other_server", "job", "study"),
+        ("other_command", "study", None),
+    ],
+)
+def test_resource_queries_hold_one_server_slot_until_cleanup(
+    resource_query_engine, monkeypatch, scenario, first_kind, second_kind
+):
+    engine, paths, _, stage = resource_query_engine(
+        ("job-1", "job-2") if scenario == "between_archives" else ("job-1",)
+    )
+    entered, release, returned = threading.Event(), threading.Event(), threading.Event()
 
     def blocked_stage(*args, **kwargs):
         stage(*args, **kwargs)
         entered.set()
         release.wait()
 
-    def list_components():
-        try:
-            JobCommandModule().list_job_components(other, ["list_job_components", "job-1"])
-        finally:
-            returned.set()
+    def blocked_totals(participants):
+        if len(paths) == 1:
+            assert not paths[0].exists()
+            entered.set()
+            release.wait()
+        return {"derived": True}
 
-    engine.job_def_manager.get_storage_for_download.side_effect = blocked_stage
+    if scenario == "between_archives":
+        monkeypatch.setattr(job_cmds_module, "sum_job_totals", blocked_totals)
+    else:
+        engine.job_def_manager.get_storage_for_download.side_effect = blocked_stage
+    second_engine, extra_paths = engine, []
+    if scenario == "other_server":
+        second_engine, extra_paths, _, _ = resource_query_engine()
+    first, second = _resource_query_connection(engine), _resource_query_connection(second_engine)
+    engine.job_def_manager.list_components = MagicMock(return_value=["workspace"])
+
+    def second_query():
+        if second_kind:
+            _invoke_resource_query(second_kind, second)
+        else:
+            JobCommandModule().list_job_components(second, ["list_job_components", "job-1"])
+        returned.set()
+
+    busy = scenario in {"same_server", "between_archives"}
     with ThreadGroup(release) as threads:
-        threads.start(_invoke_resource_query, "study", first)
-        assert entered.wait(2), "resource query did not enter archive staging"
-        threads.start(list_components)
-        assert returned.wait(1), "unrelated command was blocked by resource-query admission"
-        assert other.errors == []
-        assert other.successes
+        threads.start(_invoke_resource_query, first_kind, first)
+        assert entered.wait(2), "first query did not reach the held boundary"
+        threads.start(second_query)
+        if busy:
+            assert engine.resource_query_lock.blocked.wait(1), "second query did not contend for the slot"
+        assert returned.wait(1), "another query or command was queued"
         assert not release.is_set()
-        engine.job_def_manager.list_components.assert_called_once()
-    assert first.errors == []
-    assert first.dicts
+        if busy:
+            assert second.errors[0][0] == "resource query busy; retry later"
+            assert second.errors[0][1][MetaKey.STATUS] == MetaStatusValue.ERROR
+            assert not second.dicts
+            assert engine.job_def_manager.get_storage_for_download.call_count == 1
+        else:
+            assert not second.errors
+        if scenario == "other_command":
+            assert second.successes
+            engine.job_def_manager.list_components.assert_called_once()
+        if scenario == "other_server":
+            assert second.dicts
+            assert not second_engine.resource_query_lock.blocked.is_set()
+    assert not first.errors and first.dicts
+    assert all(not path.exists() for path in paths + extra_paths)
+    if scenario == "between_archives":
+        assert len(first.dicts[0][0]["jobs"]) == 2
+        assert len(paths) == 2
+    retry = _resource_query_connection(engine)
+    _invoke_resource_query("job", retry)
+    assert not retry.errors and retry.dicts
     assert all(not path.exists() for path in paths)

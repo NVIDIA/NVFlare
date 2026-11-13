@@ -149,8 +149,8 @@ adds the job and site identity, and serializes the participant record once.
 Local producers and reducers do not repeat the server's measurement checks.
 Measurements remain self-reported; validating a local file cannot establish their
 authenticity. Each launch owns a private
-`resource_stats/staging/terminal_handoff.<generation>.json` file with internal
-version `"4"`. Its bounded generation token is checked before consumption and
+`resource_stats/staging/terminal_handoff.<generation>.json` file. Its bounded
+generation token is checked before consumption and
 never enters public records. Cleanup removes only that generation's file, so an
 older writer or failed launch cannot replace or remove a newer handoff. Private
 staging must be empty before public archival.
@@ -170,16 +170,19 @@ a statistics result without applying the job outcome twice.
 
 Acceptance checks the input at the authenticated reporting boundary:
 
-1. Check the wrapper and raw byte limit before decoding.
-2. Bind the request to the active job and expected, non-disabled sender slot.
-3. Decode UTF-8 JSON, rejecting duplicate keys, nonfinite constants, wrong
-   kind/version, excess nesting, and unknown fields. Validate identifiers, units,
-   statuses, required numeric fields, and finite nonnegative values; require body job/site
-   identity to match the bound slot.
-4. Normalize object keys and sort/deduplicate issue tags without converting
-   numbers to strings. Recheck the canonical byte limit and compare with any accepted record.
-5. Under the per-job lock, recheck that acceptance is still open and the slot is
-   eligible. Retain immutable canonical bytes and server-owned receipt time.
+1. Under the per-job lock, bind the request to the active job and expected,
+   non-disabled sender slot. Check whether acceptance is still open.
+2. Check the wrapper and raw byte limit, then decode UTF-8 JSON. Reject duplicate
+   keys, nonfinite constants, wrong kind/version, and unexpected fields. Check
+   the fixed measurement structure, identifiers, statuses, and finite nonnegative
+   numbers; require the body job/site identity to match the bound slot.
+3. Sort and deduplicate issue tags, serialize the accepted record, and check its
+   canonical byte limit. Equivalent retries are duplicates; changed records are
+   conflicts. Retain immutable bytes and server-owned receipt time.
+
+The reader checks the decoded record in place. Its fixed field structure rules
+out arbitrary nesting; there is no separate recursive validation pass. Local
+handoff assembly projects measurement fields without repeating these checks.
 
 Hardware descriptions are not collected. Reports must not emit hostnames,
 addresses, serials, UUIDs, PCI identifiers, CUDA visibility masks, raw CPU
@@ -197,7 +200,6 @@ them independently.
 | Participant JSON, before and after canonicalization | 1 MiB |
 | Accepted canonical participant bytes retained per job | 64 MiB |
 | Job or study summary JSON | 64 MiB |
-| JSON nesting | 32 levels |
 | Expected participants per job; selected jobs per study query | 10,000 each |
 | ZIP metadata reads while constructing the member index | 4 MiB |
 
@@ -228,9 +230,9 @@ history so a later execution does not claim complete coverage of lost work.
 ## Server ledger and archive publication
 
 The coordinator maintains state and a lock for each job, plus a registry lock
-held briefly for lookup. Parsing occurs outside the per-job lock, and acceptance
-rechecks closure afterward. Slow finalization of one job must not block unrelated
-jobs through a global filesystem-I/O lock. The ledger retains only bounded
+held briefly for lookup. Bounded parsing and acceptance share the per-job lock,
+so roster and closure checks occur once. Finalization and acceptance for one job
+do not hold the registry lock during I/O or block unrelated jobs. The ledger retains only bounded
 canonical report bytes, rather than an additional decoded copy for every
 participant.
 

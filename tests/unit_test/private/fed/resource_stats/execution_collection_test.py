@@ -15,6 +15,8 @@
 """Execution windows are shared, immutable and independent of file scans."""
 
 
+from unittest.mock import Mock
+
 import pytest
 
 from nvflare.private.fed.resource_stats import collector
@@ -50,22 +52,6 @@ def test_selecting_task_mode_retains_the_existing_cpu_baseline(usage_reader):
     accountant = CpuConsumedAccountant(usage_reader=usage_reader(("100", "40"), ("102", "52")))
     accountant.exclude_children()
     assert accountant.finish() == {"cpu_seconds": 2}
-
-
-def test_execution_stop_is_one_snapshot(usage_reader, monkeypatch):
-    clock = iter([0, 10_000_000_000])
-    accountant = CpuConsumedAccountant(usage_reader=usage_reader(("0", "0"), ("2", "0")))
-    monkeypatch.setattr(collector, "CpuConsumedAccountant", lambda **_kwargs: accountant)
-
-    instance = ExecutionResourceCollector(
-        clock_ns=lambda: next(clock),
-        capacity_probe=lambda: {"cpu": {"units": 2}, "memory": {"bytes": 1024}, "gpu": {"count": 0}},
-    )
-    first = instance.stop()
-    assert first["duration_seconds"] == 10
-    assert first["cpu_consumed"] == {"cpu_seconds": 2}
-    first["resource_capacity"]["cpu"]["units"] = "999"
-    assert instance.stop()["resource_capacity"]["cpu"] == {"units": 2}
 
 
 def test_bad_capacity_and_clock_do_not_erase_cpu_work(usage_reader, monkeypatch):
@@ -227,3 +213,21 @@ def test_rejected_worker_omits_containing_duration_but_keeps_observed_work(tmp_p
         "received_bytes": 9,
         "status": "partial",
     }
+
+
+@pytest.mark.parametrize("ticks", [(10, 9), (OSError("clock"), 10), (0, 10**400), (10, 10)])
+def test_clock_failure_or_zero_preserves_raw_measurements(usage_reader, monkeypatch, ticks):
+    accountant = CpuConsumedAccountant(usage_reader=usage_reader((0, 0), (2, 0)))
+    monkeypatch.setattr(collector, "CpuConsumedAccountant", lambda **_kwargs: accountant)
+    job = collector.JobResourceCollector(clock_ns=Mock(side_effect=ticks), capacity_probe=lambda: {"cpu": {"units": 2}})
+    report = job.finish()
+    assert report["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 2}
+    assert report["resource_capacity"]["cpu"] == {"units": 2}
+    if ticks == (10, 10):
+        assert report["duration_seconds"] == 0
+        assert report["resource_time"]["cpu"] == {"unit_seconds": 0}
+    else:
+        assert "duration_seconds" not in report
+        assert report["resource_time"] == {"status": "unavailable"}
+    with pytest.raises(RuntimeError, match="already finalized"):
+        job.finish()

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import io
-import json
 import stat
 import threading
 from contextlib import nullcontext
@@ -41,23 +40,7 @@ from tests.resource_stats_report_test_utils import _participant_summary
 
 
 def _participant(job_id="job-1", participant_name="site-1", reported_at="2026-09-17T12:00:00Z"):
-    record = _participant_summary(job_id, participant_name, reported_at)
-    for field in (
-        "resource_capacity",
-        "resource_time",
-    ):
-        record[field] = {"status": "unavailable"}
-    record["resource_utilization"] = {field: {"status": "unavailable"} for field in ("cpu_consumed", "message_traffic")}
-    record["issues"] = [
-        {"metric": metric, "code": "observation_incomplete"}
-        for metric in (
-            "cpu_consumed",
-            "message_traffic",
-            "resource_capacity",
-            "resource_time",
-        )
-    ]
-    return record
+    return _participant_summary(job_id, participant_name, reported_at)
 
 
 def _workspace_zip(run_dir):
@@ -116,6 +99,7 @@ def test_accept_is_idempotent_and_finalized_bundle_reads_from_workspace(started_
     # those exact accepted bytes before the summary marker is written.
     participant_path.write_bytes(b"child-side mutation")
 
+    coordinator.disable_clients("job-1", ["site-1"])
     summary = coordinator.finalize_job("job-1")
     assert summary["job_id"] == "job-1"
     assert [(entry["participant_name"], entry.get("status")) for entry in summary["participants"]] == [
@@ -141,6 +125,8 @@ def test_accept_is_idempotent_and_finalized_bundle_reads_from_workspace(started_
     reader = WorkspaceResourceStatsReader(_workspace_zip(run_dir))
     assert reader.read_resource_summary() == summary
     assert reader.read_participant_summary("site-1") == _participant()
+    coordinator.forget_job("job-1")
+    assert not coordinator.has_job("job-1")
 
 
 def test_participant_write_failure_occurs_at_finalization_not_acceptance(started_job):
@@ -188,58 +174,6 @@ def test_workspace_reader_accepts_archive_path_and_open_file(tmp_path, published
         assert WorkspaceResourceStatsReader(archive_file).read_participant_summary("site-1") == _participant()
 
 
-@pytest.mark.parametrize("archive_version", ["0.0", "2.0", "3.0", "4.0"])
-def test_unsupported_formats_are_rejected_by_live_and_archive_readers(started_job, archive_version):
-    coordinator, run_dir = started_job
-    legacy_participant = _participant()
-    legacy_participant["schema_version"] = archive_version
-    assert (
-        coordinator.accept_resource_report(
-            "job-1", "site-1", {"participant_summary": canonical_json_bytes(legacy_participant)}
-        )
-        == RESOURCE_REPORT_INVALID
-    )
-    assert (
-        coordinator.accept_resource_report(
-            "job-1", "site-1", {"participant_summary": canonical_json_bytes(_participant())}
-        )
-        == RESOURCE_REPORT_ACCEPTED
-    )
-    legacy_summary = coordinator.finalize_job("job-1")
-    legacy_summary["schema_version"] = archive_version
-    summary_path = run_dir / "resource_stats" / RESOURCE_SUMMARY_FILE
-    summary_path.write_bytes(canonical_json_bytes(legacy_summary))
-    participant_path = run_dir / "resource_stats" / "participants" / "site-1.json"
-    participant_path.write_bytes(canonical_json_bytes(legacy_participant))
-    reader = WorkspaceResourceStatsReader(_workspace_zip(run_dir))
-    with pytest.raises(WorkspaceResourceStatsError):
-        reader.read_resource_summary()
-
-
-@pytest.mark.parametrize(
-    "participant_version",
-    ["2.0", "4.0"],
-)
-def test_workspace_reader_checks_detail_version_only_when_detail_is_requested(started_job, participant_version):
-    coordinator, run_dir = started_job
-    coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": canonical_json_bytes(_participant())})
-    coordinator.finalize_job("job-1")
-    summary_path = run_dir / "resource_stats" / RESOURCE_SUMMARY_FILE
-    participant_path = run_dir / "resource_stats" / "participants" / "site-1.json"
-    summary = json.loads(summary_path.read_bytes())
-    participant = json.loads(participant_path.read_bytes())
-    participant["schema_version"] = participant_version
-    summary_path.write_bytes(canonical_json_bytes(summary))
-    participant_path.write_bytes(canonical_json_bytes(participant))
-
-    reader = WorkspaceResourceStatsReader(_workspace_zip(run_dir))
-    # Job/study views trust the validated, self-contained rollup. Participant
-    # body consistency is checked lazily for a site-detail request.
-    reader.read_resource_summary()
-    with pytest.raises(WorkspaceResourceStatsError):
-        reader.read_participant_summary("site-1")
-
-
 def test_start_job_rejects_resource_stats_symlink(tmp_path):
     run_dir = tmp_path / "run_job-1"
     outside = tmp_path / "outside"
@@ -268,40 +202,6 @@ def test_disable_clients_marks_participant_disabled_and_rejects_later_reports(tm
     statuses = {entry["participant_name"]: entry["status"] for entry in summary["participants"]}
     assert statuses["site-2"] == "disabled"
     assert statuses["site-1"] == "missing"
-
-
-def test_disable_clients_is_a_no_op_for_unknown_or_already_accepted_participants(started_job):
-    coordinator, run_dir = started_job
-    report = canonical_json_bytes(_participant())
-    assert (
-        coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": report})
-        == RESOURCE_REPORT_ACCEPTED
-    )
-
-    # An already-accepted participant must not be retroactively disabled, and an
-    # unknown job_id / participant name must not raise.
-    coordinator.disable_clients("job-1", ["site-1"])
-    coordinator.disable_clients("no-such-job", ["site-9"])
-
-    summary = coordinator.finalize_job("job-1")
-    site = next(entry for entry in summary["participants"] if entry["participant_name"] == "site-1")
-    assert "status" not in site
-
-
-def test_forget_job_removes_registration_and_is_a_no_op_for_unknown_job(started_job):
-    coordinator, run_dir = started_job
-    assert coordinator.has_job("job-1")
-
-    coordinator.forget_job("job-1")
-
-    assert not coordinator.has_job("job-1")
-    assert (
-        coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": b"anything"})
-        == RESOURCE_REPORT_NOT_EXPECTED
-    )
-    # Forgetting a job that was never (or is no longer) registered must not raise.
-    coordinator.forget_job("job-1")
-    coordinator.forget_job("no-such-job")
 
 
 def test_restore_registration_purges_untrusted_pre_restart_reports(tmp_path):

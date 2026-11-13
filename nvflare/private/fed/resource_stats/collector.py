@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import datetime
 import math
 import os
 import time
@@ -24,7 +23,6 @@ from collections.abc import Callable, Mapping
 from copy import deepcopy
 from typing import Any, Optional
 
-from . import handoff
 from .cpu_consumed import CpuConsumedAccountant, install_cpu_accountant
 from .measurements import (
     SCHEMA_VERSION,
@@ -34,6 +32,7 @@ from .measurements import (
     capacity_to_resource_time,
     ordered_issues,
     scoped_measurement,
+    utc_timestamp,
 )
 from .probes import cgroup_linux, gpu_nvidia
 from .task_rollup import TaskResourceReducer, install_task_resource_reducer
@@ -63,12 +62,6 @@ def configure_task_collection():
             current.enable_task_collection()
         except Exception:
             current._task_collection_failed = True
-
-
-def utc_now() -> str:
-    """Return a schema-compatible UTC wall-clock timestamp."""
-
-    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def probe_capacity() -> dict[str, Any]:
@@ -109,12 +102,9 @@ def _startup_capacity_snapshot(capacity_probe, prior_observation_incomplete):
 
     try:
         result = deepcopy(dict(capacity_probe()))
-        if not all(name in result for name in ("cpu", "memory", "gpu")):
-            result["status"] = "partial" if any(name in result for name in ("cpu", "memory", "gpu")) else "unavailable"
-            result["issues"] = sorted(set(result.get("issues", [])) | {"observation_incomplete"})
     except Exception:
         return _unavailable("observation_incomplete")
-    if prior_observation_incomplete:
+    if prior_observation_incomplete or not {"cpu", "memory", "gpu"} <= result.keys():
         result["status"] = "partial" if any(name in result for name in ("cpu", "memory", "gpu")) else "unavailable"
         result["issues"] = sorted(set(result.get("issues", [])) | {"observation_incomplete"})
     return result
@@ -306,8 +296,6 @@ class JobResourceCollector(ExecutionResourceCollector):
         issues = aggregate_scope_issues(issues, measurements)
         return {
             **timing,
-            "internal_version": handoff.INTERNAL_HANDOFF_VERSION,
-            "kind": handoff.INTERNAL_HANDOFF_KIND,
             "resource_capacity": resource_capacity,
             "resource_time": resource_time,
             "issues": issues,
@@ -326,40 +314,25 @@ def assemble_participant_summary(
 ) -> dict[str, Any]:
     """Wrap this launch's observations with parent-owned job and participant identity."""
 
-    issues = (
-        list(child_handoff["issues"])
-        if child_handoff is not None
-        else [
-            {"metric": name, "code": "observation_incomplete"}
-            for name in (
-                "resource_capacity",
-                "resource_time",
-                "cpu_consumed",
-                "message_traffic",
-            )
-        ]
-    )
-    measurements = {
-        name: child_handoff[name] if child_handoff is not None else {"status": "unavailable"}
-        for name in ("resource_capacity", "resource_time")
-    }
-    report = {
+    if child_handoff is None:
+        child_handoff = {
+            "resource_capacity": {"status": "unavailable"},
+            "resource_time": {"status": "unavailable"},
+            "resource_utilization": {name: {"status": "unavailable"} for name in ("cpu_consumed", "message_traffic")},
+            "issues": [
+                {"metric": name, "code": "observation_incomplete"}
+                for name in ("cpu_consumed", "message_traffic", "resource_capacity", "resource_time")
+            ],
+        }
+    return {
         "schema_version": SCHEMA_VERSION,
         "kind": "nvflare.resource_stats.participant_summary",
         "job_id": job_id,
         "participant_name": participant_name,
-        "reported_at": utc_now(),
-        "issues": ordered_issues(issues),
-        **measurements,
-        "resource_utilization": (
-            child_handoff["resource_utilization"]
-            if child_handoff is not None
-            else {name: {"status": "unavailable"} for name in ("cpu_consumed", "message_traffic")}
-        ),
-        **(
-            {"duration_seconds": child_handoff["duration_seconds"]}
-            if child_handoff and "duration_seconds" in child_handoff
-            else {}
-        ),
+        "reported_at": utc_timestamp(),
+        **{
+            name: child_handoff[name]
+            for name in ("resource_capacity", "resource_time", "resource_utilization", "issues")
+        },
+        **({"duration_seconds": child_handoff["duration_seconds"]} if "duration_seconds" in child_handoff else {}),
     }
-    return report

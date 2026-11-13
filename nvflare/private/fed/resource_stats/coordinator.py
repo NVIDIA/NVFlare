@@ -231,13 +231,6 @@ class ResourceStatsCoordinator:
     ) -> str:
         if resource_report is None:
             return RESOURCE_REPORT_NOT_PROVIDED
-        if not isinstance(resource_report, Mapping) or set(resource_report) != {"participant_summary"}:
-            return self._mark_invalid(job_id, participant_name)
-        data = resource_report.get("participant_summary")
-        if not isinstance(data, bytes) or len(data) > MAX_PARTICIPANT_SUMMARY_BYTES:
-            return self._mark_invalid(job_id, participant_name)
-
-        received_at = utc_timestamp()
         state = self._get_job_state(job_id)
         if state is None:
             return RESOURCE_REPORT_NOT_EXPECTED
@@ -245,58 +238,38 @@ class ResourceStatsCoordinator:
             if participant_name not in state.expected or participant_name in state.disabled:
                 return RESOURCE_REPORT_NOT_EXPECTED
             existing = state.accepted.get(participant_name)
-            if existing and existing.data == data:
-                return RESOURCE_REPORT_DUPLICATE
             if state.closed and existing is None:
                 return RESOURCE_REPORT_TOO_LATE
-
-        try:
-            record = read_resource_report(data, KIND_PARTICIPANT_SUMMARY)
-        except ValueError:
-            return self._mark_invalid(job_id, participant_name, received_at)
-        if record["job_id"] != job_id or record["participant_name"] != participant_name:
-            return self._mark_invalid(job_id, participant_name, received_at)
-        # Retain bounded writer JSON. Whitespace, object-key order, and
-        # equivalent numeric values do not change a retried report.
-        data = canonical_json_bytes(record)
-        if len(data) > MAX_PARTICIPANT_SUMMARY_BYTES:
-            return self._mark_invalid(job_id, participant_name, received_at)
-
-        state = self._get_job_state(job_id)
-        if state is None:
-            return RESOURCE_REPORT_NOT_EXPECTED
-        with state.lock:
-            if participant_name not in state.expected or participant_name in state.disabled:
-                return RESOURCE_REPORT_NOT_EXPECTED
-            existing = state.accepted.get(participant_name)
+            received_at = utc_timestamp()
+            try:
+                if not isinstance(resource_report, Mapping) or set(resource_report) != {"participant_summary"}:
+                    raise ValueError("expected a participant summary")
+                data = resource_report["participant_summary"]
+                if isinstance(data, bytes) and existing and existing.data == data:
+                    return RESOURCE_REPORT_DUPLICATE
+                record = read_resource_report(data, KIND_PARTICIPANT_SUMMARY)
+                if record["job_id"] != job_id or record["participant_name"] != participant_name:
+                    raise ValueError("report identity does not match its authenticated slot")
+                data = canonical_json_bytes(record)
+                if len(data) > MAX_PARTICIPANT_SUMMARY_BYTES:
+                    raise ValueError("normalized report exceeds its size limit")
+            except ValueError:
+                if state.closed:
+                    return RESOURCE_REPORT_TOO_LATE
+                if existing is None:
+                    state.invalid_at.setdefault(participant_name, received_at)
+                return RESOURCE_REPORT_INVALID
             if existing:
+                # Numeric equivalence and formatting changes are still retries.
                 if existing.data == data or json.loads(existing.data) == record:
                     return RESOURCE_REPORT_DUPLICATE
                 return RESOURCE_REPORT_TOO_LATE if state.closed else RESOURCE_REPORT_CONFLICT
-            if state.closed:
-                return RESOURCE_REPORT_TOO_LATE
             if len(data) > MAX_ACCEPTED_REPORT_BYTES_PER_JOB - state.accepted_bytes:
                 return RESOURCE_REPORT_SERVER_ERROR
-            state.accepted[participant_name] = _AcceptedReport(
-                received_at=received_at,
-                data=data,
-            )
+            state.accepted[participant_name] = _AcceptedReport(received_at, data)
             state.accepted_bytes += len(data)
             state.invalid_at.pop(participant_name, None)
             return RESOURCE_REPORT_ACCEPTED
-
-    def _mark_invalid(self, job_id: str, participant_name: str, received_at: str | None = None) -> str:
-        state = self._get_job_state(job_id)
-        if state is None:
-            return RESOURCE_REPORT_NOT_EXPECTED
-        with state.lock:
-            if participant_name not in state.expected or participant_name in state.disabled:
-                return RESOURCE_REPORT_NOT_EXPECTED
-            if state.closed:
-                return RESOURCE_REPORT_TOO_LATE
-            if participant_name not in state.accepted:
-                state.invalid_at.setdefault(participant_name, received_at or utc_timestamp())
-        return RESOURCE_REPORT_INVALID
 
     def finalize_job(self, job_id: str) -> dict[str, Any]:
         """Close acceptance, write participant records, then publish the summary last."""
@@ -403,48 +376,21 @@ class ResourceStatsCoordinator:
 
     @staticmethod
     def _atomic_write_at(directory_fd: int, file_name: str, data: bytes) -> None:
-        temp_name = None
-        file_fd = None
+        temp_name = f".{file_name}-{secrets.token_hex(16)}.tmp"
+        fd = os.open(temp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=directory_fd)
         try:
-            for _ in range(10):
-                candidate = f".{file_name}-{secrets.token_hex(8)}.tmp"
-                try:
-                    file_fd = os.open(
-                        candidate,
-                        os.O_WRONLY
-                        | os.O_CREAT
-                        | os.O_EXCL
-                        | getattr(os, "O_NOFOLLOW", 0)
-                        | getattr(os, "O_CLOEXEC", 0),
-                        0o600,
-                        dir_fd=directory_fd,
-                    )
-                    temp_name = candidate
-                    break
-                except FileExistsError:
-                    continue
-            if file_fd is None or temp_name is None:
-                raise OSError(f"could not create a temporary resource file for {file_name}")
-            remaining = memoryview(data)
-            while remaining:
-                written = os.write(file_fd, remaining)
-                if written <= 0:
-                    raise OSError(f"short write while storing {file_name}")
-                remaining = remaining[written:]
-            os.fsync(file_fd)
-            os.close(file_fd)
-            file_fd = None
+            with os.fdopen(fd, "wb", closefd=False) as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(fd)
             os.rename(temp_name, file_name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
-            temp_name = None
             os.fsync(directory_fd)
         finally:
-            if file_fd is not None:
-                os.close(file_fd)
-            if temp_name is not None:
-                try:
-                    os.unlink(temp_name, dir_fd=directory_fd)
-                except FileNotFoundError:
-                    pass
+            os.close(fd)
+            try:
+                os.unlink(temp_name, dir_fd=directory_fd)
+            except FileNotFoundError:
+                pass
 
     @classmethod
     def _open_resource_directory(cls, run_dir: Path, include_participants: bool = False) -> int:
@@ -454,25 +400,21 @@ class ResourceStatsCoordinator:
         if not _SECURE_DIR_FD:
             raise OSError("resource publication requires directory-relative filesystem operations")
 
-        opened = []
+        current_fd = os.open(run_dir, _DIRECTORY_OPEN_FLAGS)
         try:
-            current_fd = os.open(run_dir, _DIRECTORY_OPEN_FLAGS)
-            opened.append(current_fd)
-            for component in (RESOURCE_STATS_DIR, PARTICIPANTS_DIR if include_participants else None):
-                if component is None:
-                    continue
+            components = (RESOURCE_STATS_DIR, PARTICIPANTS_DIR) if include_participants else (RESOURCE_STATS_DIR,)
+            for component in components:
                 try:
                     os.mkdir(component, 0o700, dir_fd=current_fd)
                 except FileExistsError:
                     pass
                 next_fd = os.open(component, _DIRECTORY_OPEN_FLAGS, dir_fd=current_fd)
-                opened.append(next_fd)
+                os.close(current_fd)
                 current_fd = next_fd
-            result_fd = opened.pop()
-            return result_fd
-        finally:
-            for descriptor in reversed(opened):
-                os.close(descriptor)
+            return current_fd
+        except BaseException:
+            os.close(current_fd)
+            raise
 
     @staticmethod
     def _ensure_plain_directory(path: Path) -> None:
@@ -523,15 +465,8 @@ class ResourceStatsCoordinator:
                 file_mode = os.fstat(file_fd).st_mode
                 if not stat.S_ISREG(file_mode):
                     raise OSError(f"resource member is not a regular file: {file_name}")
-                chunks = []
-                remaining = max_bytes + 1
-                while remaining:
-                    chunk = os.read(file_fd, remaining)
-                    if not chunk:
-                        break
-                    chunks.append(chunk)
-                    remaining -= len(chunk)
-                data = b"".join(chunks)
+                with os.fdopen(file_fd, "rb", closefd=False) as stream:
+                    data = stream.read(max_bytes + 1)
             finally:
                 os.close(file_fd)
         finally:
