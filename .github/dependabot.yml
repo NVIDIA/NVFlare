@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # GR00T evaluation is a tested Python 3.10 / Isaac-GR00T environment freeze.
+  # Keep its exact versions together; upgrade and revalidate the stack manually.
+  # setup_groot_eval.sh also pins torch==2.7.1 and torchvision==0.22.1 (+cu128).
+  - package-ecosystem: pip
+    directory: /research/decent-vla/scripts
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "*"
+        versions: [">=0"]
+  - package-ecosystem: uv
+    directory: /research/decent-vla/scripts
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "*"
+        versions: [">=0"]

@@ -17,16 +17,47 @@ import base64
 import os
 import threading
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import web
 
 from nvflare.fuel.f3.connection import ConnState
 from nvflare.fuel.f3.drivers.aio_context import AioContext
-from nvflare.fuel.f3.drivers.aio_http_driver import AioHttpDriver
+from nvflare.fuel.f3.drivers.aio_http_driver import MAX_FRAME_SIZE, AioHttpDriver
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
 from nvflare.fuel.f3.drivers.net_utils import get_ssl_context
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
+
+
+def test_connect_sets_finite_receive_limit(monkeypatch):
+    async def run():
+        context = AioContext("http_receive_limit_test")
+        context.loop = asyncio.get_running_loop()
+        context.ready.set()
+        monkeypatch.setattr(AioContext, "get_global_context", lambda: context)
+        session_factory = MagicMock()
+        session = MagicMock()
+        session_factory.return_value.__aenter__.return_value = session
+        websocket = object()
+        session.ws_connect.return_value.__aenter__.return_value = websocket
+        monkeypatch.setattr("nvflare.fuel.f3.drivers.aio_http_driver.aiohttp.ClientSession", session_factory)
+        driver = AioHttpDriver()
+        driver._connection_handler = AsyncMock()
+        connector = ConnectorInfo(
+            "test", driver, {"host": "localhost", "port": 8002}, Mode.ACTIVE, 0, 0, False, threading.Event()
+        )
+        try:
+            await asyncio.to_thread(driver.connect, connector)
+            session.ws_connect.assert_called_once_with(
+                "ws://localhost:8002/f3", ssl_context=None, max_msg_size=MAX_FRAME_SIZE
+            )
+            assert 0 < MAX_FRAME_SIZE <= 2 * 1024**3
+            driver._connection_handler.assert_awaited_once_with(websocket)
+        finally:
+            await driver._async_shutdown()
+
+    asyncio.run(run())
 
 
 @pytest.fixture

@@ -83,6 +83,8 @@ class _JobBinding:
 
 
 _QUEUED = {"PENDING", "CONFIGURING"}
+# Infrastructure or resource loss. DEADLINE/SPECIAL_EXIT are scheduler policy outcomes, not worker loss.
+_RETRYABLE_LOSS_STATES = {"TIMEOUT", "PREEMPTED", "OUT_OF_MEMORY", "NODE_FAIL", "BOOT_FAIL"}
 _GPU_ENV = ("CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL", "ROCR_VISIBLE_DEVICES")
 _ALLOCATION_ENV = (
     "SLURM_JOB_ID",
@@ -289,6 +291,13 @@ class SlurmTaskManager(SlurmJobManager):
             return handle
 
 
+def _lost(allocation, bad):
+    """A failure with no exit code is a kill; a plain nonzero exit is a worker bug and is not retried."""
+    if allocation.state in _RETRYABLE_LOSS_STATES:
+        return True
+    return allocation.state == "FAILED" and bad is not None and bool(bad.exit_signal or bad.derived_exit_signal)
+
+
 class SlurmTaskHandle(TaskHandleSpec):
     def __init__(self, manager, request, key, name, job_dir):
         self.manager = manager
@@ -331,7 +340,7 @@ class SlurmTaskHandle(TaskHandleSpec):
             stream.flush()
             os.fsync(stream.fileno())
 
-    def _status(self, phase, *, settled=False, exit_code=None, termination_signal=None, failure=None):
+    def _status(self, phase, *, settled=False, exit_code=None, termination_signal=None, failure=None, retryable=False):
         if self.failure_reason and failure and failure != self.failure_reason:
             failure = f"{self.failure_reason}; {failure}"
         status = TaskExecutionStatus(
@@ -341,6 +350,7 @@ class SlurmTaskHandle(TaskHandleSpec):
             cancel_requested=self.cancel_requested,
             settled=settled,
             failure_reason=failure or self.failure_reason,
+            retryable=retryable,
         )
         if status != self._last_status:
             self._record(
@@ -491,6 +501,8 @@ class SlurmTaskHandle(TaskHandleSpec):
             exit_code=(bad.exit_status or bad.derived_exit_status or 1) if bad else 0,
             termination_signal=(bad.exit_signal or bad.derived_exit_signal or None) if bad else None,
             failure=f"Slurm task {bad.job_id}: {bad.state}" if bad else None,
+            # Settled loss of an allocation that ran (timeout, preemption, OOM, crash).
+            retryable=_lost(allocation, bad) and not never_allocated and not self.cancel_requested,
         )
 
     def wait_for_settlement(self, timeout=None):

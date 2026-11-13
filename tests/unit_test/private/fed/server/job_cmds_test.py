@@ -33,6 +33,7 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.job_def import JobMetaKey, RunStatus, SubmitRecordKey, SubmitRecordState
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.storage import StorageException
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -361,6 +362,9 @@ class _FakeListedJob:
 class _FakeListJobDefManager:
     def __init__(self, jobs):
         self.jobs = jobs
+
+    def list_components(self, jid, fl_ctx):
+        return []
 
     def get_all_jobs(self, fl_ctx):
         return self.jobs
@@ -1067,7 +1071,7 @@ def test_list_jobs_by_submit_token_returns_deleted_status(monkeypatch):
 
 def test_list_job_components_returns_empty_list_for_system_components(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
-    engine = _FakeListComponentsEngine(["data", "meta", "workspace"])
+    engine = _FakeListComponentsEngine(["data", "meta", "workspace", "outputs"])
     conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
 
     JobCommandModule().list_job_components(conn, ["list_job_components", "job-1"])
@@ -2142,6 +2146,264 @@ def test_download_job_packages_all_default_components_for_finished_job(monkeypat
     assert conn.errors == []
     assert engine.job_def_manager.get_storage_for_download.call_count == 3
     module.download_folder.assert_called_once()
+
+
+def _symlink_store(tmp_path, job_id, workspace_files, outputs_files=None):
+    """A job store that prepares downloads as symlinks to its stored components, as FilesystemStorage does."""
+    store = tmp_path / "store" / job_id
+    store.mkdir(parents=True)
+    (store / "data").write_bytes(b"job zip")
+    (store / "meta").write_text("{}")
+    for component, files in (("workspace", workspace_files), ("outputs", outputs_files)):
+        if files is not None:
+            with ZipFile(store / component, "w") as z:
+                for name, data in files.items():
+                    z.writestr(name, data)
+
+    def get_storage_for_download(jid, download_dir, component, download_file, fl_ctx):
+        target_dir = Path(download_dir) / jid
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / download_file
+        if target.exists() or target.is_symlink():
+            target.unlink()
+        if (store / component).exists():  # FilesystemStorage skips a component the job does not have
+            target.symlink_to(store / component)
+
+    return store, get_storage_for_download
+
+
+def _use_store(engine, tmp_path, workspace_files, outputs_files=None):
+    store, engine.job_def_manager.get_storage_for_download = _symlink_store(
+        tmp_path, "job-1", workspace_files, outputs_files
+    )
+    engine.job_def_manager.list_components = lambda jid, fl_ctx: sorted(p.name for p in store.iterdir())
+    return store
+
+
+def _download(engine, tmp_path, cmd_props=None):
+    props = {ConnProps.DOWNLOAD_DIR: str(tmp_path / "tx")}
+    if cmd_props is not None:
+        props[ConnProps.CMD_PROPS] = cmd_props
+    conn = _MockConnection(app_ctx=engine, props=props)
+    module = JobCommandModule()
+    prepared = {}
+    reply = {}
+
+    def download_folder(conn, tx_id, folder_name, reply_meta=None):
+        folder = tmp_path / "tx" / tx_id / folder_name
+        prepared.update({p.name: p for p in folder.iterdir()})
+        reply["meta"] = reply_meta
+
+    module.download_folder = download_folder
+    module.download_job(conn, ["download_job", "job-1"])
+    assert conn.errors == []
+    return prepared, reply["meta"]
+
+
+_WORKSPACE = {"app_server/FL_global_model.pt": b"model", "metrics/metrics_summary.json": b"{}", "log.txt": b"log"}
+
+
+def _finished_job(status=RunStatus.FINISHED_COMPLETED.value, stored=False):
+    meta = {JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: status}
+    if stored:
+        meta[JobMetaKey.JOB_OUTPUTS_STORED.value] = True  # recorded at job end
+    return _FakeListedJob(meta)
+
+
+_OUTPUTS = {"app_server/FL_global_model.pt": b"model"}
+
+
+def test_download_job_outputs_only_serves_the_stored_outputs_archive_like_a_full_download(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    store = _use_store(engine, tmp_path, _WORKSPACE, _OUTPUTS)
+
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["meta.json", "workspace.zip"]
+    # no archive work before the reply: workspace.zip is a link to the stored outputs archive
+    assert prepared["workspace.zip"].resolve() == (store / "outputs").resolve()
+    with ZipFile(prepared["workspace.zip"]) as z:
+        assert z.namelist() == ["app_server/FL_global_model.pt"]
+    assert reply_meta == {MetaKey.OUTPUTS_ONLY: True}  # what was asked for: only the marker, no note
+
+
+@pytest.mark.parametrize(
+    "job, reason",
+    [
+        (_finished_job(status=RunStatus.FINISHED_EXECUTION_EXCEPTION.value), "did not complete successfully"),
+        (_finished_job(), "the job's outputs were not stored apart"),  # none produced, or an older job
+    ],
+)
+def test_download_job_outputs_only_falls_back_to_the_whole_job(monkeypatch, tmp_path, job, reason):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([job])
+    _use_store(engine, tmp_path, _WORKSPACE)
+
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    with ZipFile(prepared["workspace.zip"]) as z:
+        assert sorted(z.namelist()) == sorted(_WORKSPACE)
+    assert reply_meta[MetaKey.OUTPUTS_NOTE].startswith("the whole job was downloaded because")
+    assert reason in reply_meta[MetaKey.OUTPUTS_NOTE]
+    assert MetaKey.OUTPUTS_ONLY not in reply_meta
+
+
+def test_download_job_outputs_only_never_asks_a_store_for_a_missing_outputs_component(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job()])
+    _use_store(engine, tmp_path, _WORKSPACE)
+    prepare = engine.job_def_manager.get_storage_for_download
+
+    def strict_prepare(jid, download_dir, component, download_file, fl_ctx):
+        if component == "outputs":
+            raise StorageException("no such component")  # a store that raises for a missing component
+        prepare(jid, download_dir, component, download_file, fl_ctx)
+
+    engine.job_def_manager.get_storage_for_download = strict_prepare
+
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert reply_meta[MetaKey.OUTPUTS_NOTE]
+
+
+def test_a_full_download_without_the_outputs_archive_returns_the_rest_and_says_so(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    _use_store(engine, tmp_path, {"log.txt": b"log"})  # the outputs component is gone
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert "does not include its outputs" in reply_meta[MetaKey.OUTPUTS_NOTE]
+
+
+def test_a_full_download_uses_the_job_it_loaded_to_select_the_outputs_archive(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    _use_store(engine, tmp_path, {"log.txt": b"log"}, _OUTPUTS)
+    get_job = engine.job_def_manager.get_job
+    lookups = []
+
+    def get_job_once(jid, fl_ctx):
+        lookups.append(jid)
+        return get_job(jid, fl_ctx) if len(lookups) == 1 else None  # a later lookup hits a transient store error
+
+    engine.job_def_manager.get_job = get_job_once
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "outputs.zip", "workspace.zip"]
+    assert MetaKey.OUTPUTS_NOTE not in reply_meta
+
+
+def test_a_partly_prepared_outputs_archive_is_dropped_and_reported_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    _use_store(engine, tmp_path, {"log.txt": b"log"}, _OUTPUTS)
+    prepare = engine.job_def_manager.get_storage_for_download
+
+    def copying_store_that_fails(jid, download_dir, component, download_file, fl_ctx):
+        if component == "outputs":
+            target = Path(download_dir) / jid / download_file
+            target.write_bytes(b"PK\x03\x04 partial")  # a copy cut short
+            raise StorageException("connection reset")
+        prepare(jid, download_dir, component, download_file, fl_ctx)
+
+    engine.job_def_manager.get_storage_for_download = copying_store_that_fails
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert "does not include its outputs" in reply_meta[MetaKey.OUTPUTS_NOTE]
+
+
+def test_an_outputs_only_download_without_the_outputs_archive_returns_the_whole_job_and_says_so(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    _use_store(engine, tmp_path, {"log.txt": b"log"})
+    prepare = engine.job_def_manager.get_storage_for_download
+
+    def strict_prepare(jid, download_dir, component, download_file, fl_ctx):
+        if component == "outputs":
+            raise StorageException("no such component")  # a store that raises for a missing component
+        prepare(jid, download_dir, component, download_file, fl_ctx)
+
+    engine.job_def_manager.get_storage_for_download = strict_prepare
+
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    note = reply_meta[MetaKey.OUTPUTS_NOTE]
+    assert note.startswith("the whole job was downloaded because the job's outputs archive cannot be read")
+    assert note.count("cannot be read from the job store") == 1  # not repeated
+
+
+@pytest.mark.parametrize("cmd_props", [None, {}, {"outputs_only": "yes"}])
+def test_download_job_without_outputs_only_is_unchanged_for_a_job_without_outputs(monkeypatch, tmp_path, cmd_props):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job()])
+    _use_store(engine, tmp_path, _WORKSPACE)
+
+    prepared, reply_meta = _download(engine, tmp_path, cmd_props)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert reply_meta is None
+
+
+def test_full_download_works_when_the_store_cannot_list_components(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job()])
+    _use_store(engine, tmp_path, _WORKSPACE)
+
+    def broken_list(jid, fl_ctx):
+        raise StorageException("listing unsupported")
+
+    engine.job_def_manager.list_components = broken_list
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert reply_meta is None
+
+
+def test_full_download_sends_both_archives_into_the_workspace_folder(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    store = _use_store(engine, tmp_path, {"log.txt": b"log"}, _OUTPUTS)
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "outputs.zip", "workspace.zip"]
+    # both stored archives are linked, with no work before the reply
+    assert prepared["outputs.zip"].resolve() == (store / "outputs").resolve()
+    assert reply_meta == {MetaKey.UNZIP_INTO: {"outputs.zip": "workspace"}}
+
+
+def test_submit_job_drops_a_submitted_outputs_stored_record(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        lambda: _FakeJobMetaValidatorWithMeta({JobMetaKey.JOB_OUTPUTS_STORED.value: True}),
+    )
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.FILE_LOCATION: "job.zip",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors == []
+    assert JobMetaKey.JOB_OUTPUTS_STORED.value not in engine.job_def_manager.created_meta
 
 
 def test_get_job_log_returns_server_log(monkeypatch, tmp_path):

@@ -13,16 +13,18 @@
 # limitations under the License.
 
 import datetime
+import io
 import os
 import shutil
 import tempfile
 import unittest
+import zipfile
 from unittest import mock
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
 from nvflare.apis.job_def import JobMetaKey, RunStatus, job_from_meta
-from nvflare.apis.storage import WORKSPACE, StorageException
+from nvflare.apis.storage import OUTPUTS, WORKSPACE, StorageException, StorageSpec
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -73,6 +75,26 @@ class TestJobManager(unittest.TestCase):
             self.job_manager.save_workspace(job_id, data, self.fl_ctx)
             result = self.job_manager.get_storage_component(job_id, WORKSPACE, self.fl_ctx)
             assert result == data
+
+    def test_save_job_outputs_stores_the_outputs_folder_as_its_own_archive(self):
+        with mock.patch("nvflare.apis.impl.job_def_manager.SimpleJobDefManager._get_job_store") as mock_store:
+            mock_store.return_value = FilesystemStorage()
+
+            data, meta = self._create_job()
+            job_id = meta.get(JobMetaKey.JOB_ID)
+            staging = os.path.join(self.uri_root, "staging")
+            os.makedirs(os.path.join(staging, "app_server"))
+            with open(os.path.join(staging, "app_server", "FL_global_model.pt"), "wb") as f:
+                f.write(b"model")
+
+            assert self.job_manager.save_job_outputs(job_id, [staging], self.fl_ctx)
+
+            archive = self.job_manager.get_storage_component(job_id, OUTPUTS, self.fl_ctx)
+            with zipfile.ZipFile(io.BytesIO(archive)) as z:
+                assert [n for n in z.namelist() if not n.endswith("/")] == ["app_server/FL_global_model.pt"]
+
+    def test_outputs_is_a_valid_storage_component(self):
+        assert StorageSpec.is_valid_component(OUTPUTS)
 
     def test_create_rejects_traversing_job_id(self):
         with mock.patch("nvflare.apis.impl.job_def_manager.SimpleJobDefManager._get_job_store") as mock_store:
