@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -23,6 +23,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.private.fed.client.client_executor import JobCleanupPending
 from nvflare.private.fed.client.scheduler_cmds import CheckResourceProcessor, StartJobProcessor
 from nvflare.private.scheduler_constants import ShareableHeader
 
@@ -95,3 +96,27 @@ def test_client_runs_only_studies_listed_in_study_runtime(tmp_path, runtime_file
     if reason:
         assert reason in check_reply.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
         assert reason in start_reply
+
+
+@pytest.mark.parametrize("retained", [False, True])
+def test_start_failure_frees_only_resources_not_owned_by_executor(retained):
+    resource_manager = MagicMock(spec=ResourceManagerSpec)
+    resource_manager.allocate_resources.return_value = {"gpu": 1}
+    engine = MagicMock(spec=ClientEngineInternalSpec)
+    engine.new_context.return_value.__enter__.return_value = FLContext()
+    error = JobCleanupPending("cleanup remains owned by CP") if retained else RuntimeError("no runtime created")
+    engine.start_app.side_effect = error
+    request = Message(topic=TrainingTopic.START_JOB, body={"gpu": 1})
+    request.set_header(RequestHeader.JOB_ID, "job-1")
+    request.set_header(RequestHeader.JOB_META, {})
+    request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, "token-1")
+    with (
+        patch("nvflare.private.fed.client.scheduler_cmds._get_resource_manager", return_value=resource_manager),
+        patch("nvflare.private.fed.client.scheduler_cmds._get_resource_consumer"),
+    ):
+        reply = StartJobProcessor().process(request, engine)
+    assert str(error) in reply.body
+    if retained:
+        resource_manager.free_resources.assert_not_called()
+    else:
+        resource_manager.free_resources.assert_called_once_with(resources={"gpu": 1}, token="token-1", fl_ctx=ANY)

@@ -26,6 +26,7 @@ from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader, SysCommandTopic, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.private.fed.client.client_executor import JobCleanupPending
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 
@@ -142,7 +143,7 @@ class StartJobProcessor(RequestProcessor):
             )
         except Exception as e:
             result = f"{ERROR_MSG_PREFIX}: Start job execution exception: {secure_format_exception(e)}."
-            if allocated_resources:
+            if allocated_resources and not isinstance(e, JobCleanupPending):
                 with engine.new_context() as fl_ctx:
                     resource_manager.free_resources(resources=allocated_resources, token=token, fl_ctx=fl_ctx)
 

@@ -41,15 +41,25 @@ from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_executor import (
     _ABORT_REQUESTED_KEY,
+    _CLEANUP_PENDING_KEY,
+    _RESOURCE_OWNER_KEY,
     _RESTART_KEY,
     REPORTABLE_JOB_FAILURES,
+    JobCleanupPending,
     JobExecutor,
     _PendingJobHandle,
 )
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.communicator import Communicator
 from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_cert
-from tests.timing_utils import isolate_time
+from tests.timing_utils import ThreadGroup, isolate_time
+
+_start_thread = threading.Thread.start
+
+
+def _skip_completion_monitor(thread):
+    if getattr(thread._target, "__name__", "") != "_wait_child_process_finish":
+        _start_thread(thread)
 
 
 def _run_recovery(tmp_path, outcomes, on_wait=None, limit=3, confirmed=True, is_leaf=True, on_launch=None):
@@ -106,7 +116,7 @@ def _run_recovery(tmp_path, outcomes, on_wait=None, limit=3, confirmed=True, is_
     launcher.launch_job.side_effect = launch
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda self: None),
+        patch.object(threading.Thread, "start", _skip_completion_monitor),
     ):
         executor.start_app(
             client, "job-1", meta, SimpleNamespace(workspace=str(tmp_path), set=[]), {"gpu": 1}, "token", resources, ctx
@@ -536,7 +546,7 @@ def test_start_app_pending_handle_operations_before_launcher_returns(tmp_path):
 
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda self: None),
+        patch.object(threading.Thread, "start", _skip_completion_monitor),
     ):
         executor.start_app(
             client,
@@ -568,7 +578,7 @@ def test_start_app_preserves_abort_intent_while_launcher_is_running(tmp_path, he
 
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda self: None),
+        patch.object(threading.Thread, "start", _skip_completion_monitor),
     ):
         executor.start_app(
             client,
@@ -622,7 +632,7 @@ def test_start_app_can_abort_published_runtime_before_launcher_returns(
     launcher.launch_job.side_effect = launch_job
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda self: None),
+        patch.object(threading.Thread, "start", _skip_completion_monitor),
     ):
         executor.start_app(
             client, job_id, job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, fl_ctx
@@ -757,7 +767,7 @@ def test_start_app_allows_scheduler_metadata(tmp_path):
 
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda self: None),
+        patch.object(threading.Thread, "start", _skip_completion_monitor),
     ):
         JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
             client,
@@ -806,7 +816,7 @@ def test_start_app_uses_deployed_byoc_when_rewriting_job_meta(tmp_path, deployed
 
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda self: None),
+        patch.object(threading.Thread, "start", _skip_completion_monitor),
     ):
         JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
             client,
@@ -1001,7 +1011,7 @@ def test_wait_child_process_destroys_job_credential_when_worker_exits(tmp_path):
     assert (run_dir / "app_site-1").is_dir()
 
 
-def test_wait_child_process_destroys_job_credential_when_wait_raises(tmp_path):
+def test_wait_child_process_retains_job_credential_when_wait_raises(tmp_path):
     client = MagicMock()
     client.client_name = "site-1"
     job_executor = JobExecutor(client=client, startup="startup")
@@ -1012,18 +1022,21 @@ def test_wait_child_process_destroys_job_credential_when_wait_raises(tmp_path):
     run_dir.mkdir()
     write_job_cert(str(run_dir), b"cert", b"key")
 
-    with pytest.raises(RuntimeError, match="lost the job"):
-        job_executor._wait_child_process_finish(
-            client=client,
-            job_id="job-1",
-            allocated_resource=None,
-            token=None,
-            resource_manager=MagicMock(),
-            workspace=str(tmp_path),
-            fl_ctx=MagicMock(),
-        )
+    resources = MagicMock()
+    job_executor._wait_child_process_finish(
+        client=client,
+        job_id="job-1",
+        allocated_resource={"gpu": 1},
+        token="token",
+        resource_manager=resources,
+        workspace=str(tmp_path),
+        fl_ctx=MagicMock(),
+    )
 
-    assert find_job_cert(str(run_dir)) is None
+    assert find_job_cert(str(run_dir)) is not None
+    assert job_executor.get_run_processes_keys() == ["job-1"]
+    resources.free_resources.assert_not_called()
+    client.send_request_before_shutdown.assert_not_called()
 
 
 def test_wait_child_process_destroys_job_credential_without_job_handle(tmp_path):
@@ -1407,3 +1420,348 @@ def test_recovery_launch_keeps_early_handle_abort_support(tmp_path, abort_before
     launcher, _, handles = _run_recovery(tmp_path, [(True, 104), (False, 0)], on_launch=on_launch)
     assert launcher.launch_job.call_count == 2
     handles[1].terminate.assert_called_once()
+
+
+@pytest.mark.parametrize("replacement", [False, True], ids=["initial", "replacement"])
+@pytest.mark.parametrize("failure", ["terminate", "wait", "query"])
+def test_launch_errors_retain_cleanup_owner_and_credentials(tmp_path, replacement, failure):
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    resources = MagicMock()
+    launcher = MagicMock()
+    accepted = MagicMock(spec=JobHandleSpec)
+    accepted.poll.return_value = JobReturnCode.UNKNOWN
+    getattr(accepted, failure if failure != "query" else "poll").side_effect = RuntimeError(f"{failure} unavailable")
+    if failure == "terminate":
+        accepted.wait.side_effect = RuntimeError("observation unavailable")
+    run_dir = tmp_path / "job-1"
+    write_job_cert(str(run_dir), b"cert", b"key")
+    old = MagicMock(spec=JobHandleSpec)
+    old.poll.return_value = ProcessExitCode.INFRASTRUCTURE_ERROR
+    old.can_restart.return_value = True
+    calls = []
+
+    def launch(_meta, context):
+        calls.append(True)
+        if replacement and len(calls) == 1:
+            return old
+        publish_job_handle(accepted, context)
+        if failure != "query":
+            raise RuntimeError("startup reply lost")
+        return accepted
+
+    launcher.launch_job.side_effect = launch
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", _skip_completion_monitor),
+    ):
+        if replacement or failure == "query":
+            executor.start_app(
+                client,
+                "job-1",
+                meta,
+                SimpleNamespace(workspace=str(tmp_path), set=[]),
+                {"gpu": 1},
+                "token",
+                resources,
+                ctx,
+            )
+        else:
+            with pytest.raises(RuntimeError):
+                executor.start_app(
+                    client,
+                    "job-1",
+                    meta,
+                    SimpleNamespace(workspace=str(tmp_path), set=[]),
+                    {"gpu": 1},
+                    "token",
+                    resources,
+                    ctx,
+                )
+    if replacement or failure == "query":
+        executor._wait_child_process_finish(client, "job-1", {"gpu": 1}, "token", resources, str(tmp_path), ctx)
+    assert executor.get_run_processes_keys() == ["job-1"]
+    assert find_job_cert(str(run_dir)) is not None
+    resources.free_resources.assert_not_called()
+    client.send_request_before_shutdown.assert_not_called()
+    assert len(calls) == (2 if replacement else 1)
+    if failure != "query":
+        accepted.terminate.assert_called_once()
+        accepted.wait.assert_called_once()  # Cancellation failure cannot skip observation.
+
+
+@pytest.mark.parametrize("replacement", [False, True], ids=["initial", "replacement"])
+@pytest.mark.parametrize("failure", ["raise", "none", "event", "saved-abort"])
+def test_failed_launch_observes_published_handle_even_when_cancel_fails(tmp_path, replacement, failure):
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    launcher = MagicMock()
+    resources = MagicMock()
+    accepted = MagicMock(spec=JobHandleSpec)
+    accepted.terminate.side_effect = RuntimeError("cancellation unavailable")
+    accepted.wait.side_effect = RuntimeError("observation unavailable")
+    old = MagicMock(spec=JobHandleSpec)
+    old.poll.return_value = ProcessExitCode.INFRASTRUCTURE_ERROR
+    old.can_restart.return_value = True
+    write_job_cert(str(tmp_path / "job-1"), b"cert", b"key")
+    calls = []
+    callback_errors = []
+
+    def launch(_meta, context):
+        calls.append(True)
+        if replacement and len(calls) == 1:
+            return old
+        if failure == "saved-abort":
+            executor.abort_app("job-1")
+        # Callback errors can trigger a launcher's own blocking cleanup. Saved
+        # abort errors must reach JobExecutor only after this launcher returns.
+        try:
+            publish_job_handle(accepted, context)
+        except BaseException as e:
+            callback_errors.append(e)
+            raise
+        if failure == "raise":
+            raise RuntimeError("startup reply lost")
+        if failure == "none":
+            return None
+        return accepted
+
+    def event(event_type, context):
+        if failure == "event" and event_type == EventType.AFTER_JOB_LAUNCH and len(calls) == (2 if replacement else 1):
+            raise RuntimeError("event failed")
+
+    ctx.get_engine().fire_event.side_effect = event
+    launcher.launch_job.side_effect = launch
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", _skip_completion_monitor),
+    ):
+        if replacement:
+            executor.start_app(
+                client,
+                "job-1",
+                meta,
+                SimpleNamespace(workspace=str(tmp_path), set=[]),
+                {"gpu": 1},
+                "token",
+                resources,
+                ctx,
+            )
+            executor._wait_child_process_finish(client, "job-1", {"gpu": 1}, "token", resources, str(tmp_path), ctx)
+        else:
+            with pytest.raises(JobCleanupPending):
+                executor.start_app(
+                    client,
+                    "job-1",
+                    meta,
+                    SimpleNamespace(workspace=str(tmp_path), set=[]),
+                    {"gpu": 1},
+                    "token",
+                    resources,
+                    ctx,
+                )
+    assert callback_errors == []
+    process = executor.run_processes["job-1"]
+    assert process[RunProcessKey.JOB_HANDLE]._job_handle is accepted
+    assert process[_RESOURCE_OWNER_KEY] == ({"gpu": 1}, "token", resources)
+    assert process[_CLEANUP_PENDING_KEY] is True
+    executor.abort_app("job-1", heartbeat_cleanup=True)  # Retained owners must not stack control calls.
+    assert ctx.get_prop(FLContextKey.JOB_HANDLE_CALLBACK) is None
+    assert find_job_cert(str(tmp_path / "job-1")) is not None
+    resources.free_resources.assert_not_called()
+    client.send_request_before_shutdown.assert_not_called()
+    accepted.terminate.assert_called_once()
+    accepted.wait.assert_called_once()
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        pytest.raises(RuntimeError, match="still registered"),
+    ):
+        executor.start_app(
+            client,
+            "job-1",
+            meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            {"gpu": 1},
+            "new-token",
+            resources,
+            ctx,
+        )
+    assert len(calls) == (2 if replacement else 1)
+
+
+@pytest.mark.parametrize("blocked", ["terminate", "wait", "saved-abort"])
+def test_launch_cleanup_timeout_retains_owner_and_does_not_block_observation(tmp_path, blocked):
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    executor.job_launch_cleanup_timeout = 0.02
+    accepted = MagicMock(spec=JobHandleSpec)
+    entered = threading.Event()
+    observed = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    errors = []
+
+    def block():
+        entered.set()
+        release.wait()
+
+    accepted.terminate.side_effect = block if blocked != "wait" else None
+
+    def observe():
+        observed.set()
+        if blocked == "wait":
+            block()
+
+    accepted.wait.side_effect = observe
+    launcher = MagicMock()
+
+    def launch(_meta, context):
+        if blocked == "saved-abort":
+            executor.abort_app("job-1")
+        publish_job_handle(accepted, context)
+        if blocked == "saved-abort":
+            return accepted
+        raise RuntimeError("startup reply lost")
+
+    launcher.launch_job.side_effect = launch
+
+    def start():
+        try:
+            executor.start_app(
+                client,
+                "job-1",
+                meta,
+                SimpleNamespace(workspace=str(tmp_path), set=[]),
+                {"gpu": 1},
+                "token",
+                MagicMock(),
+                ctx,
+            )
+        except Exception as e:
+            errors.append(e)
+        finally:
+            finished.set()
+
+    # Local fake callbacks are unit boundaries. Release every gate before joining
+    # the product's control workers, even if the readiness/completion check fails.
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        try:
+            with ThreadGroup(release) as threads:
+                threads.start(start)
+                assert entered.wait(2)
+                assert observed.wait(2)  # A stuck cancel cannot suppress observation.
+                assert finished.wait(2)  # Caller returns while the operation remains gated.
+                assert len(errors) == 1 and isinstance(errors[0], JobCleanupPending)
+                assert executor.get_run_processes_keys() == ["job-1"]
+                assert not release.is_set()
+        finally:
+            release.set()
+            pending = executor.run_processes.get("job-1", {}).get(RunProcessKey.JOB_HANDLE)
+            if pending and pending.cleanup_calls:
+                for call in pending.cleanup_calls:
+                    call.join(2)
+                    assert not call.thread.is_alive()
+    accepted.terminate.assert_called_once()
+    accepted.wait.assert_called_once()
+    # Late completion does not silently unregister or resubmit a retained run.
+    assert executor.get_run_processes_keys() == ["job-1"]
+
+
+def test_failed_cancellation_with_confirmed_observation_preserves_original_launch_error(tmp_path):
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    accepted = MagicMock(spec=JobHandleSpec)
+    accepted.terminate.side_effect = RuntimeError("cancel unavailable")
+    launcher = MagicMock()
+
+    def launch(_meta, context):
+        publish_job_handle(accepted, context)
+        raise ValueError("startup failure")
+
+    launcher.launch_job.side_effect = launch
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        pytest.raises(ValueError, match="startup failure"),
+    ):
+        executor.start_app(
+            client, "job-1", meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, ctx
+        )
+    accepted.wait.assert_called_once()
+    assert executor.get_run_processes_keys() == []
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan")])
+def test_launch_cleanup_wait_must_be_finite_and_positive(value):
+    def setting(*, name, **kwargs):
+        return value if name == "job_launch_cleanup_timeout" else kwargs["default"]
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.ConfigService.get_float_var", side_effect=setting),
+        pytest.raises(ValueError, match="finite and positive"),
+    ):
+        JobExecutor(MagicMock(), "startup")
+
+
+@pytest.mark.parametrize("settled", [False, True])
+def test_monitor_start_failure_keeps_owner_until_observation_succeeds(tmp_path, settled):
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    accepted = MagicMock(spec=JobHandleSpec)
+    if not settled:
+        accepted.wait.side_effect = RuntimeError("query unavailable")
+    launcher = MagicMock()
+    launcher.launch_job.return_value = accepted
+
+    def start(thread):
+        if getattr(thread._target, "__name__", "") == "_wait_child_process_finish":
+            raise RuntimeError("cannot start monitor")
+        _start_thread(thread)
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", start),
+        pytest.raises(RuntimeError, match="cannot start monitor" if settled else "cleanup remains owned by CP"),
+    ):
+        executor.start_app(
+            client, "job-1", meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, ctx
+        )
+    assert executor.get_run_processes_keys() == ([] if settled else ["job-1"])
+    accepted.terminate.assert_called_once()
+    accepted.wait.assert_called_once()
+
+
+@pytest.mark.parametrize("failed_control", [1, 2], ids=["cancel-thread", "observe-thread"])
+def test_cleanup_control_start_failure_cannot_skip_observation_or_drop_owner(tmp_path, failed_control):
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    accepted = MagicMock(spec=JobHandleSpec)
+    launcher = MagicMock()
+    control_calls = []
+
+    def launch(_meta, context):
+        publish_job_handle(accepted, context)
+        raise ValueError("startup failure")
+
+    def start(thread):
+        control_calls.append(thread)
+        if len(control_calls) == failed_control:
+            raise RuntimeError("cannot start control operation")
+        _start_thread(thread)
+
+    launcher.launch_job.side_effect = launch
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", start),
+        pytest.raises(JobCleanupPending if failed_control == 2 else ValueError),
+    ):
+        executor.start_app(
+            client, "job-1", meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, ctx
+        )
+    assert len(control_calls) == 2
+    assert executor.get_run_processes_keys() == (["job-1"] if failed_control == 2 else [])
+    if failed_control == 1:
+        accepted.terminate.assert_not_called()
+        accepted.wait.assert_called_once()
+    else:
+        accepted.terminate.assert_called_once()
+        accepted.wait.assert_not_called()

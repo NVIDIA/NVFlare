@@ -13,6 +13,7 @@
 # limitations under the License.
 import copy
 import json
+import math
 import os
 import threading
 import time
@@ -60,6 +61,39 @@ REPORTABLE_JOB_FAILURES = {
 
 _ABORT_REQUESTED_KEY = "_abort_requested"
 _RESTART_KEY = "_restart"
+_CLEANUP_PENDING_KEY = "_cleanup_pending"
+_RESOURCE_OWNER_KEY = "_resource_owner"
+
+
+class JobCleanupPending(RuntimeError):
+    """Launch failed with a runtime still owned by JobExecutor, including its admission resources."""
+
+
+class _CleanupCall:
+    """One control operation; a stuck launcher must not block its parent or CP shutdown."""
+
+    def __init__(self, operation):
+        self.error = None
+        self.done = threading.Event()
+
+        def run():
+            try:
+                operation()
+            except BaseException as e:
+                self.error = e
+            finally:
+                self.done.set()
+
+        self.thread = threading.Thread(target=run, daemon=True)
+        try:
+            self.thread.start()
+        except BaseException as e:
+            self.error = e
+            self.done.set()
+
+    def join(self, timeout):
+        if self.thread.ident is not None:
+            self.thread.join(timeout)
 
 
 @dataclass
@@ -78,6 +112,8 @@ class _PendingJobHandle(JobHandleSpec):
         self._lock = threading.Lock()
         self._job_handle = None
         self._pending_heartbeat_cleanup: bool | None = None
+        self.cleanup_calls = None
+        self.cancel_call = None
 
     def attach(self, job_handle: JobHandleSpec) -> bool | None:
         with self._lock:
@@ -232,6 +268,11 @@ class JobExecutor(ClientExecutor):
         )
         if self.max_cj_restart_failures < 0:
             raise ValueError("max_cj_restart_failures must be nonnegative")
+        self.job_launch_cleanup_timeout = ConfigService.get_float_var(
+            name="job_launch_cleanup_timeout", conf=SystemConfigs.APPLICATION_CONF, default=10.0
+        )
+        if not math.isfinite(self.job_launch_cleanup_timeout) or self.job_launch_cleanup_timeout <= 0:
+            raise ValueError("job_launch_cleanup_timeout must be finite and positive")
 
     def start_app(
         self,
@@ -354,10 +395,13 @@ class JobExecutor(ClientExecutor):
                 RunProcessKey.STATUS: ClientStatus.STARTING,
                 _ABORT_REQUESTED_KEY: False,
                 _RESTART_KEY: restart,
+                _RESOURCE_OWNER_KEY: (allocated_resource, token, resource_manager),
             }
 
         try:
             self._launch_job(job_id, restart, pending_handle, fl_ctx)
+        except JobCleanupPending:
+            raise  # Keep the owner even if a timed-out observation has since returned.
         except BaseException:
             with self.lock:
                 if self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE) is pending_handle:
@@ -369,8 +413,50 @@ class JobExecutor(ClientExecutor):
         thread = threading.Thread(
             target=self._wait_child_process_finish,
             args=(client, job_id, allocated_resource, token, resource_manager, args.workspace, fl_ctx),
+            daemon=True,
         )
-        thread.start()
+        try:
+            thread.start()
+        except BaseException as e:
+            if not self._cleanup_failed_launch(job_id, pending_handle):
+                raise JobCleanupPending(f"job {job_id}: monitor startup failed; cleanup remains owned by CP") from e
+            with self.lock:
+                self.run_processes.pop(job_id, None)
+            raise
+
+    @staticmethod
+    def _launch_cleanup_settled(pending_handle):
+        cancel, observe = pending_handle.cleanup_calls
+        return cancel.done.is_set() and observe.done.is_set() and observe.error is None
+
+    def _retain_cleanup_owner(self, job_id):
+        with self.lock:
+            process = self.run_processes.get(job_id)
+            if process is not None:
+                process[_CLEANUP_PENDING_KEY] = True
+        self.logger.critical(
+            f"job {job_id}: cleanup unconfirmed; retaining handle, admission resources and job credentials. "
+            "Operator reconciliation is required before removing the run or restarting CP; do not resubmit."
+        )
+
+    def _cleanup_failed_launch(self, job_id, pending_handle):
+        # One attempt only, with separate bounds. Always observe even if cancellation
+        # fails or blocks. The retained registration owns both calls after timeout;
+        # neither elapsed time nor cancellation acknowledgement authorizes release.
+        cancel = pending_handle.cancel_call or _CleanupCall(pending_handle.terminate)
+        cancel.join(self.job_launch_cleanup_timeout)
+        observe = _CleanupCall(pending_handle.wait)
+        pending_handle.cleanup_calls = (cancel, observe)
+        observe.join(self.job_launch_cleanup_timeout)
+        for name, call in (("cancellation", cancel), ("observation", observe)):
+            if not call.done.is_set():
+                self.logger.error(f"job {job_id}: launch cleanup {name} exceeded job_launch_cleanup_timeout")
+            elif call.error is not None:
+                self.logger.error(f"job {job_id}: launch cleanup {name} failed: {secure_format_exception(call.error)}")
+        if not self._launch_cleanup_settled(pending_handle):
+            self._retain_cleanup_owner(job_id)
+            return False
+        return True
 
     def _launch_job(self, job_id, restart, pending_handle, fl_ctx):
         job_args = dict(restart.args)
@@ -397,7 +483,13 @@ class JobExecutor(ClientExecutor):
             heartbeat_cleanup = pending_handle.attach(handle)
             job_handle = handle
             if heartbeat_cleanup is not None:
-                self.abort_app(job_id, heartbeat_cleanup=heartbeat_cleanup)
+                # Attach and remember ownership before applying the saved abort.
+                # Reuse this cancellation during launch cleanup if it fails or hangs.
+                cancel = _CleanupCall(lambda: pending_handle.terminate(heartbeat_cleanup=heartbeat_cleanup))
+                pending_handle.cancel_call = cancel
+                cancel.join(self.job_launch_cleanup_timeout)
+                # Do not raise through publication: some launchers catch callback
+                # errors and enter their own blocking cleanup. Check after return.
 
         # Initial and replacement launches can both wait after acquiring a
         # runtime. Publish its handle before that wait so abort remains live.
@@ -407,14 +499,20 @@ class JobExecutor(ClientExecutor):
             if handle is None:
                 raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
             register_handle(handle)
+            cancel = pending_handle.cancel_call
+            if cancel is not None:
+                if not cancel.done.is_set():
+                    raise TimeoutError("saved abort did not complete within job_launch_cleanup_timeout")
+                if cancel.error is not None:
+                    raise cancel.error
             self.logger.info(f"Launched job {job_id} with job launcher: {type(restart.launcher)}")
             fl_ctx.set_prop(FLContextKey.JOB_META, restart.meta, private=True, sticky=False)
             fl_ctx.get_engine().fire_event(EventType.AFTER_JOB_LAUNCH, fl_ctx)
-        except BaseException:
+        except BaseException as e:
             # Once launched, retain ownership until the worker has exited.
             if job_handle is not None:
-                job_handle.terminate()
-                job_handle.wait()
+                if not self._cleanup_failed_launch(job_id, pending_handle):
+                    raise JobCleanupPending(f"job {job_id}: launch failed; cleanup remains owned by CP") from e
             raise
         finally:
             fl_ctx.remove_prop(FLContextKey.JOB_HANDLE_CALLBACK)
@@ -597,6 +695,12 @@ class JobExecutor(ClientExecutor):
                     process.get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED) if process else ClientStatus.NOT_STARTED
                 )
                 job_handle = process.get(RunProcessKey.JOB_HANDLE) if process else None
+                cleanup_pending = process.get(_CLEANUP_PENDING_KEY, False) if process else False
+            if cleanup_pending:
+                # Do not stack control calls on top of failed or still-running
+                # cleanup operations. Retention requires operator reconciliation.
+                self.logger.warning(f"job {job_id}: cleanup remains unconfirmed; operator reconciliation required")
+                return
             if process_status in (ClientStatus.STARTING, ClientStatus.STARTED, ClientStatus.STOPPED):
                 try:
                     if process_status == ClientStatus.STARTING:
@@ -773,6 +877,8 @@ class JobExecutor(ClientExecutor):
                 try:
                     if not self._restart_job(job_id, job_handle, return_code, fl_ctx):
                         break
+                except JobCleanupPending:
+                    return  # The replacement handle and resources remain registered.
                 except Exception as e:
                     # A submission exception may mean the backend accepted the job.
                     # Without a handle proving otherwise, never submit again.
@@ -780,10 +886,13 @@ class JobExecutor(ClientExecutor):
                     return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
                     break
                 job_handle = self.run_processes[job_id][RunProcessKey.JOB_HANDLE]
-        finally:
-            # Keep the same job credential throughout replacement; remove it only
-            # when this logical job finishes. Checkpoints and application files stay.
-            remove_job_cert(run_dir)
+        except Exception as e:
+            self.logger.error(f"job {job_id}: cannot observe CJ completion: {secure_format_exception(e)}")
+            self._retain_cleanup_owner(job_id)
+            return
+        # Keep the same job credential throughout replacement. Observation errors
+        # above leave it with the registered cleanup owner, never in a finally block.
+        remove_job_cert(run_dir)
         if job_handle:
             with self.lock:
                 process = self.run_processes.get(job_id, {})
