@@ -99,6 +99,7 @@ class TaskExecutionPolicy:
     poll_interval: float = 0.05
     max_payload_bytes: int | None = None
     finalization_timeout: float = 30.0
+    allow_job_lifetime: bool = True
 
     @classmethod
     def from_workspace(cls, workspace):
@@ -128,6 +129,7 @@ class TaskExecutionPolicy:
             "poll_interval",
             "max_payload_bytes",
             "finalization_timeout",
+            "allow_job_lifetime",
         }
         if set(config) - allowed:
             raise ValueError(f"unknown site task_execution settings: {sorted(set(config) - allowed)}")
@@ -160,8 +162,14 @@ class TaskExecutionPolicy:
         launcher = _SiteBuilder().build_component(launcher_config)
         if not isinstance(launcher, TaskLauncherSpec) or not _supported_native_launcher(launcher):
             raise ValueError("task execution requires a supported Kubernetes or Slurm TaskLauncher")
+        allow_job_lifetime = config.get(
+            "allow_job_lifetime", getattr(launcher, "cj_runtime", None) not in ("process", "docker")
+        )
+        if not isinstance(allow_job_lifetime, bool):
+            raise ValueError("allow_job_lifetime must be a boolean")
         return cls(
             launcher=launcher,
+            allow_job_lifetime=allow_job_lifetime,
             artifact_cleanup=cleanup,
             worker_timeout=options.worker_timeout,
             settlement_timeout=options.settlement_timeout,

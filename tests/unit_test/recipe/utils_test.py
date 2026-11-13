@@ -998,3 +998,29 @@ class TestAddExperimentTrackingClients:
 
         entry = next(c for c in client_cfg["components"] if c["id"] == "client_receiver")
         assert entry["path"].endswith("Namespace")
+
+
+def test_recipe_meta_preserves_explicit_cj_default_opt_out():
+    from nvflare.recipe.utils import _normalize_recipe_meta_value
+
+    value = {"@default": {"num_of_cpus": 1}, "site-1": None}
+    result = _normalize_recipe_meta_value(JobMetaKey.CJ_RESOURCE_SPEC, "cj_resource_spec", value)
+    assert result == value and result is not value
+    assert result["site-1"] is None
+
+
+@pytest.mark.parametrize(
+    "key, site",
+    [
+        (JobMetaKey.RESOURCE_SPEC, "site-1"),
+        (JobMetaKey.JOB_LAUNCHER_SPEC, "site-1"),
+        (JobMetaKey.CJ_RESOURCE_SPEC, "@default"),
+        (JobMetaKey.CJ_RESOURCE_SPEC, "@ALL"),
+        (JobMetaKey.CJ_RESOURCE_SPEC, "server"),
+    ],
+)
+def test_recipe_null_opt_out_does_not_expand_other_metadata_shapes(key, site):
+    from nvflare.recipe.utils import _normalize_recipe_meta_value
+
+    with pytest.raises(TypeError, match="must be a dict"):
+        _normalize_recipe_meta_value(key, key.value, {site: None})
