@@ -1,7 +1,87 @@
+# Default owners for paths without a later matching rule.
+# GitHub requests all listed owners; the last matching rule wins for each file.
+* @chesterxgchen @pcnudde
 
-* @yhwen @IsaacYangSLA @yanchengnv @chesterxgchen @pcnudde @nvkevlu @YuanTingHsieh @nvidianz
+# Core APIs, runtime, and shared application components.
+/nvflare/apis/ @pcnudde @YuanTingHsieh
+/nvflare/private/ @pcnudde @YuanTingHsieh
+/nvflare/app_common/ @YuanTingHsieh @pcnudde
+/nvflare/utils/ @YuanTingHsieh @pcnudde
 
-/test @YuanTingHsieh
+# Infrastructure, provisioning, dashboard, and collaboration.
+/nvflare/fuel/ @nvidianz @pcnudde
+/nvflare/lighter/ @IsaacYangSLA @pcnudde
+/nvflare/dashboard/ @IsaacYangSLA @nvidianz
+/nvflare/collab/ @nvidianz @holgerroth
+
+# Client APIs, job configuration, recipes, and CLI tools.
+/nvflare/client/ @YuanTingHsieh @chesterxgchen
+/nvflare/job_config/ @YuanTingHsieh @chesterxgchen
+/nvflare/recipe/ @YuanTingHsieh @chesterxgchen
+/nvflare/tool/ @chesterxgchen @pcnudde
+
+# Framework integrations, with specialized owners for individual integrations.
+/nvflare/app_opt/ @YuanTingHsieh @holgerroth
+/nvflare/app_opt/job_launcher/ @pcnudde @YuanTingHsieh
+/nvflare/app_opt/confidential_computing/ @IsaacYangSLA @YuanTingHsieh
+/nvflare/app_opt/sklearn/ @nvkevlu @YuanTingHsieh
+/nvflare/app_opt/xgboost/ @nvkevlu @nvidianz
+
+# Edge orchestration and device implementations.
+/nvflare/edge/ @ZiyueXu77 @YuanTingHsieh
+/nvflare/edge/device/ @nvkevlu @YuanTingHsieh
+
+# Test infrastructure and integration tests; unit tests follow source ownership.
+/tests/ @YuanTingHsieh @pcnudde
+/tests/unit_test/ @chesterxgchen @pcnudde
+/tests/unit_test/apis/ @pcnudde @YuanTingHsieh
+/tests/unit_test/private/ @pcnudde @YuanTingHsieh
+/tests/unit_test/app_common/ @YuanTingHsieh @pcnudde
+/tests/unit_test/utils/ @YuanTingHsieh @pcnudde
+/tests/unit_test/fuel/ @nvidianz @pcnudde
+/tests/unit_test/lighter/ @IsaacYangSLA @pcnudde
+/tests/unit_test/dashboard/ @IsaacYangSLA @nvidianz
+/tests/unit_test/collab/ @nvidianz @holgerroth
+/tests/unit_test/client/ @YuanTingHsieh @chesterxgchen
+/tests/unit_test/job_config/ @YuanTingHsieh @chesterxgchen
+/tests/unit_test/recipe/ @YuanTingHsieh @chesterxgchen
+/tests/unit_test/tool/ @chesterxgchen @pcnudde
+/tests/unit_test/app_opt/ @YuanTingHsieh @holgerroth
+/tests/unit_test/app_opt/job_launcher/ @pcnudde @YuanTingHsieh
+/tests/unit_test/app_opt/confidential_computing/ @IsaacYangSLA @YuanTingHsieh
+/tests/unit_test/app_opt/sklearn/ @nvkevlu @YuanTingHsieh
+/tests/unit_test/app_opt/xgboost/ @nvkevlu @nvidianz
+/tests/unit_test/edge/ @ZiyueXu77 @YuanTingHsieh
+/tests/unit_test/edge/device/ @nvkevlu @YuanTingHsieh
+/tests/unit_test/examples/ @holgerroth @chesterxgchen
+# Specialized example tests and helpers follow their deployment or research source.
+/tests/unit_test/examples/multicloud_*.py @IsaacYangSLA @pcnudde
+/tests/unit_test/examples/fedbpt_*.py @ZiyueXu77 @holgerroth
+/tests/unit_test/examples/fedce_research_*.py @ZiyueXu77 @holgerroth
+/tests/unit_test/examples/fedcore_*.py @ZiyueXu77 @holgerroth
+
+# Examples, with specialized routing for deployment and integration examples.
+/examples/ @holgerroth @chesterxgchen
+/examples/devops/ @IsaacYangSLA @pcnudde
+/examples/docker/ @YuanTingHsieh @chesterxgchen
+/examples/advanced/client-api-attach/ @YuanTingHsieh @chesterxgchen
+/examples/advanced/cc_provision/ @IsaacYangSLA @YuanTingHsieh
+/examples/advanced/edge/ @ZiyueXu77 @YuanTingHsieh
+/examples/advanced/sklearn-kmeans/ @nvkevlu @YuanTingHsieh
+/examples/advanced/sklearn-linear/ @nvkevlu @YuanTingHsieh
+/examples/advanced/sklearn-svm/ @nvkevlu @YuanTingHsieh
+/examples/advanced/xgboost/ @nvkevlu @nvidianz
+
+# Documentation, website, and agent skills.
+/docs/ @chesterxgchen @pcnudde
+/docs/conf.py @IsaacYangSLA @chesterxgchen
+/build_doc.sh @IsaacYangSLA @chesterxgchen
+/web/ @holgerroth @chesterxgchen
+/skills/ @holgerroth @chesterxgchen
+
+# CI and GitHub workflows.
+/ci/ @YuanTingHsieh @chesterxgchen
+/.github/ @YuanTingHsieh @chesterxgchen
 
 # Research projects and all nested files.
 /research/ @ZiyueXu77 @holgerroth
