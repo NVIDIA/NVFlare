@@ -13,6 +13,8 @@
 # limitations under the License.
 """Trusted Slurm profile matching and task-resource resolution."""
 
+import importlib
+import os
 from dataclasses import replace
 
 from nvflare.apis.task_launcher_spec import TaskResourceRequest
@@ -29,8 +31,17 @@ from nvflare.utils.job_launcher_utils import (
 
 TASK_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher"
 CJ_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher"
-DOCKER_CJ_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.docker_launcher.ClientDockerSlurmJobLauncher"
-PROCESS_CJ_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.process_launcher.ClientProcessSlurmJobLauncher"
+DOCKER_CJ_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher"
+PROCESS_CJ_LAUNCHER_PATH = "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
+
+
+_CJ_LAUNCHER_PATHS = {"slurm": CJ_LAUNCHER_PATH, "docker": DOCKER_CJ_LAUNCHER_PATH, "process": PROCESS_CJ_LAUNCHER_PATH}
+
+
+def validate_cj_launcher(runtime, launcher):
+    module, _, name = _CJ_LAUNCHER_PATHS[runtime].rpartition(".")
+    if type(launcher) is not getattr(importlib.import_module(module), name):
+        raise ValueError(f"task lifetime requires the site's supported {runtime} client-job launcher")
 
 
 def component_args(config):
@@ -67,20 +78,27 @@ def validate_slurm_site(launcher, site_config):
             component_path(item) != PROCESS_CJ_LAUNCHER_PATH and str(component_path(item)).endswith("JobLauncher")
             for item in components
         ):
-            raise ValueError("process Slurm task profile requires exactly one ClientProcessSlurmJobLauncher")
+            raise ValueError("process Slurm task profile requires exactly one ClientProcessJobLauncher")
         return
     if launcher.cj_runtime == "docker":
-        from nvflare.app_opt.job_launcher.slurm.docker_launcher import ClientDockerSlurmJobLauncher
+        from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher
 
         matches = [item for item in components if component_path(item) == DOCKER_CJ_LAUNCHER_PATH]
         if len(matches) != 1 or any(
             component_path(item) != DOCKER_CJ_LAUNCHER_PATH and str(component_path(item)).endswith("JobLauncher")
             for item in components
         ):
-            raise ValueError("Docker Slurm task profile requires exactly one ClientDockerSlurmJobLauncher")
-        cj = ClientDockerSlurmJobLauncher(**component_args(matches[0]))
-        if cj.workspace != launcher.manager.config.workspace_path:
-            raise ValueError("Docker CP/CJ/task profile requires the same canonical shared workspace")
+            raise ValueError("Docker Slurm task profile requires exactly one ClientDockerJobLauncher")
+        cj = ClientDockerJobLauncher(**component_args(matches[0]))
+        if (
+            cj.workspace != launcher.manager.config.workspace_path
+            or cj.workspace != os.path.realpath(cj.workspace)
+            or component_args(matches[0]).get("network") != "host"
+            or not cj.default_image
+        ):
+            raise ValueError(
+                "Docker task profile requires the same canonical shared workspace, host networking and default_image"
+            )
         return
     matches = [item for item in components if component_path(item) == CJ_LAUNCHER_PATH]
     if len(matches) != 1:

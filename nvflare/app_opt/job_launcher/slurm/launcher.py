@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import copy
-import logging
 import math
 import os
 import secrets
@@ -34,7 +33,6 @@ from nvflare.apis.job_launcher_spec import (
     JobHandleSpec,
     JobLauncherSpec,
     JobProcessArgs,
-    JobReturnCode,
     add_launcher,
     publish_job_handle,
 )
@@ -77,6 +75,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.secret_utils import has_secret_refs
 from nvflare.job_config.defs import ExecutionLifetime
 from nvflare.job_config.task_execution import get_client_execution_lifetime
+from nvflare.private.fed.task_worker.job_runtime import TaskJobHandle as _TaskCJHandle
 from nvflare.private.fed.utils.job_cert_utils import JobCertError, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     get_cj_resource_spec,
@@ -586,62 +585,6 @@ class SlurmJobLauncher(JobLauncherSpec):
 
 
 _GPU_ENV = ("CUDA_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "NVIDIA_VISIBLE_DEVICES")
-
-
-class _TaskCJHandle(JobHandleSpec):
-    """Preserve CJ outcome while bounding the wait for parent-owned cleanup."""
-
-    def __init__(self, handle, owner, cleanup_timeout=30.0, *, allow_restart=True):
-        self.handle = handle
-        self.owner = owner
-        self.cleanup_timeout = cleanup_timeout
-        self._allow_restart = allow_restart
-
-    def terminate(self):
-        self.owner.release()
-        return self.handle.terminate()
-
-    def _terminate_for_heartbeat_cleanup(self):
-        self.owner.release()
-        cleanup = getattr(self.handle, "_terminate_for_heartbeat_cleanup", self.handle.terminate)
-        return cleanup()
-
-    def can_restart(self):
-        """Replace the CJ only after CP-owned workers have all settled."""
-        if not self._allow_restart or self.handle.can_restart() is not True:
-            return False
-        self.owner.release()
-        self.owner.thread.join(self.cleanup_timeout)
-        if self.owner.thread.is_alive():
-            with self.owner.lock:
-                pending = [a.execution_id for a in self.owner.attempts.values() if not a.status.settled]
-            logging.getLogger(__name__).warning(
-                "Slurm CJ recovery skipped for job %s: worker allocations %s not settled within %ss",
-                self.owner.job_id,
-                pending,
-                self.cleanup_timeout,
-            )
-            return False
-        return True
-
-    def poll(self):
-        code = self.handle.poll()
-        if code != JobReturnCode.UNKNOWN:
-            self.owner.release()
-        return code
-
-    def wait(self):
-        self.handle.wait()
-        self.owner.release()
-        self.owner.thread.join(self.cleanup_timeout)
-        if self.owner.thread.is_alive():
-            with self.owner.lock:
-                pending = [a.execution_id for a in self.owner.attempts.values() if not a.status.settled]
-            logging.getLogger(__name__).warning(
-                "Slurm task cleanup unconfirmed for job %s allocations %s; CP retains cleanup",
-                self.owner.job_id,
-                pending,
-            )
 
 
 class ClientSlurmJobLauncher(SlurmJobLauncher):

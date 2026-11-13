@@ -640,6 +640,18 @@ class _SlurmTaskBackend(TaskLauncherSpec):
             if loopback:
                 raise ValueError(f"{cj_runtime} CJ worker_listener_host must be reachable from compute nodes")
 
+    def validate_job_launcher(self, launcher):
+        from nvflare.app_opt.job_launcher.slurm.task_policy import validate_cj_launcher
+
+        validate_cj_launcher(self.cj_runtime, launcher)
+
+    def prepare_job_runtime(self, launcher, job_meta, fl_ctx):
+        if self.cj_runtime == "slurm":
+            return None
+        from nvflare.app_opt.job_launcher.slurm.gateway_runtime import prepare_gateway_runtime
+
+        return prepare_gateway_runtime(self, launcher, job_meta, fl_ctx)
+
     def get_worker_listener_host(self):
         """Advertise this CJ's host to workers in independent Slurm allocations."""
         host = self.worker_listener_host or socket.getfqdn()

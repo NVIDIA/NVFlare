@@ -43,6 +43,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey, RequestHeader, new_cell_message
+from nvflare.private.fed.task_worker.job_runtime import launch_job
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.private.fed.utils.job_cert_utils import remove_job_cert
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -403,7 +404,7 @@ class JobExecutor(ClientExecutor):
         # runtime. Publish its handle before that wait so abort remains live.
         fl_ctx.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, register_handle, private=True, sticky=False)
         try:
-            handle = restart.launcher.launch_job(copy.deepcopy(restart.meta), fl_ctx)
+            handle = launch_job(restart.launcher, copy.deepcopy(restart.meta), fl_ctx)
             if handle is None:
                 raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
             register_handle(handle)

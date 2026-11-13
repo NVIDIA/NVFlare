@@ -27,12 +27,13 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher import docker_launcher as docker_module
-from nvflare.app_opt.job_launcher.slurm import docker_launcher as gateway_module
-from nvflare.app_opt.job_launcher.slurm.docker_launcher import ClientDockerSlurmJobLauncher
+from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher
+from nvflare.app_opt.job_launcher.slurm import gateway_runtime as gateway_module
 from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher, SlurmTaskManager
 from nvflare.app_opt.job_launcher.slurm.task_policy import DOCKER_CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
 from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
+from nvflare.private.fed.task_worker.job_runtime import launch_job
 from nvflare.private.fed.utils.job_cert_utils import JobCertError
 
 
@@ -55,8 +56,9 @@ def profile(tmp_path, monkeypatch):
                 "path": DOCKER_CJ_LAUNCHER_PATH,
                 "args": {
                     "workspace": str(root),
-                    "cj_image": "site/coordinator:tested",
-                    "parent_host": "gateway.example",
+                    "default_image": "site/coordinator:tested",
+                    "network": "host",
+                    "default_job_container_kwargs": {"nano_cpus": 1_000_000_000, "mem_limit": 1024**3},
                 },
             }
         ],
@@ -76,7 +78,7 @@ def profile(tmp_path, monkeypatch):
         },
     }
     (root / "local/resources.json").write_text(json.dumps(site))
-    launcher = ClientDockerSlurmJobLauncher(**site["components"][0]["args"])
+    launcher = ClientDockerJobLauncher(**site["components"][0]["args"])
     dc = Mock()
     dc.api.base_url = "http+docker://localhost"
     dc.info.return_value = {"OSType": "linux", "MemoryLimit": True, "CpuCfsPeriod": True, "CpuCfsQuota": True}
@@ -135,7 +137,7 @@ def test_gateway_container_uses_cj_budget_and_isolated_canonical_paths(profile, 
     for name in ("SLURM_JOB_ID", "SLURM_JWT", "DOCKER_HOST", "CUDA_VISIBLE_DEVICES"):
         monkeypatch.setenv(name, "parent-only")
     monkeypatch.setenv("NVFL_DOCKER_NETWORK", "unrelated-bridge")
-    handle = p.launcher.launch_job(p.meta, p.context)
+    handle = launch_job(p.launcher, p.meta, p.context)
     (image,) = p.dc.containers.run.call_args.args
     run = p.dc.containers.run.call_args.kwargs
     assert image == "site/coordinator:tested" and run["network"] == "host"
@@ -178,7 +180,7 @@ def test_handle_is_published_before_waiting_for_docker_startup(profile):
         return True
 
     p.native.enter_states.side_effect = started
-    handle = p.launcher.launch_job(p.meta, p.context)
+    handle = launch_job(p.launcher, p.meta, p.context)
     assert published == [handle]
     p.native.poll.return_value = JobReturnCode.SUCCESS
     assert handle.poll() == JobReturnCode.SUCCESS and handle.owner.released
@@ -188,7 +190,7 @@ def test_publication_failure_stops_cj_and_releases_task_admission(profile):
     p = profile
     p.context.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, Mock(side_effect=RuntimeError("aborted")))
     with pytest.raises(RuntimeError, match="aborted"):
-        p.launcher.launch_job(p.meta, p.context)
+        launch_job(p.launcher, p.meta, p.context)
     p.native.terminate.assert_called_once_with()
     p.native.wait.assert_called_once_with()
     p.native.enter_states.assert_not_called()
@@ -204,7 +206,7 @@ def test_docker_creation_failure_seals_task_owner(profile):
 
     p.dc.containers.run.side_effect = fail
     with pytest.raises(RuntimeError, match="daemon unavailable"):
-        p.launcher.launch_job(p.meta, p.context)
+        launch_job(p.launcher, p.meta, p.context)
     assert owners[0].released and owners[0].closed
 
 
@@ -227,7 +229,7 @@ def test_docker_proxy_start_needs_cp_capability_but_no_scheduler_environment(pro
 def test_gpu_cj_budget_is_rejected_before_creation(profile, spec):
     profile.meta["cj_resource_spec"]["site-1"] = spec
     with pytest.raises(ValueError, match="CPU-only"):
-        profile.launcher.launch_job(profile.meta, profile.context)
+        launch_job(profile.launcher, profile.meta, profile.context)
     profile.dc.containers.run.assert_not_called()
 
 
@@ -235,15 +237,20 @@ def test_gpu_cj_budget_is_rejected_before_creation(profile, spec):
 def test_job_cannot_override_gateway_container(profile, docker_spec):
     profile.meta["launcher_spec"] = {"site-1": {"docker": docker_spec}}
     with pytest.raises(ValueError, match="site-owned"):
-        profile.launcher.launch_job(profile.meta, profile.context)
+        launch_job(profile.launcher, profile.meta, profile.context)
     profile.dc.containers.run.assert_not_called()
 
 
-def test_resident_job_is_rejected_without_changing_existing_launchers(profile):
-    profile.app_config.write_text("{}")
-    with pytest.raises(ValueError, match="only execution_lifetime"):
-        profile.launcher.launch_job(profile.meta, profile.context)
-    profile.dc.containers.run.assert_not_called()
+def test_resident_job_uses_ordinary_docker_without_task_ownership(profile):
+    p = profile
+    p.app_config.write_text("{}")
+    p.meta.pop("cj_resource_spec")
+    p.meta["resource_spec"] = {"site-1": {"num_of_gpus": 0}}
+    p.meta["launcher_spec"] = {"site-1": {"docker": {"image": "resident/image"}}}
+    handle = launch_job(p.launcher, p.meta, p.context)
+    assert handle is p.native
+    assert not hasattr(p.cell, "_slurm_task_service")
+    assert p.dc.containers.run.call_args.args == ("resident/image",)
 
 
 def test_secure_cj_requires_own_job_certificate_and_preserves_mtls(profile):
@@ -254,12 +261,12 @@ def test_secure_cj_requires_own_job_certificate_and_preserves_mtls(profile):
     args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", "mtls")
     (p.root / "job-1/job_cert/job.key").unlink()
     with pytest.raises(JobCertError):
-        p.launcher.launch_job(p.meta, p.context)
+        launch_job(p.launcher, p.meta, p.context)
     p.dc.containers.run.assert_not_called()
     (p.root / "job-1/job_cert/job.key").write_text("job.key")
     # Release the failed launch's owner before another explicit launch.
     p.cell._slurm_task_service.shutdown(timeout=5)
-    p.launcher.launch_job(p.meta, p.context)
+    launch_job(p.launcher, p.meta, p.context)
     command = p.dc.containers.run.call_args.kwargs["command"]
     assert command[command.index("-p") + 1] == "stcp://gateway.example:8102"
     assert command[command.index("--parent_conn_sec") + 1] == "mtls"
@@ -267,9 +274,9 @@ def test_secure_cj_requires_own_job_certificate_and_preserves_mtls(profile):
 
 def test_live_owner_fences_a_second_cj_launch(profile):
     p = profile
-    handle = p.launcher.launch_job(p.meta, p.context)
+    handle = launch_job(p.launcher, p.meta, p.context)
     with pytest.raises(ValueError, match="already owns"):
-        p.launcher.launch_job(p.meta, p.context)
+        launch_job(p.launcher, p.meta, p.context)
     assert p.dc.containers.run.call_count == 1
     assert not handle.owner.closed
     assert not handle.can_restart()
@@ -277,7 +284,7 @@ def test_live_owner_fences_a_second_cj_launch(profile):
 
 def test_gateway_restart_policy_preserves_owner_even_after_physical_exit(profile):
     p = profile
-    handle = p.launcher.launch_job(p.meta, p.context)
+    handle = launch_job(p.launcher, p.meta, p.context)
     assert not handle.can_restart()
     p.native.can_restart.assert_not_called()
     assert not handle.owner.released
@@ -285,7 +292,7 @@ def test_gateway_restart_policy_preserves_owner_even_after_physical_exit(profile
 
 def test_heartbeat_cleanup_stops_docker_cj_and_seals_task_owner(profile):
     p = profile
-    handle = p.launcher.launch_job(p.meta, p.context)
+    handle = launch_job(p.launcher, p.meta, p.context)
     assert not hasattr(p.native, "_terminate_for_heartbeat_cleanup")
     handle._terminate_for_heartbeat_cleanup()
     assert handle.owner.closed and handle.owner.released
@@ -300,7 +307,9 @@ def test_gateway_admission_does_not_reserve_compute_gpus(profile):
     assert resources == {} and p.context.get_prop(FLContextKey.JOB_BLOCK_REASON) is None
     p.meta["cj_resource_spec"]["site-1"]["num_of_gpus"] = 1
     p.launcher.handle_event(EventType.BEFORE_CHECK_RESOURCE_MANAGER, p.context)
-    assert "CPU-only" in p.context.get_prop(FLContextKey.JOB_BLOCK_REASON)
+    with pytest.raises(ValueError, match="CPU-only"):
+        launch_job(p.launcher, p.meta, p.context)
+    p.dc.containers.run.assert_not_called()
 
 
 @pytest.mark.parametrize("platform, uid", [("darwin", 1001), ("linux", 0)])
@@ -308,7 +317,7 @@ def test_unsupported_gateway_host_is_rejected(profile, monkeypatch, platform, ui
     monkeypatch.setattr(gateway_module.sys, "platform", platform)
     monkeypatch.setattr(gateway_module.os, "getuid", lambda: uid)
     with pytest.raises(ValueError, match="Linux host networking and a nonroot"):
-        profile.launcher.launch_job(profile.meta, profile.context)
+        launch_job(profile.launcher, profile.meta, profile.context)
     profile.dc.containers.run.assert_not_called()
 
 
@@ -321,11 +330,13 @@ def test_docker_requires_explicit_worker_reachable_listener(profile, host):
         SlurmTaskLauncher(**args)
 
 
-@pytest.mark.parametrize("mutation", ["plain-docker", "wrong-workspace", "mixed-launchers"])
+@pytest.mark.parametrize("mutation", ["combined-launcher", "wrong-workspace", "mixed-launchers"])
 def test_canonical_site_profile_rejects_incompatible_launchers(profile, mutation):
     site = copy.deepcopy(profile.site)
-    if mutation == "plain-docker":
-        site["components"][0]["path"] = "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher"
+    if mutation == "combined-launcher":
+        site["components"][0][
+            "path"
+        ] = "nvflare.app_opt.job_launcher.slurm.docker_launcher.ClientDockerSlurmJobLauncher"
     elif mutation == "wrong-workspace":
         site["components"][0]["args"]["workspace"] = str(profile.root / "other-job")
     else:
@@ -334,11 +345,11 @@ def test_canonical_site_profile_rejects_incompatible_launchers(profile, mutation
         TaskExecutionPolicy.from_config(site["task_execution"]).launcher.validate_site_config(site)
 
 
-def test_only_canonical_docker_slurm_launcher_passes_policy(profile):
+def test_task_policy_selects_the_ordinary_client_docker_launcher(profile):
     policy = TaskExecutionPolicy.from_workspace(profile.workspace)
     policy.validate_job_launcher(profile.launcher)
     with pytest.raises(ValueError, match="supported"):
-        policy.validate_job_launcher(docker_module.ClientDockerJobLauncher(workspace=str(profile.root)))
+        policy.validate_job_launcher(docker_module.ServerDockerJobLauncher(workspace=str(profile.root)))
 
 
 @pytest.mark.parametrize("unsupported", ["remote", "windows", "MemoryLimit", "CpuCfsQuota", "CpuCfsPeriod"])
@@ -351,7 +362,7 @@ def test_unsupported_daemon_is_rejected_before_container_creation(profile, unsup
     else:
         p.dc.info.return_value[unsupported] = False
     with pytest.raises(ValueError, match="daemon"):
-        p.launcher.launch_job(p.meta, p.context)
+        launch_job(p.launcher, p.meta, p.context)
     p.dc.containers.run.assert_not_called()
 
 
@@ -359,7 +370,7 @@ def test_nonstandard_cpu_capability_keys_cannot_satisfy_daemon_check(profile):
     p = profile
     p.dc.info.return_value = {"OSType": "linux", "MemoryLimit": True, "CPUCfsPeriod": True, "CPUCfsQuota": True}
     with pytest.raises(ValueError, match="daemon"):
-        p.launcher.launch_job(p.meta, p.context)
+        launch_job(p.launcher, p.meta, p.context)
     p.dc.containers.run.assert_not_called()
 
 
@@ -374,6 +385,14 @@ def test_nonstandard_cpu_capability_keys_cannot_satisfy_daemon_check(profile):
 def test_cj_defaults_are_independent_of_compute(profile, spec, expected):
     p = profile
     p.meta["cj_resource_spec"]["site-1"] = spec
-    p.launcher.launch_job(p.meta, p.context)
+    launch_job(p.launcher, p.meta, p.context)
     run = p.dc.containers.run.call_args.kwargs
     assert (run["nano_cpus"], run["mem_limit"]) == expected
+
+
+def test_cp_owns_a_physical_backend_that_reaches_native_task_launch(profile, monkeypatch):
+    from tests.slurm_gateway_test_utils import assert_physical_task_dispatch
+
+    p = profile
+    handle = launch_job(p.launcher, p.meta, p.context)
+    assert_physical_task_dispatch(handle, p.root, monkeypatch)

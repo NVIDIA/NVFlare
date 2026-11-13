@@ -35,6 +35,7 @@ from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, new_cell_message
 from nvflare.private.event import fire_event
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
+from nvflare.private.fed.task_worker.job_runtime import shutdown_task_jobs
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.private.stream_runner import ObjectStreamer
@@ -110,6 +111,8 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         self.fl_components.append(ClientFedEventRunner())
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.SYSTEM_END:
+            shutdown_task_jobs(self.cell)
         fire_event(event=event_type, handlers=self.fl_components, ctx=fl_ctx)
 
     def get_cell(self):

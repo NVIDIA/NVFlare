@@ -24,7 +24,13 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import get_job_meta_study
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobReturnCode,
+    add_launcher,
+    get_job_launch_options,
+)
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.study_runtime import (
     load_study_runtime_file,
@@ -128,11 +134,12 @@ class ProcessJobLauncher(JobLauncherSpec):
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
         return self._launch_job(job_meta, fl_ctx, self._job_environment(job_meta, fl_ctx))
 
-    def _job_environment(self, job_meta, fl_ctx, *, include_study_runtime=True):
-        new_env = os.environ.copy()
+    def _job_environment(self, job_meta, fl_ctx):
+        options = get_job_launch_options(fl_ctx)
+        new_env = os.environ.copy() if options.environment is None else dict(options.environment)
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         runtime_file = study_runtime_file_path(workspace_obj.get_root_dir())
-        if include_study_runtime and os.path.exists(runtime_file):
+        if options.apply_study_runtime and os.path.exists(runtime_file):
             runtime_map = load_study_runtime_file(runtime_file, launcher_mode="process", logger=self.logger)
             study = get_job_meta_study(job_meta)
             runtime = resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)

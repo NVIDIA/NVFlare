@@ -56,10 +56,6 @@ _NATIVE_TASK_LAUNCHERS = {
     "k8s": ("nvflare.app_opt.task_launcher.k8s_launcher", "K8sTaskLauncher"),
     "slurm": ("nvflare.app_opt.job_launcher.slurm.task_launcher", "SlurmTaskLauncher"),
 }
-_NATIVE_JOB_LAUNCHERS = {
-    "k8s": ("nvflare.app_opt.job_launcher.k8s_launcher", "ClientK8sJobLauncher"),
-    "slurm": ("nvflare.app_opt.job_launcher.slurm.launcher", "ClientSlurmJobLauncher"),
-}
 
 
 def _supported_native_launcher(launcher):
@@ -181,16 +177,7 @@ class TaskExecutionPolicy:
 
     def validate_job_launcher(self, launcher):
         """Fail closed before starting a CJ on an incompatible site runtime."""
-        module_name, class_name = _NATIVE_JOB_LAUNCHERS[self.launcher.launch_mode]
-        if self.launcher.launch_mode == "slurm" and self.launcher.cj_runtime == "docker":
-            module_name = "nvflare.app_opt.job_launcher.slurm.docker_launcher"
-            class_name = "ClientDockerSlurmJobLauncher"
-        elif self.launcher.launch_mode == "slurm" and self.launcher.cj_runtime == "process":
-            module_name = "nvflare.app_opt.job_launcher.slurm.process_launcher"
-            class_name = "ClientProcessSlurmJobLauncher"
-        expected = getattr(importlib.import_module(module_name), class_name)
-        if type(launcher) is not expected:
-            raise ValueError("task lifetime requires the site's supported Kubernetes or Slurm client-job launcher")
+        self.launcher.validate_job_launcher(launcher)
 
     def task_resources(self, meta, site_name):
         validate_task_resources(meta, site_name)
