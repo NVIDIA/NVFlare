@@ -90,8 +90,8 @@ class ProdEnv(ExecEnv):
     def abort_job(self, job_id: str) -> None:
         self._get_session_manager().abort_job(job_id)
 
-    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
-        return self._get_session_manager().get_job_result(job_id, timeout)
+    def get_job_result(self, job_id: str, timeout: float = 0.0, outputs_only: bool = False) -> Optional[str]:
+        return self._get_session_manager().get_job_result(job_id, timeout, outputs_only=outputs_only)
 
     def deploy(self, job: FedJob) -> str:
         """Deploy a job using SessionManager."""
