@@ -17,3 +17,143 @@ updates:
     ignore:
       - dependency-name: "*"
         versions: [">=0"]
+
+  # Security updates for the examples involved in #5267, #5314, and #5359.
+  # Keep one directory per entry: a shared directories list would combine examples.
+  # Explicit security groups override broad repository/organization grouping here.
+  # Other packages get individual PRs; groups describe coupling, not a guarantee
+  # of compatibility. Validate each proposed upgrade in its example environment.
+  # Limit 0 disables routine version PRs, not security updates or alerts.
+  # Other directories remain subject to repository/organization defaults.
+  - package-ecosystem: pip
+    directory: /examples/advanced/qwen3-vl
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      qwen3-vl-pip-pytorch:
+        applies-to: security-updates
+        patterns: ["torch", "torchvision", "torchaudio", "torchcodec", "triton", "flash-attn", "flash_attn", "deepspeed"]
+      qwen3-vl-pip-huggingface:
+        applies-to: security-updates
+        patterns: ["transformers", "tokenizers", "huggingface-hub", "huggingface_hub", "safetensors", "accelerate", "peft"]
+  - package-ecosystem: uv
+    directory: /examples/advanced/qwen3-vl
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      qwen3-vl-uv-pytorch:
+        applies-to: security-updates
+        patterns: ["torch", "torchvision", "torchaudio", "torchcodec", "triton", "flash-attn", "flash_attn", "deepspeed"]
+      qwen3-vl-uv-huggingface:
+        applies-to: security-updates
+        patterns: ["transformers", "tokenizers", "huggingface-hub", "huggingface_hub", "safetensors", "accelerate", "peft"]
+  - package-ecosystem: pip
+    directory: /research/fedcore
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      fedcore-pip-pytorch:
+        applies-to: security-updates
+        patterns: ["torch", "torchvision", "torchaudio", "torchcodec", "triton", "flash-attn", "flash_attn", "deepspeed"]
+      fedcore-pip-huggingface:
+        applies-to: security-updates
+        patterns: ["transformers", "tokenizers", "huggingface-hub", "huggingface_hub", "safetensors", "accelerate", "peft"]
+  - package-ecosystem: uv
+    directory: /research/fedcore
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      fedcore-uv-pytorch:
+        applies-to: security-updates
+        patterns: ["torch", "torchvision", "torchaudio", "torchcodec", "triton", "flash-attn", "flash_attn", "deepspeed"]
+      fedcore-uv-huggingface:
+        applies-to: security-updates
+        patterns: ["transformers", "tokenizers", "huggingface-hub", "huggingface_hub", "safetensors", "accelerate", "peft"]
+  - package-ecosystem: pip
+    directory: /research/fed-bpt
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      fedbpt-pip-huggingface:
+        applies-to: security-updates
+        patterns: ["transformers", "tokenizers", "huggingface-hub", "huggingface_hub", "safetensors", "accelerate", "peft"]
+  - package-ecosystem: uv
+    directory: /research/fed-bpt
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      fedbpt-uv-huggingface:
+        applies-to: security-updates
+        patterns: ["transformers", "tokenizers", "huggingface-hub", "huggingface_hub", "safetensors", "accelerate", "peft"]
+  - package-ecosystem: pip
+    directory: /examples/advanced/swarm_learning/swarm_pt
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      swarm-pip-pytorch:
+        applies-to: security-updates
+        patterns: ["torch", "torchvision", "torchaudio", "torchcodec", "triton", "flash-attn", "flash_attn", "deepspeed"]
+      swarm-pip-huggingface:
+        applies-to: security-updates
+        patterns: ["transformers", "tokenizers", "huggingface-hub", "huggingface_hub", "safetensors", "accelerate", "peft"]
+  - package-ecosystem: uv
+    directory: /examples/advanced/swarm_learning/swarm_pt
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      swarm-uv-pytorch:
+        applies-to: security-updates
+        patterns: ["torch", "torchvision", "torchaudio", "torchcodec", "triton", "flash-attn", "flash_attn", "deepspeed"]
+      swarm-uv-huggingface:
+        applies-to: security-updates
+        patterns: ["transformers", "tokenizers", "huggingface-hub", "huggingface_hub", "safetensors", "accelerate", "peft"]
+  - package-ecosystem: pip
+    directory: /research/fedumm
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      fedumm-pip-pytorch:
+        applies-to: security-updates
+        patterns: ["torch", "torchvision", "torchaudio", "torchcodec", "triton", "flash-attn", "flash_attn", "deepspeed"]
+      fedumm-pip-huggingface:
+        applies-to: security-updates
+        patterns: ["transformers", "tokenizers", "huggingface-hub", "huggingface_hub", "safetensors", "accelerate", "peft"]
+  - package-ecosystem: uv
+    directory: /research/fedumm
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      fedumm-uv-pytorch:
+        applies-to: security-updates
+        patterns: ["torch", "torchvision", "torchaudio", "torchcodec", "triton", "flash-attn", "flash_attn", "deepspeed"]
+      fedumm-uv-huggingface:
+        applies-to: security-updates
+        patterns: ["transformers", "tokenizers", "huggingface-hub", "huggingface_hub", "safetensors", "accelerate", "peft"]
+  - package-ecosystem: pip
+    directory: /examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-12_federated_learning_in_financial_services/12.1_end_to_end_federated_fraud_detection
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      fraud-pip-pytorch:
+        applies-to: security-updates
+        patterns: ["torch", "torchvision", "torchaudio", "torchcodec", "triton", "flash-attn", "flash_attn", "deepspeed"]
+  - package-ecosystem: uv
+    directory: /examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-12_federated_learning_in_financial_services/12.1_end_to_end_federated_fraud_detection
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      fraud-uv-pytorch:
+        applies-to: security-updates
+        patterns: ["torch", "torchvision", "torchaudio", "torchcodec", "triton", "flash-attn", "flash_attn", "deepspeed"]
