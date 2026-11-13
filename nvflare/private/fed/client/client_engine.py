@@ -34,8 +34,8 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, new_cell_message
 from nvflare.private.event import fire_event
+from nvflare.private.fed.client.task_runtime import shutdown_task_jobs
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
-from nvflare.private.fed.task_worker.parent_runtime import shutdown_task_jobs
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.private.stream_runner import ObjectStreamer
