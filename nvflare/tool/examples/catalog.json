@@ -87,10 +87,6 @@
     "source_path": "examples/advanced/bionemo",
     "category": "advanced"
   },
-  "cc-provision": {
-    "source_path": "examples/advanced/cvm_builder",
-    "category": "advanced"
-  },
   "cvm-builder": {
     "source_path": "examples/advanced/cvm_builder",
     "category": "advanced"
