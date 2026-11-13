@@ -161,3 +161,32 @@ def test_study_preserves_partial_subtotals_and_orders_distinct_causes():
         {"metric": "resource_time", "code": "attribution_incomplete"},
         {"metric": "resource_time", "code": "observation_incomplete"},
     ]
+
+
+@pytest.mark.parametrize("scope", ["job", "study"])
+@pytest.mark.parametrize("metric", ["cpu_consumed", "resource_time"])
+def test_overflow_keeps_independent_totals_and_marks_only_the_affected_metric(scope, metric):
+    entries = [_accepted_entry(participant_name=name) for name in ("site-1", "site-2")]
+    for entry in entries:
+        if metric == "cpu_consumed":
+            entry["resource_utilization"][metric]["cpu_seconds"] = 1e308
+        else:
+            entry[metric]["cpu"]["unit_seconds"] = 1e308
+    if scope == "job":
+        totals = sum_job_totals(entries)
+    else:
+        totals = sum_study_totals(
+            [{"resource_data": "included", "totals": sum_job_totals([entry])} for entry in entries]
+        )
+    assert totals["resource_utilization"]["message_traffic"] == {"sent_bytes": 6, "received_bytes": 8}
+    if metric == "cpu_consumed":
+        assert totals["resource_utilization"][metric] == {"status": "unavailable"}
+        assert "status" not in totals["resource_time"]
+    else:
+        assert totals[metric] == {
+            "status": "partial",
+            "memory": {"byte_seconds": 16384},
+            "gpu": {"instance_seconds": 4},
+        }
+        assert totals["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 3}
+    assert totals["issues"] == [{"metric": metric, "code": "observation_incomplete"}]

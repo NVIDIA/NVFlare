@@ -19,7 +19,7 @@ import math
 import re
 from datetime import datetime
 
-from .measurements import SCHEMA_VERSION, ordered_issues, sum_job_totals
+from .measurements import SCHEMA_VERSION, ordered_issues
 
 KIND_PARTICIPANT_SUMMARY = "nvflare.resource_stats.participant_summary"
 KIND_RESOURCE_SUMMARY = "nvflare.resource_stats.resource_summary"
@@ -211,8 +211,6 @@ def _read_resource_summary(record):
     record = _read_fields(record, {"schema_version", "kind", "job_id", "participants"})
     _read_identifier(record["job_id"], JOB_ID_PATTERN)
     participants = _read_participants(record["participants"])
-    # Independently valid observations can still overflow when added together.
-    sum_job_totals(participants)
     return {**record, "participants": participants}
 
 

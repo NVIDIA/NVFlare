@@ -352,8 +352,11 @@ Unavailable and nonterminal jobs remain explicit coverage gaps, so the
 
 Nonfinite arithmetic results are rejected rather than clamped or represented as
 infinity. Collection preserves valid independent subtotals and marks gaps.
-Queries reject nonfinite derived values rather than publishing them as complete
-totals.
+Job and study queries mark an overflowing utilization total unavailable. An
+overflowing capacity-time dimension is omitted, leaving the other dimensions
+partial, or the measurement unavailable if none remain. The aggregate issue list
+identifies the affected metric with `observation_incomplete`. Source reports and
+independent measurements remain available.
 
 The CLI uses the existing success/error envelope. Job JSON data contains
 `selection: {job_id, site}`, `summary`, and an optional `participant`; study JSON

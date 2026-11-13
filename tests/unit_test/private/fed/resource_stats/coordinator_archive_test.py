@@ -603,3 +603,22 @@ def test_missing_filesystem_primitives_leave_no_registered_report(tmp_path, monk
         == RESOURCE_REPORT_NOT_EXPECTED
     )
     assert not (tmp_path / "resource_stats").exists()
+
+
+def test_overflowing_total_preserves_accepted_reports_in_archive(tmp_path):
+    coordinator = ResourceStatsCoordinator()
+    coordinator.start_job("job-1", ["site-1", "site-2"], tmp_path)
+    reports = [_participant_summary(participant_name=name) for name in ("site-1", "site-2")]
+    for report in reports:
+        report["resource_utilization"]["cpu_consumed"]["cpu_seconds"] = 1e308
+        assert (
+            coordinator.accept_resource_report(
+                "job-1", report["participant_name"], {"participant_summary": canonical_json_bytes(report)}
+            )
+            == RESOURCE_REPORT_ACCEPTED
+        )
+    summary = coordinator.finalize_job("job-1")
+    reader = WorkspaceResourceStatsReader(_workspace_zip(tmp_path))
+    assert reader.read_resource_summary() == summary
+    for report in reports:
+        assert reader.read_participant_summary(report["participant_name"]) == report

@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from .measurements import SCHEMA_VERSION, canonical_json_bytes, participant_measurements, sum_job_totals, utc_timestamp
+from .measurements import SCHEMA_VERSION, canonical_json_bytes, participant_measurements, utc_timestamp
 from .report_reader import (
     JOB_ID_PATTERN,
     KIND_PARTICIPANT_SUMMARY,
@@ -342,8 +342,6 @@ class ResourceStatsCoordinator:
                 "job_id": job_id,
                 "participants": participants,
             }
-            # Summing can overflow even when each accepted report is valid.
-            sum_job_totals(participants)
             summary_data = canonical_json_bytes(summary)
             if len(summary_data) > MAX_RESOURCE_SUMMARY_BYTES:
                 raise ValueError("resource summary exceeds its size limit")

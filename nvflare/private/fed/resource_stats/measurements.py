@@ -109,12 +109,16 @@ def capacity_to_resource_time(capacity, duration_seconds, scope_issues=None):
     return result
 
 
-def aggregate_resource_time(values, *, complete=True):
+def aggregate_resource_time(values, *, complete=True, scope_issues=None):
     result = {}
     for dimension, field in (("cpu", "unit_seconds"), ("memory", "byte_seconds"), ("gpu", "instance_seconds")):
         amounts = [value[dimension][field] for value in values if dimension in value]
         if amounts:
-            result[dimension] = {field: _sum_numbers(amounts)}
+            try:
+                result[dimension] = {field: _sum_numbers(amounts)}
+            except ValueError:
+                complete = False
+                _append_issues(scope_issues, "resource_time", {"observation_incomplete"})
     if not result:
         return {"status": "unavailable"}
     if not complete or any("status" in value for value in values):
@@ -145,19 +149,24 @@ def utc_timestamp() -> str:
 
 
 def _sum_totals(entries, *, complete):
-    totals = {
-        "resource_time": aggregate_resource_time([entry["resource_time"] for entry in entries], complete=complete),
-        "resource_utilization": {
-            field: aggregate_usage(
-                [entry["resource_utilization"][field] for entry in entries], fields, complete=complete
-            )
-            for field, fields in (
-                ("cpu_consumed", {"cpu_seconds"}),
-                ("message_traffic", {"sent_bytes", "received_bytes"}),
-            )
-        },
-    }
     issues = []
+    totals = {
+        "resource_time": aggregate_resource_time(
+            [entry["resource_time"] for entry in entries], complete=complete, scope_issues=issues
+        ),
+        "resource_utilization": {},
+    }
+    for metric, fields in (
+        ("cpu_consumed", {"cpu_seconds"}),
+        ("message_traffic", {"sent_bytes", "received_bytes"}),
+    ):
+        try:
+            value = aggregate_usage(
+                [entry["resource_utilization"][metric] for entry in entries], fields, complete=complete
+            )
+        except ValueError:
+            value = {"status": "unavailable"}
+        totals["resource_utilization"][metric] = value
     if totals["resource_time"].get("status") == "partial":
         codes = set() if complete else {"observation_incomplete"}
         for entry in entries:
