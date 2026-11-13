@@ -54,6 +54,11 @@
 /tests/unit_test/edge/ @ZiyueXu77 @YuanTingHsieh
 /tests/unit_test/edge/device/ @nvkevlu @YuanTingHsieh
 /tests/unit_test/examples/ @holgerroth @chesterxgchen
+# Specialized example tests and helpers follow their deployment or research source.
+/tests/unit_test/examples/multicloud_*.py @IsaacYangSLA @pcnudde
+/tests/unit_test/examples/fedbpt_*.py @ZiyueXu77 @holgerroth
+/tests/unit_test/examples/fedce_research_*.py @ZiyueXu77 @holgerroth
+/tests/unit_test/examples/fedcore_*.py @ZiyueXu77 @holgerroth
 
 # Examples, with specialized routing for deployment and integration examples.
 /examples/ @holgerroth @chesterxgchen
