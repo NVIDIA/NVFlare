@@ -16,10 +16,9 @@
 class CCConfigKey:
     COMPUTE_ENV = "compute_env"
     CC_CPU_MECHANISM = "cc_cpu_mechanism"
-    CC_GPU_MECHANISM = "cc_gpu_mechanism"
+    CC_GPU = "cc_gpu"
     CC_ISSUERS = "cc_issuers"
     CC_ATTESTATION_CONFIG = "cc_attestation"
-    CVM_IMAGE_NAME = "cvm_image_name"
     CLASS_ALLOW_LIST = "class_allow_list"
 
 
@@ -27,15 +26,11 @@ class CCConfigValue:
     # Compute environments
     AZURE_CVM = "azure_cvm"
     AZURE_CONFIDENTIAL_CONTAINER = "azure_confidential_container"
-    ONPREM_CVM = "onprem_cvm"
-    MOCK = "mock"
+    CONFIDENTIAL_CONTAINERS = "confidential_containers"
 
     # CC CPU mechanisms
     AMD_SEV_SNP = "amd_sev_snp"
     INTEL_TDX = "intel_tdx"
-
-    # CC GPU mechanisms
-    NVIDIA_CC = "nvidia_cc"
 
 
 # CC Manager constants
@@ -47,6 +42,7 @@ class CCManagerArgs:
     CC_VERIFIER_IDS = "cc_verifier_ids"
     VERIFY_FREQUENCY = "verify_frequency"
     CC_ENABLED_SITES = "cc_enabled_sites"
+    REQUIRED_SITE_VERIFIER_IDS = "required_site_verifier_ids"
 
 
 class CCIssuerConfig:

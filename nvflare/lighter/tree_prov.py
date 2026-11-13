@@ -358,12 +358,12 @@ def main():
 
     builders = [
         WorkspaceBuilder(["master_template.yml"]),
+        SignatureBuilder(),
         StaticFileBuilder(
             config_folder="config",
             scheme="http",
         ),
         CertBuilder(),
-        SignatureBuilder(),
         EdgeBuilder(),
     ]
 

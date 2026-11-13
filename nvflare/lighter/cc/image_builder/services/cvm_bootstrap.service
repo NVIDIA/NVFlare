@@ -1,0 +1,28 @@
+[Unit]
+Description=Attest, unlock and supervise the application vault
+After=network-online.target chrony.service nftables.service local-fs.target systemd-modules-load.service finalrd.service
+Before=docker.service containerd.service
+Wants=network-online.target
+Requires=chrony.service nftables.service finalrd.service
+FailureAction=poweroff-force
+SuccessAction=poweroff-force
+
+[Service]
+Type=notify
+NotifyAccess=main
+WorkingDirectory=/usr/lib/cvm
+ExecStart=/usr/bin/python3 -m cvm.runtime.bootstrap bootstrap
+TimeoutStartSec=45min
+WatchdogSec=360s
+WatchdogSignal=SIGKILL
+TimeoutAbortSec=5s
+TimeoutStopSec=5s
+TimeoutStopFailureMode=kill
+LimitMEMLOCK=infinity
+LimitCORE=0
+UMask=0077
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

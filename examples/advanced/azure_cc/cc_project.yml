@@ -1,0 +1,7 @@
+schema_version: 1
+attestation_services:
+  azure_maa:
+    type: azure_maa
+    endpoint: https://sharedeus2.eus2.attest.azure.net
+    token_expiration_seconds: 100
+    check_frequency_seconds: 60

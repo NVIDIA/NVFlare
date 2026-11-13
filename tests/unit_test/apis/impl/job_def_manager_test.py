@@ -49,6 +49,21 @@ class TestJobManager(unittest.TestCase):
             content = self.job_manager.get_content(meta, self.fl_ctx)
             assert content == data
 
+    def test_authoritative_job_presence(self):
+        with mock.patch.object(self.job_manager, "_get_job_store", return_value=FilesystemStorage()):
+            _, meta = self._create_job()
+            job_id = meta[JobMetaKey.JOB_ID.value]
+            assert self.job_manager.job_exists(job_id, self.fl_ctx) is True
+            self.job_manager.delete(job_id, self.fl_ctx)
+            assert self.job_manager.job_exists(job_id, self.fl_ctx) is False
+
+    def test_job_presence_propagates_storage_permission_failure(self):
+        with mock.patch.object(self.job_manager, "_get_job_store", return_value=FilesystemStorage()):
+            _, meta = self._create_job()
+            with mock.patch("nvflare.app_common.storages.filesystem_storage.os.stat", side_effect=PermissionError):
+                with self.assertRaises(PermissionError):
+                    self.job_manager.job_exists(meta[JobMetaKey.JOB_ID.value], self.fl_ctx)
+
     def test_get_app_rejects_escaping_job_folder_name(self):
         with mock.patch("nvflare.apis.impl.job_def_manager.SimpleJobDefManager._get_job_store") as mock_store:
             mock_store.return_value = FilesystemStorage()

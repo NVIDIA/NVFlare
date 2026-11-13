@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="520" viewBox="0 0 640 520" role="img" aria-labelledby="title description">
+  <title id="title">Confidential workload network boundaries</title>
+  <desc id="description">Runtime connections terminate at an approved confidential workload, not at the untrusted host. The workload communicates with Trustee over TLS, pulls encrypted CoCo images over TLS, exchanges peer proofs and model updates with NVFlare peers over mTLS, and uses application-authorized TLS connections for data and outputs. Proof-generation services remain guest-local. Management and policy publication use separate trusted administrative paths.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M1 1 L7 4 L1 7" fill="none" stroke="#52647a" stroke-width="1.5"/></marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #243746; }
+      .title { font-size: 20px; font-weight: 700; }
+      .heading { font-size: 17px; font-weight: 700; }
+      .body { font-size: 16px; }
+      .small { font-size: 14px; fill: #52647a; }
+      .trusted { fill: #eff5fc; stroke: #7996b5; }
+      .guest { fill: #eef8ef; stroke: #639566; }
+      .host { fill: #fff7f4; stroke: #b67868; stroke-dasharray: 5 4; }
+      .path { fill: none; stroke: #52647a; stroke-width: 1.5; marker-start: url(#arrow); marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="640" height="520" fill="#fff"/>
+  <text x="20" y="28" class="title">Network paths and trusted endpoints</text>
+  <rect x="20" y="50" width="280" height="74" rx="8" class="trusted"/>
+  <text x="36" y="78" class="heading">Trustee service</text>
+  <text x="36" y="104" class="body">Appraisal + resource authorization</text>
+  <rect x="340" y="50" width="280" height="74" rx="8" class="trusted"/>
+  <text x="356" y="78" class="heading">CoCo image registry</text>
+  <text x="356" y="104" class="body">Encrypted artifacts + signatures</text>
+  <path d="M160 124 V182 H250 V236" class="path"/>
+  <path d="M480 124 V182 H390 V236" class="path"/>
+  <text x="28" y="153" class="small">TLS + evidence / resource requests</text>
+  <text x="376" y="153" class="small">TLS + encrypted image pulls</text>
+  <rect x="170" y="204" width="300" height="124" rx="8" class="host"/>
+  <text x="185" y="226" class="small">Untrusted host transports packets</text>
+  <rect x="185" y="236" width="270" height="72" rx="8" class="guest"/>
+  <text x="202" y="264" class="heading">Confidential workload</text>
+  <text x="202" y="291" class="body">TLS endpoints and keys inside</text>
+  <path d="M250 308 V385 H160 V412" class="path"/>
+  <path d="M390 308 V385 H480 V412" class="path"/>
+  <text x="28" y="359" class="small">mTLS + peer proofs / updates</text>
+  <text x="374" y="359" class="small">TLS + application authorization</text>
+  <rect x="20" y="412" width="280" height="70" rx="8" class="trusted"/>
+  <text x="36" y="440" class="heading">NVFlare server / clients</text>
+  <text x="36" y="466" class="body">Authenticate the intended peer</text>
+  <rect x="340" y="412" width="280" height="70" rx="8" class="trusted"/>
+  <text x="356" y="440" class="heading">Dataset / output service</text>
+  <text x="356" y="466" class="body">Authorize data and recipients</text>
+  <text x="20" y="509" class="small">Keep proof-generation APIs guest-local; separate privileged administration.</text>
+</svg>

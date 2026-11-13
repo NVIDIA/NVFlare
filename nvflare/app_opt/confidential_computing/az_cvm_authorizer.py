@@ -21,9 +21,17 @@ AZ_CVM_NAMESPACE = "x-az-cvm"
 
 
 class AZCVMAuthorizer(CCAuthorizer):
-    def __init__(self, attester_binary="AttestationClient", maa_endpoint="sharedeus2.eus2.attest.azure.net"):
+    def __init__(
+        self,
+        attester_binary="AttestationClient",
+        maa_endpoint="sharedeus2.eus2.attest.azure.net",
+        namespace=AZ_CVM_NAMESPACE,
+    ):
+        if not isinstance(namespace, str) or not namespace:
+            raise ValueError("namespace must be a non-empty string")
         self.attester_binary = attester_binary
         self.maa_endpoint = maa_endpoint
+        self.namespace = namespace
 
     def generate(self):
         cmd = ["sudo", self.attester_binary, "-a", f"https://{self.maa_endpoint}/", "-o", "token"]
@@ -47,4 +55,4 @@ class AZCVMAuthorizer(CCAuthorizer):
         return False
 
     def get_namespace(self) -> str:
-        return AZ_CVM_NAMESPACE
+        return self.namespace

@@ -92,6 +92,10 @@ class Provisioner:
         ctx = self._build(project, mode, logger)
         if self.packager and not ctx.get(CtxKey.BUILD_ERROR):
             self.packager.package(project, ctx)
+        prod_dir = ctx.get(CtxKey.CURRENT_PROD_DIR)
+        ctx[CtxKey.PROVISION_SUCCESS] = bool(
+            not ctx.get(CtxKey.BUILD_ERROR) and not ctx.get_errors() and prod_dir and os.path.isdir(prod_dir)
+        )
         return ctx
 
     def _build(self, project: Project, mode=None, logger=None) -> ProvisionContext:
