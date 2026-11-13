@@ -17,13 +17,23 @@
 Requires the full flwr>=1.43 runtime on Python 3.11+. No GPU or data download.
 """
 
+import os
 import sys
 from pathlib import Path
 
+import pytest
+
+from nvflare.app_opt.flower.applet import _validate_flwr_runtime
 from tests.process_test_utils import run_owned_process
 
 
 def test_real_flower_round_through_nvflare(tmp_path):
+    try:
+        _validate_flwr_runtime()
+    except RuntimeError as error:
+        if os.environ.get("NVFLARE_REQUIRE_FLOWER_RUNTIME") == "1":
+            pytest.fail(str(error))
+        pytest.skip(str(error))
     repo = Path(__file__).resolve().parents[3]
     result = run_owned_process(
         [sys.executable, "-m", "tests.flower_runtime_test_utils", str(tmp_path), str(repo / "tests/data/flower_http")],

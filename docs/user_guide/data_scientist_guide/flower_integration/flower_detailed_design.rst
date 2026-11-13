@@ -107,13 +107,20 @@ They are not embedded in Fleet request headers or routed through the Control API
 Known limitations
 =================
 
-* **Unexpected process-inspection errors:** orphan discovery reads process
-  environments. Normal process-exit and access-denied races are handled, but an
-  unexpected OS error can interrupt a scan and leave discovery incomplete.
-  Cleanup reports failure rather than claiming that all workers exited. This
-  OS-specific case has not been reproduced; targeted error handling requires
-  the failing operation and error code. Operators should check for surviving
-  job-owned workers when cleanup reports failure.
+* **Process discovery:** inspection errors are logged with the PID and retried;
+  they do not discard retained ownership or prevent attempts to kill other known
+  workers. Persistent unexpected inspection errors make cleanup report failure.
+  Orphans are discovered by an inherited environment marker. A worker that loses
+  its ancestor between snapshots and has no readable marker cannot be recovered.
+  A fork-without-exec helper that inherits the job's guard pipe can delay cleanup
+  after job death until it closes the descriptor. Ordinary Flower workers retain
+  the marker and do not inherit this pipe across exec.
+* **Launch diagnostics:** the ownership wrapper reports target exec failures
+  (for example, an invalid shebang) as a failed child with a traceback in the
+  process log. These failures do not raise directly from ``start()``.
+* **Monitoring cost:** the job and guard each snapshot the process table every
+  0.5 seconds. On hosts with many processes this has a CPU cost; reducing scan
+  frequency requires evaluating the larger ancestry-discovery window.
 * **Flower key lifecycle:** ownership is enforced from key to authenticated
   NVFlare site. There is no per-site key limit, and a successful registration's
   ownership is retained for the job lifetime, including after unregistering.

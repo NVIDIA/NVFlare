@@ -14,12 +14,15 @@
 
 """Independent Flower cleanup owner; executed by path to keep startup lightweight.
 
-The job alone holds the write end of stdin. EOF means normal shutdown or job
-death, including SIGKILL. The guard lives in a separate session and retains
-process identities, so cleanup also reaches detached, reparented workers.
+The job holds the write end of stdin. EOF means normal shutdown or job death,
+including SIGKILL, unless a fork-without-exec helper inherited that descriptor.
+The guard retains observed process identities and discovers orphans by their
+inherited owner marker. Unobserved workers without a readable marker cannot be
+recovered after their ancestors exit.
 """
 
 import json
+import logging
 import os
 import selectors
 import sys
@@ -30,19 +33,45 @@ import psutil
 OWNER_ENV = "NVFLARE_FLOWER_PROCESS_OWNER"
 
 
-def capture_owned(roots, owner=None):
-    """Walk one process-table snapshot, preserving identity across PID reuse."""
-    processes = {p.pid: p for p in psutil.process_iter(["ppid", "create_time"])}
+def capture_owned(roots, owner=None, errors=None):
+    """Retain ownership on inspection failures; optionally collect incomplete scans."""
+    errors = errors if errors is not None else []
+
+    def failed(pid, error):
+        detail = RuntimeError(f"Flower process inspection failed for PID {pid}: {error!r}")
+        errors.append(detail)
+        logging.getLogger(__name__).warning("%s", detail)
+
+    processes = {}
+    try:
+        for process in psutil.process_iter(["ppid", "create_time"]):
+            processes[process.pid] = process
+    except (psutil.Error, OSError) as error:
+        failed("process table", error)
     children = {}
     for process in processes.values():
         children.setdefault(process.info["ppid"], []).append(process)
-    found = {p for p in roots if p.is_running() and processes.get(p.pid) == p}
+    found = set()
+    for process in roots:
+        try:
+            if process.is_running():
+                found.add(process)
+        except psutil.NoSuchProcess:
+            pass
+        except (psutil.Error, OSError) as error:
+            found.add(process)
+            failed(process.pid, error)
     pending = list(found)
     while pending:
         for child in children.get(pending.pop().pid, ()):
-            if child not in found and child.is_running():
-                found.add(child)
-                pending.append(child)
+            try:
+                if child not in found and child.is_running():
+                    found.add(child)
+                    pending.append(child)
+            except psutil.NoSuchProcess:
+                pass
+            except (psutil.Error, OSError) as error:
+                failed(child.pid, error)
     if owner:
         for process in processes.values():
             try:
@@ -50,6 +79,8 @@ def capture_owned(roots, owner=None):
                     found.add(process)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
+            except (psutil.Error, OSError) as error:
+                failed(process.pid, error)
     return found
 
 
@@ -63,18 +94,27 @@ def is_alive(process):
 def cleanup(owned, owner, timeout=5.0):
     deadline = time.monotonic() + timeout
     while True:
-        owned = capture_owned(owned, owner)
-        alive = [p for p in owned if is_alive(p)]
-        if not alive:
-            return
         errors = []
+        owned = capture_owned(owned, owner, errors)
+        alive = []
+        for process in owned:
+            try:
+                if is_alive(process):
+                    alive.append(process)
+            except psutil.NoSuchProcess:
+                pass
+            except (psutil.Error, OSError) as error:
+                alive.append(process)
+                errors.append(f"PID {process.pid}: {error!r}")
+        if not alive and not errors:
+            return
         for process in alive:
             try:
                 process.kill()
             except psutil.NoSuchProcess:
                 pass
-            except psutil.Error as error:
-                errors.append(str(error))
+            except (psutil.Error, OSError) as error:
+                errors.append(f"PID {process.pid}: {error!r}")
         if time.monotonic() >= deadline:
             raise RuntimeError(f"Flower guard could not clean workers {[p.pid for p in alive]}: {errors}")
         time.sleep(0.05)
@@ -103,7 +143,10 @@ def main(owner, launch_fence):
                                 owned.add(root)
                         except psutil.NoSuchProcess:
                             pass
-                owned = capture_owned(owned)
+                try:
+                    owned = capture_owned(owned)
+                except (psutil.Error, OSError):
+                    logging.getLogger(__name__).exception("Flower guard scan failed; retaining ownership and retrying")
     finally:
         # The job can die before Popen returns a PID. A child between fork and
         # exec has no owner marker yet. Its launch wrapper closes this inherited

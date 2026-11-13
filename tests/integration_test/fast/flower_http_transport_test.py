@@ -110,6 +110,24 @@ def test_invalid_local_requests_never_forward(server_factory, path, method, body
         conn.close()
 
 
+@pytest.mark.parametrize("lengths", [[], ["0", "0"], ["invalid"]])
+def test_missing_or_ambiguous_content_length_is_411(server_factory, lengths):
+    seen = []
+    server = server_factory(lambda req: seen.append(req))
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+    try:
+        conn.putrequest("POST", "/v1/fleet/get-run")
+        for length in lengths:
+            conn.putheader("Content-Length", length)
+        conn.endheaders()
+        response = conn.getresponse()
+        assert response.status == 411
+        response.read()
+        assert not seen
+    finally:
+        conn.close()
+
+
 def test_heartbeat_progresses_while_bulk_workers_are_blocked(server_factory):
     entered = [threading.Event() for _ in range(4)]
     release = threading.Event()
@@ -423,7 +441,7 @@ def test_guard_cleans_flower_tree_when_nvflare_job_dies(tmp_path, exit_kind):
             stderr=subprocess.STDOUT,
         )
         ready = tmp_path / "ready.json"
-        wait_for(lambda: ready.exists(), timeout=60)
+        wait_for(lambda: ready.exists() and ready.read_text().endswith("}"), timeout=60)
         pids = json.loads(ready.read_text())
         processes = [psutil.Process(pid) for pid in pids.values()]
         owner.capture(include_orphans=True)

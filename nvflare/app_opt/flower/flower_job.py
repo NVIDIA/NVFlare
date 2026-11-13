@@ -63,8 +63,8 @@ class FlowerJob(FedJob):
             start_task_timeout (float, optional): Timeout for starting the task. Defaults to Constant.START_TASK_TIMEOUT.
             max_client_op_interval (float, optional): Maximum interval between client operations. Defaults to Constant.MAX_CLIENT_OP_INTERVAL.
             progress_timeout (float, optional): Timeout for workflow progress. Defaults to Constant.WORKFLOW_PROGRESS_TIMEOUT.
-            per_msg_timeout (float, optional): Timeout for receiving individual messages. Defaults to 2.0 seconds.
-            tx_timeout (float, optional): Timeout for transmitting data. Defaults to 25.0 seconds.
+            per_msg_timeout (float, optional): Per-message timeout, capped at the default 2 seconds (0.5 for heartbeats).
+            tx_timeout (float, optional): Transaction timeout, capped at the default 25 seconds (3.5 for heartbeats).
             client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
             extra_env (dict, optional): optional extra env variables to be passed to Flower client
             run_config (dict, optional): optional dict for flwr run --run-config arguments

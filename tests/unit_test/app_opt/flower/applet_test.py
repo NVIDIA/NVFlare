@@ -292,3 +292,25 @@ def test_superlink_health_polling(monkeypatch, outcome):
                 connection.assert_not_called()
             else:
                 assert connection.return_value.close.call_count > 1
+
+
+@pytest.mark.parametrize("launch_fails", [False, True])
+@patch("nvflare.app_opt.flower.applet._validate_flwr_runtime")
+@patch("nvflare.app_opt.flower.applet.start_process")
+def test_client_start_and_repeated_stop(start, _version, launch_fails):
+    applet = FlowerClientApplet()
+    applet.get_command = MagicMock()
+    context = MagicMock()
+    if launch_fails:
+        start.side_effect = RuntimeError("cannot launch SuperNode")
+        with pytest.raises(RuntimeError, match="cannot launch SuperNode"):
+            applet.start({FlowerConstant.APP_CTX_FL_CONTEXT: context})
+        assert applet._start_error
+        assert applet.stop() == 0
+    else:
+        start.return_value.stop.return_value = 0
+        applet.start({FlowerConstant.APP_CTX_FL_CONTEXT: context})
+        start.assert_called_once_with(applet.get_command.return_value, context)
+        assert applet.stop(timeout=2) == 0
+        assert applet.stop() == 0
+        start.return_value.stop.assert_called_once_with(2)

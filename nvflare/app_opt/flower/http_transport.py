@@ -147,6 +147,7 @@ class FleetHttpClient:
             self._connections[conn] = sock
         response = None
         try:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self._connect(sock, timeout)
             if self._closing.is_set():
                 return http_response(503)

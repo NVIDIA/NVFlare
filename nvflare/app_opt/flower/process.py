@@ -19,6 +19,7 @@ session so shutdown and failed startup also clean up descendants.
 """
 
 import json
+import logging
 import os
 import selectors
 import shlex
@@ -49,6 +50,7 @@ class FlowerProcessManager(ProcessManager):
         self._log_writer = None
         self._monitor_error = None
         self._log_error = None
+        self._scan_errors = []
         self._guard = None
         self._spawn_fence = None
 
@@ -96,8 +98,11 @@ class FlowerProcessManager(ProcessManager):
             self._monitor.start()
             self._log_writer = threading.Thread(target=self._write_log)
             self._log_writer.start()
-        except BaseException:
-            self.stop(timeout=0.1)
+        except BaseException as error:
+            try:
+                self.stop(timeout=0.1)
+            except Exception as cleanup_error:
+                raise error from cleanup_error
             raise
 
     def _start_guard(self):
@@ -129,13 +134,25 @@ class FlowerProcessManager(ProcessManager):
     def _stop_guard(self):
         self._close_spawn_fence()
         if self._guard:
-            self._guard.stdin.close()
+            guard = self._guard
             try:
-                code = self._guard.wait(timeout=10)
+                guard.stdin.close()
+                try:
+                    code = guard.wait(timeout=10)
+                except subprocess.TimeoutExpired as error:
+                    guard.terminate()
+                    try:
+                        guard.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        guard.kill()
+                        guard.wait(timeout=1)
+                    raise RuntimeError("Flower process guard timed out and was terminated") from error
                 if code:
                     raise RuntimeError(f"Flower process guard failed: {code}")
             finally:
-                self._guard.stdout.close()
+                guard.stdout.close()
+                if guard.poll() is not None:
+                    self._guard = None
 
     def _close_spawn_fence(self):
         if self._spawn_fence is not None:
@@ -149,14 +166,21 @@ class FlowerProcessManager(ProcessManager):
     def _capture_descendants(self, include_orphans=False):
         with self._descendant_lock:
             roots = tuple(self._descendants) + ((self._root,) if self._root else ())
-            found = capture_owned(roots, self._owner if include_orphans else None)
+            errors = []
+            found = capture_owned(roots, self._owner if include_orphans else None, errors)
             found.discard(self._root)
             self._descendants = found
+            self._scan_errors = errors
 
     def _monitor_descendants(self):
         try:
             while not self._monitor_stop.is_set():
-                self._capture_descendants()
+                try:
+                    self._capture_descendants()
+                except (psutil.Error, OSError):
+                    logging.getLogger(__name__).exception(
+                        "Flower monitor scan failed; retaining ownership and retrying"
+                    )
                 self._monitor_stop.wait(0.5)
         except Exception as error:
             self._monitor_error = error
@@ -219,6 +243,11 @@ class FlowerProcessManager(ProcessManager):
                 errors.append(error)
 
         try:
+            # Let the stop path own discovery so a monitor scan cannot overwrite
+            # an incomplete orphan scan before its result is reported.
+            self._monitor_stop.set()
+            if self._monitor and self._monitor.ident is not None:
+                attempt(lambda: self._monitor.join(timeout=5))
             if self.process:
                 attempt(lambda: self._capture_descendants(include_orphans=True))
                 # Give Flower a chance to reap its own workers first.
@@ -249,10 +278,12 @@ class FlowerProcessManager(ProcessManager):
                                 alive.append(child)
                         except Exception as error:
                             errors.append(error)
-                    if not alive:
+                    if not alive and not self._scan_errors:
                         break
                     if killed_once and time.monotonic() >= deadline:
-                        errors.append(RuntimeError(f"Flower workers survived cleanup: {[p.pid for p in alive]}"))
+                        if alive:
+                            errors.append(RuntimeError(f"Flower workers survived cleanup: {[p.pid for p in alive]}"))
+                        errors.extend(self._scan_errors)
                         break
                     # Retained psutil identities protect against PID reuse.
                     # One failed kill must not prevent attempts on other workers.
@@ -280,6 +311,7 @@ class FlowerProcessManager(ProcessManager):
                     attempt(self.log_file.close)
                     self.log_file = None
         errors.extend(error for error in (self._monitor_error, self._log_error) if error is not None)
+        self._monitor_error = self._log_error = None
         if errors:
             raise RuntimeError(f"Flower process cleanup failed: {errors}") from errors[0]
         return self.process.returncode if self.process else 0

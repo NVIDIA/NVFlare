@@ -313,7 +313,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.13"]
+        include:
+          - python-version: "3.11"
+            flower: "flwr==1.43.0"
+          - python-version: "3.13"
+            flower: "flwr>=1.43"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v6
@@ -321,9 +325,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
       # Keep Flower's complete runtime dependencies separate from development
       # extras and the generic Python 3.10 matrix (Flower requires Python 3.11+).
-      - name: Install current Flower and NVFlare
-        run: python -m pip install -e . "flwr>=1.43" pytest
+      - name: Install Flower (${{ matrix.flower }}) and NVFlare
+        run: python -m pip install -e . "${{ matrix.flower }}" pytest
       - name: Exercise real Flower through the NVFlare HTTP adapters
+        env:
+          NVFLARE_REQUIRE_FLOWER_RUNTIME: "1"
         run: python -m pytest -q -rs tests/integration_test/fast/flower_runtime_test.py
 
   coverage:

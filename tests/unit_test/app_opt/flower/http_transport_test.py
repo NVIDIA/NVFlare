@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import errno
+import http.client
 import threading
 from email.message import Message
 from unittest.mock import MagicMock, patch
@@ -240,7 +241,9 @@ def test_timeout_warning_reports_effective_values(caplog):
     assert "per_msg_timeout=2.0, tx_timeout=25.0" in caplog.text
 
 
-@pytest.mark.parametrize("error,status", [(TimeoutError(), 504), (ConnectionError(), 502)])
+@pytest.mark.parametrize(
+    "error,status", [(TimeoutError(), 504), (ConnectionError(), 502), (http.client.HTTPException(), 502)]
+)
 def test_upstream_failure_is_a_gateway_error_and_retains_identity(error, status):
     connector = HttpServerConnector()
     connector.http_client = MagicMock()

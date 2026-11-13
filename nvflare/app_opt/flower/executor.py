@@ -37,8 +37,8 @@ class FlowerExecutor(TieExecutor):
         Args:
             start_task_name: name of the "start" task
             configure_task_name: name of the "config" task
-            per_msg_timeout: per-msg timeout for ReliableMessage
-            tx_timeout: transaction timeout for ReliableMessage
+            per_msg_timeout: ReliableMessage per-message timeout, capped at 2 seconds (0.5 for heartbeats).
+            tx_timeout: ReliableMessage transaction timeout, capped at 25 seconds (3.5 for heartbeats).
             client_shutdown_timeout: how long to wait for graceful shutdown of the client
             extra_env: extra env variables to be passed to client applet
             max_message_bytes: maximum HTTP request or response body size in bytes. Defaults to 512 MiB.
