@@ -69,14 +69,6 @@ class WorkspaceResourceStatsReader:
     """Bounded fixed-member reader; arbitrary workspace paths are never accepted."""
 
     def __init__(self, workspace_zip: bytes | str | os.PathLike[str] | BinaryIO):
-        if isinstance(workspace_zip, bytes):
-            if not workspace_zip:
-                raise WorkspaceResourceStatsError("workspace archive is unavailable")
-        elif isinstance(workspace_zip, (str, os.PathLike)):
-            if not os.fspath(workspace_zip):
-                raise WorkspaceResourceStatsError("workspace archive is unavailable")
-        elif not (hasattr(workspace_zip, "read") and hasattr(workspace_zip, "seek")):
-            raise WorkspaceResourceStatsError("workspace archive is unavailable")
         self._workspace_zip = workspace_zip
         self._summary: dict[str, Any] | None = None
 
@@ -99,13 +91,9 @@ class WorkspaceResourceStatsReader:
 
     def read_participant_summary(self, participant_name: str) -> dict[str, Any]:
         summary = self._summary or self.read_resource_summary()
-        accepted = {
-            entry["participant_name"]: entry
-            for entry in summary["participants"]
-            if entry.get("status", "accepted") == "accepted"
-        }
-        summary_entry = accepted.get(participant_name)
-        if summary_entry is None:
+        if not any(
+            entry["participant_name"] == participant_name and "status" not in entry for entry in summary["participants"]
+        ):
             raise WorkspaceResourceStatsError(f"participant has no accepted resource report: {participant_name}")
         member = f"{RESOURCE_STATS_PREFIX}participants/{participant_name}.json"
         data = self._read_exact_member(member, MAX_PARTICIPANT_SUMMARY_BYTES)

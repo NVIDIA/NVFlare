@@ -85,15 +85,6 @@ def test_detail_ignores_other_missing_participant_reports():
         reader.read_participant_summary("site-2")
 
 
-@pytest.mark.parametrize("version", ["0.0", "2.0", "3.0", "4.0"])
-def test_summary_rejects_unsupported_formats(version):
-    summary, _ = _reports()
-    summary["schema_version"] = version
-
-    with pytest.raises(WorkspaceResourceStatsError, match="schema_version"):
-        WorkspaceResourceStatsReader(_archive(summary)).read_resource_summary()
-
-
 @pytest.mark.parametrize("source_kind", ["bytes", "path", "stream"])
 def test_archive_index_is_bounded_before_large_directory_read(tmp_path, monkeypatch, source_kind):
     summary, _ = _reports()

@@ -219,10 +219,6 @@ def _json_object(pairs):
     return value
 
 
-def _reject_nonfinite(value):
-    raise ValueError(f"resource report contains a non-finite JSON number: {value}")
-
-
 def read_resource_report(data, expected_kind=None):
     """Decode one incoming report, checking its shape, bounds and arithmetic."""
     if not isinstance(data, bytes):
@@ -230,7 +226,7 @@ def read_resource_report(data, expected_kind=None):
     if len(data) > MAX_RECORD_BYTES.get(expected_kind, max(MAX_RECORD_BYTES.values())):
         raise ValueError("resource report exceeds the JSON byte limit")
     try:
-        record = json.loads(data.decode("utf-8"), object_pairs_hook=_json_object, parse_constant=_reject_nonfinite)
+        record = json.loads(data.decode("utf-8"), object_pairs_hook=_json_object)
     except (ValueError, RecursionError) as error:
         raise ValueError(f"invalid resource JSON: {error}") from error
     if not isinstance(record, dict):

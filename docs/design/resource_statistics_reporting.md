@@ -173,14 +173,15 @@ Acceptance checks the input at the authenticated reporting boundary:
 1. Under the per-job lock, bind the request to the active job and expected,
    non-disabled sender slot. Check whether acceptance is still open.
 2. Check the wrapper and raw byte limit, then decode UTF-8 JSON. Reject duplicate
-   keys, nonfinite constants, wrong kind/version, and unexpected fields. Check
+   keys, wrong kind/version, and unexpected fields. Check
    the fixed measurement structure, identifiers, statuses, and finite nonnegative
    numbers; require the body job/site identity to match the bound slot.
 3. Sort and deduplicate issue tags, serialize the accepted record, and check its
    canonical byte limit. Equivalent retries are duplicates; changed records are
    conflicts. Retain immutable bytes and server-owned receipt time.
 
-The reader checks the decoded record in place. Its fixed field structure rules
+The reader checks the decoded record in place, including rejecting nonfinite
+measurement values during numeric checks. Its fixed field structure rules
 out arbitrary nesting; there is no separate recursive validation pass. Local
 handoff assembly projects measurement fields without repeating these checks.
 

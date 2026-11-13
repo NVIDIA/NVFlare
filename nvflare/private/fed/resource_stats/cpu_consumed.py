@@ -49,20 +49,12 @@ if hasattr(os, "register_at_fork"):
     os.register_at_fork(after_in_child=_reset_accountant_after_fork)
 
 
-def _cpu_seconds(usage: Any) -> float:
-    user = usage.ru_utime
-    system = usage.ru_stime
-    if not all(type(value) in (float, int) and math.isfinite(value) and value >= 0 for value in (user, system)):
-        raise ValueError("invalid process CPU counter")
-    return math.fsum((user, system))
-
-
 def _read_usage() -> tuple[float, float]:
     if resource is None:
         raise OSError("process CPU counters are unavailable on this platform")
-    return (
-        _cpu_seconds(resource.getrusage(resource.RUSAGE_SELF)),
-        _cpu_seconds(resource.getrusage(resource.RUSAGE_CHILDREN)),
+    return tuple(
+        math.fsum((usage.ru_utime, usage.ru_stime))
+        for usage in (resource.getrusage(resource.RUSAGE_SELF), resource.getrusage(resource.RUSAGE_CHILDREN))
     )
 
 

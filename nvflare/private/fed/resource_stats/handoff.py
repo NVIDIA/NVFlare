@@ -120,7 +120,7 @@ def write_terminal_handoff(
     data = canonical_json_bytes(handoff)
     if len(data) > MAX_TERMINAL_HANDOFF_BYTES:
         raise InvalidTerminalHandoff("terminal handoff exceeds its size limit")
-    path = terminal_handoff_path(run_dir, launch_generation=launch_generation)
+    path = Path(run_dir) / RESOURCE_STATS_DIR / STAGING_DIR / filename
     directory_fd = _open_handoff_directory(run_dir, include_staging=True, create=True)
     temp_name = f".terminal-{secrets.token_hex(16)}.tmp"
     fd = None

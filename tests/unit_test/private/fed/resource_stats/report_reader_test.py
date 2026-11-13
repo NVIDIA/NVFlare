@@ -43,7 +43,9 @@ def test_participant_round_trip_preserves_json_numbers():
     assert encoded["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 1.5}
 
 
-@pytest.mark.parametrize("change", ["version", "extra", "numeric_string", "missing_measurement", "unsafe_identity"])
+@pytest.mark.parametrize(
+    "change", ["version", "extra", "numeric_string", "missing_measurement", "unsafe_identity", "nan", "infinity"]
+)
 def test_report_boundary_rejects_invalid_record_contents(change):
     record = _participant_summary()
     if change == "version":
@@ -54,10 +56,12 @@ def test_report_boundary_rejects_invalid_record_contents(change):
         record["duration_seconds"] = "2"
     elif change == "missing_measurement":
         del record["resource_utilization"]["cpu_consumed"]
+    elif change in ("nan", "infinity"):
+        record["resource_utilization"]["cpu_consumed"]["cpu_seconds"] = float(change)
     else:
         record["participant_name"] = "../another-site"
     with pytest.raises(ValueError):
-        read_resource_report(canonical_json_bytes(record), KIND_PARTICIPANT_SUMMARY)
+        read_resource_report(json.dumps(record).encode("utf-8"), KIND_PARTICIPANT_SUMMARY)
 
 
 @pytest.mark.parametrize("data", [b'{"kind":1,"kind":2}', b'{"value":NaN}', b"\xff", b"not JSON"])
