@@ -104,10 +104,11 @@ class Run:
                 the per-service ``poc_console.log`` introduced in #4500) remain available
                 for debugging or test assertions.
             outputs_only (bool, optional): download only the files the job produced on the server (its model,
-                metrics, statistics or evaluation report), at the same paths as a full download, without the code
-                and config it was submitted with and without the server's logs. ``job_outputs`` narrows them. The
-                whole job is downloaded, with a notice saying why, when it did not complete or produced no output
-                files. The simulator returns its local workspace unchanged. Defaults to False.
+                metrics, statistics or evaluation report), at the same paths as a full download. Left out: the
+                submitted job, its config and code, and the logs; client files are not part of either download.
+                Use the full download when you need the logs. ``job_outputs`` narrows the outputs. The whole job
+                is downloaded, with a notice saying why, when it did not complete or produced no output files. The
+                simulator returns its local workspace unchanged. Defaults to False.
 
         Returns:
             Optional[str]: Result workspace path, or None if job not finished or on error.

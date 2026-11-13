@@ -125,12 +125,19 @@ Job 3f2a...: the whole job was downloaded because the job did not complete succe
 The downloaded folder has the same layout either way, so code that reads
 `workspace/app_server/FL_global_model.pt` works with both.
 
+### What an outputs-only download leaves out
+
+- The submitted job (`job.zip`) and the server app's config and custom code.
+- The server's logs. Use the full download when you need the logs; a failed
+  job always downloads whole, logs included.
+- Client files, which are not part of either download.
+
 ### Default behavior
 
 Without `outputs_only=True`, the download returns the same files as today:
 
 ```python
-path = run.get_result()  # whole job
+path = run.get_result()  # whole job, including the logs
 ```
 
 With `SimEnv`, the job runs locally and `get_result(outputs_only=True)` returns

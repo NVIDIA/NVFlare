@@ -709,7 +709,8 @@ class PocEnv(ExecEnv):
         Args:
             job_id: The job ID to get results for.
             timeout: The timeout for the job to complete. Defaults to 0.0 (no timeout).
-            outputs_only: download only the files the job produced on the server. Defaults to False.
+            outputs_only: download only the files the job produced on the server, without the submitted job, its
+                config and code, or the logs. Defaults to False.
 
         Returns:
             Optional[str]: The result workspace path if job completed, None otherwise.

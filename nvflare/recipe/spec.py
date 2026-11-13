@@ -103,8 +103,8 @@ class ExecEnv(ABC):
         Args:
             job_id: The job ID to get results for.
             timeout: The timeout for the job to complete. Defaults to 0.0 (no timeout).
-            outputs_only: download only the files the job produced on the server, where the environment downloads
-                the result.
+            outputs_only: download only the files the job produced on the server, without the submitted job, its
+                config and code, or the logs, where the environment downloads the result.
                 ``Run`` passes this argument only when it is True, so an environment written before it existed
                 keeps working.
 

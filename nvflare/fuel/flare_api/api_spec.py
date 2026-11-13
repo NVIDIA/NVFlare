@@ -243,8 +243,8 @@ class SessionSpec(ABC):
         Args:
             job_id: ID of the job
             destination: optional directory to move the downloaded result into.
-            outputs_only: download only the job's outputs, the files it produced on the server, when the server
-                supports it.
+            outputs_only: download only the job's outputs, the files it produced on the server, without the submitted
+                job, its config and code, or the logs, when the server supports it.
 
         Returns: folder path to the location of the job result
 
