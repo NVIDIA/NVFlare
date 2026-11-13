@@ -41,8 +41,9 @@ from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 # Files the server writes for itself, not the job's result. A log file may carry a ".<n>" rotation suffix and the
 # "<file_prefix>_" of a process that configures its own logging (log_utils.configure_logging): a task worker
 # ("task_<attempt>"), a py applet ("applet", tie.py_applet) or the XGBoost adaptor ("XGBoost", its app name).
-# "log_fl.txt" is the default config's federated-learning log. Logs stay in the workspace archive, where the server's
-# log commands read them.
+# "log_fl.txt" is the default config's federated-learning log. The server writes its logs at the top of the job's
+# workspace folder (its log root), so only a file there is a log: "metrics/log.json" is a result. Logs stay in the
+# workspace archive, where the server's log commands read them.
 _SYSTEM_LOG_RE = re.compile(
     r"^(?:(?:task_[^/]+|applet|XGBoost)_)?(?:log\.txt|error_log\.txt|log\.json|log_fl\.txt)(?:\.\d+)?$"
 )
@@ -83,7 +84,7 @@ def is_produced(relative: str, deployed: Optional[DeployedFiles] = None, path: O
 
     Not produced: a file deployed with the job and left unchanged (``deployed``; ``path`` is the file on disk, compared
     with its deployed size and CRC-32), the job files written beside the server app, the server's logs and system
-    files, and anything in a ``__pycache__`` or ``job_cert`` folder. A deployed file the job rewrote, such as a seed
+    files, the server's logs at the top of the folder, and anything in a ``__pycache__`` or ``job_cert`` folder. A deployed file the job rewrote, such as a seed
     checkpoint replaced by the trained model, is produced.
     """
     if relative in _DEPLOYED_RUN_FILES:
@@ -94,7 +95,9 @@ def is_produced(relative: str, deployed: Optional[DeployedFiles] = None, path: O
     if any(part in _SYSTEM_FOLDERS for part in parts[:-1]):
         return False
     name = parts[-1]
-    return not (name in _SYSTEM_FILE_NAMES or _SYSTEM_LOG_RE.match(name) or _SYSTEM_FILE_RE.match(name))
+    if len(parts) == 1 and _SYSTEM_LOG_RE.match(name):
+        return False
+    return not (name in _SYSTEM_FILE_NAMES or _SYSTEM_FILE_RE.match(name))
 
 
 def _differs(path: str, deployed: Tuple[int, int]) -> bool:

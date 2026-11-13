@@ -153,7 +153,8 @@ unless it is:
 - **a server log**: `log.txt`, `error_log.txt`, `log.json` or `log_fl.txt`,
   including the copies written by a task worker (`task_<attempt>_`), a py
   applet (`applet_`) or the XGBoost adaptor (`XGBoost_`), and rotated `.<n>`
-  copies;
+  copies, at the top of the workspace folder, where the server writes its
+  logs. The same name in a subfolder, such as `metrics/log.json`, is an output;
 - **a system file**: the stats-pool summary and records (with any prefix),
   `audit.log`, the job signature file, or anything in a `__pycache__` or
   `job_cert` folder; or

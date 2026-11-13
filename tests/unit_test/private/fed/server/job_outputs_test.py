@@ -308,6 +308,8 @@ class TestProducedFiles:
             "results/catalog.txt",
             "training_log.txt",  # named like a log, but not one the server writes
             "metrics/val_log.json",
+            "metrics/log.json",  # a log name below the log root: MetricsArtifactWriter(round_file_name="log.json")
+            "results/log.txt",
         ],
     )
     def test_files_the_job_wrote_are_produced(self, path):

@@ -2280,6 +2280,25 @@ def test_a_full_download_without_the_outputs_archive_returns_the_rest_and_says_s
     assert "does not include its outputs" in reply_meta[MetaKey.OUTPUTS_NOTE]
 
 
+def test_a_full_download_uses_the_job_it_loaded_to_select_the_outputs_archive(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    _use_store(engine, tmp_path, {"log.txt": b"log"}, _OUTPUTS)
+    get_job = engine.job_def_manager.get_job
+    lookups = []
+
+    def get_job_once(jid, fl_ctx):
+        lookups.append(jid)
+        return get_job(jid, fl_ctx) if len(lookups) == 1 else None  # a later lookup hits a transient store error
+
+    engine.job_def_manager.get_job = get_job_once
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "outputs.zip", "workspace.zip"]
+    assert MetaKey.OUTPUTS_NOTE not in reply_meta
+
+
 def test_a_partly_prepared_outputs_archive_is_dropped_and_reported_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     engine = _FakeListEngine([_finished_job(stored=True)])

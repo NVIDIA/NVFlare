@@ -1755,6 +1755,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_id = args[1]
 
         with engine.new_context() as fl_ctx:
+            job = None
             if require_finished:
                 job = job_def_manager.get_job(job_id, fl_ctx)
                 if not job:
@@ -1767,7 +1768,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                         meta=make_meta(MetaStatusValue.JOB_RUNNING, job_id),
                     )
                     return
-            comps = get_comps_f(job_def_manager, job_id, fl_ctx)
+            comps = get_comps_f(job_def_manager, job_id, fl_ctx, job)
             if not comps:
                 conn.append_string(
                     "No components to download",
@@ -1846,10 +1847,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 os.remove(prepared)
         return os.path.lexists(prepared)
 
-    def _get_default_job_components(self, job_def_manager, job_id, fl_ctx):
+    def _get_default_job_components(self, job_def_manager, job_id, fl_ctx, job):
+        # job: the finished job this download already loaded; a second lookup could fail and drop its outputs
         comps = [(DATA, JOB_ZIP), (META, META_JSON), (WORKSPACE, WORKSPACE_ZIP)]
-        job = job_def_manager.get_job(job_id, fl_ctx)
-        if job and self._outputs_stored_apart(job.meta):
+        if self._outputs_stored_apart(job.meta):
             # the job's outputs are stored apart from the rest of its workspace
             comps.append((OUTPUTS, OUTPUTS_ZIP))
         return comps
@@ -1899,7 +1900,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         """
         self._download_job_comps(conn, args, self._get_extra_job_components)
 
-    def _get_extra_job_components(self, job_def_manager, job_id, fl_ctx):
+    def _get_extra_job_components(self, job_def_manager, job_id, fl_ctx, job=None):
         all_components = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
         if all_components:
             return [
