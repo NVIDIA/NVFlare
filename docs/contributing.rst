@@ -47,6 +47,7 @@ through this section and follow them.
 
 -  `Checking the coding style <#checking-the-coding-style>`__
 -  `Unit testing <#unit-testing>`__
+-  `Dashboard frontend development <#dashboard-frontend-development>`__
 -  `Building documentation <#building-the-documentation>`__
 -  `Signing your work <#signing-your-work>`__
 
@@ -82,6 +83,16 @@ NVIDIA FLARE tests are located under tests/. The unit test file names
 follow the ``[module_name]_test.py`` pattern.
 
 The bash script ``runtest.sh`` will run unit tests also.
+
+Dashboard frontend development
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The open-source Dashboard frontend lives in ``dashboard/ui/``. Contributors use
+Node 24 LTS and npm 11 to build its static assets; deployed Dashboard users need
+only the Python backend. See :doc:`programming_guide/dashboard_frontend` for
+locked dependency installation, frontend checks, backend-connected development,
+and publishing the built UI into the Python package. Commit the generated assets
+alongside frontend source changes and run the documented freshness check.
 
 .. _building-docs:
 

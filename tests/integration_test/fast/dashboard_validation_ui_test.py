@@ -19,11 +19,11 @@ Set NVFLARE_TEST_BROWSER_CHANNEL=chrome to use an installed Google Chrome.
 Run: pytest tests/integration_test/fast/dashboard_validation_ui_test.py -v
 """
 
-import io
 import json
 import os
 import re
 import threading
+from contextlib import ExitStack
 from uuid import uuid4
 from zipfile import ZipFile
 
@@ -85,7 +85,7 @@ def browser():
 @pytest.fixture
 def page(browser, live_dashboard):
     _, base_url = live_dashboard
-    context = browser.new_context(base_url=base_url)
+    context = browser.new_context(base_url=base_url, viewport={"width": 1600, "height": 1000})
     page = context.new_page()
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
@@ -107,12 +107,29 @@ def login(page, email, password, role):
     page.add_init_script(f"localStorage.setItem('session', {json.dumps(json.dumps(session))})")
 
 
-def validation_dialog(page, action, message):
-    # Accept immediately: a native alert can block the triggering click/keypress.
-    page.once("dialog", lambda dialog: dialog.accept())
-    with page.expect_event("dialog") as dialog_info:
-        action()
-    assert dialog_info.value.message == message
+def expect_error(page, message):
+    # Next also renders an empty route-announcer alert; scope to the API message.
+    expect(page.get_by_role("alert").filter(has_text=message)).to_be_visible()
+
+
+def site_editor(page, name=None, as_admin=False):
+    if name is None:
+        page.get_by_role("button", name="Add Site", exact=True).click()
+    elif as_admin:
+        page.get_by_role("button", name=f"Edit name for {name}", exact=True).click()
+    else:
+        page.get_by_role("button", name=name, exact=True).click()
+    dialog = page.get_by_role("dialog")
+    expect(dialog).to_be_visible()
+    return dialog, dialog.get_by_label("Site Name", exact=True)
+
+
+def save_site(page, dialog, method="PATCH"):
+    with page.expect_response(
+        lambda response: response.request.method == method and "/clients" in response.url
+    ) as saved:
+        dialog.get_by_role("button", name="Save", exact=True).click()
+    return saved.value
 
 
 def test_registration_invalid_organization_can_be_corrected(page, live_dashboard):
@@ -126,7 +143,7 @@ def test_registration_invalid_organization_can_be_corrected(page, live_dashboard
     page.get_by_role("button", name="Register", exact=True).click()
     # Registration does not advance until automatic login has completed.
     page.wait_for_function("JSON.parse(localStorage.getItem('session') || '{}').user?.token")
-    organization = page.locator('input[name="org"]')
+    organization = page.get_by_label("Organization", exact=True)
     expect(organization).to_be_visible()
     organization.fill("Test Holger Client")
     with page.expect_response(
@@ -134,7 +151,7 @@ def test_registration_invalid_organization_can_be_corrected(page, live_dashboard
     ) as saved:
         page.get_by_role("button", name="Save", exact=True).click()
     assert saved.value.status == 400
-    expect(page.get_by_text(ORG_ERROR, exact=True)).to_be_visible()
+    expect_error(page, ORG_ERROR)
     expect(organization).to_be_enabled()
     expect(organization).to_have_value("Test Holger Client")
     with app.app_context():
@@ -162,9 +179,7 @@ def test_server_name_error_keeps_form_editable(page):
     ) as saved:
         page.get_by_role("button", name="Save", exact=True).click()
     assert saved.value.status == 400
-    expect(
-        page.get_by_text("Server name must be a valid hostname or IPv4 address, without a scheme or port.", exact=True)
-    ).to_be_visible()
+    expect_error(page, "Server name must be a valid hostname or IPv4 address, without a scheme or port.")
     expect(server).to_be_enabled()
     server.fill("server.test")
     with page.expect_response(
@@ -173,6 +188,36 @@ def test_server_name_error_keeps_form_editable(page):
         page.get_by_role("button", name="Save", exact=True).click()
     assert saved.value.status == 200
     expect(server).to_be_enabled()
+
+
+def test_hostname_save_preserves_operator_server_properties(page, live_dashboard):
+    app, _ = live_dashboard
+    server_props = {"cc_enabled": True, "fed_learn_port": 9002, "admin_port": 9003, "custom": {"enabled": True}}
+    with app.app_context():
+        project = Project.query.first()
+        original_props, original_server = project.server_props, project.server1
+        assert Store.set_project({"server_props": server_props})["status"] == "ok"
+    try:
+        login(page, TEST_USER, TEST_PW, 4)
+        page.goto(NS + "/server-config")
+        expect(page.get_by_role("checkbox")).to_have_count(0)
+        page.locator('input[name="server1"]').fill("preserved.test")
+        with page.expect_response(
+            lambda response: response.request.method == "PATCH" and response.url.endswith("/project")
+        ) as saved:
+            page.get_by_role("button", name="Save", exact=True).click()
+        assert saved.value.status == 200
+        assert saved.value.request.post_data_json == {"server1": "preserved.test"}
+        expect(page.get_by_text("Server settings saved.", exact=True)).to_be_visible()
+        with app.app_context():
+            project = Project.query.first()
+            assert project.server1 == "preserved.test"
+            assert json.loads(project.server_props) == server_props
+    finally:
+        with app.app_context():
+            project = Project.query.first()
+            project.server_props, project.server1 = original_props, original_server
+            db.session.commit()
 
 
 @pytest.mark.parametrize("resource", ["users", "clients", "servers"])
@@ -222,8 +267,9 @@ def test_invalid_legacy_download_shows_error_and_allows_retry(page, live_dashboa
                 4 if resource == "servers" else 3,
             )
             page.goto(NS + "/downloads")
-            validation_dialog(page, lambda: page.get_by_role("button", name=button, exact=True).click(), message)
-            expect(page.get_by_text("Your download should be starting soon.", exact=True)).not_to_be_visible()
+            page.get_by_role("button", name=button, exact=True).click()
+            expect_error(page, message)
+            expect(page.get_by_role("dialog")).not_to_be_visible()
             setattr(target, attribute, original)
             db.session.commit()
             with page.expect_download() as download:
@@ -250,37 +296,28 @@ def test_invalid_client_name_can_be_corrected(page, live_dashboard, page_name, a
         Store.patch_user_by_project_admin(
             user["id"], {"approval_state": 100, "reviewed_role": "org_admin", "reviewed_organization": "Site_org"}
         )
-        site = Store.create_client({"name": name, "organization": "Site_org", "capacity": {"num_of_gpus": 4}}, email)[
-            "client"
-        ]
+        site = Store.create_client(
+            {"name": name, "organization": "Site_org", "capacity": {"num_of_gpus": 4, "mem_per_gpu_in_GiB": 16}}, email
+        )["client"]
     try:
         login(page, TEST_USER if as_admin else email, TEST_PW if as_admin else "test", 4 if as_admin else 3)
         page.goto(NS + "/" + page_name)
-        page.get_by_text(name, exact=True).click()
-        editor = page.locator('input[title="name"]')
+        dialog, editor = site_editor(page, name, as_admin)
         editor.fill("bad name")
-        validation_dialog(
-            page,
-            lambda: editor.press("Tab"),
-            "Client name must contain only letters, digits, hyphens, and underscores.",
-        )
+        assert save_site(page, dialog).status == 400
+        expect_error(page, "Client name must contain only letters, digits, hyphens, and underscores.")
+        expect(editor).to_have_value("bad name")
+        expect(editor).to_be_enabled()
         with app.app_context():
-            assert Client.query.get(site["id"]).name == name
-        if not as_admin:
-            expect(editor).to_have_value("bad name")
-            # Leaving a rejected edit must show the saved value in the table.
-            editor.fill("")
-            page.get_by_text("4", exact=True).last.click()
+            assert db.session.get(Client, site["id"]).name == name
+        dialog.get_by_role("button", name="Cancel", exact=True).click()
+        expect(dialog).not_to_be_visible()
         expect(page.get_by_text(name, exact=True)).to_be_visible()
         page.reload()
-        page.get_by_text(name, exact=True).click()
-        expect(editor).to_be_enabled()
+        dialog, editor = site_editor(page, name, as_admin)
         editor.fill(name + "_fixed")
-        with page.expect_response(
-            lambda response: response.request.method == "PATCH" and "/clients/" in response.url
-        ) as saved:
-            editor.press("Tab")
-        assert saved.value.status == 200
+        assert save_site(page, dialog).status == 200
+        expect(dialog).not_to_be_visible()
         expect(page.get_by_text(name + "_fixed", exact=True)).to_be_visible()
     finally:
         with app.app_context():
@@ -296,19 +333,32 @@ def test_admin_rejected_organization_edit_preserves_saved_value(page, live_dashb
     try:
         login(page, TEST_USER, TEST_PW, 4)
         page.goto(NS + "/project-admin-dashboard")
-        page.get_by_text(organization, exact=True).click()
-        editor = page.locator('input[title="organization"]')
+        edit = page.get_by_role("button", name=f"Edit organization for {email}", exact=True)
+        edit.click()
+        dialog = page.get_by_role("dialog")
+        editor = dialog.get_by_label("Organization", exact=True)
         editor.fill("Bad org")
-        validation_dialog(page, lambda: editor.press("Tab"), ORG_ERROR)
-        expect(page.get_by_text(organization, exact=True)).to_be_visible()
-        page.get_by_text(organization, exact=True).click()
+        with page.expect_response(
+            lambda response: response.request.method == "PATCH" and "/users/" in response.url
+        ) as saved:
+            dialog.get_by_role("button", name="Save", exact=True).click()
+        assert saved.value.status == 400
+        expect_error(page, ORG_ERROR)
+        expect(editor).to_have_value("Bad org")
+        with app.app_context():
+            assert db.session.get(User, user["id"]).organization.name == organization
+        dialog.get_by_role("button", name="Cancel", exact=True).click()
+        expect(dialog).not_to_be_visible()
+        expect(edit).to_have_text(organization)
+        edit.click()
         editor.fill(organization + "_fixed")
         with page.expect_response(
             lambda response: response.request.method == "PATCH" and "/users/" in response.url
         ) as saved:
-            editor.press("Tab")
+            dialog.get_by_role("button", name="Save", exact=True).click()
         assert saved.value.status == 200
-        expect(page.get_by_text(organization + "_fixed", exact=True)).to_be_visible()
+        expect(dialog).not_to_be_visible()
+        expect(edit).to_have_text(organization + "_fixed")
     finally:
         with app.app_context():
             Store.delete_user(user["id"])
@@ -320,48 +370,32 @@ def test_invalid_new_client_can_be_corrected(page, live_dashboard):
     name = "site-" + uuid4().hex
     with app.app_context():
         user = Store.create_user(
-            {
-                "email": email,
-                "password": "test",
-                "organization": "New_site_org",
-                "role": "org_admin",
-            },
+            {"email": email, "password": "test", "organization": "New_site_org", "role": "org_admin"},
             created_by_project_admin=True,
         )["user"]
     try:
         login(page, email, "test", 3)
         page.goto(NS + "/user-dashboard")
-        page.get_by_role("button", name="Add Site", exact=True).click()
-        editor = page.locator('input[title="name"]')
+        dialog, editor = site_editor(page)
         editor.fill("bad name")
-        validation_dialog(
-            page,
-            lambda: editor.press("Tab"),
-            "Client name must contain only letters, digits, hyphens, and underscores.",
-        )
+        assert save_site(page, dialog, "POST").status == 400
+        expect_error(page, "Client name must contain only letters, digits, hyphens, and underscores.")
         expect(editor).to_have_value("bad name")
         expect(editor).to_be_enabled()
         with app.app_context():
             assert Client.query.filter_by(name="bad name").first() is None
         editor.fill(name)
-        with page.expect_response(
-            lambda response: response.request.method == "POST" and response.url.endswith("/clients")
-        ) as saved:
-            editor.press("Tab")
-        assert saved.value.status == 201
-        expect(page.get_by_text(name, exact=True)).to_be_visible()
-        # A rejected later edit must not overwrite the saved table value either.
-        page.get_by_text(name, exact=True).click()
+        assert save_site(page, dialog, "POST").status == 201
+        expect(dialog).not_to_be_visible()
+        expect(page.get_by_role("button", name=name, exact=True)).to_be_visible()
+        dialog, editor = site_editor(page, name)
         editor.fill("bad name")
-        validation_dialog(
-            page,
-            lambda: editor.press("Tab"),
-            "Client name must contain only letters, digits, hyphens, and underscores.",
-        )
+        assert save_site(page, dialog).status == 400
+        expect_error(page, "Client name must contain only letters, digits, hyphens, and underscores.")
         expect(editor).to_have_value("bad name")
-        editor.fill("")
-        page.get_by_text("4", exact=True).last.click()
-        expect(page.get_by_text(name, exact=True)).to_be_visible()
+        dialog.get_by_role("button", name="Cancel", exact=True).click()
+        expect(dialog).not_to_be_visible()
+        expect(page.get_by_role("button", name=name, exact=True)).to_be_visible()
         with app.app_context():
             assert Client.query.filter_by(name=name).one().creator_id == user["id"]
     finally:
@@ -376,21 +410,26 @@ def register_through_ui(page, email):
     page.locator('input[name="password"]').fill("Testing1234!")
     page.locator('input[name="confirm_password"]').fill("Testing1234!")
     page.get_by_role("button", name="Register", exact=True).click()
-    expect(page.locator('input[name="org"]')).to_be_visible()
-    page.locator('input[name="org"]').fill("Workshop_org")
-    page.get_by_text("Member", exact=True).click()
-    page.get_by_text("Org Admin", exact=True).click()
+    expect(page.get_by_label("Organization", exact=True)).to_be_visible()
+    page.get_by_label("Organization", exact=True).fill("Workshop_org")
+    page.get_by_role("combobox", name="Role", exact=True).click()
+    page.get_by_role("option", name="Org Admin", exact=True).click()
 
 
-def approve_through_ui(page, identifier, action, resource):
+def select_row(row):
+    checkbox = row.get_by_role("checkbox")
+    checkbox.click()
+    # MUI updates selection asynchronously; check() verifies too early.
+    expect(checkbox).to_be_checked()
+
+
+def approve_through_ui(page, identifier, resource):
     row = page.get_by_role("row").filter(has_text=identifier)
-    row.get_by_role("checkbox").check()
-    page.get_by_role("button", name="Bulk Actions", exact=True).click()
-    page.get_by_role("button", name=action, exact=True).click()
+    select_row(row)
     with page.expect_response(
         lambda response: response.request.method == "PATCH" and f"/{resource}/" in response.url
     ) as approved:
-        page.get_by_role("button", name="Apply", exact=True).click()
+        page.get_by_role("button", name="Approve Selected", exact=True).click()
     assert approved.value.status == 200, approved.value.text()
     expect(row).to_contain_text("Approved")
 
@@ -402,8 +441,10 @@ def test_org_admin_signup_sites_approval_and_encrypted_download(
     app, base_url = live_dashboard
     email = f"workshop-{uuid4().hex}@test.com"
     site_name = "workshop-" + uuid4().hex
-    admin_context = browser.new_context(base_url=base_url)
+    admin_context = browser.new_context(base_url=base_url, viewport={"width": 1600, "height": 1000})
     admin = admin_context.new_page()
+    admin_failures = []
+    admin.on("pageerror", lambda error: admin_failures.append(str(error)))
     try:
         with app.app_context():
             project = Project.query.first()
@@ -420,15 +461,12 @@ def test_org_admin_signup_sites_approval_and_encrypted_download(
         expect(
             page.get_by_text("Org Admin request pending approval: register your own client sites here.", exact=True)
         ).to_be_visible()
-        page.get_by_role("button", name="Add Site", exact=True).click()
-        editor = page.locator('input[title="name"]')
+        dialog, editor = site_editor(page)
         editor.fill(site_name)
-        with page.expect_response(
-            lambda response: response.request.method == "POST" and response.url.endswith("/clients")
-        ) as created:
-            editor.press("Tab")
-        assert created.value.status == 201
-        assert created.value.json()["client"]["approval_state"] == 0
+        created = save_site(page, dialog, "POST")
+        assert created.status == 201
+        assert created.json()["client"]["approval_state"] == 0
+        expect(dialog).not_to_be_visible()
         page.get_by_role("button", name="Next", exact=True).click()
         page.get_by_role("button", name="Go to my dashboard", exact=True).click()
         expect(page.get_by_text(site_name, exact=True)).to_be_visible()
@@ -443,12 +481,13 @@ def test_org_admin_signup_sites_approval_and_encrypted_download(
         expect(row).to_contain_text("Org Admin (requested)")
         expect(row).to_contain_text("Workshop_org")
         expect(row).to_contain_text("Pending")
-        approve_through_ui(admin, email, "Approve User", "users")
+        approve_through_ui(admin, email, "users")
         admin.goto(NS + "/site-dashboard")
-        approve_through_ui(admin, site_name, "Approve Client", "clients")
+        approve_through_ui(admin, site_name, "clients")
         if not frozen_at_registration:
             admin.goto(NS + "/")
             # Use the actual project UI's freeze action, including its confirmation dialog.
+            expect(admin.get_by_role("button", name="Freeze Project", exact=True)).to_be_enabled()
             admin.get_by_role("button", name="Freeze Project", exact=True).click()
             with admin.expect_response(
                 lambda response: response.request.method == "PATCH" and response.url.endswith("/project")
@@ -474,7 +513,9 @@ def test_org_admin_signup_sites_approval_and_encrypted_download(
                 kit.read("startup/client.crt", pwd=pin_match.group(1).encode())
             )
             assert certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == site_name
+            assert certificate.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)[0].value == "Workshop_org"
         page.get_by_role("button", name="Okay", exact=True).click()
+        expect(page.get_by_role("dialog")).to_have_count(0)
         with page.expect_download() as downloaded:
             page.get_by_role("button", name="Download FLARE Console", exact=True).click()
         console_path = tmp_path / "console.zip"
@@ -482,11 +523,14 @@ def test_org_admin_signup_sites_approval_and_encrypted_download(
         body = page.locator("body").inner_text()
         pin_match = re.search(r"The secure PIN is:\s*([A-Za-z0-9]+)", body)
         assert pin_match, body
-        with ZipFile(io.BytesIO(console_path.read_bytes())) as kit:
+        with ZipFile(console_path) as kit:
             certificate = x509.load_pem_x509_certificate(
                 kit.read("startup/client.crt", pwd=pin_match.group(1).encode())
             )
             assert certificate.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)[0].value == "org_admin"
+            assert certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == email
+            assert certificate.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)[0].value == "Workshop_org"
+        assert admin_failures == [], "Unhandled administrator browser errors: " + str(admin_failures)
     finally:
         admin_context.close()
         with app.app_context():
@@ -510,9 +554,9 @@ def test_role_rejection_keeps_registration_editable(page, live_dashboard, status
     try:
         page.get_by_role("button", name="Save", exact=True).click()
         expected = "Your session has expired. Please log in again." if status == 401 else message
-        expect(page.get_by_text(expected, exact=True)).to_be_visible()
-        expect(page.locator('input[name="org"]')).to_have_value("Workshop_org")
-        expect(page.locator('input[name="org"]')).to_be_enabled()
+        expect_error(page, expected)
+        expect(page.get_by_label("Organization", exact=True)).to_have_value("Workshop_org")
+        expect(page.get_by_label("Organization", exact=True)).to_be_enabled()
         if status == 401:
             # Authentication failures clear the session; retry requires a new login.
             return
@@ -541,12 +585,10 @@ def test_site_policy_rejection_preserves_editor_without_session_timeout(page, li
         # The administrator approves the site while its owner still has the pending row open.
         with app.app_context():
             Store.patch_client_by_project_admin(site["id"], {"approval_state": 100})
-        page.get_by_text(site["name"], exact=True).click()
-        editor = page.locator('input[title="name"]')
+        dialog, editor = site_editor(page, site["name"])
         editor.fill("unapproved-name")
-        validation_dialog(
-            page, lambda: editor.press("Tab"), "Pending applicants can manage only their pending client sites."
-        )
+        assert save_site(page, dialog).status == 403
+        expect_error(page, "Pending applicants can manage only their pending client sites.")
         expect(editor).to_have_value("unapproved-name")
         assert page.url.endswith("/user-dashboard")
         with app.app_context():
@@ -557,8 +599,6 @@ def test_site_policy_rejection_preserves_editor_without_session_timeout(page, li
 
 
 def test_bulk_approval_keeps_all_successful_users_approved(page, live_dashboard):
-    from contextlib import ExitStack
-
     app, _ = live_dashboard
     users = []
     try:
@@ -579,9 +619,7 @@ def test_bulk_approval_keeps_all_successful_users_approved(page, live_dashboard)
         for user in users:
             row = page.get_by_role("row").filter(has_text=user["email"])
             expect(row).to_contain_text("Org Admin (requested)")
-            row.get_by_role("checkbox").check()
-        page.get_by_role("button", name="Bulk Actions", exact=True).click()
-        page.get_by_role("button", name="Approve User", exact=True).click()
+            select_row(row)
         with ExitStack() as stack:
             responses = [
                 stack.enter_context(
@@ -592,7 +630,7 @@ def test_bulk_approval_keeps_all_successful_users_approved(page, live_dashboard)
                 )
                 for user in users
             ]
-            page.get_by_role("button", name="Apply", exact=True).click()
+            page.get_by_role("button", name="Approve Selected", exact=True).click()
         for response in responses:
             assert response.value.status == 200
         with app.app_context():
