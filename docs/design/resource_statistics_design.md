@@ -121,7 +121,7 @@ deduplicated network-byte total. Direct in-process delivery is excluded.
 Job process: prepare workspace -> probe CPU/RAM and GPU inventory
              -> open counters -> run application -> freeze CPU/duration
 Parent:      consume terminal handoff -> release resources -> report outcome
-Server:      validate participant report -> finalize workspace archive
+Server:      validate participant report -> finalize job archives
 User:        authorized job/site/study query -> derive totals -> render
 ```
 
@@ -142,7 +142,9 @@ even if statistics are missing, invalid, or delayed. An error during resource
 release is logged without suppressing the terminal outcome report. The server
 retains accepted reports until finalization, writes participant files and then
 `resource_summary.json` under `resource_stats/`, and includes them in the normal
-workspace archive. Queries use existing per-job authorization. There is no
+job archives. Queries prefer WORKSPACE and consult separately stored OUTPUTS
+only for missing members; summary and participant detail are routed independently.
+Queries use existing per-job authorization. There is no
 separate statistics database, periodic sender, or live resource-monitoring
 service.
 
@@ -173,8 +175,10 @@ remain gaps even if an earlier generation's file survives. Scheduling retries
 alone do not establish that an earlier execution occurred.
 
 Requested archive members and ZIP indexing have separate decoded-data and metadata-read bounds. Remote job
-stores may still transfer the whole workspace archive to answer a small query.
-Query latency and temporary storage can therefore depend on the archive size,
+stores may still transfer whole archives to answer a small query. Filesystem
+storage links the stored archive and already seeks to the summary. Splitting
+outputs can reduce whole-archive staging costs, but does not guarantee faster
+study queries. Query latency and temporary storage can depend on archive size,
 not just the statistics size. Each server admits one archive-backed job or study
 query at a time and rejects concurrent requests with `resource query busy; retry
 later`. This bounds concurrency only; the [reporting

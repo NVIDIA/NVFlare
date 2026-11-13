@@ -702,8 +702,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 return
             try:
                 with engine.new_context() as fl_ctx:
-                    with self._staged_workspace_archive(job_def_manager, job_id, fl_ctx) as workspace_path:
-                        reader = WorkspaceResourceStatsReader(workspace_path)
+                    with self._staged_resource_reader(
+                        job_def_manager, job_id, fl_ctx, job.meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is True
+                    ) as reader:
                         summary = reader.read_resource_summary()
                         if summary["job_id"] != job_id:
                             raise WorkspaceResourceStatsError("resource summary job_id does not match selected job")
@@ -753,12 +754,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                         job.job_id,
                         _resource_job_name(job),
                         _resource_job_status(job.meta.get(JobMetaKey.STATUS.value)),
+                        job.meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is True,
                     )
                     for job in jobs
                 )
                 rows = []
                 cumulative_row_bytes = 0
-                for job_id, job_name, status in selected:
+                for job_id, job_name, status, outputs_stored in selected:
                     row = {
                         "job_id": job_id,
                         "job_name": job_name,
@@ -767,8 +769,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     }
                     if _is_terminal_resource_job(status):
                         try:
-                            with self._staged_workspace_archive(job_def_manager, job_id, fl_ctx) as workspace_path:
-                                summary = WorkspaceResourceStatsReader(workspace_path).read_resource_summary()
+                            with self._staged_resource_reader(
+                                job_def_manager, job_id, fl_ctx, outputs_stored
+                            ) as reader:
+                                summary = reader.read_resource_summary()
                             if summary["job_id"] != job_id:
                                 raise WorkspaceResourceStatsError("resource summary job_id does not match selected job")
                             row.update(resource_data="included", totals=sum_job_totals(summary["participants"]))
@@ -838,22 +842,26 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     @staticmethod
     @contextmanager
-    def _staged_workspace_archive(job_def_manager: JobDefManagerSpec, job_id: str, fl_ctx):
+    def _staged_resource_reader(job_def_manager: JobDefManagerSpec, job_id: str, fl_ctx, outputs_stored: bool):
         if not isinstance(job_id, str) or not job_id or job_id in {".", ".."} or os.path.basename(job_id) != job_id:
             raise WorkspaceResourceStatsError("job_id cannot be used for workspace staging")
 
         with tempfile.TemporaryDirectory(prefix="nvflare-resource-stats-") as stage_root:
-            job_def_manager.get_storage_for_download(
-                jid=job_id,
-                download_dir=stage_root,
-                component=WORKSPACE,
-                download_file=WORKSPACE_ZIP,
-                fl_ctx=fl_ctx,
+
+            def stage(component, filename):
+                archive_path = os.path.join(stage_root, job_id, filename)
+                if not os.path.isfile(archive_path):
+                    job_def_manager.get_storage_for_download(
+                        jid=job_id, download_dir=stage_root, component=component, download_file=filename, fl_ctx=fl_ctx
+                    )
+                if not os.path.isfile(archive_path):
+                    raise WorkspaceResourceStatsError(f"staged {component} archive is unavailable")
+                return archive_path
+
+            yield WorkspaceResourceStatsReader(
+                stage(WORKSPACE, WORKSPACE_ZIP),
+                outputs_archive=(lambda: stage(OUTPUTS, OUTPUTS_ZIP)) if outputs_stored else None,
             )
-            archive_path = os.path.join(stage_root, job_id, WORKSPACE_ZIP)
-            if not os.path.isfile(archive_path):
-                raise WorkspaceResourceStatsError("staged workspace archive is unavailable")
-            yield archive_path
 
     def get_job_log(self, conn: Connection, args: List[str]):
         try:

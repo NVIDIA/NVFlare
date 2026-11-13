@@ -447,7 +447,9 @@ class Session(SessionSpec):
         cluster hardware when participants share physical resources.
 
         The default command wait is 300 seconds because reading the existing
-        workspace archive can take time. An explicit session command timeout
+        job archives can take time. Queries prefer WORKSPACE and read separately
+        stored OUTPUTS only for requested members absent from WORKSPACE.
+        An explicit session command timeout
         takes precedence. A timeout does not cancel the server's archive read.
 
         Args:
@@ -483,8 +485,9 @@ class Session(SessionSpec):
         unavailable, are counted under ``coverage`` but excluded from numeric totals.
 
         The default command wait is 300 seconds; an explicit session command
-        timeout takes precedence. The server stages each existing workspace
-        archive in sequence. A timeout does not cancel that scan.
+        timeout takes precedence. The server processes jobs sequentially, staging
+        WORKSPACE and, only when needed, separately stored OUTPUTS. A timeout
+        does not cancel that scan.
 
         Returns: a dict describing the study-level rollup (``jobs``,
             ``coverage``, and ``totals``). See :ref:`resource_statistics`

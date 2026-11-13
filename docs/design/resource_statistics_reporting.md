@@ -241,7 +241,7 @@ participant.
 OPEN: accept one record per trusted slot
   -> CLOSED: freeze roster and accepted bytes; later changes are too_late
   -> FINALIZED: participant files and summary marker written
-  -> ARCHIVED: existing workspace archive saved
+  -> ARCHIVED: existing job archives saved
 ```
 
 After the server job process exits, aborted and failed jobs allow up to 20 seconds
@@ -282,7 +282,8 @@ Publication writes only accepted participant bytes through temporary files and
 atomic rename, then writes `resource_summary.json` last as the bundle commit
 marker before the existing
 [job finalization path](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/server/job_runner.py)
-saves the normal `WORKSPACE` archive. The summary contains the self-contained
+saves the job archives, with produced files in `OUTPUTS` when stored separately.
+The summary contains the self-contained
 roster and measurements, without a separately trusted totals cache. Repeated
 finalization returns the same committed bundle and does not accept newer
 measurements.
@@ -314,24 +315,32 @@ study queries. A concurrent request receives `resource query busy; retry later`
 immediately instead of entering a queue. The admission slot is released when the
 server-side query finishes, including failure paths.
 
-Only finalized jobs have archive-backed data. The reader stages the normal
-`WORKSPACE` through `JobDefManagerSpec.get_storage_for_download`; the design adds
-neither a parallel storage database nor a sidecar-storage API. It reads the summary
-member and reads a participant detail only when requested and accepted in the
-roster. For each requested member, it requires exactly one matching ZIP member,
-rejects encrypted, directory, or oversized members, and bounds actual decoded
-reads. It checks detail identity against the summary slot
-without extracting or scanning unrelated workspace contents.
+Only finalized jobs have archive-backed data. Queries use
+`JobDefManagerSpec.get_storage_for_download` and prefer `WORKSPACE`. If the
+requested member is absent and `job_outputs_stored` is true, they stage `OUTPUTS`
+and look there. Each member is routed independently: the summary and participant
+detail can reside in different archives. Malformed, oversized, duplicate, or
+identity-invalid records are errors, not reasons to try another archive.
 
-Study queries process archives sequentially and remove each archive's temporary
-staging directory before proceeding to the next job. The ZIP index has its own
-limit because a small JSON member does not imply small archive metadata. Remote
-job stores may still download the entire workspace before the reader opens it.
+Job and study queries read only the summary; a participant detail is read only
+when requested and accepted in the roster. Each requested member must have one
+matching ZIP entry, be unencrypted and within its decoded-data limit. The reader
+checks detail identity against the summary slot without extracting unrelated
+contents. Staging is scoped to one job and cleaned up on success or failure;
+OUTPUTS is never fetched when WORKSPACE contains all requested members.
+
+Study queries process jobs sequentially. Filesystem storage stages a link to the
+stored archive, so the ZIP reader already seeks directly to the summary after
+reading its bounded member index. Stores that fetch whole archives may benefit
+from a smaller WORKSPACE, but this is not a guaranteed study-query speedup:
+statistics may reside in OUTPUTS, which can also contain large models. No
+performance improvement is assumed. Both archives use the same existing size
+limits and staging API.
 
 Admission bounds concurrent queries; it does not bound the transfer size, disk
 space, or execution time of one query. Transfer-size, disk-space, and hard
 execution-time limits remain deferred until statistics can be fetched independently
-of the workspace archive. Existing download cleanup and timeout policy still
+of the job archives. Existing download cleanup and timeout policy still
 apply. A client timeout does not cancel server storage I/O or release the admission
 slot while that query continues on the server.
 

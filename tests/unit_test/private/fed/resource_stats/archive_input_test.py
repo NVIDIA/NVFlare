@@ -18,6 +18,7 @@ import io
 import struct
 import zipfile
 from copy import deepcopy
+from unittest.mock import Mock
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
@@ -155,3 +156,43 @@ def test_archive_comment_and_directory_share_metadata_budget(monkeypatch):
     with pytest.raises(WorkspaceResourceStatsError, match="ZIP metadata exceeds"):
         WorkspaceResourceStatsReader(stream).read_resource_summary()
     assert not stream.closed
+
+
+@pytest.mark.parametrize("member", ["resource_stats/resource_summary.json", "resource_stats/participants/site-1.json"])
+@pytest.mark.parametrize("failure", ["malformed", "oversized", "duplicate", "identity"])
+def test_invalid_workspace_record_never_falls_back_to_outputs(monkeypatch, member, failure):
+    summary, participant = _reports()
+    if failure == "identity":
+        # Detail identity is checked by the reader; job summary identity is bound by the query.
+        if member.endswith("resource_summary.json"):
+            summary["job_id"] = "../invalid"
+        else:
+            participant["participant_name"] = "other-site"
+    stream = io.BytesIO(_archive(summary, participant))
+    if failure == "duplicate":
+        with pytest.warns(UserWarning, match="Duplicate name"), ZipFile(stream, "a") as archive:
+            archive.writestr(member, b"{}")
+    elif failure == "oversized":
+        limit = (
+            "MAX_RESOURCE_SUMMARY_BYTES"
+            if member.endswith("resource_summary.json")
+            else "MAX_PARTICIPANT_SUMMARY_BYTES"
+        )
+        monkeypatch.setattr(archive_reader, limit, 1)
+    elif failure == "malformed":
+        stream = io.BytesIO()
+        with ZipFile(stream, "w") as archive:
+            archive.writestr(
+                "resource_stats/resource_summary.json",
+                b"invalid" if member.endswith("resource_summary.json") else canonical_json_bytes(summary),
+            )
+            archive.writestr("resource_stats/participants/site-1.json", b"invalid")
+    fallback = Mock(return_value=_archive(*_reports()))
+    reader = WorkspaceResourceStatsReader(stream, outputs_archive=fallback)
+    with pytest.raises(WorkspaceResourceStatsError):
+        (
+            reader.read_resource_summary()
+            if member.endswith("resource_summary.json")
+            else reader.read_participant_summary("site-1")
+        )
+    fallback.assert_not_called()

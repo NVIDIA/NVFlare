@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Read validated resource-statistics records from the normal WORKSPACE ZIP."""
+"""Read resource records from WORKSPACE, then separately stored OUTPUTS when missing."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ _MAX_ZIP_METADATA_BYTES = 4 * 1024 * 1024
 
 
 class WorkspaceResourceStatsError(ValueError):
-    """Raised when a WORKSPACE archive has no valid resource bundle."""
+    """Raised when the stored job archives have no valid requested resource record."""
 
 
 class _MetadataBoundedReader:
@@ -68,8 +68,9 @@ class _MetadataBoundedReader:
 class WorkspaceResourceStatsReader:
     """Bounded fixed-member reader; arbitrary workspace paths are never accepted."""
 
-    def __init__(self, workspace_zip: bytes | str | os.PathLike[str] | BinaryIO):
+    def __init__(self, workspace_zip: bytes | str | os.PathLike[str] | BinaryIO, *, outputs_archive=None):
         self._workspace_zip = workspace_zip
+        self._outputs_archive = outputs_archive  # Stage lazily, only for an absent member.
         self._summary: dict[str, Any] | None = None
 
     def read_resource_summary(self) -> dict[str, Any]:
@@ -107,31 +108,38 @@ class WorkspaceResourceStatsReader:
 
     def _read_exact_member(self, member_name: str, max_bytes: int) -> bytes:
         try:
-            with self._open_archive() as archive:
-                matches = [info for info in archive.infolist() if info.filename == member_name]
-                if len(matches) != 1:
-                    raise WorkspaceResourceStatsError(
-                        f"workspace must contain exactly one {member_name!r} member; found {len(matches)}"
-                    )
-                info = matches[0]
-                if info.is_dir() or info.flag_bits & 0x1:
-                    raise WorkspaceResourceStatsError(f"workspace member is not a readable regular file: {member_name}")
-                if info.file_size > max_bytes:
-                    raise WorkspaceResourceStatsError(f"workspace member exceeds its size limit: {member_name}")
-                with archive.open(info, "r") as stream:
-                    data = stream.read(max_bytes + 1)
-                if len(data) > max_bytes or len(data) != info.file_size:
-                    raise WorkspaceResourceStatsError(f"workspace member length is inconsistent: {member_name}")
-                return data
+            for source in (lambda: self._workspace_zip, self._outputs_archive):
+                if source is None:
+                    continue
+                with self._open_archive(source()) as archive:
+                    matches = [info for info in archive.infolist() if info.filename == member_name]
+                    if not matches:
+                        continue
+                    if len(matches) != 1:
+                        raise WorkspaceResourceStatsError(
+                            f"workspace must contain exactly one {member_name!r} member; found {len(matches)}"
+                        )
+                    info = matches[0]
+                    if info.is_dir() or info.flag_bits & 0x1:
+                        raise WorkspaceResourceStatsError(
+                            f"workspace member is not a readable regular file: {member_name}"
+                        )
+                    if info.file_size > max_bytes:
+                        raise WorkspaceResourceStatsError(f"workspace member exceeds its size limit: {member_name}")
+                    with archive.open(info, "r") as stream:
+                        data = stream.read(max_bytes + 1)
+                    if len(data) > max_bytes or len(data) != info.file_size:
+                        raise WorkspaceResourceStatsError(f"workspace member length is inconsistent: {member_name}")
+                    return data
+            raise WorkspaceResourceStatsError(f"workspace must contain exactly one {member_name!r} member; found 0")
         except WorkspaceResourceStatsError:
             raise
         except (BadZipFile, KeyError, OSError, RuntimeError, EOFError, TypeError) as exc:
             raise WorkspaceResourceStatsError(f"cannot read workspace archive: {exc}") from exc
 
     @contextmanager
-    def _open_archive(self):
+    def _open_archive(self, source):
         with ExitStack() as stack:
-            source = self._workspace_zip
             if isinstance(source, bytes):
                 source = stack.enter_context(io.BytesIO(source))
             elif isinstance(source, (str, os.PathLike)):

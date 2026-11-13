@@ -40,7 +40,7 @@ from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
 from nvflare.private.admin_defs import MsgHeader, error_reply, ok_reply
-from nvflare.private.fed.resource_stats.measurements import SCHEMA_VERSION
+from nvflare.private.fed.resource_stats.measurements import SCHEMA_VERSION, canonical_json_bytes
 from nvflare.private.fed.server import cmd_utils as cmd_utils_module
 from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import (
@@ -48,7 +48,9 @@ from nvflare.private.fed.server.job_cmds import (
     _create_get_job_log_cmd_parser,
     _create_list_job_cmd_parser,
 )
+from nvflare.private.fed.server.job_outputs import link_job_outputs
 from nvflare.private.fed.server.message_send import ClientReply
+from tests.resource_stats_report_test_utils import _participant_summary, _resource_summary
 from tests.timing_utils import ObservedLock, ThreadGroup
 
 TEST_CASES = [
@@ -1278,7 +1280,7 @@ def test_get_study_resources_stages_workspace_instead_of_loading_component(monke
         staged_paths.append(archive_path)
 
     class _PathReader:
-        def __init__(self, workspace_path):
+        def __init__(self, workspace_path, *, outputs_archive=None):
             assert Path(workspace_path).read_bytes() == b"staged workspace"
 
         @staticmethod
@@ -1336,7 +1338,7 @@ def test_get_study_resources_uses_job_metadata_name_without_archived_copy(monkey
     class _PathReader:
         archive_job_id = "job-1"
 
-        def __init__(self, workspace_path):
+        def __init__(self, workspace_path, *, outputs_archive=None):
             assert Path(workspace_path).read_bytes() == b"staged workspace"
 
         @staticmethod
@@ -2889,7 +2891,7 @@ def resource_query_engine(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "sum_study_totals", lambda _: {"derived": True})
 
     class Reader:
-        def __init__(self, workspace_path):
+        def __init__(self, workspace_path, *, outputs_archive=None):
             self.path = Path(workspace_path)
             assert self.path.read_bytes() == b"staged archive"
 
@@ -2962,7 +2964,7 @@ def test_resource_query_slot_and_archives_are_cleaned_up_after_failure(
         raise OSError("staging failed")
 
     class BrokenReader:
-        def __init__(self, workspace_path):
+        def __init__(self, workspace_path, *, outputs_archive=None):
             assert Path(workspace_path).exists()
             if failure == "unexpected":
                 raise RuntimeError("unexpected reader failure")
@@ -3125,3 +3127,102 @@ def test_resource_queries_hold_one_server_slot_until_cleanup(
     _invoke_resource_query("job", retry)
     assert not retry.errors and retry.dicts
     assert all(not path.exists() for path in paths)
+
+
+def _query_resource_archives(monkeypatch, tmp_path, workspace, outputs, *, stored=True, study=False):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(JobCommandModule, "_is_resource_job_authorized", staticmethod(lambda *_: True))
+    engine = _FakeListEngine([_finished_job(stored=stored)])
+    _use_store(engine, tmp_path, workspace, outputs)
+    prepare = engine.job_def_manager.get_storage_for_download
+    engine.job_def_manager.get_storage_for_download = MagicMock(wraps=prepare)
+    conn = _resource_query_connection(engine)
+    if study:
+        JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+    else:
+        JobCommandModule().get_job_resources(conn, ["get_job_resources", "job-1", "--site", "site-1"])
+    calls = engine.job_def_manager.get_storage_for_download.call_args_list
+    assert all(not Path(call.kwargs["download_dir"]).exists() for call in calls)
+    assert not engine.resource_query_lock.locked()
+    return conn, [call.kwargs["component"] for call in calls]
+
+
+@pytest.mark.parametrize(
+    "summary_output,detail_output,stored,study",
+    [
+        (False, False, False, False),
+        (False, True, True, False),
+        (True, False, True, False),
+        (True, True, True, False),
+        (False, True, True, True),
+        (True, True, True, True),
+    ],
+)
+def test_resource_queries_route_members_independently(
+    monkeypatch, tmp_path, summary_output, detail_output, stored, study
+):
+    summary, participant = _resource_summary(), _participant_summary()
+    workspace, outputs = {}, {}
+    (outputs if summary_output else workspace)["resource_stats/resource_summary.json"] = canonical_json_bytes(summary)
+    (outputs if detail_output else workspace)["resource_stats/participants/site-1.json"] = (
+        b"not read by study queries" if study else canonical_json_bytes(participant)
+    )
+    if not summary_output:
+        outputs["resource_stats/resource_summary.json"] = b"must prefer workspace"
+    conn, fetched = _query_resource_archives(monkeypatch, tmp_path, workspace, outputs, stored=stored, study=study)
+    assert not conn.errors
+    result = conn.dicts[0][0]
+    if study:
+        assert result["coverage"]["included_jobs"] == 1
+        assert result["jobs"][0]["totals"]["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 1.5}
+    else:
+        assert result["resource_summary"] == summary
+        assert result["participant_summary"] == participant
+    assert fetched == ["workspace"] + (["outputs"] if summary_output or (detail_output and not study) else [])
+
+
+@pytest.mark.parametrize("stored,study", [(True, False), (True, True), (False, False), (False, True)])
+def test_resource_queries_keep_missing_outputs_unavailable(monkeypatch, tmp_path, stored, study):
+    outputs = None if stored else {"resource_stats/resource_summary.json": canonical_json_bytes(_resource_summary())}
+    conn, fetched = _query_resource_archives(monkeypatch, tmp_path, {}, outputs, stored=stored, study=study)
+    if study:
+        result = conn.dicts[0][0]
+        assert result["coverage"] == {
+            "selected_jobs": 1,
+            "included_jobs": 0,
+            "unavailable_jobs": 1,
+            "nonterminal_jobs": 0,
+        }
+        assert result["totals"]["resource_utilization"]["cpu_consumed"] == {"status": "unavailable"}
+    else:
+        assert conn.errors and not conn.dicts
+    assert fetched == ["workspace"] + (["outputs"] if stored else [])
+
+
+def test_resource_reports_survive_the_produced_outputs_split(monkeypatch, tmp_path):
+    run = tmp_path / "run"
+    files = {
+        "resource_stats/resource_summary.json": canonical_json_bytes(_resource_summary()),
+        "resource_stats/participants/site-1.json": canonical_json_bytes(_participant_summary()),
+        "log.txt": b"log",
+    }
+    for name, data in files.items():
+        path = run / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    split = link_job_outputs([str(run)])
+    assert split is not None
+    try:
+        split.link_rest()
+        assert sorted(split.found) == sorted(name for name in files if name.startswith("resource_stats/"))
+        workspace, outputs = [
+            {str(path.relative_to(folder)): path.read_bytes() for path in Path(folder).rglob("*") if path.is_file()}
+            for folder in (split.rest_dirs[0], split.output_dirs[0])
+        ]
+        conn, fetched = _query_resource_archives(monkeypatch, tmp_path, workspace, outputs)
+        assert not conn.errors
+        assert conn.dicts[0][0]["resource_summary"] == _resource_summary()
+        assert conn.dicts[0][0]["participant_summary"] == _participant_summary()
+        assert fetched == ["workspace", "outputs"]
+    finally:
+        assert not split.remove()
