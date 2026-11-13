@@ -534,6 +534,13 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
         topic = request.get_header(MessageHeaderKey.TOPIC)
         with self.new_context() as fl_ctx:
+            # Auth filters validate this transport header before dispatch.
+            fl_ctx.set_prop(
+                FLContextKey.CLIENT_NAME,
+                request.get_header(CellMessageHeaderKeys.CLIENT_NAME),
+                private=True,
+                sticky=False,
+            )
             reply = self.run_manager.aux_runner.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
             shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
             reply.set_peer_context(shared_fl_ctx)

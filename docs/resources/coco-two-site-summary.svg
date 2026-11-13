@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="470" viewBox="0 0 640 470" role="img" aria-labelledby="title description">
+  <title id="title">Two confidential clients and an ordinary trusted server</title>
+  <desc id="description">Independent preparation and secure services deliver encrypted releases and authorize resources for two confidential clients in untrusted clusters. Model owner M operates an ordinary trusted FL server. Each data owner controls a separately authorized TLS dataset connector into its guest. Dashed data paths require user-supplied application integration.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M1 1 L7 4 L1 7" fill="none" stroke="#52647a" stroke-width="1.5"/></marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #243746; }
+      .title { font-size: 20px; font-weight: 700; }
+      .heading { font-size: 17px; font-weight: 700; }
+      .body { font-size: 16px; }
+      .small { font-size: 14px; fill: #52647a; }
+      .trusted { fill: #eff5fc; stroke: #7996b5; }
+      .guest { fill: #eef8ef; stroke: #639566; }
+      .host { fill: #fff7f4; stroke: #b67868; stroke-dasharray: 5 4; }
+      .owner { fill: #fff9e9; stroke: #b79a56; }
+      .arrow, .peer, .dataset { fill: none; stroke: #52647a; stroke-width: 1.5; marker-end: url(#arrow); }
+      .peer { marker-start: url(#arrow); }
+      .dataset { stroke-dasharray: 5 4; }
+    </style>
+  </defs>
+  <rect width="640" height="470" fill="#fff"/>
+  <rect x="20" y="16" width="600" height="76" rx="8" class="trusted"/>
+  <text x="40" y="43" class="heading" text-anchor="start">Trusted preparation and independent secure services</text>
+  <text x="40" y="69" class="body" text-anchor="start">Approved releases and references; Trustee authorizes resources</text>
+  <path d="M110 92 V150" class="arrow"/>
+  <path d="M530 92 V150" class="arrow"/>
+  <text x="320" y="122" class="small" text-anchor="middle">Site-specific encrypted releases + attested key delivery</text>
+  <rect x="20" y="150" width="180" height="150" rx="8" class="host"/>
+  <rect x="440" y="150" width="180" height="150" rx="8" class="host"/>
+  <text x="110" y="173" class="small" text-anchor="middle">Untrusted site A</text>
+  <text x="530" y="173" class="small" text-anchor="middle">Untrusted site B</text>
+  <rect x="30" y="188" width="160" height="92" rx="8" class="guest"/>
+  <rect x="450" y="188" width="160" height="92" rx="8" class="guest"/>
+  <text x="110" y="216" class="heading" text-anchor="middle">Confidential</text>
+  <text x="110" y="242" class="heading" text-anchor="middle">client A</text>
+  <text x="110" y="267" class="small" text-anchor="middle">Approved workload</text>
+  <text x="530" y="216" class="heading" text-anchor="middle">Confidential</text>
+  <text x="530" y="242" class="heading" text-anchor="middle">client B</text>
+  <text x="530" y="267" class="small" text-anchor="middle">Approved workload</text>
+  <rect x="230" y="188" width="180" height="92" rx="8" class="trusted"/>
+  <text x="320" y="215" class="heading" text-anchor="middle">Model owner M</text>
+  <text x="320" y="243" class="body" text-anchor="middle">Trusted FL server</text>
+  <text x="320" y="267" class="small" text-anchor="middle">Not confidential</text>
+  <path d="M190 235 H230" class="peer"/>
+  <path d="M410 235 H450" class="peer"/>
+  <text x="320" y="164" class="small" text-anchor="middle">Peer proofs + updates</text>
+  <rect x="20" y="358" width="180" height="66" rx="8" class="owner"/>
+  <rect x="440" y="358" width="180" height="66" rx="8" class="owner"/>
+  <text x="110" y="384" class="body" text-anchor="middle">Owner A dataset</text>
+  <text x="110" y="409" class="small" text-anchor="middle">Access policy</text>
+  <text x="530" y="384" class="body" text-anchor="middle">Owner B dataset</text>
+  <text x="530" y="409" class="small" text-anchor="middle">Access policy</text>
+  <path d="M110 358 V280" class="dataset"/>
+  <path d="M530 358 V280" class="dataset"/>
+  <text x="110" y="329" class="small" text-anchor="middle">TLS connector*</text>
+  <text x="530" y="329" class="small" text-anchor="middle">TLS connector*</text>
+  <text x="320" y="321" class="small" text-anchor="middle">mTLS protects transport;</text>
+  <text x="320" y="344" class="small" text-anchor="middle">outputs still need review.</text>
+  <text x="20" y="453" class="small" text-anchor="start">* Dashed data paths require user-supplied integration and authorization.</text>
+</svg>

@@ -1,0 +1,68 @@
+# Merge this fragment into the trusted service administrator's global
+# package policy. Do not add another package/import/default declaration.
+
+${prefix}_expected_initdata := ${initdata}
+${prefix}_expected_image := ${image}
+${prefix}_expected_args := ${args}
+${prefix}_expected_trust_vectors := ${trust_vectors}
+${prefix}_expected_submods := ${submods}
+${prefix}_cpu_tee := ${cpu_tee}
+${prefix}_gpu_required := ${gpu_required}
+
+${path_rules}
+
+${prefix}_approved_cpu_type(evidence) if {
+    types := object.keys(evidence) - {"report_data", "runtime_data_claims", "init_data", "init_data_claims"}
+    types == {${prefix}_cpu_tee}
+    is_object(evidence[${prefix}_cpu_tee])
+    count(evidence[${prefix}_cpu_tee]) > 0
+}
+
+${prefix}_approved_initdata(evidence) if {
+    ${prefix}_cpu_tee == "snp"
+    evidence["init_data"] == ${prefix}_expected_initdata
+}
+
+${prefix}_approved_initdata(evidence) if {
+    ${prefix}_cpu_tee == "tdx"
+    evidence["init_data"] == ${prefix}_expected_initdata
+    evidence["tdx"]["quote"]["body"]["mr_config_id"] == ${prefix}_expected_initdata
+}
+
+${prefix}_approved_gpu if {
+    ${prefix}_gpu_required == false
+}
+
+${prefix}_approved_gpu if {
+    ${prefix}_gpu_required == true
+    evidence := input.submods.gpu0["ear.veraison.annotated-evidence"]
+    types := object.keys(evidence) - {"report_data", "runtime_data_claims", "init_data", "init_data_claims"}
+    types == {"nvidia"}
+    is_object(evidence.nvidia)
+    count(evidence.nvidia) > 0
+}
+
+${prefix}_approved_container(container) if {
+    container["OCI"]["Annotations"]["io.kubernetes.cri.image-name"] == ${prefix}_expected_image
+    container["OCI"]["Process"]["Args"] == ${prefix}_expected_args
+}
+
+allow if {
+    data.plugin == "resource"
+    ${prefix}_authorized_path(data["resource-path"])
+    object.keys(input.submods) == {name | name := ${prefix}_expected_submods[_]}
+    every name, vector in ${prefix}_expected_trust_vectors {
+        input.submods[name]["ear.trustworthiness-vector"] == vector
+    }
+    ${prefix}_approved_gpu
+
+    cpu := input.submods.cpu0
+    evidence := cpu["ear.veraison.annotated-evidence"]
+    ${prefix}_approved_cpu_type(evidence)
+    ${prefix}_approved_initdata(evidence)
+    ${prefix}_expected_image in cpu["ear.trustee.identifiers"]["validated"]["container_images"]
+
+    containers := cpu["ear.veraison.annotated-evidence"]["init_data_claims"]["agent_policy_claims"]["containers"]
+    some container in containers
+    ${prefix}_approved_container(container)
+}

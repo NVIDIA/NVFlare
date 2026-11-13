@@ -445,7 +445,10 @@ class StaticFileBuilder(Builder):
         # streaming opt out by setting allow_log_streaming=false on the
         # participant in project.yml or by editing the generated
         # resources.json.default.
-        allow_log_streaming = bool(client.get_prop_fb(PropKey.ALLOW_LOG_STREAMING, default=True))
+        allow_log_streaming = client.get_prop(PropKey.ALLOW_LOG_STREAMING)
+        if allow_log_streaming is None:
+            allow_log_streaming = client.get_prop_fb(PropKey.ALLOW_LOG_STREAMING, default=True)
+        allow_log_streaming = bool(allow_log_streaming)
         replacement_dict = {
             "num_gpus": num_gpus,
             "gpu_mem": gpu_mem,

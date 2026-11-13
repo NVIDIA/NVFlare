@@ -88,7 +88,15 @@
     "category": "advanced"
   },
   "cc-provision": {
-    "source_path": "examples/advanced/cc_provision",
+    "source_path": "examples/advanced/cvm_builder",
+    "category": "advanced"
+  },
+  "cvm-builder": {
+    "source_path": "examples/advanced/cvm_builder",
+    "category": "advanced"
+  },
+  "azure-cc": {
+    "source_path": "examples/advanced/azure_cc",
     "category": "advanced"
   },
   "cifar10-pt": {
@@ -293,6 +301,11 @@
   "devops-azure-aks": {
     "source_path": "examples/devops/azure/aks",
     "destination_path": "azure/aks",
+    "category": "deployment"
+  },
+  "devops-coco": {
+    "source_path": "examples/devops/coco",
+    "destination_path": "examples/devops/coco",
     "category": "deployment"
   },
   "devops-gcp-gke": {

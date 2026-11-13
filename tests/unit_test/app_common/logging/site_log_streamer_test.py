@@ -241,3 +241,28 @@ def test_before_job_launch_injects_when_enabled(tmp_path):
         c for c in cfg["components"] if c["path"] == "nvflare.app_common.logging.job_log_streamer.JobLogStreamer"
     )
     assert injected["args"]["target_parent_server"] is True
+
+
+def test_site_streamers_inject_both_full_and_error_logs_without_duplicates(tmp_path):
+    cfg_path = _write_job_config(tmp_path, [])
+    fl_ctx = _make_launch_fl_ctx(tmp_path)
+    streamers = [SiteLogStreamer(log_file_name=name) for name in ("error_log.txt", "log.txt")]
+    with _allow_streaming(True):
+        for _ in range(2):
+            for streamer in streamers:
+                streamer._on_before_job_launch(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
+    with open(cfg_path) as stream:
+        components = json.load(stream)["components"]
+    assert len(components) == 2
+    assert len({component["id"] for component in components}) == 2
+    assert {component["args"].get("log_file_name", "log.txt") for component in components} == {
+        "log.txt",
+        "error_log.txt",
+    }
+    assert all(component["args"]["target_parent_server"] for component in components)
+
+    with _allow_streaming(False):
+        for streamer in streamers:
+            streamer._on_before_job_launch(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
+    with open(cfg_path) as stream:
+        assert json.load(stream)["components"] == []

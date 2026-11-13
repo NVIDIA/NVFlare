@@ -1,0 +1,5 @@
+[Unit]
+Description=Isolated hardware acceptance fault injector
+[Service]
+Type=simple
+ExecStart=/vault/application/lab_guest_agent.py
