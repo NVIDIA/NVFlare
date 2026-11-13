@@ -119,8 +119,63 @@ timed plan when the delay regime is part of the experiment. Stored files are
 run evidence, not distributed restart checkpoints.
 
 ``SimulationPlanRuntime``, ``PlannedRoundParticipation`` and
-``PlannedAsyncEvents`` are reusable execution
-pieces. FedBuff uses the Collab execution adapter in
-``nvflare.collab.replayable_execution``. A different workflow must expose its
-assignment, acceptance and publication decisions through an adapter; merely
-running in ``SimEnv`` cannot make hidden decisions reproducible.
+``PlannedAsyncEvents`` are reusable execution pieces. New round-based workflows
+can import ``round_participation`` and use one interface in both environments:
+
+.. code-block:: python
+
+   from nvflare.apis.simulation_plan import record_initial_model, round_participation
+
+   record_initial_model(fl_ctx, initial_version, initial_model)
+   execution = round_participation(
+       fl_ctx, round_number, available_clients, expected_count,
+       live_select=lambda: choose_clients_normally(),
+   )
+   for client_name, result in receive_results(execution.clients):
+       if accept_result(result):
+           execution.record(client_name)
+   execution.verify()  # Before publishing; a no-op in live execution.
+   execution.publish_model(next_version, new_model)
+
+``FedAvg`` uses this boundary through ``BaseModelController.sample_clients()``.
+Other algorithms can attach the same calls at their actual selection,
+acceptance and publication points. The workflow has no simulator-specific
+constructor arguments or branches.
+
+For an asynchronous Collab workflow, import ``AsyncExecutionPort`` and
+``run_async_execution`` from ``nvflare.collab.replayable_execution``. Supply
+the algorithm's state, its existing live loop, Collab submit/receive calls,
+result normalization and optional event callbacks:
+
+.. code-block:: python
+
+   from nvflare.collab import collab
+   from nvflare.collab.replayable_execution import AsyncExecutionPort, run_async_execution
+
+   port = AsyncExecutionPort(
+       state=coordinator,
+       clients=physical_clients,
+       contribution_budget=max_contributions,
+       submit=submit,
+       receive=receive,
+       live_run=run_live,
+       normalize=normalize_result,
+       aborted=lambda: collab.is_aborted,
+       on_publish=notify_model,
+   )
+   run_async_execution(port, fl_ctx)
+
+The state exposes ``model``, ``version``, ``active``, ``available_slots``,
+``finished``, ``reserve(names, metadata, factory)`` and
+``accept(assignment, result)``; ``accept`` returns whether it published a new
+model. ``reserve`` must assign sequential IDs starting at zero and return every
+requested assignment. An assignment exposes ``assignment_id``,
+``logical_name``, ``base_version``, ``metadata`` and its immutable base model.
+The port can supply ``make_assignment`` when the algorithm needs a different
+assignment class; that factory receives the stored base path instead of an
+in-memory model. ``submit(site, assignment, **kwargs)`` schedules a physical
+call; ``receive()`` returns ``(site, assignment_id, result, error)``.
+``FedBuffWorkflow`` is one implementation of this port.
+The shared runner owns the live-versus-planned choice; a new algorithm must
+still expose these real decisions rather than expecting ``SimEnv`` to infer
+them from opaque workflow code.

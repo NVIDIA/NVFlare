@@ -16,7 +16,14 @@ import json
 
 import pytest
 
-from nvflare.apis.simulation_plan import PlannedAsyncEvents, SimulationPlanRuntime, validate_simulation_plan
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.simulation_plan import (
+    SIMULATION_PLAN_PROP,
+    PlannedAsyncEvents,
+    SimulationPlanRuntime,
+    round_participation,
+    validate_simulation_plan,
+)
 
 
 def test_round_plan_rejects_unknown_or_duplicate_participants():
@@ -66,6 +73,27 @@ def test_round_acceptance_rejects_missing_contribution(tmp_path):
     runtime.finalize()
     runtime.finalize()
     assert len((tmp_path / "run.jsonl").read_text().splitlines()) == 1
+
+
+def test_round_port_uses_the_same_event_calls_in_live_and_planned_runs(tmp_path):
+    fl_ctx = FLContext()
+    live = round_participation(fl_ctx, 0, ["a", "b"], 1, lambda: ["b"])
+    assert live.clients == ["b"]
+    live.record("b")
+    live.verify()
+    live.require_replay_support(False, "unsupported in replay")
+    live.publish_model(1, {"w": 1})
+    runtime = SimulationPlanRuntime({"format_version": 1, "round_participation": {"0": ["a"]}}, tmp_path)
+    fl_ctx.set_prop(SIMULATION_PLAN_PROP, runtime)
+    planned = round_participation(fl_ctx, 0, ["a", "b"], 1, lambda: pytest.fail("live selector ran"))
+    assert planned.clients == ["a"]
+    with pytest.raises(RuntimeError, match="unsupported in replay"):
+        planned.require_replay_support(False, "unsupported in replay")
+    planned.record("a")
+    planned.verify()
+    planned.publish_model(1, {"w": 1})
+    runtime.assert_consumed()
+    assert (tmp_path / "models" / "00000001.pkl").exists()
 
 
 def test_seeded_virtual_events_and_horizon_are_deterministic():

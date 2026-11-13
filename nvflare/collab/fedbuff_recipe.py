@@ -28,7 +28,7 @@ from nvflare.collab import collab
 from nvflare.collab.api import ContextKey
 from nvflare.collab.model_ops import ModelOps
 from nvflare.collab.recipe import CollabRecipe
-from nvflare.collab.replayable_execution import run_fedbuff_execution
+from nvflare.collab.replayable_execution import AsyncExecutionPort, run_async_execution
 
 
 @dataclass(frozen=True)
@@ -488,6 +488,23 @@ class FedBuffWorkflow:
                 dispatch()  # Refill before observer evaluation/artifact work.
                 self._notify("on_model", coordinator.model, coordinator.version)
 
+    def _execution_port(self, coordinator, names, submit, receive):
+        """Expose algorithm decisions to the shared live/planned execution policy."""
+        return AsyncExecutionPort(
+            state=coordinator,
+            clients=names,
+            contribution_budget=coordinator.num_updates * coordinator.buffer_size,
+            submit=submit,
+            receive=receive,
+            live_run=lambda: self._run(coordinator, names, submit, receive),
+            normalize=self._normalize,
+            on_dispatch=lambda assignment, version, site: self._emit("dispatch", assignment, version, site),
+            on_accept=lambda assignment, version, site: self._emit("accept", assignment, version, site),
+            on_publish=lambda model, version: self._notify("on_model", model, version),
+            on_time=lambda instant: self._notify("on_time", instant),
+            aborted=lambda: collab.is_aborted,
+        )
+
     @collab.main
     def execute(self):
         names = sorted(client.name for client in collab.clients)
@@ -513,7 +530,7 @@ class FedBuffWorkflow:
             cleanup.callback(coordinator.close)
             self._notify("on_model", coordinator.model, coordinator.version)
             with self._calls(names) as (submit, receive):
-                run_fedbuff_execution(self, coordinator, names, submit, receive, collab.fl_ctx)
+                run_async_execution(self._execution_port(coordinator, names, submit, receive), collab.fl_ctx)
             self._notify("on_finish", coordinator.model, coordinator.version)
             return coordinator.model
 

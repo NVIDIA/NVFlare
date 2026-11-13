@@ -140,6 +140,49 @@ class PlannedRoundParticipation:
     def verify(self) -> None:
         self.runtime.validate_round_acceptance(self.round_number, self.accepted)
 
+    def require_replay_support(self, supported: bool, reason: str) -> None:
+        if not supported:
+            raise RuntimeError(reason)
+
+    def publish_model(self, version: int, model) -> None:
+        self.runtime.save_model(version, model)
+
+
+class LiveRoundParticipation:
+    """Matching no-op event methods for ordinary round execution."""
+
+    def __init__(self, clients: list[str]):
+        self.clients = clients
+
+    def record(self, client_name: str) -> None:
+        pass
+
+    def verify(self) -> None:
+        pass
+
+    def require_replay_support(self, supported: bool, reason: str) -> None:
+        pass
+
+    def publish_model(self, version: int, model) -> None:
+        pass
+
+
+def round_participation(fl_ctx, round_number: int, available: list[str], expected: int, live_select):
+    """Return one participation object; callers use the same event methods in every environment."""
+    runtime = fl_ctx.get_prop(SIMULATION_PLAN_PROP) if fl_ctx is not None else None
+    if runtime is not None and runtime.has_section(ROUND_PARTICIPATION):
+        if type(round_number) is not int:
+            raise RuntimeError("planned round participation requires CURRENT_ROUND in the FLContext")
+        return PlannedRoundParticipation(runtime, round_number, available, expected)
+    return LiveRoundParticipation(live_select())
+
+
+def record_initial_model(fl_ctx, version: int, model) -> None:
+    """Retain the initial state only when a round plan is active."""
+    runtime = fl_ctx.get_prop(SIMULATION_PLAN_PROP) if fl_ctx is not None else None
+    if runtime is not None and runtime.has_section(ROUND_PARTICIPATION):
+        runtime.save_model(version, model)
+
 
 def validate_simulation_plan(value: dict) -> dict:
     """Return a normalized JSON plan, rejecting unknown or malformed controls."""
