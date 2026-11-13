@@ -324,6 +324,8 @@ class TestProducedFiles:
             "log_fl.txt",
             "log.txt.3",  # rotated
             "task_1_log.txt",  # a task worker's prefixed log
+            "applet_log.txt",  # a py applet's log
+            "XGBoost_error_log.txt",  # the XGBoost adaptor's log
             "audit.log",
             "stats_pool_summary.json",
             "server.stats_pool_records.csv",

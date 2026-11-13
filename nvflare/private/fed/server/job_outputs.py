@@ -38,10 +38,14 @@ from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 
-# Files the server writes for itself, not the job's result. A log file may carry a task worker's "task_<attempt>_"
-# prefix (log_utils.configure_logging's file_prefix) and a ".<n>" rotation suffix; "log_fl.txt" is the default
-# config's federated-learning log. Logs stay in the workspace archive, where the server's log commands read them.
-_SYSTEM_LOG_RE = re.compile(r"^(?:task_[^/]+_)?(?:log\.txt|error_log\.txt|log\.json|log_fl\.txt)(?:\.\d+)?$")
+# Files the server writes for itself, not the job's result. A log file may carry a ".<n>" rotation suffix and the
+# "<file_prefix>_" of a process that configures its own logging (log_utils.configure_logging): a task worker
+# ("task_<attempt>"), a py applet ("applet", tie.py_applet) or the XGBoost adaptor ("XGBoost", its app name).
+# "log_fl.txt" is the default config's federated-learning log. Logs stay in the workspace archive, where the server's
+# log commands read them.
+_SYSTEM_LOG_RE = re.compile(
+    r"^(?:(?:task_[^/]+|applet|XGBoost)_)?(?:log\.txt|error_log\.txt|log\.json|log_fl\.txt)(?:\.\d+)?$"
+)
 _SYSTEM_FILE_RE = re.compile(
     r"^(?:.+\.)?(?:"
     + "|".join(
