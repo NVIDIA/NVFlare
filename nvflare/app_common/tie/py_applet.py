@@ -19,6 +19,7 @@ from abc import ABC, abstractmethod
 
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.log_utils import configure_logging
+from nvflare.private.fed.resource_stats.cpu_consumed import mark_unwaited_managed_children
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .applet import Applet
@@ -176,6 +177,7 @@ class PyApplet(Applet, ABC):
         self.logger.info("Starting applet in another process")
         self.process = multiprocessing.Process(target=starter.start, args=(app_ctx,), daemon=True, name="applet")
         self.process.start()
+        mark_unwaited_managed_children()
 
     def stop(self, timeout=0.0) -> int:
         """Stop the applet

@@ -44,6 +44,15 @@ def test_bootstrap_round_trip_is_private_and_immutable(tmp_path, bootstrap):
     assert list(path.parent.iterdir()) == [path]
 
 
+def test_resource_reporting_is_a_private_boolean_bootstrap_flag(bootstrap):
+    assert not bootstrap.resource_reporting
+    enabled = replace(bootstrap, resource_reporting=True)
+    assert WorkerBootstrap.from_dict(enabled.to_dict()).resource_reporting
+    for invalid in (None, 0, 1, "true"):
+        with pytest.raises(TypeError, match="resource_reporting"):
+            replace(bootstrap, resource_reporting=invalid)
+
+
 @pytest.mark.parametrize("value", [None, [], "identity", {"job_id": "job"}])
 def test_identity_requires_exact_mapping(value):
     with pytest.raises((TypeError, ValueError)):

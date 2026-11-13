@@ -15,6 +15,7 @@
 import datetime
 import gc
 import io
+import threading
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -39,6 +40,7 @@ from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
 from nvflare.private.admin_defs import MsgHeader, error_reply, ok_reply
+from nvflare.private.fed.resource_stats.measurements import SCHEMA_VERSION, canonical_json_bytes
 from nvflare.private.fed.server import cmd_utils as cmd_utils_module
 from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import (
@@ -46,7 +48,10 @@ from nvflare.private.fed.server.job_cmds import (
     _create_get_job_log_cmd_parser,
     _create_list_job_cmd_parser,
 )
+from nvflare.private.fed.server.job_outputs import link_job_outputs
 from nvflare.private.fed.server.message_send import ClientReply
+from tests.resource_stats_report_test_utils import _participant_summary, _resource_summary
+from tests.timing_utils import ObservedLock, ThreadGroup
 
 TEST_CASES = [
     (
@@ -357,6 +362,7 @@ class _FakeEngine:
 class _FakeListedJob:
     def __init__(self, meta):
         self.meta = meta
+        self.job_id = meta.get(JobMetaKey.JOB_ID.value)
 
 
 class _FakeListJobDefManager:
@@ -379,6 +385,7 @@ class _FakeListJobDefManager:
 class _FakeListEngine:
     def __init__(self, jobs):
         self.job_def_manager = _FakeListJobDefManager(jobs)
+        self.resource_query_lock = threading.Lock()
 
     def new_context(self):
         from nvflare.apis.fl_context import FLContext
@@ -1197,6 +1204,181 @@ def test_list_jobs_defaults_to_default_study_when_session_study_missing(monkeypa
     assert len(conn.tables[0].rows) == 1
     assert conn.tables[0].rows[0][1][JobMetaKey.STUDY.value] == "default"
     assert len(conn.successes) == 1
+
+
+def test_get_study_resources_refuses_oversized_response(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "MAX_STUDY_SUMMARY_BYTES", 1)
+    conn = _MockConnection(app_ctx=_FakeListEngine([]), props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    assert conn.dicts == []
+    assert "exceeds 1 bytes" in conn.errors[0][0]
+
+
+def test_get_study_resources_enforces_incremental_row_byte_budget(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "MAX_STUDY_SUMMARY_BYTES", 10)
+    monkeypatch.setattr(job_cmds_module, "canonical_json_bytes", lambda _value: b"123456")
+    monkeypatch.setattr(
+        job_cmds_module,
+        "sum_study_totals",
+        lambda _rows: pytest.fail("study totals must not be derived after the row budget is exhausted"),
+    )
+    jobs = [
+        _FakeListedJob({JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: RunStatus.RUNNING}),
+        _FakeListedJob({JobMetaKey.JOB_ID.value: "job-2", JobMetaKey.STATUS.value: RunStatus.RUNNING}),
+    ]
+    conn = _MockConnection(app_ctx=_FakeListEngine(jobs), props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    assert conn.dicts == []
+    assert conn.errors[0][0] == "study resource rows exceed 10 bytes"
+
+
+def test_get_study_resources_normalizes_run_status_enum(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "job-1",
+            JobMetaKey.STATUS.value: RunStatus.RUNNING,
+        }
+    )
+    conn = _MockConnection(app_ctx=_FakeListEngine([job]), props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    result, _meta = conn.dicts[0]
+    assert result["jobs"] == [
+        {"job_id": "job-1", "job_name": "job-1", "job_status": "RUNNING", "resource_data": "nonterminal"}
+    ]
+
+
+def test_get_study_resources_stages_workspace_instead_of_loading_component(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "sum_job_totals",
+        lambda participants: {"marker": participants[0]},
+    )
+    monkeypatch.setattr(job_cmds_module, "sum_study_totals", lambda rows: {"derived": True})
+    job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "job-1",
+            JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED,
+        }
+    )
+    engine = _FakeListEngine([job])
+    staged_paths = []
+
+    def _stage_workspace(jid, download_dir, component, download_file, fl_ctx):
+        archive_path = Path(download_dir) / jid / download_file
+        archive_path.parent.mkdir(parents=True)
+        archive_path.write_bytes(b"staged workspace")
+        staged_paths.append(archive_path)
+
+    class _PathReader:
+        def __init__(self, workspace_path, *, outputs_archive=None):
+            assert Path(workspace_path).read_bytes() == b"staged workspace"
+
+        @staticmethod
+        def read_resource_summary():
+            return {"schema_version": SCHEMA_VERSION, "job_id": "job-1", "participants": ["included"]}
+
+    engine.job_def_manager.get_storage_for_download = MagicMock(side_effect=_stage_workspace)
+    engine.job_def_manager.get_storage_component = MagicMock(
+        side_effect=AssertionError("study query must not materialize workspace bytes")
+    )
+    monkeypatch.setattr(job_cmds_module, "WorkspaceResourceStatsReader", _PathReader)
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    assert conn.errors == []
+    result, _meta = conn.dicts[0]
+    assert result["jobs"] == [
+        {
+            "job_id": "job-1",
+            "job_name": "job-1",
+            "job_status": RunStatus.FINISHED_COMPLETED.value,
+            "resource_data": "included",
+            "totals": {"marker": "included"},
+        }
+    ]
+    engine.job_def_manager.get_storage_for_download.assert_called_once()
+    engine.job_def_manager.get_storage_component.assert_not_called()
+    assert len(staged_paths) == 1
+    assert not staged_paths[0].exists()
+
+
+def test_get_study_resources_uses_job_metadata_name_without_archived_copy(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "sum_job_totals",
+        lambda participants: {"marker": participants},
+    )
+    monkeypatch.setattr(job_cmds_module, "sum_study_totals", lambda rows: {"derived": True})
+    job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "job-1",
+            JobMetaKey.JOB_NAME.value: "trusted-name",
+            JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED,
+        }
+    )
+    engine = _FakeListEngine([job])
+
+    def _stage_workspace(jid, download_dir, component, download_file, fl_ctx):
+        archive_path = Path(download_dir) / jid / download_file
+        archive_path.parent.mkdir(parents=True)
+        archive_path.write_bytes(b"staged workspace")
+
+    class _PathReader:
+        archive_job_id = "job-1"
+
+        def __init__(self, workspace_path, *, outputs_archive=None):
+            assert Path(workspace_path).read_bytes() == b"staged workspace"
+
+        @staticmethod
+        def read_resource_summary():
+            return {
+                "schema_version": SCHEMA_VERSION,
+                "job_id": _PathReader.archive_job_id,
+                "participants": [],
+            }
+
+    engine.job_def_manager.get_storage_for_download = MagicMock(side_effect=_stage_workspace)
+    monkeypatch.setattr(job_cmds_module, "WorkspaceResourceStatsReader", _PathReader)
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    assert conn.errors == []
+    result, _meta = conn.dicts[0]
+    assert result["jobs"] == [
+        {
+            "job_id": "job-1",
+            "job_name": "trusted-name",
+            "job_status": RunStatus.FINISHED_COMPLETED.value,
+            "resource_data": "included",
+            "totals": {"marker": []},
+        }
+    ]
+
+    _PathReader.archive_job_id = "job-2"
+    mismatch_conn = _MockConnection(app_ctx=engine, props={ConnProps.ACTIVE_STUDY: "default"})
+    JobCommandModule().get_study_resources(mismatch_conn, ["get_study_resources"])
+    assert mismatch_conn.errors == []
+    assert mismatch_conn.dicts[0][0]["jobs"] == [
+        {
+            "job_id": "job-1",
+            "job_name": "trusted-name",
+            "job_status": RunStatus.FINISHED_COMPLETED.value,
+            "resource_data": "unavailable",
+        }
+    ]
 
 
 def test_list_jobs_ignores_duration_parse_failures(monkeypatch):
@@ -2699,3 +2881,335 @@ def test_invalid_log_byte_limit_rejected_before_reading(tmp_path, limit):
     assert conn.errors
     assert not conn.dicts
     engine.job_def_manager.get_client_data.assert_not_called()
+
+
+@pytest.fixture
+def resource_query_engine(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(JobCommandModule, "_is_resource_job_authorized", staticmethod(lambda *_: True))
+    monkeypatch.setattr(job_cmds_module, "sum_job_totals", lambda _: {"derived": True})
+    monkeypatch.setattr(job_cmds_module, "sum_study_totals", lambda _: {"derived": True})
+
+    class Reader:
+        def __init__(self, workspace_path, *, outputs_archive=None):
+            self.path = Path(workspace_path)
+            assert self.path.read_bytes() == b"staged archive"
+
+        def read_resource_summary(self):
+            return {"job_id": self.path.parent.name, "participants": []}
+
+    monkeypatch.setattr(job_cmds_module, "WorkspaceResourceStatsReader", Reader)
+
+    def create(job_ids=("job-1",)):
+        jobs = [
+            _FakeListedJob({JobMetaKey.JOB_ID.value: jid, JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED})
+            for jid in job_ids
+        ]
+        engine = _FakeListEngine(jobs)
+        engine.resource_query_lock = ObservedLock()
+        paths = []
+
+        def stage(jid, download_dir, component, download_file, fl_ctx):
+            assert all(not path.exists() for path in paths)
+            path = Path(download_dir) / jid / download_file
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"staged archive")
+            paths.append(path)
+
+        engine.job_def_manager.get_storage_for_download = MagicMock(side_effect=stage)
+        return engine, paths, Reader, stage
+
+    return create
+
+
+def _resource_query_connection(engine):
+    job = engine.job_def_manager.jobs[0]
+    return _MockConnection(
+        app_ctx=engine,
+        props={
+            JobCommandModule.JOB: job,
+            JobCommandModule.JOB_ID: job.job_id,
+            ConnProps.ACTIVE_STUDY: "default",
+        },
+    )
+
+
+def _invoke_resource_query(kind, conn):
+    module = JobCommandModule()
+    if kind == "job":
+        module.get_job_resources(conn, ["get_job_resources", conn.get_prop(JobCommandModule.JOB_ID)])
+    else:
+        module.get_study_resources(conn, ["get_study_resources"])
+
+
+@pytest.mark.parametrize(
+    "kind,failure",
+    [
+        ("job", "staging"),
+        ("study", "staging"),
+        ("job", "reader"),
+        ("study", "reader"),
+        ("study", "authorization"),
+        ("job", "unexpected"),
+        ("study", "unexpected"),
+    ],
+)
+def test_resource_query_slot_and_archives_are_cleaned_up_after_failure(
+    resource_query_engine, monkeypatch, kind, failure
+):
+    engine, paths, reader, stage = resource_query_engine()
+
+    def fail_staging(*args, **kwargs):
+        stage(*args, **kwargs)
+        raise OSError("staging failed")
+
+    class BrokenReader:
+        def __init__(self, workspace_path, *, outputs_archive=None):
+            assert Path(workspace_path).exists()
+            if failure == "unexpected":
+                raise RuntimeError("unexpected reader failure")
+            raise job_cmds_module.WorkspaceResourceStatsError("reader failed")
+
+    if failure == "staging":
+        engine.job_def_manager.get_storage_for_download.side_effect = fail_staging
+    elif failure in {"reader", "unexpected"}:
+        monkeypatch.setattr(job_cmds_module, "WorkspaceResourceStatsReader", BrokenReader)
+    else:
+        monkeypatch.setattr(
+            JobCommandModule,
+            "_is_resource_job_authorized",
+            staticmethod(MagicMock(side_effect=RuntimeError("authorization failed"))),
+        )
+    failed = _resource_query_connection(engine)
+    if failure == "unexpected":
+        with pytest.raises(RuntimeError, match="unexpected reader failure"):
+            _invoke_resource_query(kind, failed)
+    else:
+        _invoke_resource_query(kind, failed)
+        assert failed.errors or failed.dicts[0][0]["jobs"][0]["resource_data"] == "unavailable"
+    assert all(not path.exists() for path in paths)
+    assert not engine.resource_query_lock.lock.locked()
+
+    engine.job_def_manager.get_storage_for_download.side_effect = stage
+    monkeypatch.setattr(job_cmds_module, "WorkspaceResourceStatsReader", reader)
+    monkeypatch.setattr(JobCommandModule, "_is_resource_job_authorized", staticmethod(lambda *_: True))
+    retry = _resource_query_connection(engine)
+    _invoke_resource_query(kind, retry)
+    assert retry.errors == []
+    assert retry.dicts
+    assert all(not path.exists() for path in paths)
+
+
+def test_resource_query_early_budget_error_releases_admission_slot(resource_query_engine, monkeypatch):
+    engine, paths, _, _ = resource_query_engine()
+    monkeypatch.setattr(job_cmds_module, "MAX_STUDY_JOBS", 0)
+    conn = _resource_query_connection(engine)
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+    assert "more than 0 accessible retained jobs" in conn.errors[0][0]
+    assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.ERROR
+    assert not engine.resource_query_lock.lock.locked()
+    _invoke_resource_query("job", _resource_query_connection(engine))
+    assert len(paths) == 1 and not paths[0].exists()
+
+
+@pytest.mark.parametrize("kind", ["job", "study"])
+def test_resource_query_reply_failure_releases_slot_for_retry(resource_query_engine, kind):
+    engine, paths, _, _ = resource_query_engine()
+    failed = _resource_query_connection(engine)
+    failed.append_dict = MagicMock(side_effect=RuntimeError("connection closed"))
+
+    with pytest.raises(RuntimeError, match="connection closed"):
+        _invoke_resource_query(kind, failed)
+
+    assert all(not path.exists() for path in paths)
+    assert not engine.resource_query_lock.lock.locked()
+    retry = _resource_query_connection(engine)
+    _invoke_resource_query(kind, retry)
+    assert retry.errors == []
+    assert retry.dicts
+    assert all(not path.exists() for path in paths)
+
+
+@pytest.mark.parametrize("kind", ["job", "study"])
+def test_resource_query_context_failure_releases_slot_for_retry(resource_query_engine, kind):
+    engine, paths, _, _ = resource_query_engine()
+    context = engine.new_context
+    engine.new_context = MagicMock(side_effect=RuntimeError("context failed"))
+
+    with pytest.raises(RuntimeError, match="context failed"):
+        _invoke_resource_query(kind, _resource_query_connection(engine))
+
+    engine.job_def_manager.get_storage_for_download.assert_not_called()
+    assert not engine.resource_query_lock.lock.locked()
+    engine.new_context = context
+    retry = _resource_query_connection(engine)
+    _invoke_resource_query(kind, retry)
+    assert retry.errors == []
+    assert retry.dicts
+    assert all(not path.exists() for path in paths)
+
+
+@pytest.mark.parametrize(
+    "scenario,first_kind,second_kind",
+    [
+        ("same_server", "job", "study"),
+        ("same_server", "study", "job"),
+        ("between_archives", "study", "job"),
+        ("other_server", "job", "study"),
+        ("other_command", "study", None),
+    ],
+)
+def test_resource_queries_hold_one_server_slot_until_cleanup(
+    resource_query_engine, monkeypatch, scenario, first_kind, second_kind
+):
+    engine, paths, _, stage = resource_query_engine(
+        ("job-1", "job-2") if scenario == "between_archives" else ("job-1",)
+    )
+    entered, release, returned = threading.Event(), threading.Event(), threading.Event()
+
+    def blocked_stage(*args, **kwargs):
+        stage(*args, **kwargs)
+        entered.set()
+        release.wait()
+
+    def blocked_totals(participants):
+        if len(paths) == 1:
+            assert not paths[0].exists()
+            entered.set()
+            release.wait()
+        return {"derived": True}
+
+    if scenario == "between_archives":
+        monkeypatch.setattr(job_cmds_module, "sum_job_totals", blocked_totals)
+    else:
+        engine.job_def_manager.get_storage_for_download.side_effect = blocked_stage
+    second_engine, extra_paths = engine, []
+    if scenario == "other_server":
+        second_engine, extra_paths, _, _ = resource_query_engine()
+    first, second = _resource_query_connection(engine), _resource_query_connection(second_engine)
+    engine.job_def_manager.list_components = MagicMock(return_value=["workspace"])
+
+    def second_query():
+        if second_kind:
+            _invoke_resource_query(second_kind, second)
+        else:
+            JobCommandModule().list_job_components(second, ["list_job_components", "job-1"])
+        returned.set()
+
+    busy = scenario in {"same_server", "between_archives"}
+    with ThreadGroup(release) as threads:
+        threads.start(_invoke_resource_query, first_kind, first)
+        assert entered.wait(2), "first query did not reach the held boundary"
+        threads.start(second_query)
+        if busy:
+            assert engine.resource_query_lock.blocked.wait(1), "second query did not contend for the slot"
+        assert returned.wait(1), "another query or command was queued"
+        assert not release.is_set()
+        if busy:
+            assert second.errors[0][0] == "resource query busy; retry later"
+            assert second.errors[0][1][MetaKey.STATUS] == MetaStatusValue.ERROR
+            assert not second.dicts
+            assert engine.job_def_manager.get_storage_for_download.call_count == 1
+        else:
+            assert not second.errors
+        if scenario == "other_command":
+            assert second.successes
+            engine.job_def_manager.list_components.assert_called_once()
+        if scenario == "other_server":
+            assert second.dicts
+            assert not second_engine.resource_query_lock.blocked.is_set()
+    assert not first.errors and first.dicts
+    assert all(not path.exists() for path in paths + extra_paths)
+    if scenario == "between_archives":
+        assert len(first.dicts[0][0]["jobs"]) == 2
+        assert len(paths) == 2
+    retry = _resource_query_connection(engine)
+    _invoke_resource_query("job", retry)
+    assert not retry.errors and retry.dicts
+    assert all(not path.exists() for path in paths)
+
+
+def _query_resource_archives(monkeypatch, tmp_path, workspace, outputs, *, stored=True, study=False):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(JobCommandModule, "_is_resource_job_authorized", staticmethod(lambda *_: True))
+    engine = _FakeListEngine([_finished_job(stored=stored)])
+    _use_store(engine, tmp_path, workspace, outputs)
+    prepare = engine.job_def_manager.get_storage_for_download
+    engine.job_def_manager.get_storage_for_download = MagicMock(wraps=prepare)
+    conn = _resource_query_connection(engine)
+    if study:
+        JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+    else:
+        JobCommandModule().get_job_resources(conn, ["get_job_resources", "job-1", "--site", "site-1"])
+    calls = engine.job_def_manager.get_storage_for_download.call_args_list
+    assert all(not Path(call.kwargs["download_dir"]).exists() for call in calls)
+    assert not engine.resource_query_lock.locked()
+    return conn, [call.kwargs["component"] for call in calls]
+
+
+@pytest.mark.parametrize(
+    "summary_output,stored,study",
+    [(False, False, False), (False, True, False), (True, True, False), (False, True, True), (True, True, True)],
+)
+def test_resource_queries_read_summary_once_for_job_and_site(monkeypatch, tmp_path, summary_output, stored, study):
+    summary, participant = _resource_summary(), _participant_summary()
+    workspace, outputs = {}, {}
+    (outputs if summary_output else workspace)["resource_stats/resource_summary.json"] = canonical_json_bytes(summary)
+    if not summary_output:
+        outputs["resource_stats/resource_summary.json"] = b"must prefer workspace"
+    conn, fetched = _query_resource_archives(monkeypatch, tmp_path, workspace, outputs, stored=stored, study=study)
+    assert not conn.errors
+    result = conn.dicts[0][0]
+    if study:
+        assert result["coverage"]["included_jobs"] == 1
+        assert result["jobs"][0]["totals"]["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 1.5}
+    else:
+        assert result["resource_summary"] == summary
+        assert result["participant_summary"] == participant
+    assert fetched == ["workspace"] + (["outputs"] if summary_output else [])
+
+
+@pytest.mark.parametrize("stored,study", [(True, False), (True, True), (False, False), (False, True)])
+def test_resource_queries_keep_missing_outputs_unavailable(monkeypatch, tmp_path, stored, study):
+    outputs = None if stored else {"resource_stats/resource_summary.json": canonical_json_bytes(_resource_summary())}
+    conn, fetched = _query_resource_archives(monkeypatch, tmp_path, {}, outputs, stored=stored, study=study)
+    if study:
+        result = conn.dicts[0][0]
+        assert result["coverage"] == {
+            "selected_jobs": 1,
+            "included_jobs": 0,
+            "unavailable_jobs": 1,
+            "nonterminal_jobs": 0,
+        }
+        assert result["totals"]["resource_utilization"]["cpu_consumed"] == {"status": "unavailable"}
+    else:
+        assert conn.errors and not conn.dicts
+    assert fetched == ["workspace"] + (["outputs"] if stored else [])
+
+
+def test_resource_reports_survive_the_produced_outputs_split(monkeypatch, tmp_path):
+    run = tmp_path / "run"
+    files = {
+        "resource_stats/resource_summary.json": canonical_json_bytes(_resource_summary()),
+        "log.txt": b"log",
+    }
+    for name, data in files.items():
+        path = run / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    split = link_job_outputs([str(run)])
+    assert split is not None
+    try:
+        split.link_rest()
+        assert sorted(split.found) == sorted(name for name in files if name.startswith("resource_stats/"))
+        workspace, outputs = [
+            {str(path.relative_to(folder)): path.read_bytes() for path in Path(folder).rglob("*") if path.is_file()}
+            for folder in (split.rest_dirs[0], split.output_dirs[0])
+        ]
+        conn, fetched = _query_resource_archives(monkeypatch, tmp_path, workspace, outputs)
+        assert not conn.errors
+        assert conn.dicts[0][0]["resource_summary"] == _resource_summary()
+        assert conn.dicts[0][0]["participant_summary"] == _participant_summary()
+        assert fetched == ["workspace", "outputs"]
+    finally:
+        assert not split.remove()

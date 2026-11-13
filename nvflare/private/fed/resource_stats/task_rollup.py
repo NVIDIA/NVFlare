@@ -1,0 +1,232 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Bounded, participant-owned reduction of settled task-worker observations."""
+
+from __future__ import annotations
+
+import json
+import os
+import threading
+from copy import deepcopy
+from dataclasses import dataclass
+
+from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
+
+from .measurements import aggregate_scope_issues, capacity_to_resource_time, merge_worker_measurement
+
+MAX_SIDECAR_BYTES = 64 * 1024
+_MAX_SCOPES = 10_000
+_MAX_STATE_BYTES = 4 * 1024 * 1024
+_MAX_PENDING_BYTES = 8 * 1024 * 1024
+_UNAVAILABLE = {"status": "unavailable"}
+_ACTIVE = None
+_ACTIVE_LOCK = threading.Lock()
+
+
+def _reset_after_fork():
+    global _ACTIVE, _ACTIVE_LOCK
+    _ACTIVE = None
+    _ACTIVE_LOCK = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_after_fork)
+
+
+def install_task_resource_reducer(reducer):
+    """Install the current physical Client Job's owner; never a site parent."""
+    global _ACTIVE
+    with _ACTIVE_LOCK:
+        _ACTIVE = reducer
+
+
+def get_task_resource_reducer():
+    with _ACTIVE_LOCK:
+        return _ACTIVE
+
+
+def _encoded(value):
+    return json.dumps(value, allow_nan=False, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
+def _key(identity):
+    return (identity.job_id, identity.site_name, identity.task_id, identity.attempt_id, "worker")
+
+
+@dataclass
+class _Scope:
+    identity: TaskAttemptIdentity
+    settled: bool = False
+    record: dict | None = None
+    reserved: bool = True
+
+
+class TaskResourceReducer:
+    """Count each trusted singleton session once without controlling its lifecycle.
+
+    The launcher owns all handles, waiting, cancellation and settlement. This
+    ledger only consumes optional final files after that owner confirms exit.
+    No identities are evicted: losing one could let a replay add work twice.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._scopes = {}
+        self._state_bytes = 0
+        self._pending_bytes = 0
+        self._totals = {"resource_time": None, "cpu_consumed": None, "message_traffic": None, "issues": []}
+        self._incomplete = False
+        self._frozen = False
+        self._containment_lost = False
+
+    def _fits(self, entry_bytes, totals):
+        return entry_bytes + len(_encoded(totals)) + 1024 <= _MAX_STATE_BYTES
+
+    def _freeze(self):
+        self._frozen = True
+        self._incomplete = True
+
+    def mark_incomplete(self):
+        """Keep optional collection failures out of the runtime control path."""
+        with self._lock:
+            self._incomplete = True
+
+    def register(self, identity):
+        """Reserve one sidecar before launch; false disables only statistics."""
+        key = _key(identity)
+        with self._lock:
+            previous = self._scopes.get(key)
+            if previous is not None:
+                if previous.identity != identity:
+                    self._incomplete = True
+                return previous.identity == identity and previous.reserved and not previous.settled
+            if self._frozen:
+                self._containment_lost = True
+                return False
+            scope = _Scope(identity)
+            size = len(_encoded(identity.to_dict()))
+            if len(self._scopes) >= _MAX_SCOPES or not self._fits(self._state_bytes + size, self._totals):
+                self._freeze()
+                self._containment_lost = True
+                return False
+            if self._pending_bytes + MAX_SIDECAR_BYTES > _MAX_PENDING_BYTES:
+                self._incomplete = True
+                self._containment_lost = True
+                return False
+            self._scopes[key] = scope
+            self._state_bytes += size
+            self._pending_bytes += MAX_SIDECAR_BYTES
+            return True
+
+    def _updated_totals(self, record):
+        totals = {**self._totals, "issues": list(self._totals["issues"])}
+        record_issues = list(record["issues"])
+        resource_time = capacity_to_resource_time(
+            record["resource_capacity"], record.get("duration_seconds"), record_issues
+        )
+        issues = totals["issues"]
+        issues.extend(
+            issue for issue in record_issues if issue["metric"] in {"resource_time", "cpu_consumed", "message_traffic"}
+        )
+        for metric, contribution in (
+            ("resource_time", resource_time),
+            ("cpu_consumed", record["cpu_consumed"]),
+            ("message_traffic", record["message_traffic"]),
+        ):
+            totals[metric] = merge_worker_measurement(metric, totals[metric], contribution, issues)
+        totals["issues"] = aggregate_scope_issues(
+            issues, {field: value for field, value in totals.items() if field != "issues" and value is not None}
+        )
+        return totals
+
+    def settle(self, identity, store, *, started=None, settled=False):
+        """Consume independently of result validity, only after physical settlement."""
+        key = _key(identity)
+        with self._lock:
+            scope = self._scopes.get(key)
+            if scope is None or scope.identity != identity:
+                return
+            if not settled and started is not False:
+                # The unresolved row itself marks snapshots incomplete. A later
+                # normal cleanup proof can still supply its final contribution.
+                return
+        record = None
+        if started is not False:
+            try:
+                record = store.read_resource_stats(identity)
+            except Exception:
+                pass
+        with self._lock:
+            scope = self._scopes[key]
+            if scope.settled:
+                if record is not None and scope.record != record:
+                    self._incomplete = True
+            else:
+                scope.settled = True
+                if started is not False:
+                    if record is None or self._frozen:
+                        self._incomplete = True
+                    else:
+                        try:
+                            record_size = len(_encoded(record))
+                            totals = self._updated_totals(record)
+                            if self._fits(self._state_bytes + record_size, totals):
+                                scope.record = record
+                                self._state_bytes += record_size
+                                self._totals = totals
+                            else:
+                                self._freeze()
+                        except (KeyError, TypeError, ValueError, OverflowError):
+                            # Keep earlier totals and retire the optional file below.
+                            self._incomplete = True
+        retired = started is False
+        if started is not False:
+            try:
+                # This optional file is outside checkpoint/result commit and receipts.
+                store.remove_resource_stats(identity)
+                retired = True
+            except Exception:
+                with self._lock:
+                    self._incomplete = True
+        if retired:
+            with self._lock:
+                scope = self._scopes[key]
+                if scope.reserved:
+                    # A failed deletion still occupies this generation's disk budget.
+                    # Successful retries release it exactly once without recounting.
+                    scope.reserved = False
+                    self._pending_bytes -= MAX_SIDECAR_BYTES
+
+    def snapshot(self):
+        """Return worker-only subtotals; None means no contribution and no gap."""
+        with self._lock:
+            result = deepcopy(self._totals)
+            # Rejected registrations may still execute without a tracked settlement.
+            contained = not self._containment_lost and all(scope.settled for scope in self._scopes.values())
+            incomplete = self._incomplete or not contained
+        issues = result["issues"]
+        if incomplete:
+            for field in ("resource_time", "cpu_consumed", "message_traffic"):
+                value = result[field]
+                if value is None:
+                    result[field] = dict(_UNAVAILABLE)
+                elif value.get("status") != "unavailable":
+                    value["status"] = "partial"
+                issues.append({"metric": field, "code": "observation_incomplete"})
+        result["issues"] = aggregate_scope_issues(
+            issues, {field: value for field, value in result.items() if field != "issues" and value is not None}
+        )
+        result["duration_contained"] = contained
+        return result

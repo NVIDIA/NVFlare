@@ -287,6 +287,8 @@ class AdminCommandNames:
     SHOW_ERRORS = "show_errors"
     RESET_ERRORS = "reset_errors"
     GET_JOB_LOG = "get_job_log"
+    GET_JOB_RESOURCES = "get_job_resources"
+    GET_STUDY_RESOURCES = "get_study_resources"
     AUX_COMMAND = "aux_command"
     SYS_INFO = "sys_info"
     REPORT_RESOURCES = "report_resources"

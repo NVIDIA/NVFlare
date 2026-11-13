@@ -67,6 +67,12 @@ from nvflare.fuel.f3.drivers.net_utils import parse_url
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY, LazyDownloadRef
+from nvflare.private.fed.resource_stats.cpu_consumed import mark_unwaited_managed_children
+from nvflare.private.fed.resource_stats.message_traffic import (
+    record_external_trainer_traffic,
+    register_external_trainer,
+    retire_external_trainer,
+)
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
 from nvflare.utils.process_utils import log_subprocess_output, prepare_subprocess_command
@@ -170,6 +176,8 @@ class _TrainerSession(CellSession):
         self._stop_lock = threading.Lock()
         self._cleanup_lock = threading.Lock()
         self._cleaned = False
+        # A settled result snapshot does not cover a later task on this trainer.
+        self.traffic_pending_task_id: Optional[str] = None
 
 
 # Kept as a private compatibility alias for existing backend tests/extensions.
@@ -499,6 +507,8 @@ class ExternalProcessBackend(CellBackendBase):
                         start_new_session=(os.name == "posix"),
                     )
                     trainer.process = process
+                    mark_unwaited_managed_children()
+                    register_external_trainer(self._cell, trainer.trainer_fqcn)
                     if os.name == "posix":
                         # start_new_session made the child its own group leader (pgid == pid)
                         trainer.pgid = process.pid
@@ -596,6 +606,8 @@ class ExternalProcessBackend(CellBackendBase):
             trainer._next_shutdown_retry = now + _SHUTDOWN_RETRY_INTERVAL
             if trainer.session_id is None or not self._process_group_alive(trainer):
                 return
+            with self._task_lock:
+                traffic_task_id = trainer.traffic_pending_task_id
             request = new_cell_message({}, {MsgKey.SESSION_ID: trainer.session_id, MsgKey.REASON: "shutdown requested"})
             try:
                 if wait_timeout > 0:
@@ -614,6 +626,15 @@ class ExternalProcessBackend(CellBackendBase):
                     body = reply.payload
                     if isinstance(body, dict):
                         source_live = body.get(MsgKey.RESULT_SOURCE_LIVE)
+                        traffic_complete = record_external_trainer_traffic(
+                            self._cell,
+                            trainer.trainer_fqcn,
+                            body.get(MsgKey.MESSAGE_TRAFFIC),
+                            incomplete=source_live is True,
+                        )
+                        with self._task_lock:
+                            if traffic_complete and trainer.traffic_pending_task_id == traffic_task_id:
+                                trainer.traffic_pending_task_id = None
                         if source_live is True:
                             trainer.result_source_live.set()
                             # Keep probing: this acknowledgement describes the current
@@ -796,10 +817,12 @@ class ExternalProcessBackend(CellBackendBase):
             # A reaped owned process group cannot remain a result source. Keep
             # this launch-scoped truth consistent even when its final SHUTDOWN
             # acknowledgement was lost during Cell/F3 teardown.
+            traffic_incomplete = trainer.traffic_pending_task_id is not None
             trainer.result_source_live.clear()
             trainer.result_accepted.clear()
             trainer.result_source_task_id = None
             trainer._cleaned = True
+            retire_external_trainer(self._cell, trainer.trainer_fqcn, incomplete=traffic_incomplete)
         try:
             log_thread = trainer.log_thread
             if log_thread is not None and log_thread.is_alive():
@@ -1089,6 +1112,7 @@ class ExternalProcessBackend(CellBackendBase):
 
         with self._task_lock:
             self._current_task = task
+            trainer.traffic_pending_task_id = task.task_id
         try:
             task_message = {
                 MsgKey.SESSION_ID: trainer.session_id,
@@ -1217,6 +1241,12 @@ class ExternalProcessBackend(CellBackendBase):
         with session._result_failure_lock:
             session.result_source_refs = ()
             session.result_receiver_ids = ()
+
+    def _on_trainer_message_traffic(self, session: CellSession, traffic) -> None:
+        if isinstance(session, _TrainerSession):
+            complete = record_external_trainer_traffic(self._cell, session.trainer_fqcn, traffic)
+            if complete and session.traffic_pending_task_id == session.result_source_task_id:
+                session.traffic_pending_task_id = None
 
     @staticmethod
     def _collect_result_source_refs(value, source_fqcn: str, visited=None) -> set[str]:

@@ -20,9 +20,7 @@ monotonic duration window and CPU counters start. At the job process's
 pre-streaming-shutdown publication boundary, the collector freezes CPU, duration,
 and traffic. If known callbacks or managed trainers can outlive that snapshot,
 the affected coverage is partial; a later callback drain does not extend the
-observation window retroactively. The collector scans retained files once per
-participant after CPU and duration are frozen, before report files and the final
-archive are written. There is no sampling thread or periodic report sender.
+observation window retroactively. There is no sampling thread or periodic report sender.
 
 Task collection runs inside the actual worker environment after launcher limits
 and visibility are established. The existing [worker](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/task_worker/worker.py)
@@ -142,11 +140,14 @@ observable failed or aborted work. The reducer retains accepted scope identities
 it does not deduplicate by task name, result identity, PID alone, or hardware UUID
 across sessions. Missing artifacts leave known subtotals with incomplete quality.
 The ledger cannot establish lifecycle ownership. Its retention is capped at
-10,000 scopes and 4 MiB of encoded state, with at most
+10,000 scopes and a 4 MiB budget for encoded identities, accepted records, and
+totals, with at most
 8 MiB of outstanding worker artifacts and 64 KiB per accepted artifact. On
 exhaustion, accepted subtotals are frozen and marked incomplete; replay keys are
 never evicted to admit duplicate work. These bounds limit serialized state, not
-total Python heap.
+total Python heap. Records stay decoded for duplicate comparison; their encoded
+size is charged once when retained. The launcher owns backend handles; the
+reducer tracks only the attempt identity, settlement, and artifact reservation.
 
 ## Duration, capacity-time, and aggregation
 
@@ -188,49 +189,7 @@ If lifecycle evidence cannot place every included execution inside the participa
 window, the duration and CPU average are omitted while valid work and capacity-time
 are retained. Monotonic timestamps are not compared across hosts. Zero duration
 has no CPU average. Concurrent executions may expose the same hardware, so
-capacity-time is an observation rather than unique ownership. Filesystem capacities
-are never added or multiplied by time.
-
-## Retained files and filesystem observation
-
-At participant finalization, the collector streams a depth-first run-directory
-traversal and sums regular entries' `st_size`. It counts hard-linked names
-separately and sparse files by logical length. The scan includes existing inputs,
-configuration, and logs, not just new outputs. It excludes symlinks, nonregular
-entries, and only the top-level `resource_stats/` directory. A nested application
-directory with that name is ordinary content. The scan does not follow symlinks
-to files, directories, or the run root.
-
-Descriptor-relative directory operations use no-follow checks. Children are
-resolved relative to their open parent so that a checked directory replaced with
-an external symlink cannot escape the scan. All iterators and descriptors are
-closed on every exit. If safe primitives are unsupported, the measurement is
-unavailable rather than falling back to a followable path walk.
-
-The scan budgets are 100,000 visited entries, depth 64, and one second of
-monotonic traversal, checked between entries. Iterators are depth-bounded rather
-than materializing directory listings. A limit, permission error, or vanishing
-entry retains a partial subtotal. Failure before observing either an entry or an
-empty directory is unavailable; a successfully observed empty directory is zero.
-File contents are not opened.
-
-The scan is non-atomic: concurrent writes and renames, as well as ordinary mounted
-subtrees, affect it. The result measures logical retained content, not peak storage,
-physical blocks, I/O bytes, or archive size. Separately, `statvfs` on the run
-directory observes visible filesystem capacity without walking mounts or adding
-capacities.
-
-Filesystem observations run in an isolated process behind a bounded finalization
-wait of two seconds, including helper startup, followed by at most 0.25 seconds
-of synchronous reaping. The cooperative scan deadline limits ordinary traversal;
-the outer wait also covers filesystem calls that do not return. At expiry,
-cleanup proceeds with any safely captured measurement and marks unfinished
-observations unavailable. A captured scan subtotal retains partial quality. Late
-results are ignored. The runtime owns observer termination and cleanup. A
-late-starting observer is also abandoned, and the helper monitors its owner
-process and control pipe. Job termination and resource release do not wait
-indefinitely for the observer. These bounds apply to optional filesystem
-observations, not to handoff or archive I/O.
+capacity-time is an observation rather than unique ownership.
 
 ## Message payload accounting
 
@@ -267,9 +226,8 @@ supported issue such as `unsupported` or `malformed_source`, tagged with the
 affected metric. Only reporting-contract issue codes are used, never raw paths,
 native errors, or host data. Missing fields are not zero. Capacity and time
 quality belongs to their owning objects rather than individual dimensions, so
-known CPU and RAM values are retained when GPU measurement fails. CPU work,
-retained content, and traffic each own their quality; filesystem is complete or
-unavailable. A participant, worker, handoff or aggregate owns one `issues` list;
+known CPU and RAM values are retained when GPU measurement fails. CPU work
+and traffic each own their quality. A participant, worker, handoff or aggregate owns one `issues` list;
 metrics retain their own status. Complete scopes use an empty list. Derived
 totals describe their own coverage gaps rather than copying source issue
 details.
@@ -277,7 +235,10 @@ details.
 For example, unreadable worker GPU capacity makes capacity-time partial while
 valid CPU work and traffic can remain complete. A wholly missing worker report
 makes all three rollups incomplete. Neither case changes the coordinator's valid
-startup snapshot or the final file scan.
+startup snapshot. An unchecked cgroup limit can leave capacity overstated, so
+`partial` describes incomplete coverage, not a guaranteed numerical lower bound.
+A lost earlier execution marks the retained attempt's totals partial without
+replacing them with zero.
 
 Consider these disjoint executions, all within one 60-second participant window:
 

@@ -30,9 +30,11 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.zip_utils import get_all_file_paths
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
+from nvflare.private.fed.resource_stats.handoff import terminal_handoff_path, write_terminal_handoff
 from nvflare.private.fed.server.job_runner import JobRunner, _FinishedJobState
 from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.utils.job_cert_utils import write_job_cert
+from tests.resource_stats_report_test_utils import _participant_summary
 
 
 def _patch_job_runner_sleep(side_effect):
@@ -51,6 +53,7 @@ def _patch_job_runner_sleep(side_effect):
 
 def _make_runner_inputs(num_clients=1):
     runner = JobRunner(workspace_root="/tmp")
+    runner.resource_stats.start_job = MagicMock()
     runner.log_info = MagicMock()
     runner.log_warning = MagicMock()
     runner.fire_event = MagicMock()
@@ -67,7 +70,7 @@ def _make_runner_inputs(num_clients=1):
 
     job = MagicMock()
     job.job_id = "job-1"
-    job.meta = {}
+    job.meta = {JobMetaKey.JOB_NAME.value: "hello-pt"}
     job.min_sites = 0  # no minimum by default
     job.required_sites = None  # no required sites by default
 
@@ -1229,7 +1232,7 @@ def test_fail_run_ignores_job_already_finalized():
     assert "job-1" not in engine.exception_run_processes
 
 
-def test_fail_run_releases_client_outcome_barrier():
+def test_fail_run_preserves_reporting_roster_and_cancels_immediately():
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
     runner._stop_run = MagicMock()
@@ -1251,68 +1254,109 @@ def test_fail_run_releases_client_outcome_barrier():
 
     assert runner.fail_run("job-1", ProcessExitCode.EXCEPTION, fl_ctx) == ""
 
-    assert "job-1" not in runner._pending_client_outcomes
-    assert "job-1" not in runner._client_outcome_deadlines
+    assert runner._pending_client_outcomes["job-1"] == {"site-1", "site-2"}
+    assert runner._client_outcome_deadlines["job-1"] == 123.0
     runner._stop_run.assert_called_once_with("job-1", fl_ctx)
 
 
-@pytest.mark.parametrize(
-    "failure_process",
-    [
-        {
-            RunProcessKey.PARTICIPANTS: {},
-            RunProcessKey.PROCESS_RETURN_CODE: ProcessExitCode.EXCEPTION,
-        },
-        {
-            RunProcessKey.PARTICIPANTS: {},
-            RunProcessKey.PROCESS_FINISHED: True,
-            RunProcessKey.PROCESS_EXE_ERROR: True,
-        },
-    ],
-    ids=["failure-return-code", "execution-error-without-return-code"],
-)
-def test_job_complete_process_releases_client_outcome_barrier_after_server_failure(failure_process):
-    runner = JobRunner(workspace_root="/tmp")
+@pytest.mark.parametrize("failure", ["server-exit", "server-error", "launcher-abort", "user-abort"])
+@pytest.mark.parametrize("report_arrives", [False, True])
+@pytest.mark.parametrize("configured_wait", [5.0, 900.0])
+def test_failed_jobs_allow_reports_until_bounded_grace(tmp_path, failure, report_arrives, configured_wait):
+    runner = JobRunner(workspace_root=str(tmp_path))
+    runner.client_outcome_wait_timeout = configured_wait
     runner.logger = MagicMock()
     runner.fire_event = MagicMock()
     runner.log_debug = MagicMock()
     runner.log_info = MagicMock()
     runner.abort_client_run = MagicMock()
     runner._save_workspace = MagicMock()
-    runner.ask_to_stop = False
+    runner._accept_server_resource_report = MagicMock()
+    run_dir = tmp_path / "job-1"
+    runner.resource_stats.start_job("job-1", ["site-1"], run_dir)
+    runner.resource_stats.finalize_job = MagicMock(wraps=runner.resource_stats.finalize_job)
 
     engine = MagicMock()
     engine.run_processes = {}
     engine.client_manager.clients = {}
-    engine.exception_run_processes = {"job-1": failure_process}
-
-    job_manager = MagicMock()
-    engine.get_component.return_value = job_manager
-
+    failure_process = {RunProcessKey.PARTICIPANTS: {}}
+    if failure == "server-error":
+        failure_process.update({RunProcessKey.PROCESS_FINISHED: True, RunProcessKey.PROCESS_EXE_ERROR: True})
+    else:
+        failure_process[RunProcessKey.PROCESS_RETURN_CODE] = (
+            JobReturnCode.ABORTED if failure == "launcher-abort" else ProcessExitCode.EXCEPTION
+        )
+    engine.exception_run_processes = {} if failure == "user-abort" else {"job-1": failure_process}
     completion_ctx = MagicMock()
     engine.new_context.return_value = nullcontext(completion_ctx)
-
-    job = MagicMock(job_id="job-1", run_aborted=False)
+    job = MagicMock(job_id="job-1", run_aborted=failure == "user-abort")
     runner.running_jobs = {"job-1": job}
     runner._pending_client_outcomes = {"job-1": {"site-1"}}
-    runner._client_outcome_deadlines = {"job-1": 123.0}
+    runner._client_outcome_deadlines = {"job-1": 900.0}
+    deadline = min(configured_wait, 20.0)
+    passes = 0
 
-    def _stop_after_first_pass(_):
-        runner.ask_to_stop = True
+    def advance(_):
+        nonlocal passes
+        passes += 1
+        if passes == 1:
+            runner._save_workspace.assert_not_called()
+            runner.resource_stats.finalize_job.assert_not_called()
+            assert runner._client_outcome_deadlines["job-1"] == deadline
+            if failure != "user-abort":
+                runner.abort_client_run.assert_called_once_with("job-1", [], completion_ctx)
+            if report_arrives:
+                report = {"participant_summary": json.dumps(_participant_summary()).encode()}
+                assert runner.accept_client_resource_report("job-1", "site-1", report) == "accepted"
+                runner.resolve_client_outcome("job-1", "site-1")
+                clock.monotonic.return_value = 1.0
+            else:
+                clock.monotonic.return_value = deadline - 1
+        elif passes == 2 and not report_arrives:
+            runner._save_workspace.assert_not_called()
+            assert runner._client_outcome_deadlines["job-1"] == deadline
+            clock.monotonic.return_value = deadline
+        else:
+            runner.ask_to_stop = True
 
-    with _patch_job_runner_sleep(_stop_after_first_pass):
+    with _patch_job_runner_sleep(advance) as clock:
         runner._job_complete_process(engine)
 
+    expected = RunStatus.FINISHED_ABORTED if "abort" in failure else RunStatus.FINISHED_EXECUTION_EXCEPTION
+    engine.get_component.return_value.set_status.assert_called_once_with("job-1", expected, completion_ctx)
     runner._save_workspace.assert_called_once_with(completion_ctx, ANY, "job-1")
-    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_EXECUTION_EXCEPTION, completion_ctx)
-    runner.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, completion_ctx)
-    engine.remove_exception_process.assert_called_once_with("job-1")
+    runner.resource_stats.finalize_job.assert_called_once_with("job-1")
+    summary = json.loads((run_dir / "resource_stats" / "resource_summary.json").read_text())
+    entry = next(p for p in summary["participants"] if p["participant_name"] == "site-1")
+    if report_arrives:
+        assert "status" not in entry
+        assert entry["resource_utilization"]["cpu_consumed"]["cpu_seconds"] == 1.5
+    else:
+        assert entry["status"] == "missing"
     assert "job-1" not in runner.running_jobs
-    assert "job-1" not in runner._pending_client_outcomes
     assert "job-1" not in runner._client_outcome_deadlines
-    runner.logger.info.assert_called_once_with(
-        "Server failure for job (job-1); skipping client outcome wait for: ['site-1']"
-    )
+
+
+def test_reporting_grace_does_not_block_another_jobs_completion():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.running_jobs = {name: MagicMock(job_id=name, run_aborted=True) for name in ("waiting", "ready")}
+    runner._pending_client_outcomes = {"waiting": {"site-1"}}
+    runner._save_workspace = MagicMock()
+    runner._fire_job_lifecycle_event = MagicMock()
+    runner.log_debug = MagicMock()
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+    ctx = MagicMock()
+    engine.new_context.return_value = nullcontext(ctx)
+
+    with _patch_job_runner_sleep(lambda _: setattr(runner, "ask_to_stop", True)):
+        runner._job_complete_process(engine)
+
+    runner._save_workspace.assert_called_once_with(ctx, ANY, "ready")
+    engine.get_component.return_value.set_status.assert_called_once_with("ready", RunStatus.FINISHED_ABORTED, ctx)
+    assert set(runner.running_jobs) == {"waiting"}
+    assert runner._client_outcome_deadlines["waiting"] == 20.0
 
 
 def test_job_complete_process_keeps_client_outcome_barrier_for_clean_unknown_return_code():
@@ -1384,6 +1428,7 @@ def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code
     job_manager.set_status.assert_not_called()
     runner.ask_to_stop = False
     job.run_aborted = True
+    runner.resolve_client_outcome("job-1", "site-1")
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
@@ -1436,6 +1481,143 @@ def test_job_complete_process_finalizes_server_outcome_after_client_outcome_grac
     job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_COMPLETED, completion_ctx)
     assert "site-1" in runner.logger.warning.call_args[0][0]
     assert "job-1" not in runner._client_outcome_deadlines
+
+
+@pytest.mark.parametrize("failure", ["assembly", "serialization"])
+def test_bad_server_handoff_preserves_client_reports_at_job_completion(tmp_path, failure):
+    runner = JobRunner(workspace_root=str(tmp_path))
+    runner.fire_event = MagicMock()
+    runner.log_debug = MagicMock()
+    runner.log_exception = MagicMock()
+    runner._save_workspace = MagicMock()
+    run_dir = tmp_path / "run_job-1"
+    runner.resource_stats.start_job("job-1", ["site-1"], run_dir)
+    client = _participant_summary()
+    assert (
+        runner.accept_client_resource_report("job-1", "site-1", {"participant_summary": json.dumps(client).encode()})
+        == "accepted"
+    )
+    runner.bind_server_resource_generation("job-1", "server-launch")
+    handoff = {**_participant_summary(participant_name="server"), "launch_generation": "server-launch"}
+    path = write_terminal_handoff(run_dir, handoff, launch_generation="server-launch")
+    if failure == "assembly":
+        del handoff["issues"]
+    else:
+        handoff["resource_utilization"]["cpu_consumed"]["cpu_seconds"] = float("inf")
+    path.write_text(json.dumps(handoff))
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+    completion_ctx = MagicMock()
+    completion_ctx.get_workspace.return_value.get_run_dir.return_value = str(run_dir)
+    engine.new_context.return_value = nullcontext(completion_ctx)
+    runner.running_jobs = {"job-1": MagicMock(job_id="job-1", run_aborted=False)}
+
+    with _patch_job_runner_sleep(lambda _: setattr(runner, "ask_to_stop", True)):
+        runner._job_complete_process(engine)
+
+    summary = json.loads((run_dir / "resource_stats" / "resource_summary.json").read_text())
+    entries = {entry["participant_name"]: entry for entry in summary["participants"]}
+    assert entries["site-1"]["resource_utilization"] == _participant_summary()["resource_utilization"]
+    assert "status" not in entries["site-1"]
+    assert entries["server"]["status"] == "missing"
+    assert entries["site-1"]["reported_at"] == client["reported_at"]
+    assert not path.exists()
+    runner._save_workspace.assert_called_once_with(completion_ctx, ANY, "job-1")
+    engine.get_component.return_value.set_status.assert_called_once_with(
+        "job-1", RunStatus.FINISHED_COMPLETED, completion_ctx
+    )
+    assert "job-1" not in runner.running_jobs
+
+
+def test_job_complete_process_contains_resource_stats_finalization_write_failure():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event = MagicMock()
+    runner.log_debug = MagicMock()
+    runner.log_exception = MagicMock()
+    runner._save_workspace = MagicMock()
+    runner._accept_server_resource_report = MagicMock()
+    runner._fire_job_lifecycle_event = MagicMock()
+    runner.ask_to_stop = False
+    runner.resource_stats.has_job = MagicMock(return_value=True)
+    runner.resource_stats.finalize_job = MagicMock(side_effect=OSError("disk full"))
+    runner.resource_stats.discard_job_artifacts = MagicMock()
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+    parent_cell = engine.get_cell.return_value
+    parent_cell.get_fqcn.return_value = "server"
+    parent_cell.get_traffic_stats.return_value = {"server.job-1": {"sent": 1, "received": 2}}
+    parent_cell.pop_traffic_stats.side_effect = RuntimeError("counter unavailable")
+    job_manager = MagicMock()
+    engine.get_component.return_value = job_manager
+    completion_ctx = MagicMock()
+    engine.new_context.return_value = nullcontext(completion_ctx)
+
+    job = MagicMock(job_id="job-1", run_aborted=True)
+    job.meta = {}
+    runner.running_jobs = {"job-1": job}
+
+    def _stop_after_first_pass(_):
+        runner.ask_to_stop = True
+
+    with _patch_job_runner_sleep(_stop_after_first_pass) as clock:
+        runner._job_complete_process(engine)
+
+    runner.resource_stats.finalize_job.assert_called_once_with("job-1")
+    clock.sleep.assert_called_once_with(1.0)
+    runner._accept_server_resource_report.assert_called_once_with("job-1", completion_ctx)
+    runner.resource_stats.discard_job_artifacts.assert_called_once_with("job-1")
+    runner._save_workspace.assert_called_once_with(completion_ctx, ANY, "job-1")
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, completion_ctx)
+    runner._fire_job_lifecycle_event.assert_has_calls(
+        [
+            call(EventType.JOB_ABORTED, "job-1", completion_ctx),
+            call(EventType.JOB_COMPLETED, "job-1", completion_ctx),
+        ]
+    )
+    assert "Failed to finalize resource statistics" in runner.log_exception.call_args[0][1]
+    parent_cell.pop_traffic_stats.assert_called_once_with("server.job-1")
+
+
+@pytest.mark.parametrize("aborted", [False, True])
+def test_job_completion_retires_parent_peers_after_final_report_archive_and_status(aborted):
+    order = []
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event = MagicMock()
+    runner.log_debug = MagicMock()
+    runner._get_finished_job_status = MagicMock(return_value=RunStatus.FINISHED_COMPLETED)
+    runner._accept_server_resource_report = MagicMock(side_effect=lambda *_args: order.append("accept"))
+    runner._save_workspace = MagicMock(side_effect=lambda *_args: order.append("archive"))
+    runner.resource_stats = MagicMock()
+    runner.resource_stats.finalize_job.side_effect = lambda *_args: order.append("finalize")
+    participants = [{"name": "site-1", "fqcn": "relay-1.site-1"}]
+    job = MagicMock(job_id="job-1", run_aborted=aborted)
+    job.meta = {JobMetaKey.JOB_CLIENTS: participants}
+    runner.running_jobs = {"job-1": job}
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+    job_manager = engine.get_component.return_value
+    job_manager.set_status.side_effect = lambda *_args: order.append("status")
+    engine.new_context.return_value = nullcontext(MagicMock())
+
+    def retire_before_unregister(cell, job_id, sites):
+        assert cell is engine.get_cell.return_value
+        assert sites is participants
+        assert job_id in runner.running_jobs
+        order.append("retire")
+
+    with (
+        _patch_job_runner_sleep(lambda _seconds: setattr(runner, "ask_to_stop", True)),
+        patch("nvflare.private.fed.server.job_runner.retire_job_traffic", side_effect=retire_before_unregister),
+    ):
+        runner._job_complete_process(engine)
+
+    assert order == ["accept", "finalize", "archive", "status", "retire"]
+    assert "job-1" not in runner.running_jobs
 
 
 def test_job_complete_process_keeps_processing_jobs_when_save_workspace_fails():
@@ -1729,3 +1911,273 @@ def test_start_run_integration_real_reply_check_updates_meta(mock_get_bool):
     warning_msg = runner.log_warning.call_args[0][1]
     assert "site-2" in warning_msg
     assert "timed out" in warning_msg
+
+
+@patch("nvflare.private.fed.server.job_runner.check_client_replies", return_value=[])
+@patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=True)
+def test_start_run_continues_when_resource_stats_setup_fails(mock_get_bool, mock_check_replies):
+    runner, fl_ctx, engine, job, client_sites = _make_runner_inputs()
+    runner.resource_stats.start_job = MagicMock(side_effect=OSError("unsafe path"))
+
+    runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
+
+    engine.start_app_on_server.assert_called_once()
+    assert "Resource statistics are unavailable" in runner.log_warning.call_args[0][1]
+
+
+@patch("nvflare.private.fed.server.job_runner.check_client_replies", return_value=[])
+@patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=True)
+def test_start_run_registers_resource_participants_without_copying_job_name(mock_get_bool, mock_check_replies):
+    runner, fl_ctx, _engine, job, client_sites = _make_runner_inputs()
+    fl_ctx.get_workspace.return_value.get_run_dir.return_value = "/tmp/run_job-1"
+
+    runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
+
+    runner.resource_stats.start_job.assert_called_once_with("job-1", ["site-1"], "/tmp/run_job-1")
+
+
+@patch("nvflare.private.fed.server.job_runner.check_client_replies", return_value=[])
+@patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=True)
+def test_start_run_keeps_selected_but_not_deployable_client_missing(mock_get_bool, mock_check_replies, tmp_path):
+    runner, fl_ctx, engine, job, client_sites = _make_runner_inputs()
+    runner.resource_stats = type(runner.resource_stats)()
+    fl_ctx.get_workspace.return_value.get_run_dir.return_value = str(tmp_path / "run_job-1")
+
+    runner._start_run(
+        job_id=job.job_id,
+        job=job,
+        client_sites=client_sites,
+        fl_ctx=fl_ctx,
+        expected_client_names=["site-1", "site-2"],
+    )
+    summary = runner.resource_stats.finalize_job(job.job_id)
+
+    site2 = next(entry for entry in summary["participants"] if entry["participant_name"] == "site-2")
+    assert site2["status"] == "missing"
+    assert job.meta[JobMetaKey.RESOURCE_PARTICIPANTS] == ["site-1", "site-2"]
+    engine.get_component.return_value.update_meta.assert_called_once_with(
+        "job-1",
+        {JobMetaKey.RESOURCE_PARTICIPANTS.value: ["site-1", "site-2"]},
+        fl_ctx,
+    )
+
+
+@patch("nvflare.private.fed.server.job_runner.check_client_replies", return_value=[])
+@patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=True)
+def test_deploy_failed_client_renders_disabled_not_missing(mock_get_bool, mock_check_replies, tmp_path):
+    # Mirrors the call sequence run() performs once a site fails to deploy: start
+    # the run with that site already excluded from client_sites but still in
+    # expected_client_names, then disable it so it is distinguishable from a site
+    # that was expected to report and simply never did.
+    runner, fl_ctx, engine, job, client_sites = _make_runner_inputs()
+    runner.resource_stats = type(runner.resource_stats)()
+    fl_ctx.get_workspace.return_value.get_run_dir.return_value = str(tmp_path / "run_job-1")
+    failed_clients = ["site-2"]
+
+    runner._start_run(
+        job_id=job.job_id,
+        job=job,
+        client_sites=client_sites,
+        fl_ctx=fl_ctx,
+        expected_client_names=["site-1", "site-2"],
+    )
+    runner.resource_stats.disable_clients(job.job_id, failed_clients)
+    summary = runner.resource_stats.finalize_job(job.job_id)
+
+    site2 = next(entry for entry in summary["participants"] if entry["participant_name"] == "site-2")
+    assert site2["status"] == "disabled"
+
+
+@pytest.mark.parametrize(
+    "traffic",
+    [None, {"sent_bytes": 0, "received_bytes": 0}, {"sent_bytes": 1024, "received_bytes": 512}],
+)
+def test_server_handoff_is_bound_and_accepted_before_finalization(tmp_path, traffic):
+    runner = JobRunner(workspace_root=str(tmp_path))
+    runner.bind_server_resource_generation("job-1", "server-launch")
+    run_dir = tmp_path / "run_job-1"
+    runner.resource_stats.start_job("job-1", ["site-1"], run_dir)
+    workspace = MagicMock()
+    workspace.get_run_dir.return_value = str(run_dir)
+    fl_ctx = MagicMock()
+    fl_ctx.get_workspace.return_value = workspace
+    if traffic is not None:
+        handoff = _participant_summary()
+        handoff["resource_utilization"]["message_traffic"] = traffic
+        write_terminal_handoff(run_dir, handoff, launch_generation="server-launch")
+
+    runner._accept_server_resource_report("job-1", fl_ctx)
+    summary = runner.resource_stats.finalize_job("job-1")
+
+    server = next(entry for entry in summary["participants"] if entry["participant_name"] == "server")
+    assert "status" not in server
+    if traffic is None:
+        assert server["resource_capacity"] == {"status": "unavailable"}
+        assert {"metric": "resource_capacity", "code": "observation_incomplete"} in server["issues"]
+        assert server["resource_utilization"]["message_traffic"] == {"status": "unavailable"}
+        assert {"metric": "message_traffic", "code": "observation_incomplete"} in server["issues"]
+    else:
+        assert server["duration_seconds"] == 2
+        assert server["resource_utilization"]["message_traffic"] == traffic
+        assert server["issues"] == []
+    assert not terminal_handoff_path(run_dir, launch_generation="server-launch").exists()
+    assert not hasattr(runner, "f3_counters")
+
+
+def test_restore_running_job_registers_resource_participants_before_server_start(tmp_path):
+    runner = JobRunner(workspace_root=str(tmp_path))
+    runner.scheduler = MagicMock()
+    workspace = MagicMock()
+    workspace.get_run_dir.return_value = str(tmp_path / "run_job-1")
+    fl_ctx = MagicMock()
+    fl_ctx.get_workspace.return_value = workspace
+    engine = fl_ctx.get_engine.return_value
+    job = MagicMock()
+    job.meta = {
+        JobMetaKey.JOB_NAME.value: "hello-pt",
+        JobMetaKey.RESOURCE_PARTICIPANTS.value: ["site-1", "site-2"],
+    }
+    engine.get_component.return_value.get_job.return_value = job
+    client = MagicMock()
+    client.name = "site-1"
+
+    def assert_registered_before_start(*args, **kwargs):
+        assert runner.resource_stats.has_job("job-1")
+        return ""
+
+    engine.start_app_on_server.side_effect = assert_registered_before_start
+
+    runner.restore_running_job("job-1", {"token-1": client}, None, fl_ctx)
+
+    assert runner.resource_stats.accept_resource_report("job-1", "site-1", {"participant_summary": b"{}"}) == "invalid"
+    summary = runner.resource_stats.finalize_job("job-1")
+    assert summary["job_id"] == "job-1"
+    site2 = next(entry for entry in summary["participants"] if entry["participant_name"] == "site-2")
+    assert site2["status"] == "missing"
+    assert engine.start_app_on_server.call_args.kwargs["restored_attempt"] is True
+    assert engine.start_app_on_server.call_args.kwargs["snapshot"] is None
+    runner.scheduler.restore_scheduled_job.assert_called_once_with("job-1")
+
+
+def _make_restore_inputs(tmp_path):
+    runner, fl_ctx, engine, job, _client_sites = _make_runner_inputs()
+    runner.scheduler = MagicMock()
+    runner.log_error = MagicMock()
+    fl_ctx.get_workspace.return_value.get_run_dir.return_value = str(tmp_path / "run_job-1")
+    engine.get_component.return_value.get_job.return_value = job
+    client = MagicMock()
+    client.name = "site-1"
+    return runner, fl_ctx, engine, job, {"token-1": client}
+
+
+@pytest.mark.parametrize("raise_on_start", (False, True))
+def test_failed_restore_does_not_claim_running_ownership(tmp_path, raise_on_start):
+    runner, fl_ctx, engine, _job, clients = _make_restore_inputs(tmp_path)
+    if raise_on_start:
+        engine.start_app_on_server.side_effect = RuntimeError("launch failed")
+    else:
+        engine.start_app_on_server.return_value = "launch failed"
+
+    runner.restore_running_job("job-1", clients, None, fl_ctx)
+
+    assert "job-1" not in runner.running_jobs
+    runner.scheduler.restore_scheduled_job.assert_not_called()
+    runner.log_error.assert_called_once()
+
+
+@pytest.mark.parametrize("already_running", (False, True))
+def test_failed_restore_preserves_existing_running_job(tmp_path, already_running):
+    runner, fl_ctx, engine, job, clients = _make_restore_inputs(tmp_path)
+    if already_running:
+        runner.running_jobs["job-1"] = job
+    engine.start_app_on_server.return_value = "launch failed"
+
+    runner.restore_running_job("job-1", clients, None, fl_ctx)
+
+    assert ("job-1" in runner.running_jobs) is already_running
+    if already_running:
+        assert runner.running_jobs["job-1"] is job
+    runner.scheduler.restore_scheduled_job.assert_not_called()
+    runner.log_error.assert_called_once()
+
+
+def test_scheduler_restore_failure_keeps_running_job_owned(tmp_path):
+    runner, fl_ctx, _engine, job, clients = _make_restore_inputs(tmp_path)
+    runner.scheduler.restore_scheduled_job.side_effect = RuntimeError("scheduler restore failed")
+
+    runner.restore_running_job("job-1", clients, None, fl_ctx)
+
+    assert runner.running_jobs["job-1"] is job
+    assert runner._pending_client_outcomes["job-1"] == {"site-1"}
+    runner.log_error.assert_called_once()
+
+
+def test_restore_continues_when_optional_resource_report_setup_fails(tmp_path):
+    runner, fl_ctx, _engine, job, clients = _make_restore_inputs(tmp_path)
+    runner.resource_stats.start_job.side_effect = RuntimeError("report setup failed")
+    runner.resource_stats.forget_job = MagicMock()
+
+    runner.restore_running_job("job-1", clients, None, fl_ctx)
+
+    assert runner.running_jobs["job-1"] is job
+    runner.resource_stats.start_job.assert_called_once_with(
+        "job-1", ["site-1"], str(tmp_path / "run_job-1"), reset_existing=True
+    )
+    runner.resource_stats.forget_job.assert_called_once_with("job-1")
+    runner.scheduler.restore_scheduled_job.assert_called_once_with("job-1")
+    runner.log_warning.assert_called_once()
+
+
+def test_server_generation_discards_only_matching_failed_launch_and_retires_job(tmp_path):
+    runner = JobRunner(workspace_root=str(tmp_path))
+    runner.bind_server_resource_generation("job-1", "old-launch")
+    runner.discard_server_resource_generation("job-1", "old-launch")
+    assert runner._server_resource_generations == {}
+
+    runner.bind_server_resource_generation("job-1", "new-launch")
+    runner.discard_server_resource_generation("job-1", "old-launch")
+    assert runner._server_resource_generations == {"job-1": "new-launch"}
+    runner.scheduler = MagicMock()
+    runner.remove_running_job("job-1")
+    assert runner._server_resource_generations == {}
+
+
+@pytest.mark.parametrize("bound_generation", [None, "new-launch"])
+def test_server_missing_generation_or_report_never_uses_old_or_unbound_file(tmp_path, bound_generation):
+    runner = JobRunner(workspace_root=str(tmp_path))
+    run_dir = tmp_path / "run_job-1"
+    runner.resource_stats.start_job("job-1", [], run_dir)
+    if bound_generation:
+        runner.bind_server_resource_generation("job-1", bound_generation)
+    # Neither the old generation nor the legacy filename belongs to this execution.
+    unavailable = {"status": "unavailable"}
+    handoff = {
+        "duration_seconds": 10,
+        "resource_capacity": unavailable,
+        "resource_time": unavailable,
+        "resource_utilization": {
+            "cpu_consumed": {"cpu_seconds": 99},
+            "message_traffic": unavailable,
+        },
+        "issues": [
+            {"metric": metric, "code": "observation_incomplete"}
+            for metric in (
+                "resource_capacity",
+                "resource_time",
+                "message_traffic",
+            )
+        ],
+    }
+    old_path = write_terminal_handoff(run_dir, handoff, launch_generation="old-launch")
+    diagnostic_path = old_path.with_name("terminal_handoff.json")
+    diagnostic_path.write_text(json.dumps(handoff))
+    fl_ctx = MagicMock()
+    fl_ctx.get_workspace.return_value.get_run_dir.return_value = str(run_dir)
+
+    runner.resource_stats.accept_resource_report = MagicMock(return_value="accepted")
+    runner._accept_server_resource_report("job-1", fl_ctx)
+    server = json.loads(runner.resource_stats.accept_resource_report.call_args.args[2]["participant_summary"])
+    assert "duration_seconds" not in server
+    assert server["resource_utilization"]["cpu_consumed"] == unavailable
+    assert old_path.exists()
+    assert diagnostic_path.exists()

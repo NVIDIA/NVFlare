@@ -1,0 +1,137 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""One-boundary CPU accounting for a job execution process.
+
+On Unix, SELF covers the process and its threads; CHILDREN covers only
+terminated children that have been waited for, including descendants only
+when every intervening process waited. No site-parent CPU or cgroup-wide
+counter is used. This module does not sample or change worker teardown.
+"""
+
+from __future__ import annotations
+
+import math
+import os
+import threading
+from typing import Any
+
+try:
+    import resource
+except ImportError:
+    resource = None
+
+_active: CpuConsumedAccountant | None = None
+_active_lock = threading.Lock()
+
+
+def _reset_accountant_after_fork() -> None:
+    # The child has different process counters, and a copied thread lock may
+    # have been held by a thread that did not survive the fork. Never acquire
+    # an inherited lock here or use the parent's measurement baseline.
+    global _active, _active_lock
+    _active = None
+    _active_lock = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_accountant_after_fork)
+
+
+def _read_usage() -> tuple[float, float]:
+    if resource is None:
+        raise OSError("process CPU counters are unavailable on this platform")
+    return tuple(
+        math.fsum((usage.ru_utime, usage.ru_stime))
+        for usage in (resource.getrusage(resource.RUSAGE_SELF), resource.getrusage(resource.RUSAGE_CHILDREN))
+    )
+
+
+class CpuConsumedAccountant:
+    """Measure CPU used by one job process and its waited descendants.
+
+    The job collector owns the shared participant measurement duration.
+    This accountant records only the CPU counter delta over that window.
+    """
+
+    def __init__(
+        self,
+        *,
+        usage_reader=_read_usage,
+        prior_observation_incomplete: bool = False,
+        known_attribution_incomplete: bool = False,
+        include_children: bool = True,
+    ):
+        self._usage_reader = usage_reader
+        self._start: tuple[float, float] | None = None
+        self._lock = threading.Lock()
+        self._prior_observation_incomplete = prior_observation_incomplete
+        self._known_attribution_incomplete = known_attribution_incomplete
+        self._include_children = include_children
+        try:
+            self._start = self._usage_reader()
+        except (OSError, ValueError, AttributeError, TypeError, OverflowError):
+            pass
+
+    def mark_attribution_incomplete(self) -> None:
+        """Record a lifecycle path that may outlive the final boundary."""
+
+        with self._lock:
+            self._known_attribution_incomplete = True
+
+    def exclude_children(self) -> None:
+        """Use SELF over the existing baseline when workers report separately."""
+
+        with self._lock:
+            self._include_children = False
+
+    def finish(self) -> dict[str, Any]:
+        with self._lock:
+            known_attribution_incomplete = self._known_attribution_incomplete
+        issues = set()
+        if self._prior_observation_incomplete:
+            issues.add("observation_incomplete")
+        if known_attribution_incomplete:
+            issues.add("attribution_incomplete")
+        if self._start is None:
+            return {"status": "unavailable", "issues": ["observation_incomplete"]}
+        try:
+            end = self._usage_reader()
+            seconds = math.fsum((end[0] - self._start[0], end[1] - self._start[1] if self._include_children else 0.0))
+            if not math.isfinite(seconds) or seconds < 0:
+                raise ValueError("invalid CPU counter delta")
+        except (OSError, ValueError, AttributeError, TypeError, OverflowError):
+            return {"status": "unavailable", "issues": ["observation_incomplete"]}
+        result = {"cpu_seconds": seconds}
+        if issues:
+            result["status"] = "partial"
+            result["issues"] = sorted(issues)
+        return result
+
+
+def install_cpu_accountant(accountant: CpuConsumedAccountant) -> None:
+    """Make the current job process's collector available to managed launchers."""
+
+    global _active
+    with _active_lock:
+        _active = accountant
+
+
+def mark_unwaited_managed_children() -> None:
+    """Mark managed children whose CPU attribution may be incomplete."""
+
+    with _active_lock:
+        accountant = _active
+    if accountant is not None:
+        accountant.mark_attribution_incomplete()

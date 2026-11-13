@@ -39,6 +39,8 @@ TESTS = (
     "tests/integration_test/fast/peer_admin_authorization_test.py",
     "tests/integration_test/fast/process_launcher_lifecycle_test.py",
     "tests/integration_test/fast/recipe_log_config_test.py",
+    "tests/integration_test/fast/resource_stats_cpu_process_test.py",
+    "tests/integration_test/fast/resource_stats_task_process_test.py",
     "tests/integration_test/fast/server_transit_e2e_test.py",
     "tests/integration_test/fast/slurm_task_worker_test.py",
     "tests/integration_test/fast/slurm_task_session_test.py",

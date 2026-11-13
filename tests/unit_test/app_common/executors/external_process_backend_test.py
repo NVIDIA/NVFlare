@@ -66,6 +66,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.streaming.download_service import SOURCE_FAILURE_TOPIC
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+from nvflare.private.fed.resource_stats.message_traffic import snapshot_message_traffic
 from tests.timing_utils import (
     WAIT_TIMEOUT,
     CheckedThread,
@@ -173,6 +174,9 @@ class FakeCell:
 
     def get_fqcn(self):
         return self.fqcn
+
+    def get_traffic_stats(self):
+        return {}
 
     def is_cell_connected(self, target_fqcn):
         return target_fqcn not in self.disconnected
@@ -426,6 +430,78 @@ def _drive_natural_reaper(backend, trainer, monkeypatch, steps):
     backend._closed = True
     backend._wait_for_natural_exit_and_cleanup(trainer)
     return observations
+
+
+@pytest.mark.parametrize("pending_task", ["task-1", "task-2"])
+def test_traffic_snapshot_requires_existing_session_and_task_validation(env, pending_task):
+
+    backend, _ = _initialized_backend(env)
+    trainer = backend._active_launch
+    try:
+        trainer.result_source_live.set()
+        trainer.result_source_task_id = "task-1"
+        trainer.traffic_pending_task_id = pending_task
+        payload = {
+            MsgKey.SESSION_ID: trainer.session_id,
+            MsgKey.TASK_ID: "task-1",
+            MsgKey.MESSAGE_TRAFFIC: {"sent_bytes": 123, "received_bytes": 456},
+        }
+        invalid = dict(payload, **{MsgKey.SESSION_ID: "wrong-session"})
+        reply = env.cell.deliver(Topic.RESULT_SOURCE_SETTLED, trainer.trainer_fqcn, invalid)
+        assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.ERROR
+        assert snapshot_message_traffic(env.cell)["status"] == "partial"
+        reply = env.cell.deliver(Topic.RESULT_SOURCE_SETTLED, trainer.trainer_fqcn, payload)
+        assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_SOURCE_SETTLED
+        assert snapshot_message_traffic(env.cell) == {"sent_bytes": 123, "received_bytes": 456}
+        assert not trainer.result_source_live.is_set()
+        assert trainer.traffic_pending_task_id == (None if pending_task == "task-1" else pending_task)
+    finally:
+        backend.finalize(FLContext())
+
+
+def test_existing_shutdown_reply_updates_cumulative_trainer_traffic(env):
+
+    backend, _ = _initialized_backend(env)
+    trainer = backend._active_launch
+    env.cell.on_shutdown = lambda *_: make_cell_reply(
+        CellReturnCode.OK,
+        body={
+            MsgKey.RESULT_SOURCE_LIVE: False,
+            MsgKey.MESSAGE_TRAFFIC: {"sent_bytes": 200, "received_bytes": 500},
+        },
+    )
+    try:
+        backend._request_trainer_shutdown(trainer, wait_timeout=0.1)
+        assert snapshot_message_traffic(env.cell) == {"sent_bytes": 200, "received_bytes": 500}
+        backend._request_trainer_shutdown(trainer, wait_timeout=0.1)
+        assert snapshot_message_traffic(env.cell) == {"sent_bytes": 200, "received_bytes": 500}
+    finally:
+        backend.finalize(FLContext())
+
+
+def test_failed_result_source_keeps_traffic_partial_after_existing_failure_cleanup(env):
+
+    backend, _ = _initialized_backend(env)
+    trainer = backend._active_launch
+    try:
+        ebp.record_external_trainer_traffic(env.cell, trainer.trainer_fqcn, {"sent_bytes": 123, "received_bytes": 456})
+        trainer.traffic_pending_task_id = "unobserved-task"
+        # Existing source-failure handling clears this live flag before cleanup.
+        trainer.result_source_live.clear()
+        trainer.result_failure_notified = True
+        trainer.result_failure_delivery_done.set()
+        trainer.process.exit(1)
+
+        backend._cleanup_trainer(trainer)
+
+        assert snapshot_message_traffic(env.cell) == {
+            "sent_bytes": 123,
+            "received_bytes": 456,
+            "status": "partial",
+            "issues": ["observation_incomplete"],
+        }
+    finally:
+        backend.finalize(FLContext())
 
 
 def _install_auto_result(env, lazy_result=False):
@@ -3932,3 +4008,88 @@ def _isolate_module_clocks(monkeypatch):
         "nvflare.app_common.executors.client_api.cell_backend",
         "nvflare.app_common.executors.client_api.external_process_backend",
     )
+
+
+@pytest.mark.parametrize("fresh_shutdown", [False, True])
+def test_persistent_trainer_needs_traffic_for_its_latest_task(env, fresh_shutdown):
+    backend, fl_ctx = _initialized_backend(env)
+    trainer = backend._active_launch
+    ebp.record_external_trainer_traffic(env.cell, trainer.trainer_fqcn, {"sent_bytes": 100, "received_bytes": 200})
+    seen = []
+
+    def fail_task(topic, target, request):
+        seen.append(request.payload[MsgKey.TASK_ID])
+        if fresh_shutdown:
+            return make_cell_reply(CellReturnCode.OK, body={MsgKey.REPLY_TOPIC: Topic.TASK_FAILED})
+        trainer.process.exit(1)
+        return _task_accepted_reply()
+
+    env.cell.on_request = fail_task
+    try:
+        result = backend._run_task(trainer, "train", Shareable(), fl_ctx, Signal())
+        assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+        assert seen == [trainer.traffic_pending_task_id]
+        if fresh_shutdown:
+            env.cell.on_shutdown = lambda *_: make_cell_reply(
+                CellReturnCode.OK,
+                body={
+                    MsgKey.RESULT_SOURCE_LIVE: False,
+                    MsgKey.MESSAGE_TRAFFIC: {"sent_bytes": 150, "received_bytes": 300},
+                },
+            )
+            backend._request_trainer_shutdown(trainer, wait_timeout=0.1, force_probe=True)
+            trainer.process.exit(1)
+        backend._cleanup_trainer(trainer)
+        expected = (
+            {"sent_bytes": 150, "received_bytes": 300}
+            if fresh_shutdown
+            else {"sent_bytes": 100, "received_bytes": 200, "status": "partial", "issues": ["observation_incomplete"]}
+        )
+        assert snapshot_message_traffic(env.cell) == expected
+    finally:
+        backend.finalize(FLContext())
+
+
+@pytest.mark.parametrize("new_task,shutdown_sent", [(False, 100), (True, 100), (True, 200)])
+def test_delayed_shutdown_cannot_downgrade_settled_traffic_during_cleanup(env, new_task, shutdown_sent):
+    backend, _ = _initialized_backend(env)
+    trainer = backend._active_launch
+    trainer.traffic_pending_task_id = trainer.result_source_task_id = "task"
+    trainer.result_source_live.set()
+
+    replies = []
+
+    def delayed_reply(*_):
+        reply = env.cell.deliver(
+            Topic.RESULT_SOURCE_SETTLED,
+            trainer.trainer_fqcn,
+            {
+                MsgKey.SESSION_ID: trainer.session_id,
+                MsgKey.TASK_ID: "task",
+                MsgKey.MESSAGE_TRAFFIC: {"sent_bytes": 150, "received_bytes": 300},
+            },
+        )
+        replies.append(reply)
+        if new_task:
+            trainer.traffic_pending_task_id = "next-task"
+        return make_cell_reply(
+            CellReturnCode.OK,
+            body={
+                MsgKey.RESULT_SOURCE_LIVE: shutdown_sent < 150,
+                MsgKey.MESSAGE_TRAFFIC: {"sent_bytes": shutdown_sent, "received_bytes": shutdown_sent * 2},
+            },
+        )
+
+    env.cell.on_shutdown = delayed_reply
+    try:
+        backend._request_trainer_shutdown(trainer, wait_timeout=0.1)
+        assert replies[0].payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_SOURCE_SETTLED
+        assert trainer.traffic_pending_task_id == ("next-task" if new_task else None)
+        trainer.process.exit(0)
+        backend._cleanup_trainer(trainer)
+        expected = {"sent_bytes": max(150, shutdown_sent), "received_bytes": max(300, shutdown_sent * 2)}
+        if new_task:
+            expected.update(status="partial", issues=["observation_incomplete"])
+        assert snapshot_message_traffic(env.cell) == expected
+    finally:
+        backend.finalize(FLContext())

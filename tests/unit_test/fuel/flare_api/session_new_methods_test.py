@@ -20,7 +20,7 @@ from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.flare_api.api_spec import CommandError, MonitorReturnCode, TargetType
 from nvflare.fuel.hci.client.api import ResultKey
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
 
 
 def _make_session():
@@ -100,6 +100,33 @@ class TestGetJobMeta:
         with patch.object(session, "_do_command", return_value=_ok_meta_result({MetaKey.JOB_META: job_meta})):
             result = session.get_job_meta("abc123")
         assert result == job_meta
+
+
+class TestGetResources:
+    @staticmethod
+    def _reply(payload):
+        result = _ok_meta_result()
+        result["data"] = [{ProtoKey.TYPE: ProtoKey.DICT, ProtoKey.DATA: payload}]
+        return result
+
+    def test_job_resources_command_and_site(self):
+        session = _make_session()
+        payload = {"resource_summary": {"job_id": "job-1"}}
+        with patch.object(session, "_do_command", return_value=self._reply(payload)) as mock_cmd:
+            assert session.get_job_resources("job-1", site="site-1") == payload
+        assert split_to_args(mock_cmd.call_args.args[0]) == [
+            AdminCommandNames.GET_JOB_RESOURCES,
+            "job-1",
+            "--site",
+            "site-1",
+        ]
+
+    def test_study_resources_command(self):
+        session = _make_session()
+        payload = {"kind": "nvflare.resource_stats.study_summary"}
+        with patch.object(session, "_do_command", return_value=self._reply(payload)) as mock_cmd:
+            assert session.get_study_resources() == payload
+        mock_cmd.assert_called_once_with(AdminCommandNames.GET_STUDY_RESOURCES, enforce_meta=False)
 
 
 class TestDeleteJob:
