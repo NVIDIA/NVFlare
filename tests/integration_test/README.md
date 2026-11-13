@@ -43,6 +43,10 @@ HF/Gloo suite that skips under pytest-xdist. Use a fresh pytest invocation rathe
 than appending these cases to an xdist unit run. Run this shared CI selection with
 `python3 ci/run_process_contracts.py` from the repository root.
 
+`fast/f3_heartbeat_backpressure_test.py` exercises live F3 connections under
+heartbeat and application-worker backpressure. It is part of the same serial
+premerge matrix and coverage selection.
+
 The slow suite includes XGBoost recipe tests that require the federated XGBoost wheel. CI installs it
 through `ci/run_integration.sh slow`. For direct local pytest runs, install the wheel from
 `examples/advanced/xgboost/requirements.txt` first, or run the suite through `ci/run_integration.sh slow`.

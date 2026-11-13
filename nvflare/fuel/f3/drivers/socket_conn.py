@@ -189,6 +189,7 @@ class SocketConnection(Connection):
             n = self.sock.recv_into(view, remaining)
             if n == 0:
                 raise CommError(CommError.CLOSED, f"Connection {self.name} is closed by peer")
+            self.report_receive_progress()
             view = view[n:]
             remaining -= n
 

@@ -32,6 +32,8 @@ class FakeDriver:
         self.send_heartbeat_supported = send_heartbeat_supported
 
     def capabilities(self):
+        if self.send_heartbeat_supported is None:
+            return None
         return {DriverCap.SEND_HEARTBEAT.value: self.send_heartbeat_supported}
 
 
@@ -39,6 +41,7 @@ class FakeConnObj:
     def __init__(self, send_heartbeat_supported=True):
         self.connector = SimpleNamespace(driver=FakeDriver(send_heartbeat_supported))
         self.close = MagicMock()
+        self.force_close = MagicMock(side_effect=self.close)
 
     def __str__(self):
         return "FakeConn"
@@ -48,11 +51,16 @@ class FakeSfmConn:
     def __init__(self, stall_sec, last_activity, send_heartbeat_supported=True):
         self._stall_sec = stall_sec
         self.last_activity = last_activity
+        self.sfm_endpoint = object()
+        self.receive_idle_timeout_triggered = False
         self.conn = FakeConnObj(send_heartbeat_supported=send_heartbeat_supported)
-        self.send_heartbeat = MagicMock()
+        self.send_heartbeat_async = MagicMock()
 
     def get_send_stall_seconds(self):
         return self._stall_sec
+
+    def get_last_activity(self):
+        return self.last_activity
 
 
 class MutableFakeSfmConn(FakeSfmConn):
@@ -65,7 +73,7 @@ def test_heartbeat_can_remove_connection_while_iterating():
     connections = {"test": conn}
     monitor = HeartbeatMonitor(connections)
     monitor.curr_time = monitor.interval + 1
-    conn.send_heartbeat.side_effect = lambda *_: connections.clear()
+    conn.send_heartbeat_async.side_effect = lambda *_: connections.clear()
     monitor._check_heartbeat()
     assert not connections
 
@@ -105,8 +113,24 @@ class BlockingSendConn:
 
 
 class TestSfmStallMonitor:
-    def _make_monitor(self, monkeypatch, *, hb_interval, stall_timeout, close_enabled, conns, consecutive_checks=1):
+    def _make_monitor(
+        self,
+        monkeypatch,
+        *,
+        hb_interval,
+        stall_timeout,
+        close_enabled,
+        conns,
+        consecutive_checks=1,
+        receive_idle_timeout=None,
+    ):
         monkeypatch.setattr(CommConfigurator, "get_heartbeat_interval", lambda self, default: hb_interval)
+        monkeypatch.setattr(
+            CommConfigurator,
+            "get_sfm_receive_idle_timeout",
+            lambda self, default: default if receive_idle_timeout is None else receive_idle_timeout,
+            raising=False,
+        )
         monkeypatch.setattr(CommConfigurator, "get_sfm_send_stall_timeout", lambda self, default: stall_timeout)
         monkeypatch.setattr(
             CommConfigurator, "get_sfm_close_stalled_connection", lambda self, default=False: close_enabled
@@ -115,6 +139,157 @@ class TestSfmStallMonitor:
             CommConfigurator, "get_sfm_send_stall_consecutive_checks", lambda self, default=3: consecutive_checks
         )
         return HeartbeatMonitor(conns)
+
+    def test_receive_idle_timeout_defaults_to_three_heartbeat_intervals(self, monkeypatch):
+        monitor = self._make_monitor(
+            monkeypatch,
+            hb_interval=10,
+            stall_timeout=30.0,
+            close_enabled=False,
+            conns={},
+        )
+
+        assert monitor.receive_idle_timeout == 30
+
+    def test_one_way_transfer_keeps_both_normal_receive_deadlines(self, monkeypatch):
+        from nvflare.fuel.f3.sfm import sfm_conn as sfm_module
+
+        clock = ManualClock()
+        monkeypatch.setattr(sfm_module, "time", clock)
+        sender_transport = FakeConnObj()
+        sender_transport.name = "sender"
+        receiver_transport = FakeConnObj()
+        receiver_transport.name = "receiver"
+        sender = SfmConnection(sender_transport, Endpoint("sender"))
+        receiver = SfmConnection(receiver_transport, Endpoint("receiver"))
+        for conn in (sender, receiver):
+            conn.sfm_endpoint = object()
+            conn.record_receive_activity()
+        # Outbound control frames cannot overtake the sender's DATA frame.
+        sender.send_heartbeat_async = MagicMock()
+        # The reverse direction is free: its PING is inbound activity for the
+        # sender, even though the sender's PONG also waits behind DATA.
+        receiver.send_heartbeat_async = MagicMock(side_effect=lambda *_: sender.record_receive_activity())
+        monitors = [
+            self._make_monitor(
+                monkeypatch,
+                hb_interval=60,
+                stall_timeout=45.0,
+                close_enabled=False,
+                conns={conn.get_name(): conn},
+            )
+            for conn in (receiver, sender)
+        ]
+        assert all(monitor.receive_idle_timeout == 180 for monitor in monitors)
+        for monitor in monitors:
+            monitor.curr_time = clock.monotonic()
+            monitor._check_heartbeat()
+
+        # Forty chunks span 400 seconds, well beyond both unchanged 180-second
+        # deadlines. No live transport or worker is involved in this policy test.
+        for _ in range(40):
+            clock.advance(10)
+            receiver.record_receive_activity()
+            for monitor in monitors:
+                monitor.curr_time = clock.monotonic()
+                monitor._check_heartbeat()
+            assert not receiver.receive_idle_timeout_triggered
+            assert not sender.receive_idle_timeout_triggered, "healthy sender expired during one-way progress"
+        assert receiver.send_heartbeat_async.call_count >= 5
+        sender_transport.force_close.assert_not_called()
+        receiver_transport.force_close.assert_not_called()
+
+        # Keeping reverse heartbeats alive must not disable genuine silence
+        # detection. Neither side receives any bytes after this point.
+        receiver.send_heartbeat_async.side_effect = None
+        clock.advance(181)
+        for monitor in monitors:
+            monitor.curr_time = clock.monotonic()
+            monitor._check_heartbeat()
+        sender_transport.force_close.assert_called_once()
+        receiver_transport.force_close.assert_called_once()
+
+    def test_receive_activity_does_not_postpone_or_flood_heartbeats(self, monkeypatch):
+        conn = FakeSfmConn(stall_sec=0, last_activity=100)
+        conns = {"receiver": conn}
+        monitor = self._make_monitor(monkeypatch, hb_interval=60, stall_timeout=45, close_enabled=False, conns=conns)
+        for now, expected_sends in ((100, 0), (155, 0), (161, 1), (162, 1), (222, 2)):
+            conn.last_activity = now
+            monitor.curr_time = now
+            monitor._check_heartbeat()
+            assert conn.send_heartbeat_async.call_count == expected_sends
+        conn.conn.force_close.assert_not_called()
+        conns.clear()
+        monitor._check_heartbeat()
+        assert not monitor.last_heartbeat
+        assert not monitor.stall_counts
+
+    def test_monitor_closes_ready_connection_after_receive_idle_timeout(self, monkeypatch):
+        sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=100.0)
+        monitor = self._make_monitor(
+            monkeypatch,
+            hb_interval=10,
+            stall_timeout=30.0,
+            close_enabled=False,
+            conns={"c1": sfm_conn},
+            receive_idle_timeout=20.0,
+        )
+
+        monitor.curr_time = 121.0
+        monitor._check_heartbeat()
+        monitor._check_heartbeat()
+
+        sfm_conn.conn.close.assert_called_once()
+        sfm_conn.send_heartbeat_async.assert_not_called()
+
+    def test_monitor_does_not_close_connection_before_handshake(self, monkeypatch):
+        sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=0.0)
+        sfm_conn.sfm_endpoint = None
+        monitor = self._make_monitor(
+            monkeypatch,
+            hb_interval=10,
+            stall_timeout=30.0,
+            close_enabled=False,
+            conns={"c1": sfm_conn},
+            receive_idle_timeout=20.0,
+        )
+
+        monitor.curr_time = 121.0
+        monitor._check_heartbeat()
+
+        sfm_conn.conn.close.assert_not_called()
+
+    def test_monitor_keeps_connection_open_when_receive_timeout_is_disabled(self, monkeypatch):
+        sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=100.0)
+        monitor = self._make_monitor(
+            monkeypatch,
+            hb_interval=10,
+            stall_timeout=30.0,
+            close_enabled=False,
+            conns={"c1": sfm_conn},
+            receive_idle_timeout=0.0,
+        )
+
+        monitor.curr_time = 121.0
+        monitor._check_heartbeat()
+
+        sfm_conn.conn.close.assert_not_called()
+
+    def test_monitor_does_not_apply_receive_timeout_without_heartbeat_support(self, monkeypatch):
+        sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=100.0, send_heartbeat_supported=False)
+        monitor = self._make_monitor(
+            monkeypatch,
+            hb_interval=10,
+            stall_timeout=30.0,
+            close_enabled=False,
+            conns={"c1": sfm_conn},
+            receive_idle_timeout=20.0,
+        )
+
+        monitor.curr_time = 121.0
+        monitor._check_heartbeat()
+
+        sfm_conn.conn.close.assert_not_called()
 
     def test_monitor_closes_stalled_connection_when_enabled(self, monkeypatch):
         sfm_conn = FakeSfmConn(stall_sec=20.0, last_activity=0.0)
@@ -130,7 +305,7 @@ class TestSfmStallMonitor:
         monitor._check_heartbeat()
 
         sfm_conn.conn.close.assert_called_once()
-        sfm_conn.send_heartbeat.assert_not_called()
+        sfm_conn.send_heartbeat_async.assert_not_called()
 
     def test_monitor_closes_only_after_consecutive_guard_threshold(self, monkeypatch):
         sfm_conn = FakeSfmConn(stall_sec=20.0, last_activity=0.0)
@@ -182,7 +357,7 @@ class TestSfmStallMonitor:
         monitor._check_heartbeat()
 
         sfm_conn.conn.close.assert_not_called()
-        sfm_conn.send_heartbeat.assert_not_called()
+        sfm_conn.send_heartbeat_async.assert_not_called()
 
     def test_monitor_sends_ping_when_idle_and_not_stalled(self, monkeypatch):
         sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=0.0, send_heartbeat_supported=True)
@@ -197,7 +372,7 @@ class TestSfmStallMonitor:
         monitor.curr_time = 100.0
         monitor._check_heartbeat()
 
-        sfm_conn.send_heartbeat.assert_called_once_with(Types.PING)
+        sfm_conn.send_heartbeat_async.assert_called_once_with(Types.PING)
         sfm_conn.conn.close.assert_not_called()
 
     def test_monitor_skips_ping_when_driver_disables_heartbeat(self, monkeypatch):
@@ -213,7 +388,22 @@ class TestSfmStallMonitor:
         monitor.curr_time = 100.0
         monitor._check_heartbeat()
 
-        sfm_conn.send_heartbeat.assert_not_called()
+        sfm_conn.send_heartbeat_async.assert_not_called()
+
+    def test_monitor_keeps_default_heartbeat_when_capabilities_are_unspecified(self, monkeypatch):
+        sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=0.0, send_heartbeat_supported=None)
+        monitor = self._make_monitor(
+            monkeypatch,
+            hb_interval=10,
+            stall_timeout=30.0,
+            close_enabled=False,
+            conns={"c1": sfm_conn},
+        )
+
+        monitor.curr_time = 100.0
+        monitor._check_heartbeat()
+
+        sfm_conn.send_heartbeat_async.assert_called_once_with(Types.PING)
 
     def test_monitor_has_no_stall_warning_in_normal_non_stalled_flow(self, monkeypatch, caplog):
         sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=0.0)
