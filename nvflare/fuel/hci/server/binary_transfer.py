@@ -35,7 +35,7 @@ class BinaryTransfer:
         else:
             return os.path.join(download_dir, tx_id, folder_name)
 
-    def download_folder(self, conn: Connection, tx_id: str, folder_name: str):
+    def download_folder(self, conn: Connection, tx_id: str, folder_name: str, reply_meta: dict = None):
         self.logger.debug(f"download_folder called for {folder_name}")
         tx_path = self.tx_path(conn, tx_id, folder_name)
 
@@ -88,6 +88,7 @@ class BinaryTransfer:
                     meta=make_meta(
                         MetaStatusValue.OK,
                         extra={
+                            **(reply_meta or {}),
                             MetaKey.SOURCE_FQCN: source_fqcn,
                             MetaKey.FILES: files,
                             MetaKey.TX_ID: tx_id,

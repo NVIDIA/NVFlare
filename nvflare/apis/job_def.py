@@ -79,6 +79,7 @@ class JobMetaKey(str, Enum):
     RESOURCE_PARTICIPANTS = "resource_participants"  # server-owned expected client names for resource coverage
     STUDY = "study"
     JOB_LAUNCHER_SPEC = "launcher_spec"
+    JOB_OUTPUTS_STORED = "job_outputs_stored"  # set by the server: the outputs are stored apart from the workspace
 
     def __repr__(self):
         return self.value
@@ -104,6 +105,9 @@ USER_SETTABLE_JOB_META_KEYS = frozenset(
         JobMetaKey.CUSTOM_PROPS,
     }
 )
+
+# download_job command property asking the server for only the job's outputs
+OUTPUTS_ONLY_PROP = "outputs_only"
 
 
 class SubmitRecordState(str, Enum):

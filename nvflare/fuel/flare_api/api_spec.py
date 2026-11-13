@@ -250,13 +250,15 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def download_job_result(self, job_id: str, destination: str = None) -> str:
+    def download_job_result(self, job_id: str, destination: str = None, outputs_only: bool = False) -> str:
         """
         Download result of the job
 
         Args:
             job_id: ID of the job
             destination: optional directory to move the downloaded result into.
+            outputs_only: download only the job's outputs, the files it produced on the server, without the submitted
+                job, its config and code, or the logs, when the server supports it.
 
         Returns: folder path to the location of the job result
 

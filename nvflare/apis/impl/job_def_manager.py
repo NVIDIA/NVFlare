@@ -34,7 +34,7 @@ from nvflare.apis.job_def import (
 )
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.apis.storage import WORKSPACE, StorageException, StorageSpec
+from nvflare.apis.storage import OUTPUTS, WORKSPACE, StorageException, StorageSpec
 from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
 from nvflare.apis.utils.job_submit_token import (
     canonical_job_content_hash,
@@ -563,6 +563,10 @@ class SimpleJobDefManager(JobDefManagerSpec):
             store = self._get_job_store(fl_ctx)
             store.update_meta(self.job_uri(jid), updated_meta, replace=False)
         return meta
+
+    def save_job_outputs(self, jid: str, data: List[str], fl_ctx: FLContext):
+        store = self._get_job_store(fl_ctx)
+        return store.update_object(self.job_uri(jid), data, OUTPUTS)
 
     def save_workspace(self, jid: str, data: Union[bytes, str, List[str]], fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)

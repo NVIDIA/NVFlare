@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import os
 import threading
 import time
@@ -22,6 +23,14 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.recipe._failure_summary import failure_summary
 from nvflare.recipe._run_summary import _print_output, result_summary, run_context, summary_header
 from nvflare.recipe.spec import ExecEnv
+
+
+def _accepts_outputs_only(get_job_result) -> bool:
+    try:
+        params = inspect.signature(get_job_result).parameters
+    except (TypeError, ValueError):
+        return False  # cannot tell: get the whole job rather than risk a TypeError that loses the result
+    return "outputs_only" in params or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
 class Run:
@@ -81,7 +90,7 @@ class Run:
                 self.logger.warning(f"Failed to get job status: {e}")
                 return None
 
-    def get_result(self, timeout: float = 0.0, clean_up: bool = True) -> Optional[str]:
+    def get_result(self, timeout: float = 0.0, clean_up: bool = True, outputs_only: bool = False) -> Optional[str]:
         """Get the result workspace of the run.
 
         Waits for job to complete, caches status, then stops execution environment.
@@ -94,6 +103,12 @@ class Run:
                 the workspace on disk after the run so server/client log files (including
                 the per-service ``poc_console.log`` introduced in #4500) remain available
                 for debugging or test assertions.
+            outputs_only (bool, optional): download only the files the job produced on the server (its model,
+                metrics, statistics or evaluation report), at the same paths as a full download. Left out: the
+                submitted job, its config and code, and the logs; client files are not part of either download.
+                Use the full download when you need the logs. The whole job is downloaded, with a notice saying why,
+                when it did not complete or produced no output files. The simulator returns its local workspace
+                unchanged. Defaults to False.
 
         Returns:
             Optional[str]: Result workspace path, or None if job not finished or on error.
@@ -105,7 +120,15 @@ class Run:
 
             result = None
             try:
-                result = self.exec_env.get_job_result(self.job_id, timeout=timeout)
+                if outputs_only and _accepts_outputs_only(self.exec_env.get_job_result):
+                    result = self.exec_env.get_job_result(self.job_id, timeout=timeout, outputs_only=True)
+                else:
+                    if outputs_only:
+                        self.logger.info(
+                            "This execution environment does not support outputs_only; getting the whole job."
+                        )
+                    # an ExecEnv written before outputs_only takes only these arguments
+                    result = self.exec_env.get_job_result(self.job_id, timeout=timeout)
                 self._cached_result = result
             except Exception as e:
                 self.logger.warning(f"Failed to get job result: {e}")

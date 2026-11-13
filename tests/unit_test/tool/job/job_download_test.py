@@ -41,7 +41,7 @@ class TestJobDownload:
 
         mock_sess = MagicMock()
         mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
-        mock_sess.download_job_result.return_value = str(download_path)
+        mock_sess._download_job_result.return_value = (str(download_path), None)
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             cmd_job_download(args)
@@ -67,6 +67,89 @@ class TestJobDownload:
         assert data["artifacts"] == {}
         assert set(data["missing_artifacts"]) == {"global_model", "metrics_summary", "client_logs"}
 
+    def _download_outputs_only(self, tmp_path, capsys, notice):
+        from nvflare.tool.job.job_cli import cmd_job_download
+
+        download_path = tmp_path / "results"
+        download_path.mkdir()
+        args = self._make_args(output_dir=tmp_path / "dest")
+        args.outputs_only = True
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
+        mock_sess._download_job_result.return_value = (str(download_path), notice)
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            cmd_job_download(args)
+
+        return mock_sess, capsys.readouterr()
+
+    def test_download_outputs_only_requests_a_filtered_download(self, tmp_path, capsys):
+        mock_sess, captured = self._download_outputs_only(tmp_path, capsys, notice=None)
+
+        assert mock_sess._download_job_result.call_args.kwargs == {"outputs_only": True}
+        data = json.loads(captured.out)["data"]
+        assert data["outputs_only"] is True
+        assert data["outputs_note"] is None
+
+    def test_download_outputs_only_reports_a_whole_job_download(self, tmp_path, capsys):
+        notice = "Job abc123: the whole job was downloaded because it produced no output files."
+
+        _, captured = self._download_outputs_only(tmp_path, capsys, notice=notice)
+
+        data = json.loads(captured.out)["data"]
+        assert data["outputs_only"] is False
+        assert data["outputs_note"] == notice
+
+    def test_download_outputs_only_tells_a_human_why_the_whole_job_came_back(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        notice = "Job abc123: the whole job was downloaded because the job did not complete successfully (status X)."
+
+        _, captured = self._download_outputs_only(tmp_path, capsys, notice=notice)
+
+        assert notice in captured.out
+
+    def test_parser_accepts_outputs_only(self):
+        import argparse
+
+        from nvflare.tool.job.job_cli import def_job_cli_parser
+
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers(dest="cmd"))
+
+        assert root.parse_args(["job", "download", "abc123", "--outputs-only"]).outputs_only is True
+        assert root.parse_args(["job", "download", "abc123"]).outputs_only is False
+
+    def test_download_without_outputs_only_is_unchanged(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        download_path.mkdir()
+
+        mock_sess, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert mock_sess._download_job_result.call_args.kwargs == {"outputs_only": False}
+        assert "outputs_only" not in envelope["data"]
+        assert "outputs_note" not in envelope["data"]
+
+    def test_full_download_reports_stored_outputs_missing_from_it(self, tmp_path, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_download
+
+        download_path = tmp_path / "results"
+        download_path.mkdir()
+        notice = (
+            "Job abc123: the job's outputs archive cannot be read from the job store, so the downloaded workspace "
+            "does not include its outputs."
+        )
+        args = self._make_args(output_dir=tmp_path / "dest")
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
+        mock_sess._download_job_result.return_value = (str(download_path), notice)
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            cmd_job_download(args)
+
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["outputs_note"] == notice  # a script can tell the workspace is incomplete
+        assert "outputs_only" not in data
+
     def test_download_human_output_omits_artifact_contract_payload(self, tmp_path, capsys, monkeypatch):
         """Plain text mode reports a concise download result without dumping JSON contract fields."""
         from nvflare.tool.job.job_cli import cmd_job_download
@@ -77,7 +160,7 @@ class TestJobDownload:
         args = self._make_args(output_dir=tmp_path / "dest")
         mock_sess = MagicMock()
         mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
-        mock_sess.download_job_result.return_value = str(download_path)
+        mock_sess._download_job_result.return_value = (str(download_path), None)
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             cmd_job_download(args)
@@ -117,7 +200,7 @@ class TestJobDownload:
         mock_sess, _ = self._download_json(args, "/path/to/results", capsys)
 
         expected_dest = os.path.abspath(".")
-        mock_sess.download_job_result.assert_called_once_with("abc123", expected_dest)
+        mock_sess._download_job_result.assert_called_once_with("abc123", expected_dest, outputs_only=False)
 
     def test_download_with_output_dir(self, tmp_path, capsys):
         """explicit output_dir is used as an absolute destination."""
@@ -127,7 +210,7 @@ class TestJobDownload:
         mock_sess, _ = self._download_json(args, tmp_path / "downloaded-results", capsys)
 
         expected_dest = os.path.abspath(output_dir)
-        mock_sess.download_job_result.assert_called_once_with("abc123", expected_dest)
+        mock_sess._download_job_result.assert_called_once_with("abc123", expected_dest, outputs_only=False)
 
     @pytest.mark.parametrize("model_name", ["FL_global_model.pt", "global_model.pt", "global_model.pth"])
     def test_download_discovers_global_model_artifact(self, tmp_path, capsys, model_name):
@@ -481,7 +564,7 @@ class TestJobDownload:
         args = self._make_args()
         mock_sess = MagicMock()
         mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
-        mock_sess.download_job_result.side_effect = AuthenticationError("bad cert")
+        mock_sess._download_job_result.side_effect = AuthenticationError("bad cert")
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with pytest.raises(AuthenticationError):
@@ -494,7 +577,7 @@ class TestJobDownload:
         args = self._make_args()
         mock_sess = MagicMock()
         mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
-        mock_sess.download_job_result.side_effect = NoConnection("connection refused")
+        mock_sess._download_job_result.side_effect = NoConnection("connection refused")
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with pytest.raises(SystemExit) as exc_info:
@@ -523,7 +606,7 @@ class TestJobDownload:
         assert envelope["error_code"] == "JOB_NOT_DONE"
         assert "current status: RUNNING" in envelope["message"]
         assert "--study cancer" in envelope["hint"]
-        mock_sess.download_job_result.assert_not_called()
+        mock_sess._download_job_result.assert_not_called()
 
     def test_download_existing_destination_requires_force(self, capsys, tmp_path):
         """an existing local download directory is a normal CLI error unless --force is used."""
@@ -545,7 +628,7 @@ class TestJobDownload:
         assert envelope["error_code"] == "INVALID_ARGS"
         assert str(existing) in envelope["message"]
         assert "--force" in envelope["hint"]
-        mock_sess.download_job_result.assert_not_called()
+        mock_sess._download_job_result.assert_not_called()
 
     def test_download_force_replaces_existing_destination(self, capsys, tmp_path):
         """--force removes the existing local download directory before downloading."""
@@ -561,7 +644,9 @@ class TestJobDownload:
 
         assert envelope["status"] == "ok"
         assert not marker.exists()
-        mock_sess.download_job_result.assert_called_once_with("abc123", os.path.abspath(output_dir))
+        mock_sess._download_job_result.assert_called_once_with(
+            "abc123", os.path.abspath(output_dir), outputs_only=False
+        )
 
     def test_download_api_job_not_done_maps_to_job_not_done(self, capsys, tmp_path):
         """JobNotDone from the server download API remains user-facing."""
@@ -570,7 +655,7 @@ class TestJobDownload:
         args = self._make_args(output_dir=tmp_path / "dest", study="cancer")
         mock_sess = MagicMock()
         mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
-        mock_sess.download_job_result.side_effect = JobNotDone("job is still running")
+        mock_sess._download_job_result.side_effect = JobNotDone("job is still running")
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with pytest.raises(SystemExit) as exc_info:

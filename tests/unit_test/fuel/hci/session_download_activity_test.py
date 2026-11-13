@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import hashlib
+import os
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -486,6 +487,146 @@ def test_pull_folder_failure_removes_transaction_directory(tmp_path):
 
     assert module.pull_folder(["pull_folder", "job-1"], ctx) == failure
     assert not tx_path.exists()
+
+
+@pytest.mark.parametrize("props", [None, {"outputs_only": True}])
+def test_pull_folder_forwards_command_props_to_the_server(tmp_path, props):
+    module = FileTransferModule(str(tmp_path), str(tmp_path))
+    api = MagicMock()
+    api.server_execute.return_value = {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.META: {}}
+    command_entry = MagicMock()
+    command_entry.full_command_name.return_value = "download_job"
+    ctx = MagicMock()
+    ctx.get_command_entry.return_value = command_entry
+    ctx.get_api.return_value = api
+    ctx.get_command_props.return_value = props
+
+    module.pull_folder(["download_job", "job-1"], ctx)
+
+    api.server_execute.assert_called_once_with("download_job job-1", props=props)
+
+
+@pytest.mark.parametrize("reply_meta", [None, {MetaKey.OUTPUTS_NOTE: "the whole job was downloaded because x"}])
+def test_download_folder_adds_reply_meta_beside_the_file_list(monkeypatch, tmp_path, reply_meta):
+    source_folder = tmp_path / "download" / "command-tx" / "job-1"
+    source_folder.mkdir(parents=True)
+    (source_folder / "meta.json").write_text("{}")
+
+    class _Downloader:
+        def __init__(self, **kwargs):
+            self.tx_id = "stream-tx"
+            self.delete_transaction = MagicMock()
+
+        def add_object(self, obj, ref_id=None):
+            return "ref-1"
+
+    monkeypatch.setattr("nvflare.fuel.hci.server.binary_transfer.ObjectDownloader", _Downloader)
+    session_mgr = MagicMock(idle_timeout=60.0, monitor_interval=5.0)
+    session_mgr.bind_download.return_value = True
+    engine = MagicMock()
+    engine.get_cell.return_value.get_fqcn.return_value = "server"
+    conn = Connection(
+        props={
+            ConnProps.DOWNLOAD_DIR: str(tmp_path / "download"),
+            ConnProps.ENGINE: engine,
+            ConnProps.ADMIN_SERVER: SimpleNamespace(timeout=10.0, sess_mgr=session_mgr),
+            ConnProps.SESSION: SimpleNamespace(sess_id="session-1"),
+        }
+    )
+    conn.append_string = MagicMock()
+
+    BinaryTransfer().download_folder(conn, "command-tx", "job-1", reply_meta=reply_meta)
+
+    meta = conn.append_string.call_args.kwargs["meta"]
+    assert meta[MetaKey.FILES] and meta[MetaKey.TX_ID] == "command-tx"
+    for key, value in (reply_meta or {}).items():
+        assert meta[key] == value
+    if reply_meta is None:
+        assert MetaKey.OUTPUTS_NOTE not in meta
+
+
+def test_pull_folder_passes_the_servers_outputs_only_report_to_the_caller(tmp_path):
+    module = FileTransferModule(str(tmp_path), str(tmp_path))
+    (tmp_path / "job-1__tx-1").mkdir()
+    api = MagicMock()
+    api.server_execute.return_value = {
+        ProtoKey.STATUS: APIStatus.SUCCESS,
+        ProtoKey.META: {
+            MetaKey.FILES: [["meta.json", "ref-1"]],
+            MetaKey.TX_ID: "tx-1",
+            MetaKey.SOURCE_FQCN: "server",
+            MetaKey.OUTPUTS_NOTE: "the whole job was downloaded because it produced no output files",
+            MetaKey.OUTPUTS_ONLY: False,
+        },
+    }
+    api.do_command.return_value = {ProtoKey.STATUS: APIStatus.SUCCESS}
+    command_entry = MagicMock()
+    command_entry.full_command_name.return_value = "download_job"
+    ctx = MagicMock()
+    ctx.get_command_entry.return_value = command_entry
+    ctx.get_api.return_value = api
+
+    result = module.pull_folder(["download_job", "job-1"], ctx)
+
+    assert (
+        result[ProtoKey.META][MetaKey.OUTPUTS_NOTE]
+        == "the whole job was downloaded because it produced no output files"
+    )
+    assert result[ProtoKey.META][MetaKey.OUTPUTS_ONLY] is False
+    assert MetaKey.FILES not in result[ProtoKey.META]
+
+
+def test_pull_folder_unzips_a_mapped_archive_into_the_named_folder(tmp_path):
+    import zipfile
+
+    module = FileTransferModule(str(tmp_path), str(tmp_path))
+    tx_folder = tmp_path / "job-1__tx-1"
+    tx_folder.mkdir()
+    archives = {
+        "workspace.zip": {"log.txt": b"current log"},
+        # a declared log is in both archives; the outputs archive's copy is from when the outputs were stored
+        "outputs.zip": {"app_server/FL_global_model.pt": b"model", "log.txt": b"older log"},
+    }
+    for name, members in archives.items():
+        with zipfile.ZipFile(tx_folder / name, "w") as z:
+            for member, data in members.items():
+                z.writestr(member, data)
+    api = MagicMock()
+    api.server_execute.return_value = {
+        ProtoKey.STATUS: APIStatus.SUCCESS,
+        ProtoKey.META: {
+            MetaKey.FILES: [["workspace.zip", "ref-1"], ["outputs.zip", "ref-2"]],
+            MetaKey.TX_ID: "tx-1",
+            MetaKey.SOURCE_FQCN: "server",
+            MetaKey.UNZIP_INTO: {"outputs.zip": "workspace", "bad.zip": "../escape"},
+        },
+    }
+    api.do_command.side_effect = [
+        {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.APP_DATA: str(tx_folder / "outputs.zip")},
+        {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.APP_DATA: str(tx_folder / "workspace.zip")},
+    ]
+    command_entry = MagicMock()
+    command_entry.full_command_name.return_value = "download_job"
+    ctx = MagicMock()
+    ctx.get_command_entry.return_value = command_entry
+    ctx.get_api.return_value = api
+
+    result = module.pull_folder(["download_job", "job-1"], ctx)
+
+    workspace = os.path.join(result[ProtoKey.META][MetaKey.LOCATION], "workspace")
+    assert sorted(
+        os.path.relpath(os.path.join(d, f), workspace) for d, _, files in os.walk(workspace) for f in files
+    ) == [os.path.join("app_server", "FL_global_model.pt"), "log.txt"]
+    with open(os.path.join(workspace, "log.txt"), "rb") as f:
+        assert f.read() == b"current log"  # the workspace archive's copy wins
+
+
+def test_unzip_targets_keep_only_plain_folder_names():
+    targets = FileTransferModule._unzip_targets(
+        {"outputs.zip": "workspace", "a.zip": "../up", "b.zip": "x/y", "../c.zip": "workspace", "d.zip": ""}
+    )
+
+    assert targets == {"outputs.zip": "workspace"}
 
 
 def test_logout_after_expiry_does_not_use_stopped_messenger():

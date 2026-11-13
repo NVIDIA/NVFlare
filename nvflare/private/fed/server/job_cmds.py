@@ -40,6 +40,7 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.job_def import (
     ALL_SITES,
     DEFAULT_STUDY,
+    OUTPUTS_ONLY_PROP,
     SERVER_SITE_NAME,
     Job,
     JobMetaKey,
@@ -55,6 +56,8 @@ from nvflare.apis.storage import (
     JOB_ZIP,
     META,
     META_JSON,
+    OUTPUTS,
+    OUTPUTS_ZIP,
     WORKSPACE,
     WORKSPACE_ZIP,
     DataTypes,
@@ -91,6 +94,7 @@ from nvflare.private.fed.resource_stats.report_reader import (
 )
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
+from nvflare.private.fed.server.job_outputs import outputs_only_refusal
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import extract_participants
@@ -105,6 +109,22 @@ class _SubmitTokenJobDeleted(Exception):
         super().__init__("submit token refers to a deleted job")
         self.record = record
 
+
+def _outputs_note(whole_job_reason: Optional[str], missing: Optional[str]) -> Optional[str]:
+    """One note for the caller: why an outputs-only request returned the whole job, and that stored outputs are
+    missing from the download. None when the download is what was asked for."""
+    parts = []
+    if whole_job_reason:
+        parts.append(f"the whole job was downloaded because {whole_job_reason}")
+    if missing and missing != whole_job_reason:
+        parts.append(missing)
+    return "; ".join(parts) or None
+
+
+_OUTPUTS_ARCHIVE_MISSING = (
+    "the job's outputs archive cannot be read from the job store, so the downloaded workspace does not include "
+    "its outputs"
+)
 
 CLONED_META_KEYS = {
     JobMetaKey.JOB_NAME.value,
@@ -1326,7 +1346,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         with engine.new_context() as fl_ctx:
             list_of_data = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
             if list_of_data:
-                system_components = {"workspace", "meta", "scheduled", "data"}
+                system_components = {WORKSPACE, META, "scheduled", DATA, OUTPUTS}
                 filtered_data = [item for item in list_of_data if item not in system_components]
                 if filtered_data:
                     data_str = ", ".join(filtered_data)
@@ -1881,6 +1901,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
                 # Submit-token is server-owned submission metadata. User job metadata must not expose it.
                 meta.pop(SubmitRecordKey.SUBMIT_TOKEN.value, None)
+                # set by the server when the job ends, never by a submitter
+                meta.pop(JobMetaKey.JOB_OUTPUTS_STORED.value, None)
 
                 job_def_manager = engine.job_def_manager
                 if not isinstance(job_def_manager, JobDefManagerSpec):
@@ -1973,7 +1995,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_download_dir = self.tx_path(conn, tx_id)
         shutil.rmtree(job_download_dir, ignore_errors=True)
 
-    def _download_job_comps(self, conn: Connection, args: List[str], get_comps_f, require_finished: bool = False):
+    def _download_job_comps(
+        self, conn: Connection, args: List[str], get_comps_f, require_finished: bool = False, outputs_only: bool = False
+    ):
         """
         Job download uses binary protocol for more efficient download.
         - Retrieve job data from job store. This puts job files (meta, data, and workspace) in a transfer folder
@@ -1998,6 +2022,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_id = args[1]
 
         with engine.new_context() as fl_ctx:
+            job = None
             if require_finished:
                 job = job_def_manager.get_job(job_id, fl_ctx)
                 if not job:
@@ -2010,7 +2035,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                         meta=make_meta(MetaStatusValue.JOB_RUNNING, job_id),
                     )
                     return
-            comps = get_comps_f(job_def_manager, job_id, fl_ctx)
+            comps = get_comps_f(job_def_manager, job_id, fl_ctx, job)
             if not comps:
                 conn.append_string(
                     "No components to download",
@@ -2022,13 +2047,31 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 return
 
             try:
-                for ct, file_name in comps:
-                    job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
+                reply_meta = {}
+                if outputs_only:
+                    reason, missing = self._prepare_outputs_download(
+                        job_def_manager, job_id, job.meta, job_download_dir, comps, fl_ctx
+                    )
+                else:
+                    reason, missing = None, self._prepare_whole_job(
+                        job_def_manager, job_id, job_download_dir, comps, fl_ctx
+                    )
+                if outputs_only and not reason:
+                    reply_meta[MetaKey.OUTPUTS_ONLY] = True
+                note = _outputs_note(reason, missing)
+                if note:
+                    # the download is not what the caller asked for; the client shows why
+                    reply_meta[MetaKey.OUTPUTS_NOTE] = note
+
+                if os.path.lexists(os.path.join(job_download_dir, job_id, OUTPUTS_ZIP)):
+                    # the outputs belong in the workspace folder, beside the rest of it
+                    reply_meta[MetaKey.UNZIP_INTO] = {OUTPUTS_ZIP: WORKSPACE_ZIP[: -len(".zip")]}
 
                 self.download_folder(
                     conn,
                     tx_id=tx_id,
                     folder_name=job_id,
+                    reply_meta=reply_meta or None,
                 )
             except Exception as e:
                 secure_log_traceback()
@@ -2036,8 +2079,48 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 self._clean_up_download(conn, tx_id)
                 conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
 
-    def _get_default_job_components(self, job_def_manager, job_id, fl_ctx):
-        return [(DATA, JOB_ZIP), (META, META_JSON), (WORKSPACE, WORKSPACE_ZIP)]
+    @staticmethod
+    def _outputs_stored_apart(meta: Optional[dict]) -> bool:
+        """Whether the job's outputs are stored apart from its workspace, as recorded at job end."""
+        return isinstance(meta, dict) and meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is True
+
+    def _prepare_whole_job(self, job_def_manager, job_id: str, job_download_dir: str, comps, fl_ctx) -> Optional[str]:
+        """Prepare the whole job for download, and say why its stored outputs are missing from it, if they are.
+
+        A job whose outputs are stored apart has them only in its outputs archive. If that archive cannot be read,
+        the rest of the job is still prepared, and the reason tells the client that the workspace lacks them.
+        """
+        for ct, file_name in comps:
+            if ct != OUTPUTS:
+                job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
+                continue
+            if not self._prepare_outputs_archive(job_def_manager, job_id, job_download_dir, [(ct, file_name)], fl_ctx):
+                return _OUTPUTS_ARCHIVE_MISSING
+        return None
+
+    def _prepare_outputs_archive(self, job_def_manager, job_id: str, job_download_dir: str, comps, fl_ctx) -> bool:
+        """Prepare ``comps``, the last of which is the job's outputs archive, and return whether it was prepared.
+
+        When preparing fails, a possibly partial outputs archive is removed: it would fail to unzip and take the
+        rest of the download with it.
+        """
+        prepared = os.path.join(job_download_dir, job_id, comps[-1][1])
+        try:
+            for ct, file_name in comps:
+                job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
+        except Exception as e:
+            self.logger.warning(f"cannot prepare the outputs of job {job_id}: {secure_format_exception(e)}")
+            if os.path.lexists(prepared):
+                os.remove(prepared)
+        return os.path.lexists(prepared)
+
+    def _get_default_job_components(self, job_def_manager, job_id, fl_ctx, job):
+        # job: the finished job this download already loaded; a second lookup could fail and drop its outputs
+        comps = [(DATA, JOB_ZIP), (META, META_JSON), (WORKSPACE, WORKSPACE_ZIP)]
+        if self._outputs_stored_apart(job.meta):
+            # the job's outputs are stored apart from the rest of its workspace
+            comps.append((OUTPUTS, OUTPUTS_ZIP))
+        return comps
 
     def download_job(self, conn: Connection, args: List[str]):
         """
@@ -2046,7 +2129,35 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         - Returns job file names, a TX ID, and a command name for downloading files to the admin client
         - Admin client downloads received file names one by one. It signals the end of download in the last command.
         """
-        self._download_job_comps(conn, args, self._get_default_job_components, require_finished=True)
+        cmd_props = conn.get_prop(ConnProps.CMD_PROPS)
+        outputs_only = isinstance(cmd_props, dict) and cmd_props.get(OUTPUTS_ONLY_PROP) is True
+        self._download_job_comps(
+            conn, args, self._get_default_job_components, require_finished=True, outputs_only=outputs_only
+        )
+
+    def _prepare_outputs_download(self, job_def_manager, job_id: str, meta: dict, job_download_dir: str, comps, fl_ctx):
+        """Prepare an outputs-only download: meta.json and the job's outputs archive as workspace.zip.
+
+        The outputs archive was stored when the job ended, so it is prepared like the workspace archive in a full
+        download, with no work before the reply. The whole job is prepared instead when the job did not complete,
+        did not store its outputs apart, or its outputs archive cannot be read.
+
+        Returns:
+            (None, None) for an outputs-only download; otherwise why the whole job was prepared, and why its stored
+            outputs are missing from it, if they are.
+        """
+        reason = outputs_only_refusal(meta)
+        if not reason and not self._outputs_stored_apart(meta):
+            reason = (
+                "the job's outputs were not stored apart: it produced no output files, it finished before this "
+                "feature, or they were kept in its workspace archive"
+            )
+        if not reason:
+            comps_to_send = [(META, META_JSON), (OUTPUTS, WORKSPACE_ZIP)]
+            if self._prepare_outputs_archive(job_def_manager, job_id, job_download_dir, comps_to_send, fl_ctx):
+                return None, None
+            reason = _OUTPUTS_ARCHIVE_MISSING
+        return reason, self._prepare_whole_job(job_def_manager, job_id, job_download_dir, comps, fl_ctx)
 
     def download_job_components(self, conn: Connection, args: List[str]):
         """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.
@@ -2056,13 +2167,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         """
         self._download_job_comps(conn, args, self._get_extra_job_components)
 
-    def _get_extra_job_components(self, job_def_manager, job_id, fl_ctx):
+    def _get_extra_job_components(self, job_def_manager, job_id, fl_ctx, job=None):
         all_components = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
         if all_components:
             return [
                 (item, item)
                 for item in all_components
-                if item not in {WORKSPACE, META, "scheduled", DATA} and StorageSpec.is_valid_component(item)
+                if item not in {WORKSPACE, META, "scheduled", DATA, OUTPUTS} and StorageSpec.is_valid_component(item)
             ]
         else:
             return None
