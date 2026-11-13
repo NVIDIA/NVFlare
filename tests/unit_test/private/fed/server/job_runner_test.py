@@ -1180,6 +1180,54 @@ def test_job_complete_process_finalizes_server_outcome_after_client_outcome_grac
     assert "job-1" not in runner._client_outcome_deadlines
 
 
+@pytest.mark.parametrize("failure", ["assembly", "serialization"])
+def test_bad_server_handoff_preserves_client_reports_at_job_completion(tmp_path, failure):
+    runner = JobRunner(workspace_root=str(tmp_path))
+    runner.fire_event = MagicMock()
+    runner.log_debug = MagicMock()
+    runner.log_exception = MagicMock()
+    runner._save_workspace = MagicMock()
+    run_dir = tmp_path / "run_job-1"
+    runner.resource_stats.start_job("job-1", ["site-1"], run_dir)
+    client = _participant_summary()
+    assert (
+        runner.accept_client_resource_report("job-1", "site-1", {"participant_summary": json.dumps(client).encode()})
+        == "accepted"
+    )
+    runner.bind_server_resource_generation("job-1", "server-launch")
+    handoff = {**_participant_summary(participant_name="server"), "launch_generation": "server-launch"}
+    path = write_terminal_handoff(run_dir, handoff, launch_generation="server-launch")
+    if failure == "assembly":
+        del handoff["issues"]
+    else:
+        handoff["resource_utilization"]["cpu_consumed"]["cpu_seconds"] = float("inf")
+    path.write_text(json.dumps(handoff))
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+    completion_ctx = MagicMock()
+    completion_ctx.get_workspace.return_value.get_run_dir.return_value = str(run_dir)
+    engine.new_context.return_value = nullcontext(completion_ctx)
+    runner.running_jobs = {"job-1": MagicMock(job_id="job-1", run_aborted=False)}
+
+    with _patch_job_runner_sleep(lambda _: setattr(runner, "ask_to_stop", True)):
+        runner._job_complete_process(engine)
+
+    summary = json.loads((run_dir / "resource_stats" / "resource_summary.json").read_text())
+    entries = {entry["participant_name"]: entry for entry in summary["participants"]}
+    assert entries["site-1"]["resource_utilization"] == _participant_summary()["resource_utilization"]
+    assert "status" not in entries["site-1"]
+    assert entries["server"]["status"] == "missing"
+    assert json.loads((run_dir / "resource_stats" / "participants" / "site-1.json").read_text()) == client
+    assert not path.exists()
+    runner._save_workspace.assert_called_once_with(completion_ctx, ANY, "job-1")
+    engine.get_component.return_value.set_status.assert_called_once_with(
+        "job-1", RunStatus.FINISHED_COMPLETED, completion_ctx
+    )
+    assert "job-1" not in runner.running_jobs
+
+
 def test_job_complete_process_contains_resource_stats_finalization_write_failure():
     runner = JobRunner(workspace_root="/tmp")
     runner.fire_event = MagicMock()

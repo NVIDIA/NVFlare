@@ -196,6 +196,11 @@ class JobRunner(FLComponent):
             )
             if status not in {RESOURCE_REPORT_ACCEPTED, RESOURCE_REPORT_DUPLICATE}:
                 self.log_warning(fl_ctx, f"Server resource report for job ({job_id}) was {status}")
+        except Exception as e:
+            # A failed server observation must not discard accepted client reports.
+            self.log_exception(
+                fl_ctx, f"Failed to collect server resource statistics for job ({job_id}): {secure_format_exception(e)}"
+            )
         finally:
             remove_terminal_handoff(run_dir, expected_generation=expected_generation)
 
