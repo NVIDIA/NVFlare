@@ -37,6 +37,14 @@ class HttpClientConnector(FlowerClientConnector):
         max_message_bytes=DEFAULT_MAX_MESSAGE_BYTES,
     ):
         super().__init__(per_msg_timeout, tx_timeout)
+        self.per_msg_timeout = min(per_msg_timeout, 2.0)
+        self.tx_timeout = min(tx_timeout, 25.0)
+        if (self.per_msg_timeout, self.tx_timeout) != (per_msg_timeout, tx_timeout):
+            self.logger.warning(
+                "Flower HTTP timeouts capped to per_msg_timeout=%s, tx_timeout=%s seconds",
+                self.per_msg_timeout,
+                self.tx_timeout,
+            )
         self.client_shutdown_timeout = client_shutdown_timeout
         self.max_message_bytes = max_message_bytes
         self.http_server = None
@@ -80,14 +88,15 @@ class HttpClientConnector(FlowerClientConnector):
             )
             rc = reply.get_return_code()
         except Exception:
-            self._server_done = True
-            self._exit_code = TieConstant.EXIT_CODE_FAILED
+            if not heartbeat:
+                self._server_done = True
+                self._exit_code = TieConstant.EXIT_CODE_FAILED
             return http_response(503)
         if rc == ReturnCode.OK:
             return reply
         if rc == ReturnCode.SERVICE_UNAVAILABLE:
             self._server_done = True
-        elif rc != ReturnCode.TASK_ABORTED:
+        elif rc != ReturnCode.TASK_ABORTED and not heartbeat:
             # Continuing after an uncertain state-changing request can duplicate
             # Flower operations. Fail the job instead of replaying at this layer.
             self._server_done = True

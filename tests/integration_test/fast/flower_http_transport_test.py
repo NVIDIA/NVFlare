@@ -15,6 +15,7 @@
 """Real socket and process lifecycle contracts; no Flower installation needed."""
 
 import http.client
+import json
 import os
 import shlex
 import signal
@@ -23,6 +24,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import psutil
@@ -205,6 +207,9 @@ def flower_process_factory(tmp_path):
             if manager.process:
                 attempt(lambda: manager.process.wait(timeout=10))
                 attempt(manager.process.stdout.close)
+            if manager._guard:
+                attempt(manager._guard.stdin.close)
+                attempt(manager._guard.stdout.close)
             if manager.log_file:
                 attempt(manager.log_file.close)
         if errors:
@@ -279,7 +284,8 @@ def test_failed_worker_cleanup_releases_log_reader(detached_flower_factory, tmp_
     with patch.object(psutil.Process, "kill", deny_one_worker):
         with pytest.raises(RuntimeError, match="Flower process cleanup failed"):
             manager.stop(timeout=0.2)
-    assert process_running(blocked)  # still holding the log pipe open
+    # The independent guard gets a second chance even if in-process cleanup fails.
+    wait_for(lambda: not process_running(blocked))
     wait_for(lambda: not process_running(other))
     assert not manager._monitor.is_alive()
     assert not manager._log_writer.is_alive()
@@ -398,5 +404,166 @@ def test_truncated_protobuf_is_not_reframed_as_success():
                 client.send(envelope("/v1/fleet/get-run"))
             assert error.value.status == 502
     finally:
+        client.close()
+        listener.close()
+
+
+@pytest.mark.parametrize("exit_kind", ["sigkill", "exit"])
+def test_guard_cleans_flower_tree_when_nvflare_job_dies(tmp_path, exit_kind):
+    if os.name != "posix":
+        pytest.skip("Flower integration requires POSIX process groups")
+    with (tmp_path / "job.log").open("w+") as log, OwnedProcesses(grace=2) as owner:
+        job = owner.start(
+            [
+                sys.executable,
+                "-c",
+                "from tests.flower_process_test_utils import guarded_job; " f"guarded_job({str(tmp_path)!r})",
+            ],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
+        ready = tmp_path / "ready.json"
+        wait_for(lambda: ready.exists(), timeout=60)
+        pids = json.loads(ready.read_text())
+        processes = [psutil.Process(pid) for pid in pids.values()]
+        owner.capture(include_orphans=True)
+        assert all(p in owner.identities and process_running(p) for p in processes)
+        if exit_kind == "sigkill":
+            os.killpg(job.pid, signal.SIGKILL)
+        else:
+            (tmp_path / "exit").touch()
+        job.wait(timeout=10)
+        # Assert before independent harness cleanup; otherwise it could hide a leak.
+        wait_for(lambda: not any(process_running(p) for p in processes), timeout=15)
+
+
+def test_control_capacity_is_bounded_and_released(server_factory):
+    release = threading.Event()
+    entered = threading.Event()
+    lock = threading.Lock()
+    count = 0
+
+    def forward(req):
+        nonlocal count
+        with lock:
+            count += 1
+            if count == 16:
+                entered.set()
+        release.wait()
+        return http_response(200)
+
+    server = server_factory(forward)
+    client = FleetHttpClient(server.address)
+    try:
+        with ThreadGroup(release) as workers:
+            for _ in range(16):
+                workers.start(client.send, envelope("/v1/fleet/get-run"))
+            assert entered.wait(15)
+            assert client.send(envelope("/v1/fleet/get-run"))["status"] == 503
+        assert client.send(envelope("/v1/fleet/get-run"))["status"] == 200
+    finally:
+        release.set()
+        client.close()
+
+
+def test_connection_limit_rejects_excess_and_recovers(server_factory):
+    server = server_factory(lambda req: http_response(200))
+    sockets = []
+    try:
+        for _ in range(32):
+            sockets.append(socket.create_connection(("127.0.0.1", server.server_port), timeout=5))
+        wait_for(lambda: len(server._sockets) == 32)
+        with socket.create_connection(("127.0.0.1", server.server_port), timeout=5) as extra:
+            assert extra.recv(1) == b""
+        sockets.pop().close()
+        wait_for(lambda: len(server._sockets) == 31)
+        client = FleetHttpClient(server.address)
+        try:
+            assert client.send(envelope("/v1/fleet/get-run"))["status"] == 200
+        finally:
+            client.close()
+    finally:
+        for sock in sockets:
+            sock.close()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Observes Linux /proc wait channel for the pre-exec launch fence")
+def test_guard_retains_launch_before_owner_marker_is_installed(tmp_path):
+    with (tmp_path / "job.log").open("w+") as log, OwnedProcesses(grace=2) as owner:
+        job = owner.start(
+            [
+                sys.executable,
+                "-c",
+                "from tests.flower_process_test_utils import guarded_job_during_launch; "
+                f"guarded_job_during_launch({str(tmp_path)!r})",
+            ],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
+        ready = tmp_path / "launch.json"
+        wait_for(lambda: ready.exists() and ready.read_text().endswith("}"), timeout=60)
+        pids = json.loads(ready.read_text())
+        target, guard = psutil.Process(pids["target"]), psutil.Process(pids["guard"])
+        owner.capture(include_orphans=True)
+        assert target in owner.identities and guard in owner.identities
+        wait_for(lambda: target.status() == psutil.STATUS_STOPPED)
+        os.killpg(job.pid, signal.SIGKILL)
+        job.wait(timeout=10)
+
+        # Observe the guard blocked on the launch pipe after job EOF. This
+        # establishes the startup race without a scheduling sleep before resume.
+        def waiting_for_launch():
+            assert process_running(guard), "guard exited before launch ownership was established"
+            return "pipe_read" in Path(f"/proc/{guard.pid}/wchan").read_text()
+
+        wait_for(waiting_for_launch, timeout=15)
+        target.send_signal(signal.SIGCONT)
+        wait_for(lambda: not process_running(target) and not process_running(guard), timeout=15)
+
+
+def test_close_interrupts_body_after_connection_socket_is_transferred():
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    listener.settimeout(10)
+    client = FleetHttpClient(f"127.0.0.1:{listener.getsockname()[1]}")
+    release, headers_read, done = threading.Event(), threading.Event(), threading.Event()
+    errors = []
+    original = http.client.HTTPConnection.getresponse
+
+    def getresponse(conn):
+        response = original(conn)
+        assert conn.sock is None
+        headers_read.set()
+        return response
+
+    def upstream():
+        conn, _ = listener.accept()
+        with conn:
+            conn.recv(65536)
+            conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\n")
+            release.wait()
+
+    def send():
+        try:
+            client.send(envelope("/v1/fleet/get-run"))
+        except (OSError, HttpError, http.client.HTTPException) as error:
+            errors.append(error)
+        finally:
+            done.set()
+
+    try:
+        with patch.object(http.client.HTTPConnection, "getresponse", getresponse), ThreadGroup(release) as workers:
+            workers.start(upstream)
+            workers.start(send)
+            assert headers_read.wait(10)
+            start = time.monotonic()
+            client.close()
+            assert done.wait(5)
+            assert time.monotonic() - start < 5
+        assert errors
+        assert not client._connections
+    finally:
+        release.set()
         client.close()
         listener.close()

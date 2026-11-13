@@ -64,12 +64,16 @@ class FlowerExecutor(TieExecutor):
     def get_connector(self, fl_ctx: FLContext):
         from nvflare.app_opt.flower.connectors.http_client_connector import HttpClientConnector
 
-        return HttpClientConnector(
+        connector = HttpClientConnector(
             max_message_bytes=self.max_message_bytes,
             client_shutdown_timeout=self.client_shutdown_timeout,
             per_msg_timeout=self.per_msg_timeout,
             tx_timeout=self.tx_timeout,
         )
+
+        self.per_msg_timeout = connector.per_msg_timeout
+        self.tx_timeout = connector.tx_timeout
+        return connector
 
     def get_applet(self, fl_ctx: FLContext):
         return FlowerClientApplet(

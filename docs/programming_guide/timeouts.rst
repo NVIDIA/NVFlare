@@ -982,14 +982,19 @@ Flower-specific controller and executor timeouts (flower/controller.py, flower/e
      - 0.5
      - How often to check Flower run status
    * - per_msg_timeout
-     - 10.0
+     - 2.0
      - Per-message timeout for ReliableMessage
    * - tx_timeout
-     - 100.0
+     - 25.0
      - Transaction timeout for ReliableMessage
    * - client_shutdown_timeout
      - 5.0
      - Max time for graceful client shutdown
+
+
+Flower HTTP caps these values at 2 and 25 seconds and logs a warning when larger
+values are supplied. Heartbeats use tighter caps of 0.5 and 3.5 seconds. See
+:ref:`flower_http_design` for payload, timing, and shutdown requirements.
 
 
 Private Set Intersection (PSI)
@@ -1796,8 +1801,8 @@ Hierarchical Relationships
    │                                                                 │
    │  Flower-Specific                                                │
    │  ├── superlink_ready_timeout (10s)                              │
-   │  ├── per_msg_timeout (10s)                                      │
-   │  ├── tx_timeout (100s)                                          │
+   │  ├── per_msg_timeout (2s)                                       │
+   │  ├── tx_timeout (25s)                                           │
    │  └── client_shutdown_timeout (5s)                               │
    │                                                                 │
    │  CCWF Server-Side                                               │
@@ -2145,12 +2150,14 @@ Settings for Flower framework integration:
    from nvflare.app_opt.flower.flower_job import FlowerJob
 
    job = FlowerJob(
+       name="flower_job",
+       flower_content="./flwr-pt",
        superlink_ready_timeout=30.0,    # 30 sec for Flower server
        configure_task_timeout=60,
        start_task_timeout=30,
        progress_timeout=7200,           # 2 hours for training
-       per_msg_timeout=30.0,
-       tx_timeout=300.0,
+       per_msg_timeout=2.0,
+       tx_timeout=25.0,
        client_shutdown_timeout=10.0,
    )
 
@@ -2483,14 +2490,13 @@ Flower Integration
    from nvflare.app_opt.flower.recipe import FlowerRecipe
 
    recipe = FlowerRecipe(
-       server_app=ServerApp(...),
-       client_app=ClientApp(...),
+       flower_content="./flwr-pt",
        superlink_ready_timeout=30.0,
        configure_task_timeout=300,
        start_task_timeout=30,
        progress_timeout=7200,
-       per_msg_timeout=30.0,
-       tx_timeout=300.0,
+       per_msg_timeout=2.0,
+       tx_timeout=25.0,
        client_shutdown_timeout=10.0,
    )
 

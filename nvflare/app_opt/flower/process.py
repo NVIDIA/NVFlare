@@ -18,6 +18,7 @@ Flower starts SuperExec and app workers. Put each SuperLink/SuperNode in its own
 session so shutdown and failed startup also clean up descendants.
 """
 
+import json
 import os
 import selectors
 import shlex
@@ -31,8 +32,8 @@ import uuid
 import psutil
 
 from nvflare.app_common.tie.process_mgr import ProcessManager
-
-_OWNER_ENV = "NVFLARE_FLOWER_PROCESS_OWNER"
+from nvflare.app_opt.flower.process_guard import OWNER_ENV as _OWNER_ENV
+from nvflare.app_opt.flower.process_guard import capture_owned
 
 
 class FlowerProcessManager(ProcessManager):
@@ -48,6 +49,8 @@ class FlowerProcessManager(ProcessManager):
         self._log_writer = None
         self._monitor_error = None
         self._log_error = None
+        self._guard = None
+        self._spawn_fence = None
 
     def start(self, fl_ctx):
         if os.name != "posix":
@@ -62,19 +65,32 @@ class FlowerProcessManager(ProcessManager):
         env.update(self.cmd_desc.env or {})
         env[_OWNER_ENV] = self._owner
         try:
+            self._start_guard()
             self.process = subprocess.Popen(
-                shlex.split(self.cmd_desc.cmd),
+                # The first exec installs the ownership marker. Keep the
+                # launch fence open until then, including across close_fds.
+                [
+                    sys.executable,
+                    "-c",
+                    "import os,sys; os.close(int(sys.argv[1])); os.execvpe(sys.argv[2],sys.argv[2:],os.environ)",
+                    str(self._spawn_fence),
+                    *shlex.split(self.cmd_desc.cmd),
+                ],
                 cwd=self.cmd_desc.cwd,
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
                 bufsize=0,
+                pass_fds=(self._spawn_fence,),
             )
             try:
                 self._root = psutil.Process(self.process.pid)
+                self._guard.stdin.write(json.dumps((self._root.pid, self._root.create_time())).encode() + b"\n")
+                self._guard.stdin.flush()
             except psutil.NoSuchProcess:
                 pass
+            self._close_spawn_fence()
             os.set_blocking(self.process.stdout.fileno(), False)
             self._monitor = threading.Thread(target=self._monitor_descendants)
             self._monitor.start()
@@ -84,39 +100,64 @@ class FlowerProcessManager(ProcessManager):
             self.stop(timeout=0.1)
             raise
 
+    def _start_guard(self):
+        # Establish independent ownership before any Flower process can start.
+        # The target inherits neither the control pipe nor the guard's session.
+        read_fence, self._spawn_fence = os.pipe()
+        try:
+            self._guard = subprocess.Popen(
+                [
+                    sys.executable,
+                    os.path.join(os.path.dirname(__file__), "process_guard.py"),
+                    self._owner,
+                    str(read_fence),
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=self.log_file or subprocess.DEVNULL,
+                start_new_session=True,
+                bufsize=0,
+                pass_fds=(read_fence,),
+            )
+        finally:
+            os.close(read_fence)
+        with selectors.DefaultSelector() as selector:
+            selector.register(self._guard.stdout, selectors.EVENT_READ)
+            if not selector.select(30) or self._guard.stdout.readline() != b"ready\n":
+                raise RuntimeError("Flower process guard did not become ready")
+
+    def _stop_guard(self):
+        self._close_spawn_fence()
+        if self._guard:
+            self._guard.stdin.close()
+            try:
+                code = self._guard.wait(timeout=10)
+                if code:
+                    raise RuntimeError(f"Flower process guard failed: {code}")
+            finally:
+                self._guard.stdout.close()
+
+    def _close_spawn_fence(self):
+        if self._spawn_fence is not None:
+            os.close(self._spawn_fence)
+            self._spawn_fence = None
+
     def _owned_descendants(self):
         with self._descendant_lock:
             return tuple(self._descendants)
 
     def _capture_descendants(self, include_orphans=False):
-        found, gone = set(), set()
-        roots = self._owned_descendants() + ((self._root,) if self._root else ())
-        for process in roots:
-            try:
-                if not _is_alive(process):
-                    gone.add(process)
-                    continue
-                found.update(process.children(recursive=True))
-            except psutil.NoSuchProcess:
-                gone.add(process)
-        if include_orphans:
-            # The inherited marker also finds workers whose parent exited
-            # between snapshots. Never identify workers by executable name.
-            for process in psutil.process_iter():
-                try:
-                    if process.pid != self.process.pid and process.environ().get(_OWNER_ENV) == self._owner:
-                        found.add(process)
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
         with self._descendant_lock:
-            self._descendants.difference_update(gone)
-            self._descendants.update(found)
+            roots = tuple(self._descendants) + ((self._root,) if self._root else ())
+            found = capture_owned(roots, self._owner if include_orphans else None)
+            found.discard(self._root)
+            self._descendants = found
 
     def _monitor_descendants(self):
         try:
             while not self._monitor_stop.is_set():
                 self._capture_descendants()
-                self._monitor_stop.wait(0.1)
+                self._monitor_stop.wait(0.5)
         except Exception as error:
             self._monitor_error = error
 
@@ -181,6 +222,7 @@ class FlowerProcessManager(ProcessManager):
             if self.process:
                 attempt(lambda: self._capture_descendants(include_orphans=True))
                 # Give Flower a chance to reap its own workers first.
+                leader_alive = self.process.poll() is None
                 attempt(lambda: self._signal_group(signal.SIGTERM))
                 try:
                     self.process.wait(timeout=timeout)
@@ -191,7 +233,8 @@ class FlowerProcessManager(ProcessManager):
                 attempt(lambda: self._capture_descendants(include_orphans=True))
                 attempt(lambda: self._signal_group(signal.SIGKILL))
                 attempt(lambda: self.process.wait(timeout=timeout))
-                attempt(lambda: self._wait_for_descendants(timeout))
+                if leader_alive:
+                    attempt(lambda: self._wait_for_descendants(timeout))
                 # A worker may create another detached process just before it
                 # is killed. Rescan after each kill pass, including after the
                 # deadline, so unknown survivors cannot count as success.
@@ -219,6 +262,7 @@ class FlowerProcessManager(ProcessManager):
                     time.sleep(0.05)
         finally:
             self._monitor_stop.set()
+            attempt(self._stop_guard)
             # Allow normal EOF to drain remaining output, then explicitly
             # release the reader even if killing a worker failed.
             if self._log_writer and self._log_writer.ident is not None:

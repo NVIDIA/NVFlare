@@ -19,9 +19,12 @@ opaque bytes. ReliableMessage owns NVFlare retries; this layer never retries an
 HTTP operation or follows redirects.
 """
 
+import errno
 import http.client
+import selectors
 import socket
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from nvflare.apis.shareable import Shareable
@@ -126,8 +129,9 @@ class FleetHttpClient:
         check_positive_int("max_message_bytes", max_message_bytes)
         self.max_message_bytes = max_message_bytes
         self._lock = threading.Lock()
-        self._connections = set()
+        self._connections = {}
         self._closed = False
+        self._closing = threading.Event()
 
     def send(self, request):
         path, headers, body = validate_request(request, self.max_message_bytes)
@@ -136,10 +140,16 @@ class FleetHttpClient:
         with self._lock:
             if self._closed:
                 return http_response(503)
-            # Connect under the lock so close() cannot miss an in-flight socket.
-            conn.connect()
-            self._connections.add(conn)
+            # Publish socket ownership before connecting, without holding the
+            # shared lock across network I/O. HTTPConnection must not reconnect.
+            sock = conn.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            conn.auto_open = False
+            self._connections[conn] = sock
+        response = None
         try:
+            self._connect(sock, timeout)
+            if self._closing.is_set():
+                return http_response(503)
             conn.request("POST", path, body=body, headers=headers)
             response = conn.getresponse()
             length = response.getheader("Content-Length")
@@ -157,18 +167,50 @@ class FleetHttpClient:
             # Do not reframe a truncated protobuf as a successful shorter body.
             if length is not None and len(content) != length:
                 raise HttpError(502, "Incomplete SuperLink response")
-            return http_response(response.status, content, filter_headers(response.headers, RESPONSE_HEADERS))
+            try:
+                headers = filter_headers(response.headers, RESPONSE_HEADERS)
+            except HttpError as ex:
+                raise HttpError(502, "Invalid SuperLink response headers") from ex
+            return http_response(response.status, content, headers)
         finally:
             with self._lock:
-                self._connections.discard(conn)
+                self._connections.pop(conn, None)
+            if response:
+                response.close()
             conn.close()
+            sock.close()
+
+    def _connect(self, sock, timeout):
+        # A loopback listener with a full accept queue can stall connect().
+        # Poll a nonblocking socket so close() also cancels this phase promptly.
+        sock.setblocking(False)
+        code = sock.connect_ex((self.host, self.port))
+        if code not in (0, errno.EINPROGRESS, errno.EWOULDBLOCK, errno.EALREADY, errno.EINTR):
+            raise OSError(code, "Cannot connect to SuperLink")
+        deadline = time.monotonic() + timeout
+        with selectors.DefaultSelector() as selector:
+            selector.register(sock, selectors.EVENT_WRITE)
+            while code:
+                if self._closing.is_set():
+                    raise OSError("SuperLink connection cancelled")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("Timed out connecting to SuperLink")
+                if selector.select(min(0.1, remaining)):
+                    code = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+                    if code:
+                        raise OSError(code, "Cannot connect to SuperLink")
+        sock.settimeout(timeout)
 
     def close(self):
         with self._lock:
             self._closed = True
-            for conn in self._connections:
-                if conn.sock:
-                    _shutdown_socket(conn.sock)
+            self._closing.set()
+            # getresponse() may move ownership to HTTPResponse.fp and clear
+            # conn.sock for Connection: close. Retain the original socket until
+            # its response body has finished, so shutdown can still interrupt it.
+            for sock in self._connections.values():
+                _shutdown_socket(sock)
 
 
 def _shutdown_socket(sock):

@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import errno
+import threading
+from email.message import Message
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,7 +25,9 @@ from nvflare.apis.signal import Signal
 from nvflare.app_opt.flower.connectors.http_client_connector import HttpClientConnector
 from nvflare.app_opt.flower.connectors.http_server_connector import HttpServerConnector
 from nvflare.app_opt.flower.http_transport import (
+    HEARTBEAT_PATH,
     REQUEST_HEADERS,
+    FleetHttpClient,
     HttpError,
     filter_headers,
     http_response,
@@ -204,3 +209,154 @@ def test_flower_controller_fails_job_on_client_transport_failure():
     message[Constant.MSG_KEY_EXIT_CODE] = Constant.EXIT_CODE_FAILED
     controller._process_client_done("done", message, context("site-1"))
     controller._trigger_stop.assert_called_once()
+
+
+@pytest.mark.parametrize("failure", [make_reply(ReturnCode.COMMUNICATION_ERROR), RuntimeError("transport unavailable")])
+def test_heartbeat_recovers_after_transient_failure(failure):
+    connector = HttpClientConnector()
+    connector.set_abort_signal(Signal())
+    connector.send_request = MagicMock(side_effect=[failure, http_response(200)])
+    assert connector._forward(request(HEARTBEAT_PATH))["status"] == 503
+    assert not connector._server_done
+    assert connector._exit_code == 0
+    assert connector._forward(request(HEARTBEAT_PATH))["status"] == 200
+    assert connector.send_request.call_count == 2
+
+
+@pytest.mark.parametrize("path", [HEARTBEAT_PATH, "/v1/fleet/push-messages"])
+@pytest.mark.parametrize("rc,done", [(ReturnCode.SERVICE_UNAVAILABLE, True), (ReturnCode.TASK_ABORTED, False)])
+def test_clean_remote_shutdown_and_task_abort(path, rc, done):
+    connector = HttpClientConnector()
+    connector.set_abort_signal(Signal())
+    connector.send_request = MagicMock(return_value=make_reply(rc))
+    assert connector._forward(request(path))["status"] == 503
+    assert connector._server_done == done
+    assert connector._exit_code == 0
+
+
+def test_timeout_warning_reports_effective_values(caplog):
+    connector = HttpClientConnector(per_msg_timeout=10, tx_timeout=100)
+    assert (connector.per_msg_timeout, connector.tx_timeout) == (2, 25)
+    assert "per_msg_timeout=2.0, tx_timeout=25.0" in caplog.text
+
+
+@pytest.mark.parametrize("error,status", [(TimeoutError(), 504), (ConnectionError(), 502)])
+def test_upstream_failure_is_a_gateway_error_and_retains_identity(error, status):
+    connector = HttpServerConnector()
+    connector.http_client = MagicMock()
+    connector.http_client.send.side_effect = error
+    assert connector.send_request_to_flower(request(), context("site-1"))["status"] == status
+    assert connector.send_request_to_flower(request(), context("site-2"))["status"] == 403
+
+
+@pytest.mark.parametrize("length,body", [("garbage", b""), ("-1", b""), ("1025", b""), ("10", b"short")])
+def test_invalid_upstream_content_length_is_502(length, body):
+    client = FleetHttpClient("127.0.0.1:1234", max_message_bytes=1024)
+    with (
+        patch("nvflare.app_opt.flower.http_transport.socket.socket"),
+        patch("nvflare.app_opt.flower.http_transport.http.client.HTTPConnection") as connection,
+        patch.object(client, "_connect"),
+    ):
+        response = connection.return_value.getresponse.return_value
+        response.getheader.return_value = length
+        response.read.return_value = body
+        with pytest.raises(HttpError) as error:
+            client.send(request())
+        assert error.value.status == 502
+        connection.return_value.close.assert_called_once()
+    assert not client._connections
+
+
+@pytest.mark.parametrize("values", [["application/protobuf", "application/protobuf"], ["x" * 8193]])
+def test_invalid_upstream_headers_are_502(values):
+    client = FleetHttpClient("127.0.0.1:1234")
+    with (
+        patch("nvflare.app_opt.flower.http_transport.socket.socket"),
+        patch("nvflare.app_opt.flower.http_transport.http.client.HTTPConnection") as connection,
+        patch.object(client, "_connect"),
+    ):
+        response = connection.return_value.getresponse.return_value
+        response.getheader.return_value = "0"
+        response.read.return_value = b""
+        response.status = 200
+        response.headers = Message()
+        for value in values:
+            response.headers["content-type"] = value
+        with pytest.raises(HttpError) as error:
+            client.send(request())
+        assert error.value.status == 502
+
+
+def test_send_after_close_does_not_create_socket():
+    client = FleetHttpClient("127.0.0.1:1234")
+    client.close()
+    with patch("nvflare.app_opt.flower.http_transport.socket.socket") as socket_type:
+        assert client.send(request())["status"] == 503
+    socket_type.assert_not_called()
+
+
+def test_pending_connect_does_not_block_heartbeat_or_close():
+    from tests.timing_utils import ThreadGroup
+
+    client = FleetHttpClient("127.0.0.1:1234")
+    entered, release, closed = threading.Event(), threading.Event(), threading.Event()
+    results = []
+
+    def connect(sock, timeout):
+        if timeout == 20:
+            entered.set()
+            release.wait()
+
+    with (
+        patch("nvflare.app_opt.flower.http_transport.socket.socket"),
+        patch("nvflare.app_opt.flower.http_transport.http.client.HTTPConnection") as connection,
+        patch.object(client, "_connect", side_effect=connect),
+    ):
+        connections = [MagicMock(), MagicMock()]
+        connection.side_effect = connections
+        response = connections[1].getresponse.return_value
+        response.getheader.return_value = "0"
+        response.read.return_value = b""
+        response.headers = Message()
+        response.status = 200
+        with ThreadGroup(release) as workers:
+            workers.start(lambda: results.append(client.send(request())))
+            assert entered.wait(10)
+            heartbeat_done = threading.Event()
+
+            def heartbeat():
+                assert client.send(request(HEARTBEAT_PATH))["status"] == 200
+                heartbeat_done.set()
+
+            workers.start(heartbeat)
+            assert heartbeat_done.wait(5)
+            workers.start(lambda: (client.close(), closed.set()))
+            assert closed.wait(5)
+        assert results[0]["status"] == 503
+        assert not client._connections
+        # Only the heartbeat was sent; the late connection cannot send or reopen.
+        connections[0].request.assert_not_called()
+        assert connections[1].request.call_count == 1
+        assert all(conn.close.call_count == 1 for conn in connections)
+
+
+def test_connect_wait_observes_cancellation():
+    client = FleetHttpClient("127.0.0.1:1234")
+    sock = MagicMock()
+    sock.connect_ex.return_value = errno.EINPROGRESS
+    with patch("nvflare.app_opt.flower.http_transport.selectors.DefaultSelector") as selector:
+        selector.return_value.__enter__.return_value.select.side_effect = lambda _: client.close() or []
+        with pytest.raises(OSError, match="cancelled"):
+            client._connect(sock, 20)
+
+
+def test_executor_logs_effective_timeouts():
+    from nvflare.app_opt.flower.executor import FlowerExecutor
+
+    executor = FlowerExecutor(per_msg_timeout=10, tx_timeout=100)
+    executor.get_connector(None)
+    executor.log_info = MagicMock()
+    executor._log_states(None)
+    logs = [call.args[1] for call in executor.log_info.call_args_list]
+    assert "    self.per_msg_timeout=2.0" in logs
+    assert "    self.tx_timeout=25.0" in logs

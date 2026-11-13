@@ -44,7 +44,7 @@ def test_flower_recipe_rejects_missing_flwr_package():
             mock_flower_job.assert_not_called()
 
 
-@pytest.mark.parametrize("flwr_version", ["1.43.0", "1.43.1", "1.43.5", "1.44.0", "2.0.0"])
+@pytest.mark.parametrize("flwr_version", ["1.43.0", "1.43.1", "1.43.5", "1.44.0rc1", "1.44.0", "2.0.0"])
 def test_flower_recipe_accepts_compatible_flwr_version(flwr_version):
     fake_job = FedJob(name="test_flower", min_clients=1)
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
@@ -201,3 +201,22 @@ def test_flower_job_has_byoc_when_content_provided():
             assert "pyproject.toml" in os.listdir(
                 server_custom
             ), "Expected pyproject.toml in server custom/ for BYOC mode"
+
+
+def test_payload_limit_reaches_both_deployed_connectors(tmp_path):
+    import json
+
+    from nvflare.app_opt.flower.controller import FlowerController
+    from nvflare.app_opt.flower.executor import FlowerExecutor
+
+    limit = 1234567
+    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.43.0"):
+        recipe = FlowerRecipe(name="limits", flower_app_path="local/custom/app", max_message_bytes=limit)
+    recipe._job.export_job(str(tmp_path))
+    config_dir = tmp_path / "limits" / "app" / "config"
+    server = json.loads((config_dir / "config_fed_server.json").read_text())
+    client = json.loads((config_dir / "config_fed_client.json").read_text())
+    controller_args = server["workflows"][0]["args"]
+    executor_args = client["executors"][0]["executor"]["args"]
+    assert FlowerController(**controller_args).get_connector(None).max_message_bytes == limit
+    assert FlowerExecutor(**executor_args).get_connector(None).max_message_bytes == limit

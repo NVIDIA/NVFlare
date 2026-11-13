@@ -84,12 +84,9 @@ class HttpServerConnector(FlowerServerConnector):
                     if path != "/v1/fleet/register-node":
                         return http_response(403)
                     self._key_owners[key] = site
-            try:
-                reply = self.http_client.send(request)
-            except Exception:
-                # Do not release an identity after an uncertain registration.
-                # The job will fail rather than risk a cross-site takeover.
-                raise
+            # Preserve ownership after an uncertain registration. Only an
+            # explicit rejection below releases a newly registered key.
+            reply = self.http_client.send(request)
             if path == "/v1/fleet/register-node" and reply["status"] >= 400 and not owner:
                 with self._identity_lock:
                     self._key_owners.pop(key, None)

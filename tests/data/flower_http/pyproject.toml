@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "flower-smoke"
+version = "1.0.0"
+dependencies = ["flwr>=1.43", "numpy"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["flower_smoke"]
+
+[tool.flwr.app]
+publisher = "nvflare"
+
+[tool.flwr.app.components]
+serverapp = "flower_smoke.app:server_app"
+clientapp = "flower_smoke.app:client_app"

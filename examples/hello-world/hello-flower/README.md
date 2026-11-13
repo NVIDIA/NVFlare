@@ -40,7 +40,7 @@ or editable installation that selected the example revision.
 > [!IMPORTANT]
 > This revision requires `flwr>=1.43` on the server and every client, with the same
 > Flower minor version throughout the job. It uses Flower's HTTP Fleet API and requires
-> POSIX hosts (Linux or macOS). Older Flower versions and the gRPC adapter are no longer supported.
+> Python 3.11+ and POSIX hosts (Linux or macOS). Older Flower versions and the gRPC adapter are no longer supported.
 > Use the matching NVFlare release branch and its example dependencies for older deployments.
 
 The Recipe API, Flower app code, and TensorBoard relay keep the same structure. Local

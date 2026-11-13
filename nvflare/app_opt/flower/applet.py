@@ -322,8 +322,9 @@ class FlowerServerApplet(Applet):
             server_app: this process performs server side of training.
 
         We start the superlink first, and wait for it to become ready, then start the server app.
-        Each process will have its own log file in the job's run dir. The superlink's log file is named
-        "superlink_log.txt". The server app's log file is named "server_app_log.txt".
+        SuperLink output is streamed to "superlink_log.txt" in the job's run dir.
+        "server_app_log.txt" is a best-effort snapshot fetched at shutdown while
+        SuperLink is still available; it can be absent after a SuperLink crash.
 
         Args:
             app_ctx: the run context of the applet.

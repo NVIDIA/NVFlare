@@ -16,7 +16,6 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_package_version
 from typing import Optional
 
-from packaging.specifiers import SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from nvflare.app_common.tie.defs import Constant
@@ -45,7 +44,7 @@ def _validate_flwr_version():
             f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
         ) from ex
 
-    is_supported = parsed_version in SpecifierSet(SUPPORTED_FLWR_SPEC.removeprefix("flwr"))
+    is_supported = parsed_version >= SUPPORTED_FLWR_MIN_VERSION
     if not is_supported:
         raise RuntimeError(
             f"incompatible flwr version '{installed_version}'. " f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."

@@ -261,3 +261,34 @@ def test_server_log_is_saved_before_superlink_stops(run_command, tmp_path):
     applet.stop()
     assert shlex.split(run_command.call_args.args[0].cmd)[1:] == ["log", "123", "nvflare", "--show"]
     manager.stop.assert_called_once()
+
+
+@pytest.mark.parametrize("outcome", ["ready", "exited", "timeout"])
+def test_superlink_health_polling(monkeypatch, outcome):
+    from nvflare.app_opt.flower import applet
+    from tests.timing_utils import isolate_time
+
+    clock = isolate_time(monkeypatch, applet)
+    tick = [0.0]
+    clock.monotonic = lambda: tick[0]
+
+    def sleep(seconds):
+        tick[0] += seconds
+        assert tick[0] <= 2, "health polling exceeded its deadline"
+
+    clock.sleep = sleep
+    process = MagicMock()
+    process.poll.return_value = 1 if outcome == "exited" else None
+    with patch.object(applet.http.client, "HTTPConnection") as connection:
+        connection.return_value.getresponse.return_value.status = 200 if outcome == "ready" else 503
+        if outcome == "ready":
+            applet._wait_for_superlink("127.0.0.1:1234", process, 1)
+            connection.return_value.request.assert_called_once_with("GET", "/health")
+            connection.return_value.close.assert_called_once()
+        else:
+            with pytest.raises(RuntimeError, match="exited during startup" if outcome == "exited" else "not healthy"):
+                applet._wait_for_superlink("127.0.0.1:1234", process, 1)
+            if outcome == "exited":
+                connection.assert_not_called()
+            else:
+                assert connection.return_value.close.call_count > 1
