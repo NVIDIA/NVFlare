@@ -40,6 +40,8 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     SlurmProtocolError,
     SubmissionResult,
 )
+from nvflare.app_opt.job_launcher.slurm.task_inventory import inventory
+from nvflare.app_opt.job_launcher.slurm.task_inventory import main as inventory_main
 from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher, SlurmTaskManager
 from nvflare.app_opt.job_launcher.slurm.task_scheduler import SlurmTaskCliAdapter, TaskSlurmRecord
 from nvflare.private.fed.task_worker.artifacts import IncompleteTaskArtifactError
@@ -358,6 +360,61 @@ def test_uncertain_submission_retains_cleanup_handle_and_identity_fence(backend,
         with pytest.raises(TaskSettlementError):
             handle.cancel()
         adapter.cancel.assert_not_called()
+
+
+def test_task_inventory_survives_unconfirmed_and_confirmed_cleanup(backend, capsys):
+    launcher, adapter, request = backend
+    adapter.active_by_id.return_value = _query("RUNNING")
+    handle = launcher.launch_task(request)
+    assert not handle.poll().settled
+    rows = inventory(launcher.manager.config.workspace_path)
+    assert len(rows) == 1
+    assert rows[0]["state"] == "unconfirmed"
+    assert (rows[0]["job_id"], rows[0]["task_id"], rows[0]["attempt_id"]) == (
+        request.job_id,
+        request.task_id,
+        request.attempt_id,
+    )
+    assert rows[0]["execution_id"] == handle.execution_id
+    assert rows[0]["scheduler_job_name"] == handle.job_name
+    assert rows[0]["scheduler_comment"] == launcher.manager._marker(handle.nvflare_job_id)
+    inventory_main(["--workspace", launcher.manager.config.workspace_path])
+    assert json.loads(capsys.readouterr().out)["state"] == "unconfirmed"
+    adapter.active_by_id.return_value = _query()
+    adapter.task_accounting.return_value = _accounting()
+    assert handle.poll_fresh().settled
+    assert inventory(launcher.manager.config.workspace_path)[0]["state"] == "confirmed_settled"
+    with Path(handle.job_dir, "scheduler.jsonl").open("a") as stream:
+        stream.write(
+            json.dumps({"event": "status", "execution_id": handle.execution_id, "phase": "running", "settled": True})
+        )
+        stream.write("\n")
+    rows = inventory(launcher.manager.config.workspace_path)
+    assert rows[0]["state"] == "unconfirmed"
+    assert "inventory_error" in rows[0]
+    identity_path = Path(handle.job_dir, "identity.json")
+    identity = json.loads(identity_path.read_text())
+    identity["job_id"] = "different-job"
+    identity_path.write_text(json.dumps(identity))
+    rows = inventory(launcher.manager.config.workspace_path)
+    assert rows[0]["state"] == "unconfirmed"
+    assert "task identity does not match directory key" in rows[0]["inventory_error"]
+
+
+def test_task_inventory_keeps_ambiguous_and_corrupt_records_unconfirmed(backend):
+    launcher, adapter, request = backend
+    adapter.submit.return_value = SubmissionResult(CommandResult(None, "", "", timed_out=True))
+    with pytest.raises(TaskLaunchError) as error:
+        launcher.launch_task(request)
+    handle = error.value.handle
+    rows = inventory(launcher.manager.config.workspace_path)
+    assert rows[0]["state"] == "unconfirmed"
+    assert rows[0]["execution_id"] == handle.execution_id
+    assert rows[0]["scheduler_comment"] == launcher.manager._marker(handle.nvflare_job_id)
+    Path(handle.job_dir, "scheduler.jsonl").write_text('{"event": "status", "settled": true}\n')
+    rows = inventory(launcher.manager.config.workspace_path)
+    assert rows[0]["state"] == "unconfirmed"
+    assert "inventory_error" in rows[0]
 
 
 def test_submit_exception_and_shutdown(backend):

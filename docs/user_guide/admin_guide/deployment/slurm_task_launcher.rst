@@ -300,6 +300,33 @@ retains cleanup ownership while alive. Administrative investigation and native
 cancellation use the site's Slurm tools; there is no operator-release file or
 NVFlare override that declares an allocation released.
 
+After CP loss or restart, inspect its retained attempt inventory from the same
+site workspace::
+
+    python -m nvflare.app_opt.job_launcher.slurm.task_inventory --workspace /path/to/site/workspace
+
+The read-only command emits one JSON line per retained attempt, including the
+job, site, task, attempt, execution ID, scheduler job name/comment, and last
+recorded state. ``unconfirmed`` includes submissions with no returned allocation
+ID and incomplete or damaged journals. ``confirmed_settled`` means the former CP
+recorded native settlement; it is not a fresh scheduler query. No entry is
+adopted or cancelled by this command. Keep the task directories until the
+corresponding allocations have been reconciled.
+The inventory covers task allocations only. CJ and server-job allocations use
+the resident Slurm job launcher and require separate scheduler reconciliation.
+
+For each unconfirmed entry, check the current queue under the submitting UID
+using its exact scheduler name and comment. If it has an allocation ID, inspect
+that ID with ``squeue`` and ``sacct --duplicates`` (including batch and other
+steps). An unresolved ID needs a name/comment search and may require the site's
+Slurm administrator to investigate delayed or missing accounting. Cancel only
+an allocation whose ownership matches the retained identity, then recheck
+controller disappearance and terminal allocation/step records. A successful
+``scancel`` response, an empty queue, or elapsed time alone does not confirm GPU
+release. If Slurm or accounting is unavailable, retain the inventory and
+escalate through the site's normal incident process; CP restart does not adopt
+these attempts or guarantee shutdown during the outage.
+
 Recognized definite ``sbatch`` rejections fail promptly with scheduler text.
 Site/Lua explanations may accompany a known rejection, including messages
 printed at error level. Known resource validation errors and local errors such
