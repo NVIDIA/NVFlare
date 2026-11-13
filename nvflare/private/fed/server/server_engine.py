@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import copy
+import glob
 import json
 import os
 import re
 import shutil
 import sys
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -48,6 +50,7 @@ from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.utils.tensor_disk_offload_context import server_root_dir_prefix
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
@@ -203,6 +206,11 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
     def wait_for_complete(self, workspace, job_id, process):
         process.wait()
+        # A killed or fail-fast job process skips its own tensor offload cleanup.
+        leftover = glob.escape(os.path.join(tempfile.gettempdir(), server_root_dir_prefix(workspace, job_id))) + "*"
+        for root_dir in glob.glob(leftover):
+            self.logger.warning(f"Job: {job_id} exited without removing tensor offload dir {root_dir}; removing it")
+            shutil.rmtree(root_dir, ignore_errors=True)
         run_process_info = self.run_processes.get(job_id)
         if run_process_info:
             # Wait for the job process to finish UPDATE_RUN_STATUS process

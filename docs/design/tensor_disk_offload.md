@@ -161,8 +161,9 @@ Custom aggregators are responsible for:
 
 ## Temp File Lifecycle
 
-- Each workflow creates a job-scoped offload root (`nvflare_tensor_offload_<job>_*`),
-  with safetensors download directories beneath it.
+- Each workflow creates a job-scoped offload root
+  (`nvflare_tensor_offload_server_<workspace-digest>_<job>+*` on the server, `nvflare_tensor_offload_<job>_*` for Swarm clients), with safetensors
+  download directories beneath it.
 - Temp dir selection follows Python `tempfile` behavior (`TMPDIR` / OS default, typically `/tmp`).
 - In containerized deployments, `/tmp` may be tmpfs (RAM-backed); set `TMPDIR` to a disk-backed mount to realize memory offload benefits.
 - `LazyTensorDict` owns a shared `_TempDirRef`; each lazy ref keeps this reference alive.
@@ -170,6 +171,8 @@ Custom aggregators are responsible for:
   a fallback.
 - FedAvg-style workflows restore the prior FOBS context and remove their
   job-scoped root when the workflow exits.
+- A killed or fail-fast server job process skips that cleanup, so the server parent
+  removes the job's server roots from its own temp dir after reaping the job process.
 - Swarm keeps its job-scoped root and tensor-forwarding route through workflow
   finalization. Explicit terminal downloads inherit the run abort signal. At job
   `END_RUN`, Swarm cancels active disk consumers under its root, gives the
