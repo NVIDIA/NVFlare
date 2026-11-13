@@ -20,9 +20,9 @@ import threading
 import time
 import zipfile
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple
 
-from nvflare.apis.client import Client
+from nvflare.apis.client import Client, ClientDictKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
@@ -874,7 +874,9 @@ class JobRunner(FLComponent):
                 # have left
                 self.log_debug(fl_ctx, f"Job {job_id} cannot be read; storing its workspace whole")
             else:
-                split = link_job_outputs(ws_dirs, self._deployed_files(job, fl_ctx))
+                split = link_job_outputs(
+                    ws_dirs, self._deployed_files(job, fl_ctx), self._job_client_names(job_id, job)
+                )
                 if not split:
                     self.log_info(fl_ctx, f"The outputs of job {job_id} are kept in its workspace archive")
                 elif not job_manager.save_job_outputs(job_id, split.output_dirs, fl_ctx):
@@ -892,6 +894,23 @@ class JobRunner(FLComponent):
             self._remove_links(split, job_id, fl_ctx)
         self._clear_job_outputs_stored(job_manager, job, job_id, fl_ctx, recorded)
         return None
+
+    def _job_client_names(self, job_id: str, stored_job: Job) -> Set[str]:
+        """The names of the job's clients, whose streamed logs the server keeps in ``<client>/`` folders.
+
+        Recorded in the running job's meta when the job started (the stored meta may lack them).
+        """
+        with self.lock:
+            running_job = self.running_jobs.get(job_id)
+        for job in (running_job, stored_job):
+            clients = job.meta.get(JobMetaKey.JOB_CLIENTS) if job else None
+            if isinstance(clients, list) and clients:
+                return {
+                    c.get(ClientDictKey.NAME)
+                    for c in clients
+                    if isinstance(c, dict) and isinstance(c.get(ClientDictKey.NAME), str)
+                }
+        return set()
 
     @staticmethod
     def _deployed_files(job: Job, fl_ctx: FLContext) -> Dict[str, Tuple[int, int]]:

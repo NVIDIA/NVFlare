@@ -216,11 +216,20 @@ You will then see the simulated devices start receiving the model from the serve
 #### Federated Training v.s. Centralized Training
 After the configured rounds have finished, the training is complete, now let's check the training results.
 
-FL results are saved in `/tmp/nvflare/jobs-storage`. Each job stores the files it produced in its `outputs` archive and
-the rest of its workspace in its `workspace` archive, so let's extract both into one folder per job
+FL results are saved in `/tmp/nvflare/jobs-storage`. A job stores the files it produced in its `outputs` archive and the
+rest of its workspace in its `workspace` archive; its `meta` records `"job_outputs_stored": true` when the `outputs`
+archive is current. Let's extract each job's archives into one `extracted` folder beside them
 
 ```commandline
-find /tmp/nvflare/jobs-storage -type f \( -name "workspace" -o -name "outputs" \) -exec sh -c 'unzip -o -q "$1" -d "$(dirname "$1")/extracted"' sh {} \;
+find /tmp/nvflare/jobs-storage -type f -name meta | while read -r meta; do
+  job_dir=$(dirname "$meta")
+  [ -f "$job_dir/workspace" ] || continue
+  rm -rf "$job_dir/extracted"
+  unzip -o -q "$job_dir/workspace" -d "$job_dir/extracted"
+  if python3 -c 'import json, sys; sys.exit(json.load(open(sys.argv[1])).get("job_outputs_stored") is not True)' "$meta"; then
+    unzip -o -q "$job_dir/outputs" -d "$job_dir/extracted"
+  fi
+done
 ```
 
 Then we can start TensorBoard to visualize the training results:
