@@ -17,7 +17,13 @@ import os
 import pytest
 
 from nvflare.apis.job_def import JobMetaKey, RunStatus
-from nvflare.private.fed.server.job_outputs import declared_outputs, link_job_outputs, outputs_only_refusal
+from nvflare.private.fed.server.job_outputs import (
+    declared_outputs,
+    has_invalid_job_outputs,
+    is_produced,
+    link_job_outputs,
+    outputs_only_refusal,
+)
 
 
 def _run_folder(root, files):
@@ -318,28 +324,128 @@ class TestSplitJobOutputs:
 
 
 class TestOutputsOnlyRefusal:
-    def test_completed_job_with_outputs_is_served_its_outputs(self):
-        meta = {
-            JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED.value,
-            JobMetaKey.JOB_OUTPUTS.value: ["metrics/", "metrics/"],
-        }
-        assert outputs_only_refusal(meta) == (None, ["metrics/"])
+    def test_a_completed_job_is_served_its_outputs(self):
+        assert outputs_only_refusal({JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED.value}) is None
 
+    @pytest.mark.parametrize("status", [RunStatus.FINISHED_EXECUTION_EXCEPTION, RunStatus.FINISHED_ABORTED])
+    def test_a_job_that_did_not_complete_gets_the_whole_download(self, status):
+        assert "did not complete" in outputs_only_refusal({JobMetaKey.STATUS.value: status.value})
+
+
+@pytest.mark.parametrize("value, invalid", [(None, False), ([], False), (["metrics/"], False), (["../x"], True)])
+def test_has_invalid_job_outputs(value, invalid):
+    assert has_invalid_job_outputs({JobMetaKey.JOB_OUTPUTS.value: value}) is invalid
+
+
+class TestProducedFiles:
     @pytest.mark.parametrize(
-        "meta, reason",
+        "path",
         [
-            ({JobMetaKey.STATUS.value: RunStatus.FINISHED_EXECUTION_EXCEPTION.value}, "did not complete"),
-            ({JobMetaKey.STATUS.value: RunStatus.FINISHED_ABORTED.value}, "did not complete"),
-            ({JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED.value}, "declares no job_outputs"),
-            (
-                {JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED.value, JobMetaKey.JOB_OUTPUTS.value: ["../x"]},
-                "invalid",
-            ),
+            "app_server/FL_global_model.pt",
+            "models/server.npy",
+            "metrics/round_metrics.jsonl",
+            "cross_site_val/cross_val_results.json",
+            "tb_events/site-1/events.out.tfevents.1",
+            "app_server/custom/new_report.json",  # created by the job, not deployed with it
+            "results/catalog.txt",
         ],
     )
-    def test_other_jobs_get_the_whole_download(self, meta, reason):
-        refusal, outputs = outputs_only_refusal(meta)
-        assert reason in refusal and outputs == []
+    def test_files_the_job_wrote_are_produced(self, path):
+        assert is_produced(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "meta.json",
+            "fl_app.txt",
+            "log.txt",
+            "error_log.txt",
+            "log.json",
+            "log_fl.txt",
+            "log.txt.3",  # rotated
+            "task_1_log.txt",  # a task worker's prefixed log
+            "audit.log",
+            "stats_pool_summary.json",
+            "server.stats_pool_records.csv",
+            "app_server/custom/__pycache__/net.cpython-312.pyc",
+            "job_cert/job.crt",
+            "app_server/.__nvfl_sig.json",
+        ],
+    )
+    def test_job_files_logs_and_system_files_are_not(self, path):
+        assert not is_produced(path)
+
+    def test_deployed_files_are_not(self):
+        deployed = {"app_server/config/config_fed_server.json", "app_server/custom/net.py"}
+
+        assert not is_produced("app_server/custom/net.py", deployed)
+        assert is_produced("app_server/custom/other.py", deployed)
+
+
+class TestLinkProducedOutputs:
+    def test_without_job_outputs_every_produced_file_is_an_output(self, tmp_path):
+        deployed = {"app_server/config/config_fed_server.json", "app_server/custom/net.py"}
+        run_dir = _run_folder(
+            tmp_path / "run",
+            {
+                "app_server/config/config_fed_server.json": b"{}",
+                "app_server/custom/net.py": b"net",
+                "app_server/custom/__pycache__/net.cpython-312.pyc": b"pyc",
+                "app_server/FL_global_model.pt": b"model",
+                "app_server/my_model.bin": b"custom persistor",
+                "metrics/metrics_summary.json": b"{}",
+                "meta.json": b"{}",
+                "fl_app.txt": b"app",
+                "log.txt": b"log",
+            },
+        )
+
+        split = link_job_outputs([str(run_dir)], [], deployed)
+        split.link_rest()
+
+        produced = ["app_server/FL_global_model.pt", "app_server/my_model.bin", "metrics/metrics_summary.json"]
+        assert split.found == produced
+        assert _files(split.output_dirs[0]) == produced
+        assert _files(split.rest_dirs[0]) == [
+            "app_server/config/config_fed_server.json",
+            "app_server/custom/__pycache__/net.cpython-312.pyc",
+            "app_server/custom/net.py",
+            "fl_app.txt",
+            "log.txt",
+            "meta.json",
+        ]
+
+    def test_job_outputs_narrow_the_outputs(self, tmp_path):
+        run_dir = _run_folder(
+            tmp_path / "run", {"app_server/FL_global_model.pt": b"model", "metrics/metrics_summary.json": b"{}"}
+        )
+
+        split = link_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt"], set())
+
+        assert _files(split.output_dirs[0]) == ["app_server/FL_global_model.pt"]
+
+    def test_nothing_produced_keeps_the_workspace_whole(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/config/c.json": b"{}", "log.txt": b"log"})
+
+        assert link_job_outputs([str(run_dir)], [], {"app_server/config/c.json"}) is None
+
+    def test_a_file_produced_after_the_outputs_were_stored_rejects_the_split(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model"})
+        split = link_job_outputs([str(run_dir)], [], set())
+        (run_dir / "late_report.json").write_text("{}")  # an output missing from the stored archive
+
+        with pytest.raises(OSError):
+            split.link_rest()
+
+    def test_a_server_log_written_after_the_outputs_were_stored_keeps_the_split(self, tmp_path):
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model", "log.txt": b"old"})
+        split = link_job_outputs([str(run_dir)], [], set())
+        with open(run_dir / "log.txt", "ab") as f:
+            f.write(b" more")  # the server keeps logging; logs are not outputs
+
+        split.link_rest()
+
+        assert _files(split.rest_dirs[0]) == ["log.txt"]
 
 
 @pytest.mark.parametrize("value", [None, [], ["../x"], "metrics/"])

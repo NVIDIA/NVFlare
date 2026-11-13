@@ -105,7 +105,7 @@ def _outputs_note(whole_job_reason: Optional[str], missing: Optional[str]) -> Op
 
 _OUTPUTS_ARCHIVE_MISSING = (
     "the job's outputs archive cannot be read from the job store, so the downloaded workspace does not include "
-    "its declared outputs"
+    "its outputs"
 )
 
 CLONED_META_KEYS = {
@@ -1813,7 +1813,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     @staticmethod
     def _outputs_stored_apart(meta: Optional[dict]) -> bool:
-        """Whether the job's declared outputs are stored apart from its workspace, as recorded at job end."""
+        """Whether the job's outputs are stored apart from its workspace, as recorded at job end."""
         return isinstance(meta, dict) and meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is True
 
     def _prepare_whole_job(self, job_def_manager, job_id: str, job_download_dir: str, comps, fl_ctx) -> Optional[str]:
@@ -1850,7 +1850,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         comps = [(DATA, JOB_ZIP), (META, META_JSON), (WORKSPACE, WORKSPACE_ZIP)]
         job = job_def_manager.get_job(job_id, fl_ctx)
         if job and self._outputs_stored_apart(job.meta):
-            # the job's declared outputs are stored apart from the rest of its workspace
+            # the job's outputs are stored apart from the rest of its workspace
             comps.append((OUTPUTS, OUTPUTS_ZIP))
         return comps
 
@@ -1871,18 +1871,18 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         """Prepare an outputs-only download: meta.json and the job's outputs archive as workspace.zip.
 
         The outputs archive was stored when the job ended, so it is prepared like the workspace archive in a full
-        download, with no work before the reply. The whole job is prepared instead when the job did not complete,
-        declares no outputs, did not store its outputs apart, or its outputs archive cannot be read.
+        download, with no work before the reply. The whole job is prepared instead when the job did not complete, did not
+        store its outputs apart, or its outputs archive cannot be read.
 
         Returns:
             (None, None) for an outputs-only download; otherwise why the whole job was prepared, and why its stored
             outputs are missing from it, if they are.
         """
-        reason, _ = outputs_only_refusal(meta)
+        reason = outputs_only_refusal(meta)
         if not reason and not self._outputs_stored_apart(meta):
             reason = (
-                "the job's outputs were not stored apart: none of its declared outputs were produced, "
-                "it finished before this feature, or they were kept in its workspace archive"
+                "the job's outputs were not stored apart: it produced no output files, it finished before this "
+                "feature, or they were kept in its workspace archive"
             )
         if not reason:
             comps_to_send = [(META, META_JSON), (OUTPUTS, WORKSPACE_ZIP)]

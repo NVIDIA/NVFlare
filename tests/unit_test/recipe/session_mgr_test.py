@@ -409,7 +409,7 @@ def test_admin_session_closes_after_unexpected_monitor_return_code():
 
 
 @pytest.mark.parametrize(
-    "notice", [None, "Job job-id: the whole job was downloaded because the job declares no job_outputs."]
+    "notice", [None, "Job job-id: the whole job was downloaded because it produced no output files."]
 )
 def test_outputs_only_result_prints_why_the_whole_job_came_back(tmp_path, capsys, notice):
     session = MagicMock()

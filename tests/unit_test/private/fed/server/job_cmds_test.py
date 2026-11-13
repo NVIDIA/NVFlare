@@ -2236,7 +2236,7 @@ def test_download_job_outputs_only_serves_the_stored_outputs_archive_like_a_full
     "job, reason",
     [
         (_finished_job(status=RunStatus.FINISHED_EXECUTION_EXCEPTION.value), "did not complete successfully"),
-        (_finished_job(outputs=None), "declares no job_outputs"),
+        (_finished_job(outputs=None), "not stored apart"),
         (_finished_job(), "the job's outputs were not stored apart"),  # none produced, or an older job
     ],
 )
@@ -2282,7 +2282,7 @@ def test_a_full_download_without_the_outputs_archive_returns_the_rest_and_says_s
     prepared, reply_meta = _download(engine, tmp_path)
 
     assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
-    assert "does not include its declared outputs" in reply_meta[MetaKey.OUTPUTS_NOTE]
+    assert "does not include its outputs" in reply_meta[MetaKey.OUTPUTS_NOTE]
 
 
 def test_a_partly_prepared_outputs_archive_is_dropped_and_reported_missing(monkeypatch, tmp_path):
@@ -2303,7 +2303,7 @@ def test_a_partly_prepared_outputs_archive_is_dropped_and_reported_missing(monke
     prepared, reply_meta = _download(engine, tmp_path)
 
     assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
-    assert "does not include its declared outputs" in reply_meta[MetaKey.OUTPUTS_NOTE]
+    assert "does not include its outputs" in reply_meta[MetaKey.OUTPUTS_NOTE]
 
 
 def test_an_outputs_only_download_without_the_outputs_archive_returns_the_whole_job_and_says_so(monkeypatch, tmp_path):

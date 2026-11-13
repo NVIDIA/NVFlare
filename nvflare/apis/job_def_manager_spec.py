@@ -309,9 +309,10 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     def save_job_outputs(self, jid: str, data: list[str], fl_ctx: FLContext) -> str | None:
-        """Save the job's declared outputs (``job_outputs``) to the job storage, as their own archive.
+        """Save the job's outputs to the job storage, as their own archive.
 
-        The server names the declared files in folders of hard links, which this method archives; the rest of the
+        The outputs are the files the job produced, or those its ``job_outputs`` select. The server names them in
+        folders of hard links, which this method archives; the rest of the
         workspace is then saved with ``save_workspace`` without them, so each file is stored once. The folders hold
         links to the job's files: an implementation reads them and must not move or delete their contents. A full
         download sends both archives; an outputs-only download sends this one.

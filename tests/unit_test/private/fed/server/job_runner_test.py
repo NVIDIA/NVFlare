@@ -403,12 +403,76 @@ def test_save_workspace_stores_declared_outputs_once_apart_from_the_rest(tmp_pat
     assert _no_link_folders_left(tmp_path)
 
 
-@pytest.mark.parametrize("outputs", [None, ["plots/"]])
-def test_save_workspace_keeps_everything_in_the_workspace_when_nothing_declared_was_produced(tmp_path, outputs):
+def test_save_workspace_keeps_everything_in_the_workspace_when_nothing_selected_was_produced(tmp_path):
     run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
     runner.log_info = MagicMock()
-    _job_with_outputs(job_manager, outputs)
+    _job_with_outputs(job_manager, ["plots/"])
+    archived = _capture_archives(job_manager)
+
+    runner._save_workspace(fl_ctx)
+
+    job_manager.save_job_outputs.assert_not_called()
+    assert archived == {"workspace": ["app_server/FL_global_model.pt", "log.txt"]}
+
+
+def _deployed_job(job_manager, app_files, deploy_to=("server",), outputs=None):
+    import io
+    import zipfile
+
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w") as z:
+        for name in app_files:
+            z.writestr(name, "deployed")
+    job = MagicMock(meta={"job_outputs": outputs} if outputs is not None else {})
+    job.get_deployment.return_value = {"app": list(deploy_to)}
+    job.get_application.return_value = data.getvalue()
+    job_manager.get_job.return_value = job
+    return job
+
+
+@pytest.mark.parametrize("deploy_to", [("server",), ("@ALL",)])
+def test_without_job_outputs_every_file_the_job_produced_is_stored_apart(tmp_path, deploy_to):
+    run_dir = _run_dir_with_model(tmp_path)
+    for name, content in {
+        "app_server/config/config_fed_server.json": "{}",
+        "app_server/custom/net.py": "net",
+        "metrics/metrics_summary.json": "{}",
+        "meta.json": "{}",
+    }.items():
+        (run_dir / name).parent.mkdir(parents=True, exist_ok=True)
+        (run_dir / name).write_text(content)
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    _deployed_job(job_manager, ["config/config_fed_server.json", "custom/net.py"], deploy_to)
+    archived = _capture_archives(job_manager)
+
+    runner._save_workspace(fl_ctx)
+
+    # the server app and job files deployed with the job, and the server's log, stay with the rest
+    assert archived == {
+        "outputs": ["app_server/FL_global_model.pt", "metrics/metrics_summary.json"],
+        "workspace": ["app_server/config/config_fed_server.json", "app_server/custom/net.py", "log.txt", "meta.json"],
+    }
+    job_manager.update_meta.assert_called_once_with("job-1", {"job_outputs_stored": True}, fl_ctx)
+
+
+def test_an_unreadable_server_app_keeps_the_workspace_whole(tmp_path):
+    run_dir = _run_dir_with_model(tmp_path)
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    job = _deployed_job(job_manager, [])
+    job.get_application.side_effect = RuntimeError("store unavailable")  # its own files could pass as outputs
+    archived = _capture_archives(job_manager)
+
+    runner._save_workspace(fl_ctx)
+
+    job_manager.save_job_outputs.assert_not_called()
+    assert archived == {"workspace": ["app_server/FL_global_model.pt", "log.txt"]}
+
+
+def test_invalid_job_outputs_keep_the_workspace_whole(tmp_path):
+    run_dir = _run_dir_with_model(tmp_path)
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    _job_with_outputs(job_manager, ["../outside"])  # a job submitted before the check
     archived = _capture_archives(job_manager)
 
     runner._save_workspace(fl_ctx)

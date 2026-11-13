@@ -240,7 +240,7 @@ def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
 
     The value shape depends on the key: ``SCOPE`` takes a string;
     ``JOB_OUTPUTS`` takes a list of server workspace paths (see
-    :func:`nvflare.apis.job_def.validate_job_outputs`) and replaces the outputs named by the job's components;
+    :func:`nvflare.apis.job_def.validate_job_outputs`) and narrows an outputs-only download to the files they select (by default it returns every file the job produced);
     ``RESOURCE_SPEC``, ``CJ_RESOURCE_SPEC`` and ``JOB_LAUNCHER_SPEC`` take a dict keyed by site name
     with dict values; ``CUSTOM_PROPS`` takes a dict. Dict values must be
     completely JSON-serializable, cannot contain non-finite floats, and have

@@ -555,7 +555,7 @@ def test_pull_folder_passes_the_servers_outputs_only_report_to_the_caller(tmp_pa
             MetaKey.FILES: [["meta.json", "ref-1"]],
             MetaKey.TX_ID: "tx-1",
             MetaKey.SOURCE_FQCN: "server",
-            MetaKey.OUTPUTS_NOTE: "the whole job was downloaded because the job declares no job_outputs",
+            MetaKey.OUTPUTS_NOTE: "the whole job was downloaded because it produced no output files",
             MetaKey.OUTPUTS_ONLY: False,
         },
     }
@@ -570,7 +570,7 @@ def test_pull_folder_passes_the_servers_outputs_only_report_to_the_caller(tmp_pa
 
     assert (
         result[ProtoKey.META][MetaKey.OUTPUTS_NOTE]
-        == "the whole job was downloaded because the job declares no job_outputs"
+        == "the whole job was downloaded because it produced no output files"
     )
     assert result[ProtoKey.META][MetaKey.OUTPUTS_ONLY] is False
     assert MetaKey.FILES not in result[ProtoKey.META]

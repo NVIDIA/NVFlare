@@ -17,9 +17,8 @@ from typing import Union
 
 import torch
 
-from nvflare.apis.job_outputs import register_output_resolver
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.app_common.workflows.fedavg import FedAvg, fedavg_job_outputs
+from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.security.logging import secure_format_exception
 
 
@@ -175,7 +174,3 @@ class FedOpt(FedAvg):
         global_model.metrics = aggr_result.metrics
 
         return global_model
-
-
-# saves the model as FedAvg does
-register_output_resolver(FedOpt, fedavg_job_outputs)

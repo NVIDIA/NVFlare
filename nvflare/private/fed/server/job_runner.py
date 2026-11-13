@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import os
+import posixpath
 import shutil
 import threading
 import time
+import zipfile
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -31,6 +34,7 @@ from nvflare.apis.fl_constant import (
     SiteType,
     SystemComponents,
     SystemConfigs,
+    WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
@@ -47,7 +51,7 @@ from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
-from nvflare.private.fed.server.job_outputs import declared_outputs, link_job_outputs
+from nvflare.private.fed.server.job_outputs import declared_outputs, has_invalid_job_outputs, link_job_outputs
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
@@ -671,7 +675,7 @@ class JobRunner(FLComponent):
 
             engine = fl_ctx.get_engine()
             job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-            # the declared outputs are stored apart from the rest, so each file is stored once
+            # the job's outputs are stored apart from the rest, so each file is stored once
             split = self._save_job_outputs(job_manager, job_id, ws_dirs, fl_ctx)
             try:
                 location = job_manager.save_workspace(job_id, split.rest_dirs if split else ws_dirs, fl_ctx)
@@ -693,7 +697,7 @@ class JobRunner(FLComponent):
                 self.log_warning(fl_ctx, f"Workspace archive source disappeared before cleanup for job {job_id}: {d}")
 
     def _save_job_outputs(self, job_manager, job_id: str, ws_dirs: list, fl_ctx: FLContext):
-        """Store the job's declared outputs as their own archive, and return the split for the workspace archive.
+        """Store the job's outputs as their own archive, and return the split for the workspace archive.
 
         The outputs and the rest of the workspace are named by folders of hard links beside the workspace folders,
         so each file is stored once and the workspace folders are never changed. The outputs are linked and stored
@@ -701,9 +705,12 @@ class JobRunner(FLComponent):
         is. The job's meta records that the outputs are stored apart (``job_outputs_stored``), which downloads rely
         on. A retry rebuilds the links from the same files; a crash leaves only extra links behind.
 
+        The outputs are the files the job produced (everything but the server app deployed with it, its job files,
+        and the server's logs and system files), or the files its ``job_outputs`` selects when it sets them.
+
         Returns:
             The split, whose rest folders the workspace archive is built from; or None, in which case the workspace
-            folders are archived whole, as without declared outputs.
+            folders are archived whole.
         """
         if getattr(type(job_manager), "save_job_outputs", None) is JobDefManagerSpec.save_job_outputs:
             return None  # the job store does not store outputs apart
@@ -712,10 +719,11 @@ class JobRunner(FLComponent):
         recorded = False  # whether the record may have been set, even if setting it raised
         try:
             job = job_manager.get_job(job_id, fl_ctx)
-            outputs = declared_outputs(job.meta) if job else []
-            if not outputs:
-                return None
-            split = link_job_outputs(ws_dirs, outputs)
+            if not job or has_invalid_job_outputs(job.meta):
+                return None  # the outputs cannot be selected
+            outputs = declared_outputs(job.meta)
+            deployed = set() if outputs else self._deployed_paths(job, fl_ctx)
+            split = link_job_outputs(ws_dirs, outputs, deployed)
             if not split:
                 self.log_info(fl_ctx, f"The outputs of job {job_id} are kept in its workspace archive")
             elif not job_manager.save_job_outputs(job_id, split.output_dirs, fl_ctx):
@@ -725,7 +733,7 @@ class JobRunner(FLComponent):
                 # downloads rely on this record, not on listing components, to know the workspace lacks the outputs
                 recorded = True
                 job_manager.update_meta(job_id, {JobMetaKey.JOB_OUTPUTS_STORED.value: True}, fl_ctx)
-                self.log_debug(fl_ctx, f"Outputs {split.found} of job {job_id} saved")
+                self.log_debug(fl_ctx, f"{len(split.found)} outputs of job {job_id} saved")
                 return split
         except Exception as e:
             self.log_warning(fl_ctx, f"Cannot save the outputs of job {job_id}: {secure_format_exception(e)}")
@@ -733,6 +741,20 @@ class JobRunner(FLComponent):
             self._remove_links(split, job_id, fl_ctx)
         self._clear_job_outputs_stored(job_manager, job, job_id, fl_ctx, recorded)
         return None
+
+    @staticmethod
+    def _deployed_paths(job: Job, fl_ctx: FLContext) -> Set[str]:
+        """Run-folder paths of the files deployed with the job's server app, read from the stored job.
+
+        Raises when the app cannot be read: without this list, the job's own files would count as its outputs.
+        """
+        app_folder = WorkspaceConstants.APP_PREFIX + SiteType.SERVER
+        for app_name, participants in job.get_deployment().items():
+            sites = extract_participants(participants)
+            if SiteType.SERVER in sites or any(s.upper() == ALL_SITES for s in sites):
+                with zipfile.ZipFile(io.BytesIO(job.get_application(app_name, fl_ctx))) as z:
+                    return {posixpath.join(app_folder, n) for n in z.namelist() if not n.endswith("/")}
+        return set()
 
     def _clear_job_outputs_stored(self, job_manager, job, job_id: str, fl_ctx: FLContext, recorded: bool = False):
         # an earlier attempt stored outputs apart, or this one may have recorded it before failing; this attempt

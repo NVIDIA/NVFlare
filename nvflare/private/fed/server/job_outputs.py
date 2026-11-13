@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The job's declared outputs (``job_outputs``): stored apart from the rest of the workspace when the job ends.
+"""A job's outputs: stored apart from the rest of its workspace when the job ends.
 
-When a job ends, the server stores its run folder as the workspace archive and deletes the folder. For a job that
-declares outputs, the server first builds two folders of hard links next to each workspace folder: one naming the
-declared output files, one naming everything else. It stores the first as the outputs archive and the second as the
+A job's outputs are the files it produced on the server: every file in its workspace folders except what was
+deployed with the job (its server app and job files), the server's logs and system files, and Python's
+``__pycache__`` folders. A job that sets ``job_outputs`` narrows them to the files those entries select.
+
+When a job ends, the server stores its run folder as the workspace archive and deletes the folder. It first builds two
+folders of hard links next to each workspace folder: one naming the output files, one naming everything else. It stores the first as the outputs archive and the second as the
 workspace archive, so every file is stored once. The run folder itself is never changed until both are stored, so a
 retry or a crash loses nothing: the link folders are only extra names for the same files.
 
@@ -25,23 +28,44 @@ download sends both, unzipped into the same ``workspace/`` folder.
 """
 
 import os
+import re
 import shutil
-from typing import List, Optional, Tuple
+from typing import AbstractSet, List, Optional, Tuple
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey, RunStatus, job_output_matches, validate_job_outputs
+from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 
-# Files the server's log commands read from the workspace archive, at any depth. A declared one is linked into both
-# folders, so the log commands keep working; like any output, it must not change once stored.
+# Files the server's log commands read from the workspace archive, at any depth. One that job_outputs selects is
+# linked into both folders, so the log commands keep working; like any output, it must not change once stored.
 # "log.json" is job_cmds.JSON_LOG_FILE_NAME.
 _LOG_FILE_NAMES = {WorkspaceConstants.LOG_FILE_NAME, WorkspaceConstants.ERROR_LOG_FILE_NAME, "log.json"}
+
+# Files the server writes for itself, not the job's result. A log file may carry a "<prefix>_" (task workers) and a
+# ".<n>" rotation suffix; "log_fl.txt" is the default config's federated-learning log.
+_SYSTEM_LOG_RE = re.compile(r"^(?:.+_)?(?:log\.txt|error_log\.txt|log\.json|log_fl\.txt)(?:\.\d+)?$")
+_SYSTEM_FILE_RE = re.compile(
+    r"^(?:.+\.)?(?:"
+    + "|".join(
+        re.escape(n)
+        for n in (
+            WorkspaceConstants.STATS_POOL_SUMMARY_FILE_NAME,
+            WorkspaceConstants.STATS_POOL_RECORDS_FILE_NAME,
+        )
+    )
+    + ")$"
+)
+_SYSTEM_FILE_NAMES = {WorkspaceConstants.AUDIT_LOG, NVFLARE_SIG_FILE}
+_SYSTEM_FOLDERS = {"__pycache__", "job_cert"}  # job_cert: the job's credentials (job_cert_utils.JOB_CERT_DIR_NAME)
+# written beside the server app when the job is deployed
+_DEPLOYED_RUN_FILES = {WorkspaceConstants.JOB_META_FILE, "fl_app.txt"}
 
 _OUTPUTS_LINKS = ".outputs_links"
 _WORKSPACE_LINKS = ".workspace_links"
 
 
 def declared_outputs(meta: dict) -> List[str]:
-    """The job's valid declared outputs, or an empty list."""
+    """The job's valid ``job_outputs`` entries, or an empty list."""
     declared = meta.get(JobMetaKey.JOB_OUTPUTS.value)
     if not declared:
         return []
@@ -51,17 +75,33 @@ def declared_outputs(meta: dict) -> List[str]:
         return []
 
 
-def outputs_only_refusal(meta: dict) -> Tuple[Optional[str], List[str]]:
-    """Why an outputs-only download returns the whole job (None when it need not), and the declared outputs."""
+def has_invalid_job_outputs(meta: dict) -> bool:
+    """Whether the job sets ``job_outputs`` to a value that does not pass validation (a job submitted before the
+    check, or edited since). Its outputs cannot be selected, so its workspace is stored whole."""
+    return bool(meta.get(JobMetaKey.JOB_OUTPUTS.value)) and not declared_outputs(meta)
+
+
+def outputs_only_refusal(meta: dict) -> Optional[str]:
+    """Why an outputs-only download returns the whole job based on its status, or None when it need not."""
     status = meta.get(JobMetaKey.STATUS.value)
     if status != RunStatus.FINISHED_COMPLETED.value:
-        return f"the job did not complete successfully (status {status})", []
-    if not meta.get(JobMetaKey.JOB_OUTPUTS.value):
-        return f"the job declares no {JobMetaKey.JOB_OUTPUTS.value}", []
-    outputs = declared_outputs(meta)
-    if not outputs:
-        return f"the job's {JobMetaKey.JOB_OUTPUTS.value} are invalid", []
-    return None, outputs
+        return f"the job did not complete successfully (status {status})"
+    return None
+
+
+def is_produced(relative: str, deployed: AbstractSet[str] = frozenset()) -> bool:
+    """Whether a file at ``relative`` (a ``/``-separated path in a workspace folder) was produced by the job.
+
+    Not produced: a file deployed with the job (``deployed``, plus the job files written beside the server app), the
+    server's logs and system files, and anything in a ``__pycache__`` or ``job_cert`` folder.
+    """
+    if relative in deployed or relative in _DEPLOYED_RUN_FILES:
+        return False
+    parts = relative.split("/")
+    if any(part in _SYSTEM_FOLDERS for part in parts[:-1]):
+        return False
+    name = parts[-1]
+    return not (name in _SYSTEM_FILE_NAMES or _SYSTEM_LOG_RE.match(name) or _SYSTEM_FILE_RE.match(name))
 
 
 def _link_folder(source_dir: str, suffix: str) -> str:
@@ -71,20 +111,27 @@ def _link_folder(source_dir: str, suffix: str) -> str:
 
 
 class SplitWorkspace:
-    """Hard-link folders naming a job's declared outputs and the rest of its workspace."""
+    """Hard-link folders naming a job's outputs and the rest of its workspace.
 
-    def __init__(self, source_dirs: List[str], outputs: List[str]):
+    Args:
+        source_dirs: the job's workspace folders.
+        outputs: the job's ``job_outputs`` entries; when empty, every produced file is an output.
+        deployed: paths, relative to a workspace folder, of the files deployed with the job.
+    """
+
+    def __init__(self, source_dirs: List[str], outputs: List[str], deployed: AbstractSet[str] = frozenset()):
         self.source_dirs = list(source_dirs)
         self.outputs = outputs
+        self.deployed = frozenset(deployed)
         self.output_dirs = [_link_folder(d, _OUTPUTS_LINKS) for d in source_dirs]
         self.rest_dirs = [_link_folder(d, _WORKSPACE_LINKS) for d in source_dirs]
-        self.found: List[str] = []  # the declared entries found, in declaration order
+        self.found: List[str] = []  # the job_outputs entries found in their order, or the produced files found
         self._linked = [{} for _ in source_dirs]  # relative path -> identity, for each outputs folder
 
     def link_outputs(self):
-        """Name the declared output files found in the workspace folders in the outputs folders.
+        """Name the output files found in the workspace folders in the outputs folders.
 
-        Records each linked file's identity, and the declared entries found, in declaration order. Raises OSError
+        Records each linked file's identity, and the outputs found. Raises OSError
         when a link cannot be made or a folder cannot be read.
         """
         found = set()
@@ -95,7 +142,7 @@ class SplitWorkspace:
                 for name in files:
                     source = os.path.join(root, name)
                     relative = os.path.normpath(os.path.join(relative_root, name))
-                    entry = _output_entry(source, relative, self.outputs)
+                    entry = self._output_entry(source, relative)
                     if entry:
                         found.add(entry)
                         target = os.path.join(output_dir, relative)
@@ -103,14 +150,23 @@ class SplitWorkspace:
                         # the file as stored: read from the link, so a replacement of the source in between is
                         # seen as a change by link_rest
                         linked[relative] = _identity(target)
-        self.found = [entry for entry in self.outputs if entry in found]
+        self.found = [entry for entry in self.outputs if entry in found] if self.outputs else sorted(found)
+
+    def _output_entry(self, source: str, relative: str) -> str:
+        """The ``job_outputs`` entry or produced path that makes a file an output, or an empty string."""
+        if os.path.islink(source):
+            return ""  # a symlink is never an output: it stays with the rest
+        relative = relative.replace(os.sep, "/")
+        if self.outputs:
+            return job_output_matches(relative, self.outputs)
+        return relative if is_produced(relative, self.deployed) else ""
 
     def link_rest(self):
-        """Name everything but the declared outputs in the rest folders, from a fresh walk of the workspace.
+        """Name everything but the outputs in the rest folders, from a fresh walk of the workspace.
 
         Called after the outputs are stored, so a file created or replaced meanwhile is archived as it is now. Only
         the files named in the outputs folders are left out. Raises OSError when a link cannot be made, a folder
-        cannot be read, a stored output was replaced, written to or removed meanwhile, or a declared output was
+        cannot be read, a stored output was replaced, written to or removed meanwhile, or an output was
         created meanwhile; the stored outputs archive would then be out of date, so the workspace is stored whole.
         It also raises when a path stored as an output in one workspace folder is in another folder's
         rest: the workspace folders share archive paths, the later folder's copy wins, and the client unzips the
@@ -142,7 +198,7 @@ class SplitWorkspace:
                         continue  # stored in the outputs archive
                     if relative in stored:
                         raise OSError(f"{relative} is an output in one workspace folder and not in another")
-                    if _output_entry(source, relative, self.outputs):
+                    if self._output_entry(source, relative):
                         raise OSError(f"output {relative} was created after the outputs were stored")
                     _link(source, os.path.join(rest_dir, relative))
             if seen != set(linked):
@@ -172,11 +228,6 @@ def _identity(path: str) -> Tuple[int, int, int, int]:
     return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns
 
 
-def _output_entry(source: str, relative: str, outputs: List[str]) -> str:
-    # a symlink is never an output: it stays with the rest
-    return "" if os.path.islink(source) else job_output_matches(relative.replace(os.sep, "/"), outputs)
-
-
 def _link(source: str, target: str):
     os.makedirs(os.path.dirname(target), exist_ok=True)
     if os.path.islink(source):
@@ -193,18 +244,23 @@ def _link(source: str, target: str):
         os.link(source, target)  # another name for the same file: nothing is copied
 
 
-def link_job_outputs(source_dirs: List[str], outputs: List[str]) -> Optional[SplitWorkspace]:
-    """Name the declared outputs found in ``source_dirs`` in hard-link folders beside them.
+def link_job_outputs(
+    source_dirs: List[str], outputs: List[str], deployed: AbstractSet[str] = frozenset()
+) -> Optional[SplitWorkspace]:
+    """Name the job's outputs found in ``source_dirs`` in hard-link folders beside them.
+
+    The outputs are the files ``outputs`` (the job's ``job_outputs``) selects or, when it is empty, every file the job
+    produced (see :func:`is_produced`).
 
     Each source folder gets an outputs link folder with the same relative paths, so storing the link folders gives
     the same archive paths as storing the source folders. The source folders are not changed. Call
     ``SplitWorkspace.link_rest`` once the outputs are stored.
 
     Returns:
-        The split, or None when no declared output exists or the links cannot be made (for example across
-        filesystems); the caller then stores the source folders whole, as without declared outputs.
+        The split, or None when no output exists or the links cannot be made (for example across filesystems); the
+        caller then stores the source folders whole.
     """
-    split = SplitWorkspace(source_dirs, outputs)
+    split = SplitWorkspace(source_dirs, outputs, deployed)
     split.remove()  # left over from an interrupted attempt: links only
     try:
         split.link_outputs()

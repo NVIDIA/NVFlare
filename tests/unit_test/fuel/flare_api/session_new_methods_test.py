@@ -907,9 +907,7 @@ class TestDownloadJobResultOutputsOnly:
             path = session.download_job_result(self._JOB_ID, **kwargs)
         return cmd, path
 
-    _WHOLE = {
-        MetaKey.OUTPUTS_NOTE: "the whole job was downloaded because none of the job's declared outputs were found"
-    }
+    _WHOLE = {MetaKey.OUTPUTS_NOTE: "the whole job was downloaded because it produced no output files"}
 
     _OUTPUTS = {MetaKey.OUTPUTS_ONLY: True}
 
@@ -928,9 +926,7 @@ class TestDownloadJobResultOutputsOnly:
         with caplog.at_level("WARNING"):
             self._download(tmp_path, self._WHOLE, outputs_only=True)
 
-        assert f"Job {self._JOB_ID}: the whole job was downloaded because none of the job's declared outputs" in (
-            caplog.text
-        )
+        assert f"Job {self._JOB_ID}: the whole job was downloaded because it produced no output files" in (caplog.text)
 
     def test_says_nothing_when_the_download_is_what_was_asked_for(self, tmp_path, caplog):
         with caplog.at_level("INFO"):

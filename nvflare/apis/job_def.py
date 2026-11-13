@@ -108,7 +108,7 @@ USER_SETTABLE_JOB_META_KEYS = frozenset(
 
 MAX_JOB_OUTPUTS = 100
 
-# download_job command property asking the server for only the job's declared outputs
+# download_job command property asking the server for only the job's outputs
 OUTPUTS_ONLY_PROP = "outputs_only"
 
 

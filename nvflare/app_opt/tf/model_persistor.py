@@ -19,7 +19,6 @@ import tensorflow as tf
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_outputs import in_server_app, register_output_resolver
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.model_desc import ModelDescriptor
@@ -285,7 +284,3 @@ class TFModelPersistor(ModelPersistor):
             )
 
         return model_inventory
-
-
-# the model file it saves in the server app folder
-register_output_resolver(TFModelPersistor, lambda persistor: [in_server_app(persistor.save_name)])

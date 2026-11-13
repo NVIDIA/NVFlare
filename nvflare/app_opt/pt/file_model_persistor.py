@@ -26,7 +26,6 @@ import torch
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_outputs import in_server_app, register_output_resolver
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileName, EnvironmentKey
@@ -423,14 +422,3 @@ class PTFileModelPersistor(ModelPersistor):
             )
 
         return model_inventory
-
-
-def pt_persistor_job_outputs(persistor: PTFileModelPersistor):
-    """The model files a PTFileModelPersistor saves in the server app folder."""
-    return [
-        in_server_app(persistor.global_model_file_name),
-        in_server_app(persistor.best_global_model_file_name),
-    ]
-
-
-register_output_resolver(PTFileModelPersistor, pt_persistor_job_outputs)

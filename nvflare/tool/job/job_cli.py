@@ -1094,7 +1094,7 @@ def cmd_job_download(cmd_args):
         payload["artifacts"] = None
         payload["missing_artifacts"] = None
     if outputs_only:
-        payload["outputs_only"] = outputs_notice is None  # whether only the declared outputs were downloaded
+        payload["outputs_only"] = outputs_notice is None  # whether only the job's outputs were downloaded
         payload["outputs_note"] = outputs_notice
     if json_mode:
         output_ok(payload)
@@ -1236,7 +1236,7 @@ def define_download_job_parser(job_subparser):
         "--outputs-only",
         dest="outputs_only",
         action="store_true",
-        help="download only the outputs the job declares (job_outputs); the whole job when it declares none or failed",
+        help="download only the files the job produced on the server; the whole job when it produced none or failed",
     )
     add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")

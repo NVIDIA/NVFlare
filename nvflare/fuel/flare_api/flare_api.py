@@ -511,9 +511,11 @@ class Session(SessionSpec):
             job_id (str): ID of the job
             destination (str): optional directory to move the downloaded result into.
                 If not specified, result is left in the download_dir from the admin config.
-            outputs_only (bool): download only the outputs the job declared (``job_outputs`` in its meta), at the
-                same paths under ``workspace/`` as a full download. The server returns the whole job when the job
-                did not complete, declares no outputs or produced none of them; a notice saying why is logged.
+            outputs_only (bool): download only the job's outputs, at the same paths under ``workspace/`` as a full
+                download: the files the job produced on the server, without the code and config it was submitted
+                with and without the server's logs, or the files its ``job_outputs`` select when it sets them. The
+                server returns the whole job when the job did not complete or produced no output files; a notice
+                saying why is logged.
                 A notice is also logged for any download that lacks the job's stored outputs.
 
         Returns: folder path to the location of the job result

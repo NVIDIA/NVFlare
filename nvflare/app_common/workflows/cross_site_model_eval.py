@@ -23,7 +23,6 @@ from nvflare.apis.dxo import DXO, from_file, from_shareable, get_leaf_dxos
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
-from nvflare.apis.job_outputs import as_folder, register_output_resolver
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
@@ -545,7 +544,3 @@ class CrossSiteModelEval(Controller):
             self._accept_val_result(client_name=client.name, result=result, fl_ctx=fl_ctx)
         else:
             self.log_error(fl_ctx, "Ignoring result from unknown task.")
-
-
-# the cross-site validation results folder, relative to the run folder
-register_output_resolver(CrossSiteModelEval, lambda controller: [as_folder(controller._cross_val_dir)])

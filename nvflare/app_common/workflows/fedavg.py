@@ -19,7 +19,6 @@ from typing import Any, Dict, Optional, Set, Union
 
 from nvflare.apis.controller_spec import TaskCompletionStatus
 from nvflare.apis.fl_constant import FLMetaKey
-from nvflare.apis.job_outputs import register_output_resolver
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
@@ -579,11 +578,3 @@ class FedAvg(BaseFedAvg):
         """
         # Default: use FOBS to load entire FLModel
         return fobs.loadf(filepath)
-
-
-def fedavg_job_outputs(controller: FedAvg):
-    """The model file FedAvg saves itself, relative to the run folder, when it has no persistor."""
-    return [] if controller._persistor_id else [controller.save_filename]
-
-
-register_output_resolver(FedAvg, fedavg_job_outputs)

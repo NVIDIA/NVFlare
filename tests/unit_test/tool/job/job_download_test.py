@@ -93,7 +93,7 @@ class TestJobDownload:
         assert data["outputs_note"] is None
 
     def test_download_outputs_only_reports_a_whole_job_download(self, tmp_path, capsys):
-        notice = "Job abc123: the whole job was downloaded because the job declares no job_outputs."
+        notice = "Job abc123: the whole job was downloaded because it produced no output files."
 
         _, captured = self._download_outputs_only(tmp_path, capsys, notice=notice)
 
