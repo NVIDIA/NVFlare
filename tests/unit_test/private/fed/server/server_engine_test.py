@@ -336,16 +336,23 @@ def test_wait_for_complete_records_nonzero_return_code_for_first_failure():
     assert "job-1" not in engine.run_processes
 
 
+def _job_engine(workspace_root):
+    fobs_ctx = {}
+    cell = SimpleNamespace(get_fobs_context=lambda: dict(fobs_ctx), update_fobs_context=fobs_ctx.update)
+    workspace = SimpleNamespace(get_root_dir=lambda: str(workspace_root))
+    return SimpleNamespace(run_manager=None, get_cell=lambda: cell, get_workspace=lambda: workspace)
+
+
 def test_wait_for_complete_removes_tensor_offload_root_left_by_exited_job(tmp_path, monkeypatch):
     """A killed or fail-fast job process never runs its own cleanup; its parent reclaims the root."""
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
-    fobs_ctx = {}
-    cell = SimpleNamespace(get_fobs_context=lambda: dict(fobs_ctx), update_fobs_context=fobs_ctx.update)
-    job_engine = SimpleNamespace(run_manager=None, get_cell=lambda: cell)
-    root_dir = Path(setup_tensor_disk_offload(engine=job_engine, enabled=True, job_id="job-1").root_dir)
+    this_server, other_server = _job_engine(tmp_path / "server_a"), _job_engine(tmp_path / "server_b")
+    root_dir = Path(setup_tensor_disk_offload(engine=this_server, enabled=True, job_id="job-1").root_dir)
     (root_dir / "chunk_0.safetensors").write_bytes(b"accepted update")
     # Custom job ids can start with another job's id.
-    other_job_root = Path(setup_tensor_disk_offload(engine=job_engine, enabled=True, job_id="job-1_retry").root_dir)
+    other_job_root = Path(setup_tensor_disk_offload(engine=this_server, enabled=True, job_id="job-1_retry").root_dir)
+    # Another server sharing this host and temp dir can run a job with the same custom id.
+    other_server_root = Path(setup_tensor_disk_offload(engine=other_server, enabled=True, job_id="job-1").root_dir)
     # A Swarm client of the same job can share this host and temp dir.
     client_root = tmp_path / "nvflare_tensor_offload_job-1_abc"
     client_root.mkdir()
@@ -355,11 +362,11 @@ def test_wait_for_complete_removes_tensor_offload_root_left_by_exited_job(tmp_pa
     process.wait.side_effect = lambda: root_existed_while_job_ran.append(root_dir.exists())
 
     with patch("nvflare.private.fed.server.server_engine.get_return_code", return_value=ProcessExitCode.EXCEPTION):
-        engine.wait_for_complete(workspace="/tmp", job_id="job-1", process=process)
+        engine.wait_for_complete(workspace=str(tmp_path / "server_a"), job_id="job-1", process=process)
 
     assert root_existed_while_job_ran == [True]
     assert not root_dir.exists()
-    assert other_job_root.exists() and client_root.exists()
+    assert other_job_root.exists() and other_server_root.exists() and client_root.exists()
 
 
 def _make_remove_engine(run_processes):

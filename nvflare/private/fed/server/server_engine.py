@@ -207,7 +207,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def wait_for_complete(self, workspace, job_id, process):
         process.wait()
         # A killed or fail-fast job process skips its own tensor offload cleanup.
-        leftover = glob.escape(os.path.join(tempfile.gettempdir(), server_root_dir_prefix(job_id))) + "*"
+        leftover = glob.escape(os.path.join(tempfile.gettempdir(), server_root_dir_prefix(workspace, job_id))) + "*"
         for root_dir in glob.glob(leftover):
             self.logger.warning(f"Job: {job_id} exited without removing tensor offload dir {root_dir}; removing it")
             shutil.rmtree(root_dir, ignore_errors=True)
