@@ -41,6 +41,13 @@ def split_job_outputs(source_dirs, outputs):
     return split
 
 
+def _deployed(files):
+    """The deployed-files map for these contents: path -> (size, CRC-32)."""
+    import zlib
+
+    return {path: (len(content), zlib.crc32(content)) for path, content in files.items()}
+
+
 def _files(root):
     return sorted(
         os.path.relpath(os.path.join(d, f), root).replace(os.sep, "/") for d, _, files in os.walk(root) for f in files
@@ -375,16 +382,27 @@ class TestProducedFiles:
     def test_job_files_logs_and_system_files_are_not(self, path):
         assert not is_produced(path)
 
-    def test_deployed_files_are_not(self):
-        deployed = {"app_server/config/config_fed_server.json", "app_server/custom/net.py"}
+    def test_unchanged_deployed_files_are_not(self, tmp_path):
+        net = tmp_path / "net.py"
+        net.write_bytes(b"net")
+        deployed = _deployed({"app_server/custom/net.py": b"net"})
 
-        assert not is_produced("app_server/custom/net.py", deployed)
+        assert not is_produced("app_server/custom/net.py", deployed, str(net))
         assert is_produced("app_server/custom/other.py", deployed)
+
+    @pytest.mark.parametrize("trained", [b"trained weights", b"seed"[::-1]])  # a new size, or the same size
+    def test_a_deployed_file_the_job_rewrote_is_produced(self, tmp_path, trained):
+        checkpoint = tmp_path / "model.pt"
+        checkpoint.write_bytes(trained)  # the seed checkpoint, replaced by the trained model
+
+        assert is_produced(
+            "app_server/custom/model.pt", _deployed({"app_server/custom/model.pt": b"seed"}), str(checkpoint)
+        )
 
 
 class TestLinkProducedOutputs:
     def test_without_job_outputs_every_produced_file_is_an_output(self, tmp_path):
-        deployed = {"app_server/config/config_fed_server.json", "app_server/custom/net.py"}
+        deployed = _deployed({"app_server/config/config_fed_server.json": b"{}", "app_server/custom/net.py": b"net"})
         run_dir = _run_folder(
             tmp_path / "run",
             {
@@ -427,7 +445,16 @@ class TestLinkProducedOutputs:
     def test_nothing_produced_keeps_the_workspace_whole(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"app_server/config/c.json": b"{}", "log.txt": b"log"})
 
-        assert link_job_outputs([str(run_dir)], [], {"app_server/config/c.json"}) is None
+        assert link_job_outputs([str(run_dir)], [], _deployed({"app_server/config/c.json": b"{}"})) is None
+
+    def test_a_trained_model_saved_over_a_deployed_seed_is_an_output(self, tmp_path):
+        run_dir = _run_folder(
+            tmp_path / "run", {"app_server/custom/model.pt": b"trained", "metrics/metrics_summary.json": b"{}"}
+        )
+
+        split = link_job_outputs([str(run_dir)], [], _deployed({"app_server/custom/model.pt": b"seed"}))
+
+        assert split.found == ["app_server/custom/model.pt", "metrics/metrics_summary.json"]
 
     def test_a_file_produced_after_the_outputs_were_stored_rejects_the_split(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model"})

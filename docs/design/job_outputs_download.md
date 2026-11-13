@@ -156,9 +156,10 @@ nvflare job download <job_id> --outputs-only
 At job end, the server walks the job's workspace folders. A file is an output
 unless it is:
 
-- **deployed with the job**: a file of the server app deployed from the
-  submitted job (`app_server/<path in the app>`, read from the stored job), or
-  `meta.json` and `fl_app.txt`, which deployment writes beside it;
+- **deployed with the job and unchanged**: a file of the server app deployed
+  from the submitted job (`app_server/<path in the app>`, read from the stored
+  job) whose size and CRC-32 still match the deployed copy, or `meta.json` and
+  `fl_app.txt`, which deployment writes beside it;
 - **a server log**: `log.txt`, `error_log.txt`, `log.json` or `log_fl.txt`,
   including a task worker's `<prefix>_` copy and rotated `.<n>` copies;
 - **a system file**: the stats-pool summary and records (with any prefix),
@@ -166,10 +167,10 @@ unless it is:
   `job_cert` folder; or
 - **a symlink**, which stays with the rest, as before.
 
-A file the job creates inside `app_server/custom/` is an output; a deployed
-file the job rewrites in place is not. If the deployed app cannot be read from
-the store, the job's own files cannot be told apart, so the workspace is
-stored whole.
+A file the job creates inside `app_server/custom/` is an output, and so is a
+deployed file the job rewrote, such as a seed checkpoint replaced by the
+trained model. If the deployed app cannot be read from the store, the job's own
+files cannot be told apart, so the workspace is stored whole.
 
 Logs written under non-default file names by a custom logging configuration
 count as outputs: the outputs-only download then holds more than needed, never
@@ -288,7 +289,7 @@ The workspace folders stay intact until both archives are stored:
 - The workspace folders are archived whole, as before this change, when the
   job store does not implement `save_job_outputs` (checked before any walk),
   the job produced no output files, its `job_outputs` select none or are
-  invalid, its deployed app cannot be read, a link cannot be made (for
+  invalid, the job or its deployed app cannot be read, a link cannot be made (for
   example a link folder on a different filesystem), a folder cannot be read, or
   the outputs are not stored. If an earlier attempt had recorded the split, the
   record is cleared, so downloads do not use that older outputs archive. If
@@ -419,7 +420,7 @@ of its own.
 | The code that adds each component (a recipe, a model wrapper, a job class) records the component's files | Rejected. The same knowledge is applied at every place a class is used, each new recipe must remember it, and custom components and plain `FedJob`s declare nothing. |
 | A resolver registered beside each component class, applied when `meta.json` is generated | Rejected. Exact for built-in components, but a custom persistor's job downloads whole until its author learns to register it, and a custom writer that is not a persistor is left out silently. Every new component needs a resolver. |
 | A dedicated outputs folder that components save into | Rejected. It moves where every built-in component saves today, breaking existing paths; keeping the old paths means saving the model twice; and a custom component that saves elsewhere is left out silently. |
-| **Every file the job produced: the workspace minus what was deployed with the job and the server's logs and system files** | **Chosen.** Nothing to declare or register for any component, built-in or custom, recipe or hand-written job. Nothing the job produced is left out silently: the worst case is a few more files than needed, never a missing model. Files stay where they are written, so paths are the same in both downloads. `job_outputs` narrows the selection when wanted. |
+| **Every file the job produced: the workspace minus what was deployed with the job and left unchanged, and the server's logs and system files** | **Chosen.** Nothing to declare or register for any component, built-in or custom, recipe or hand-written job. Nothing the job produced is left out silently: the worst case is a few more files than needed, never a missing model. Files stay where they are written, so paths are the same in both downloads. `job_outputs` narrows the selection when wanted. |
 
 ### Telling the caller what it received
 
@@ -494,12 +495,14 @@ Unit tests:
   oversized lists.
 - `set_recipe_meta` accepts the key and applies the same checks.
 - Produced files: models, metrics, evaluation results, TensorBoard events and
-  a new file under `custom/` are outputs; `meta.json`, `fl_app.txt`, server
-  logs (prefixed and rotated), stats-pool files, `audit.log`, the signature
-  file, `__pycache__`, `job_cert/` and the deployed app's files are not.
+  a new file under `custom/` and a deployed file the job rewrote are outputs;
+  `meta.json`, `fl_app.txt`, server logs (prefixed and rotated), stats-pool
+  files, `audit.log`, the signature file, `__pycache__`, `job_cert/` and the
+  deployed app's unchanged files are not.
 - The deployed app is read from the stored job for a `server` or `@ALL`
   deployment; when it cannot be read, or `job_outputs` is invalid, the
-  workspace is stored whole.
+  workspace is stored whole. A retry that cannot read the job clears a record
+  an earlier attempt left.
 - `job_outputs` narrows the outputs; when it selects nothing that exists, the
   workspace is stored whole.
 - Cloned jobs keep `job_outputs`.

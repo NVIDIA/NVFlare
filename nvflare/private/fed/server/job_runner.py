@@ -20,7 +20,7 @@ import threading
 import time
 import zipfile
 from dataclasses import dataclass
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -705,8 +705,9 @@ class JobRunner(FLComponent):
         is. The job's meta records that the outputs are stored apart (``job_outputs_stored``), which downloads rely
         on. A retry rebuilds the links from the same files; a crash leaves only extra links behind.
 
-        The outputs are the files the job produced (everything but the server app deployed with it, its job files,
-        and the server's logs and system files), or the files its ``job_outputs`` selects when it sets them.
+        The outputs are the files the job produced (everything but the unchanged files of the server app deployed
+        with it, its job files, and the server's logs and system files), or the files its ``job_outputs`` selects when
+        it sets them.
 
         Returns:
             The split, whose rest folders the workspace archive is built from; or None, in which case the workspace
@@ -720,21 +721,24 @@ class JobRunner(FLComponent):
         try:
             job = job_manager.get_job(job_id, fl_ctx)
             if not job or has_invalid_job_outputs(job.meta):
-                return None  # the outputs cannot be selected
-            outputs = declared_outputs(job.meta)
-            deployed = set() if outputs else self._deployed_paths(job, fl_ctx)
-            split = link_job_outputs(ws_dirs, outputs, deployed)
-            if not split:
-                self.log_info(fl_ctx, f"The outputs of job {job_id} are kept in its workspace archive")
-            elif not job_manager.save_job_outputs(job_id, split.output_dirs, fl_ctx):
-                self.log_info(fl_ctx, f"The job store did not save the outputs of job {job_id} apart")
+                # the outputs cannot be selected: store the workspace whole, and clear a record an earlier attempt
+                # may have left (always, when the job cannot be read)
+                self.log_debug(fl_ctx, f"The outputs of job {job_id} cannot be selected; storing its workspace whole")
             else:
-                split.link_rest()
-                # downloads rely on this record, not on listing components, to know the workspace lacks the outputs
-                recorded = True
-                job_manager.update_meta(job_id, {JobMetaKey.JOB_OUTPUTS_STORED.value: True}, fl_ctx)
-                self.log_debug(fl_ctx, f"{len(split.found)} outputs of job {job_id} saved")
-                return split
+                outputs = declared_outputs(job.meta)
+                deployed = {} if outputs else self._deployed_files(job, fl_ctx)
+                split = link_job_outputs(ws_dirs, outputs, deployed)
+                if not split:
+                    self.log_info(fl_ctx, f"The outputs of job {job_id} are kept in its workspace archive")
+                elif not job_manager.save_job_outputs(job_id, split.output_dirs, fl_ctx):
+                    self.log_info(fl_ctx, f"The job store did not save the outputs of job {job_id} apart")
+                else:
+                    split.link_rest()
+                    # downloads rely on this record, not on listing components, to know the workspace lacks them
+                    recorded = True
+                    job_manager.update_meta(job_id, {JobMetaKey.JOB_OUTPUTS_STORED.value: True}, fl_ctx)
+                    self.log_debug(fl_ctx, f"{len(split.found)} outputs of job {job_id} saved")
+                    return split
         except Exception as e:
             self.log_warning(fl_ctx, f"Cannot save the outputs of job {job_id}: {secure_format_exception(e)}")
         if split:
@@ -743,8 +747,8 @@ class JobRunner(FLComponent):
         return None
 
     @staticmethod
-    def _deployed_paths(job: Job, fl_ctx: FLContext) -> Set[str]:
-        """Run-folder paths of the files deployed with the job's server app, read from the stored job.
+    def _deployed_files(job: Job, fl_ctx: FLContext) -> Dict[str, Tuple[int, int]]:
+        """Run-folder path -> (size, CRC-32) of each file deployed with the job's server app, read from the stored job.
 
         Raises when the app cannot be read: without this list, the job's own files would count as its outputs.
         """
@@ -753,8 +757,12 @@ class JobRunner(FLComponent):
             sites = extract_participants(participants)
             if SiteType.SERVER in sites or any(s.upper() == ALL_SITES for s in sites):
                 with zipfile.ZipFile(io.BytesIO(job.get_application(app_name, fl_ctx))) as z:
-                    return {posixpath.join(app_folder, n) for n in z.namelist() if not n.endswith("/")}
-        return set()
+                    return {
+                        posixpath.join(app_folder, info.filename): (info.file_size, info.CRC)
+                        for info in z.infolist()
+                        if not info.is_dir()
+                    }
+        return {}
 
     def _clear_job_outputs_stored(self, job_manager, job, job_id: str, fl_ctx: FLContext, recorded: bool = False):
         # an earlier attempt stored outputs apart, or this one may have recorded it before failing; this attempt

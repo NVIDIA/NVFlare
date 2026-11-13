@@ -15,8 +15,8 @@
 """A job's outputs: stored apart from the rest of its workspace when the job ends.
 
 A job's outputs are the files it produced on the server: every file in its workspace folders except what was
-deployed with the job (its server app and job files), the server's logs and system files, and Python's
-``__pycache__`` folders. A job that sets ``job_outputs`` narrows them to the files those entries select.
+deployed with the job and left unchanged (its server app and job files), the server's logs and system files, and
+Python's ``__pycache__`` folders. A job that sets ``job_outputs`` narrows them to the files those entries select.
 
 When a job ends, the server stores its run folder as the workspace archive and deletes the folder. It first builds two
 folders of hard links next to each workspace folder: one naming the output files, one naming everything else. It stores the first as the outputs archive and the second as the
@@ -30,7 +30,8 @@ download sends both, unzipped into the same ``workspace/`` folder.
 import os
 import re
 import shutil
-from typing import AbstractSet, List, Optional, Tuple
+import zlib
+from typing import Dict, List, Mapping, Optional, Tuple
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey, RunStatus, job_output_matches, validate_job_outputs
@@ -89,19 +90,38 @@ def outputs_only_refusal(meta: dict) -> Optional[str]:
     return None
 
 
-def is_produced(relative: str, deployed: AbstractSet[str] = frozenset()) -> bool:
+# a deployed file: (size, CRC-32) as deployed
+DeployedFiles = Mapping[str, Tuple[int, int]]
+
+
+def is_produced(relative: str, deployed: Optional[DeployedFiles] = None, path: Optional[str] = None) -> bool:
     """Whether a file at ``relative`` (a ``/``-separated path in a workspace folder) was produced by the job.
 
-    Not produced: a file deployed with the job (``deployed``, plus the job files written beside the server app), the
-    server's logs and system files, and anything in a ``__pycache__`` or ``job_cert`` folder.
+    Not produced: a file deployed with the job and left unchanged (``deployed``; ``path`` is the file on disk, compared
+    with its deployed size and CRC-32), the job files written beside the server app, the server's logs and system
+    files, and anything in a ``__pycache__`` or ``job_cert`` folder. A deployed file the job rewrote, such as a seed
+    checkpoint replaced by the trained model, is produced.
     """
-    if relative in deployed or relative in _DEPLOYED_RUN_FILES:
+    if relative in _DEPLOYED_RUN_FILES:
         return False
+    if deployed and relative in deployed:
+        return path is not None and _differs(path, deployed[relative])
     parts = relative.split("/")
     if any(part in _SYSTEM_FOLDERS for part in parts[:-1]):
         return False
     name = parts[-1]
     return not (name in _SYSTEM_FILE_NAMES or _SYSTEM_LOG_RE.match(name) or _SYSTEM_FILE_RE.match(name))
+
+
+def _differs(path: str, deployed: Tuple[int, int]) -> bool:
+    size, crc = deployed
+    if os.path.getsize(path) != size:
+        return True
+    value = 0
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            value = zlib.crc32(chunk, value)
+    return value != crc
 
 
 def _link_folder(source_dir: str, suffix: str) -> str:
@@ -116,13 +136,14 @@ class SplitWorkspace:
     Args:
         source_dirs: the job's workspace folders.
         outputs: the job's ``job_outputs`` entries; when empty, every produced file is an output.
-        deployed: paths, relative to a workspace folder, of the files deployed with the job.
+        deployed: the files deployed with the job, by path relative to a workspace folder, with their deployed size
+            and CRC-32.
     """
 
-    def __init__(self, source_dirs: List[str], outputs: List[str], deployed: AbstractSet[str] = frozenset()):
+    def __init__(self, source_dirs: List[str], outputs: List[str], deployed: Optional[DeployedFiles] = None):
         self.source_dirs = list(source_dirs)
         self.outputs = outputs
-        self.deployed = frozenset(deployed)
+        self.deployed: Dict[str, Tuple[int, int]] = dict(deployed or {})
         self.output_dirs = [_link_folder(d, _OUTPUTS_LINKS) for d in source_dirs]
         self.rest_dirs = [_link_folder(d, _WORKSPACE_LINKS) for d in source_dirs]
         self.found: List[str] = []  # the job_outputs entries found in their order, or the produced files found
@@ -159,7 +180,7 @@ class SplitWorkspace:
         relative = relative.replace(os.sep, "/")
         if self.outputs:
             return job_output_matches(relative, self.outputs)
-        return relative if is_produced(relative, self.deployed) else ""
+        return relative if is_produced(relative, self.deployed, source) else ""
 
     def link_rest(self):
         """Name everything but the outputs in the rest folders, from a fresh walk of the workspace.
@@ -245,7 +266,7 @@ def _link(source: str, target: str):
 
 
 def link_job_outputs(
-    source_dirs: List[str], outputs: List[str], deployed: AbstractSet[str] = frozenset()
+    source_dirs: List[str], outputs: List[str], deployed: Optional[DeployedFiles] = None
 ) -> Optional[SplitWorkspace]:
     """Name the job's outputs found in ``source_dirs`` in hard-link folders beside them.
 
