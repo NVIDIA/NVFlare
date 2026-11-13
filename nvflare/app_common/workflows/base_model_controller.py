@@ -23,6 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.simulation_plan import ROUND_PARTICIPATION, SIMULATION_PLAN_PROP, PlannedRoundParticipation
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
@@ -478,6 +479,17 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             A list of clients names.
         """
         clients = [client.name for client in self.engine.get_clients()]
+        self._simulation_round_adapter = None
+        runtime = self.fl_ctx.get_prop(SIMULATION_PLAN_PROP) if getattr(self, "fl_ctx", None) else None
+        if runtime is not None and runtime.has_section(ROUND_PARTICIPATION):
+            round_number = self.fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
+            if type(round_number) is not int:
+                raise RuntimeError("planned round participation requires CURRENT_ROUND in the FLContext")
+            expected = num_clients if num_clients else len(clients)
+            self._simulation_round_adapter = PlannedRoundParticipation(runtime, round_number, clients, expected)
+            selected = self._simulation_round_adapter.clients
+            self.info(f"Planned clients: {selected}")
+            return selected
 
         if num_clients:
             check_positive_int("num_clients", num_clients)

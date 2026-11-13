@@ -22,6 +22,7 @@ from pydantic import BaseModel, model_validator
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import RunStatus
+from nvflare.apis.simulation_plan import SIMULATION_PLAN_FILE, load_simulation_plan, validate_simulation_plan
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST
 from nvflare.job_config.api import FedJob
@@ -73,6 +74,8 @@ class SimEnv(ExecEnv):
         log_config: Optional[str] = None,
         workspace_root: str = WORKSPACE_ROOT,
         extra: Optional[dict] = None,
+        reprod: bool = False,
+        plan: Optional[dict | str] = None,
     ):
         """Initialize simulation execution environment.
 
@@ -86,6 +89,8 @@ class SimEnv(ExecEnv):
             workspace_root (str, optional): Root directory for simulation workspace. Defaults to WORKSPACE_ROOT.
                 The process-level NVFLARE_SIMULATOR_WORKSPACE_ROOT orchestration setting takes precedence when set.
             extra: extra env config info
+            reprod: Enable controlled, reproducible simulation. Requires a plan.
+            plan: JSON plan dictionary or path, supplied only to the simulator run.
         """
         super().__init__(extra)
 
@@ -113,6 +118,18 @@ class SimEnv(ExecEnv):
                 stacklevel=2,
             )
         self.workspace_root = workspace_override or v.workspace_root
+        if not isinstance(reprod, bool):
+            raise TypeError("reprod must be a bool")
+        if reprod != (plan is not None):
+            raise ValueError("reprod=True requires plan, and plan requires reprod=True")
+        if isinstance(plan, dict):
+            self.simulation_plan = validate_simulation_plan(plan)
+        elif isinstance(plan, str):
+            self.simulation_plan = load_simulation_plan(plan)
+        elif plan is None:
+            self.simulation_plan = None
+        else:
+            raise TypeError("plan must be a dictionary, JSON path, or None")
         self.last_run_failed = False
         self._job_statuses: dict[str, str] = {}
 
@@ -135,6 +152,11 @@ class SimEnv(ExecEnv):
             _print_output(f"Simulation · {self.num_clients} clients\nStarting server and clients...", flush=True)
             workspace = os.path.join(self.workspace_root, job_id)
             self._ensure_default_component_policy(workspace)
+            plan_path = None
+            if self.simulation_plan is not None:
+                plan_path = os.path.join(workspace, SIMULATION_PLAN_FILE)
+                with open(plan_path, "w", encoding="utf-8") as stream:
+                    json.dump(self.simulation_plan, stream, indent=2)
             run_status = job.simulator_run(
                 workspace=workspace,
                 n_clients=self.num_clients if self.clients is None else None,
@@ -142,6 +164,7 @@ class SimEnv(ExecEnv):
                 threads=self.num_threads,
                 gpu=self.gpu_config,
                 log_config=self.log_config,
+                simulation_plan=plan_path,
             )
         except BaseException:
             self._record_status(job_id, RunStatus.FAILED_TO_RUN)

@@ -18,6 +18,8 @@ from types import SimpleNamespace
 import pytest
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.simulation_plan import SIMULATION_PLAN_PROP, SimulationPlanRuntime
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.workflows.fedavg import FedAvg
 
 NAMES = ["site-1", "site-2", "site-3", "site-4", "site-5", "site-6"]
@@ -64,6 +66,17 @@ class TestSampleClients:
     def test_seeded_full_participation_keeps_engine_order(self):
         controller = make_controller(NAMES, seed=7)
         assert controller.sample_clients(len(NAMES)) == NAMES
+
+    def test_simulation_plan_overrides_sampling_for_a_round(self, tmp_path):
+        controller = make_controller(NAMES, seed=7)
+        runtime = SimulationPlanRuntime(
+            {"format_version": 1, "round_participation": {"0": ["site-5", "site-2"]}}, tmp_path
+        )
+        controller.fl_ctx.set_prop(SIMULATION_PLAN_PROP, runtime)
+        controller.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
+        assert controller.sample_clients(2) == ["site-5", "site-2"]
+        with pytest.raises(ValueError, match="expects 3"):
+            controller.sample_clients(3)
 
     @pytest.mark.parametrize("seed", [-1, "7", 1.5])
     def test_invalid_seed_is_rejected(self, seed):

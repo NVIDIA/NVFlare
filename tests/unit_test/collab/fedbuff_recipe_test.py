@@ -26,9 +26,12 @@ import numpy as np
 import pytest
 
 from examples.advanced.collab.numpy_async.job import NumpyModelOps
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
+from nvflare.apis.simulation_plan import SIMULATION_PLAN_PROP, SimulationPlanRuntime
 from nvflare.collab import FedBuffRecipe, collab
 from nvflare.collab.api.app import ClientApp, ServerApp
+from nvflare.collab.api.constants import FL_CONTEXT_PROP
 from nvflare.collab.api.context import get_call_context, set_call_context
 from nvflare.collab.api.group_call_context import ResultWaiter
 from nvflare.collab.api.proxy import Proxy
@@ -70,15 +73,18 @@ class _Client:
         self.malformed = malformed
         self.increment = increment
         self.assignments = []
+        self.seeds = []
 
     @collab.publish
-    def train(self, assignment_ids, model_version, global_model, logical_assignments):
+    def train(self, assignment_ids, model_version, global_model, logical_assignments, train_seeds=None):
         if self.release:
             assert self.release.wait(timeout=2), "workflow waited for slow client before publishing"
         if self.failure:
             raise RuntimeError("training failed")
         name = collab.site_name
         self.assignments.append((assignment_ids[name], model_version))
+        if train_seeds is not None:
+            self.seeds.append((assignment_ids[name], train_seeds[name]))
         metadata = {
             "assignment_id": assignment_ids[name],
             "model_version": model_version,
@@ -97,13 +103,17 @@ class _ScaleUpdate:
         return {name: value * self.scale for name, value in update.delta.items()}
 
 
-def _execute(observer, clients, *, abort=None, **options):
+def _execute(observer, clients, *, abort=None, runtime=None, **options):
     signal = abort or Signal()
     settings = dict(num_updates=2, concurrency=len(clients), call_timeout=0.5)
     settings.update(options)
     workflow = FedBuffWorkflow(_ModelLoader(), NumpyModelOps(), observer=observer, **settings)
     server = ServerApp(workflow)
     server._abort_signal = signal
+    if runtime is not None:
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(SIMULATION_PLAN_PROP, runtime)
+        server.set_prop(FL_CONTEXT_PROP, fl_ctx)
     previous = get_call_context()
     try:
         with ThreadPoolExecutor(max_workers=len(clients)) as workers:
@@ -167,6 +177,108 @@ def test_real_groups_sync_boundary():
     assert output["w"].item() == 2
     assert all([version for _, version in client.assignments] == [0, 1] for client in clients)
     assert app.closed and app.finished
+
+
+@pytest.mark.parametrize("physical_workers", [1, 2])
+def test_planned_replay_binds_bases_before_physical_dispatch(tmp_path, physical_workers):
+    plan = {
+        "format_version": 1,
+        "async_execution": {
+            "logical_sequence": ["client-0", "client-1", "client-2", "client-3"],
+            "arrival_sequence": [1, 0, 2, 3],
+        },
+    }
+    runtime = SimulationPlanRuntime(plan, tmp_path / str(physical_workers))
+    clients = [_Client() for _ in range(physical_workers)]
+    output = _execute(
+        _Observer(),
+        clients,
+        runtime=runtime,
+        num_updates=4,
+        concurrency=2,
+        buffer_size=1,
+    )
+    runtime.assert_consumed()
+    assignments = [json.loads(line) for line in (runtime.trace_dir / "assignments.jsonl").read_text().splitlines()]
+    accepted = [json.loads(line) for line in (runtime.trace_dir / "accepted.jsonl").read_text().splitlines()]
+    assert [item["base_version"] for item in assignments] == [0, 0, 1, 2]
+    assert [item["assignment_id"] for item in accepted] == [1, 0, 2, 3]
+    assert output["w"].item() == 4
+
+
+def test_planned_replay_respects_explicit_physical_mapping(tmp_path):
+    plan = {
+        "format_version": 1,
+        "async_execution": {
+            "logical_sequence": ["a", "b"],
+            "arrival_sequence": [1, 0],
+            "physical_sites": ["site-2", "site-1"],
+        },
+    }
+    runtime = SimulationPlanRuntime(plan, tmp_path)
+    _execute(_Observer(), [_Client(), _Client()], runtime=runtime, num_updates=2, concurrency=2, buffer_size=1)
+    dispatched = [json.loads(line) for line in (tmp_path / "dispatch.jsonl").read_text().splitlines()]
+    assert dispatched == [{"assignment_id": 1, "site": "site-1"}, {"assignment_id": 0, "site": "site-2"}]
+
+
+@pytest.mark.parametrize("physical_workers", [1, 2])
+def test_timed_plan_uses_virtual_events_independent_of_worker_pool(tmp_path, physical_workers):
+    profile = {
+        "download": {"distribution": "constant", "value": 0},
+        "train": {"distribution": "constant", "value": 0},
+        "upload": {"distribution": "constant", "value": 1},
+    }
+    plan = {
+        "format_version": 1,
+        "async_execution": {
+            "logical_sequence": ["a", "b", "c", "d"],
+            "train_seeds": [11, 12, 13, 14],
+            "timing": {
+                "starts": [0, 0, 2.1, 3.2],
+                "seed": 7,
+                "profiles": {name: profile for name in ("a", "b", "c", "d")},
+                "horizon": 10,
+            },
+        },
+    }
+    runtime = SimulationPlanRuntime(plan, tmp_path / str(physical_workers))
+    clients = [_Client() for _ in range(physical_workers)]
+    output = _execute(
+        _Observer(),
+        clients,
+        runtime=runtime,
+        num_updates=4,
+        concurrency=2,
+        buffer_size=1,
+    )
+    runtime.assert_consumed()
+    assignments = [json.loads(line) for line in (runtime.trace_dir / "assignments.jsonl").read_text().splitlines()]
+    accepted = [json.loads(line) for line in (runtime.trace_dir / "accepted.jsonl").read_text().splitlines()]
+    assert [item["base_version"] for item in assignments] == [0, 0, 2, 3]
+    assert [item["train_seed"] for item in assignments] == [11, 12, 13, 14]
+    assert [item["assignment_id"] for item in accepted] == [0, 1, 2, 3]
+    assert [item["virtual_time"] for item in accepted] == [1.0, 1.0, 3.1, 4.2]
+    assert sorted(seed for client in clients for seed in client.seeds) == [(0, 11), (1, 12), (2, 13), (3, 14)]
+    assert output["w"].item() == 4
+
+
+def test_timed_plan_stops_acceptance_at_horizon_and_drains_started_results(tmp_path):
+    profile = {phase: {"distribution": "constant", "value": 1} for phase in ("download", "train", "upload")}
+    runtime = SimulationPlanRuntime(
+        {
+            "format_version": 1,
+            "async_execution": {
+                "logical_sequence": ["a", "b"],
+                "timing": {"starts": [0, 0], "seed": 1, "profiles": {"a": profile, "b": profile}, "horizon": 0.5},
+            },
+        },
+        tmp_path,
+    )
+    output = _execute(_Observer(), [_Client()], runtime=runtime, num_updates=2, concurrency=2, buffer_size=1)
+    assert output["w"].item() == 0
+    assert runtime.virtual_time == 0.5
+    assert len(list((tmp_path / "results").glob("*.pkl"))) == 1
+    assert not (tmp_path / "accepted.jsonl").exists()
 
 
 def test_optional_transform_runs_through_collab_recipe_workflow():

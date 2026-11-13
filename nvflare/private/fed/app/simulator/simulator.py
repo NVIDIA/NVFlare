@@ -39,6 +39,7 @@ def define_simulator_parser(simulator_parser):
         help="log config mode ('concise', 'progress', 'msg_only', 'full', 'verbose'), filepath, or level",
     )
     simulator_parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
+    simulator_parser.add_argument("--simulation-plan", type=str, help="JSON execution plan for reproducible runs")
     simulator_parser.add_argument(
         "--end_run_for_all",
         default=False,
@@ -61,6 +62,7 @@ def run_simulator(simulator_args):
         log_config=log_config,
         max_clients=simulator_args.max_clients,
         end_run_for_all=simulator_args.end_run_for_all,
+        simulation_plan=simulator_args.simulation_plan,
     )
     run_status = simulator.run()
 

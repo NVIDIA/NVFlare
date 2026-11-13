@@ -298,7 +298,9 @@ class FedJobConfig:
         self._remove_backup_root_if_empty(os.path.dirname(backup_job_dir))
         shutil.rmtree(cleanup_dir, ignore_errors=True)
 
-    def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None):
+    def simulator_run(
+        self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None, simulation_plan=None
+    ):
         if gpu and any(
             app.client_app and app.client_app.additional_params.get("execution_lifetime", "job") == "task"
             for app in self.fed_apps.values()
@@ -329,6 +331,8 @@ class FedJobConfig:
                     args += ["-gpu", str(gpu)]
                 if log_config:
                     args.append("-l" + str(log_config))
+                if simulation_plan:
+                    args += ["--simulation-plan", os.path.abspath(simulation_plan)]
 
                 new_env = os.environ.copy()
                 process = popen_in_new_session(args, shell=False, env=new_env)

@@ -28,6 +28,7 @@ from nvflare.collab import collab
 from nvflare.collab.api import ContextKey
 from nvflare.collab.model_ops import ModelOps
 from nvflare.collab.recipe import CollabRecipe
+from nvflare.collab.replayable_execution import run_fedbuff_execution
 
 
 @dataclass(frozen=True)
@@ -208,9 +209,24 @@ class FedBuffTrainingCoordinator:
             raise ValueError("available client names must be unique")
         busy = {assignment.client_name for assignment in self.active.values()}
         clients = [name for name in available_clients if name not in busy]
+        return self.reserve(clients)
+
+    def reserve(
+        self, logical_names: list[str], metadata: list[dict] | None = None, assignment_factory=None
+    ) -> list[Assignment]:
+        """Bind logical work to the current model before a physical worker is chosen."""
+        if len(set(logical_names)) != len(logical_names):
+            raise ValueError("logical client names must be unique within a reservation")
+        if metadata is not None and len(metadata) != len(logical_names):
+            raise ValueError("metadata must match logical client names")
         assignments = []
-        for name in clients[: self.available_slots]:
-            assignment = Assignment(self._next_id, name, name, self.version, self.model)
+        for index, name in enumerate(logical_names[: self.available_slots]):
+            details = deepcopy(metadata[index]) if metadata is not None else {}
+            assignment = (
+                assignment_factory(self._next_id, name, self.version, self.model, details)
+                if assignment_factory is not None
+                else Assignment(self._next_id, name, name, self.version, self.model, details)
+            )
             self._next_id += 1
             self.active[assignment.assignment_id] = assignment
             assignments.append(assignment)
@@ -497,7 +513,7 @@ class FedBuffWorkflow:
             cleanup.callback(coordinator.close)
             self._notify("on_model", coordinator.model, coordinator.version)
             with self._calls(names) as (submit, receive):
-                self._run(coordinator, names, submit, receive)
+                run_fedbuff_execution(self, coordinator, names, submit, receive, collab.fl_ctx)
             self._notify("on_finish", coordinator.model, coordinator.version)
             return coordinator.model
 
@@ -512,8 +528,8 @@ class FedBuffRecipe(CollabRecipe):
 
     model_loader supplies the initial model; model_ops supplies arithmetic.
     An optional observer owns evaluation and artifacts.
-    An optional update_transform modifies accepted deltas. Replay, seed policies
-    and storage are research concerns. Other options pass to CollabRecipe;
+    An optional update_transform modifies accepted deltas. Simulation plans
+    are supplied by SimEnv, not by the exported recipe. Other options pass to CollabRecipe;
     min_clients defaults to concurrency. Components must be reconstructible.
     """
 

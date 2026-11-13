@@ -26,6 +26,7 @@ import pytest
 
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.simulation_plan import SIMULATION_PLAN_PROP
 from nvflare.private.fed.app.simulator import simulator_worker
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner, SimulatorRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
@@ -115,11 +116,14 @@ class TestSimulatorRunner:
         runner = SimulatorRunner(job_folder="", workspace="")
         runner.server = MagicMock()
         fl_ctx = runner.server.engine.new_context.return_value.__enter__.return_value
-        fl_ctx.get_prop.return_value = execution_error
+        fl_ctx.get_prop.side_effect = lambda key, default=None: (
+            execution_error if key == FLContextKey.FATAL_SYSTEM_ERROR else None
+        )
 
         assert runner._get_server_run_status() == expected_status
 
-        fl_ctx.get_prop.assert_called_once_with(FLContextKey.FATAL_SYSTEM_ERROR, False)
+        assert fl_ctx.get_prop.call_args_list[0].args == (FLContextKey.FATAL_SYSTEM_ERROR, False)
+        assert fl_ctx.get_prop.call_args_list[1].args == (SIMULATION_PLAN_PROP,)
 
     @pytest.mark.parametrize(
         "gpus, expected_gpus",

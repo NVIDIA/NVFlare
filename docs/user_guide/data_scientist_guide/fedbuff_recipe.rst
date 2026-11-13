@@ -196,6 +196,10 @@ distinct within that module.
      - Initial model construction, dataset/shards, training and optimizer state;
        evaluation, metrics and artifacts through observer hooks.
      - Core assignment/version accounting and buffered aggregation.
+   * - :ref:`Simulation plan runtime <reproducible_simulation>`
+     - Simulator-only participation, logical starts, acceptance, virtual time,
+       disk evidence and model history.
+     - Recipe construction, exported job configuration and production arrivals.
    * - :github_nvflare_link:`Research workflow
        <examples/advanced/collab/pt_async_cifar10_reproducible/workflow.py>`
      - ``ResearchRecipe``, logical reservations, predefined replay, worker reuse,
@@ -222,7 +226,9 @@ Reproducible Research
 ---------------------
 
 Actual arrivals depend on training/RPC timing; fixed seeds alone do not make them
-reproducible. The
+reproducible. :ref:`Reproducible Simulation Plans <reproducible_simulation>`
+describe simulator-owned fixed acceptance and virtual-time controls for this
+same recipe. The earlier
 :github_nvflare_link:`reproducible example <examples/advanced/collab/pt_async_cifar10_reproducible>`
 explains fixed replay, seed helpers and retained experiment files. Its
 ``ResearchRecipe`` and workflow reuse core numerical acceptance and the protected

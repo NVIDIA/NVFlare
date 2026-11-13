@@ -347,6 +347,8 @@ boundary: collect all client results, publish, then dispatch the next batch.
 
 The FedBuff guide explains the relationship to the paper's terminology and
 the configurable refill extension.
+For controlled simulator participation and virtual-time execution, see
+:ref:`Reproducible Simulation Plans <reproducible_simulation>`.
 
 .. toctree::
    :maxdepth: 1

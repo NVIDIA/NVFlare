@@ -22,6 +22,7 @@ import pytest
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import RunStatus
+from nvflare.apis.simulation_plan import SIMULATION_PLAN_FILE
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST, ComponentPathAuthorizer
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
@@ -134,6 +135,18 @@ def test_sim_env_deploy_with_explicit_clients_does_not_pass_n_clients(tmp_path):
     assert kwargs.get("n_clients") is None
     assert kwargs.get("clients") == ["site-1", "site-2"]
     assert not env.last_run_failed
+
+
+def test_sim_env_passes_validated_plan_outside_the_job(tmp_path):
+    plan = {"format_version": 1, "round_participation": {"0": ["site-2", "site-1"]}}
+    env = SimEnv(num_clients=2, workspace_root=str(tmp_path), reprod=True, plan=plan)
+    job = _make_job()
+    mock_run = _deploy_with_mocked_simulator(env, job)
+    path = tmp_path / job.name / SIMULATION_PLAN_FILE
+    assert json.loads(path.read_text()) == plan
+    assert mock_run.call_args.kwargs["simulation_plan"] == str(path)
+    with pytest.raises(ValueError, match="requires plan"):
+        SimEnv(num_clients=2, reprod=True)
 
 
 @pytest.mark.parametrize(
