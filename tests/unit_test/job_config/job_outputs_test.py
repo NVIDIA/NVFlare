@@ -156,6 +156,14 @@ class TestResolvers:
         assert _paths(FedAvg(num_clients=1, num_rounds=1, persistor_id="", save_filename="final.pt")) == ["final.pt"]
         assert _paths(FedAvg(num_clients=1, num_rounds=1)) == []  # its persistor saves the model
 
+    def test_pytorch_fedavg_names_the_model_and_its_metadata_only_without_a_persistor(self):
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        controller = PTFedAvg(num_clients=1, num_rounds=1, persistor_id="", save_filename="final.pt")
+
+        assert _paths(controller) == ["final.pt", "final.pt.metadata"]
+        assert _paths(PTFedAvg(num_clients=1, num_rounds=1)) == []
+
     def test_cross_site_evaluation_names_the_folder_it_was_given(self):
         assert _paths(CrossSiteModelEval()) == ["cross_site_val/"]
         assert _paths(CrossSiteModelEval(cross_val_dir="my_eval")) == ["my_eval/"]

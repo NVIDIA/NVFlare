@@ -194,6 +194,27 @@ class TestSplitJobOutputs:
         linked = os.path.join(split.rest_dirs[0], "data_link")
         assert os.path.islink(linked) and os.listdir(linked) == ["a.csv"]
 
+    def test_a_source_replaced_right_after_its_link_was_made_rejects_the_split(self, tmp_path, monkeypatch):
+        import nvflare.private.fed.server.job_outputs as job_outputs_module
+
+        run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"old"})
+        model = run_dir / "app_server" / "FL_global_model.pt"
+        real_link = job_outputs_module._link
+
+        def link_then_replace(source, target):
+            real_link(source, target)
+            if source == str(model):
+                model.unlink()
+                model.write_bytes(b"newer")  # the stored link still names the old file
+
+        monkeypatch.setattr(job_outputs_module, "_link", link_then_replace)
+        split = link_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt"])
+        monkeypatch.setattr(job_outputs_module, "_link", real_link)
+
+        # the outputs archive would hold the old model and the workspace archive would leave out the newer one
+        with pytest.raises(OSError):
+            split.link_rest()
+
     def test_a_file_written_after_the_outputs_are_linked_is_kept_with_the_rest(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model", "log.txt": b"old"})
         split = link_job_outputs([str(run_dir)], ["app_server/FL_global_model.pt"])

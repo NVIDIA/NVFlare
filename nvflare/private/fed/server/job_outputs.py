@@ -98,8 +98,11 @@ class SplitWorkspace:
                     entry = _output_entry(source, relative, self.outputs)
                     if entry:
                         found.add(entry)
-                        _link(source, os.path.join(output_dir, relative))
-                        linked[relative] = _identity(source)
+                        target = os.path.join(output_dir, relative)
+                        _link(source, target)
+                        # the file as stored: read from the link, so a replacement of the source in between is
+                        # seen as a change by link_rest
+                        linked[relative] = _identity(target)
         self.found = [entry for entry in self.outputs if entry in found]
 
     def link_rest(self):

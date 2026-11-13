@@ -158,5 +158,9 @@ class PTFedAvg(FedAvg):
 PTFedAvgEarlyStopping = PTFedAvg
 
 
-# saves the model as FedAvg does
-register_output_resolver(PTFedAvg, fedavg_job_outputs)
+def pt_fedavg_job_outputs(controller: PTFedAvg):
+    """The model file PTFedAvg saves itself when it has no persistor, and the FLModel metadata saved beside it."""
+    return [path for file in fedavg_job_outputs(controller) for path in (file, f"{file}.metadata")]
+
+
+register_output_resolver(PTFedAvg, pt_fedavg_job_outputs)
