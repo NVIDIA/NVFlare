@@ -72,9 +72,12 @@ def profile(tmp_path, monkeypatch):
     adapter.poll.return_value = None
     spawn = Mock(return_value=adapter)
     monkeypatch.setattr("nvflare.app_common.job_launcher.process_launcher.spawn_process", spawn)
-    monkeypatch.setattr(
-        "nvflare.app_common.job_launcher.process_launcher.os.killpg", Mock(side_effect=ProcessLookupError)
-    )
+
+    def kill_group(*args):
+        adapter.poll.return_value = -9
+        raise ProcessLookupError()
+
+    monkeypatch.setattr("nvflare.app_common.job_launcher.process_launcher.os.killpg", kill_group)
     meta = {"job_id": "job-1", "launcher_spec": {"site-1": {"slurm": {"gpus_per_node": 4}}}}
     try:
         yield SimpleNamespace(**locals())
@@ -196,6 +199,8 @@ def test_process_policy_and_system_shutdown(profile):
 @pytest.mark.parametrize("lifetime", [None, "job"])
 def test_ordinary_process_launcher_keeps_resident_jobs_independent_of_task_policy(profile, lifetime):
     p = profile
+    p.site["task_execution"]["allow_job_lifetime"] = True
+    (p.root / "local/resources.json").write_text(json.dumps(p.site))
     config = {} if lifetime is None else {"execution_lifetime": lifetime}
     Path(p.workspace.get_client_app_config_file_path("job-1")).write_text(json.dumps(config))
     handle = launch_job(p.launcher, p.meta, p.context)
@@ -210,3 +215,19 @@ def test_cp_owns_a_physical_backend_that_reaches_native_task_launch(profile, mon
     p = profile
     handle = launch_job(p.launcher, p.meta, p.context)
     assert_physical_task_dispatch(handle, p.root, monkeypatch)
+
+
+@pytest.mark.parametrize("default", ["@default", "@ALL"])
+def test_process_gateway_can_opt_out_of_federation_coordinator_budget(profile, default):
+    p = profile
+    p.meta["cj_resource_spec"] = {default: {"num_of_cpus": 2, "memory": "2Gi"}, "site-1": None}
+    launch_job(p.launcher, p.meta, p.context)
+    p.spawn.assert_called_once()
+
+
+def test_process_gateway_refuses_resident_jobs_by_default(profile):
+    p = profile
+    Path(p.workspace.get_client_app_config_file_path("job-1")).write_text("{}")
+    with pytest.raises(ValueError, match="refuses job-lifetime"):
+        launch_job(p.launcher, p.meta, p.context)
+    p.spawn.assert_not_called()

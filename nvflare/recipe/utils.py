@@ -179,7 +179,8 @@ def _normalize_recipe_meta_value(key: JobMetaKey, key_str: str, value: Any) -> A
     JSON-normalized, caller-independent copy.
 
     Per-key shapes: SCOPE is a plain string; RESOURCE_SPEC, CJ_RESOURCE_SPEC and JOB_LAUNCHER_SPEC
-    are dicts keyed by site name with dict values; the remaining user-settable
+    are dicts keyed by site name with dict values (CJ_RESOURCE_SPEC also permits
+    explicit client-site nulls to skip federation defaults); the remaining user-settable
     keys (CUSTOM_PROPS) are dicts. Catching shape errors here gives an immediate,
     contextual error instead of a late failure at server-side submission
     (JobMetaValidator) or job launch (e.g. PrivacyService scope lookup).
@@ -197,7 +198,7 @@ def _normalize_recipe_meta_value(key: JobMetaKey, key_str: str, value: Any) -> A
     # All other user-settable keys are dict-shaped.
     if key in _SITE_KEYED_META_KEYS:
         try:
-            _validate_per_site_config_shape(value)
+            _validate_per_site_config_shape(value, allow_client_null=key is JobMetaKey.CJ_RESOURCE_SPEC)
         except TypeError as e:
             raise TypeError(f"recipe meta value for key {key_str!r}: {e}") from None
     elif not isinstance(value, dict):
@@ -262,7 +263,7 @@ def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
     job_config.meta_props[key_str] = normalized_value
 
 
-def _validate_per_site_config_shape(config: Any) -> Dict[str, Dict]:
+def _validate_per_site_config_shape(config: Any, *, allow_client_null=False) -> Dict[str, Dict]:
     if not isinstance(config, dict):
         raise TypeError(f"config must be a dict, got {type(config).__name__}")
     if not config:
@@ -271,6 +272,13 @@ def _validate_per_site_config_shape(config: Any) -> Dict[str, Dict]:
     for site_name, site_config in config.items():
         if not isinstance(site_name, str):
             raise TypeError(f"per-site config key must be a str, got {type(site_name).__name__}")
+        if (
+            allow_client_null
+            and site_name
+            and site_name not in ("@default", ALL_SITES, SERVER_SITE_NAME)
+            and site_config is None
+        ):
+            continue
         if not isinstance(site_config, dict):
             raise TypeError(f"per-site config for site {site_name!r} must be a dict, got {type(site_config).__name__}")
 

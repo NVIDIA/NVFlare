@@ -28,7 +28,7 @@ from nvflare.private.fed.client.task_runtime import TaskJobRuntime, shutdown_tas
 
 
 def runtime_fixture(job_id="job-1"):
-    owner = SimpleNamespace(attach_cj=Mock(), release=Mock(), thread=Mock())
+    owner = SimpleNamespace(attach_cj=Mock(), release=Mock(), finish_cj_launch=Mock(), thread=Mock())
     owner.thread.is_alive.return_value = False
     service = SimpleNamespace(add_job=Mock(return_value=owner), shutdown=Mock())
     service_class = Mock(get_or_create=Mock(return_value=service))
@@ -78,12 +78,13 @@ def test_launch_restores_parent_settings_and_cleans_acquired_runtime(failure):
         p.owner.release.assert_called()
         if failure != "create":
             native.terminate.assert_called_once()
-            native.wait.assert_called_once()
+            native.wait.assert_not_called()
+            p.owner.thread.join.assert_called_with(5)
     assert p.context.get_prop_detail(JOB_LAUNCH_OPTIONS) == original_options
     assert p.context.get_prop_detail(FLContextKey.JOB_HANDLE_CALLBACK) == original_callback
     assert "TASK_TOKEN" not in p.options.environment
     shutdown_task_jobs(p.cell)
-    p.service.shutdown.assert_called_once_with(timeout=30.0)
+    p.service.shutdown.assert_called_once_with(timeout=5)
 
 
 def test_early_abort_uses_owned_handle_before_launcher_waits():
@@ -139,3 +140,97 @@ def test_shutdown_fences_a_later_launch_before_acquiring_owner_or_coordinator():
         p.runtime.launch(launcher, p.context)
     p.service.add_job.assert_not_called()
     launcher.launch_job.assert_not_called()
+
+
+def test_shutdown_uses_site_timeout_and_continues_after_a_service_failure(caplog):
+    p = runtime_fixture()
+    p.runtime.launch(Mock(launch_job=Mock(spec=JobHandleSpec)), p.context)
+    p.service.shutdown.side_effect = RuntimeError("cleanup unavailable")
+    second = Mock()
+    p.cell._task_job_services[object()] = (second, 7.5)
+    shutdown_task_jobs(p.cell)
+    p.service.shutdown.assert_called_once_with(timeout=5)
+    second.shutdown.assert_called_once_with(timeout=7.5)
+    assert "continuing CP shutdown" in caplog.text
+
+
+def test_system_end_still_reaches_components_if_runtime_shutdown_raises(monkeypatch):
+    from nvflare.apis.event_type import EventType
+    from nvflare.private.fed.client import client_engine as engine_module
+
+    engine = object.__new__(engine_module.ClientEngine)
+    engine.cell = object()
+    engine.logger = Mock()
+    engine.fl_components = [Mock()]
+    dispatch = Mock()
+    monkeypatch.setattr(engine_module, "shutdown_task_jobs", Mock(side_effect=RuntimeError("cleanup unavailable")))
+    monkeypatch.setattr(engine_module, "fire_event", dispatch)
+    context = FLContext()
+    engine.fire_event(EventType.SYSTEM_END, context)
+    dispatch.assert_called_once_with(event=EventType.SYSTEM_END, handlers=engine.fl_components, ctx=context)
+    engine.logger.error.assert_called_once()
+
+
+@pytest.mark.parametrize("late_creation", [False, True])
+def test_docker_stop_failure_retains_owner_until_confirmed_exit(late_creation):
+    from docker.errors import APIError
+
+    from nvflare.apis.job_launcher_spec import JobReturnCode
+    from nvflare.app_opt.job_launcher.docker_launcher import DockerJobHandle
+    from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskService
+    from tests.timing_utils import ThreadGroup, join_thread
+
+    p = runtime_fixture()
+    p.runtime.service_class = SlurmTaskService
+    p.runtime.backend = SimpleNamespace(poll_interval=0.01)
+    p.runtime.cleanup_timeout = 0.03
+    p.cell.register_request_cb = Mock()
+    client = Mock()
+    container = client.containers.get.return_value
+    container.status = "running"
+    container.stop.side_effect = APIError("daemon temporarily unavailable")
+    native = DockerJobHandle("container-1", "coordinator", client, watch_exit=False)
+    native.wait = Mock(side_effect=AssertionError("unbounded wait must not run during launch-failure cleanup"))
+    entered, finish = threading.Event(), threading.Event()
+
+    def create(meta, context):
+        entered.set()
+        if late_creation:
+            finish.wait()
+        publish_job_handle(native, context)
+        return native
+
+    def launch_late():
+        with pytest.raises(RuntimeError, match="shut down during"):
+            p.runtime.launch(Mock(launch_job=create), p.context)
+
+    with ThreadGroup(finish) as threads:
+        try:
+            if late_creation:
+                worker = threads.start(launch_late)
+                assert entered.wait(5)
+            else:
+                p.runtime.launch(Mock(launch_job=create), p.context)
+            service = p.cell._slurm_task_service
+            owner = service.jobs["job-1"]
+            shutdown_task_jobs(p.cell)
+            finish.set()
+            if late_creation:
+                join_thread(worker)
+            assert owner.thread.is_alive() and service.jobs["job-1"] is owner
+            assert owner.cj_handle is native
+            assert native.poll() == JobReturnCode.UNKNOWN
+            native.wait.assert_not_called()
+            container.stop.assert_called()
+            # A later successful retry is needed before ownership can disappear.
+            container.stop.side_effect = None
+            owner.wake.set()
+            join_thread(owner.thread)
+            assert native.poll() == JobReturnCode.ABORTED
+            assert not service.jobs
+        finally:
+            container.stop.side_effect = None
+            finish.set()
+            service = getattr(p.cell, "_slurm_task_service", None)
+            if service:
+                assert service.shutdown(timeout=5) == ()

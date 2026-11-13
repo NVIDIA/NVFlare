@@ -85,6 +85,7 @@ def profile(tmp_path, monkeypatch):
     launcher._docker_client = dc
     native = Mock(spec=docker_module.DockerJobHandle)
     native.poll.return_value = JobReturnCode.UNKNOWN
+    native.terminate.side_effect = lambda: setattr(native.poll, "return_value", JobReturnCode.ABORTED)
     native.enter_states.return_value = True
     native.can_restart.return_value = True
     monkeypatch.setattr(docker_module, "DockerJobHandle", Mock(return_value=native))
@@ -160,7 +161,7 @@ def test_gateway_container_uses_cj_budget_and_isolated_canonical_paths(profile, 
     assert all(not m["Target"].endswith(".key") for m in run["mounts"])
     assert not any("docker.sock" in m["Target"] or "other-job" in m["Target"] for m in run["mounts"])
     command = run["command"]
-    assert command[command.index("-p") + 1] == "tcp://gateway.example:8102"
+    assert command[command.index("-p") + 1] == "tcp://127.0.0.1:8102"
     assert str(p.root) in command and str(p.root / "startup") in command
     assert p.meta == original
     assert not handle.can_restart()  # Gateway recovery is disabled for this initial profile.
@@ -192,7 +193,7 @@ def test_publication_failure_stops_cj_and_releases_task_admission(profile):
     with pytest.raises(RuntimeError, match="aborted"):
         launch_job(p.launcher, p.meta, p.context)
     p.native.terminate.assert_called_once_with()
-    p.native.wait.assert_called_once_with()
+    p.native.wait.assert_not_called()  # Launch-failure cleanup is bounded by the owner deadline.
     p.native.enter_states.assert_not_called()
 
 
@@ -244,6 +245,8 @@ def test_job_cannot_override_gateway_container(profile, docker_spec):
 def test_resident_job_uses_ordinary_docker_without_task_ownership(profile):
     p = profile
     p.app_config.write_text("{}")
+    p.site["task_execution"]["allow_job_lifetime"] = True
+    (p.root / "local/resources.json").write_text(json.dumps(p.site))
     p.meta.pop("cj_resource_spec")
     p.meta["resource_spec"] = {"site-1": {"num_of_gpus": 0}}
     p.meta["launcher_spec"] = {"site-1": {"docker": {"image": "resident/image"}}}
@@ -268,7 +271,7 @@ def test_secure_cj_requires_own_job_certificate_and_preserves_mtls(profile):
     p.cell._slurm_task_service.shutdown(timeout=5)
     launch_job(p.launcher, p.meta, p.context)
     command = p.dc.containers.run.call_args.kwargs["command"]
-    assert command[command.index("-p") + 1] == "stcp://gateway.example:8102"
+    assert command[command.index("-p") + 1] == "stcp://127.0.0.1:8102"
     assert command[command.index("--parent_conn_sec") + 1] == "mtls"
 
 
@@ -378,8 +381,8 @@ def test_nonstandard_cpu_capability_keys_cannot_satisfy_daemon_check(profile):
     "spec, expected",
     [
         ({}, (1_000_000_000, 1024**3)),
-        ({"num_of_cpus": 1.5}, (1_500_000_000, 1024**3)),
-        ({"memory": "2Gi"}, (1_000_000_000, 2 * 1024**3)),
+        ({"num_of_cpus": 0.75}, (750_000_000, 1024**3)),
+        ({"memory": "256Mi"}, (1_000_000_000, 256 * 1024**2)),
     ],
 )
 def test_cj_defaults_are_independent_of_compute(profile, spec, expected):
@@ -396,3 +399,173 @@ def test_cp_owns_a_physical_backend_that_reaches_native_task_launch(profile, mon
     p = profile
     handle = launch_job(p.launcher, p.meta, p.context)
     assert_physical_task_dispatch(handle, p.root, monkeypatch)
+
+
+@pytest.mark.parametrize("budget", [{"num_of_cpus": 64}, {"memory": "512Gi"}])
+def test_job_cannot_raise_site_coordinator_ceilings(profile, budget):
+    profile.meta["cj_resource_spec"]["site-1"] = budget
+    with pytest.raises(ValueError, match="ceiling"):
+        launch_job(profile.launcher, profile.meta, profile.context)
+    profile.dc.containers.run.assert_not_called()
+
+
+def test_site_security_profiles_survive_mandatory_restrictions(profile):
+    p = profile
+    p.launcher.default_job_container_kwargs.update(
+        cap_drop=["NET_RAW"], security_opt=["seccomp=/site/seccomp.json", "apparmor=site-profile"]
+    )
+    launch_job(p.launcher, p.meta, p.context)
+    run = p.dc.containers.run.call_args.kwargs
+    assert run["cap_drop"] == ["NET_RAW", "ALL"]
+    assert run["security_opt"] == ["seccomp=/site/seccomp.json", "apparmor=site-profile", "no-new-privileges:true"]
+
+
+@pytest.mark.parametrize(
+    "settings, error",
+    [
+        ({"nano_cpus": 0}, "nano_cpus"),
+        ({"nano_cpus": True}, "nano_cpus"),
+        ({"mem_limit": "bad"}, "mem_limit"),
+        ({"mem_limit": False}, "mem_limit"),
+        ({"mem_limit": -1}, "mem_limit"),
+        ({"privileged": True}, "unsupported"),
+        ({"cap_drop": "ALL"}, "cap_drop"),
+        ({"security_opt": ["no-new-privileges:false"]}, "cannot disable"),
+    ],
+)
+def test_site_container_mistakes_are_rejected_when_loading_policy(profile, settings, error):
+    p = profile
+    p.site["components"][0]["args"]["default_job_container_kwargs"].update(settings)
+    (p.root / "local/resources.json").write_text(json.dumps(p.site))
+    with pytest.raises(ValueError, match=error):
+        TaskExecutionPolicy.from_workspace(p.workspace)
+    p.dc.info.assert_not_called()
+    p.dc.containers.run.assert_not_called()
+
+
+def test_docker_memory_string_is_valid_at_policy_load_and_launch(profile):
+    p = profile
+    p.site["components"][0]["args"]["default_job_container_kwargs"]["mem_limit"] = "1g"
+    (p.root / "local/resources.json").write_text(json.dumps(p.site))
+    TaskExecutionPolicy.from_workspace(p.workspace)
+    p.launcher.default_job_container_kwargs["mem_limit"] = "1g"
+    p.meta["cj_resource_spec"]["site-1"] = {}
+    launch_job(p.launcher, p.meta, p.context)
+    assert p.dc.containers.run.call_args.kwargs["mem_limit"] == 1024**3
+
+
+def test_federation_docker_default_does_not_replace_site_coordinator(profile):
+    p = profile
+    p.meta["launcher_spec"] = {"default": {"docker": {"image": "federation/compute"}}, "site-1": {"docker": {}}}
+    launch_job(p.launcher, p.meta, p.context)
+    assert p.dc.containers.run.call_args.args == ("site/coordinator:tested",)
+    assert p.meta["launcher_spec"]["default"]["docker"]["image"] == "federation/compute"
+
+
+@pytest.mark.parametrize("image", [None, "resident/image"])
+def test_gateway_refuses_resident_jobs_unless_site_opts_in(profile, image):
+    p = profile
+    p.app_config.write_text("{}")
+    p.meta.pop("cj_resource_spec")
+    if image:
+        p.meta["launcher_spec"] = {"site-1": {"docker": {"image": image}}}
+    with pytest.raises(ValueError, match="refuses job-lifetime"):
+        launch_job(p.launcher, p.meta, p.context)
+    p.dc.containers.run.assert_not_called()
+
+
+@pytest.mark.parametrize("url", ["tcp://0.0.0.0:8102", "tcp://host", "file:///tmp/parent"])
+def test_gateway_rejects_unconnectable_parent_address(profile, url):
+    p = profile
+    p.context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.PARENT_URL] = ("-p", url)
+    with pytest.raises(ValueError, match="parent"):
+        launch_job(p.launcher, p.meta, p.context)
+    p.dc.containers.run.assert_not_called()
+
+
+@pytest.mark.parametrize("creation_fails", [False, True])
+def test_shutdown_retains_inflight_creation_and_cleans_late_container(profile, creation_fails):
+    import threading
+
+    from nvflare.private.fed.client.task_runtime import shutdown_task_jobs
+    from tests.timing_utils import ThreadGroup, join_thread
+
+    p = profile
+    entered, finish = threading.Event(), threading.Event()
+    published = Mock()
+    p.context.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, published)
+    p.site["task_execution"]["finalization_timeout"] = 0.01
+    (p.root / "local/resources.json").write_text(json.dumps(p.site))
+    original_create = p.dc.containers.run.return_value
+
+    def create(*args, **kwargs):
+        entered.set()
+        finish.wait()
+        if creation_fails:
+            raise RuntimeError("creation failed")
+        return original_create
+
+    p.dc.containers.run.side_effect = create
+
+    def launch():
+        with pytest.raises(RuntimeError, match="creation failed" if creation_fails else "shut down during"):
+            launch_job(p.launcher, p.meta, p.context)
+
+    with ThreadGroup(finish) as threads:
+        worker = threads.start(launch)
+        assert entered.wait(5), "Docker creation did not enter"
+        service = p.cell._slurm_task_service
+        owner = service.jobs["job-1"]
+        shutdown_task_jobs(p.cell)
+        assert owner.released and owner.cj_launch_pending
+        assert owner.thread.is_alive() and service.jobs["job-1"] is owner
+        finish.set()
+        join_thread(worker)
+        join_thread(owner.thread)
+        assert "job-1" not in service.jobs
+    published.assert_not_called()
+    if not creation_fails:
+        p.native.terminate.assert_called_once()
+        p.native.wait.assert_not_called()
+    else:
+        p.native.terminate.assert_not_called()
+
+
+def test_system_shutdown_terminates_already_attached_coordinator(profile):
+    from nvflare.private.fed.client.task_runtime import shutdown_task_jobs
+
+    p = profile
+    handle = launch_job(p.launcher, p.meta, p.context)
+    shutdown_task_jobs(p.cell)
+    p.native.terminate.assert_called_once()
+    assert handle.owner.closed and not handle.owner.thread.is_alive()
+
+
+@pytest.mark.parametrize("cpus", [0.067, 8.3])
+@pytest.mark.parametrize("request_budget", [False, True])
+def test_fractional_site_ceiling_accepts_defaults_and_exactly_equal_budget(profile, cpus, request_budget):
+    p = profile
+    p.launcher.default_job_container_kwargs["nano_cpus"] = round(cpus * 1_000_000_000)
+    spec = {"num_of_cpus": cpus} if request_budget else {}
+    p.meta["cj_resource_spec"]["site-1"] = spec
+    launch_job(p.launcher, p.meta, p.context)
+    assert p.dc.containers.run.call_args.kwargs["nano_cpus"] == round(cpus * 1_000_000_000)
+
+
+def test_optional_null_launcher_spec_keeps_site_default_coordinator(profile):
+    p = profile
+    p.meta["launcher_spec"] = None
+    launch_job(p.launcher, p.meta, p.context)
+    assert p.dc.containers.run.call_args.args == ("site/coordinator:tested",)
+
+
+def test_client_engine_checks_invalid_site_limits_before_accepting_jobs(profile):
+    from nvflare.private.fed.client.client_engine import ClientEngine
+
+    p = profile
+    p.site["components"][0]["args"]["default_job_container_kwargs"]["mem_limit"] = "invalid"
+    (p.root / "local/resources.json").write_text(json.dumps(p.site))
+    client = Mock(client_name="site-1", client_args={}, components={}, secure_train=False)
+    with pytest.raises(ValueError, match="site mem_limit"):
+        ClientEngine(client, SimpleNamespace(workspace=str(p.root)), rank=0)
+    p.dc.info.assert_not_called()

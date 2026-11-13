@@ -39,6 +39,7 @@ from nvflare.utils.job_launcher_utils import (
     portable_memory_to_mib,
     refresh_custom_dir_import_path,
     resolve_site_resource_spec,
+    validate_cj_execution_lifetime,
     validate_cj_resource_spec,
     validate_docker_job_launcher_spec,
     validate_portable_resource_conflicts,
@@ -581,3 +582,33 @@ def test_cj_role_cannot_be_supplied_for_resident_job(spec):
 def test_invalid_cj_budgets_are_rejected(values):
     with pytest.raises(ValueError):
         validate_cj_resource_spec({"site-1": values})
+
+
+@pytest.mark.parametrize("task_sites", [{"site-1", "site-2"}, {"@ALL"}])
+def test_explicit_cj_null_opts_one_task_site_out_of_federation_defaults(task_sites):
+    meta = {
+        "resource_spec": {"@default": {"num_of_gpus": 2}},
+        "cj_resource_spec": {
+            "@default": {"num_of_cpus": 1, "memory": "1Gi"},
+            "site-1": None,
+        },
+    }
+    if "@ALL" in task_sites:
+        meta["cj_resource_spec"]["@ALL"] = {"memory": "2Gi"}
+    normalize_cj_resource_spec(meta, task_sites)
+    assert has_cj_resource_spec(meta, "site-1")
+    assert get_cj_resource_spec(meta, "site-1") == {}
+    assert get_resource_manager_spec(meta, "site-1") == {}
+    assert get_cj_resource_spec(meta, "site-2") == {
+        "num_of_cpus": 1,
+        "memory": "2Gi" if "@ALL" in task_sites else "1Gi",
+    }
+    assert meta["cj_resource_spec"]["site-1"] is None
+    with pytest.raises(ValueError, match="execution_lifetime"):
+        validate_cj_execution_lifetime(meta, "site-1", "job")
+
+
+@pytest.mark.parametrize("site", ["@default", "@ALL", "server"])
+def test_cj_null_is_only_an_explicit_client_site_opt_out(site):
+    with pytest.raises(ValueError):
+        validate_cj_resource_spec({site: None})
