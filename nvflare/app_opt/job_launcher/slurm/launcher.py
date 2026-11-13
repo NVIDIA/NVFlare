@@ -75,7 +75,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.secret_utils import has_secret_refs
 from nvflare.job_config.defs import ExecutionLifetime
 from nvflare.job_config.task_execution import get_client_execution_lifetime
-from nvflare.private.fed.task_worker.job_runtime import TaskJobHandle as _TaskCJHandle
+from nvflare.private.fed.task_worker.parent_runtime import TaskJobHandle as _TaskCJHandle
 from nvflare.private.fed.utils.job_cert_utils import JobCertError, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     get_cj_resource_spec,

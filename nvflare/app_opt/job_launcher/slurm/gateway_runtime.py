@@ -25,7 +25,7 @@ from nvflare.apis.job_launcher_spec import JobLaunchOptions, JobProcessArgs
 from nvflare.apis.task_launcher_spec import TaskResourceRequest
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES
-from nvflare.private.fed.task_worker.job_runtime import TaskJobRuntime
+from nvflare.private.fed.task_worker.parent_runtime import TaskJobRuntime
 from nvflare.utils.job_launcher_utils import get_cj_resource_spec, get_job_launcher_spec, portable_memory_to_bytes
 
 

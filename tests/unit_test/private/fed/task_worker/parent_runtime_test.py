@@ -24,7 +24,7 @@ import pytest
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JOB_LAUNCH_OPTIONS, JobHandleSpec, JobLaunchOptions, publish_job_handle
-from nvflare.private.fed.task_worker.job_runtime import TaskJobRuntime, shutdown_task_jobs
+from nvflare.private.fed.task_worker.parent_runtime import TaskJobRuntime, shutdown_task_jobs
 
 
 def runtime_fixture(job_id="job-1"):
