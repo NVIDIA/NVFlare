@@ -152,7 +152,7 @@ def test_zero_visible_devices_is_an_observed_zero():
     assert "GPUs available 0 GPU-h" in output
 
 
-def test_best_effort_capacity_keeps_values_and_explains_the_possible_overstatement():
+def test_partial_capacity_keeps_values_and_marks_only_affected_metrics():
     participant = _participant()
     participant["resource_capacity"].update(status="partial")
     participant["issues"] = [issue for issue in participant["issues"] if issue["metric"] != "resource_capacity"] + [
@@ -165,7 +165,8 @@ def test_best_effort_capacity_keeps_values_and_explains_the_possible_overstateme
     assert _site_cell(output, "MEM VISIBLE GiB-h") == "64*"
     assert _site_cell(output, "GPU-h") == "2*"
     assert _site_cell(output, "AVG CPU USED") == "0.5"
-    assert "some execution measurements or limits could not be checked" in output
+    assert "capacity-time incomplete" in output
+    assert "CPU time used incomplete" not in output
     assert "observation_incomplete" not in output
 
 
@@ -249,7 +250,7 @@ def test_cpu_average_preserves_its_own_quality_and_shared_duration(capacity, dur
         assert _site_cell(output, "CPU VISIBLE") == "0.02*"
         assert _site_cell(output, "MEM VISIBLE GiB-h") == "0.18*"
         assert _site_cell(output, "GPU-h") == "—"
-        assert "capacity-time: GPU capacity observations are missing" in output
+        assert "capacity-time incomplete" in output
     elif capacity == "unavailable":
         assert _site_cell(output, "CPU VISIBLE") == "—"
     elif capacity == "complete":
@@ -258,7 +259,7 @@ def test_cpu_average_preserves_its_own_quality_and_shared_duration(capacity, dur
         assert "measurement duration unavailable" in output
 
 
-def test_unavailable_source_cause_is_shown_without_another_status_column():
+def test_unavailable_metric_has_short_text_and_preserves_json_issue_codes():
     participant = _participant()
     participant["resource_utilization"]["message_traffic"] = {"status": "unavailable"}
 
@@ -266,7 +267,9 @@ def test_unavailable_source_cause_is_shown_without_another_status_column():
 
     output = render_job_resources(_job_summary(participant))
 
-    assert "message traffic unavailable (measurement contained invalid values)" in output
+    assert "message traffic unavailable" in output
+    assert "malformed_source" not in output
+    assert participant["issues"] == [{"metric": "message_traffic", "code": "malformed_source"}]
 
 
 def test_job_renderer_sorts_participants_with_numeric_counters():

@@ -201,6 +201,8 @@ class ResourceStatsCoordinator:
             return
         disabled = []
         with state.lock:
+            if state.closed:
+                return
             for name in client_names:
                 if state.expected.get(name) == "client" and name not in state.accepted:
                     state.disabled.add(name)
@@ -278,8 +280,6 @@ class ResourceStatsCoordinator:
         if state is None:
             raise RuntimeError(f"resource participants are not registered for job {job_id}")
         with state.lock:
-            if state.finalized:
-                return self._read_resource_file(state.run_dir, RESOURCE_SUMMARY_FILE, MAX_RESOURCE_SUMMARY_BYTES)
             state.closed = True
             participants = []
             for participant_name, role in state.expected.items():
@@ -315,6 +315,8 @@ class ResourceStatsCoordinator:
                 "job_id": job_id,
                 "participants": participants,
             }
+            if state.finalized:
+                return summary
             summary_data = canonical_json_bytes(summary)
             if len(summary_data) > MAX_RESOURCE_SUMMARY_BYTES:
                 raise ValueError("resource summary exceeds its size limit")
@@ -451,26 +453,3 @@ class ResourceStatsCoordinator:
             os.fsync(stats_fd)
         finally:
             os.close(stats_fd)
-
-    @classmethod
-    def _read_resource_file(cls, run_dir: Path, file_name: str, max_bytes: int) -> dict[str, Any]:
-        directory_fd = cls._open_resource_directory(run_dir)
-        try:
-            file_fd = os.open(
-                file_name,
-                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0) | os.O_NONBLOCK,
-                dir_fd=directory_fd,
-            )
-            try:
-                file_mode = os.fstat(file_fd).st_mode
-                if not stat.S_ISREG(file_mode):
-                    raise OSError(f"resource member is not a regular file: {file_name}")
-                with os.fdopen(file_fd, "rb", closefd=False) as stream:
-                    data = stream.read(max_bytes + 1)
-            finally:
-                os.close(file_fd)
-        finally:
-            os.close(directory_fd)
-        if len(data) > max_bytes:
-            raise ValueError(f"resource member exceeds its size limit: {file_name}")
-        return json.loads(data)

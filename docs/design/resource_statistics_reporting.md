@@ -285,8 +285,9 @@ marker before the existing
 saves the job archives, with produced files in `OUTPUTS` when stored separately.
 The summary contains the self-contained
 roster and measurements, without a separately trusted totals cache. Repeated
-finalization returns the same committed bundle and does not accept newer
-measurements.
+finalization reconstructs the summary from the frozen accepted records without
+rereading or republishing files. It does not verify that the published files still
+exist. Roster changes and newer measurements are rejected after closure.
 
 If publication fails, the incomplete statistics bundle is excluded or discarded
 and the normal job and archive failure policy continues. An optional statistics
@@ -376,8 +377,8 @@ data contains `selection: {study}` and `summary`. The CLI rejects `--site` witho
 `--job`; a job query may also specify its study. The `--schema` option describes
 the command interface, not the report-format schema. Authorization,
 nonterminal-job, and unavailable-data errors remain distinguishable. Text output
-rounds only for display; JSON retains native numbers, per-metric status, and
-scope-level issues described above.
+rounds only for display and lists affected metrics as incomplete or unavailable.
+JSON retains native numbers, per-metric status, and detailed scope-level issue codes.
 
 ## Compatibility and failure boundary
 

@@ -25,13 +25,6 @@ _GIB = 2**30
 _HOUR = 3600
 _MISSING = "—"
 
-_ISSUE_LABELS = {
-    "observation_incomplete": "part of the measurement could not be collected",
-    "attribution_incomplete": "some work could not be assigned to this participant",
-    "unsupported": "not supported here",
-    "malformed_source": "measurement contained invalid values",
-}
-
 _MEASUREMENT_LABELS = {
     "resource_time": "capacity-time",
     "cpu_consumed": "CPU time used",
@@ -129,28 +122,6 @@ def _table(headers: list[str], rows: list[list[str]]) -> list[str]:
     return ["  ".join(value.ljust(widths[index]) for index, value in enumerate(row)).rstrip() for row in values]
 
 
-def _issue_detail(value: dict, field: str, scope_issues: list[dict]) -> str:
-    issues = [issue["code"] for issue in scope_issues if issue["metric"] == field]
-    labels = dict(_ISSUE_LABELS)
-    if field == "resource_time":
-        missing = [
-            label for resource, label in (("cpu", "CPU"), ("memory", "RAM"), ("gpu", "GPU")) if resource not in value
-        ]
-        labels["observation_incomplete"] = (
-            f"{', '.join(missing)} capacity observations are missing"
-            if missing
-            else "some execution measurements or limits could not be checked"
-        )
-        labels["attribution_incomplete"] = "some capacity observations could not be assigned to this participant"
-    elif field == "cpu_consumed":
-        labels["observation_incomplete"] = "part of the CPU measurement interval is missing"
-        labels["attribution_incomplete"] = "some child-process CPU time may be missing"
-    elif field == "message_traffic":
-        labels["observation_incomplete"] = "some message counters were unavailable"
-        labels["attribution_incomplete"] = "some message traffic could not be assigned to this participant"
-    return "; ".join(labels.get(issue, issue.replace("_", " ")) for issue in issues)
-
-
 def _data_gaps(participants: list[dict]) -> list[str]:
     lines = []
     for entry in participants:
@@ -166,11 +137,7 @@ def _data_gaps(participants: list[dict]) -> list[str]:
             status = value.get("status", "reported")
             if status == "reported":
                 continue
-            detail = _issue_detail(value, field, entry.get("issues", []))
-            if status == "partial":
-                gaps.append(f"{label}: {detail or 'some values may be missing'}")
-            else:
-                gaps.append(f"{label} unavailable" + (f" ({detail})" if detail else ""))
+            gaps.append(f"{label} {'incomplete' if status == 'partial' else 'unavailable'}")
         if gaps:
             lines.append(f"  {name}: " + "; ".join(gaps))
     return lines

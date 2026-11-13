@@ -276,19 +276,28 @@ def test_finalization_preserves_receipt_time_without_stored_summary_times(tmp_pa
     assert set(summary) == {"schema_version", "kind", "job_id", "participants"}
 
 
-def test_finalize_job_is_idempotent_and_rereads_the_published_summary(started_job):
-    coordinator, run_dir = started_job
-    report = canonical_json_bytes(_participant())
-    coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": report})
-
+@pytest.mark.parametrize("removed", [False, True])
+def test_repeated_finalization_returns_frozen_state_without_disk_io(tmp_path, removed):
+    coordinator = ResourceStatsCoordinator()
+    coordinator.start_job("job-1", ["site-1", "site-2"], tmp_path)
+    coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": canonical_json_bytes(_participant())})
     first = coordinator.finalize_job("job-1")
-    with patch.object(coordinator_module.ResourceStatsCoordinator, "_atomic_write_resource") as atomic_write_resource:
+    path = tmp_path / "resource_stats" / RESOURCE_SUMMARY_FILE
+    if removed:
+        path.unlink()
+    else:
+        path.write_bytes(b"changed after publication")
+    coordinator.disable_clients("job-1", ["site-2"])
+    assert (
+        coordinator.accept_resource_report("job-1", "site-2", {"participant_summary": b"{}"})
+        == RESOURCE_REPORT_TOO_LATE
+    )
+    with patch.object(coordinator, "_open_resource_directory", side_effect=AssertionError("unexpected disk I/O")):
         second = coordinator.finalize_job("job-1")
-
-    # The second call must take the already-finalized short-circuit: it re-reads
-    # the published summary from disk rather than re-running the write path.
-    atomic_write_resource.assert_not_called()
-    assert second == first
+        assert second == first
+        first["participants"].clear()
+        assert coordinator.finalize_job("job-1") == second
+    assert not path.exists() if removed else path.read_bytes() == b"changed after publication"
 
 
 @pytest.mark.parametrize(
