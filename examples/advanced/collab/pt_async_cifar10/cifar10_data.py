@@ -20,6 +20,8 @@ from pathlib import Path
 import numpy as np
 from torchvision import datasets
 
+from nvflare.utils.data.partition import dirichlet_label_partition
+
 
 def download_cifar10(data_root: str) -> None:
     """Download both CIFAR-10 splits used by training and server evaluation."""
@@ -28,27 +30,10 @@ def download_cifar10(data_root: str) -> None:
 
 
 def _partition(labels: np.ndarray, num_sites: int, alpha: float, seed: int) -> list[list[int]]:
-    if alpha <= 0:
-        raise ValueError("alpha must be greater than zero")
-    random = np.random.default_rng(seed)
-    minimum_size = 0
-    while minimum_size < 10:
-        site_indices = [[] for _ in range(num_sites)]
-        for label in np.unique(labels):
-            label_indices = np.flatnonzero(labels == label)
-            random.shuffle(label_indices)
-            proportions = random.dirichlet(np.full(num_sites, alpha))
-            proportions *= np.array([len(indices) < len(labels) / num_sites for indices in site_indices])
-            proportions /= proportions.sum()
-            boundaries = (np.cumsum(proportions) * len(label_indices)).astype(int)[:-1]
-            site_indices = [
-                indices + partition.tolist()
-                for indices, partition in zip(site_indices, np.split(label_indices, boundaries))
-            ]
-        minimum_size = min(map(len, site_indices))
-    for indices in site_indices:
-        random.shuffle(indices)
-    return site_indices
+    result = dirichlet_label_partition(
+        labels=np.asarray(labels).reshape(-1), num_sites=num_sites, alpha=alpha, seed=seed
+    )
+    return [result.site_indices[site].tolist() for site in range(num_sites)]
 
 
 def split_and_save(split_dir_prefix: str, num_sites: int, alpha: float, seed: int = 0) -> str:
@@ -56,19 +41,24 @@ def split_and_save(split_dir_prefix: str, num_sites: int, alpha: float, seed: in
     data_root = "/tmp/cifar10"
     download_cifar10(data_root)
     labels = np.asarray(datasets.CIFAR10(root=data_root, train=True, download=False).targets)
-    site_indices = _partition(labels, num_sites, alpha, seed)
+    result = dirichlet_label_partition(labels=labels, num_sites=num_sites, alpha=alpha, seed=seed)
     split_dir = Path(f"{split_dir_prefix}_{num_sites}sites_alpha{alpha:.2f}_seed{seed}")
     split_dir.mkdir(parents=True, exist_ok=True)
 
     class_summary = {}
-    for site, indices in enumerate(site_indices, start=1):
-        np.save(split_dir / f"site-{site}.npy", np.asarray(indices))
-        values, counts = np.unique(labels[indices], return_counts=True)
-        class_summary[str(site)] = {str(int(value)): int(count) for value, count in zip(values, counts)}
+    for site in range(num_sites):
+        np.save(split_dir / f"site-{site + 1}.npy", result.site_indices[site])
+        class_summary[str(site + 1)] = {str(label): count for label, count in result.class_counts[site].items()}
 
     (split_dir / "summary.json").write_text(
         json.dumps(
-            {"num_sites": num_sites, "alpha": alpha, "seed": seed, "class_counts": class_summary},
+            {
+                "num_sites": num_sites,
+                "alpha": alpha,
+                "seed": seed,
+                "partitioner": "nvflare.utils.data.partition.dirichlet_label_partition",
+                "class_counts": class_summary,
+            },
             indent=2,
         )
         + "\n",
