@@ -26,18 +26,13 @@ on:
       - '.cursor-plugin/**'
       - 'skills/**'
       - 'dev_tools/agent/package_plugin.py'
-      - 'dev_tools/agent/plugin_validation/**'
+      - 'dev_tools/agent/plugin_validation/ci_check.py'
       - 'dev_tools/agent/skills/**'
       - 'ci/check_relative_doc_links.py'
       - '.github/workflows/plugin-package.yml'
   merge_group:
     types: [checks_requested]
   workflow_dispatch:
-    inputs:
-      security_scan:
-        description: 'Also run deterministic Tier 1 security validation (no agents or provider keys)'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -77,44 +72,5 @@ jobs:
             ${{ runner.temp }}/plugin-checks/results.json
             ${{ runner.temp }}/plugin-checks/skill-lint.log
             ${{ runner.temp }}/plugin-checks/candidate/
-          if-no-files-found: warn
-          retention-days: 14
-
-  tier1:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.security_scan }}
-    needs: package
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
-      - name: Download the checked candidate
-        uses: actions/download-artifact@v4
-        with:
-          name: nvidia-nvflare-package-checks
-          path: ${{ runner.temp }}/plugin-input
-      - name: Install the evaluated tool release
-        run: |
-          python -m pip install 'uv==0.11.14'
-          python -m pip install 'skillevaluator[security] @ git+https://github.com/NVIDIA/SkillEvaluator.git@8149356e4476a1497fb334727f13f699c6fa6ba5'
-      - name: Run deterministic Tier 1
-        env:
-          SKILLEVALUATOR_RUNTIME_DIR: ${{ runner.temp }}/plugin-scanners
-          UV_CACHE_DIR: ${{ runner.temp }}/plugin-scanner-cache
-          SOURCE_REVISION: ${{ github.sha }}
-        run: >-
-          skillevaluator validate "$RUNNER_TEMP/plugin-input/candidate/nvidia-nvflare"
-          --type plugin --external --tiers 1
-          --no-dedup --no-tier3 --no-autopilot --no-llm
-          --evaluated-source-repository NVIDIA/NVFlare
-          --evaluated-source-revision "$SOURCE_REVISION"
-          -r cli,json,html -o "$RUNNER_TEMP/plugin-tier1"
-      - name: Retain Tier 1 findings, including failed scans
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: nvidia-nvflare-tier1
-          path: ${{ runner.temp }}/plugin-tier1/
           if-no-files-found: warn
           retention-days: 14

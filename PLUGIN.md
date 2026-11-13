@@ -77,7 +77,7 @@ packaged file's SHA-256 digest, and the archive digest. ZIP entries use fixed
 timestamps so identical inputs produce identical archives with the same toolchain.
 No private keys, credentials, or local logs are required by the build.
 During preparation, `packaging_matches_source_commit` is false if the manifests,
-guide, card, or builder have not been committed. Commit the reviewed packaging and
+guide, card, license, or builder have not been committed. Commit the reviewed packaging and
 rebuild before using the source commit as provenance for a release.
 
 The builder requires all nine skills and checks every bundled skill file against
@@ -86,67 +86,44 @@ resource, unrecorded skill file, symlink, or changed skill tree fails the build.
 These digest comparisons establish content preservation; they do not verify the
 signing certificate's trust, constitute a new evaluation, or sign the plugin.
 
-Run the existing skill checks against the extracted package (requires PyYAML in
-the development environment):
+The `Plugin Package` CI workflow validates the manifests and discovery settings,
+builds twice to check reproducibility, and checks archive contents, permissions,
+retained resource hashes, bundled documentation links, and skill lint. It retains
+the candidate and check results as workflow artifacts. Run the same check locally
+in an isolated Python 3.12 environment:
 
 ```bash
-python3 -m dev_tools.agent.skills.checks \
-  --skills-root /tmp/nvidia-nvflare-candidate/nvidia-nvflare/skills
-claude plugin validate /tmp/nvidia-nvflare-candidate/nvidia-nvflare --strict
+python3.12 -m venv /tmp/nvidia-nvflare-validation
+/tmp/nvidia-nvflare-validation/bin/python -m pip install \
+  'PyYAML==6.0.3' 'jsonschema==4.25.1'
+curl --fail --location --silent --show-error --max-time 30 \
+  https://agent-plugins.org/schemas/1.0.0/plugin.schema.json \
+  --output /tmp/nvidia-nvflare-plugin.schema.json
+/tmp/nvidia-nvflare-validation/bin/python \
+  -m dev_tools.agent.plugin_validation.ci_check \
+  --schema /tmp/nvidia-nvflare-plugin.schema.json \
+  --output /tmp/nvidia-nvflare-package-checks
 ```
 
-Validate root `plugin.json` against the published Agent Plugins 1.0.0 schema using
-a JSON Schema Draft 2020-12 validator. Check the native manifest fields against
-the host documentation below. Keep schema validation, native loading, and actual
-workflow evaluation as separate evidence; passing one does not establish the others.
+The checker verifies the downloaded schema's pinned SHA-256 digest before use.
+Use a new check output directory outside the checkout. The builder and checker
+are development tools excluded from the distributed plugin; they require no
+provider credentials and do not run agents, sign, or publish content. A packaging
+pass does not establish security-scan completeness or workflow quality.
 
-With SkillEvaluator OSS 0.8.0 and its security dependencies installed in an
-isolated environment, run the deterministic plugin checks explicitly:
+## Host and evaluation checks
 
-```bash
-skillevaluator validate /tmp/nvidia-nvflare-candidate/nvidia-nvflare \
-  --type plugin --tiers 1 --no-dedup --no-tier3 --no-autopilot --no-llm \
-  -r cli,json,html -o /tmp/nvidia-nvflare-tier1
-```
+Load an extracted copy outside the repository through each host's documented
+plugin mechanism, without duplicate installed skills. Confirm the display label,
+all nine components, routing, and shared references. Record the host/model
+versions, archive digest, and outcomes. See the host references below and the
+Plugin Card for checks already completed.
 
-Inspect scanner completeness and the detailed findings as well as the exit code.
-An incomplete scan is a release blocker. Keep its report for triage; do not remove
-signed resources or suppress findings merely to obtain a passing package scan.
-This command does not run live agents or establish plugin signing eligibility.
-
-## Host smoke tests
-
-Test a copy extracted outside the repository so source-relative dependencies
-cannot hide missing package files. Use a disposable user workspace and avoid
-loading separately installed copies of these same skills during the test.
-
-- **Claude Code:** start `claude --plugin-dir /path/to/nvidia-nvflare`. Confirm
-  discovery, then try `/nvidia-nvflare:nvflare-orient`. Use the host's plugin listing
-  to inspect all bundled skills before running conversion scenarios.
-- **Codex:** use the documented local marketplace/import flow for the extracted
-  plugin. Confirm the NVIDIA FLARE display label and skill inventory in a fresh
-  session. The build command does not change your global agent configuration.
-- **Cursor:** import the package through the supported plugin development or team
-  marketplace flow for the installed version. Confirm discovery and relative
-  references in a fresh session. A CLI that supports `--plugin-dir` can also test
-  the extracted directory directly with `agent --plugin-dir /path/to/nvidia-nvflare`.
-  Use `--mode ask --sandbox enabled` for a read-only discovery/routing check.
-  Native UI loading remains a separate manual check.
-- **Other Agent Plugins clients:** load the portable root manifest and confirm
-  all nine directories are discovered, including shared resources.
-
-For each host, record its exact version, plugin archive digest, discovered skill
-names, and scenario outcomes. Exercise one small PyTorch conversion, one
-Lightning conversion, one Hugging Face conversion, failed-job diagnosis,
-federated statistics, and the Auto-FL/report boundary. Use only synthetic data
-and bounded local runs. Include negative requests that should not select a
-converter or the report skill. Host namespacing and skill routing must be checked
-in real sessions even though the skill files are unchanged.
-
-A read-only loading/routing probe confirms skill discovery, selection, and shared
-reference resolution. It does not establish successful conversions, training,
-statistics execution, report generation, or Tier 3 coverage. Retain those workflow
-results separately, with their input fixtures and generated artifacts.
+Complete workflow evaluation and official scanning/signing through the supported
+NVIDIA service before publication. Loading probes do not establish conversions
+or Tier 3 coverage. Retain complete reports and triage findings; an incomplete
+scan remains a release blocker. Do not edit signed resources or suppress findings
+merely to obtain a passing scan.
 
 ## Release evidence checklist
 

@@ -110,26 +110,21 @@ the host's data-handling settings before exposing sensitive inputs.
 The local preparation used the `2.9` component tree at source revision
 `5f2250f1cd63ca2b3aff1952d950e3c3e9af5496`. All nine component directories,
 including their instructions, scripts, references, datasets, reports, and retained
-signatures, were preserved. The local runtime qualification used Python 3.12.9
-on macOS arm64 and NVFlare 2.9.1 built from that revision.
+signatures, were preserved.
 
 | Check | Result and scope |
 | --- | --- |
 | Package structure | Agent Plugins schema, Claude strict manifest validation, and repository skill lint passed for the initial candidate |
 | Component integrity | All 165 resource hashes in nine retained signature manifests matched packaged files; cryptographic signing trust was not checked locally |
 | Native loading and routing | Passed the host probes listed above |
-| Training fixture qualification | Three original synthetic PyTorch, Lightning, and Hugging Face inputs routed correctly and trained with finite loss on CPU |
-| Report lifecycle checks | The packaged helper generated a stopped-campaign report, summary, and plot; active and unfinished-candidate fixtures were rejected as expected |
-| Evidence preservation | Qualification left the original fixtures, campaign evidence, and plugin files unchanged |
 | Plugin security scan | Earlier candidate blocked: OSS SkillEvaluator 0.8.0 with SkillSpector 2.13.3 reported findings and incomplete analysis; final package scan remains required |
 | Plugin-level quality, lift, and agent/arm coverage | Not established; full workflow and formal plugin evaluation remain pending |
 
-The six fixture checks qualify source training and direct reporter behavior.
-They do not constitute agent-driven conversion tests or a plugin benchmark.
+Packaging and discovery checks do not constitute agent-driven conversion tests
+or a plugin benchmark.
 Existing component reports describe their own evaluations; their scores are not
 aggregated into a plugin score. The packaging guide documents local build and
-validation commands; developer fixtures are under
-`dev_tools/agent/plugin_validation/` in the source repository.
+validation commands. Full workflow evaluation is separate release work.
 
 ## Known limitations
 
