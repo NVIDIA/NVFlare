@@ -1,0 +1,16 @@
+# Fixture qualification dependencies exercised on Python 3.12 / macOS arm64.
+# NVFlare itself is installed separately from the intended source checkout.
+# This constrains the tested framework combination; it is not a full lockfile.
+accelerate==1.15.0
+huggingface-hub==1.33.0
+matplotlib==3.10.1
+numpy==1.26.4
+packaging==26.3
+pandas==2.2.3
+pytorch-lightning==2.6.1
+PyYAML==6.0.3
+safetensors==0.8.0
+torch==2.11.0
+torchmetrics==1.9.0
+torchvision==0.26.0
+transformers==5.12.1
