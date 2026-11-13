@@ -46,6 +46,11 @@ def _get_cell(engine):
     return engine.get_cell()
 
 
+def server_root_dir_prefix(job_id: str) -> str:
+    # "server" keeps the server parent's removal by job id from matching a client's root on a shared host.
+    return f"nvflare_tensor_offload_server_{job_id}_"
+
+
 def setup_tensor_disk_offload(
     engine, enabled: bool, job_id: str = "job", root_dir: Optional[str] = None
 ) -> TensorDiskOffloadContext:
@@ -70,7 +75,7 @@ def setup_tensor_disk_offload(
     fobs_ctx = cell.get_fobs_context()
     previous_value = fobs_ctx.get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
     previous_root_dir = fobs_ctx.get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
-    offload_dir = tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{job_id}_", dir=root_dir)
+    offload_dir = tempfile.mkdtemp(prefix=server_root_dir_prefix(job_id), dir=root_dir)
     context = TensorDiskOffloadContext(
         previous_value=previous_value,
         previous_root_dir=previous_root_dir,
