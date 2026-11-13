@@ -712,6 +712,12 @@ class K8sTaskLauncher(_K8sTaskProfile):
 
     cleanup_owned_by_parent = True
 
+    def validate_job_launcher(self, launcher):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        if type(launcher) is not ClientK8sJobLauncher:
+            raise ValueError("task lifetime requires the site's supported Kubernetes client-job launcher")
+
     def handle_event(self, event_type, fl_ctx):
         from nvflare.app_opt.task_launcher.k8s_task_service import K8sTaskClient
 

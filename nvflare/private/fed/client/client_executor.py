@@ -55,6 +55,7 @@ from nvflare.private.fed.resource_stats.handoff import (
 )
 from nvflare.private.fed.resource_stats.measurements import ordered_issues
 from nvflare.private.fed.resource_stats.message_traffic import retire_job_traffic
+from nvflare.private.fed.task_worker.job_runtime import launch_job
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.private.fed.utils.job_cert_utils import remove_job_cert
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -728,7 +729,7 @@ class JobExecutor(ClientExecutor):
         fl_ctx.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, register_handle, private=True, sticky=False)
         try:
             fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=False)
-            handle = restart.launcher.launch_job(copy.deepcopy(restart.meta), fl_ctx)
+            handle = launch_job(restart.launcher, copy.deepcopy(restart.meta), fl_ctx)
             if handle is None:
                 raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
             register_handle(handle)
