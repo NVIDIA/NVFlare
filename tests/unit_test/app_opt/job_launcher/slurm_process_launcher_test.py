@@ -32,7 +32,7 @@ from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher
 from nvflare.app_opt.job_launcher.slurm.task_policy import PROCESS_CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
 from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
-from nvflare.private.fed.task_worker.job_runtime import launch_job, shutdown_task_jobs
+from nvflare.private.fed.task_worker.parent_runtime import launch_job, shutdown_task_jobs
 
 
 @pytest.fixture

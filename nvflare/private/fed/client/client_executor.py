@@ -55,7 +55,7 @@ from nvflare.private.fed.resource_stats.handoff import (
 )
 from nvflare.private.fed.resource_stats.measurements import ordered_issues
 from nvflare.private.fed.resource_stats.message_traffic import retire_job_traffic
-from nvflare.private.fed.task_worker.job_runtime import launch_job
+from nvflare.private.fed.task_worker.parent_runtime import launch_job
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.private.fed.utils.job_cert_utils import remove_job_cert
 from nvflare.security.logging import secure_format_exception, secure_log_traceback

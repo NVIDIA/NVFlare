@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Parent ownership around an independently selected coordinator launcher."""
+"""CP-side ownership and lifecycle for coordinators with disposable task workers."""
 
 import logging
 import secrets
