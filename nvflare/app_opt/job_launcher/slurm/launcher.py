@@ -604,6 +604,24 @@ class _TaskCJHandle(JobHandleSpec):
         self.owner.release()
         return self.handle._terminate_for_heartbeat_cleanup()
 
+    def can_restart(self):
+        """Replace the CJ only after CP-owned workers have all settled."""
+        if self.handle.can_restart() is not True:
+            return False
+        self.owner.release()
+        self.owner.thread.join(self.cleanup_timeout)
+        if self.owner.thread.is_alive():
+            with self.owner.lock:
+                pending = [a.execution_id for a in self.owner.attempts.values() if not a.status.settled]
+            logging.getLogger(__name__).warning(
+                "Slurm CJ recovery skipped for job %s: worker allocations %s not settled within %ss",
+                self.owner.job_id,
+                pending,
+                self.cleanup_timeout,
+            )
+            return False
+        return True
+
     def poll(self):
         code = self.handle.poll()
         if code != JobReturnCode.UNKNOWN:

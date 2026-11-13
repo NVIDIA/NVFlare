@@ -43,6 +43,8 @@ The unreleased `study_job_spec_file_path` pod-template mechanism (PR #4804) is r
   argument or deploy-config key selects the file.
 - Filename = format: `study_runtime.yaml` is v2 strict, `study_data.yaml` is v1 frozen. No content sniffing.
 - Job side unchanged: the job still submits only `{"study": "..."}`.
+- On a client, a file that lists at least one study is the list of studies the site runs: jobs for an unlisted study
+  (including `default`) are rejected at the resource check. No file or empty `studies` accepts every study.
 
 ```yaml
 format_version: 2
