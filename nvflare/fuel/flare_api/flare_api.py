@@ -130,7 +130,8 @@ def _validate_target_strs(targets: List[str]) -> None:
     process_targets_into_str(targets)
 
 
-_OLD_SERVER_NOTE = "the whole job was downloaded because the server does not support outputs-only downloads"
+# an outputs-only request whose reply lacks the outputs_only mark: the server returned the whole job
+_FULL_DOWNLOAD_NOTE = "the whole job was downloaded because the server does not support outputs-only downloads"
 
 
 def _outputs_download_notice(meta: dict, job_id: str, outputs_only: bool = False) -> Optional[str]:
@@ -138,7 +139,7 @@ def _outputs_download_notice(meta: dict, job_id: str, outputs_only: bool = False
     whole job, or a job whose stored outputs are missing from the download. None otherwise."""
     note = meta.get(MetaKey.OUTPUTS_NOTE)
     if not note and outputs_only and meta.get(MetaKey.OUTPUTS_ONLY) is not True:
-        note = _OLD_SERVER_NOTE  # a server that ignores the request says nothing about it
+        note = _FULL_DOWNLOAD_NOTE
     return f"Job {job_id}: {note}." if note else None
 
 
