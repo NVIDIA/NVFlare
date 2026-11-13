@@ -22,7 +22,7 @@ from zipfile import ZipFile
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_constant import JobConstants
-from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey, validate_job_outputs
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.apis.job_meta_validator_spec import JobMetaValidatorSpec
 from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
@@ -59,19 +59,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
         self._validate_launcher_spec(job_name, meta)
         validate_portable_resource_conflicts(meta)
         self._validate_mandatory_clients(job_name, meta, clients)
-        self._validate_job_outputs(job_name, meta)
         return meta
-
-    @staticmethod
-    def _validate_job_outputs(job_name: str, meta: dict):
-        # Rejected at submission, so an invalid declaration never surfaces only after a long run.
-        key = JobMetaKey.JOB_OUTPUTS.value
-        if key not in meta:
-            return
-        try:
-            meta[key] = validate_job_outputs(meta[key])
-        except (TypeError, ValueError) as e:
-            raise ValueError(f"invalid {key} for job {job_name}: {e}") from None
 
     def validate(self, job_name: str, job_data: bytes) -> Tuple[bool, str, dict]:
         """Validate job

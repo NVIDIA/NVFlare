@@ -384,6 +384,12 @@ class SimpleJobDefManager(JobDefManagerSpec):
         except StorageException:
             return None
 
+    def set_results_uri(self, jid: str, result_uri: str, fl_ctx: FLContext):
+        store = self._get_job_store(fl_ctx)
+        updated_meta = {JobMetaKey.RESULT_LOCATION.value: result_uri}
+        store.update_meta(self.job_uri(jid), updated_meta, replace=False)
+        return self.get_job(jid, fl_ctx)
+
     def get_app(self, job: Job, app_name: str, fl_ctx: FLContext) -> bytes:
         check_job_id(job.job_id)
         check_job_app_name(app_name)

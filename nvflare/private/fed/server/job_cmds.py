@@ -115,7 +115,6 @@ CLONED_META_KEYS = {
     JobMetaKey.RESOURCE_SPEC.value,
     JobMetaKey.CJ_RESOURCE_SPEC.value,
     JobMetaKey.CONTENT_LOCATION.value,
-    JobMetaKey.JOB_OUTPUTS.value,
     JobMetaKey.APPROVALS.value,
     JobMetaKey.MIN_CLIENTS.value,
     JobMetaKey.MANDATORY_CLIENTS.value,

@@ -51,7 +51,7 @@ from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
-from nvflare.private.fed.server.job_outputs import declared_outputs, has_invalid_job_outputs, link_job_outputs
+from nvflare.private.fed.server.job_outputs import link_job_outputs
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
@@ -705,9 +705,8 @@ class JobRunner(FLComponent):
         is. The job's meta records that the outputs are stored apart (``job_outputs_stored``), which downloads rely
         on. A retry rebuilds the links from the same files; a crash leaves only extra links behind.
 
-        The outputs are the files the job produced (everything but the unchanged files of the server app deployed
-        with it, its job files, and the server's logs and system files), or the files its ``job_outputs`` selects when
-        it sets them.
+        The outputs are the files the job produced: everything but the unchanged files of the server app deployed
+        with it, its job files, and the server's logs and system files.
 
         Returns:
             The split, whose rest folders the workspace archive is built from; or None, in which case the workspace
@@ -720,14 +719,12 @@ class JobRunner(FLComponent):
         recorded = False  # whether the record may have been set, even if setting it raised
         try:
             job = job_manager.get_job(job_id, fl_ctx)
-            if not job or has_invalid_job_outputs(job.meta):
-                # the outputs cannot be selected: store the workspace whole, and clear a record an earlier attempt
-                # may have left (always, when the job cannot be read)
-                self.log_debug(fl_ctx, f"The outputs of job {job_id} cannot be selected; storing its workspace whole")
+            if not job:
+                # its deployed app is unknown: store the workspace whole, and clear a record an earlier attempt may
+                # have left
+                self.log_debug(fl_ctx, f"Job {job_id} cannot be read; storing its workspace whole")
             else:
-                outputs = declared_outputs(job.meta)
-                deployed = {} if outputs else self._deployed_files(job, fl_ctx)
-                split = link_job_outputs(ws_dirs, outputs, deployed)
+                split = link_job_outputs(ws_dirs, self._deployed_files(job, fl_ctx))
                 if not split:
                     self.log_info(fl_ctx, f"The outputs of job {job_id} are kept in its workspace archive")
                 elif not job_manager.save_job_outputs(job_id, split.output_dirs, fl_ctx):

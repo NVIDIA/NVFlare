@@ -12,8 +12,7 @@ produced on the server: everything in its server workspace except what was
 deployed with it (its server app's config and custom code, and its job files)
 and the server's own logs and system files. Nothing has to be declared: built-in
 and custom components, recipes, plain `FedJob`s and hand-written jobs all work
-the same way. A job can narrow its outputs to specific files with an optional
-`job_outputs` list.
+the same way.
 
 When a job ends, the server stores its outputs apart from the rest of the
 workspace, so each file is stored once. An outputs-only download sends the
@@ -50,7 +49,6 @@ server-side model.
   a full download.
 - It works for every job without declaring anything, including jobs with custom
   components and hand-written jobs.
-- A job can narrow its outputs to specific files.
 - No existing script, execution environment or deployment changes behavior
   unless it asks for an outputs-only download.
 - Failed jobs still give the caller what they need to debug.
@@ -96,21 +94,6 @@ model_path = os.path.join(path, "workspace", "app_server", "FL_global_model.pt")
 The same holds for a custom persistor, a custom report or metrics writer,
 federated statistics, a plain `FedJob` and a hand-written job: whatever files
 the job writes on the server are its outputs.
-
-### Narrowing the outputs
-
-`set_recipe_meta` narrows the outputs to the files its entries select. For
-example, to keep only the final model:
-
-```python
-from nvflare.apis.job_def import JobMetaKey
-from nvflare.recipe import set_recipe_meta
-
-set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, ["app_server/FL_global_model.pt"])
-```
-
-Paths are relative to the server run folder, and an entry ending in `/` selects
-a folder. A hand-written job adds `job_outputs` to its `meta.json`.
 
 ### When the whole job comes back
 
@@ -183,48 +166,12 @@ Logs written under non-default file names by a custom logging configuration
 count as outputs: the outputs-only download then holds more than needed, never
 less.
 
-### Job metadata: `job_outputs`
+### Job metadata: `job_outputs_stored`
 
-An optional key in `meta.json` narrows the outputs:
-
-```json
-{
-  "job_outputs": [
-    "app_server/FL_global_model.pt",
-    "metrics/"
-  ]
-}
-```
-
-- Each entry is a path relative to the root of the server workspace archive.
-  That root is the job's run folder. When separate result, log or audit roots
-  are configured, their contents are merged at the same root.
-- An entry ending in `/` selects that folder and everything under it.
-- Entries are exact paths. There are no wildcards.
-- Without the key, every produced file is an output.
-- `JobMetaKey.JOB_OUTPUTS = "job_outputs"`.
-- The existing `JobMetaKey.RESULT_LOCATION` and `JobDefManager.set_results_uri`
-  are removed. Nothing calls `set_results_uri`, it is not part of
-  `JobDefManagerSpec`, and no stored job has `result_location`. Removing them
-  leaves one key for job results.
-- `JOB_OUTPUTS` is added to `CLONED_META_KEYS`, so a cloned job keeps it.
-- `JOB_OUTPUTS` is added to `USER_SETTABLE_JOB_META_KEYS`, so
-  `set_recipe_meta(recipe, JobMetaKey.JOB_OUTPUTS, [...])` works and checks the
-  same rules before submission.
-
-### Validation
-
-The server's `JobMetaValidator` checks `job_outputs` at submission and rejects
-the job when the value is invalid. Errors appear at submit time, not after a
-long run.
-
-- The value is a list of at most 100 non-empty strings.
-- Each entry uses `/` separators, is relative, and contains no `..`, `.`, empty
-  segment, backslash or drive prefix.
-- Duplicates are removed.
-
-A stored job whose `job_outputs` does not pass validation (submitted before the
-check, or edited since) keeps its workspace whole.
+The server records `job_outputs_stored: true` in a job's meta when it stores
+the job's outputs apart (`JobMetaKey.JOB_OUTPUTS_STORED`). Downloads decide
+from this record. It is written only by the server; a submitted job's value is
+removed at submission. A job adds nothing to its `meta.json` for this feature.
 
 ### Admin command: `download_job` with an `outputs_only` option
 
@@ -270,10 +217,8 @@ and then deletes the folder. It now stores the job's outputs as their own
    wins. The client unzips the outputs archive first, so a path that is an
    output in one folder and not in another (for example a symlink) could change
    which copy a full download keeps; the workspace is then stored whole too.
-   The log files the server's log commands read (`log.txt`, `log.json`,
-   `error_log.txt`) are named here too when `job_outputs` selects them, so
-   those commands keep working; like any other output, a selected log that
-   changed after it was stored makes the workspace stored whole. Symlinks are
+   Logs are never outputs, so they stay in the workspace archive, where the
+   server's log commands read them. Symlinks are
    recreated pointing at what they resolve to in the untouched workspace, so a
    link to an output still reads it, and a linked folder stays a link.
 4. **Record the split.** Set `job_outputs_stored: true` in the job's meta.
@@ -295,16 +240,13 @@ The workspace folders stay intact until both archives are stored:
   the next attempt replaces them.
 - The workspace folders are archived whole, as before this change, when the
   job store does not implement `save_job_outputs` (checked before any walk),
-  the job produced no output files, its `job_outputs` select none or are
-  invalid, the job or its deployed app cannot be read, a link cannot be made (for
+  the job produced no output files, the job or its deployed app cannot be
+  read, a link cannot be made (for
   example a link folder on a different filesystem), a folder cannot be read, or
   the outputs are not stored. If an earlier attempt had recorded the split, the
   record is cleared, so downloads do not use that older outputs archive. If
   clearing the record fails, the archival fails and is retried, rather than
   leave the older outputs archive authoritative.
-
-`job_outputs_stored` is written only by the server; a submitted job's value is
-removed at submission.
 
 **Why at job end.** By the time anyone downloads, the result files exist only
 inside stored archives; the run folder is gone. A download replies at once
@@ -326,9 +268,8 @@ the workspace lacks the outputs; the FLARE API logs it as a warning
 
 The reply also carries `unzip_into: {"outputs.zip": "workspace"}`, and the
 admin client unzips `outputs.zip` into `workspace/` first and `workspace.zip`
-after it. The only files in both archives are server logs that `job_outputs`
-selects, and the workspace archive's copy is the newer one. The result is the
-same `workspace/` folder as before this change. The admin client accepts only a
+after it. No file is in both archives. The result is the same `workspace/`
+folder as before this change. The admin client accepts only a
 plain folder name there, never a path. A job without the record downloads
 exactly as before.
 
@@ -423,11 +364,11 @@ of its own.
 
 | Option | Outcome |
 | --- | --- |
-| A declared list only, written by the user or by each recipe | Rejected as the default. Users would need to know internal paths, a custom component's files are left out until someone lists them, and a wrong list silently filters the model out. It stays as the optional narrowing list. |
+| A declared list, written by the user or by each recipe | Rejected. Users would need to know internal paths, a custom component's files are left out until someone lists them, and a wrong list silently filters the model out. |
 | The code that adds each component (a recipe, a model wrapper, a job class) records the component's files | Rejected. The same knowledge is applied at every place a class is used, each new recipe must remember it, and custom components and plain `FedJob`s declare nothing. |
 | A resolver registered beside each component class, applied when `meta.json` is generated | Rejected. Exact for built-in components, but a custom persistor's job downloads whole until its author learns to register it, and a custom writer that is not a persistor is left out silently. Every new component needs a resolver. |
 | A dedicated outputs folder that components save into | Rejected. It moves where every built-in component saves today, breaking existing paths; keeping the old paths means saving the model twice; and a custom component that saves elsewhere is left out silently. |
-| **Every file the job produced: the workspace minus what was deployed with the job and left unchanged, and the server's logs and system files** | **Chosen.** Nothing to declare or register for any component, built-in or custom, recipe or hand-written job. Nothing the job produced is left out silently: the worst case is a few more files than needed, never a missing model. Files stay where they are written, so paths are the same in both downloads. `job_outputs` narrows the selection when wanted. |
+| **Every file the job produced: the workspace minus what was deployed with the job and left unchanged, and the server's logs and system files** | **Chosen.** Nothing to declare or register for any component, built-in or custom, recipe or hand-written job. Nothing the job produced is left out silently: the worst case is a few more files than needed, never a missing model. Files stay where they are written, so paths are the same in both downloads. |
 
 ### Telling the caller what it received
 
@@ -459,8 +400,6 @@ Return the whole job with a reason, rather than an empty download: an empty
 | Existing custom `ExecEnv` subclasses | `Run` does not pass the new argument unless the caller asks for an outputs-only download. |
 | New client, old server | Not supported: the admin client and the server run the same version. An older server ignores the property and returns the whole job; the FLARE API reports it as a whole-job download. |
 | Old client, new server | Not supported: the admin client and the server run the same version. An older client's full download of a job with an `outputs` component would unzip `outputs.zip` into its own folder rather than into `workspace/`. |
-| Code that references `JobMetaKey.RESULT_LOCATION` or calls `set_results_uri` | Must drop the reference. Neither ever held or produced a value. |
-| A job with `job_outputs` on an old server | The old server stores the key and ignores it. Downloads are full. |
 | Failed or aborted job with `outputs_only=True` | The whole job, including logs. The FLARE API, Recipe API and CLI show why the whole job came back. |
 | Completed job that produced no output files | The whole job, with the reason shown. |
 | Job that finished before this change | No `outputs` component: its workspace archive holds everything. Full downloads are unchanged, and outputs-only downloads return the whole job, with the reason. |
@@ -483,39 +422,28 @@ Known limitations:
 - The command, its authorization and its permission category are unchanged,
   so no new data becomes reachable. Outputs-only download returns a subset of what
   `download_job` already returns.
-- The server validates `job_outputs` at submission and again before splitting,
-  links only files under the job's workspace folders, and never treats a
-  symlink as an output.
+- The server links only files under the job's workspace folders, and never
+  treats a symlink as an output.
 - The job's credentials (`job_cert/`) are removed before archiving, as today,
   and are never treated as outputs.
 - The admin client unzips a downloaded archive only into a plain folder name
   from the server's reply, never a path.
-- `job_outputs` names files, not contents. It must not contain secrets, the
-  same as other job metadata.
 
 ## Testing
 
 Unit tests:
 
-- `job_outputs` validation: valid entries, folder entries, and rejection of
-  absolute paths, `..`, `.`, backslashes, empty segments, non-strings and
-  oversized lists.
-- `set_recipe_meta` accepts the key and applies the same checks.
 - Produced files: models, metrics, evaluation results, TensorBoard events and
   a new file under `custom/` and a deployed file the job rewrote are outputs;
   `meta.json`, `fl_app.txt`, server logs (prefixed and rotated), stats-pool
   files, `audit.log`, the signature file, `__pycache__`, `job_cert/` and the
   deployed app's unchanged files are not.
 - The deployed app is read from the stored job for a `server` or `@ALL`
-  deployment; when it cannot be read, or `job_outputs` is invalid, the
-  workspace is stored whole. A retry that cannot read the job clears a record
+  deployment; when it cannot be read, the workspace is stored whole. A retry that cannot read the job clears a record
   an earlier attempt left.
-- `job_outputs` narrows the outputs; when it selects nothing that exists, the
-  workspace is stored whole.
-- Cloned jobs keep `job_outputs`.
 - At job end, hard-link folders name the outputs and the rest at their paths,
-  beside each workspace folder, without changing it: the same file, selected
-  log files in both, symlinks with the rest. The outputs are stored as
+  beside each workspace folder, without changing it: the same file, logs and
+  symlinks with the rest. The outputs are stored as
   `outputs` and the rest as `workspace`. The workspace is archived whole when
   nothing was produced, links cannot be made, or `save_job_outputs` fails or
   saves nothing. A retry after a failed workspace save stores the same outputs
@@ -560,10 +488,8 @@ and the job's config, custom code and logs are absent.
 
 | Part | Location |
 | --- | --- |
-| Key, validation, constants | `nvflare/apis/job_def.py` (`JobMetaKey.JOB_OUTPUTS`, `validate_job_outputs`, `job_output_matches`) |
-| Submission check | `JobMetaValidator._validate_job_outputs` |
-| Cloning | `CLONED_META_KEYS` in `job_cmds.py` |
-| Selecting the outputs | `is_produced` and `link_job_outputs` in `nvflare/private/fed/server/job_outputs.py`; `JobRunner._deployed_paths` reads the deployed server app from the stored job |
+| Meta record and command property | `nvflare/apis/job_def.py` (`JobMetaKey.JOB_OUTPUTS_STORED`, `OUTPUTS_ONLY_PROP`) |
+| Selecting the outputs | `is_produced` and `link_job_outputs` in `nvflare/private/fed/server/job_outputs.py`; `JobRunner._deployed_files` reads the deployed server app from the stored job |
 | Outputs storage | `JobRunner._save_job_outputs`, `SplitWorkspace` in `nvflare/private/fed/server/job_outputs.py`, `JobDefManagerSpec.save_job_outputs`, storage component `outputs` |
 | Full download | `JobCommandModule._get_default_job_components` (adds `outputs.zip`), reply key `unzip_into`, `FileTransferModule.pull_folder` |
 | Outputs-only download | `JobCommandModule.download_job` |

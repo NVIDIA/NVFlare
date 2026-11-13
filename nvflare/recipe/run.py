@@ -106,8 +106,7 @@ class Run:
             outputs_only (bool, optional): download only the files the job produced on the server (its model,
                 metrics, statistics or evaluation report), at the same paths as a full download. Left out: the
                 submitted job, its config and code, and the logs; client files are not part of either download.
-                Use the full download when you need the logs. ``job_outputs`` narrows the outputs. The whole job
-                is downloaded, with a notice saying why, when it did not complete or produced no output files. The
+                Use the full download when you need the logs. The whole job is downloaded, with a notice saying why, when it did not complete or produced no output files. The
                 simulator returns its local workspace unchanged. Defaults to False.
 
         Returns:

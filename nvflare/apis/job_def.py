@@ -58,6 +58,7 @@ class JobMetaKey(str, Enum):
     RESOURCE_SPEC = "resource_spec"
     CJ_RESOURCE_SPEC = "cj_resource_spec"
     CONTENT_LOCATION = "content_location"
+    RESULT_LOCATION = "result_location"
     APPROVALS = "approvals"
     MIN_CLIENTS = "min_clients"
     MANDATORY_CLIENTS = "mandatory_clients"
@@ -77,7 +78,6 @@ class JobMetaKey(str, Enum):
     JOB_CLIENTS = "job_clients"  # clients that participated the job
     STUDY = "study"
     JOB_LAUNCHER_SPEC = "launcher_spec"
-    JOB_OUTPUTS = "job_outputs"  # server workspace paths that make up the job's result
     JOB_OUTPUTS_STORED = "job_outputs_stored"  # set by the server: the outputs are stored apart from the workspace
 
     def __repr__(self):
@@ -102,65 +102,11 @@ USER_SETTABLE_JOB_META_KEYS = frozenset(
         JobMetaKey.JOB_LAUNCHER_SPEC,
         JobMetaKey.SCOPE,
         JobMetaKey.CUSTOM_PROPS,
-        JobMetaKey.JOB_OUTPUTS,
     }
 )
 
-MAX_JOB_OUTPUTS = 100
-
 # download_job command property asking the server for only the job's outputs
 OUTPUTS_ONLY_PROP = "outputs_only"
-
-
-def validate_job_outputs(value) -> list:
-    """Check a ``job_outputs`` value and return it without duplicates, in its original order.
-
-    ``job_outputs`` lists the files and folders of the server workspace that make up a job's result. Each entry is a
-    path relative to the root of the workspace archive (the job's run folder), with ``/`` separators. An entry
-    ending in ``/`` names a folder and everything under it. There are no wildcards.
-
-    Raises:
-        TypeError: the value is not a list of strings.
-        ValueError: the list is too long, or an entry is empty, absolute, or holds ``..``, ``.``, an empty segment,
-            a backslash or a drive prefix.
-    """
-    if not isinstance(value, list):
-        raise TypeError(f"{JobMetaKey.JOB_OUTPUTS.value} must be a list, got {type(value).__name__}")
-    if len(value) > MAX_JOB_OUTPUTS:
-        raise ValueError(f"{JobMetaKey.JOB_OUTPUTS.value} has {len(value)} entries; at most {MAX_JOB_OUTPUTS} allowed")
-    outputs = []
-    for entry in value:
-        if not isinstance(entry, str):
-            raise TypeError(f"{JobMetaKey.JOB_OUTPUTS.value} entries must be strings, got {type(entry).__name__}")
-        _check_job_output_path(entry)
-        if entry not in outputs:
-            outputs.append(entry)
-    return outputs
-
-
-def _check_job_output_path(entry: str):
-    name = JobMetaKey.JOB_OUTPUTS.value
-    if not entry:
-        raise ValueError(f"{name} entries must not be empty")
-    if "\\" in entry:
-        raise ValueError(f"{name} entry {entry!r} must use '/' separators")
-    if entry.startswith("/") or (len(entry) > 1 and entry[0].isalpha() and entry[1] == ":"):
-        raise ValueError(f"{name} entry {entry!r} must be a relative path")
-    segments = entry[:-1].split("/") if entry.endswith("/") else entry.split("/")
-    for segment in segments:
-        if segment in ("", ".", ".."):
-            raise ValueError(f"{name} entry {entry!r} must not hold an empty, '.' or '..' segment")
-
-
-def job_output_matches(member: str, outputs: list) -> str:
-    """The ``job_outputs`` entry that selects archive member ``member``, or an empty string when none does."""
-    for entry in outputs:
-        if entry.endswith("/"):
-            if member.startswith(entry):
-                return entry
-        elif member == entry:
-            return entry
-    return ""
 
 
 class SubmitRecordState(str, Enum):

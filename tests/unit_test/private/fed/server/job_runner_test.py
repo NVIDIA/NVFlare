@@ -87,6 +87,9 @@ def _make_workspace_save_inputs(run_dir, result_root, log_root, audit_root):
     workspace.get_audit_root.return_value = audit_root
 
     job_manager = MagicMock()
+    # no stored job by default, so the workspace is archived whole; tests of the outputs split set one with
+    # _deployed_job
+    job_manager.get_job.return_value = None
     engine = MagicMock()
     engine.get_component.return_value = job_manager
 
@@ -352,8 +355,20 @@ def test_save_workspace_skips_duplicate_missing_sources(tmp_path):
     ]
 
 
-def _job_with_outputs(job_manager, outputs):
-    job_manager.get_job.return_value = MagicMock(meta={"job_outputs": outputs})
+def _deployed_job(job_manager, app_files=None, deploy_to=("server",), meta=None):
+    """A stored job whose server app holds ``app_files``: path in the app -> content as deployed."""
+    import io
+    import zipfile
+
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w") as z:
+        for name, content in dict(app_files or {}).items():
+            z.writestr(name, content)
+    job = MagicMock(meta=dict(meta or {}))
+    job.get_deployment.return_value = {"app": list(deploy_to)}
+    job.get_application.return_value = data.getvalue()
+    job_manager.get_job.return_value = job
+    return job
 
 
 def _files(root):
@@ -390,10 +405,10 @@ def _no_link_folders_left(tmp_path):
     return sorted(p.name for p in tmp_path.iterdir() if p.name.startswith(".")) == []
 
 
-def test_save_workspace_stores_declared_outputs_once_apart_from_the_rest(tmp_path):
+def test_save_workspace_stores_the_jobs_outputs_once_apart_from_the_rest(tmp_path):
     run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
-    _job_with_outputs(job_manager, ["app_server/FL_global_model.pt", "metrics/"])
+    _deployed_job(job_manager)
     archived = _capture_archives(job_manager)
 
     runner._save_workspace(fl_ctx)
@@ -403,37 +418,24 @@ def test_save_workspace_stores_declared_outputs_once_apart_from_the_rest(tmp_pat
     assert _no_link_folders_left(tmp_path)
 
 
-def test_save_workspace_keeps_everything_in_the_workspace_when_nothing_selected_was_produced(tmp_path):
-    run_dir = _run_dir_with_model(tmp_path)
+def test_save_workspace_keeps_everything_in_the_workspace_when_nothing_was_produced(tmp_path):
+    run_dir = tmp_path / "run"
+    (run_dir / "app_server" / "config").mkdir(parents=True)
+    (run_dir / "app_server" / "config" / "config_fed_server.json").write_text("{}")
+    (run_dir / "log.txt").write_text("log")
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
     runner.log_info = MagicMock()
-    _job_with_outputs(job_manager, ["plots/"])
+    _deployed_job(job_manager, {"config/config_fed_server.json": "{}"})
     archived = _capture_archives(job_manager)
 
     runner._save_workspace(fl_ctx)
 
     job_manager.save_job_outputs.assert_not_called()
-    assert archived == {"workspace": ["app_server/FL_global_model.pt", "log.txt"]}
-
-
-def _deployed_job(job_manager, app_files, deploy_to=("server",), outputs=None):
-    """A stored job whose server app holds ``app_files``: path in the app -> content as deployed."""
-    import io
-    import zipfile
-
-    data = io.BytesIO()
-    with zipfile.ZipFile(data, "w") as z:
-        for name, content in dict(app_files).items():
-            z.writestr(name, content)
-    job = MagicMock(meta={"job_outputs": outputs} if outputs is not None else {})
-    job.get_deployment.return_value = {"app": list(deploy_to)}
-    job.get_application.return_value = data.getvalue()
-    job_manager.get_job.return_value = job
-    return job
+    assert archived == {"workspace": ["app_server/config/config_fed_server.json", "log.txt"]}
 
 
 @pytest.mark.parametrize("deploy_to", [("server",), ("@ALL",)])
-def test_without_job_outputs_every_file_the_job_produced_is_stored_apart(tmp_path, deploy_to):
+def test_every_file_the_job_produced_is_stored_apart(tmp_path, deploy_to):
     run_dir = _run_dir_with_model(tmp_path)
     for name, content in {
         "app_server/config/config_fed_server.json": "{}",
@@ -474,7 +476,7 @@ def test_a_retry_that_cannot_read_the_job_clears_an_earlier_outputs_record(tmp_p
     run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
     runner.log_info = MagicMock()
-    _deployed_job(job_manager, {})
+    _deployed_job(job_manager)
     archived = _capture_archives(job_manager)
     job_manager.save_workspace.side_effect = [OSError("store unavailable"), "/store/job-1/workspace"]
 
@@ -497,20 +499,8 @@ def test_a_retry_that_cannot_read_the_job_clears_an_earlier_outputs_record(tmp_p
 def test_an_unreadable_server_app_keeps_the_workspace_whole(tmp_path):
     run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
-    job = _deployed_job(job_manager, {})
+    job = _deployed_job(job_manager)
     job.get_application.side_effect = RuntimeError("store unavailable")  # its own files could pass as outputs
-    archived = _capture_archives(job_manager)
-
-    runner._save_workspace(fl_ctx)
-
-    job_manager.save_job_outputs.assert_not_called()
-    assert archived == {"workspace": ["app_server/FL_global_model.pt", "log.txt"]}
-
-
-def test_invalid_job_outputs_keep_the_workspace_whole(tmp_path):
-    run_dir = _run_dir_with_model(tmp_path)
-    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
-    _job_with_outputs(job_manager, ["../outside"])  # a job submitted before the check
     archived = _capture_archives(job_manager)
 
     runner._save_workspace(fl_ctx)
@@ -523,7 +513,7 @@ def test_invalid_job_outputs_keep_the_workspace_whole(tmp_path):
 def test_save_workspace_keeps_outputs_in_the_workspace_when_they_are_not_stored(tmp_path, failure):
     run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
-    _job_with_outputs(job_manager, ["app_server/FL_global_model.pt"])
+    _deployed_job(job_manager)
     archived = _capture_archives(job_manager)
     if failure == "raises":
         job_manager.save_job_outputs.side_effect = OSError("disk full")
@@ -542,7 +532,7 @@ def test_a_retry_after_a_failed_workspace_save_stores_the_same_outputs_again(tmp
     run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
     runner.log_exception = MagicMock()
-    _job_with_outputs(job_manager, ["app_server/FL_global_model.pt", "log.txt"])
+    _deployed_job(job_manager)
     stored_outputs = []
     job_manager.save_job_outputs.side_effect = (
         lambda job_id, folders, ctx: stored_outputs.append([f for folder in folders for f in _files(folder)])
@@ -556,13 +546,13 @@ def test_a_retry_after_a_failed_workspace_save_stores_the_same_outputs_again(tmp
     assert _no_link_folders_left(tmp_path)
     runner._save_workspace(fl_ctx)
 
-    assert stored_outputs == [["app_server/FL_global_model.pt", "log.txt"]] * 2  # never just the log
+    assert stored_outputs == [["app_server/FL_global_model.pt"]] * 2
 
 
 def test_save_workspace_records_that_the_outputs_are_stored_apart(tmp_path):
     run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
-    _job_with_outputs(job_manager, ["app_server/FL_global_model.pt"])
+    _deployed_job(job_manager)
     _capture_archives(job_manager)
 
     runner._save_workspace(fl_ctx)
@@ -574,9 +564,7 @@ def test_a_fallback_after_an_earlier_split_clears_the_record(tmp_path, monkeypat
     run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
     runner.log_info = MagicMock()
-    job_manager.get_job.return_value = MagicMock(
-        meta={"job_outputs": ["app_server/FL_global_model.pt"], "job_outputs_stored": True}
-    )
+    _deployed_job(job_manager, meta={"job_outputs_stored": True})
     archived = _capture_archives(job_manager)
 
     def cross_device(*args, **kwargs):
@@ -606,7 +594,7 @@ def test_a_fallback_clears_the_record_even_when_the_job_cannot_be_read(tmp_path)
 def test_a_record_that_may_have_been_set_before_failing_is_cleared(tmp_path):
     run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
-    _job_with_outputs(job_manager, ["app_server/FL_global_model.pt"])  # the meta read before the attempt: not set
+    _deployed_job(job_manager)  # the meta read before the attempt: not set
     archived = _capture_archives(job_manager)
     # the store saved the record, then raised (e.g. a timeout after the write)
     job_manager.update_meta.side_effect = [RuntimeError("timed out"), None]
@@ -622,9 +610,7 @@ def test_a_failed_record_clear_fails_the_archival_so_it_is_retried(tmp_path, mon
     run_dir = _run_dir_with_model(tmp_path)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
     runner.log_info = MagicMock()
-    job_manager.get_job.return_value = MagicMock(
-        meta={"job_outputs": ["app_server/FL_global_model.pt"], "job_outputs_stored": True}
-    )
+    _deployed_job(job_manager, meta={"job_outputs_stored": True})
     job_manager.update_meta.side_effect = RuntimeError("meta store unavailable")
     monkeypatch.setattr(os, "link", MagicMock(side_effect=OSError(18, "Invalid cross-device link")))
 

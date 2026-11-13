@@ -2203,12 +2203,8 @@ def _download(engine, tmp_path, cmd_props=None):
 _WORKSPACE = {"app_server/FL_global_model.pt": b"model", "metrics/metrics_summary.json": b"{}", "log.txt": b"log"}
 
 
-def _finished_job(
-    status=RunStatus.FINISHED_COMPLETED.value, outputs=("app_server/FL_global_model.pt", "plots/"), stored=False
-):
+def _finished_job(status=RunStatus.FINISHED_COMPLETED.value, stored=False):
     meta = {JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: status}
-    if outputs is not None:
-        meta[JobMetaKey.JOB_OUTPUTS.value] = list(outputs)
     if stored:
         meta[JobMetaKey.JOB_OUTPUTS_STORED.value] = True  # recorded at job end
     return _FakeListedJob(meta)
@@ -2236,7 +2232,6 @@ def test_download_job_outputs_only_serves_the_stored_outputs_archive_like_a_full
     "job, reason",
     [
         (_finished_job(status=RunStatus.FINISHED_EXECUTION_EXCEPTION.value), "did not complete successfully"),
-        (_finished_job(outputs=None), "not stored apart"),
         (_finished_job(), "the job's outputs were not stored apart"),  # none produced, or an older job
     ],
 )
@@ -2390,34 +2385,6 @@ def test_submit_job_drops_a_submitted_outputs_stored_record(monkeypatch):
 
     assert conn.errors == []
     assert JobMetaKey.JOB_OUTPUTS_STORED.value not in engine.job_def_manager.created_meta
-
-
-def test_clone_job_keeps_job_outputs(monkeypatch):
-    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
-    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
-    source_job = _FakeListedJob(
-        {
-            JobMetaKey.JOB_ID.value: "source-job",
-            JobMetaKey.JOB_NAME.value: "source",
-            JobMetaKey.JOB_OUTPUTS.value: ["metrics/"],
-        }
-    )
-    engine = _FakeEngine()
-    conn = _MockConnection(
-        app_ctx=engine,
-        props={
-            JobCommandModule.JOB: source_job,
-            JobCommandModule.JOB_ID: "source-job",
-            ConnProps.USER_NAME: "submitter",
-            ConnProps.USER_ORG: "org",
-            ConnProps.USER_ROLE: "role",
-        },
-    )
-
-    JobCommandModule().clone_job(conn, ["clone_job", "source-job"])
-
-    assert conn.errors == []
-    assert engine.job_def_manager.cloned_meta[JobMetaKey.JOB_OUTPUTS.value] == ["metrics/"]
 
 
 def test_get_job_log_returns_server_log(monkeypatch, tmp_path):
