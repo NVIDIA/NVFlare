@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Run asynchronous CIFAR-10 training with ``CollabRecipe``.
+"""Run asynchronous CIFAR-10 training with ``FedBuffRecipe``.
 
 From the ``examples/advanced/collab/pt_async_cifar10`` directory:
 
@@ -23,10 +23,11 @@ From the ``examples/advanced/collab/pt_async_cifar10`` directory:
 import argparse
 from pathlib import Path
 
-from async_aggregator import Cifar10AsyncAggregator
+from async_aggregator import Cifar10ModelLoader, Cifar10Observer
+from model import PTModelOps
 from trainer import Cifar10Trainer
 
-from nvflare.collab import CollabRecipe
+from nvflare.collab import FedBuffRecipe
 from nvflare.recipe import SimEnv
 
 JOB_NAME = "collab_pt_async_cifar10"
@@ -53,22 +54,22 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--alpha", type=float, default=0.5, help="Dirichlet data heterogeneity parameter")
     parser.add_argument("--split-seed", type=int, default=0, help="CIFAR-10 partition seed")
     parser.add_argument(
-        "--num-active-jobs",
+        "--concurrency",
         type=int,
         default=None,
-        help="K: client-job slots kept active (default: all physical clients)",
+        help="Maximum concurrent client assignments (default: all physical clients)",
     )
     parser.add_argument(
         "--buffer-size",
         type=int,
         default=4,
-        help="B: returned updates aggregated into each new global model (default: 4)",
+        help="Returned updates aggregated into each new global model (default: 4)",
     )
     parser.add_argument(
         "--min-open-slots",
         type=int,
         default=1,
-        help="O: open slots accumulated before dispatch; O=1 is FedBuff (default: 1)",
+        help="Free client slots before dispatch; one refills immediately (default: 1)",
     )
     parser.add_argument("--num-rounds", type=int, default=100, help="Number of global aggregations (default: 100)")
     parser.add_argument("--local-batch-size", type=int, default=64)
@@ -86,13 +87,13 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--call-timeout", type=float, default=3600.0)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--setup-seed", type=int, default=10)
-    parser.add_argument("--run-seed", type=int, default=10)
+    parser.add_argument("--run-seed", type=int, default=10, help="Server-side RNG seed after model setup")
     parser.add_argument("--checkpoint-interval", type=int, default=0)
     parser.add_argument("--workspace-root", default="/tmp/nvflare/collab")
     return parser
 
 
-def make_recipe(args) -> CollabRecipe:
+def make_recipe(args) -> FedBuffRecipe:
     if args.num_clients < 1:
         raise ValueError("--num-clients must be >= 1")
     if args.alpha <= 0:
@@ -103,28 +104,23 @@ def make_recipe(args) -> CollabRecipe:
         raise ValueError("--total-client-rounds must be >= 1 and --num-workers must be >= 0")
     if args.local_lr <= 0 or args.server_lr <= 0 or args.call_timeout <= 0:
         raise ValueError("--local-lr, --server-lr, and --call-timeout must be > 0")
-    num_active_jobs = args.num_clients if args.num_active_jobs is None else args.num_active_jobs
-    if not 1 <= num_active_jobs <= args.num_clients:
-        raise ValueError("--num-active-jobs must be between 1 and --num-clients")
+    concurrency = args.num_clients if args.concurrency is None else args.concurrency
+    if not 1 <= concurrency <= args.num_clients:
+        raise ValueError("--concurrency must be between 1 and --num-clients")
     if args.buffer_size < 1:
         raise ValueError("--buffer-size must be >= 1")
-    if not 1 <= args.min_open_slots <= num_active_jobs:
-        raise ValueError("--min-open-slots must be between 1 and --num-active-jobs")
+    if not 1 <= args.min_open_slots <= concurrency:
+        raise ValueError("--min-open-slots must be between 1 and --concurrency")
 
     device = None if args.device == "auto" else args.device
 
-    server = Cifar10AsyncAggregator(
+    observer = Cifar10Observer(
         data_root=args.data_root,
         num_rounds=args.num_rounds,
-        num_active_jobs=num_active_jobs,
         buffer_size=args.buffer_size,
-        min_open_slots=args.min_open_slots,
-        call_timeout=args.call_timeout,
         device=device,
         eval_batch_size=args.eval_batch_size,
-        server_lr=args.server_lr,
         setup_seed=args.setup_seed,
-        run_seed=args.run_seed,
         checkpoint_interval=args.checkpoint_interval,
     )
     client = Cifar10Trainer(
@@ -137,13 +133,22 @@ def make_recipe(args) -> CollabRecipe:
         total_client_rounds=args.total_client_rounds,
         num_workers=args.num_workers,
     )
-    recipe = CollabRecipe(
+    recipe = FedBuffRecipe(
         job_name=JOB_NAME,
-        server=server,
+        model_loader=Cifar10ModelLoader(setup_seed=args.setup_seed, run_seed=args.run_seed),
+        observer=observer,
+        model_ops=PTModelOps(),
+        num_updates=args.num_rounds,
+        concurrency=concurrency,
+        buffer_size=args.buffer_size,
+        min_open_slots=args.min_open_slots,
+        server_lr=args.server_lr,
+        weight_metric="num_steps",
+        call_timeout=args.call_timeout,
         client=client,
         min_clients=args.num_clients,
         sync_task_timeout=600,
-        max_call_threads_for_server=max(100, args.num_clients),
+        max_call_threads_for_server=max(8, args.num_clients),
         max_call_threads_for_client=max(100, args.num_clients),
     )
     recipe.set_client_prop("data_root", args.data_root)
@@ -159,9 +164,9 @@ def main():
         raise ValueError("--alpha must be > 0")
     args.train_idx_root = prepare_splits(args.num_clients, args.alpha, args.split_seed)
     recipe = make_recipe(args)
-    num_active_jobs = args.num_clients if args.num_active_jobs is None else args.num_active_jobs
+    concurrency = args.num_clients if args.concurrency is None else args.concurrency
 
-    if args.min_open_slots == args.buffer_size == num_active_jobs:
+    if args.min_open_slots == args.buffer_size == concurrency:
         schedule = "synchronous FedAvg-style"
     elif args.min_open_slots == 1:
         schedule = "FedBuff asynchronous"
@@ -173,9 +178,9 @@ def main():
     print("=" * 80)
     print("CIFAR-10 COLLAB FEDBUFF")
     print(f"  Physical simulator clients: {args.num_clients}")
-    print(f"  Active jobs (K): {num_active_jobs}")
-    print(f"  Update buffer (B): {args.buffer_size}")
-    print(f"  Dispatch threshold (O): {args.min_open_slots}")
+    print(f"  Active clients: {concurrency}")
+    print(f"  Buffer size: {args.buffer_size}")
+    print(f"  Minimum open slots: {args.min_open_slots}")
     print(f"  Schedule: {schedule}")
     print(f"  Global aggregations: {args.num_rounds}")
     print(f"  Data root: {args.data_root}")

@@ -318,6 +318,41 @@ Client API / Job Recipe API path:
   site's Cell configured with certificates; without that, the call raises
   rather than falling back to a non-secure transport.
 
+FedBuff Training
+----------------
+
+Use ``FedBuffRecipe`` for reusable buffered training in actual client arrival
+order. Supply a client, model loader and model operations, with an optional
+observer for evaluation and artifacts; the recipe owns
+assignment tracking, client dispatch and buffered weighted aggregation. Replies
+enter one shared server queue directly from Collab callbacks; the workflow
+consumes that queue to fill the aggregation buffer.
+
+Three independent settings control scheduling:
+
+* **Active clients** (``concurrency``): the maximum number of outstanding
+  client training assignments. Each client has at most one.
+* **Buffer size** (``buffer_size``): accepted client updates combined before
+  publishing the next global model.
+* **Minimum open slots** (``min_open_slots``): free assignment slots required
+  before the server dispatches replacement work.
+
+For example, ``concurrency=8``, ``buffer_size=4`` and ``min_open_slots=1``
+keep up to eight assignments outstanding. Each accepted result frees a slot,
+which is immediately refilled using the latest published model. Every four
+accepted updates produce a new global model, while other clients can continue
+training on earlier versions. Raising ``min_open_slots`` waits for more free
+slots before refilling. Setting all three counts equal gives a synchronous
+boundary: collect all client results, publish, then dispatch the next batch.
+
+The FedBuff guide explains the relationship to the paper's terminology and
+the configurable refill extension.
+
+.. toctree::
+   :maxdepth: 1
+
+   fedbuff_recipe
+
 Examples
 --------
 
