@@ -306,6 +306,8 @@ class TestProducedFiles:
             "tb_events/site-1/events.out.tfevents.1",
             "app_server/custom/new_report.json",  # created by the job, not deployed with it
             "results/catalog.txt",
+            "training_log.txt",  # named like a log, but not one the server writes
+            "metrics/val_log.json",
         ],
     )
     def test_files_the_job_wrote_are_produced(self, path):

@@ -513,8 +513,9 @@ class Session(SessionSpec):
                 If not specified, result is left in the download_dir from the admin config.
             outputs_only (bool): download only the job's outputs, at the same paths under ``workspace/`` as a full
                 download: the files the job produced on the server (models, metrics, evaluation results). Left
-                out: the submitted job, its config and code, and the logs; use the full download when you need the logs. The server returns the whole job
-                when the job did not complete or produced no output files; a notice saying why is logged.
+                out: the submitted job, its config and code, and the logs; use the full download when you need the
+                logs. The server returns the whole job when the job did not complete or produced no output files; a
+                notice saying why is logged.
                 A notice is also logged for any download that lacks the job's stored outputs.
 
         Returns: folder path to the location of the job result
@@ -526,8 +527,8 @@ class Session(SessionSpec):
         return location
 
     def _download_job_result(self, job_id: str, destination: str = None, outputs_only: bool = False):
-        """Download the job's result; returns its location and, for an outputs-only request that returned the
-        whole job, a notice saying why (else None)."""
+        """Download the job's result; returns its location and a notice when the download is not what was asked
+        for (an outputs-only request that returned the whole job, or stored outputs missing from it), else None."""
         import shutil
 
         self._validate_job_id(job_id)

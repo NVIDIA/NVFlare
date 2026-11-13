@@ -263,8 +263,8 @@ class FileTransferModule(CommandModule):
                     files_to_unzip.append(file_to_unzip)
 
         if not error:
-            # unzip downloaded zip files; a file the server maps into another file's folder is unzipped first, so where
-            # both hold the same path (the server's logs), the archive named after the folder wins
+            # unzip downloaded zip files; a file the server maps into another file's folder (the outputs archive) is
+            # unzipped first, then the archive named after that folder
             unzip_into = self._unzip_targets(meta.get(MetaKey.UNZIP_INTO))
             files_to_unzip.sort(key=lambda f: os.path.basename(f) not in unzip_into)
             for f in files_to_unzip:

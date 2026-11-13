@@ -20,8 +20,9 @@ Python's ``__pycache__`` folders.
 
 When a job ends, the server stores its run folder as the workspace archive and deletes the folder. It first builds two
 folders of hard links next to each workspace folder: one naming the output files, one naming everything else. It
-stores the first as the outputs archive and the second as the workspace archive, so every file is stored once. The run folder itself is never changed until both are stored, so a
-retry or a crash loses nothing: the link folders are only extra names for the same files.
+stores the first as the outputs archive and the second as the workspace archive, so every file is stored once. The
+run folder itself is never changed until both are stored, so a retry or a crash loses nothing: the link folders are
+only extra names for the same files.
 
 An outputs-only download sends the outputs archive the way a full download sends the workspace archive, and a full
 download sends both, unzipped into the same ``workspace/`` folder.
@@ -37,10 +38,10 @@ from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 
-# Files the server writes for itself, not the job's result. A log file may carry a "<prefix>_" (task workers) and a
-# ".<n>" rotation suffix; "log_fl.txt" is the default config's federated-learning log. Logs stay in the workspace
-# archive, where the server's log commands read them.
-_SYSTEM_LOG_RE = re.compile(r"^(?:.+_)?(?:log\.txt|error_log\.txt|log\.json|log_fl\.txt)(?:\.\d+)?$")
+# Files the server writes for itself, not the job's result. A log file may carry a task worker's "task_<attempt>_"
+# prefix (log_utils.configure_logging's file_prefix) and a ".<n>" rotation suffix; "log_fl.txt" is the default
+# config's federated-learning log. Logs stay in the workspace archive, where the server's log commands read them.
+_SYSTEM_LOG_RE = re.compile(r"^(?:task_[^/]+_)?(?:log\.txt|error_log\.txt|log\.json|log_fl\.txt)(?:\.\d+)?$")
 _SYSTEM_FILE_RE = re.compile(
     r"^(?:.+\.)?(?:"
     + "|".join(

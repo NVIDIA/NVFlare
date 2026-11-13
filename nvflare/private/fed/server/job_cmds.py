@@ -115,6 +115,7 @@ CLONED_META_KEYS = {
     JobMetaKey.RESOURCE_SPEC.value,
     JobMetaKey.CJ_RESOURCE_SPEC.value,
     JobMetaKey.CONTENT_LOCATION.value,
+    JobMetaKey.RESULT_LOCATION.value,
     JobMetaKey.APPROVALS.value,
     JobMetaKey.MIN_CLIENTS.value,
     JobMetaKey.MANDATORY_CLIENTS.value,
@@ -1870,8 +1871,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         """Prepare an outputs-only download: meta.json and the job's outputs archive as workspace.zip.
 
         The outputs archive was stored when the job ended, so it is prepared like the workspace archive in a full
-        download, with no work before the reply. The whole job is prepared instead when the job did not complete, did not
-        store its outputs apart, or its outputs archive cannot be read.
+        download, with no work before the reply. The whole job is prepared instead when the job did not complete,
+        did not store its outputs apart, or its outputs archive cannot be read.
 
         Returns:
             (None, None) for an outputs-only download; otherwise why the whole job was prepared, and why its stored

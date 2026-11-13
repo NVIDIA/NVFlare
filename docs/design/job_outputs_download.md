@@ -151,7 +151,7 @@ unless it is:
   job) whose size and CRC-32 still match the deployed copy, or `meta.json` and
   `fl_app.txt`, which deployment writes beside it;
 - **a server log**: `log.txt`, `error_log.txt`, `log.json` or `log_fl.txt`,
-  including a task worker's `<prefix>_` copy and rotated `.<n>` copies;
+  including a task worker's `task_<attempt>_` copy and rotated `.<n>` copies;
 - **a system file**: the stats-pool summary and records (with any prefix),
   `audit.log`, the job signature file, or anything in a `__pycache__` or
   `job_cert` folder; or
