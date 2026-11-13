@@ -1,0 +1,40 @@
+{
+  "alfworld": {
+    "domains": ["bathroom", "bedroom", "kitchen", "living"],
+    "eval_splits": ["valid_seen", "valid_unseen"],
+    "game_root": "data/alfworld/alfworld_official_042/json_2.1.1",
+    "subset_dir": "data/alfworld/collab_subsets/v3_s",
+    "files": {
+      "bathroom__train.json": [100, "84db5eb2501a4d2c5c83fce635d6a603be0c377c188b7d2689a894d2c902b5cc"],
+      "bathroom__valid_seen.json": [20, "87f491cc5e2ce5c39199d87b4243612aa558c9e69339e5ac8be99a6b8a6ec20a"],
+      "bathroom__valid_unseen.json": [19, "5ea19ed951cc03ae88a9237e75dddd9f928de7a5a29755d617fc7eeb99e657fb"],
+      "bedroom__train.json": [100, "9819ac22f297d2db7f458e930859d0bf4aa91f1e571d50860781517a69814aad"],
+      "bedroom__valid_seen.json": [20, "d1906e98824018e32670dd5f7f0bcb1d6c6db7a186f55d864c66e6d2102a8882"],
+      "bedroom__valid_unseen.json": [20, "110d0b7495b695d6fb6e10b9b4a8e8e7c25edb8086251998dbfda28c051d4773"],
+      "kitchen__train.json": [100, "8a439b6fade1e210c1f062188d74a695dded3b7e8b2a1baffaed93722f06e4f5"],
+      "kitchen__valid_seen.json": [20, "7558233b8316f86b59ec75f67e77bce71f1cd90bed0307fa968a75859173c816"],
+      "kitchen__valid_unseen.json": [20, "fdaf45560cf6534ded90af2dfefc82db9f46c14e1dd02eb5e324b61eccb52cb8"],
+      "living__train.json": [100, "08b027f26d303b59809870bc56719cb5639ee11671455897b12443044f9ca081"],
+      "living__valid_seen.json": [17, "cdd3512d69e4727a2cf1a0817f8b269a5d7361316f0cfcc4ffd1ac9c29540c7e"],
+      "living__valid_unseen.json": [11, "267d604607fcf8c36caf20616df395904127ad0096da986785161c10aca91b2e"]
+    }
+  },
+  "fever": {
+    "domains": ["A_film_tv", "B_music"],
+    "files": {
+      "data/fever/fever_ab_train_A_v3.jsonl": [100, "f1f4258fec08559166834532e79adbbbf65404ba48ab630f8a4c451595c629ff"],
+      "data/fever/fever_ab_train_B_v3.jsonl": [100, "11bb3bc2c653ce492e803d40bb7d29adb7357f6eceb23d52e339530e137c13db"],
+      "data/fever/fever_ab_test_v3.jsonl": [60, "ed1f1b84a489917a9749676d68d311c4b8314abdce21adc09de99838425ea88a"]
+    }
+  },
+  "pddl": {
+    "domains": ["gripper", "blockworld", "barman", "tyreworld"],
+    "files": {
+      "data/pddl/pddl_domain_gripper.jsonl": [20, "6cf26e09ddb87df218c2cfe958b1dfa032af69fabfc1453f1e3293cce8d5831a"],
+      "data/pddl/pddl_domain_blockworld.jsonl": [10, "ea97754818f600590db300c24c7e5d35d211a107c733ec2a0d3bacafd3d32e29"],
+      "data/pddl/pddl_domain_barman.jsonl": [20, "598544205ad2c955736c89d155916cb1cb3623058d182d2dea1051517dd6a198"],
+      "data/pddl/pddl_domain_tyreworld.jsonl": [10, "b3f22eb67a8fa0ff108654f505a7fea12f2efe6abfd84f0a13451cd18434f712"],
+      "data/pddl/test.jsonl": [60, "555295d7e207b89ffad10f9c7340337a6a208c5cbd34e6d0707e719f3d0bc23e"]
+    }
+  }
+}

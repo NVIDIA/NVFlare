@@ -1,0 +1,179 @@
+{
+  "artifact_sha256": {
+    "server/simulate_job/artifacts/pddl/server/global_memory.json": "e7b1565f45d4374989f229c529298fe8993bf5f75c71be085004b2c6a49562bc",
+    "server/simulate_job/artifacts/pddl/server/metrics_by_client.json": "a2665f25dc01ff72b96edcbfed90ac69bac9c6b804b04920059a9025f9d0acb6",
+    "site-1/simulate_job/artifacts/pddl/gripper/evaluate_metrics.json": "f029a68cf6e10c43a41ba160380c7e176dd413f9a62aa54faa42343051206a61",
+    "site-1/simulate_job/artifacts/pddl/gripper/local_memory.json": "a899b7724e3c88d590378d2845b1fb7f868e445f7ba4a9defab4d75065c034d5",
+    "site-1/simulate_job/artifacts/pddl/gripper/shared_global/memco/global_memory.json": "e7b1565f45d4374989f229c529298fe8993bf5f75c71be085004b2c6a49562bc",
+    "site-1/simulate_job/artifacts/pddl/gripper/shared_global/memco/promotion_wilson.json": "087c1b1da9972629894285b88cdc5d2ab42213950c3ce339623a9eae6039ea77",
+    "site-1/simulate_job/artifacts/pddl/gripper/train_metrics.json": "be3330b993a4414e4485a88e6758cb33e12281b3430a60104cb8254f3ed8f6c7",
+    "site-2/simulate_job/artifacts/pddl/blockworld/evaluate_metrics.json": "ad349d2701863543b614eb867377e8c611d091d28e3ae2e6e4b960cd321dc7e8",
+    "site-2/simulate_job/artifacts/pddl/blockworld/local_memory.json": "af58c1f82c0beeb20322884281fe524e6e179c0b1b98dedf587c03111c10ebfb",
+    "site-2/simulate_job/artifacts/pddl/blockworld/shared_global/memco/global_memory.json": "e7b1565f45d4374989f229c529298fe8993bf5f75c71be085004b2c6a49562bc",
+    "site-2/simulate_job/artifacts/pddl/blockworld/shared_global/memco/promotion_wilson.json": "9d133c198b6c40bbf4926155d8fd9e9e0f0cc81c2ddc3e3c1915043e65445390",
+    "site-2/simulate_job/artifacts/pddl/blockworld/train_metrics.json": "1928571f3396a0d4125bb29d0203be11479e5a22aa8f7ba09c5805d1f90e8cce"
+  },
+  "clients": {
+    "site-1": {
+      "local_memory_counts": {
+        "artifacts": 56,
+        "candidates": 5,
+        "episode_ids": 2,
+        "rules": 26
+      },
+      "local_memory_unchanged_after_evaluation": true,
+      "received_final_global_matches_server": true,
+      "training": {
+        "accuracy": 0.0,
+        "avg_reward": 0.20833333333333331,
+        "num_completed": 2,
+        "num_success": 0,
+        "num_tasks": 2,
+        "per_task": [
+          {
+            "done": false,
+            "game_name": "gripper",
+            "problem_index": 0,
+            "reward": 0.25
+          },
+          {
+            "done": false,
+            "game_name": "gripper",
+            "problem_index": 1,
+            "reward": 0.16666666666666666
+          }
+        ]
+      },
+      "training_domain": "gripper"
+    },
+    "site-2": {
+      "local_memory_counts": {
+        "artifacts": 64,
+        "candidates": 4,
+        "episode_ids": 2,
+        "rules": 36
+      },
+      "local_memory_unchanged_after_evaluation": true,
+      "received_final_global_matches_server": true,
+      "training": {
+        "accuracy": 0.0,
+        "avg_reward": 0.08333333333333333,
+        "num_completed": 2,
+        "num_success": 0,
+        "num_tasks": 2,
+        "per_task": [
+          {
+            "done": false,
+            "game_name": "blockworld",
+            "problem_index": 0,
+            "reward": 0.0
+          },
+          {
+            "done": false,
+            "game_name": "blockworld",
+            "problem_index": 1,
+            "reward": 0.16666666666666666
+          }
+        ]
+      },
+      "training_domain": "blockworld"
+    }
+  },
+  "command": "PYTHONPATH=. python research/memco/job.py --config research/memco/configs/pddl-smoke.json --data-root /path/to/data-root --workspace /tmp/memco-validation-live-final",
+  "configuration": "configs/pddl-smoke.json",
+  "dataset_sha256": {
+    "data/pddl/pddl_domain_barman.jsonl": "598544205ad2c955736c89d155916cb1cb3623058d182d2dea1051517dd6a198",
+    "data/pddl/pddl_domain_blockworld.jsonl": "ea97754818f600590db300c24c7e5d35d211a107c733ec2a0d3bacafd3d32e29",
+    "data/pddl/pddl_domain_gripper.jsonl": "6cf26e09ddb87df218c2cfe958b1dfa032af69fabfc1453f1e3293cce8d5831a",
+    "data/pddl/pddl_domain_tyreworld.jsonl": "b3f22eb67a8fa0ff108654f505a7fea12f2efe6abfd84f0a13451cd18434f712",
+    "data/pddl/test.jsonl": "555295d7e207b89ffad10f9c7340337a6a208c5cbd34e6d0707e719f3d0bc23e"
+  },
+  "date": "2026-11-06",
+  "dependencies": {
+    "grpcio": "1.74.0",
+    "gym": "0.26.2",
+    "langchain": "0.3.27",
+    "nltk": "3.8.1",
+    "numpy": "2.3.4",
+    "openai": "1.99.5",
+    "sentence-transformers": "5.2.2",
+    "torch": "2.8.0"
+  },
+  "duration_seconds": 204.9,
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "environment": {
+    "HF_HUB_OFFLINE": "1",
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "PYTHONHASHSEED": "41",
+    "TOKENIZERS_PARALLELISM": "false"
+  },
+  "evaluation": {
+    "average": {
+      "accuracy": 0.0,
+      "avg_reward": 0.125,
+      "num_clients": 2,
+      "num_completed": 2,
+      "num_success": 0,
+      "num_tasks": 2
+    },
+    "site-1": {
+      "accuracy": 0.0,
+      "avg_reward": 0.25,
+      "num_completed": 1,
+      "num_success": 0,
+      "num_tasks": 1,
+      "per_task": [
+        {
+          "done": false,
+          "game_name": "gripper",
+          "problem_index": 0,
+          "reward": 0.25
+        }
+      ]
+    },
+    "site-2": {
+      "accuracy": 0.0,
+      "avg_reward": 0.0,
+      "num_completed": 1,
+      "num_success": 0,
+      "num_tasks": 1,
+      "per_task": [
+        {
+          "done": false,
+          "game_name": "gripper",
+          "problem_index": 0,
+          "reward": 0.0
+        }
+      ]
+    }
+  },
+  "global_memory": {
+    "artifact_count": 23,
+    "candidate_count": 2,
+    "rule_count": 10
+  },
+  "limitations": [
+    "Small live integration run; no full benchmark campaign.",
+    "Both clients evaluate the same first PDDL evaluation task (gripper problem 0).",
+    "No task was solved in the evaluation; partial rewards are not task successes.",
+    "FEVER, ALFWorld, and distributed production deployment were not exercised."
+  ],
+  "max_completion_tokens": 512,
+  "model": "gpt-4o-mini",
+  "model_temperature": 0.1,
+  "nvflare_core_commit": "c224d87d85a99c81aec97c663be470ad1bd8563d",
+  "nvflare_version": "0+untagged.2.g0be515a",
+  "platform": "macOS 15.7.7, arm64, CPU",
+  "project_commit": "0be515ac0ecb7b8b35cbeef49e2c7ef039c77e52",
+  "python": "3.11.4",
+  "resolved_model": "gpt-4o-mini-2024-07-18",
+  "simulator_exit_code": 0,
+  "status": "Completed",
+  "style_checks": {
+    "black": "25.9.0",
+    "flake8": "7.1.1",
+    "isort": "5.13.2"
+  },
+  "unit_tests_passed": 33
+}

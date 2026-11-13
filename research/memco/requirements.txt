@@ -1,0 +1,18 @@
+# Runtime validated with Python 3.11.4 in the `nvdamas` Conda environment.
+# Install NVFlare 2.9.0 or later from the current repository before these dependencies.
+alfworld==0.4.2
+attrs==25.4.0
+beautifulsoup4==4.12.2
+gym==0.26.2
+langchain==0.3.27
+lxml==4.9.2
+msgpack==1.0.3
+networkx==3.3
+nltk==3.8.1
+numpy>=2.0,<3
+openai==1.99.5
+python-dotenv==1.1.1
+PyYAML==6.0
+requests==2.31.0
+sentence-transformers==5.2.2
+wikipedia==1.4.0
