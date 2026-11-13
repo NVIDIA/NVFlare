@@ -4,13 +4,14 @@ This directory contains examples demonstrating multi-GPU federated learning with
 
 ## Overview
 
-Multi-GPU training allows clients to leverage multiple GPUs for faster local training in federated learning scenarios. Each example showcases framework-specific approaches to distributed training integrated with NVFlare.
+Multi-GPU training allows clients to use multiple GPUs for faster local training or greater model capacity in federated learning scenarios. Each example showcases framework-specific approaches to distributed training integrated with NVFlare.
 
 ## Examples
 
 | Framework | Strategy | Description | Directory |
 |-----------|----------|-------------|-----------|
 | **PyTorch** | DDP (DistributedDataParallel) | Manual DDP with NCCL backend | [`pt/`](pt/) |
+| **PyTorch** | FSDP2 (Fully Sharded Data Parallel) | Full-parameter Qwen2.5-1.5B training on WikiText-2 | [`fsdp2/`](fsdp2/) |
 | **PyTorch Lightning** | DDP Strategy | High-level DDP abstraction | [`lightning/`](lightning/) |
 
 ## What Each Example Demonstrates
@@ -20,6 +21,12 @@ Multi-GPU training allows clients to leverage multiple GPUs for faster local tra
 - Per-site configuration (different master ports for different sites)
 - Explicit rank coordination with NVFlare server
 - Uses `torch.distributed.run` for process spawning
+
+### PyTorch FSDP2 (`fsdp2/`)
+- Fine-tunes all Qwen2.5-1.5B parameters on disjoint WikiText-2 training shards
+- Shards parameters, gradients, and AdamW state across two GPUs per client
+- Uses rank-zero Client API with collective full-state loading and gathering
+- Runs two simulated clients on four GPUs; see its README for memory requirements
 
 ### PyTorch Lightning (`lightning/`)
 - High-level Lightning DDP integration with NVFlare
@@ -32,17 +39,18 @@ Multi-GPU training allows clients to leverage multiple GPUs for faster local tra
 ### Prerequisites
 
 **Hardware:**
-- 2+ CUDA-capable GPUs
+- CUDA-capable GPUs; see each example for its required GPU count
 - NCCL support (for PyTorch examples)
 
 **Software:**
-- Python 3.8+
+- Python version supported by the selected example and its framework
 - CUDA toolkit
 - Framework-specific dependencies (see individual READMEs)
 
 ### Quick Start
 
-Each example follows the same pattern:
+The DDP examples follow this pattern. For FSDP2, follow the [FSDP2 quick start](fsdp2/README.md#quick-start),
+which uses `python prepare_data.py` to cache Qwen2.5-1.5B and prepare WikiText-2 before training:
 
 ```bash
 # Navigate to example directory
