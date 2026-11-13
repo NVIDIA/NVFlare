@@ -29,6 +29,7 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 from nvflare.app_common.job_launcher.server_process_launcher import ServerProcessJobLauncher
+from nvflare.app_opt.job_launcher.slurm.process_launcher import ClientProcessSlurmJobLauncher
 from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher
 from nvflare.app_opt.job_launcher.slurm.task_policy import PROCESS_CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
@@ -65,7 +66,7 @@ def profile(tmp_path, monkeypatch):
     context.set_prop(ReservedKey.RUN_NUM, "job-1")
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
     context.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace)
-    launcher = ClientProcessJobLauncher()
+    launcher = ClientProcessSlurmJobLauncher()
     monkeypatch.setattr(launcher, "get_command", lambda *_: "/shared/python -m actual_cj")
     adapter = Mock()
     adapter.pid = 999999999
@@ -161,13 +162,17 @@ def test_unenforced_cj_budget_is_rejected_before_spawn(profile, budget):
     p.spawn.assert_not_called()
 
 
-@pytest.mark.parametrize("mutation", ["slurm-runtime", "mixed-launchers", "wrong-launcher"])
+@pytest.mark.parametrize("mutation", ["slurm-runtime", "mixed-launchers", "wrong-launcher", "generic-launcher"])
 def test_process_cj_requires_explicit_canonical_profile(profile, mutation):
     p = profile
     if mutation == "slurm-runtime":
         p.site["task_execution"]["launcher"]["args"].pop("cj_runtime")
     elif mutation == "mixed-launchers":
         p.site["components"].append({"path": "other.OtherJobLauncher"})
+    elif mutation == "generic-launcher":
+        p.site["components"][0][
+            "path"
+        ] = "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
     else:
         p.site["components"][0]["path"] = "other.OtherJobLauncher"
     (p.root / "local/resources.json").write_text(json.dumps(p.site))
@@ -181,9 +186,21 @@ def test_process_policy_and_system_shutdown(profile):
     policy = TaskExecutionPolicy.from_workspace(p.workspace)
     assert type(policy.launcher) is SlurmTaskLauncher
     policy.validate_job_launcher(p.launcher)
-    with pytest.raises(ValueError):
-        policy.validate_job_launcher(ServerProcessJobLauncher())
+    for unsupported in (ClientProcessJobLauncher(), ServerProcessJobLauncher()):
+        with pytest.raises(ValueError):
+            policy.validate_job_launcher(unsupported)
     p.launcher.launch_job(p.meta, p.context)
     p.adapter.poll.return_value = 0
     p.launcher.handle_event(EventType.SYSTEM_END, p.context)
     assert p.cell._slurm_task_service.shutdown(timeout=5) == ()
+
+
+@pytest.mark.parametrize("lifetime", [None, "job"])
+def test_process_slurm_launcher_rejects_resident_jobs_before_spawn(profile, lifetime):
+    p = profile
+    config = {} if lifetime is None else {"execution_lifetime": lifetime}
+    Path(p.workspace.get_client_app_config_file_path("job-1")).write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="supports only execution_lifetime"):
+        p.launcher.launch_job(p.meta, p.context)
+    p.spawn.assert_not_called()
+    assert not hasattr(p.cell, "_slurm_task_service")

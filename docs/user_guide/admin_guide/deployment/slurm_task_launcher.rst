@@ -100,8 +100,8 @@ Process CJ on a login or service host
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A trusted site can keep both CP and CJ on a login or service host while
-running task workers in Slurm. Configure the existing
-``nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher``
+running task workers in Slurm. Configure the opt-in
+``nvflare.app_opt.job_launcher.slurm.process_launcher.ClientProcessSlurmJobLauncher``
 as the site's only client job launcher and set the site's task launcher
 ``cj_runtime`` to ``process``::
 
@@ -109,7 +109,7 @@ as the site's only client job launcher and set the site's task launcher
       "components": [
         {
           "id": "job_launcher",
-          "path": "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
+          "path": "nvflare.app_opt.job_launcher.slurm.process_launcher.ClientProcessSlurmJobLauncher"
         }
       ],
       "task_execution": {

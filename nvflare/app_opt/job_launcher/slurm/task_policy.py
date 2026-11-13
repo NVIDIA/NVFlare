@@ -30,7 +30,7 @@ from nvflare.utils.job_launcher_utils import (
 TASK_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher"
 CJ_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher"
 DOCKER_CJ_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.docker_launcher.ClientDockerSlurmJobLauncher"
-PROCESS_CJ_LAUNCHER_PATH = "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
+PROCESS_CJ_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.process_launcher.ClientProcessSlurmJobLauncher"
 
 
 def component_args(config):
@@ -67,7 +67,7 @@ def validate_slurm_site(launcher, site_config):
             component_path(item) != PROCESS_CJ_LAUNCHER_PATH and str(component_path(item)).endswith("JobLauncher")
             for item in components
         ):
-            raise ValueError("process Slurm task profile requires exactly one ClientProcessJobLauncher")
+            raise ValueError("process Slurm task profile requires exactly one ClientProcessSlurmJobLauncher")
         return
     if launcher.cj_runtime == "docker":
         from nvflare.app_opt.job_launcher.slurm.docker_launcher import ClientDockerSlurmJobLauncher
