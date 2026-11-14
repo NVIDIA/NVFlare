@@ -113,7 +113,8 @@ A network database:
 ```
 
 The `uri` holds no credentials; the `username` and `password` secrets complete it when configured. The site delivers
-those environment variables to the job through its Study runtime `secret_env`. `connect_args` holds non-secret,
+those environment variables to the job through its Study runtime `secret_env`, or, for a process-launched site,
+through the site's environment. `connect_args` holds non-secret,
 driver-specific settings; the example is PostgreSQL's connect timeout. Use a database identity with only metadata
 visibility.
 
