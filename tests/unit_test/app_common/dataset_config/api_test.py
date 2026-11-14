@@ -153,6 +153,11 @@ class TestValidation:
         with pytest.raises(DatasetConfigError):
             parse(data)
 
+    def test_malformed_uri_is_a_config_error_that_does_not_echo_it(self):
+        with pytest.raises(DatasetConfigError, match="is not a valid URI") as error:
+            parse(with_dataset(type="sql", uri="postgresql://reader:s3cret@[::1/db"))
+        assert "s3cret" not in str(error.value)
+
     def test_username_without_password_is_allowed(self):
         config = parse(with_dataset(type="sql", uri="postgresql://reader@host/db"))
         assert config.get_dataset("d").path is None
