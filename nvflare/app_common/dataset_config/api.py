@@ -80,7 +80,11 @@ def _check_uri(uri, label: str, source: str) -> str | None:
     """Validate a dataset URI; return the decoded local path of a file URI, else None."""
     if not isinstance(uri, str) or not uri:
         raise _error(source, f"{label}.uri is required")
-    parts = urlsplit(uri)
+    try:
+        parts = urlsplit(uri)
+    except ValueError:
+        # e.g. an unclosed IPv6 host; the URI is not echoed, as it may hold credentials
+        raise _error(source, f"{label}.uri is not a valid URI") from None
     if not parts.scheme or not _SCHEME.match(parts.scheme):
         raise _error(source, f"{label}.uri must be an absolute URI with a scheme")
     if parts.password is not None:
