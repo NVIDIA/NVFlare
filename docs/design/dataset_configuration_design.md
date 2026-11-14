@@ -408,7 +408,7 @@ for name in config.list_datasets():
 
 ### 3.3 Implementation
 
-`DatasetConfigAPI` in `nvflare/app_common/dataset_config/api.py` implements the spec. It is built from a configuration dictionary, the content Section 2 describes, and does not depend on where that dictionary came from. Validation, defaults and the frozen objects work on the dictionary; `revision` is a hash of its content.
+`DatasetConfigAPI` in `nvflare/app_common/dataset_config/api.py` implements the spec. It is built from a configuration dictionary, the content Section 2 describes, and does not depend on where that dictionary came from. Validation, defaults and the frozen objects work on the dictionary; `revision` is a hash of what the job sees, its Study's part, so the site file and the Kubernetes copy of the same Study give the same revision.
 
 A loader produces the dictionary. In every deployment mode it reads `local/datasets.yaml` as the job sees it (Section 3.4); only it decodes the file format (YAML, with `yaml.safe_load`). Components depend on `StudyDatasetConfig`, so another source, such as a site service, can be added as a loader without changing them.
 

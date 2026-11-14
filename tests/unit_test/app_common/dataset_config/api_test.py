@@ -18,13 +18,12 @@ import pytest
 import yaml
 
 from nvflare.apis.dataset_config_spec import (
-    DATASET_CONFIG_ENV,
     DatasetConfigError,
     UnknownDatasetError,
     get_study_dataset_config,
 )
 from nvflare.apis.fl_constant import FLContextKey
-from nvflare.app_common.dataset_config.api import load_study_config, parse_study_config, write_withheld_dataset_config
+from nvflare.app_common.dataset_config.api import extract_study_config, load_study_config, parse_study_config
 
 CONFIG = {
     "format_version": 1,
@@ -164,11 +163,6 @@ class TestValidation:
 
 
 class TestLoading:
-    def test_the_withheld_configuration_offers_no_datasets(self, tmp_path):
-        path = write_withheld_dataset_config(str(tmp_path / "withheld.yaml"))
-        assert write_withheld_dataset_config(path) == path  # rewriting the read-only file is a no-op
-        assert load_study_config(path, "oncology", missing_ok=False).list_datasets() == []
-
     def test_missing_file(self, tmp_path):
         assert load_study_config(str(tmp_path / "none.yaml"), "oncology", missing_ok=True).list_datasets() == []
         with pytest.raises(DatasetConfigError):
@@ -204,34 +198,75 @@ class TestLoading:
             load_study_config(str(path), "oncology", missing_ok=False)
 
 
-def make_fl_ctx(workspace_root, study="oncology"):
+def make_fl_ctx(workspace_root, study="oncology", job_id="job-1"):
     fl_ctx = MagicMock()
     fl_ctx.get_prop.side_effect = lambda key, default=None: {"study": study} if key == FLContextKey.JOB_META else None
+    fl_ctx.get_job_id.return_value = job_id
     fl_ctx.get_engine.return_value.get_workspace.return_value.get_root_dir.return_value = str(workspace_root)
     return fl_ctx
 
 
+def write_site_file(workspace_root, data):
+    (workspace_root / "local").mkdir(parents=True, exist_ok=True)
+    path = workspace_root / "local" / "datasets.yaml"
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    return path
+
+
 class TestGetStudyDatasetConfig:
-    def test_reads_the_site_file(self, tmp_path, monkeypatch):
-        monkeypatch.delenv(DATASET_CONFIG_ENV, raising=False)
-        (tmp_path / "local").mkdir()
-        (tmp_path / "local" / "datasets.yaml").write_text(yaml.safe_dump(CONFIG, sort_keys=False))
+    def test_reads_local_datasets_yaml(self, tmp_path):
+        write_site_file(tmp_path, CONFIG)
         assert get_study_dataset_config(make_fl_ctx(tmp_path)).list_datasets() == ["omop", "ehr"]
 
-    def test_missing_site_file_is_empty(self, tmp_path, monkeypatch):
-        monkeypatch.delenv(DATASET_CONFIG_ENV, raising=False)
+    def test_missing_file_is_empty(self, tmp_path):
         assert get_study_dataset_config(make_fl_ctx(tmp_path)).list_datasets() == []
 
-    def test_delivered_file_is_used_and_must_exist(self, tmp_path, monkeypatch):
-        delivered = tmp_path / "study.yaml"
-        delivered.write_text(yaml.safe_dump(CONFIG, sort_keys=False))
-        monkeypatch.setenv(DATASET_CONFIG_ENV, str(delivered))
-        assert get_study_dataset_config(make_fl_ctx(tmp_path / "ws")).list_datasets() == ["omop", "ehr"]
-        monkeypatch.setenv(DATASET_CONFIG_ENV, str(tmp_path / "missing.yaml"))
-        with pytest.raises(DatasetConfigError):
-            get_study_dataset_config(make_fl_ctx(tmp_path / "ws"))
+    def test_loaded_once_per_job(self, tmp_path):
+        path = write_site_file(tmp_path, CONFIG)
+        first = get_study_dataset_config(make_fl_ctx(tmp_path, job_id="job-a"))
+        path.write_text(yaml.safe_dump({"format_version": 1}))  # edited while job-a runs
+        assert get_study_dataset_config(make_fl_ctx(tmp_path, job_id="job-a")) is first
+        assert get_study_dataset_config(make_fl_ctx(tmp_path, job_id="job-b")).list_datasets() == []
 
-    def test_relative_delivered_path_is_rejected(self, tmp_path, monkeypatch):
-        monkeypatch.setenv(DATASET_CONFIG_ENV, "study.yaml")
+    def test_a_failed_load_is_retried(self, tmp_path):
+        path = write_site_file(tmp_path, {"format_version": 2})
         with pytest.raises(DatasetConfigError):
-            get_study_dataset_config(make_fl_ctx(tmp_path))
+            get_study_dataset_config(make_fl_ctx(tmp_path, job_id="job-c"))
+        path.write_text(yaml.safe_dump(CONFIG, sort_keys=False))
+        assert get_study_dataset_config(make_fl_ctx(tmp_path, job_id="job-c")).list_datasets() == ["omop", "ehr"]
+
+
+class TestKubernetesStudyPart:
+    def test_holds_only_the_jobs_study_and_site_usage(self, tmp_path):
+        other = {
+            **CONFIG,
+            "studies": {**CONFIG["studies"], "cardiology": {"datasets": {"echo": {"type": "csv", "uri": "file:///e"}}}},
+        }
+        part = yaml.safe_load(extract_study_config(str(write_site_file(tmp_path, other)), "oncology"))
+        assert list(part["studies"]) == ["oncology"]
+        assert "usage" in CONFIG and part["usage"] == CONFIG["usage"]
+
+    def test_a_job_sees_the_same_configuration_from_the_part_and_the_site_file(self, tmp_path):
+        site = write_site_file(tmp_path / "site", CONFIG)
+        job = tmp_path / "job"
+        (job / "local").mkdir(parents=True)
+        (job / "local" / "datasets.yaml").write_bytes(extract_study_config(str(site), "oncology"))
+        from_site = load_study_config(str(site), "oncology", missing_ok=False)
+        from_part = load_study_config(str(job / "local" / "datasets.yaml"), "oncology", missing_ok=False)
+        assert from_part.list_datasets() == from_site.list_datasets() and from_part.revision == from_site.revision
+
+    def test_another_study_gets_an_empty_part(self, tmp_path):
+        part = yaml.safe_load(extract_study_config(str(write_site_file(tmp_path, CONFIG)), "cardiology"))
+        assert part["studies"] == {}
+
+    def test_no_site_file_sends_none(self, tmp_path):
+        assert extract_study_config(str(tmp_path / "datasets.yaml"), "oncology") is None
+
+    def test_an_invalid_site_file_sends_a_part_the_api_rejects(self, tmp_path):
+        site = write_site_file(
+            tmp_path / "site", {"format_version": 1, "studies": {"oncology": {"datasets": {"d": {"type": "csv"}}}}}
+        )
+        job_file = tmp_path / "datasets.yaml"
+        job_file.write_bytes(extract_study_config(str(site), "oncology"))
+        with pytest.raises(DatasetConfigError, match="site's dataset configuration is invalid"):
+            load_study_config(str(job_file), "oncology", missing_ok=False)

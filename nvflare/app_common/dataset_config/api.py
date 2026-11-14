@@ -19,8 +19,10 @@ today); everything else validates and serves the parsed document, so a different
 """
 
 import hashlib
+import json
 import os
 import re
+import threading
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
@@ -30,7 +32,6 @@ from urllib.parse import unquote, urlsplit
 import yaml
 
 from nvflare.apis.dataset_config_spec import (
-    DATASET_CONFIG_ENV,
     DATASET_CONFIG_FILE,
     DatasetConfig,
     DatasetConfigError,
@@ -44,6 +45,9 @@ _NAME = re.compile(r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*$")
 _TOP_KEYS = frozenset({"format_version", "studies", "usage"})
+# Set, with a reason, in the Study part the Kubernetes workspace transfer writes when the site file is invalid, so the
+# job fails closed instead of seeing no datasets. Not part of the site file's format.
+_INVALID_KEY = "invalid_site_configuration"
 _STUDY_KEYS = frozenset({"datasets"})
 _DATASET_KEYS = frozenset({"type", "uri", "options", "secrets", "usage"})
 
@@ -176,13 +180,15 @@ class DatasetConfigAPI(StudyDatasetConfig):
         return value
 
 
-def parse_study_config(data, study: str, source: str, revision: str = "") -> DatasetConfigAPI:
+def parse_study_config(data, study: str, source: str, revision: str | None = None) -> DatasetConfigAPI:
     """Validate a whole parsed file and return the snapshot of one Study. Other Studies are validated too, so one
     broken entry anywhere makes the file invalid, as the launcher sees it."""
     if data is None:
         data = {}
     if not isinstance(data, dict):
         raise _error(source, "must be a mapping")
+    if _INVALID_KEY in data:
+        raise _error(source, f"the site's dataset configuration is invalid: {data[_INVALID_KEY]}")
     unknown = set(data) - _TOP_KEYS
     if unknown:
         raise _error(source, f"unsupported keys {_names(unknown)}")
@@ -206,6 +212,8 @@ def parse_study_config(data, study: str, source: str, revision: str = "") -> Dat
             datasets[dataset_name], secrets[dataset_name] = _dataset(name, dataset_name, dataset_entry, source)
         if name == study:
             selected, selected_secrets = datasets, secrets
+    if revision is None:
+        revision = _revision(_study_part(data, study))
     return DatasetConfigAPI(study, selected, selected_secrets, _freeze(site_usage), revision)
 
 
@@ -217,25 +225,42 @@ def _read_document(raw: bytes, source: str):
         raise _error(source, "not valid YAML") from None
 
 
-# What a container job sees in place of the site file, which covers every Study: a valid configuration with no
-# datasets. Launchers bind it read-only over local/datasets.yaml, so the rest of local/ stays live for the job.
-WITHHELD_DATASET_CONFIG = b"format_version: 1\n"
+def _study_part(document: dict, study: str) -> dict:
+    """What a job of study may see of a valid document: format_version, the Study's entry and site-wide usage."""
+    studies = document.get("studies") or {}
+    part = {
+        "format_version": document["format_version"],
+        "studies": {study: studies[study]} if study in studies else {},
+    }
+    if document.get("usage") is not None:
+        part["usage"] = document["usage"]
+    return part
 
 
-def write_withheld_dataset_config(path: str) -> str:
-    """Write WITHHELD_DATASET_CONFIG to path, read-only, unless it is already there; return path."""
+def _revision(part: dict) -> str:
+    """A hash of the content a job sees, so a site file and the Kubernetes copy of the same Study agree."""
+    return hashlib.sha256(json.dumps(part, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+
+def extract_study_config(path: str, study: str) -> bytes | None:
+    """The local/datasets.yaml a job of study receives in Kubernetes, written by the parent's workspace transfer.
+
+    The whole site file at path is validated first; the result holds only the Study's part (see _study_part). An
+    invalid site file yields a file the API rejects with the reason. Returns None when the site file does not exist.
+    """
     try:
-        with open(path, "rb") as f:
-            if f.read() == WITHHELD_DATASET_CONFIG:
-                return path
+        raw = Path(path).read_bytes()
     except FileNotFoundError:
-        pass
-    tmp_path = f"{path}.{os.getpid()}.tmp"
-    with open(tmp_path, "wb") as f:
-        f.write(WITHHELD_DATASET_CONFIG)
-    os.chmod(tmp_path, 0o444)
-    os.replace(tmp_path, path)
-    return path
+        return None
+    except OSError as e:
+        reason = f"cannot read dataset configuration '{path}': {type(e).__name__}"
+        return yaml.safe_dump({"format_version": FORMAT_VERSION, _INVALID_KEY: reason}).encode("utf-8")
+    try:
+        document = _read_document(raw, path)
+        parse_study_config(document, study, path)  # validates every Study, as a job reading the file would
+    except DatasetConfigError as e:
+        return yaml.safe_dump({"format_version": FORMAT_VERSION, _INVALID_KEY: str(e)}).encode("utf-8")
+    return yaml.safe_dump(_study_part(document, study), sort_keys=False).encode("utf-8")
 
 
 def load_study_config(path: str, study: str, missing_ok: bool) -> DatasetConfigAPI:
@@ -248,22 +273,32 @@ def load_study_config(path: str, study: str, missing_ok: bool) -> DatasetConfigA
         raise DatasetConfigError(f"dataset configuration '{path}' does not exist") from None
     except OSError as e:
         raise DatasetConfigError(f"cannot read dataset configuration '{path}': {type(e).__name__}") from None
-    return parse_study_config(_read_document(raw, path), study, path, hashlib.sha256(raw).hexdigest())
+    return parse_study_config(_read_document(raw, path), study, path)
+
+
+_loaded: dict = {}  # (configuration path, job ID, Study) -> snapshot: loaded once per job
+_loaded_lock = threading.Lock()
 
 
 def load_job_study_config(fl_ctx) -> DatasetConfigAPI:
-    """The snapshot for the job in fl_ctx. See nvflare.apis.dataset_config_spec.get_study_dataset_config."""
+    """The snapshot for the job in fl_ctx. See nvflare.apis.dataset_config_spec.get_study_dataset_config.
+
+    The job reads local/datasets.yaml in its workspace: the site file, or in Kubernetes the Study part the parent
+    wrote. A successful load is kept for the job's life; a failed one is retried on the next call.
+    """
     from nvflare.apis.fl_constant import FLContextKey
     from nvflare.apis.job_def import get_job_meta_study
 
     study = get_job_meta_study(fl_ctx.get_prop(FLContextKey.JOB_META))
-    delivered = os.environ.get(DATASET_CONFIG_ENV)
-    if delivered is not None:
-        if not delivered or not os.path.isabs(delivered):
-            raise DatasetConfigError(f"{DATASET_CONFIG_ENV} must be an absolute path")
-        return load_study_config(delivered, study, missing_ok=False)
     engine = fl_ctx.get_engine()
     workspace = engine.get_workspace() if engine is not None else None
     if workspace is None:
         raise DatasetConfigError("the site workspace is unavailable")
-    return load_study_config(os.path.join(workspace.get_root_dir(), "local", DATASET_CONFIG_FILE), study, True)
+    path = os.path.join(workspace.get_root_dir(), "local", DATASET_CONFIG_FILE)
+    key = (path, fl_ctx.get_job_id(), study)
+    with _loaded_lock:
+        config = _loaded.get(key)
+        if config is None:
+            config = load_study_config(path, study, missing_ok=True)
+            _loaded[key] = config
+    return config

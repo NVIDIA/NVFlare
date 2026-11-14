@@ -21,6 +21,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+import yaml
 
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     BOOTSTRAP_CONNECT_TIMEOUT,
@@ -158,7 +159,6 @@ class TestWorkspaceTransferManager:
                 b"study-a:\n  training:\n    source: nvfldata\n    mode: ro\n",
             )
             _write_file(os.path.join(ws_root, "local", "study_runtime.yaml"), b"format_version: 2\nstudies: {}\n")
-            _write_file(os.path.join(ws_root, "local", "datasets.yaml"), b"format_version: 1\nstudies: {}\n")
             _write_file(os.path.join(ws_root, "local", "custom", "helper.py"), b"VALUE = 1\n")
             zip_path = os.path.join(tmp, "workspace.zip")
 
@@ -171,7 +171,63 @@ class TestWorkspaceTransferManager:
             assert f"{JOB_ID}/app/config/config_train.json" in names
             assert "local/study_data.yaml" not in names
             assert "local/study_runtime.yaml" not in names
-            assert "local/datasets.yaml" not in names  # covers every Study
+            assert "local/datasets.yaml" not in names  # the site has none
+
+    @pytest.mark.parametrize(
+        "study, expected",
+        [("oncology", ["omop"]), ("cardiology", ["echo"]), ("default", [])],
+    )
+    def test_workspace_bundle_carries_only_the_jobs_study_part_of_datasets_yaml(self, study, expected):
+        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
+            _make_workspace(ws_root, JOB_ID)
+            _write_file(
+                os.path.join(ws_root, "local", "datasets.yaml"),
+                b"format_version: 1\n"
+                b"studies:\n"
+                b"  oncology: {datasets: {omop: {type: parquet, uri: 'file:///data/oncology/omop'}}}\n"
+                b"  cardiology: {datasets: {echo: {type: csv, uri: 'file:///data/cardiology/echo.csv'}}}\n"
+                b"usage: {catalog: {limits: {max_records: 5}}}\n",
+            )
+            zip_path = os.path.join(tmp, "workspace.zip")
+
+            _zip_workspace_to_file(ws_root, JOB_ID, zip_path, study)
+
+            with zipfile.ZipFile(zip_path) as zf:
+                part = yaml.safe_load(zf.read("local/datasets.yaml"))
+            assert [name for entry in part["studies"].values() for name in entry["datasets"]] == expected
+            assert set(part["studies"]) <= {study}
+            assert part["usage"] == {"catalog": {"limits": {"max_records": 5}}}
+
+    def test_the_download_sends_the_study_given_at_add_job(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as ws_root:
+            _make_workspace(ws_root, JOB_ID)
+            _write_file(
+                os.path.join(ws_root, "local", "datasets.yaml"),
+                b"format_version: 1\nstudies:\n  oncology: {datasets: {omop: {type: parquet, uri: 'file:///o'}}}\n"
+                b"  cardiology: {datasets: {echo: {type: csv, uri: 'file:///e'}}}\n",
+            )
+            owner_cell = _FakeCell(fqcn="site-1.parent")
+            manager = WorkspaceTransferManager(owner_cell)
+            transfer_token = manager.add_job(JOB_ID, ws_root, "oncology")
+            sent = {}
+
+            def add_file(downloader, file_name):
+                with zipfile.ZipFile(file_name) as zf:
+                    sent["part"] = yaml.safe_load(zf.read("local/datasets.yaml"))
+                return "ref-1"
+
+            fake_downloader = MagicMock()
+            fake_downloader.tx_id = "tx-1"
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.ObjectDownloader",
+                lambda *args, **kwargs: fake_downloader,
+            )
+            monkeypatch.setattr("nvflare.app_opt.job_launcher.workspace_cell_transfer.add_file", add_file)
+            request = new_cell_message({}, {"job_id": JOB_ID, "transfer_token": transfer_token})
+            request.set_header(MessageHeaderKey.ORIGIN, make_workspace_transfer_fqcn(owner_cell.get_fqcn(), JOB_ID))
+            manager._handle_prepare_download(request)
+
+            assert list(sent["part"]["studies"]) == ["oncology"]
 
     def test_workspace_bundle_excludes_legacy_custom_study_data_path(self):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
