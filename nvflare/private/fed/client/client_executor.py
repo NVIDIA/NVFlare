@@ -953,9 +953,14 @@ class JobExecutor(ClientExecutor):
         engine.fire_event(EventType.JOB_COMPLETED, fl_ctx)
         self.logger.debug(f"Fired event JOB_COMPLETED {EventType.JOB_COMPLETED}")
 
-    def get_status(self, job_id):
-        process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)
-        return process_status
+    def get_status(self, job_id, *, reject_cleanup_pending=False):
+        with self.lock:
+            process = self.run_processes.get(job_id, {})
+            if reject_cleanup_pending and process.get(_CLEANUP_PENDING_KEY):
+                # This request owns a new admission allocation, not the retained
+                # one. An ordinary error lets its caller release only that retry.
+                raise RuntimeError(f"job {job_id}: cleanup remains unconfirmed; operator reconciliation required")
+            return process.get(RunProcessKey.STATUS, ClientStatus.STOPPED)
 
     def get_run_processes_keys(self):
         with self.lock:

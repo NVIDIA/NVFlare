@@ -12,19 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import FLContextKey, SystemComponents
+from nvflare.apis.fl_constant import FLContextKey, RunProcessKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.workspace import Workspace
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
+from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.client.client_executor import JobCleanupPending
+from nvflare.private.fed.client.client_executor import _RESOURCE_OWNER_KEY, JobCleanupPending, JobExecutor
+from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.scheduler_cmds import CheckResourceProcessor, StartJobProcessor
+from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_cert
 from nvflare.private.scheduler_constants import ShareableHeader
 
 
@@ -120,3 +124,68 @@ def test_start_failure_frees_only_resources_not_owned_by_executor(retained):
         resource_manager.free_resources.assert_not_called()
     else:
         resource_manager.free_resources.assert_called_once_with(resources={"gpu": 1}, token="token-1", fl_ctx=ANY)
+
+
+@pytest.mark.parametrize("status", [ClientStatus.STARTING, ClientStatus.READY, ClientStatus.STOPPED])
+def test_repeat_start_rejects_retained_job_and_frees_only_retry_allocation(tmp_path, status):
+    for name in ("startup", "local"):
+        (tmp_path / name).mkdir()
+    resource_manager = MagicMock(spec=ResourceManagerSpec)
+    old_resources = {"gpu": [0]}
+    retry_resources = {"gpu": [1]}
+    resource_manager.allocate_resources.return_value = retry_resources
+    executor = JobExecutor(MagicMock(), "startup")
+    retained_handle = MagicMock()
+    owner = {
+        RunProcessKey.JOB_HANDLE: retained_handle,
+        RunProcessKey.STATUS: ClientStatus.STARTING,
+        _RESOURCE_OWNER_KEY: (old_resources, "old-token", resource_manager),
+    }
+    executor.run_processes["job-1"] = owner
+    executor.notify_job_status("job-1", status)
+    executor._retain_cleanup_owner("job-1")
+    if status == ClientStatus.READY:
+        assert executor.get_status("job-1") == ClientStatus.STARTED
+    run_dir = tmp_path / "job-1"
+    run_dir.mkdir()
+    write_job_cert(str(run_dir), b"cert", b"key")
+    engine = MagicMock(spec=ClientEngine)
+    engine.client_executor = executor
+    engine.args = SimpleNamespace(workspace=str(tmp_path))
+    engine.client = executor.client
+    engine.client.client_name = "site-1"
+    engine.rank = 0
+    engine.logger = MagicMock()
+    (run_dir / "app_site-1").mkdir()
+    engine.new_context.return_value.__enter__.return_value = FLContext()
+    engine.start_app.side_effect = lambda *args, **kwargs: ClientEngine.start_app(engine, *args, **kwargs)
+    request = Message(topic=TrainingTopic.START_JOB, body={"gpu": 1})
+    request.set_header(RequestHeader.JOB_ID, "job-1")
+    request.set_header(RequestHeader.JOB_META, {})
+    request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, "retry-token")
+    with (
+        patch("nvflare.private.fed.client.scheduler_cmds._get_resource_manager", return_value=resource_manager),
+        patch("nvflare.private.fed.client.scheduler_cmds._get_resource_consumer"),
+        patch.object(executor, "start_app") as launch,
+    ):
+        reply = StartJobProcessor().process(request, engine)
+    assert "cleanup remains unconfirmed" in reply.body
+    resource_manager.allocate_resources.assert_called_once()
+    resource_manager.free_resources.assert_called_once_with(resources=retry_resources, token="retry-token", fl_ctx=ANY)
+    launch.assert_not_called()
+    retained_handle.terminate.assert_not_called()
+    retained_handle.wait.assert_not_called()
+    assert executor.run_processes["job-1"] is owner
+    assert owner[_RESOURCE_OWNER_KEY] == (old_resources, "old-token", resource_manager)
+    assert find_job_cert(str(run_dir)) is not None
+
+
+def test_started_job_without_retained_cleanup_keeps_existing_start_response():
+    executor = JobExecutor(MagicMock(), "startup")
+    executor.run_processes["job-1"] = {RunProcessKey.STATUS: ClientStatus.STARTED}
+    engine = MagicMock(spec=ClientEngine)
+    engine.client_executor = executor
+
+    with patch.object(executor, "start_app") as launch:
+        assert ClientEngine.start_app(engine, "job-1", {}) == "Client app already started."
+    launch.assert_not_called()

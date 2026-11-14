@@ -354,7 +354,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         token: str = None,
         resource_manager=None,
     ) -> str:
-        status = self.client_executor.get_status(job_id)
+        status = self.client_executor.get_status(job_id, reject_cleanup_pending=True)
         if status == ClientStatus.STARTED:
             return "Client app already started."
 

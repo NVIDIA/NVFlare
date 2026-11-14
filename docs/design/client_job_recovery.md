@@ -190,7 +190,9 @@ handle, control-call state, admission allocation/token/resource-manager referenc
 and job credentials. The start request returns an error without freeing that
 allocation. Replacement failure keeps the same owner. Ordinary monitor wait/query
 errors also preserve the registration and credentials. Retained jobs stay in CP's
-job list and reject another launch of the same logical job. Heartbeat/admin aborts
+job list and reject another launch of the same logical job, including runs whose
+CJ already reported STARTED. A repeated start releases only its new admission
+allocation; the retained run keeps its original allocation. Heartbeat/admin aborts
 of retained runs log the reconciliation requirement without stacking more control
 calls. A different start request that fails before acquiring a runtime still frees
 its own admission allocation.
