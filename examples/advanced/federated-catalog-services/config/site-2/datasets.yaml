@@ -1,5 +1,5 @@
-# site-2 dataset configuration. Compose mounts it read-only into the site container and names it in
-# NVFLARE_DATASET_CONFIG.
+# site-2 dataset configuration. example_setup.py copies it into the site's startup kit as local/datasets.yaml,
+# where a deployed site keeps it.
 format_version: 1
 studies:
   default:

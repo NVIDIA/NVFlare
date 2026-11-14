@@ -154,11 +154,10 @@ you also want fresh demo data.
 | Configuration | Supplied by | Purpose |
 | --- | --- | --- |
 | [project.yml](project.yml) | `nvflare provision` | Defines participants, endpoints, certificate host names and startup kits. |
-| Each site's dataset configuration | Read-only Compose mount of `config/<site>/datasets.yaml` at `/site-config/datasets.yaml`, named by `NVFLARE_DATASET_CONFIG` | Declares the site's datasets for each Study: where each one is, how to connect, and the catalog rules that decide what is published. |
+| Each site's dataset configuration | `example_setup.py` copies `config/<site>/datasets.yaml` into the site's startup kit as `local/datasets.yaml` | Declares the site's datasets for each Study: where each one is, how to connect, and the catalog rules that decide what is published. |
 | site-2's `CATALOG_DB_USER` and `CATALOG_DB_PASSWORD` | Compose environment | The database credentials its dataset configuration names as secrets. |
 
-A deployed site normally keeps this file at `<workspace>/local/datasets.yaml`. This example mounts it separately
-because each site container works from an ephemeral copy of its startup kit.
+That is where a deployed site keeps it. After editing a `config/<site>/datasets.yaml`, rerun `python example_setup.py` and restart the site (`docker compose up -d --force-recreate nvflare-<site>`); the next catalog read uses it.
 
 ### Network and workspace
 

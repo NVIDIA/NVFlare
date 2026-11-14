@@ -34,7 +34,6 @@ services:
     <<: *flare
     environment:
       NVFL_WORKSPACE: /workspace
-      NVFLARE_DATASET_CONFIG: /site-config/datasets.yaml
     volumes:
       - type: bind
         source: ${CATALOG_KITS:?Run python example_setup.py first}/site-1
@@ -42,7 +41,6 @@ services:
         read_only: true
         bind: {create_host_path: false}
       - site-1-data:/data:ro
-      - ./config/site-1/datasets.yaml:/site-config/datasets.yaml:ro
     depends_on:
       site-1-seed: {condition: service_completed_successfully}
   site-1-seed:
@@ -58,7 +56,6 @@ services:
     <<: *flare
     environment:
       NVFL_WORKSPACE: /workspace
-      NVFLARE_DATASET_CONFIG: /site-config/datasets.yaml
       # The metadata reader's demo credentials, named by the secrets of site-2's omop dataset.
       CATALOG_DB_USER: catalog_reader
       CATALOG_DB_PASSWORD: local-demo-reader
@@ -68,7 +65,6 @@ services:
         target: /startup-kit
         read_only: true
         bind: {create_host_path: false}
-      - ./config/site-2/datasets.yaml:/site-config/datasets.yaml:ro
     post_start:
       # The bootstrap password is given to the seeding command only, not to the FLARE client or its jobs.
       - command: ["python", "prepare_data.py", "site-2"]
