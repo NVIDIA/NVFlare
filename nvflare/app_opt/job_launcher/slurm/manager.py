@@ -90,14 +90,16 @@ def _write_exclusive(path: str, data: bytes, mode: int) -> None:
 
 def _cleanup_job_dir(job_dir: str) -> None:
     try:
-        sandbox_root = os.path.join(job_dir, SANDBOX_ROOT)
-        if os.path.isdir(sandbox_root) and not os.path.islink(sandbox_root):
-            pending = [sandbox_root]
-            while pending:
-                path = pending.pop()
-                os.chmod(path, 0o700)
-                with os.scandir(path) as entries:
-                    pending.extend(entry.path for entry in entries if entry.is_dir(follow_symlinks=False))
+        # folders the job or the staged local/ copy may leave without write permission, which rmtree needs
+        for name in (SANDBOX_ROOT, _STAGED_LOCAL_DIR):
+            root = os.path.join(job_dir, name)
+            if os.path.isdir(root) and not os.path.islink(root):
+                pending = [root]
+                while pending:
+                    path = pending.pop()
+                    os.chmod(path, 0o700)
+                    with os.scandir(path) as entries:
+                        pending.extend(entry.path for entry in entries if entry.is_dir(follow_symlinks=False))
         shutil.rmtree(job_dir)
     except FileNotFoundError:
         pass
@@ -109,6 +111,9 @@ def _job_name(site_name: str, job_key: str) -> str:
 
 def _is_terminal(state: str) -> bool:
     return state in _APPLICATION_TERMINAL_STATES or state in _INFRASTRUCTURE_TERMINAL_STATES or state == "CANCELLED"
+
+
+_STAGED_LOCAL_DIR = "local"  # in the job folder: the copy of local/ bound into a sandbox
 
 
 def _stage_job_local_dir(local_dir: str, dest_dir: str) -> str:
@@ -229,7 +234,7 @@ class SlurmJobManager:
             )
             # a copy of local/ without the site dataset configuration, which covers every Study
             local_source = _stage_job_local_dir(
-                os.path.realpath(os.path.join(workspace, "local")), os.path.join(job_dir, "local")
+                os.path.realpath(os.path.join(workspace, "local")), os.path.join(job_dir, _STAGED_LOCAL_DIR)
             )
             launcher_mounts = (
                 BindMount(os.path.join(job_dir, SANDBOX_ROOT), workspace, "rw"),

@@ -633,6 +633,25 @@ def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path):
     assert not os.path.exists(handle.job_dir)
 
 
+def test_terminal_cleanup_removes_read_only_folders_of_the_staged_local_copy(tmp_path):
+    read_only = tmp_path / "local" / "custom" / "pkg"
+    read_only.mkdir(parents=True)
+    (read_only / "helper.py").write_text("VALUE = 1")
+    os.chmod(read_only, 0o500)  # copied with its permissions
+    adapter = Adapter()
+    adapter.live = _query(LookupStatus.NOT_FOUND)
+    adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="COMPLETED"))
+    manager = _manager(tmp_path, adapter)
+    try:
+        handle = manager.launch(_plan(tmp_path, sandbox="apptainer", image="/image.sif"))
+        assert Path(handle.job_dir, "local", "custom", "pkg", "helper.py").is_file()
+
+        assert handle.poll() == JobReturnCode.SUCCESS
+        assert not os.path.exists(handle.job_dir)
+    finally:
+        os.chmod(read_only, 0o700)
+
+
 def test_apptainer_startup_and_resolver_mounts_use_compute_node_paths(tmp_path, monkeypatch):
     parent_target = "/run/parent-specific/resolv.conf"
     realpath = os.path.realpath
