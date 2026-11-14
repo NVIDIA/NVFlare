@@ -279,7 +279,7 @@ The controller collects one result per site and writes `catalog_results.json` in
 }
 ```
 
-- `sites` has one entry per site the read targeted. `status` is the site's `OK` or `FAILED`, or `NO_RESULT` when no valid application result arrived: a timeout, disconnect or abort, or a non-OK framework return code such as `TASK_UNSUPPORTED`. A site's entry is the health report for this read; there is no stored health.
+- `sites` has one entry per site the read targeted. `status` is the site's `OK` or `FAILED`, or `NO_RESULT` when no valid application result arrived: a timeout, disconnect or abort, or a non-OK framework return code such as `TASK_UNSUPPORTED`. A site named in `sites` that never joins the job (offline, or not scheduled) is `NO_RESULT` too; without `sites`, the entries are the sites the job ran on. A site's entry is the health report for this read; there is no stored health.
 - `datasets` lists each accepted catalog with its site. Two sites with a dataset of the same name stay separate entries. The controller rejects an entry that fails `from_wire` or validation, adds that dataset to the site's `unavailable` list, and keeps the site's other entries. It does not merge schemas, infer equivalence or combine populations.
 - `completed_at` is server time when the controller wrote the result. `observed_at` is the source's own observation time, stored as null when it is not valid RFC 3339 UTC or is more than 300 seconds after `completed_at`.
 
