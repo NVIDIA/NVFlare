@@ -198,6 +198,22 @@ class TestWorkspaceTransferManager:
             assert set(part["studies"]) <= {study}
             assert part["usage"] == {"catalog": {"limits": {"max_records": 5}}}
 
+    def test_an_invalid_site_file_reaches_the_job_as_a_rejected_part(self):
+        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
+            _make_workspace(ws_root, JOB_ID)
+            _write_file(
+                os.path.join(ws_root, "local", "datasets.yaml"),
+                b"format_version: 1\nstudies:\n  cardiology: {datasets: {echo: {type: csv}}}\n",  # no uri: invalid
+            )
+            zip_path = os.path.join(tmp, "workspace.zip")
+
+            _zip_workspace_to_file(ws_root, JOB_ID, zip_path, "oncology")
+
+            with zipfile.ZipFile(zip_path) as zf:
+                part = zf.read("local/datasets.yaml")
+            assert b"cardiology" not in part and b"echo" not in part
+            assert "invalid_site_configuration" in yaml.safe_load(part)
+
     def test_configmap_backing_files_do_not_bypass_filtering(self):
         # local/ as kubelet projects a ConfigMap: real files in ..<timestamp>/, visible names linked through ..data
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
