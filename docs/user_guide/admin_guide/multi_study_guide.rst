@@ -235,7 +235,6 @@ the parent service's environment into the job's environment, following the same 
    studies:
      lung-cancer:
        env:
-         DB_HOST: db.internal
          TRAINING_DATA: /srv/studies/lung-cancer/training
          DB_CA_FILE: /srv/studies/lung-cancer/secrets/ca.crt
        secret_env:
@@ -246,7 +245,8 @@ the parent service's environment into the job's environment, following the same 
          TRAINING_DATA: /srv/studies/default/training
 
 Set ``LUNG_DB_PASSWORD`` in the parent service's environment before starting it. A job in
-``lung-cancer`` receives its value as ``DB_PASSWORD``; the value itself stays out of the YAML file.
+``lung-cancer`` receives its value as ``DB_PASSWORD``; the value itself stays out of the YAML file. The database's address and how FLARE components may use it are described in ``local/datasets.yaml``,
+not here: Study runtime delivers access, such as credentials and mounts.
 The optional ``key`` field is accepted for compatibility with Docker configuration and is ignored.
 A missing source variable fails launch. An empty source value is allowed.
 

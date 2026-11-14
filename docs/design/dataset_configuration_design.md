@@ -23,9 +23,18 @@ Non-goals:
 
 ### 2.1 Location and ownership
 
-The configuration is the site-owned file `<workspace>/local/datasets.yaml`, next to `study_runtime.yaml`. Like that file, it covers every Study at the site and belongs to the site's parent process. A container job never sees it; the launcher gives the job only its own Study's part (Section 3.4). Jobs cannot supply or replace the configuration: it is never part of a job package, and the API ignores any copy inside the job's app directory.
+The configuration is the site-owned file `<workspace>/local/datasets.yaml`, next to `study_runtime.yaml`. Like that file, it covers every Study at the site and belongs to the site. Jobs cannot supply or replace it: it is never part of a job package, and the API ignores any copy inside the job's app directory. In Kubernetes the file can come from a ConfigMap mounted into the parent pod's `local/` folder and edited with `kubectl`.
 
-When an edited file takes effect depends on the launch mode. A container job receives its Study's part once, when it is launched, so an edit applies from the next job. A process job reads the file at each snapshot (Section 3.2), so an edit applies from the next snapshot. Neither needs a restart of the site.
+A site's per-Study configuration is two files in `local/`:
+
+| File | Read by | Holds | Since |
+| --- | --- | --- | --- |
+| `study_runtime.yaml` | The launcher | How each Study's jobs are run: image, mounts, environment, secret sources, launcher settings | FLARE 2.9 (process mode: 2.10) |
+| `datasets.yaml` | Components, through this API | What each Study's datasets are and how components may use them | FLARE 2.10 (this design) |
+
+`study_data.yaml`, the 2.8 mount-only file that `study_runtime.yaml` replaces, is legacy. Docker and Kubernetes still read it for kits that have not migrated, Slurm rejects it, and process mode ignores it. New sites, and this design, use `study_runtime.yaml`.
+
+A job loads the configuration once, when a component first asks for it, and keeps it for the job's life (Section 3.4). An edit applies from the next job, in every launch mode, without a restart of the site.
 
 ### 2.2 Format
 
@@ -83,6 +92,13 @@ usage:                            # site-wide settings, per FLARE component
 
 Unknown keys outside `usage` sections, wrong value types, a missing `type` or `uri`, a `uri` that breaks the rules of Section 2.3, and a secret value given where a variable name is expected are rejected; the whole file is then invalid. Contents of `usage` sections are not validated by the API: each component validates its own section and rejects what it does not understand.
 
+**Format version.** Every file states `format_version`, as `study_runtime.yaml` does; it is the gate for changing the format later. This design is version 1.
+
+- The API reads the versions this FLARE release supports and rejects any other value, including a boolean, so a file written for a newer format fails closed on an older FLARE instead of being half-read.
+- The version changes only for an incompatible change: removing or renaming a key, or changing what a key means. A new optional key or a new dataset `type` keeps the version; because unknown keys are rejected, a file that uses one needs a FLARE release that knows it.
+- `usage` sections are versioned by their components, not by this number: each component validates its own section.
+- The file is versioned on its own, independently of `study_runtime.yaml`'s `format_version`. In Kubernetes, the part the parent sends a job keeps the site file's version.
+
 ### 2.3 Dataset URI
 
 `uri` says where a dataset is. It has two forms:
@@ -113,20 +129,43 @@ with the Study and dataset names filled in, for example `file:///data/oncology/o
 
 The API does not check that a `file` path exists or that a network address answers; the component that reads the dataset reports that. Percent-encoding follows RFC 3986, so a space in a path is written `%20`. `DatasetConfig.path` returns the decoded local path of a `file` URI.
 
-### 2.4 What the configuration does not hold
+### 2.4 Boundary with Study runtime configuration
+
+Every data source has two halves. `study_runtime.yaml` owns **access**: what the job can reach, applied by the launcher and enforced outside the job; this is also where Studies are isolated. `datasets.yaml` owns **description**: what the source is and how FLARE components may use it; it never grants access.
+
+| Responsibility | `study_runtime.yaml` | `datasets.yaml` |
+| --- | --- | --- |
+| Read by | The launcher, before the job starts | FLARE components in the job, through this API |
+| How a Study's jobs run: image, pod template, Docker and Slurm settings, plain `env` | Yes | No |
+| Access and Study isolation: mounts, delivery of credentials | Yes | No |
+| What a source is and where and how to read it: `type`, `uri`, `options` | No | Yes |
+| Secrets | Delivers the values (`secret_env`, `secret_mounts`) | Names the variable each dataset uses (`secrets`) |
+| How components may use a source: `usage` | No | Yes |
+| Enforced outside job code | Yes | No: FLARE components honor it |
+
+How that splits for each kind of source:
+
+| Data source | Access and isolation (`study_runtime.yaml`) | Description and use (`datasets.yaml`) |
+| --- | --- | --- |
+| Files on a volume (Parquet, CSV, SQLite, images) | Mount only the Study's volume at `/data/<study>/<dataset>` (`datasets` mount entry) | `type: parquet`, `uri: file:///data/<study>/<dataset>`, `usage` |
+| Database | Deliver only the Study's database-role credentials (`secret_env`); the role limits what can be read | `type: sql`, `uri: postgresql://…`, `options`, `secrets` names, `usage` |
+| Databricks / Unity Catalog | Deliver the Study's token or downscoped credentials (`secret_env`) | `type: unity-catalog`, `uri`, `options`, `secrets` names, `usage` |
+| Object storage, REST API | Deliver the Study's credentials (`secret_env`, `secret_mounts`) | `type`, address, `secrets` names, `usage` |
+
+- **Where the halves meet:** at the mount path for a volume, and at the environment variable holding the credential otherwise. A database needs no Study runtime `datasets` entry.
+- **`usage` rules are not access control.** `exclude_columns` keeps the catalog from publishing a column, but job code with the access can still read it. What a job can read at all is set by the access half.
+- **Unreachable sources** are reported by the component that tries to read them; the API does not check paths or connect to sources.
 
 | Concern | Owner |
 | --- | --- |
 | The Study itself: its definition, description and membership | The federation's Study registry on the server |
-| Host source paths, mount modes, images, secret sources | Study runtime configuration of the launcher |
+| Mounts, images, launcher settings, secret sources | Study runtime configuration of the launcher |
 | Secret values | The site's secret store, delivered as environment variables |
 | Observed structure (tables, columns, types) | The dataset itself, read by the component that uses it |
 
-A dataset named in both places is linked by its name: Study runtime mounts the host source at `/data/<study>/<dataset>`, and this configuration describes what is there. A dataset declared here whose URI cannot be reached is reported by the component that tries to read it; the API does not check paths or connect to sources.
-
 **A Study entry is this site's data for that Study, not the Study's configuration.** `studies.<study>` holds only `datasets`. The Study's own description and settings live on the server, once for the whole federation; a copy here would drift from it at every site. For the same reason there is no Study-level `description`, `notes` or `options`:
 
-- **Notes.** Use YAML comments. Parsing drops them, so they stay with the site operator and never reach a job; the launcher writes only the parsed Study part into the job.
+- **Notes.** Use YAML comments. Parsing drops them, so they stay with the site operator and never reach a job; in Kubernetes the parent sends the job only the parsed Study part.
 - **Settings shared by several datasets.** Use a YAML anchor (`&name`) and merge key (`<<: *name`) instead of Study-level defaults. `yaml.safe_load` resolves them, so the API and the job see ordinary, complete dataset entries, and the format needs no merge rules:
 
 ```yaml
@@ -293,13 +332,12 @@ class StudyDatasetConfig(ABC):
 
 
 def get_study_dataset_config(fl_ctx: FLContext) -> StudyDatasetConfig:
-    """Load and validate a snapshot of the job's Study.
+    """The configuration of the job's Study.
 
-    The Study comes from the job metadata in fl_ctx ("default" when the job names none). In a
-    container job the file is the Study part the launcher delivered (NVFLARE_DATASET_CONFIG);
-    in a process job it is <workspace>/local/datasets.yaml. Raises DatasetConfigError when
-    the file is unreadable or invalid, or when NVFLARE_DATASET_CONFIG names a file that does
-    not exist. Only a missing <workspace>/local/datasets.yaml yields a snapshot with no datasets.
+    The Study comes from the job metadata in fl_ctx ("default" when the job names none). The
+    configuration is loaded on the first call in the job and kept for the job's life (Section 3.4).
+    Raises DatasetConfigError when it is unreadable or invalid. A site with no configuration
+    yields a snapshot with no datasets.
     """
 ```
 
@@ -330,28 +368,40 @@ for name in config.list_datasets():
 
 ### 3.2 Contract
 
-- **Study-bound.** `get_study_dataset_config(fl_ctx)` returns the job's Study only; a job without an explicit Study is in the `default` Study, as everywhere in FLARE. No method accepts a Study name. In container modes this is a security boundary enforced by the launcher, not by the API (Section 3.4).
+- **Study-bound.** `get_study_dataset_config(fl_ctx)` returns the job's Study only; a job without an explicit Study is in the `default` Study, as everywhere in FLARE. No method accepts a Study name.
 - **Read-only and immutable.** There are no write methods. `DatasetConfig` is frozen, its mappings are read-only views and its tuples are copies, so one component cannot change what another sees.
-- **Snapshot.** One call loads and validates the whole file once. Every method of that snapshot answers from the same content, and `revision` identifies it. A component takes a new snapshot per task. In a process job, that snapshot sees edits to the site file. In a container job, every snapshot reads the Study part delivered at launch, so edits apply from the next job.
-- **Fail closed.** An unreadable or invalid file raises `DatasetConfigError` from `get_study_dataset_config`; a snapshot is never partly loaded. So does a missing launcher-delivered file: when `NVFLARE_DATASET_CONFIG` is set, the file it names must exist. The one exception is a missing site file, `<workspace>/local/datasets.yaml`, which yields a snapshot with no datasets: a site that offers no datasets needs no file.
+- **Snapshot.** The configuration is validated as a whole when it is loaded. Every method answers from that content, and `revision` identifies it. The job keeps it for its life, so all of its components and tasks see the same configuration.
+- **Fail closed.** An unreadable or invalid configuration raises `DatasetConfigError` from `get_study_dataset_config`; a snapshot is never partly loaded. A site with no configuration is not an error: the snapshot has no datasets.
 - **Secrets stay out of the model.** `DatasetConfig` lists which secret keys exist but carries no values. `get_secret` reads the environment variable at call time. Error messages name the dataset and key, never the value.
 - **No interpretation.** The API applies the rules and defaults of Section 2 and nothing else. It does not resolve connectors, read sources, check that a URI is reachable or validate `usage` contents; each component validates its own rules.
 
 ### 3.3 Implementation
 
-`DatasetConfigAPI` in `nvflare/app_common/dataset_config/api.py` implements the spec. It currently supports loading: it reads the file described in Section 2, validates it and returns frozen objects. Only one function in it decodes the file format (YAML, with `yaml.safe_load`), so a different format changes that function alone. Components depend on `StudyDatasetConfig`, so another site-owned source, such as a site service, can replace the file later without changing them.
+`DatasetConfigAPI` in `nvflare/app_common/dataset_config/api.py` implements the spec. It is built from a configuration dictionary, the content Section 2 describes, and does not depend on where that dictionary came from. Validation, defaults and the frozen objects work on the dictionary; `revision` is a hash of its content.
 
-### 3.4 Isolation between Studies
+A loader produces the dictionary. In every launch mode it reads `local/datasets.yaml` as the job sees it (Section 3.4); only it decodes the file format (YAML, with `yaml.safe_load`). Components depend on `StudyDatasetConfig`, so another source, such as a site service, can be added as a loader without changing them.
 
-In container modes (Docker, Kubernetes and containerized Slurm), Study isolation is a security measure: a job can access only its own Study's data. The launchers already enforce it for data. They mount only the job's Study datasets and inject only that Study's `secret_env`. The dataset configuration follows the same boundary:
+### 3.4 Loading in each launch mode
 
-- **The launcher delivers the job's Study only.** When it starts a job, the launcher in the parent process loads `local/datasets.yaml`, validates it, and extracts the job's Study. It hands that part to the job as a read-only file, and sets `NVFLARE_DATASET_CONFIG` in the job to the file's path. The API in the job reads that file. A job therefore cannot read another Study's dataset names, URIs, options, rules or secret variable names, even by opening files directly.
-- **The site file stays out of the job.** The launchers withhold `local/datasets.yaml` from every container job. Kubernetes leaves it out of the job workspace it transfers, beside `study_runtime.yaml` and `study_data.yaml`. Docker and Slurm sandboxes still bind `local/` whole, so a job sees later edits to its other files (such as a logging-config reload), and bind a read-only configuration with no datasets over `local/datasets.yaml`. Until a launcher delivers the job's Study part, a container job therefore sees no datasets.
-- **Read-only to the job.** The Study's part is mounted or projected read-only, outside the job's writable workspace: a read-only bind in Docker and Slurm, and a projected volume in Kubernetes. A job cannot loosen its own Study's rules.
-- **Invalid configuration fails closed.** If the site file is invalid, the launcher still starts the job and sets `NVFLARE_DATASET_CONFIG`, but delivers no file, so the API raises `DatasetConfigError` and components fail as they would on a broken file. A missing site file is not an error: the launcher delivers a valid Study part with no datasets.
-- **Fixed for the job's life.** The Study part is delivered once, at launch. An edit to the site file applies from the next job; a running job keeps the configuration it started with.
+In every mode the job reads `local/datasets.yaml` from its own workspace. What differs is how `local/` reaches the job, and that is already decided by each launcher.
 
-Process mode is not isolated, for data or for configuration. A process job is a local process with the site's filesystem and environment. There, the API reads `local/datasets.yaml` directly and returns the job's Study only, as a convenience. Process mode is for development and proof-of-concept sites, as Study runtime already documents.
+| Mode | How the job sees `local/datasets.yaml` |
+| --- | --- |
+| Process | The site file, in the site workspace |
+| Docker | The site file, through the `local/` folder the launcher mounts read-only |
+| Slurm, jobs and task workers | The site file, on the site's shared storage (bound read-only in a sandbox) |
+| Kubernetes, job pods and task workers | A copy holding only the job's Study, written by the parent into the job's workspace transfer |
+
+**Kubernetes.** A job pod does not see the parent's workspace. The parent sends the job its workspace (`local/` and the job folder) through the workspace transfer, which already leaves out the site files the job must not have, `study_runtime.yaml` and `study_data.yaml`. For `datasets.yaml` the transfer sends the job's part instead of the whole file: the parent loads the site file, validates all of it, and writes a `local/datasets.yaml` with the job's Study entry and the site-wide `usage` settings. In the persistent-workspace profile the transferred `local/` sits on the jobs PVC, and task worker pods mount it read-only, so they read the same part. Task workers receive only the site's environment, so the configuration travels as this file, not in the job's environment.
+
+- No site file: the transfer sends none, and the job sees no datasets.
+- An invalid site file: the transfer sends a `local/datasets.yaml` that the API rejects, stating that the site configuration is invalid, so components fail as they would on a broken file instead of seeing no datasets.
+
+The part is written when the job pod downloads its workspace, at launch. The pod and its workers never receive another Study's entries.
+
+**Process, Docker and Slurm.** The job reads the site file, as it can reach the rest of `local/`, and the API returns only the job's Study. As with `study_runtime.yaml` in these modes, the file itself is readable by job code; the API's Study binding is not a security boundary there.
+
+**Fixed for the job's life.** A job loads the configuration once, on first use, and keeps it. An edit to the site file applies from the next job; a running job keeps the configuration it started with.
 
 ## 4. Design decisions
 
@@ -361,7 +411,7 @@ Process mode is not isolated, for data or for configuration. A process job is a 
 | A separate file from Study runtime configuration | Adding these fields to `study_runtime.yaml` | Different readers, content, validation and owners; see Section 4.1. |
 | Explicit dataset list | Listing the directories under `/data/<study>` | A mount alone does not say what type of source it is or whether any component may use it, and process-launched sites have no mounts. |
 | Secret variable names in the configuration | Secret values, or a secret-store reference scheme | Reuses how Study runtime already delivers secrets. The file never holds a secret, so it can be read and reviewed freely. |
-| The launcher delivers the job's Study part | Every job reads the site file and filters by its Study | Filtering inside the job is not a boundary: job code can read the whole file. Delivery by the parent keeps other Studies' configuration out of the container, as is already done for data and secrets. |
+| In Kubernetes, the workspace transfer sends the job only its Study's part of the file | Leaving the file out, or passing the part in the job's environment | The transfer already decides what a job pod gets of `local/`, and task worker pods read the job's transferred `local/` but not its environment. Every mode then loads the same file the same way. |
 
 ### 4.1 Why a separate file instead of `study_runtime.yaml`
 
