@@ -356,11 +356,11 @@ Process mode is not isolated, for data or for configuration. A process job is a 
 
 Each subsection states one decision, the option it was weighed against, and why.
 
-### 4.1 Datasets in their own file, separate from Study runtime configuration
+### 4.1 Separate configuration files for datasets and Study runtime
 
-**Decision.** A site configures each Study in two files: `local/study_runtime.yaml`, which the launcher reads, and `local/datasets.yaml`, which components read through the API.
+**Decision.** A site keeps its dataset configuration and its Study runtime configuration in separate files: `local/datasets.yaml`, which components read through the API, and `local/study_runtime.yaml`, which the launcher reads.
 
-**Option not taken.** A `datasets` section in `study_runtime.yaml`, giving one file per site.
+**Option not taken.** One configuration file per site: the dataset configuration as a section of `study_runtime.yaml`.
 
 **Why.** The two files serve different readers, describe different things and change for different reasons.
 
@@ -373,11 +373,11 @@ Each subsection states one decision, the option it was weighed against, and why.
 
 Secrets are still configured in one place. Study runtime `secret_env`, or the site's process environment, sets the secret's value in an environment variable. `datasets.yaml` holds only that variable's name, so a component can ask for "the database password" without knowing the variable. Neither file holds a secret value.
 
-### 4.2 Datasets declared at the site, not on the server
+### 4.2 Dataset configuration owned by the site, not the server
 
-**Decision.** Each site declares its own datasets in its own workspace.
+**Decision.** Each site keeps its own dataset configuration in its own workspace.
 
-**Option not taken.** Declaring each site's datasets on the server, in the Study registry or in the submitted job.
+**Option not taken.** Each site's dataset configuration held on the server, in the Study registry or in the submitted job.
 
 **Why.** A site's datasets, their locations and their usage rules are the site's decision. Declaring them on the server would publish paths and connection details to the federation, let a job's submitter rather than the site decide what a job may read, and still need a site-side mapping to the real locations.
 
