@@ -222,6 +222,7 @@ for name in config.list_datasets():
     rules = dataset.usage_rules("catalog")          # None: this component may not use the dataset
     if rules and rules.get("share"):
         read(dataset.type, dataset.path or dataset.uri, dataset.options)
+```
 
 ## 3. API
 
@@ -345,7 +346,7 @@ for name in config.list_datasets():
 In container modes (Docker, Kubernetes and containerized Slurm), Study isolation is a security measure: a job can access only its own Study's data. The launchers already enforce it for data. They mount only the job's Study datasets and inject only that Study's `secret_env`. The dataset configuration follows the same boundary:
 
 - **The launcher delivers the job's Study only.** When it starts a job, the launcher in the parent process loads `local/datasets.yaml`, validates it, and extracts the job's Study. It hands that part to the job as a read-only file, and sets `NVFLARE_DATASET_CONFIG` in the job to the file's path. The API in the job reads that file. A job therefore cannot read another Study's dataset names, URIs, options, rules or secret variable names, even by opening files directly.
-- **The site file stays out of the job.** The launchers withhold `local/datasets.yaml` from every container job, as the Kubernetes and Slurm workspace transfer already withholds `study_runtime.yaml` and `study_data.yaml`. Kubernetes leaves it out of the job workspace it transfers. Docker binds `local/` entry by entry without it, as it already binds `startup/` file by file. Slurm sandboxes bind a copy of `local/` without it. Until a launcher delivers the job's Study part, a container job therefore sees no datasets.
+- **The site file stays out of the job.** The launchers withhold `local/datasets.yaml` from every container job. Kubernetes leaves it out of the job workspace it transfers, beside `study_runtime.yaml` and `study_data.yaml`. Docker and Slurm sandboxes still bind `local/` whole, so a job sees later edits to its other files (such as a logging-config reload), and bind a read-only configuration with no datasets over `local/datasets.yaml`. Until a launcher delivers the job's Study part, a container job therefore sees no datasets.
 - **Read-only to the job.** The Study's part is mounted or projected read-only, outside the job's writable workspace: a read-only bind in Docker and Slurm, and a projected volume in Kubernetes. A job cannot loosen its own Study's rules.
 - **Invalid configuration fails closed.** If the site file is invalid, the launcher still starts the job and sets `NVFLARE_DATASET_CONFIG`, but delivers no file, so the API raises `DatasetConfigError` and components fail as they would on a broken file. A missing site file is not an error: the launcher delivers a valid Study part with no datasets.
 - **Fixed for the job's life.** The Study part is delivered once, at launch. An edit to the site file applies from the next job; a running job keeps the configuration it started with.

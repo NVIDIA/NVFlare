@@ -217,6 +217,27 @@ def _read_document(raw: bytes, source: str):
         raise _error(source, "not valid YAML") from None
 
 
+# What a container job sees in place of the site file, which covers every Study: a valid configuration with no
+# datasets. Launchers bind it read-only over local/datasets.yaml, so the rest of local/ stays live for the job.
+WITHHELD_DATASET_CONFIG = b"format_version: 1\n"
+
+
+def write_withheld_dataset_config(path: str) -> str:
+    """Write WITHHELD_DATASET_CONFIG to path, read-only, unless it is already there; return path."""
+    try:
+        with open(path, "rb") as f:
+            if f.read() == WITHHELD_DATASET_CONFIG:
+                return path
+    except FileNotFoundError:
+        pass
+    tmp_path = f"{path}.{os.getpid()}.tmp"
+    with open(tmp_path, "wb") as f:
+        f.write(WITHHELD_DATASET_CONFIG)
+    os.chmod(tmp_path, 0o444)
+    os.replace(tmp_path, path)
+    return path
+
+
 def load_study_config(path: str, study: str, missing_ok: bool) -> DatasetConfigAPI:
     """Read one file. A missing file yields an empty snapshot only when missing_ok."""
     try:

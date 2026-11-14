@@ -28,6 +28,7 @@ from typing import Callable, Optional
 from nvflare.apis.dataset_config_spec import DATASET_CONFIG_FILE
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
+from nvflare.app_common.dataset_config.api import write_withheld_dataset_config
 from nvflare.app_opt.job_launcher.slurm.batch import (
     _render_batch_script,
     _render_node_script,
@@ -90,16 +91,14 @@ def _write_exclusive(path: str, data: bytes, mode: int) -> None:
 
 def _cleanup_job_dir(job_dir: str) -> None:
     try:
-        # folders the job or the staged local/ copy may leave without write permission, which rmtree needs
-        for name in (SANDBOX_ROOT, _STAGED_LOCAL_DIR):
-            root = os.path.join(job_dir, name)
-            if os.path.isdir(root) and not os.path.islink(root):
-                pending = [root]
-                while pending:
-                    path = pending.pop()
-                    os.chmod(path, 0o700)
-                    with os.scandir(path) as entries:
-                        pending.extend(entry.path for entry in entries if entry.is_dir(follow_symlinks=False))
+        sandbox_root = os.path.join(job_dir, SANDBOX_ROOT)
+        if os.path.isdir(sandbox_root) and not os.path.islink(sandbox_root):
+            pending = [sandbox_root]
+            while pending:
+                path = pending.pop()
+                os.chmod(path, 0o700)
+                with os.scandir(path) as entries:
+                    pending.extend(entry.path for entry in entries if entry.is_dir(follow_symlinks=False))
         shutil.rmtree(job_dir)
     except FileNotFoundError:
         pass
@@ -111,20 +110,6 @@ def _job_name(site_name: str, job_key: str) -> str:
 
 def _is_terminal(state: str) -> bool:
     return state in _APPLICATION_TERMINAL_STATES or state in _INFRASTRUCTURE_TERMINAL_STATES or state == "CANCELLED"
-
-
-_STAGED_LOCAL_DIR = "local"  # in the job folder: the copy of local/ bound into a sandbox
-
-
-def _stage_job_local_dir(local_dir: str, dest_dir: str) -> str:
-    """Copy the site's local/ folder, without the site dataset configuration, to dest_dir for the job sandbox."""
-
-    def withheld(directory, names):
-        return [DATASET_CONFIG_FILE] if directory == local_dir and DATASET_CONFIG_FILE in names else []
-
-    shutil.copytree(local_dir, dest_dir, symlinks=True, ignore=withheld, dirs_exist_ok=True)
-    os.chmod(dest_dir, 0o700)
-    return dest_dir
 
 
 class SlurmJobManager:
@@ -232,16 +217,22 @@ class SlurmJobManager:
             startup_source = stage_job_startup_dir(
                 os.path.realpath(os.path.join(workspace, "startup")), os.path.join(job_dir, "startup")
             )
-            # a copy of local/ without the site dataset configuration, which covers every Study
-            local_source = _stage_job_local_dir(
-                os.path.realpath(os.path.join(workspace, "local")), os.path.join(job_dir, _STAGED_LOCAL_DIR)
-            )
             launcher_mounts = (
                 BindMount(os.path.join(job_dir, SANDBOX_ROOT), workspace, "rw"),
                 BindMount(plan.run_dir, plan.run_dir, "rw"),
                 BindMount(startup_source, os.path.join(workspace, "startup"), "ro"),
-                BindMount(local_source, os.path.join(workspace, "local"), "ro"),
+                BindMount(
+                    os.path.realpath(os.path.join(workspace, "local")),
+                    os.path.join(workspace, "local"),
+                    "ro",
+                ),
             )
+            site_dataset_config = os.path.join(workspace, "local", DATASET_CONFIG_FILE)
+            if os.path.lexists(site_dataset_config):
+                # the site dataset configuration covers every Study: cover it with one that has no datasets. local/
+                # stays bound whole, so the job sees later edits to its other files (e.g. a logging-config reload).
+                withheld = write_withheld_dataset_config(os.path.join(job_dir, "withheld_datasets.yaml"))
+                launcher_mounts += (BindMount(withheld, site_dataset_config, "ro"),)
             if plan.sandbox == "apptainer":
                 launcher_mounts += (
                     BindMount(

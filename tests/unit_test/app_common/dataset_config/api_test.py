@@ -24,7 +24,7 @@ from nvflare.apis.dataset_config_spec import (
     get_study_dataset_config,
 )
 from nvflare.apis.fl_constant import FLContextKey
-from nvflare.app_common.dataset_config.api import load_study_config, parse_study_config
+from nvflare.app_common.dataset_config.api import load_study_config, parse_study_config, write_withheld_dataset_config
 
 CONFIG = {
     "format_version": 1,
@@ -164,6 +164,11 @@ class TestValidation:
 
 
 class TestLoading:
+    def test_the_withheld_configuration_offers_no_datasets(self, tmp_path):
+        path = write_withheld_dataset_config(str(tmp_path / "withheld.yaml"))
+        assert write_withheld_dataset_config(path) == path  # rewriting the read-only file is a no-op
+        assert load_study_config(path, "oncology", missing_ok=False).list_datasets() == []
+
     def test_missing_file(self, tmp_path):
         assert load_study_config(str(tmp_path / "none.yaml"), "oncology", missing_ok=True).list_datasets() == []
         with pytest.raises(DatasetConfigError):
