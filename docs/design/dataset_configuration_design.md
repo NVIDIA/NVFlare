@@ -34,7 +34,7 @@ A site's per-Study configuration is two files in `local/`:
 
 `study_data.yaml`, the 2.8 mount-only file that `study_runtime.yaml` replaces, is legacy. Docker and Kubernetes still read it for kits that have not migrated, Slurm rejects it, and process mode ignores it. New sites, and this design, use `study_runtime.yaml`.
 
-A job loads the configuration once, when a component first asks for it, and keeps it for the job's life (Section 3.4). An edit applies from the next job, in every launch mode, without a restart of the site.
+A job loads the configuration once, when a component first asks for it, and keeps it for the job's life (Section 3.4). An edit applies from the next job, in every deployment mode, without a restart of the site.
 
 ### 2.2 Format
 
@@ -410,27 +410,27 @@ for name in config.list_datasets():
 
 `DatasetConfigAPI` in `nvflare/app_common/dataset_config/api.py` implements the spec. It is built from a configuration dictionary, the content Section 2 describes, and does not depend on where that dictionary came from. Validation, defaults and the frozen objects work on the dictionary; `revision` is a hash of its content.
 
-A loader produces the dictionary. In every launch mode it reads `local/datasets.yaml` as the job sees it (Section 3.4); only it decodes the file format (YAML, with `yaml.safe_load`). Components depend on `StudyDatasetConfig`, so another source, such as a site service, can be added as a loader without changing them.
+A loader produces the dictionary. In every deployment mode it reads `local/datasets.yaml` as the job sees it (Section 3.4); only it decodes the file format (YAML, with `yaml.safe_load`). Components depend on `StudyDatasetConfig`, so another source, such as a site service, can be added as a loader without changing them.
 
-### 3.4 Loading in each launch mode
+### 3.4 Loading in each deployment mode
 
-In every mode the job reads `local/datasets.yaml` from its own workspace. What differs is how `local/` reaches the job, and that is already decided by each launcher.
+In every case the job reads `local/datasets.yaml` from its own workspace. What differs is how `local/` reaches it, which the launcher already decides. A site runs jobs in one deployment mode, and on Kubernetes and Slurm a job can be job-scoped (the job runs its tasks itself) or task-scoped (tasks run in separate task workers).
 
-| Mode | How the job sees `local/datasets.yaml` |
-| --- | --- |
-| Process | The site file, in the site workspace |
-| Docker | The site file, through the `local/` folder the launcher mounts read-only |
-| Slurm, jobs and task workers | The site file, on the site's shared storage (bound read-only in a sandbox) |
-| Kubernetes, job pods and task workers | A copy holding only the job's Study, written by the parent into the job's workspace transfer |
+| Deployment mode | Job-scoped: the job | Task-scoped: the job and its task workers |
+| --- | --- | --- |
+| Process | The site file, in the site workspace | Not supported |
+| Docker | The site file, through the `local/` folder the launcher mounts read-only | Not supported |
+| Slurm | The site file, on the site's shared storage (bound read-only in a sandbox) | The site file, on the same shared storage |
+| Kubernetes | A copy holding only the job's Study, written by the parent into the job pod's workspace transfer | The same copy: the transferred workspace sits on the jobs PVC, and task worker pods mount its `local/` read-only |
 
-**Kubernetes.** A job pod does not see the parent's workspace. The parent sends the job its workspace (`local/` and the job folder) through the workspace transfer, which already leaves out the site files the job must not have, `study_runtime.yaml` and `study_data.yaml`. For `datasets.yaml` the transfer sends the job's part instead of the whole file: the parent loads the site file, validates all of it, and writes a `local/datasets.yaml` with the job's Study entry and the site-wide `usage` settings. In the persistent-workspace profile the transferred `local/` sits on the jobs PVC, and task worker pods mount it read-only, so they read the same part. Task workers receive only the site's environment, so the configuration travels as this file, not in the job's environment.
+**Kubernetes.** A job pod does not see the parent's workspace. The parent sends the job its workspace (`local/` and the job folder) through the workspace transfer, which already leaves out the site files the job must not have, `study_runtime.yaml` and `study_data.yaml`. For `datasets.yaml` the transfer sends the job's part instead of the whole file: the parent loads the site file, validates all of it, and writes a `local/datasets.yaml` with the job's Study entry and the site-wide `usage` settings. For a task-scoped job the transferred `local/` sits on the jobs PVC, and task worker pods mount it read-only, so they read the same part. Task workers receive only the site's environment, not the job's, so the configuration travels as this file.
 
 - No site file: the transfer sends none, and the job sees no datasets.
 - An invalid site file: the transfer sends a `local/datasets.yaml` that the API rejects, stating that the site configuration is invalid, so components fail as they would on a broken file instead of seeing no datasets.
 
 The part is written when the job pod downloads its workspace, at launch. The pod and its workers never receive another Study's entries.
 
-**Process, Docker and Slurm.** The job reads the site file, as it can reach the rest of `local/`, and the API returns only the job's Study. As with `study_runtime.yaml` in these modes, the file itself is readable by job code; the API's Study binding is not a security boundary there.
+**Process, Docker and Slurm.** The job, and on Slurm its task workers, read the site file, as it can reach the rest of `local/`, and the API returns only the job's Study. As with `study_runtime.yaml` in these modes, the file itself is readable by job code; the API's Study binding is not a security boundary there.
 
 **Fixed for the job's life.** A job loads the configuration once, on first use, and keeps it. An edit to the site file applies from the next job; a running job keeps the configuration it started with.
 
