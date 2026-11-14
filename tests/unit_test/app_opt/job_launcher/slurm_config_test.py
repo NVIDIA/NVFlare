@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 import pytest
 
 from nvflare.app_opt.job_launcher.slurm.config import (
@@ -23,6 +25,7 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     normalize_slurm_executables,
     normalize_slurm_image,
     normalize_slurm_launcher_settings,
+    resolve_slurm_parent_executables,
 )
 
 
@@ -39,6 +42,14 @@ def test_mount_source_rejects_launcher_owned_path(tmp_path):
 def test_executables_reject_unknown_key():
     with pytest.raises(SlurmLauncherError, match="unknown key"):
         normalize_slurm_executables({"unknown": "/usr/bin/true"})
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Slurm command dispatch uses POSIX executable symlinks")
+def test_parent_executable_rejects_broken_symlink(tmp_path):
+    missing = tmp_path / "sbatch"
+    missing.symlink_to(tmp_path / "missing-target")
+    with pytest.raises(SlurmLauncherError, match="not an executable regular file"):
+        resolve_slurm_parent_executables({"sbatch": str(missing)})
 
 
 def test_integer_rejects_boolean():
