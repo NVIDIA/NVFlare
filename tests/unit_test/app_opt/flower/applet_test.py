@@ -14,6 +14,7 @@
 
 import os
 import shlex
+import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -27,11 +28,12 @@ from nvflare.app_opt.flower.applet import FlowerClientApplet, FlowerServerApplet
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 
 
-def _make_server_applet(run_config=None):
+def _make_server_applet(run_config=None, **kwargs):
     applet = FlowerServerApplet(
         database="",
         superlink_ready_timeout=1.0,
         run_config=run_config,
+        **kwargs,
     )
     applet.exec_api_addr = "127.0.0.1:9093"
     applet.flower_app_dir = "/tmp/flower app"
@@ -208,7 +210,7 @@ def test_server_http_launcher_and_dependency_policy(_run, start, ready, _version
     ctx = FLContext()
     ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
     ctx.set_prop(ReservedKey.RUN_NUM, "job", private=True, sticky=False)
-    applet = FlowerServerApplet("", 10, allow_runtime_dependency_installation=runtime_deps)
+    applet = FlowerServerApplet("", 10, allow_runtime_dependency_installation=runtime_deps, flwr_run_timeout=600)
     applet.start({FlowerConstant.APP_CTX_SUPERLINK_ADDR: "127.0.0.1:19092", FlowerConstant.APP_CTX_FL_CONTEXT: ctx})
     descriptor = start.call_args.args[0]
     argv = shlex.split(descriptor.cmd)
@@ -220,6 +222,7 @@ def test_server_http_launcher_and_dependency_policy(_run, start, ready, _version
     assert descriptor.env["FLWR_HOME"] == str(tmp_path / "flwr_home")
     ready.assert_called_once_with("127.0.0.1:19092", start.return_value, 10)
     assert applet.run_id == "123"
+    assert _run.call_args.kwargs["timeout"] == 600
 
 
 @pytest.mark.parametrize(
@@ -261,6 +264,53 @@ def test_server_log_is_saved_before_superlink_stops(run_command, tmp_path):
     applet.stop()
     assert shlex.split(run_command.call_args.args[0].cmd)[1:] == ["log", "123", "nvflare", "--show"]
     manager.stop.assert_called_once()
+    assert run_command.call_args.kwargs["timeout"] == 5.0
+
+
+@pytest.mark.parametrize("finished", [False, True])
+def test_cli_timeouts_do_not_prevent_server_cleanup(monkeypatch, tmp_path, caplog, finished):
+    from nvflare.app_opt.flower import applet as subject
+    from tests.timing_utils import isolate_time
+
+    isolate_time(monkeypatch, subject).sleep = MagicMock()
+    applet = _make_server_applet(flwr_command_timeout=11, flwr_log_timeout=2)
+    applet.run_id = "123"
+    applet.run_dir = str(tmp_path)
+    applet.flower_run_finished = finished
+    manager = applet._superlink_process_mgr = MagicMock()
+    manager.poll.return_value = None
+    commands = []
+
+    def run(descriptor, timeout):
+        commands.append((shlex.split(descriptor.cmd)[1], timeout))
+        assert manager.stop.call_count == 0
+        raise subprocess.TimeoutExpired(descriptor.cmd, timeout)
+
+    with patch.object(subject, "run_command", side_effect=run), patch.object(subject, "_validate_flower_executable"):
+        assert applet.stop() == 0
+    assert commands == ([("log", 2)] if finished else [("stop", 11), ("log", 2)])
+    manager.stop.assert_called_once()
+    assert applet._superlink_process_mgr is None
+    assert "could not save Flower ServerApp log" in caplog.text
+
+
+def test_status_query_uses_command_timeout():
+    applet = _make_server_applet(flwr_run_timeout=600, flwr_command_timeout=11, flwr_log_timeout=2)
+    applet.run_id = "123"
+    with (
+        patch("nvflare.app_opt.flower.applet._validate_flower_executable"),
+        patch(
+            "nvflare.app_opt.flower.applet.run_command", return_value='{"success":true,"runs":[{"status":"running"}]}'
+        ) as run,
+    ):
+        assert applet._query_for_run_status() == (False, 0)
+    assert run.call_args.kwargs["timeout"] == 11
+
+
+@pytest.mark.parametrize("name", ["flwr_run_timeout", "flwr_command_timeout", "flwr_log_timeout"])
+def test_applet_rejects_invalid_cli_timeout(name):
+    with pytest.raises(ValueError, match=name):
+        _make_server_applet(**{name: 0})
 
 
 @pytest.mark.parametrize("outcome", ["ready", "exited", "timeout"])

@@ -975,6 +975,15 @@ Flower-specific controller and executor timeouts (flower/controller.py, flower/e
    * - superlink_ready_timeout
      - 10.0
      - Time to wait for Flower superlink to become ready
+   * - flwr_run_timeout
+     - 300.0
+     - CLI startup, FAB preparation, and run submission
+   * - flwr_command_timeout
+     - 15.0
+     - Each local status or stop CLI command
+   * - flwr_log_timeout
+     - 5.0
+     - Best-effort ServerApp log snapshot before process cleanup
    * - superlink_min_query_interval
      - 10.0
      - Minimal interval for querying superlink status
@@ -992,7 +1001,11 @@ Flower-specific controller and executor timeouts (flower/controller.py, flower/e
      - Max time for graceful client shutdown
 
 
-Flower HTTP caps these values at 2 and 25 seconds and logs a warning when larger
+The CLI timeouts are positive, finite values configurable through FlowerRecipe,
+FlowerJob, and FlowerController. A log snapshot timeout does not prevent process
+cleanup. These settings do not override Flower's own HTTP timeouts.
+
+Flower HTTP caps ``per_msg_timeout`` and ``tx_timeout`` at 2 and 25 seconds and logs a warning when larger
 values are supplied. Heartbeats use tighter caps of 0.5 and 3.5 seconds. See
 :ref:`flower_http_design` for payload, timing, and shutdown requirements.
 

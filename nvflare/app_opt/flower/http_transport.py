@@ -234,39 +234,41 @@ class _FleetHandler(BaseHTTPRequestHandler):
             self._reply(http_response(503, headers={"retry-after": "1"}))
             return
         try:
-            if self.path not in FLEET_PATHS:
-                raise HttpError(404, "Unknown Fleet route")
-            lengths = self.headers.get_all("Content-Length", [])
-            if len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdecimal():
-                raise HttpError(411, "A single Content-Length is required")
-            if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Encoding"):
-                raise HttpError(400, "Encoded request bodies are not supported")
-            length = int(lengths[0])
-            if length > self.server.max_message_bytes:
-                raise HttpError(413, "Fleet payload exceeds max_message_bytes")
-            headers = filter_headers(self.headers, REQUEST_HEADERS)
-            body = self.rfile.read(length)
-            if len(body) != length:
-                raise HttpError(400, "Incomplete request body")
-            request = Shareable()
-            request.update(method="POST", path=self.path, headers=headers, body=body)
-            validate_request(request, self.server.max_message_bytes)
-            reply = self.server.forward(request)
-            status, content = reply.get("status"), reply.get("body")
-            if type(status) is not int or not 200 <= status <= 599 or not isinstance(content, bytes):
-                raise HttpError(502, "Invalid Fleet response")
-            if len(content) > self.server.max_message_bytes:
-                raise HttpError(502, "Fleet response exceeds max_message_bytes")
-            reply["headers"] = filter_headers(reply["headers"], RESPONSE_HEADERS)
-        except HttpError as ex:
-            reply = error_response(ex)
-        except (TimeoutError, socket.timeout):
-            reply = http_response(504)
-        except Exception:
-            reply = http_response(502)
+            try:
+                if self.path not in FLEET_PATHS:
+                    raise HttpError(404, "Unknown Fleet route")
+                lengths = self.headers.get_all("Content-Length", [])
+                if len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdecimal():
+                    raise HttpError(411, "A single Content-Length is required")
+                if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Encoding"):
+                    raise HttpError(400, "Encoded request bodies are not supported")
+                length = int(lengths[0])
+                if length > self.server.max_message_bytes:
+                    raise HttpError(413, "Fleet payload exceeds max_message_bytes")
+                headers = filter_headers(self.headers, REQUEST_HEADERS)
+                body = self.rfile.read(length)
+                if len(body) != length:
+                    raise HttpError(400, "Incomplete request body")
+                request = Shareable()
+                request.update(method="POST", path=self.path, headers=headers, body=body)
+                validate_request(request, self.server.max_message_bytes)
+                reply = self.server.forward(request)
+                status, content = reply.get("status"), reply.get("body")
+                if type(status) is not int or not 200 <= status <= 599 or not isinstance(content, bytes):
+                    raise HttpError(502, "Invalid Fleet response")
+                if len(content) > self.server.max_message_bytes:
+                    raise HttpError(502, "Fleet response exceeds max_message_bytes")
+                reply["headers"] = filter_headers(reply["headers"], RESPONSE_HEADERS)
+            except HttpError as ex:
+                reply = error_response(ex)
+            except (TimeoutError, socket.timeout):
+                reply = http_response(504)
+            except Exception:
+                reply = http_response(502)
+            self._reply(reply)
         finally:
+            # The buffered response remains owned until its socket write ends.
             gate.release()
-        self._reply(reply)
 
     def _reply(self, reply):
         self.close_connection = True

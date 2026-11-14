@@ -20,6 +20,7 @@ session so shutdown and failed startup also clean up descendants.
 
 import json
 import logging
+import math
 import os
 import selectors
 import shlex
@@ -35,6 +36,7 @@ import psutil
 from nvflare.app_common.tie.process_mgr import ProcessManager
 from nvflare.app_opt.flower.process_guard import OWNER_ENV as _OWNER_ENV
 from nvflare.app_opt.flower.process_guard import capture_owned
+from nvflare.fuel.utils.validation_utils import check_positive_number
 
 
 class FlowerProcessManager(ProcessManager):
@@ -328,7 +330,15 @@ def start_process(cmd_desc, fl_ctx, stop_method="term"):
     return manager
 
 
-def run_command(cmd_desc):
+def validate_command_timeout(name, timeout):
+    check_positive_number(name, timeout)
+    if not math.isfinite(timeout):
+        raise ValueError(f"{name} must be finite, but got {timeout}")
+
+
+def run_command(cmd_desc, timeout):
+    """Run one Flower CLI operation within its configured wall-clock limit."""
+    validate_command_timeout("timeout", timeout)
     env = os.environ.copy()
     env.update(cmd_desc.env or {})
     result = subprocess.run(
@@ -337,7 +347,7 @@ def run_command(cmd_desc):
         env=env,
         capture_output=True,
         text=True,
-        timeout=45,
+        timeout=timeout,
         check=True,
     )
     return result.stdout

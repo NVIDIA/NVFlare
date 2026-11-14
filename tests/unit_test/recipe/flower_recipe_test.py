@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import tempfile
 from importlib.metadata import PackageNotFoundError
@@ -19,10 +20,33 @@ from unittest.mock import patch
 
 import pytest
 
+from nvflare.app_opt.flower.controller import FlowerController
 from nvflare.app_opt.flower.recipe import FlowerRecipe
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
 from nvflare.job_config.api import FedJob
 from nvflare.recipe import secret_ref
+
+
+@patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.43.0")
+def test_cli_timeouts_survive_recipe_export_and_applet_construction(_version, tmp_path):
+    timeouts = {"flwr_run_timeout": 600, "flwr_command_timeout": 12, "flwr_log_timeout": 3}
+    recipe = FlowerRecipe(name="flower-timeouts", flower_app_path="local/custom/my_app", **timeouts)
+    recipe.export(str(tmp_path))
+    config = json.loads((tmp_path / "flower-timeouts/app/config/config_fed_server.json").read_text())
+    workflow = config["workflows"][0]
+    assert workflow["path"] == "nvflare.app_opt.flower.controller.FlowerController"
+    controller = FlowerController(**workflow["args"])
+    applet = controller.get_applet(None)
+    for name, value in timeouts.items():
+        assert workflow["args"][name] == value
+        assert getattr(applet, name) == value
+
+
+@pytest.mark.parametrize("name", ["flwr_run_timeout", "flwr_command_timeout", "flwr_log_timeout"])
+@patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.43.0")
+def test_recipe_rejects_invalid_cli_timeout(_version, name):
+    with pytest.raises(ValueError, match=name):
+        FlowerRecipe(flower_app_path="local/custom/my_app", **{name: float("inf")})
 
 
 @pytest.mark.parametrize("flwr_version", ["1.15.9", "1.16rc0", "1.26.0", "1.28.0", "1.40.0", "1.42.9", "1.43.0rc0"])

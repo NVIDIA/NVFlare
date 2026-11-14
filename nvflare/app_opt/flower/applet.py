@@ -29,7 +29,7 @@ from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.app_common.tie.process_mgr import CommandDescriptor, ProcessManager, StopMethod
 from nvflare.app_opt.flower.defs import Constant
 from nvflare.app_opt.flower.http_transport import split_address
-from nvflare.app_opt.flower.process import run_command, start_process
+from nvflare.app_opt.flower.process import run_command, start_process, validate_command_timeout
 from nvflare.security.logging import secure_format_exception
 
 from .path_utils import validate_flower_app_path, validate_flower_app_path_no_symlinks
@@ -172,8 +172,12 @@ class FlowerClientApplet(CLIApplet):
 
     def stop(self, timeout=5.0):
         manager = self._proc_mgr
+        if not manager:
+            return 0
+        result = manager.stop(timeout)
+        # Incomplete cleanup retains owned workers/guards for another attempt.
         self._proc_mgr = None
-        return manager.stop(timeout) if manager else 0
+        return result
 
     def get_command(self, ctx: dict) -> CommandDescriptor:
         """Implementation of the get_command method required by the super class CLIApplet.
@@ -270,6 +274,9 @@ class FlowerServerApplet(Applet):
         run_config: Optional[dict] = None,
         allow_runtime_dependency_installation: bool = False,
         flower_app_path: Optional[str] = None,
+        flwr_run_timeout: float = Constant.FLWR_RUN_TIMEOUT,
+        flwr_command_timeout: float = Constant.FLWR_COMMAND_TIMEOUT,
+        flwr_log_timeout: float = Constant.FLWR_LOG_TIMEOUT,
     ):
         """Constructor of FlowerServerApplet.
 
@@ -281,8 +288,20 @@ class FlowerServerApplet(Applet):
             run_config: optional dict for flwr run --run-config arguments
             allow_runtime_dependency_installation: whether to allow dynamic dependency installation
             flower_app_path: absolute path to pre-deployed Flower app on the server (clients receive via FAB)
+            flwr_run_timeout: seconds allowed for CLI startup, FAB preparation and run submission. Defaults to 300.
+            flwr_command_timeout: seconds allowed for each status or stop CLI command. Defaults to 15.
+            flwr_log_timeout: seconds allowed for the best-effort log snapshot during shutdown. Defaults to 5.
         """
         Applet.__init__(self)
+        for name, value in (
+            ("flwr_run_timeout", flwr_run_timeout),
+            ("flwr_command_timeout", flwr_command_timeout),
+            ("flwr_log_timeout", flwr_log_timeout),
+        ):
+            validate_command_timeout(name, value)
+        self.flwr_run_timeout = flwr_run_timeout
+        self.flwr_command_timeout = flwr_command_timeout
+        self.flwr_log_timeout = flwr_log_timeout
         self._superlink_process_mgr = None
         self.database = database
         self.run_config = run_config
@@ -418,7 +437,7 @@ class FlowerServerApplet(Applet):
 
         # submitting the server app using "flwr run" command
         flwr_run_cmd = self._flower_command("run")
-        run_info = self._run_flower_command(flwr_run_cmd, cwd=self.flower_app_dir)
+        run_info = self._run_flower_command(flwr_run_cmd, cwd=self.flower_app_dir, timeout=self.flwr_run_timeout)
         run_id = run_info.get("run-id")
         if not run_id:
             raise RuntimeError(f"invalid result from command '{flwr_run_cmd}': missing run-id")
@@ -495,10 +514,10 @@ class FlowerServerApplet(Applet):
 
         return " ".join(command_parts)
 
-    def _run_flower_command(self, command: str, cwd: Optional[str] = None):
+    def _run_flower_command(self, command: str, cwd: Optional[str] = None, timeout: Optional[float] = None):
         self.logger.debug(f"running flower command: {command}")
         cmd_desc = CommandDescriptor(cmd=command, env=self._build_flower_env(include_flwr_home=True), cwd=cwd)
-        reply = run_command(cmd_desc)
+        reply = run_command(cmd_desc, timeout=self.flwr_command_timeout if timeout is None else timeout)
         if not isinstance(reply, str):
             raise RuntimeError(f"failed to run command '{command}': expect reply to be str but got {type(reply)}")
 
@@ -574,7 +593,10 @@ class FlowerServerApplet(Applet):
         try:
             executable = os.path.join(os.path.dirname(sys.executable), FLOWER_CLI)
             command = shlex.join([executable, "log", str(self.run_id), FLOWER_SUPERLINK_CONNECTION, "--show"])
-            output = run_command(CommandDescriptor(cmd=command, env=self._build_flower_env(include_flwr_home=True)))
+            output = run_command(
+                CommandDescriptor(cmd=command, env=self._build_flower_env(include_flwr_home=True)),
+                timeout=self.flwr_log_timeout,
+            )
             with open(os.path.join(self.run_dir, "server_app_log.txt"), "w", encoding="utf-8") as log:
                 log.write(output)
         except Exception as ex:

@@ -47,6 +47,9 @@ class FlowerJob(FedJob):
         run_config: Optional[dict] = None,
         max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES,
         allow_runtime_dependency_installation: bool = False,
+        flwr_run_timeout: float = FlowerConstant.FLWR_RUN_TIMEOUT,
+        flwr_command_timeout: float = FlowerConstant.FLWR_COMMAND_TIMEOUT,
+        flwr_log_timeout: float = FlowerConstant.FLWR_LOG_TIMEOUT,
     ):
         """
         Flower Job.
@@ -70,6 +73,9 @@ class FlowerJob(FedJob):
             run_config (dict, optional): optional dict for flwr run --run-config arguments
             max_message_bytes: maximum HTTP request or response body size in bytes. Defaults to 512 MiB.
             allow_runtime_dependency_installation (bool, optional): whether to allow dynamic dependency installation. Defaults to False.
+            flwr_run_timeout: seconds allowed for CLI startup, FAB preparation and run submission. Defaults to 300.
+            flwr_command_timeout: seconds allowed for each status or stop CLI command. Defaults to 15.
+            flwr_log_timeout: seconds allowed for the best-effort log snapshot during shutdown. Defaults to 5.
         """
         if flower_content and flower_app_path:
             raise ValueError("Specify either 'flower_content' (BYOC) or 'flower_app_path' (pre-deployed), not both.")
@@ -113,6 +119,9 @@ class FlowerJob(FedJob):
             max_message_bytes=max_message_bytes,
             allow_runtime_dependency_installation=allow_runtime_dependency_installation,
             flower_app_path=flower_app_path,
+            flwr_run_timeout=flwr_run_timeout,
+            flwr_command_timeout=flwr_command_timeout,
+            flwr_log_timeout=flwr_log_timeout,
         )
         self.to_server(controller)
         if flower_content:

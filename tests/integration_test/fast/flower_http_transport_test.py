@@ -33,7 +33,13 @@ import pytest
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.tie.process_mgr import CommandDescriptor
-from nvflare.app_opt.flower.http_transport import FleetHttpClient, FleetHttpServer, HttpError, http_response
+from nvflare.app_opt.flower.http_transport import (
+    FleetHttpClient,
+    FleetHttpServer,
+    HttpError,
+    _FleetHandler,
+    http_response,
+)
 from nvflare.app_opt.flower.process import FlowerProcessManager
 from tests.process_test_utils import OwnedProcesses, process_running
 from tests.timing_utils import ThreadGroup, wait_for
@@ -153,6 +159,73 @@ def test_heartbeat_progresses_while_bulk_workers_are_blocked(server_factory):
             assert all(event.wait(10) for event in entered)
             assert client.send(envelope("/v1/fleet/pull-object"))["status"] == 503
             assert client.send(envelope("/v1/fleet/send-node-heartbeat"))["body"] == b"ok"
+    finally:
+        release.set()
+        client.close()
+
+
+def test_bulk_response_writes_keep_slots_and_heartbeat_capacity(server_factory):
+    # Gate the response-body write itself, after forwarding has returned. This
+    # models socket backpressure without relying on OS buffer sizes or sleeps.
+    entered = [threading.Event() for _ in range(4)]
+    release = threading.Event()
+    lock = threading.Lock()
+    body_size = 8 * 1024 * 1024
+    forwarded = 0
+    writes = 0
+
+    class GatedWriter:
+        def __init__(self, writer):
+            self.writer = writer
+
+        def __getattr__(self, name):
+            return getattr(self.writer, name)
+
+        def write(self, data):
+            nonlocal writes
+            if len(data) == body_size:
+                with lock:
+                    index = writes
+                    writes += 1
+                entered[index].set()
+                release.wait()
+            return self.writer.write(data)
+
+    class Handler(_FleetHandler):
+        def setup(self):
+            super().setup()
+            self.wfile = GatedWriter(self.wfile)
+
+    def forward(req):
+        nonlocal forwarded
+        if req["path"] == "/v1/fleet/pull-object":
+            with lock:
+                forwarded += 1
+                index = forwarded
+            if index <= 4:
+                return http_response(200, b"x" * body_size)
+        # A wrongly admitted fifth bulk request returns promptly, so the old
+        # implementation fails the assertion without waiting for a write gate.
+        return http_response(200, b"ok")
+
+    server = server_factory(forward)
+    server.RequestHandlerClass = Handler
+    client = FleetHttpClient(server.address)
+
+    def receive_body():
+        reply = client.send(envelope("/v1/fleet/pull-object"))
+        assert reply["status"] == 200
+        assert reply["body"] == b"x" * body_size
+
+    try:
+        with ThreadGroup(release) as workers:
+            for _ in entered:
+                workers.start(receive_body)
+            assert all(event.wait(10) for event in entered)
+            assert client.send(envelope("/v1/fleet/pull-object"))["status"] == 503
+            assert client.send(envelope("/v1/fleet/send-node-heartbeat"))["body"] == b"ok"
+            assert forwarded == 4
+        assert client.send(envelope("/v1/fleet/pull-object"))["body"] == b"ok"
     finally:
         release.set()
         client.close()

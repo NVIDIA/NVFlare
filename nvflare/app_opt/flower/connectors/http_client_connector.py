@@ -14,6 +14,8 @@
 
 """Bridge a local Flower SuperNode to NVFlare ReliableMessage."""
 
+import threading
+
 from nvflare.apis.shareable import ReturnCode
 from nvflare.apis.signal import Signal
 from nvflare.app_common.tie.defs import Constant as TieConstant
@@ -26,6 +28,7 @@ from nvflare.app_opt.flower.http_transport import (
     http_response,
 )
 from nvflare.fuel.utils.network_utils import get_local_addresses
+from nvflare.security.logging import secure_format_exception
 
 
 class HttpClientConnector(FlowerClientConnector):
@@ -50,6 +53,8 @@ class HttpClientConnector(FlowerClientConnector):
         self.http_server = None
         self._server_done = False
         self._exit_code = 0
+        self._stop_lock = threading.Lock()
+        self._cleanup_complete = False
 
     def set_abort_signal(self, abort_signal):
         # Local shutdown cancels forwarding without aborting the enclosing job.
@@ -87,10 +92,11 @@ class HttpClientConnector(FlowerClientConnector):
                 tx_timeout=min(self.tx_timeout, 3.5 if heartbeat else 25.0),
             )
             rc = reply.get_return_code()
-        except Exception:
+        except Exception as ex:
             if not heartbeat:
                 self._server_done = True
                 self._exit_code = TieConstant.EXIT_CODE_FAILED
+                self.logger.error("Flower forwarding failed; stopping training: %s", secure_format_exception(ex))
             return http_response(503)
         if rc == ReturnCode.OK:
             return reply
@@ -109,14 +115,16 @@ class HttpClientConnector(FlowerClientConnector):
         return self.is_applet_stopped()
 
     def stop(self, fl_ctx):
-        if self.stopped:
-            return
-        self.stopped = True
-        if self.abort_signal:
-            self.abort_signal.trigger(True)
-        try:
-            self.stop_applet(self.client_shutdown_timeout)
-        finally:
-            if self.http_server:
-                self.http_server.close()
-                self.http_server = None
+        with self._stop_lock:
+            if self._cleanup_complete:
+                return
+            self.stopped = True
+            if self.abort_signal:
+                self.abort_signal.trigger(True)
+            try:
+                self.stop_applet(self.client_shutdown_timeout)
+            finally:
+                if self.http_server:
+                    self.http_server.close()
+                    self.http_server = None
+            self._cleanup_complete = True

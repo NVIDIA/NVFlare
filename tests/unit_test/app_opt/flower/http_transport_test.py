@@ -14,8 +14,10 @@
 
 import errno
 import http.client
+import io
 import threading
 from email.message import Message
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,6 +25,7 @@ import pytest
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.app_opt.flower.applet import FlowerClientApplet
 from nvflare.app_opt.flower.connectors.http_client_connector import HttpClientConnector
 from nvflare.app_opt.flower.connectors.http_server_connector import HttpServerConnector
 from nvflare.app_opt.flower.http_transport import (
@@ -30,11 +33,13 @@ from nvflare.app_opt.flower.http_transport import (
     REQUEST_HEADERS,
     FleetHttpClient,
     HttpError,
+    _FleetHandler,
     filter_headers,
     http_response,
     split_address,
     validate_request,
 )
+from tests.timing_utils import ObservedLock, ThreadGroup
 
 
 def request(path="/v1/fleet/register-node"):
@@ -147,6 +152,100 @@ def test_client_shutdown_cancels_forwarding_without_aborting_job():
     assert connector.abort_signal.triggered
     assert not parent.triggered
     assert connector._forward(request())["status"] == 503
+
+
+@pytest.mark.parametrize("failed_resource", ["applet", "http_server"])
+def test_client_cleanup_retries_failed_resources(failed_resource):
+    connector = HttpClientConnector()
+    connector.set_abort_signal(Signal())
+    applet = connector.applet = FlowerClientApplet()
+    manager = applet._proc_mgr = MagicMock()
+    server = connector.http_server = MagicMock()
+    failed = manager.stop if failed_resource == "applet" else server.close
+    failed.side_effect = [RuntimeError("cleanup incomplete"), 0]
+
+    with pytest.raises(RuntimeError, match="cleanup incomplete"):
+        connector.stop(None)
+    assert connector.stopped
+    assert connector.abort_signal.triggered
+    assert connector._forward(request())["status"] == 503
+    if failed_resource == "applet":
+        assert applet._proc_mgr is manager
+    else:
+        assert connector.http_server is server
+
+    connector.stop(None)
+    connector.stop(None)
+    assert applet._proc_mgr is None
+    assert connector.http_server is None
+    assert manager.stop.call_count == (2 if failed_resource == "applet" else 1)
+    assert server.close.call_count == (2 if failed_resource == "http_server" else 1)
+
+
+def test_concurrent_client_stops_serialize_cleanup():
+    connector = HttpClientConnector()
+    connector.set_abort_signal(Signal())
+    connector._stop_lock = ObservedLock()
+    entered, release = threading.Event(), threading.Event()
+
+    def stop_applet(timeout):
+        entered.set()
+        release.wait()
+
+    connector.stop_applet = MagicMock(side_effect=stop_applet)
+    with ThreadGroup(release) as workers:
+        workers.start(connector.stop, None)
+        assert entered.wait(10)
+        workers.start(connector.stop, None)
+        assert connector._stop_lock.blocked.wait(10)
+    connector.stop_applet.assert_called_once()
+
+
+@pytest.mark.parametrize("secure", [False, True])
+def test_training_exception_is_logged_without_request_data(monkeypatch, caplog, secure):
+    monkeypatch.setenv("NVFLARE_SECURE_LOGGING", str(secure))
+    connector = HttpClientConnector()
+    connector.set_abort_signal(Signal())
+    connector.send_request = MagicMock(side_effect=RuntimeError("transport unavailable"))
+    req = request()
+    req["body"] = b"private-model-data"
+    req["headers"]["flwr-signature"] = "private-signed-header"
+    assert connector._forward(req)["status"] == 503
+    assert connector._is_stopped()[1] != 0
+    assert "Flower forwarding failed; stopping training" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert ("transport unavailable" in caplog.text) == (not secure)
+    assert "private-model-data" not in caplog.text
+    assert "private-signed-header" not in caplog.text
+
+
+@pytest.mark.parametrize("write_fails", [False, True])
+def test_response_slot_is_held_during_write_and_released_afterward(write_fails):
+    gate = threading.BoundedSemaphore(1)
+    handler = object.__new__(_FleetHandler)
+    handler.path = "/v1/fleet/pull-object"
+    handler.headers = Message()
+    handler.headers["Content-Length"] = "0"
+    handler.headers["Content-Type"] = "application/protobuf"
+    handler.rfile = io.BytesIO()
+    handler.server = SimpleNamespace(
+        bulk_slots=gate, max_message_bytes=1024, forward=lambda req: http_response(200, b"model")
+    )
+
+    def write(reply):
+        assert reply["body"] == b"model"
+        assert not gate.acquire(blocking=False), "response write no longer holds its slot"
+        if write_fails:
+            raise OSError("peer closed")
+
+    handler._reply = write
+    if write_fails:
+        with pytest.raises(OSError, match="peer closed"):
+            handler.do_POST()
+    else:
+        handler.do_POST()
+    assert gate.acquire(blocking=False)
+    gate.release()
 
 
 @patch("nvflare.app_opt.flower.connectors.http_client_connector.FleetHttpServer")

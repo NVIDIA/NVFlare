@@ -18,8 +18,32 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.app_common.tie.process_mgr import CommandDescriptor
-from nvflare.app_opt.flower.process import FlowerProcessManager
+from nvflare.app_opt.flower.process import FlowerProcessManager, run_command
 from tests.timing_utils import isolate_time
+
+
+@pytest.mark.parametrize("times_out", [False, True])
+def test_cli_uses_configured_deadline_and_preserves_timeout_error(times_out):
+    descriptor = CommandDescriptor("flwr run . nvflare")
+    error = subprocess.TimeoutExpired(descriptor.cmd, 600)
+    with patch("nvflare.app_opt.flower.process.subprocess.run") as run:
+        run.return_value.stdout = "submitted"
+        if times_out:
+            run.side_effect = error
+            with pytest.raises(subprocess.TimeoutExpired) as caught:
+                run_command(descriptor, timeout=600)
+            assert caught.value is error
+        else:
+            assert run_command(descriptor, timeout=600) == "submitted"
+        assert run.call_args.kwargs["timeout"] == 600
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan")])
+def test_cli_deadline_must_be_positive_and_finite(timeout):
+    with patch("nvflare.app_opt.flower.process.subprocess.run") as run:
+        with pytest.raises(ValueError, match="timeout"):
+            run_command(CommandDescriptor("flwr list nvflare"), timeout=timeout)
+        run.assert_not_called()
 
 
 @pytest.mark.parametrize("cleanup_fails", [False, True])

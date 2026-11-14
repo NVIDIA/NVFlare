@@ -45,6 +45,14 @@ ServerApp log with ``flwr log --show`` before stopping SuperLink. This is a
 best-effort shutdown snapshot in ``server_app_log.txt``, not a live log. It can
 be absent if SuperLink crashes before the snapshot.
 
+The local CLI deadlines are configurable through FlowerRecipe, FlowerJob, and
+FlowerController. ``flwr_run_timeout`` defaults to 300 seconds for CLI startup,
+FAB preparation, and run submission. ``flwr_command_timeout`` defaults to 15
+seconds for each status or stop command. ``flwr_log_timeout`` defaults to 5
+seconds for the shutdown log snapshot; a timeout is logged and process cleanup
+continues. All three values must be positive and finite. These limits do not
+change Flower's own HTTP timeouts or the inter-site transaction limits below.
+
 The bridge preserves Flower's public-key, timestamp, signature, and runtime-version
 headers. A key is associated with the registering authenticated NVFlare site for
 the lifetime of that job. SuperLink still verifies the signature and the node
@@ -58,6 +66,8 @@ FlowerRecipe to both connectors. Flower transfers complete object protobufs;
 this bridge buffers them in memory. Size the host for simultaneous transfers
 and training. The local server admits at most 32 connections, with four bulk
 request workers and separate capacity for heartbeat and metadata requests.
+Each worker slot remains held until its response has been written, including
+when a slow local reader blocks the write.
 Excess requests receive a busy response or connection close.
 
 ReliableMessage owns retransmission and transaction deduplication between sites.
@@ -67,6 +77,8 @@ policy. An uncertain state-changing NVFlare transaction fails the client workflo
 Transient heartbeat communication failures return HTTP 503 without marking the
 client failed, allowing Flower to send subsequent heartbeats. An explicit server
 shutdown still ends the client cleanly.
+Forwarding exceptions that fail training are logged using NVFlare's secure
+exception formatter without adding request bodies or signed headers to the log.
 
 ``per_msg_timeout`` and ``tx_timeout`` default to 2 and 25 seconds. Larger values
 are capped, with a warning showing the effective limits, to fit Flower's 30-second HTTP timeout. Heartbeats
@@ -78,6 +90,8 @@ process guard retains descendant identities while the job is alive. Closing its
 control pipe, including when the job process is killed, triggers cleanup. The
 control pipe is not inherited by Flower workers. Descendant monitoring uses one
 process-table snapshot per scan.
+If client cleanup fails, the applet retains its process manager and subsequent
+stop calls retry the unfinished cleanup while forwarding remains disabled.
 
 Compatibility and migration
 ===========================
