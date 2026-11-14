@@ -915,3 +915,52 @@ def test_real_slurm_handle_cancel_observation_fits_default_parent_cleanup_bound(
             if call.thread.ident is not None:
                 call.thread.join(5)
                 assert not call.thread.is_alive()
+
+
+def test_cancel_fast_polling_backs_off_without_synthesizing_settlement(tmp_path):
+    clock = Clock()
+    adapter = Adapter()
+    adapter.live = _query(LookupStatus.FOUND, _record(state="COMPLETING"))
+    adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="CANCELLED"))
+    manager = _manager(tmp_path, adapter, monotonic=clock)
+    manager.config = replace(manager.config, poll_interval=10.0)
+    handle = manager.launch(_plan(tmp_path))
+    waits = []
+    query_times = []
+    active = adapter.active_by_id
+
+    def query(*args, **kwargs):
+        query_times.append(clock.value)
+        return active(*args, **kwargs)
+
+    class PolicyCondition:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def notify_all(self):
+            pass
+
+        def wait(self, timeout):
+            waits.append(timeout)
+            assert len(waits) <= 15, "cancellation polling never returned to poll_interval"
+            clock.value += timeout
+            # A repeated cancellation request must not refresh the fast window.
+            handle._request_cancel()
+            assert handle.terminal_result is None
+            assert manager._handles["job-1"] is handle
+            if clock.value >= 30:
+                adapter.live = _query(LookupStatus.NOT_FOUND)
+
+    adapter.active_by_id = query
+    handle.condition = PolicyCondition()
+    handle.terminate()
+    handle.wait()
+    assert waits == [1.0] * 10 + [10.0, 10.0]
+    assert query_times[-3:] == [10.0, 20.0, 30.0]
+    assert len(query_times) == 14  # Includes terminate()'s initial query.
+    assert sum(call[0] == "cancel" for call in adapter.calls) == 13
+    assert handle.terminal_result == JobReturnCode.ABORTED
+    assert not manager._handles

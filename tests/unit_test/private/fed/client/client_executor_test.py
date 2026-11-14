@@ -1871,3 +1871,110 @@ def test_unconfirmed_launch_cleanup_logs_original_launch_error(tmp_path, caplog)
         )
     assert "launch failed: ValueError: startup handshake failed" in caplog.text
     assert "observation unavailable" in caplog.text
+
+
+def test_slow_run_delete_allows_heartbeat_status_notifications_and_other_launches(tmp_path):
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path, "new-job")
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    executor.run_processes["other-job"] = {RunProcessKey.STATUS: ClientStatus.STARTING}
+    deleting = tmp_path / "delete-me"
+    deleting.mkdir()
+    deleting_meta = {JobConstants.JOB_ID: "delete-me"}
+    Path(workspace.get_job_meta_path("delete-me")).write_text(json.dumps(deleting_meta))
+    entered = threading.Event()
+    release = threading.Event()
+    progressed = threading.Event()
+    from nvflare.private.fed.client import client_executor as subject
+
+    rmtree = subject.shutil.rmtree
+    launcher = MagicMock()
+
+    def slow_delete(path):
+        entered.set()
+        release.wait()
+        rmtree(path)
+
+    def other_operations():
+        assert executor.get_run_processes_keys() == ["other-job"]  # Heartbeat job list.
+        assert executor.get_status("other-job") == ClientStatus.STARTING
+        executor.notify_job_status("other-job", ClientStatus.READY)
+        assert executor.check_status("other-job") == "started"
+        with pytest.raises(RuntimeError, match="deletion in progress"):
+            executor.check_start_app("delete-me")
+        # Also fence a caller that passed the public check before deletion began.
+        with pytest.raises(RuntimeError, match="deletion in progress"):
+            executor.start_app(
+                client,
+                "delete-me",
+                deleting_meta,
+                SimpleNamespace(workspace=str(tmp_path), set=[]),
+                None,
+                None,
+                None,
+                ctx,
+            )
+        executor.start_app(
+            client, "new-job", meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, ctx
+        )
+        assert set(executor.get_run_processes_keys()) == {"other-job", "new-job"}
+        progressed.set()
+
+    with (
+        patch.object(subject.shutil, "rmtree", side_effect=slow_delete),
+        patch.object(subject, "get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", _skip_completion_monitor),
+        ThreadGroup(release) as threads,
+    ):
+        threads.start(executor.delete_run, "delete-me", str(deleting))
+        assert entered.wait(5)
+        threads.start(other_operations)
+        assert progressed.wait(5)  # These operations finish with rmtree still gated.
+        assert not release.is_set()
+    assert not deleting.exists()
+    assert executor.check_start_app("delete-me") == ClientStatus.STOPPED
+
+
+def test_failed_run_delete_does_not_leave_job_fenced(tmp_path):
+    _, workspace, client, _ = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    from nvflare.private.fed.client import client_executor as subject
+
+    with (
+        patch.object(subject.shutil, "rmtree", side_effect=OSError("storage unavailable")),
+        pytest.raises(OSError, match="storage unavailable"),
+    ):
+        executor.delete_run("job-1", str(tmp_path / "job-1"))
+    assert executor.check_start_app("job-1") == ClientStatus.STOPPED
+
+
+@pytest.mark.parametrize("cancel_error", [None, RuntimeError("cancel failed")])
+def test_retained_admin_abort_logs_observed_completion_without_releasing_owner(tmp_path, caplog, cancel_error):
+    import logging
+
+    _, workspace, client, _ = _make_start_app_inputs(tmp_path)
+    client.cell.get_fqcn.return_value = "site-1"
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    accepted = MagicMock(spec=JobHandleSpec)
+    accepted.terminate.side_effect = cancel_error
+    pending = _PendingJobHandle()
+    pending.attach(accepted)
+    resources = MagicMock()
+    owner = {
+        RunProcessKey.JOB_HANDLE: pending,
+        RunProcessKey.STATUS: ClientStatus.STARTED,
+        _RESOURCE_OWNER_KEY: ({"gpu": 1}, "token", resources),
+    }
+    executor.run_processes["job-1"] = owner
+    write_job_cert(str(tmp_path / "job-1"), b"cert", b"key")
+    executor._retain_cleanup_owner("job-1")
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        executor.abort_app("job-1")
+    assert "backend completion observed after admin abort" in caplog.text
+    assert "registration, admission resources and credentials remain retained" in caplog.text
+    accepted.terminate.assert_called_once()
+    accepted.wait.assert_called_once()
+    assert executor.run_processes["job-1"] is owner
+    assert executor.get_status("job-1") == ClientStatus.CLEANUP_PENDING
+    assert find_job_cert(str(tmp_path / "job-1")) is not None
+    resources.free_resources.assert_not_called()

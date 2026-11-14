@@ -58,6 +58,7 @@ from nvflare.private.fed.utils.job_cert_utils import stage_job_startup_dir
 
 _HEALTHY_MISSES = 5
 _ACCOUNTING_RETRY_INTERVAL = 6.0
+_CANCEL_FAST_POLL_WINDOW = 10.0
 _JOB_NAME_SITE_LENGTH = 32
 
 
@@ -453,6 +454,7 @@ class SlurmJobHandle(JobHandleSpec):
         self.operation_lock = threading.Lock()
         self.job_id = job_id
         self.cancel_requested = False
+        self._cancel_requested_at = None
         self.user_abort = False
         self.terminal_result = None
         self.exit_confirmed = False
@@ -462,6 +464,8 @@ class SlurmJobHandle(JobHandleSpec):
 
     def _request_cancel(self, user_abort: bool = False) -> None:
         with self.condition:
+            if self._cancel_requested_at is None:
+                self._cancel_requested_at = self.manager._monotonic()
             self.cancel_requested = True
             self.user_abort = self.user_abort or user_abort
             self.condition.notify_all()
@@ -494,9 +498,12 @@ class SlurmJobHandle(JobHandleSpec):
         while self.poll() == JobReturnCode.UNKNOWN:
             with self.condition:
                 if self.terminal_result is None:
-                    # A full default poll interval (10s) races the parent's 10s
-                    # cleanup bound. Observe cancellation promptly; settlement
-                    # still requires the normal scheduler evidence.
-                    interval = min(self.poll_interval, 1.0) if self.cancel_requested else self.poll_interval
+                    # Observe cancellation promptly during the parent's default
+                    # cleanup window, then restore the configured scheduler rate.
+                    interval = self.poll_interval
+                    if self._cancel_requested_at is not None:
+                        remaining = _CANCEL_FAST_POLL_WINDOW - (self.manager._monotonic() - self._cancel_requested_at)
+                        if remaining > 0:
+                            interval = min(interval, 1.0, remaining)
                     self.condition.wait(timeout=interval)
         return None

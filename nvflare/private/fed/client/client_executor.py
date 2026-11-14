@@ -258,6 +258,7 @@ class JobExecutor(ClientExecutor):
         self.logger = get_obj_logger(self)
         self.startup = startup
         self.run_processes = {}
+        self._deleting_runs = set()
         self.lock = threading.Lock()
 
         self.job_query_timeout = ConfigService.get_float_var(
@@ -388,6 +389,8 @@ class JobExecutor(ClientExecutor):
         restart = _JobRestart(job_launcher, copy.deepcopy(job_meta), job_args)
         pending_handle = _PendingJobHandle()
         with self.lock:
+            if job_id in self._deleting_runs:
+                raise RuntimeError(f"job {job_id}: deletion in progress")
             if job_id in self.run_processes:
                 raise RuntimeError(f"client app for job '{job_id}' is still registered")
             self.run_processes[job_id] = {
@@ -730,7 +733,12 @@ class JobExecutor(ClientExecutor):
                         )
                     except Exception as e:
                         self.logger.warning(f"job {job_id}: cannot send abort: {secure_format_exception(e)}")
-                    self._cleanup_failed_launch(job_id, job_handle, retry=True)
+                    if self._cleanup_failed_launch(job_id, job_handle, retry=True):
+                        self.logger.info(
+                            f"job {job_id}: backend completion observed after admin abort; "
+                            "registration, admission resources and credentials remain retained; "
+                            "operator reconciliation required"
+                        )
                 finally:
                     with self.lock:
                         process.pop(_CLEANUP_RETRY_KEY, None)
@@ -990,6 +998,8 @@ class JobExecutor(ClientExecutor):
     def check_start_app(self, job_id):
         """Reject a retained owner before the engine's already-started shortcut."""
         with self.lock:
+            if job_id in self._deleting_runs:
+                raise RuntimeError(f"job {job_id}: deletion in progress")
             process = self.run_processes.get(job_id, {})
             if process.get(_CLEANUP_PENDING_KEY):
                 # This request owns a new admission allocation, not the retained
@@ -1009,8 +1019,15 @@ class JobExecutor(ClientExecutor):
         with self.lock:
             if job_id in self.run_processes:
                 raise RuntimeError(f"job {job_id}: still registered; cannot delete an owned run")
+            if job_id in self._deleting_runs:
+                raise RuntimeError(f"job {job_id}: deletion in progress")
+            self._deleting_runs.add(job_id)
+        try:
             if os.path.exists(job_dir):
                 shutil.rmtree(job_dir)
+        finally:
+            with self.lock:
+                self._deleting_runs.discard(job_id)
 
     def get_run_processes_keys(self):
         with self.lock:

@@ -183,10 +183,12 @@ same cleanup path.
 that cancellation rather than starting another. Control calls and the ordinary
 CJ monitor use daemon threads so an unavailable backend cannot indefinitely hold
 CP process exit. This does not make a runtime disappear when CP exits.
-Slurm cancellation waits requery at most one second apart, even with the default
-10-second running-job poll interval, so a normally cancelled allocation can be
-observed within the default parent cleanup bound. Query outages or slow scheduler
-settlement can still exceed that bound and require reconciliation.
+Slurm cancellation waits requery at most one second apart during the first
+10 seconds after the initial cancellation request, then return to `poll_interval`.
+Repeated cancellation requests do not extend that fast window. This permits
+prompt observation within the default parent cleanup bound without indefinitely
+increasing the scheduler query/cancel rate for stuck allocations. Query outages or
+slow scheduler settlement can still exceed the bound and require reconciliation.
 
 If cancellation is still running, observation raises, or observation exceeds its
 bound, CP logs a critical reconciliation message and keeps the run registration,
@@ -199,14 +201,19 @@ CJ already reported STARTED. A repeated start releases only its new admission
 allocation; the retained run keeps its original allocation. Status queries expose
 `cleanup pending`. Deletion through the client parent rejects every registered
 run, preserving credentials and launch files even if the server has forgotten it.
+Filesystem removal runs outside the executor lock; a per-job deletion fence blocks
+reuse of that directory while heartbeats and other jobs continue normally.
 The original launch failure is logged before cleanup errors.
 
 An explicit admin abort still sends a cooperative abort and makes a bounded
 cancellation/observation attempt. It reuses in-flight cleanup calls, and another
 explicit request may retry completed failed calls. Concurrent admin requests do
-not stack control operations. Heartbeats neither retry retained cleanup nor emit
-repeated warnings. A different start request that fails before acquiring a runtime
-still frees its own admission allocation.
+not stack control operations. If completion is observed after an admin abort, a
+log records that evidence and explicitly states that registration, admission
+resources and credentials remain retained for operator reconciliation. Heartbeats
+neither retry retained cleanup nor emit repeated warnings. A different start
+request that fails before acquiring a runtime still frees its own admission
+allocation.
 
 There is no automatic settlement retry loop or finalization of retained runs.
 An in-flight control call may later finish, but the run remains registered for
