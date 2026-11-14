@@ -315,13 +315,6 @@ def validate_cj_resource_spec(spec):
         raise ValueError("cj_resource_spec must be a dictionary keyed by site or @default")
     allowed = set(PORTABLE_RESOURCE_KEYS) | {"mem_per_gpu_in_GiB"}
     for site, values in spec.items():
-        if (
-            isinstance(site, str)
-            and site
-            and site not in (SERVER_SITE_NAME, ALL_SITES, PORTABLE_RESOURCE_DEFAULT_KEY)
-            and values is None
-        ):
-            continue  # Explicit client-site opt-out from federation defaults.
         if not isinstance(site, str) or not site or site == SERVER_SITE_NAME or not isinstance(values, dict):
             raise ValueError("cj_resource_spec requires client-site dictionaries")
         if set(values) - allowed:
@@ -346,9 +339,8 @@ def validate_cj_resource_spec(spec):
 def normalize_cj_resource_spec(meta, task_sites):
     """Bind CJ budgets to task sites derived from actual client app configs.
 
-    Site entries select independent CJ admission and prevent compute resources
-    from becoming a whole-job reservation. Empty dictionaries inherit federation
-    CJ defaults; an explicit client-site None skips them for site-owned defaults.
+    Empty site entries are meaningful: they select site-owned CJ defaults and
+    prevent the compute resource_spec from becoming a whole-job reservation.
     Neither a default block nor an unrelated site can opt a resident CJ out of
     its compute admission requirements.
     """
@@ -383,7 +375,7 @@ def get_cj_resource_spec(meta, site_name):
     """Resolve the independent CJ budget, without inheriting compute fields."""
     spec = meta.get(JobMetaKey.CJ_RESOURCE_SPEC.value) or {}
     validate_cj_resource_spec(spec)
-    if not has_cj_resource_spec(meta, site_name) or (site_name in spec and spec[site_name] is None):
+    if not has_cj_resource_spec(meta, site_name):
         return {}
     return {**spec.get(PORTABLE_RESOURCE_DEFAULT_KEY, {}), **spec.get(ALL_SITES, {}), **spec.get(site_name, {})}
 

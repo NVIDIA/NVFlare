@@ -218,14 +218,6 @@ def test_cp_owns_a_physical_backend_that_reaches_native_task_launch(profile, mon
     assert_physical_task_dispatch(handle, p.root, monkeypatch)
 
 
-@pytest.mark.parametrize("default", ["@default", "@ALL"])
-def test_process_cp_host_can_opt_out_of_federation_coordinator_budget(profile, default):
-    p = profile
-    p.meta["cj_resource_spec"] = {default: {"num_of_cpus": 2, "memory": "2Gi"}, "site-1": None}
-    launch_job(p.launcher, p.meta, p.context)
-    p.spawn.assert_called_once()
-
-
 def test_process_cp_host_refuses_resident_jobs_by_default(profile):
     p = profile
     Path(p.workspace.get_client_app_config_file_path("job-1")).write_text("{}")
