@@ -72,7 +72,7 @@ _CP_HOST_CJ_PREPARERS = {
 }
 
 
-def _prepare_task_binding(task_launcher, job_launcher, job_meta, fl_ctx):
+def _prepare_cp_host_cj(task_launcher, job_launcher, job_meta, fl_ctx):
     pairing = tuple(f"{type(item).__module__}.{type(item).__qualname__}" for item in (job_launcher, task_launcher))
     target = _CP_HOST_CJ_PREPARERS.get(pairing)
     if target is None:

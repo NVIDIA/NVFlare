@@ -235,7 +235,7 @@ def launch_job(launcher, job_meta, fl_ctx):
         lifetime = get_client_execution_lifetime(config)
         policy = validate_task_site(workspace)
         if lifetime == "task" or policy is not None:
-            from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy, _prepare_task_binding
+            from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy, _prepare_cp_host_cj
 
             policy = policy or TaskExecutionPolicy.from_workspace(workspace)
             if lifetime != "task":
@@ -243,7 +243,7 @@ def launch_job(launcher, job_meta, fl_ctx):
                     raise ValueError("site task_execution policy refuses job-lifetime applications; use task lifetime")
                 return launcher.launch_job(job_meta, fl_ctx)
             policy.validate_job_launcher(launcher)
-            runtime = _prepare_task_binding(policy.launcher, launcher, job_meta, fl_ctx)
+            runtime = _prepare_cp_host_cj(policy.launcher, launcher, job_meta, fl_ctx)
             if runtime is not None:
                 runtime.cleanup_timeout = policy.finalization_timeout
                 return _launch_job_with_task_workers(runtime, launcher, fl_ctx)
