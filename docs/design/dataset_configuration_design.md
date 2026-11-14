@@ -125,7 +125,9 @@ with the Study and dataset names filled in, for example `file:///data/oncology/o
 - is missing;
 - is not absolute (it has no scheme);
 - is a `file` URI with a host, a query or a fragment, or a path that is not absolute;
-- contains a password (`user:password@`). A URI is not secret; credentials go in `secrets`.
+- contains a password (`user:password@`), or a query parameter that carries a credential, by name and case-insensitively: `password`, `pwd`, `secret`, `token`, `api_key`, `sig`, `signature`, `X-Amz-Signature`, `X-Goog-Signature` and similar (signed and SAS URLs, connection strings with passwords). A URI is not secret; credentials go in `secrets`.
+
+The credential check is best-effort: it cannot recognize a token used as a user name (`https://TOKEN@host`) or one hidden in a path. Sites must still keep credentials out of `uri`. Error messages name the offending parameter, never its value.
 
 The API does not check that a `file` path exists or that a network address answers; the component that reads the dataset reports that. Percent-encoding follows RFC 3986, so a space in a path is written `%20`. `DatasetConfig.path` returns the decoded local path of a `file` URI.
 
