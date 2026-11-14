@@ -144,6 +144,85 @@ studies:
         options: {schema: public, tables: [labs]}
 ```
 
+### 2.5 Examples
+
+**A process-launched site.** Nothing is mounted, so each `file` URI is where the data already is. A job submitted without a Study is in the `default` Study.
+
+```yaml
+# <workspace>/local/datasets.yaml
+format_version: 1
+studies:
+  default:
+    datasets:
+      patients:
+        type: csv
+        uri: file:///home/site-1/data/patients.csv
+        usage:
+          catalog: {share: true}
+```
+
+**A Kubernetes site.** The site's two files work together and are linked by Study and dataset names. `study_runtime.yaml`, read by the launcher, mounts the data and delivers the secrets. `datasets.yaml` describes what the job finds. A network dataset has no Study runtime entry; only its secrets do.
+
+```yaml
+# <workspace>/local/study_runtime.yaml: what the launcher places in the job
+format_version: 2
+studies:
+  oncology:
+    datasets:
+      omop: {source: oncology-omop, mode: ro}         # PVC, mounted at /data/oncology/omop
+    secret_env:
+      EHR_DB_USER: {source: ehr-db, key: username}     # from Kubernetes Secret ehr-db
+      EHR_DB_PASSWORD: {source: ehr-db, key: password}
+```
+
+```yaml
+# <workspace>/local/datasets.yaml: what the job finds, and how components may use it
+format_version: 1
+studies:
+  oncology:
+    datasets:
+      omop:
+        type: parquet
+        uri: file:///data/oncology/omop                # where study_runtime.yaml mounts dataset omop
+        usage:
+          catalog: {share: true}
+      ehr:
+        type: sql
+        uri: postgresql+psycopg://ehr-db.oncology.example:5432/ehr   # not mounted: the job connects
+        secrets: {username: EHR_DB_USER, password: EHR_DB_PASSWORD}  # variables set by secret_env
+        usage:
+          catalog: {share: true}
+```
+
+**Several Studies at one site.** Each job sees only its own Study.
+
+```yaml
+format_version: 1
+studies:
+  oncology:
+    datasets:
+      omop: {type: parquet, uri: file:///data/oncology/omop, usage: {catalog: {share: true}}}
+  cardiology:
+    datasets:
+      echo: {type: csv, uri: file:///data/cardiology/echo.csv}   # no usage.catalog: never published
+```
+
+| Job's Study | `list_datasets()` | Notes |
+| --- | --- | --- |
+| `oncology` | `["omop"]` | `get_dataset("echo")` raises `UnknownDatasetError`. |
+| `cardiology` | `["echo"]` | `get_dataset("echo").usage_rules("catalog")` is `None`, so the catalog does not share it. |
+| `default`, or any Study not in the file | `[]` | The site offers that Study no datasets. |
+
+A component reads the configuration the same way in every case:
+
+```python
+config = get_study_dataset_config(fl_ctx)          # the job's Study only
+for name in config.list_datasets():
+    dataset = config.get_dataset(name)
+    rules = dataset.usage_rules("catalog")          # None: this component may not use the dataset
+    if rules and rules.get("share"):
+        read(dataset.type, dataset.path or dataset.uri, dataset.options)
+
 ## 3. API
 
 ### 3.1 Specification
