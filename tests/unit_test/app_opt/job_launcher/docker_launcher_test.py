@@ -551,23 +551,33 @@ class TestDockerJobLauncherInit:
 
 _FAKE_STARTUP_FILES = ("rootCA.pem", "client.crt", "client.key", "fed_client.json")
 _fake_startup_dir = None
+# the site's local/ folder; datasets.yaml covers every Study and is withheld from the job
+_FAKE_LOCAL_FILES = ("resources.json", "datasets.yaml")
+_fake_local_dir = None
 
 
 @pytest.fixture(scope="module", autouse=True)
 def _shared_startup_kit(tmp_path_factory):
-    """A real startup kit directory, shared by the module, so the launcher can list files to bind."""
-    global _fake_startup_dir
+    """A real startup kit and local/ folder, shared by the module, so the launcher can list entries to bind."""
+    global _fake_startup_dir, _fake_local_dir
     _fake_startup_dir = str(tmp_path_factory.mktemp("startup"))
     for name in _FAKE_STARTUP_FILES:
         with open(os.path.join(_fake_startup_dir, name), "w") as f:
             f.write(name)
+    _fake_local_dir = str(tmp_path_factory.mktemp("local"))
+    for name in _FAKE_LOCAL_FILES:
+        with open(os.path.join(_fake_local_dir, name), "w") as f:
+            f.write(name)
+    os.mkdir(os.path.join(_fake_local_dir, "custom"))
     yield
     _fake_startup_dir = None
+    _fake_local_dir = None
 
 
 def _make_workspace_obj(startup_dir=None, run_dir="/ws/job-1"):
     workspace_obj = MagicMock()
     workspace_obj.get_startup_kit_dir.return_value = startup_dir or _fake_startup_dir
+    workspace_obj.get_site_config_dir.return_value = _fake_local_dir
     workspace_obj.get_run_dir.return_value = run_dir
     workspace_obj.get_app_custom_dir.return_value = ""
     workspace_obj.get_site_custom_dir.return_value = ""
@@ -809,8 +819,10 @@ class TestDockerJobLauncherLaunchJob:
         assert startup_targets == [
             f"/var/tmp/nvflare/workspace/startup/{name}" for name in ("client.crt", "fed_client.json", "rootCA.pem")
         ]
-        assert mounts[len(startup_targets) + 1]["Target"] == "/var/tmp/nvflare/workspace/local"
-        assert mounts[len(startup_targets) + 2]["Target"] == "/var/tmp/nvflare/workspace/job-1"
+        local_targets = [m["Target"] for m in mounts if m["Target"].startswith("/var/tmp/nvflare/workspace/local/")]
+        # local/ is bound entry by entry, without the site dataset configuration, which covers every Study
+        assert local_targets == [f"/var/tmp/nvflare/workspace/local/{name}" for name in ("custom", "resources.json")]
+        assert mounts[len(startup_targets) + len(local_targets) + 1]["Target"] == "/var/tmp/nvflare/workspace/job-1"
 
         mounts_by_target = _mounts_by_target(call_kwargs["mounts"])
         assert mounts_by_target["/var/tmp/nvflare/workspace"] == {
@@ -827,12 +839,14 @@ class TestDockerJobLauncherLaunchJob:
             "ReadOnly": True,
         }
         assert "/var/tmp/nvflare/workspace/startup/client.key" not in mounts_by_target
-        assert mounts_by_target["/var/tmp/nvflare/workspace/local"] == {
-            "Target": "/var/tmp/nvflare/workspace/local",
-            "Source": "/host/workspace/local",
+        assert mounts_by_target["/var/tmp/nvflare/workspace/local/resources.json"] == {
+            "Target": "/var/tmp/nvflare/workspace/local/resources.json",
+            "Source": "/host/workspace/local/resources.json",
             "Type": "bind",
             "ReadOnly": True,
         }
+        assert "/var/tmp/nvflare/workspace/local" not in mounts_by_target
+        assert "/var/tmp/nvflare/workspace/local/datasets.yaml" not in mounts_by_target
         assert mounts_by_target["/var/tmp/nvflare/workspace/job-1"] == {
             "Target": "/var/tmp/nvflare/workspace/job-1",
             "Source": "/host/workspace/job-1",
@@ -1032,7 +1046,8 @@ class TestDockerJobLauncherLaunchJob:
             "/var/tmp/nvflare/workspace/startup/client.crt",
             "/var/tmp/nvflare/workspace/startup/fed_client.json",
             "/var/tmp/nvflare/workspace/startup/rootCA.pem",
-            "/var/tmp/nvflare/workspace/local",
+            "/var/tmp/nvflare/workspace/local/custom",
+            "/var/tmp/nvflare/workspace/local/resources.json",
             "/var/tmp/nvflare/workspace/job-1",
         }
 
@@ -1081,7 +1096,8 @@ class TestDockerJobLauncherLaunchJob:
             "/var/tmp/nvflare/workspace/startup/client.crt",
             "/var/tmp/nvflare/workspace/startup/fed_client.json",
             "/var/tmp/nvflare/workspace/startup/rootCA.pem",
-            "/var/tmp/nvflare/workspace/local",
+            "/var/tmp/nvflare/workspace/local/custom",
+            "/var/tmp/nvflare/workspace/local/resources.json",
             "/var/tmp/nvflare/workspace/job-1",
         }
         assert "has no entry for study 'study-a'" in caplog.text

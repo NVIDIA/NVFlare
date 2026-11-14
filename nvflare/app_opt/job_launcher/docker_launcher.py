@@ -31,6 +31,7 @@ except ImportError:
     _DOCKER_AVAILABLE = False
 
 from nvflare.apis.app_validation import AppValidationKey
+from nvflare.apis.dataset_config_spec import DATASET_CONFIG_FILE
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import (
     ConnectionSecurity,
@@ -192,6 +193,15 @@ def _exit_code_to_return_code(exit_code: int) -> JobReturnCode:
         return JobReturnCode.ABORTED
     else:
         return JobReturnCode.EXECUTION_ERROR
+
+
+def _job_local_entries(local_dir: str) -> list[str]:
+    """The entries of the site's local/ folder a job container sees: all but the site dataset configuration."""
+    try:
+        names = os.listdir(local_dir)
+    except FileNotFoundError:
+        return []
+    return sorted(name for name in names if name != DATASET_CONFIG_FILE)
 
 
 def _safe_workspace_child_path(workspace: str, child_name: str, allow_reserved: bool = False) -> str:
@@ -801,6 +811,17 @@ class DockerJobLauncher(JobLauncherSpec):
                 )
                 for fname in job_startup_files(workspace_obj.get_startup_kit_dir())
             ]
+            # bind local/ entry by entry: the site dataset configuration covers every Study and stays out of
+            # the job container
+            local_mounts = [
+                docker.types.Mount(
+                    target=posixpath.join(container_local_dir, name),
+                    source=os.path.join(host_local_dir, name),
+                    type="bind",
+                    read_only=True,
+                )
+                for name in _job_local_entries(workspace_obj.get_site_config_dir())
+            ]
             mounts = [
                 docker.types.Mount(
                     target=self.WORKSPACE_MOUNT,
@@ -810,7 +831,7 @@ class DockerJobLauncher(JobLauncherSpec):
                     tmpfs_mode=_WORKSPACE_TMPFS_MODE,
                 ),
                 *startup_mounts,
-                docker.types.Mount(target=container_local_dir, source=host_local_dir, type="bind", read_only=True),
+                *local_mounts,
                 docker.types.Mount(
                     target=container_job_workspace,
                     source=host_job_workspace,

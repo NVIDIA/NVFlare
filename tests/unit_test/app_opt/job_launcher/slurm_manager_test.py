@@ -140,6 +140,7 @@ def _plan(tmp_path, pending_timeout=5, setup="", sandbox="none", image=None):
     run_dir = tmp_path / "job-1"
     run_dir.mkdir(exist_ok=True)
     (tmp_path / "startup").mkdir(exist_ok=True)
+    (tmp_path / "local").mkdir(exist_ok=True)
     return LaunchPlan(
         job_id="job-1",
         site_name="site-1",
@@ -405,6 +406,24 @@ def test_sandbox_gets_keyless_staged_startup_kit(tmp_path):
     assert sorted(p.name for p in staged.iterdir()) == ["client.crt", "rootCA.pem"]
     assert f"{staged}:{tmp_path / 'startup'}:ro" in adapter.submitted_batch
     assert f"{tmp_path / 'startup'}:{tmp_path / 'startup'}:ro" not in adapter.submitted_batch
+
+
+def test_sandbox_gets_local_without_the_site_dataset_configuration(tmp_path):
+    local = tmp_path / "local"
+    (local / "custom").mkdir(parents=True)
+    (local / "custom" / "helper.py").write_text("VALUE = 1")
+    (local / "resources.json").write_text("{}")
+    (local / "datasets.yaml").write_text("format_version: 1\nstudies: {}\n")  # covers every Study
+    adapter = Adapter()
+    manager = _manager(tmp_path, adapter)
+
+    handle = manager.launch(_plan(tmp_path, sandbox="apptainer", image="/image.sif"))
+
+    staged = Path(handle.job_dir, "local")
+    assert sorted(p.name for p in staged.iterdir()) == ["custom", "resources.json"]
+    assert (staged / "custom" / "helper.py").read_text() == "VALUE = 1"
+    assert f"{staged}:{local}:ro" in adapter.submitted_batch
+    assert f"{local}:{local}:ro" not in adapter.submitted_batch
 
 
 def test_submission_uses_site_timeout(tmp_path):

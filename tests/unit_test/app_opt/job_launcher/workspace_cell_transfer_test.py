@@ -158,6 +158,7 @@ class TestWorkspaceTransferManager:
                 b"study-a:\n  training:\n    source: nvfldata\n    mode: ro\n",
             )
             _write_file(os.path.join(ws_root, "local", "study_runtime.yaml"), b"format_version: 2\nstudies: {}\n")
+            _write_file(os.path.join(ws_root, "local", "datasets.yaml"), b"format_version: 1\nstudies: {}\n")
             _write_file(os.path.join(ws_root, "local", "custom", "helper.py"), b"VALUE = 1\n")
             zip_path = os.path.join(tmp, "workspace.zip")
 
@@ -170,6 +171,7 @@ class TestWorkspaceTransferManager:
             assert f"{JOB_ID}/app/config/config_train.json" in names
             assert "local/study_data.yaml" not in names
             assert "local/study_runtime.yaml" not in names
+            assert "local/datasets.yaml" not in names  # covers every Study
 
     def test_workspace_bundle_excludes_legacy_custom_study_data_path(self):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:

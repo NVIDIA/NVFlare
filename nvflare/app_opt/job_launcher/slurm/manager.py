@@ -25,6 +25,7 @@ import time
 from dataclasses import replace
 from typing import Callable, Optional
 
+from nvflare.apis.dataset_config_spec import DATASET_CONFIG_FILE
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
 from nvflare.app_opt.job_launcher.slurm.batch import (
@@ -108,6 +109,17 @@ def _job_name(site_name: str, job_key: str) -> str:
 
 def _is_terminal(state: str) -> bool:
     return state in _APPLICATION_TERMINAL_STATES or state in _INFRASTRUCTURE_TERMINAL_STATES or state == "CANCELLED"
+
+
+def _stage_job_local_dir(local_dir: str, dest_dir: str) -> str:
+    """Copy the site's local/ folder, without the site dataset configuration, to dest_dir for the job sandbox."""
+
+    def withheld(directory, names):
+        return [DATASET_CONFIG_FILE] if directory == local_dir and DATASET_CONFIG_FILE in names else []
+
+    shutil.copytree(local_dir, dest_dir, symlinks=True, ignore=withheld, dirs_exist_ok=True)
+    os.chmod(dest_dir, 0o700)
+    return dest_dir
 
 
 class SlurmJobManager:
@@ -215,15 +227,15 @@ class SlurmJobManager:
             startup_source = stage_job_startup_dir(
                 os.path.realpath(os.path.join(workspace, "startup")), os.path.join(job_dir, "startup")
             )
+            # a copy of local/ without the site dataset configuration, which covers every Study
+            local_source = _stage_job_local_dir(
+                os.path.realpath(os.path.join(workspace, "local")), os.path.join(job_dir, "local")
+            )
             launcher_mounts = (
                 BindMount(os.path.join(job_dir, SANDBOX_ROOT), workspace, "rw"),
                 BindMount(plan.run_dir, plan.run_dir, "rw"),
                 BindMount(startup_source, os.path.join(workspace, "startup"), "ro"),
-                BindMount(
-                    os.path.realpath(os.path.join(workspace, "local")),
-                    os.path.join(workspace, "local"),
-                    "ro",
-                ),
+                BindMount(local_source, os.path.join(workspace, "local"), "ro"),
             )
             if plan.sandbox == "apptainer":
                 launcher_mounts += (

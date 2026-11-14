@@ -43,6 +43,7 @@ from pathlib import PurePosixPath
 
 import yaml
 
+from nvflare.apis.dataset_config_spec import DATASET_CONFIG_FILE
 from nvflare.apis.fl_constant import ConnPropKey, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -85,7 +86,10 @@ PER_REQUEST_TIMEOUT = 300.0
 BOOTSTRAP_CONNECT_TIMEOUT = 30.0
 BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
-_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml", "local/study_runtime.yaml"})
+# site files covering every Study; a job receives only its own Study's part, if any
+_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset(
+    {"local/study_data.yaml", "local/study_runtime.yaml", f"local/{DATASET_CONFIG_FILE}"}
+)
 _RESOURCE_CONFIG_NAMES = ("resources.json", "resources.json.default")
 _K8S_LAUNCHER_COMPONENT_ID = "k8s_launcher"
 
