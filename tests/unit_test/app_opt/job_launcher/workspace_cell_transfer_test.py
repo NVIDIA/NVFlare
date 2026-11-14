@@ -198,6 +198,34 @@ class TestWorkspaceTransferManager:
             assert set(part["studies"]) <= {study}
             assert part["usage"] == {"catalog": {"limits": {"max_records": 5}}}
 
+    def test_configmap_backing_files_do_not_bypass_filtering(self):
+        # local/ as kubelet projects a ConfigMap: real files in ..<timestamp>/, visible names linked through ..data
+        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
+            _make_workspace(ws_root, JOB_ID)
+            local = os.path.join(ws_root, "local")
+            backing = os.path.join(local, "..2026_11_14_00_00_00.123456789")
+            _write_file(
+                os.path.join(backing, "datasets.yaml"),
+                b"format_version: 1\nstudies:\n  oncology: {datasets: {omop: {type: parquet, uri: 'file:///o'}}}\n"
+                b"  cardiology: {datasets: {echo: {type: csv, uri: 'file:///e'}}}\n",
+            )
+            _write_file(os.path.join(backing, "study_runtime.yaml"), b"format_version: 2\nstudies: {}\n")
+            _write_file(os.path.join(backing, "site.json"), b"{}")
+            os.symlink(os.path.basename(backing), os.path.join(local, "..data"))
+            for name in ("datasets.yaml", "study_runtime.yaml", "site.json"):
+                os.symlink(os.path.join("..data", name), os.path.join(local, name))
+            zip_path = os.path.join(tmp, "workspace.zip")
+
+            _zip_workspace_to_file(ws_root, JOB_ID, zip_path, "oncology")
+
+            with zipfile.ZipFile(zip_path) as zf:
+                names = set(zf.namelist())
+                assert not any("/.." in name for name in names)
+                assert "local/study_runtime.yaml" not in names
+                assert zf.read("local/site.json") == b"{}"  # visible files keep their content
+                assert b"cardiology" not in b"".join(zf.read(name) for name in names if name.startswith("local/"))
+                assert list(yaml.safe_load(zf.read("local/datasets.yaml"))["studies"]) == ["oncology"]
+
     def test_the_download_sends_the_study_given_at_add_job(self, monkeypatch):
         with tempfile.TemporaryDirectory() as ws_root:
             _make_workspace(ws_root, JOB_ID)

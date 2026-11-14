@@ -271,10 +271,12 @@ def _study_part(document: dict, study: str) -> dict:
 
 
 def _canonical(value):
-    """value in a form JSON can encode identically every time, for any YAML-loaded content.
+    """value in a form JSON encodes identically every time and differently for different values, for any YAML-loaded
+    content.
 
     Mapping keys need not be strings, or even of one type (`{1: a, other: b}` is valid YAML), so mappings become
-    lists of [key, value] pairs ordered by each key's type and repr; sets are ordered the same way.
+    [key, value] pairs ordered by each key's type and repr. Every container is tagged ("map", "set", "list"), and so is
+    any value JSON cannot hold, so no two different values share a form: every list in the result is a tag.
     """
     if isinstance(value, Mapping):
         items = [[_canonical(k), _canonical(v)] for k, v in value.items()]
@@ -282,10 +284,10 @@ def _canonical(value):
     if isinstance(value, (set, frozenset)):
         return ["set", sorted((_canonical(v) for v in value), key=lambda v: (type(v).__name__, repr(v)))]
     if isinstance(value, (list, tuple)):
-        return [_canonical(v) for v in value]
+        return ["list", [_canonical(v) for v in value]]
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
-    return repr(value)  # e.g. a YAML date
+    return ["other", type(value).__name__, repr(value)]  # e.g. a YAML date
 
 
 def _revision(part: dict) -> str:

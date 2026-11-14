@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -285,6 +286,21 @@ class TestKubernetesStudyPart:
         assert config.revision == load_study_config(str(site), "oncology", missing_ok=False).revision
         part = extract_study_config(str(site), "oncology")
         assert yaml.safe_load(part)["studies"]["oncology"]["datasets"]["d"]["options"]["columns"][1] == "first"
+
+    @pytest.mark.parametrize(
+        "first, second",
+        [
+            ({"columns": {}}, {"columns": ["map", []]}),  # a mapping and a list that looks like its encoding
+            ({"columns": {1: "a"}}, {"columns": {"1": "a"}}),
+            ({"since": datetime.date(2026, 1, 1)}, {"since": "datetime.date(2026, 1, 1)"}),
+            ({"tables": ["a", "b"]}, {"tables": ["b", "a"]}),
+        ],
+    )
+    def test_different_settings_have_different_revisions(self, first, second):
+        revisions = {
+            parse(with_dataset(type="csv", uri="file:///x", options=options)).revision for options in (first, second)
+        }
+        assert len(revisions) == 2
 
     def test_an_invalid_other_study_is_not_revealed_to_the_job(self, tmp_path, caplog):
         bad = {"format_version": 1, "studies": {**CONFIG["studies"], "secret-study": {"datasets": {"hidden-set": {}}}}}
