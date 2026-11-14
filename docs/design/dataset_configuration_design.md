@@ -34,7 +34,7 @@ A site's per-Study configuration is two files in `local/`:
 
 `study_data.yaml`, the 2.8 mount-only file that `study_runtime.yaml` replaces, is legacy. Docker and Kubernetes still read it for kits that have not migrated, Slurm rejects it, and process mode ignores it. New sites, and this design, use `study_runtime.yaml`.
 
-A job loads the configuration once, when a component first asks for it, and keeps it for the job's life (Section 3.4). An edit applies from the next job, in every deployment mode, without a restart of the site.
+A job loads the configuration once, when a component first asks for it, and keeps it for the job's life, so an edit applies from the next job, without a restart of the site. Section 3.4 gives the details for each deployment mode, including the one exception: task workers of a task-scoped job on Slurm read the file when they start.
 
 ### 2.2 Format
 
@@ -401,7 +401,7 @@ for name in config.list_datasets():
 
 - **Study-bound.** `get_study_dataset_config(fl_ctx)` returns the job's Study only; a job without an explicit Study is in the `default` Study, as everywhere in FLARE. No method accepts a Study name.
 - **Read-only and immutable.** There are no write methods. `DatasetConfig` is frozen, its mappings are read-only views and its tuples are copies, so one component cannot change what another sees.
-- **Snapshot.** The configuration is validated as a whole when it is loaded. Every method answers from that content, and `revision` identifies it. The job keeps it for its life, so all of its components and tasks see the same configuration.
+- **Snapshot.** The configuration is validated as a whole when it is loaded. Every method answers from that content, and `revision` identifies it. The job keeps it for its life, so all of its components see the same configuration; Section 3.4 notes the Slurm task-scoped exception.
 - **Fail closed.** An unreadable or invalid configuration raises `DatasetConfigError` from `get_study_dataset_config`; a snapshot is never partly loaded. A site with no configuration is not an error: the snapshot has no datasets.
 - **Secrets stay out of the model.** `DatasetConfig` lists which secret keys exist but carries no values. `get_secret` reads the environment variable at call time. Error messages name the dataset and key, never the value.
 - **No interpretation.** The API applies the rules and defaults of Section 2 and nothing else. It does not resolve connectors, read sources, check that a URI is reachable or validate `usage` contents; each component validates its own rules.
@@ -416,12 +416,16 @@ A loader produces the dictionary. In every deployment mode it reads `local/datas
 
 In every case the job reads `local/datasets.yaml` from its own workspace. What differs is how `local/` reaches it, which the launcher already decides. A site runs jobs in one deployment mode, and on Kubernetes and Slurm a job can be job-scoped (the job runs its tasks itself) or task-scoped (tasks run in separate task workers).
 
-| Deployment mode | Job-scoped: the job | Task-scoped: the job and its task workers |
-| --- | --- | --- |
-| Process | The site file, in the site workspace | Not supported |
-| Docker | The site file, through the `local/` folder the launcher mounts read-only | Not supported |
-| Slurm | The site file, on the site's shared storage (bound read-only in a sandbox) | The site file, on the same shared storage |
-| Kubernetes | A copy holding only the job's Study, written by the parent into the job pod's workspace transfer | The same copy: the transferred workspace sits on the jobs PVC, and task worker pods mount its `local/` read-only |
+| Deployment mode | Execution scope | How the job accesses the dataset configuration | When it is loaded |
+| --- | --- | --- | --- |
+| Process | Job-scoped | Reads the site file, `local/datasets.yaml`, in the site workspace | First use in the job |
+| Docker | Job-scoped | Reads the site file through the `local/` folder the launcher mounts read-only | First use in the job |
+| Slurm | Job-scoped | Reads the site file on the site's shared storage (bound read-only in a sandbox) | First use in the job |
+| Slurm | Task-scoped | The job and each task worker read the site file on the same shared storage | First use in each process, so a task worker started after an edit sees it |
+| Kubernetes | Job-scoped | Reads `local/datasets.yaml` holding only its Study, written by the parent into the job pod's workspace transfer | The copy is made at launch; the job reads it on first use |
+| Kubernetes | Task-scoped | The job pod and its task worker pods read that same copy: it sits on the jobs PVC, and task workers mount its `local/` read-only | The copy is made at launch, so every task worker of the job sees the same configuration |
+
+Process and Docker do not support task-scoped execution.
 
 **Kubernetes.** A job pod does not see the parent's workspace. The parent sends the job its workspace (`local/` and the job folder) through the workspace transfer, which already leaves out the site files the job must not have, `study_runtime.yaml` and `study_data.yaml`. For `datasets.yaml` the transfer sends the job's part instead of the whole file: the parent loads the site file, validates all of it, and writes a `local/datasets.yaml` with the job's Study entry and the site-wide `usage` settings. For a task-scoped job the transferred `local/` sits on the jobs PVC, and task worker pods mount it read-only, so they read the same part. Task workers receive only the site's environment, not the job's, so the configuration travels as this file.
 
@@ -432,7 +436,7 @@ The part is written when the job pod downloads its workspace, at launch. The pod
 
 **Process, Docker and Slurm.** The job, and on Slurm its task workers, read the site file, as it can reach the rest of `local/`, and the API returns only the job's Study. As with `study_runtime.yaml` in these modes, the file itself is readable by job code; the API's Study binding is not a security boundary there.
 
-**Fixed for the job's life.** A job loads the configuration once, on first use, and keeps it. An edit to the site file applies from the next job; a running job keeps the configuration it started with.
+**Fixed for the job's life.** A job loads the configuration once, on first use, and keeps it, so an edit to the site file applies from the next job. The one exception is a task-scoped job on Slurm: each task worker is its own process that reads the site file, so a worker started after an edit sees the edit.
 
 ## 4. Design decisions
 
