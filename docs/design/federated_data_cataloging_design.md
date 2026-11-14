@@ -51,7 +51,7 @@ Each read is a bounded full metadata read of every selected dataset. There is no
 
 ### 3.1 Dataset configuration
 
-The executor reads the site's datasets and rules only through the read-only [dataset configuration API](dataset_configuration_design.md). It takes one snapshot of the job's Study per task, so an edited configuration applies to the next read. It does not open configuration files, detect the launcher mode or parse launcher configuration.
+The executor reads the site's datasets and rules only through the read-only [dataset configuration API](dataset_configuration_design.md). The configuration of the job's Study is loaded once per job, so an edited configuration applies to the next read, which is a new job. It does not open configuration files, detect the launcher mode or parse launcher configuration.
 
 | Catalog need | Source |
 | --- | --- |
@@ -102,7 +102,7 @@ class CatalogConnector(ABC):
 
 The catalog reads two parts of the [dataset configuration](dataset_configuration_design.md): the `catalog` rules of each dataset, and the site-wide `catalog` settings.
 
-The executor takes one configuration snapshot per catalog task and uses it as follows:
+The executor uses the configuration of the job's Study as follows:
 
 | Catalog need | API call |
 | --- | --- |
