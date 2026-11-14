@@ -93,6 +93,7 @@ class _Job:
         self.cj_launch_pending = False
         self.manage_cj = False
         self.cj_settled = False
+        self._cj_cleanup_warning_logged = False
         self.cj_termination_lock = threading.Lock()
 
     def attach_cj(self, handle):
@@ -155,6 +156,15 @@ class _Job:
         except Exception:
             # An unavailable scheduler cannot prove CJ death. The owner remains.
             pass
+        if cleanup:
+            with self.lock:
+                warn = not self.cj_settled and not self._cj_cleanup_warning_logged
+                if warn:
+                    self._cj_cleanup_warning_logged = True
+            if warn:
+                logger.warning(
+                    "Coordinator cleanup unconfirmed for job %s; CP retains ownership and retries", self.job_id
+                )
 
     def run(self):
         while True:

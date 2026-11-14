@@ -584,14 +584,16 @@ class DockerJobLauncher(JobLauncherSpec):
                                           Note: "volumes", "mounts", "network", "environment", "command",
                                           "name", "detach", "auto_remove", "user", "working_dir", and "image"
                                           are controlled by the launcher and cannot be overridden here; a site
-                                          default job image belongs in studies.<study>.container.image in
-                                          local/study_runtime.yaml.
+                                          default job image belongs in default_image, or in
+                                          studies.<study>.container.image in local/study_runtime.yaml.
             default_job_env: site-level default environment variables injected into every job
                              container launched by this site. Useful for site/runtime-specific
                              settings such as NCCL workarounds. Launcher-controlled variables
                              like USER, HOME, and PYTHONPATH still take precedence.
             default_python_path: Default Python executable path inside job containers. Jobs can override
                                  it with launcher_spec[site]["docker"]["python_path"].
+            default_image: Site fallback image when neither the job nor its study selects an image.
+                           CP-host task coordinators use this image independently of worker images.
         """
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -732,7 +734,8 @@ class DockerJobLauncher(JobLauncherSpec):
                 f"Set launcher_spec['{site_name}']['docker']['image'] (preferred), "
                 f"launcher_spec['default']['docker']['image'] (shared default), "
                 f"resource_spec['{site_name}']['docker']['image'] (legacy), "
-                f"or studies.<study>.container.image in local/study_runtime.yaml (site default)."
+                f"studies.<study>.container.image in local/study_runtime.yaml (study default), "
+                f"or the launcher's default_image (site fallback)."
             )
 
         workspace = self.workspace

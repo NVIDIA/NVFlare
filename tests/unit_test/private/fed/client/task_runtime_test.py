@@ -177,6 +177,34 @@ def test_system_end_still_reaches_components_if_runtime_shutdown_raises(monkeypa
     engine.logger.error.assert_called_once()
 
 
+@pytest.mark.parametrize("failure", ["still-running", "stop-error", "status-error"])
+def test_unconfirmed_coordinator_cleanup_warns_once_and_keeps_retrying(caplog, failure):
+    from nvflare.private.fed.task_worker.task_service import _Job
+
+    native = Mock(spec=JobHandleSpec)
+    native.is_cleanup_complete.return_value = False
+    if failure == "stop-error":
+        native.terminate.side_effect = RuntimeError("stop unavailable")
+    elif failure == "status-error":
+        native.is_cleanup_complete.side_effect = RuntimeError("status unavailable")
+    owner = _Job(None, "job-1", "site-1", "token", "site-1.job-1")
+    owner.manage_cj = True
+    owner.attach_cj(native)
+    owner.release()
+    for _ in range(3):
+        owner.observe_cj()
+    assert owner.cj_settled is False
+    assert native.is_cleanup_complete.call_count >= 3
+    warnings = [record for record in caplog.records if record.name == "nvflare.private.fed.task_worker.task_service"]
+    assert len(warnings) == 1
+    assert "job-1; CP retains ownership and retries" in warnings[0].getMessage()
+    native.terminate.side_effect = None
+    native.is_cleanup_complete.side_effect = None
+    native.is_cleanup_complete.return_value = True
+    owner.observe_cj()
+    assert owner.cj_settled is True
+
+
 @pytest.mark.parametrize("late_creation", [False, True])
 def test_docker_stop_failure_retains_owner_until_confirmed_exit(late_creation):
     from docker.errors import APIError
