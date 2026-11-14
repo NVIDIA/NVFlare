@@ -157,7 +157,7 @@ you also want fresh demo data.
 | Each site's dataset configuration | `example_setup.py` copies `config/<site>/datasets.yaml` into the site's startup kit as `local/datasets.yaml` | Declares the site's datasets for each Study: where each one is, how to connect, and the catalog rules that decide what is published. |
 | site-2's `CATALOG_DB_USER` and `CATALOG_DB_PASSWORD` | Compose environment | The database credentials its dataset configuration names as secrets. |
 
-That is where a deployed site keeps it. After editing a `config/<site>/datasets.yaml`, rerun `python example_setup.py` and restart the site (`docker compose up -d --force-recreate nvflare-<site>`); the next catalog read uses it.
+That is where a deployed site keeps it, and on a deployed site an edit applies from the next job. In this example each site container copies its read-only kit into a temporary workspace when it starts, so after editing a `config/<site>/datasets.yaml`, rerun `python example_setup.py` and restart the site (`docker compose up -d --force-recreate nvflare-<site>`); the next catalog read uses it.
 
 ### Network and workspace
 
@@ -223,7 +223,7 @@ site-2's dataset has `type: sql`, `uri: postgresql+pg8000://postgres:5432/omop`,
 The dataset is named `omop` in the `default` Study at both sites; the same name at two sites identifies two separate
 site catalogs. Unity Catalog returns REST metadata and SQLAlchemy reflects the database's metadata. The job reads no
 business rows, and Spark is not required. Each dataset's catalog rules share it while excluding the source-value
-columns. A missing or invalid configuration fails that site's read with `CONFIG_UNAVAILABLE`. Jobs supply neither the
+columns. An invalid configuration fails that site's read with `CONFIG_UNAVAILABLE`; a missing one means the site offers the Study no datasets. Jobs supply neither the
 configuration nor credentials.
 
 ### Source credentials and assumptions

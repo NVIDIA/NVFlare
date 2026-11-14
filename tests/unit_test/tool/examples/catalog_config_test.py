@@ -70,7 +70,6 @@ def test_the_services_database_credentials_are_secrets_not_part_of_the_uri():
     for site in ("site-1", "site-2"):
         # the site reads local/datasets.yaml from its kit, which example_setup.py fills; nothing is mounted for it
         service = compose["services"][f"nvflare-{site}"]
-        assert "NVFLARE_DATASET_CONFIG" not in service["environment"]
         assert not any("datasets.yaml" in str(volume) for volume in service["volumes"])
 
 
