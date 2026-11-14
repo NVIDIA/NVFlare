@@ -152,7 +152,11 @@ def _workspace_download_excludes(workspace_root: str) -> frozenset[str]:
 def _write_dir_to_zip(zf: zipfile.ZipFile, src: str, root: str, excluded_paths: frozenset[str] = frozenset()) -> None:
     if not os.path.isdir(src):
         return
-    for dirpath, _dirs, files in os.walk(src):
+    for dirpath, dirs, files in os.walk(src):
+        # A Kubernetes ConfigMap or Secret mounted as a directory keeps its real files in hidden "..<timestamp>/"
+        # folders behind a "..data" link; the visible names link into them. Archive only the visible names (written
+        # with their content), so an excluded or filtered file cannot leave through its backing copy.
+        dirs[:] = [d for d in dirs if not d.startswith("..")]
         for fname in files:
             abs_path = os.path.join(dirpath, fname)
             rel_path = os.path.relpath(abs_path, root).replace(os.sep, "/")
