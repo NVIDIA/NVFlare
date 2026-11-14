@@ -357,7 +357,30 @@ Process mode is not isolated, for data or for configuration. A process job is a 
 | Choice | Set aside | Reason |
 | --- | --- | --- |
 | One file per site with a `usage` section per component | A separate configuration file for each component | A dataset is described once. Each new component would otherwise add its own file, its own loader and its own copy of the dataset list. |
-| A separate file from Study runtime configuration | Adding these fields to `study_runtime.yaml` | Study runtime is read by the launcher in the parent process and holds images, host paths and secret sources the job must not see. Remote datasets need no launcher entry at all. |
+| A separate file from Study runtime configuration | Adding these fields to `study_runtime.yaml`, or declaring datasets on the server | See Section 4.1. |
 | Explicit dataset list | Listing the directories under `/data/<study>` | A mount alone does not say what type of source it is or whether any component may use it, and process-launched sites have no mounts. |
 | Secret variable names in the configuration | Secret values, or a secret-store reference scheme | Reuses how Study runtime already delivers secrets. The file never holds a secret, so it can be read and reviewed freely. |
 | The launcher delivers the job's Study part | Every job reads the site file and filters by its Study | Filtering inside the job is not a boundary: job code can read the whole file. Delivery by the parent keeps other Studies' configuration out of the container, as is already done for data and secrets. |
+
+### 4.1 Where the dataset configuration lives
+
+A site already has a per-Study configuration file, `local/study_runtime.yaml`, so the first question is whether datasets belong there. Three places were considered:
+
+| Option | What it looks like | Outcome |
+| --- | --- | --- |
+| A. A `datasets` section in `study_runtime.yaml` | One site file per Study holds both how the launcher prepares the job and what the job's components may use | Set aside |
+| B. A separate site file, `local/datasets.yaml` | The launcher keeps `study_runtime.yaml`; components read `datasets.yaml` through the API | **Chosen** |
+| C. Datasets declared on the server | The Study registry or the submitted job lists each site's datasets | Set aside |
+
+**Why not A.** The two files serve different readers, describe different things and change for different reasons:
+
+- **Reader and trust.** The launcher reads `study_runtime.yaml` in the parent process, before the job starts. It holds what the job must not see: host paths and volume names, images, pod templates, Docker and Slurm settings, and where each secret comes from. `datasets.yaml` exists to be read by the job. In one file, every container launcher would have to strip the launcher fields before handing the job its part, and any launcher field added later would reach jobs until it, too, was stripped. With two files the trust boundary is the file boundary: the launcher keeps one and delivers the job's Study part of the other.
+- **Content.** Study runtime says how data reaches the job ("mount this volume read-only"). The dataset configuration says what the data is and how components may use it ("Parquet; publish its metadata to the catalog; hide this column"). The two sets of datasets differ: a network database needs no mount, and a process-launched site has no mounts at all. Process-mode Study runtime accepts only `env` and `secret_env` and rejects a `datasets` section, so a process site could not describe its datasets there.
+- **Validation and failure.** Study runtime is validated strictly per launcher mode: the same entry is valid for Kubernetes and rejected for Slurm. The dataset configuration is the same for every launcher, and the API leaves `usage` sections to the components that own them. In one file, a mistake in a catalog rule would fail every job launch for the Study, not only the components that read the configuration, and the two formats could not be versioned apart.
+- **Ownership.** Infrastructure operators change mounts, images and secret sources; data stewards change which datasets exist and what may be shared. Separate files keep those edits, their review and their file permissions apart.
+
+**Why not C.** A site's datasets, their locations and their usage rules are the site's decision and stay at the site. Declaring them on the server would publish paths and connection details to the federation, let a job's submitter rather than the site decide what a job may read, and still need a site-side mapping to the real locations.
+
+**The cost of B, and how it is kept small.** A mounted dataset appears in both site files. The two are linked only by names: Study runtime mounts the dataset at `/data/<study>/<dataset>`, and `datasets.yaml` uses `file:///data/<study>/<dataset>` (Section 2.3). A network dataset appears only in `datasets.yaml`.
+
+Secrets are still configured in one place. Study runtime `secret_env`, or the site's process environment, sets the secret's value in an environment variable. `datasets.yaml` holds only that variable's name, so a component can ask for "the database password" without knowing the variable. Neither file holds a secret value.
