@@ -33,7 +33,7 @@ from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher, 
 from nvflare.app_opt.job_launcher.slurm.task_policy import DOCKER_CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
 from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
-from nvflare.private.fed.client.task_runtime import launch_job
+from nvflare.private.fed.client.task_runtime import _TaskJobState, launch_job
 from nvflare.private.fed.utils.job_cert_utils import JobCertError
 
 
@@ -97,7 +97,8 @@ def profile(tmp_path, monkeypatch):
     context = FLContext()
     context.set_prop(ReservedKey.IDENTITY_NAME, "site-1")
     context.set_prop(ReservedKey.RUN_NUM, "job-1")
-    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell, get_component=lambda _: None))
+    engine = SimpleNamespace(get_cell=lambda: cell, get_component=lambda _: None, _task_job_state=_TaskJobState())
+    context.set_prop(ReservedKey.ENGINE, engine)
     context.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace)
     context.set_prop(
         FLContextKey.JOB_PROCESS_ARGS,
@@ -124,6 +125,7 @@ def profile(tmp_path, monkeypatch):
             dc=dc,
             native=native,
             cell=cell,
+            engine=engine,
             context=context,
             meta=meta,
         )
@@ -517,7 +519,7 @@ def test_shutdown_retains_inflight_creation_and_cleans_late_container(profile, c
         assert entered.wait(5), "Docker creation did not enter"
         service = p.cell._slurm_task_service
         owner = service.jobs["job-1"]
-        shutdown_task_jobs(p.cell)
+        shutdown_task_jobs(p.engine)
         assert owner.released and owner.cj_launch_pending
         assert owner.thread.is_alive() and service.jobs["job-1"] is owner
         finish.set()
@@ -537,7 +539,7 @@ def test_system_shutdown_terminates_already_attached_coordinator(profile):
 
     p = profile
     handle = launch_job(p.launcher, p.meta, p.context)
-    shutdown_task_jobs(p.cell)
+    shutdown_task_jobs(p.engine)
     p.native.terminate.assert_called_once()
     assert handle.owner.closed and not handle.owner.thread.is_alive()
 

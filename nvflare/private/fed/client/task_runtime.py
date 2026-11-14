@@ -18,13 +18,22 @@ import logging
 import os
 import secrets
 import threading
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.job_launcher_spec import JOB_LAUNCH_OPTIONS, JobHandleSpec, JobLaunchOptions, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.task_execution import get_client_execution_lifetime
+
+
+@dataclass
+class _TaskJobState:
+    """CP-owned admission fence and task-service registry, shared by its jobs."""
+
+    lock: object = field(default_factory=threading.Lock)
+    closing: bool = False
+    services: dict = field(default_factory=dict)
 
 
 class TaskJobHandle(JobHandleSpec):
@@ -104,16 +113,17 @@ class TaskJobRuntime:
     cleanup_timeout: float
 
     def launch(self, launcher, fl_ctx):
-        cell = fl_ctx.get_engine().get_cell()
+        engine = fl_ctx.get_engine()
+        cell = engine.get_cell()
+        state = engine._task_job_state
         token = secrets.token_hex(32)
-        lock = cell.__dict__.setdefault("_task_job_lock", threading.Lock())
-        with lock:
-            if cell.__dict__.get("_task_job_closing"):
+        with state.lock:
+            if state.closing:
                 raise RuntimeError("parent task runtime is shutting down")
             service = self.service_class.get_or_create(cell)
             # Register and admit atomically with CP shutdown, so shutdown cannot
             # miss an owner created just after its services snapshot.
-            cell.__dict__.setdefault("_task_job_services", {})[self.service_class] = (service, self.cleanup_timeout)
+            state.services[self.service_class] = (service, self.cleanup_timeout)
             owner = service.add_job(
                 self.backend, self.meta[JobConstants.JOB_ID], fl_ctx.get_identity_name(), token, cj_launch_pending=True
             )
@@ -128,9 +138,9 @@ class TaskJobRuntime:
                     raise RuntimeError("launcher published a different coordinator handle")
                 return result
             result = TaskJobHandle(native, owner, self.cleanup_timeout, allow_restart=False)
-            with lock:
+            with state.lock:
                 owner.attach_cj(native)
-                if cell.__dict__.get("_task_job_closing"):
+                if state.closing:
                     raise RuntimeError("parent task runtime shut down during coordinator creation")
             if previous_callback is not None:
                 previous_callback(result)
@@ -204,13 +214,13 @@ def launch_job(launcher, job_meta, fl_ctx):
     return launcher.launch_job(job_meta, fl_ctx)
 
 
-def shutdown_task_jobs(cell, timeout=None):
-    if cell is None:
+def shutdown_task_jobs(engine, timeout=None):
+    if engine is None:
         return
-    lock = cell.__dict__.setdefault("_task_job_lock", threading.Lock())
-    with lock:
-        cell.__dict__["_task_job_closing"] = True
-        services = tuple(cell.__dict__.get("_task_job_services", {}).values())
+    state = engine._task_job_state
+    with state.lock:
+        state.closing = True
+        services = tuple(state.services.values())
     for service, configured_timeout in services:
         try:
             service.shutdown(timeout=configured_timeout if timeout is None else timeout)
