@@ -28,7 +28,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 import yaml
 
@@ -44,6 +44,33 @@ FORMAT_VERSION = 1
 # the naming rule of Study runtime datasets (nvflare/app_opt/job_launcher/study_runtime.py)
 _NAME = re.compile(r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Query parameter names that carry a credential, compared case-insensitively: database passwords in a connection
+# string, signed or SAS URLs, and API tokens. A uri reaches every component, so these must go in secrets instead.
+_CREDENTIAL_QUERY_KEYS = frozenset(
+    {
+        "password",
+        "passwd",
+        "pwd",
+        "secret",
+        "client_secret",
+        "token",
+        "access_token",
+        "refresh_token",
+        "id_token",
+        "auth_token",
+        "api_key",
+        "apikey",
+        "access_key",
+        "secret_key",
+        "sig",
+        "signature",
+        "x-amz-signature",
+        "x-amz-credential",
+        "x-amz-security-token",
+        "x-goog-signature",
+        "x-goog-credential",
+    }
+)
 _SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*$")
 _TOP_KEYS = frozenset({"format_version", "studies", "usage"})
 # Set, with a reason, in the Study part the Kubernetes workspace transfer writes when the site file is invalid, so the
@@ -94,6 +121,11 @@ def _check_uri(uri, label: str, source: str) -> str | None:
         raise _error(source, f"{label}.uri must be an absolute URI with a scheme")
     if parts.password is not None:
         raise _error(source, f"{label}.uri must not contain a password; put credentials in secrets")
+    for key, _ in parse_qsl(parts.query, keep_blank_values=True):
+        if key.lower() in _CREDENTIAL_QUERY_KEYS:  # the name only: the value may be a live credential
+            raise _error(
+                source, f"{label}.uri query parameter '{key}' carries a credential; put credentials in secrets"
+            )
     if parts.scheme.lower() != "file":
         return None
     if parts.netloc or parts.query or parts.fragment:

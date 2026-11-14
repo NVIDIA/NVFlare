@@ -17,11 +17,7 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
-from nvflare.apis.dataset_config_spec import (
-    DatasetConfigError,
-    UnknownDatasetError,
-    get_study_dataset_config,
-)
+from nvflare.apis.dataset_config_spec import DatasetConfigError, UnknownDatasetError, get_study_dataset_config
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.app_common.dataset_config.api import extract_study_config, load_study_config, parse_study_config
 
@@ -156,6 +152,26 @@ class TestValidation:
         with pytest.raises(DatasetConfigError, match="is not a valid URI") as error:
             parse(with_dataset(type="sql", uri="postgresql://reader:s3cret@[::1/db"))
         assert "s3cret" not in str(error.value)
+
+    @pytest.mark.parametrize(
+        "uri",
+        [
+            "https://acct.blob.core.windows.net/c?sv=2024&sig=SECRET",  # Azure SAS
+            "s3://bucket/key?X-Amz-Signature=SECRET",  # presigned
+            "https://storage.googleapis.com/b/o?X-Goog-Signature=SECRET",
+            "jdbc:postgresql://db:5432/x?user=u&password=SECRET",
+            "https://api.example/v1?api_key=SECRET",
+            "https://api.example/v1?Token=SECRET",
+        ],
+    )
+    def test_credentials_in_the_query_are_rejected_without_echoing_them(self, uri):
+        with pytest.raises(DatasetConfigError, match="carries a credential") as error:
+            parse(with_dataset(type="sql", uri=uri))
+        assert "SECRET" not in str(error.value)
+
+    def test_ordinary_query_parameters_are_allowed(self):
+        config = parse(with_dataset(type="sql", uri="postgresql://db/x?sslmode=require&application_name=flare"))
+        assert config.get_dataset("d").path is None
 
     def test_username_without_password_is_allowed(self):
         config = parse(with_dataset(type="sql", uri="postgresql://reader@host/db"))
