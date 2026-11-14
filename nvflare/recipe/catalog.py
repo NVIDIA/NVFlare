@@ -28,6 +28,7 @@ from nvflare.app_common.fdn.catalog.common.payload import (
 from nvflare.app_common.fdn.catalog.server.controller import CatalogController
 from nvflare.app_common.fdn.catalog.site.executor import CatalogExecutor
 from nvflare.job_config.api import FedJob
+from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.recipe.spec import ExecEnv, Recipe
 
 # Catalog tasks finish in well under a second; with the 2 s framework default each site would wait that long after
@@ -90,7 +91,7 @@ class CatalogRecipe(Recipe):
         self.task_timeout_s = task_timeout_s
         self.site_config_root = str(Path(site_config_root).resolve()) if site_config_root is not None else None
         job = FedJob(name=name, min_clients=1, meta_props={CATALOG_JOB_META: True})
-        job.to_server(CatalogController(datasets=datasets, task_timeout_s=task_timeout_s))
+        job.to_server(CatalogController(datasets=datasets, task_timeout_s=task_timeout_s, sites=sites))
         for site in sites if sites is not None else [None]:
             if self.site_config_root is not None:
                 from nvflare.app_common.fdn.catalog.simulation import SimulationCatalogExecutor
@@ -133,22 +134,46 @@ class CatalogRecipe(Recipe):
         status = run.get_status()
         if status != RunStatus.FINISHED_COMPLETED.value:
             raise CatalogReadError(f"catalog read job {run.job_id} ended with status {status}", run.job_id, status)
-        found = sorted(Path(result_dir).rglob(RESULTS_FILE)) if result_dir and os.path.isdir(result_dir) else []
+        found = _find_results(result_dir, isinstance(getattr(run, "exec_env", None), _sim_env_class()))
         if len(found) != 1:
             raise CatalogReadError(f"catalog read job {run.job_id} has no single {RESULTS_FILE}", run.job_id, status)
         try:
             results = check_catalog_results(json.loads(found[0].read_text(encoding="utf-8")))
         except (OSError, ValueError, PayloadError) as e:
             raise CatalogReadError(f"catalog results are unreadable: {type(e).__name__}", run.job_id, status) from None
-        from nvflare.recipe.sim_env import SimEnv
-
-        if isinstance(getattr(run, "exec_env", None), SimEnv):
+        if isinstance(getattr(run, "exec_env", None), _sim_env_class()):
             kept = found[0]  # the live simulation workspace, not a downloaded copy: nothing to remove
         else:
             kept = _keep_only_the_result(Path(result_dir), found[0])
         if output_path is not None and not _same_file(kept, output_path):
             shutil.copyfile(kept, output_path)
         return results
+
+
+def _sim_env_class():
+    from nvflare.recipe.sim_env import SimEnv
+
+    return SimEnv
+
+
+def _find_results(result_dir, simulation: bool) -> list[Path]:
+    """The catalog_results.json files of a result directory, looked up where the controller's file lands first.
+
+    The controller writes it in the server's run folder: in a SimEnv workspace that is server/<simulator job>/; in a
+    download, workspace/ (or, after a completed read, the directory itself). A known location wins, so a copy saved
+    elsewhere in the directory cannot make a later read ambiguous; otherwise the directory is searched.
+    """
+    if not result_dir or not os.path.isdir(result_dir):
+        return []
+    root = Path(result_dir)
+    if simulation:
+        known = [root / "server" / SimulatorConstants.JOB_NAME / RESULTS_FILE]
+    else:
+        known = [root / RESULTS_FILE, root / "workspace" / RESULTS_FILE]
+    for path in known:
+        if path.is_file():
+            return [path]
+    return sorted(root.rglob(RESULTS_FILE))
 
 
 def _same_file(path: Path, other: str) -> bool:

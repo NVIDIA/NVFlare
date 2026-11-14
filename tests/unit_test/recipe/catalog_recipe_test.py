@@ -198,6 +198,15 @@ class TestGetCatalogResults:
         assert results == doc and json.loads(out.read_text()) == doc
         assert (site_local / "datasets.yaml").is_file() and (job / "site-1" / "startup").is_dir()
 
+    def test_a_simulation_export_does_not_make_a_later_read_ambiguous(self, tmp_path):
+        job = tmp_path / "simulate_job"
+        doc = write_results(job / "server" / "simulate_job")  # the server's run folder in a SimEnv workspace
+        run = FakeRun(str(job), exec_env=MagicMock(spec=SimEnv))
+        recipe = CatalogRecipe()
+
+        assert recipe.get_catalog_results(run, output_path=str(job / "catalog_results.json")) == doc
+        assert recipe.get_catalog_results(run) == doc  # the exported copy is a second match
+
     def test_saving_to_the_kept_result_itself_does_not_raise(self, tmp_path):
         job = tmp_path / "job-1"
         doc = write_results(job / "workspace" / "app_server")
@@ -230,6 +239,12 @@ class TestGetCatalogResults:
         (tmp_path / "catalog_results.json").write_text("{not json")
         with pytest.raises(CatalogReadError):
             CatalogRecipe().get_catalog_results(FakeRun(str(tmp_path)))
+
+
+def test_the_requested_sites_reach_the_controller():
+    recipe = CatalogRecipe(sites=["site-1", "site-2"])
+    controller = recipe._job._deploy_map["server"].app_config.workflows[0].controller
+    assert controller.sites == ["site-1", "site-2"]
 
 
 def test_get_catalog_is_the_recipe_in_one_call(tmp_path, monkeypatch):
