@@ -206,8 +206,9 @@ Limits
 **********
 
 * The catalog is shared by all users of the Study. It does not provide per-user views.
-* A site that is offline or does not answer in time is reported as ``NO_RESULT`` in that
-  read; nothing from an earlier read is carried over.
+* A site that does not answer in time, or a site named in ``sites`` that is offline, is
+  reported as ``NO_RESULT`` in that read; nothing from an earlier read is carried over. Without
+  ``sites``, a read covers the sites that are online when it starts.
 * Each read adds one job to the server's job store.
 * Connectors publish only what a source reports. Parquet files carry no keys, and
   descriptions or declared standards are not published.
