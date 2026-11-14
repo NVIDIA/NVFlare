@@ -20,6 +20,7 @@ today); everything else validates and serves the parsed document, so a different
 
 import hashlib
 import json
+import logging
 import os
 import re
 import threading
@@ -188,7 +189,7 @@ def parse_study_config(data, study: str, source: str, revision: str | None = Non
     if not isinstance(data, dict):
         raise _error(source, "must be a mapping")
     if _INVALID_KEY in data:
-        raise _error(source, f"the site's dataset configuration is invalid: {data[_INVALID_KEY]}")
+        raise _error(source, str(data[_INVALID_KEY]))
     unknown = set(data) - _TOP_KEYS
     if unknown:
         raise _error(source, f"unsupported keys {_names(unknown)}")
@@ -237,30 +238,57 @@ def _study_part(document: dict, study: str) -> dict:
     return part
 
 
+def _canonical(value):
+    """value in a form JSON can encode identically every time, for any YAML-loaded content.
+
+    Mapping keys need not be strings, or even of one type (`{1: a, other: b}` is valid YAML), so mappings become
+    lists of [key, value] pairs ordered by each key's type and repr; sets are ordered the same way.
+    """
+    if isinstance(value, Mapping):
+        items = [[_canonical(k), _canonical(v)] for k, v in value.items()]
+        return ["map", sorted(items, key=lambda kv: (type(kv[0]).__name__, repr(kv[0])))]
+    if isinstance(value, (set, frozenset)):
+        return ["set", sorted((_canonical(v) for v in value), key=lambda v: (type(v).__name__, repr(v)))]
+    if isinstance(value, (list, tuple)):
+        return [_canonical(v) for v in value]
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    return repr(value)  # e.g. a YAML date
+
+
 def _revision(part: dict) -> str:
     """A hash of the content a job sees, so a site file and the Kubernetes copy of the same Study agree."""
-    return hashlib.sha256(json.dumps(part, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+    return hashlib.sha256(json.dumps(_canonical(part)).encode("utf-8")).hexdigest()
+
+
+_INVALID_FOR_JOB = "the site's dataset configuration is invalid; the reason is in the site's log"
+logger = logging.getLogger(__name__)
 
 
 def extract_study_config(path: str, study: str) -> bytes | None:
     """The local/datasets.yaml a job of study receives in Kubernetes, written by the parent's workspace transfer.
 
     The whole site file at path is validated first; the result holds only the Study's part (see _study_part). An
-    invalid site file yields a file the API rejects with the reason. Returns None when the site file does not exist.
+    invalid site file yields a file the API rejects. The reason is logged here, at the site, and not sent: it can name
+    another Study's datasets. Returns None when the site file does not exist.
     """
     try:
         raw = Path(path).read_bytes()
     except FileNotFoundError:
         return None
     except OSError as e:
-        reason = f"cannot read dataset configuration '{path}': {type(e).__name__}"
-        return yaml.safe_dump({"format_version": FORMAT_VERSION, _INVALID_KEY: reason}).encode("utf-8")
+        logger.warning(
+            f"dataset configuration '{path}' cannot be read for a job of Study '{study}': {type(e).__name__}"
+        )
+        return yaml.safe_dump({"format_version": FORMAT_VERSION, _INVALID_KEY: _INVALID_FOR_JOB}).encode("utf-8")
     try:
         document = _read_document(raw, path)
         parse_study_config(document, study, path)  # validates every Study, as a job reading the file would
-    except DatasetConfigError as e:
-        return yaml.safe_dump({"format_version": FORMAT_VERSION, _INVALID_KEY: str(e)}).encode("utf-8")
-    return yaml.safe_dump(_study_part(document, study), sort_keys=False).encode("utf-8")
+        return yaml.safe_dump(_study_part(document, study), sort_keys=False).encode("utf-8")
+    except Exception as e:  # never break the job's workspace download; the job fails closed instead
+        reason = str(e) if isinstance(e, DatasetConfigError) else type(e).__name__
+        logger.warning(f"dataset configuration '{path}' is not sent to a job of Study '{study}': {reason}")
+        return yaml.safe_dump({"format_version": FORMAT_VERSION, _INVALID_KEY: _INVALID_FOR_JOB}).encode("utf-8")
 
 
 def load_study_config(path: str, study: str, missing_ok: bool) -> DatasetConfigAPI:
