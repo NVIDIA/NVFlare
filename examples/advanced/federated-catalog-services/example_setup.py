@@ -18,6 +18,7 @@ Every step prints the command it runs, so you can repeat it by hand or
 use it in your own deployment:
 
   1. nvflare provision -p project.yml -w <workspace>   create startup kits for the server, sites and admin
+     and copy each config/<site>/datasets.yaml into its site kit as local/datasets.yaml
   2. nvflare config add <admin> <kit> / config use     register the admin kit, so `nvflare` commands can connect
   3. .env and .sdk/                                select startup kits and the matching container SDK
 
@@ -173,6 +174,11 @@ def main():
         if not (kits / participant["name"] / "startup").is_dir():
             raise ValueError(f"Incomplete kit generation {kits}; rerun with --reprovision")
     print(f"  Kits: {shown(kits)}", flush=True)
+    # Each site keeps its dataset configuration in its kit's local/, as a deployed site does; the container copies
+    # the kit into its workspace at start. Copied on every run, so an edited config/<site>/datasets.yaml applies.
+    for site in sites:
+        shutil.copyfile(example_root / "config" / site / "datasets.yaml", kits / site / "local" / "datasets.yaml")
+    print("  Dataset configuration: config/<site>/datasets.yaml -> <site kit>/local/datasets.yaml", flush=True)
 
     # 2. The admin kit: the identity `nvflare job`, `nvflare system` and `get_catalog` connect with.
     step(

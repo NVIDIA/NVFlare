@@ -68,9 +68,10 @@ def test_the_services_database_credentials_are_secrets_not_part_of_the_uri():
     environment = compose["services"]["nvflare-site-2"]["environment"]
     assert {"CATALOG_DB_USER", "CATALOG_DB_PASSWORD"} <= set(environment)
     for site in ("site-1", "site-2"):
+        # the site reads local/datasets.yaml from its kit, which example_setup.py fills; nothing is mounted for it
         service = compose["services"][f"nvflare-{site}"]
-        assert service["environment"]["NVFLARE_DATASET_CONFIG"] == "/site-config/datasets.yaml"
-        assert f"./config/{site}/datasets.yaml:/site-config/datasets.yaml:ro" in service["volumes"]
+        assert "NVFLARE_DATASET_CONFIG" not in service["environment"]
+        assert not any("datasets.yaml" in str(volume) for volume in service["volumes"])
 
 
 def _load(example, module):
@@ -262,7 +263,7 @@ def test_service_setup_separates_exported_host_input_from_container_settings(mon
     kits = workspace / project["name"] / "prod_00"
     for participant in project["participants"]:
         (kits / participant["name"] / "startup").mkdir(parents=True)
-    (kits / "nvflare-server/local").mkdir()
+        (kits / participant["name"] / "local").mkdir()  # as provisioned
     (kits / setup.KIT_SDK_FILE).write_text("/opt/sdk/sdk.whl[catalog]")
     wheel = tmp_path / "sdk.whl"
     wheel.write_bytes(b"controlled SDK wheel")
@@ -280,6 +281,10 @@ def test_service_setup_separates_exported_host_input_from_container_settings(mon
     assert os.environ["NVFLARE_PACKAGE"] == host_input
     compose = yaml.safe_load((source / "compose.yaml").read_text())
     assert compose["x-flare"]["build"]["args"]["NVFLARE_PACKAGE"].startswith("${CATALOG_SDK_PACKAGE:")
+    for site in ("site-1", "site-2"):  # each site keeps its dataset configuration in its kit, as a deployed site does
+        assert (kits / site / "local" / "datasets.yaml").read_bytes() == (
+            source / "config" / site / "datasets.yaml"
+        ).read_bytes()
 
 
 @pytest.mark.parametrize("recorded", [None, "/opt/sdk/older-sdk.whl[catalog]"])
@@ -309,19 +314,24 @@ def test_service_setup_refuses_kits_created_for_another_sdk(monkeypatch, tmp_pat
 
 
 def test_service_setup_records_the_sdk_of_new_kits(monkeypatch, tmp_path):
+    import shutil
+
     import yaml
 
     setup = _load("federated-catalog-services", "example_setup")
     example = tmp_path / "example"
     example.mkdir()
     (example / "project.yml").write_text((EXAMPLES / "federated-catalog-services/project.yml").read_text())
+    shutil.copytree(EXAMPLES / "federated-catalog-services/config", example / "config")
     project = yaml.safe_load((example / "project.yml").read_text())
     workspace = tmp_path / "kits"
 
     def provision(*args):
         if args[:2] == ("nvflare", "provision"):
             for participant in project["participants"]:
-                (workspace / project["name"] / "prod_00" / participant["name"] / "startup").mkdir(parents=True)
+                kit = workspace / project["name"] / "prod_00" / participant["name"]
+                (kit / "startup").mkdir(parents=True)
+                (kit / "local").mkdir()
 
     wheel = tmp_path / "sdk.whl"
     wheel.write_bytes(b"controlled SDK wheel")
