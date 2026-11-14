@@ -40,6 +40,11 @@ from tests.task_execution_test_utils import _config, _configure, _statistics_con
 from tests.timing_utils import isolate_time
 
 
+def test_unknown_launcher_pairing_is_rejected_instead_of_using_native_fallback():
+    with pytest.raises(ValueError, match="unsupported client-job/task launcher pairing"):
+        policy_module._prepare_cp_host_cj(SimpleNamespace(), SimpleNamespace(), {}, None)
+
+
 def test_alias_timeout_and_specs_are_inert_snapshots():
     config = _config(result_wait_timeout=12)
     spec = config["executors"][0]["executor"]
