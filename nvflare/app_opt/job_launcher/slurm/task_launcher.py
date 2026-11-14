@@ -18,6 +18,7 @@ the backend worker command are separate integration prerequisites; see the
 deployment documentation. It never interprets job metadata as site policy.
 """
 
+import copy
 import hashlib
 import ipaddress
 import json
@@ -32,7 +33,7 @@ import time
 from dataclasses import dataclass, replace
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.task_launcher_spec import (
     TaskExecutionPhase,
@@ -65,6 +66,7 @@ from nvflare.app_opt.job_launcher.slurm.scheduler_client import _command_diagnos
 from nvflare.app_opt.job_launcher.slurm.task_scheduler import SlurmTaskCliAdapter, submission_was_rejected
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.fed.task_worker.protocol import CELL_SESSION_CREDENTIALS, _open_regular, read_bootstrap
 from nvflare.private.fed.utils.job_cert_utils import job_cert_paths
 
@@ -828,6 +830,31 @@ class _SlurmTaskBackend(TaskLauncherSpec):
         return self.manager.config.poll_interval
 
     max_attempts = 10000
+
+
+def _prepare_task_binding(job_meta, fl_ctx, options):
+    """Bind the CP's physical backend independently of the CJ's proxy."""
+    from nvflare.app_opt.job_launcher.slurm.task_policy import component_args
+    from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN, SlurmTaskService
+    from nvflare.private.fed.client.task_runtime import TaskExecutionBinding
+
+    workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+    site_config = ConfigService.load_config_dict(workspace.get_resources_file_path())
+    backend = _SlurmTaskBackend(**component_args(site_config["task_execution"]["launcher"]))
+    backend.bind_job(job_meta[JobConstants.JOB_ID], fl_ctx.get_identity_name(), workspace, job_meta)
+    environment = dict(options.environment or {})
+    for name in tuple(environment):
+        if name.startswith(("SLURM_", "SBATCH_", "SQUEUE_", "SACCT_", "SCANCEL_")):
+            environment.pop(name)
+    return TaskExecutionBinding(
+        backend,
+        SlurmTaskService,
+        ENV_TASK_OWNER,
+        ENV_TASK_TOKEN,
+        copy.deepcopy(job_meta),
+        replace(options, environment=environment),
+        30.0,
+    )
 
 
 class SlurmTaskLauncher(_SlurmTaskBackend):
