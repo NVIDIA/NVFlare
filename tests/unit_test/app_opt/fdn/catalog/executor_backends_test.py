@@ -13,12 +13,12 @@
 # limitations under the License.
 
 import json
+from types import SimpleNamespace
 
 import pytest
 import yaml
 
-from nvflare.apis.dataset_config_spec import DATASET_CONFIG_ENV
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -116,11 +116,13 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
             }
         },
     }
-    config_file = tmp_path / "datasets.yaml"
-    config_file.write_text(yaml.safe_dump(config))
-    monkeypatch.setenv(DATASET_CONFIG_ENV, str(config_file))
+    workspace = tmp_path / "workspace"
+    (workspace / "local").mkdir(parents=True)
+    (workspace / "local" / "datasets.yaml").write_text(yaml.safe_dump(config))  # the site file the job reads
 
     ctx = FLContext()
+    engine = SimpleNamespace(get_workspace=lambda: SimpleNamespace(get_root_dir=lambda: str(workspace)))
+    ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
     ctx.set_prop(FLContextKey.JOB_META, {"study": "study1", CATALOG_JOB_META: True}, private=True, sticky=False)
     data = Shareable()
     data[CATALOG_READ_KEY] = build_task_payload(None)
