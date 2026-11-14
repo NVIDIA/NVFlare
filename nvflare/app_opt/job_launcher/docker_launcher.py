@@ -46,8 +46,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import (
     JobHandleSpec,
-    JobLaunchOptions,
     JobLauncherSpec,
+    JobLaunchOptions,
     JobProcessArgs,
     JobReturnCode,
     add_launcher,
@@ -198,8 +198,10 @@ def _get_gpu_request(docker_spec, resource_spec, container_kwargs):
     return requests[0] if requests else None
 
 
-def _rewrite_parent_url(job_args: dict, site_name: str, secure_mode: bool = False) -> tuple[dict, str | None]:
-    """Rewrite a parent URL to Docker DNS while preserving its transport security."""
+def _rewrite_parent_url(
+    job_args: dict, site_name: str, secure_mode: bool = False, *, preserve_parent_url: bool = False
+) -> tuple[dict, str | None]:
+    """Validate parent transport/security, then preserve it or select Docker DNS."""
     entry = job_args.get(JobProcessArgs.PARENT_URL)
     if not entry:
         return job_args, None
@@ -243,7 +245,11 @@ def _rewrite_parent_url(job_args: dict, site_name: str, secure_mode: bool = Fals
     if (parsed.scheme == "stcp") != (connection_security == ConnectionSecurity.MTLS):
         raise ValueError("parent URL scheme does not match parent connection security")
 
-    parent_url = urlunsplit((parsed.scheme, f"{site_name}:{port}", parsed.path, parsed.query, parsed.fragment))
+    parent_url = (
+        str(original_url)
+        if preserve_parent_url
+        else urlunsplit((parsed.scheme, f"{site_name}:{port}", parsed.path, parsed.query, parsed.fragment))
+    )
     copied = dict(job_args)
     copied[JobProcessArgs.PARENT_URL] = (flag, parent_url)
     return copied, None
@@ -740,7 +746,10 @@ class DockerJobLauncher(JobLauncherSpec):
         # from the original PARENT_URL in job_args. This avoids baking parent_url into
         # resources.json at provision time.
         job_args, file_parent_dir = _rewrite_parent_url(
-            job_args, options.parent_host or site_name, secure_mode=fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
+            job_args,
+            site_name,
+            secure_mode=fl_ctx.get_prop(FLContextKey.SECURE_MODE, False),
+            preserve_parent_url=options.preserve_parent_url,
         )
         if file_parent_dir and file_parent_dir.startswith(workspace_mount):
             raise ValueError(f"shared-file parent directory {file_parent_dir} overlaps the container workspace mount")
@@ -1066,7 +1075,7 @@ class ClientDockerJobLauncher(DockerJobLauncher):
             environment=environment,
             apply_study_runtime=False,
             workspace_mount=workspace.get_root_dir(),
-            parent_host=(f"[{parent_url.hostname}]" if ":" in parent_url.hostname else parent_url.hostname),
+            preserve_parent_url=True,
             container_kwargs=limits,
         )
 

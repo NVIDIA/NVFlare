@@ -14,7 +14,6 @@
 """Trusted Slurm profile matching and task-resource resolution."""
 
 import importlib
-import os
 from dataclasses import replace
 
 from nvflare.apis.task_launcher_spec import TaskResourceRequest

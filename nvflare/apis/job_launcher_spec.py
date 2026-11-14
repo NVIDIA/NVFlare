@@ -36,7 +36,7 @@ class JobLaunchOptions:
     environment: Optional[dict] = None
     apply_study_runtime: bool = True
     workspace_mount: Optional[str] = None
-    parent_host: Optional[str] = None
+    preserve_parent_url: bool = False
     container_kwargs: dict = field(default_factory=dict)
 
 
