@@ -797,3 +797,87 @@ def test_real_worker_forked_after_snapshot_cannot_be_reported_settled(tmp_path, 
 
 
 pytestmark = [pytest.mark.timeout(120), pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")]
+
+
+@pytest.mark.timeout(90)
+def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path):
+    from nvflare.apis.fl_constant import ReservedKey
+    from nvflare.apis.fl_context import FLContext
+    from nvflare.apis.job_launcher_spec import JobLaunchOptions, JobReturnCode, publish_job_handle
+    from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
+    from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskService
+    from nvflare.private.fed.client.task_runtime import TaskJobRuntime, shutdown_task_jobs
+    from tests.timing_utils import join_thread, wait_for
+
+    child_pid_path = tmp_path / "coordinator-child.pid"
+    child_code = (
+        "import os,pathlib,sys,time; " "pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(120)"
+    )
+    leader_code = (
+        "import pathlib,subprocess,sys,time; "
+        "subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2]]); "
+        "p=pathlib.Path(sys.argv[2]); "
+        'exec("while not p.exists():\\n time.sleep(0.01)")'
+    )
+    entered, finish = threading.Event(), threading.Event()
+    cell = SimpleNamespace(get_fqcn=lambda: "site-1", register_request_cb=Mock())
+    context = FLContext()
+    context.set_prop(ReservedKey.IDENTITY_NAME, "site-1")
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    runtime = TaskJobRuntime(
+        SimpleNamespace(poll_interval=0.02),
+        SlurmTaskService,
+        "TEST_OWNER",
+        "TEST_TOKEN",
+        {"job_id": "job-1"},
+        JobLaunchOptions(),
+        2.0,
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", leader_code, child_code, str(child_pid_path)],
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    native = ProcessHandle(process=process, owns_process_group=True)
+    native.wait = Mock(side_effect=AssertionError("launch failure must not call an unbounded wait"))
+
+    def create(meta, fl_ctx):
+        wait_for(child_pid_path.exists, timeout=20)
+        assert process.wait(timeout=20) == 0
+        entered.set()
+        finish.wait()
+        publish_job_handle(native, fl_ctx)
+        return native
+
+    def launch():
+        with pytest.raises(RuntimeError, match="shut down during"):
+            runtime.launch(Mock(launch_job=create), context)
+
+    try:
+        with ThreadGroup(finish, timeout=30) as threads:
+            worker = threads.start(launch)
+            assert entered.wait(25), "coordinator did not exit after its child reached readiness"
+            child_pid = int(child_pid_path.read_text())
+            assert native.poll() == JobReturnCode.SUCCESS
+            assert not native.is_cleanup_complete()
+            assert _process_running(psutil.Process(child_pid))
+            owner = cell._slurm_task_service.jobs["job-1"]
+            shutdown_task_jobs(cell, timeout=0.01)
+            assert owner.thread.is_alive() and owner.cj_launch_pending
+            finish.set()
+            join_thread(worker, timeout=20)
+            join_thread(owner.thread, timeout=20)
+            native.wait.assert_not_called()
+            _assert_pid_not_running(child_pid)
+            assert native.is_cleanup_complete()
+            assert not cell._slurm_task_service.jobs
+    finally:
+        finish.set()
+        if not native.is_cleanup_complete():
+            native.terminate()
+        process.wait(timeout=10)
+        service = getattr(cell, "_slurm_task_service", None)
+        if service:
+            assert service.shutdown(timeout=10) == ()

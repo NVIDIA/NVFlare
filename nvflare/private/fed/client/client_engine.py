@@ -109,9 +109,10 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         self.fl_components = [x for x in self.client.components.values() if isinstance(x, FLComponent)]
 
         self.fl_components.append(ClientFedEventRunner())
-        validate_task_site(Workspace(args.workspace, self.client_name))
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.SYSTEM_BOOTSTRAP:
+            validate_task_site(Workspace(self.args.workspace, self.client_name))
         if event_type == EventType.SYSTEM_END:
             try:
                 shutdown_task_jobs(self.cell)

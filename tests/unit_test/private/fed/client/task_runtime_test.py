@@ -234,3 +234,91 @@ def test_docker_stop_failure_retains_owner_until_confirmed_exit(late_creation):
             service = getattr(p.cell, "_slurm_task_service", None)
             if service:
                 assert service.shutdown(timeout=5) == ()
+
+
+@pytest.mark.parametrize("late_creation", [False, True])
+def test_exited_process_leader_does_not_release_owned_children(monkeypatch, late_creation):
+    import signal
+
+    from nvflare.apis.job_launcher_spec import JobReturnCode
+    from nvflare.app_common.job_launcher import process_launcher as process_module
+    from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
+    from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskService
+    from tests.timing_utils import ThreadGroup, join_thread
+
+    p = runtime_fixture()
+    p.runtime.service_class = SlurmTaskService
+    p.runtime.backend = SimpleNamespace(poll_interval=0.01)
+    p.runtime.cleanup_timeout = 0.03
+    p.cell.register_request_cb = Mock()
+    adapter = Mock(pid=12345)
+    adapter.poll.return_value = 0  # The coordinator exited; its group still has a child.
+    native = ProcessHandle(process_adapter=adapter, owns_process_group=True)
+    entered, finish, group_gone, kill_requested = (threading.Event() for _ in range(4))
+
+    def killpg(pid, sig):
+        assert pid == adapter.pid
+        if group_gone.is_set():
+            raise ProcessLookupError()
+        if sig == signal.SIGKILL:
+            kill_requested.set()
+
+    monkeypatch.setattr(process_module.os, "killpg", killpg)
+
+    def create(meta, context):
+        entered.set()
+        if late_creation:
+            finish.wait()
+        publish_job_handle(native, context)
+        return native
+
+    def launch_late():
+        with pytest.raises(RuntimeError, match="shut down during"):
+            p.runtime.launch(Mock(launch_job=create), p.context)
+
+    with ThreadGroup(finish) as threads:
+        try:
+            if late_creation:
+                worker = threads.start(launch_late)
+                assert entered.wait(5)
+            else:
+                p.runtime.launch(Mock(launch_job=create), p.context)
+            service = p.cell._slurm_task_service
+            owner = service.jobs["job-1"]
+            shutdown_task_jobs(p.cell)
+            finish.set()
+            if late_creation:
+                join_thread(worker)
+            assert kill_requested.wait(5), "cleanup skipped the exited coordinator's child group"
+            assert native.poll() == JobReturnCode.SUCCESS
+            assert not native.is_cleanup_complete()
+            assert owner.thread.is_alive() and service.jobs["job-1"] is owner
+            # Even after SIGKILL, CP retains ownership until group absence is observed.
+            group_gone.set()
+            owner.wake.set()
+            join_thread(owner.thread)
+            assert native.is_cleanup_complete() and not service.jobs
+            adapter.wait.assert_not_called()
+        finally:
+            group_gone.set()
+            finish.set()
+            service = getattr(p.cell, "_slurm_task_service", None)
+            if service:
+                assert service.shutdown(timeout=5) == ()
+
+
+def test_wrapped_cleanup_requires_physical_execution_and_owned_workers_to_settle():
+    from nvflare.private.fed.client.task_runtime import TaskJobHandle
+
+    p = runtime_fixture()
+    native = Mock(spec=JobHandleSpec)
+    native.is_cleanup_complete.return_value = False
+    wrapped = TaskJobHandle(native, p.owner)
+    assert not wrapped.is_cleanup_complete()
+    p.owner.release.assert_not_called()
+    native.is_cleanup_complete.return_value = True
+    p.owner.thread.is_alive.return_value = True
+    assert not wrapped.is_cleanup_complete()
+    p.owner.release.assert_called_once()
+    p.owner.thread.is_alive.return_value = False
+    assert wrapped.is_cleanup_complete()

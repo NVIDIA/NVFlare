@@ -126,6 +126,14 @@ def publish_job_handle(job_handle, fl_ctx: FLContext):
 
 
 class JobHandleSpec(ABC):
+    def is_cleanup_complete(self) -> bool:
+        """Confirm execution cleanup, including owned children for process launchers.
+
+        This is separate from restart eligibility: application checkpoints or
+        retry policy can prevent a restart after physical cleanup is complete.
+        """
+        return self.poll() != JobReturnCode.UNKNOWN
+
     def can_restart(self) -> bool:
         """Confirm termination of this handle's execution (e.g. the CJ process group).
 

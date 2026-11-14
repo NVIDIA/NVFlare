@@ -49,6 +49,12 @@ class TaskJobHandle(JobHandleSpec):
         cleanup = getattr(self.handle, "_terminate_for_heartbeat_cleanup", self.handle.terminate)
         return cleanup()
 
+    def is_cleanup_complete(self):
+        if self.handle.is_cleanup_complete() is not True:
+            return False
+        self.owner.release()
+        return not self.owner.thread.is_alive()
+
     def can_restart(self):
         """Replace the CJ only after CP-owned workers have all settled."""
         if not self._allow_restart or self.handle.can_restart() is not True:

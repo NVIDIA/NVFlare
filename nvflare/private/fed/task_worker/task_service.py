@@ -114,9 +114,9 @@ class _Job:
                 handle = self.cj_handle
             if handle is None:
                 return
-            if not self._cj_is_dead(handle):
+            if handle.is_cleanup_complete() is not True:
                 handle.terminate()
-            settled = self._cj_is_dead(handle)
+            settled = handle.is_cleanup_complete() is True
             with self.lock:
                 self.cj_settled = settled
 
