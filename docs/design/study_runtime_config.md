@@ -21,7 +21,7 @@ Trust boundary:
 
 Goals: secrets as references only (never values in `local/` files); zero-configuration discovery (no launcher
 arguments, no `resources.json` edits); Docker, Kubernetes, and Slurm conceptually aligned; FLARE-owned launch
-behavior untouchable; datasets extensible by `type` so new providers need no format change.
+behavior untouchable; dataset types can support new placement mechanisms without changing the format.
 
 Non-goals: job-requested Secrets; job-side runtime wiring; replacing `launcher_spec`/`resource_spec`; changing the
 pod template merge machinery; describing data sources (that is `local/datasets.yaml`).
