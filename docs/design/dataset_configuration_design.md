@@ -352,9 +352,11 @@ In container modes (Docker, Kubernetes and containerized Slurm), Study isolation
 
 Process mode is not isolated, for data or for configuration. A process job is a local process with the site's filesystem and environment. There, the API reads `local/datasets.yaml` directly and returns the job's Study only, as a convenience. Process mode is for development and proof-of-concept sites, as Study runtime already documents.
 
-## 4. Alternatives
+## 4. Design decisions
 
-| Choice | Set aside | Reason |
+Each row is a decision this design makes, the option it was weighed against, and why the decision was made.
+
+| Decision | Option not taken | Why |
 | --- | --- | --- |
 | One file per site with a `usage` section per component | A separate configuration file for each component | A dataset is described once. Each new component would otherwise add its own file, its own loader and its own copy of the dataset list. |
 | A separate file from Study runtime configuration | Adding these fields to `study_runtime.yaml`, or declaring datasets on the server | See Section 4.1. |
