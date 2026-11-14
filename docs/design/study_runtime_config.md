@@ -21,7 +21,7 @@ Trust boundary:
 
 Goals: secrets as references only (never values in `local/` files); zero-configuration discovery (no launcher
 arguments, no `resources.json` edits); Docker, Kubernetes, and Slurm conceptually aligned; FLARE-owned launch
-behavior untouchable; datasets extensible by `type` so new providers need no format change; v1 deployments keep
+behavior untouchable; datasets extensible by `type` so a new placement mechanism needs no format change; v1 deployments keep
 working.
 
 Non-goals: job-requested Secrets; job-side runtime wiring; replacing `launcher_spec`/`resource_spec`; changing the
