@@ -630,7 +630,7 @@ class _SlurmTaskBackend(TaskLauncherSpec):
         self._initialization_lock = threading.Lock()
         if cj_runtime in ("docker", "process"):
             if not worker_listener_host:
-                raise ValueError(f"{cj_runtime} CJ requires an explicit worker_listener_host on the gateway")
+                raise ValueError(f"{cj_runtime} CJ requires an explicit worker_listener_host on the CP host")
             host = self.get_worker_listener_host()
             try:
                 loopback = ipaddress.ip_address(host).is_loopback

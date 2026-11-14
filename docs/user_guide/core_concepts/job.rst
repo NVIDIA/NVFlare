@@ -207,10 +207,10 @@ For task-lifetime clients, ``cj_resource_spec`` controls the coordinator budget
 independently of task compute resources. Its dictionaries merge ``@default``,
 ``@ALL`` and client-site fields. An explicit client-site ``null`` opts that
 client out of those inherited coordinator budgets and uses the site's policy;
-``{}`` continues to inherit them. For example, a Process gateway can use
-``"cj_resource_spec": {"@default": {"num_of_cpus": 1, "memory": "1Gi"}, "gateway-site": null}``.
+``{}`` continues to inherit them. For example, a Process site on a login node can use
+``"cj_resource_spec": {"@default": {"num_of_cpus": 1, "memory": "1Gi"}, "process-site": null}``.
 This does not enable CJ-only admission for job-lifetime applications. See
-:ref:`slurm_task_launcher` for gateway policy and Docker coordinator ceilings.
+:ref:`slurm_task_launcher` for CP host policy and Docker coordinator ceilings.
 
 The Slurm job block accepts ``image``, ``nodes``, ``gpus_per_node``,
 ``cpus_per_node``, ``mem_per_node`` (MiB), ``time``, and

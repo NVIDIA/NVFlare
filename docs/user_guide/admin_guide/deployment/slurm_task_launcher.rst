@@ -100,10 +100,10 @@ allocations: ``time`` is preserved for each allocation, and ``pending_timeout``
 is bounded by the respective trusted site limit. Splitting CPU, memory and
 GPU budgets does not discard the job timing policy.
 
-Process CJ on a login or service host
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Process CJ on a login node or submit host
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A trusted site can keep both CP and CJ on a login or service host while
+A trusted site can keep both CP and CJ on a login node or submit host while
 running task workers in Slurm. Configure the existing
 ``nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher``
 as the site's only client job launcher and set the site's task launcher
@@ -124,7 +124,7 @@ as the site's only client job launcher and set the site's task launcher
             "workspace_path": "/shared/site-1",
             "shared_filesystem": true,
             "cgroup_enforced": true,
-            "worker_listener_host": "gateway.example",
+            "worker_listener_host": "cp-host.example",
             "python_path": "/shared/runtime/bin/python",
             "cpu_cores": 2,
             "memory_mb": 4096,
@@ -148,24 +148,24 @@ This profile runs trusted code under the site's UID. It provides no
 container isolation or enforced CPU/memory budget for CJ; nonzero
 ``cj_resource_spec`` budgets are rejected. Slurm still admits and tracks
 each task allocation. For a mixed federation with shared CJ budgets, set
-``cj_resource_spec["site-1"]`` to ``null`` for a Process gateway. This opts only
+``cj_resource_spec["site-1"]`` to ``null`` for a Process login node. This opts only
 that client out of the inherited budgets while keeping compute resources on
 its Slurm tasks. The default ``cj_runtime: slurm`` profile is unchanged and
 continues to require a Slurm CJ allocation.
 
-Process and Docker gateway profiles refuse job-lifetime applications by default,
+Process and Docker login node profiles refuse job-lifetime applications by default,
 including applications that omit ``execution_lifetime``. A site that permits
-resident applications on its gateway can explicitly set
+resident applications on its login node can explicitly set
 ``task_execution.allow_job_lifetime`` to ``true`` in its canonical site file.
 Those applications then use the ordinary job launcher's behavior and site
 image defaults. Native Slurm and Kubernetes profiles retain their existing
 job-lifetime behavior unless the site explicitly disables it.
 
-Docker CJs on a gateway
-~~~~~~~~~~~~~~~~~~~~~~~
+Docker CJs on a login node
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 For clusters whose compute nodes all have GPUs, CP can keep each task-mode CJ
-in a CPU-only Docker container on its own gateway host. Only compute workers
+in a CPU-only Docker container on its own login node host. Only compute workers
 use Slurm allocations. The site independently selects the ordinary
 Docker job launcher and the Slurm task launcher. CP establishes task ownership
 around job launch; neither job launcher implements Slurm submission.
@@ -203,7 +203,7 @@ site components. Configure the task launcher in that same file with
             "cj_runtime": "docker",
             "shared_filesystem": true,
             "cgroup_enforced": true,
-            "worker_listener_host": "gateway.example",
+            "worker_listener_host": "cp-host.example",
             "python_path": "/shared/env/bin/python",
             "cpu_cores": 4,
             "memory_mb": 4096,
@@ -216,15 +216,15 @@ site components. Configure the task launcher in that same file with
 
 This initial profile requires:
 
-* A Linux gateway, a local Docker daemon with CPU/memory limit support, the
+* A Linux login node, a local Docker daemon with CPU/memory limit support, the
   Docker Python SDK on CP, and a nonroot CP UID. CP needs permission to use
   Docker and all four Slurm commands. Docker CJs need neither interface.
   The task backend requires a Unix-socket daemon endpoint and checks its Linux
   CPU-quota and memory-limit capabilities before creating the container.
-  Do not submit CP with ``parent.slurm`` when placing it on the gateway;
-  run the prepared ``startup/start_slurm.sh`` as a persistent gateway service.
+  Do not submit CP with ``parent.slurm`` when placing it on the login node;
+  run the prepared ``startup/start_slurm.sh`` as a persistent login node service.
 * Exactly one ``ClientDockerJobLauncher`` in the canonical site file.
-  The gateway task profile applies to ``execution_lifetime="task"`` applications.
+  The login node task profile applies to ``execution_lifetime="task"`` applications.
   Explicit per-site and legacy job Docker options, including
   image/entrypoint/device overrides, are rejected. Federation-wide
   ``launcher_spec["default"]["docker"]`` settings are ignored for this
@@ -247,7 +247,7 @@ This initial profile requires:
   ``worker_listener_host`` advertises CJ's listener to compute hosts and must
   be reachable from them. Do not override the configured host
   network through ``NVFL_DOCKER_NETWORK``. CJ opens its own dynamic listener
-  port, so the gateway firewall must permit those worker connections. Bridge networking, Docker
+  port, so the login node firewall must permit those worker connections. Bridge networking, Docker
   Desktop, shared-file parent transport and automatic host discovery are
   unsupported in this profile. Host networking does not isolate network access;
   qualify it under the site's network and job-code trust policy.
@@ -256,8 +256,8 @@ This initial profile requires:
 nanocpus and bytes (or a Docker memory string such as ``"1g"``). These must
 be explicit and act as per-coordinator ceilings: a job's ``cj_resource_spec``
 may reduce either limit but cannot increase it. Requests above a ceiling fail
-before container creation. These limits bound each CJ, not aggregate gateway
-concurrency; provision gateway capacity for the site's admitted jobs.
+before container creation. These limits bound each CJ, not aggregate host
+concurrency; provision host capacity for the site's admitted jobs.
 GPU/device settings and other container overrides are unsupported in this task
 profile. Site ``cap_drop`` and ``security_opt`` lists are preserved and extended
 with ``ALL`` and ``no-new-privileges``. Disabling ``no-new-privileges`` is rejected.
@@ -296,7 +296,7 @@ Storage and recovery
 Native Slurm allocations share the site workspace under one UID. They require
 trusted job code and do not enforce CP-private storage, per-job filesystem
 isolation or scheduler-credential isolation. The Slurm CJ launcher warns at
-startup; mTLS does not add filesystem isolation. The gateway Docker profile
+startup; mTLS does not add filesystem isolation. The login node Docker profile
 isolates the CJ filesystem view but keeps this native-worker trust requirement.
 
 Keep required checkpoints and application state in the persistent job directory.
@@ -315,7 +315,7 @@ the common policy. Set ``NVFLARE_MAX_CJ_RESTART_FAILURES=0`` on CP, or pass
 recovery. The budget counts consecutive failed starts and resets at READY,
 rather than being a lifetime or per-job cap.
 
-The gateway ``process`` and ``docker`` task profiles keep automatic CJ recovery
+The login node ``process`` and ``docker`` task profiles keep automatic CJ recovery
 disabled in this initial implementation. CP continues cleanup while alive;
 CP crash/restart adoption is not implemented for any Slurm profile. Persistent
 files alone do not authorize automatic physical retry.

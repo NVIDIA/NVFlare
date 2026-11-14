@@ -807,10 +807,10 @@ def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path
     from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
     from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskService
     from nvflare.private.fed.client.task_runtime import (
-        TaskJobRuntime,
-        _TaskJobState,
+        TaskExecutionBinding,
+        _TaskExecutionState,
         _launch_job_with_task_workers,
-        shutdown_task_jobs,
+        shutdown_task_execution,
     )
     from tests.timing_utils import join_thread, wait_for
 
@@ -828,9 +828,9 @@ def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path
     cell = SimpleNamespace(get_fqcn=lambda: "site-1", register_request_cb=Mock())
     context = FLContext()
     context.set_prop(ReservedKey.IDENTITY_NAME, "site-1")
-    engine = SimpleNamespace(get_cell=lambda: cell, _task_job_state=_TaskJobState())
+    engine = SimpleNamespace(get_cell=lambda: cell, _task_execution_state=_TaskExecutionState())
     context.set_prop(ReservedKey.ENGINE, engine)
-    runtime = TaskJobRuntime(
+    runtime = TaskExecutionBinding(
         SimpleNamespace(poll_interval=0.02),
         SlurmTaskService,
         "TEST_OWNER",
@@ -870,7 +870,7 @@ def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path
             assert not native.is_cleanup_complete()
             assert _process_running(psutil.Process(child_pid))
             owner = cell._slurm_task_service.jobs["job-1"]
-            shutdown_task_jobs(engine, timeout=0.01)
+            shutdown_task_execution(engine, timeout=0.01)
             assert owner.thread.is_alive() and owner.cj_launch_pending
             finish.set()
             join_thread(worker, timeout=20)

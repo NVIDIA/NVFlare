@@ -28,7 +28,7 @@ from nvflare.job_config.task_execution import get_client_execution_lifetime
 
 
 @dataclass
-class _TaskJobState:
+class _TaskExecutionState:
     """CP-owned admission fence and task-service registry, shared by its jobs."""
 
     lock: object = field(default_factory=threading.Lock)
@@ -36,7 +36,7 @@ class _TaskJobState:
     services: dict = field(default_factory=dict)
 
 
-class TaskJobHandle(JobHandleSpec):
+class JobHandleWithTaskWorkers(JobHandleSpec):
     """Preserve CJ outcome while bounding the wait for parent-owned cleanup."""
 
     def __init__(self, handle, owner, cleanup_timeout=30.0, *, allow_restart=True):
@@ -103,7 +103,7 @@ class TaskJobHandle(JobHandleSpec):
 
 
 @dataclass
-class TaskJobRuntime:
+class TaskExecutionBinding:
     """Prepared backend binding and settings for one CJ launch."""
 
     backend: object
@@ -118,7 +118,7 @@ class TaskJobRuntime:
 def _launch_job_with_task_workers(prepared, launcher, fl_ctx):
     engine = fl_ctx.get_engine()
     cell = engine.get_cell()
-    state = engine._task_job_state
+    state = engine._task_execution_state
     token = secrets.token_hex(32)
     with state.lock:
         if state.closing:
@@ -144,7 +144,7 @@ def _launch_job_with_task_workers(prepared, launcher, fl_ctx):
             if result.handle is not native:
                 raise RuntimeError("launcher published a different coordinator handle")
             return result
-        result = TaskJobHandle(native, owner, prepared.cleanup_timeout, allow_restart=False)
+        result = JobHandleWithTaskWorkers(native, owner, prepared.cleanup_timeout, allow_restart=False)
         with state.lock:
             owner.attach_cj(native)
             if state.closing:
@@ -183,7 +183,7 @@ def _launch_job_with_task_workers(prepared, launcher, fl_ctx):
 
 
 def _prepare_process_slurm_cj(task_launcher, launcher, job_meta, fl_ctx):
-    from nvflare.app_opt.job_launcher.slurm.gateway_runtime import prepare_gateway_runtime
+    from nvflare.app_opt.job_launcher.slurm.task_binding import prepare_task_binding
     from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES
     from nvflare.utils.job_launcher_utils import get_cj_resource_spec
 
@@ -193,15 +193,15 @@ def _prepare_process_slurm_cj(task_launcher, launcher, job_meta, fl_ctx):
     environment = os.environ.copy()
     environment.update({name: "none" if name == "NVIDIA_VISIBLE_DEVICES" else "" for name in GPU_ENVIRONMENT_NAMES})
     options = JobLaunchOptions(environment=environment, apply_study_runtime=False)
-    return prepare_gateway_runtime(job_meta, fl_ctx, options)
+    return prepare_task_binding(job_meta, fl_ctx, options)
 
 
 def _prepare_docker_slurm_cj(task_launcher, launcher, job_meta, fl_ctx):
-    from nvflare.app_opt.job_launcher.slurm.gateway_runtime import prepare_gateway_runtime
+    from nvflare.app_opt.job_launcher.slurm.task_binding import prepare_task_binding
 
     task_launcher.validate_job_launcher(launcher)
     options = launcher._task_coordinator_options(job_meta, fl_ctx)
-    prepared = prepare_gateway_runtime(job_meta, fl_ctx, options)
+    prepared = prepare_task_binding(job_meta, fl_ctx, options)
     site = fl_ctx.get_identity_name()
     # Only the physical CJ copy drops compute budgets and job image selection.
     # The ordinary Docker launcher then uses its validated site default image.
@@ -235,7 +235,7 @@ def launch_job(launcher, job_meta, fl_ctx):
         lifetime = get_client_execution_lifetime(config)
         policy = validate_task_site(workspace)
         if lifetime == "task" or policy is not None:
-            from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy, _prepare_job_runtime
+            from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy, _prepare_task_binding
 
             policy = policy or TaskExecutionPolicy.from_workspace(workspace)
             if lifetime != "task":
@@ -243,17 +243,17 @@ def launch_job(launcher, job_meta, fl_ctx):
                     raise ValueError("site task_execution policy refuses job-lifetime applications; use task lifetime")
                 return launcher.launch_job(job_meta, fl_ctx)
             policy.validate_job_launcher(launcher)
-            runtime = _prepare_job_runtime(policy.launcher, launcher, job_meta, fl_ctx)
+            runtime = _prepare_task_binding(policy.launcher, launcher, job_meta, fl_ctx)
             if runtime is not None:
                 runtime.cleanup_timeout = policy.finalization_timeout
                 return _launch_job_with_task_workers(runtime, launcher, fl_ctx)
     return launcher.launch_job(job_meta, fl_ctx)
 
 
-def shutdown_task_jobs(engine, timeout=None):
+def shutdown_task_execution(engine, timeout=None):
     if engine is None:
         return
-    state = engine._task_job_state
+    state = engine._task_execution_state
     with state.lock:
         state.closing = True
         services = tuple(state.services.values())
