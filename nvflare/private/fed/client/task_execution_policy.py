@@ -58,6 +58,30 @@ _NATIVE_TASK_LAUNCHERS = {
 }
 
 
+# CP composition is private. Class paths keep unused optional backends out of
+# the import graph; exact supported launcher types are validated by policy.
+_LOCAL_CJ_PREPARERS = {
+    (
+        "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
+        "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+    ): ("nvflare.app_opt.job_launcher.slurm.gateway_runtime", "prepare_gateway_runtime"),
+    (
+        "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
+        "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+    ): ("nvflare.app_opt.job_launcher.slurm.gateway_runtime", "prepare_gateway_runtime"),
+}
+
+
+def _prepare_job_runtime(task_launcher, job_launcher, job_meta, fl_ctx):
+    pairing = tuple(f"{type(item).__module__}.{type(item).__qualname__}" for item in (job_launcher, task_launcher))
+    target = _LOCAL_CJ_PREPARERS.get(pairing)
+    if target is None:
+        # Existing native launchers retain their own ownership setup.
+        return None
+    module, name = target
+    return getattr(importlib.import_module(module), name)(task_launcher, job_launcher, job_meta, fl_ctx)
+
+
 def _supported_native_launcher(launcher):
     """Import only the selected backend; optional backends stay optional."""
     target = _NATIVE_TASK_LAUNCHERS.get(launcher.launch_mode)

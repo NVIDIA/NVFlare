@@ -236,13 +236,6 @@ class TaskLauncherSpec(FLComponent, ABC):
         """Validate the site-selected coordinator launcher before physical launch."""
         raise UnsupportedTaskResourceError("task backend does not support this coordinator launcher")
 
-    def prepare_job_runtime(self, launcher, job_meta, fl_ctx):
-        """Return parent task ownership for a separately launched coordinator.
-
-        ``None`` keeps ownership setup in an existing native job launcher.
-        """
-        return None
-
     def get_worker_listener_host(self) -> str:
         """Host at which this launcher's workers can reach their Client Job.
 
