@@ -1,0 +1,1101 @@
+{
+  "format_version": 1,
+  "study": "default",
+  "job_id": "sample",
+  "completed_at": "2026-11-09T04:41:41Z",
+  "sites": {
+    "site-1": {
+      "status": "OK",
+      "reason_code": null,
+      "unavailable": [],
+      "skipped": []
+    },
+    "site-2": {
+      "status": "OK",
+      "reason_code": null,
+      "unavailable": [],
+      "skipped": []
+    }
+  },
+  "datasets": [
+    {
+      "site": "site-1",
+      "dataset": "omop",
+      "metadata": {
+        "display_name": "omop",
+        "description": null,
+        "owner": null,
+        "tables": [
+          {
+            "name": "condition_occurrence",
+            "columns": [
+              {
+                "name": "condition_occurrence_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "person_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "condition_concept_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "condition_start_date",
+                "type": "date",
+                "nullable": false
+              },
+              {
+                "name": "condition_start_datetime",
+                "type": "timestamp",
+                "nullable": true
+              },
+              {
+                "name": "condition_end_date",
+                "type": "date",
+                "nullable": true
+              },
+              {
+                "name": "condition_end_datetime",
+                "type": "timestamp",
+                "nullable": true
+              },
+              {
+                "name": "condition_type_concept_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "condition_status_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "stop_reason",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "provider_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "visit_occurrence_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "visit_detail_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "condition_source_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "condition_status_source_value",
+                "type": "string",
+                "nullable": true
+              }
+            ],
+            "primary_key": [],
+            "relationships": []
+          },
+          {
+            "name": "drug_exposure",
+            "columns": [
+              {
+                "name": "drug_exposure_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "person_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "drug_concept_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "drug_exposure_start_date",
+                "type": "date",
+                "nullable": false
+              },
+              {
+                "name": "drug_exposure_start_datetime",
+                "type": "timestamp",
+                "nullable": true
+              },
+              {
+                "name": "drug_exposure_end_date",
+                "type": "date",
+                "nullable": false
+              },
+              {
+                "name": "drug_exposure_end_datetime",
+                "type": "timestamp",
+                "nullable": true
+              },
+              {
+                "name": "verbatim_end_date",
+                "type": "date",
+                "nullable": true
+              },
+              {
+                "name": "drug_type_concept_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "stop_reason",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "refills",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "quantity",
+                "type": "double",
+                "nullable": true
+              },
+              {
+                "name": "days_supply",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "sig",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "route_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "lot_number",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "provider_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "visit_occurrence_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "visit_detail_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "drug_source_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "route_source_value",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "dose_unit_source_value",
+                "type": "string",
+                "nullable": true
+              }
+            ],
+            "primary_key": [],
+            "relationships": []
+          },
+          {
+            "name": "measurement",
+            "columns": [
+              {
+                "name": "measurement_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "person_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "measurement_concept_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "measurement_date",
+                "type": "date",
+                "nullable": false
+              },
+              {
+                "name": "measurement_datetime",
+                "type": "timestamp",
+                "nullable": true
+              },
+              {
+                "name": "measurement_time",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "measurement_type_concept_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "operator_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "value_as_number",
+                "type": "double",
+                "nullable": true
+              },
+              {
+                "name": "value_as_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "unit_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "range_low",
+                "type": "double",
+                "nullable": true
+              },
+              {
+                "name": "range_high",
+                "type": "double",
+                "nullable": true
+              },
+              {
+                "name": "provider_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "visit_occurrence_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "visit_detail_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "measurement_source_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "unit_source_value",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "unit_source_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "value_source_value",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "measurement_event_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "meas_event_field_concept_id",
+                "type": "integer",
+                "nullable": true
+              }
+            ],
+            "primary_key": [],
+            "relationships": []
+          },
+          {
+            "name": "observation_period",
+            "columns": [
+              {
+                "name": "observation_period_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "person_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "observation_period_start_date",
+                "type": "date",
+                "nullable": false
+              },
+              {
+                "name": "observation_period_end_date",
+                "type": "date",
+                "nullable": false
+              },
+              {
+                "name": "period_type_concept_id",
+                "type": "integer",
+                "nullable": false
+              }
+            ],
+            "primary_key": [],
+            "relationships": []
+          },
+          {
+            "name": "person",
+            "columns": [
+              {
+                "name": "person_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "gender_concept_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "year_of_birth",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "month_of_birth",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "day_of_birth",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "birth_datetime",
+                "type": "timestamp",
+                "nullable": true
+              },
+              {
+                "name": "race_concept_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "ethnicity_concept_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "location_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "provider_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "care_site_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "gender_source_value",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "gender_source_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "race_source_value",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "race_source_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "ethnicity_source_value",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "ethnicity_source_concept_id",
+                "type": "integer",
+                "nullable": true
+              }
+            ],
+            "primary_key": [],
+            "relationships": []
+          },
+          {
+            "name": "visit_occurrence",
+            "columns": [
+              {
+                "name": "visit_occurrence_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "person_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "visit_concept_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "visit_start_date",
+                "type": "date",
+                "nullable": false
+              },
+              {
+                "name": "visit_start_datetime",
+                "type": "timestamp",
+                "nullable": true
+              },
+              {
+                "name": "visit_end_date",
+                "type": "date",
+                "nullable": false
+              },
+              {
+                "name": "visit_end_datetime",
+                "type": "timestamp",
+                "nullable": true
+              },
+              {
+                "name": "visit_type_concept_id",
+                "type": "integer",
+                "nullable": false
+              },
+              {
+                "name": "provider_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "care_site_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "visit_source_value",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "visit_source_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "admitted_from_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "admitted_from_source_value",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "discharged_to_concept_id",
+                "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "discharged_to_source_value",
+                "type": "string",
+                "nullable": true
+              },
+              {
+                "name": "preceding_visit_occurrence_id",
+                "type": "integer",
+                "nullable": true
+              }
+            ],
+            "primary_key": [],
+            "relationships": []
+          }
+        ],
+        "resources": [],
+        "semantic_profile": {
+          "standard": null,
+          "version": null,
+          "vocabulary_version": null,
+          "mapping_version": null,
+          "declaration_ref": null,
+          "validation_ref": null
+        },
+        "modalities": [
+          "tabular"
+        ],
+        "operations": [],
+        "source_version": null,
+        "lineage": [],
+        "provenance": {
+          "source": "unity-catalog",
+          "declaration_ref": null,
+          "validation_ref": null
+        }
+      },
+      "observed_at": null
+    },
+    {
+      "site": "site-2",
+      "dataset": "omop",
+      "metadata": {
+        "display_name": "omop",
+        "description": null,
+        "owner": null,
+        "tables": [
+          {
+            "name": "condition_occurrence",
+            "columns": [
+              {
+                "name": "condition_occurrence_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "person_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "condition_concept_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "condition_start_date",
+                "type": "DATE",
+                "nullable": false
+              },
+              {
+                "name": "condition_start_datetime",
+                "type": "TIMESTAMP WITHOUT TIME ZONE",
+                "nullable": true
+              },
+              {
+                "name": "condition_end_date",
+                "type": "DATE",
+                "nullable": true
+              },
+              {
+                "name": "condition_end_datetime",
+                "type": "TIMESTAMP WITHOUT TIME ZONE",
+                "nullable": true
+              },
+              {
+                "name": "condition_type_concept_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "condition_status_concept_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "stop_reason",
+                "type": "VARCHAR(50)",
+                "nullable": true
+              },
+              {
+                "name": "provider_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "visit_occurrence_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "visit_detail_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "condition_source_concept_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "condition_status_source_value",
+                "type": "VARCHAR(50)",
+                "nullable": true
+              }
+            ],
+            "primary_key": [
+              "condition_occurrence_id"
+            ],
+            "relationships": [
+              {
+                "columns": [
+                  "person_id"
+                ],
+                "target_table": "person",
+                "target_columns": [
+                  "person_id"
+                ]
+              },
+              {
+                "columns": [
+                  "visit_occurrence_id"
+                ],
+                "target_table": "visit_occurrence",
+                "target_columns": [
+                  "visit_occurrence_id"
+                ]
+              }
+            ]
+          },
+          {
+            "name": "drug_exposure",
+            "columns": [
+              {
+                "name": "drug_exposure_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "person_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "drug_concept_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "drug_exposure_start_date",
+                "type": "DATE",
+                "nullable": false
+              },
+              {
+                "name": "drug_exposure_start_datetime",
+                "type": "TIMESTAMP WITHOUT TIME ZONE",
+                "nullable": true
+              },
+              {
+                "name": "drug_exposure_end_date",
+                "type": "DATE",
+                "nullable": false
+              },
+              {
+                "name": "drug_exposure_end_datetime",
+                "type": "TIMESTAMP WITHOUT TIME ZONE",
+                "nullable": true
+              },
+              {
+                "name": "verbatim_end_date",
+                "type": "DATE",
+                "nullable": true
+              },
+              {
+                "name": "drug_type_concept_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "stop_reason",
+                "type": "VARCHAR(50)",
+                "nullable": true
+              },
+              {
+                "name": "refills",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "quantity",
+                "type": "DOUBLE PRECISION",
+                "nullable": true
+              },
+              {
+                "name": "days_supply",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "sig",
+                "type": "VARCHAR(50)",
+                "nullable": true
+              },
+              {
+                "name": "route_concept_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "lot_number",
+                "type": "VARCHAR(50)",
+                "nullable": true
+              },
+              {
+                "name": "provider_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "visit_occurrence_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "visit_detail_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "drug_source_concept_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "route_source_value",
+                "type": "VARCHAR(50)",
+                "nullable": true
+              },
+              {
+                "name": "dose_unit_source_value",
+                "type": "VARCHAR(50)",
+                "nullable": true
+              }
+            ],
+            "primary_key": [
+              "drug_exposure_id"
+            ],
+            "relationships": [
+              {
+                "columns": [
+                  "person_id"
+                ],
+                "target_table": "person",
+                "target_columns": [
+                  "person_id"
+                ]
+              },
+              {
+                "columns": [
+                  "visit_occurrence_id"
+                ],
+                "target_table": "visit_occurrence",
+                "target_columns": [
+                  "visit_occurrence_id"
+                ]
+              }
+            ]
+          },
+          {
+            "name": "observation_period",
+            "columns": [
+              {
+                "name": "observation_period_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "person_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "observation_period_start_date",
+                "type": "DATE",
+                "nullable": false
+              },
+              {
+                "name": "observation_period_end_date",
+                "type": "DATE",
+                "nullable": false
+              },
+              {
+                "name": "period_type_concept_id",
+                "type": "INTEGER",
+                "nullable": false
+              }
+            ],
+            "primary_key": [
+              "observation_period_id"
+            ],
+            "relationships": [
+              {
+                "columns": [
+                  "person_id"
+                ],
+                "target_table": "person",
+                "target_columns": [
+                  "person_id"
+                ]
+              }
+            ]
+          },
+          {
+            "name": "person",
+            "columns": [
+              {
+                "name": "person_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "gender_concept_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "year_of_birth",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "month_of_birth",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "day_of_birth",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "birth_datetime",
+                "type": "TIMESTAMP WITHOUT TIME ZONE",
+                "nullable": true
+              },
+              {
+                "name": "race_concept_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "ethnicity_concept_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "location_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "provider_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "care_site_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "gender_source_value",
+                "type": "VARCHAR(50)",
+                "nullable": true
+              },
+              {
+                "name": "gender_source_concept_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "race_source_value",
+                "type": "VARCHAR(50)",
+                "nullable": true
+              },
+              {
+                "name": "race_source_concept_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "ethnicity_source_value",
+                "type": "VARCHAR(50)",
+                "nullable": true
+              },
+              {
+                "name": "ethnicity_source_concept_id",
+                "type": "INTEGER",
+                "nullable": true
+              }
+            ],
+            "primary_key": [
+              "person_id"
+            ],
+            "relationships": []
+          },
+          {
+            "name": "visit_occurrence",
+            "columns": [
+              {
+                "name": "visit_occurrence_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "person_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "visit_concept_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "visit_start_date",
+                "type": "DATE",
+                "nullable": false
+              },
+              {
+                "name": "visit_start_datetime",
+                "type": "TIMESTAMP WITHOUT TIME ZONE",
+                "nullable": true
+              },
+              {
+                "name": "visit_end_date",
+                "type": "DATE",
+                "nullable": false
+              },
+              {
+                "name": "visit_end_datetime",
+                "type": "TIMESTAMP WITHOUT TIME ZONE",
+                "nullable": true
+              },
+              {
+                "name": "visit_type_concept_id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "provider_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "care_site_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "visit_source_value",
+                "type": "VARCHAR(50)",
+                "nullable": true
+              },
+              {
+                "name": "visit_source_concept_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "admitted_from_concept_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "admitted_from_source_value",
+                "type": "VARCHAR(50)",
+                "nullable": true
+              },
+              {
+                "name": "discharged_to_concept_id",
+                "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "discharged_to_source_value",
+                "type": "VARCHAR(50)",
+                "nullable": true
+              },
+              {
+                "name": "preceding_visit_occurrence_id",
+                "type": "INTEGER",
+                "nullable": true
+              }
+            ],
+            "primary_key": [
+              "visit_occurrence_id"
+            ],
+            "relationships": [
+              {
+                "columns": [
+                  "person_id"
+                ],
+                "target_table": "person",
+                "target_columns": [
+                  "person_id"
+                ]
+              }
+            ]
+          }
+        ],
+        "resources": [],
+        "semantic_profile": {
+          "standard": null,
+          "version": null,
+          "vocabulary_version": null,
+          "mapping_version": null,
+          "declaration_ref": null,
+          "validation_ref": null
+        },
+        "modalities": [
+          "tabular"
+        ],
+        "operations": [],
+        "source_version": null,
+        "lineage": [],
+        "provenance": {
+          "source": "sql",
+          "declaration_ref": null,
+          "validation_ref": null
+        }
+      },
+      "observed_at": null
+    }
+  ]
+}

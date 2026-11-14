@@ -1,0 +1,4 @@
+person_id,test_name,result_value,collected_date,abnormal
+1001,glucose,95.5,2024-01-01,false
+1002,glucose,130.2,2024-01-02,true
+1003,glucose,,2024-01-03,false

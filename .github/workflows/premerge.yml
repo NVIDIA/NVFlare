@@ -437,7 +437,7 @@ jobs:
       - name: Run wheel build
         if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         run: python3 -m build --wheel
-      - name: Verify bundled example catalog
+      - name: Verify bundled example catalog and catalog visualization
         if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         run: |
           python3 - <<'PY'
@@ -448,5 +448,11 @@ jobs:
           wheel = next(Path("dist").glob("*.whl"))
           with ZipFile(wheel) as archive:
               catalog = json.loads(archive.read("nvflare/tool/examples/catalog.json"))
+              for name in (
+                  "nvflare/app_opt/fdn/__init__.py",
+                  "nvflare/app_opt/fdn/catalog/__init__.py",
+                  "nvflare/app_opt/fdn/catalog/visualization.py",
+              ):
+                  assert name in archive.namelist(), f"wheel is missing {name}"
           assert catalog, "wheel contains an empty example catalog"
           PY
