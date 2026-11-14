@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Gateway policy and Docker API contracts; no real containers or scheduler."""
+"""CP host policy and Docker API contracts; no real containers or scheduler."""
 
 import copy
 import json
@@ -32,7 +32,7 @@ from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher, 
 from nvflare.app_opt.job_launcher.slurm.task_policy import DOCKER_CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
 from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
-from nvflare.private.fed.client.task_runtime import _TaskJobState, launch_job
+from nvflare.private.fed.client.task_runtime import _TaskExecutionState, launch_job
 from nvflare.private.fed.utils.job_cert_utils import JobCertError
 
 
@@ -69,7 +69,7 @@ def profile(tmp_path, monkeypatch):
                     "cj_runtime": "docker",
                     "shared_filesystem": True,
                     "cgroup_enforced": True,
-                    "worker_listener_host": "gateway.example",
+                    "worker_listener_host": "cp-host.example",
                     "python_path": "/shared/env/bin/python",
                     "poll_interval": 0.01,
                 },
@@ -96,7 +96,9 @@ def profile(tmp_path, monkeypatch):
     context = FLContext()
     context.set_prop(ReservedKey.IDENTITY_NAME, "site-1")
     context.set_prop(ReservedKey.RUN_NUM, "job-1")
-    engine = SimpleNamespace(get_cell=lambda: cell, get_component=lambda _: None, _task_job_state=_TaskJobState())
+    engine = SimpleNamespace(
+        get_cell=lambda: cell, get_component=lambda _: None, _task_execution_state=_TaskExecutionState()
+    )
     context.set_prop(ReservedKey.ENGINE, engine)
     context.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace)
     context.set_prop(
@@ -134,7 +136,7 @@ def profile(tmp_path, monkeypatch):
             assert service.shutdown(timeout=5) == ()
 
 
-def test_gateway_container_uses_cj_budget_and_isolated_canonical_paths(profile, monkeypatch):
+def test_cp_host_container_uses_cj_budget_and_isolated_canonical_paths(profile, monkeypatch):
     p = profile
     original = copy.deepcopy(p.meta)
     for name in ("SLURM_JOB_ID", "SLURM_JWT", "DOCKER_HOST", "CUDA_VISIBLE_DEVICES"):
@@ -166,7 +168,7 @@ def test_gateway_container_uses_cj_budget_and_isolated_canonical_paths(profile, 
     assert command[command.index("-p") + 1] == "tcp://127.0.0.1:8102"
     assert str(p.root) in command and str(p.root / "startup") in command
     assert p.meta == original
-    assert not handle.can_restart()  # Gateway recovery is disabled for this initial profile.
+    assert not handle.can_restart()  # CP host recovery is disabled for this initial profile.
     handle.terminate()
     assert owner.released and owner.closed
     p.native.terminate.assert_called_once_with()
@@ -224,7 +226,7 @@ def test_docker_proxy_start_needs_cp_capability_but_no_scheduler_environment(pro
     monkeypatch.setenv(ENV_TASK_TOKEN, "job-capability")
     proxy.handle_event(EventType.START_RUN, p.context)
     assert proxy._client.owner == "site-1" and proxy._client.token == "job-capability"
-    assert proxy.get_worker_listener_host() == "gateway.example"
+    assert proxy.get_worker_listener_host() == "cp-host.example"
     SlurmTaskManager.initialize.assert_not_called()
 
 
@@ -237,7 +239,7 @@ def test_gpu_cj_budget_is_rejected_before_creation(profile, spec):
 
 
 @pytest.mark.parametrize("docker_spec", [{"image": "job/image"}, {"device_requests": []}, {"entrypoint": ["sh"]}])
-def test_job_cannot_override_gateway_container(profile, docker_spec):
+def test_job_cannot_override_cp_host_container(profile, docker_spec):
     profile.meta["launcher_spec"] = {"site-1": {"docker": docker_spec}}
     with pytest.raises(ValueError, match="site-owned"):
         launch_job(profile.launcher, profile.meta, profile.context)
@@ -287,7 +289,7 @@ def test_live_owner_fences_a_second_cj_launch(profile):
     assert not handle.can_restart()
 
 
-def test_gateway_restart_policy_preserves_owner_even_after_physical_exit(profile):
+def test_cp_host_restart_policy_preserves_owner_even_after_physical_exit(profile):
     p = profile
     handle = launch_job(p.launcher, p.meta, p.context)
     assert not handle.can_restart()
@@ -304,7 +306,7 @@ def test_heartbeat_cleanup_stops_docker_cj_and_seals_task_owner(profile):
     p.native.terminate.assert_called_once_with()
 
 
-def test_gateway_admission_does_not_reserve_compute_gpus(profile):
+def test_cp_host_admission_does_not_reserve_compute_gpus(profile):
     p = profile
     resources = {}
     p.context.set_prop(FLContextKey.CLIENT_RESOURCE_SPECS, resources)
@@ -318,7 +320,7 @@ def test_gateway_admission_does_not_reserve_compute_gpus(profile):
 
 
 @pytest.mark.parametrize("platform, uid", [("darwin", 1001), ("linux", 0)])
-def test_unsupported_gateway_host_is_rejected(profile, monkeypatch, platform, uid):
+def test_unsupported_cp_host_host_is_rejected(profile, monkeypatch, platform, uid):
     monkeypatch.setattr(docker_module.sys, "platform", platform)
     monkeypatch.setattr(docker_module.os, "getuid", lambda: uid)
     with pytest.raises(ValueError, match="Linux host networking and a nonroot"):
@@ -327,7 +329,7 @@ def test_unsupported_gateway_host_is_rejected(profile, monkeypatch, platform, ui
 
 
 @pytest.mark.parametrize(
-    "host", [None, "127.0.0.1", "localhost", "test.localhost.", "0.0.0.0", "tcp://gateway:1", "gateway:1"]
+    "host", [None, "127.0.0.1", "localhost", "test.localhost.", "0.0.0.0", "tcp://CP host:1", "CP host:1"]
 )
 def test_docker_requires_explicit_worker_reachable_listener(profile, host):
     args = {**profile.site["task_execution"]["launcher"]["args"], "worker_listener_host": host}
@@ -396,7 +398,7 @@ def test_cj_defaults_are_independent_of_compute(profile, spec, expected):
 
 
 def test_cp_owns_a_physical_backend_that_reaches_native_task_launch(profile, monkeypatch):
-    from tests.slurm_gateway_test_utils import assert_physical_task_dispatch
+    from tests.slurm_task_binding_test_utils import assert_physical_task_dispatch
 
     p = profile
     handle = launch_job(p.launcher, p.meta, p.context)
@@ -465,7 +467,7 @@ def test_federation_docker_default_does_not_replace_site_coordinator(profile):
 
 
 @pytest.mark.parametrize("image", [None, "resident/image"])
-def test_gateway_refuses_resident_jobs_unless_site_opts_in(profile, image):
+def test_cp_host_refuses_resident_jobs_unless_site_opts_in(profile, image):
     p = profile
     p.app_config.write_text("{}")
     p.meta.pop("cj_resource_spec")
@@ -477,7 +479,7 @@ def test_gateway_refuses_resident_jobs_unless_site_opts_in(profile, image):
 
 
 @pytest.mark.parametrize("url", ["tcp://0.0.0.0:8102", "tcp://host", "file:///tmp/parent"])
-def test_gateway_rejects_unconnectable_parent_address(profile, url):
+def test_cp_host_rejects_unconnectable_parent_address(profile, url):
     p = profile
     p.context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.PARENT_URL] = ("-p", url)
     with pytest.raises(ValueError, match="parent"):
@@ -489,7 +491,7 @@ def test_gateway_rejects_unconnectable_parent_address(profile, url):
 def test_shutdown_retains_inflight_creation_and_cleans_late_container(profile, creation_fails):
     import threading
 
-    from nvflare.private.fed.client.task_runtime import shutdown_task_jobs
+    from nvflare.private.fed.client.task_runtime import shutdown_task_execution
     from tests.timing_utils import ThreadGroup, join_thread
 
     p = profile
@@ -518,7 +520,7 @@ def test_shutdown_retains_inflight_creation_and_cleans_late_container(profile, c
         assert entered.wait(5), "Docker creation did not enter"
         service = p.cell._slurm_task_service
         owner = service.jobs["job-1"]
-        shutdown_task_jobs(p.engine)
+        shutdown_task_execution(p.engine)
         assert owner.released and owner.cj_launch_pending
         assert owner.thread.is_alive() and service.jobs["job-1"] is owner
         finish.set()
@@ -534,11 +536,11 @@ def test_shutdown_retains_inflight_creation_and_cleans_late_container(profile, c
 
 
 def test_system_shutdown_terminates_already_attached_coordinator(profile):
-    from nvflare.private.fed.client.task_runtime import shutdown_task_jobs
+    from nvflare.private.fed.client.task_runtime import shutdown_task_execution
 
     p = profile
     handle = launch_job(p.launcher, p.meta, p.context)
-    shutdown_task_jobs(p.engine)
+    shutdown_task_execution(p.engine)
     p.native.terminate.assert_called_once()
     assert handle.owner.closed and not handle.owner.thread.is_alive()
 

@@ -12,17 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Slurm binding and gateway requirements for ordinary coordinator launchers."""
+"""Slurm backend binding and scheduler environment for a CP-host coordinator."""
 
 import copy
 from dataclasses import replace
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.private.fed.client.task_runtime import TaskJobRuntime
+from nvflare.private.fed.client.task_runtime import TaskExecutionBinding
 
 
-def prepare_gateway_runtime(job_meta, fl_ctx, options):
+def prepare_task_binding(job_meta, fl_ctx, options):
     from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN, SlurmTaskService
 
     workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
@@ -37,7 +37,7 @@ def prepare_gateway_runtime(job_meta, fl_ctx, options):
     for name in tuple(environment):
         if name.startswith(("SLURM_", "SBATCH_", "SQUEUE_", "SACCT_", "SCANCEL_")):
             environment.pop(name)
-    return TaskJobRuntime(
+    return TaskExecutionBinding(
         backend,
         SlurmTaskService,
         ENV_TASK_OWNER,

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""In-process Slurm gateway dispatch assertion with the scheduler boundary mocked."""
+"""In-process Slurm CP host dispatch assertion with the scheduler boundary mocked."""
 
 from unittest.mock import Mock
 

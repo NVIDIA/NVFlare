@@ -95,10 +95,10 @@ def docker_cj_site_settings(launcher):
     defaults = launcher.default_job_container_kwargs
     unsupported = set(defaults) - {"nano_cpus", "mem_limit", "cap_drop", "security_opt"}
     if unsupported:
-        raise ValueError(f"gateway Docker CJ has unsupported site container settings: {sorted(unsupported)}")
+        raise ValueError(f"CP host Docker CJ has unsupported site container settings: {sorted(unsupported)}")
     cpu = defaults.get("nano_cpus")
     if isinstance(cpu, bool) or not isinstance(cpu, int) or cpu <= 0:
-        raise ValueError("gateway Docker CJ site nano_cpus must be a positive integer")
+        raise ValueError("CP host Docker CJ site nano_cpus must be a positive integer")
     memory = defaults.get("mem_limit")
     try:
         if isinstance(memory, bool) or not isinstance(memory, (int, str)):
@@ -108,13 +108,13 @@ def docker_cj_site_settings(launcher):
             raise ValueError()
     except (DockerException, ValueError, TypeError, OverflowError) as error:
         raise ValueError(
-            "gateway Docker CJ site mem_limit must be positive bytes or a Docker size such as '1g'"
+            "CP host Docker CJ site mem_limit must be positive bytes or a Docker size such as '1g'"
         ) from error
     security = {}
     for key in ("cap_drop", "security_opt"):
         value = defaults.get(key, [])
         if not isinstance(value, list) or any(not isinstance(v, str) or not v.strip() for v in value):
-            raise ValueError(f"gateway Docker CJ site {key} must be a list of nonempty strings")
+            raise ValueError(f"CP host Docker CJ site {key} must be a list of nonempty strings")
         security[key] = list(value)
     for option in security["security_opt"]:
         if option.startswith("no-new-privileges") and option not in (
@@ -122,7 +122,7 @@ def docker_cj_site_settings(launcher):
             "no-new-privileges:true",
             "no-new-privileges=true",
         ):
-            raise ValueError("gateway Docker CJ site security_opt cannot disable no-new-privileges")
+            raise ValueError("CP host Docker CJ site security_opt cannot disable no-new-privileges")
     if not any(v.upper() == "ALL" for v in security["cap_drop"]):
         security["cap_drop"].append("ALL")
     if not any(v.startswith("no-new-privileges") for v in security["security_opt"]):
@@ -133,7 +133,7 @@ def docker_cj_site_settings(launcher):
 def docker_cj_limits(launcher, job_meta, site):
     requested = get_cj_resource_spec(job_meta, site)
     if requested.get("num_of_gpus", 0) or requested.get("mem_per_gpu_in_GiB", 0):
-        raise ValueError("gateway Docker CJ must be CPU-only; request GPUs for tasks")
+        raise ValueError("CP host Docker CJ must be CPU-only; request GPUs for tasks")
     defaults = docker_cj_site_settings(launcher)
     cpu = (
         int(Decimal(str(requested["num_of_cpus"])) * 1_000_000_000)
@@ -142,9 +142,9 @@ def docker_cj_limits(launcher, job_meta, site):
     )
     memory = portable_memory_to_bytes(requested["memory"]) if "memory" in requested else defaults["mem_limit"]
     if cpu < 1:
-        raise ValueError("gateway Docker CJ requires at least one nanocpu")
+        raise ValueError("CP host Docker CJ requires at least one nanocpu")
     if cpu > defaults["nano_cpus"] or memory > defaults["mem_limit"]:
-        raise ValueError("gateway Docker CJ cj_resource_spec exceeds the site's CPU or memory ceiling")
+        raise ValueError("CP host Docker CJ cj_resource_spec exceeds the site's CPU or memory ceiling")
     return {**defaults, "nano_cpus": int(cpu), "mem_limit": memory}
 
 
@@ -1034,7 +1034,7 @@ class ClientDockerJobLauncher(DockerJobLauncher):
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         site = fl_ctx.get_identity_name()
         if sys.platform != "linux" or os.getuid() == 0:
-            raise ValueError("gateway Docker CJ requires Linux host networking and a nonroot CP UID")
+            raise ValueError("CP host Docker CJ requires Linux host networking and a nonroot CP UID")
         self._validate_task_coordinator_profile(workspace.get_root_dir(), network=self.network)
         # Federation images target other runtimes. This coordinator uses the
         # site's image; explicit per-site/legacy Docker overrides are rejected.
@@ -1042,15 +1042,15 @@ class ClientDockerJobLauncher(DockerJobLauncher):
         docker_meta["launcher_spec"] = docker_meta.get("launcher_spec") or {}
         docker_meta["launcher_spec"].setdefault("default", {}).pop("docker", None)
         if get_job_launcher_spec(docker_meta, site, "docker"):
-            raise ValueError("gateway Docker CJ uses site-owned settings; job Docker options are unsupported")
+            raise ValueError("CP host Docker CJ uses site-owned settings; job Docker options are unsupported")
         parent = (fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS) or {}).get(JobProcessArgs.PARENT_URL)
         if not isinstance(parent, (tuple, list)) or len(parent) != 2:
-            raise ValueError("gateway Docker CJ requires a TCP or mTLS TCP parent connection")
+            raise ValueError("CP host Docker CJ requires a TCP or mTLS TCP parent connection")
         parent_url = urlsplit(str(parent[1]))
         if parent_url.scheme not in ("tcp", "stcp") or not parent_url.hostname or not parent_url.port:
-            raise ValueError("gateway Docker CJ requires a TCP or mTLS TCP parent connection with host and port")
+            raise ValueError("CP host Docker CJ requires a TCP or mTLS TCP parent connection with host and port")
         if parent_url.hostname in ("0.0.0.0", "::"):
-            raise ValueError("gateway Docker CJ parent URL must advertise a connectable CP host")
+            raise ValueError("CP host Docker CJ parent URL must advertise a connectable CP host")
         limits = docker_cj_limits(self, job_meta, site)
         client = self._get_docker_client()
         info = client.info()
@@ -1059,7 +1059,7 @@ class ClientDockerJobLauncher(DockerJobLauncher):
             or info.get("OSType") != "linux"
             or not all(info.get(key) is True for key in ("MemoryLimit", "CpuCfsPeriod", "CpuCfsQuota"))
         ):
-            raise ValueError("gateway Docker daemon must be local and enforce Linux CPU/memory limits")
+            raise ValueError("CP host Docker daemon must be local and enforce Linux CPU/memory limits")
         environment = dict(self.default_job_env)
         environment.update({name: "void" if name == "NVIDIA_VISIBLE_DEVICES" else "" for name in GPU_ENVIRONMENT_NAMES})
         return JobLaunchOptions(

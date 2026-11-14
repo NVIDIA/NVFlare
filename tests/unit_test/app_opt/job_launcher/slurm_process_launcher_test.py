@@ -32,7 +32,7 @@ from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher
 from nvflare.app_opt.job_launcher.slurm.task_policy import PROCESS_CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
 from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
-from nvflare.private.fed.client.task_runtime import _TaskJobState, launch_job, shutdown_task_jobs
+from nvflare.private.fed.client.task_runtime import _TaskExecutionState, launch_job, shutdown_task_execution
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def profile(tmp_path, monkeypatch):
                     "cj_runtime": "process",
                     "shared_filesystem": True,
                     "cgroup_enforced": True,
-                    "worker_listener_host": "gateway.example",
+                    "worker_listener_host": "cp-host.example",
                     "python_path": "/shared/python",
                 },
             }
@@ -63,7 +63,7 @@ def profile(tmp_path, monkeypatch):
     context = FLContext()
     context.set_prop(ReservedKey.IDENTITY_NAME, "site-1")
     context.set_prop(ReservedKey.RUN_NUM, "job-1")
-    engine = SimpleNamespace(get_cell=lambda: cell, _task_job_state=_TaskJobState())
+    engine = SimpleNamespace(get_cell=lambda: cell, _task_execution_state=_TaskExecutionState())
     context.set_prop(ReservedKey.ENGINE, engine)
     context.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace)
     launcher = ClientProcessJobLauncher()
@@ -193,7 +193,7 @@ def test_process_policy_and_system_shutdown(profile):
         policy.validate_job_launcher(ServerProcessJobLauncher())
     launch_job(p.launcher, p.meta, p.context)
     p.adapter.poll.return_value = 0
-    shutdown_task_jobs(p.engine)
+    shutdown_task_execution(p.engine)
     assert p.cell._slurm_task_service.shutdown(timeout=5) == ()
 
 
@@ -211,7 +211,7 @@ def test_ordinary_process_launcher_keeps_resident_jobs_independent_of_task_polic
 
 
 def test_cp_owns_a_physical_backend_that_reaches_native_task_launch(profile, monkeypatch):
-    from tests.slurm_gateway_test_utils import assert_physical_task_dispatch
+    from tests.slurm_task_binding_test_utils import assert_physical_task_dispatch
 
     p = profile
     handle = launch_job(p.launcher, p.meta, p.context)
@@ -219,14 +219,14 @@ def test_cp_owns_a_physical_backend_that_reaches_native_task_launch(profile, mon
 
 
 @pytest.mark.parametrize("default", ["@default", "@ALL"])
-def test_process_gateway_can_opt_out_of_federation_coordinator_budget(profile, default):
+def test_process_cp_host_can_opt_out_of_federation_coordinator_budget(profile, default):
     p = profile
     p.meta["cj_resource_spec"] = {default: {"num_of_cpus": 2, "memory": "2Gi"}, "site-1": None}
     launch_job(p.launcher, p.meta, p.context)
     p.spawn.assert_called_once()
 
 
-def test_process_gateway_refuses_resident_jobs_by_default(profile):
+def test_process_cp_host_refuses_resident_jobs_by_default(profile):
     p = profile
     Path(p.workspace.get_client_app_config_file_path("job-1")).write_text("{}")
     with pytest.raises(ValueError, match="refuses job-lifetime"):
