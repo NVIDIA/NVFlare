@@ -51,7 +51,7 @@ Each read is a bounded full metadata read of every selected dataset. There is no
 
 ### 3.1 Dataset configuration
 
-The executor reads the site's datasets and rules only through the read-only [dataset configuration API](dataset_configuration_design.md). The configuration of the job's Study is loaded once per job, so an edited configuration applies to the next read, which is a new job. It does not open configuration files, detect the launcher mode or parse launcher configuration.
+The executor reads the site's datasets and rules only through the read-only [dataset configuration API](dataset_configuration_design.md). The configuration of the job's Study is loaded once per job, so an edited configuration applies to the next read, which is a new job. It does not open configuration files, detect the deployment mode or parse launcher configuration.
 
 | Catalog need | Source |
 | --- | --- |
@@ -61,7 +61,7 @@ The executor reads the site's datasets and rules only through the read-only [dat
 | Publication rules | `get_dataset(name).usage_rules("catalog")` (Section 3.3) |
 | Read limits, extra connectors, installed operations | `site_usage("catalog")` (Section 3.3) |
 
-Container launchers mount a file-based dataset at `/data/<study>/<dataset>`, and its configuration gives that location as `uri: file:///data/<study>/<dataset>`. The mount comes from the existing [study runtime configuration](../../nvflare/app_opt/job_launcher/study_runtime.py). A process-launched site mounts nothing; its configuration gives the `file` URI where the data already is. Network sources, such as a SQL server or Unity Catalog, use site-owned options and secrets, never a mount.
+Container launchers mount a file-based dataset at `/data/<study>/<dataset>`, and its configuration gives that location as `uri: file:///data/<study>/<dataset>`. The mount comes from the existing [Study runtime configuration](study_runtime_config.md). A process-launched site mounts nothing; its configuration gives the `file` URI where the data already is. Network sources, such as a SQL server or Unity Catalog, use site-owned options and secrets, never a mount.
 
 ### 3.2 Connectors
 
@@ -251,7 +251,7 @@ A site result:
 | Shared, but not read completely because a time or record budget ran out | `skipped` |
 | Not shared (`share: false` or no catalog rules) | Omitted; its name does not leave the site |
 
-The three lists are disjoint. A non-empty `skipped` list is the signal to raise the site's limits; it carries no reason code. `status` is `OK` when the read completed, even with unavailable or skipped datasets or nothing to share. `FAILED`, with a safe `reason_code`, means the read as a whole could not run: `CONFIG_UNAVAILABLE` when the dataset configuration or catalog settings are missing or invalid, `INTERNAL` otherwise. A failed read returns no catalogs. Any other status is read as `FAILED`. Source exceptions, paths and credentials never appear in a result; details go to the site log.
+The three lists are disjoint. A non-empty `skipped` list is the signal to raise the site's limits; it carries no reason code. `status` is `OK` when the read completed, even with unavailable or skipped datasets or nothing to share. `FAILED`, with a safe `reason_code`, means the read as a whole could not run: `CONFIG_UNAVAILABLE` when the dataset configuration or the catalog settings are invalid (a missing configuration file reads as no datasets, and missing catalog settings use the defaults), `INTERNAL` otherwise. A failed read returns no catalogs. Any other status is read as `FAILED`. Source exceptions, paths and credentials never appear in a result; details go to the site log.
 
 ### 3.6 Budgets and failure isolation
 
@@ -397,7 +397,7 @@ results = recipe.get_catalog_results(run)          # waits, downloads, loads cat
 | `datasets` | everything each site shares | `{site: [names]}`. A site reads the listed names it shares and skips the rest. A site absent from the mapping reads everything it shares. Naming a site that is not read is an error. |
 | `task_timeout_s` | 300 | Seconds to wait for each site before recording it as `NO_RESULT`. |
 | `task_request_interval_s` | 0.1 | How often, in seconds, sites ask the server for work during this job: the server's `task_request_interval` for this job only. The default lets sites notice the end of the run right after returning their results. Must be positive. |
-| `site_config_root` | none | `SimEnv` only: the parent folder of one folder per site, each with that site's `local/datasets.yaml` and its data. A simulated job runs in the `default` Study, so these files declare datasets under `studies: default:`. It is required with `SimEnv` and refused in other environments. |
+| `site_config_root` | none | `SimEnv` only: the parent folder of one folder per site, each with that site's `local/datasets.yaml` and its data. In `SimEnv` the executor reads that file instead of the job workspace's, the one exception to how jobs load the configuration. A simulated job runs in the `default` Study, so these files declare datasets under `studies: default:`. It is required with `SimEnv` and refused in other environments. |
 
 `get_catalog_results(run, output_path=None, timeout=0)` waits for the job, at most `timeout` seconds when it is positive, downloads its result through the environment, and returns the parsed `catalog_results.json`. With `output_path`, it also saves the file there. It raises `CatalogReadError` when the job did not finish successfully or the file is missing. The same call works in `SimEnv`, `PocEnv` and `ProdEnv`; in `SimEnv` the file is read from the local simulation workspace.
 
@@ -419,7 +419,7 @@ Neither `get_catalog` nor the recipe carries a connection, credential, URI, conn
 
 Required checks:
 
-- Read datasets only from the dataset configuration snapshot of the job's Study; a request cannot add a dataset, path, connector or credential. A missing configuration file at the default location reads as no datasets; an invalid one fails the read with `CONFIG_UNAVAILABLE`.
+- Read datasets only from the dataset configuration snapshot of the job's Study; a request cannot add a dataset, path, connector or credential. A missing configuration file reads as no datasets; an invalid one fails the read with `CONFIG_UNAVAILABLE`.
 - Corrupt dataset B among A, B and C: A and C are returned, B is `unavailable` with no partial schema. Exhaust a dataset budget and the whole-read budget separately; budget-skipped datasets appear in `skipped`.
 - A dataset with `share: false` or without catalog rules never appears in the result, not even by name.
 - Exclude a referenced table or column: dependent relationships and partial primary keys are removed, and the rest is published without leaking excluded names.
