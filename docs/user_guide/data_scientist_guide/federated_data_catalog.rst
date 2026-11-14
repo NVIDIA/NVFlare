@@ -47,8 +47,8 @@ Python API: read with ``get_catalog``
 
 ``get_catalog`` submits the read, waits for it, and returns the parsed
 ``catalog_results.json``. Of the job's downloaded workspace it keeps only that file; when the read fails, the whole
-workspace is kept for diagnosis. It works in any recipe environment: ``SimEnv``, ``PocEnv`` or
-``ProdEnv``.
+workspace is kept for diagnosis. ``SimEnv`` returns its live simulation workspace instead of a download, and that
+workspace is left unchanged. It works in any recipe environment: ``SimEnv``, ``PocEnv`` or ``ProdEnv``.
 
 .. list-table::
    :header-rows: 1
