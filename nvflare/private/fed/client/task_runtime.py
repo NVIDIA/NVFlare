@@ -104,6 +104,8 @@ class TaskJobHandle(JobHandleSpec):
 
 @dataclass
 class TaskJobRuntime:
+    """Prepared backend binding and settings for one CJ launch."""
+
     backend: object
     service_class: type
     owner_env: str
@@ -112,67 +114,72 @@ class TaskJobRuntime:
     options: JobLaunchOptions
     cleanup_timeout: float
 
-    def launch(self, launcher, fl_ctx):
-        engine = fl_ctx.get_engine()
-        cell = engine.get_cell()
-        state = engine._task_job_state
-        token = secrets.token_hex(32)
-        with state.lock:
-            if state.closing:
-                raise RuntimeError("parent task runtime is shutting down")
-            service = self.service_class.get_or_create(cell)
-            # Register and admit atomically with CP shutdown, so shutdown cannot
-            # miss an owner created just after its services snapshot.
-            state.services[self.service_class] = (service, self.cleanup_timeout)
-            owner = service.add_job(
-                self.backend, self.meta[JobConstants.JOB_ID], fl_ctx.get_identity_name(), token, cj_launch_pending=True
-            )
-        previous = {key: fl_ctx.get_prop_detail(key) for key in (JOB_LAUNCH_OPTIONS, FLContextKey.JOB_HANDLE_CALLBACK)}
-        previous_callback = fl_ctx.get_prop(FLContextKey.JOB_HANDLE_CALLBACK)
-        result = None
 
-        def attach(native):
-            nonlocal result
-            if result is not None:
-                if result.handle is not native:
-                    raise RuntimeError("launcher published a different coordinator handle")
-                return result
-            result = TaskJobHandle(native, owner, self.cleanup_timeout, allow_restart=False)
-            with state.lock:
-                owner.attach_cj(native)
-                if state.closing:
-                    raise RuntimeError("parent task runtime shut down during coordinator creation")
-            if previous_callback is not None:
-                previous_callback(result)
+def _launch_job_with_task_workers(prepared, launcher, fl_ctx):
+    engine = fl_ctx.get_engine()
+    cell = engine.get_cell()
+    state = engine._task_job_state
+    token = secrets.token_hex(32)
+    with state.lock:
+        if state.closing:
+            raise RuntimeError("parent task runtime is shutting down")
+        service = prepared.service_class.get_or_create(cell)
+        # Register and admit atomically with CP shutdown, so shutdown cannot
+        # miss an owner created just after its services snapshot.
+        state.services[prepared.service_class] = (service, prepared.cleanup_timeout)
+        owner = service.add_job(
+            prepared.backend,
+            prepared.meta[JobConstants.JOB_ID],
+            fl_ctx.get_identity_name(),
+            token,
+            cj_launch_pending=True,
+        )
+    previous = {key: fl_ctx.get_prop_detail(key) for key in (JOB_LAUNCH_OPTIONS, FLContextKey.JOB_HANDLE_CALLBACK)}
+    previous_callback = fl_ctx.get_prop(FLContextKey.JOB_HANDLE_CALLBACK)
+    result = None
+
+    def attach(native):
+        nonlocal result
+        if result is not None:
+            if result.handle is not native:
+                raise RuntimeError("launcher published a different coordinator handle")
             return result
+        result = TaskJobHandle(native, owner, prepared.cleanup_timeout, allow_restart=False)
+        with state.lock:
+            owner.attach_cj(native)
+            if state.closing:
+                raise RuntimeError("parent task runtime shut down during coordinator creation")
+        if previous_callback is not None:
+            previous_callback(result)
+        return result
 
-        environment = dict(self.options.environment or {})
-        environment.update({self.owner_env: cell.get_fqcn(), self.token_env: token})
-        options = replace(self.options, environment=environment)
-        try:
-            fl_ctx.remove_prop(JOB_LAUNCH_OPTIONS)
-            fl_ctx.remove_prop(FLContextKey.JOB_HANDLE_CALLBACK)
-            fl_ctx.set_prop(JOB_LAUNCH_OPTIONS, options, private=True, sticky=False)
-            fl_ctx.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, attach, private=True, sticky=False)
-            return attach(launcher.launch_job(self.meta, fl_ctx))
-        except BaseException:
-            owner.release()
-            if result is not None:
-                try:
-                    result.terminate()
-                except Exception:
-                    logging.getLogger(__name__).exception("Coordinator termination failed; CP retains cleanup")
-                owner.finish_cj_launch()
-                owner.thread.join(self.cleanup_timeout)
-                if owner.thread.is_alive():
-                    logging.getLogger(__name__).warning("Coordinator cleanup unconfirmed; CP retains job ownership")
-            raise
-        finally:
+    environment = dict(prepared.options.environment or {})
+    environment.update({prepared.owner_env: cell.get_fqcn(), prepared.token_env: token})
+    options = replace(prepared.options, environment=environment)
+    try:
+        fl_ctx.remove_prop(JOB_LAUNCH_OPTIONS)
+        fl_ctx.remove_prop(FLContextKey.JOB_HANDLE_CALLBACK)
+        fl_ctx.set_prop(JOB_LAUNCH_OPTIONS, options, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, attach, private=True, sticky=False)
+        return attach(launcher.launch_job(prepared.meta, fl_ctx))
+    except BaseException:
+        owner.release()
+        if result is not None:
+            try:
+                result.terminate()
+            except Exception:
+                logging.getLogger(__name__).exception("Coordinator termination failed; CP retains cleanup")
             owner.finish_cj_launch()
-            for key, detail in previous.items():
-                fl_ctx.remove_prop(key)
-                if detail is not None:
-                    fl_ctx.set_prop(key, **detail)
+            owner.thread.join(prepared.cleanup_timeout)
+            if owner.thread.is_alive():
+                logging.getLogger(__name__).warning("Coordinator cleanup unconfirmed; CP retains job ownership")
+        raise
+    finally:
+        owner.finish_cj_launch()
+        for key, detail in previous.items():
+            fl_ctx.remove_prop(key)
+            if detail is not None:
+                fl_ctx.set_prop(key, **detail)
 
 
 def _prepare_process_slurm_cj(task_launcher, launcher, job_meta, fl_ctx):
@@ -239,7 +246,7 @@ def launch_job(launcher, job_meta, fl_ctx):
             runtime = _prepare_job_runtime(policy.launcher, launcher, job_meta, fl_ctx)
             if runtime is not None:
                 runtime.cleanup_timeout = policy.finalization_timeout
-                return runtime.launch(launcher, fl_ctx)
+                return _launch_job_with_task_workers(runtime, launcher, fl_ctx)
     return launcher.launch_job(job_meta, fl_ctx)
 
 

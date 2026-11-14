@@ -24,7 +24,12 @@ import pytest
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JOB_LAUNCH_OPTIONS, JobHandleSpec, JobLaunchOptions, publish_job_handle
-from nvflare.private.fed.client.task_runtime import TaskJobRuntime, _TaskJobState, shutdown_task_jobs
+from nvflare.private.fed.client.task_runtime import (
+    TaskJobRuntime,
+    _TaskJobState,
+    _launch_job_with_task_workers,
+    shutdown_task_jobs,
+)
 
 
 def runtime_fixture(job_id="job-1"):
@@ -67,7 +72,7 @@ def test_launch_restores_parent_settings_and_cleans_acquired_runtime(failure):
 
     launcher = Mock(launch_job=create)
     if failure == "none":
-        handle = p.runtime.launch(launcher, p.context)
+        handle = _launch_job_with_task_workers(p.runtime, launcher, p.context)
         assert callback.call_args.args == (handle,)
         assert handle.handle is native
         assert not handle.can_restart()
@@ -75,7 +80,7 @@ def test_launch_restores_parent_settings_and_cleans_acquired_runtime(failure):
         native.terminate.assert_not_called()
     else:
         with pytest.raises(RuntimeError, match=failure):
-            p.runtime.launch(launcher, p.context)
+            _launch_job_with_task_workers(p.runtime, launcher, p.context)
         p.owner.release.assert_called()
         if failure != "create":
             native.terminate.assert_called_once()
@@ -99,7 +104,7 @@ def test_early_abort_uses_owned_handle_before_launcher_waits():
         native.terminate.assert_called_once()
         return native
 
-    handle = p.runtime.launch(Mock(launch_job=create), p.context)
+    handle = _launch_job_with_task_workers(p.runtime, Mock(launch_job=create), p.context)
     assert handle.handle is native
     p.owner.attach_cj.assert_called_once_with(native)
 
@@ -120,7 +125,7 @@ def test_two_jobs_share_launcher_without_sharing_capabilities_or_settings():
 
     launcher = Mock(launch_job=create)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        futures = [pool.submit(p.runtime.launch, launcher, p.context) for p in cases]
+        futures = [pool.submit(_launch_job_with_task_workers, p.runtime, launcher, p.context) for p in cases]
         handles = [f.result(timeout=10) for f in futures]
     tokens = [p.service.add_job.call_args.args[-1] for p in cases]
     assert len(set(tokens)) == 2
@@ -138,14 +143,14 @@ def test_shutdown_fences_a_later_launch_before_acquiring_owner_or_coordinator():
     shutdown_task_jobs(p.engine)
     launcher = Mock()
     with pytest.raises(RuntimeError, match="shutting down"):
-        p.runtime.launch(launcher, p.context)
+        _launch_job_with_task_workers(p.runtime, launcher, p.context)
     p.service.add_job.assert_not_called()
     launcher.launch_job.assert_not_called()
 
 
 def test_shutdown_uses_site_timeout_and_continues_after_a_service_failure(caplog):
     p = runtime_fixture()
-    p.runtime.launch(Mock(launch_job=Mock(spec=JobHandleSpec)), p.context)
+    _launch_job_with_task_workers(p.runtime, Mock(launch_job=Mock(spec=JobHandleSpec)), p.context)
     p.service.shutdown.side_effect = RuntimeError("cleanup unavailable")
     second = Mock()
     p.engine._task_job_state.services[object()] = (second, 7.5)
@@ -203,7 +208,7 @@ def test_docker_stop_failure_retains_owner_until_confirmed_exit(late_creation):
 
     def launch_late():
         with pytest.raises(RuntimeError, match="shut down during"):
-            p.runtime.launch(Mock(launch_job=create), p.context)
+            _launch_job_with_task_workers(p.runtime, Mock(launch_job=create), p.context)
 
     with ThreadGroup(finish) as threads:
         try:
@@ -211,7 +216,7 @@ def test_docker_stop_failure_retains_owner_until_confirmed_exit(late_creation):
                 worker = threads.start(launch_late)
                 assert entered.wait(5)
             else:
-                p.runtime.launch(Mock(launch_job=create), p.context)
+                _launch_job_with_task_workers(p.runtime, Mock(launch_job=create), p.context)
             service = p.cell._slurm_task_service
             owner = service.jobs["job-1"]
             shutdown_task_jobs(p.engine)
@@ -275,7 +280,7 @@ def test_exited_process_leader_does_not_release_owned_children(monkeypatch, late
 
     def launch_late():
         with pytest.raises(RuntimeError, match="shut down during"):
-            p.runtime.launch(Mock(launch_job=create), p.context)
+            _launch_job_with_task_workers(p.runtime, Mock(launch_job=create), p.context)
 
     with ThreadGroup(finish) as threads:
         try:
@@ -283,7 +288,7 @@ def test_exited_process_leader_does_not_release_owned_children(monkeypatch, late
                 worker = threads.start(launch_late)
                 assert entered.wait(5)
             else:
-                p.runtime.launch(Mock(launch_job=create), p.context)
+                _launch_job_with_task_workers(p.runtime, Mock(launch_job=create), p.context)
             service = p.cell._slurm_task_service
             owner = service.jobs["job-1"]
             shutdown_task_jobs(p.engine)
