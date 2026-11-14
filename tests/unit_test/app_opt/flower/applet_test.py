@@ -14,6 +14,7 @@
 
 import os
 import shlex
+import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -27,11 +28,12 @@ from nvflare.app_opt.flower.applet import FlowerClientApplet, FlowerServerApplet
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 
 
-def _make_server_applet(run_config=None):
+def _make_server_applet(run_config=None, **kwargs):
     applet = FlowerServerApplet(
         database="",
         superlink_ready_timeout=1.0,
         run_config=run_config,
+        **kwargs,
     )
     applet.exec_api_addr = "127.0.0.1:9093"
     applet.flower_app_dir = "/tmp/flower app"
@@ -169,5 +171,196 @@ def test_client_applet_passes_exact_metrics_bootstrap_without_credentials(_valid
 
     assert cmd_desc.env[ANALYTICS_BOOTSTRAP_ENV] == "/workspace/run_job/app_site-1/config/analytics_bootstrap.json"
     assert cmd_desc.env["MY_VAR"] == "value"
+    argv = shlex.split(cmd_desc.cmd)
+    assert "--grpc-adapter" not in argv
+    assert "--clientappio-api-address" not in argv
+    assert argv[argv.index("--host") + 1] == "127.0.0.1"
+    assert argv[argv.index("--port") + 1] == "9094"
+    assert "--allow-runtime-dependency-installation" not in argv
     assert "auth_token" not in repr(cmd_desc.env).lower()
     assert "bearer" not in repr(cmd_desc.env).lower()
+
+
+@patch("nvflare.app_opt.flower.applet._validate_flower_executable")
+def test_list_targets_exact_run_with_option(_validate_executable):
+    command = shlex.split(_make_server_applet()._flower_command("list", "12345678901234567890"))
+    assert command[1:] == ["list", "--run-id", "12345678901234567890", "nvflare", "--format", "json"]
+
+
+@pytest.mark.parametrize("applet_type", [FlowerServerApplet, FlowerClientApplet])
+@patch("nvflare.app_opt.flower.applet._validate_flwr_runtime", side_effect=RuntimeError("unsupported Flower"))
+def test_deployed_runtime_rejects_version_before_start(_validate, applet_type):
+    applet = _make_server_applet() if applet_type is FlowerServerApplet else FlowerClientApplet()
+    with pytest.raises(RuntimeError, match="unsupported Flower"):
+        applet.start({})
+
+
+@pytest.mark.parametrize("runtime_deps", [False, True])
+@patch("nvflare.app_opt.flower.applet._validate_flower_executable")
+@patch("nvflare.app_opt.flower.applet._validate_flwr_runtime")
+@patch("nvflare.app_opt.flower.applet._wait_for_superlink")
+@patch("nvflare.app_opt.flower.applet.start_process")
+@patch("nvflare.app_opt.flower.applet.run_command", return_value='{"success": true, "run-id": "123"}')
+def test_server_http_launcher_and_dependency_policy(_run, start, ready, _version, _executable, runtime_deps, tmp_path):
+    workspace = MagicMock(spec=Workspace)
+    workspace.get_run_dir.return_value = str(tmp_path)
+    workspace.get_app_custom_dir.return_value = str(tmp_path / "custom")
+    engine = MagicMock()
+    engine.get_workspace.return_value = workspace
+    ctx = FLContext()
+    ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    ctx.set_prop(ReservedKey.RUN_NUM, "job", private=True, sticky=False)
+    applet = FlowerServerApplet("", 10, allow_runtime_dependency_installation=runtime_deps, flwr_run_timeout=600)
+    applet.start({FlowerConstant.APP_CTX_SUPERLINK_ADDR: "127.0.0.1:19092", FlowerConstant.APP_CTX_FL_CONTEXT: ctx})
+    descriptor = start.call_args.args[0]
+    argv = shlex.split(descriptor.cmd)
+    assert argv[1:6] == ["--insecure", "--host", "127.0.0.1", "--port", "19092"]
+    expected_flag = (
+        "--allow-runtime-dependency-installation" if runtime_deps else "--disable-runtime-dependency-installation"
+    )
+    assert argv[6:] == [expected_flag]
+    assert descriptor.env["FLWR_HOME"] == str(tmp_path / "flwr_home")
+    ready.assert_called_once_with("127.0.0.1:19092", start.return_value, 10)
+    assert applet.run_id == "123"
+    assert _run.call_args.kwargs["timeout"] == 600
+
+
+@pytest.mark.parametrize(
+    "status,expected",
+    [
+        ("running", (False, 0)),
+        ("finished:completed", (True, 0)),
+        ("finished:failed", (True, 1)),
+        ("finished:stopped", (True, 1)),
+    ],
+)
+def test_flower_completion_status(status, expected):
+    from nvflare.app_common.tie.defs import Constant
+
+    applet = _make_server_applet()
+    applet.run_id = "123"
+    applet._flower_command = MagicMock(return_value="list command")
+    applet._run_flower_command = MagicMock(return_value={"runs": [{"status": status}]})
+    stopped, code = applet._query_for_run_status()
+    assert stopped == expected[0]
+    assert code == (Constant.EXIT_CODE_FAILED if expected[1] else 0)
+    applet._flower_command.assert_called_once_with("list", "123")
+
+
+@patch("nvflare.app_opt.flower.applet.run_command", return_value="ServerApp training summary\n")
+def test_server_log_is_saved_before_superlink_stops(run_command, tmp_path):
+    applet = _make_server_applet()
+    applet.run_id = "123"
+    applet.run_dir = str(tmp_path)
+    applet.flower_run_finished = True
+    manager = MagicMock()
+    manager.poll.return_value = None
+    applet._superlink_process_mgr = manager
+
+    def stop():
+        assert (tmp_path / "server_app_log.txt").read_text() == "ServerApp training summary\n"
+
+    manager.stop.side_effect = stop
+    applet.stop()
+    assert shlex.split(run_command.call_args.args[0].cmd)[1:] == ["log", "123", "nvflare", "--show"]
+    manager.stop.assert_called_once()
+    assert run_command.call_args.kwargs["timeout"] == 5.0
+
+
+@pytest.mark.parametrize("finished", [False, True])
+def test_cli_timeouts_do_not_prevent_server_cleanup(monkeypatch, tmp_path, caplog, finished):
+    from nvflare.app_opt.flower import applet as subject
+    from tests.timing_utils import isolate_time
+
+    isolate_time(monkeypatch, subject).sleep = MagicMock()
+    applet = _make_server_applet(flwr_command_timeout=11, flwr_log_timeout=2)
+    applet.run_id = "123"
+    applet.run_dir = str(tmp_path)
+    applet.flower_run_finished = finished
+    manager = applet._superlink_process_mgr = MagicMock()
+    manager.poll.return_value = None
+    commands = []
+
+    def run(descriptor, timeout):
+        commands.append((shlex.split(descriptor.cmd)[1], timeout))
+        assert manager.stop.call_count == 0
+        raise subprocess.TimeoutExpired(descriptor.cmd, timeout)
+
+    with patch.object(subject, "run_command", side_effect=run), patch.object(subject, "_validate_flower_executable"):
+        assert applet.stop() == 0
+    assert commands == ([("log", 2)] if finished else [("stop", 11), ("log", 2)])
+    manager.stop.assert_called_once()
+    assert applet._superlink_process_mgr is None
+    assert "could not save Flower ServerApp log" in caplog.text
+
+
+def test_status_query_uses_command_timeout():
+    applet = _make_server_applet(flwr_run_timeout=600, flwr_command_timeout=11, flwr_log_timeout=2)
+    applet.run_id = "123"
+    with (
+        patch("nvflare.app_opt.flower.applet._validate_flower_executable"),
+        patch(
+            "nvflare.app_opt.flower.applet.run_command", return_value='{"success":true,"runs":[{"status":"running"}]}'
+        ) as run,
+    ):
+        assert applet._query_for_run_status() == (False, 0)
+    assert run.call_args.kwargs["timeout"] == 11
+
+
+@pytest.mark.parametrize("name", ["flwr_run_timeout", "flwr_command_timeout", "flwr_log_timeout"])
+def test_applet_rejects_invalid_cli_timeout(name):
+    with pytest.raises(ValueError, match=name):
+        _make_server_applet(**{name: 0})
+
+
+@pytest.mark.parametrize("outcome", ["ready", "exited", "timeout"])
+def test_superlink_health_polling(monkeypatch, outcome):
+    from nvflare.app_opt.flower import applet
+    from tests.timing_utils import isolate_time
+
+    clock = isolate_time(monkeypatch, applet)
+    tick = [0.0]
+    clock.monotonic = lambda: tick[0]
+
+    def sleep(seconds):
+        tick[0] += seconds
+        assert tick[0] <= 2, "health polling exceeded its deadline"
+
+    clock.sleep = sleep
+    process = MagicMock()
+    process.poll.return_value = 1 if outcome == "exited" else None
+    with patch.object(applet.http.client, "HTTPConnection") as connection:
+        connection.return_value.getresponse.return_value.status = 200 if outcome == "ready" else 503
+        if outcome == "ready":
+            applet._wait_for_superlink("127.0.0.1:1234", process, 1)
+            connection.return_value.request.assert_called_once_with("GET", "/health")
+            connection.return_value.close.assert_called_once()
+        else:
+            with pytest.raises(RuntimeError, match="exited during startup" if outcome == "exited" else "not healthy"):
+                applet._wait_for_superlink("127.0.0.1:1234", process, 1)
+            if outcome == "exited":
+                connection.assert_not_called()
+            else:
+                assert connection.return_value.close.call_count > 1
+
+
+@pytest.mark.parametrize("launch_fails", [False, True])
+@patch("nvflare.app_opt.flower.applet._validate_flwr_runtime")
+@patch("nvflare.app_opt.flower.applet.start_process")
+def test_client_start_and_repeated_stop(start, _version, launch_fails):
+    applet = FlowerClientApplet()
+    applet.get_command = MagicMock()
+    context = MagicMock()
+    if launch_fails:
+        start.side_effect = RuntimeError("cannot launch SuperNode")
+        with pytest.raises(RuntimeError, match="cannot launch SuperNode"):
+            applet.start({FlowerConstant.APP_CTX_FL_CONTEXT: context})
+        assert applet._start_error
+        assert applet.stop() == 0
+    else:
+        start.return_value.stop.return_value = 0
+        applet.start({FlowerConstant.APP_CTX_FL_CONTEXT: context})
+        start.assert_called_once_with(applet.get_command.return_value, context)
+        assert applet.stop(timeout=2) == 0
+        assert applet.stop() == 0
+        start.return_value.stop.assert_called_once_with(2)

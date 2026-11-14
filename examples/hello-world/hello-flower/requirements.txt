@@ -1,5 +1,4 @@
-# Flower 1.40+ removes the gRPC-adapter transport used by NVFlare.
-flwr>=1.26,<1.40
+flwr>=1.43
 torch
 torchvision
 tensorboard

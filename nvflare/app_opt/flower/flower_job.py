@@ -18,6 +18,7 @@ from typing import List, Optional
 from nvflare.app_common.metrics_exchange.metrics_sender import ANALYTICS_BOOTSTRAP_ENV
 from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
+from nvflare.app_opt.flower.http_transport import DEFAULT_MAX_MESSAGE_BYTES
 from nvflare.job_config.api import FedJob
 
 from .controller import FlowerController
@@ -39,12 +40,16 @@ class FlowerJob(FedJob):
         start_task_timeout=FlowerConstant.START_TASK_TIMEOUT,
         max_client_op_interval: float = FlowerConstant.MAX_CLIENT_OP_INTERVAL,
         progress_timeout: float = FlowerConstant.WORKFLOW_PROGRESS_TIMEOUT,
-        per_msg_timeout=10.0,
-        tx_timeout=100.0,
+        per_msg_timeout=2.0,
+        tx_timeout=25.0,
         client_shutdown_timeout=5.0,
         extra_env: Optional[dict] = None,
         run_config: Optional[dict] = None,
+        max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES,
         allow_runtime_dependency_installation: bool = False,
+        flwr_run_timeout: float = FlowerConstant.FLWR_RUN_TIMEOUT,
+        flwr_command_timeout: float = FlowerConstant.FLWR_COMMAND_TIMEOUT,
+        flwr_log_timeout: float = FlowerConstant.FLWR_LOG_TIMEOUT,
     ):
         """
         Flower Job.
@@ -61,12 +66,16 @@ class FlowerJob(FedJob):
             start_task_timeout (float, optional): Timeout for starting the task. Defaults to Constant.START_TASK_TIMEOUT.
             max_client_op_interval (float, optional): Maximum interval between client operations. Defaults to Constant.MAX_CLIENT_OP_INTERVAL.
             progress_timeout (float, optional): Timeout for workflow progress. Defaults to Constant.WORKFLOW_PROGRESS_TIMEOUT.
-            per_msg_timeout (float, optional): Timeout for receiving individual messages. Defaults to 10.0 seconds.
-            tx_timeout (float, optional): Timeout for transmitting data. Defaults to 100.0 seconds.
+            per_msg_timeout (float, optional): Per-message timeout, capped at the default 2 seconds (0.5 for heartbeats).
+            tx_timeout (float, optional): Transaction timeout, capped at the default 25 seconds (3.5 for heartbeats).
             client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
             extra_env (dict, optional): optional extra env variables to be passed to Flower client
             run_config (dict, optional): optional dict for flwr run --run-config arguments
-            allow_runtime_dependency_installation (bool, optional): whether to allow dynamic dependency installation. Defaults to False. (only flwr>=1.29)
+            max_message_bytes: maximum HTTP request or response body size in bytes. Defaults to 512 MiB.
+            allow_runtime_dependency_installation (bool, optional): whether to allow dynamic dependency installation. Defaults to False.
+            flwr_run_timeout: seconds allowed for CLI startup, FAB preparation and run submission. Defaults to 300.
+            flwr_command_timeout: seconds allowed for each status or stop CLI command. Defaults to 15.
+            flwr_log_timeout: seconds allowed for the best-effort log snapshot during shutdown. Defaults to 5.
         """
         if flower_content and flower_app_path:
             raise ValueError("Specify either 'flower_content' (BYOC) or 'flower_app_path' (pre-deployed), not both.")
@@ -107,8 +116,12 @@ class FlowerJob(FedJob):
             max_client_op_interval=max_client_op_interval,
             progress_timeout=progress_timeout,
             run_config=run_config,
+            max_message_bytes=max_message_bytes,
             allow_runtime_dependency_installation=allow_runtime_dependency_installation,
             flower_app_path=flower_app_path,
+            flwr_run_timeout=flwr_run_timeout,
+            flwr_command_timeout=flwr_command_timeout,
+            flwr_log_timeout=flwr_log_timeout,
         )
         self.to_server(controller)
         if flower_content:
@@ -120,6 +133,7 @@ class FlowerJob(FedJob):
             tx_timeout=tx_timeout,
             client_shutdown_timeout=client_shutdown_timeout,
             extra_env=flower_env,
+            max_message_bytes=max_message_bytes,
             allow_runtime_dependency_installation=allow_runtime_dependency_installation,
         )
         self.to_clients(executor)

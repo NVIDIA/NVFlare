@@ -38,13 +38,25 @@ The requirements file intentionally does not install NVFlare. This preserves the
 or editable installation that selected the example revision.
 
 > [!IMPORTANT]
-> This `main` branch example requires `flwr>=1.26,<1.40` and uses the newer Flower SuperLink configuration flow.
-> The upper bound is temporary: [Flower 1.40](https://github.com/flwrlabs/flower/releases/tag/framework-1.40.0)
-> removes the SuperNode `--grpc-adapter` transport used by NVFlare. Keep this bound until the integration
-> supports Flower's HTTP transport.
->
-> If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of this example and use `flwr>=1.16,<1.26`.
-> NVFlare 2.7.x still uses Flower's legacy `--federation-config` CLI option, which Flower 1.26+ ignores.
+> This revision requires `flwr>=1.43` on the server and every client, with the same
+> Flower minor version throughout the job. It uses Flower's HTTP Fleet API and requires
+> Python 3.11+ and POSIX hosts (Linux or macOS). Older Flower versions and the gRPC adapter are no longer supported.
+> Use the matching NVFlare release branch and its example dependencies for older deployments.
+
+The Recipe API, Flower app code, and TensorBoard relay keep the same structure. Local
+HTTP endpoints bind to `127.0.0.1`; communication between sites still uses NVFlare's
+configured transport and security. No public Flower port is needed. The bridge only
+forwards Fleet requests; Control and Runtime APIs remain local.
+
+Runtime dependency installation is disabled by default. Install this example's dependencies
+in every site's environment before submitting the job. `allow_runtime_dependency_installation=True`
+opts into Flower's per-app dependency installation and therefore requires package-index access.
+
+HTTP payloads are limited to 512 MiB per request or response. Set `max_message_bytes` on
+`FlowerRecipe` to change the limit on both sides. The bridge retains whole protobuf bodies
+in memory. Allow memory for concurrent transfers in addition to training. ReliableMessage
+transactions are capped at 25 seconds (3.5 seconds for heartbeats) to fit within Flower's
+30-second request and 5-second heartbeat timeouts.
 
 ## Code Structure
 
@@ -181,6 +193,12 @@ recipe = FlowerRecipe(
 - Arbitrary user-chosen `flower_app_path` values are not allowed.
 
 Ensure your site's `authorization.json` grants the `server-predeployed-flwr` permission.
+When component allow-list enforcement is enabled, the site administrator must also
+permit `nvflare.app_opt.flower.controller.FlowerController` on the server and
+`nvflare.app_opt.flower.executor.FlowerExecutor` plus
+`nvflare.app_common.widgets.metric_relay.MetricRelay` on clients in the local
+`resources.json` `class_allow_list`. Keep enforcement enabled and grant only the
+components required by the approved app.
 See the [NVFlare documentation](https://nvflare.readthedocs.io/) for details.
 
 ## Output summary

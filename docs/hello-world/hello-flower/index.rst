@@ -43,17 +43,18 @@ Then install the remaining example dependencies:
 The requirements file intentionally does not install NVFlare. This preserves
 the release, local wheel, or editable installation that selected the example revision.
 
-.. warning::
+.. important::
 
-   This ``main`` branch example requires ``flwr>=1.26,<1.40`` and uses the newer
-   Flower SuperLink configuration flow. The upper bound is temporary:
-   `Flower 1.40 <https://github.com/flwrlabs/flower/releases/tag/framework-1.40.0>`_
-   removes the SuperNode ``--grpc-adapter`` transport used by NVFlare. Keep this
-   bound until the integration supports Flower's HTTP transport.
+   This revision requires ``flwr>=1.43`` on the server and every client,
+   using the same Flower minor version. It supports the HTTP Fleet API on POSIX
+   hosts (Linux or macOS). Older Flower versions and the gRPC adapter are no
+   longer supported. Use the matching NVFlare release branch and example
+   dependencies for older deployments.
 
-   If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of
-   this example and use ``flwr>=1.16,<1.26``. NVFlare 2.7.x still uses Flower's
-   legacy ``--federation-config`` CLI option, which Flower 1.26+ ignores.
+HTTP endpoints bind to loopback; inter-site traffic still uses NVFlare's configured
+transport and security. Runtime dependency installation is disabled by default.
+Install the example dependencies at every site. See :ref:`flower_http_design`
+for protocol limits and migration guidance.
 
 Code Structure
 --------------
