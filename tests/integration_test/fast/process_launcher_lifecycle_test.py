@@ -806,7 +806,12 @@ def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path
     from nvflare.apis.job_launcher_spec import JobLaunchOptions, JobReturnCode, publish_job_handle
     from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
     from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskService
-    from nvflare.private.fed.client.task_runtime import TaskJobRuntime, _TaskJobState, shutdown_task_jobs
+    from nvflare.private.fed.client.task_runtime import (
+        TaskJobRuntime,
+        _TaskJobState,
+        _launch_job_with_task_workers,
+        shutdown_task_jobs,
+    )
     from tests.timing_utils import join_thread, wait_for
 
     child_pid_path = tmp_path / "coordinator-child.pid"
@@ -854,7 +859,7 @@ def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path
 
     def launch():
         with pytest.raises(RuntimeError, match="shut down during"):
-            runtime.launch(Mock(launch_job=create), context)
+            _launch_job_with_task_workers(runtime, Mock(launch_job=create), context)
 
     try:
         with ThreadGroup(finish, timeout=30) as threads:
