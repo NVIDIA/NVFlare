@@ -117,8 +117,9 @@ class CatalogRecipe(Recipe):
     def get_catalog_results(self, run, output_path: str | None = None, timeout: float = 0.0) -> dict:
         """Wait for the job, download its result and return the parsed catalog_results.json.
 
-        When the read completes, the downloaded job workspace is reduced to its catalog_results.json; a failed
-        job's workspace is kept whole for diagnosis.
+        When the read completes, a downloaded job workspace is reduced to its catalog_results.json; a failed
+        job's workspace is kept whole for diagnosis. SimEnv returns its live simulation workspace, whose site
+        configuration and inputs later runs reuse, so that workspace is left unchanged.
 
         Args:
             run: the Run returned by ``execute``.
@@ -139,10 +140,22 @@ class CatalogRecipe(Recipe):
             results = check_catalog_results(json.loads(found[0].read_text(encoding="utf-8")))
         except (OSError, ValueError, PayloadError) as e:
             raise CatalogReadError(f"catalog results are unreadable: {type(e).__name__}", run.job_id, status) from None
-        kept = _keep_only_the_result(Path(result_dir), found[0])
-        if output_path is not None:
+        from nvflare.recipe.sim_env import SimEnv
+
+        if isinstance(getattr(run, "exec_env", None), SimEnv):
+            kept = found[0]  # the live simulation workspace, not a downloaded copy: nothing to remove
+        else:
+            kept = _keep_only_the_result(Path(result_dir), found[0])
+        if output_path is not None and not _same_file(kept, output_path):
             shutil.copyfile(kept, output_path)
         return results
+
+
+def _same_file(path: Path, other: str) -> bool:
+    try:
+        return os.path.samefile(path, other)
+    except OSError:
+        return False  # e.g. other does not exist yet
 
 
 def _keep_only_the_result(result_dir: Path, results_file: Path) -> Path:
