@@ -808,8 +808,8 @@ def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path
     from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskService
     from nvflare.private.fed.client.task_runtime import (
         TaskExecutionBinding,
-        _TaskExecutionState,
         _launch_job_with_task_workers,
+        _TaskExecutionState,
         shutdown_task_execution,
     )
     from tests.timing_utils import join_thread, wait_for
