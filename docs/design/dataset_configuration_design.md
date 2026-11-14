@@ -354,61 +354,53 @@ Process mode is not isolated, for data or for configuration. A process job is a 
 
 ## 4. Design decisions
 
-Each subsection states one decision, the option it was weighed against, and why.
+Each subsection compares the chosen design (**✓**) with the option not taken.
 
 ### 4.1 Separate configuration files for datasets and Study runtime
 
-**Decision.** A site keeps its dataset configuration and its Study runtime configuration in separate files: `local/datasets.yaml`, which components read through the API, and `local/study_runtime.yaml`, which the launcher reads.
+| | **✓ Two files:** `datasets.yaml` and `study_runtime.yaml` | One file: datasets as a section of `study_runtime.yaml` |
+| --- | --- | --- |
+| Reader | Components, through the API; the launcher reads only Study runtime | Launcher and components read the same file |
+| What a container job receives | Its Study's part of `datasets.yaml` only | The launcher must strip host paths, images, pod templates and secret sources, including any field added later |
+| Datasets covered | Mounted, network and process-site datasets | Process-mode Study runtime rejects `datasets`, so process sites cannot describe theirs |
+| Validation | Same for every launcher; components validate their own `usage` | Per launcher mode, for both parts |
+| Effect of a bad catalog rule | Only components that read the configuration fail | Every job launch for the Study fails |
+| Edited by | Data stewards (`datasets.yaml`), infrastructure operators (`study_runtime.yaml`) | Both, in one file |
 
-**Option not taken.** One configuration file per site: the dataset configuration as a section of `study_runtime.yaml`.
-
-**Why.** The two files serve different readers, describe different things and change for different reasons.
-
-- **Reader and trust.** The launcher reads `study_runtime.yaml` in the parent process, before the job starts. It holds what the job must not see: host paths and volume names, images, pod templates, Docker and Slurm settings, and where each secret comes from. `datasets.yaml` exists to be read by the job. In one file, every container launcher would have to strip the launcher fields before handing the job its part, and any launcher field added later would reach jobs until it, too, was stripped. With two files the trust boundary is the file boundary: the launcher keeps one and delivers the job's Study part of the other.
-- **Content.** Study runtime says how data reaches the job ("mount this volume read-only"). The dataset configuration says what the data is and how components may use it ("Parquet; publish its metadata to the catalog; hide this column"). The two sets of datasets differ: a network database needs no mount, and a process-launched site has no mounts at all. Process-mode Study runtime accepts only `env` and `secret_env` and rejects a `datasets` section, so a process site could not describe its datasets there.
-- **Validation and failure.** Study runtime is validated strictly per launcher mode: the same entry is valid for Kubernetes and rejected for Slurm. The dataset configuration is the same for every launcher, and the API leaves `usage` sections to the components that own them. In one file, a mistake in a catalog rule would fail every job launch for the Study, not only the components that read the configuration, and the two formats could not be versioned apart.
-- **Ownership.** Infrastructure operators change mounts, images and secret sources; data stewards change which datasets exist and what may be shared. Separate files keep those edits, their review and their file permissions apart.
-
-**The cost, and how it is kept small.** A mounted dataset appears in both files. The two are linked only by names: Study runtime mounts the dataset at `/data/<study>/<dataset>`, and `datasets.yaml` uses `file:///data/<study>/<dataset>` (Section 2.3). A network dataset appears only in `datasets.yaml`.
-
-Secrets are still configured in one place. Study runtime `secret_env`, or the site's process environment, sets the secret's value in an environment variable. `datasets.yaml` holds only that variable's name, so a component can ask for "the database password" without knowing the variable. Neither file holds a secret value.
+Cost: a mounted dataset appears in both files, linked only by its name and the `/data/<study>/<dataset>` path (Section 2.3). Secrets are still configured in one place: Study runtime `secret_env` (or the site environment) sets the value; `datasets.yaml` names only the variable.
 
 ### 4.2 Dataset configuration owned by the site, not the server
 
-**Decision.** Each site keeps its own dataset configuration in its own workspace.
-
-**Option not taken.** Each site's dataset configuration held on the server, in the Study registry or in the submitted job.
-
-**Why.** A site's datasets, their locations and their usage rules are the site's decision. Declaring them on the server would publish paths and connection details to the federation, let a job's submitter rather than the site decide what a job may read, and still need a site-side mapping to the real locations.
+| | **✓ At the site** | On the server (Study registry or submitted job) |
+| --- | --- | --- |
+| Who decides what a job may read | The site | The server or the job's submitter |
+| Paths and connection details | Stay at the site | Published to the federation |
+| Mapping to real locations | Direct | Still needs a site-side mapping |
 
 ### 4.3 One file for all components, with a usage section per component
 
-**Decision.** One dataset configuration per site. Each dataset's `usage` section holds the rules of each component that may use it.
-
-**Option not taken.** A separate configuration file for each component, such as one for the catalog and one for training data loaders.
-
-**Why.** A dataset is described once. Each new component would otherwise add its own file, its own loader and its own copy of the dataset list, and the copies would drift.
+| | **✓ One file, `usage.<component>` per dataset** | One file per component |
+| --- | --- | --- |
+| Dataset described | Once | Once per component, and the copies drift |
+| New component adds | A `usage` key | A file, a loader and a dataset list |
 
 ### 4.4 An explicit dataset list
 
-**Decision.** The configuration lists each dataset with its type and URI.
-
-**Option not taken.** Discovering datasets by listing the directories mounted under `/data/<study>`.
-
-**Why.** A mount alone does not say what type of source it is or whether any component may use it. Process-launched sites have no mounts, and network datasets are not mounted at all.
+| | **✓ Each dataset listed with type and URI** | Discover the folders mounted under `/data/<study>` |
+| --- | --- | --- |
+| Source type and permitted use | Stated | Unknown from a mount |
+| Process sites and network datasets | Covered | Not mounted, so not found |
 
 ### 4.5 Secret variable names, not values
 
-**Decision.** A dataset's `secrets` maps a logical key to the name of an environment variable.
-
-**Option not taken.** Secret values in the file, or a reference scheme into a secret store.
-
-**Why.** It reuses how Study runtime already delivers secrets, so secrets are configured in one place (Section 4.1). The file never holds a secret, so it can be read and reviewed freely.
+| | **✓ Environment variable names** | Secret values, or secret-store references |
+| --- | --- | --- |
+| Secret in the file | Never; the file can be read and reviewed freely | Values: yes; references: a new scheme to resolve |
+| Delivery | Reuses Study runtime `secret_env` | New mechanism |
 
 ### 4.6 The launcher delivers the job's Study part
 
-**Decision.** For a container job, the launcher in the parent process extracts the job's Study from the site file and hands only that part to the job (Section 3.4).
-
-**Option not taken.** Every job reads the whole site file and filters it by its Study.
-
-**Why.** Filtering inside the job is not a boundary: job code can read the whole file. Delivery by the parent keeps other Studies' configuration out of the container, as is already done for data and secrets.
+| | **✓ Parent extracts and delivers the job's Study** | Each job reads the whole file and filters by Study |
+| --- | --- | --- |
+| Other Studies' configuration in the container | Absent | Present; job code can read it |
+| Consistent with | How launchers already isolate data and secrets | — |
