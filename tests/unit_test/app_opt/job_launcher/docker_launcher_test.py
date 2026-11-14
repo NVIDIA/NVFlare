@@ -83,6 +83,7 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobReturnCode
+from nvflare.app_common.dataset_config.api import WITHHELD_DATASET_CONFIG
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.app_common.resource_managers.passthrough_resource_manager import PassthroughResourceManager
 from nvflare.app_opt.job_launcher.docker_launcher import (
@@ -789,6 +790,43 @@ class TestDockerJobLauncherLaunchJob:
 
         with pytest.raises(ValueError, match="invalid shared-file parent URL"):
             launcher.launch_job(_make_job_meta(), fl_ctx)
+
+    @pytest.mark.parametrize("has_site_file", [True, False])
+    def test_launch_covers_the_site_dataset_configuration(self, tmp_path, has_site_file):
+        local_dir = tmp_path / "local"
+        local_dir.mkdir()
+        (local_dir / "log_config.json").write_text("{}")
+        if has_site_file:
+            (local_dir / "datasets.yaml").write_text("format_version: 1\nstudies: {}\n")  # covers every Study
+        workspace_obj = _make_workspace_obj()
+        workspace_obj.get_site_config_dir.return_value = str(local_dir)
+        workspace_obj.get_root_dir.return_value = str(tmp_path)
+        launcher = _make_launcher(workspace="/host/workspace")
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx(workspace_obj=workspace_obj)
+        launcher.launch_job(_make_job_meta(), fl_ctx)
+
+        mounts = dc.containers.run.call_args[1]["mounts"]
+        targets = [m["Target"] for m in mounts]
+        # local/ stays bound whole, so the job sees later edits such as a logging-config reload
+        assert _mounts_by_target(mounts)["/var/tmp/nvflare/workspace/local"]["Source"] == "/host/workspace/local"
+        cover = _mounts_by_target(mounts).get("/var/tmp/nvflare/workspace/local/datasets.yaml")
+        if not has_site_file:
+            assert cover is None
+            return
+        assert cover == {
+            "Target": "/var/tmp/nvflare/workspace/local/datasets.yaml",
+            "Source": "/host/workspace/.nvflare_withheld_datasets.yaml",
+            "Type": "bind",
+            "ReadOnly": True,
+        }
+        assert targets.index(cover["Target"]) > targets.index("/var/tmp/nvflare/workspace/local")
+        assert (tmp_path / ".nvflare_withheld_datasets.yaml").read_bytes() == WITHHELD_DATASET_CONFIG
 
     def test_launch_workspace_bind_mounted(self):
         launcher = _make_launcher(workspace="/host/workspace")

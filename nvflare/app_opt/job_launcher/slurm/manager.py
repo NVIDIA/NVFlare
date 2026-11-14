@@ -25,8 +25,10 @@ import time
 from dataclasses import replace
 from typing import Callable, Optional
 
+from nvflare.apis.dataset_config_spec import DATASET_CONFIG_FILE
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
+from nvflare.app_common.dataset_config.api import write_withheld_dataset_config
 from nvflare.app_opt.job_launcher.slurm.batch import (
     _render_batch_script,
     _render_node_script,
@@ -225,6 +227,12 @@ class SlurmJobManager:
                     "ro",
                 ),
             )
+            site_dataset_config = os.path.join(workspace, "local", DATASET_CONFIG_FILE)
+            if os.path.lexists(site_dataset_config):
+                # the site dataset configuration covers every Study: cover it with one that has no datasets. local/
+                # stays bound whole, so the job sees later edits to its other files (e.g. a logging-config reload).
+                withheld = write_withheld_dataset_config(os.path.join(job_dir, "withheld_datasets.yaml"))
+                launcher_mounts += (BindMount(withheld, site_dataset_config, "ro"),)
             if plan.sandbox == "apptainer":
                 launcher_mounts += (
                     BindMount(

@@ -31,6 +31,7 @@ except ImportError:
     _DOCKER_AVAILABLE = False
 
 from nvflare.apis.app_validation import AppValidationKey
+from nvflare.apis.dataset_config_spec import DATASET_CONFIG_FILE
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import (
     ConnectionSecurity,
@@ -43,6 +44,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.dataset_config.api import write_withheld_dataset_config
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.app_common.resource_managers.passthrough_resource_manager import PassthroughResourceManager
 from nvflare.app_opt.job_launcher.study_data import (
@@ -192,6 +194,10 @@ def _exit_code_to_return_code(exit_code: int) -> JobReturnCode:
         return JobReturnCode.ABORTED
     else:
         return JobReturnCode.EXECUTION_ERROR
+
+
+# at the site workspace root, outside every job's writable workspace: bound over local/datasets.yaml in job containers
+_WITHHELD_DATASET_CONFIG_NAME = ".nvflare_withheld_datasets.yaml"
 
 
 def _safe_workspace_child_path(workspace: str, child_name: str, allow_reserved: bool = False) -> str:
@@ -801,6 +807,21 @@ class DockerJobLauncher(JobLauncherSpec):
                 )
                 for fname in job_startup_files(workspace_obj.get_startup_kit_dir())
             ]
+            # the site dataset configuration covers every Study: cover it with one that has no datasets. local/ stays
+            # bound whole, so the job sees later edits to its other files (e.g. a logging-config reload).
+            withheld_mounts = []
+            if os.path.lexists(os.path.join(workspace_obj.get_site_config_dir(), DATASET_CONFIG_FILE)):
+                write_withheld_dataset_config(os.path.join(workspace_obj.get_root_dir(), _WITHHELD_DATASET_CONFIG_NAME))
+                withheld_mounts.append(
+                    docker.types.Mount(
+                        target=posixpath.join(container_local_dir, DATASET_CONFIG_FILE),
+                        source=_safe_workspace_child_path(
+                            workspace, _WITHHELD_DATASET_CONFIG_NAME, allow_reserved=True
+                        ),
+                        type="bind",
+                        read_only=True,
+                    )
+                )
             mounts = [
                 docker.types.Mount(
                     target=self.WORKSPACE_MOUNT,
@@ -811,6 +832,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 ),
                 *startup_mounts,
                 docker.types.Mount(target=container_local_dir, source=host_local_dir, type="bind", read_only=True),
+                *withheld_mounts,
                 docker.types.Mount(
                     target=container_job_workspace,
                     source=host_job_workspace,
