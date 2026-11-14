@@ -440,7 +440,7 @@ Process and Docker do not support task-scoped execution.
 **Kubernetes.** A job pod does not see the parent's workspace. The parent sends the job its workspace (`local/` and the job folder) through the workspace transfer, which already leaves out the site files the job must not have, `study_runtime.yaml` and `study_data.yaml`. For `datasets.yaml` the transfer sends the job's part instead of the whole file: the parent loads the site file, validates all of it, and writes a `local/datasets.yaml` with the job's Study entry and the site-wide `usage` settings. For a task-scoped job the transferred `local/` sits on the jobs PVC, and task worker pods mount it read-only, so they read the same part. Task workers receive only the site's environment, not the job's, so the configuration travels as this file.
 
 - No site file: the transfer sends none, and the job sees no datasets.
-- An invalid site file: the transfer sends a `local/datasets.yaml` that the API rejects, stating that the site configuration is invalid, so components fail as they would on a broken file instead of seeing no datasets.
+- An invalid site file: the transfer sends a `local/datasets.yaml` that the API rejects, so components fail as they would on a broken file instead of seeing no datasets. It states only that the site configuration is invalid; the parent logs the reason at the site, because it can name another Study's datasets.
 
 The part is written when the job pod downloads its workspace, at launch. The pod and its workers never receive another Study's entries.
 
