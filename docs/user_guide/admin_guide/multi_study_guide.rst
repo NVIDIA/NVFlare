@@ -236,17 +236,16 @@ the parent service's environment into the job's environment, following the same 
      lung-cancer:
        env:
          TRAINING_DATA: /srv/studies/lung-cancer/training
-         DB_CA_FILE: /srv/studies/lung-cancer/secrets/ca.crt
+         SERVICE_CA_FILE: /srv/studies/lung-cancer/secrets/ca.crt
        secret_env:
-         DB_PASSWORD:
-           source: LUNG_DB_PASSWORD
+         HF_TOKEN:
+           source: LUNG_HF_TOKEN
      default:
        env:
          TRAINING_DATA: /srv/studies/default/training
 
-Set ``LUNG_DB_PASSWORD`` in the parent service's environment before starting it. A job in
-``lung-cancer`` receives its value as ``DB_PASSWORD``; the value itself stays out of the YAML file. The database's address and how FLARE components may use it are described in ``local/datasets.yaml``,
-not here: Study runtime delivers access, such as credentials and mounts.
+Set ``LUNG_HF_TOKEN`` in the parent service's environment before starting it. A job in
+``lung-cancer`` receives its value as ``HF_TOKEN``; the value itself stays out of the YAML file.
 The optional ``key`` field is accepted for compatibility with Docker configuration and is ignored.
 A missing source variable fails launch. An empty source value is allowed.
 
@@ -255,7 +254,7 @@ including empty strings, with no shell expansion. Names must be valid POSIX envi
 names; launcher-owned names such as ``PYTHONPATH`` cannot be configured or used as secret sources.
 A destination cannot appear in both ``env`` and ``secret_env``.
 
-Applications must read path variables such as ``TRAINING_DATA`` and ``DB_CA_FILE`` to use them.
+Applications must read path variables such as ``TRAINING_DATA`` and ``SERVICE_CA_FILE`` to use them.
 Files must already exist on the host. Process mode supports only ``env`` and ``secret_env``;
 container and mount settings are rejected, and hard-coded container paths are not translated.
 

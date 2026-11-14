@@ -62,14 +62,13 @@ studies:
     env:
       HF_HOME: /tmp/hf_cache
 
-    secret_env:                          # the Study's database-role credentials: the access half of the database.
-      DB_USER: {source: study-db, key: username}       # Its address and use are described in datasets.yaml.
-      DB_PASSWORD: {source: study-db, key: password}
+    secret_env:
+      HF_TOKEN: {source: study-hf, key: token}
 
     secret_mounts:
-      db-ca:
-        source: study-db-ca
-        mount_path: /var/run/nvflare/secrets/db-ca
+      service-ca:
+        source: study-service-ca
+        mount_path: /var/run/nvflare/secrets/service-ca
         mode: ro
         items:                           # optional; omitted = full Secret projection
           ca.crt: ca.crt
