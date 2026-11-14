@@ -15,8 +15,9 @@
 """Read-only access to the site's dataset configuration for the job's Study.
 
 A site describes the data it offers each Study in ``<workspace>/local/datasets.yaml``. Components in a job read it
-only through :func:`get_study_dataset_config`, which returns an immutable snapshot of the job's Study. In a container
-job the launcher delivers only that Study's part and names it in ``NVFLARE_DATASET_CONFIG``.
+only through :func:`get_study_dataset_config`, which returns an immutable snapshot of the job's Study. The job reads
+``local/datasets.yaml`` in its workspace: the site file, or in Kubernetes the Study's part that the parent writes into
+the job's workspace transfer.
 """
 
 from abc import ABC, abstractmethod
@@ -24,7 +25,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-DATASET_CONFIG_ENV = "NVFLARE_DATASET_CONFIG"
 DATASET_CONFIG_FILE = "datasets.yaml"  # under <workspace>/local
 
 
@@ -89,13 +89,11 @@ class StudyDatasetConfig(ABC):
 
 
 def get_study_dataset_config(fl_ctx) -> StudyDatasetConfig:
-    """Load and validate a snapshot of the job's Study.
+    """The configuration of the job's Study.
 
-    The Study comes from the job metadata in fl_ctx ("default" when the job names none). In a container job the file
-    is the Study part the launcher delivered (NVFLARE_DATASET_CONFIG); in a process job it is
-    <workspace>/local/datasets.yaml. Raises DatasetConfigError when the file is unreadable or invalid, or when
-    NVFLARE_DATASET_CONFIG names a file that does not exist. Only a missing <workspace>/local/datasets.yaml yields a
-    snapshot with no datasets.
+    The Study comes from the job metadata in fl_ctx ("default" when the job names none). The configuration is
+    <workspace>/local/datasets.yaml, loaded on the first successful call in the job and kept for the job's life. Raises
+    DatasetConfigError when it is unreadable or invalid. A missing file yields a snapshot with no datasets.
     """
     from nvflare.app_common.dataset_config.api import load_job_study_config
 
