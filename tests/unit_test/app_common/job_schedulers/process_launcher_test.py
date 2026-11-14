@@ -435,3 +435,13 @@ def test_process_launcher_handle_event_always_adds_launcher(monkeypatch):
 
     assert recorded["launcher"] is launcher
     assert recorded["ctx"] is fl_ctx
+
+
+def test_physical_cleanup_does_not_require_restart_eligibility(tmp_path):
+    adapter = mock.Mock()
+    adapter.poll.return_value = 0
+    handle = ProcessHandle(process_adapter=adapter, owns_process_group=True, app_dir=str(tmp_path))
+    (tmp_path / bootstrap_file_name(1)).write_text("uncleared application marker")
+    with mock.patch("nvflare.app_common.job_launcher.process_launcher.os.killpg", side_effect=ProcessLookupError):
+        assert handle.is_cleanup_complete()
+        assert not handle.can_restart()

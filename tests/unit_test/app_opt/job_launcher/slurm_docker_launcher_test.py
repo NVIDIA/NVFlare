@@ -85,6 +85,7 @@ def profile(tmp_path, monkeypatch):
     launcher._docker_client = dc
     native = Mock(spec=docker_module.DockerJobHandle)
     native.poll.return_value = JobReturnCode.UNKNOWN
+    native.is_cleanup_complete.side_effect = lambda: native.poll() != JobReturnCode.UNKNOWN
     native.terminate.side_effect = lambda: setattr(native.poll, "return_value", JobReturnCode.ABORTED)
     native.enter_states.return_value = True
     native.can_restart.return_value = True
@@ -566,6 +567,7 @@ def test_client_engine_checks_invalid_site_limits_before_accepting_jobs(profile)
     p.site["components"][0]["args"]["default_job_container_kwargs"]["mem_limit"] = "invalid"
     (p.root / "local/resources.json").write_text(json.dumps(p.site))
     client = Mock(client_name="site-1", client_args={}, components={}, secure_train=False)
+    engine = ClientEngine(client, SimpleNamespace(workspace=str(p.root)), rank=0)
     with pytest.raises(ValueError, match="site mem_limit"):
-        ClientEngine(client, SimpleNamespace(workspace=str(p.root)), rank=0)
+        engine.fire_event(EventType.SYSTEM_BOOTSTRAP, engine.new_context())
     p.dc.info.assert_not_called()
