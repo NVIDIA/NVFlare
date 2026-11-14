@@ -183,6 +183,16 @@ studies:
         options: {schema: public, tables: [labs]}
 ```
 
+**Changes to the Study runtime configuration.** This design narrows what `study_runtime.yaml` is for. Its format and parser do not change (`format_version` stays 2), and existing files keep working.
+
+| Area | Before | With this design |
+| --- | --- | --- |
+| Responsibility | How a Study's jobs run, including describing data sources | How a Study's jobs run, and access only: mounts and credential delivery |
+| Database connections | Suggested as plain `env` (`DB_HOST`, `DB_NAME`) plus `secret_env` | Address in `datasets.yaml` (`uri`, `options`); credentials still from `secret_env`. `env` stays a generic feature |
+| Databricks | A reserved `datasets` type `databricks` (rejected as "not yet supported") and a planned provider | Removed from the Study runtime design; the parser still rejects `type: databricks`. A Unity Catalog is described in `datasets.yaml`, its credentials delivered by `secret_env` |
+| Kubernetes workspace transfer | Leaves `study_runtime.yaml` and `study_data.yaml` out of the job pod | Unchanged for those files; also sends the job's Study part of `datasets.yaml` (Section 3.4) |
+| Documentation | `study_runtime_config.md`, the `deploy prepare` template and the multi-Study guide used database examples | Database and Databricks examples removed; they point to this boundary |
+
 ### 2.5 Why a separate file instead of `study_runtime.yaml`
 
 **1. Different reader, different trust level.**
