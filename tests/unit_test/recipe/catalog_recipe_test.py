@@ -14,6 +14,7 @@
 
 import json
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
@@ -29,6 +30,7 @@ from nvflare.app_common.fdn.catalog.common.payload import (
 )
 from nvflare.recipe import catalog as catalog_module
 from nvflare.recipe.catalog import DEFAULT_TASK_REQUEST_INTERVAL_S, CatalogReadError, CatalogRecipe, get_catalog
+from nvflare.recipe.sim_env import SimEnv
 from tests.unit_test.app_common.fdn.catalog.helpers import make_catalog
 
 
@@ -140,9 +142,10 @@ class TestSimulation:
 
 
 class FakeRun:
-    def __init__(self, result_dir, status=RunStatus.FINISHED_COMPLETED.value):
+    def __init__(self, result_dir, status=RunStatus.FINISHED_COMPLETED.value, exec_env=None):
         self.job_id = "job-1"
         self.result_dir, self.status, self.calls = result_dir, status, []
+        self.exec_env = exec_env
 
     def get_result(self, timeout=0.0, clean_up=True):
         self.calls.append((timeout, clean_up))
@@ -178,6 +181,30 @@ class TestGetCatalogResults:
         CatalogRecipe().get_catalog_results(FakeRun(str(job)))
         assert [p.name for p in job.iterdir()] == ["catalog_results.json"]
         assert json.loads((job / "catalog_results.json").read_text()) == doc
+
+    def test_a_simulation_keeps_its_live_workspace(self, tmp_path):
+        job = tmp_path / "simulate_job"
+        doc = write_results(job / "server" / "simulate_job" / "app_server")
+        site_local = job / "site-1" / "local"
+        site_local.mkdir(parents=True)
+        (site_local / "datasets.yaml").write_text("format_version: 1\n")  # reused by later simulation runs
+        (job / "site-1" / "startup").mkdir()
+        out = tmp_path / "saved.json"
+
+        results = CatalogRecipe().get_catalog_results(
+            FakeRun(str(job), exec_env=MagicMock(spec=SimEnv)), output_path=str(out)
+        )
+
+        assert results == doc and json.loads(out.read_text()) == doc
+        assert (site_local / "datasets.yaml").is_file() and (job / "site-1" / "startup").is_dir()
+
+    def test_saving_to_the_kept_result_itself_does_not_raise(self, tmp_path):
+        job = tmp_path / "job-1"
+        doc = write_results(job / "workspace" / "app_server")
+
+        results = CatalogRecipe().get_catalog_results(FakeRun(str(job)), output_path=str(job / "catalog_results.json"))
+
+        assert results == doc and json.loads((job / "catalog_results.json").read_text()) == doc
 
     def test_a_failed_read_keeps_the_whole_workspace(self, tmp_path):
         job = tmp_path / "job-1"
