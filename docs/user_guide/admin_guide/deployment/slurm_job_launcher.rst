@@ -228,6 +228,11 @@ Important keys are:
        only as an explicit insecure opt-out on a trusted, isolated network.
    * - ``poll_interval``
      - Scheduler polling interval; default ``10`` seconds.
+       Cancellation observation waits use at most ``1`` second between queries
+       for the first ``10`` seconds after the initial cancellation request, then
+       return to ``poll_interval``. Repeated requests do not extend that window.
+       Query time and scheduler settlement still count against the client-parent
+       cleanup bound; the fast window is not settlement evidence.
    * - ``submit_timeout``
      - Maximum time to wait for ``sbatch`` to return a job ID; default ``30``
        seconds.
