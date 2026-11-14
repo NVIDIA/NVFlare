@@ -22,7 +22,7 @@ At each site, `CatalogExecutor` reads the site's dataset configuration and retur
 | `common/payload.py` | `build_task_payload`, `build_result`, `parse_result`, `build_catalog_results` | The task payload, a site's result, and the `catalog_results.json` document. No FLARE or I/O imports. |
 | `simulation.py` | `SimulationCatalogExecutor` | In `SimEnv`, reads each site's `local/datasets.yaml` under `site_config_root/<site>/`. |
 | `nvflare/apis/dataset_config_spec.py` | `get_study_dataset_config`, `StudyDatasetConfig`, `DatasetConfig` | The read-only dataset configuration API the executor uses. |
-| `nvflare/app_common/dataset_config/api.py` | `load_study_config` | Its implementation over `local/datasets.yaml` in the job's workspace, loaded once per job. |
+| `nvflare/app_common/dataset_config/api.py` | `load_job_study_config`, `load_study_config` | Its implementation: `load_job_study_config` reads `local/datasets.yaml` in the job's workspace once per job; `load_study_config` reads one file (used by `SimulationCatalogExecutor`). |
 
 Site code never imports server code, and `common/` imports only `common/`; `site/layout_test.py` checks this.
 
