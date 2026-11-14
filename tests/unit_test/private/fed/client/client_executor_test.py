@@ -1592,6 +1592,7 @@ def test_failed_launch_observes_published_handle_even_when_cancel_fails(tmp_path
 @pytest.mark.parametrize("blocked", ["terminate", "wait", "saved-abort"])
 def test_launch_cleanup_timeout_retains_owner_and_does_not_block_observation(tmp_path, blocked):
     meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    client.cell.get_fqcn.return_value = "site-1"
     executor = JobExecutor(client, workspace.get_startup_kit_dir())
     executor.job_launch_cleanup_timeout = 0.02
     accepted = MagicMock(spec=JobHandleSpec)
@@ -1654,12 +1655,22 @@ def test_launch_cleanup_timeout_retains_owner_and_does_not_block_observation(tmp
                 assert len(errors) == 1 and isinstance(errors[0], JobCleanupPending)
                 assert executor.get_run_processes_keys() == ["job-1"]
                 assert not release.is_set()
+                aborted = threading.Event()
+
+                def abort_again():
+                    executor.abort_app("job-1")
+                    aborted.set()
+
+                threads.start(abort_again)
+                assert aborted.wait(2)
+                accepted.terminate.assert_called_once()
+                accepted.wait.assert_called_once()
         finally:
             release.set()
             pending = executor.run_processes.get("job-1", {}).get(RunProcessKey.JOB_HANDLE)
             if pending and pending.cleanup_calls:
                 for call in pending.cleanup_calls:
-                    call.join(2)
+                    call.thread.join(2)
                     assert not call.thread.is_alive()
     accepted.terminate.assert_called_once()
     accepted.wait.assert_called_once()
@@ -1765,3 +1776,98 @@ def test_cleanup_control_start_failure_cannot_skip_observation_or_drop_owner(tmp
     else:
         accepted.terminate.assert_called_once()
         accepted.wait.assert_not_called()
+
+
+def test_admin_abort_after_monitor_error_still_cancels_and_observes(tmp_path):
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    client.cell.get_fqcn.return_value = "site-1"
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    accepted = MagicMock(spec=JobHandleSpec)
+    accepted.wait.side_effect = RuntimeError("query unavailable")
+    pending = _PendingJobHandle()
+    pending.attach(accepted)
+    resources = MagicMock()
+    owner = {
+        RunProcessKey.JOB_HANDLE: pending,
+        RunProcessKey.STATUS: ClientStatus.STARTED,
+        _RESOURCE_OWNER_KEY: ({"gpu": 1}, "token", resources),
+    }
+    executor.run_processes["job-1"] = owner
+    write_job_cert(str(tmp_path / "job-1"), b"cert", b"key")
+    executor._wait_child_process_finish(client, "job-1", {"gpu": 1}, "token", resources, str(tmp_path), ctx)
+    assert executor.check_status("job-1") == "cleanup pending"
+    assert executor.get_status("job-1") == ClientStatus.CLEANUP_PENDING
+    accepted.terminate.assert_not_called()
+    executor.abort_app("job-1")
+    assert client.cell.fire_and_forget.call_args.kwargs["topic"] == AdminCommandNames.ABORT
+    accepted.terminate.assert_called_once()
+    assert accepted.wait.call_count == 2
+    executor.abort_app("job-1")  # Completed failures may be retried by another explicit request.
+    assert accepted.terminate.call_count == 2
+    assert accepted.wait.call_count == 3
+    assert executor.run_processes["job-1"] is owner
+    assert find_job_cert(str(tmp_path / "job-1")) is not None
+    resources.free_resources.assert_not_called()
+
+
+def test_retained_heartbeat_is_quiet_and_does_not_issue_new_control_calls(tmp_path, caplog):
+    _, workspace, client, _ = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    handle = MagicMock(spec=JobHandleSpec)
+    executor.run_processes["job-1"] = {
+        RunProcessKey.JOB_HANDLE: handle,
+        RunProcessKey.STATUS: ClientStatus.STARTED,
+    }
+    executor._retain_cleanup_owner("job-1")
+    caplog.clear()
+    for _ in range(3):
+        executor.abort_app("job-1", heartbeat_cleanup=True)
+    handle.terminate.assert_not_called()
+    client.cell.fire_and_forget.assert_not_called()
+    assert not caplog.records
+
+
+@pytest.mark.parametrize("retained", [False, True], ids=["active", "retained"])
+def test_admin_delete_preserves_owned_run_files_and_credentials(tmp_path, retained):
+    _, workspace, client, _ = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    owner = {RunProcessKey.JOB_HANDLE: MagicMock(), RunProcessKey.STATUS: ClientStatus.STARTED}
+    executor.run_processes["job-1"] = owner
+    if retained:
+        executor._retain_cleanup_owner("job-1")
+    run_dir = tmp_path / "job-1"
+    launch_file = run_dir / "launch.sh"
+    launch_file.write_text("owned launch files")
+    write_job_cert(str(run_dir), b"cert", b"key")
+    engine = SimpleNamespace(args=SimpleNamespace(workspace=str(tmp_path)), client_executor=executor)
+    result = ClientEngine.delete_run(engine, "job-1")
+    assert "cannot delete an owned run" in result
+    assert launch_file.read_text() == "owned launch files"
+    assert find_job_cert(str(run_dir)) is not None
+    assert executor.run_processes["job-1"] is owner
+    executor.run_processes.pop("job-1")  # Reconciled by the operator.
+    assert "Delete run folder" in ClientEngine.delete_run(engine, "job-1")
+    assert not run_dir.exists()
+
+
+def test_unconfirmed_launch_cleanup_logs_original_launch_error(tmp_path, caplog):
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    handle = MagicMock(spec=JobHandleSpec)
+    handle.wait.side_effect = RuntimeError("observation unavailable")
+    launcher = MagicMock()
+
+    def launch(_meta, context):
+        publish_job_handle(handle, context)
+        raise ValueError("startup handshake failed")
+
+    launcher.launch_job.side_effect = launch
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        pytest.raises(JobCleanupPending),
+    ):
+        executor.start_app(
+            client, "job-1", meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, ctx
+        )
+    assert "launch failed: ValueError: startup handshake failed" in caplog.text
+    assert "observation unavailable" in caplog.text

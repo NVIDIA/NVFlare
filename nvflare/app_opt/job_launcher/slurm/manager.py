@@ -464,6 +464,7 @@ class SlurmJobHandle(JobHandleSpec):
         with self.condition:
             self.cancel_requested = True
             self.user_abort = self.user_abort or user_abort
+            self.condition.notify_all()
 
     def _set_terminal(self, result: int) -> None:
         with self.condition:
@@ -493,5 +494,9 @@ class SlurmJobHandle(JobHandleSpec):
         while self.poll() == JobReturnCode.UNKNOWN:
             with self.condition:
                 if self.terminal_result is None:
-                    self.condition.wait(timeout=self.poll_interval)
+                    # A full default poll interval (10s) races the parent's 10s
+                    # cleanup bound. Observe cancellation promptly; settlement
+                    # still requires the normal scheduler evidence.
+                    interval = min(self.poll_interval, 1.0) if self.cancel_requested else self.poll_interval
+                    self.condition.wait(timeout=interval)
         return None

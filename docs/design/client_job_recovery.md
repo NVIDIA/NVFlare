@@ -183,6 +183,10 @@ same cleanup path.
 that cancellation rather than starting another. Control calls and the ordinary
 CJ monitor use daemon threads so an unavailable backend cannot indefinitely hold
 CP process exit. This does not make a runtime disappear when CP exits.
+Slurm cancellation waits requery at most one second apart, even with the default
+10-second running-job poll interval, so a normally cancelled allocation can be
+observed within the default parent cleanup bound. Query outages or slow scheduler
+settlement can still exceed that bound and require reconciliation.
 
 If cancellation is still running, observation raises, or observation exceeds its
 bound, CP logs a critical reconciliation message and keeps the run registration,
@@ -192,12 +196,19 @@ allocation. Replacement failure keeps the same owner. Ordinary monitor wait/quer
 errors also preserve the registration and credentials. Retained jobs stay in CP's
 job list and reject another launch of the same logical job, including runs whose
 CJ already reported STARTED. A repeated start releases only its new admission
-allocation; the retained run keeps its original allocation. Heartbeat/admin aborts
-of retained runs log the reconciliation requirement without stacking more control
-calls. A different start request that fails before acquiring a runtime still frees
-its own admission allocation.
+allocation; the retained run keeps its original allocation. Status queries expose
+`cleanup pending`. Deletion through the client parent rejects every registered
+run, preserving credentials and launch files even if the server has forgotten it.
+The original launch failure is logged before cleanup errors.
 
-There is no settlement retry loop or automatic finalization of retained runs.
+An explicit admin abort still sends a cooperative abort and makes a bounded
+cancellation/observation attempt. It reuses in-flight cleanup calls, and another
+explicit request may retry completed failed calls. Concurrent admin requests do
+not stack control operations. Heartbeats neither retry retained cleanup nor emit
+repeated warnings. A different start request that fails before acquiring a runtime
+still frees its own admission allocation.
+
+There is no automatic settlement retry loop or finalization of retained runs.
 An in-flight control call may later finish, but the run remains registered for
 operator reconciliation. A normal `JobHandleSpec.wait()` return is the launcher's
 existing completion contract; this change does not strengthen each backend's
@@ -234,7 +245,8 @@ separate facts.
    per-job credentials/control artifacts and rebuild the affected admission state
    according to the site's resource manager. Restart CP only after this audit,
    including any CP-owned task-worker allocations. There is no supported live
-   command to finalize a retained registration, and CP restart adoption is a
+   command to finalize a retained registration (admin abort requests cancellation
+   and observation, not finalization), and CP restart adoption is a
    separate feature. If CP is lost, this reconciliation responsibility transfers
    to the operator; in-memory ownership is not durable adoption.
 
@@ -261,6 +273,15 @@ Slurm qualification must exercise accepted-but-lost replies, cancellation/query
 outages, controller/accounting lag, allocation/step teardown and physical GPU
 release for CJ and SJ as applicable. Earlier operator-inventory hardware runs do
 not qualify this change or the pending Slurm slice.
+
+### Kubernetes settlement limitation
+
+The current `K8sJobHandle.terminate()` marks the handle terminal and releases its
+job resources even when Pod deletion raises an API or network error. Its `wait()`
+then returns without confirming Pod/container shutdown. The caller can therefore
+release ownership despite a surviving Pod; this PR does not fix that backend
+contract. Track the separate [Kubernetes ownership follow-up](https://github.com/NVIDIA/NVFlare/issues/5791).
+Do not describe the caller-retention fix as Kubernetes settlement protection.
 
 ## Task and checkpoint boundaries
 

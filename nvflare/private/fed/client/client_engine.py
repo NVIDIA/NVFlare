@@ -14,7 +14,6 @@
 
 import os
 import re
-import shutil
 import sys
 import threading
 from typing import List
@@ -354,7 +353,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         token: str = None,
         resource_manager=None,
     ) -> str:
-        status = self.client_executor.get_status(job_id, reject_cleanup_pending=True)
+        status = self.client_executor.check_start_app(job_id)
         if status == ClientStatus.STARTED:
             return "Client app already started."
 
@@ -482,8 +481,10 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
     def delete_run(self, job_id: str) -> str:
         ws = Workspace(self.args.workspace)
         job_id_folder = ws.get_run_dir(job_id)
-        if os.path.exists(job_id_folder):
-            shutil.rmtree(job_id_folder)
+        try:
+            self.client_executor.delete_run(job_id, job_id_folder)
+        except RuntimeError as e:
+            return f"{ERROR_MSG_PREFIX}: {e}"
         return f"Delete run folder: {job_id_folder}."
 
     def get_current_run_info(self, job_id) -> ClientRunInfo:

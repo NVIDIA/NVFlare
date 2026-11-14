@@ -853,3 +853,65 @@ def _isolate_module_clocks(monkeypatch):
         monkeypatch,
         "nvflare.app_opt.job_launcher.slurm.manager",
     )
+
+
+def test_real_slurm_handle_cancel_observation_fits_default_parent_cleanup_bound(tmp_path):
+    import threading
+
+    from nvflare.private.fed.client.client_executor import JobExecutor, _PendingJobHandle
+    from tests.timing_utils import ThreadGroup
+
+    adapter = Adapter()
+    manager = _manager(tmp_path, adapter)
+    manager.config = replace(manager.config, poll_interval=10.0)
+    waiting = threading.Event()
+    completed = threading.Event()
+    results = []
+    active = adapter.active_by_id
+
+    def query(*args, **kwargs):
+        result = active(*args, **kwargs)
+        if sum(call[0] == "live" for call in adapter.calls) == 2:
+            waiting.set()  # Cancellation and the first wait query saw the allocation alive.
+        return result
+
+    adapter.active_by_id = query
+    adapter.live = [
+        _query(LookupStatus.FOUND, _record()),
+        _query(LookupStatus.FOUND, _record()),
+        _query(LookupStatus.NOT_FOUND),
+    ]
+    adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="CANCELLED"))
+    handle = manager.launch(_plan(tmp_path))
+    pending = _PendingJobHandle()
+    pending.attach(handle)
+    executor = JobExecutor(MagicMock(), str(tmp_path / "startup"))
+    assert executor.job_launch_cleanup_timeout == handle.poll_interval == 10.0
+
+    def cleanup():
+        results.append(executor._cleanup_failed_launch("job-1", pending))
+        completed.set()
+
+    try:
+        with ThreadGroup() as threads:
+            try:
+                threads.start(cleanup)
+                assert waiting.wait(5)
+                # Completion watchdog, not a scheduler-release deadline. The former
+                # 10s wait cannot pass this guard; cancellation should requery in 1s.
+                assert completed.wait(5)
+                assert results == [True]
+                assert handle.terminal_result == JobReturnCode.ABORTED
+                assert not manager._handles
+                assert not Path(handle.job_dir).exists()
+            finally:
+                # Drive genuine terminal scheduler evidence to wake the real handle,
+                # including when testing the old implementation's long wait.
+                adapter.live = _query(LookupStatus.NOT_FOUND)
+                handle.accounting_last_query = float("-inf")
+                handle.poll()
+    finally:
+        for call in pending.cleanup_calls or ():
+            if call.thread.ident is not None:
+                call.thread.join(5)
+                assert not call.thread.is_alive()
