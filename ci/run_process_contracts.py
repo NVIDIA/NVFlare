@@ -40,6 +40,7 @@ TESTS = (
     "tests/integration_test/fast/process_launcher_lifecycle_test.py",
     "tests/integration_test/fast/recipe_log_config_test.py",
     "tests/integration_test/fast/server_transit_e2e_test.py",
+    "tests/integration_test/fast/slurm_command_resolution_test.py",
     "tests/integration_test/fast/slurm_task_worker_test.py",
     "tests/integration_test/fast/slurm_task_session_test.py",
     "tests/integration_test/fast/step_ca_admin_cert_process_test.py",
