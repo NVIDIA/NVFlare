@@ -79,9 +79,7 @@ For example, a task application may supply::
 Shared export and server submission derive task sites from the actual client
 configs, including mixed lifetimes and ``@ALL`` deployments. They add the
 applicable CJ entries even when the application omits a budget. The shared
-resolver merges ``@default``, ``@ALL`` and site-specific CJ fields. An explicit
-client entry such as ``"site-1": null`` skips those defaults and uses the site's
-CJ policy; an empty dictionary continues to inherit defaults. This
+resolver merges ``@default``, ``@ALL`` and site-specific CJ fields; this
 backend does not infer admission roles
 from a supplied flag. CP and CJ validate the locally resolved lifetime
 before application components start. Resident-job admission remains based
@@ -147,11 +145,9 @@ workspace and the same installed NVFlare version.
 This profile runs trusted code under the site's UID. It provides no
 container isolation or enforced CPU/memory budget for CJ; nonzero
 ``cj_resource_spec`` budgets are rejected. Slurm still admits and tracks
-each task allocation. For a mixed federation with shared CJ budgets, set
-``cj_resource_spec["site-1"]`` to ``null`` for a Process login node. This opts only
-that client out of the inherited budgets while keeping compute resources on
-its Slurm tasks. The default ``cj_runtime: slurm`` profile is unchanged and
-continues to require a Slurm CJ allocation.
+each task allocation. Inherited federation-wide CJ budgets are subject to the
+same rejection; jobs targeting this profile must omit nonzero CJ budgets.
+The default ``cj_runtime: slurm`` profile continues to require a Slurm CJ allocation.
 
 Process and Docker login node profiles refuse job-lifetime applications by default,
 including applications that omit ``execution_lifetime``. A site that permits
