@@ -60,7 +60,7 @@ _NATIVE_TASK_LAUNCHERS = {
 
 # CP composition is private. Class paths keep unused optional backends out of
 # the import graph; exact supported launcher types are validated by policy.
-_CP_HOST_CJ_PREPARERS = {
+_CJ_PREPARERS = {
     (
         "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
         "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
@@ -69,12 +69,22 @@ _CP_HOST_CJ_PREPARERS = {
         "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
         "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
     ): ("nvflare.private.fed.client.task_runtime", "_prepare_docker_slurm_cj"),
+    (
+        "nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher",
+        "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+    ): None,
+    (
+        "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
+        "nvflare.app_opt.task_launcher.k8s_launcher.K8sTaskLauncher",
+    ): None,
 }
 
 
 def _prepare_cp_host_cj(task_launcher, job_launcher, job_meta, fl_ctx):
     pairing = tuple(f"{type(item).__module__}.{type(item).__qualname__}" for item in (job_launcher, task_launcher))
-    target = _CP_HOST_CJ_PREPARERS.get(pairing)
+    if pairing not in _CJ_PREPARERS:
+        raise ValueError(f"unsupported client-job/task launcher pairing: {pairing}")
+    target = _CJ_PREPARERS[pairing]
     if target is None:
         # Existing native launchers retain their own ownership setup.
         return None

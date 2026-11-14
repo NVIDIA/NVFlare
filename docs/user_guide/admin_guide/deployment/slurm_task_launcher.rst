@@ -150,7 +150,9 @@ same rejection; jobs targeting this profile must omit nonzero CJ budgets.
 The default ``cj_runtime: slurm`` profile continues to require a Slurm CJ allocation.
 
 Process and Docker login node profiles refuse job-lifetime applications by default,
-including applications that omit ``execution_lifetime``. A site that permits
+including applications that omit ``execution_lifetime``. This check occurs at
+client-job launch, after application deployment and before starting any CJ.
+A site that permits
 resident applications on its login node can explicitly set
 ``task_execution.allow_job_lifetime`` to ``true`` in its canonical site file.
 Those applications then use the ordinary job launcher's behavior and site

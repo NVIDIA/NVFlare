@@ -184,15 +184,9 @@ def _launch_job_with_task_workers(prepared, launcher, fl_ctx):
 
 def _prepare_process_slurm_cj(task_launcher, launcher, job_meta, fl_ctx):
     from nvflare.app_opt.job_launcher.slurm.task_launcher import _prepare_task_binding
-    from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES
-    from nvflare.utils.job_launcher_utils import get_cj_resource_spec
 
     task_launcher.validate_job_launcher(launcher)
-    if any(get_cj_resource_spec(job_meta, fl_ctx.get_identity_name()).values()):
-        raise ValueError("process CJ cannot enforce cj_resource_spec budgets; use a Slurm or Docker CJ")
-    environment = os.environ.copy()
-    environment.update({name: "none" if name == "NVIDIA_VISIBLE_DEVICES" else "" for name in GPU_ENVIRONMENT_NAMES})
-    options = JobLaunchOptions(environment=environment, apply_study_runtime=False)
+    options = launcher._task_coordinator_options(job_meta, fl_ctx)
     return _prepare_task_binding(job_meta, fl_ctx, options)
 
 
