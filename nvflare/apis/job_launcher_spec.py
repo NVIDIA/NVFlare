@@ -13,11 +13,40 @@
 # limitations under the License.
 import os
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Optional
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+
+JOB_LAUNCH_OPTIONS = "_job_launch_options"
+
+
+@dataclass(frozen=True)
+class JobLaunchOptions:
+    """Trusted parent settings for one launch, never job-selected site policy.
+
+    ``environment`` replaces the launcher's initial environment when supplied.
+    Launchers still add job credentials and application import paths. Paths and
+    container options affect this launch only, not the shared launcher instance.
+    """
+
+    environment: Optional[dict] = None
+    apply_study_runtime: bool = True
+    workspace_mount: Optional[str] = None
+    preserve_parent_url: bool = False
+    container_kwargs: dict = field(default_factory=dict)
+
+
+def get_job_launch_options(fl_ctx):
+    options = fl_ctx.get_prop(JOB_LAUNCH_OPTIONS)
+    if options is None:
+        return JobLaunchOptions()
+    if not isinstance(options, JobLaunchOptions):
+        raise TypeError("job launch options must be JobLaunchOptions")
+    return options
 
 
 class JobProcessArgs:
@@ -97,6 +126,14 @@ def publish_job_handle(job_handle, fl_ctx: FLContext):
 
 
 class JobHandleSpec(ABC):
+    def is_cleanup_complete(self) -> bool:
+        """Confirm execution cleanup, including owned children for process launchers.
+
+        This is separate from restart eligibility: application checkpoints or
+        retry policy can prevent a restart after physical cleanup is complete.
+        """
+        return self.poll() != JobReturnCode.UNKNOWN
+
     def can_restart(self) -> bool:
         """Confirm termination of this handle's execution (e.g. the CJ process group).
 

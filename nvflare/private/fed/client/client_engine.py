@@ -34,6 +34,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, new_cell_message
 from nvflare.private.event import fire_event
+from nvflare.private.fed.client.task_runtime import _TaskExecutionState, shutdown_task_execution, validate_task_site
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import security_close
@@ -77,6 +78,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         self.aux_runner = AuxRunner(self)
         self.object_streamer = ObjectStreamer(self.aux_runner)
         self.cell = None
+        self._task_execution_state = _TaskExecutionState()
 
         client_config = client.client_args
         fqsn = client_config.get("fqsn", client.client_name)
@@ -110,6 +112,14 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         self.fl_components.append(ClientFedEventRunner())
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.SYSTEM_BOOTSTRAP:
+            validate_task_site(Workspace(self.args.workspace, self.client_name))
+        if event_type == EventType.SYSTEM_END:
+            try:
+                shutdown_task_execution(self)
+            except Exception as error:
+                self.logger.error(f"Task runtime shutdown failed: {secure_format_exception(error)}")
+                secure_log_traceback()
         fire_event(event=event_type, handlers=self.fl_components, ctx=fl_ctx)
 
     def get_cell(self):

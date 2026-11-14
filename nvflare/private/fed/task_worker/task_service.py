@@ -90,12 +90,36 @@ class _Job:
         self.released = False
         self.on_done = None
         self.cj_handle = None
+        self.cj_launch_pending = False
+        self.manage_cj = False
+        self.cj_settled = False
+        self._cj_cleanup_warning_logged = False
+        self.cj_termination_lock = threading.Lock()
 
     def attach_cj(self, handle):
         with self.lock:
             self.cj_handle = handle
             self.next_cj_observation = 0.0
         self.wake.set()
+
+    def finish_cj_launch(self):
+        with self.lock:
+            self.cj_launch_pending = False
+        self.wake.set()
+
+    def terminate_cj(self):
+        # The wrapper and owner thread may both request cleanup. Serialize the
+        # native call and require an observed exit before forgetting the owner.
+        with self.cj_termination_lock:
+            with self.lock:
+                handle = self.cj_handle
+            if handle is None:
+                return
+            if handle.is_cleanup_complete() is not True:
+                handle.terminate()
+            settled = handle.is_cleanup_complete() is True
+            with self.lock:
+                self.cj_settled = settled
 
     def close(self):
         with self.lock:
@@ -120,15 +144,27 @@ class _Job:
         with self.lock:
             handle, released = self.cj_handle, self.released
             now = time.monotonic()
-            if released or handle is None or now < self.next_cj_observation:
+            cleanup = self.manage_cj and released and not self.cj_settled
+            if handle is None or (not cleanup and (released or now < self.next_cj_observation)):
                 return
             self.next_cj_observation = now + _CJ_OBSERVATION_INTERVAL
         try:
-            if self._cj_is_dead(handle):
+            if cleanup:
+                self.terminate_cj()
+            elif self._cj_is_dead(handle):
                 self.release()
         except Exception:
             # An unavailable scheduler cannot prove CJ death. The owner remains.
             pass
+        if cleanup:
+            with self.lock:
+                warn = not self.cj_settled and not self._cj_cleanup_warning_logged
+                if warn:
+                    self._cj_cleanup_warning_logged = True
+            if warn:
+                logger.warning(
+                    "Coordinator cleanup unconfirmed for job %s; CP retains ownership and retries", self.job_id
+                )
 
     def run(self):
         while True:
@@ -180,14 +216,23 @@ class _Job:
                 except Exception as error:
                     logger.warning("CP task observation failed for %s: %s", self.job_id, type(error).__name__)
             with self.lock:
-                done = self.released and all(a.status.settled for a in self.attempts.values())
+                done = (
+                    self.released
+                    and not self.cj_launch_pending
+                    and (not self.manage_cj or self.cj_handle is None or self.cj_settled)
+                    and all(a.status.settled for a in self.attempts.values())
+                )
                 settlement_waiting = any(
                     a.settlement_wait_until > time.monotonic() and not a.status.settled for a in self.attempts.values()
                 )
             if done:
                 self.on_done()
                 return
-            self.wake.wait(min(self.backend.poll_interval, 1.0) if settlement_waiting else self.backend.poll_interval)
+            self.wake.wait(
+                min(self.backend.poll_interval, 1.0)
+                if settlement_waiting or (self.manage_cj and self.released)
+                else self.backend.poll_interval
+            )
             self.wake.clear()
 
 
@@ -222,8 +267,9 @@ class CPTaskService:
                 cell.__dict__[key] = service
             return service
 
-    def add_job(self, backend, job_id, site_name, token):
+    def add_job(self, backend, job_id, site_name, token, *, cj_launch_pending=False):
         job = self.job_class(backend, job_id, site_name, token, FQCN.join([self.cell.get_fqcn(), job_id]))
+        job.cj_launch_pending = job.manage_cj = cj_launch_pending
         with self.lock:
             if job_id in self.jobs:
                 raise ValueError(f"CP already owns this {self.backend_name} task job")

@@ -40,6 +40,11 @@ from tests.task_execution_test_utils import _config, _configure, _statistics_con
 from tests.timing_utils import isolate_time
 
 
+def test_unknown_launcher_pairing_is_rejected_instead_of_using_native_fallback():
+    with pytest.raises(ValueError, match="unsupported client-job/task launcher pairing"):
+        policy_module._prepare_cp_host_cj(SimpleNamespace(), SimpleNamespace(), {}, None)
+
+
 def test_alias_timeout_and_specs_are_inert_snapshots():
     config = _config(result_wait_timeout=12)
     spec = config["executors"][0]["executor"]
@@ -771,12 +776,17 @@ def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
 ):
     class NativeLauncher(TaskLauncherSpec):
         launch_mode = mode
+        cj_runtime = "slurm"
 
         def launch_task(self, request):
             raise NotImplementedError()
 
         def validate_site_config(self, site_config):
             validate(site_config)
+
+        def validate_job_launcher(self, job_launcher):
+            if type(job_launcher) is not NativeJobLauncher:
+                raise ValueError("unsupported native client-job launcher")
 
     validate = Mock()
     launcher = NativeLauncher()
@@ -804,14 +814,11 @@ def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
     with pytest.raises(ValueError, match="environment_variables is not supported"):
         TaskExecutionPolicy.from_config({**config, "environment_variables": ["APP_DATA"]})
 
-    job_module, job_class_name = policy_module._NATIVE_JOB_LAUNCHERS[mode]
-
     class NativeJobLauncher:
         pass
 
-    monkeypatch.setitem(sys.modules, job_module, SimpleNamespace(**{job_class_name: NativeJobLauncher}))
     policy.validate_job_launcher(NativeJobLauncher())
-    with pytest.raises(ValueError, match="supported Kubernetes or Slurm client-job launcher"):
+    with pytest.raises(ValueError, match="unsupported native client-job launcher"):
         policy.validate_job_launcher(SimpleNamespace())
 
     class Impersonator(NativeLauncher):

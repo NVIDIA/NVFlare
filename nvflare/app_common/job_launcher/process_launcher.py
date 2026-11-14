@@ -24,7 +24,13 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import get_job_meta_study
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobReturnCode,
+    add_launcher,
+    get_job_launch_options,
+)
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.study_runtime import (
     load_study_runtime_file,
@@ -92,6 +98,11 @@ class ProcessHandle(JobHandleSpec):
             time.sleep(min(0.1, remaining))
         return True
 
+    def is_cleanup_complete(self):
+        if self.owns_process_group:
+            return self._group_exited()
+        return self.poll() != JobReturnCode.UNKNOWN
+
     def can_restart(self):
         if not self._group_exited():
             return False
@@ -126,11 +137,14 @@ class ProcessJobLauncher(JobLauncherSpec):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
+        return self._launch_job(job_meta, fl_ctx, self._job_environment(job_meta, fl_ctx))
 
-        new_env = os.environ.copy()
+    def _job_environment(self, job_meta, fl_ctx):
+        options = get_job_launch_options(fl_ctx)
+        new_env = os.environ.copy() if options.environment is None else dict(options.environment)
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         runtime_file = study_runtime_file_path(workspace_obj.get_root_dir())
-        if os.path.exists(runtime_file):
+        if options.apply_study_runtime and os.path.exists(runtime_file):
             runtime_map = load_study_runtime_file(runtime_file, launcher_mode="process", logger=self.logger)
             study = get_job_meta_study(job_meta)
             runtime = resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
@@ -150,7 +164,11 @@ class ProcessJobLauncher(JobLauncherSpec):
             add_custom_dir_to_path(app_custom_folder, new_env)
 
         new_env.update(get_credential_env(fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS) or {}))
+        return new_env
 
+    def _launch_job(self, job_meta, fl_ctx, new_env):
+        workspace_obj = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        job_id = job_meta.get(JobConstants.JOB_ID)
         command = self.get_command(job_meta, fl_ctx)
         argv = shlex.split(command, True)
 

@@ -232,6 +232,10 @@ class TaskLauncherSpec(FLComponent, ABC):
     # separately retaining and reporting unconfirmed native cleanup.
     completion_requires_settlement = True
 
+    def validate_job_launcher(self, launcher):
+        """Validate the site-selected coordinator launcher before physical launch."""
+        raise UnsupportedTaskResourceError("task backend does not support this coordinator launcher")
+
     def get_worker_listener_host(self) -> str:
         """Host at which this launcher's workers can reach their Client Job.
 

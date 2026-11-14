@@ -1246,10 +1246,15 @@ def test_shared_admission_rejects_unsupported_task_cj_before_launch(tmp_path, bu
     launcher.launch_job = Mock(side_effect=AssertionError("unsupported task CJ must not start"))
     # Canonical site-policy validation has its own tests. Exercise the real
     # selected-launcher check at the shared parent admission boundary here.
-    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode="slurm" if backend == "slurm_server" else "k8s"))
+    from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher
+    from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
+
+    task = object.__new__(SlurmTaskLauncher if backend == "slurm_server" else K8sTaskLauncher)
+    task.cj_runtime = "slurm"
+    policy = TaskExecutionPolicy(task)
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
         with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
-            with pytest.raises(ValueError, match="supported Kubernetes or Slurm client-job launcher"):
+            with pytest.raises(ValueError, match="supported .*client-job launcher"):
                 JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
                     client,
                     "job-1",
@@ -1296,7 +1301,12 @@ def test_shared_admission_reaches_matching_native_cj_launcher(tmp_path, mode, mo
     config_dir = Path(workspace.get_app_config_dir("job-1"))
     config_dir.mkdir(parents=True)
     (config_dir / "config_fed_client.json").write_text('{"execution_lifetime":"task"}')
-    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode=mode))
+    from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher
+    from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
+
+    task = object.__new__(SlurmTaskLauncher if mode == "slurm" else K8sTaskLauncher)
+    task.cj_runtime = "slurm"
+    policy = TaskExecutionPolicy(task)
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
         with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
             with pytest.raises(RuntimeError, match="native launch boundary reached"):

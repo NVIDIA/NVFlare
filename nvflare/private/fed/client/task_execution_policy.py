@@ -56,10 +56,40 @@ _NATIVE_TASK_LAUNCHERS = {
     "k8s": ("nvflare.app_opt.task_launcher.k8s_launcher", "K8sTaskLauncher"),
     "slurm": ("nvflare.app_opt.job_launcher.slurm.task_launcher", "SlurmTaskLauncher"),
 }
-_NATIVE_JOB_LAUNCHERS = {
-    "k8s": ("nvflare.app_opt.job_launcher.k8s_launcher", "ClientK8sJobLauncher"),
-    "slurm": ("nvflare.app_opt.job_launcher.slurm.launcher", "ClientSlurmJobLauncher"),
+
+
+# CP composition is private. Class paths keep unused optional backends out of
+# the import graph; exact supported launcher types are validated by policy.
+_CJ_PREPARERS = {
+    (
+        "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
+        "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+    ): ("nvflare.private.fed.client.task_runtime", "_prepare_process_slurm_cj"),
+    (
+        "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
+        "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+    ): ("nvflare.private.fed.client.task_runtime", "_prepare_docker_slurm_cj"),
+    (
+        "nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher",
+        "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+    ): None,
+    (
+        "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
+        "nvflare.app_opt.task_launcher.k8s_launcher.K8sTaskLauncher",
+    ): None,
 }
+
+
+def _prepare_cp_host_cj(task_launcher, job_launcher, job_meta, fl_ctx):
+    pairing = tuple(f"{type(item).__module__}.{type(item).__qualname__}" for item in (job_launcher, task_launcher))
+    if pairing not in _CJ_PREPARERS:
+        raise ValueError(f"unsupported client-job/task launcher pairing: {pairing}")
+    target = _CJ_PREPARERS[pairing]
+    if target is None:
+        # Existing native launchers retain their own ownership setup.
+        return None
+    module, name = target
+    return getattr(importlib.import_module(module), name)(task_launcher, job_launcher, job_meta, fl_ctx)
 
 
 def _supported_native_launcher(launcher):
@@ -103,6 +133,7 @@ class TaskExecutionPolicy:
     poll_interval: float = 0.05
     max_payload_bytes: int | None = None
     finalization_timeout: float = 30.0
+    allow_job_lifetime: bool = True
 
     @classmethod
     def from_workspace(cls, workspace):
@@ -132,6 +163,7 @@ class TaskExecutionPolicy:
             "poll_interval",
             "max_payload_bytes",
             "finalization_timeout",
+            "allow_job_lifetime",
         }
         if set(config) - allowed:
             raise ValueError(f"unknown site task_execution settings: {sorted(set(config) - allowed)}")
@@ -164,8 +196,14 @@ class TaskExecutionPolicy:
         launcher = _SiteBuilder().build_component(launcher_config)
         if not isinstance(launcher, TaskLauncherSpec) or not _supported_native_launcher(launcher):
             raise ValueError("task execution requires a supported Kubernetes or Slurm TaskLauncher")
+        allow_job_lifetime = config.get(
+            "allow_job_lifetime", getattr(launcher, "cj_runtime", None) not in ("process", "docker")
+        )
+        if not isinstance(allow_job_lifetime, bool):
+            raise ValueError("allow_job_lifetime must be a boolean")
         return cls(
             launcher=launcher,
+            allow_job_lifetime=allow_job_lifetime,
             artifact_cleanup=cleanup,
             worker_timeout=options.worker_timeout,
             settlement_timeout=options.settlement_timeout,
@@ -181,10 +219,7 @@ class TaskExecutionPolicy:
 
     def validate_job_launcher(self, launcher):
         """Fail closed before starting a CJ on an incompatible site runtime."""
-        module_name, class_name = _NATIVE_JOB_LAUNCHERS[self.launcher.launch_mode]
-        expected = getattr(importlib.import_module(module_name), class_name)
-        if type(launcher) is not expected:
-            raise ValueError("task lifetime requires the site's supported Kubernetes or Slurm client-job launcher")
+        self.launcher.validate_job_launcher(launcher)
 
     def task_resources(self, meta, site_name):
         validate_task_resources(meta, site_name)
