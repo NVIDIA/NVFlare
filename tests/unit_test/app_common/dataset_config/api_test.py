@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import datetime
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -20,6 +21,7 @@ import yaml
 
 from nvflare.apis.dataset_config_spec import DatasetConfigError, UnknownDatasetError, get_study_dataset_config
 from nvflare.apis.fl_constant import FLContextKey
+from nvflare.app_common.dataset_config import api as api_module
 from nvflare.app_common.dataset_config.api import extract_study_config, load_study_config, parse_study_config
 
 CONFIG = {
@@ -252,6 +254,13 @@ class TestGetStudyDatasetConfig:
         path.write_text(yaml.safe_dump(CONFIG, sort_keys=False))
         assert get_study_dataset_config(make_fl_ctx(tmp_path, job_id="job-c")).list_datasets() == ["omop", "ehr"]
 
+    def test_the_removed_environment_variable_is_ignored(self, tmp_path, monkeypatch):
+        other = tmp_path / "elsewhere.yaml"
+        other.write_text(yaml.safe_dump({"format_version": 1, "studies": {"oncology": {"datasets": {}}}}))
+        monkeypatch.setenv("NVFLARE_DATASET_CONFIG", str(other))
+        write_site_file(tmp_path, CONFIG)
+        assert get_study_dataset_config(make_fl_ctx(tmp_path, job_id="job-env")).list_datasets() == ["omop", "ehr"]
+
 
 class TestKubernetesStudyPart:
     def test_holds_only_the_jobs_study_and_site_usage(self, tmp_path):
@@ -314,6 +323,37 @@ class TestKubernetesStudyPart:
         with pytest.raises(DatasetConfigError) as error:
             load_study_config(str(job_file), "oncology", missing_ok=False)
         assert "secret-study" not in str(error.value) and "site's log" in str(error.value)
+
+    def _rejected(self, tmp_path, part):
+        job_file = tmp_path / "job-datasets.yaml"
+        job_file.write_bytes(part)
+        with pytest.raises(DatasetConfigError, match="site's log"):
+            load_study_config(str(job_file), "oncology", missing_ok=False)
+
+    def test_an_unreadable_site_file_sends_a_part_the_api_rejects(self, tmp_path, monkeypatch, caplog):
+        site = write_site_file(tmp_path / "site", CONFIG)
+        real_read = Path.read_bytes
+        monkeypatch.setattr(
+            Path,
+            "read_bytes",
+            lambda self: (_ for _ in ()).throw(PermissionError()) if self == site else real_read(self),
+        )
+        with caplog.at_level("WARNING"):
+            part = extract_study_config(str(site), "oncology")
+        assert "PermissionError" in caplog.text
+        monkeypatch.setattr(Path, "read_bytes", real_read)
+        self._rejected(tmp_path, part)
+
+    def test_an_unexpected_error_never_escapes_and_sends_a_part_the_api_rejects(self, tmp_path, monkeypatch):
+        site = write_site_file(tmp_path / "site", CONFIG)
+
+        def broken(*args):
+            raise TypeError("unexpected")
+
+        monkeypatch.setattr(api_module, "_study_part", broken)
+        part = extract_study_config(str(site), "oncology")  # must not raise: it runs in the workspace download
+        monkeypatch.undo()
+        self._rejected(tmp_path, part)
 
     def test_an_invalid_site_file_sends_a_part_the_api_rejects(self, tmp_path):
         site = write_site_file(
