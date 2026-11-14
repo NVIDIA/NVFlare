@@ -175,6 +175,35 @@ class TaskJobRuntime:
                     fl_ctx.set_prop(key, **detail)
 
 
+def _prepare_process_slurm_cj(task_launcher, launcher, job_meta, fl_ctx):
+    from nvflare.app_opt.job_launcher.slurm.gateway_runtime import prepare_gateway_runtime
+    from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES
+    from nvflare.utils.job_launcher_utils import get_cj_resource_spec
+
+    task_launcher.validate_job_launcher(launcher)
+    if any(get_cj_resource_spec(job_meta, fl_ctx.get_identity_name()).values()):
+        raise ValueError("process CJ cannot enforce cj_resource_spec budgets; use a Slurm or Docker CJ")
+    environment = os.environ.copy()
+    environment.update({name: "none" if name == "NVIDIA_VISIBLE_DEVICES" else "" for name in GPU_ENVIRONMENT_NAMES})
+    options = JobLaunchOptions(environment=environment, apply_study_runtime=False)
+    return prepare_gateway_runtime(job_meta, fl_ctx, options)
+
+
+def _prepare_docker_slurm_cj(task_launcher, launcher, job_meta, fl_ctx):
+    from nvflare.app_opt.job_launcher.slurm.gateway_runtime import prepare_gateway_runtime
+
+    task_launcher.validate_job_launcher(launcher)
+    options = launcher._task_coordinator_options(job_meta, fl_ctx)
+    prepared = prepare_gateway_runtime(job_meta, fl_ctx, options)
+    site = fl_ctx.get_identity_name()
+    # Only the physical CJ copy drops compute budgets and job image selection.
+    # The ordinary Docker launcher then uses its validated site default image.
+    prepared.meta["resource_spec"] = {}
+    prepared.meta["cj_resource_spec"] = {site: {}}
+    prepared.meta["launcher_spec"] = {site: {"docker": {}}}
+    return prepared
+
+
 def validate_task_site(workspace):
     """Validate optional canonical task policy before CP accepts jobs."""
     path = workspace.get_resources_file_path()
