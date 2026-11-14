@@ -25,6 +25,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_launcher_spec import JobReturnCode
+from nvflare.app_common.dataset_config.api import WITHHELD_DATASET_CONFIG
 from nvflare.app_opt.job_launcher.slurm import manager as manager_module
 from nvflare.app_opt.job_launcher.slurm.config import (
     CONTAINER_RESOLV_CONF,
@@ -140,7 +141,6 @@ def _plan(tmp_path, pending_timeout=5, setup="", sandbox="none", image=None):
     run_dir = tmp_path / "job-1"
     run_dir.mkdir(exist_ok=True)
     (tmp_path / "startup").mkdir(exist_ok=True)
-    (tmp_path / "local").mkdir(exist_ok=True)
     return LaunchPlan(
         job_id="job-1",
         site_name="site-1",
@@ -408,22 +408,32 @@ def test_sandbox_gets_keyless_staged_startup_kit(tmp_path):
     assert f"{tmp_path / 'startup'}:{tmp_path / 'startup'}:ro" not in adapter.submitted_batch
 
 
-def test_sandbox_gets_local_without_the_site_dataset_configuration(tmp_path):
+def test_sandbox_covers_the_site_dataset_configuration_and_keeps_local_live(tmp_path):
     local = tmp_path / "local"
-    (local / "custom").mkdir(parents=True)
-    (local / "custom" / "helper.py").write_text("VALUE = 1")
-    (local / "resources.json").write_text("{}")
+    local.mkdir()
+    (local / "log_config.json").write_text("{}")
     (local / "datasets.yaml").write_text("format_version: 1\nstudies: {}\n")  # covers every Study
     adapter = Adapter()
     manager = _manager(tmp_path, adapter)
 
     handle = manager.launch(_plan(tmp_path, sandbox="apptainer", image="/image.sif"))
 
-    staged = Path(handle.job_dir, "local")
-    assert sorted(p.name for p in staged.iterdir()) == ["custom", "resources.json"]
-    assert (staged / "custom" / "helper.py").read_text() == "VALUE = 1"
-    assert f"{staged}:{local}:ro" in adapter.submitted_batch
-    assert f"{local}:{local}:ro" not in adapter.submitted_batch
+    cover = Path(handle.job_dir, "withheld_datasets.yaml")
+    assert cover.read_bytes() == WITHHELD_DATASET_CONFIG
+    # local/ stays bound whole, so the job sees later edits such as a logging-config reload
+    assert f"{local}:{local}:ro" in adapter.submitted_batch
+    assert f"{cover}:{local / 'datasets.yaml'}:ro" in adapter.submitted_batch
+    assert adapter.submitted_batch.index(f"{local}:{local}:ro") < adapter.submitted_batch.index(f"{cover}:")
+
+
+def test_sandbox_without_a_site_dataset_configuration_covers_nothing(tmp_path):
+    adapter = Adapter()
+    manager = _manager(tmp_path, adapter)
+
+    handle = manager.launch(_plan(tmp_path, sandbox="apptainer", image="/image.sif"))
+
+    assert not Path(handle.job_dir, "withheld_datasets.yaml").exists()
+    assert "datasets.yaml" not in adapter.submitted_batch
 
 
 def test_submission_uses_site_timeout(tmp_path):
@@ -631,25 +641,6 @@ def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path):
 
     assert handle.poll() == JobReturnCode.SUCCESS
     assert not os.path.exists(handle.job_dir)
-
-
-def test_terminal_cleanup_removes_read_only_folders_of_the_staged_local_copy(tmp_path):
-    read_only = tmp_path / "local" / "custom" / "pkg"
-    read_only.mkdir(parents=True)
-    (read_only / "helper.py").write_text("VALUE = 1")
-    os.chmod(read_only, 0o500)  # copied with its permissions
-    adapter = Adapter()
-    adapter.live = _query(LookupStatus.NOT_FOUND)
-    adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="COMPLETED"))
-    manager = _manager(tmp_path, adapter)
-    try:
-        handle = manager.launch(_plan(tmp_path, sandbox="apptainer", image="/image.sif"))
-        assert Path(handle.job_dir, "local", "custom", "pkg", "helper.py").is_file()
-
-        assert handle.poll() == JobReturnCode.SUCCESS
-        assert not os.path.exists(handle.job_dir)
-    finally:
-        os.chmod(read_only, 0o700)
 
 
 def test_apptainer_startup_and_resolver_mounts_use_compute_node_paths(tmp_path, monkeypatch):
