@@ -90,18 +90,9 @@ def validate_slurm_site(launcher, site_config):
         ):
             raise ValueError("Docker Slurm task profile requires exactly one ClientDockerJobLauncher")
         cj = ClientDockerJobLauncher(**component_args(matches[0]))
-        if (
-            cj.workspace != launcher.manager.config.workspace_path
-            or cj.workspace != os.path.realpath(cj.workspace)
-            or component_args(matches[0]).get("network") != "host"
-            or not cj.default_image
-        ):
-            raise ValueError(
-                "Docker task profile requires the same canonical shared workspace, host networking and default_image"
-            )
-        from nvflare.app_opt.job_launcher.slurm.gateway_runtime import docker_cj_site_settings
-
-        docker_cj_site_settings(cj)
+        cj._validate_task_coordinator_profile(
+            launcher.manager.config.workspace_path, network=component_args(matches[0]).get("network")
+        )
         return
     matches = [item for item in components if component_path(item) == CJ_LAUNCHER_PATH]
     if len(matches) != 1:

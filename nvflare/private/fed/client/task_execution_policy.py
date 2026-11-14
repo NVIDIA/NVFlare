@@ -64,11 +64,11 @@ _LOCAL_CJ_PREPARERS = {
     (
         "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
         "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
-    ): ("nvflare.app_opt.job_launcher.slurm.gateway_runtime", "prepare_gateway_runtime"),
+    ): ("nvflare.private.fed.client.task_runtime", "_prepare_process_slurm_cj"),
     (
         "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
         "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
-    ): ("nvflare.app_opt.job_launcher.slurm.gateway_runtime", "prepare_gateway_runtime"),
+    ): ("nvflare.private.fed.client.task_runtime", "_prepare_docker_slurm_cj"),
 }
 
 

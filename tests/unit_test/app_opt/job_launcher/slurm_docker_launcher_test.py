@@ -28,7 +28,6 @@ from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher import docker_launcher as docker_module
 from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher
-from nvflare.app_opt.job_launcher.slurm import gateway_runtime as gateway_module
 from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher, SlurmTaskManager
 from nvflare.app_opt.job_launcher.slurm.task_policy import DOCKER_CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
@@ -90,8 +89,8 @@ def profile(tmp_path, monkeypatch):
     native.enter_states.return_value = True
     native.can_restart.return_value = True
     monkeypatch.setattr(docker_module, "DockerJobHandle", Mock(return_value=native))
-    monkeypatch.setattr(gateway_module.sys, "platform", "linux")
-    monkeypatch.setattr(gateway_module.os, "getuid", lambda: 1001)
+    monkeypatch.setattr(docker_module.sys, "platform", "linux")
+    monkeypatch.setattr(docker_module.os, "getuid", lambda: 1001)
     monkeypatch.setattr(SlurmTaskManager, "initialize", Mock(side_effect=AssertionError("no Slurm CLI in CJ")))
     cell = SimpleNamespace(get_fqcn=lambda: "site-1", register_request_cb=Mock())
     context = FLContext()
@@ -320,8 +319,8 @@ def test_gateway_admission_does_not_reserve_compute_gpus(profile):
 
 @pytest.mark.parametrize("platform, uid", [("darwin", 1001), ("linux", 0)])
 def test_unsupported_gateway_host_is_rejected(profile, monkeypatch, platform, uid):
-    monkeypatch.setattr(gateway_module.sys, "platform", platform)
-    monkeypatch.setattr(gateway_module.os, "getuid", lambda: uid)
+    monkeypatch.setattr(docker_module.sys, "platform", platform)
+    monkeypatch.setattr(docker_module.os, "getuid", lambda: uid)
     with pytest.raises(ValueError, match="Linux host networking and a nonroot"):
         launch_job(profile.launcher, profile.meta, profile.context)
     profile.dc.containers.run.assert_not_called()
