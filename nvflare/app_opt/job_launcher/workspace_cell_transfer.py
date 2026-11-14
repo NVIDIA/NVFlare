@@ -43,6 +43,7 @@ from pathlib import PurePosixPath
 
 import yaml
 
+from nvflare.apis.dataset_config_spec import DATASET_CONFIG_FILE
 from nvflare.apis.fl_constant import ConnPropKey, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -85,7 +86,10 @@ PER_REQUEST_TIMEOUT = 300.0
 BOOTSTRAP_CONNECT_TIMEOUT = 30.0
 BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
-_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml", "local/study_runtime.yaml"})
+# Site-wide files are excluded. The job receives its own Study dataset configuration separately.
+_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset(
+    {"local/study_data.yaml", "local/study_runtime.yaml", f"local/{DATASET_CONFIG_FILE}"}
+)
 
 
 @dataclass
