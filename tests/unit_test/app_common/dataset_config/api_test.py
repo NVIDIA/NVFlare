@@ -262,6 +262,27 @@ class TestKubernetesStudyPart:
     def test_no_site_file_sends_none(self, tmp_path):
         assert extract_study_config(str(tmp_path / "datasets.yaml"), "oncology") is None
 
+    def test_mappings_with_non_string_keys_load_and_extract(self, tmp_path):
+        data = with_dataset(type="csv", uri="file:///x", options={"columns": {1: "first", "other": "rest"}})
+        site = write_site_file(tmp_path / "site", data)
+        config = load_study_config(str(site), "oncology", missing_ok=False)
+        assert config.revision == load_study_config(str(site), "oncology", missing_ok=False).revision
+        part = extract_study_config(str(site), "oncology")
+        assert yaml.safe_load(part)["studies"]["oncology"]["datasets"]["d"]["options"]["columns"][1] == "first"
+
+    def test_an_invalid_other_study_is_not_revealed_to_the_job(self, tmp_path, caplog):
+        bad = {"format_version": 1, "studies": {**CONFIG["studies"], "secret-study": {"datasets": {"hidden-set": {}}}}}
+        site = write_site_file(tmp_path / "site", bad)
+        with caplog.at_level("WARNING"):
+            part = extract_study_config(str(site), "oncology")
+        assert b"secret-study" not in part and b"hidden-set" not in part
+        assert "secret-study" in caplog.text  # the reason stays at the site
+        job_file = tmp_path / "datasets.yaml"
+        job_file.write_bytes(part)
+        with pytest.raises(DatasetConfigError) as error:
+            load_study_config(str(job_file), "oncology", missing_ok=False)
+        assert "secret-study" not in str(error.value) and "site's log" in str(error.value)
+
     def test_an_invalid_site_file_sends_a_part_the_api_rejects(self, tmp_path):
         site = write_site_file(
             tmp_path / "site", {"format_version": 1, "studies": {"oncology": {"datasets": {"d": {"type": "csv"}}}}}
