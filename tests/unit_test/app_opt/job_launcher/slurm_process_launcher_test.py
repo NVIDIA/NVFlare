@@ -32,7 +32,7 @@ from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher
 from nvflare.app_opt.job_launcher.slurm.task_policy import PROCESS_CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
 from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
-from nvflare.private.fed.client.task_runtime import launch_job, shutdown_task_jobs
+from nvflare.private.fed.client.task_runtime import _TaskJobState, launch_job, shutdown_task_jobs
 
 
 @pytest.fixture
@@ -63,7 +63,8 @@ def profile(tmp_path, monkeypatch):
     context = FLContext()
     context.set_prop(ReservedKey.IDENTITY_NAME, "site-1")
     context.set_prop(ReservedKey.RUN_NUM, "job-1")
-    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    engine = SimpleNamespace(get_cell=lambda: cell, _task_job_state=_TaskJobState())
+    context.set_prop(ReservedKey.ENGINE, engine)
     context.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace)
     launcher = ClientProcessJobLauncher()
     monkeypatch.setattr(launcher, "get_command", lambda *_: "/shared/python -m actual_cj")
@@ -192,7 +193,7 @@ def test_process_policy_and_system_shutdown(profile):
         policy.validate_job_launcher(ServerProcessJobLauncher())
     launch_job(p.launcher, p.meta, p.context)
     p.adapter.poll.return_value = 0
-    shutdown_task_jobs(p.cell)
+    shutdown_task_jobs(p.engine)
     assert p.cell._slurm_task_service.shutdown(timeout=5) == ()
 
 

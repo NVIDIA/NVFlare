@@ -24,7 +24,7 @@ import pytest
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JOB_LAUNCH_OPTIONS, JobHandleSpec, JobLaunchOptions, publish_job_handle
-from nvflare.private.fed.client.task_runtime import TaskJobRuntime, shutdown_task_jobs
+from nvflare.private.fed.client.task_runtime import TaskJobRuntime, _TaskJobState, shutdown_task_jobs
 
 
 def runtime_fixture(job_id="job-1"):
@@ -35,7 +35,8 @@ def runtime_fixture(job_id="job-1"):
     cell = SimpleNamespace(get_fqcn=lambda: "site-1")
     context = FLContext()
     context.set_prop(ReservedKey.IDENTITY_NAME, "site-1")
-    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
+    engine = SimpleNamespace(get_cell=lambda: cell, _task_job_state=_TaskJobState())
+    context.set_prop(ReservedKey.ENGINE, engine)
     options = JobLaunchOptions(environment={"WORKER_KIND": job_id}, apply_study_runtime=False)
     runtime = TaskJobRuntime(object(), service_class, "TASK_OWNER", "TASK_TOKEN", {"job_id": job_id}, options, 5)
     return SimpleNamespace(**locals())
@@ -83,7 +84,7 @@ def test_launch_restores_parent_settings_and_cleans_acquired_runtime(failure):
     assert p.context.get_prop_detail(JOB_LAUNCH_OPTIONS) == original_options
     assert p.context.get_prop_detail(FLContextKey.JOB_HANDLE_CALLBACK) == original_callback
     assert "TASK_TOKEN" not in p.options.environment
-    shutdown_task_jobs(p.cell)
+    shutdown_task_jobs(p.engine)
     p.service.shutdown.assert_called_once_with(timeout=5)
 
 
@@ -129,12 +130,12 @@ def test_two_jobs_share_launcher_without_sharing_capabilities_or_settings():
         handle.terminate()
         native = handle.handle
         native.terminate.assert_called_once()
-        shutdown_task_jobs(p.cell)
+        shutdown_task_jobs(p.engine)
 
 
 def test_shutdown_fences_a_later_launch_before_acquiring_owner_or_coordinator():
     p = runtime_fixture()
-    shutdown_task_jobs(p.cell)
+    shutdown_task_jobs(p.engine)
     launcher = Mock()
     with pytest.raises(RuntimeError, match="shutting down"):
         p.runtime.launch(launcher, p.context)
@@ -147,8 +148,8 @@ def test_shutdown_uses_site_timeout_and_continues_after_a_service_failure(caplog
     p.runtime.launch(Mock(launch_job=Mock(spec=JobHandleSpec)), p.context)
     p.service.shutdown.side_effect = RuntimeError("cleanup unavailable")
     second = Mock()
-    p.cell._task_job_services[object()] = (second, 7.5)
-    shutdown_task_jobs(p.cell)
+    p.engine._task_job_state.services[object()] = (second, 7.5)
+    shutdown_task_jobs(p.engine)
     p.service.shutdown.assert_called_once_with(timeout=5)
     second.shutdown.assert_called_once_with(timeout=7.5)
     assert "continuing CP shutdown" in caplog.text
@@ -213,7 +214,7 @@ def test_docker_stop_failure_retains_owner_until_confirmed_exit(late_creation):
                 p.runtime.launch(Mock(launch_job=create), p.context)
             service = p.cell._slurm_task_service
             owner = service.jobs["job-1"]
-            shutdown_task_jobs(p.cell)
+            shutdown_task_jobs(p.engine)
             finish.set()
             if late_creation:
                 join_thread(worker)
@@ -285,7 +286,7 @@ def test_exited_process_leader_does_not_release_owned_children(monkeypatch, late
                 p.runtime.launch(Mock(launch_job=create), p.context)
             service = p.cell._slurm_task_service
             owner = service.jobs["job-1"]
-            shutdown_task_jobs(p.cell)
+            shutdown_task_jobs(p.engine)
             finish.set()
             if late_creation:
                 join_thread(worker)
