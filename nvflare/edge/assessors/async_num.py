@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,9 +32,20 @@ class _ModelState:
         self.last_update_time = None
 
     def accept(self, model_update: ModelUpdate, fl_ctx: FLContext):
-        self.last_update_time = time.time()
-        self.devices.update(model_update.devices)
-        return self.aggregator.accept(model_update.update, fl_ctx)
+        overlap = self.devices.keys() & model_update.devices.keys()
+        if overlap:
+            if overlap != model_update.devices.keys():
+                raise ValueError(
+                    f"partial overlap in model V{model_update.model_version}: "
+                    "cannot separate already accepted devices from a preaggregated update"
+                )
+            return False
+
+        accepted = self.aggregator.accept(model_update.update, fl_ctx)
+        if accepted:
+            self.last_update_time = time.time()
+            self.devices.update(model_update.devices)
+        return accepted
 
 
 class AsyncNumAssessor(Assessor):
@@ -143,11 +154,14 @@ class AsyncNumAssessor(Assessor):
                     self.log_error(fl_ctx, f"No model state for version {model_version}")
                     continue
 
-                accepted = model_state.accept(model_update, fl_ctx)
+                update_accepted = model_state.accept(model_update, fl_ctx)
+                accepted = update_accepted and accepted
                 self.log_info(
                     fl_ctx,
-                    f"processed child update V{model_version} with {len(model_update.devices)} devices: {accepted=}",
+                    f"processed child update V{model_version} with {len(model_update.devices)} devices: {update_accepted=}",
                 )
+                if not update_accepted:
+                    continue
 
                 # remove reported devices from selection, and from used devices if device_reuse is enabled
                 # indicating that the reported devices becomes available again for reuse
