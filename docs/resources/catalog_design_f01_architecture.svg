@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 420" width="1040" height="420" role="img" aria-labelledby="t d">
-<title id="t">Architecture at a glance</title><desc id="d">A user calls get_catalog or runs CatalogRecipe, which submits a catalog job. The server job runner starts the CatalogController, which sends a task to each site executor. The executor reads its Study's part of the site dataset configuration, delivered read-only by the launcher, through the read-only API and reads each shared dataset through a connector. The controller validates the site results and writes catalog_results.json into the job workspace, which is saved to the job store and downloaded back to the user. The latest read supersedes earlier ones.</desc>
+<title id="t">Architecture at a glance</title><desc id="d">A user calls get_catalog or runs CatalogRecipe, which submits a catalog job. The server job runner starts the CatalogController, which sends a task to each site executor. The executor reads its Study's dataset configuration through the read-only API and reads each shared dataset through a connector. The controller validates the site results and writes catalog_results.json into the job workspace, which is saved to the job store and downloaded back to the user. The latest read supersedes earlier ones.</desc>
 <style>
 :root { --bg:#fbfcfb; --zone:#f0f3f2; --surface:#ffffff; --ink:#1b2422; --muted:#5a6764; --line:#b9c4c0;
   --accent:#0b6e67; --accent-tint:#d7ece9; --warn:#8f5400; --warn-tint:#f5e5c6; }
@@ -64,9 +64,9 @@ text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif
 <text class="" x="862" y="139" text-anchor="middle">applies the site's catalog rules</text>
 <rect class="box w" x="712" y="190" width="160" height="80" rx="7"/>
 <text class="b" x="792" y="214" text-anchor="middle">Dataset config</text>
-<text class="" x="792" y="232" text-anchor="middle">job's Study part only,</text>
-<text class="" x="792" y="249" text-anchor="middle">read-only, from the</text>
-<text class="" x="792" y="265" text-anchor="middle">launcher</text>
+<text class="" x="792" y="232" text-anchor="middle">job's Study only,</text>
+<text class="" x="792" y="249" text-anchor="middle">through the read-only</text>
+<text class="" x="792" y="265" text-anchor="middle">dataset config API</text>
 <rect class="box" x="882" y="190" width="138" height="80" rx="7"/>
 <text class="b" x="951" y="214" text-anchor="middle">Connectors</text>
 <text class="" x="951" y="232" text-anchor="middle">parquet, csv, sql,</text>
