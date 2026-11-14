@@ -389,3 +389,5 @@ Process mode is not isolated, for data or for configuration. A process job is a 
 - Separate files keep those edits apart, which also helps file permissions and change review.
 
 The cost is two files to keep in step for mounted datasets. The design keeps that small: the dataset name is the only link between them, and a mounted dataset always lands at `/data/<study>/<dataset>`.
+
+Secrets are not entered in two places. A secret is configured once, in Study runtime `secret_env` (or, for a process-launched site, the site's environment), which puts its value in an environment variable. `datasets.yaml` holds only that variable's name, such as `secrets: {password: EHR_DB_PASSWORD}`, so a component can ask for "the database password" without knowing where it comes from. Neither file holds a secret value.
