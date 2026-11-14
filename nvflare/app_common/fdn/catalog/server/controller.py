@@ -58,10 +58,16 @@ def _now() -> str:
 
 
 class CatalogController(Controller):
-    def __init__(self, datasets: dict[str, list[str]] | None = None, task_timeout_s: int = 300):
+    def __init__(
+        self,
+        datasets: dict[str, list[str]] | None = None,
+        task_timeout_s: int = 300,
+        sites: list[str] | None = None,
+    ):
         """datasets maps a site to the names to read there; a site reads the named datasets it shares and skips the
         rest. A site that is not in the mapping, or None, reads everything it shares. The job's clients are the sites
-        it was deployed to."""
+        it was deployed to. sites lists the sites the caller asked for, if it named them: a named site that is not
+        among the job's clients (offline, or not scheduled) is recorded as NO_RESULT instead of being left out."""
         super().__init__()
         if datasets is not None and not (
             isinstance(datasets, dict)
@@ -78,7 +84,12 @@ class CatalogController(Controller):
             raise PayloadError("datasets must map each site to a non-empty list of names")
         if type(task_timeout_s) is not int or task_timeout_s <= 0:
             raise PayloadError("task_timeout_s must be a positive integer")
+        if sites is not None and not (
+            isinstance(sites, list) and sites and all(isinstance(site, str) and site for site in sites)
+        ):
+            raise PayloadError("sites must be a non-empty list of site names")
         self.datasets = datasets
+        self.sites = sites
         self.task_timeout_s = task_timeout_s
         self.limits = ReadLimits(**DEFAULT_LIMITS)  # the server's own validation limits; sites cannot raise them
         self._results_path: str | None = None
@@ -103,7 +114,10 @@ class CatalogController(Controller):
         except FileNotFoundError:
             pass
         self._clients = sorted(c.name for c in self._engine.get_clients())
-        unknown = sorted(set(self.datasets or {}) - set(self._clients))
+        missing = sorted(set(self.sites or ()) - set(self._clients))
+        if missing:
+            self.log_warning(fl_ctx, f"requested sites are not in this job and are recorded as NO_RESULT: {missing}")
+        unknown = sorted(set(self.datasets or {}) - set(self._clients) - set(self.sites or ()))
         if unknown:
             self.log_warning(fl_ctx, f"datasets name sites that are not in this job and are ignored: {unknown}")
 
@@ -206,7 +220,9 @@ class CatalogController(Controller):
             return
         with self._write_lock:  # control_flow and stop_controller can both write
             with self._lock:
-                entries = {name: self._entries.get(name, _NO_RESULT) for name in self._clients}
+                # a requested site that never joined the job is reported, not left out
+                names = sorted(set(self._clients) | set(self.sites or ()))
+                entries = {name: self._entries.get(name, _NO_RESULT) for name in names}
             document = build_catalog_results(self._study, self._job_id, _now(), entries)
             temporary = f"{self._results_path}.tmp"
             with open(temporary, "w", encoding="utf-8") as f:

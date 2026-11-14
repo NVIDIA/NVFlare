@@ -85,6 +85,22 @@ class TestResults:
         assert [(d["site"], d["dataset"]) for d in doc["datasets"]] == [("site-a", "omop")]
         assert [p.name for p in tmp_path.iterdir()] == ["catalog_results.json"]
 
+    def test_a_requested_site_that_never_joined_is_no_result(self, tmp_path):
+        # site-b was requested but excluded before the job started (offline, or no resources)
+        controller = make_controller(tmp_path, clients=("site-a",), sites=["site-a", "site-b"])
+        ok = build_result(ResultStatus.OK, [make_catalog(dataset="omop")])
+        controller._record(client_task("site-a", reply(ReturnCode.OK, ok)), None)
+        controller._write_results()
+
+        doc = written(tmp_path)
+        assert doc["sites"]["site-a"]["status"] == "OK"
+        assert doc["sites"]["site-b"]["status"] == "NO_RESULT"
+
+    def test_without_requested_sites_only_the_jobs_clients_are_reported(self, tmp_path):
+        controller = make_controller(tmp_path, clients=("site-a",))
+        controller._write_results()
+        assert list(written(tmp_path)["sites"]) == ["site-a"]
+
     def test_failed_site_keeps_its_reason(self, tmp_path):
         controller = make_controller(tmp_path)
         failed = build_result(ResultStatus.FAILED, reason_code=ReasonCode.CONFIG_UNAVAILABLE)
@@ -256,11 +272,16 @@ class TestArguments:
         with pytest.raises(PayloadError):
             CatalogController(datasets=datasets)
 
+    @pytest.mark.parametrize("sites", [[], "site-a", ["site-a", ""], ["site-a", 1], ("site-a",)])
+    def test_bad_sites(self, sites):
+        with pytest.raises(PayloadError):
+            CatalogController(sites=sites)
+
     @pytest.mark.parametrize("timeout", [0, -1, True, 1.5])
     def test_bad_timeout(self, timeout):
         with pytest.raises(PayloadError):
             CatalogController(task_timeout_s=timeout)
 
     def test_the_arguments_are_attributes_so_the_job_config_can_record_them(self):
-        controller = CatalogController(datasets={"site-a": ["a"]}, task_timeout_s=30)
-        assert (controller.datasets, controller.task_timeout_s) == ({"site-a": ["a"]}, 30)
+        controller = CatalogController(datasets={"site-a": ["a"]}, task_timeout_s=30, sites=["site-a"])
+        assert (controller.datasets, controller.task_timeout_s, controller.sites) == ({"site-a": ["a"]}, 30, ["site-a"])
