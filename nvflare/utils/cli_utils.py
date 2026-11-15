@@ -11,21 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
 import os
 import pathlib
-import shutil
+import sys
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
-from pyhocon import ConfigFactory as CF
-from pyhocon import ConfigTree, HOCONConverter
-
-from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.tool.job.job_client_const import CONFIG_CONF
+from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.tool.job.job_client_const import CONFIG_JSON
 
 CONFIG_VERSION = "version"
 CURRENT_CONFIG_VERSION = 2
+LEGACY_CONFIG_CONF = "config.conf"
+
+_warned_legacy_config_paths = set()
 
 
 def get_home_dir() -> Path:
@@ -48,7 +49,7 @@ def get_hidden_nvflare_config_path(hidden_nvflare_dir: str) -> str:
     Returns:
         str: The path to the hidden nvflare configuration file.
     """
-    hidden_nvflare_config_file = os.path.join(hidden_nvflare_dir, CONFIG_CONF)
+    hidden_nvflare_config_file = os.path.join(hidden_nvflare_dir, CONFIG_JSON)
     return str(hidden_nvflare_config_file)
 
 
@@ -69,91 +70,79 @@ def get_hidden_nvflare_dir() -> pathlib.Path:
     return hidden_nvflare_dir
 
 
-def load_config(config_file_path) -> Optional[ConfigTree]:
-    if os.path.isfile(config_file_path):
-        return CF.parse_file(config_file_path)
-    else:
+def get_config_value(config: dict, dotted_key: str, default: Any = None) -> Any:
+    node = config
+    for part in dotted_key.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return default
+        node = node[part]
+    return node
+
+
+def set_config_value(config: dict, dotted_key: str, value: Any) -> dict:
+    *parents, leaf = dotted_key.split(".")
+    node = config
+    for part in parents:
+        if not isinstance(node.get(part), dict):
+            node[part] = {}
+        node = node[part]
+    node[leaf] = value
+    return config
+
+
+def pop_config_value(config: dict, dotted_key: str, default: Any = None) -> Any:
+    parent_key, _, leaf = dotted_key.rpartition(".")
+    parent = get_config_value(config, parent_key) if parent_key else config
+    return parent.pop(leaf, default) if isinstance(parent, dict) else default
+
+
+def warn_if_legacy_hidden_config(config_file_path: str) -> None:
+    legacy_path = os.path.join(os.path.dirname(config_file_path), LEGACY_CONFIG_CONF)
+    if os.path.isfile(config_file_path) or not os.path.isfile(legacy_path):
+        return
+    if legacy_path in _warned_legacy_config_paths:
+        return
+    _warned_legacy_config_paths.add(legacy_path)
+    print(
+        f"Warning: {legacy_path} is no longer read; settings are now stored in {config_file_path}. "
+        "Re-register startup kits with 'nvflare config add <id> <startup-kit-dir>' and 'nvflare config use <id>', "
+        "and set the POC workspace with 'nvflare poc config --pw <dir>'.",
+        file=sys.stderr,
+    )
+
+
+def load_config(config_file_path) -> Optional[dict]:
+    if not os.path.isfile(config_file_path):
+        warn_if_legacy_hidden_config(config_file_path)
         return None
+    try:
+        with open(config_file_path) as f:
+            config = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"cannot parse {config_file_path}: {e}") from e
+    if not isinstance(config, dict):
+        raise ValueError(f"cannot parse {config_file_path}: expected a JSON object")
+    return config
 
 
-def find_startup_kit_config_keys(nvflare_config: ConfigTree) -> List[str]:
-    """Return old startup-kit config keys that should no longer be persisted."""
-    if not nvflare_config:
-        return []
-
-    keys = []
-    for key in ("startup_kit.path", "startup_kit", "poc.startup_kit", "prod.startup_kit"):
-        try:
-            if nvflare_config.get(key, None) is not None:
-                keys.append(key)
-        except Exception:
-            pass
-    return keys
-
-
-def remove_startup_kit_config_keys(nvflare_config: ConfigTree) -> ConfigTree:
-    """Remove obsolete startup kit config keys without touching the startup_kits registry."""
-    if not nvflare_config:
-        return nvflare_config
-
-    for key in ("startup_kit.path", "startup_kit", "poc.startup_kit", "prod.startup_kit"):
-        try:
-            nvflare_config.pop(key, None)
-        except Exception:
-            pass
-    return nvflare_config
-
-
-def load_hidden_config_state() -> Tuple[str, Optional[ConfigTree], bool]:
+def load_hidden_config_state() -> Tuple[str, Optional[dict], bool]:
     hidden_dir = get_or_create_hidden_nvflare_dir()
     hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(hidden_dir))
     nvflare_config = load_config(hidden_nvflare_config_file)
     return hidden_nvflare_config_file, nvflare_config, False
 
 
-def backup_hidden_config_file(hidden_nvflare_config_file: str) -> Optional[str]:
-    if not os.path.exists(hidden_nvflare_config_file):
-        return None
-
-    backup_base = f"{hidden_nvflare_config_file}.bak"
-    backup_path = backup_base
-    suffix = 1
-    while os.path.exists(backup_path):
-        backup_path = f"{backup_base}{suffix}"
-        suffix += 1
-
-    shutil.copy2(hidden_nvflare_config_file, backup_path)
-    return backup_path
-
-
-def load_hidden_config() -> ConfigTree:
+def load_hidden_config() -> Optional[dict]:
     _, nvflare_config, _ = load_hidden_config_state()
     return nvflare_config
 
 
-def create_poc_workspace_config(nvflare_config: ConfigTree, poc_workspace_dir: Optional[str] = None) -> ConfigTree:
-    """
-    Args:
-        poc_workspace_dir: specified poc_workspace_dir
-        nvflare_config (ConfigTree): The existing nvflare configuration.
-
-    Returns:
-        ConfigTree: The merged configuration tree.
-    """
+def create_poc_workspace_config(nvflare_config: dict, poc_workspace_dir: Optional[str] = None) -> dict:
     if poc_workspace_dir is None:
         return nvflare_config
 
-    poc_workspace_dir = os.path.abspath(poc_workspace_dir)
-
-    conf_str = f"""
-        {CONFIG_VERSION} = {CURRENT_CONFIG_VERSION}
-        poc {{
-            workspace = "{poc_workspace_dir}"
-        }}
-    """
-    conf: ConfigTree = CF.parse_string(conf_str)
-
-    return conf.with_fallback(nvflare_config)
+    nvflare_config[CONFIG_VERSION] = CURRENT_CONFIG_VERSION
+    return set_config_value(nvflare_config, "poc.workspace", os.path.abspath(poc_workspace_dir))
 
 
 def check_dir(dir_path: str):
@@ -170,77 +159,24 @@ def is_dir_empty(path: str):
     return len(targe_dir) == 0
 
 
-def hocon_to_string(target_fmt: ConfigFormat, dst_config: ConfigTree):
-    if target_fmt == ConfigFormat.JSON:
-        return HOCONConverter.to_json(dst_config)
-    elif target_fmt == ConfigFormat.PYHOCON:
-        return HOCONConverter.to_hocon(config=dst_config, level=1)
-    elif target_fmt == ConfigFormat.OMEGACONF:
-        from nvflare.fuel_opt.utils.omegaconf_loader import OmegaConfLoader
-        from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
+def save_config(dst_config: dict, dst_path: str):
+    if not dst_path or not dst_path.endswith(ConfigService.CONFIG_EXTENSIONS):
+        raise ValueError(
+            f"invalid configuration file path '{dst_path}', expecting one of {list(ConfigService.CONFIG_EXTENSIONS)}"
+        )
 
-        loader = OmegaConfLoader()
-        dst_dict_config = PyhoconConfig(dst_config).to_dict()
-        omega_conf = loader.load_config_from_dict(dst_dict_config)
-        return omega_conf.to_str()
-
-
-def save_configs(app_configs: Dict[str, Tuple], keep_origin_format: bool = True):
-    for app_name, (dst_config, dst_path) in app_configs.items():
-        save_config(dst_config, dst_path, keep_origin_format)
-
-
-def save_config(dst_config: ConfigTree, dst_path, keep_origin_format: bool = True):
-    if dst_path is None or dst_path.rindex(".") == -1:
-        raise ValueError(f"configuration file path '{dst_path}' can't be None or has no extension")
-
-    require_clean_up = False
-    if keep_origin_format:
-        filename = os.path.basename(dst_path)
-        fmt = next((fmt for ext, fmt in ConfigFormat.config_ext_formats().items() if filename.endswith(ext)), None)
-        if fmt is None:
-            raise ValueError(f"invalid file extension {dst_path}, no corresponding configuration format")
-        dst_config_path = dst_path
-
-    else:
-        fmt = ConfigFormat.PYHOCON
-        ext = ConfigFormat.extensions(fmt)[0]
-        if dst_path.endswith(ext):
-            dst_config_path = dst_path
-        else:
-            filename = f"{os.path.basename(dst_path).split('.')[0]}{ext}"
-            dst_config_path = os.path.join(os.path.dirname(dst_path), filename)
-            require_clean_up = True
-
-    config_str = hocon_to_string(fmt, dst_config)
     temp_path = None
     try:
-        with tempfile.NamedTemporaryFile("w", dir=os.path.dirname(dst_config_path), delete=False) as outfile:
+        with tempfile.NamedTemporaryFile("w", dir=os.path.dirname(dst_path), delete=False) as outfile:
             temp_path = outfile.name
-            outfile.write(f"{config_str}\n")
+            json.dump(dst_config, outfile, indent=2)
+            outfile.write("\n")
             outfile.flush()
             os.fsync(outfile.fileno())
-        os.replace(temp_path, dst_config_path)
+        os.replace(temp_path, dst_path)
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
-
-    if require_clean_up:
-        if os.path.exists(dst_path):
-            os.remove(dst_path)
-
-
-def get_hidden_config() -> (str, ConfigTree):
-    hidden_nvflare_config_file, conf, _ = load_hidden_config_state()
-    nvflare_config = CF.parse_string("{}") if not conf else conf
-    return hidden_nvflare_config_file, nvflare_config
-
-
-def print_hidden_config(dst_path: str, dst_config: ConfigTree):
-    original_ext = os.path.basename(dst_path).split(".")[1]
-    fmt = ConfigFormat.config_ext_formats().get(f".{original_ext}", None)
-    config_str = hocon_to_string(fmt, dst_config)
-    print(config_str)
 
 
 def find_in_list(arr: List, item) -> bool:

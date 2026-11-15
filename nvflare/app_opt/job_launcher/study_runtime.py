@@ -423,7 +423,7 @@ def _parse_study(
     launcher_mode: str,
 ) -> StudyRuntime:
     _require_name(study, "study name", file_path)
-    entry = _require_dict(entry, f"studies.{study}", file_path)
+    entry = _require_dict({} if entry is None else entry, f"studies.{study}", file_path)
     _require_known_keys(entry, _STUDY_KEYS, f"studies.{study}", file_path)
     if "slurm" in entry and launcher_mode != "slurm":
         raise _error(file_path, "slurm is Slurm-only and is not supported by this launcher.")
@@ -517,3 +517,15 @@ def resolve_study_runtime(
             study,
         )
     return StudyRuntime(study=study or "")
+
+
+def study_block_reason(workspace_root: str, study: str) -> Optional[str]:
+    """A client site whose study runtime file lists studies runs only those studies."""
+    file_path = study_runtime_file_path(workspace_root)
+    if not os.path.exists(file_path):
+        return None
+    with open(file_path, "rt") as f:
+        studies = (yaml.safe_load(f) or {}).get("studies")
+    if not studies or study in studies:
+        return None
+    return f"study '{study}' is not configured at this site"

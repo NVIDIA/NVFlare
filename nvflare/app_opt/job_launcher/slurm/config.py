@@ -435,3 +435,5 @@ class LaunchPlan:
     forward_env: tuple
     additional_node_command: tuple = ()
     node_app_dir: Optional[str] = None
+    execution_lifetime: str = "job"
+    clear_gres: bool = False

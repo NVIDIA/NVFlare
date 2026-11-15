@@ -27,6 +27,19 @@ Verify with ``nvflare system version``. Leftover 2.9 peers are rejected before
 endpoint attachment and cannot replace a 2.10 connection. This procedure
 includes a server outage and does not resume running jobs across the upgrade.
 
+.. _multi_process_executor_migration:
+
+Multi-process Executor Deprecation
+---------------------------------
+
+``MultiProcessExecutor`` and ``PTMultiProcessExecutor`` are deprecated in 2.10
+while their imports and configuration remain available. For PyTorch DDP training,
+use job-based Client API with ``launch_external_process=True`` and ``torchrun``,
+as in the :github_nvflare_link:`multi-GPU example <examples/advanced/multi-gpu/pt>`.
+Only global rank zero exchanges models with FLARE; the script synchronizes
+models and shutdown across ranks. Applications relying on the legacy wrapper's
+arbitrary FL events or component graph must adapt those explicitly before migrating.
+
 Upgrading from 2.7.2 to 2.8.0
 =============================
 
@@ -139,13 +152,36 @@ Impact:
 
 - Scripts that call these commands now fail with an invalid-command or
   invalid-argument error. ``nvflare job submit`` is unchanged.
-- A ``job_template.path`` entry that an earlier release saved in
-  ``~/.nvflare/config.conf`` is ignored. It can be deleted.
 
 Define jobs with the Job Recipe API instead. Use ``nvflare recipe list`` and
 ``nvflare recipe show <recipe>`` to discover recipes, export the job with
 ``python job.py --export --export-dir <job_folder>``, and submit it with
 ``nvflare job submit -j <job_folder>``.
+
+HOCON and OmegaConf Config Support Removed
+------------------------------------------
+
+FLARE's generic configuration loader reads only JSON (``.json``, with ``.json.default``
+as the fallback). HOCON (``.conf``) and OmegaConf (``.yml``/``.yaml``) job and
+site configs are no longer recognized, and ``pyhocon`` is no longer a
+dependency. The ``CONFIG`` and ``core_opt`` install extras are removed.
+Provisioning, Kubernetes, ``local/study_runtime.yaml``, and integration test
+scenario YAML files are not affected; they use separate PyYAML readers.
+See :ref:`configurations` for the formats used by each configuration type.
+
+Impact:
+
+- Jobs with HOCON or YAML configs, including stored jobs and jobs submitted by
+  older clients, are rejected. Rewrite their ``meta``, ``config_fed_server`` and
+  ``config_fed_client`` files as JSON, or re-export them with the Job Recipe API.
+- Hand-written ``.conf`` or ``.yml`` site configs are ignored. Provisioned site
+  configs are already JSON.
+- CLI settings move from ``~/.nvflare/config.conf`` to ``~/.nvflare/config.json``.
+  The old file is no longer read; the CLI prints a warning while it exists.
+  Re-register startup kits with ``nvflare config add <id> <startup-kit-dir>`` and
+  ``nvflare config use <id>``, and set the POC workspace with
+  ``nvflare poc config --pw <dir>``.
+- ``nvflare job submit`` looks only for ``meta.json`` and ``config_fed_*.json``.
 
 Legacy Client API Stack Removal
 -------------------------------
@@ -220,7 +256,7 @@ CLI Startup Kit Resolution Change
 ---------------------------------
 
 On the current ``main`` branch, server-connected CLI commands use a shared
-active startup kit registry in ``~/.nvflare/config.conf``.
+active startup kit registry in ``~/.nvflare/config.json``.
 
 Impact:
 

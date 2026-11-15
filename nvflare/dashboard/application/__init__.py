@@ -18,9 +18,11 @@ from nvflare.dashboard.utils import EnvVar, get_web_root
 from nvflare.fuel.utils.optional_dependencies import DASHBOARD_OPTIONAL_MODULES, optional_dependency_import
 
 with optional_dependency_import("NVFlare Dashboard", "dashboard", DASHBOARD_OPTIONAL_MODULES):
-    from flask import Flask
+    from flask import Flask, jsonify
     from flask_jwt_extended import JWTManager
     from flask_sqlalchemy import SQLAlchemy
+
+from .validation import DashboardError
 
 db = SQLAlchemy()
 jwt = JWTManager()
@@ -32,6 +34,12 @@ def init_app():
     static_folder = os.environ.get(EnvVar.DASHBOARD_STATIC_FOLDER, "static")
     app = Flask(__name__, static_url_path="", static_folder=static_folder)
     app.config.from_object("nvflare.dashboard.config.Config")
+
+    @app.errorhandler(DashboardError)
+    def invalid_request(error):
+        db.session.rollback()
+        return jsonify(status="error", message=str(error), errors=error.errors), error.status_code
+
     db.init_app(app)
     jwt.init_app(app)
     with app.app_context():

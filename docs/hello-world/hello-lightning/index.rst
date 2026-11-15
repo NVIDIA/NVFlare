@@ -21,9 +21,6 @@ package, choose the matching command to add its PyTorch extra:
    # Stable installation
    python -m pip install "nvflare[PT]"
 
-   # Nightly installation
-   python -m pip install "nvflare-nightly[PT]"
-
 Then download the matching example:
 
 .. code-block:: bash

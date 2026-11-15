@@ -1,0 +1,28 @@
+#!/bin/sh
+# initramfs local-bottom: ephemeral writes over the verified root.
+set -eu
+case "${1:-}" in prereqs) exit 0;; esac
+. /scripts/functions
+[ -b /dev/mapper/verity_root ] || panic "Verified root is not active"
+modprobe overlay
+root_overlay_max_mib=
+root_overlay_limit_seen=no
+for word in $(cat /proc/cmdline); do
+    case "$word" in
+        cvm.root_overlay_max_mib=*)
+            [ "$root_overlay_limit_seen" = no ] || panic "Duplicate root overlay limit"
+            root_overlay_limit_seen=yes
+            root_overlay_max_mib=${word#cvm.root_overlay_max_mib=}
+            ;;
+    esac
+done
+case "$root_overlay_max_mib" in *[!0-9]*|'') panic "Invalid root overlay limit";; esac
+[ "$root_overlay_max_mib" -gt 0 ] 2>/dev/null || panic "Invalid root overlay limit"
+mkdir -p /cow /rofs
+mount -t tmpfs -o "size=${root_overlay_max_mib}M,mode=0755,nosuid,nodev" tmpfs /cow
+mkdir -p /cow/upper /cow/work
+mount --move "$rootmnt" /rofs
+mount -t overlay overlay -o lowerdir=/rofs,upperdir=/cow/upper,workdir=/cow/work "$rootmnt"
+mkdir -p "$rootmnt/rofs" "$rootmnt/cow"
+mount --move /rofs "$rootmnt/rofs"
+mount --move /cow "$rootmnt/cow"

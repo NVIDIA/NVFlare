@@ -11,41 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
-import shutil
-import tempfile
-
 import pytest
 
-from nvflare.dashboard.application import init_app
 from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
-
-TEST_USER = "admin@test.com"
-TEST_PW = "testing1234"
+from tests.dashboard_test_utils import TEST_PW, TEST_USER
 
 
 @pytest.fixture(scope="session")
-def app():
-
-    web_root = tempfile.mkdtemp(prefix="nvflare-", dir=os.environ.get("TMPDIR"))
-    sqlite_file = os.path.join(web_root, "db.sqlite")
-    if os.path.exists(sqlite_file):
-        os.remove(sqlite_file)
-    os.environ["DATABASE_URL"] = f"sqlite:///{sqlite_file}"
-    os.environ["NVFL_CREDENTIAL"] = f"{TEST_USER}:{TEST_PW}:nvidia"
-    os.environ["NVFL_WEB_ROOT"] = web_root
-    app = init_app()
-    app.config.update(
-        {
-            "TESTING": True,
-            "ENV": "prod",  # To get rid of the performance warning
-        }
-    )
-
-    yield app
-
-    # Cleanup
-    shutil.rmtree(web_root, ignore_errors=True)
+def app(dashboard_app):
+    return dashboard_app
 
 
 @pytest.fixture(scope="session")

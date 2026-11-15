@@ -1,1 +1,3 @@
 nvflare/_version.py export-subst
+# A leading space marks blank context lines in this unified diff.
+nvflare/lighter/cc/image_builder/cvm/build/kbs_client_policy_selector.patch whitespace=-blank-at-eol

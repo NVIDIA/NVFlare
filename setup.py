@@ -49,12 +49,6 @@ if versions["error"]:
 else:
     version = versions["version"]
 
-release = os.environ.get("NVFL_RELEASE")
-if release == "1":
-    package_name = "nvflare"
-else:
-    package_name = "nvflare-nightly"
-
 
 def package_files(
     root,
@@ -75,7 +69,7 @@ cmdclass = versioneer.get_cmdclass()
 
 
 setup(
-    name=package_name,
+    name="nvflare",
     version=version,
     cmdclass=cmdclass,
     package_dir={"nvflare": "nvflare"},
@@ -87,7 +81,7 @@ setup(
         exclude=["tests", "tests.*", "dev_tools", "dev_tools.*"],
     ),
     package_data={
-        "": ["*.yml", "*.yaml", "*.tpl", "*.html", "*.js", "poc.zip", "*.config", "*.conf"],
+        "": ["*.yml", "*.yaml", "*.tpl", "*.html", "*.js", "poc.zip", "*.config"],
         "nvflare.dashboard.application": extra_files,
         "nvflare.tool.deploy": deploy_templates,
         "nvflare.tool.examples": ["catalog.json"],

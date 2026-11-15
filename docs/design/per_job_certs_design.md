@@ -231,17 +231,24 @@ stops one job's credential from acting as another job's cell:
 - Every TLS driver hands the raw peer certificate to `Connection.record_peer`
   (the F3 base class), which derives `PEER_CN` and stores the DER as
   `PEER_CERT` once for all transports. Drivers parse nothing.
-- Cellnet knows one generic rule, in its own vocabulary: a certificate may carry
+- Cellnet enforces a generic scope rule: a certificate may carry
   cell-scope URIs, and a peer presenting one may only claim an FQCN equal to or
   under one of those cells (`cell_scopes` / `fqcn_in_scopes` in
   `nvflare/fuel/f3/cellnet/identity.py`, built on `FQCN.is_ancestor`). The
   check runs at the connection handshake (`ConnManager`) and again on the
   certificate exchanged for message-level crypto (`CredentialManager`). A
-  certificate without cell URIs is unrestricted, as site certificates are.
+  certificate without cell URIs is unrestricted unless its issuer matches the
+  locally installed job CA.
+- The server loads `job_ca.crt` beside its root CA and requires critical
+  `CA:TRUE/pathlen:0`. It compares normalized issuer names, including self-issued
+  key rollover, and requires a valid job ID and job/bootstrap scopes owned by the
+  certificate identity before replacing a connection or caching a certificate.
+  Other issuers must use a distinct subject name. Nodes without this local CA
+  retain the generic scope rule.
 - Which cells a job credential lists is decided where it is issued
   (`job_cell_scopes` in `nvflare/private/fed/utils/job_cert_utils.py`): the job
-  cell and the bootstrap cell under the owning CP or server. Cellnet carries no
-  job vocabulary; `site-1.<job B>.ws_transfer_<job A>` is under job B's cell
+  cell and the bootstrap cell under the owning CP or server.
+  `site-1.<job B>.ws_transfer_<job A>` is under job B's cell
   and is rejected for job A's certificate.
 
 The rule is one-directional on purpose: it constrains what a job cert may

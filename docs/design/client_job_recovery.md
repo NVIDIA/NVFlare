@@ -22,7 +22,10 @@ is outside this client-only recovery feature.
 
 ## One setting
 
-`max_cj_restart_failures` in the client's `local/application.conf`, default `3`.
+`max_cj_restart_failures` is configured on CP, with default `3`.
+Set `NVFLARE_MAX_CJ_RESTART_FAILURES` in CP's environment before startup, or add
+`max_cj_restart_failures=<value>` to the `--set` arguments of CP's Python launch
+command. `--set` takes precedence over the environment variable.
 `0` disables recovery. No application opt-in is required.
 
 The limit counts consecutive attempts to get a replacement initialized. There is
@@ -44,9 +47,11 @@ closing the server assignment. CP waits for CJ and its workers to stop, then
 uses the same restart policy. A valid committed result takes precedence;
 application errors, rejected submissions and cancellation do not trigger recovery.
 
-Kubernetes supports this path with the persistent jobs PVC. Integration with the
-[Slurm task-adapter proposal](https://github.com/NVIDIA/NVFlare/pull/5513)
-remains separate work; resident Slurm CJ recovery is unchanged. Local Process/Docker
+Kubernetes supports this path with the persistent jobs PVC. Slurm
+([task adapter](https://github.com/NVIDIA/NVFlare/pull/5513)) uses the shared
+workspace: a worker allocation settling as TIMEOUT, PREEMPTED, OUT_OF_MEMORY,
+NODE_FAIL, BOOT_FAIL or a signal-killed FAILED exits CJ, and CP replaces it after all workers settle. No
+signal precedes the wall-time limit, so work since the last checkpoint repeats. Local Process/Docker
 task mode is deferred because its CJ restart gates do not establish worker
 settlement; see the [eligibility gap](#process-task-mode-recovery-gap) below.
 

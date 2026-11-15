@@ -32,11 +32,13 @@ from nvflare.fuel.utils.optional_dependencies import (
 
 @pytest.fixture
 def mock_distributions(monkeypatch):
-    def configure(versions, module_path=optional_dependencies.__file__):
+    def configure(versions, module_path=optional_dependencies.__file__, direct_url=None):
         def lookup(name):
             if name not in versions:
                 raise PackageNotFoundError(name)
-            return SimpleNamespace(version=versions[name], locate_file=lambda _: module_path)
+            return SimpleNamespace(
+                version=versions[name], locate_file=lambda _: module_path, read_text=lambda _: direct_url
+            )
 
         monkeypatch.setattr(optional_dependencies, "distribution", lookup)
 
@@ -77,8 +79,7 @@ def test_require_optional_dependencies_lists_missing_modules(mock_distributions)
     ("name", "version"),
     (
         ("nvflare", "2.10.1"),
-        ("nvflare-nightly", "2.10.0.dev20261029"),
-        ("nvflare-nightly", "2.10.0.dev0+125.gd05110ab4.dirty"),
+        ("nvflare", "2.10.0rc1"),
     ),
 )
 def test_recovery_guidance_preserves_distribution_and_version(mock_distributions, name, version, extra):
@@ -97,10 +98,85 @@ def test_recovery_guidance_preserves_distribution_and_version(mock_distributions
 
 @pytest.mark.parametrize(
     "versions",
-    ({}, {"nvflare": "2.10.0", "nvflare-nightly": "2.10.0.dev20261029"}, {"nvflare": ""}),
+    (
+        {},
+        {"nvflare-nightly": "2.10.0.dev20261029"},
+        {"nvflare": "2.10.0", "nvflare-nightly": "2.10.0.dev20261029"},
+        {"nvflare": ""},
+    ),
 )
 def test_recovery_guidance_does_not_guess_distribution(mock_distributions, versions):
     mock_distributions(versions)
+    with patch.object(optional_dependencies, "find_spec", return_value=None):
+        with pytest.raises(MissingOptionalDependencyError) as error:
+            require_optional_dependencies("feature", "dashboard", ("flask",))
+
+    assert "same NVFlare wheel or source checkout with the 'dashboard' extra" in str(error.value)
+    assert "pip install" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "direct_url",
+    (
+        '{"url": "file:///build/nvflare.whl", "archive_info": {}}',
+        '{"url": "file:///checkout", "dir_info": {"editable": true}}',
+    ),
+)
+@pytest.mark.parametrize("version", ("2.10.0", "2.10.0.dev0+125.gd05110ab4"))
+def test_recovery_guidance_preserves_local_install(mock_distributions, direct_url, version):
+    mock_distributions({"nvflare": version}, direct_url=direct_url)
+    with patch.object(optional_dependencies, "find_spec", return_value=None):
+        with pytest.raises(MissingOptionalDependencyError) as error:
+            require_optional_dependencies("feature", "dashboard", ("flask",))
+
+    assert "same NVFlare wheel or source checkout with the 'dashboard' extra" in str(error.value)
+    assert "pip install" not in str(error.value)
+
+
+@pytest.mark.parametrize("version", ("2.10.0dev0", "2.10.0.dev0+125.gd05110ab4", "2.10.0+vendor.1", "unknown"))
+def test_recovery_guidance_does_not_resolve_custom_versions_without_direct_url(mock_distributions, version):
+    # Index and --find-links installs need not record direct_url.json.
+    mock_distributions({"nvflare": version})
+    with patch.object(optional_dependencies, "find_spec", return_value=None):
+        with pytest.raises(MissingOptionalDependencyError) as error:
+            require_optional_dependencies("feature", "dashboard", ("flask",))
+
+    assert "same NVFlare wheel or source checkout with the 'dashboard' extra" in str(error.value)
+    assert "pip install" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "direct_url",
+    (
+        '{"url": "file:///opt/NVFlare", "dir_info": {}}',
+        '{"url": "file:///opt/NVFlare", "dir_info": {"editable": false}}',
+    ),
+)
+def test_recovery_guidance_for_release_built_from_temporary_checkout(mock_distributions, direct_url):
+    mock_distributions({"nvflare": "2.10.0"}, direct_url=direct_url)
+    with patch.object(optional_dependencies, "find_spec", return_value=None):
+        with pytest.raises(MissingOptionalDependencyError) as error:
+            require_optional_dependencies("feature", "dashboard", ("flask",))
+
+    assert "python -m pip install 'nvflare[dashboard]==2.10.0'" in str(error.value)
+    assert "container image" in str(error.value)
+    assert "build time" in str(error.value)
+
+
+def test_recovery_guidance_for_development_image_requires_build_time_extras(mock_distributions):
+    mock_distributions({"nvflare": "2.10.0.dev0"}, direct_url='{"url": "file:///opt/NVFlare", "dir_info": {}}')
+    with patch.object(optional_dependencies, "find_spec", return_value=None):
+        with pytest.raises(MissingOptionalDependencyError) as error:
+            require_optional_dependencies("feature", "dashboard", ("flask",))
+
+    assert "pip install" not in str(error.value)
+    assert "container image" in str(error.value)
+    assert "build time" in str(error.value)
+
+
+@pytest.mark.parametrize("direct_url", ("invalid json", "[]", '{"dir_info": null}'))
+def test_recovery_guidance_does_not_guess_from_invalid_provenance(mock_distributions, direct_url):
+    mock_distributions({"nvflare": "2.10.0"}, direct_url=direct_url)
     with patch.object(optional_dependencies, "find_spec", return_value=None):
         with pytest.raises(MissingOptionalDependencyError) as error:
             require_optional_dependencies("feature", "dashboard", ("flask",))

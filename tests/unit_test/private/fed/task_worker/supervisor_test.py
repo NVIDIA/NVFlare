@@ -33,6 +33,113 @@ from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSuper
 from tests.task_supervisor_test_utils import RUNNING, SETTLED, UNSETTLED, _attempt, _payload, _records
 
 
+@pytest.mark.parametrize("cleanup", ["timeout", "unsettled", "error", "settled"])
+def test_parent_owned_completion_survives_unconfirmed_cleanup(tmp_path, cleanup):
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+    attempt["launcher"].completion_requires_settlement = False
+    attempt["launcher"].cleanup_owned_by_parent = True
+    handle.result_received = Mock()
+    if cleanup == "timeout":
+        handle.wait_for_settlement.side_effect = TimeoutError("accounting unavailable")
+    elif cleanup == "error":
+        handle.wait_for_settlement.side_effect = RuntimeError("controller unavailable")
+    else:
+        handle.wait_for_settlement.return_value = SETTLED if cleanup == "settled" else UNSETTLED
+
+    outcome = supervisor.run(**attempt, options=TaskSupervisorOptions(settlement_timeout=0.01))
+
+    assert outcome.result["value"] == 2
+    assert not outcome.aborted
+    assert outcome.execution_status.settled is (cleanup == "settled")
+    assert not supervisor.settlement_unconfirmed
+    assert not supervisor.owns_execution
+    handle.result_received.assert_called_once_with()
+    handle.wait_for_settlement.assert_called_once_with(timeout=0.01)
+    assert supervisor.read_saved_result(outcome.identity)["value"] == 2
+    issues = supervisor.take_issues()
+    assert bool(issues) is (cleanup != "settled")
+    if issues:
+        assert all(level == "warning" and handle.execution_id in message for level, message in issues)
+    supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)
+    assert _payload(attempt).exists() is (cleanup != "settled")
+    second, next_handle = _attempt(tmp_path, attempt_id="attempt-2")
+    second["launcher"].completion_requires_settlement = False
+    second["launcher"].cleanup_owned_by_parent = True
+    next_handle.result_received = Mock()
+    assert supervisor.run(**second).result["value"] == 2
+    supervisor.end_run()
+    handle.cancel.assert_not_called()
+
+
+def test_parent_owned_result_requires_verified_payload_before_cleanup_handoff(tmp_path):
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+    attempt["launcher"].completion_requires_settlement = False
+    attempt["launcher"].cleanup_owned_by_parent = True
+    handle.result_received = Mock()
+    launch = attempt["launcher"].launch_task.side_effect
+
+    def corrupt(request):
+        result = launch(request)
+        _payload(attempt).write_bytes(b"corrupt")
+        return result
+
+    attempt["launcher"].launch_task.side_effect = corrupt
+    with pytest.raises((ValueError, IncompleteTaskArtifactError)):
+        supervisor.run(**attempt)
+    handle.result_received.assert_not_called()
+
+
+def test_completion_published_during_cleanup_wait_preserves_the_result(tmp_path):
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+    attempt["launcher"].completion_requires_settlement = False
+    attempt["launcher"].cleanup_owned_by_parent = True
+    handle.result_received = Mock()
+    launch = attempt["launcher"].launch_task.side_effect
+    saved = []
+    path = Path(attempt["store"].attempt_dir(attempt["bootstrap"].identity), "completion.json")
+
+    def delay_completion(request):
+        result = launch(request)
+        saved.append(path.read_bytes())
+        path.unlink()
+        return result
+
+    def complete_during_wait(**kwargs):
+        path.write_bytes(saved[0])
+        raise TimeoutError("accounting is unavailable after completion")
+
+    attempt["launcher"].launch_task.side_effect = delay_completion
+    handle.wait_for_settlement.side_effect = complete_during_wait
+    assert supervisor.run(**attempt).result["value"] == 2
+    assert not supervisor.settlement_unconfirmed
+    handle.result_received.assert_called_once_with()
+
+
+def test_lost_result_acknowledgement_does_not_fail_verified_completion(tmp_path):
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+    attempt["launcher"].completion_requires_settlement = False
+    attempt["launcher"].cleanup_owned_by_parent = True
+    handle.result_received = Mock(side_effect=TimeoutError("reply lost"))
+    handle.wait_for_settlement.side_effect = TimeoutError("cleanup unavailable")
+    outcome = supervisor.run(**attempt)
+    assert outcome.result["value"] == 2
+    assert not supervisor.owns_execution and not supervisor.settlement_unconfirmed
+    assert supervisor.read_saved_result(outcome.identity)["value"] == 2
+    assert all(level == "warning" for level, _ in supervisor.take_issues())
+
+
+def test_completion_before_cleanup_requires_parent_ownership_before_launch(tmp_path):
+    attempt, _ = _attempt(tmp_path)
+    attempt["launcher"].completion_requires_settlement = False
+    with pytest.raises(ValueError, match="parent cleanup owner"):
+        TaskSupervisor().run(**attempt)
+    attempt["launcher"].launch_task.assert_not_called()
+
+
 @pytest.mark.parametrize("fault", ["none", "payload", "completion", "released", "unknown"])
 def test_saved_result_requires_the_original_retained_validated_completion(tmp_path, fault):
     supervisor = TaskSupervisor()
@@ -80,6 +187,23 @@ def test_worker_failure_reports_original_type_message_and_diagnostics(tmp_path):
     with pytest.raises(RuntimeError, match="ValueError: trainer rejected its input.*diagnostics:"):
         supervisor.run(**attempt)
     assert (_payload(attempt).parent / "failure.json").exists()
+
+
+def test_native_rejection_without_worker_artifacts_reports_scheduler_reason(tmp_path):
+    supervisor = TaskSupervisor()
+    attempt, handle = _attempt(tmp_path)
+
+    def reject(request):
+        handle.request = request
+        return handle
+
+    reason = "Slurm task submission failed: Invalid partition name specified"
+    attempt["launcher"].launch_task.side_effect = reject
+    handle.wait_for_settlement.return_value = replace(SETTLED, exit_code=1, failure_reason=reason)
+    with pytest.raises(RuntimeError, match="Invalid partition name specified.*diagnostics:"):
+        supervisor.run(**attempt)
+    assert not supervisor.settlement_unconfirmed
+    assert reason in _records(attempt)[-1]["message"]
 
 
 def test_launch_error_without_handle_preserves_original_exception(tmp_path):
