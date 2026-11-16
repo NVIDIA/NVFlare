@@ -38,13 +38,12 @@ The requirements file intentionally does not install NVFlare. This preserves the
 or editable installation that selected the example revision.
 
 > [!IMPORTANT]
-> This `main` branch example requires `flwr>=1.26,<1.40` and uses the newer Flower SuperLink configuration flow.
-> The upper bound is temporary: [Flower 1.40](https://github.com/flwrlabs/flower/releases/tag/framework-1.40.0)
-> removes the SuperNode `--grpc-adapter` transport used by NVFlare. Keep this bound until the integration
-> supports Flower's HTTP transport.
+> This `main` branch example requires `flwr>=1.43`. NVFlare tunnels Flower's HTTP Fleet API through FLARE, and
+> the earlier gRPC-adapter transport is no longer used. FLARE server and clients must run the same NVFlare version.
 >
-> If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of this example and use `flwr>=1.16,<1.26`.
-> NVFlare 2.7.x still uses Flower's legacy `--federation-config` CLI option, which Flower 1.26+ ignores.
+> If you need `flwr<1.36`, use an NVFlare release from before this change. For released NVFlare 2.7.x, switch to the
+> 2.7 branch or tag of this example and use `flwr>=1.16,<1.26`. NVFlare 2.7.x still uses Flower's legacy
+> `--federation-config` CLI option, which Flower 1.26+ ignores.
 
 ## Code Structure
 

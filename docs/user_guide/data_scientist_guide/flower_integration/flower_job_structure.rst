@@ -38,7 +38,7 @@ Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this 
     build-backend = "hatchling.build"
 
     # Tested with:
-    #   flwr==1.27.0
+    #   flwr==1.43.0
     #   nvflare==2.9.0rc1
     #   torch==2.11.0
     #   torchvision==0.26.0
@@ -50,7 +50,7 @@ Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this 
     description = ""
     license = "Apache-2.0"
     dependencies = [
-        "flwr>=1.26",
+        "flwr>=1.43",
         "nvflare~=2.9.0rc",
         "torch",
         "torchvision",
@@ -80,9 +80,8 @@ Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this 
    need to define a ``[tool.flwr.federations]`` section in ``pyproject.toml`` for
    FLARE execution.
 
-.. note:: Flower 1.26+ support requires the NVFlare 2.9 release candidate line
-   (``nvflare~=2.9.0rc``), or NVFlare installed from current ``main``. If you
-   are using released NVFlare 2.7.x, use ``flwr>=1.16,<1.26`` and the 2.7 branch
+.. note:: Flower 1.43+ support requires NVFlare installed from current ``main``.
+   If you are using released NVFlare 2.7.x, use ``flwr>=1.16,<1.26`` and the 2.7 branch
    or tag of the Flower examples.
 
 Project Name

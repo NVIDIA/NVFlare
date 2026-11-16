@@ -193,7 +193,7 @@ jobs:
         if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         run: |
           ./runtest.sh --torch-backend=cpu -p
-          uv pip install --system --no-deps "flwr>=1.16,<1.26"
+          uv pip install --system --no-deps "flwr>=1.43,<1.44"
       # Installed outside NVFlare's development environment because SkillEvaluator
       # requires click>=8.3.3 while NVFlare pins click==8.1.7 below Python 3.14.
       # Keep every Tier 1 static scanner explicit: a missing scanner must fail the
@@ -304,6 +304,35 @@ jobs:
       - name: Run HF Client API checks (${{ matrix.name }})
         run: ${{ matrix.test_command }}
 
+  flower-integration-tests:
+    needs: full-ci-selection
+    if: needs.full-ci-selection.outputs.run-full-ci == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.14"
+      # The unit-test jobs install Flower with --no-deps so that it cannot change NVFlare's grpc/protobuf
+      # versions. These tests run the real Flower runner, so this job installs Flower with its dependencies.
+      - name: Install dependencies
+        run: |
+          ./runtest.sh --torch-backend=cpu -p
+          uv pip install --system "flwr>=1.43,<1.44"
+      - name: Run Flower bridge and runner integration tests
+        run: >-
+          python3 -m pytest -q -rs
+          tests/integration_test/fast/flower_http_bridge_test.py
+          tests/integration_test/fast/flower_runner_test.py
+
   coverage:
     runs-on: ubuntu-24.04
     needs: [full-ci-selection, unit-tests]
@@ -324,7 +353,7 @@ jobs:
       - name: Install dependencies
         run: |
           ./runtest.sh --torch-backend=cpu -p
-          uv pip install --system --no-deps "flwr>=1.16,<1.26"
+          uv pip install --system --no-deps "flwr>=1.43,<1.44"
       - name: Run unit test with coverage
         run: python3 -m pytest --numprocesses=auto -v --cov=nvflare --cov-report xml:cov.xml --dist loadgroup tests/unit_test
       - name: Include process and transport contract coverage
@@ -432,7 +461,7 @@ jobs:
         if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         run: |
           ./runtest.sh --torch-backend=cpu -p
-          uv pip install --system --no-deps "flwr>=1.16,<1.26"
+          uv pip install --system --no-deps "flwr>=1.43,<1.44"
           uv pip install --system build twine
       - name: Run wheel build
         if: needs.full-ci-selection.outputs.run-full-ci == 'true'

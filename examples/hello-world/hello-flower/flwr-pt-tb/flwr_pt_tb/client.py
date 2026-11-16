@@ -16,8 +16,7 @@
 import threading
 
 from flwr.client import ClientApp, NumPyClient
-from flwr.common import Context
-from flwr.common.record import MetricRecord, RecordDict
+from flwr.common import Context, MetricRecord, RecordDict
 
 from nvflare.client import tracking
 from nvflare.client.tracking import SummaryWriter
