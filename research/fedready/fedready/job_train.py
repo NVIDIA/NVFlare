@@ -2243,8 +2243,26 @@ def summarize_simulator_status(workspace: str | Path) -> dict[str, Any]:
     empty_result_clients: set[str] = set()
     communication_error_clients: set[str] = set()
     non_tensor_param_warnings: list[str] = []
+    training_error_count = 0
+    cleanup_error_count = 0
+    aggregation_counts: list[tuple[int, int]] = []
 
-    def record_message(message: str) -> None:
+    def record_message(message: str, *, is_error: bool = False, server: bool = False) -> None:
+        nonlocal training_error_count, cleanup_error_count
+        if is_error:
+            if server and finished_fedavg and message.rsplit(" - ERROR - ", 1)[-1].strip() == "could not stop AIO loop":
+                cleanup_error_count += 1
+            else:
+                training_error_count += 1
+        # FedAvg emits intermediate counts for every client; retain the final
+        # count of each round rather than treating progress as missing results.
+        if server and re.search(r"Round \d+ started\.", message):
+            aggregation_counts.append((0, 0))
+        match = re.search(r"Aggregated (\d+)/(\d+) results", message)
+        if server and match:
+            if not aggregation_counts:
+                aggregation_counts.append((0, 0))
+            aggregation_counts[-1] = (int(match.group(1)), int(match.group(2)))
         match = re.search(r"Empty result from client ([^,\s]+), skipping", message)
         if match:
             empty_result_clients.add(match.group(1))
@@ -2262,7 +2280,7 @@ def summarize_simulator_status(workspace: str | Path) -> dict[str, Any]:
                 except json.JSONDecodeError:
                     continue
                 message = str(record.get("message") or "")
-                record_message(message)
+                record_message(message, is_error=record.get("levelname") in {"ERROR", "CRITICAL"}, server=True)
                 if record.get("levelname") == "ERROR":
                     error_count += 1
                 if "Finished FedAvg" in message:
@@ -2272,7 +2290,7 @@ def summarize_simulator_status(workspace: str | Path) -> dict[str, Any]:
     elif log_txt.exists():
         with log_txt.open("r", encoding="utf-8", errors="replace") as handle:
             for line in handle:
-                record_message(line)
+                record_message(line, is_error=" - ERROR - " in line or " - CRITICAL - " in line, server=True)
                 if " - ERROR - " in line:
                     error_count += 1
                 if "Finished FedAvg" in line:
@@ -2289,13 +2307,15 @@ def summarize_simulator_status(workspace: str | Path) -> dict[str, Any]:
                     record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                record_message(str(record.get("message") or ""))
+                record_message(
+                    str(record.get("message") or ""), is_error=record.get("levelname") in {"ERROR", "CRITICAL"}
+                )
     for path in sorted(root.rglob("log.txt")):
         if path == log_txt:
             continue
         with path.open("r", encoding="utf-8", errors="replace") as handle:
             for line in handle:
-                record_message(line)
+                record_message(line, is_error=" - ERROR - " in line or " - CRITICAL - " in line)
 
     model_paths = sorted(str(path) for path in server_dir.rglob("FL_global_model.pt"))
     metric_paths = sorted(path for path in root.rglob(DEFAULT_METRICS_JSONL))
@@ -2305,6 +2325,9 @@ def summarize_simulator_status(workspace: str | Path) -> dict[str, Any]:
     has_empty_results = bool(empty_result_clients)
     has_non_tensor_params = bool(non_tensor_param_warnings)
     has_metric_artifact = bool(valid_metric_artifacts)
+    all_results_aggregated = bool(aggregation_counts) and all(
+        received == expected and expected > 0 for received, expected in aggregation_counts
+    )
     completed_with_warnings = bool(error_count or has_empty_results)
     warning_codes: list[str] = []
     if error_count:
@@ -2316,6 +2339,9 @@ def summarize_simulator_status(workspace: str | Path) -> dict[str, Any]:
         "workspace": str(root),
         "finished_fedavg": finished_fedavg,
         "server_error_count": error_count,
+        "training_error_count": training_error_count,
+        "aio_cleanup_error_count": cleanup_error_count,
+        "all_results_aggregated": all_results_aggregated,
         "empty_result_clients": sorted(empty_result_clients),
         "client_communication_error_clients": sorted(communication_error_clients),
         "non_tensor_param_warning_count": len(non_tensor_param_warnings),
@@ -2329,7 +2355,16 @@ def summarize_simulator_status(workspace: str | Path) -> dict[str, Any]:
         "aggregated_result_messages": aggregated_result_messages[-3:],
         "completed_with_warnings": completed_with_warnings,
         "warning_codes": warning_codes,
-        "succeeded": (finished_fedavg and not has_non_tensor_params and bool(model_paths) and has_metric_artifact),
+        "succeeded": (
+            finished_fedavg
+            and all_results_aggregated
+            and not has_empty_results
+            and not communication_error_clients
+            and not training_error_count
+            and not has_non_tensor_params
+            and bool(model_paths)
+            and has_metric_artifact
+        ),
     }
 
 

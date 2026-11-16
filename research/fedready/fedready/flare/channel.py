@@ -21,6 +21,7 @@ from typing import Any
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.utils.validation_utils import check_job_name
 
 FEDREADY_MESSAGE_KEY = "fedready_message"
 TASK_QUERY_TASK_NAME = "fedready_task_query"
@@ -79,11 +80,15 @@ def from_shareable(shareable: Shareable) -> FlareMessage:
         site_id = str(site_id).strip()
         if not site_id:
             raise ValueError(f"Shareable header {HEADER_SITE_ID} is empty")
+    session_id = _required_text_header(shareable, HEADER_SESSION_ID)
+    task_id = _required_text_header(shareable, HEADER_TASK_ID)
+    check_job_name(HEADER_SESSION_ID, session_id)
+    check_job_name(HEADER_TASK_ID, task_id)
     return FlareMessage(
-        session_id=_required_text_header(shareable, HEADER_SESSION_ID),
+        session_id=session_id,
         correlation_id=_required_text_header(shareable, HEADER_CORRELATION_ID),
         schema_ref=_required_text_header(shareable, HEADER_SCHEMA_REF),
-        task_id=_required_text_header(shareable, HEADER_TASK_ID),
+        task_id=task_id,
         site_id=site_id,
         payload=payload,
     )

@@ -24,6 +24,20 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from nvflare.fuel.utils.validation_utils import check_job_name
+
+
+def contained_path(root: str | Path, *parts: str) -> Path:
+    """Resolve workflow path components and reject traversal or escaping symlinks."""
+
+    for part in parts:
+        check_job_name("workflow path component", part)
+    base = Path(root).expanduser().resolve()
+    target = base.joinpath(*parts).resolve()
+    if target == base or base not in target.parents:
+        raise ValueError("workflow path escapes its local root")
+    return target
+
 
 def safe_path_slug(value: str, *, fallback: str, max_length: int = 96) -> str:
     """Return a bounded readable path component with a stable collision suffix."""

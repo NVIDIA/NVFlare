@@ -68,6 +68,7 @@ from fedready.flare.channel import set_fl_ctx_round as _set_fl_ctx_round
 from fedready.flare.channel import to_shareable
 from fedready.flare.channel import total_rounds_from_shareable as _total_rounds_from_shareable
 from fedready.prompts import render_client_prompt, render_client_prompt_object
+from fedready.utils.io import contained_path
 from fedready.utils.logging import FlowLogger
 
 from nvflare.apis.executor import Executor
@@ -149,11 +150,11 @@ class FedReadyTaskQueryExecutor(Executor):
 
     def _execute_inquiry(self, client_id: str, request_message: FlareMessage, fl_ctx: FLContext) -> FlareMessage:
         inquiry = request_message.payload
-        logger = FlowLogger(Path(self.output_dir) / request_message.session_id)
+        logger = FlowLogger(contained_path(self.output_dir, request_message.session_id))
         client_agent = ClientAgent(
             client_id,
             agent_backend=CodexWorkerBackend.from_env(
-                run_dir=Path(self.output_dir) / request_message.session_id,
+                run_dir=contained_path(self.output_dir, request_message.session_id),
                 session_id=request_message.session_id,
                 timeout_seconds=self.agent_timeout_seconds,
             ),
@@ -356,11 +357,11 @@ class FedReadyTaskQueryExecutor(Executor):
         fl_ctx: FLContext,
     ) -> FlareMessage:
         policy = request_message.payload
-        logger = FlowLogger(Path(self.output_dir) / request_message.session_id)
+        logger = FlowLogger(contained_path(self.output_dir, request_message.session_id))
         client_agent = ClientAgent(
             client_id,
             agent_backend=CodexWorkerBackend.from_env(
-                run_dir=Path(self.output_dir) / request_message.session_id,
+                run_dir=contained_path(self.output_dir, request_message.session_id),
                 session_id=request_message.session_id,
                 timeout_seconds=self.agent_timeout_seconds,
             ),
@@ -485,13 +486,13 @@ class FedReadyTaskQueryExecutor(Executor):
         ).resolve()
         result = _client_local_datalist_request(client_id=client_id, policy=policy)
         if _needs_local_adapter(result):
-            adapter_workspace = (
-                Path(self.output_dir)
-                / request_message.session_id
-                / "sites"
-                / client_id
-                / "local_adapters"
-                / str(request_message.task_id)
+            adapter_workspace = contained_path(
+                self.output_dir,
+                request_message.session_id,
+                "sites",
+                client_id,
+                "local_adapters",
+                request_message.task_id,
             )
             adapter_workspace.mkdir(parents=True, exist_ok=True)
             provenance_snapshot = capture_client_data_provenance(local_data_path)

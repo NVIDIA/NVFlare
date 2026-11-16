@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from fedready.utils.io import contained_path
+
 ACTION_ORDER = {
     "SERVER_AGENT_OUTPUT": 1,
     "SERVER_GUARDRAIL_CHECKED": 2,
@@ -71,9 +73,8 @@ class FlowLogger:
 
     def __init__(self, run_dir: str | Path) -> None:
         self.run_dir = Path(run_dir)
-        (self.run_dir / "server" / "requests").mkdir(parents=True, exist_ok=True)
-        (self.run_dir / "server" / "responses").mkdir(parents=True, exist_ok=True)
-        (self.run_dir / "server" / "decisions").mkdir(parents=True, exist_ok=True)
+        for directory in ("requests", "responses", "decisions"):
+            contained_path(self.run_dir, "server", directory).mkdir(parents=True, exist_ok=True)
 
     def write_server_event(
         self,
@@ -135,7 +136,7 @@ class FlowLogger:
         flare: dict[str, Any] | None = None,
         agent_prompt: str | None = None,
     ) -> dict[str, Any]:
-        site_dir = self.run_dir / "sites" / client_id
+        site_dir = contained_path(self.run_dir, "sites", client_id)
         site_dir.mkdir(parents=True, exist_ok=True)
         event = self._event(
             session_id=session_id,
@@ -159,7 +160,7 @@ class FlowLogger:
         return event
 
     def write_artifact(self, relative_path: str | Path, payload: dict[str, Any]) -> Path:
-        path = self.run_dir / relative_path
+        path = contained_path(self.run_dir, *Path(relative_path).parts)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
         return path
@@ -224,7 +225,7 @@ class FlowLogger:
     def _append_round_action_event(self, root: Path, event: dict[str, Any]) -> None:
         round_dir = _round_dir_name(event)
         action_name = _action_file_name(event)
-        self._append_jsonl(root / "rounds" / round_dir / "actions" / action_name, event)
+        self._append_jsonl(contained_path(root, "rounds", round_dir, "actions", action_name), event)
 
 
 def _round_dir_name(event: dict[str, Any]) -> str:

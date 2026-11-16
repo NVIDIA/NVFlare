@@ -102,7 +102,10 @@ class NVFlareJobTestCase(unittest.TestCase):
             server_dir.mkdir()
             client_dir.mkdir()
             (server_dir / "log.json").write_text(
-                json.dumps({"levelname": "INFO", "message": "Finished FedAvg"}) + "\n",
+                json.dumps({"levelname": "INFO", "message": "Aggregated 1/1 results"})
+                + "\n"
+                + json.dumps({"levelname": "INFO", "message": "Finished FedAvg"})
+                + "\n",
                 encoding="utf-8",
             )
             (server_dir / "FL_global_model.pt").write_bytes(b"model")
@@ -119,6 +122,67 @@ class NVFlareJobTestCase(unittest.TestCase):
             status = summarize_simulator_status(workspace)
             self.assertTrue(status["metric_artifact_available"])
             self.assertTrue(status["succeeded"])
+
+    def test_simulator_success_rejects_partial_results_and_training_errors(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            server = root / "server"
+            client = root / "site-1"
+            server.mkdir()
+            client.mkdir()
+            (server / "FL_global_model.pt").write_bytes(b"model")
+            (client / "fedready_training_metrics.jsonl").write_text('{"round": 0, "loss": 0.5}\n')
+            clean = [("INFO", "Aggregated 2/2 results"), ("INFO", "Finished FedAvg")]
+            cases = [
+                (
+                    [
+                        ("INFO", "Round 0 started."),
+                        ("INFO", "Aggregated 1/2 results"),
+                        ("INFO", "Aggregated 2/2 results"),
+                        *clean[-1:],
+                    ],
+                    True,
+                ),
+                (
+                    [
+                        ("INFO", "Round 0 started."),
+                        ("INFO", "Aggregated 1/2 results"),
+                        ("INFO", "Round 1 started."),
+                        *clean,
+                    ],
+                    False,
+                ),
+                ([("INFO", "Aggregated 1/2 results"), clean[-1]], False),
+                ([("WARNING", "Empty result from client site-2, skipping"), *clean], False),
+                ([("WARNING", "Communication error with client site-2"), *clean], False),
+                ([("ERROR", "trainer failed"), *clean], False),
+                ([("ERROR", "could not stop AIO loop"), *clean], False),
+                ([*clean, ("ERROR", "could not stop AIO loop")], True),
+                ([*clean, ("ERROR", "trainer failed")], False),
+                (clean, True),
+            ]
+            for log_format in ("json", "txt"):
+                log = server / f"log.{log_format}"
+                for messages, succeeded in cases:
+                    with self.subTest(log_format=log_format, messages=messages):
+                        log.write_text(
+                            "\n".join(
+                                (
+                                    json.dumps({"levelname": level, "message": message})
+                                    if log_format == "json"
+                                    else f"server - {level} - {message}"
+                                )
+                                for level, message in messages
+                            )
+                            + "\n"
+                        )
+                        self.assertEqual(summarize_simulator_status(root)["succeeded"], succeeded)
+                log.unlink()
+            (server / "log.json").write_text(
+                "\n".join(json.dumps({"levelname": level, "message": message}) for level, message in clean) + "\n"
+            )
+            (client / "log.json").write_text(json.dumps({"levelname": "ERROR", "message": "trainer failed"}) + "\n")
+            self.assertFalse(summarize_simulator_status(root)["succeeded"])
 
     def test_task_script_runner_preserves_space_containing_preflight_path(self) -> None:
         with TemporaryDirectory() as tmp:

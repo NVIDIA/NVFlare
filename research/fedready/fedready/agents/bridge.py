@@ -27,7 +27,7 @@ from uuid import uuid4
 
 from fedready.agents.local_adapter import TASK_EXAMPLE_DIR
 from fedready.prompts import render_server_prompt
-from fedready.utils.io import atomic_write_json
+from fedready.utils.io import atomic_write_json, contained_path
 from fedready.utils.logging import payload_digest, timestamp_utc
 
 FILE_AGENT_REQUEST_SCHEMA = "fedready.file_agent_request.v1"
@@ -190,10 +190,10 @@ class CodexWorkerBackend:
         execution_context = context
         request_id = _request_id(role=role, action=action, site_id=site_id)
         run_dir = Path(self.run_dir).expanduser().resolve()
-        request_dir = run_dir / "agent_mailbox" / role / (site_id or "server") / request_id
-        request_dir.mkdir(parents=True, exist_ok=False)
+        request_dir = contained_path(run_dir, "agent_mailbox", role, site_id or "server", request_id)
         worker_id = _codex_worker_id(role=role, site_id=site_id)
-        worker_dir = run_dir / "agent_workers" / role / (site_id or "server")
+        worker_dir = contained_path(run_dir, "agent_workers", role, site_id or "server")
+        request_dir.mkdir(parents=True, exist_ok=False)
         worker_dir.mkdir(parents=True, exist_ok=True)
         context = _package_codex_request_context(
             context=context,

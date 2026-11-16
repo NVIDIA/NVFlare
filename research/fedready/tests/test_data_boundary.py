@@ -20,14 +20,29 @@ from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
+from unittest.mock import Mock, patch
 
 from fedready.agents import ClientAgent
+from fedready.agents.bridge import CodexWorkerBackend
 from fedready.agents.local_adapter import sanitize_adapter_diagnostic
+from fedready.client import FedReadyTaskQueryExecutor
 from fedready.data.contracts.classification import label_value
 from fedready.data.extractor import _run_generated_data_materializer
 from fedready.data.parser import DataParserConfig, list_client_ids, parse_site_dataset
-from fedready.utils.logging import payload_digest
+from fedready.flare.channel import (
+    HEADER_SESSION_ID,
+    HEADER_TASK_ID,
+    FlareMessage,
+    from_shareable,
+    set_round_headers,
+    to_shareable,
+)
+from fedready.utils.io import contained_path
+from fedready.utils.logging import FlowLogger, payload_digest
 from PIL import Image
+
+from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.signal import Signal
 
 
 class _CapturingAgentBackend:
@@ -66,6 +81,89 @@ def _generated_materializer(source: str) -> dict[str, Any]:
 
 
 class DataBoundaryTestCase(unittest.TestCase):
+    def test_guardrail_preserves_denials_and_rejects_invalid_redactions(self) -> None:
+        payload = {
+            "schema_version": "fedready.client_response.v1",
+            "client_id": "SITE_A",
+            "note": "sensitive",
+            "notes": ["[redacted-by-guardrail]"],
+        }
+        for allowed, fields, expected in (
+            (False, ["note"], False),
+            (False, ["does_not_exist"], False),
+            (True, ["does_not_exist"], False),
+            (True, ["note", "does_not_exist"], False),
+            (True, ["client_id"], False),
+            (True, ["notes.0"], False),
+            (True, ["note"], True),
+        ):
+            with self.subTest(allowed=allowed, fields=fields):
+                backend = Mock()
+                backend.request.return_value = {
+                    "schema_version": "fedready.guardrail_decision.v1",
+                    "allowed": allowed,
+                    "reason_code": "TEST_DECISION",
+                    "reason": "test decision",
+                    "redacted_fields": fields,
+                }
+                decision = ClientAgent("SITE_A", backend).authorize_outgoing_profile_response(response=payload)
+                self.assertEqual(decision.allowed, expected)
+                if not allowed:
+                    self.assertEqual(decision.reason_code, "TEST_DECISION")
+                self.assertEqual(payload["note"], "sensitive")
+
+    def test_task_envelope_rejects_path_ids_before_client_writes(self) -> None:
+        with TemporaryDirectory() as tmp:
+            output = Path(tmp) / "runs"
+            executor = FedReadyTaskQueryExecutor(site_meta_path="unused.json", output_dir=str(output))
+            executor.log_exception = Mock()
+            for header in (HEADER_SESSION_ID, HEADER_TASK_ID):
+                for value in ("/tmp/escape", "../escape", "a/../escape", "..", "C:\\escape", "a\\escape"):
+                    with self.subTest(header=header, value=value):
+                        message = to_shareable(FlareMessage("session", "correlation", "schema", "task", {}))
+                        message.set_header(header, value)
+                        set_round_headers(message, current_round=1, total_rounds=2, action="profile")
+                        with self.assertRaises(ValueError):
+                            from_shareable(message)
+                        reply = executor.execute(executor.task_name, message, Mock(), Signal())
+                        self.assertEqual(reply.get_return_code(), ReturnCode.BAD_TASK_DATA)
+                        self.assertFalse(output.exists())
+
+    def test_workflow_paths_reject_escaping_symlinks(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "runs"
+            outside = Path(tmp) / "outside"
+            root.mkdir()
+            outside.mkdir()
+            (root / "session").symlink_to(outside, target_is_directory=True)
+            with self.assertRaises(ValueError):
+                contained_path(root, "session")
+            (root / "session").unlink()
+            adapter_parent = root / "session" / "sites" / "SITE_A" / "local_adapters"
+            adapter_parent.mkdir(parents=True)
+            (adapter_parent / "task").symlink_to(outside, target_is_directory=True)
+            with self.assertRaises(ValueError):
+                contained_path(root, "session", "sites", "SITE_A", "local_adapters", "task")
+            (root / "session" / "server").symlink_to(outside, target_is_directory=True)
+            with self.assertRaises(ValueError):
+                FlowLogger(root / "session")
+            (root / "session" / "agent_mailbox").symlink_to(outside, target_is_directory=True)
+            backend = CodexWorkerBackend(root / "session", session_id="session")
+            with patch("fedready.agents.bridge.subprocess.run") as run:
+                with self.assertRaises(ValueError):
+                    backend.request(
+                        role="client_agent",
+                        action="SMOKE",
+                        phase="data_profile",
+                        input_schema="in",
+                        output_schema="out",
+                        prompt="test",
+                        context={},
+                        site_id="SITE_A",
+                    )
+                run.assert_not_called()
+            self.assertEqual(list(outside.iterdir()), [])
+
     def test_client_guardrail_receives_exact_generated_materializer_source(self) -> None:
         backend = _CapturingAgentBackend()
         source = 'Path("/private/client-data").read_bytes()\n'

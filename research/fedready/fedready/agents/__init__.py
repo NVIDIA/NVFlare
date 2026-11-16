@@ -469,7 +469,7 @@ class GuardrailAgent:
             baseline_decision=baseline_decision,
             rule_id=shape_decision.rule_id,
         )
-        if allow_outgoing_redaction and agent_decision.redacted_fields:
+        if agent_decision.allowed and allow_outgoing_redaction and agent_decision.redacted_fields:
             return _guardrail_redaction_decision(
                 payload=payload,
                 redacted_fields=agent_decision.redacted_fields,
@@ -1523,15 +1523,19 @@ def _guardrail_redaction_decision(
     rule_id: str,
 ) -> GuardrailDecision:
     effective_redacted_fields = _guardrail_normalize_redaction_paths(payload, redacted_fields)
-    if not effective_redacted_fields:
+    if not effective_redacted_fields or any(
+        not _guardrail_path_exists(payload, field.removeprefix("payload_for_review.")) for field in redacted_fields
+    ):
         return GuardrailDecision(
-            allowed=True,
+            allowed=False,
             rule_id=rule_id,
-            reason_code=None,
-            reason="Guardrail found no applicable optional fields to redact.",
+            reason_code="INVALID_GUARDRAIL_REDACTION",
+            reason="Guardrail requested redactions that do not exist in the outgoing payload.",
         )
     try:
         redacted_payload = _guardrail_apply_redactions(payload, effective_redacted_fields)
+        if redacted_payload == payload:
+            raise ValueError("redaction did not change the payload")
     except ValueError as exc:
         return GuardrailDecision(
             allowed=False,
