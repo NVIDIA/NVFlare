@@ -153,20 +153,6 @@ CLASSIFICATION_TRAINING = TrainingContract(
 )
 
 
-KNOWN_TRAINING_CONTRACTS = (SEGMENTATION_TRAINING, CLASSIFICATION_TRAINING)
-
-
-def known_sample_manifests() -> tuple[tuple[str, str], ...]:
-    return tuple((contract.samples_file, contract.sample_manifest_format) for contract in KNOWN_TRAINING_CONTRACTS)
-
-
-def sample_manifest_format_for_file(samples_file: str) -> str:
-    for known_file, known_format in known_sample_manifests():
-        if samples_file == known_file:
-            return known_format
-    return ""
-
-
 def contract_from_task(task: str, *, extraction_summary: Mapping[str, Any] | None = None) -> TrainingContract:
     generated = generated_training_contract_from_summary(extraction_summary)
     if generated is not None:

@@ -19,11 +19,12 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
 
 from fedready import server
-from fedready.agents import ClientAgent
+from fedready.agents import ClientAgent, bridge
 from fedready.agents.bridge import CodexWorkerBackend
 from fedready.agents.local_adapter import sanitize_adapter_diagnostic
 from fedready.client import FedReadyTaskQueryExecutor
@@ -82,6 +83,59 @@ def _generated_materializer(source: str) -> dict[str, Any]:
 
 
 class DataBoundaryTestCase(unittest.TestCase):
+    def test_codex_envelope_is_checked_before_response_file_writes(self) -> None:
+        for source in ("file", "last_message"):
+            for case in ("valid", "wrong_schema", "wrong_request", "bare_output"):
+                with self.subTest(source=source, case=case), TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    code = root / "code"
+                    code.mkdir()
+
+                    def codex_response(command, **kwargs):
+                        request_dir = Path(kwargs["cwd"])
+                        request = json.loads((request_dir / "request.json").read_text())
+                        response = {
+                            "schema_version": bridge.FILE_AGENT_RESPONSE_SCHEMA,
+                            "request_id": request["request_id"],
+                            "status": "completed",
+                            "output": {"status": "implemented"},
+                            "files": [{"path": "adapter.py", "content": "# generated adapter\n"}],
+                        }
+                        if case == "wrong_schema":
+                            response["schema_version"] = "unexpected.wrapper"
+                        elif case == "wrong_request":
+                            response["request_id"] = "another-request"
+                        elif case == "bare_output":
+                            response = {"schema_version": "fedready.local_adapter_spec.v1", "status": "implemented"}
+                        response_path = (
+                            request_dir / "response.json"
+                            if source == "file"
+                            else Path(command[command.index("--output-last-message") + 1])
+                        )
+                        response_path.write_text(json.dumps(response))
+                        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+                    backend = CodexWorkerBackend(root / "run", session_id="session", sandbox_retry_attempts=0)
+                    request_args = dict(
+                        role="client_agent",
+                        site_id="SITE_A",
+                        action="CLIENT.IMPLEMENT_LOCAL_ADAPTER",
+                        phase="data_harmonization",
+                        input_schema="in",
+                        output_schema="FedReadyLocalAdapterSpec@v1",
+                        prompt="test",
+                        context={"code_workspace": str(code), "code_workspace_allowed_for_agent_writes": True},
+                    )
+                    with patch.object(bridge.subprocess, "run", side_effect=codex_response):
+                        if case == "valid":
+                            self.assertEqual(backend.request(**request_args), {"status": "implemented"})
+                            self.assertTrue((code / "adapter.py").is_file())
+                        else:
+                            with self.assertRaises(ValueError):
+                                backend.request(**request_args)
+                            self.assertFalse((code / "adapter.py").exists())
+                    self.assertFalse((root / "run/agent_workers").exists())
+
     def test_reply_is_decoded_once_and_rejects_mismatched_client_identity(self) -> None:
         reply = to_shareable(
             FlareMessage(

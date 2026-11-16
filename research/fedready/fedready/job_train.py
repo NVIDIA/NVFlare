@@ -208,12 +208,6 @@ def _training_data_contract_payload(
     return payload
 
 
-def _safe_training_labels_from_extraction_summary(extraction_summary: dict[str, Any]) -> dict[str, Any]:
-    label_summary = _safe_training_label_summary_from_extraction_summary(extraction_summary)
-    labels = label_summary.get("labels")
-    return labels if isinstance(labels, dict) else {}
-
-
 def _safe_training_label_summary_from_extraction_summary(extraction_summary: dict[str, Any]) -> dict[str, Any]:
     labels: dict[str, str] = {}
     class_counts: dict[str, int] = {}

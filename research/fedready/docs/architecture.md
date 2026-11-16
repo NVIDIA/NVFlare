@@ -63,6 +63,11 @@ settings remain explicit. Extraction response builders select shareable fields
 from local manifests. Initial trainer generation and runtime repair use the
 same bounded validation loop with separate stage feedback and artifact names.
 
+Each Codex request starts a scoped process and keeps request-local logs. Response
+envelopes must contain the exact schema and request ID before returned file
+writes are applied. Runtime preflight checks references, the local VLM, and a
+live guardrail request.
+
 ## Promotion gates
 
 1. Guardrails authorize every agent action and FLARE payload shape.

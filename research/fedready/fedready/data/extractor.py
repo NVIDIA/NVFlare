@@ -2611,28 +2611,6 @@ def _contract_visual_qc_bundle(
     )
 
 
-def _row_split_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
-    counts: Counter[str] = Counter()
-    for row in rows:
-        split = row.get("split")
-        if split in STANDARD_SPLITS:
-            counts[str(split)] += 1
-    return dict(sorted(counts.items()))
-
-
-def _no_orientation_adjustment() -> dict[str, Any]:
-    return {
-        "schema_version": "fedready.local_label_orientation_rule.v1",
-        "strategy": "not_applied_by_minimal_extractor",
-        "selected_transform": "as_is",
-        "reason": (
-            "The minimal shared extractor does not infer or repair label orientation. "
-            "A real client agent must supply any site-local orientation decision in a future adapter path."
-        ),
-        "safe_to_share": True,
-    }
-
-
 def _bounded_sample_pairs_for_default_fl_splits(
     pairs: list[dict[str, Any]],
     policy: dict[str, Any],
@@ -2944,37 +2922,6 @@ def _not_applicable_result(client_id: str, policy: dict[str, Any], reason: str) 
         "privacy": {
             "safe_to_share": True,
             "redacted": ["source_local_paths", "source_filenames", "raw_images", "raw_masks"],
-        },
-    }
-
-
-def _unsupported_label_format_result(client_id: str, policy: dict[str, Any], source_label_type: str) -> dict[str, Any]:
-    return {
-        "schema_version": EXTRACTION_RESULT_SCHEMA,
-        "client_id": client_id,
-        "data": "unsupported by minimal extractor",
-        "policy_digest": policy.get("strategy_digest") or payload_digest(policy),
-        "screening": {
-            "schema_version": "fedready.local_label_screening.v1",
-            "status": "capability_gap",
-            "reason_code": "NON_BINARY_LABEL_FORMAT_REQUIRES_AGENT_ADAPTER",
-            "reason": (
-                "The minimal shared extractor supports native binary segmentation masks only. "
-                "No built-in adapter, orientation repair, contour parser, channel parser, or index parser was used."
-            ),
-            "source_label_type": source_label_type,
-            "safe_to_share": True,
-        },
-        "agent_action_required": {
-            "required": True,
-            "kind": "client_local_label_adapter",
-            "source_label_type": source_label_type,
-            "implemented_by_baseline": False,
-            "safe_to_share": True,
-        },
-        "privacy": {
-            "safe_to_share": True,
-            "redacted": ["source_local_paths", "source_filenames", "raw_images", "raw_masks", "raw_annotations"],
         },
     }
 

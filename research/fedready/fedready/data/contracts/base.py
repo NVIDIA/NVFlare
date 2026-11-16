@@ -411,10 +411,3 @@ def _generated_contract_field_description(fields: Any, field_name: str) -> str:
                 if isinstance(item, Mapping) and _field_definition_name(item) == field_name:
                     parts.extend(str(item.get(key) or "") for key in ("type", "description", "format"))
     return " ".join(part for part in parts if part)
-
-
-def _explicit_record_type_alias(value: Any) -> str:
-    text = _record_type_text(value)
-    if text.startswith(f"{OBJECT_DETECTION}_"):
-        return OBJECT_DETECTION
-    return "unknown"

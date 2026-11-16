@@ -16,9 +16,6 @@
 
 from __future__ import annotations
 
-import os
-import shutil
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -30,8 +27,6 @@ from fedready.utils.logging import timestamp_utc
 
 RUNTIME_PREFLIGHT_SCHEMA = "fedready.runtime_preflight.v1"
 DEFAULT_RUNTIME_PREFLIGHT_AGENT_TIMEOUT_SECONDS = 300.0
-DEFAULT_RUNTIME_PREFLIGHT_MIN_FREE_GIB = 10.0
-DEFAULT_RUNTIME_PREFLIGHT_MIN_FREE_INODES = 100_000
 
 
 def run_live_runtime_preflight(
@@ -44,8 +39,6 @@ def run_live_runtime_preflight(
     local_vlm_base_url: str = LOCAL_VISION_API_BASE_URL,
     local_vlm_model: str = DEFAULT_LOCAL_VISION_MODEL,
     local_vlm_api_key_env: str = "FEDREADY_LOCAL_VISION_API_KEY",
-    min_free_gib: float = DEFAULT_RUNTIME_PREFLIGHT_MIN_FREE_GIB,
-    min_free_inodes: int = DEFAULT_RUNTIME_PREFLIGHT_MIN_FREE_INODES,
     guardrail_smoke: bool = True,
     visual_checks: bool = True,
 ) -> dict[str, Any]:
@@ -55,8 +48,6 @@ def run_live_runtime_preflight(
         raise ValueError("runtime preflight requires a non-empty task")
     if agent_timeout_seconds <= 0:
         raise ValueError("agent_timeout_seconds must be positive")
-    if min_free_gib < 0 or min_free_inodes < 0:
-        raise ValueError("storage thresholds must be non-negative")
     if visual_checks:
         if not local_vlm_model.strip():
             raise ValueError("local VLM model must be configured")
@@ -70,11 +61,6 @@ def run_live_runtime_preflight(
     run_dir = Path(output_dir).expanduser().resolve() / "runtime_preflight" / preflight_session
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    storage = _check_storage(
-        roots=(root, Path(tempfile.gettempdir())),
-        min_free_gib=min_free_gib,
-        min_free_inodes=min_free_inodes,
-    )
     visual_skip_reason = "visual infrastructure checks are not required for this phase"
     task_example_report: dict[str, Any] = {
         "status": "skipped",
@@ -166,7 +152,6 @@ def run_live_runtime_preflight(
         "agent_backend": "codex",
         "task": task,
         "checks": {
-            "storage": storage,
             "task_example": task_example_report,
             "local_vlm": local_vlm_report,
             "live_guardrail": guardrail_report,
@@ -175,31 +160,6 @@ def run_live_runtime_preflight(
     }
     atomic_write_json(run_dir / "runtime_preflight.json", report)
     return report
-
-
-def _check_storage(
-    *,
-    roots: tuple[Path, ...],
-    min_free_gib: float,
-    min_free_inodes: int,
-) -> list[dict[str, Any]]:
-    minimum_bytes = int(min_free_gib * 1024**3)
-    checked_devices: set[int] = set()
-    reports: list[dict[str, Any]] = []
-    for root in roots:
-        resolved = root.expanduser().resolve()
-        stat = resolved.stat()
-        if stat.st_dev in checked_devices:
-            continue
-        checked_devices.add(stat.st_dev)
-        usage = shutil.disk_usage(resolved)
-        free_inodes = int(os.statvfs(resolved).f_favail)
-        if usage.free < minimum_bytes:
-            raise RuntimeError(f"runtime preflight requires at least {min_free_gib:g} GiB free on {resolved}")
-        if free_inodes < min_free_inodes:
-            raise RuntimeError(f"runtime preflight requires at least {min_free_inodes} free inodes on {resolved}")
-        reports.append({"root": str(resolved), "free_bytes": usage.free, "free_inodes": free_inodes})
-    return reports
 
 
 def _default_session_id() -> str:

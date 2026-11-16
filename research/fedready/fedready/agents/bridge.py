@@ -131,13 +131,7 @@ def _is_retryable_codex_worker_startup_failure(exc: Exception) -> bool:
 
 @dataclass(frozen=True)
 class CodexWorkerBackend:
-    """Run FedReady requests through workflow-owned Codex worker identities.
-
-    The worker identity is persistent across requests, but each request is run by a
-    scoped ``codex exec`` invocation rooted at the request directory. This avoids
-    inheriting a supervising Codex conversation while keeping explicit server/client
-    worker lifecycle state under ``agent_workers``.
-    """
+    """Run each request in a scoped Codex process with explicit role/site identity."""
 
     run_dir: str | Path
     session_id: str
@@ -192,9 +186,7 @@ class CodexWorkerBackend:
         run_dir = Path(self.run_dir).expanduser().resolve()
         request_dir = contained_path(run_dir, "agent_mailbox", role, site_id or "server", request_id)
         worker_id = _codex_worker_id(role=role, site_id=site_id)
-        worker_dir = contained_path(run_dir, "agent_workers", role, site_id or "server")
         request_dir.mkdir(parents=True, exist_ok=False)
-        worker_dir.mkdir(parents=True, exist_ok=True)
         context = _package_codex_request_context(
             context=context,
             request_dir=request_dir,
@@ -229,16 +221,6 @@ class CodexWorkerBackend:
                 "retry_of_request_id": _retry_of_request_id,
                 "reason": "request-local filesystem sandbox was unavailable before command execution",
             }
-        request_payload["worker"] = {
-            "schema_version": "fedready.codex_worker_ref.v1",
-            "worker_id": worker_id,
-            "worker_dir": "[workflow-managed-worker-directory]",
-            "state_file": "[workflow-managed-worker-state]",
-            "lifecycle_owner": "fedready_nvflare_workflow",
-            "lifecycle": "workflow_owned_active_inactive_worker",
-            "request_scoped_process": True,
-            "parent_conversation_context_inherited": False,
-        }
         _write_json(request_dir / "request.json", request_payload)
         _write_json(request_dir / "context.json", context)
         (request_dir / "prompt.md").write_text(_render_prompt(request_payload, prompt), encoding="utf-8")
@@ -276,7 +258,6 @@ class CodexWorkerBackend:
                 "request_dir": ".",
                 "backend": "codex",
                 "worker_id": worker_id,
-                "worker_dir": "[workflow-managed-worker-directory]",
                 "model": self.model,
                 "codex_logs": {
                     "task": "codex_worker/codex_task.md",
@@ -286,17 +267,6 @@ class CodexWorkerBackend:
                 },
                 "agent_skills": agent_skills,
             },
-        )
-        _mark_codex_worker_state(
-            worker_dir=worker_dir,
-            worker_id=worker_id,
-            role=role,
-            site_id=site_id,
-            lifecycle_status="active",
-            request_id=request_id,
-            request_dir=request_dir,
-            request_status="running",
-            model=self.model,
         )
         try:
             command = self._codex_command(
@@ -368,16 +338,11 @@ class CodexWorkerBackend:
                 response_from_message = _parse_agent_response(
                     last_message_path.read_text(encoding="utf-8"),
                     request_id=request_id,
-                    repair_request_id=True,
-                    repair_schema_version=True,
-                    expected_output_schema=output_schema,
                 )
                 _write_json(response_path, response_from_message)
             response = _parse_agent_response(
                 json.dumps(_read_json_object(response_path)),
                 request_id=request_id,
-                repair_request_id=False,
-                repair_schema_version=False,
             )
             _apply_file_writes(response=response, context=execution_context, request_dir=request_dir)
             status = response.get("status")
@@ -407,21 +372,8 @@ class CodexWorkerBackend:
                     "request_dir": str(request_dir),
                     "backend": "codex",
                     "worker_id": worker_id,
-                    "worker_dir": str(worker_dir),
                     "error": _agent_error_summary(exc),
                 },
-            )
-            _mark_codex_worker_state(
-                worker_dir=worker_dir,
-                worker_id=worker_id,
-                role=role,
-                site_id=site_id,
-                lifecycle_status="inactive",
-                request_id=request_id,
-                request_dir=request_dir,
-                request_status="failed",
-                model=self.model,
-                error=_agent_error_summary(exc),
             )
             if should_retry_sandbox_failure:
                 return self.request(
@@ -450,20 +402,7 @@ class CodexWorkerBackend:
                 "response_digest": payload_digest(response),
                 "backend": "codex",
                 "worker_id": worker_id,
-                "worker_dir": str(worker_dir),
             },
-        )
-        _mark_codex_worker_state(
-            worker_dir=worker_dir,
-            worker_id=worker_id,
-            role=role,
-            site_id=site_id,
-            lifecycle_status="inactive",
-            request_id=request_id,
-            request_dir=request_dir,
-            request_status="completed",
-            model=self.model,
-            response_digest=payload_digest(response),
         )
         return output
 
@@ -642,9 +581,6 @@ def _codex_worker_task_text(
         "\n".join(f"- `{skill.get('name')}`: `{skill.get('path')}` ({skill.get('status')})" for skill in agent_skills)
         or "- none"
     )
-    visual_qc_text = (
-        render_server_prompt("codex_worker_visual_qc_note") if action == "CLIENT.VISUAL_QC_EXTRACTION" else ""
-    )
     return render_server_prompt(
         "codex_worker_task_text",
         worker_id=worker_id,
@@ -658,7 +594,6 @@ def _codex_worker_task_text(
         context_json=json.dumps(context, indent=2, sort_keys=True),
         add_dir_text=add_dir_text,
         skill_text=skill_text,
-        visual_qc_text=visual_qc_text,
         file_agent_response_schema=FILE_AGENT_RESPONSE_SCHEMA,
     )
 
@@ -679,74 +614,6 @@ def _redact_codex_command(
         label = add_dir_labels[index] if index < len(add_dir_labels) else f"additional_dir_{index + 1}"
         replacements[str(path)] = label.split(" ", 1)[0]
     return [replacements.get(part, part) for part in command]
-
-
-def _mark_codex_worker_state(
-    *,
-    worker_dir: Path,
-    worker_id: str,
-    role: str,
-    site_id: str | None,
-    lifecycle_status: str,
-    request_id: str,
-    request_dir: Path,
-    request_status: str,
-    model: str | None,
-    error: dict[str, Any] | None = None,
-    response_digest: str | None = None,
-) -> None:
-    state_path = worker_dir / "worker_state.json"
-    try:
-        state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
-    except json.JSONDecodeError:
-        state = {}
-    if not isinstance(state, dict):
-        state = {}
-    created_at = state.get("created_at") or timestamp_utc()
-    request_count = int(state.get("request_count") or 0)
-    if lifecycle_status == "active":
-        request_count += 1
-    event = {
-        "schema_version": "fedready.codex_worker_event.v1",
-        "timestamp_utc": timestamp_utc(),
-        "worker_id": worker_id,
-        "role": role,
-        "site_id": site_id,
-        "lifecycle_status": lifecycle_status,
-        "request_id": request_id,
-        "request_status": request_status,
-        "request_dir": str(request_dir),
-    }
-    if error is not None:
-        event["error"] = error
-    if response_digest is not None:
-        event["response_digest"] = response_digest
-    _append_jsonl(worker_dir / "events.jsonl", event)
-    state = {
-        "schema_version": "fedready.codex_worker_state.v1",
-        "worker_id": worker_id,
-        "role": role,
-        "site_id": site_id,
-        "backend": "codex",
-        "model": model,
-        "created_at": created_at,
-        "updated_at": event["timestamp_utc"],
-        "lifecycle_owner": "fedready_nvflare_workflow",
-        "lifecycle_status": lifecycle_status,
-        "active": lifecycle_status == "active",
-        "current_request_id": request_id if lifecycle_status == "active" else None,
-        "last_request_id": request_id,
-        "last_request_status": request_status,
-        "last_request_dir": str(request_dir),
-        "request_count": request_count,
-        "parent_conversation_context_inherited": False,
-        "filesystem_scope": "request_dir_plus_explicit_request_roots",
-    }
-    if error is not None:
-        state["last_error"] = error
-    if response_digest is not None:
-        state["last_response_digest"] = response_digest
-    _write_json(state_path, state)
 
 
 def _request_id(*, role: str, action: str, site_id: str | None) -> str:
@@ -859,39 +726,14 @@ def _read_json_object(path: Path) -> dict[str, Any]:
     return value
 
 
-def _parse_agent_response(
-    content: str,
-    *,
-    request_id: str,
-    repair_request_id: bool = False,
-    repair_schema_version: bool = False,
-    expected_output_schema: str | None = None,
-) -> dict[str, Any]:
-    response = _loads_json_object(content)
+def _parse_agent_response(content: str, *, request_id: str) -> dict[str, Any]:
+    response = json.loads(content)
+    if not isinstance(response, dict):
+        raise ValueError("Agent response must be a JSON object")
     if response.get("schema_version") != FILE_AGENT_RESPONSE_SCHEMA:
-        if expected_output_schema and _schema_versions_equivalent(
-            response.get("schema_version"),
-            expected_output_schema,
-        ):
-            response = {
-                "schema_version": FILE_AGENT_RESPONSE_SCHEMA,
-                "request_id": response.get("request_id", request_id),
-                "status": "completed",
-                "output": response,
-            }
-        elif (
-            repair_schema_version
-            and response.get("status") in {"completed", "denied", "failed"}
-            and isinstance(response.get("output"), dict)
-        ):
-            response["schema_version"] = FILE_AGENT_RESPONSE_SCHEMA
-        else:
-            raise ValueError(f"Agent response schema mismatch for {request_id}")
+        raise ValueError(f"Agent response schema mismatch for {request_id}")
     if response.get("request_id") != request_id:
-        if repair_request_id:
-            response["request_id"] = request_id
-        else:
-            raise ValueError(f"Agent response request_id mismatch for {request_id}")
+        raise ValueError(f"Agent response request_id mismatch for {request_id}")
     if response.get("status") not in {"completed", "denied", "failed"}:
         raise ValueError(f"Agent response status mismatch for {request_id}")
     if not isinstance(response.get("output"), dict):
@@ -900,76 +742,17 @@ def _parse_agent_response(
 
 
 def _can_return_failed_output(*, action: str, response: dict[str, Any], output_schema: str) -> bool:
-    if response.get("status") != "failed":
-        return False
-    if _can_return_failed_visual_qc_output(action=action, response=response, output_schema=output_schema):
-        return True
-    if _can_return_failed_profile_output(action=action, response=response, output_schema=output_schema):
-        return True
-    return False
-
-
-def _can_return_failed_visual_qc_output(*, action: str, response: dict[str, Any], output_schema: str) -> bool:
-    if action != "CLIENT.VISUAL_QC_EXTRACTION":
+    if response.get("status") != "failed" or action != "CLIENT.REPORT_DATA_PROFILE":
         return False
     output = response.get("output")
-    if not isinstance(output, dict):
-        return False
-    if not _schema_versions_equivalent(output.get("schema_version"), output_schema):
-        return False
+    expected_schemas = {output_schema}
+    if output_schema == "FedReadyClientResponse@v1":
+        expected_schemas.add("fedready.client_response.v1")
     return (
-        output.get("status") in {"failed", "needs_more_samples", "not_performed"} and output.get("passed") is not True
+        isinstance(output, dict)
+        and output.get("schema_version") in expected_schemas
+        and output.get("data") == "not applicable"
     )
-
-
-def _can_return_failed_profile_output(*, action: str, response: dict[str, Any], output_schema: str) -> bool:
-    if action != "CLIENT.REPORT_DATA_PROFILE":
-        return False
-    output = response.get("output")
-    if not isinstance(output, dict):
-        return False
-    if not _schema_versions_equivalent(output.get("schema_version"), output_schema):
-        return False
-    return output.get("data") == "not applicable"
-
-
-def _schema_versions_equivalent(actual: Any, expected: str) -> bool:
-    if actual == expected:
-        return True
-    aliases = {
-        "FedReadyClientInquiry@v1": {"fedready.client_inquiry.v1"},
-        "FedReadyClientResponse@v1": {"fedready.client_response.v1"},
-        "FedReadyLocalAdapterSpec@v1": {"fedready.local_adapter_spec.v1"},
-        "FedReadyExtractionQCDecision@v1": {
-            "fedready.extraction_qc_decision.v1",
-            "fedready.extraction_visual_qc_decision.v1",
-        },
-        "FedReadyTrainingCodeSpec@v1": {"fedready.training_code_spec.v1"},
-        "FedReadyGuardrailDecision@v1": {"fedready.guardrail_decision.v1"},
-    }
-    return isinstance(actual, str) and actual in aliases.get(expected, set())
-
-
-def _loads_json_object(content: str) -> dict[str, Any]:
-    text = content.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
-    try:
-        value = json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start < 0 or end <= start:
-            raise
-        value = json.loads(text[start : end + 1])
-    if not isinstance(value, dict):
-        raise ValueError("agent response content must be a JSON object")
-    return value
 
 
 def _resolve_local_output_paths(output: dict[str, Any], *, context: dict[str, Any]) -> dict[str, Any]:
@@ -1033,16 +816,6 @@ def _apply_file_writes(*, response: dict[str, Any], context: dict[str, Any], req
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     atomic_write_json(path, payload)
-
-
-def _append_jsonl(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, sort_keys=True) + "\n")
-
-
-def _json_safe(value: Any) -> Any:
-    return json.loads(json.dumps(value, default=_json_default))
 
 
 def _json_default(value: Any) -> Any:

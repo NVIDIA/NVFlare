@@ -35,8 +35,6 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, Iterator
 
-from fedready.utils.io import atomic_write_json
-
 try:  # Pillow is optional, but available in the vlm_env used for this project.
     from PIL import Image
 except ImportError:  # pragma: no cover - exercised only in minimal environments.
@@ -524,71 +522,6 @@ def _validated_site_clients(site_meta: dict[str, Any]) -> list[dict[str, Any]]:
     return validated
 
 
-def pseudonymize_site_metadata(
-    site_meta_path: str | Path,
-    *,
-    output_path: str | Path,
-    mapping_path: str | Path,
-    prefix: str = "SITE",
-) -> dict[str, Any]:
-    """Create a runnable registry whose client ids do not name public datasets."""
-
-    source = _load_json(Path(site_meta_path))
-    clients = source.get("clients")
-    if not isinstance(clients, list) or not clients:
-        raise ValueError("site metadata must contain a non-empty clients list")
-    clean_prefix = re.sub(r"[^A-Za-z0-9_]+", "_", prefix).strip("_").upper()
-    if not clean_prefix:
-        raise ValueError("pseudonym prefix must contain at least one letter or digit")
-    width = max(3, len(str(len(clients))))
-    transformed_clients: list[dict[str, Any]] = []
-    mapping: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for index, client in enumerate(clients, start=1):
-        if not isinstance(client, dict):
-            raise ValueError(f"site metadata client entry {index - 1} must be an object")
-        original_id = client.get("client_id")
-        if not isinstance(original_id, str) or not original_id.strip():
-            raise ValueError(f"site metadata client entry {index - 1} has no valid client_id")
-        if original_id in seen:
-            raise ValueError(f"site metadata contains duplicate client_id: {original_id}")
-        seen.add(original_id)
-        pseudonym = f"{clean_prefix}_{index:0{width}d}"
-        transformed = dict(client)
-        transformed["client_id"] = pseudonym
-        transformed_clients.append(transformed)
-        mapping.append({"pseudonym": pseudonym, "original_client_id": original_id})
-
-    output_payload = {
-        **{key: value for key, value in source.items() if key not in {"client_count", "clients"}},
-        "schema_version": "fedready.pseudonymized_site_metadata.v1",
-        "client_count": len(transformed_clients),
-        "clients": transformed_clients,
-        "identity_control": {
-            "mode": "pseudonymized_client_ids",
-            "prefix": clean_prefix,
-            "mapping_stored_separately": True,
-        },
-    }
-    mapping_payload = {
-        "schema_version": "fedready.client_identity_mapping.v1",
-        "privacy": {"safe_to_share": False, "reason": "links experiment aliases to source dataset ids"},
-        "source_site_meta": str(Path(site_meta_path)),
-        "pseudonymized_site_meta": str(Path(output_path)),
-        "clients": mapping,
-    }
-    atomic_write_json(output_path, output_payload)
-    atomic_write_json(mapping_path, mapping_payload)
-    return {
-        "schema_version": "fedready.pseudonymized_site_metadata_result.v1",
-        "client_count": len(transformed_clients),
-        "output_path": str(Path(output_path)),
-        "mapping_path": str(Path(mapping_path)),
-        "server_visible_client_ids": [entry["pseudonym"] for entry in mapping],
-        "mapping_safe_to_share": False,
-    }
-
-
 def _load_json(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         value = json.load(handle)
@@ -610,13 +543,6 @@ def _load_data_card(data_path: Path) -> dict[str, Any] | None:
             except (OSError, ValueError, json.JSONDecodeError):
                 return None
     return None
-
-
-def load_shareable_label_schema(data_path: str | Path) -> dict[str, Any]:
-    """Load only the task schema that a client data card explicitly authorizes."""
-
-    card = _load_data_card(Path(data_path))
-    return _data_card_shareable_label_schema(card)
 
 
 def _scan_dataset(root: Path, config: DataParserConfig) -> ScanResult:
