@@ -33,6 +33,7 @@ TESTS = (
     "tests/integration_test/fast/hf_distributed_contract_test.py",
     "tests/integration_test/fast/http_frame_size_test.py",
     "tests/integration_test/fast/job_cert_binding_live_test.py",
+    "tests/integration_test/fast/lightning_step_sync_ddp_test.py",
     "tests/integration_test/fast/multicloud_source_test.py",
     "tests/integration_test/fast/openshift_scripts_test.py",
     "tests/integration_test/fast/harness_process_cleanup_test.py",
