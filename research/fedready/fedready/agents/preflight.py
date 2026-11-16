@@ -39,8 +39,6 @@ def run_live_runtime_preflight(
     local_vlm_base_url: str = LOCAL_VISION_API_BASE_URL,
     local_vlm_model: str = DEFAULT_LOCAL_VISION_MODEL,
     local_vlm_api_key_env: str = "FEDREADY_LOCAL_VISION_API_KEY",
-    guardrail_smoke: bool = True,
-    visual_checks: bool = True,
 ) -> dict[str, Any]:
     """Fail before expensive work when required live infrastructure is unavailable."""
 
@@ -48,11 +46,10 @@ def run_live_runtime_preflight(
         raise ValueError("runtime preflight requires a non-empty task")
     if agent_timeout_seconds <= 0:
         raise ValueError("agent_timeout_seconds must be positive")
-    if visual_checks:
-        if not local_vlm_model.strip():
-            raise ValueError("local VLM model must be configured")
-        if not is_local_http_url(local_vlm_base_url):
-            raise ValueError("runtime preflight refuses a non-local VLM endpoint")
+    if not local_vlm_model.strip():
+        raise ValueError("local VLM model must be configured")
+    if not is_local_http_url(local_vlm_base_url):
+        raise ValueError("runtime preflight refuses a non-local VLM endpoint")
 
     root = Path(project_root).expanduser().resolve()
     if not root.is_dir():
@@ -61,89 +58,71 @@ def run_live_runtime_preflight(
     run_dir = Path(output_dir).expanduser().resolve() / "runtime_preflight" / preflight_session
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    visual_skip_reason = "visual infrastructure checks are not required for this phase"
-    task_example_report: dict[str, Any] = {
-        "status": "skipped",
-        "reason": visual_skip_reason,
-    }
-    local_vlm_report: dict[str, Any] = {
-        "status": "skipped",
-        "reason": visual_skip_reason,
-    }
-    if visual_checks:
-        task_examples = task_example_context()
-        examples = task_examples.get("examples") if isinstance(task_examples, dict) else None
-        reference_image = task_example_image_path()
-        if not isinstance(examples, list) or not examples or reference_image is None:
-            raise RuntimeError("set FEDREADY_TASK_EXAMPLE_ID to a digest-valid prepared reference task_key")
+    task_examples = task_example_context()
+    examples = task_examples.get("examples") if isinstance(task_examples, dict) else None
+    reference_image = task_example_image_path()
+    if not isinstance(examples, list) or not examples or reference_image is None:
+        raise RuntimeError("set FEDREADY_TASK_EXAMPLE_ID to a digest-valid prepared reference task_key")
 
-        vlm_response, vlm_call = _query_local_vlm_image(
-            base_url=local_vlm_base_url,
-            model=local_vlm_model,
-            image_path=reference_image,
-            reference_image_path=reference_image,
-            prompt=(
-                "Infrastructure readiness check only. Confirm that both canonical task-example images "
-                "are readable. Do not assess dataset suitability. Return a short non-empty response."
-            ),
-            api_key_env=local_vlm_api_key_env,
-            max_tokens=32,
-            log_path=run_dir / "local_vlm_preflight_calls.jsonl",
-        )
-        if not vlm_response.strip() or vlm_call.get("status") != "completed":
-            raise RuntimeError("local VLM preflight did not complete successfully")
-        task_example_report = {
-            "status": "ready",
-            "matched_example_count": len(examples),
-            "reference_image_digest_valid": True,
-        }
-        local_vlm_report = {
-            "status": "ready",
-            "model": local_vlm_model,
-            "endpoint_local": True,
-            "response_status_code": vlm_call.get("response_status_code"),
-        }
-
-    guardrail_report: dict[str, Any] = {
-        "status": "skipped",
-        "backend": "codex",
-        "agent_reviewed": False,
-        "normal_message_allowed": None,
-        "reason": "guardrail smoke already completed for this experiment batch",
+    vlm_response, vlm_call = _query_local_vlm_image(
+        base_url=local_vlm_base_url,
+        model=local_vlm_model,
+        image_path=reference_image,
+        reference_image_path=reference_image,
+        prompt=(
+            "Infrastructure readiness check only. Confirm that both canonical task-example images "
+            "are readable. Do not assess dataset suitability. Return a short non-empty response."
+        ),
+        api_key_env=local_vlm_api_key_env,
+        max_tokens=32,
+        log_path=run_dir / "local_vlm_preflight_calls.jsonl",
+    )
+    if not vlm_response.strip() or vlm_call.get("status") != "completed":
+        raise RuntimeError("local VLM preflight did not complete successfully")
+    task_example_report = {
+        "status": "ready",
+        "matched_example_count": len(examples),
+        "reference_image_digest_valid": True,
     }
-    if guardrail_smoke:
-        backend = CodexWorkerBackend.from_env(
-            run_dir=run_dir,
-            session_id=preflight_session,
-            timeout_seconds=agent_timeout_seconds,
-        )
-        guardrail_decision = GuardrailAgent(
-            party_role="server",
-            party_id="server",
-            agent_backend=backend,
-        ).inspect(
-            direction="outgoing",
-            check=ACTION_CHECKS["SERVER.DEFINE_PROFILE_REQUEST"],
-            payload={
-                "schema_version": "fedready.client_inquiry.v1",
-                "task": task,
-                "intent": {
-                    "routing_scope": "task_family_evidenced_safe_aggregate_metadata_only",
-                    "task_description": task,
-                },
-                "message": {"instructions": ["Inspect safe aggregate metadata for explicit task-relevant evidence."]},
+    local_vlm_report = {
+        "status": "ready",
+        "model": local_vlm_model,
+        "endpoint_local": True,
+        "response_status_code": vlm_call.get("response_status_code"),
+    }
+
+    backend = CodexWorkerBackend.from_env(
+        run_dir=run_dir,
+        session_id=preflight_session,
+        timeout_seconds=agent_timeout_seconds,
+    )
+    guardrail_decision = GuardrailAgent(
+        party_role="server",
+        party_id="server",
+        agent_backend=backend,
+    ).inspect(
+        direction="outgoing",
+        check=ACTION_CHECKS["SERVER.DEFINE_PROFILE_REQUEST"],
+        payload={
+            "schema_version": "fedready.client_inquiry.v1",
+            "task": task,
+            "intent": {
+                "routing_scope": "task_family_evidenced_safe_aggregate_metadata_only",
+                "task_description": task,
             },
-            counterpart="smoke_test_client",
-        )
-        if not guardrail_decision.allowed or guardrail_decision.redaction_applied:
-            raise RuntimeError("live guardrail smoke test blocked a normal profile message")
-        guardrail_report = {
-            "status": "ready",
-            "backend": "codex",
-            "agent_reviewed": True,
-            "normal_message_allowed": True,
-            "allow_list_rule": guardrail_decision.rule_id,
-        }
+            "message": {"instructions": ["Inspect safe aggregate metadata for explicit task-relevant evidence."]},
+        },
+        counterpart="smoke_test_client",
+    )
+    if not guardrail_decision.allowed or guardrail_decision.redaction_applied:
+        raise RuntimeError("live guardrail smoke test blocked a normal profile message")
+    guardrail_report = {
+        "status": "ready",
+        "backend": "codex",
+        "agent_reviewed": True,
+        "normal_message_allowed": True,
+        "allow_list_rule": guardrail_decision.rule_id,
+    }
 
     report = {
         "schema_version": RUNTIME_PREFLIGHT_SCHEMA,

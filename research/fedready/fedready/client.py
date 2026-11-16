@@ -61,6 +61,7 @@ from fedready.flare.channel import (
     ROUND_EXTRACTION,
     ROUND_PROFILE,
     TASK_QUERY_TASK_NAME,
+    TOTAL_DATA_ROUNDS,
     FlareMessage,
 )
 from fedready.flare.channel import current_round_from_shareable as _current_round_from_shareable
@@ -94,7 +95,6 @@ class FedReadyTaskQueryExecutor(Executor):
         max_image_samples: int = 8,
         histogram_bins: int = 8,
         task_name: str = TASK_QUERY_TASK_NAME,
-        total_rounds: int = 2,
         extraction_output_root: str = ExtractionConfig.output_root,
         extraction_output_name: str | None = None,
         extraction_max_samples: int | None = None,
@@ -111,7 +111,6 @@ class FedReadyTaskQueryExecutor(Executor):
         self.max_image_samples = max_image_samples
         self.histogram_bins = histogram_bins
         self.task_name = task_name
-        self.total_rounds = total_rounds
         self.extraction_output_root = extraction_output_root
         self.extraction_output_name = extraction_output_name
         self.extraction_max_samples = extraction_max_samples
@@ -137,7 +136,7 @@ class FedReadyTaskQueryExecutor(Executor):
                 return make_reply(ReturnCode.BAD_PEER_CONTEXT)
             if request_message.site_id is not None and request_message.site_id != client_id:
                 return make_reply(ReturnCode.BAD_PEER_CONTEXT)
-            _set_fl_ctx_round(fl_ctx, current_round, self.total_rounds)
+            _set_fl_ctx_round(fl_ctx, current_round, TOTAL_DATA_ROUNDS)
             if current_round == ROUND_PROFILE:
                 response_message = self._execute_inquiry(client_id, request_message, fl_ctx)
             elif current_round == ROUND_EXTRACTION:
@@ -368,7 +367,7 @@ class FedReadyTaskQueryExecutor(Executor):
             payload={
                 "policy": _safe_policy_summary(policy),
                 "current_round": current_round,
-                "total_rounds": _total_rounds_from_shareable(shareable, self.total_rounds),
+                "total_rounds": _total_rounds_from_shareable(shareable, TOTAL_DATA_ROUNDS),
             },
             schema_ref=request_message.schema_ref,
             status="received",
@@ -416,7 +415,6 @@ class FedReadyTaskQueryExecutor(Executor):
             output_root=str(config_payload.get("output_root") or self.extraction_output_root),
             output_name=config_payload.get("output_name") or self.extraction_output_name,
             max_samples=config_payload.get("max_samples", self.extraction_max_samples),
-            max_scan_files=self.max_scan_files,
             overwrite=bool(config_payload.get("overwrite", self.extraction_overwrite)),
             validation_fraction=float(config_payload.get("validation_fraction", self.extraction_validation_fraction)),
         )
@@ -429,7 +427,6 @@ class FedReadyTaskQueryExecutor(Executor):
                 "output_root": extractor_config.output_root,
                 "output_name": extractor_config.output_name,
                 "max_samples": extractor_config.max_samples,
-                "max_scan_files": extractor_config.max_scan_files,
                 "overwrite": extractor_config.overwrite,
                 "validation_fraction": extractor_config.validation_fraction,
             },
@@ -1495,6 +1492,6 @@ def _flare_round_context(
         "task_id": request_message.task_id,
         "site_id": client_id,
         "current_round": _current_round_from_shareable(shareable),
-        "total_rounds": _total_rounds_from_shareable(shareable, 2),
+        "total_rounds": _total_rounds_from_shareable(shareable, TOTAL_DATA_ROUNDS),
         "round_action": shareable.get_header(HEADER_ROUND_ACTION),
     }

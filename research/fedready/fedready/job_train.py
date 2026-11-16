@@ -105,7 +105,6 @@ class FedAvgTrainingConfig:
     learning_rate: float = 1e-3
     target_size: tuple[int, int] = (128, 128)
     num_workers: int = 0
-    use_site_intensity_stats: bool = False
     device: str = "auto"
     dataset_root: str = DEFAULT_DATASET_ROOT
     task_name: str = DEFAULT_TRAINING_TASK_NAME
@@ -507,7 +506,6 @@ def build_training_plan(
             "learning_rate": config.learning_rate,
             "target_size": list(config.target_size),
             "num_workers": config.num_workers,
-            "use_site_intensity_stats": config.use_site_intensity_stats,
             "device": config.device,
         },
         "data_contract": _training_data_contract_payload(
@@ -1121,7 +1119,6 @@ def _preflight_training_config(
         learning_rate=learning_rate,
         target_size=(int(target_size[0]), int(target_size[1])),
         num_workers=0,
-        use_site_intensity_stats=False,
         device="cpu",
         dataset_root=str(Path(dataset_root).resolve()),
         task_name=str(task_name or DEFAULT_TRAINING_TASK_NAME),
@@ -2365,11 +2362,11 @@ def _build_fedavg_job_object(
     task_name = training_plan.get("algorithm", {}).get("task_name", DEFAULT_TRAINING_TASK_NAME)
     for client_id in client_ids:
         _add_training_package(job, package_dir=package_dir, target=client_id)
-        _add_client_runtime_launcher_if_needed(job, target=client_id, client_config=ready_configs[client_id])
+        _add_client_runtime_launcher(job, target=client_id)
         job.to(
             ClientAPIExecutor(
                 execution_mode=ExecutionMode.IN_PROCESS,
-                task_script_path=_client_task_script_path(ready_configs[client_id], training_code_spec),
+                task_script_path=CLIENT_TRAINING_LAUNCHER_SCRIPT,
                 task_script_args=str(ready_configs[client_id]["task_script_args"]),
                 params_exchange_format=ExchangeFormat.PYTORCH,
                 server_expected_format=ExchangeFormat.NUMPY,
@@ -2497,14 +2494,7 @@ def _format_client_runtime_task_args(
     return " ".join(launcher_args + [training_args])
 
 
-def _client_task_script_path(config: dict[str, Any], training_code_spec: dict[str, Any]) -> str:
-    value = config.get("task_script_path")
-    return str(value) if isinstance(value, str) and value.strip() else str(training_code_spec["entry_script"])
-
-
-def _add_client_runtime_launcher_if_needed(job: FedJob, *, target: str, client_config: dict[str, Any]) -> None:
-    if client_config.get("task_script_path") != CLIENT_TRAINING_LAUNCHER_SCRIPT:
-        return
+def _add_client_runtime_launcher(job: FedJob, *, target: str) -> None:
     runtime_dir = Path(__file__).resolve().parent / "flare"
     job.add_file_to(
         str(runtime_dir / CLIENT_TRAINING_LAUNCHER_SCRIPT),
@@ -2542,8 +2532,6 @@ def _format_task_args(
             "--num-workers {num_workers} --device {device} --metrics-jsonl {metrics_jsonl}"
         )
     args = template.format(**values)
-    if config.use_site_intensity_stats and "--use-site-intensity-stats" not in args:
-        args += " --use-site-intensity-stats"
     return args
 
 

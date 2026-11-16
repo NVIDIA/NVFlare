@@ -46,10 +46,8 @@ from fedready.data.contracts.base import GENERATED_DATA_CONTRACT_SCHEMA_VERSION
 from fedready.prompts import render_client_prompt
 from PIL import Image, UnidentifiedImageError
 
-ADAPTER_BROKER_STATE_FILE = "fedready_adapter_broker_state.json"
 ADAPTER_PREFLIGHT_STATE_FILE = "fedready_adapter_preflight_state.json"
 ADAPTER_PREFLIGHT_QC_STATE_FILE = "fedready_adapter_preflight_qc_state.json"
-ADAPTER_PREFLIGHT_ATTEMPT_STATE_FILE = "fedready_adapter_preflight_attempts.json"
 ADAPTER_PREFLIGHT_QC_REFERENCE_FILE = "adapter_preflight_reference.png"
 _PACKAGED_TASK_EXAMPLE_DIR = Path(__file__).resolve().parent / "task_example"
 _SOURCE_TASK_EXAMPLE_DIR = Path(__file__).resolve().parents[2] / "task_example"

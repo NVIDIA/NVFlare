@@ -101,7 +101,6 @@ def build_agent_task_query_job(
     max_image_samples: int = 8,
     histogram_bins: int = 8,
     max_clients: int | None = None,
-    total_rounds: int = 2,
     result_wait_timeout: int = 14_400,
     extraction_output_root: str = ExtractionConfig.output_root,
     extraction_output_name: str | None = None,
@@ -109,7 +108,6 @@ def build_agent_task_query_job(
     extraction_overwrite: bool = False,
     extraction_validation_fraction: float = ExtractionConfig.validation_fraction,
     agent_timeout_seconds: float = 3600.0,
-    client_inquiry_prompt: str | None = None,
 ) -> tuple[FedJob, list[str]]:
     """Build an NVFlare Job API job for the FedReady task-query flow."""
 
@@ -130,7 +128,6 @@ def build_agent_task_query_job(
         max_image_samples=max_image_samples,
         histogram_bins=histogram_bins,
         max_clients=max_clients,
-        total_rounds=total_rounds,
         result_wait_timeout=result_wait_timeout,
         extraction_output_root=extraction_output_root,
         extraction_output_name=extraction_output_name,
@@ -138,7 +135,6 @@ def build_agent_task_query_job(
         extraction_overwrite=extraction_overwrite,
         extraction_validation_fraction=extraction_validation_fraction,
         agent_timeout_seconds=agent_timeout_seconds,
-        client_inquiry_prompt=client_inquiry_prompt,
     )
     controller = FedReadyTaskQueryController(**controller_kwargs)
     executor = FedReadyTaskQueryExecutor(
@@ -149,7 +145,6 @@ def build_agent_task_query_job(
         max_scan_files=max_scan_files,
         max_image_samples=max_image_samples,
         histogram_bins=histogram_bins,
-        total_rounds=total_rounds,
         extraction_output_root=extraction_output_root,
         extraction_output_name=extraction_output_name,
         extraction_max_samples=extraction_max_samples,

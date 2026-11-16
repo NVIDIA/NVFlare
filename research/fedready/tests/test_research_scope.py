@@ -15,9 +15,11 @@
 from __future__ import annotations
 
 import inspect
+import json
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -35,10 +37,10 @@ from fedready.data.contracts.base import generated_contract_visual_qc_required
 from fedready.data.contracts.training import CLASSIFICATION_TRAINING, SEGMENTATION_TRAINING
 from fedready.job_data import run_fed_job_recipe
 from fedready.job_train import (
+    CLIENT_TRAINING_LAUNCHER_SCRIPT,
     _build_fedavg_job_object,
     _training_code_spec_validation_errors,
     _training_local_simulation_errors,
-    export_fedavg_training_job,
 )
 
 
@@ -142,12 +144,38 @@ class ResearchScopeTestCase(unittest.TestCase):
         self.assertIn("CLIENT.VISUAL_QC_EXTRACTION", source)
         self.assertIn("CLIENT.VISUAL_QC_EXTRACTION", {key[3] for key in ALLOW_LIST_RULES})
 
-    def test_training_job_uses_current_client_api_executor(self) -> None:
-        source = inspect.getsource(_build_fedavg_job_object)
-        self.assertIn("ClientAPIExecutor", source)
-        self.assertIn("ExecutionMode.IN_PROCESS", source)
-        self.assertNotIn("PTInProcessClientAPIExecutor", source)
-        self.assertIn("_build_fedavg_job_object", inspect.getsource(export_fedavg_training_job))
+    def test_training_job_always_uses_the_validating_client_runtime(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "generated_training"
+            package.mkdir()
+            (package / "__init__.py").touch()
+            (package / "train.py").write_text("pass\n")
+            (package / "model.py").write_text("class Model: pass\n")
+            job = _build_fedavg_job_object(
+                job_name="test_runtime_gate",
+                training_plan={"algorithm": {"num_rounds": 2}},
+                training_code_spec={
+                    "package_dir": str(package),
+                    "model_class_path": "generated_training.model.Model",
+                    "entry_script": "train.py",
+                },
+                client_configs={
+                    "SITE_A": {
+                        "status": "ready",
+                        "task_script_path": "bypass.py",
+                        "task_script_args": "--dataset-root data --client-id SITE_A",
+                    }
+                },
+                min_clients=None,
+            )
+            job.export_job(str(root / "jobs"))
+            client = root / "jobs/test_runtime_gate/app_SITE_A"
+            executor = json.loads((client / "config/config_fed_client.json").read_text())["executors"][0]["executor"]
+            self.assertTrue(executor["path"].endswith(".ClientAPIExecutor"))
+            self.assertEqual(executor["args"]["execution_mode"], "in_process")
+            self.assertEqual(executor["args"]["task_script_path"], CLIENT_TRAINING_LAUNCHER_SCRIPT)
+            self.assertTrue((client / "custom" / CLIENT_TRAINING_LAUNCHER_SCRIPT).is_file())
 
     def test_recipe_runner_uses_current_execute_entry_point(self) -> None:
         source = inspect.getsource(run_fed_job_recipe)

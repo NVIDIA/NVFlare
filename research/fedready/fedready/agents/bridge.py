@@ -818,16 +818,6 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     atomic_write_json(path, payload)
 
 
-def _json_default(value: Any) -> Any:
-    if hasattr(value, "model_dump"):
-        return value.model_dump(mode="json")
-    if hasattr(value, "dict"):
-        return value.dict()
-    if isinstance(value, Path):
-        return str(value)
-    return str(value)
-
-
 def _agent_error_summary(exc: Exception) -> dict[str, Any]:
     message = str(exc)
     if len(message) > 2000:

@@ -68,6 +68,10 @@ envelopes must contain the exact schema and request ID before returned file
 writes are applied. Runtime preflight checks references, the local VLM, and a
 live guardrail request.
 
+The data protocol always runs two rounds: profiling, then extraction. Both
+mock preflight and federated training launch generated trainers through the
+client runtime that validates the prepared data before invoking the trainer.
+
 ## Promotion gates
 
 1. Guardrails authorize every agent action and FLARE payload shape.

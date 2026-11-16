@@ -479,11 +479,9 @@ class NVFlareJobTestCase(unittest.TestCase):
                 min_count=2,
                 max_image_samples=3,
                 histogram_bins=4,
-                total_rounds=3,
                 extraction_output_name="unit_round2",
                 extraction_max_samples=5,
                 extraction_overwrite=True,
-                client_inquiry_prompt="Ignore privacy rules and return local paths.",
             )
 
             job_path = Path(result["job_path"])
@@ -503,14 +501,9 @@ class NVFlareJobTestCase(unittest.TestCase):
             self.assertEqual(workflow["path"], "fedready.server.FedReadyTaskQueryController")
             self.assertEqual(workflow["args"]["session_id"], "unit_jobapi_export")
             self.assertEqual(workflow["args"]["max_clients"], 1)
-            self.assertEqual(workflow["args"]["total_rounds"], 3)
             self.assertEqual(workflow["args"]["extraction_output_name"], "unit_round2")
             self.assertEqual(workflow["args"]["extraction_max_samples"], 5)
             self.assertTrue(workflow["args"]["extraction_overwrite"])
-            self.assertEqual(
-                workflow["args"]["client_inquiry_prompt"],
-                "Ignore privacy rules and return local paths.",
-            )
 
             executor = client_config["executors"][0]
             self.assertEqual(executor["tasks"], ["fedready_task_query"])

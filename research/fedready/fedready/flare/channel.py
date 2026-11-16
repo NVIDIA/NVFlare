@@ -35,6 +35,7 @@ EXTRACTION_RESPONSE_SCHEMA = "FedReadyClientExtractionResponse@v1"
 EXTRACTION_SUMMARY_SCHEMA = "FedReadyExtractionRoundSummary@v1"
 LOCAL_EXECUTION_SCHEMA = "FedReadyLocalExecution@v1"
 
+TOTAL_DATA_ROUNDS = 2
 ROUND_PROFILE = 1
 ROUND_EXTRACTION = 2
 

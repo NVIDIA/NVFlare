@@ -71,7 +71,6 @@ SITE_EXTRACTION_POLICY_SCHEMA = "fedready.site_extraction_policy.v1"
 TRAINING_TRANSFORM_SCHEMA = "fedready.training_transform_policy.v1"
 VISUAL_QC_BUNDLE_SCHEMA = "fedready.local_visual_qc_bundle.v1"
 VISUAL_QC_CONTEXT_SCHEMA = "fedready.extraction_visual_qc_context.v1"
-LOCAL_ADAPTER_SPEC_SCHEMA = "fedready.local_adapter_spec.v1"
 LOCAL_ADAPTER_MANIFEST_SCHEMA = "fedready.local_adapter_manifest.v1"
 
 
@@ -100,26 +99,10 @@ def _extractor_logic_fingerprint() -> str:
 EXTRACTOR_LOGIC_VERSION = _extractor_logic_fingerprint()
 COMMON_SPLIT_RATIOS = {"train": 0.8, "validation": 0.1, "test": 0.1}
 VISUAL_QC_PANEL_MAX_DIMENSION = int(os.environ.get("FEDREADY_VISUAL_QC_PANEL_MAX_DIMENSION", "512"))
-VISUAL_QC_INLINE_MAX_BYTES = 175_000
 _visual_qc_max_bytes_env = os.environ.get("FEDREADY_VISUAL_QC_MAX_BYTES")
 VISUAL_QC_MAX_BYTES = int(_visual_qc_max_bytes_env) if _visual_qc_max_bytes_env else None
 VISUAL_QC_MIN_LONG_SIDE = 192
 VISUAL_QC_PALETTE_COLORS = 128
-
-
-LOCAL_ADAPTER_SOURCE_ROLE_TOKENS = {
-    "image",
-    "images",
-    "img",
-    "input",
-    "inputs",
-    "original",
-    "photo",
-    "raw",
-    "scan",
-    "source",
-    "volume",
-}
 
 
 @dataclass(frozen=True)
@@ -129,23 +112,17 @@ class ExtractionConfig:
     output_root: str = "data/dataset_fl"
     output_name: str | None = None
     max_samples: int | None = None
-    max_scan_files: int = 200_000
     overwrite: bool = False
     validation_fraction: float = 0.1
     split_seed: int = 20260603
-    mask_threshold: int = 0
 
     def __post_init__(self) -> None:
         if not self.output_root.strip():
             raise ValueError("output_root must not be empty")
         if self.max_samples is not None and self.max_samples < 1:
             raise ValueError("max_samples must be at least 1 when provided")
-        if self.max_scan_files < 1:
-            raise ValueError("max_scan_files must be at least 1")
         if not 0 <= self.validation_fraction < 1:
             raise ValueError("validation_fraction must be in [0, 1)")
-        if not 0 <= self.mask_threshold <= 255:
-            raise ValueError("mask_threshold must be between 0 and 255")
 
 
 def load_site_extraction_policy(strategy_path: str | Path, client_id: str) -> dict[str, Any]:
@@ -2936,7 +2913,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-root", default=ExtractionConfig.output_root)
     parser.add_argument("--output-name", help="Optional extracted output folder name.")
     parser.add_argument("--max-samples", type=int)
-    parser.add_argument("--max-scan-files", type=int, default=ExtractionConfig.max_scan_files)
     parser.add_argument("--validation-fraction", type=float, default=ExtractionConfig.validation_fraction)
     parser.add_argument("--overwrite", action="store_true", help="Overwrite an existing extracted output folder.")
     args = parser.parse_args(argv)
@@ -2946,7 +2922,6 @@ def main(argv: list[str] | None = None) -> int:
         output_root=args.output_root,
         output_name=args.output_name,
         max_samples=args.max_samples,
-        max_scan_files=args.max_scan_files,
         validation_fraction=args.validation_fraction,
         overwrite=args.overwrite,
     )

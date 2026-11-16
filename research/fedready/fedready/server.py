@@ -47,6 +47,7 @@ from fedready.flare.channel import (
     SERVER_STATE_SCHEMA,
     SIMULATION_SCHEMA_VERSION,
     TASK_QUERY_TASK_NAME,
+    TOTAL_DATA_ROUNDS,
     FlareMessage,
     from_shareable,
 )
@@ -80,7 +81,6 @@ class FedReadyTaskQueryController(Controller):
         histogram_bins: int = 8,
         max_clients: int | None = None,
         task_name: str = TASK_QUERY_TASK_NAME,
-        total_rounds: int = 2,
         result_wait_timeout: int = 600,
         wait_time_after_min_received: int = 0,
         extraction_output_root: str = ExtractionConfig.output_root,
@@ -89,7 +89,6 @@ class FedReadyTaskQueryController(Controller):
         extraction_overwrite: bool = False,
         extraction_validation_fraction: float = ExtractionConfig.validation_fraction,
         agent_timeout_seconds: float = 3600.0,
-        client_inquiry_prompt: str | None = None,
     ) -> None:
         super().__init__()
         self.site_meta_path = site_meta_path
@@ -103,7 +102,6 @@ class FedReadyTaskQueryController(Controller):
         self.histogram_bins = histogram_bins
         self.max_clients = max_clients
         self.task_name = task_name
-        self.total_rounds = total_rounds
         self.result_wait_timeout = result_wait_timeout
         self.wait_time_after_min_received = wait_time_after_min_received
         self.extraction_output_root = extraction_output_root
@@ -112,7 +110,6 @@ class FedReadyTaskQueryController(Controller):
         self.extraction_overwrite = extraction_overwrite
         self.extraction_validation_fraction = extraction_validation_fraction
         self.agent_timeout_seconds = agent_timeout_seconds
-        self.client_inquiry_prompt = client_inquiry_prompt
 
     def start_controller(self, fl_ctx: FLContext) -> None:
         self.log_info(fl_ctx, "FedReady task-query controller started.")
@@ -142,17 +139,9 @@ class FedReadyTaskQueryController(Controller):
         )
         server_agent = ServerAgent(agent_backend)
         server_guardrail = GuardrailAgent(party_role="server", party_id="server", agent_backend=agent_backend)
-        _set_fl_ctx_round(fl_ctx, ROUND_PROFILE, self.total_rounds)
+        _set_fl_ctx_round(fl_ctx, ROUND_PROFILE, TOTAL_DATA_ROUNDS)
         server_turn = server_agent.compose_client_inquiry(task=user_task, client_ids=client_ids)
         client_payload = _client_inquiry_payload(server_turn.output)
-        prompt_override_applied = self.client_inquiry_prompt is not None
-        if prompt_override_applied:
-            client_payload = _client_inquiry_with_prompt_override(client_payload, self.client_inquiry_prompt or "")
-        server_event_payload = _server_inquiry_log_payload(
-            server_output=server_turn.output,
-            client_payload=client_payload,
-            prompt_override_applied=prompt_override_applied,
-        )
         job_id = fl_ctx.get_job_id() or session
         correlation_id = str(uuid4())
         outgoing_guardrail = server_guardrail.inspect(
@@ -170,14 +159,14 @@ class FedReadyTaskQueryController(Controller):
                 payload=client_payload,
             )
         )
-        _set_round_headers(request, current_round=ROUND_PROFILE, total_rounds=self.total_rounds, action="profile")
+        _set_round_headers(request, current_round=ROUND_PROFILE, total_rounds=TOTAL_DATA_ROUNDS, action="profile")
 
         write_event = partial(logger.write_server_event, session_id=session, phase_id="profile")
         write_event(
             step_id="profile.server_inquiry.001",
             correlation_id=correlation_id,
             event_type="SERVER_AGENT_OUTPUT",
-            payload=server_event_payload,
+            payload=server_turn.output,
             schema_ref=CLIENT_INQUIRY_SCHEMA,
             privacy_class="policy_metadata",
             visibility="cross_site_redacted",
@@ -193,7 +182,7 @@ class FedReadyTaskQueryController(Controller):
                 "task_name": self.task_name,
                 "targets": client_ids,
                 "current_round": ROUND_PROFILE,
-                "total_rounds": self.total_rounds,
+                "total_rounds": TOTAL_DATA_ROUNDS,
             },
         )
         write_event(
@@ -216,7 +205,7 @@ class FedReadyTaskQueryController(Controller):
                 "task_name": self.task_name,
                 "targets": client_ids,
                 "current_round": ROUND_PROFILE,
-                "total_rounds": self.total_rounds,
+                "total_rounds": TOTAL_DATA_ROUNDS,
             },
         )
         if not outgoing_guardrail.allowed:
@@ -229,7 +218,7 @@ class FedReadyTaskQueryController(Controller):
         task = Task(
             name=self.task_name,
             data=request,
-            props=_round_props(ROUND_PROFILE, self.total_rounds, "profile"),
+            props=_round_props(ROUND_PROFILE, TOTAL_DATA_ROUNDS, "profile"),
             timeout=self.result_wait_timeout,
         )
         self.broadcast_and_wait(
@@ -280,7 +269,7 @@ class FedReadyTaskQueryController(Controller):
                     "site_id": client_id,
                     "return_code": reply.get_return_code() if reply is not None else ReturnCode.EMPTY_RESULT,
                     "current_round": ROUND_PROFILE,
-                    "total_rounds": self.total_rounds,
+                    "total_rounds": TOTAL_DATA_ROUNDS,
                 },
             )
             if not incoming_guardrail.allowed:
@@ -305,7 +294,7 @@ class FedReadyTaskQueryController(Controller):
                     "site_id": client_id,
                     "return_code": reply.get_return_code() if reply is not None else ReturnCode.EMPTY_RESULT,
                     "current_round": ROUND_PROFILE,
-                    "total_rounds": self.total_rounds,
+                    "total_rounds": TOTAL_DATA_ROUNDS,
                 },
             )
 
@@ -340,7 +329,7 @@ class FedReadyTaskQueryController(Controller):
                 ],
             },
             "rounds": {
-                "total_rounds": self.total_rounds,
+                "total_rounds": TOTAL_DATA_ROUNDS,
                 "completed": [ROUND_PROFILE],
                 "round_1": {
                     "name": "profile",
@@ -363,33 +352,28 @@ class FedReadyTaskQueryController(Controller):
             privacy_class="aggregate_stats",
             status="completed",
             policy=summary_turn.guardrail,
-            next_step=(
-                {"action": "dispatch_extraction_policies", "reason": "round 1 completed and round 2 is enabled"}
-                if self.total_rounds >= ROUND_EXTRACTION
-                else extraction_strategy["next_step"]
-            ),
+            next_step={"action": "dispatch_extraction_policies", "reason": "profile round completed"},
             agent_prompt=summary_turn.prompt,
             flare={
                 "job_id": job_id,
                 "task_name": self.task_name,
                 "current_round": ROUND_PROFILE,
-                "total_rounds": self.total_rounds,
+                "total_rounds": TOTAL_DATA_ROUNDS,
             },
         )
 
-        if self.total_rounds >= ROUND_EXTRACTION:
-            self._run_extraction_round(
-                logger=logger,
-                session=session,
-                job_id=job_id,
-                user_task=user_task,
-                server_agent=server_agent,
-                server_guardrail=server_guardrail,
-                extraction_strategy=extraction_strategy,
-                server_state=server_state,
-                fl_ctx=fl_ctx,
-                abort_signal=abort_signal,
-            )
+        self._run_extraction_round(
+            logger=logger,
+            session=session,
+            job_id=job_id,
+            user_task=user_task,
+            server_agent=server_agent,
+            server_guardrail=server_guardrail,
+            extraction_strategy=extraction_strategy,
+            server_state=server_state,
+            fl_ctx=fl_ctx,
+            abort_signal=abort_signal,
+        )
 
     def _run_extraction_round(
         self,
@@ -409,7 +393,7 @@ class FedReadyTaskQueryController(Controller):
             return
 
         write_event = partial(logger.write_server_event, session_id=session, phase_id="harmonization")
-        _set_fl_ctx_round(fl_ctx, ROUND_EXTRACTION, self.total_rounds)
+        _set_fl_ctx_round(fl_ctx, ROUND_EXTRACTION, TOTAL_DATA_ROUNDS)
         applicable_clients = [
             client_id for client_id in extraction_strategy.get("applicable_clients", []) if isinstance(client_id, str)
         ]
@@ -471,7 +455,7 @@ class FedReadyTaskQueryController(Controller):
                     "job_id": job_id,
                     "task_name": self.task_name,
                     "current_round": ROUND_EXTRACTION,
-                    "total_rounds": self.total_rounds,
+                    "total_rounds": TOTAL_DATA_ROUNDS,
                 },
             )
 
@@ -506,7 +490,7 @@ class FedReadyTaskQueryController(Controller):
                 "task_name": self.task_name,
                 "targets": target_clients,
                 "current_round": ROUND_EXTRACTION,
-                "total_rounds": self.total_rounds,
+                "total_rounds": TOTAL_DATA_ROUNDS,
             },
         )
 
@@ -539,7 +523,7 @@ class FedReadyTaskQueryController(Controller):
                     "task_name": self.task_name,
                     "site_id": client_id,
                     "current_round": ROUND_EXTRACTION,
-                    "total_rounds": self.total_rounds,
+                    "total_rounds": TOTAL_DATA_ROUNDS,
                 },
             )
             if outgoing_guardrail.allowed:
@@ -568,13 +552,13 @@ class FedReadyTaskQueryController(Controller):
             _set_round_headers(
                 request,
                 current_round=ROUND_EXTRACTION,
-                total_rounds=self.total_rounds,
+                total_rounds=TOTAL_DATA_ROUNDS,
                 action="extract",
             )
             task = Task(
                 name=self.task_name,
                 data=request,
-                props=_round_props(ROUND_EXTRACTION, self.total_rounds, "extract"),
+                props=_round_props(ROUND_EXTRACTION, TOTAL_DATA_ROUNDS, "extract"),
                 timeout=self.result_wait_timeout,
             )
             self.send(
@@ -626,7 +610,7 @@ class FedReadyTaskQueryController(Controller):
                     "site_id": client_id,
                     "return_code": reply.get_return_code() if reply is not None else ReturnCode.EMPTY_RESULT,
                     "current_round": ROUND_EXTRACTION,
-                    "total_rounds": self.total_rounds,
+                    "total_rounds": TOTAL_DATA_ROUNDS,
                 },
             )
             if not incoming_guardrail.allowed:
@@ -651,7 +635,7 @@ class FedReadyTaskQueryController(Controller):
                     "site_id": client_id,
                     "return_code": reply.get_return_code() if reply is not None else ReturnCode.EMPTY_RESULT,
                     "current_round": ROUND_EXTRACTION,
-                    "total_rounds": self.total_rounds,
+                    "total_rounds": TOTAL_DATA_ROUNDS,
                 },
             )
 
@@ -689,7 +673,7 @@ class FedReadyTaskQueryController(Controller):
                 "job_id": job_id,
                 "task_name": self.task_name,
                 "current_round": ROUND_EXTRACTION,
-                "total_rounds": self.total_rounds,
+                "total_rounds": TOTAL_DATA_ROUNDS,
             },
         )
 
@@ -712,38 +696,6 @@ def _client_inquiry_payload(server_output: dict[str, Any]) -> dict[str, Any]:
         "task": server_output["task"],
         "intent": server_output["intent"],
         "message": server_output["message"],
-    }
-
-
-def _client_inquiry_with_prompt_override(payload: dict[str, Any], prompt: str) -> dict[str, Any]:
-    prompt_text = prompt.strip()
-    if not prompt_text:
-        raise ValueError("client inquiry prompt override must not be empty")
-    return {
-        **payload,
-        "message": {
-            "task": payload.get("task"),
-            "intent": payload.get("intent"),
-            "prompt_override": True,
-            "custom_prompt": prompt_text,
-            "instructions": [prompt_text],
-        },
-    }
-
-
-def _server_inquiry_log_payload(
-    *,
-    server_output: dict[str, Any],
-    client_payload: dict[str, Any],
-    prompt_override_applied: bool,
-) -> dict[str, Any]:
-    if not prompt_override_applied:
-        return server_output
-    return {
-        **client_payload,
-        "prompt_override_applied": True,
-        "effective_payload": "client_inquiry_sent_via_flare",
-        "original_server_agent_message": server_output.get("message"),
     }
 
 
