@@ -1,0 +1,110 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Reviewed successful EAR claims, shared with assembled role kits."""
+
+import re
+
+TRUST_VECTOR = {
+    "executables": 3,
+    "hardware": 2,
+    "configuration": 2,
+}
+
+# Exact policy contracts, not thresholds over AR4SI values. Trustee v0.22
+# serializes only the asserted claims into the signed EAR and omits the
+# unasserted AR4SI fields whose internal value is zero. The shared policy
+# appraises an approved CPU or GPU configuration as 2.
+CPU_TRUST_VECTORS = {
+    "snp": dict(TRUST_VECTOR),
+    "tdx": dict(TRUST_VECTOR),
+}
+
+# NVFlare configuration uses one platform vocabulary throughout. Trustee's
+# signed EAR keeps the upstream verifier names as evidence object keys; keep
+# that wire-format translation here instead of exposing it to operators.
+CPU_TEE_EVIDENCE_TYPES = {
+    "intel_tdx": "tdx",
+    "amd_sev_snp": "snp",
+}
+
+
+LEGACY_CPU_TEE_ALIASES = {
+    "tdx": "intel_tdx",
+    "snp": "amd_sev_snp",
+}
+
+
+def normalize_cpu_tee(cpu_tee):
+    """Return the public CPU TEE name while accepting 2.9 upgrade aliases."""
+
+    if not isinstance(cpu_tee, str):
+        return cpu_tee
+    return LEGACY_CPU_TEE_ALIASES.get(cpu_tee, cpu_tee)
+
+
+def cpu_evidence_type_for_tee(cpu_tee):
+    """Translate an NVFlare CPU TEE name to Trustee's signed evidence key."""
+
+    try:
+        return CPU_TEE_EVIDENCE_TYPES[normalize_cpu_tee(cpu_tee)]
+    except (KeyError, TypeError):
+        raise ValueError("Unsupported CPU TEE: use intel_tdx or amd_sev_snp") from None
+
+
+def cpu_tee_for_evidence_type(cpu_type):
+    """Translate a verified Trustee evidence key to the NVFlare CPU TEE name."""
+
+    for cpu_tee, evidence_type in CPU_TEE_EVIDENCE_TYPES.items():
+        if cpu_type == evidence_type:
+            return cpu_tee
+    raise ValueError("Unsupported Trustee CPU evidence type")
+
+
+def cpu_evidence_type(evidence):
+    """Identify the platform in already authenticated Trustee EAR evidence.
+
+    This function does not verify the EAR signature. Callers must first verify
+    it against their independently authenticated Attestation Service key.
+    """
+    if not isinstance(evidence, dict):
+        raise ValueError("Missing CPU annotated evidence")
+    cpu_types = set(evidence) - {"report_data", "runtime_data_claims", "init_data", "init_data_claims"}
+    if len(cpu_types) != 1 or not cpu_types <= CPU_TRUST_VECTORS.keys():
+        raise ValueError("Expected exactly one supported SNP or TDX CPU evidence type")
+    cpu_type = next(iter(cpu_types))
+    if not isinstance(evidence[cpu_type], dict) or not evidence[cpu_type]:
+        raise ValueError("Malformed CPU hardware evidence")
+    return cpu_type
+
+
+def normalized_init_data(evidence):
+    """Read an attested SHA-256 InitData binding, never arbitrary prefix bytes.
+
+    Call only on AS-signature-verified evidence. Pinned Trustee emits SNP's
+    32-byte host_data directly. For TDX it emits the entire 48-byte MRCONFIGID,
+    which Kata binds as SHA-256 followed by 16 zero bytes. The duplicated quote
+    field must agree, and unsupported widths, encodings and padding fail closed.
+    """
+    cpu_type = cpu_evidence_type(evidence)
+    value = evidence.get("init_data")
+    width = 64 if cpu_type == "snp" else 96
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{" + str(width) + "}", value):
+        raise ValueError("Invalid attested InitData encoding")
+    if cpu_type == "tdx":
+        quote = evidence["tdx"].get("quote")
+        body = quote.get("body") if isinstance(quote, dict) else None
+        if not isinstance(body, dict) or body.get("mr_config_id") != value or value[64:] != "0" * 32:
+            raise ValueError("Invalid TDX InitData binding or padding")
+    return value[:64]

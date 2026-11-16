@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="478" viewBox="0 0 640 478" role="img" aria-labelledby="title description">
+  <title id="title">CoCo launch checkpoints</title>
+  <desc id="description">Five conceptual phases: launch the guest, load approved policy and encrypted artifacts, appraise CPU and required GPU evidence, authorize exact resources, then enforce guest checks and start the workload. Startup failure, key-release denial and guest-request denial remain distinct outcomes. This is not an exact RPC sequence or a claim of exact image-digest enforcement.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M1 1 L7 4 L1 7" fill="none" stroke="#52647a" stroke-width="1.5"/></marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #243746; }
+      .title { font-size: 20px; font-weight: 700; }
+      .heading { font-size: 17px; font-weight: 700; }
+      .body { font-size: 16px; }
+      .small { font-size: 14px; fill: #52647a; }
+      .trusted { fill: #eff5fc; stroke: #7996b5; }
+      .guest { fill: #eef8ef; stroke: #639566; }
+      .host { fill: #fff7f4; stroke: #b67868; stroke-dasharray: 5 4; }
+      .owner { fill: #fff9e9; stroke: #b79a56; }
+      .arrow, .peer, .dataset { fill: none; stroke: #52647a; stroke-width: 1.5; marker-end: url(#arrow); }
+      .peer { marker-start: url(#arrow); }
+      .dataset { stroke-dasharray: 5 4; }
+    </style>
+  </defs>
+  <rect width="640" height="478" fill="#fff"/>
+  <text x="20" y="28" class="title" text-anchor="start">CoCo launch: five enforcement checkpoints</text>
+  <rect x="20" y="48" width="600" height="62" rx="8" class="host"/>
+  <text x="35" y="73" class="heading" text-anchor="start">1. Launch the confidential guest</text>
+  <text x="35" y="97" class="small" text-anchor="start">The host schedules the Pod; Running is not trusted proof.</text>
+  <path d="M320 110 V124" class="arrow"/>
+  <rect x="20" y="124" width="600" height="62" rx="8" class="guest"/>
+  <text x="35" y="149" class="heading" text-anchor="start">2. Load guest policy and encrypted image artifacts</text>
+  <text x="35" y="173" class="small" text-anchor="start">Approved InitData and guest controls constrain the launch.</text>
+  <path d="M320 186 V200" class="arrow"/>
+  <rect x="20" y="200" width="600" height="62" rx="8" class="guest"/>
+  <text x="35" y="225" class="heading" text-anchor="start">3. Appraise the required hardware evidence</text>
+  <text x="35" y="249" class="small" text-anchor="start">CPU-only or CPU + required GPU; compare approved references.</text>
+  <path d="M320 262 V276" class="arrow"/>
+  <rect x="20" y="276" width="600" height="62" rx="8" class="trusted"/>
+  <text x="35" y="301" class="heading" text-anchor="start">4. Authorize each protected resource</text>
+  <text x="35" y="325" class="small" text-anchor="start">KBS binds resource delivery to the attested guest.</text>
+  <path d="M320 338 V352" class="arrow"/>
+  <rect x="20" y="352" width="600" height="62" rx="8" class="guest"/>
+  <text x="35" y="377" class="heading" text-anchor="start">5. Enforce guest checks, then start the workload</text>
+  <text x="35" y="401" class="small" text-anchor="start">Verify / decrypt images and enforce the effective guest policy.</text>
+  <text x="20" y="438" class="small" text-anchor="start">Failed checkpoints stop that launch path; requests may interleave or repeat.</text>
+  <text x="20" y="461" class="small" text-anchor="start">Exact image-digest binding remains a documented limitation.</text>
+</svg>

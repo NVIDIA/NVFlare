@@ -23,6 +23,16 @@ from nvflare.apis.job_def import Job, RunStatus, SubmitRecordState
 class JobDefManagerSpec(FLComponent, ABC):
     """Job Definition Management API."""
 
+    def job_exists(self, jid: str, fl_ctx: FLContext) -> bool:
+        """Return authoritative job presence for interrupted log deletion.
+
+        Custom managers may implement this optional method using a storage
+        provider's authoritative presence check. Return a bool only when the
+        result is certain; propagate storage errors. Until implemented,
+        deletion recovery keeps staged logs and the intent marker for review.
+        """
+        raise NotImplementedError("authoritative job presence is not supported by this JobDefManager")
+
     @abstractmethod
     def create(self, meta: dict, uploaded_content: str | bytes, fl_ctx: FLContext) -> dict[str, Any]:
         """Create a new job permanently.
