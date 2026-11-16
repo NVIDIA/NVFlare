@@ -21,9 +21,11 @@ import threading
 from dataclasses import dataclass, field, replace
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JOB_LAUNCH_OPTIONS, JobHandleSpec, JobLaunchOptions, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.job_config.defs import ExecutionLifetime
 from nvflare.job_config.task_execution import get_client_execution_lifetime
 
 
@@ -197,9 +199,9 @@ def _prepare_docker_slurm_cj(launcher, job_meta, fl_ctx):
     site = fl_ctx.get_identity_name()
     # Only the physical CJ copy drops compute budgets and job image selection.
     # The ordinary Docker launcher then uses its validated site default image.
-    prepared.meta["resource_spec"] = {}
-    prepared.meta["cj_resource_spec"] = {site: {}}
-    prepared.meta["launcher_spec"] = {site: {"docker": {}}}
+    prepared.meta[JobMetaKey.RESOURCE_SPEC.value] = {}
+    prepared.meta[JobMetaKey.CJ_RESOURCE_SPEC.value] = {site: {}}
+    prepared.meta[JobMetaKey.JOB_LAUNCHER_SPEC.value] = {site: {"docker": {}}}
     return prepared
 
 
@@ -226,11 +228,11 @@ def launch_job(launcher, job_meta, fl_ctx):
         )
         lifetime = get_client_execution_lifetime(config)
         policy = validate_task_site(workspace)
-        if lifetime == "task" or policy is not None:
+        if lifetime == ExecutionLifetime.TASK or policy is not None:
             from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy, _prepare_cp_host_cj
 
             policy = policy or TaskExecutionPolicy.from_workspace(workspace)
-            if lifetime != "task":
+            if lifetime != ExecutionLifetime.TASK:
                 if not policy.allow_job_lifetime:
                     raise ValueError("site task_execution policy refuses job-lifetime applications; use task lifetime")
                 return launcher.launch_job(job_meta, fl_ctx)

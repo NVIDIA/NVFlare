@@ -1035,8 +1035,8 @@ class ClientDockerJobLauncher(DockerJobLauncher):
         # Federation images target other runtimes. This coordinator uses the
         # site's image; explicit per-site/legacy Docker overrides are rejected.
         docker_meta = copy.deepcopy(job_meta)
-        docker_meta["launcher_spec"] = docker_meta.get("launcher_spec") or {}
-        docker_meta["launcher_spec"].setdefault("default", {}).pop("docker", None)
+        docker_meta[JobMetaKey.JOB_LAUNCHER_SPEC.value] = docker_meta.get(JobMetaKey.JOB_LAUNCHER_SPEC.value) or {}
+        docker_meta[JobMetaKey.JOB_LAUNCHER_SPEC.value].setdefault("default", {}).pop("docker", None)
         if get_job_launcher_spec(docker_meta, site, "docker"):
             raise ValueError("CP host Docker CJ uses site-owned settings; job Docker options are unsupported")
         parent = (fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS) or {}).get(JobProcessArgs.PARENT_URL)

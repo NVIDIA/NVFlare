@@ -26,6 +26,7 @@ from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.task_execution import _timeout, reject_job_gpu_reservation, validate_task_resources
+from nvflare.private.fed.client.task_runtime import _prepare_docker_slurm_cj, _prepare_process_slurm_cj
 from nvflare.private.fed.task_worker.protocol import _require_payload_limit
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisorOptions
 
@@ -66,12 +67,12 @@ _CJ_PREPARERS = {
         "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
         "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
         "process",
-    ): ("nvflare.private.fed.client.task_runtime", "_prepare_process_slurm_cj"),
+    ): _prepare_process_slurm_cj,
     (
         "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
         "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
         "docker",
-    ): ("nvflare.private.fed.client.task_runtime", "_prepare_docker_slurm_cj"),
+    ): _prepare_docker_slurm_cj,
     (
         "nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher",
         "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
@@ -101,8 +102,7 @@ def _prepare_cp_host_cj(task_launcher, job_launcher, job_meta, fl_ctx):
     if target is None:
         # Existing native launchers retain their own ownership setup.
         return None
-    module, name = target
-    return getattr(importlib.import_module(module), name)(job_launcher, job_meta, fl_ctx)
+    return target(job_launcher, job_meta, fl_ctx)
 
 
 def _supported_native_launcher(launcher):
