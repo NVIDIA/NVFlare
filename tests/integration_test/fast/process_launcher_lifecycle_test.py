@@ -887,3 +887,45 @@ def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path
         service = getattr(cell, "_slurm_task_service", None)
         if service:
             assert service.shutdown(timeout=10) == ()
+
+
+def test_running_process_coordinator_aborts_settle_without_cleanup_warnings(tmp_path, caplog):
+    from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
+    from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskService
+    from nvflare.private.fed.client.task_runtime import JobHandleWithTaskWorkers
+    from tests.process_test_utils import OwnedProcesses
+    from tests.timing_utils import join_thread
+
+    service = SlurmTaskService(SimpleNamespace(get_fqcn=lambda: "site-1", register_request_cb=Mock()))
+    code = "import pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text('ready'); time.sleep(120)"
+    try:
+        with OwnedProcesses() as processes:
+            for attempt in range(20):
+                ready = tmp_path / f"coordinator-{attempt}.ready"
+                process = processes.start([sys.executable, "-c", code, str(ready)])
+                native = ProcessHandle(process=process, owns_process_group=True)
+                owner = service.add_job(
+                    SimpleNamespace(poll_interval=0.02),
+                    f"job-{attempt}",
+                    "site-1",
+                    "test-token",
+                    cj_launch_pending=True,
+                )
+                owner.attach_cj(native)
+                owner.finish_cj_launch()
+                _wait_for_file(ready)
+                assert process.poll() is None
+                handle = JobHandleWithTaskWorkers(native, owner, allow_restart=False)
+                handle.terminate()
+                join_thread(owner.thread, timeout=10)
+                assert native.is_cleanup_complete()
+                assert handle.is_cleanup_complete()
+                assert not service.jobs
+        assert not [
+            record
+            for record in caplog.records
+            if record.name == "nvflare.private.fed.task_worker.task_service"
+            and "Coordinator cleanup unconfirmed" in record.getMessage()
+        ]
+    finally:
+        assert service.shutdown(timeout=10) == ()

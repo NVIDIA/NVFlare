@@ -93,6 +93,7 @@ class _Job:
         self.cj_launch_pending = False
         self.manage_cj = False
         self.cj_settled = False
+        self._cj_cleanup_pending = False
         self._cj_cleanup_warning_logged = False
         self.cj_termination_lock = threading.Lock()
 
@@ -158,7 +159,10 @@ class _Job:
             pass
         if cleanup:
             with self.lock:
-                warn = not self.cj_settled and not self._cj_cleanup_warning_logged
+                # A successful signal can take a pass to settle. Warn only
+                # after a second observation still cannot confirm cleanup.
+                warn = self._cj_cleanup_pending and not self.cj_settled and not self._cj_cleanup_warning_logged
+                self._cj_cleanup_pending = not self.cj_settled
                 if warn:
                     self._cj_cleanup_warning_logged = True
             if warn:

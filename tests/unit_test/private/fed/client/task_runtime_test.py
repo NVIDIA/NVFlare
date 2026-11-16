@@ -191,6 +191,9 @@ def test_unconfirmed_coordinator_cleanup_warns_once_and_keeps_retrying(caplog, f
     owner.manage_cj = True
     owner.attach_cj(native)
     owner.release()
+    owner.observe_cj()
+    assert owner.cj_settled is False
+    assert not [record for record in caplog.records if record.name == "nvflare.private.fed.task_worker.task_service"]
     for _ in range(3):
         owner.observe_cj()
     assert owner.cj_settled is False
@@ -203,6 +206,24 @@ def test_unconfirmed_coordinator_cleanup_warns_once_and_keeps_retrying(caplog, f
     native.is_cleanup_complete.return_value = True
     owner.observe_cj()
     assert owner.cj_settled is True
+
+
+def test_process_cleanup_settling_after_first_signal_does_not_warn(caplog):
+    from nvflare.private.fed.task_worker.task_service import _Job
+
+    native = Mock(spec=JobHandleSpec)
+    native.is_cleanup_complete.side_effect = [False, False, True, True]
+    owner = _Job(None, "job-1", "site-1", "token", "site-1.job-1")
+    owner.manage_cj = True
+    owner.attach_cj(native)
+    owner.release()
+    owner.observe_cj()
+    assert owner.cj_settled is False
+    native.terminate.assert_called_once_with()
+    owner.observe_cj()
+    assert owner.cj_settled is True
+    native.terminate.assert_called_once_with()
+    assert not [record for record in caplog.records if record.name == "nvflare.private.fed.task_worker.task_service"]
 
 
 @pytest.mark.parametrize("late_creation", [False, True])
