@@ -152,6 +152,10 @@ class PTFedAvg(FedAvg):
 
         # Load FLModel metadata if exists
         metadata_path = self._metadata_path(filepath)
+        if not os.path.exists(metadata_path):
+            # Older saves resolved checkpoint aliases before naming the sidecar.
+            # Validate the target-side path too, and prefer alias-side metadata.
+            metadata_path = self._metadata_path(os.path.realpath(filepath))
         if os.path.exists(metadata_path):
             model: FLModel = fobs.loadf(metadata_path)
             model.params = params

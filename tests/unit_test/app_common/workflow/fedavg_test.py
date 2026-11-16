@@ -2360,6 +2360,44 @@ class TestPTFedAvgModelPersistence:
         assert (tmp_path / "current.pt.metadata").is_file()
         assert not (tmp_path / "target.pt.metadata").exists()
 
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    @pytest.mark.parametrize("metadata_layout", ["target", "both", "neither", "escaping_target"])
+    def test_load_checkpoint_alias_with_legacy_metadata(self, tmp_path, metadata_layout):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        target = run_dir / "target.pt"
+        alias = run_dir / "current.pt"
+        alias.symlink_to(target.name)
+        controller = PTFedAvg(persistor_id="", save_filename=alias.name)
+        controller.get_run_dir = MagicMock(return_value=str(run_dir))
+        model = FLModel(params={"weight": torch.tensor([1.0])}, metrics={"accuracy": 0.85})
+        # Reproduce the old layout: weights and metadata named after the target.
+        controller.save_model_file(model, str(target))
+        target_metadata = run_dir / "target.pt.metadata"
+        if metadata_layout == "both":
+            model.metrics = {"accuracy": 0.95}
+            controller.save_model(model)
+        elif metadata_layout in {"neither", "escaping_target"}:
+            target_metadata.unlink()
+        if metadata_layout == "escaping_target":
+            outside = tmp_path / "outside.metadata"
+            outside.write_bytes(b"outside must not be deserialized")
+            target_metadata.symlink_to(outside)
+            with patch("nvflare.app_opt.pt.fedavg.fobs.loadf") as load_metadata:
+                with pytest.raises(ValueError, match="model metadata path"):
+                    controller.load_model()
+                load_metadata.assert_not_called()
+            return
+
+        loaded = controller.load_model()
+
+        assert torch.equal(loaded.params["weight"], model.params["weight"])
+        assert loaded.metrics == (None if metadata_layout == "neither" else model.metrics)
+
     def test_run_registers_tensor_decomposer(self):
         """Test that run() registers TensorDecomposer."""
         from nvflare.app_opt.pt.fedavg import PTFedAvg
