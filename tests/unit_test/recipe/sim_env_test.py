@@ -215,7 +215,7 @@ def test_sim_env_deploy_with_explicit_clients_does_not_pass_n_clients(tmp_path):
 
 
 def test_sim_env_passes_validated_plan_outside_the_job(tmp_path):
-    plan = {"format_version": 1, "round_participation": {"0": ["site-2", "site-1"]}}
+    plan = {"format_version": 1, "async_execution": {"logical_sequence": ["a"], "arrival_sequence": [0]}}
     env = SimEnv(num_clients=2, workspace_root=str(tmp_path), reprod=True, plan=plan)
     job = _make_job()
     mock_run = _deploy_with_mocked_simulator(env, job)

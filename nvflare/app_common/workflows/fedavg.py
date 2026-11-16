@@ -19,7 +19,6 @@ from typing import Any, Dict, Optional, Set, Union
 
 from nvflare.apis.controller_spec import TaskCompletionStatus
 from nvflare.apis.fl_constant import FLMetaKey
-from nvflare.apis.simulation_plan import record_initial_model
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
@@ -192,7 +191,6 @@ class FedAvg(BaseFedAvg):
 
             model.start_round = self.start_round
             model.total_rounds = self.num_rounds
-            record_initial_model(self.fl_ctx, self.start_round, model)
 
             for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
                 self.info(center_message(message=f"Round {self.current_round} started.", boarder_str="-"))
@@ -206,11 +204,6 @@ class FedAvg(BaseFedAvg):
                 self.event(AppEventType.ROUND_STARTED)
 
                 clients = self.sample_clients(self.num_clients)
-                round_execution = self._round_execution
-                round_execution.require_replay_support(
-                    self.aggregator is None,
-                    "planned FedAvg participation requires the built-in aggregator to verify acceptance",
-                )
 
                 # Reset aggregation state for this round
                 if self.aggregator:
@@ -267,8 +260,6 @@ class FedAvg(BaseFedAvg):
                     if round_state["failed"]:
                         raise RuntimeError("FedAvg aggregation failed; refusing to update or save the model")
 
-                round_execution.verify()
-
                 self.event(AppEventType.BEFORE_AGGREGATION)
 
                 # Get final aggregated result
@@ -278,7 +269,6 @@ class FedAvg(BaseFedAvg):
                 )
 
                 model = self.update_model(model, aggregate_results)
-                round_execution.publish_model(self.current_round + 1, model)
 
                 # Early stopping: check if current model is better
                 if self.stop_condition:
@@ -380,7 +370,6 @@ class FedAvg(BaseFedAvg):
         if self._params_type is None:
             self._params_type = result.params_type
         self._received_count += 1
-        self._round_execution.record(client_name)
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
         return True
 

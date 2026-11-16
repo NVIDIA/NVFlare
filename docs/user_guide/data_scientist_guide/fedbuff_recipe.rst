@@ -197,7 +197,7 @@ distinct within that module.
        evaluation, metrics and artifacts through observer hooks.
      - Core assignment/version accounting and buffered aggregation.
    * - :ref:`Simulation plan runtime <reproducible_simulation>`
-     - Simulator-only participation, logical starts, acceptance, virtual time,
+     - Simulator-only logical starts, acceptance, virtual time,
        disk evidence and model history.
      - Recipe construction, exported job configuration and production arrivals.
    * - :github_nvflare_link:`Reproducible simulation example

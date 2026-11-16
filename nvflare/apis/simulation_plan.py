@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Simulation-only execution plans shared by task and Collab workflows.
+"""Simulation-only execution plans for cooperating workflows.
 
 Plans are run inputs, not part of the exported job. A server-side runtime owns
 their consumption and traces so an unsupported section cannot be ignored.
@@ -28,7 +28,6 @@ from pathlib import Path
 
 SIMULATION_PLAN_FILE = "simulation_plan.json"
 SIMULATION_PLAN_PROP = "__simulation_plan_runtime__"
-ROUND_PARTICIPATION = "round_participation"
 ASYNC_EXECUTION = "async_execution"
 FORMAT_VERSION = 1
 PHASES = ("download", "train", "upload")
@@ -125,65 +124,6 @@ class PlannedAsyncEvents:
             yield instant, identity, phase
 
 
-class PlannedRoundParticipation:
-    """Selection and acceptance boundary for a round-based workflow."""
-
-    def __init__(self, runtime, round_number: int, available: list[str], expected: int):
-        self.runtime = runtime
-        self.round_number = round_number
-        self.clients = runtime.select_round(round_number, available, expected)
-        self.accepted = []
-
-    def record(self, client_name: str) -> None:
-        self.accepted.append(client_name)
-
-    def verify(self) -> None:
-        self.runtime.validate_round_acceptance(self.round_number, self.accepted)
-
-    def require_replay_support(self, supported: bool, reason: str) -> None:
-        if not supported:
-            raise RuntimeError(reason)
-
-    def publish_model(self, version: int, model) -> None:
-        self.runtime.save_model(version, model)
-
-
-class LiveRoundParticipation:
-    """Matching no-op event methods for ordinary round execution."""
-
-    def __init__(self, clients: list[str]):
-        self.clients = clients
-
-    def record(self, client_name: str) -> None:
-        pass
-
-    def verify(self) -> None:
-        pass
-
-    def require_replay_support(self, supported: bool, reason: str) -> None:
-        pass
-
-    def publish_model(self, version: int, model) -> None:
-        pass
-
-
-def round_participation(fl_ctx, round_number: int, available: list[str], expected: int, live_select):
-    """Return one participation object; callers use the same event methods in every environment."""
-    runtime = fl_ctx.get_prop(SIMULATION_PLAN_PROP) if fl_ctx is not None else None
-    if runtime is not None and runtime.has_section(ROUND_PARTICIPATION):
-        if type(round_number) is not int:
-            raise RuntimeError("planned round participation requires CURRENT_ROUND in the FLContext")
-        return PlannedRoundParticipation(runtime, round_number, available, expected)
-    return LiveRoundParticipation(live_select())
-
-
-def record_initial_model(fl_ctx, version: int, model) -> None:
-    """Retain the initial state only when a round plan is active."""
-    runtime = fl_ctx.get_prop(SIMULATION_PLAN_PROP) if fl_ctx is not None else None
-    if runtime is not None and runtime.has_section(ROUND_PARTICIPATION):
-        runtime.save_model(version, model)
-
-
 def validate_simulation_plan(value: dict) -> dict:
     """Return a normalized JSON plan, rejecting unknown or malformed controls."""
     if (
@@ -192,30 +132,12 @@ def validate_simulation_plan(value: dict) -> dict:
         or value["format_version"] != FORMAT_VERSION
     ):
         raise ValueError(f"simulation plan must be an object with format_version={FORMAT_VERSION}")
-    unknown = set(value) - {"format_version", ROUND_PARTICIPATION, ASYNC_EXECUTION}
+    unknown = set(value) - {"format_version", ASYNC_EXECUTION}
     if unknown:
         raise ValueError(f"unsupported simulation plan sections: {sorted(unknown)}")
-    if ROUND_PARTICIPATION not in value and ASYNC_EXECUTION not in value:
+    if ASYNC_EXECUTION not in value:
         raise ValueError("simulation plan must contain a supported execution section")
     result = {"format_version": FORMAT_VERSION}
-    if ROUND_PARTICIPATION in value:
-        rounds = value[ROUND_PARTICIPATION]
-        if not isinstance(rounds, dict) or not rounds:
-            raise ValueError("round_participation must map round numbers to client lists")
-        normalized = {}
-        for raw_round, clients in rounds.items():
-            try:
-                round_number = int(raw_round)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"invalid planned round: {raw_round!r}") from exc
-            if str(round_number) != str(raw_round) or round_number < 0:
-                raise ValueError(f"invalid planned round: {raw_round!r}")
-            if not isinstance(clients, list) or not clients or any(not isinstance(c, str) or not c for c in clients):
-                raise ValueError(f"round {round_number} must list nonempty client names")
-            if len(clients) != len(set(clients)):
-                raise ValueError(f"round {round_number} has duplicate client names")
-            normalized[str(round_number)] = list(clients)
-        result[ROUND_PARTICIPATION] = normalized
     if ASYNC_EXECUTION in value:
         async_plan = value[ASYNC_EXECUTION]
         if not isinstance(async_plan, dict) or set(async_plan) - {
@@ -275,36 +197,9 @@ class SimulationPlanRuntime:
         self.plan = validate_simulation_plan(plan)
         self.trace_dir = Path(trace_dir)
         self._consumed = set()
-        self._selected_rounds = {}
-        self._accepted_rounds = set()
         self._started_at = time.monotonic()
         self.virtual_time = None
         self._finalized = False
-
-    def select_round(self, round_number: int, available: list[str], expected: int | None) -> list[str]:
-        rounds = self.plan[ROUND_PARTICIPATION]
-        key = str(round_number)
-        if key not in rounds:
-            raise ValueError(f"no participation plan for round {round_number}")
-        selected = rounds[key]
-        if expected is not None and len(selected) != expected:
-            raise ValueError(f"round {round_number} plans {len(selected)} clients; workflow expects {expected}")
-        missing = set(selected) - set(available)
-        if missing:
-            raise RuntimeError(f"planned clients unavailable in round {round_number}: {sorted(missing)}")
-        self._consumed.add(ROUND_PARTICIPATION)
-        self._selected_rounds[round_number] = list(selected)
-        self._trace("rounds.jsonl", {"round": round_number, "selected": selected, "available": sorted(available)})
-        return list(selected)
-
-    def validate_round_acceptance(self, round_number: int, accepted: list[str]) -> None:
-        planned = self._selected_rounds.get(round_number)
-        if planned is None:
-            raise RuntimeError(f"round {round_number} was not selected through the simulation plan")
-        self._trace("round_acceptance.jsonl", {"round": round_number, "accepted": accepted})
-        if len(accepted) != len(planned) or set(accepted) != set(planned):
-            raise RuntimeError(f"round {round_number} accepted {accepted}, expected exactly {planned}")
-        self._accepted_rounds.add(round_number)
 
     def has_section(self, section: str) -> bool:
         return section in self.plan
@@ -341,10 +236,6 @@ class SimulationPlanRuntime:
         unused = set(self.plan) - {"format_version"} - self._consumed
         if unused:
             raise RuntimeError(f"simulation plan was not consumed by this workflow: {sorted(unused)}")
-        if ROUND_PARTICIPATION in self.plan:
-            planned = {int(key) for key in self.plan[ROUND_PARTICIPATION]}
-            if planned != self._accepted_rounds:
-                raise RuntimeError(f"planned rounds were not fully accepted: {sorted(planned - self._accepted_rounds)}")
 
     def finalize(self) -> None:
         if not self._finalized:

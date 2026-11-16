@@ -23,7 +23,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.apis.simulation_plan import LiveRoundParticipation, round_participation
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
@@ -79,7 +78,6 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             check_non_negative_int("sampling_seed", sampling_seed)
         self._sampling_seed = sampling_seed
         self._sampling_rng = random.Random(sampling_seed) if sampling_seed is not None else None
-        self._round_execution = LiveRoundParticipation([])
 
         # config data
         self._ignore_result_error = ignore_result_error
@@ -481,32 +479,26 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         """
         clients = [client.name for client in self.engine.get_clients()]
 
-        def live_select():
-            selected = list(clients)
-            if num_clients:
-                check_positive_int("num_clients", num_clients)
-                if num_clients < len(selected):
-                    if self._sampling_rng is None:
-                        random.shuffle(selected)
-                    else:
-                        selected.sort()
-                        self._sampling_rng.shuffle(selected)
-                    selected = selected[0:num_clients]
-                    self.info(
-                        f"num_clients ({num_clients}) is less than the number of available clients. Returning a random subset of ({num_clients}) clients."
-                    )
-                elif num_clients > len(selected):
-                    self.error(
-                        f"num_clients ({num_clients}) is greater than the number of available clients. Returning all ({len(selected)}) available clients."
-                    )
-            self.info(f"Sampled clients: {selected}")
-            return selected
+        if num_clients:
+            check_positive_int("num_clients", num_clients)
+            if num_clients < len(clients):
+                if self._sampling_rng is None:
+                    random.shuffle(clients)
+                else:
+                    clients.sort()
+                    self._sampling_rng.shuffle(clients)
+                clients = clients[0:num_clients]
+                self.info(
+                    f"num_clients ({num_clients}) is less than the number of available clients. Returning a random subset of ({num_clients}) clients."
+                )
+            elif num_clients > len(clients):
+                self.error(
+                    f"num_clients ({num_clients}) is greater than the number of available clients. Returning all ({len(clients)}) available clients."
+                )
 
-        fl_ctx = getattr(self, "fl_ctx", None)
-        round_number = fl_ctx.get_prop(AppConstants.CURRENT_ROUND) if fl_ctx is not None else None
-        expected = num_clients if num_clients else len(clients)
-        self._round_execution = round_participation(fl_ctx, round_number, clients, expected, live_select)
-        return self._round_execution.clients
+        self.info(f"Sampled clients: {clients}")
+
+        return clients
 
     def set_fl_context(self, data: FLModel):
         """Set fl_ctx CURRENT_ROUND and NUM_ROUNDS from FLModel so they stay current each round.

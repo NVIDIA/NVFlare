@@ -3,38 +3,11 @@
 Reproducible Simulation Plans
 =============================
 
-``SimEnv(reprod=True, plan=...)`` controls participation and logical execution
-without changing a recipe or its exported job. The same job can run in
-``ProdEnv`` with live scheduling. A plan is a JSON dictionary or a path to a
-JSON file; it is simulator input and is never packaged in the job.
-
-Round Participation
--------------------
-
-Use ``round_participation`` for a round-based controller such as the standard
-``FedAvg`` controller. Configure the recipe for two participants per round and
-run it with three physical sites:
-
-.. code-block:: python
-
-   from nvflare.recipe import SimEnv
-
-   plan = {
-       "format_version": 1,
-       "round_participation": {
-           "0": ["site-2", "site-1"],
-           "1": ["site-3", "site-2"],
-       },
-   }
-   run = recipe.execute(SimEnv(num_clients=3, reprod=True, plan=plan))
-
-The plan must cover every executed round. Each selected site must exist and
-the list length must match the controller's expected participant count.
-``FedAvg`` checks that every selected contribution was accepted before
-publishing a round. Its built-in aggregator supports this check; a custom
-aggregator needs its own acceptance adapter. Other controllers can use
-``PlannedRoundParticipation`` at their selection and publication boundaries;
-its ``record()`` and ``verify()`` methods make accepted participants explicit.
+``SimEnv(reprod=True, plan=...)`` controls logical asynchronous execution for
+cooperating Collab workflows without changing a recipe or its exported job.
+The same job can run in ``ProdEnv`` with live scheduling. A plan is a JSON
+dictionary or a path to a JSON file; it is simulator input and is never
+packaged in the job.
 
 Buffered Asynchronous Execution
 -------------------------------
@@ -59,9 +32,9 @@ supplies only the simulator. The equivalent import path is:
    run = recipe.execute(SimEnv(num_clients=2, reprod=True, plan=make_plan(10)))
 
 ``FedBuffRecipe`` consumes an ``async_execution`` plan through its shared
-execution port. ``logical_sequence``
-names assignments in reservation order. ``arrival_sequence`` lists assignment
-IDs in acceptance order, independent of physical completion order:
+execution port. ``logical_sequence`` names assignments in reservation order.
+``arrival_sequence`` lists assignment IDs in acceptance order, independent of
+physical completion order:
 
 .. code-block:: python
 
@@ -83,10 +56,12 @@ client cannot be reserved again while an earlier assignment for that client
 remains active, including across separate reservation batches. The runnable
 example uses ``["alice", "bob", "bob", "alice"]`` with acceptance order
 ``[1, 0, 2, 3]`` to satisfy this rule.
+
 An optional ``physical_sites`` list pins each assignment to a named physical
 site; without it, available sites take pending work in FIFO order. The pinned
 site names must exist in the ``SimEnv`` pool. ``dispatch.jsonl`` records the
 actual assignment-to-site mapping in either mode.
+
 ``train_seeds`` are passed to the client's published ``train`` method as a
 ``{physical_site: seed}`` mapping. The client must apply them to its own
 training/data RNG. A reused physical worker must reset or separate its data
@@ -124,48 +99,22 @@ Evidence and Limits
 -------------------
 
 The simulator writes plan traces under
-``<workspace>/<job>/server/simulate_job/simulation/``. Round plans write
-``rounds.jsonl`` and ``round_acceptance.jsonl``. Buffered plans write
+``<workspace>/<job>/server/simulate_job/simulation/``. Buffered plans write
 ``assignments.jsonl``, ``accepted.jsonl``, and retained ``models/`` and
 ``results/`` files; timed plans also write ``phases.jsonl`` and
 ``dispatch.jsonl``. ``run.jsonl`` reports wall seconds and virtual time
-separately. Unknown plan controls, unused sections and incomplete planned
-rounds fail the run.
+separately. Unknown plan controls and unused sections fail the run.
 
-This controls participation and server acceptance. Matching numerical models
-also requires deterministic initialization, client training, data loading,
-optional transforms and reduction behavior. FedAvg's built-in streaming
-aggregation still consumes accepted results as callbacks arrive, so its plan
-guarantees the selected set, not bitwise equality across different completion
-orders. A fixed FedBuff replay does not assign virtual timestamps; choose a
-timed plan when the delay regime is part of the experiment. Stored files are
-run evidence, not distributed restart checkpoints.
+This controls logical assignments and server acceptance. Matching numerical
+models also requires deterministic initialization, client training, data
+loading, optional transforms and reduction behavior. A fixed FedBuff replay
+does not assign virtual timestamps; choose a timed plan when the delay regime
+is part of the experiment. Stored files are run evidence, not distributed
+restart checkpoints.
 
-``SimulationPlanRuntime``, ``PlannedRoundParticipation`` and
-``PlannedAsyncEvents`` are reusable execution pieces. New round-based workflows
-can import ``round_participation`` and use one interface in both environments:
-
-.. code-block:: python
-
-   from nvflare.apis.simulation_plan import record_initial_model, round_participation
-
-   record_initial_model(fl_ctx, initial_version, initial_model)
-   execution = round_participation(
-       fl_ctx, round_number, available_clients, expected_count,
-       live_select=lambda: choose_clients_normally(),
-   )
-   for client_name, result in receive_results(execution.clients):
-       if accept_result(result):
-           execution.record(client_name)
-   execution.verify()  # Before publishing; a no-op in live execution.
-   execution.publish_model(next_version, new_model)
-
-``FedAvg`` uses this boundary through ``BaseModelController.sample_clients()``.
-Other algorithms can attach the same calls at their actual selection,
-acceptance and publication points. The workflow has no simulator-specific
-constructor arguments or branches.
-
-For an asynchronous Collab workflow, import ``AsyncExecutionPort`` and
+``SimulationPlanRuntime`` supplies plan claiming, trace writing, model/result
+storage and unused-plan checks. ``PlannedAsyncEvents`` supplies virtual events.
+For another asynchronous Collab workflow, import ``AsyncExecutionPort`` and
 ``run_async_execution`` from ``nvflare.collab.replayable_execution``. Supply
 the algorithm's state, its existing live loop, Collab submit/receive calls,
 result normalization and optional event callbacks:
@@ -201,4 +150,6 @@ call; ``receive()`` returns ``(site, assignment_id, result, error)``.
 ``FedBuffWorkflow`` is one implementation of this port.
 The shared runner owns the live-versus-planned choice; a new algorithm must
 still expose these real decisions rather than expecting ``SimEnv`` to infer
-them from opaque workflow code.
+them from opaque workflow code. Other workflow families can use the same
+simulator-owned runtime once they expose their own assignment, acceptance and
+publication boundaries; this release implements the Collab async path only.
