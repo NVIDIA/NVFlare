@@ -381,52 +381,6 @@ def _nested_value(container: Mapping[str, Any], *path: str) -> Any:
     return value
 
 
-def label_harmonization_for_training(
-    *,
-    task: str,
-    contract: TrainingContract,
-    label_summary: Mapping[str, Any],
-) -> dict[str, Any]:
-    if contract.record_type != CLASSIFICATION or "binary" not in task.lower():
-        return {}
-    raw_values = label_summary.get("observed_label_values", [])
-    return {
-        "required": True,
-        "scope": "cross_client_federated_training",
-        "shared_label_space": {"0": "negative_or_control", "1": "positive_or_target"},
-        "raw_observed_label_values": raw_values if isinstance(raw_values, list) else [],
-        "adapter_requirement": (
-            "Client data harmonization should emit canonical integer labels 0 and 1. If a local source "
-            "has multiple task-positive diagnosis values, collapse them to 1 only when local evidence "
-            "defines those values as positive for the requested binary task; otherwise mark the site unfeasible."
-        ),
-        "training_code_requirement": (
-            "Use one shared binary output head/loss across all clients. Do not create per-client output "
-            "heads or let one client remain multi-class. As a guard for extracted artifacts admitted by "
-            "the data phase, the dataset loader may map nonzero integer labels to 1 for this binary task, "
-            "but it must reject missing, negative, non-integer, or semantically unknown labels."
-        ),
-    }
-
-
-def harmonized_binary_class_counts(class_counts: Mapping[str, Any]) -> dict[str, int]:
-    counts = {"0": 0, "1": 0}
-    for key, value in class_counts.items():
-        try:
-            count = int(value)
-        except (TypeError, ValueError):
-            continue
-        label = _coerce_label_value(key)
-        if isinstance(label, int):
-            counts["0" if label == 0 else "1"] += count
-    return {key: value for key, value in counts.items() if value}
-
-
-def _coerce_label_value(value: Any) -> int | str:
-    text = str(value)
-    return int(text) if text.isdigit() else text
-
-
 def family_from_extraction_summary(extraction_summary: Mapping[str, Any]) -> str:
     formats: set[str] = set()
     results = extraction_summary.get("extraction_results")

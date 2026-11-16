@@ -18,6 +18,7 @@ import inspect
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -42,6 +43,32 @@ from fedready.job_train import (
 
 
 class ResearchScopeTestCase(unittest.TestCase):
+    def test_training_response_does_not_infer_required_fields_from_aliases(self) -> None:
+        backend = mock.Mock()
+        backend.request.return_value = {
+            "schema_version": "fedready.training_code_spec.v1",
+            "status": "implemented",
+            "package": {"root": "training"},
+            "entry_point": {"script": "train.py"},
+            "model_class": {"module": "training.model", "class": "Model"},
+        }
+        turn = ServerAgent(backend).implement_training_code(
+            task={"task": "segmentation"}, extraction_summary={}, training_plan={}, code_workspace="/tmp"
+        )
+        errors = _training_code_spec_validation_errors(turn.output, require_local_simulation=False)
+        self.assertEqual(
+            {error["key"] for error in errors if error["kind"] == "missing_required_key"},
+            {"package_dir", "entry_script", "model_class_path"},
+        )
+
+    def test_extraction_summary_is_verifier_owned_without_a_model_call(self) -> None:
+        backend = mock.Mock()
+        summary = ServerAgent(backend).summarize_extraction_results(
+            task={"task": "segmentation"}, extraction_results={}
+        )
+        backend.request.assert_not_called()
+        self.assertEqual(summary.output["extracted_client_count"], 0)
+        self.assertEqual(summary.output["total_extracted_samples"], 0)
 
     def test_agent_classes_reject_missing_backend(self) -> None:
         with self.assertRaisesRegex(ValueError, "live Codex agent backend is required"):

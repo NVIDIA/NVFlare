@@ -28,3 +28,8 @@ Dataset licenses continue to apply to the locally prepared references.
 To prepare the bundle elsewhere, pass the destination as the second argument
 and set `FEDREADY_TASK_EXAMPLE_DIR` to that absolute directory before starting
 FedReady processes.
+
+Set `FEDREADY_TASK_EXAMPLE_ID` on the server and clients to the intended
+manifest `task_key`: `cup_seg`, `disc_seg`, `disc_detec`, or `glaucoma_cls`.
+Selection requires an exact ID and valid asset digests; task wording is not
+used to guess a reference.

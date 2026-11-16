@@ -19,6 +19,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from fedready.agents import _parse_local_vlm_visual_qc_response
 from fedready.data.extractor import apply_automatic_orientation_repair
 from fedready.data.qc import visual_qc_decision_passed
 from fedready.job_train import ready_training_clients
@@ -42,6 +43,22 @@ def _extracted_result(*, transform: str = "as_is", visual_passed: bool = True) -
 
 
 class VisualQCContractTestCase(unittest.TestCase):
+    def test_visual_decision_requires_explicit_json_without_text_inference(self) -> None:
+        for response in (
+            "as_is is not justified; I cannot assess this image.",
+            "Do not use hflip; image cannot be assessed.",
+            '{"transform": "as_is", "reason": "aligned"}',
+            '{"selected_transform": "original", "reason": "aligned"}',
+            '{"selected_transform": [], "reason": "aligned"}',
+            '{"selected_transform": "as_is"}',
+        ):
+            with self.subTest(response=response):
+                self.assertEqual(_parse_local_vlm_visual_qc_response(response)[0], "undecided")
+        self.assertEqual(
+            _parse_local_vlm_visual_qc_response('{"selected_transform": "hflip", "reason": "mirrored mask"}'),
+            ("hflip", "mirrored mask"),
+        )
+
     def test_consensus_transform_repairs_every_prepared_segmentation_mask(self) -> None:
         with TemporaryDirectory() as tmp:
             project_root = Path(tmp)

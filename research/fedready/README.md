@@ -235,7 +235,13 @@ cp research/fedready/meta/reference-sources.example.json \
 bash research/fedready/prepare_ref.sh \
   /tmp/fedready-reference-sources.json
 export FEDREADY_TASK_EXAMPLE_DIR="$(pwd)/research/fedready/task_example"
+export FEDREADY_TASK_EXAMPLE_ID=glaucoma_cls
 ```
+
+Set `FEDREADY_TASK_EXAMPLE_ID` on the server and clients to the exact prepared
+manifest `task_key` for the experiment: `glaucoma_cls`, `disc_seg`, `cup_seg`, or
+`disc_detec`. The walkthrough below uses `glaucoma_cls`. References are selected
+by this explicit ID and checked against their recorded digests.
 
 The preparer selects real image/target pairs from the declared manifests and
 writes the same canonical final-form contract used by visual review. Source

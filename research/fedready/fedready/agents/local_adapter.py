@@ -453,7 +453,7 @@ def review_local_adapter_preflight(
             stale_path.unlink(missing_ok=True)
         (workspace / ADAPTER_PREFLIGHT_QC_REFERENCE_FILE).unlink(missing_ok=True)
 
-        example_image = adapter_preflight_task_example_path(task=task, record_type=record_type)
+        example_image = adapter_preflight_task_example_path(record_type=record_type)
         if example_image is None:
             result = AdapterRuntimeResult(
                 stage="representative_raw_image_review",
@@ -616,7 +616,6 @@ def review_local_adapter_preflight(
 
         reference_qc_path = workspace / ADAPTER_PREFLIGHT_QC_REFERENCE_FILE
         reference_example = write_adapter_preflight_task_example_reference(
-            task=task,
             record_type=record_type,
             output_path=reference_qc_path,
             data_contract=data_contract,
@@ -764,82 +763,34 @@ def _adapter_preflight_qc_path(workspace: Path, review_index: int) -> Path:
     return workspace / f"adapter_preflight_qc_{review_index + 1:02d}.png"
 
 
-def adapter_preflight_task_example_path(*, task: str, record_type: str) -> Path | None:
-    example = _select_task_example(task=task, record_type=record_type)
+def adapter_preflight_task_example_path(*, record_type: str) -> Path | None:
+    example = _select_task_example(record_type=record_type)
     return _task_example_asset_path(example, "image_path", "image")
 
 
-def task_example_image_path_for_task(task: str | None = None) -> Path | None:
-    """Return the best matching canonical task example image, if one exists."""
-
-    example = _select_task_example_for_task(task=task)
-    return _task_example_asset_path(example, "image_path", "image")
+def task_example_image_path() -> Path | None:
+    return _task_example_asset_path(_select_task_example(), "image_path", "image")
 
 
-def task_example_image_label_paths_for_task(task: str | None = None) -> dict[str, Any] | None:
-    """Return the matched canonical image and its validated label asset."""
-
-    example = _select_task_example_for_task(task=task)
-    image_path = _task_example_asset_path(example, "image_path", "image")
-    if image_path is None or not isinstance(example, Mapping):
-        return None
-    for label_kind, field in (
-        ("mask", "mask_path"),
-        ("annotation", "annotation_path"),
-        ("class_label", "label_path"),
-    ):
-        label_path = _task_example_asset_path(example, field)
-        if label_path is not None:
-            return {
-                "task_key": str(example.get("task_key") or ""),
-                "record_type": str(example.get("record_type") or ""),
-                "image_path": image_path,
-                "label_path": label_path,
-                "label_kind": label_kind,
-            }
-    return None
-
-
-def task_example_context_for_task(task: str | None = None) -> dict[str, Any]:
-    manifest = _load_task_example_manifest()
-    examples = manifest.get("examples") if isinstance(manifest, Mapping) else None
-    safe_examples: list[dict[str, Any]] = []
-    task_text = str(task or "").casefold()
-    for example in examples if isinstance(examples, list) else []:
-        if not isinstance(example, Mapping):
-            continue
-        if not _task_example_assets_valid(example):
-            continue
-        public = _public_task_example(example)
-        if task_text:
-            score = _task_example_match_score(
-                task_text,
-                " ".join(str(example.get(key) or "") for key in ("task_key", "task", "description")).casefold(),
-            )
-            if score <= 0:
-                continue
-            public["match_score"] = score
-        safe_examples.append(public)
-    if task_text:
-        safe_examples.sort(key=lambda value: int(value.get("match_score") or 0), reverse=True)
+def task_example_context() -> dict[str, Any]:
+    example = _select_task_example()
     return {
         "schema_version": "fedready.task_example_context.v1",
         "root": "task_example",
         "storage": "canonical_final_expected_form",
-        "examples": safe_examples,
+        "examples": [_public_task_example(example)] if example is not None else [],
         "safe_to_share": True,
     }
 
 
 def write_adapter_preflight_task_example_reference(
     *,
-    task: str,
     record_type: str,
     output_path: Path,
     data_contract: Mapping[str, Any] | None,
 ) -> dict[str, Any] | None:
     del data_contract
-    example = _select_task_example(task=task, record_type=record_type)
+    example = _select_task_example(record_type=record_type)
     if example is None:
         return None
     image_path = _task_example_asset_path(example, "image_path", "image")
@@ -872,49 +823,21 @@ def _load_task_example_manifest() -> dict[str, Any]:
     return manifest if isinstance(manifest, dict) else {}
 
 
-def _select_task_example_for_task(*, task: str | None) -> Mapping[str, Any] | None:
-    manifest = _load_task_example_manifest()
-    examples = manifest.get("examples") if isinstance(manifest, Mapping) else None
-    task_text = str(task or "").casefold()
-    best: tuple[int, Mapping[str, Any]] | None = None
-    fallback: Mapping[str, Any] | None = None
-    for example in examples if isinstance(examples, list) else []:
-        if not isinstance(example, Mapping):
-            continue
-        if not _task_example_assets_valid(example):
-            continue
-        if fallback is None:
-            fallback = example
-        haystack = " ".join(str(example.get(key) or "") for key in ("task_key", "task", "description")).casefold()
-        score = _task_example_match_score(task_text, haystack)
-        if score <= 0:
-            continue
-        if best is None or score > best[0]:
-            best = (score, example)
-    if best is not None:
-        return best[1]
-    return fallback if not task_text else None
-
-
-def _select_task_example(*, task: str, record_type: str) -> Mapping[str, Any] | None:
-    manifest = _load_task_example_manifest()
-    examples = manifest.get("examples") if isinstance(manifest, Mapping) else None
-    task_text = str(task or "").casefold()
-    best: tuple[int, Mapping[str, Any]] | None = None
-    for example in examples if isinstance(examples, list) else []:
-        if not isinstance(example, Mapping):
-            continue
-        if not _task_example_record_type_matches(str(example.get("record_type") or ""), record_type):
-            continue
-        if not _task_example_assets_valid(example):
-            continue
-        haystack = " ".join(str(example.get(key) or "") for key in ("task_key", "task", "description")).casefold()
-        score = _task_example_match_score(task_text, haystack)
-        if score <= 0:
-            continue
-        if best is None or score > best[0]:
-            best = (score, example)
-    return best[1] if best is not None else None
+def _select_task_example(*, record_type: str | None = None) -> Mapping[str, Any] | None:
+    """Select the operator-declared reference, never a keyword-scored substitute."""
+    task_key = os.environ.get("FEDREADY_TASK_EXAMPLE_ID", "").strip()
+    examples = _load_task_example_manifest().get("examples", [])
+    if not isinstance(examples, list):
+        return None
+    matches = [item for item in examples if isinstance(item, Mapping) and item.get("task_key") == task_key]
+    if not task_key or len(matches) != 1:
+        return None
+    example = matches[0]
+    if record_type is not None and not _task_example_record_type_matches(
+        str(example.get("record_type") or ""), record_type
+    ):
+        return None
+    return example if _task_example_assets_valid(example) else None
 
 
 def _public_task_example(example: Mapping[str, Any]) -> dict[str, Any]:
@@ -982,27 +905,6 @@ def _task_example_record_type_matches(example_record_type: str, record_type: str
     if example_type == target_type:
         return True
     return example_type == "generated_contract" and target_type not in {"", "unknown", "segmentation", "classification"}
-
-
-def _task_example_match_score(task_text: str, haystack: str) -> int:
-    score = 0
-    if "cup" in task_text and "cup" in haystack:
-        score += 10
-    if ("disc" in task_text or "disk" in task_text) and ("disc" in haystack or "disk" in haystack):
-        score += 10
-    if "segmentation" in task_text and "segmentation" in haystack:
-        score += 2
-    if "detection" in task_text and "detection" in haystack:
-        score += 2
-    if "box" in task_text and "box" in haystack:
-        score += 2
-    if "glaucoma" in task_text and "glaucoma" in haystack:
-        score += 10
-    if "classification" in task_text and "classification" in haystack:
-        score += 2
-    if "fundus" in task_text and "fundus" in haystack:
-        score += 1
-    return score
 
 
 def write_adapter_preflight_qc_record(

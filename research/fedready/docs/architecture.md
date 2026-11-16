@@ -50,6 +50,13 @@ validated updates.
 - Acquisition-quality scoring and quality-based sample filtering are outside
   this contribution.
 
+The operator selects the prepared reference by `FEDREADY_TASK_EXAMPLE_ID` on
+the server and clients. Selection uses the exact manifest ID and verifies asset
+digests. Agent responses must use the documented fields; missing fields and
+invalid visual-decision JSON are returned as validation failures. Training
+consumes the label IDs and meanings established during data preparation.
+Extraction counts and readiness summaries are computed by the verifier.
+
 ## Promotion gates
 
 1. Guardrails authorize every agent action and FLARE payload shape.

@@ -189,33 +189,13 @@ def _training_data_contract_payload(
         }
     )
     label_summary = _safe_training_label_summary_from_extraction_summary(extraction_summary)
-    label_harmonization = training_contracts.label_harmonization_for_training(
-        task=task,
-        contract=task_contract,
-        label_summary=label_summary,
-    )
-    if label_harmonization:
-        payload["label_harmonization"] = label_harmonization
-        payload["labels"] = label_harmonization["shared_label_space"]
-        payload["observed_label_values"] = [0, 1]
-        payload["num_classes"] = 2
-        raw_values = label_summary.get("observed_label_values", [])
-        if raw_values:
-            payload["raw_observed_label_values"] = raw_values
-        class_counts = training_contracts.harmonized_binary_class_counts(
-            label_summary.get("class_counts") if isinstance(label_summary.get("class_counts"), dict) else {}
-        )
-        if class_counts:
-            payload["class_counts"] = class_counts
-    else:
-        labels = label_summary.get("labels") if isinstance(label_summary.get("labels"), dict) else {}
-        if labels:
-            payload["labels"] = labels
-            payload["observed_label_values"] = label_summary.get("observed_label_values", [])
-            payload["num_classes"] = len(labels)
-        class_counts = label_summary.get("class_counts") if isinstance(label_summary.get("class_counts"), dict) else {}
-        if class_counts:
-            payload["class_counts"] = class_counts
+    labels = label_summary.get("labels")
+    if labels:
+        payload["labels"] = labels
+        payload["observed_label_values"] = label_summary["observed_label_values"]
+        payload["num_classes"] = len(labels)
+    if label_summary["class_counts"]:
+        payload["class_counts"] = label_summary["class_counts"]
     canonical = _canonical_labels_from_extraction_summary(extraction_summary)
     if canonical:
         payload["canonical_labels"] = canonical
@@ -2156,49 +2136,11 @@ def _training_local_simulation_errors(spec: dict[str, Any]) -> list[dict[str, An
 
 
 def _selected_reference_example_path(spec: dict[str, Any]) -> str | None:
-    for key in (
-        "selected_reference_example_path",
-        "selected_reference_example_url",
-        "reference_example_path",
-        "reference_example_url",
-    ):
-        value = spec.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    selection = spec.get("reference_example_selection")
-    if isinstance(selection, dict):
-        for key in (
-            "selected_reference_example_path",
-            "path",
-            "url",
-            "source",
-            "example_path",
-            "example_url",
-        ):
-            value = selection.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-    value = spec.get("base_reference")
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return None
+    value = spec.get("selected_reference_example_path")
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _reference_api_evidence(spec: dict[str, Any]) -> Any:
-    value = spec.get("reference_api_evidence")
-    if isinstance(value, list) and value:
-        return value
-    selection = spec.get("reference_example_selection")
-    if isinstance(selection, dict):
-        for key in (
-            "reference_api_evidence",
-            "api_evidence",
-            "api_observations",
-            "evidence",
-        ):
-            value = selection.get(key)
-            if isinstance(value, list) and value:
-                return value
     return spec.get("reference_api_evidence")
 
 

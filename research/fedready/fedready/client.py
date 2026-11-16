@@ -31,7 +31,7 @@ from fedready.agents.local_adapter import (
     capture_client_data_provenance,
     ensure_local_adapter_pipeline,
     sanitize_adapter_diagnostic,
-    task_example_context_for_task,
+    task_example_context,
 )
 from fedready.data.contracts import (
     available_contract_summaries,
@@ -518,9 +518,7 @@ class FedReadyTaskQueryExecutor(Executor):
                 "local_data_path": str(local_data_path),
                 "adapter_workspace": str(adapter_workspace.resolve()),
                 "adapter_manifest_contract": adapter_manifest_contract,
-                "task_examples": task_example_context_for_task(
-                    policy.get("task") if isinstance(policy.get("task"), str) else None
-                ),
+                "task_examples": task_example_context(),
                 "execution_limits": {
                     "max_records": extractor_config.max_samples,
                     "min_records": self.min_count,

@@ -50,6 +50,28 @@ from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 
 
 class NVFlareJobTestCase(unittest.TestCase):
+    def test_training_preserves_approved_label_ids_and_counts(self) -> None:
+        labels = {"negative": 1, "positive": 2}
+        summary = {
+            "extraction_strategy": {"label_rule": {"canonical_labels": labels}},
+            "extraction_results": {
+                "SITE_A": {
+                    "data": "extracted",
+                    "extraction": {"classification_storage": {"class_counts": {"1": 4, "2": 6}}},
+                }
+            },
+        }
+        payload = job_train._training_data_contract_payload(
+            task="binary classification",
+            task_contract=job_train.training_contracts.CLASSIFICATION_TRAINING,
+            dataset_root="prepared",
+            extraction_summary=summary,
+        )
+        self.assertEqual(payload["canonical_labels"], labels)
+        self.assertEqual(payload["observed_label_values"], [1, 2])
+        self.assertEqual(payload["class_counts"], {"1": 4, "2": 6})
+        self.assertNotIn("label_harmonization", payload)
+
     def test_training_package_export_uses_integrity_root(self) -> None:
         with TemporaryDirectory() as tmp:
             package_dir = Path(tmp) / "fedready_task_training"

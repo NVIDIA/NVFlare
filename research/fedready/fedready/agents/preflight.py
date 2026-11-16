@@ -24,11 +24,7 @@ from typing import Any
 
 from fedready.agents import DEFAULT_LOCAL_VISION_MODEL, GuardrailAgent, GuardrailCheck, _query_local_vlm_image
 from fedready.agents.bridge import LOCAL_VISION_API_BASE_URL, CodexWorkerBackend
-from fedready.agents.local_adapter import (
-    is_local_http_url,
-    task_example_context_for_task,
-    task_example_image_path_for_task,
-)
+from fedready.agents.local_adapter import is_local_http_url, task_example_context, task_example_image_path
 from fedready.utils.io import atomic_write_json
 from fedready.utils.logging import timestamp_utc
 
@@ -89,11 +85,11 @@ def run_live_runtime_preflight(
         "reason": visual_skip_reason,
     }
     if visual_checks:
-        task_examples = task_example_context_for_task(task)
+        task_examples = task_example_context()
         examples = task_examples.get("examples") if isinstance(task_examples, dict) else None
-        reference_image = task_example_image_path_for_task(task)
+        reference_image = task_example_image_path()
         if not isinstance(examples, list) or not examples or reference_image is None:
-            raise RuntimeError("no digest-valid task_example reference is available for the requested task")
+            raise RuntimeError("set FEDREADY_TASK_EXAMPLE_ID to a digest-valid prepared reference task_key")
 
         vlm_response, vlm_call = _query_local_vlm_image(
             base_url=local_vlm_base_url,

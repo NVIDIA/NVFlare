@@ -38,8 +38,8 @@ from urllib.request import Request, urlopen
 
 from fedready.agents.local_adapter import (
     DEFAULT_LOCAL_ADAPTER_MAX_ATTEMPTS,
-    task_example_context_for_task,
-    task_example_image_path_for_task,
+    task_example_context,
+    task_example_image_path,
 )
 from fedready.agents.training_reference import NVFLARE_EXAMPLE_SELECTION_ID, NVFLARE_EXAMPLE_SELECTION_PROMPT
 from fedready.data.contracts import (
@@ -79,7 +79,6 @@ def _required_training_package_contract(training_plan: dict[str, Any]) -> dict[s
     data_contract = training_plan.get("data_contract")
     data_contract = data_contract if isinstance(data_contract, dict) else None
     contract["input_data_contract"] = data_contract
-    contract["label_harmonization_contract"] = (data_contract or {}).get("label_harmonization")
 
     preflight_contract = contract.get("local_preflight_contract")
     if isinstance(preflight_contract, dict):
@@ -356,19 +355,6 @@ VISUAL_QC_ALLOWED_SELECTIONS = VISUAL_QC_TRANSFORM_SET | {"undecided"}
 LOCAL_VISION_API_BASE_URL = "http://127.0.0.1:8001/v1"
 DEFAULT_LOCAL_VISION_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
 LOCAL_VLM_QC_SCHEMA = "fedready.local_vlm_visual_qc.v1"
-VISUAL_QC_COUNT_FIELDS = (
-    "selected_transform_counts",
-    "transform_vote_counts",
-    "transform_counts",
-    "vote_counts",
-)
-VISUAL_QC_TRANSFORM_LIST_FIELDS = ("selected_transforms", "sample_selected_transforms")
-VISUAL_QC_PER_SAMPLE_FIELDS = (
-    "per_sample_decisions",
-    "sample_decisions",
-    "per_sample_results",
-    "per_sample_records",
-)
 
 
 def check_allow_list(check: GuardrailCheck) -> GuardrailDecision:
@@ -597,23 +583,9 @@ class ServerAgent:
                 output_schema="FedReadyExtractionRoundSummary@v1",
             )
         )
-        prompt = render_server_prompt(
-            "aggregate_extraction_results",
-            task_json=json.dumps(task, sort_keys=True),
-        )
-        baseline = _generic_extraction_round_summary(task=task, extraction_results=extraction_results)
-        output = self._agent_output(
-            role="server_agent",
-            action="SERVER.AGGREGATE_EXTRACTION_RESULTS",
-            phase="data_harmonization",
-            input_schema="FedReadyClientExtractionResponse@v1",
-            output_schema="FedReadyExtractionRoundSummary@v1",
-            prompt=prompt,
-            context={"task": task, "extraction_results": extraction_results},
-            output_template=baseline,
-        )
-        output = _lock_harness_owned_fields(output, baseline=baseline)
-        return AgentTurn(prompt=prompt, output=output, guardrail=decision.as_policy())
+        # Counts and readiness are verifier-owned facts, with no model decision here.
+        output = _generic_extraction_round_summary(task=task, extraction_results=extraction_results)
+        return AgentTurn(prompt="", output=output, guardrail=decision.as_policy())
 
     def implement_training_code(
         self,
@@ -668,7 +640,6 @@ class ServerAgent:
             output_template=output,
             allow_template_passthrough=False,
         )
-        output = _normalize_training_code_output(output, code_workspace=code_workspace)
         _reject_reference_training_code_output(output, action="SERVER.IMPLEMENT_TRAINING_CODE")
         return AgentTurn(prompt=prompt, output=output, guardrail=decision.as_policy())
 
@@ -725,7 +696,6 @@ class ServerAgent:
             output_template=output,
             allow_template_passthrough=True,
         )
-        output = _normalize_training_code_output(output, code_workspace=code_workspace)
         _reject_reference_training_code_output(output, action="SERVER.IMPLEMENT_TRAINING_CODE")
         return AgentTurn(prompt=prompt, output=output, guardrail=decision.as_policy())
 
@@ -779,7 +749,7 @@ class ServerAgent:
                 "code_workspace_allowed_for_agent_writes": True,
                 "required_materializer_contract": render_server_prompt_object("required_data_materializer_contract"),
                 "built_in_data_contract_examples": available_contract_summaries(),
-                "task_examples": task_example_context_for_task(_task_text_for_contract(task)),
+                "task_examples": task_example_context(),
             },
             output_template=output,
             allow_template_passthrough=False,
@@ -831,7 +801,7 @@ class ServerAgent:
                 "inquiry": inquiry,
                 "site_profile_summary": _compact_site_profile_summary(site_wise_info),
                 "built_in_data_contract_examples": available_contract_summaries(),
-                "task_examples": task_example_context_for_task(_task_text_for_contract(task)),
+                "task_examples": task_example_context(),
                 "generated_contract_policy": render_server_prompt_object("generated_contract_policy"),
                 "site_wise_info_storage": "Full site_wise_info remains in server-local state and is logged separately; do not echo it.",
                 "output_template": output_template,
@@ -912,7 +882,7 @@ class ServerAgent:
         )
         if not allow_template_passthrough:
             _raise_if_template_passthrough(action=action, output=output, template=output_template)
-        return _merge_output_template(output_template, output)
+        return output
 
 
 class ClientAgent:
@@ -1174,7 +1144,7 @@ class ClientAgent:
                 output=api_output,
                 template=output_template,
             )
-            output = _normalize_local_adapter_output(api_output, client_id=self.client_id)
+            output = api_output
             try:
                 _require_local_adapter_agent_output(output, client_id=self.client_id)
                 break
@@ -1935,91 +1905,6 @@ def _raise_if_template_passthrough(*, action: str, output: dict[str, Any], templ
         raise RuntimeError(f"{action} backend returned output_template unchanged; refusing template fallback")
 
 
-def _normalize_training_code_output(output: dict[str, Any], *, code_workspace: str) -> dict[str, Any]:
-    if not isinstance(output, dict):
-        return output
-    normalized = dict(output)
-    workspace = Path(code_workspace).resolve()
-
-    if not isinstance(normalized.get("package_dir"), str) or not normalized["package_dir"].strip():
-        package = normalized.get("package")
-        files = normalized.get("files")
-        package_root = None
-        if isinstance(package, dict):
-            package_root = package.get("root") or package.get("name")
-        if not package_root and isinstance(files, dict):
-            package_root_file = files.get("package_root")
-            if isinstance(package_root_file, str) and package_root_file.strip():
-                package_root = Path(package_root_file).parts[0]
-        if isinstance(package_root, str) and package_root.strip():
-            candidate = Path(package_root)
-            if not candidate.is_absolute():
-                candidate = workspace / candidate
-            normalized["package_dir"] = str(candidate.resolve())
-
-    if not isinstance(normalized.get("entry_script"), str) or not normalized["entry_script"].strip():
-        script = None
-        entry_script = normalized.get("entry_script")
-        if isinstance(entry_script, dict):
-            for key in ("path", "script", "entry_script", "file", "relative_path"):
-                value = entry_script.get(key)
-                if isinstance(value, str) and value.strip():
-                    script = value
-                    break
-        if script is None:
-            entry_point = normalized.get("entry_point")
-            script = entry_point.get("script") if isinstance(entry_point, dict) else None
-        if isinstance(script, str) and script.strip():
-            normalized["entry_script"] = script
-
-    if not isinstance(normalized.get("model_class_path"), str) or not normalized["model_class_path"].strip():
-        framework = normalized.get("framework")
-        model_class = framework.get("model_class") if isinstance(framework, dict) else None
-        if not model_class:
-            model_info = normalized.get("model_class")
-            if isinstance(model_info, dict):
-                module_name = model_info.get("module")
-                class_name = model_info.get("class")
-                if isinstance(module_name, str) and isinstance(class_name, str):
-                    model_class = f"{module_name}.{class_name}"
-        if isinstance(model_class, str) and model_class.strip():
-            normalized["model_class_path"] = model_class
-
-    if not isinstance(normalized.get("framework"), str):
-        framework = normalized.get("framework")
-        if isinstance(framework, dict) and isinstance(framework.get("name"), str):
-            normalized["framework"] = framework["name"]
-
-    reference_selection = normalized.get("reference_example_selection")
-    if isinstance(reference_selection, dict):
-        if not isinstance(normalized.get("selected_reference_example_path"), str):
-            for key in ("selected_reference_example_path", "path", "url", "source", "example_path", "example_url"):
-                value = reference_selection.get(key)
-                if isinstance(value, str) and value.strip():
-                    normalized["selected_reference_example_path"] = value
-                    break
-        if not isinstance(normalized.get("reference_api_evidence"), list) or not normalized["reference_api_evidence"]:
-            for key in ("reference_api_evidence", "api_evidence", "api_observations", "evidence"):
-                value = reference_selection.get(key)
-                if isinstance(value, list) and value:
-                    normalized["reference_api_evidence"] = value
-                    break
-    selected_reference = normalized.get("selected_reference_example_path")
-    if (
-        isinstance(selected_reference, str)
-        and selected_reference.strip()
-        and normalized.get("base_reference") == "agent_selected_nvflare_example"
-    ):
-        normalized["base_reference"] = selected_reference
-
-    if "metric_artifacts" not in normalized:
-        metrics_output = normalized.get("metrics_output")
-        artifact = metrics_output.get("artifact") if isinstance(metrics_output, dict) else None
-        if isinstance(artifact, str) and artifact.strip():
-            normalized["metric_artifacts"] = [artifact]
-    return normalized
-
-
 def _reject_reference_training_code_output(output: dict[str, Any], *, action: str) -> None:
     if output.get("deterministic_ground_truth") is True:
         raise RuntimeError(f"{action} returned reference/baseline code from a live backend")
@@ -2040,51 +1925,8 @@ def _adapter_source_label_type(*, policy: dict[str, Any], extraction_result: dic
     return None
 
 
-def _normalize_local_adapter_output(output: dict[str, Any], *, client_id: str) -> dict[str, Any]:
-    if not isinstance(output, dict):
-        raise RuntimeError(f"CLIENT.IMPLEMENT_LOCAL_ADAPTER for {client_id} returned non-object output")
-    nested = output.get("local_adapter")
-    if isinstance(nested, dict):
-        normalized = dict(nested)
-    else:
-        normalized = dict(output)
-    if normalized.get("schema_version") == "FedReadyLocalAdapterSpec@v1":
-        normalized["schema_version"] = "fedready.local_adapter_spec.v1"
-    if "status" not in normalized and isinstance(normalized.get("adapter_status"), str):
-        normalized["status"] = normalized["adapter_status"]
-    if "manifest_path" not in normalized and isinstance(normalized.get("adapter_manifest_path"), str):
-        normalized["manifest_path"] = normalized["adapter_manifest_path"]
-    if "script_path" not in normalized and isinstance(normalized.get("adapter_script_path"), str):
-        normalized["script_path"] = normalized["adapter_script_path"]
-    adapter = normalized.get("adapter")
-    if isinstance(adapter, dict):
-        if "manifest_path" not in normalized and isinstance(adapter.get("manifest_path"), str):
-            normalized["manifest_path"] = adapter["manifest_path"]
-        if "script_path" not in normalized and isinstance(adapter.get("script_path"), str):
-            normalized["script_path"] = adapter["script_path"]
-    manifest = normalized.get("manifest")
-    if isinstance(manifest, dict):
-        if "manifest_path" not in normalized and isinstance(manifest.get("path"), str):
-            normalized["manifest_path"] = manifest["path"]
-        if "record_count" not in normalized and isinstance(manifest.get("record_count"), int):
-            normalized["record_count"] = manifest["record_count"]
-    if (
-        "status" not in normalized
-        and isinstance(normalized.get("manifest_path"), str)
-        and isinstance(normalized.get("script_path"), str)
-        and isinstance(normalized.get("record_count"), int)
-        and normalized["record_count"] > 0
-    ):
-        normalized["status"] = "implemented"
-    normalized.setdefault("schema_version", "fedready.local_adapter_spec.v1")
-    normalized.setdefault("client_id", client_id)
-    normalized.setdefault("adapter_kind", "client_local_label_adapter")
-    normalized.setdefault("safe_to_share", False)
-    return normalized
-
-
 def _safe_local_adapter_revision_output(output: dict[str, Any]) -> dict[str, Any]:
-    """Give both live backends the same path-free prior-attempt summary."""
+    """Return a path-free prior-attempt summary for Codex revision."""
 
     return {
         "schema_version": output.get("schema_version"),
@@ -2093,7 +1935,7 @@ def _safe_local_adapter_revision_output(output: dict[str, Any]) -> dict[str, Any
         "source_label_type": output.get("source_label_type"),
         "adapter_kind": output.get("adapter_kind"),
         "record_count": output.get("record_count"),
-        "manifest_path_present": bool(output.get("manifest_path") or output.get("adapter_manifest_path")),
+        "manifest_path_present": bool(output.get("manifest_path")),
         "script_path_present": bool(output.get("script_path")),
         "safe_to_share": True,
     }
@@ -2126,6 +1968,8 @@ def _local_adapter_backend_failure_feedback(
 
 
 def _require_local_adapter_agent_output(output: dict[str, Any], *, client_id: str) -> None:
+    if not isinstance(output, dict):
+        raise RuntimeError(f"CLIENT.IMPLEMENT_LOCAL_ADAPTER for {client_id} returned non-object output")
     if output.get("schema_version") != "fedready.local_adapter_spec.v1":
         raise RuntimeError(
             f"CLIENT.IMPLEMENT_LOCAL_ADAPTER for {client_id} missing " "schema_version=fedready.local_adapter_spec.v1"
@@ -2214,63 +2058,22 @@ def _generic_data_materializer_spec_template(*, generated_contract: dict[str, An
 def _normalize_data_materializer_output(output: dict[str, Any], *, code_workspace: str) -> dict[str, Any]:
     if not isinstance(output, dict):
         raise RuntimeError("SERVER.IMPLEMENT_DATA_MATERIALIZER returned non-object output")
-    nested = output.get("data_materializer")
-    if isinstance(nested, dict):
-        output = dict(nested)
     normalized = dict(output)
-    normalized.setdefault("schema_version", DATA_MATERIALIZER_SPEC_OUTPUT_SCHEMA)
-    normalized.setdefault("status", "implemented")
-    workspace = Path(code_workspace).resolve()
     package_dir = normalized.get("package_dir")
-    if not isinstance(package_dir, str) or not package_dir.strip():
-        package_dir = str(workspace)
-    package_path = Path(package_dir).expanduser()
-    if not package_path.is_absolute():
-        if package_path.parts and package_path.parts[0] in {"code_workspace", "materializer_workspace"}:
-            package_path = Path(*package_path.parts[1:])
-        package_path = workspace / package_path
-    package_path = package_path.resolve()
-    normalized["package_dir"] = str(package_path)
-    entry_script = normalized.get("entry_script")
-    if isinstance(entry_script, dict):
-        entry_script = entry_script.get("path")
-    if not isinstance(entry_script, str) or not entry_script.strip():
-        candidates = ["materializer.py", "fedready_generated_materializer.py"]
-        for candidate in candidates:
-            if (package_path / candidate).is_file():
-                entry_script = candidate
-                break
-    if isinstance(entry_script, str) and entry_script.strip():
-        resolved_entry = _resolve_data_materializer_entry_path(
-            entry_script=entry_script,
-            package_path=package_path,
-            workspace=workspace,
-        )
-        if resolved_entry is not None:
-            entry_script = resolved_entry.relative_to(package_path).as_posix()
-    normalized["entry_script"] = entry_script
+    if isinstance(package_dir, str) and package_dir.strip():
+        package_path = Path(package_dir).expanduser()
+        if not package_path.is_absolute():
+            package_path = Path(code_workspace) / package_path
+        normalized["package_dir"] = str(package_path.resolve())
     return normalized
 
 
-def _resolve_data_materializer_entry_path(*, entry_script: str, package_path: Path, workspace: Path) -> Path | None:
-    entry_path = Path(entry_script).expanduser()
-    candidates: list[Path] = []
+def _resolve_data_materializer_entry_path(*, entry_script: str, package_path: Path) -> Path | None:
+    entry_path = Path(entry_script)
     if entry_path.is_absolute():
-        candidates.append(entry_path)
-    else:
-        candidates.append(package_path / entry_path)
-        parts = entry_path.parts
-        if parts and parts[0] in {"code_workspace", "materializer_workspace"}:
-            candidates.append(workspace / Path(*parts[1:]))
-        candidates.append(workspace / entry_path)
-
-    for candidate in candidates:
-        resolved = candidate.resolve()
-        if resolved == package_path or package_path not in resolved.parents:
-            continue
-        if resolved.is_file():
-            return resolved
-    return None
+        return None
+    resolved = (package_path / entry_path).resolve()
+    return resolved if resolved.is_relative_to(package_path) and resolved.is_file() else None
 
 
 def _require_data_materializer_agent_output(output: dict[str, Any]) -> None:
@@ -2292,7 +2095,6 @@ def _require_data_materializer_agent_output(output: dict[str, Any]) -> None:
     resolved_entry = _resolve_data_materializer_entry_path(
         entry_script=entry_script,
         package_path=package_path,
-        workspace=package_path.parent,
     )
     if resolved_entry is None:
         raise RuntimeError("SERVER.IMPLEMENT_DATA_MATERIALIZER entry_script does not exist")
@@ -2681,13 +2483,6 @@ def _merge_output_template(output_template: dict[str, Any], output: dict[str, An
     return merged
 
 
-def _lock_harness_owned_fields(output: dict[str, Any], *, baseline: dict[str, Any]) -> dict[str, Any]:
-    locked = dict(output)
-    for key, value in baseline.items():
-        locked[key] = json.loads(json.dumps(value, default=str))
-    return locked
-
-
 def _lock_extraction_runtime_config(output: dict[str, Any], *, extraction_config: dict[str, Any]) -> dict[str, Any]:
     """Keep workflow-owned extraction settings out of backend control."""
     policies = output.get("policies")
@@ -2752,8 +2547,6 @@ def _lock_client_inquiry_policy(output: dict[str, Any], *, baseline: dict[str, A
 def _normalize_visual_qc_output(output: dict[str, Any], qc_context: dict[str, Any] | None = None) -> dict[str, Any]:
     allowed_statuses = {"passed", "failed", "needs_more_samples", "not_performed", "needs_agent_visual_review"}
     normalized = dict(output)
-    for field in VISUAL_QC_PER_SAMPLE_FIELDS:
-        normalized.pop(field, None)
     consensus = _visual_qc_consensus(normalized, qc_context)
     if consensus["expected_sample_count"] > 0:
         normalized["sample_count"] = consensus["expected_sample_count"]
@@ -2955,25 +2748,8 @@ def _visual_qc_consensus(output: dict[str, Any], qc_context: dict[str, Any] | No
 
 
 def _extract_visual_qc_transform_counts(output: dict[str, Any]) -> dict[str, int]:
-    for field in VISUAL_QC_COUNT_FIELDS:
-        value = output.get(field)
-        if isinstance(value, dict):
-            counts = _coerce_visual_qc_counts(value)
-            if counts:
-                return counts
-    for field in VISUAL_QC_TRANSFORM_LIST_FIELDS:
-        value = output.get(field)
-        if isinstance(value, list):
-            counts = _count_visual_qc_selections(value)
-            if counts:
-                return counts
-    for field in VISUAL_QC_PER_SAMPLE_FIELDS:
-        value = output.get(field)
-        if isinstance(value, list):
-            counts = _count_visual_qc_sample_decisions(value)
-            if counts:
-                return counts
-    return {}
+    counts = output.get("selected_transform_counts")
+    return _coerce_visual_qc_counts(counts) if isinstance(counts, dict) else {}
 
 
 def _coerce_visual_qc_counts(value: dict[Any, Any]) -> dict[str, int]:
@@ -2985,25 +2761,6 @@ def _coerce_visual_qc_counts(value: dict[Any, Any]) -> dict[str, int]:
         count = _coerce_nonnegative_int(count_value)
         if count is not None and count > 0:
             counts[transform] = counts.get(transform, 0) + count
-    return counts
-
-
-def _count_visual_qc_selections(values: list[Any]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for value in values:
-        if value in VISUAL_QC_ALLOWED_SELECTIONS:
-            counts[str(value)] = counts.get(str(value), 0) + 1
-    return counts
-
-
-def _count_visual_qc_sample_decisions(values: list[Any]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for value in values:
-        if not isinstance(value, dict):
-            continue
-        selected = value.get("selected_transform")
-        if selected in VISUAL_QC_ALLOWED_SELECTIONS:
-            counts[str(selected)] = counts.get(str(selected), 0) + 1
     return counts
 
 
@@ -3030,15 +2787,8 @@ def _expected_visual_qc_sample_count(
 
 
 def _visual_qc_reviewed_sample_count(output: dict[str, Any], counts: dict[str, int]) -> int:
-    for field in ("reviewed_sample_count", "reviewed_count"):
-        count = _coerce_nonnegative_int(output.get(field))
-        if count is not None:
-            return count
-    if counts:
-        return sum(counts.values())
-    if output.get("reviewed") is True and output.get("selected_transform") in VISUAL_QC_ALLOWED_SELECTIONS:
-        return 1
-    return 0
+    count = _coerce_nonnegative_int(output.get("reviewed_sample_count"))
+    return count if count is not None else sum(counts.values())
 
 
 def _visual_qc_required_vote_count(sample_count: int) -> int:
@@ -3128,9 +2878,7 @@ def _request_local_vlm_visual_qc(
             model=model,
             base_url=base_url,
         )
-    reference_image_path = task_example_image_path_for_task(
-        policy.get("task") if isinstance(policy.get("task"), str) else None
-    )
+    reference_image_path = task_example_image_path()
     if reference_image_path is None:
         return _local_vlm_qc_failure(
             client_id=client_id,
@@ -3485,19 +3233,20 @@ def _extract_chat_completion_text(response_body: str) -> str:
 
 
 def _parse_local_vlm_visual_qc_response(response_text: str) -> tuple[str, str]:
-    data = _loads_first_json_object(response_text)
-    selected: Any = None
-    reason: Any = None
-    if isinstance(data, dict):
-        selected = data.get("selected_transform") or data.get("transform") or data.get("selected")
-        reason = data.get("reason") or data.get("visual_evidence") or data.get("evidence")
-    normalized = _normalize_local_vlm_transform(selected)
-    if normalized is None:
-        normalized = _infer_transform_from_text(response_text) or "undecided"
-    reason_text = (
-        str(reason).strip() if isinstance(reason, str) and reason.strip() else _safe_reason_from_text(response_text)
-    )
-    return normalized, reason_text
+    try:
+        data = json.loads(response_text)
+    except json.JSONDecodeError:
+        return "undecided", "local VLM returned invalid decision JSON"
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get("selected_transform"), str)
+        or data["selected_transform"] not in VISUAL_QC_ALLOWED_SELECTIONS
+    ):
+        return "undecided", "local VLM did not return an explicit supported transform"
+    reason = data.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        return "undecided", "local VLM decision is missing its reason"
+    return data["selected_transform"], reason.strip()
 
 
 def _local_vlm_qc_decision(
@@ -3633,61 +3382,6 @@ def _local_vlm_mime_type(path: Path) -> str:
     if suffix in {".jpg", ".jpeg"}:
         return "image/jpeg"
     raise ValueError(f"Unsupported image suffix for local VLM visual QC: {suffix or '<none>'}")
-
-
-def _loads_first_json_object(text: str) -> dict[str, Any] | None:
-    decoder = json.JSONDecoder()
-    for match in re.finditer(r"\{", text):
-        try:
-            value, _end = decoder.raw_decode(text[match.start() :])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            return value
-    return None
-
-
-def _normalize_local_vlm_transform(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
-    aliases = {
-        "as_is": "as_is",
-        "asis": "as_is",
-        "original": "as_is",
-        "none": "as_is",
-        "horizontal_flip": "hflip",
-        "h_flip": "hflip",
-        "hflip": "hflip",
-        "left_right_flip": "hflip",
-        "vertical_flip": "vflip",
-        "v_flip": "vflip",
-        "vflip": "vflip",
-        "top_bottom_flip": "vflip",
-        "rotate_180": "rot180",
-        "rotation_180": "rot180",
-        "rot180": "rot180",
-        "180": "rot180",
-        "undecided": "undecided",
-        "unknown": "undecided",
-        "unclear": "undecided",
-    }
-    return aliases.get(normalized)
-
-
-def _infer_transform_from_text(text: str) -> str | None:
-    lowered = text.lower()
-    matches = [transform for transform in VISUAL_QC_ALLOWED_SELECTIONS if transform in lowered]
-    if len(matches) == 1:
-        return matches[0]
-    return None
-
-
-def _safe_reason_from_text(text: str) -> str:
-    compact = " ".join(text.strip().split())
-    if not compact:
-        return "local VLM returned an empty visual QC response"
-    return compact[:800]
 
 
 def _safe_short_json(value: Any, *, limit: int = 1000) -> str:
