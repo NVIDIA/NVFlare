@@ -784,10 +784,6 @@ def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
         def validate_site_config(self, site_config):
             validate(site_config)
 
-        def validate_job_launcher(self, job_launcher):
-            if type(job_launcher) is not NativeJobLauncher:
-                raise ValueError("unsupported native client-job launcher")
-
     validate = Mock()
     launcher = NativeLauncher()
     monkeypatch.setitem(sys.modules, module_name, SimpleNamespace(**{class_name: NativeLauncher}))
@@ -813,13 +809,6 @@ def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
         policy.task_resources({"resource_spec": {"site": {"num_of_gpus": 1}}}, "site")
     with pytest.raises(ValueError, match="environment_variables is not supported"):
         TaskExecutionPolicy.from_config({**config, "environment_variables": ["APP_DATA"]})
-
-    class NativeJobLauncher:
-        pass
-
-    policy.validate_job_launcher(NativeJobLauncher())
-    with pytest.raises(ValueError, match="unsupported native client-job launcher"):
-        policy.validate_job_launcher(SimpleNamespace())
 
     class Impersonator(NativeLauncher):
         pass

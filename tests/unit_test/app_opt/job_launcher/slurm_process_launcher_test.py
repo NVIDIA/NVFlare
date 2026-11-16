@@ -31,7 +31,11 @@ from nvflare.app_common.job_launcher.server_process_launcher import ServerProces
 from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher
 from nvflare.app_opt.job_launcher.slurm.task_policy import PROCESS_CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
-from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
+from nvflare.private.fed.client.task_execution_policy import (
+    GPU_ENVIRONMENT_NAMES,
+    TaskExecutionPolicy,
+    _get_cj_preparer,
+)
 from nvflare.private.fed.client.task_runtime import _TaskExecutionState, launch_job, shutdown_task_execution
 
 
@@ -184,13 +188,22 @@ def test_process_cj_requires_explicit_canonical_profile(profile, mutation):
     p.spawn.assert_not_called()
 
 
+@pytest.mark.parametrize("runtime", ["slurm", "docker"])
+def test_known_launcher_pair_must_match_configured_cj_runtime(profile, runtime):
+    policy = TaskExecutionPolicy.from_workspace(profile.workspace)
+    policy.launcher.cj_runtime = runtime
+    with pytest.raises(ValueError, match="unsupported client-job/task launcher pairing"):
+        _get_cj_preparer(policy.launcher, profile.launcher)
+    profile.spawn.assert_not_called()
+
+
 def test_process_policy_and_system_shutdown(profile):
     p = profile
     policy = TaskExecutionPolicy.from_workspace(p.workspace)
     assert type(policy.launcher) is SlurmTaskLauncher
-    policy.validate_job_launcher(p.launcher)
-    with pytest.raises(ValueError):
-        policy.validate_job_launcher(ServerProcessJobLauncher())
+    with pytest.raises(ValueError, match="unsupported client-job/task launcher pairing"):
+        launch_job(ServerProcessJobLauncher(), p.meta, p.context)
+    p.spawn.assert_not_called()
     launch_job(p.launcher, p.meta, p.context)
     p.adapter.poll.return_value = 0
     shutdown_task_execution(p.engine)

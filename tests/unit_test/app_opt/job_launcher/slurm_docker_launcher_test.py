@@ -353,10 +353,11 @@ def test_canonical_site_profile_rejects_incompatible_launchers(profile, mutation
 
 
 def test_task_policy_selects_the_ordinary_client_docker_launcher(profile):
-    policy = TaskExecutionPolicy.from_workspace(profile.workspace)
-    policy.validate_job_launcher(profile.launcher)
-    with pytest.raises(ValueError, match="supported"):
-        policy.validate_job_launcher(docker_module.ServerDockerJobLauncher(workspace=str(profile.root)))
+    server = docker_module.ServerDockerJobLauncher(workspace=str(profile.root))
+    with pytest.raises(ValueError, match="unsupported client-job/task launcher pairing"):
+        launch_job(server, profile.meta, profile.context)
+    profile.dc.containers.run.assert_not_called()
+    launch_job(profile.launcher, profile.meta, profile.context)
 
 
 @pytest.mark.parametrize("unsupported", ["remote", "windows", "MemoryLimit", "CpuCfsQuota", "CpuCfsPeriod"])

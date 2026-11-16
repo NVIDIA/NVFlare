@@ -1883,7 +1883,7 @@ def test_shared_admission_rejects_unsupported_task_cj_before_launch(tmp_path, bu
     policy = TaskExecutionPolicy(task)
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
         with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
-            with pytest.raises(ValueError, match="supported .*client-job launcher"):
+            with pytest.raises(ValueError, match="unsupported client-job/task launcher pairing"):
                 JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
                     client,
                     "job-1",

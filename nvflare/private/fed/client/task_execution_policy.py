@@ -60,36 +60,49 @@ _NATIVE_TASK_LAUNCHERS = {
 
 # CP composition is private. Class paths keep unused optional backends out of
 # the import graph; exact supported launcher types are validated by policy.
+# Slurm pairings also require the site's configured CJ runtime.
 _CJ_PREPARERS = {
     (
         "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
         "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+        "process",
     ): ("nvflare.private.fed.client.task_runtime", "_prepare_process_slurm_cj"),
     (
         "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
         "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+        "docker",
     ): ("nvflare.private.fed.client.task_runtime", "_prepare_docker_slurm_cj"),
     (
         "nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher",
         "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+        "slurm",
     ): None,
     (
         "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
         "nvflare.app_opt.task_launcher.k8s_launcher.K8sTaskLauncher",
+        None,
     ): None,
 }
 
 
-def _prepare_cp_host_cj(task_launcher, job_launcher, job_meta, fl_ctx):
+def _get_cj_preparer(task_launcher, job_launcher):
     pairing = tuple(f"{type(item).__module__}.{type(item).__qualname__}" for item in (job_launcher, task_launcher))
+    runtime = (
+        getattr(task_launcher, "cj_runtime", None) if getattr(task_launcher, "launch_mode", None) == "slurm" else None
+    )
+    pairing += (runtime,)
     if pairing not in _CJ_PREPARERS:
         raise ValueError(f"unsupported client-job/task launcher pairing: {pairing}")
-    target = _CJ_PREPARERS[pairing]
+    return _CJ_PREPARERS[pairing]
+
+
+def _prepare_cp_host_cj(task_launcher, job_launcher, job_meta, fl_ctx):
+    target = _get_cj_preparer(task_launcher, job_launcher)
     if target is None:
         # Existing native launchers retain their own ownership setup.
         return None
     module, name = target
-    return getattr(importlib.import_module(module), name)(task_launcher, job_launcher, job_meta, fl_ctx)
+    return getattr(importlib.import_module(module), name)(job_launcher, job_meta, fl_ctx)
 
 
 def _supported_native_launcher(launcher):
@@ -216,10 +229,6 @@ class TaskExecutionPolicy:
         # Native backend configuration, never the resident CJ's environment,
         # owns worker credentials, GPU visibility and application variables.
         return {}
-
-    def validate_job_launcher(self, launcher):
-        """Fail closed before starting a CJ on an incompatible site runtime."""
-        self.launcher.validate_job_launcher(launcher)
 
     def task_resources(self, meta, site_name):
         validate_task_resources(meta, site_name)

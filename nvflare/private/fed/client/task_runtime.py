@@ -182,18 +182,16 @@ def _launch_job_with_task_workers(prepared, launcher, fl_ctx):
                 fl_ctx.set_prop(key, **detail)
 
 
-def _prepare_process_slurm_cj(task_launcher, launcher, job_meta, fl_ctx):
+def _prepare_process_slurm_cj(launcher, job_meta, fl_ctx):
     from nvflare.app_opt.job_launcher.slurm.task_launcher import _prepare_task_binding
 
-    task_launcher.validate_job_launcher(launcher)
     options = launcher._task_coordinator_options(job_meta, fl_ctx)
     return _prepare_task_binding(job_meta, fl_ctx, options)
 
 
-def _prepare_docker_slurm_cj(task_launcher, launcher, job_meta, fl_ctx):
+def _prepare_docker_slurm_cj(launcher, job_meta, fl_ctx):
     from nvflare.app_opt.job_launcher.slurm.task_launcher import _prepare_task_binding
 
-    task_launcher.validate_job_launcher(launcher)
     options = launcher._task_coordinator_options(job_meta, fl_ctx)
     prepared = _prepare_task_binding(job_meta, fl_ctx, options)
     site = fl_ctx.get_identity_name()
@@ -236,7 +234,6 @@ def launch_job(launcher, job_meta, fl_ctx):
                 if not policy.allow_job_lifetime:
                     raise ValueError("site task_execution policy refuses job-lifetime applications; use task lifetime")
                 return launcher.launch_job(job_meta, fl_ctx)
-            policy.validate_job_launcher(launcher)
             runtime = _prepare_cp_host_cj(policy.launcher, launcher, job_meta, fl_ctx)
             if runtime is not None:
                 runtime.cleanup_timeout = policy.finalization_timeout

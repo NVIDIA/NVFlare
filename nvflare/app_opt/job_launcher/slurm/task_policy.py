@@ -13,7 +13,6 @@
 # limitations under the License.
 """Trusted Slurm profile matching and task-resource resolution."""
 
-import importlib
 from dataclasses import replace
 
 from nvflare.apis.task_launcher_spec import TaskResourceRequest
@@ -32,15 +31,6 @@ TASK_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTask
 CJ_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher"
 DOCKER_CJ_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher"
 PROCESS_CJ_LAUNCHER_PATH = "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
-
-
-_CJ_LAUNCHER_PATHS = {"slurm": CJ_LAUNCHER_PATH, "docker": DOCKER_CJ_LAUNCHER_PATH, "process": PROCESS_CJ_LAUNCHER_PATH}
-
-
-def validate_cj_launcher(runtime, launcher):
-    module, _, name = _CJ_LAUNCHER_PATHS[runtime].rpartition(".")
-    if type(launcher) is not getattr(importlib.import_module(module), name):
-        raise ValueError(f"task lifetime requires the site's supported {runtime} client-job launcher")
 
 
 def component_args(config):
