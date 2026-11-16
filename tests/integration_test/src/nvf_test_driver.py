@@ -14,6 +14,7 @@
 
 import logging
 import os
+import re
 import time
 
 from nvflare.apis.job_def import RunStatus
@@ -206,6 +207,7 @@ class NVFTestDriver:
         self.test_done = False
         self.job_id = None
         self.last_job_name = None
+        self._workflow_ready_jobs = set()
 
         self.action_handlers = {
             "start": _StartHandler(),
@@ -346,6 +348,31 @@ class NVFTestDriver:
             _, run_state = _update_run_state(stats=None, run_state=run_state, job_run_status=job_run_status)
         return run_state
 
+    def _job_workflow_is_ready(self):
+        if self.job_id in self._workflow_ready_jobs:
+            return True
+
+        marker = "Server runner starting ..."
+        job_log = self._get_job_log(target=TargetType.SERVER, job_id=self.job_id)
+        ready = any(marker in line for line in job_log)
+        if not ready:
+            # The first workflow-dependent event may occur after log rotation.
+            # Read only retained backups of this job's log, never the site's log
+            # or another job's files. ls returns one name per line without a TTY.
+            listing = self.super_admin_api.ls_target(TargetType.SERVER, path=self.job_id)
+            for name in listing.splitlines():
+                name = name.strip()
+                if not re.fullmatch(r"log\.txt\.[0-9]+", name):
+                    continue
+                text = self.super_admin_api.cat_target(TargetType.SERVER, file=os.path.join(self.job_id, name))
+                if marker in text:
+                    ready = True
+                    break
+        if ready:
+            # A later rotation (or removal of older backups) cannot undo startup.
+            self._workflow_ready_jobs.add(self.job_id)
+        return ready
+
     def _get_workflow_state(self, run_state):
         if not self.job_id or not self.super_admin_api or run_state.get("job_status") != RunStatus.RUNNING.value:
             return run_state
@@ -354,8 +381,7 @@ class NVFTestDriver:
             # RUNNING metadata means the process was launched, not that its
             # engine is initialized. Observe this job's startup before sending
             # show_stats to it; the site's log can contain earlier jobs.
-            job_log = self._get_job_log(target=TargetType.SERVER, job_id=self.job_id)
-            if not any("Server runner starting ..." in line for line in job_log):
+            if not self._job_workflow_is_ready():
                 return run_state
             stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
         except (JobNotFound, JobNotRunning, ConnectionError, SessionClosed):
