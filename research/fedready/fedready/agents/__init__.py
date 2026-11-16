@@ -248,8 +248,6 @@ class GuardrailDecision:
 
 
 GUARDRAIL_DECISION_OUTPUT_SCHEMA = "fedready.guardrail_decision.v1"
-GUARDRAIL_REVIEW_MODE_ENV = "FEDREADY_GUARDRAIL_REVIEW_MODE"
-GUARDRAIL_REVIEW_MODES = {"agent"}
 
 
 class GuardrailError(RuntimeError):
@@ -351,15 +349,6 @@ ALLOW_LIST_RULES = {
         "FedReadyExtractionQCBundle@v1",
         "FedReadyExtractionQCDecision@v1",
     ): "client.visual_qc_extraction.v1",
-    (
-        "client_agent",
-        "server_agent_via_flare",
-        "local_training_workspace",
-        "CLIENT.PREPARE_TRAINING_SITE",
-        "fl_training",
-        "FedReadyTrainingPlan@v1",
-        "FedReadyClientTrainingConfig@v1",
-    ): "client.prepare_training_site.v1",
 }
 
 
@@ -424,12 +413,10 @@ class GuardrailAgent:
         party_role: str,
         party_id: str,
         agent_backend: Any,
-        review_mode: str | None = None,
     ) -> None:
         self.party_role = party_role
         self.party_id = party_id
         self.agent_backend = _require_configured_agent_backend(agent_backend)
-        self.review_mode = _guardrail_review_mode(review_mode)
 
     def inspect(
         self,
@@ -489,15 +476,6 @@ class GuardrailAgent:
                 rule_id=shape_decision.rule_id,
             )
         return agent_decision
-
-
-def _guardrail_review_mode(value: str | None = None) -> str:
-    mode = str(value if value is not None else os.environ.get(GUARDRAIL_REVIEW_MODE_ENV, "agent"))
-    mode = mode.strip().lower()
-    if mode not in GUARDRAIL_REVIEW_MODES:
-        allowed = ", ".join(sorted(GUARDRAIL_REVIEW_MODES))
-        raise ValueError(f"{GUARDRAIL_REVIEW_MODE_ENV} must be one of: {allowed}")
-    return mode
 
 
 class ServerAgent:
@@ -1045,44 +1023,6 @@ class ClientAgent:
             counterpart="server_agent",
         )
 
-    def prepare_training_site(
-        self,
-        *,
-        training_plan: dict[str, Any],
-        dataset_summary: dict[str, Any],
-        client_config_template: dict[str, Any],
-    ) -> AgentTurn:
-        decision = require_allowed(
-            GuardrailCheck(
-                role="client_agent",
-                source="server_agent_via_flare",
-                channel="local_training_workspace",
-                action="CLIENT.PREPARE_TRAINING_SITE",
-                phase="fl_training",
-                input_schema="FedReadyTrainingPlan@v1",
-                output_schema="FedReadyClientTrainingConfig@v1",
-            )
-        )
-        prompt = render_client_prompt("prepare_training_site", client_id=self.client_id)
-        output = dict(client_config_template)
-        output = self._agent_output(
-            role="client_agent",
-            action="CLIENT.PREPARE_TRAINING_SITE",
-            phase="fl_training",
-            input_schema="FedReadyTrainingPlan@v1",
-            output_schema="FedReadyClientTrainingConfig@v1",
-            prompt=prompt,
-            context={
-                "training_plan": training_plan,
-                "dataset_summary": dataset_summary,
-                "output_template": client_config_template,
-                "output_template_instruction": render_client_prompt(
-                    "prepare_training_site_output_template_instruction"
-                ),
-            },
-        )
-        return AgentTurn(prompt=prompt, output=output, guardrail=decision.as_policy())
-
     def _agent_output(
         self,
         *,
@@ -1354,7 +1294,6 @@ class ClientAgent:
         qc_context: dict[str, Any],
         output: dict[str, Any],
     ) -> dict[str, Any]:
-        _visual_qc_backend_mode()
         local_vlm_output = _request_local_vlm_visual_qc(
             client_id=self.client_id,
             policy=policy,
@@ -1362,8 +1301,6 @@ class ClientAgent:
             qc_context=qc_context,
             output_template=output,
         )
-        if local_vlm_output is None:
-            raise RuntimeError("local visual QC backend returned no decision")
         return local_vlm_output
 
 
@@ -3153,10 +3090,7 @@ def _request_local_vlm_visual_qc(
     extraction_result: dict[str, Any],
     qc_context: dict[str, Any],
     output_template: dict[str, Any],
-) -> dict[str, Any] | None:
-    if not _should_use_local_vlm_visual_qc():
-        return None
-
+) -> dict[str, Any]:
     model = _local_vlm_model_name()
     base_url = os.environ.get("FEDREADY_VISION_AGENT_API_BASE_URL", LOCAL_VISION_API_BASE_URL).strip()
     api_key_env = os.environ.get("FEDREADY_VISION_AGENT_API_KEY_ENV", "FEDREADY_LOCAL_VISION_API_KEY").strip()
@@ -3237,20 +3171,6 @@ def _request_local_vlm_visual_qc(
             model=model,
             base_url=base_url,
         )
-
-
-def _should_use_local_vlm_visual_qc() -> bool:
-    return _visual_qc_backend_mode() == "local_vlm"
-
-
-def _visual_qc_backend_mode() -> str:
-    mode = os.environ.get("FEDREADY_VISUAL_QC_BACKEND", "").strip().lower().replace("-", "_")
-    if mode in {"", "local_vlm", "vlm", "local"}:
-        return "local_vlm"
-    raise ValueError(
-        "FEDREADY_VISUAL_QC_BACKEND supports only 'local_vlm'; agent, disabled, and deterministic "
-        "visual-review fallbacks are unsupported"
-    )
 
 
 def _local_vlm_model_name() -> str:

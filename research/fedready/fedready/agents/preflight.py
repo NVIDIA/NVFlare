@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from fedready.agents import DEFAULT_LOCAL_VISION_MODEL, GuardrailAgent, GuardrailCheck, _query_local_vlm_image
-from fedready.agents.bridge import LOCAL_VISION_API_BASE_URL, build_agent_backend
+from fedready.agents.bridge import LOCAL_VISION_API_BASE_URL, CodexWorkerBackend
 from fedready.agents.local_adapter import (
     is_local_http_url,
     task_example_context_for_task,
@@ -40,7 +40,6 @@ DEFAULT_RUNTIME_PREFLIGHT_MIN_FREE_INODES = 100_000
 
 def run_live_runtime_preflight(
     *,
-    agent_backend: str,
     task: str,
     project_root: str | Path,
     output_dir: str | Path,
@@ -56,9 +55,6 @@ def run_live_runtime_preflight(
 ) -> dict[str, Any]:
     """Fail before expensive work when required live infrastructure is unavailable."""
 
-    backend_kind = str(agent_backend).strip().lower()
-    if backend_kind != "codex":
-        raise ValueError("runtime preflight requires agent_backend=codex")
     if not task.strip():
         raise ValueError("runtime preflight requires a non-empty task")
     if agent_timeout_seconds <= 0:
@@ -128,24 +124,21 @@ def run_live_runtime_preflight(
 
     guardrail_report: dict[str, Any] = {
         "status": "skipped",
-        "backend": backend_kind,
+        "backend": "codex",
         "agent_reviewed": False,
         "normal_message_allowed": None,
         "reason": "guardrail smoke already completed for this experiment batch",
     }
     if guardrail_smoke:
-        backend = build_agent_backend(
-            kind=backend_kind,
+        backend = CodexWorkerBackend.from_env(
             run_dir=run_dir,
             session_id=preflight_session,
             timeout_seconds=agent_timeout_seconds,
-            poll_interval_seconds=1.0,
         )
         guardrail_decision = GuardrailAgent(
             party_role="server",
             party_id="server",
             agent_backend=backend,
-            review_mode="agent",
         ).inspect(
             direction="outgoing",
             check=GuardrailCheck(
@@ -172,7 +165,7 @@ def run_live_runtime_preflight(
             raise RuntimeError("live guardrail smoke test blocked a normal profile message")
         guardrail_report = {
             "status": "ready",
-            "backend": backend_kind,
+            "backend": "codex",
             "agent_reviewed": True,
             "normal_message_allowed": True,
             "allow_list_rule": guardrail_decision.rule_id,
@@ -182,7 +175,7 @@ def run_live_runtime_preflight(
         "schema_version": RUNTIME_PREFLIGHT_SCHEMA,
         "status": "ready",
         "session_id": preflight_session,
-        "agent_backend": backend_kind,
+        "agent_backend": "codex",
         "task": task,
         "checks": {
             "storage": storage,

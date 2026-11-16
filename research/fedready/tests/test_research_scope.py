@@ -18,8 +18,6 @@ import inspect
 import sys
 import unittest
 from pathlib import Path
-from tempfile import TemporaryDirectory
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -29,9 +27,8 @@ from fedready.agents import (
     GuardrailAgent,
     ServerAgent,
     _aggregate_visual_qc_sample_outputs,
-    _visual_qc_backend_mode,
 )
-from fedready.agents.bridge import CodexWorkerBackend, _codex_skill_path, build_agent_backend
+from fedready.agents.bridge import _codex_skill_path
 from fedready.agents.local_adapter import ensure_local_adapter_pipeline
 from fedready.data.contracts.base import generated_contract_visual_qc_required
 from fedready.data.contracts.training import CLASSIFICATION_TRAINING, SEGMENTATION_TRAINING
@@ -45,23 +42,6 @@ from fedready.job_train import (
 
 
 class ResearchScopeTestCase(unittest.TestCase):
-    def test_public_backend_factory_is_codex_only(self) -> None:
-        with TemporaryDirectory() as tmp:
-            backend = build_agent_backend(
-                kind="codex",
-                run_dir=tmp,
-                session_id="scope-test",
-            )
-            self.assertIsInstance(backend, CodexWorkerBackend)
-
-            for unsupported in ("file", "openhands", "deterministic", "none"):
-                with self.subTest(unsupported=unsupported):
-                    with self.assertRaisesRegex(ValueError, "only 'codex'"):
-                        build_agent_backend(
-                            kind=unsupported,
-                            run_dir=tmp,
-                            session_id="scope-test",
-                        )
 
     def test_agent_classes_reject_missing_backend(self) -> None:
         with self.assertRaisesRegex(ValueError, "live Codex agent backend is required"):
@@ -70,15 +50,6 @@ class ResearchScopeTestCase(unittest.TestCase):
             ClientAgent("site-1", None)
         with self.assertRaisesRegex(ValueError, "live Codex agent backend is required"):
             GuardrailAgent(party_role="server", party_id="server", agent_backend=None)
-
-    def test_visual_backend_is_local_vlm_only(self) -> None:
-        with patch.dict("os.environ", {"FEDREADY_VISUAL_QC_BACKEND": "local_vlm"}):
-            self.assertEqual(_visual_qc_backend_mode(), "local_vlm")
-        for unsupported in ("agent", "disabled", "deterministic"):
-            with self.subTest(unsupported=unsupported):
-                with patch.dict("os.environ", {"FEDREADY_VISUAL_QC_BACKEND": unsupported}):
-                    with self.assertRaisesRegex(ValueError, "only 'local_vlm'"):
-                        _visual_qc_backend_mode()
 
     def test_deterministic_training_specs_cannot_bypass_live_preflight(self) -> None:
         errors = _training_local_simulation_errors({"deterministic_ground_truth": True})

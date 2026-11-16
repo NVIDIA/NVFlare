@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from fedready.agents import ClientAgent, _query_local_vlm_image
-from fedready.agents.bridge import build_agent_backend
+from fedready.agents.bridge import CodexWorkerBackend
 from fedready.agents.local_adapter import (
     DEFAULT_LOCAL_ADAPTER_MAX_ATTEMPTS,
     DEFAULT_LOCAL_ADAPTER_PREFLIGHT_RECORDS,
@@ -98,9 +98,7 @@ class FedReadyTaskQueryExecutor(Executor):
         extraction_max_samples: int | None = None,
         extraction_overwrite: bool = False,
         extraction_validation_fraction: float = ExtractionConfig.validation_fraction,
-        agent_backend: str = "codex",
         agent_timeout_seconds: float = 3600.0,
-        agent_poll_interval_seconds: float = 2.0,
     ) -> None:
         super().__init__()
         self.site_meta_path = site_meta_path
@@ -117,9 +115,7 @@ class FedReadyTaskQueryExecutor(Executor):
         self.extraction_max_samples = extraction_max_samples
         self.extraction_overwrite = extraction_overwrite
         self.extraction_validation_fraction = extraction_validation_fraction
-        self.agent_backend = agent_backend
         self.agent_timeout_seconds = agent_timeout_seconds
-        self.agent_poll_interval_seconds = agent_poll_interval_seconds
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name != self.task_name:
@@ -156,12 +152,10 @@ class FedReadyTaskQueryExecutor(Executor):
         logger = FlowLogger(Path(self.output_dir) / request_message.session_id)
         client_agent = ClientAgent(
             client_id,
-            agent_backend=_build_agent_backend(
-                kind=self.agent_backend,
+            agent_backend=CodexWorkerBackend.from_env(
                 run_dir=Path(self.output_dir) / request_message.session_id,
                 session_id=request_message.session_id,
                 timeout_seconds=self.agent_timeout_seconds,
-                poll_interval_seconds=self.agent_poll_interval_seconds,
             ),
         )
         receive_prompt = render_client_prompt(
@@ -365,12 +359,10 @@ class FedReadyTaskQueryExecutor(Executor):
         logger = FlowLogger(Path(self.output_dir) / request_message.session_id)
         client_agent = ClientAgent(
             client_id,
-            agent_backend=_build_agent_backend(
-                kind=self.agent_backend,
+            agent_backend=CodexWorkerBackend.from_env(
                 run_dir=Path(self.output_dir) / request_message.session_id,
                 session_id=request_message.session_id,
                 timeout_seconds=self.agent_timeout_seconds,
-                poll_interval_seconds=self.agent_poll_interval_seconds,
             ),
         )
         current_round = _current_round_from_shareable(shareable)
@@ -574,7 +566,6 @@ class FedReadyTaskQueryExecutor(Executor):
                             "Client-local adapter agent exhausted its bounded attempts without producing "
                             "a validated response."
                         ),
-                        backend_kind=self.agent_backend,
                         error_type=type(exc).__name__,
                     )
                     result = adapter_failure
@@ -637,7 +628,7 @@ class FedReadyTaskQueryExecutor(Executor):
                                 "diagnostic": runtime_result.diagnostic,
                                 "attempt": adapter_attempt,
                                 "max_attempts": adapter_attempts,
-                                "backend": self.agent_backend,
+                                "backend": "codex",
                             },
                             schema_ref="FedReadyLocalAdapterRuntimeState@v1",
                             status=runtime_result.status,
@@ -668,7 +659,6 @@ class FedReadyTaskQueryExecutor(Executor):
                                 policy=policy,
                                 reason_code="CLIENT_LOCAL_VLM_UNAVAILABLE",
                                 reason=("Required client-local VLM service did not complete " "adapter preflight."),
-                                backend_kind=self.agent_backend,
                                 error_type="LocalVLMUnavailable",
                                 bounded_attempts_exhausted=False,
                             )
@@ -776,7 +766,6 @@ class FedReadyTaskQueryExecutor(Executor):
                                 "Client-local adapter output failed local extraction validation after bounded "
                                 "revision attempts."
                             ),
-                            backend_kind=self.agent_backend,
                             error_type="AdapterValidationError",
                         )
                         result = adapter_failure
@@ -790,7 +779,6 @@ class FedReadyTaskQueryExecutor(Executor):
                                 "Client-local adapter agent reported failure and did not produce a validated "
                                 "local datalist."
                             ),
-                            backend_kind=self.agent_backend,
                             error_type="AgentReportedFailure",
                         )
                         result = adapter_failure
@@ -1080,7 +1068,6 @@ def _client_local_adapter_failure_result(
     policy: dict[str, Any],
     reason_code: str,
     reason: str,
-    backend_kind: str,
     error_type: str,
     bounded_attempts_exhausted: bool = True,
 ) -> dict[str, Any]:
@@ -1119,7 +1106,7 @@ def _client_local_adapter_failure_result(
             "stage": "client_local_adapter",
             "reason_code": reason_code,
             "reason": reason,
-            "backend": backend_kind,
+            "backend": "codex",
             "error_type": error_type,
             "bounded_attempts_exhausted": bounded_attempts_exhausted,
             "safe_to_share": True,
@@ -1569,23 +1556,6 @@ def _safe_adapter_output_summary(output: dict[str, Any]) -> dict[str, Any]:
         "reason": output.get("reason"),
         "safe_to_share": True,
     }
-
-
-def _build_agent_backend(
-    *,
-    kind: str,
-    run_dir: Path,
-    session_id: str,
-    timeout_seconds: float,
-    poll_interval_seconds: float,
-) -> object:
-    return build_agent_backend(
-        kind=kind,
-        run_dir=run_dir,
-        session_id=session_id,
-        timeout_seconds=timeout_seconds,
-        poll_interval_seconds=poll_interval_seconds,
-    )
 
 
 def _flare_round_context(

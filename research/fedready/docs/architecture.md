@@ -73,7 +73,7 @@ validated updates.
 
 Recent small examples use the Collab API for direct Python server-to-client
 calls. FedReady retains Controller/Executor because it needs explicit task
-headers, resumable two-round state, per-client failure handling, and exported
+headers, two-round state, per-client failure handling, and exported
 message/audit artifacts. It still follows the newer repository convention of
 launching through a Recipe and `Recipe.execute`, and its generated training
 phase uses the Client API and built-in FedAvg workflow instead of implementing

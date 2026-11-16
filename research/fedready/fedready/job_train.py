@@ -41,7 +41,7 @@ from typing import Any, Mapping
 from urllib.parse import quote
 
 from fedready.agents import ServerAgent
-from fedready.agents.bridge import build_agent_backend
+from fedready.agents.bridge import CodexWorkerBackend
 from fedready.agents.training_reference import (
     NVFLARE_EXAMPLE_SELECTION_ID,
     NVFLARE_EXAMPLE_SELECTION_PATTERN,
@@ -606,9 +606,7 @@ def prepare_training_code_with_server_agent(
     training_plan: dict[str, Any],
     run_dir: str | Path,
     session_id: str,
-    agent_backend: str,
     timeout_seconds: float,
-    poll_interval_seconds: float,
     max_attempts: int = DEFAULT_TRAINING_CODE_AGENT_MAX_ATTEMPTS,
 ) -> dict[str, Any]:
     """Request task-dependent training code and give the agent one local validation loop."""
@@ -617,12 +615,10 @@ def prepare_training_code_with_server_agent(
     code_workspace.mkdir(parents=True, exist_ok=True)
     feedback_dir = Path(run_dir) / "training_phase" / "server"
     feedback_dir.mkdir(parents=True, exist_ok=True)
-    backend = _build_agent_backend(
-        kind=agent_backend,
+    backend = CodexWorkerBackend.from_env(
         run_dir=Path(run_dir),
         session_id=session_id,
         timeout_seconds=timeout_seconds,
-        poll_interval_seconds=poll_interval_seconds,
     )
     server_agent = ServerAgent(backend)
     agent_training_plan = _training_plan_with_mock_simulation_contract(
@@ -1334,13 +1330,7 @@ def prepare_client_training_configs(
     *,
     training_plan: dict[str, Any],
     training_code_spec: dict[str, Any],
-    project_root: str | Path,
-    run_dir: str | Path,
-    session_id: str,
     config: FedAvgTrainingConfig,
-    agent_backend: str,
-    timeout_seconds: float,
-    poll_interval_seconds: float,
 ) -> dict[str, dict[str, Any]]:
     """Prepare client runtime configs without reading client-local datasets centrally.
 
@@ -1350,14 +1340,6 @@ def prepare_client_training_configs(
     training entry script is invoked.
     """
 
-    _ = (
-        project_root,
-        run_dir,
-        session_id,
-        agent_backend,
-        timeout_seconds,
-        poll_interval_seconds,
-    )
     _require_relative_dataset_root_for_client_runtime(config.dataset_root)
     training_code_spec = validate_training_code_spec(training_code_spec)
     configs: dict[str, dict[str, Any]] = {}
@@ -1500,7 +1482,6 @@ def export_fedavg_training_job(
 def prepare_and_export_fedavg_training_job(
     *,
     extraction_summary_path: str | Path,
-    project_root: str | Path,
     output_dir: str | Path,
     session_id: str | None,
     job_root: str | Path,
@@ -1508,9 +1489,7 @@ def prepare_and_export_fedavg_training_job(
     task: str = "<TASK_DESCRIPTION>",
     config: FedAvgTrainingConfig | None = None,
     training_code_spec_path: str | Path | None = None,
-    agent_backend: str = "codex",
     agent_timeout_seconds: float = 3600.0,
-    agent_poll_interval_seconds: float = 2.0,
     min_clients: int | None = None,
 ) -> dict[str, Any]:
     """Prepare agent-generated training code/configs and export a FedAvg job."""
@@ -1532,21 +1511,13 @@ def prepare_and_export_fedavg_training_job(
             training_plan=training_plan,
             run_dir=run_dir,
             session_id=session,
-            agent_backend=agent_backend,
             timeout_seconds=agent_timeout_seconds,
-            poll_interval_seconds=agent_poll_interval_seconds,
         )
 
     client_configs = prepare_client_training_configs(
         training_plan=training_plan,
         training_code_spec=code_spec,
-        project_root=project_root,
-        run_dir=run_dir,
-        session_id=session,
         config=cfg,
-        agent_backend=agent_backend,
-        timeout_seconds=agent_timeout_seconds,
-        poll_interval_seconds=agent_poll_interval_seconds,
     )
     _write_json(
         run_dir / "training_phase" / "server" / "client_training_configs.json",
@@ -1589,8 +1560,6 @@ def run_fedavg_training_job(
         job_name=base_job_name,
     )
     cfg = kwargs.get("config") or FedAvgTrainingConfig()
-    project_root = Path(kwargs.get("project_root", "."))
-    agent_backend = str(kwargs.get("agent_backend", "codex"))
     can_revise_runtime = kwargs.get("training_code_spec_path") is None
     runtime_attempts = DEFAULT_TRAINING_RUNTIME_AGENT_MAX_ATTEMPTS if can_revise_runtime else 1
     last_status: dict[str, Any] | None = None
@@ -1682,16 +1651,13 @@ def run_fedavg_training_job(
             runtime_feedback=runtime_feedback,
             run_dir=run_dir,
             session_id=session,
-            agent_backend=agent_backend,
             timeout_seconds=float(kwargs.get("agent_timeout_seconds", 3600.0)),
-            poll_interval_seconds=float(kwargs.get("agent_poll_interval_seconds", 2.0)),
         )
         refreshed_configs = _refresh_client_training_configs_for_code_spec(
             raw_configs,
             training_plan=training_plan,
             training_code_spec=revised_code_spec,
             config=cfg,
-            project_root=project_root,
         )
         retry_job_name = _runtime_attempt_job_name(base_job_name, runtime_attempt + 1)
         export = export_fedavg_training_job(
@@ -1728,9 +1694,7 @@ def revise_training_code_after_runtime_feedback(
     runtime_feedback: dict[str, Any],
     run_dir: str | Path,
     session_id: str,
-    agent_backend: str,
     timeout_seconds: float,
-    poll_interval_seconds: float,
     max_attempts: int = DEFAULT_TRAINING_CODE_AGENT_MAX_ATTEMPTS,
 ) -> dict[str, Any]:
     """Ask the server coding agent to revise code after an actual simulator failure."""
@@ -1738,12 +1702,10 @@ def revise_training_code_after_runtime_feedback(
     run_path = Path(run_dir)
     code_workspace = run_path / "training_phase" / "server_generated_code"
     feedback_dir = run_path / "training_phase" / "server"
-    backend = _build_agent_backend(
-        kind=agent_backend,
+    backend = CodexWorkerBackend.from_env(
         run_dir=run_path,
         session_id=session_id,
         timeout_seconds=timeout_seconds,
-        poll_interval_seconds=poll_interval_seconds,
     )
     server_agent = ServerAgent(backend)
     agent_training_plan = _training_plan_with_mock_simulation_contract(
@@ -2415,9 +2377,7 @@ def _refresh_client_training_configs_for_code_spec(
     training_plan: dict[str, Any],
     training_code_spec: dict[str, Any],
     config: FedAvgTrainingConfig,
-    project_root: Path,
 ) -> dict[str, dict[str, Any]]:
-    _ = project_root
     refreshed: dict[str, dict[str, Any]] = {}
     for client_id, cfg in configs.items():
         if not isinstance(cfg, dict):
@@ -2731,23 +2691,6 @@ def _safe_adapter_summary(value: Any) -> dict[str, Any] | None:
     }
 
 
-def _build_agent_backend(
-    *,
-    kind: str,
-    run_dir: Path,
-    session_id: str,
-    timeout_seconds: float,
-    poll_interval_seconds: float,
-) -> object:
-    return build_agent_backend(
-        kind=kind,
-        run_dir=run_dir,
-        session_id=session_id,
-        timeout_seconds=timeout_seconds,
-        poll_interval_seconds=poll_interval_seconds,
-    )
-
-
 def _read_json(path: str | Path) -> dict[str, Any]:
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -2802,7 +2745,6 @@ def main(argv: list[str] | None = None) -> int:
     result = run_fedavg_training_job(
         workspace=project_root / "workspace",
         extraction_summary_path=summary_path,
-        project_root=project_root,
         output_dir=project_root / "runs",
         session_id=None,
         job_root=project_root / "jobs",
@@ -2812,7 +2754,6 @@ def main(argv: list[str] | None = None) -> int:
             num_rounds=100,
             dataset_root=_dataset_root_from_extraction_summary_path(summary_path),
         ),
-        agent_backend="codex",
     )
     print(
         json.dumps(

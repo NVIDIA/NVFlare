@@ -108,11 +108,8 @@ def build_agent_task_query_job(
     extraction_max_samples: int | None = None,
     extraction_overwrite: bool = False,
     extraction_validation_fraction: float = ExtractionConfig.validation_fraction,
-    agent_backend: str = "codex",
     agent_timeout_seconds: float = 3600.0,
-    agent_poll_interval_seconds: float = 2.0,
     client_inquiry_prompt: str | None = None,
-    profile_resume_run_dir: str | Path | None = None,
 ) -> tuple[FedJob, list[str]]:
     """Build an NVFlare Job API job for the FedReady task-query flow."""
 
@@ -140,13 +137,8 @@ def build_agent_task_query_job(
         extraction_max_samples=extraction_max_samples,
         extraction_overwrite=extraction_overwrite,
         extraction_validation_fraction=extraction_validation_fraction,
-        agent_backend=agent_backend,
         agent_timeout_seconds=agent_timeout_seconds,
-        agent_poll_interval_seconds=agent_poll_interval_seconds,
         client_inquiry_prompt=client_inquiry_prompt,
-        profile_resume_run_dir=(
-            str(Path(profile_resume_run_dir).resolve()) if profile_resume_run_dir is not None else None
-        ),
     )
     controller = FedReadyTaskQueryController(**controller_kwargs)
     executor = FedReadyTaskQueryExecutor(
@@ -163,9 +155,7 @@ def build_agent_task_query_job(
         extraction_max_samples=extraction_max_samples,
         extraction_overwrite=extraction_overwrite,
         extraction_validation_fraction=extraction_validation_fraction,
-        agent_backend=agent_backend,
         agent_timeout_seconds=agent_timeout_seconds,
-        agent_poll_interval_seconds=agent_poll_interval_seconds,
     )
     job.to_server(controller, id="fedready_task_query_controller")
     for client_id in client_ids:
@@ -326,7 +316,6 @@ def main(argv: list[str] | None = None) -> int:
     from fedready.agents.preflight import run_live_runtime_preflight
 
     run_live_runtime_preflight(
-        agent_backend="codex",
         task=task,
         project_root=project_root,
         output_dir=project_root / "runs",
@@ -353,7 +342,6 @@ def main(argv: list[str] | None = None) -> int:
         session_id=session_id,
         extraction_output_root=_run_scoped_extraction_output_root(session_id),
         extraction_output_name=session_id,
-        agent_backend="codex",
     )
     print(
         json.dumps(

@@ -75,7 +75,11 @@ NVFlare simulation before it can be exported or run.
 ## Implementation Scope
 
 This contribution provides the stable research artifact with one live
-coding-agent backend (`codex`). A client-local VLM performs bounded raw-input
+coding-agent backend (`codex`). Job entry points construct
+`CodexWorkerBackend.from_env()` from `fedready/agents/bridge.py`; agents use its
+`request(...)` method. To extend this example with another coding-agent backend,
+implement the same request contract and change that construction explicitly.
+A client-local VLM performs bounded raw-input
 guardrail
 inspection and image/label alignment review; for spatial labels, the workflow
 renders orientation candidates. For the built-in segmentation contract, it
