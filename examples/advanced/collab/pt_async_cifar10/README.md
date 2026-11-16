@@ -231,8 +231,8 @@ training uses ordinary persistent loaders, optimizer and scheduler state; this
 example does not impose per-assignment RNG scopes or replay.
 
 Actual arrivals depend on training and RPC timing. `schedule.jsonl` records the
-observed assignment IDs, physical/logical clients and base versions. For fixed
-replay and assignment seed helpers, see the separate
+observed assignment IDs, physical/logical clients and base versions. For
+simulator-owned replay and assignment seed helpers, see the separate
 [async research example](../pt_async_cifar10_reproducible/README.md). Its client contract can
 be adopted explicitly when building a reproducible training experiment.
 

@@ -12,20 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Example-owned reproducible replay using the shared coordinator and SimEnv."""
+"""Reproducible NumPy FedBuff simulation with simulator-owned plans."""
 
 import argparse
-import json
-from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
 from pt_async_cifar10_reproducible.model import NumpyModelOps
-from pt_async_cifar10_reproducible.replay import ReplayScheduler
-from pt_async_cifar10_reproducible.seed_policy import SeededTrainArgs, SeedPolicy
-from pt_async_cifar10_reproducible.workflow import ResearchRecipe
+from pt_async_cifar10_reproducible.seed_policy import SeedPolicy
 
-from nvflare.collab import collab
+from nvflare.collab import FedBuffRecipe, collab
 from nvflare.recipe import SimEnv
 
 
@@ -35,76 +31,54 @@ class ResearchModelLoader:
 
 
 class ResearchObserver:
-    def __init__(self, run_config: dict):
-        self.run_config = run_config
-        self._run_dir = None
-
-    def initialize(self):
-        self._run_dir = Path(collab.workspace.get_run_dir(collab.fl_ctx.get_job_id()))
-        config_file = self._run_dir / "run_config.json"
-        if config_file.exists():
-            raise FileExistsError(f"Research artifacts already exist in {self._run_dir}; use a fresh workspace")
-        config_file.write_text(json.dumps(self.run_config, indent=2))
-        (self._run_dir / "schedule.jsonl").write_text("")
-        (self._run_dir / "published_models").mkdir(exist_ok=True)
-
-    def on_model(self, model, version):
-        np.savez(self._run_dir / "published_models" / f"{version:08d}.npz", **model)
-
-    def on_event(self, event):
-        # Append immediately; do not accumulate an in-memory experiment trace.
-        with (self._run_dir / "schedule.jsonl").open("a") as stream:
-            stream.write(json.dumps(asdict(event)) + "\n")
-
     def on_finish(self, model, version):
-        np.save(self._run_dir / "final_weights.npy", model["weights"])
+        run_dir = Path(collab.workspace.get_run_dir(collab.fl_ctx.get_job_id()))
+        np.save(run_dir / "final_weights.npy", model["weights"])
 
 
 class ResearchClient:
     @collab.publish
-    def train(self, assignment_ids, model_version, global_model, logical_assignments, train_seeds):
+    def train(self, assignment_ids, model_version, global_model, logical_assignments, train_seeds=None):
         site = collab.site_name
-        seed = train_seeds[site]
+        identity = assignment_ids[site]
+        logical_name = logical_assignments[site]
+        # A plan supplies its explicit seed. Live runs use the same independent
+        # seed stream without needing a simulator-specific client protocol.
+        seed = (
+            train_seeds[site]
+            if train_seeds is not None
+            else SeedPolicy(collab.get_app_prop("run_seed")).seed(
+                "train", assignment_id=identity, logical_name=logical_name
+            )
+        )
         rng = SeedPolicy(seed).numpy_rng("local_update")
         updated = {key: value + rng.normal(size=value.shape).astype(value.dtype) for key, value in global_model.items()}
         return (
             updated,
             {},
             {
-                "assignment_id": assignment_ids[site],
+                "assignment_id": identity,
                 "model_version": model_version,
-                "logical_name": logical_assignments[site],
+                "logical_name": logical_name,
                 "train_seed": seed,
             },
         )
 
 
 def make_recipe(run_seed=10):
-    # Reserve three logical jobs even on one physical worker. Acceptance order
-    # and assignment seeds are independent of physical completion timing.
-    order = [2, 0, 1, 3]
-    logical = ["alice", "bob", "alice", "carol"]
-    recipe = ResearchRecipe(
+    recipe = FedBuffRecipe(
         job_name="collab_pt_async_cifar10_reproducible",
         client=ResearchClient(),
         model_loader=ResearchModelLoader(),
-        observer=ResearchObserver(
-            {
-                "run_seed": run_seed,
-                "concurrency": 3,
-                "buffer_size": 1,
-                "min_open_slots": 1,
-                "arrival_sequence": order,
-                "logical_sequence": logical,
-            }
-        ),
+        observer=ResearchObserver(),
         model_ops=NumpyModelOps(),
         num_updates=4,
-        concurrency=3,
-        scheduler=ReplayScheduler(order, logical),
-        train_kwargs=SeededTrainArgs(SeedPolicy(run_seed)),
+        concurrency=2,
+        buffer_size=1,
+        min_open_slots=1,
         call_timeout=30,
     )
+    recipe.set_client_prop("run_seed", run_seed)
     # Bundle the example package so relative imports also work in exported jobs.
     package = str(Path(__file__).resolve().parent)
     recipe.add_server_file(package)
@@ -112,13 +86,47 @@ def make_recipe(run_seed=10):
     return recipe
 
 
+def make_plan(run_seed=10, mode="fixed"):
+    logical = ["alice", "bob", "bob", "alice"]
+    policy = SeedPolicy(run_seed)
+    execution = {
+        "logical_sequence": logical,
+        "train_seeds": [
+            policy.seed("train", assignment_id=identity, logical_name=name) for identity, name in enumerate(logical)
+        ],
+    }
+    if mode == "fixed":
+        # After accepting bob's first assignment, bob is eligible again.
+        execution["arrival_sequence"] = [1, 0, 2, 3]
+    elif mode == "timed":
+        constant = {"distribution": "constant", "value": 1}
+        profile = {phase: constant for phase in ("download", "train", "upload")}
+        execution["timing"] = {
+            "starts": [0, 0, 4, 4],
+            "seed": policy.seed("delays"),
+            "profiles": {name: profile for name in sorted(set(logical))},
+            "horizon": 8,
+        }
+    else:
+        raise ValueError(f"unknown plan mode: {mode}")
+    return {"format_version": 1, "async_execution": execution}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--num-clients", type=int, default=2)
     parser.add_argument("--run-seed", type=int, default=10)
+    parser.add_argument("--plan-mode", choices=("fixed", "timed"), default="fixed")
     parser.add_argument("--workspace-root", default="/tmp/nvflare/collab")
     args = parser.parse_args()
-    run = make_recipe(args.run_seed).execute(SimEnv(num_clients=args.num_clients, workspace_root=args.workspace_root))
+    run = make_recipe(args.run_seed).execute(
+        SimEnv(
+            num_clients=args.num_clients,
+            workspace_root=args.workspace_root,
+            reprod=True,
+            plan=make_plan(args.run_seed, args.plan_mode),
+        )
+    )
     print("Job status:", run.get_status())
     print("Results:", run.get_result())
 

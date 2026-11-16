@@ -39,7 +39,27 @@ its ``record()`` and ``verify()`` methods make accepted participants explicit.
 Buffered Asynchronous Execution
 -------------------------------
 
-``FedBuffRecipe`` accepts an ``async_execution`` plan. ``logical_sequence``
+The :github_nvflare_link:`runnable NumPy example
+<examples/advanced/collab/pt_async_cifar10_reproducible>` constructs a
+``FedBuffRecipe`` and runs it from ``examples/advanced/collab`` with:
+
+.. code-block:: bash
+
+   python -m pt_async_cifar10_reproducible.job --num-clients 2 --run-seed 10
+
+Its ``make_recipe()`` returns a regular ``FedBuffRecipe`` and ``make_plan()``
+supplies only the simulator. The equivalent import path is:
+
+.. code-block:: python
+
+   from pt_async_cifar10_reproducible.job import make_plan, make_recipe
+   from nvflare.recipe import SimEnv
+
+   recipe = make_recipe(run_seed=10)
+   run = recipe.execute(SimEnv(num_clients=2, reprod=True, plan=make_plan(10)))
+
+``FedBuffRecipe`` consumes an ``async_execution`` plan through its shared
+execution port. ``logical_sequence``
 names assignments in reservation order. ``arrival_sequence`` lists assignment
 IDs in acceptance order, independent of physical completion order:
 
@@ -59,7 +79,10 @@ The physical sites execute the logical assignments; their names do not
 determine the assignment base or acceptance order. The plan must have
 ``num_updates * buffer_size`` assignments, and its acceptance order must be
 compatible with the workflow's concurrency and refill threshold. A logical
-client cannot have two assignments in the same reservation batch.
+client cannot be reserved again while an earlier assignment for that client
+remains active, including across separate reservation batches. The runnable
+example uses ``["alice", "bob", "bob", "alice"]`` with acceptance order
+``[1, 0, 2, 3]`` to satisfy this rule.
 An optional ``physical_sites`` list pins each assignment to a named physical
 site; without it, available sites take pending work in FIFO order. The pinned
 site names must exist in the ``SimEnv`` pool. ``dispatch.jsonl`` records the

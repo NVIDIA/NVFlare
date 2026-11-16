@@ -200,18 +200,18 @@ distinct within that module.
      - Simulator-only participation, logical starts, acceptance, virtual time,
        disk evidence and model history.
      - Recipe construction, exported job configuration and production arrivals.
-   * - :github_nvflare_link:`Research workflow
-       <examples/advanced/collab/pt_async_cifar10_reproducible/workflow.py>`
-     - ``ResearchRecipe``, logical reservations, predefined replay, worker reuse,
-       seed streams, held results and append-only disk checkpoints.
-     - Core supplies shared acceptance/aggregation math and Collab call/lifecycle
-       implementation. Sampled FedRevive phases remain follow-up work.
+   * - :github_nvflare_link:`Research example
+       <examples/advanced/collab/pt_async_cifar10_reproducible>`
+     - A complete ``FedBuffRecipe`` composition with independent client seed
+       streams and simulator plans for fixed acceptance or virtual timing.
+     - Shared execution controls, retained model/result evidence and numerical
+       acceptance are supplied by the simulator and core recipe.
 
 ``FedBuffRecipe`` builds ``FedBuffWorkflow``, which invokes ``FedBuffTrainingCoordinator``.
 The coordinator performs no Collab calls and uses caller-supplied model arithmetic.
 Both production and research use the same numerical acceptance/publication path.
-Research may choose when to submit or accept work and where to keep bases/results;
-core never imports the examples.
+``SimEnv`` selects planned execution and owns retained bases/results; core never
+imports the examples.
 
 The same module defines ``Assignment``, ``FedBuffResult``, ``AcceptedUpdate``,
 ``FedBuffEvent``. They describe server-local state and hook inputs, and introduce
@@ -228,13 +228,13 @@ Reproducible Research
 Actual arrivals depend on training/RPC timing; fixed seeds alone do not make them
 reproducible. :ref:`Reproducible Simulation Plans <reproducible_simulation>`
 describe simulator-owned fixed acceptance and virtual-time controls for this
-same recipe. The earlier
+same recipe. The
 :github_nvflare_link:`reproducible example <examples/advanced/collab/pt_async_cifar10_reproducible>`
-explains fixed replay, seed helpers and retained experiment files. Its
-``ResearchRecipe`` and workflow reuse core numerical acceptance and the protected
-``_coordinator_class``/``_run`` implementation points while sharing
-``_create_coordinator``, Collab calls and lifecycle. The research API and concrete
-model helpers remain examples, outside the installed SDK.
+shows an ordinary ``FedBuffRecipe`` run with a simulator-owned plan, seed
+helpers and retained experiment evidence. Its concrete model and seed helpers
+remain example code, outside the installed SDK. A new async algorithm can
+connect its assignment, acceptance and publication operations through the
+shared execution port; this example needs no recipe subclass.
 
 Failure and Recovery Limits
 ---------------------------

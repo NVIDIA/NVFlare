@@ -15,7 +15,6 @@
 """Research seed streams, usable without a Collab runtime.
 
 Seed derivation never consumes a generator or changes process RNG state.
-Only SeededTrainArgs adapts the policy to the asynchronous train protocol.
 """
 
 import hashlib
@@ -64,33 +63,3 @@ class SeedPolicy:
         import numpy as np
 
         return np.random.default_rng(self.seed(stream, **scope))
-
-
-class SeededTrainArgs:
-    """Use with ResearchRecipe(train_kwargs=...) to seed logical assignments.
-
-    An explicit assignment.metadata['train_seed'] takes precedence (trace
-    replay). Otherwise derive it from logical identity and assignment ID. Stamp
-    the selected seed into server-owned metadata before dispatch so on_event
-    records it. No physical-worker name participates in seed derivation.
-    The client must declare train_seeds and apply its own seed/RNG context.
-    """
-
-    def __init__(self, seed_policy: SeedPolicy, stream: str = "train"):
-        if not isinstance(seed_policy, SeedPolicy):
-            raise TypeError("seed_policy must be a SeedPolicy")
-        if not isinstance(stream, str) or not stream:
-            raise ValueError("stream must be a nonempty string")
-        self.seed_policy = seed_policy
-        self.stream = stream
-
-    def __call__(self, call):
-        assignment = call.assignment
-        if "train_seed" in assignment.metadata:
-            seed = _check_seed(assignment.metadata["train_seed"])
-        else:
-            seed = self.seed_policy.seed(
-                self.stream, assignment_id=assignment.assignment_id, logical_name=assignment.logical_name
-            )
-            assignment.metadata["train_seed"] = seed
-        return {"train_seeds": {call.client_name: seed}}
