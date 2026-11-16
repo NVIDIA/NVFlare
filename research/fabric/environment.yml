@@ -1,0 +1,15 @@
+name: fabric-nvflare
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+      - nvflare==2.7.2
+      - numpy==1.26.4
+      - pandas==2.3.3
+      - scikit-learn==1.7.2
+      - h5py==3.16.0
+      - nvidia-cudnn-cu12==9.19.0.56
+      - torch==2.11.0+cu128

@@ -1,0 +1,6 @@
+nvflare==2.7.2
+torch==2.11.0
+numpy==1.26.4
+pandas==2.3.3
+scikit-learn==1.7.2
+h5py==3.16.0
