@@ -16,26 +16,18 @@
 
 import importlib
 import os
-import re
 from dataclasses import dataclass
 
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.task_launcher_spec import TaskLauncherSpec, TaskResourceRequest
-from nvflare.app_common.task_launcher.process_launcher import ProcessTaskLauncher
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.job_config.task_execution import (
-    _timeout,
-    reject_job_gpu_reservation,
-    validate_process_task_resources,
-    validate_task_resources,
-)
+from nvflare.job_config.task_execution import _timeout, reject_job_gpu_reservation, validate_task_resources
 from nvflare.private.fed.task_worker.protocol import _require_payload_limit
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisorOptions
-from nvflare.utils.job_launcher_utils import get_job_launcher_spec
 
 GPU_ENVIRONMENT_NAMES = {
     "CUDA_VISIBLE_DEVICES",
@@ -60,30 +52,13 @@ FORBIDDEN_ENVIRONMENT_NAMES = (
         "DOCKER_API_VERSION",
     }
 )
-PASSTHROUGH_ENVIRONMENT_NAMES = {
-    "PATH",
-    "PYTHONPATH",
-    "PYTHONHOME",
-    "PYTHONNOUSERSITE",
-    "PYTHONHASHSEED",
-    "VIRTUAL_ENV",
-    "HOME",
-    "LANG",
-    "LC_ALL",
-    "TMPDIR",
-    "TMP",
-    "TEMP",
-    "LD_LIBRARY_PATH",
-    "DYLD_LIBRARY_PATH",
-    "DYLD_FALLBACK_LIBRARY_PATH",
-    "NVFLARE_SECURE_LOGGING",
-    "FL_LOG_LEVEL",
-}
-
 _NATIVE_TASK_LAUNCHERS = {
-    "docker": ("nvflare.app_opt.task_launcher.docker_launcher", "DockerTaskLauncher"),
     "k8s": ("nvflare.app_opt.task_launcher.k8s_launcher", "K8sTaskLauncher"),
     "slurm": ("nvflare.app_opt.job_launcher.slurm.task_launcher", "SlurmTaskLauncher"),
+}
+_NATIVE_JOB_LAUNCHERS = {
+    "k8s": ("nvflare.app_opt.job_launcher.k8s_launcher", "ClientK8sJobLauncher"),
+    "slurm": ("nvflare.app_opt.job_launcher.slurm.launcher", "ClientSlurmJobLauncher"),
 }
 
 
@@ -100,10 +75,6 @@ def _supported_native_launcher(launcher):
             return False
         raise
     return type(launcher) is getattr(module, class_name, None)
-
-
-def is_native_task_launcher(launcher):
-    return launcher.launch_mode in _NATIVE_TASK_LAUNCHERS
 
 
 def site_job_launchers(site_config):
@@ -126,7 +97,6 @@ class _SiteBuilder(ComponentBuilder):
 @dataclass(frozen=True)
 class TaskExecutionPolicy:
     launcher: TaskLauncherSpec
-    environment_variables: tuple[str, ...] = ()
     artifact_cleanup: str = "receipt"
     worker_timeout: float | None = None
     settlement_timeout: float = 10.0
@@ -143,28 +113,19 @@ class TaskExecutionPolicy:
         policy = cls.from_config(data.get("task_execution", {}))
         # Only the canonical site file may establish the CP/CJ backend. A
         # container environment or job meta cannot select its own authority.
-        if _supported_native_launcher(policy.launcher):
-            policy.launcher.validate_site_config(data)
-            return policy
-        launchers = site_job_launchers(data)
-        if launchers and (
-            len(launchers) != 1
-            or launchers[0][0]
-            not in {
-                "ClientProcessJobLauncher",
-                "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
-            }
-        ):
-            raise ValueError("task and job launch modes must match; configure a supported site TaskLauncher")
+        policy.launcher.validate_site_config(data)
         return policy
 
     @classmethod
     def from_config(cls, config):
         if not isinstance(config, dict):
             raise ValueError("site task_execution policy must be a dict")
+        if "environment_variables" in config:
+            raise ValueError(
+                "environment_variables is not supported; configure worker environment on the native backend"
+            )
         allowed = {
             "launcher",
-            "environment_variables",
             "artifact_cleanup",
             "worker_timeout",
             "settlement_timeout",
@@ -174,15 +135,6 @@ class TaskExecutionPolicy:
         }
         if set(config) - allowed:
             raise ValueError(f"unknown site task_execution settings: {sorted(set(config) - allowed)}")
-        names = config.get("environment_variables", [])
-        if not isinstance(names, list) or any(
-            not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) for name in names
-        ):
-            raise ValueError("environment_variables must be a list of valid environment names")
-        if set(names) & FORBIDDEN_ENVIRONMENT_NAMES:
-            raise ValueError(
-                "task environment policy cannot forward federation credentials, API bootstrap, or GPU visibility"
-            )
         cleanup = config.get("artifact_cleanup", "receipt")
         if cleanup not in ("receipt", "retain"):
             raise ValueError("artifact_cleanup must be 'receipt' or 'retain'")
@@ -197,52 +149,46 @@ class TaskExecutionPolicy:
         if finalization_timeout is None or finalization_timeout <= 0:
             raise ValueError("finalization_timeout must be finite and positive")
         launcher_config = config.get("launcher")
-        launcher = ProcessTaskLauncher() if launcher_config is None else _SiteBuilder().build_component(launcher_config)
-        if not isinstance(launcher, TaskLauncherSpec) or not (
-            launcher.launch_mode == "process" or _supported_native_launcher(launcher)
-        ):
-            raise ValueError("task execution requires a supported Process, Docker, Kubernetes or Slurm TaskLauncher")
-        if launcher.launch_mode != "process" and names:
-            raise ValueError("native worker environment belongs to trusted backend configuration")
+        if launcher_config is None:
+            raise ValueError(
+                "task execution requires an explicit site Kubernetes or Slurm TaskLauncher; "
+                "local Process and Docker task execution are deferred; use job lifetime on local sites"
+            )
+        if isinstance(launcher_config, dict):
+            # Give old full paths and short-name aliases the same actionable
+            # error before importing a removed or never-shipped implementation.
+            for field in ("path", "class_path", "name"):
+                path = launcher_config.get(field)
+                if isinstance(path, str) and path.rsplit(".", 1)[-1] in ("ProcessTaskLauncher", "DockerTaskLauncher"):
+                    raise ValueError("local Process and Docker task execution are deferred; use job lifetime")
+        launcher = _SiteBuilder().build_component(launcher_config)
+        if not isinstance(launcher, TaskLauncherSpec) or not _supported_native_launcher(launcher):
+            raise ValueError("task execution requires a supported Kubernetes or Slurm TaskLauncher")
         return cls(
-            launcher,
-            tuple(dict.fromkeys(names)),
-            cleanup,
-            options.worker_timeout,
-            options.settlement_timeout,
-            options.poll_interval,
-            limit,
-            finalization_timeout,
+            launcher=launcher,
+            artifact_cleanup=cleanup,
+            worker_timeout=options.worker_timeout,
+            settlement_timeout=options.settlement_timeout,
+            poll_interval=options.poll_interval,
+            max_payload_bytes=limit,
+            finalization_timeout=finalization_timeout,
         )
 
     def worker_environment(self):
-        if self.launcher.launch_mode != "process":
-            return {}
-        allowed = PASSTHROUGH_ENVIRONMENT_NAMES | set(self.environment_variables)
-        environment = {
-            name: value
-            for name, value in os.environ.items()
-            if name in allowed and name not in FORBIDDEN_ENVIRONMENT_NAMES
-        }
-        environment.update(
-            {
-                "CUDA_VISIBLE_DEVICES": "",
-                "HIP_VISIBLE_DEVICES": "",
-                "NVIDIA_VISIBLE_DEVICES": "none",
-                "ROCR_VISIBLE_DEVICES": "",
-            }
-        )
-        return environment
+        # Native backend configuration, never the resident CJ's environment,
+        # owns worker credentials, GPU visibility and application variables.
+        return {}
+
+    def validate_job_launcher(self, launcher):
+        """Fail closed before starting a CJ on an incompatible site runtime."""
+        module_name, class_name = _NATIVE_JOB_LAUNCHERS[self.launcher.launch_mode]
+        expected = getattr(importlib.import_module(module_name), class_name)
+        if type(launcher) is not expected:
+            raise ValueError("task lifetime requires the site's supported Kubernetes or Slurm client-job launcher")
 
     def task_resources(self, meta, site_name):
-        native_mode = _supported_native_launcher(self.launcher)
-        validate_task_resources(meta, site_name, allow_gpu=native_mode)
-        if native_mode:
-            reject_job_gpu_reservation(meta, site_name)
-        if not native_mode:
-            validate_process_task_resources(meta, site_name)
-            return TaskResourceRequest()
-        if self.launcher.launch_mode != "docker":
-            return TaskResourceRequest()
-        spec = get_job_launcher_spec(meta, site_name, "docker")
-        return TaskResourceRequest(gpu_count=spec.get("num_of_gpus", 0))
+        validate_task_resources(meta, site_name)
+        reject_job_gpu_reservation(meta, site_name)
+        # Each native backend derives its request from the validated site/job
+        # binding; do not reinterpret it as local process or Docker resources.
+        return TaskResourceRequest()

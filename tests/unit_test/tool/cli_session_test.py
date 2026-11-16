@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 from argparse import Namespace
 
 from nvflare.tool.cli_session import new_cli_session
@@ -88,18 +89,14 @@ def test_new_cli_session_for_args_uses_kit_id_without_mutating_active(tmp_path, 
     home = tmp_path / "home"
     config_dir = home / ".nvflare"
     config_dir.mkdir(parents=True)
-    config_path = config_dir / "config.conf"
+    config_path = config_dir / "config.json"
     config_path.write_text(
-        f"""
-        version = 2
-        startup_kits {{
-          active = "active"
-          entries {{
-            active = "{active_kit}"
-            scoped = "{scoped_kit}"
-          }}
-        }}
-        """,
+        json.dumps(
+            {
+                "version": 2,
+                "startup_kits": {"active": "active", "entries": {"active": str(active_kit), "scoped": str(scoped_kit)}},
+            }
+        ),
         encoding="utf-8",
     )
     monkeypatch.setenv("HOME", str(home))
@@ -112,4 +109,4 @@ def test_new_cli_session_for_args_uses_kit_id_without_mutating_active(tmp_path, 
     assert returned is fake_sess
     assert new_secure.call_args.kwargs["username"] == "scoped@nvidia.com"
     assert new_secure.call_args.kwargs["startup_kit_location"] == str(scoped_kit)
-    assert 'active = "active"' in config_path.read_text(encoding="utf-8")
+    assert json.loads(config_path.read_text(encoding="utf-8"))["startup_kits"]["active"] == "active"

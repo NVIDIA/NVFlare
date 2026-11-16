@@ -346,7 +346,9 @@ different data site and features. We hope this feature will make it easier to pe
 ### Task execution lifetime
 
 The dataframe and image recipe examples accept `--execution_lifetime task`.
-This runs `StatisticsExecutor` and its named statistics generator in a fresh CPU
-Process worker for each assignment. Privacy filters and cleansers stay in the
+Export this configuration for a scheduler-backed task site (Kubernetes; Slurm
+integration is separate), where `StatisticsExecutor` and its named generator
+run in a fresh worker for each assignment. Local Process/Docker task execution
+is deferred; use the default job lifetime for simulator and local POC runs. Privacy filters and cleansers stay in the
 Client Job. Generators must load their data during initialization and cannot depend
 on in-memory state from previous statistics tasks. The default is `job` lifetime.

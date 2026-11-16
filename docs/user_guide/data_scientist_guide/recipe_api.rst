@@ -83,6 +83,12 @@ All concrete recipes support the common execution surface:
    the execution environment requires deployment artifacts that job export
    itself does not need.
 
+``nvflare.recipe.is_export_requested()``
+   Return whether Recipe consumed ``--export`` when the package was imported.
+   The recorded decision does not change when ``sys.argv`` changes later. Use
+   this accessor when script validation needs to distinguish export from
+   execution, without redeclaring the reserved export flags.
+
 ``recipe.run(env, server_exec_params=None, client_exec_params=None)``
    Submit directly through the environment and return a ``Run`` handle. Most
    user examples should use ``execute`` so export flags continue to work.
@@ -187,10 +193,6 @@ Shared helpers:
 ``recipe.enable_log_streaming(*file_names)``
    Add the default Recipe log-streaming components. If no file names are given,
    the recipe streams ``log.json``.
-
-``recipe.enable_tensor_streaming(format="pytorch", tasks=None, tensor_send_timeout=30.0, wait_send_task_data_all_clients_timeout=300.0)``
-   Add matching tensor-streaming components to the server and all generated
-   client apps. The format must match the recipe's ``server_expected_format``.
 
 Utility helpers:
 
@@ -557,6 +559,14 @@ statistics, PSI, and survival analysis. Warnings and errors remain visible:
 .. code-block:: bash
 
    python job.py --log_config progress
+
+Named logging levels and custom JSON configuration files are also accepted.
+Simulation validates its effective logging selector immediately before deployment,
+before creating a workspace or starting processes. Invalid command-line or inherited
+environment selectors produce usage errors; invalid explicit ``SimEnv(log_config=...)``
+values raise ``ValueError`` at deployment. Help and export-only workflows do not
+validate runtime logging. Scripts may prepare a logging JSON file or repair an
+inherited ``FL_LOG_LEVEL`` after importing Recipe and before deployment.
 
 Detailed diagnostic records remain in ``log.txt`` and ``log.json``. To show full
 diagnostics on the console, run:

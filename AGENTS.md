@@ -5,6 +5,7 @@
 - Keep edits scoped to the task; do not modify unrelated files in a dirty worktree.
 - Start with targeted tests for changed files, then run broader checks as needed.
 - Before adding, changing, or moving tests, read and follow the [test placement and authoring rules](tests/README.md#choosing-the-test-layer).
+- For AI-authored test changes, apply the test review checklist to the actual target branch, including helper/fixture process launches and release-only tests. Do not claim a full audit from a pattern scan or a focused passing run.
 - Before pushing or opening a PR, run the project style check (`./runtest.sh -s`, or the closest scoped equivalent when justified). If it cannot be run, state that clearly before pushing.
 - Read `CLAUDE.md` for shared repo guidance such as project overview, architecture notes, commands, package layout, and style/testing conventions. Keep `AGENTS.md` limited to agent-specific addenda.
 - For code reviews and pre-PR review, follow [REVIEW.md](REVIEW.md).

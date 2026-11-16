@@ -304,6 +304,53 @@ def test_replacement_failure_after_attachment_reaps_worker_before_releasing_reso
     assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == 104
 
 
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True])
+@pytest.mark.parametrize("abort_before_publication", [False, True])
+def test_replacement_handle_publication_keeps_abort_live(tmp_path, heartbeat_cleanup, abort_before_publication):
+    def intercept_launch(executor, index, _):
+        if index != 0:
+            return
+        launcher = executor.run_processes["job-1"][_RESTART_KEY].launcher
+        launch = launcher.launch_job.side_effect
+
+        def publish_and_abort(meta, ctx):
+            if abort_before_publication:
+                executor.abort_app("job-1", heartbeat_cleanup=heartbeat_cleanup)
+            handle = launch(meta, ctx)
+            publish_job_handle(handle, ctx)
+            if not abort_before_publication:
+                executor.abort_app("job-1", heartbeat_cleanup=heartbeat_cleanup)
+            handle.terminate.assert_called_once()
+            return handle
+
+        launcher.launch_job.side_effect = publish_and_abort
+
+    launcher, _, handles = _run_recovery(tmp_path, [(True, 104), (False, 9)], on_wait=intercept_launch)
+    assert launcher.launch_job.call_count == 2
+    handles[-1].terminate.assert_called_once()
+
+
+def test_replacement_submission_failure_after_publication_reaps_accepted_worker(tmp_path):
+    def intercept_launch(executor, index, handle):
+        if index:
+            handle.terminate.assert_called_once()
+            return
+        launcher = executor.run_processes["job-1"][_RESTART_KEY].launcher
+        launch = launcher.launch_job.side_effect
+
+        def publish_then_fail(meta, ctx):
+            handle = launch(meta, ctx)
+            publish_job_handle(handle, ctx)
+            raise RuntimeError("launcher failed after accepting the replacement")
+
+        launcher.launch_job.side_effect = publish_then_fail
+
+    launcher, _, handles = _run_recovery(tmp_path, [(True, 104), (False, 1)], on_wait=intercept_launch)
+    assert launcher.launch_job.call_count == 2
+    handles[-1].terminate.assert_called_once()
+    handles[-1].wait.assert_called_once()
+
+
 def test_abort_while_replacement_launcher_has_not_returned(tmp_path):
     def intercept_launch(executor, index, _):
         if index != 0:
@@ -1158,24 +1205,16 @@ def test_start_app_rejects_cj_budget_drift(tmp_path):
         )
 
 
-@pytest.mark.parametrize("config_case", ["nested_json", "hocon_include", "yaml_environment"])
-def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path, monkeypatch, config_case):
+def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path):
     job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
     job_meta["cj_resource_spec"] = {"site-1": {}}
     with open(workspace.get_job_meta_path("job-1"), "w") as stream:
         json.dump(job_meta, stream)
     config = Path(workspace.get_app_config_dir("job-1"))
     config.mkdir(parents=True)
-    if config_case == "nested_json":
-        (config / "config_fed_client.conf").write_text("execution_lifetime = task\n")
-        (config / "shadow").mkdir()
-        (config / "shadow" / "config_fed_client.json").write_text('{"execution_lifetime":"job"}')
-    elif config_case == "hocon_include":
-        (config / "config_fed_client.conf").write_text('execution_lifetime = task\ninclude "runtime-mode.conf"\n')
-        (config / "runtime-mode.conf").write_text("execution_lifetime = job\n")
-    else:
-        (config / "config_fed_client.yml").write_text("execution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\n")
-        monkeypatch.setenv("NVFLARE_LIFETIME", "job")
+    (config / "config_fed_client.json.default").write_text('{"execution_lifetime":"task"}')
+    (config / "shadow").mkdir()
+    (config / "shadow" / "config_fed_client.json").write_text('{"execution_lifetime":"job"}')
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher") as choose:
         with pytest.raises(ValueError, match="resolved client execution_lifetime"):
             JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
@@ -1184,64 +1223,44 @@ def test_cj_admission_rejects_locally_resolved_resident_config(tmp_path, monkeyp
     choose.assert_not_called()
 
 
-def test_cj_image_environment_cannot_change_admitted_task_into_resident_compute(tmp_path, monkeypatch):
-    from pathlib import Path
-
-    from nvflare.fuel.utils.config_service import ConfigService
-    from nvflare.private.fed.client.client_app_runner import ClientAppRunner
-    from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
-
-    job_meta, workspace, _, _ = _make_start_app_inputs(tmp_path)
-    job_meta["cj_resource_spec"] = {"site-1": {}}
-    with open(workspace.get_job_meta_path("job-1"), "w") as stream:
-        json.dump(job_meta, stream)
-    config = Path(workspace.get_app_config_dir("job-1"))
-    config.mkdir(parents=True)
-    path = config / "config_fed_client.yml"
-    path.write_text("format_version: 3\nexecution_lifetime: ${oc.env:NVFLARE_LIFETIME,task}\nexecutors: []\n")
-    monkeypatch.delenv("NVFLARE_LIFETIME", raising=False)
-    assert ConfigService.load_config_dict(str(path))["execution_lifetime"] == "task"
-    monkeypatch.setenv("NVFLARE_LIFETIME", "job")
-    args = SimpleNamespace(
-        workspace=str(tmp_path),
-        job_id="job-1",
-        client_name="site-1",
-        client_config="config/config_fed_client.json",
-        set=[],
-        sp_scheme="grpc",
-        sp_target="server:8002",
-    )
-    with patch.object(ClientJsonConfigurator, "configure") as build:
-        with pytest.raises(ValueError, match="resolved client execution_lifetime"):
-            ClientAppRunner().create_client_runner(workspace.get_app_dir("job-1"), args, "config", MagicMock(), False)
-    build.assert_not_called()
-
-
-@pytest.mark.parametrize("budget", [{"num_of_cpus": 0.5}, {"memory": "1Gi"}, {"num_of_gpus": 1}])
-def test_process_cj_rejects_explicit_unenforceable_coordinator_budget(budget):
+@pytest.mark.parametrize("budget", [{}, {"num_of_cpus": 0.5}, {"memory": "1Gi"}, {"num_of_gpus": 1}])
+@pytest.mark.parametrize("backend", ["process", "docker", "custom", "slurm_server"])
+def test_shared_admission_rejects_unsupported_task_cj_before_launch(tmp_path, budget, backend):
     from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
+    from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher
+    from nvflare.app_opt.job_launcher.slurm.launcher import ServerSlurmJobLauncher
+    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 
-    context = MagicMock()
-    context.get_identity_name.return_value = "site-1"
-    with pytest.raises(ValueError, match="Process CJ cannot enforce"):
-        ClientProcessJobLauncher().get_command({"cj_resource_spec": {"site-1": budget}}, context)
-
-
-@pytest.mark.parametrize(
-    "compute", [{"num_of_cpus": 2}, {"memory": "4Gi"}, {"num_of_licenses": 1}, {"mem_per_gpu_in_GiB": 8}]
-)
-def test_process_task_compute_requirements_fail_before_starting_cj(compute):
-    from nvflare.apis.task_launcher_spec import UnsupportedTaskResourceError
-    from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
-
-    context = Mock()
-    context.get_identity_name.return_value = "site-1"
-    with patch("nvflare.app_common.job_launcher.client_process_launcher.generate_client_command") as command:
-        with pytest.raises(UnsupportedTaskResourceError):
-            ClientProcessJobLauncher().get_command(
-                {"resource_spec": {"@default": compute}, "cj_resource_spec": {"site-1": {}}}, context
-            )
-    command.assert_not_called()
+    job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-1": budget}
+    Path(workspace.get_job_meta_path("job-1")).write_text(json.dumps(job_meta))
+    config_dir = Path(workspace.get_app_config_dir("job-1"))
+    config_dir.mkdir(parents=True)
+    (config_dir / "config_fed_client.json").write_text('{"execution_lifetime":"task"}')
+    classes = {
+        "process": ClientProcessJobLauncher,
+        "docker": ClientDockerJobLauncher,
+        "slurm_server": ServerSlurmJobLauncher,
+    }
+    launcher = object.__new__(classes[backend]) if backend in classes else Mock()
+    launcher.launch_job = Mock(side_effect=AssertionError("unsupported task CJ must not start"))
+    # Canonical site-policy validation has its own tests. Exercise the real
+    # selected-launcher check at the shared parent admission boundary here.
+    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode="slurm" if backend == "slurm_server" else "k8s"))
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
+            with pytest.raises(ValueError, match="supported Kubernetes or Slurm client-job launcher"):
+                JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+                    client,
+                    "job-1",
+                    job_meta,
+                    SimpleNamespace(workspace=str(tmp_path), set=[]),
+                    None,
+                    None,
+                    None,
+                    context,
+                )
+    launcher.launch_job.assert_not_called()
 
 
 def test_process_resident_compute_admission_keeps_legacy_behavior():
@@ -1253,6 +1272,70 @@ def test_process_resident_compute_admission_keeps_legacy_behavior():
         assert (
             ClientProcessJobLauncher().get_command({"resource_spec": {"@default": {"num_of_cpus": 2}}}, context) == "CJ"
         )
+
+
+@pytest.mark.parametrize("gpus", [0, 1])
+@pytest.mark.parametrize(
+    "mode,module_name,class_name",
+    [
+        ("k8s", "nvflare.app_opt.job_launcher.k8s_launcher", "ClientK8sJobLauncher"),
+        ("slurm", "nvflare.app_opt.job_launcher.slurm.launcher", "ClientSlurmJobLauncher"),
+    ],
+)
+def test_shared_admission_reaches_matching_native_cj_launcher(tmp_path, mode, module_name, class_name, gpus):
+    import importlib
+
+    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
+
+    launcher = object.__new__(getattr(importlib.import_module(module_name), class_name))
+    launcher.launch_job = Mock(side_effect=RuntimeError("native launch boundary reached"))
+    job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    job_meta["resource_spec"] = {"site-1": {"num_of_gpus": gpus}}
+    job_meta["cj_resource_spec"] = {"site-1": {}}
+    Path(workspace.get_job_meta_path("job-1")).write_text(json.dumps(job_meta))
+    config_dir = Path(workspace.get_app_config_dir("job-1"))
+    config_dir.mkdir(parents=True)
+    (config_dir / "config_fed_client.json").write_text('{"execution_lifetime":"task"}')
+    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode=mode))
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
+            with pytest.raises(RuntimeError, match="native launch boundary reached"):
+                JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+                    client,
+                    "job-1",
+                    job_meta,
+                    SimpleNamespace(workspace=str(tmp_path), set=[]),
+                    None,
+                    None,
+                    None,
+                    context,
+                )
+    launcher.launch_job.assert_called_once()
+
+
+def test_shared_admission_keeps_job_site_independent_of_another_sites_task_policy(tmp_path):
+    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
+
+    job_meta, workspace, client, context = _make_start_app_inputs(tmp_path)
+    job_meta["cj_resource_spec"] = {"site-2": {}}
+    Path(workspace.get_job_meta_path("job-1")).write_text(json.dumps(job_meta))
+    launcher = Mock()
+    launcher.launch_job.side_effect = RuntimeError("resident launch boundary reached")
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        with patch.object(TaskExecutionPolicy, "from_workspace") as native_policy:
+            with pytest.raises(RuntimeError, match="resident launch boundary reached"):
+                JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+                    client,
+                    "job-1",
+                    job_meta,
+                    SimpleNamespace(workspace=str(tmp_path), set=[]),
+                    None,
+                    None,
+                    None,
+                    context,
+                )
+    native_policy.assert_not_called()
+    launcher.launch_job.assert_called_once()
 
 
 def test_cp_admission_uses_shared_resource_lifetime_classifier(tmp_path):

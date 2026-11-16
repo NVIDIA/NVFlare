@@ -46,6 +46,7 @@ from nvflare.fuel.f3.cellnet.identity import (
     get_cert_common_name_from_file,
     get_param,
     is_mtls_config,
+    load_job_ca_cert,
 )
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
 from nvflare.fuel.f3.cellnet.utils import buffer_len, decode_payload, encode_payload, format_log_message, make_reply
@@ -436,6 +437,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             local_fqcn=self.my_info.fqcn,
             prefix_identity_map=prefix_identity_map,
             exact_identity_map=exact_identity_map,
+            job_ca_cert=load_job_ca_cert(get_param(credentials, DriverParams.CA_CERT)),
         )
 
         ep = Endpoint(
@@ -1387,7 +1389,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def _send_direct_message(self, target_cell, message):
         target_cell.process_message(
-            endpoint=Endpoint(self.my_info.fqcn), connection=None, app_id=self.APP_ID, message=message
+            endpoint=self.communicator.local_endpoint, connection=None, app_id=self.APP_ID, message=message
         )
 
     def _send_target_messages(
@@ -2122,10 +2124,29 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 if reply:
                     return reply
 
-        if msg_type == MessageType.REQ and self.message_interceptor is not None:
-            reply = self._try_cb(
-                message, self.message_interceptor, *self.message_interceptor_args, **self.message_interceptor_kwargs
+        if msg_type == MessageType.REQ:
+            reply = None
+            reply_target = origin
+            from_upstream = endpoint.name == FQCN.ROOT_SERVER or (
+                self.my_info.gen > 1 and endpoint.name == FQCN.get_parent(self.my_info.fqcn)
             )
+            if (
+                channel == CellChannel.SERVER_PARENT_LISTENER
+                or (channel == CellChannel.CLIENT_COMMAND and not from_upstream)
+            ) and (FQCN.validate(origin) or (origin != endpoint.name and not FQCN.is_ancestor(endpoint.name, origin))):
+                # Check each hop before forwarding: a job child must not claim a sibling job or the server.
+                reply = make_reply(ReturnCode.UNAUTHENTICATED, "origin does not belong to sending peer")
+                reply_target = endpoint.name
+            elif channel == CellChannel.CLIENT_MAIN and origin == FQCN.ROOT_SERVER and not from_upstream:
+                # Check every hop, including relays: a downstream client must not
+                # impersonate the server on the client administration channel.
+                # mTLS binds the actual endpoint to the provisioned topology identity.
+                reply = make_reply(ReturnCode.UNAUTHENTICATED, "server command did not arrive from upstream")
+                reply_target = endpoint.name
+            elif self.message_interceptor is not None:
+                reply = self._try_cb(
+                    message, self.message_interceptor, *self.message_interceptor_args, **self.message_interceptor_kwargs
+                )
 
             if reply:
                 self.logger.debug(f"{self.my_info.fqcn}: interceptor stopped message!")
@@ -2140,7 +2161,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                         MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
                         MessageHeaderKey.TO_CELL: endpoint.name,
                         MessageHeaderKey.ORIGIN: self.my_info.fqcn,
-                        MessageHeaderKey.DESTINATION: origin,
+                        MessageHeaderKey.DESTINATION: reply_target,
                         MessageHeaderKey.REQ_ID: [req_id],
                         MessageHeaderKey.MSG_TYPE: MessageType.RETURN,
                         MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],

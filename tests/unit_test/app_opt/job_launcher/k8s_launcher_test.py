@@ -3835,11 +3835,11 @@ def _task_profile(pvc_root, persist_resident_workspaces=True):
     )
 
 
-def _mock_job_workspace_owner(monkeypatch, launcher):
+def _mock_job_workspace_owner(monkeypatch, launcher, job_id=_TASK_JOB_ID):
     # Unit-test the valid PVC profile independently of the host runner's UID.
     # The separate ownership-guard tests continue to use real filesystem IDs.
     real_stat = os.stat
-    directory = os.path.join(launcher.job_workspace_pvc_root, job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE))
+    directory = os.path.join(launcher.job_workspace_pvc_root, job_workspace_subpath(job_id, _TASK_SITE))
 
     def stat(path, *args, **kwargs):
         info = real_stat(path, *args, **kwargs)
@@ -3873,7 +3873,7 @@ def _exited_cj(handle, sandbox_down=True, exit_code=137):
 
 
 @pytest.mark.parametrize("lifetime", ["job", "task"])
-@pytest.mark.parametrize("extension", ["json", "conf", "yml"])
+@pytest.mark.parametrize("extension", ["json", "json.default"])
 @pytest.mark.parametrize("budgets", ["defaults", "native_compute", "portable_compute", "cj_gpu"])
 @pytest.mark.parametrize("create_status, cleanup_status", [(None, None), (403, None), (500, None), (None, 503)])
 def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
@@ -3885,10 +3885,7 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
     (tmp_path / "local").mkdir()
     config = tmp_path / _TASK_JOB_ID / f"app_{_TASK_SITE}" / "config"
     config.mkdir(parents=True)
-    content = (
-        json.dumps({"execution_lifetime": lifetime}) if extension == "json" else f"execution_lifetime: {lifetime}\n"
-    )
-    (config / f"config_fed_client.{extension}").write_text(content)
+    (config / f"config_fed_client.{extension}").write_text(json.dumps({"execution_lifetime": lifetime}))
     workspace = Workspace(str(tmp_path), site_name=_TASK_SITE)
     fl_ctx = FLContext()
     fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, _TASK_SITE, private=False, sticky=True)
@@ -4212,12 +4209,16 @@ def test_recovery_waits_for_cj_sandbox_and_cp_owned_tasks(recoverable_cj, monkey
         clock.sleep.assert_called_once()
 
 
-def test_recovery_cannot_adopt_a_replaced_workspace(tmp_path, recoverable_cj):
-    launcher = _task_profile(tmp_path)
+@pytest.mark.parametrize("runner_uid", [0, 1000], ids=["root-runner", "nonroot-runner"])
+def test_recovery_cannot_adopt_a_replaced_workspace(tmp_path, monkeypatch, recoverable_cj, runner_uid):
+    with patch.object(os, "getuid", return_value=runner_uid), patch.object(os, "getgid", return_value=runner_uid):
+        launcher = _task_profile(tmp_path)
+    _mock_job_workspace_owner(monkeypatch, launcher, job_id="job-1")
     subpath = launcher._prepare_workspace_subpath("job-1", _TASK_SITE)
     directory = tmp_path / subpath
     info = directory.stat()
     recoverable_cj.workspace_reservation = (str(directory), info.st_dev, info.st_ino)
+    assert launcher._prepare_workspace_subpath("job-1", _TASK_SITE, recoverable_cj) == subpath
     directory.rename(directory.with_name("old"))
     directory.mkdir()
     with pytest.raises(ValueError, match="differs"):

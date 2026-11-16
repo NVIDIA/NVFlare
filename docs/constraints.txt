@@ -77,7 +77,6 @@ multidict==7.1.0
 networkx==3.4.2
 numpy==2.2.6
 oauthlib==4.0.0
-omegaconf==2.4.0
 openmined_psi==2.0.6
 opentelemetry-api==1.45.1
 opentelemetry-proto==1.45.1
@@ -99,7 +98,6 @@ pycparser==3.11
 pydantic==2.14.2
 pydantic_core==2.50.2
 Pygments==2.21.0
-pyhocon==0.3.63
 PyJWT==2.15.1
 pyparsing==3.3.3
 python-dateutil==2.9.0.post0

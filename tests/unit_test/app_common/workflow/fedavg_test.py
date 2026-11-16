@@ -2080,6 +2080,25 @@ class TestFedAvgAggregationWeights:
 class TestFedAvgLoadSaveModel:
     """Test FedAvg load_model and save_model overrides."""
 
+    @pytest.mark.parametrize("filename", ["models/global.fobs", "../outside.fobs"])
+    def test_file_paths_stay_under_run_dir(self, tmp_path, filename):
+        run_dir = tmp_path / "job"
+        (run_dir / "models").mkdir(parents=True)
+        controller = FedAvg(persistor_id="", save_filename=filename)
+        controller.get_run_dir = MagicMock(return_value=str(run_dir))
+        model = FLModel(params={"w": 2.0})
+
+        if filename.startswith("../"):
+            with pytest.raises(ValueError, match="must stay inside"):
+                controller.save_model(model)
+            with pytest.raises(ValueError, match="must stay inside"):
+                controller.load_model()
+            assert not (tmp_path / "outside.fobs").exists()
+        else:
+            controller.save_model(model)
+            assert (run_dir / filename).is_file()
+            assert controller.load_model().params == model.params
+
     def test_load_model_with_persistor(self):
         """Test load_model delegates to parent when persistor is available."""
         controller = FedAvg()

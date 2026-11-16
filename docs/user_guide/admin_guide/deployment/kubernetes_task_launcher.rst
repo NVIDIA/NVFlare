@@ -31,6 +31,9 @@ a replacement on the same job/site subtree. It preserves checkpoints and avoids
 repeating workspace download. Use updated images for both CP and CJ; older CJ
 images do not write the workspace initialization record required for recovery.
 
+Set ``NVFLARE_MAX_CJ_RESTART_FAILURES`` in CP's environment before startup;
+``0`` disables recovery.
+
 CJ and workers have no Kubernetes API token. CJ sends bounded commands to CP
 using a per-job capability token; CP fixes the Pod manifest and admits one
 unsettled attempt per job. Pod deletion alone does not prove settlement: CP uses

@@ -236,11 +236,13 @@ max_bins_percent: The maximum number of bins allowed in terms of percentage of l
 Set this number to avoid the number of bins being equal to or close to the data size, which can lead to data leakage.
 For example: max_bins_percent = 15 means the number of bins should not be more than 15% of the data count
 
-```
-   min_count = 15
-   min_noise_level = 0.1
-   max_noise_level = 0.3
-   max_bins_percent = 15
+```json
+{
+  "min_count": 15,
+  "min_noise_level": 0.1,
+  "max_noise_level": 0.3,
+  "max_bins_percent": 15
+}
 ```
 This privacy control can be expressed in the job recipe at the job level. But it can also be applied at the organization privacy 
 policy level, for example, using a configuration file in the [local privacy policy](../local/privacy.json)

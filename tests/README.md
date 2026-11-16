@@ -13,6 +13,12 @@ file's location is not evidence that new cases belong there.
 | `tests/integration_test/slow/` | Integration scenarios whose duration or resource/dependency needs require nightly or dedicated CI. | Extended federated training; large models/data; expensive provisioning; GPU scenarios; scenarios requiring downloads or specialized environments. |
 
 Short runtime does not make a process or transport lifecycle test a unit test.
+Executing a real Bash script or Python CLI is an integration test even when
+Docker, kubectl, HTTP clients, and other commands inside it are fake executables.
+Interpreter startup, shell pipelines, inherited coverage hooks, filesystem tools,
+and process scheduling remain real boundaries. Keep validation and command
+construction in unit tests with the component's process boundary mocked. Choose
+fast or slow integration according to the workflow's actual cost and resources.
 Conversely, temporary files, small CPU tensor operations, serialization, and
 synchronized local threads can be valid unit-test tools. Importing a real library
 does not by itself make a test integration-level; executing its distributed or
@@ -107,25 +113,41 @@ then trigger the policy event. Keep a separate unit case proving that startup
 time counts against deadlines. Never increase a timer to hide a missing
 precondition or delete a required latency assertion to make a test pass.
 
+A CLI completion watchdog is different from a product timeout contract. It must
+allow for startup and CI contention; do not assert that an entire shell workflow
+finishes in 5–15 seconds unless throughput is the behavior under test. Retain its
+functional assertions, run resource-sensitive workflows serially, kill and reap
+owned process groups on failure, and report captured output and recent command
+progress on timeout. Unit tests of product timeout decisions should use a
+controlled clock and fake process instead of waiting for a real CLI watchdog.
+
 ## CI execution and coverage
 
 Before moving or adding a suite, check the actual workflow/runner command that
 collects it. Directory placement alone does not schedule a test. Preserve intended
 OS/Python coverage, dependency setup, and coverage reporting when splitting suites.
 
-Premerge runs the extracted process/transport suites serially in a fresh pytest
+Premerge runs the extracted process/transport and CLI suites serially in a fresh pytest
 invocation on every existing unit-test OS/Python combination, outside the unit
 xdist run. Their shared selection is `ci/run_process_contracts.py`; the coverage
 job uses the same list with `--cov-append`. Other integration suites have their
 own CI selections; do not add every fast suite to this specific runner. Keep
 conditional skip reasons visible in CI logs, for example with pytest `-rs`.
 
-`python3 ci/check_unit_test_contracts.py` rejects timer-driven test interleavings
-and unisolated clock patches. This focused check cannot prove thread safety or
-find every indirect patch; review the behavioral contract even when it passes.
+The shared selection also includes harness cleanup regressions and concurrency
+cases whose product-deadlock watchdog must live in a separate process. Temporary
+Git repositories explicitly disable commit signing; they must work even when the
+invoking user's Git configuration requires a signing key.
+
+Review these behavioral contracts through helpers and fixtures. A source-pattern
+scan or a focused passing run does not establish that an entire suite is stable.
 
 ## Test review checklist
 
+- Audit the actual target branch, including release-only additions; a scan of
+  `main` does not establish that a release branch has the same tests.
+- Does the case launch an interpreter, shell, CLI, policy engine, or process tree,
+  including through a helper? If so, verify integration placement and CI selection.
 - What observable behavior is verified, and which concrete regression fails it?
 - Does the chosen layer match the real boundaries and resources exercised?
 - Are the asserted preconditions observed before the action that depends on them?

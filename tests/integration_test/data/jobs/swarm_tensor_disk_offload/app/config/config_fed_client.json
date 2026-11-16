@@ -1,0 +1,78 @@
+{
+  "format_version": 2,
+  "app_script": "train.py",
+  "tensor_download_chunk_size": 1048576,
+  "tensor_streaming_per_request_timeout": 120,
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
+        "args": {
+          "execution_mode": "external_process",
+          "command": "python3 -u custom/{app_script}",
+          "launch_once": true,
+          "heartbeat_timeout": 120,
+          "params_exchange_format": "pytorch",
+          "server_expected_format": "pytorch",
+          "params_transfer_type": "FULL",
+          "train_with_evaluation": true
+        }
+      }
+    },
+    {
+      "tasks": [
+        "swarm_*"
+      ],
+      "executor": {
+        "path": "test_components.RotatingSwarmClientController",
+        "args": {
+          "learn_task_name": "train",
+          "learn_task_timeout": 300,
+          "learn_task_ack_timeout": 120,
+          "learn_task_abort_timeout": 30,
+          "final_result_ack_timeout": 120,
+          "persistor_id": "persistor",
+          "aggregator_id": "aggregator",
+          "shareable_generator_id": "shareable_generator",
+          "min_responses_required": 2,
+          "wait_time_after_min_resps_received": 0.2,
+          "max_concurrent_submissions": 1,
+          "enable_tensor_disk_offload": true
+        }
+      }
+    }
+  ],
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "persistor",
+      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+      "args": {
+        "model": {
+          "path": "model.SyntheticModel",
+          "args": {
+            "tensor_elements": 1048576
+          }
+        },
+        "allow_numpy_conversion": false,
+        "load_device": "cpu"
+      }
+    },
+    {
+      "id": "shareable_generator",
+      "path": "nvflare.app_common.ccwf.comps.simple_model_shareable_generator.SimpleModelShareableGenerator",
+      "args": {}
+    },
+    {
+      "id": "aggregator",
+      "path": "test_components.TensorOffloadValidatingAggregator",
+      "args": {
+        "expected_data_kind": "WEIGHTS"
+      }
+    }
+  ]
+}

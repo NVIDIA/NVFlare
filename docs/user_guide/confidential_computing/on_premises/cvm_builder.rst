@@ -1,0 +1,152 @@
+.. _cvm_builder:
+
+Provisioning with CVM Builder
+=============================
+
+CVM Builder creates reusable, approved generic CVMs and combines them with an
+application-specific encrypted vault during NVFlare provisioning. Configure the
+participant through the common :ref:`cc_deployment` interface, select
+``cc_deployment_mode: bare_metal_cvm``, and keep Trustee/KBS, approval keys, and
+the builder location in the project's single ``cc_project.yml``. This page
+covers the mode-specific operator workflow; it does not define a second
+provisioning schema.
+
+The operator flow is linear: build and approve the generic CVM once with
+``cvmctl build``; run ``nvflare provision``, which invokes ``cvmctl vault`` for
+each protected participant; then authenticate and launch each delivery with
+``cvmctl run``. Lower-level finalize, approval, publish, and pull commands are
+for split roles, cross-host measurement, offline transfer, and recovery.
+
+.. figure:: ../../../../nvflare/lighter/cc/image_builder/images/cvm_two_stage_build.png
+   :width: 100%
+   :align: center
+   :alt: Build and approve a reusable generic CVM for each platform, then populate application content and seal independent per-platform vaults with keys held by Trustee.
+
+   Reusable generic CVM and application-specific vault construction.
+
+Prepare the worker
+------------------
+
+Run provisioning and vault construction on a trusted Linux worker configured
+for CVM Builder. The builder requires Ubuntu 26.04. Follow the
+:github_nvflare_link:`build guide
+<nvflare/lighter/cc/image_builder/BUILD_GUIDE.md>` and
+:github_nvflare_link:`Trustee guide
+<nvflare/lighter/cc/image_builder/TRUSTEE_GUIDE.md>` for disk tools, disabled
+swap, core-dump policy, locked memory, approved bundles, and Trustee
+administration. Provisioning does not change these host settings or launch a
+CVM.
+
+For a source checkout at ``/opt/NVFlare``, prepare the builder environment with:
+
+.. code-block:: bash
+
+   cd /opt/NVFlare/nvflare/lighter/cc/image_builder
+   python3 -m venv .venv
+   .venv/bin/python -m pip install -r requirements.txt
+
+``cvmctl vault`` selects ``CVM_BUILDER_PYTHON``, its own ``.venv/bin/python``,
+or ``python3``. An unprivileged provisioner uses ``sudo -n`` where construction
+or output inspection requires it. Configure that boundary in advance; no
+interactive sudo prompt or remote worker submission is implemented.
+
+The provisioner must itself be able to read the generic ``cvm_image`` directory,
+including ``profile_set.json``, before sudo is invoked. Materialize generic
+inputs as that user, or use an administrator-reviewed shared input location.
+Pulling the input with sudo creates a root-owned directory with mode ``0700``;
+sudo for subsequent build commands does not fix this earlier inspection.
+See :github_nvflare_link:`generic-image permissions
+<nvflare/lighter/cc/image_builder/USER_GUIDE.md#generic-images-used-by-provisioning>`.
+
+Prepare the generic CVM and application
+---------------------------------------
+
+Set ``bare_metal_cvm.cvm_image`` to an immutable OCI registry reference or a
+previously pulled directory. A pulled directory contains ``profile_set.json``
+and every referenced platform bundle. For registry input, install ORAS and
+configure authentication for the provisioning account. CVM Builder validates
+the approval of every selected bundle.
+
+Build a Linux amd64 application image containing NVFlare, Bash, application
+code, and dependencies, then save it:
+
+.. code-block:: bash
+
+   image=my-nvflare-application:1.0
+   docker pull --platform linux/amd64 "$image"
+   docker save "$image" -o /srv/nvflare/images/application.tar
+
+Set ``workload.source.type: docker_archive`` and point ``path`` at that file.
+NVFlare derives the image identity from the archive. The archive must contain
+one distinct image; multiple tags for that image are allowed. ``docker export``
+output is not supported.
+
+The generic CVM contract must match the participant's ``cpu_tee`` and
+``gpu_tee``. CPU-only and GPU-enabled bundles have different approval and
+measurement contracts. The configuration has no independent platform list:
+the requested TEE pair selects the matching profile from ``cvm_image``.
+
+.. figure:: ../../../../nvflare/lighter/cc/image_builder/images/cvm_generic_bundle_layout.png
+   :width: 100%
+   :align: center
+   :alt: A generic CVM output contains an OCI archive, artifact digests, profile_set.json and a platform workspace with the manifest and measured boot files. Approval adds approval.json.
+
+   Generic CVM output. ``PROFILE`` is the profile version; ``PLATFORM`` is
+   ``amd_sev_snp`` or ``intel_tdx``. Approval applies to the exact platform bundle.
+
+Provision and distribute
+------------------------
+
+Use the common project, service, participant, builder, and packager structure
+in :ref:`cc_deployment`, then run:
+
+.. code-block:: bash
+
+   nvflare provision -p project.yml -w /srv/nvflare/provisioning
+
+The common packager verifies every selected startup kit before moving the
+plaintext kits into private state. It then invokes ``cvmctl vault`` once per
+participant. ``build_tools.bare_metal_cvm.output_root`` is optional. Without it,
+deliveries use the production directory layout; with it, each build uses a
+fresh operator-private output directory.
+
+The public CC manifest records each OCI archive checksum, OCI manifest digest,
+CVM build ID, platform, and vault resource identity. It contains no credentials
+or private staging paths. Distribute the complete ``.oci.tar`` and checksum
+through an authenticated channel. A direct builder workflow can publish each
+signed delivery during ``cvmctl vault`` with ``--publish`` and
+``--cosign-signing-key``. NVFlare provisioning leaves publication as a separate release
+step with ``cvmctl publish`` because its provisioner does not hold the release
+signing key.
+
+On a matching TEE host, use ``cvmctl run`` to authenticate, materialize, and
+launch an archive or immutable registry reference in one operation. Use
+``cvmctl pull`` followed by ``sudo ./launch_cvm.sh`` when staging and launch
+must remain separate. The verified guest attests, unlocks the application vault,
+and starts the NVFlare participant. Stop it with
+``sudo ./shutdown_cvm.sh``. See the :github_nvflare_link:`CVM Builder user guide
+<nvflare/lighter/cc/image_builder/USER_GUIDE.md>` for delivery and launch
+commands.
+
+.. figure:: ../../../../nvflare/lighter/cc/image_builder/images/cvm_delivery_layout.png
+   :width: 100%
+   :align: center
+   :alt: A platform delivery contains the encrypted vault, vault manifest, launch and shutdown wrappers, and a cvm_bundle directory containing the measured boot artifacts.
+
+   Operator-facing delivery files. Runtime helpers and clear sidecar inputs
+   accompany these files; the illustration is not an exhaustive archive listing.
+
+Network, data, and recovery behavior
+------------------------------------
+
+Federation, admin, relay, and listener ports are derived from the signed kit.
+``bare_metal_cvm.network`` adds only application-specific ports and CIDRs.
+``user_config`` and ``user_data`` are optional clear, read-only directories;
+private keys, PEM private-key content, symlinks, and startup kits are rejected.
+``/applog`` is clear writable output. Confidential logs and runtime state belong
+under the encrypted vault.
+
+A failed build keeps its private input, logs, output, and recovery records.
+Resolve an uncertain Trustee upload with the Trustee administrator before
+starting a fresh build. Never attach one writable vault file to two CVMs or copy
+it while running; copies retain the same identity and revocation scope.

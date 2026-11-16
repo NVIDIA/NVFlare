@@ -92,14 +92,16 @@ class _Attempt:
     releasing: bool = False
     released: bool = False
     result_readers: int = 0
+    cleanup_delegated: bool = False
 
 
 class TaskSupervisor:
     """Own one active physical attempt; retain failed or unresolved evidence.
 
     Instances have one job lifetime. ``end_run`` permanently closes admission.
-    Unconfirmed settlement permanently fences this instance, even if a later
-    cleanup succeeds. There is no reset or automatic physical retry.
+    Strict backends fence this instance after unconfirmed settlement. A
+    parent-owned backend can instead retain native cleanup separately after
+    a valid application completion. There is no automatic physical retry.
 
     Default cleanup follows confirmed settlement, a decoded successful result
     and terminal receipt/closure. Uploads use the decoded in-memory result.
@@ -128,7 +130,7 @@ class TaskSupervisor:
 
     @property
     def owns_execution(self) -> bool:
-        """Staging/launch or physical execution is still outstanding."""
+        """This supervisor still owns staging, launch or physical execution."""
         with self._state_lock:
             return self._active is not None and not self._active.settled
 
@@ -223,6 +225,9 @@ class TaskSupervisor:
             raise TypeError("input_payload and abort_signal must be Shareable and Signal")
         if not isinstance(launcher, TaskLauncherSpec):
             raise TypeError("launcher must be a TaskLauncherSpec")
+        parent_cleanup = launcher.completion_requires_settlement is False
+        if parent_cleanup and getattr(launcher, "cleanup_owned_by_parent", False) is not True:
+            raise ValueError("completion before settlement requires a parent cleanup owner")
         if not isinstance(store, FileTaskArtifactStore):
             raise TypeError("store must be a FileTaskArtifactStore")
         if os.path.realpath(bootstrap.artifact_root) != store.root_dir:
@@ -271,10 +276,10 @@ class TaskSupervisor:
             self._diagnostic(attempt, "launched", execution_id=handle.execution_id, supervisor_pid=os.getpid())
             if handle.request.identity != launch_identity:
                 raise ValueError("launcher handle does not match owned task attempt identity")
-            status = self._wait(attempt, abort_signal, options, deadline_provider)
+            status = self._wait(attempt, abort_signal, options, deadline_provider, parent_cleanup=parent_cleanup)
             self._diagnostic(
                 attempt,
-                "settled",
+                "completed" if parent_cleanup else "settled",
                 execution_id=handle.execution_id,
                 exit_code=status.exit_code,
                 termination_signal=status.termination_signal,
@@ -284,10 +289,10 @@ class TaskSupervisor:
             if self._aborted(attempt, abort_signal):
                 attempt.failed = True
                 return TaskSupervisorOutcome(identity=identity, aborted=True, execution_status=status)
-            # Only a settled execution can authorize reading its completion.
-            # A later process failure cannot erase a fully verified completion.
-            # Keep abnormal-exit and post-publication failure artifacts anyway.
-            attempt.failed |= not status.succeeded or os.path.lexists(
+            # A parent-owned backend may hand off the immutable completion
+            # before scheduler cleanup is confirmed. Verify its payload before
+            # acknowledging it or permitting the next assignment.
+            attempt.failed |= (not parent_cleanup and not status.succeeded) or os.path.lexists(
                 os.path.join(store.attempt_dir(identity), "failure.json")
             )
             try:
@@ -305,6 +310,11 @@ class TaskSupervisor:
                         f"{status.failure_reason or status.termination_signal or status.exit_code} "
                         f"(diagnostics: {store.attempt_dir(identity)})"
                     ) from e
+                if status.failure_reason:
+                    raise IncompleteTaskArtifactError(
+                        f"task worker {identity.attempt_id} failed: {status.failure_reason} "
+                        f"(diagnostics: {store.attempt_dir(identity)})"
+                    ) from e
                 raise
             if completion.identity != identity:
                 raise ValueError("task completion identity does not match owned attempt")
@@ -319,6 +329,11 @@ class TaskSupervisor:
                 attempt.completion = completion
                 attempt.failed |= result.get_return_code(default=ReturnCode.OK) != ReturnCode.OK
             self._diagnostic(attempt, "validated", worker_pid=completion.worker_pid, worker_ppid=completion.worker_ppid)
+            if parent_cleanup:
+                status = self._finish_parent_cleanup(attempt, status, options.settlement_timeout)
+                if self._aborted(attempt, abort_signal):
+                    attempt.failed = True
+                    return TaskSupervisorOutcome(identity, aborted=True, execution_status=status)
             return TaskSupervisorOutcome(identity, result, completion, execution_status=status)
         except BaseException as e:
             if attempt is not None:
@@ -329,7 +344,7 @@ class TaskSupervisor:
             raise
         finally:
             with self._state_lock:
-                if attempt is not None and (attempt.handle is None or attempt.settled):
+                if attempt is not None and (attempt.handle is None or attempt.settled or attempt.cleanup_delegated):
                     if not self._settlement_unconfirmed:
                         self._active = None
             self._execution_lock.release()
@@ -339,7 +354,48 @@ class TaskSupervisor:
         with self._state_lock:
             return self._stopping or attempt.cancel_requested.is_set() or abort_signal.triggered
 
-    def _wait(self, attempt, abort_signal, options, deadline_provider=None):
+    def _finish_parent_cleanup(self, attempt, status, timeout):
+        """Wait once, then keep the result and leave native cleanup with CP."""
+        detail = None
+        try:
+            observed = attempt.handle.wait_for_settlement(timeout=timeout)
+            if not isinstance(observed, TaskExecutionStatus):
+                raise TypeError("invalid native cleanup status")
+            if observed.settled and observed.phase != TaskExecutionPhase.TERMINAL:
+                raise ValueError("nonterminal native cleanup cannot be settled")
+            status = observed
+            attempt.settled = status.settled and status.phase == TaskExecutionPhase.TERMINAL
+        except Exception as error:
+            detail = str(error)
+        # CP acquired ownership during launch; a lost acknowledgement cannot
+        # erase it. Notification is idempotent and never declares settlement.
+        attempt.cleanup_delegated = True
+        try:
+            attempt.handle.result_received()
+        except Exception as error:
+            detail = f"result acknowledgement unavailable: {error}"
+        if not attempt.settled or detail:
+            message = f"task cleanup unconfirmed for {attempt.handle.execution_id}; CP retains cleanup"
+            if detail:
+                message += f": {detail}"
+            with self._state_lock:
+                self._issues.append(("warning", message))
+            self._diagnostic(attempt, "cleanup_unconfirmed", execution_id=attempt.handle.execution_id, detail=detail)
+        return status
+
+    @staticmethod
+    def _completion_available(attempt):
+        try:
+            attempt.store.read_completion(attempt.identity)
+        except FileNotFoundError:
+            return False
+        except IncompleteTaskArtifactError as error:
+            if not isinstance(error.__cause__, FileNotFoundError):
+                raise
+            return False
+        return True
+
+    def _wait(self, attempt, abort_signal, options, deadline_provider=None, *, parent_cleanup=False):
         deadline = None if options.worker_timeout is None else time.monotonic() + options.worker_timeout
         while True:
             if self._aborted(attempt, abort_signal):
@@ -360,18 +416,26 @@ class TaskSupervisor:
                 self._cancel(attempt)
                 raise TimeoutError("task worker timed out")
             status = attempt.handle.poll()
+            if parent_cleanup and self._completion_available(attempt):
+                return status
             if status.phase == TaskExecutionPhase.TERMINAL:
                 timeout = (
                     options.settlement_timeout if remaining is None else min(options.settlement_timeout, remaining)
                 )
                 try:
                     status = attempt.handle.wait_for_settlement(timeout=timeout)
-                except TimeoutError:
-                    self._cancel(attempt)
+                except Exception as error:
+                    # Completion may have been published while the scheduler
+                    # wait was in progress. Preserve it before fencing failure.
+                    if parent_cleanup and self._completion_available(attempt):
+                        return status
+                    if isinstance(error, TimeoutError):
+                        self._cancel(attempt)
+                    elif isinstance(error, TaskSettlementError):
+                        self._fence(attempt)
                     raise
-                except TaskSettlementError:
-                    self._fence(attempt)
-                    raise
+                if parent_cleanup and self._completion_available(attempt):
+                    return status
                 return self._confirm_settlement(attempt, status)
             attempt.cancel_requested.wait(
                 options.poll_interval if remaining is None else min(options.poll_interval, remaining)
@@ -413,14 +477,14 @@ class TaskSupervisor:
         return TaskSupervisorOutcome(identity, self.read_saved_result(identity), completion)
 
     def read_saved_result(self, identity: TaskAttemptIdentity) -> Shareable:
-        """Re-read a settled result without launching or replaying worker side effects."""
+        """Re-read a validated result without repeating worker side effects."""
         with self._state_lock:
             attempt = self._attempts.get(identity)
             if (
                 self._stopping
                 or self._settlement_unconfirmed
                 or attempt is None
-                or not attempt.settled
+                or not (attempt.settled or attempt.cleanup_delegated)
                 or not attempt.validated
                 or attempt.releasing
                 or attempt.released

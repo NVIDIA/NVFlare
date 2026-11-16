@@ -18,10 +18,12 @@ import os
 import socket
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 import yaml
 
+from nvflare.app_opt.job_launcher.study_runtime import study_block_reason
 from nvflare.cli_exception import CLIException
 from nvflare.lighter.utils import update_project_server_name_config
 from nvflare.tool.poc import poc_commands
@@ -446,12 +448,39 @@ class TestPOCCommands:
         monkeypatch.setattr(
             poc_commands,
             "_prepare_poc_docker_kit",
-            lambda kit, config, workspace: calls.append((kit, config, workspace)),
+            lambda kit, config, workspace, _studies: calls.append((kit, config, workspace)),
         )
 
         assert poc_commands._prepare_poc_docker_deployments(str(tmp_path), project_config) is True
         assert len(calls) == 2
         assert {workspace for _kit, _config, workspace in calls} == {str(tmp_path)}
+
+    def test_poc_docker_client_runs_the_named_studies_it_is_enrolled_in(self, monkeypatch, tmp_path):
+        project_config = {
+            "name": "example_project",
+            "participants": [{"name": name, "type": "client", "org": "nvidia"} for name in ("site-1", "site-2")],
+            "studies": {"study-a": {"site_orgs": {"nvidia": ["site-1"]}}, "study-b": None},
+            "poc_runtime": {"runtime": "docker", "docker_image": "nvflare/site:latest"},
+        }
+        prod_dir = tmp_path / "prod_00"
+        for site in ("site-1", "site-2"):
+            (prod_dir / site / "local").mkdir(parents=True)
+        monkeypatch.setattr(poc_commands, "get_prod_dir", lambda *_args: str(prod_dir))
+        monkeypatch.setattr(
+            poc_commands,
+            "_prepare_poc_docker_kit",
+            lambda kit, _config, workspace, studies: poc_commands._write_poc_docker_study_runtime(
+                Path(kit), workspace, studies
+            ),
+        )
+
+        poc_commands._prepare_poc_docker_deployments(str(tmp_path), project_config)
+
+        assert study_block_reason(str(prod_dir / "site-1"), "study-a") is None
+        assert study_block_reason(str(prod_dir / "site-1"), "default") is None
+        assert (
+            study_block_reason(str(prod_dir / "site-2"), "study-a") == "study 'study-a' is not configured at this site"
+        )
 
     def test_write_poc_docker_study_runtime_maps_workspace_data(self, tmp_path):
         kit_dir = tmp_path / "prod_00" / "site-1"

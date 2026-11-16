@@ -990,7 +990,7 @@ def _isolate_communication_config(monkeypatch):
 
 
 @pytest.mark.parametrize("owner", ["site-1", "server"])
-@pytest.mark.parametrize("extension", ["json", "conf", "yaml"])
+@pytest.mark.parametrize("extension", ["json", "json.default"])
 @pytest.mark.parametrize("security", ["mtls", "clear"])
 @pytest.mark.parametrize("job_override", [False, True])
 def test_downloaded_site_security_replaces_bootstrap_defaults(
@@ -1015,8 +1015,6 @@ def test_downloaded_site_security_replaces_bootstrap_defaults(
     }
     config["max_message_size"] = 16777216
     text = json.dumps(config)
-    if extension == "yaml":
-        text = f"max_message_size: 16777216\ninternal:\n  scheme: tcp\n  resources:\n    host: {owner}\n    port: 8102\n    connection_security: {security}\n"
     bundle = tmp_path / "bundle.zip"
     entries = {f"local/comm_config.{extension}": text.encode()}
     if job_override:

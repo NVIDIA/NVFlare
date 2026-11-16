@@ -257,7 +257,7 @@ class TestJobSubmitOutput:
                     "-j",
                     "./my_job",
                     "-f",
-                    "config_fed_server.conf",
+                    "config_fed_server.json",
                     "num_rounds=1",
                 ]
             )

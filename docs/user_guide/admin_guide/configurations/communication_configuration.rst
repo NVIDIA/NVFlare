@@ -167,12 +167,14 @@ Secondly, in the "adhoc" section, you can further specify what scheme to use for
 
 .. code-block:: json
 
-  "adhoc": {
-    "scheme": "tcp",
-    "resources": {
-      "host": "localhost",
-      "secure": false,
-      "ports": [8008, 9008]
+  {
+    "adhoc": {
+      "scheme": "tcp",
+      "resources": {
+        "host": "localhost",
+        "secure": false,
+        "ports": [8008, 9008]
+      }
     }
   }
 
@@ -243,12 +245,14 @@ If this default setup does not work for you, you can configure it to your liking
 
 .. code-block:: json
 
-  "internal": {
-    "scheme": "grpc",
-    "resources": {
-      "host": "localhost",
-      "secure": false,
-      "ports": [8008, 9008]
+  {
+    "internal": {
+      "scheme": "grpc",
+      "resources": {
+        "host": "localhost",
+        "secure": false,
+        "ports": [8008, 9008]
+      }
     }
   }
 
@@ -382,7 +386,7 @@ The communication_timeout parameter should be adjusted as following on clients i
     "format_version": 2,
     "client": {
       "communication_timeout": 6000
-    },
+    }
   }
 
 Here are the detailed description of each messaging parameter,

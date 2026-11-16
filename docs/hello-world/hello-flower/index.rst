@@ -10,15 +10,12 @@ Get NVFlare and the Example
 
 For the complete installation instructions, see `Installation <https://nvflare.readthedocs.io/en/main/installation.html>`_.
 
-Install either the stable or nightly NVFlare distribution:
+Install a released NVFlare package:
 
 .. code-block:: bash
 
    # Stable
    python -m pip install nvflare
-
-   # Nightly (use instead of the stable command)
-   python -m pip install nvflare-nightly
 
 Then download the matching example revision:
 
@@ -44,12 +41,15 @@ Then install the remaining example dependencies:
    python -m pip install -r requirements.txt
 
 The requirements file intentionally does not install NVFlare. This preserves
-the stable, nightly, or editable distribution that selected the example revision.
+the release, local wheel, or editable installation that selected the example revision.
 
 .. warning::
 
-   This ``main`` branch example uses Flower 1.26+ and the newer Flower SuperLink
-   configuration flow.
+   This ``main`` branch example requires ``flwr>=1.26,<1.40`` and uses the newer
+   Flower SuperLink configuration flow. The upper bound is temporary:
+   `Flower 1.40 <https://github.com/flwrlabs/flower/releases/tag/framework-1.40.0>`_
+   removes the SuperNode ``--grpc-adapter`` transport used by NVFlare. Keep this
+   bound until the integration supports Flower's HTTP transport.
 
    If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of
    this example and use ``flwr>=1.16,<1.26``. NVFlare 2.7.x still uses Flower's

@@ -15,7 +15,14 @@
 from cryptography import x509
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
-from nvflare.fuel.sec.cert_uri import NVFLARE_CERT_URI_ROOT, parse_admin_study_uri
+from nvflare.fuel.sec.cert_uri import (
+    CA_URI_KIND,
+    JOB_CA_URI_VALUE,
+    JOB_URI_KIND,
+    NVFLARE_CERT_URI_ROOT,
+    cert_uri_values,
+    parse_admin_study_uri,
+)
 
 ADMIN_CERT_PLACEHOLDER_CN = "nvflare-admin"
 MAX_ADMIN_STUDIES = 64
@@ -52,6 +59,16 @@ def get_admin_study_entitlements(cert: x509.Certificate) -> tuple[str, ...]:
 
 def _invalid_entitlements(reason: str):
     raise AdminCertValidationError(f"invalid admin study entitlements: {reason}")
+
+
+def reject_job_credential(cert: x509.Certificate, intermediate_certs=None):
+    """Reject runtime job credentials for site identity and job package signing."""
+    if cert_uri_values(cert, JOB_URI_KIND):
+        raise AdminCertValidationError("job-scoped certificate cannot be used to assert site identity or sign jobs")
+    # A job CA key can mint a leaf without a job URI; its issuer-signed CA marker remains authoritative.
+    for chain_cert in (cert, *(intermediate_certs or ())):
+        if JOB_CA_URI_VALUE in cert_uri_values(chain_cert, CA_URI_KIND):
+            raise AdminCertValidationError("certificate issued by the job CA cannot assert site identity or sign jobs")
 
 
 def validate_admin_leaf_cert(cert: x509.Certificate, reject_placeholder_cn: bool = True):
