@@ -22,7 +22,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fedready.agents import DEFAULT_LOCAL_VISION_MODEL, GuardrailAgent, GuardrailCheck, _query_local_vlm_image
+from fedready.agents import ACTION_CHECKS, DEFAULT_LOCAL_VISION_MODEL, GuardrailAgent, _query_local_vlm_image
 from fedready.agents.bridge import LOCAL_VISION_API_BASE_URL, CodexWorkerBackend
 from fedready.agents.local_adapter import is_local_http_url, task_example_context, task_example_image_path
 from fedready.utils.io import atomic_write_json
@@ -137,15 +137,7 @@ def run_live_runtime_preflight(
             agent_backend=backend,
         ).inspect(
             direction="outgoing",
-            check=GuardrailCheck(
-                role="server_agent",
-                source="human_user",
-                channel="server_console",
-                action="SERVER.DEFINE_PROFILE_REQUEST",
-                phase="data_profile",
-                input_schema="TaskSpec@v1",
-                output_schema="FedReadyClientInquiry@v1",
-            ),
+            check=ACTION_CHECKS["SERVER.DEFINE_PROFILE_REQUEST"],
             payload={
                 "schema_version": "fedready.client_inquiry.v1",
                 "task": task,

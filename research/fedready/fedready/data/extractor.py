@@ -558,74 +558,126 @@ def extract_dataset(
     (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     _cleanup_deferred_adapter_staging(deferred_adapter_staging_dir)
 
+    return _extraction_result(
+        manifest,
+        label_rule_applied=contract_runtime.label_rule_applied(policy),
+        warnings=_dedupe(scan_warnings + label_warnings + pair_warnings + adapter_warnings),
+        extraction_details={
+            "preview_available": preview["available"],
+            "preview_label_value_scale": preview.get("label_value_scale"),
+        },
+    )
+
+
+def _extraction_result(
+    manifest: dict[str, Any],
+    *,
+    label_rule_applied: dict[str, Any],
+    warnings: list[str],
+    extraction_details: dict[str, Any],
+) -> dict[str, Any]:
+    """Serialize verifier-owned facts; never copy the private manifest wholesale."""
+    result = {
+        key: manifest[key]
+        for key in (
+            "client_id",
+            "policy_digest",
+            "source_label_type",
+            "record_type",
+            "local_adapter",
+            "conversion_options",
+            "counts",
+            "failed_pairs",
+            "split_plan",
+            "screening",
+            "verification",
+        )
+    }
+    result.update(
+        {
+            "schema_version": EXTRACTION_RESULT_SCHEMA,
+            "data": _extraction_status(
+                extracted_count=manifest["counts"]["total"],
+                screening=manifest["screening"],
+                verification=manifest["verification"],
+            ),
+            "label_orientation": {
+                "selected_transform": manifest["label_orientation"]["selected_transform"],
+                "strategy": manifest["label_orientation"]["strategy"],
+                "safe_to_share": True,
+            },
+            "extraction": {
+                "output_root": manifest["output"]["root"],
+                "client_folder": manifest["client_id"],
+                "output_name": manifest["output"]["run_label"],
+                "local_output_path_redacted": True,
+                "reused_existing_output": False,
+                "visual_qc_available": bool(manifest["visual_qc"].get("available")),
+                "target_size": manifest["target_size"],
+                "stored_resolution": manifest["stored_resolution"],
+                "training_transform_policy": manifest["training_transform_policy"],
+                "sample_manifest": manifest["sample_manifest"],
+                "sample_manifest_format": manifest["sample_manifest_format"],
+                "classification_storage": manifest.get("classification_storage"),
+                "image_rule_applied": {
+                    "channels": "RGB",
+                    "resize": "deferred_to_training_time",
+                    "extraction_resize_applied": False,
+                },
+                "label_rule_applied": label_rule_applied,
+                **extraction_details,
+            },
+            "privacy": {
+                "safe_to_share": True,
+                "redacted": [
+                    "source_local_paths",
+                    "source_filenames",
+                    "extracted_local_paths",
+                    "extracted_filenames",
+                    "sample_ids",
+                    "raw_images",
+                    "raw_masks",
+                    "raw_labels",
+                    "raw_annotations",
+                    "visual_qc_artifact_paths",
+                ],
+            },
+            "visual_qc_artifacts": _visual_qc_safe_summary(manifest["visual_qc"]),
+            "warnings": warnings,
+        }
+    )
+    return result
+
+
+def _failed_extraction_result(
+    *,
+    client_id: str,
+    policy: dict[str, Any],
+    source_label_type: str,
+    adapter_summary: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Common failed-result envelope; callers supply screening and error details."""
     return {
         "schema_version": EXTRACTION_RESULT_SCHEMA,
         "client_id": client_id,
-        "data": _extraction_status(
-            extracted_count=extracted_count,
-            screening=screening,
-            verification=verification,
-        ),
-        "screening": screening,
-        "policy_digest": manifest["policy_digest"],
+        "data": "extraction verification failed",
+        "policy_digest": policy.get("strategy_digest") or payload_digest(policy),
         "source_label_type": source_label_type,
-        "record_type": contract.record_type,
-        "local_adapter": (
-            _local_adapter_safe_summary(local_adapter, adapter_manifest=adapter_manifest)
-            if local_adapter is not None or adapter_manifest is not None
-            else None
-        ),
-        "conversion_options": conversion_options,
-        "counts": manifest["counts"],
-        "failed_pairs": manifest["failed_pairs"],
-        "split_plan": split_plan,
-        "label_orientation": {
-            "selected_transform": label_orientation["selected_transform"],
-            "strategy": label_orientation["strategy"],
-            "safe_to_share": True,
+        "verification": {
+            "schema_version": "fedready.local_extraction_verification.v1",
+            "valid_case_count": 0,
+            "expected_extracted_count": 0,
+            "extracted_count": 0,
+            "failed_pair_count": 0,
+            "matches_execution_target": False,
+            "matches_all_valid_cases": False,
+            "passed": False,
         },
-        "verification": verification,
-        "extraction": {
-            "output_root": cfg.output_root,
-            "client_folder": client_id,
-            "output_name": output_name,
-            "local_output_path_redacted": True,
-            "reused_existing_output": False,
-            "preview_available": preview["available"],
-            "preview_label_value_scale": preview.get("label_value_scale"),
-            "visual_qc_available": bool(visual_qc.get("available")),
-            "target_size": list(target_size),
-            "stored_resolution": "source_image_resolution",
-            "training_transform_policy": "training_transforms.json",
-            "sample_manifest": sample_manifest_name,
-            "sample_manifest_format": sample_manifest_format,
-            "classification_storage": storage_sections.get("classification_storage"),
-            "image_rule_applied": {
-                "channels": "RGB",
-                "resize": "deferred_to_training_time",
-                "extraction_resize_applied": False,
-            },
-            "label_rule_applied": contract_runtime.label_rule_applied(policy),
-        },
+        "local_adapter": adapter_summary,
         "privacy": {
             "safe_to_share": True,
-            "redacted": [
-                "source_local_paths",
-                "source_filenames",
-                "extracted_local_paths",
-                "extracted_filenames",
-                "extracted_local_paths",
-                "extracted_filenames",
-                "sample_ids",
-                "raw_images",
-                "raw_masks",
-                "raw_labels",
-                "raw_annotations",
-                "visual_qc_artifact_paths",
-            ],
+            "redacted": ["source_local_paths", "source_filenames", "raw_images", "raw_masks", "raw_annotations"],
         },
-        "visual_qc_artifacts": _visual_qc_safe_summary(visual_qc),
-        "warnings": _dedupe(scan_warnings + label_warnings + pair_warnings + adapter_warnings),
     }
 
 
@@ -979,32 +1031,18 @@ def _adapter_manifest_required_result(
 ) -> dict[str, Any]:
     reason = "Live extraction requires an implemented client-local adapter with a valid manifest."
     result = {
-        "schema_version": EXTRACTION_RESULT_SCHEMA,
-        "client_id": client_id,
-        "data": "extraction verification failed",
-        "policy_digest": policy.get("strategy_digest") or payload_digest(policy),
-        "source_label_type": source_label_type,
+        **_failed_extraction_result(
+            client_id=client_id,
+            policy=policy,
+            source_label_type=source_label_type,
+            adapter_summary=_local_adapter_safe_summary(local_adapter, adapter_manifest=None),
+        ),
         "screening": {
             "schema_version": "fedready.local_label_screening.v1",
             "status": "failed",
             "reason_code": "LOCAL_ADAPTER_MANIFEST_REQUIRED",
             "reason": reason,
             "safe_to_share": True,
-        },
-        "verification": {
-            "schema_version": "fedready.local_extraction_verification.v1",
-            "valid_case_count": 0,
-            "expected_extracted_count": 0,
-            "extracted_count": 0,
-            "failed_pair_count": 0,
-            "matches_execution_target": False,
-            "matches_all_valid_cases": False,
-            "passed": False,
-        },
-        "local_adapter": _local_adapter_safe_summary(local_adapter, adapter_manifest=None),
-        "privacy": {
-            "safe_to_share": True,
-            "redacted": ["source_local_paths", "source_filenames", "raw_images", "raw_masks", "raw_annotations"],
         },
         "warnings": _dedupe(
             ["LOCAL_ADAPTER_MANIFEST_REQUIRED", *_stable_warning_codes(warnings, fallback_code="ADAPTER_WARNING")]
@@ -1244,77 +1282,22 @@ def _extract_generated_contract_dataset(
         },
     }
     (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-    return {
-        "schema_version": EXTRACTION_RESULT_SCHEMA,
-        "client_id": client_id,
-        "data": _extraction_status(
-            extracted_count=extracted_count,
-            screening=screening,
-            verification=verification,
-        ),
-        "screening": screening,
-        "policy_digest": manifest["policy_digest"],
-        "source_label_type": source_label_type,
-        "record_type": generated_contract_record_type(generated_contract),
-        "local_adapter": _local_adapter_safe_summary(local_adapter, adapter_manifest=adapter_manifest),
-        "conversion_options": conversion_options,
-        "counts": manifest["counts"],
-        "failed_pairs": manifest["failed_pairs"],
-        "split_plan": split_plan,
-        "label_orientation": {
-            "selected_transform": "as_is",
-            "strategy": "generated_contract_materializer",
-            "safe_to_share": True,
-        },
-        "verification": verification,
-        "extraction": {
-            "output_root": cfg.output_root,
-            "client_folder": client_id,
-            "output_name": output_name,
-            "local_output_path_redacted": True,
-            "reused_existing_output": False,
-            "preview_available": preview.get("available") is True,
-            "visual_qc_available": bool(visual_qc.get("available")),
-            "target_size": list(target_size),
-            "stored_resolution": "source_image_resolution",
-            "training_transform_policy": "training_transforms.json",
-            "sample_manifest": sample_manifest_name,
-            "sample_manifest_format": sample_manifest_format,
-            "classification_storage": storage_sections.get("classification_storage"),
-            "object_detection_storage": storage_sections.get("object_detection_storage"),
-            "image_rule_applied": {
-                "channels": "RGB",
-                "resize": "deferred_to_training_time",
-                "extraction_resize_applied": False,
-            },
-            "label_rule_applied": _generated_label_rule_applied(generated_contract),
-        },
-        "privacy": {
-            "safe_to_share": True,
-            "redacted": [
-                "source_local_paths",
-                "source_filenames",
-                "extracted_local_paths",
-                "extracted_filenames",
-                "sample_ids",
-                "raw_images",
-                "raw_masks",
-                "raw_labels",
-                "raw_annotations",
-                "visual_qc_artifact_paths",
-            ],
-        },
-        "visual_qc_artifacts": _visual_qc_safe_summary(visual_qc),
-        "warnings": _dedupe(
+    return _extraction_result(
+        manifest,
+        label_rule_applied=_generated_label_rule_applied(generated_contract),
+        warnings=_dedupe(
             [
                 *_stable_warning_codes(adapter_warnings, fallback_code="ADAPTER_WARNING"),
                 *_stable_warning_codes(
-                    materializer_result.get("warnings", []),
-                    fallback_code="GENERATED_MATERIALIZER_WARNING",
+                    materializer_result.get("warnings", []), fallback_code="GENERATED_MATERIALIZER_WARNING"
                 ),
             ]
         ),
-    }
+        extraction_details={
+            "preview_available": preview.get("available") is True,
+            "object_detection_storage": storage_sections.get("object_detection_storage"),
+        },
+    )
 
 
 def _run_generated_data_materializer(
@@ -1813,32 +1796,18 @@ def _generated_materializer_failure_result(
     reason_code: str = "SERVER_GENERATED_MATERIALIZER_FAILED",
 ) -> dict[str, Any]:
     return {
-        "schema_version": EXTRACTION_RESULT_SCHEMA,
-        "client_id": client_id,
-        "data": "extraction verification failed",
-        "policy_digest": policy.get("strategy_digest") or payload_digest(policy),
-        "source_label_type": source_label_type,
+        **_failed_extraction_result(
+            client_id=client_id,
+            policy=policy,
+            source_label_type=source_label_type,
+            adapter_summary=_local_adapter_safe_summary(local_adapter, adapter_manifest=adapter_manifest),
+        ),
         "screening": {
             "schema_version": "fedready.local_label_screening.v1",
             "status": "failed",
             "reason_code": reason_code,
             "reason": reason,
             "safe_to_share": True,
-        },
-        "verification": {
-            "schema_version": "fedready.local_extraction_verification.v1",
-            "valid_case_count": 0,
-            "expected_extracted_count": 0,
-            "extracted_count": 0,
-            "failed_pair_count": 0,
-            "matches_execution_target": False,
-            "matches_all_valid_cases": False,
-            "passed": False,
-        },
-        "local_adapter": _local_adapter_safe_summary(local_adapter, adapter_manifest=adapter_manifest),
-        "privacy": {
-            "safe_to_share": True,
-            "redacted": ["source_local_paths", "source_filenames", "raw_images", "raw_masks", "raw_annotations"],
         },
         "warnings": _dedupe([reason_code, *_stable_warning_codes(warnings, fallback_code="ADAPTER_WARNING")]),
     }
@@ -1866,11 +1835,12 @@ def _generated_materializer_required_result(
         "produced and shipped with the extraction policy before client-local extraction can continue."
     )
     return {
-        "schema_version": EXTRACTION_RESULT_SCHEMA,
-        "client_id": client_id,
-        "data": "extraction verification failed",
-        "policy_digest": policy.get("strategy_digest") or payload_digest(policy),
-        "source_label_type": source_label_type,
+        **_failed_extraction_result(
+            client_id=client_id,
+            policy=policy,
+            source_label_type=source_label_type,
+            adapter_summary=_local_adapter_safe_summary(local_adapter, adapter_manifest=adapter_manifest),
+        ),
         "screening": {
             "schema_version": "fedready.local_label_screening.v1",
             "status": "capability_gap",
@@ -1879,26 +1849,11 @@ def _generated_materializer_required_result(
             "generated_record_type": generated_type,
             "safe_to_share": True,
         },
-        "verification": {
-            "schema_version": "fedready.local_extraction_verification.v1",
-            "valid_case_count": 0,
-            "expected_extracted_count": 0,
-            "extracted_count": 0,
-            "failed_pair_count": 0,
-            "matches_execution_target": False,
-            "matches_all_valid_cases": False,
-            "passed": False,
-        },
-        "local_adapter": _local_adapter_safe_summary(local_adapter, adapter_manifest=adapter_manifest),
         "agent_action_required": {
             "required": True,
             "kind": "server_generated_contract_materializer",
             "implemented_by_baseline": False,
             "safe_to_share": True,
-        },
-        "privacy": {
-            "safe_to_share": True,
-            "redacted": ["source_local_paths", "source_filenames", "raw_images", "raw_masks", "raw_annotations"],
         },
         "warnings": _dedupe([reason, *warnings]),
     }

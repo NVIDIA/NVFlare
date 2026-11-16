@@ -17,11 +17,12 @@
 from __future__ import annotations
 
 import time
+from functools import partial
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fedready.agents import GuardrailAgent, GuardrailCheck, ServerAgent
+from fedready.agents import ACTION_CHECKS, GuardrailAgent, ServerAgent
 from fedready.agents.bridge import CodexWorkerBackend
 from fedready.data.extractor import ExtractionConfig
 from fedready.data.parser import list_client_ids
@@ -156,15 +157,7 @@ class FedReadyTaskQueryController(Controller):
         correlation_id = str(uuid4())
         outgoing_guardrail = server_guardrail.inspect(
             direction="outgoing",
-            check=GuardrailCheck(
-                role="server_agent",
-                source="human_user",
-                channel="server_console",
-                action="SERVER.DEFINE_PROFILE_REQUEST",
-                phase="data_profile",
-                input_schema="TaskSpec@v1",
-                output_schema="FedReadyClientInquiry@v1",
-            ),
+            check=ACTION_CHECKS["SERVER.DEFINE_PROFILE_REQUEST"],
             payload=client_payload,
             counterpart="client_agents",
         )
@@ -179,9 +172,8 @@ class FedReadyTaskQueryController(Controller):
         )
         _set_round_headers(request, current_round=ROUND_PROFILE, total_rounds=self.total_rounds, action="profile")
 
-        logger.write_server_event(
-            session_id=session,
-            phase_id="profile",
+        write_event = partial(logger.write_server_event, session_id=session, phase_id="profile")
+        write_event(
             step_id="profile.server_inquiry.001",
             correlation_id=correlation_id,
             event_type="SERVER_AGENT_OUTPUT",
@@ -204,9 +196,7 @@ class FedReadyTaskQueryController(Controller):
                 "total_rounds": self.total_rounds,
             },
         )
-        logger.write_server_event(
-            session_id=session,
-            phase_id="profile",
+        write_event(
             step_id="profile.server_outgoing_guardrail.001",
             correlation_id=correlation_id,
             event_type="SERVER_OUTGOING_GUARDRAIL_CHECKED",
@@ -263,25 +253,14 @@ class FedReadyTaskQueryController(Controller):
                 "expected_task_id": expected_profile_task_id,
                 "expected_site_id": client_id,
             }
-            response = _response_from_reply(client_id, reply, **expected_reply)
-            message = _message_from_reply(reply, client_id=client_id, **expected_reply)
+            response, message = _read_reply(client_id, reply, **expected_reply)
             incoming_guardrail = server_guardrail.inspect(
                 direction="incoming",
-                check=GuardrailCheck(
-                    role="server_agent",
-                    source="client_agent_via_flare",
-                    channel="flare_task_result",
-                    action="SERVER.AGGREGATE_CLIENT_PROFILES",
-                    phase="data_profile",
-                    input_schema="FedReadyClientResponse@v1",
-                    output_schema="FedReadyServerState@v1",
-                ),
+                check=ACTION_CHECKS["SERVER.AGGREGATE_CLIENT_PROFILES"],
                 payload=response,
                 counterpart=client_id,
             )
-            logger.write_server_event(
-                session_id=session,
-                phase_id="profile",
+            write_event(
                 step_id=f"profile.server_incoming_guardrail.{index:03d}",
                 correlation_id=correlation_id,
                 event_type="SERVER_INCOMING_GUARDRAIL_CHECKED",
@@ -307,9 +286,7 @@ class FedReadyTaskQueryController(Controller):
             if not incoming_guardrail.allowed:
                 response = _server_guardrail_denial_payload(client_id=client_id, decision=incoming_guardrail)
             site_wise_info[client_id] = response
-            logger.write_server_event(
-                session_id=session,
-                phase_id="profile",
+            write_event(
                 step_id=f"profile.server_receive.{index:03d}",
                 correlation_id=correlation_id,
                 event_type="CLIENT_AGENT_OUTPUT_RECEIVED",
@@ -377,9 +354,7 @@ class FedReadyTaskQueryController(Controller):
         logger.write_artifact("server/final_state.json", server_state)
         logger.write_artifact("server/requests/client_inquiry.json", client_payload)
 
-        logger.write_server_event(
-            session_id=session,
-            phase_id="profile",
+        write_event(
             step_id="profile.server_summary.001",
             correlation_id=correlation_id,
             event_type="SERVER_AGENT_OUTPUT",
@@ -433,6 +408,7 @@ class FedReadyTaskQueryController(Controller):
         if abort_signal.triggered:
             return
 
+        write_event = partial(logger.write_server_event, session_id=session, phase_id="harmonization")
         _set_fl_ctx_round(fl_ctx, ROUND_EXTRACTION, self.total_rounds)
         applicable_clients = [
             client_id for client_id in extraction_strategy.get("applicable_clients", []) if isinstance(client_id, str)
@@ -470,9 +446,7 @@ class FedReadyTaskQueryController(Controller):
                 "server/generated_materializers/materializer_spec.json",
                 materializer_turn.output,
             )
-            logger.write_server_event(
-                session_id=session,
-                phase_id="harmonization",
+            write_event(
                 step_id="harmonization.server_materializer.001",
                 correlation_id=str(uuid4()),
                 event_type="SERVER_AGENT_OUTPUT",
@@ -512,9 +486,7 @@ class FedReadyTaskQueryController(Controller):
         correlation_id = str(uuid4())
 
         logger.write_artifact("server/requests/extraction_policies.json", dispatch_turn.output)
-        logger.write_server_event(
-            session_id=session,
-            phase_id="harmonization",
+        write_event(
             step_id="harmonization.server_policy.001",
             correlation_id=correlation_id,
             event_type="SERVER_AGENT_OUTPUT",
@@ -544,21 +516,11 @@ class FedReadyTaskQueryController(Controller):
             site_policy = policies[client_id]
             outgoing_guardrail = server_guardrail.inspect(
                 direction="outgoing",
-                check=GuardrailCheck(
-                    role="server_agent",
-                    source="server_state",
-                    channel="flare_task",
-                    action="SERVER.DISPATCH_EXTRACTION_POLICY",
-                    phase="data_harmonization",
-                    input_schema="FedReadyServerState@v1",
-                    output_schema="FedReadySiteExtractionPolicy@v1",
-                ),
+                check=ACTION_CHECKS["SERVER.DISPATCH_EXTRACTION_POLICY"],
                 payload=site_policy,
                 counterpart=client_id,
             )
-            logger.write_server_event(
-                session_id=session,
-                phase_id="harmonization",
+            write_event(
                 step_id=f"harmonization.server_outgoing_guardrail.{index:03d}",
                 correlation_id=correlation_id,
                 event_type="SERVER_OUTGOING_GUARDRAIL_CHECKED",
@@ -633,25 +595,14 @@ class FedReadyTaskQueryController(Controller):
                 "expected_task_id": task_id,
                 "expected_site_id": client_id,
             }
-            response = _response_from_reply(client_id, reply, **expected_reply)
-            message = _message_from_reply(reply, client_id=client_id, **expected_reply)
+            response, message = _read_reply(client_id, reply, **expected_reply)
             incoming_guardrail = server_guardrail.inspect(
                 direction="incoming",
-                check=GuardrailCheck(
-                    role="server_agent",
-                    source="client_agent_via_flare",
-                    channel="flare_task_result",
-                    action="SERVER.AGGREGATE_EXTRACTION_RESULTS",
-                    phase="data_harmonization",
-                    input_schema="FedReadyClientExtractionResponse@v1",
-                    output_schema="FedReadyExtractionRoundSummary@v1",
-                ),
+                check=ACTION_CHECKS["SERVER.AGGREGATE_EXTRACTION_RESULTS"],
                 payload=response,
                 counterpart=client_id,
             )
-            logger.write_server_event(
-                session_id=session,
-                phase_id="harmonization",
+            write_event(
                 step_id=f"harmonization.server_incoming_guardrail.{index:03d}",
                 correlation_id=correlation_id,
                 event_type="SERVER_INCOMING_GUARDRAIL_CHECKED",
@@ -681,9 +632,7 @@ class FedReadyTaskQueryController(Controller):
             if not incoming_guardrail.allowed:
                 response = _server_guardrail_denial_payload(client_id=client_id, decision=incoming_guardrail)
             extraction_results[client_id] = response
-            logger.write_server_event(
-                session_id=session,
-                phase_id="harmonization",
+            write_event(
                 step_id=f"harmonization.server_receive.{index:03d}",
                 correlation_id=correlation_id,
                 event_type="CLIENT_EXTRACTION_OUTPUT_RECEIVED",
@@ -725,9 +674,7 @@ class FedReadyTaskQueryController(Controller):
         logger.write_artifact("server/responses/extraction_results.json", {"extraction_results": extraction_results})
         logger.write_artifact("server/decisions/extraction_round_summary.json", summary_turn.output)
         logger.write_artifact("server/final_state.json", server_state)
-        logger.write_server_event(
-            session_id=session,
-            phase_id="harmonization",
+        write_event(
             step_id="harmonization.server_summary.001",
             correlation_id=correlation_id,
             event_type="SERVER_AGENT_OUTPUT",
@@ -850,7 +797,7 @@ def _wait_for_task_completion(
         time.sleep(getattr(controller, "_task_check_period", 0.5))
 
 
-def _response_from_reply(
+def _read_reply(
     client_id: str,
     reply: Shareable | None,
     *,
@@ -859,45 +806,14 @@ def _response_from_reply(
     expected_schema_ref: str | None = None,
     expected_task_id: str | None = None,
     expected_site_id: str | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], FlareMessage | None]:
     if reply is None:
-        return {"status": "error", "client_id": client_id, "reason_code": ReturnCode.EMPTY_RESULT}
+        return {"status": "error", "client_id": client_id, "reason_code": ReturnCode.EMPTY_RESULT}, None
     rc = reply.get_return_code()
     if rc != ReturnCode.OK:
-        return {"status": "error", "client_id": client_id, "reason_code": rc}
+        return {"status": "error", "client_id": client_id, "reason_code": rc}, None
     try:
-        return _validated_reply_message(
-            client_id=client_id,
-            reply=reply,
-            expected_session_id=expected_session_id,
-            expected_correlation_id=expected_correlation_id,
-            expected_schema_ref=expected_schema_ref,
-            expected_task_id=expected_task_id,
-            expected_site_id=expected_site_id,
-        ).payload
-    except Exception as exc:  # noqa: BLE001 - server records malformed client replies as bounded errors.
-        return {
-            "status": "error",
-            "client_id": client_id,
-            "reason_code": "MALFORMED_REPLY",
-            "reason": f"Malformed FLARE reply ({type(exc).__name__}).",
-        }
-
-
-def _message_from_reply(
-    reply: Shareable | None,
-    *,
-    client_id: str,
-    expected_session_id: str | None = None,
-    expected_correlation_id: str | None = None,
-    expected_schema_ref: str | None = None,
-    expected_task_id: str | None = None,
-    expected_site_id: str | None = None,
-) -> FlareMessage | None:
-    if reply is None or reply.get_return_code() != ReturnCode.OK:
-        return None
-    try:
-        return _validated_reply_message(
+        message = _validated_reply_message(
             client_id=client_id,
             reply=reply,
             expected_session_id=expected_session_id,
@@ -906,8 +822,14 @@ def _message_from_reply(
             expected_task_id=expected_task_id,
             expected_site_id=expected_site_id,
         )
-    except Exception:
-        return None
+        return message.payload, message
+    except Exception as exc:  # noqa: BLE001 - server records malformed client replies as bounded errors.
+        return {
+            "status": "error",
+            "client_id": client_id,
+            "reason_code": "MALFORMED_REPLY",
+            "reason": f"Malformed FLARE reply ({type(exc).__name__}).",
+        }, None
 
 
 def _validated_reply_message(

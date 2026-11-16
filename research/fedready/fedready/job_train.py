@@ -588,8 +588,10 @@ def prepare_training_code_with_server_agent(
     session_id: str,
     timeout_seconds: float,
     max_attempts: int = DEFAULT_TRAINING_CODE_AGENT_MAX_ATTEMPTS,
+    previous_code_spec: dict[str, Any] | None = None,
+    runtime_feedback: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Request task-dependent training code and give the agent one local validation loop."""
+    """Generate or repair training code through a bounded validation and revision loop."""
 
     code_workspace = Path(run_dir) / "training_phase" / "server_generated_code"
     code_workspace.mkdir(parents=True, exist_ok=True)
@@ -605,12 +607,21 @@ def prepare_training_code_with_server_agent(
         training_plan=training_plan,
         code_workspace=code_workspace,
     )
-    turn = server_agent.implement_training_code(
+    runtime_revision = runtime_feedback is not None
+    stage = "runtime_revision" if runtime_revision else "initial"
+    prefix = "runtime_" if runtime_revision else ""
+    request_context = dict(
         task={"task": task},
         extraction_summary=extraction_summary,
         training_plan=agent_training_plan,
         code_workspace=str(code_workspace.resolve()),
     )
+    if runtime_revision:
+        turn = server_agent.revise_training_code(
+            **request_context, previous_code_spec=previous_code_spec, validation_feedback=runtime_feedback
+        )
+    else:
+        turn = server_agent.implement_training_code(**request_context)
     attempts = max(1, int(max_attempts))
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
@@ -626,7 +637,7 @@ def prepare_training_code_with_server_agent(
                 code_workspace=code_workspace,
                 run_dir=run_dir,
                 attempt=attempt,
-                stage="initial",
+                stage=stage,
             )
         except Exception as exc:
             last_error = exc
@@ -640,18 +651,19 @@ def prepare_training_code_with_server_agent(
             )
             if isinstance(exc, TrainingCodePreflightError):
                 feedback["preflight_status"] = exc.status
-                feedback["agent_instruction"] = render_server_prompt("training_preflight_revision_initial")
+                feedback["agent_instruction"] = render_server_prompt(
+                    "training_preflight_revision_runtime" if runtime_revision else "training_preflight_revision_initial"
+                )
+            if runtime_revision:
+                feedback["source_runtime_feedback"] = runtime_feedback
             _write_json(
-                feedback_dir / f"training_code_validation_attempt_{attempt}.json",
+                feedback_dir / f"{prefix}training_code_validation_attempt_{attempt}.json",
                 feedback,
             )
             if attempt >= attempts:
                 break
             turn = server_agent.revise_training_code(
-                task={"task": task},
-                extraction_summary=extraction_summary,
-                training_plan=agent_training_plan,
-                code_workspace=str(code_workspace.resolve()),
+                **request_context,
                 previous_code_spec=turn.output,
                 validation_feedback=feedback,
             )
@@ -1623,7 +1635,7 @@ def run_fedavg_training_job(
             runtime_feedback,
         )
         extraction_summary = load_extraction_summary(kwargs["extraction_summary_path"])
-        revised_code_spec = revise_training_code_after_runtime_feedback(
+        revised_code_spec = prepare_training_code_with_server_agent(
             task=str(training_plan.get("task") or kwargs.get("task") or "<TASK_DESCRIPTION>"),
             extraction_summary=extraction_summary,
             training_plan=training_plan,
@@ -1663,92 +1675,6 @@ def run_fedavg_training_job(
 
     error_suffix = f": {last_error}" if last_error is not None else ""
     raise RuntimeError(f"NVFlare simulator training did not finish successfully: {last_status}{error_suffix}")
-
-
-def revise_training_code_after_runtime_feedback(
-    *,
-    task: str,
-    extraction_summary: dict[str, Any],
-    training_plan: dict[str, Any],
-    previous_code_spec: dict[str, Any],
-    runtime_feedback: dict[str, Any],
-    run_dir: str | Path,
-    session_id: str,
-    timeout_seconds: float,
-    max_attempts: int = DEFAULT_TRAINING_CODE_AGENT_MAX_ATTEMPTS,
-) -> dict[str, Any]:
-    """Ask the server coding agent to revise code after an actual simulator failure."""
-
-    run_path = Path(run_dir)
-    code_workspace = run_path / "training_phase" / "server_generated_code"
-    feedback_dir = run_path / "training_phase" / "server"
-    backend = CodexWorkerBackend.from_env(
-        run_dir=run_path,
-        session_id=session_id,
-        timeout_seconds=timeout_seconds,
-    )
-    server_agent = ServerAgent(backend)
-    agent_training_plan = _training_plan_with_mock_simulation_contract(
-        training_plan=training_plan,
-        code_workspace=code_workspace,
-    )
-    turn = server_agent.revise_training_code(
-        task={"task": task},
-        extraction_summary=extraction_summary,
-        training_plan=agent_training_plan,
-        code_workspace=str(code_workspace.resolve()),
-        previous_code_spec=previous_code_spec,
-        validation_feedback=runtime_feedback,
-    )
-    last_error: Exception | None = None
-    attempts = max(1, int(max_attempts))
-    for attempt in range(1, attempts + 1):
-        try:
-            if turn.output.get("status") != "implemented":
-                raise RuntimeError(
-                    "server agent did not implement revised training code: "
-                    f"{turn.output.get('status')} {turn.output.get('reason')}"
-                )
-            return _validate_training_code_with_local_preflight(
-                spec=turn.output,
-                training_plan=agent_training_plan,
-                code_workspace=code_workspace,
-                run_dir=run_dir,
-                attempt=attempt,
-                stage="runtime_revision",
-            )
-        except Exception as exc:
-            last_error = exc
-            feedback = build_training_code_validation_feedback(
-                spec=turn.output,
-                error=exc,
-                attempt=attempt,
-                max_attempts=attempts,
-                code_workspace=code_workspace,
-                require_local_simulation=False,
-            )
-            if isinstance(exc, TrainingCodePreflightError):
-                feedback["preflight_status"] = exc.status
-                feedback["agent_instruction"] = render_server_prompt("training_preflight_revision_runtime")
-            feedback["source_runtime_feedback"] = runtime_feedback
-            _write_json(
-                feedback_dir / f"runtime_training_code_validation_attempt_{attempt}.json",
-                feedback,
-            )
-            if attempt >= attempts:
-                break
-            turn = server_agent.revise_training_code(
-                task={"task": task},
-                extraction_summary=extraction_summary,
-                training_plan=agent_training_plan,
-                code_workspace=str(code_workspace.resolve()),
-                previous_code_spec=turn.output,
-                validation_feedback=feedback,
-            )
-    raise RuntimeError(
-        "server agent runtime training-code revision failed local validation after "
-        f"{attempts} attempt(s): {last_error}"
-    ) from last_error
 
 
 def build_training_runtime_feedback(

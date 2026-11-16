@@ -351,6 +351,9 @@ ALLOW_LIST_RULES = {
 }
 
 
+ACTION_CHECKS = {key[3]: GuardrailCheck(*key) for key in ALLOW_LIST_RULES}
+
+
 VISUAL_QC_ALLOWED_SELECTIONS = VISUAL_QC_TRANSFORM_SET | {"undecided"}
 LOCAL_VISION_API_BASE_URL = "http://127.0.0.1:8001/v1"
 DEFAULT_LOCAL_VISION_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
@@ -471,17 +474,7 @@ class ServerAgent:
         self.agent_backend = _require_configured_agent_backend(agent_backend)
 
     def compose_client_inquiry(self, *, task: dict[str, Any], client_ids: list[str]) -> AgentTurn:
-        decision = require_allowed(
-            GuardrailCheck(
-                role="server_agent",
-                source="human_user",
-                channel="server_console",
-                action="SERVER.DEFINE_PROFILE_REQUEST",
-                phase="data_profile",
-                input_schema="TaskSpec@v1",
-                output_schema="FedReadyClientInquiry@v1",
-            )
-        )
+        decision = require_allowed(ACTION_CHECKS["SERVER.DEFINE_PROFILE_REQUEST"])
         prompt = render_server_prompt(
             "define_profile_request",
             task_json=json.dumps(task, sort_keys=True),
@@ -509,17 +502,7 @@ class ServerAgent:
         target_client_ids: list[str],
         extraction_config: dict[str, Any],
     ) -> AgentTurn:
-        decision = require_allowed(
-            GuardrailCheck(
-                role="server_agent",
-                source="server_state",
-                channel="flare_task",
-                action="SERVER.DISPATCH_EXTRACTION_POLICY",
-                phase="data_harmonization",
-                input_schema="FedReadyServerState@v1",
-                output_schema="FedReadySiteExtractionPolicy@v1",
-            )
-        )
+        decision = require_allowed(ACTION_CHECKS["SERVER.DISPATCH_EXTRACTION_POLICY"])
         prompt = render_server_prompt(
             "dispatch_extraction_policy",
             task_json=json.dumps(task, sort_keys=True),
@@ -572,17 +555,7 @@ class ServerAgent:
         task: dict[str, Any],
         extraction_results: dict[str, Any],
     ) -> AgentTurn:
-        decision = require_allowed(
-            GuardrailCheck(
-                role="server_agent",
-                source="client_agent_via_flare",
-                channel="flare_task_result",
-                action="SERVER.AGGREGATE_EXTRACTION_RESULTS",
-                phase="data_harmonization",
-                input_schema="FedReadyClientExtractionResponse@v1",
-                output_schema="FedReadyExtractionRoundSummary@v1",
-            )
-        )
+        decision = require_allowed(ACTION_CHECKS["SERVER.AGGREGATE_EXTRACTION_RESULTS"])
         # Counts and readiness are verifier-owned facts, with no model decision here.
         output = _generic_extraction_round_summary(task=task, extraction_results=extraction_results)
         return AgentTurn(prompt="", output=output, guardrail=decision.as_policy())
@@ -601,17 +574,7 @@ class ServerAgent:
         for the current run. No fixed reference trainer is substituted here.
         """
 
-        decision = require_allowed(
-            GuardrailCheck(
-                role="server_agent",
-                source="server_state",
-                channel="local_training_workspace",
-                action="SERVER.IMPLEMENT_TRAINING_CODE",
-                phase="fl_training",
-                input_schema="FedReadyExtractionRoundSummary@v1",
-                output_schema="FedReadyTrainingCodeSpec@v1",
-            )
-        )
+        decision = require_allowed(ACTION_CHECKS["SERVER.IMPLEMENT_TRAINING_CODE"])
         prompt = render_server_prompt(
             "implement_training_code",
             task_json=json.dumps(task, sort_keys=True),
@@ -655,17 +618,7 @@ class ServerAgent:
     ) -> AgentTurn:
         """Ask the server agent to revise training code after local validation fails."""
 
-        decision = require_allowed(
-            GuardrailCheck(
-                role="server_agent",
-                source="server_state",
-                channel="local_training_workspace",
-                action="SERVER.IMPLEMENT_TRAINING_CODE",
-                phase="fl_training",
-                input_schema="FedReadyExtractionRoundSummary@v1",
-                output_schema="FedReadyTrainingCodeSpec@v1",
-            )
-        )
+        decision = require_allowed(ACTION_CHECKS["SERVER.IMPLEMENT_TRAINING_CODE"])
         prompt = render_server_prompt("revise_training_code")
         output = (
             dict(previous_code_spec) if isinstance(previous_code_spec, dict) else _generic_training_code_spec_template()
@@ -715,17 +668,7 @@ class ServerAgent:
         dataset-specific client rules.
         """
 
-        decision = require_allowed(
-            GuardrailCheck(
-                role="server_agent",
-                source="server_state",
-                channel="local_materializer_workspace",
-                action="SERVER.IMPLEMENT_DATA_MATERIALIZER",
-                phase="data_harmonization",
-                input_schema="FedReadyGeneratedDataContract@v1",
-                output_schema="FedReadyDataMaterializerSpec@v1",
-            )
-        )
+        decision = require_allowed(ACTION_CHECKS["SERVER.IMPLEMENT_DATA_MATERIALIZER"])
         generated_contract = _generated_contract_with_prepared_split_policy(
             extraction_strategy.get("generated_data_contract")
         )
@@ -765,17 +708,7 @@ class ServerAgent:
         inquiry: dict[str, Any],
         site_wise_info: dict[str, Any],
     ) -> AgentTurn:
-        decision = require_allowed(
-            GuardrailCheck(
-                role="server_agent",
-                source="client_agent_via_flare",
-                channel="flare_task_result",
-                action="SERVER.AGGREGATE_CLIENT_PROFILES",
-                phase="data_profile",
-                input_schema="FedReadyClientResponse@v1",
-                output_schema="FedReadyServerState@v1",
-            )
-        )
+        decision = require_allowed(ACTION_CHECKS["SERVER.AGGREGATE_CLIENT_PROFILES"])
         base_prompt = render_server_prompt(
             "aggregate_client_profiles_base",
             task_json=json.dumps(task, sort_keys=True),
@@ -906,15 +839,7 @@ class ClientAgent:
             agent_backend=self.agent_backend,
         ).inspect(
             direction="incoming",
-            check=GuardrailCheck(
-                role="client_agent",
-                source="server_agent_via_flare",
-                channel="flare_task",
-                action="CLIENT.REPORT_DATA_PROFILE",
-                phase="data_profile",
-                input_schema="FedReadyClientInquiry@v1",
-                output_schema="FedReadyClientResponse@v1",
-            ),
+            check=ACTION_CHECKS["CLIENT.REPORT_DATA_PROFILE"],
             payload=inquiry,
             counterpart="server_agent",
         )
@@ -940,15 +865,7 @@ class ClientAgent:
             agent_backend=self.agent_backend,
         ).inspect(
             direction="incoming",
-            check=GuardrailCheck(
-                role="client_agent",
-                source="server_agent_via_flare",
-                channel="flare_task",
-                action="CLIENT.EXTRACT_DATA",
-                phase="data_harmonization",
-                input_schema="FedReadySiteExtractionPolicy@v1",
-                output_schema="FedReadyClientExtractionResponse@v1",
-            ),
+            check=ACTION_CHECKS["CLIENT.EXTRACT_DATA"],
             payload=policy,
             counterpart="server_agent",
         )
@@ -960,15 +877,7 @@ class ClientAgent:
             agent_backend=self.agent_backend,
         ).inspect(
             direction="outgoing",
-            check=GuardrailCheck(
-                role="client_agent",
-                source="server_agent_via_flare",
-                channel="flare_task",
-                action="CLIENT.REPORT_DATA_PROFILE",
-                phase="data_profile",
-                input_schema="FedReadyClientInquiry@v1",
-                output_schema="FedReadyClientResponse@v1",
-            ),
+            check=ACTION_CHECKS["CLIENT.REPORT_DATA_PROFILE"],
             payload=response,
             counterpart="server_agent",
         )
@@ -980,39 +889,9 @@ class ClientAgent:
             agent_backend=self.agent_backend,
         ).inspect(
             direction="outgoing",
-            check=GuardrailCheck(
-                role="client_agent",
-                source="server_agent_via_flare",
-                channel="flare_task",
-                action="CLIENT.EXTRACT_DATA",
-                phase="data_harmonization",
-                input_schema="FedReadySiteExtractionPolicy@v1",
-                output_schema="FedReadyClientExtractionResponse@v1",
-            ),
+            check=ACTION_CHECKS["CLIENT.EXTRACT_DATA"],
             payload=response,
             counterpart="server_agent",
-        )
-
-    def _agent_output(
-        self,
-        *,
-        role: str,
-        action: str,
-        phase: str,
-        input_schema: str,
-        output_schema: str,
-        prompt: str,
-        context: dict[str, Any],
-    ) -> dict[str, Any]:
-        return self.agent_backend.request(
-            role=role,
-            action=action,
-            phase=phase,
-            input_schema=input_schema,
-            output_schema=output_schema,
-            prompt=prompt,
-            context=context,
-            site_id=self.client_id,
         )
 
     def answer_inquiry(self, *, inquiry: dict[str, Any], parsed_profile: dict[str, Any]) -> AgentTurn:
@@ -1057,17 +936,7 @@ class ClientAgent:
         previous_output: dict[str, Any] | None = None,
         validation_feedback: dict[str, Any] | None = None,
     ) -> AgentTurn:
-        decision = require_allowed(
-            GuardrailCheck(
-                role="client_agent",
-                source="client_local_extractor",
-                channel="local_adapter_workspace",
-                action="CLIENT.IMPLEMENT_LOCAL_ADAPTER",
-                phase="data_harmonization",
-                input_schema="FedReadyLocalAdapterRequest@v1",
-                output_schema="FedReadyLocalAdapterSpec@v1",
-            )
-        )
+        decision = require_allowed(ACTION_CHECKS["CLIENT.IMPLEMENT_LOCAL_ADAPTER"])
         local_adapter_requirements = render_client_prompt("local_adapter_implementation_requirements")
         local_adapter_cli_skeleton = render_client_prompt("local_adapter_cli_skeleton")
         base_prompt = render_client_prompt(
@@ -1184,17 +1053,7 @@ class ClientAgent:
         extraction_result: dict[str, Any],
         qc_context: dict[str, Any],
     ) -> AgentTurn:
-        decision = require_allowed(
-            GuardrailCheck(
-                role="client_agent",
-                source="client_local_extractor",
-                channel="local_visual_qc",
-                action="CLIENT.VISUAL_QC_EXTRACTION",
-                phase="data_harmonization",
-                input_schema="FedReadyExtractionQCBundle@v1",
-                output_schema="FedReadyExtractionQCDecision@v1",
-            )
-        )
+        decision = require_allowed(ACTION_CHECKS["CLIENT.VISUAL_QC_EXTRACTION"])
         output = _live_visual_qc_template(client_id=self.client_id, qc_context=qc_context)
         prompt = render_client_prompt("visual_qc_extraction", client_id=self.client_id)
         artifacts = _visual_qc_artifacts(qc_context)

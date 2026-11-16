@@ -57,6 +57,12 @@ invalid visual-decision JSON are returned as validation failures. Training
 consumes the label IDs and meanings established during data preparation.
 Extraction counts and readiness summaries are computed by the verifier.
 
+Shared action descriptors retain the full allow-list identity tuple. Each
+phase binds its fixed audit context once, while event payloads and privacy
+settings remain explicit. Extraction response builders select shareable fields
+from local manifests. Initial trainer generation and runtime repair use the
+same bounded validation loop with separate stage feedback and artifact names.
+
 ## Promotion gates
 
 1. Guardrails authorize every agent action and FLARE payload shape.

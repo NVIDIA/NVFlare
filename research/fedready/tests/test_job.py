@@ -50,6 +50,61 @@ from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 
 
 class NVFlareJobTestCase(unittest.TestCase):
+    def test_training_validation_preserves_stage_feedback_and_attempt_budget(self) -> None:
+        for runtime_feedback in (None, {"failure": "simulator failed"}):
+            for budget in (1, 2):
+                with self.subTest(runtime=runtime_feedback is not None, budget=budget), TemporaryDirectory() as tmp:
+                    with (
+                        mock.patch.object(job_train.CodexWorkerBackend, "from_env"),
+                        mock.patch.object(job_train, "ServerAgent") as agent_type,
+                        mock.patch.object(job_train, "_training_plan_with_mock_simulation_contract", return_value={}),
+                        mock.patch.object(job_train, "build_training_code_validation_feedback", return_value={}),
+                        mock.patch.object(
+                            job_train,
+                            "_validate_training_code_with_local_preflight",
+                            side_effect=[
+                                job_train.TrainingCodePreflightError({"succeeded": False}),
+                                {"validated": True},
+                            ],
+                        ) as validate,
+                    ):
+                        agent = agent_type.return_value
+                        agent.implement_training_code.return_value.output = {"status": "implemented"}
+                        agent.revise_training_code.return_value.output = {"status": "implemented"}
+                        kwargs = dict(
+                            task="segmentation",
+                            extraction_summary={},
+                            training_plan={},
+                            run_dir=tmp,
+                            session_id="test",
+                            timeout_seconds=1,
+                            max_attempts=budget,
+                            previous_code_spec={"status": "implemented"},
+                            runtime_feedback=runtime_feedback,
+                        )
+                        if budget == 1:
+                            with self.assertRaisesRegex(RuntimeError, "after 1 attempt"):
+                                job_train.prepare_training_code_with_server_agent(**kwargs)
+                        else:
+                            self.assertEqual(
+                                job_train.prepare_training_code_with_server_agent(**kwargs), {"validated": True}
+                            )
+                        self.assertEqual(validate.call_count, budget)
+                        self.assertEqual(agent.implement_training_code.call_count, int(runtime_feedback is None))
+                        self.assertEqual(
+                            agent.revise_training_code.call_count, budget - 1 + int(runtime_feedback is not None)
+                        )
+                        stage = "runtime_revision" if runtime_feedback is not None else "initial"
+                        self.assertTrue(all(call.kwargs["stage"] == stage for call in validate.call_args_list))
+                        prefix = "runtime_" if runtime_feedback is not None else ""
+                        feedback = json.loads(
+                            (
+                                Path(tmp) / "training_phase/server" / f"{prefix}training_code_validation_attempt_1.json"
+                            ).read_text()
+                        )
+                        self.assertEqual(feedback["preflight_status"], {"succeeded": False})
+                        self.assertEqual(feedback.get("source_runtime_feedback"), runtime_feedback)
+
     def test_training_preserves_approved_label_ids_and_counts(self) -> None:
         labels = {"negative": 1, "positive": 2}
         summary = {

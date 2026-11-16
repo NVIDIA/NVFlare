@@ -22,6 +22,7 @@ from tempfile import TemporaryDirectory
 from typing import Any
 from unittest.mock import Mock, patch
 
+from fedready import server
 from fedready.agents import ClientAgent
 from fedready.agents.bridge import CodexWorkerBackend
 from fedready.agents.local_adapter import sanitize_adapter_diagnostic
@@ -81,6 +82,33 @@ def _generated_materializer(source: str) -> dict[str, Any]:
 
 
 class DataBoundaryTestCase(unittest.TestCase):
+    def test_reply_is_decoded_once_and_rejects_mismatched_client_identity(self) -> None:
+        reply = to_shareable(
+            FlareMessage(
+                session_id="session",
+                correlation_id="correlation",
+                schema_ref="response",
+                task_id="task",
+                site_id="SITE_A",
+                payload={"client_id": "SITE_A", "data": "applicable"},
+            )
+        )
+        expected = dict(
+            expected_session_id="session",
+            expected_correlation_id="correlation",
+            expected_schema_ref="response",
+            expected_task_id="task",
+            expected_site_id="SITE_A",
+        )
+        with patch.object(server, "from_shareable", wraps=from_shareable) as decode:
+            payload, message = server._read_reply("SITE_A", reply, **expected)
+        self.assertEqual(decode.call_count, 1)
+        self.assertEqual(payload, message.payload)
+        payload["client_id"] = "SITE_B"
+        rejected, message = server._read_reply("SITE_A", reply, **expected)
+        self.assertIsNone(message)
+        self.assertEqual(rejected["reason_code"], "MALFORMED_REPLY")
+
     def test_guardrail_preserves_denials_and_rejects_invalid_redactions(self) -> None:
         payload = {
             "schema_version": "fedready.client_response.v1",

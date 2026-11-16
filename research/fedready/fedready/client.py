@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -166,12 +167,16 @@ class FedReadyTaskQueryExecutor(Executor):
             schema_ref=request_message.schema_ref,
         )
 
-        logger.write_client_event(
+        write_event = partial(
+            logger.write_client_event,
             client_id=client_id,
             session_id=request_message.session_id,
             phase_id="profile",
-            step_id=f"profile.client_receive.{client_id}",
             correlation_id=request_message.correlation_id,
+            flare={"task_name": self.task_name, "task_id": request_message.task_id, "site_id": client_id},
+        )
+        write_event(
+            step_id=f"profile.client_receive.{client_id}",
             event_type="CLIENT_REQUEST_RECEIVED",
             payload={"inquiry": inquiry.get("message", {})},
             schema_ref=request_message.schema_ref,
@@ -184,16 +189,11 @@ class FedReadyTaskQueryExecutor(Executor):
             },
             next_step={"action": "check_allow_list", "reason": "client received server inquiry through NVFlare"},
             agent_prompt=receive_prompt,
-            flare={"task_name": self.task_name, "task_id": request_message.task_id, "site_id": client_id},
         )
 
         guardrail = client_agent.authorize_inquiry(inquiry=inquiry)
-        logger.write_client_event(
-            client_id=client_id,
-            session_id=request_message.session_id,
-            phase_id="profile",
+        write_event(
             step_id=f"profile.client_guardrail.{client_id}",
-            correlation_id=request_message.correlation_id,
             event_type="CLIENT_GUARDRAIL_CHECKED",
             payload=guardrail.as_payload(),
             schema_ref=GUARDRAIL_SCHEMA,
@@ -204,7 +204,6 @@ class FedReadyTaskQueryExecutor(Executor):
                 "reason": guardrail.reason,
             },
             agent_prompt=receive_prompt,
-            flare={"task_name": self.task_name, "task_id": request_message.task_id, "site_id": client_id},
         )
         if not guardrail.allowed:
             return FlareMessage(
@@ -238,19 +237,14 @@ class FedReadyTaskQueryExecutor(Executor):
                 "histogram_bins": parser_config.histogram_bins,
             },
         }
-        logger.write_client_event(
-            client_id=client_id,
-            session_id=request_message.session_id,
-            phase_id="profile",
+        write_event(
             step_id=f"profile.client_local_exec_start.{client_id}",
-            correlation_id=request_message.correlation_id,
             event_type="CLIENT_LOCAL_EXECUTION_STARTED",
             payload=execution_payload,
             schema_ref="FedReadyLocalExecution@v1",
             status="started",
             policy=guardrail.as_policy(),
             next_step={"action": "parse_site_dataset", "reason": "local aggregate dataset profile is needed"},
-            flare={"task_name": self.task_name, "task_id": request_message.task_id, "site_id": client_id},
         )
         parsed_profile = parse_site_dataset(
             self.site_meta_path,
@@ -258,12 +252,8 @@ class FedReadyTaskQueryExecutor(Executor):
             project_root=self.project_root,
             config=parser_config,
         )
-        logger.write_client_event(
-            client_id=client_id,
-            session_id=request_message.session_id,
-            phase_id="profile",
+        write_event(
             step_id=f"profile.client_local_exec_done.{client_id}",
-            correlation_id=request_message.correlation_id,
             event_type="CLIENT_LOCAL_EXECUTION_COMPLETED",
             payload={
                 **execution_payload,
@@ -280,17 +270,12 @@ class FedReadyTaskQueryExecutor(Executor):
             status="completed",
             policy=guardrail.as_policy(),
             next_step={"action": "client_agent_interpret_profile", "reason": "parser returned safe aggregate metadata"},
-            flare={"task_name": self.task_name, "task_id": request_message.task_id, "site_id": client_id},
         )
 
         client_turn = client_agent.answer_inquiry(inquiry=inquiry, parsed_profile=parsed_profile)
         outgoing_guardrail = client_agent.authorize_outgoing_profile_response(response=client_turn.output)
-        logger.write_client_event(
-            client_id=client_id,
-            session_id=request_message.session_id,
-            phase_id="profile",
+        write_event(
             step_id=f"profile.client_outgoing_guardrail.{client_id}",
-            correlation_id=request_message.correlation_id,
             event_type="CLIENT_OUTGOING_GUARDRAIL_CHECKED",
             payload=outgoing_guardrail.as_payload(),
             schema_ref=GUARDRAIL_SCHEMA,
@@ -301,7 +286,6 @@ class FedReadyTaskQueryExecutor(Executor):
                 "reason": outgoing_guardrail.reason,
             },
             agent_prompt=client_turn.prompt,
-            flare={"task_name": self.task_name, "task_id": request_message.task_id, "site_id": client_id},
         )
         response_payload = (
             outgoing_guardrail.effective_payload(client_turn.output)
@@ -314,12 +298,8 @@ class FedReadyTaskQueryExecutor(Executor):
             )
         )
         response_payload = _bind_payload_client_id(response_payload, client_id=client_id)
-        logger.write_client_event(
-            client_id=client_id,
-            session_id=request_message.session_id,
-            phase_id="profile",
+        write_event(
             step_id=f"profile.client_output.{client_id}",
-            correlation_id=request_message.correlation_id,
             event_type="CLIENT_AGENT_OUTPUT",
             payload=response_payload,
             schema_ref=CLIENT_RESPONSE_SCHEMA,
@@ -338,7 +318,6 @@ class FedReadyTaskQueryExecutor(Executor):
                 ),
             },
             agent_prompt=client_turn.prompt,
-            flare={"task_name": self.task_name, "task_id": request_message.task_id, "site_id": client_id},
         )
         return FlareMessage(
             session_id=request_message.session_id,
@@ -375,12 +354,16 @@ class FedReadyTaskQueryExecutor(Executor):
             schema_ref=request_message.schema_ref,
         )
 
-        logger.write_client_event(
+        write_event = partial(
+            logger.write_client_event,
             client_id=client_id,
             session_id=request_message.session_id,
             phase_id="harmonization",
-            step_id=f"harmonization.client_receive.{client_id}",
             correlation_id=request_message.correlation_id,
+            flare=_flare_round_context(self.task_name, request_message, shareable, client_id),
+        )
+        write_event(
+            step_id=f"harmonization.client_receive.{client_id}",
             event_type="CLIENT_EXTRACTION_REQUEST_RECEIVED",
             payload={
                 "policy": _safe_policy_summary(policy),
@@ -397,16 +380,11 @@ class FedReadyTaskQueryExecutor(Executor):
             },
             next_step={"action": "check_allow_list", "reason": "client received round-2 policy through NVFlare"},
             agent_prompt=receive_prompt,
-            flare=_flare_round_context(self.task_name, request_message, shareable, client_id),
         )
 
         guardrail = client_agent.authorize_extraction(policy=policy)
-        logger.write_client_event(
-            client_id=client_id,
-            session_id=request_message.session_id,
-            phase_id="harmonization",
+        write_event(
             step_id=f"harmonization.client_guardrail.{client_id}",
-            correlation_id=request_message.correlation_id,
             event_type="CLIENT_EXTRACTION_GUARDRAIL_CHECKED",
             payload=guardrail.as_payload(),
             schema_ref=GUARDRAIL_SCHEMA,
@@ -417,7 +395,6 @@ class FedReadyTaskQueryExecutor(Executor):
                 "reason": guardrail.reason,
             },
             agent_prompt=receive_prompt,
-            flare=_flare_round_context(self.task_name, request_message, shareable, client_id),
         )
         if not guardrail.allowed:
             return FlareMessage(
@@ -459,19 +436,14 @@ class FedReadyTaskQueryExecutor(Executor):
             "data_binding": "client_agent_local_manifest",
             "policy_digest": policy.get("strategy_digest"),
         }
-        logger.write_client_event(
-            client_id=client_id,
-            session_id=request_message.session_id,
-            phase_id="harmonization",
+        write_event(
             step_id=f"harmonization.client_local_exec_start.{client_id}",
-            correlation_id=request_message.correlation_id,
             event_type="CLIENT_EXTRACTION_EXECUTION_STARTED",
             payload=execution_payload,
             schema_ref=LOCAL_EXECUTION_SCHEMA,
             status="started",
             policy=guardrail.as_policy(),
             next_step={"action": "extract_site_dataset", "reason": "site-specific policy passed allow-list check"},
-            flare=_flare_round_context(self.task_name, request_message, shareable, client_id),
         )
 
         project_root = (
@@ -569,12 +541,8 @@ class FedReadyTaskQueryExecutor(Executor):
                     )
                     result = adapter_failure
                     break
-                logger.write_client_event(
-                    client_id=client_id,
-                    session_id=request_message.session_id,
-                    phase_id="harmonization",
+                write_event(
                     step_id=f"harmonization.client_local_adapter.{client_id}.attempt{adapter_attempt}",
-                    correlation_id=request_message.correlation_id,
                     event_type="CLIENT_LOCAL_ADAPTER_OUTPUT",
                     payload={
                         **_safe_adapter_output_summary(adapter_turn.output),
@@ -594,7 +562,6 @@ class FedReadyTaskQueryExecutor(Executor):
                         "reason": "client-local adapter agent responded to extractor capability gap",
                     },
                     agent_prompt=adapter_turn.prompt,
-                    flare=_flare_round_context(self.task_name, request_message, shareable, client_id),
                 )
                 adapter_output = dict(adapter_turn.output)
                 if adapter_output.get("status") in {"implemented", "unfeasible"}:
@@ -613,12 +580,8 @@ class FedReadyTaskQueryExecutor(Executor):
                                 else None
                             ),
                         )
-                        logger.write_client_event(
-                            client_id=client_id,
-                            session_id=request_message.session_id,
-                            phase_id="harmonization",
+                        write_event(
                             step_id=(f"harmonization.client_local_adapter.{client_id}." f"runtime{adapter_attempt}"),
-                            correlation_id=request_message.correlation_id,
                             event_type="CLIENT_LOCAL_ADAPTER_RUNTIME_VALIDATION",
                             payload={
                                 "stage": runtime_result.stage,
@@ -645,12 +608,6 @@ class FedReadyTaskQueryExecutor(Executor):
                                 "reason": "backend-neutral client-local runtime verdict",
                             },
                             agent_prompt=adapter_turn.prompt,
-                            flare=_flare_round_context(
-                                self.task_name,
-                                request_message,
-                                shareable,
-                                client_id,
-                            ),
                         )
                         if runtime_result.infrastructure_failure:
                             adapter_failure = _client_local_adapter_failure_result(
@@ -738,12 +695,8 @@ class FedReadyTaskQueryExecutor(Executor):
                                 ),
                             )
                             previous_adapter_output = adapter_output
-                            logger.write_client_event(
-                                client_id=client_id,
-                                session_id=request_message.session_id,
-                                phase_id="harmonization",
+                            write_event(
                                 step_id=f"harmonization.client_local_adapter.{client_id}.feedback{adapter_attempt}",
-                                correlation_id=request_message.correlation_id,
                                 event_type="CLIENT_LOCAL_ADAPTER_VALIDATION_FEEDBACK",
                                 payload=adapter_feedback,
                                 schema_ref="FedReadyLocalAdapterFeedback@v1",
@@ -754,7 +707,6 @@ class FedReadyTaskQueryExecutor(Executor):
                                     "reason": "local extractor rejected the adapter output",
                                 },
                                 agent_prompt=adapter_turn.prompt,
-                                flare=_flare_round_context(self.task_name, request_message, shareable, client_id),
                             )
                             continue
                         adapter_failure = _client_local_adapter_failure_result(
@@ -785,12 +737,8 @@ class FedReadyTaskQueryExecutor(Executor):
                         result = {**result, "local_adapter": _safe_adapter_output_summary(adapter_turn.output)}
                 break
             if adapter_failure is not None:
-                logger.write_client_event(
-                    client_id=client_id,
-                    session_id=request_message.session_id,
-                    phase_id="harmonization",
+                write_event(
                     step_id=f"harmonization.client_local_adapter.{client_id}.failed",
-                    correlation_id=request_message.correlation_id,
                     event_type="CLIENT_LOCAL_ADAPTER_FAILED",
                     payload=adapter_failure,
                     schema_ref="FedReadyClientExtractionResponse@v1",
@@ -800,7 +748,6 @@ class FedReadyTaskQueryExecutor(Executor):
                         "action": "return_failure_via_nvflare",
                         "reason": "bounded client-local adapter work did not produce a validated datalist",
                     },
-                    flare=_flare_round_context(self.task_name, request_message, shareable, client_id),
                 )
         # Extractor diagnostics are revision-only client data and must not reach reporting agents.
         result.pop("_client_local_diagnostic", None)
@@ -832,12 +779,8 @@ class FedReadyTaskQueryExecutor(Executor):
                 project_root=project_root,
             )
             result = {**result, "visual_qc": visual_qc_output}
-            logger.write_client_event(
-                client_id=client_id,
-                session_id=request_message.session_id,
-                phase_id="harmonization",
+            write_event(
                 step_id=f"harmonization.client_visual_qc.{client_id}",
-                correlation_id=request_message.correlation_id,
                 event_type="CLIENT_ORIENTATION_QC_DECISION",
                 payload=visual_qc_output,
                 schema_ref="FedReadyExtractionQCDecision@v1",
@@ -852,7 +795,6 @@ class FedReadyTaskQueryExecutor(Executor):
                     "reason": "client visual QC decision recorded for extracted samples",
                 },
                 agent_prompt=visual_qc_turn.prompt,
-                flare=_flare_round_context(self.task_name, request_message, shareable, client_id),
             )
         result_summary = {
             "data": result.get("data"),
@@ -868,12 +810,8 @@ class FedReadyTaskQueryExecutor(Executor):
             "privacy": result.get("privacy"),
             "warnings": result.get("warnings"),
         }
-        logger.write_client_event(
-            client_id=client_id,
-            session_id=request_message.session_id,
-            phase_id="harmonization",
+        write_event(
             step_id=f"harmonization.client_local_exec_done.{client_id}",
-            correlation_id=request_message.correlation_id,
             event_type="CLIENT_EXTRACTION_EXECUTION_COMPLETED",
             payload={
                 **execution_payload,
@@ -884,7 +822,6 @@ class FedReadyTaskQueryExecutor(Executor):
             status="completed",
             policy=guardrail.as_policy(),
             next_step={"action": "client_agent_return_extraction_result", "reason": "extractor completed"},
-            flare=_flare_round_context(self.task_name, request_message, shareable, client_id),
         )
 
         client_turn = client_agent.report_extraction_result(
@@ -898,12 +835,8 @@ class FedReadyTaskQueryExecutor(Executor):
         )
         extraction_response = _redact_server_visible_extraction_response(client_turn.output)
         outgoing_guardrail = client_agent.authorize_outgoing_extraction_response(response=extraction_response)
-        logger.write_client_event(
-            client_id=client_id,
-            session_id=request_message.session_id,
-            phase_id="harmonization",
+        write_event(
             step_id=f"harmonization.client_outgoing_guardrail.{client_id}",
-            correlation_id=request_message.correlation_id,
             event_type="CLIENT_EXTRACTION_OUTGOING_GUARDRAIL_CHECKED",
             payload=outgoing_guardrail.as_payload(),
             schema_ref=GUARDRAIL_SCHEMA,
@@ -914,7 +847,6 @@ class FedReadyTaskQueryExecutor(Executor):
                 "reason": outgoing_guardrail.reason,
             },
             agent_prompt=client_turn.prompt,
-            flare=_flare_round_context(self.task_name, request_message, shareable, client_id),
         )
         response_payload = (
             outgoing_guardrail.effective_payload(extraction_response)
@@ -927,12 +859,8 @@ class FedReadyTaskQueryExecutor(Executor):
             )
         )
         response_payload = _bind_payload_client_id(response_payload, client_id=client_id)
-        logger.write_client_event(
-            client_id=client_id,
-            session_id=request_message.session_id,
-            phase_id="harmonization",
+        write_event(
             step_id=f"harmonization.client_output.{client_id}",
-            correlation_id=request_message.correlation_id,
             event_type="CLIENT_EXTRACTION_OUTPUT",
             payload=response_payload,
             schema_ref=EXTRACTION_RESPONSE_SCHEMA,
@@ -951,7 +879,6 @@ class FedReadyTaskQueryExecutor(Executor):
                 ),
             },
             agent_prompt=client_turn.prompt,
-            flare=_flare_round_context(self.task_name, request_message, shareable, client_id),
         )
         return FlareMessage(
             session_id=request_message.session_id,
