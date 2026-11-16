@@ -1,6 +1,6 @@
 # Experimental memorization mitigation and auditing
 
-Status: draft for API and design review, updated November 10, 2026.
+Status: draft for API and design review, updated November 16, 2026.
 
 Issue: [NVIDIA/NVFlare#5680](https://github.com/NVIDIA/NVFlare/issues/5680).
 
@@ -105,7 +105,13 @@ reference changes. Ordinary in-place parameter/buffer changes, tensor/storage
 replacement, and dtype/device conversions are detected. Finalize precision and
 placement before constructing the scorer. In-place writes through `.data` or
 external storage aliases bypass version tracking and remain unsupported, as do
-arbitrary forward-code changes.
+arbitrary forward-code changes. Parameters and buffers created under
+`torch.inference_mode()` lack version counters; their contents are hashed at
+construction and before each score, including cache hits, to detect mutation.
+This preserves the supplied model without replacing or cloning its tensors, but
+adds CPU transfer/hashing cost proportional to the inference tensors' size.
+Construct the reference outside `inference_mode()` to use ordinary version checks;
+scoring can still run inside it.
 
 Optional cache keys bind checkpoint tensor contents, tokenizer and scoring
 identities, tokenized inputs, labels and supplied tensor model inputs. The caller's

@@ -44,6 +44,9 @@ class FrozenReferenceScorer:
     ordinary in-place changes, dtype/device conversions and storage replacement
     are rejected. In-place writes through .data or external storage aliases bypass
     version tracking and are unsupported. Recreate the scorer after any change.
+    Inference tensors lack version counters and are content-hashed before every
+    score, including cache hits, with CPU transfer/hashing cost. Construct the
+    reference outside inference_mode to retain inexpensive version checks.
     Cached scores are potentially sensitive local artifacts.
     """
 
@@ -68,7 +71,17 @@ class FrozenReferenceScorer:
 
     def _model_versions(self):
         return [
-            (name, id(t), t._version, t.device, t.dtype, tuple(t.shape), t.stride(), t.data_ptr())
+            (
+                name,
+                id(t),
+                # Inference tensors can mutate but have no version counter.
+                tensor_digest({name: t}) if torch.is_inference(t) else t._version,
+                t.device,
+                t.dtype,
+                tuple(t.shape),
+                t.stride(),
+                t.data_ptr(),
+            )
             for name, t in list(self.model.named_parameters()) + list(self.model.named_buffers())
         ]
 

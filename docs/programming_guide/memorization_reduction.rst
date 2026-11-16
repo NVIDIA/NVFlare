@@ -98,6 +98,13 @@ Keep the reference immutable. Ordinary in-place changes, storage replacement and
 dtype/device conversions are detected; set precision and placement before creating
 the scorer and construct a new scorer after any change. In-place writes through
 ``.data`` or external storage aliases bypass version tracking and are unsupported.
+Parameters and buffers created under ``torch.inference_mode()`` are supported.
+They have no version counters, so their contents are hashed at construction and
+before every score, including cache hits. This adds CPU transfer and hashing cost
+proportional to those tensors' size. Construct the reference outside
+``inference_mode()`` to retain inexpensive version checks; scoring itself can still
+run inside that context.
+
 Arbitrary changes to forward behavior also require a new scoring identity. A fixed-order precomputation, indexed by shuffled training
 batches, avoids cache misses caused solely by different batch groupings. The
 optional cache has no built-in quota or eviction: manage disk usage and retention

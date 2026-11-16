@@ -117,6 +117,34 @@ def test_reference_conversion_or_storage_replacement_rejects_cached_scores(tmp_p
     assert scorer.cache_hits == 0 and model.calls == 1
 
 
+@pytest.mark.parametrize("use_cache", [False, True])
+@pytest.mark.parametrize("mutate", ["parameter", "buffer"])
+def test_inference_reference_initialization_scoring_and_mutation_detection(tmp_path, use_cache, mutate):
+    with torch.inference_mode():
+        model = TinyLM()
+        model.register_buffer("scale", torch.ones(1))
+    inputs = torch.tensor([[1, 2, 3]])
+    scorer = FrozenReferenceScorer(model, "tokenizer", "context", tmp_path if use_cache else None)
+    assert scorer.model is model
+    assert torch.is_inference(model.embed.weight) and torch.is_inference(model.scale)
+    expected = model.embed(inputs)[:, :-1].log_softmax(-1).gather(-1, inputs[:, 1:, None]).squeeze(-1)
+    for _ in range(2):
+        scores, mask = scorer.score(inputs, inputs)
+        torch.testing.assert_close(scores, expected)
+        assert mask.all() and not scores.requires_grad
+    assert model.calls == (1 if use_cache else 2)
+    assert scorer.cache_hits == int(use_cache)
+
+    # Inference tensors can still be changed inside inference_mode, without counters.
+    with torch.inference_mode():
+        tensor = model.embed.weight if mutate == "parameter" else model.scale
+        tensor.add_(1)
+    with pytest.raises(ValueError, match="Reference changed"):
+        scorer.score(inputs, inputs)
+    assert model.calls == (1 if use_cache else 2)
+    assert scorer.cache_hits == int(use_cache)
+
+
 def test_online_scoring_does_not_hash_inputs(monkeypatch):
     model = TinyLM()
     scorer = FrozenReferenceScorer(model, "tokenizer", "context")
