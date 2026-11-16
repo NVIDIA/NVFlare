@@ -28,6 +28,8 @@ def run(workspace, app):
         superlink_ready_timeout=30,
         configure_task_timeout=60,
         start_task_timeout=60,
+        # Allow CLI startup on loaded CI runners before capturing the round marker.
+        flwr_log_timeout=30,
     )
     env = SimEnv(num_clients=2, workspace_root=workspace)
     execution = None

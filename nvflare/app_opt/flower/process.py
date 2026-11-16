@@ -331,9 +331,15 @@ def start_process(cmd_desc, fl_ctx, stop_method="term"):
 
 
 def validate_command_timeout(name, timeout):
+    if isinstance(timeout, bool):
+        raise ValueError(f"{name} must be a positive number, not bool")
     check_positive_number(name, timeout)
-    if not math.isfinite(timeout):
-        raise ValueError(f"{name} must be finite, but got {timeout}")
+    try:
+        finite = math.isfinite(timeout)
+    except OverflowError:
+        finite = False
+    if not finite:
+        raise ValueError(f"{name} must be finite and representable as a float")
 
 
 def run_command(cmd_desc, timeout):

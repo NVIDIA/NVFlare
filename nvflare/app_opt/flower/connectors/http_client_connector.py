@@ -107,6 +107,9 @@ class HttpClientConnector(FlowerClientConnector):
             # Flower operations. Fail the job instead of replaying at this layer.
             self._server_done = True
             self._exit_code = TieConstant.EXIT_CODE_FAILED
+            self.logger.error(
+                "Flower forwarding failed; stopping training: path=%s, return_code=%s", request["path"], rc
+            )
         return http_response(503)
 
     def _is_stopped(self):

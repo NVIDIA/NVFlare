@@ -38,7 +38,9 @@ def test_cli_uses_configured_deadline_and_preserves_timeout_error(times_out):
         assert run.call_args.kwargs["timeout"] == 600
 
 
-@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan")])
+@pytest.mark.parametrize(
+    "timeout", [0, -1, float("inf"), float("nan"), True, False, pytest.param(10**10000, id="integer-overflow")]
+)
 def test_cli_deadline_must_be_positive_and_finite(timeout):
     with patch("nvflare.app_opt.flower.process.subprocess.run") as run:
         with pytest.raises(ValueError, match="timeout"):

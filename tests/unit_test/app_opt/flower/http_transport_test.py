@@ -201,20 +201,28 @@ def test_concurrent_client_stops_serialize_cleanup():
     connector.stop_applet.assert_called_once()
 
 
+@pytest.mark.parametrize("failure", ["exception", "error_reply"])
 @pytest.mark.parametrize("secure", [False, True])
-def test_training_exception_is_logged_without_request_data(monkeypatch, caplog, secure):
+def test_training_failure_is_logged_without_request_data(monkeypatch, caplog, secure, failure):
     monkeypatch.setenv("NVFLARE_SECURE_LOGGING", str(secure))
     connector = HttpClientConnector()
     connector.set_abort_signal(Signal())
-    connector.send_request = MagicMock(side_effect=RuntimeError("transport unavailable"))
+    if failure == "exception":
+        connector.send_request = MagicMock(side_effect=RuntimeError("transport unavailable"))
+    else:
+        connector.send_request = MagicMock(return_value=make_reply(ReturnCode.COMMUNICATION_ERROR))
     req = request()
     req["body"] = b"private-model-data"
     req["headers"]["flwr-signature"] = "private-signed-header"
     assert connector._forward(req)["status"] == 503
     assert connector._is_stopped()[1] != 0
     assert "Flower forwarding failed; stopping training" in caplog.text
-    assert "RuntimeError" in caplog.text
-    assert ("transport unavailable" in caplog.text) == (not secure)
+    if failure == "exception":
+        assert "RuntimeError" in caplog.text
+        assert ("transport unavailable" in caplog.text) == (not secure)
+    else:
+        assert f"return_code={ReturnCode.COMMUNICATION_ERROR}" in caplog.text
+        assert f"path={req['path']}" in caplog.text
     assert "private-model-data" not in caplog.text
     assert "private-signed-header" not in caplog.text
 
@@ -312,7 +320,7 @@ def test_flower_controller_fails_job_on_client_transport_failure():
 
 
 @pytest.mark.parametrize("failure", [make_reply(ReturnCode.COMMUNICATION_ERROR), RuntimeError("transport unavailable")])
-def test_heartbeat_recovers_after_transient_failure(failure):
+def test_heartbeat_recovers_after_transient_failure(failure, caplog):
     connector = HttpClientConnector()
     connector.set_abort_signal(Signal())
     connector.send_request = MagicMock(side_effect=[failure, http_response(200)])
@@ -321,17 +329,19 @@ def test_heartbeat_recovers_after_transient_failure(failure):
     assert connector._exit_code == 0
     assert connector._forward(request(HEARTBEAT_PATH))["status"] == 200
     assert connector.send_request.call_count == 2
+    assert "Flower forwarding failed" not in caplog.text
 
 
 @pytest.mark.parametrize("path", [HEARTBEAT_PATH, "/v1/fleet/push-messages"])
 @pytest.mark.parametrize("rc,done", [(ReturnCode.SERVICE_UNAVAILABLE, True), (ReturnCode.TASK_ABORTED, False)])
-def test_clean_remote_shutdown_and_task_abort(path, rc, done):
+def test_clean_remote_shutdown_and_task_abort(path, rc, done, caplog):
     connector = HttpClientConnector()
     connector.set_abort_signal(Signal())
     connector.send_request = MagicMock(return_value=make_reply(rc))
     assert connector._forward(request(path))["status"] == 503
     assert connector._server_done == done
     assert connector._exit_code == 0
+    assert "Flower forwarding failed" not in caplog.text
 
 
 def test_timeout_warning_reports_effective_values(caplog):

@@ -48,10 +48,12 @@ be absent if SuperLink crashes before the snapshot.
 The local CLI deadlines are configurable through FlowerRecipe, FlowerJob, and
 FlowerController. ``flwr_run_timeout`` defaults to 300 seconds for CLI startup,
 FAB preparation, and run submission. ``flwr_command_timeout`` defaults to 15
-seconds for each status or stop command. ``flwr_log_timeout`` defaults to 5
-seconds for the shutdown log snapshot; a timeout is logged and process cleanup
-continues. All three values must be positive and finite. These limits do not
-change Flower's own HTTP timeouts or the inter-site transaction limits below.
+seconds for each status or stop command. A status-command timeout fails the job
+without retrying; a stop-command timeout is logged and shutdown continues.
+``flwr_log_timeout`` defaults to 5 seconds for the shutdown log snapshot; a
+timeout is logged and process cleanup continues. All three values must be
+positive and finite. These limits do not change Flower's own HTTP timeouts or
+the inter-site transaction limits below.
 
 The bridge preserves Flower's public-key, timestamp, signature, and runtime-version
 headers. A key is associated with the registering authenticated NVFlare site for
@@ -78,7 +80,9 @@ Transient heartbeat communication failures return HTTP 503 without marking the
 client failed, allowing Flower to send subsequent heartbeats. An explicit server
 shutdown still ends the client cleanly.
 Forwarding exceptions that fail training are logged using NVFlare's secure
-exception formatter without adding request bodies or signed headers to the log.
+exception formatter. Error replies that fail training are logged with the return
+code and validated Fleet route. Neither diagnostic adds request bodies or signed
+headers to the log.
 
 ``per_msg_timeout`` and ``tx_timeout`` default to 2 and 25 seconds. Larger values
 are capped, with a warning showing the effective limits, to fit Flower's 30-second HTTP timeout. Heartbeats
@@ -90,8 +94,10 @@ process guard retains descendant identities while the job is alive. Closing its
 control pipe, including when the job process is killed, triggers cleanup. The
 control pipe is not inherited by Flower workers. Descendant monitoring uses one
 process-table snapshot per scan.
-If client cleanup fails, the applet retains its process manager and subsequent
-stop calls retry the unfinished cleanup while forwarding remains disabled.
+If client cleanup fails, the applet retains its process manager. A caller can
+invoke ``stop()`` again to retry unfinished cleanup while forwarding remains
+disabled. The normal ``END_RUN`` handler calls ``stop()`` once and does not
+schedule an automatic retry.
 
 Compatibility and migration
 ===========================

@@ -279,16 +279,16 @@ def test_cli_timeouts_do_not_prevent_server_cleanup(monkeypatch, tmp_path, caplo
     applet.flower_run_finished = finished
     manager = applet._superlink_process_mgr = MagicMock()
     manager.poll.return_value = None
-    commands = []
+    events = []
+    manager.stop.side_effect = lambda: events.append(("cleanup", None))
 
     def run(descriptor, timeout):
-        commands.append((shlex.split(descriptor.cmd)[1], timeout))
-        assert manager.stop.call_count == 0
+        events.append((shlex.split(descriptor.cmd)[1], timeout))
         raise subprocess.TimeoutExpired(descriptor.cmd, timeout)
 
     with patch.object(subject, "run_command", side_effect=run), patch.object(subject, "_validate_flower_executable"):
         assert applet.stop() == 0
-    assert commands == ([("log", 2)] if finished else [("stop", 11), ("log", 2)])
+    assert events == ([("log", 2)] if finished else [("stop", 11), ("log", 2)]) + [("cleanup", None)]
     manager.stop.assert_called_once()
     assert applet._superlink_process_mgr is None
     assert "could not save Flower ServerApp log" in caplog.text

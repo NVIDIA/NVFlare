@@ -1002,8 +1002,9 @@ Flower-specific controller and executor timeouts (flower/controller.py, flower/e
 
 
 The CLI timeouts are positive, finite values configurable through FlowerRecipe,
-FlowerJob, and FlowerController. A log snapshot timeout does not prevent process
-cleanup. These settings do not override Flower's own HTTP timeouts.
+FlowerJob, and FlowerController. A status-command timeout fails the job without
+retrying. A stop-command or log snapshot timeout is logged and process cleanup
+continues. These settings do not override Flower's own HTTP timeouts.
 
 Flower HTTP caps ``per_msg_timeout`` and ``tx_timeout`` at 2 and 25 seconds and logs a warning when larger
 values are supplied. Heartbeats use tighter caps of 0.5 and 3.5 seconds. See
