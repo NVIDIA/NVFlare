@@ -11,6 +11,9 @@ Collection follows the runtime's execution boundaries and admission checks. Each
 execution mode provides attributable measurements and lifecycle ownership; resource
 statistics does not select or enable backends.
 
+Storage metrics are outside this feature's scope. Measuring specific retained
+artifacts would require a separate definition and implementation.
+
 ## Relationship to JobStatsReporter
 
 Resource statistics automatically records startup capacity, capacity-time, CPU

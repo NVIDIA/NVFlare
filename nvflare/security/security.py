@@ -40,7 +40,8 @@ COMMAND_CATEGORIES = {
     AC.SHOW_ERRORS: CommandCategory.VIEW,
     AC.LIST_JOBS: CommandCategory.VIEW,
     AC.GET_JOB_META: CommandCategory.VIEW,
-    AC.GET_JOB_RESOURCES: CommandCategory.VIEW,
+    AC.GET_JOB_RESOURCES: CommandCategory.DOWNLOAD_JOB,
+    # Study admission is broad; each included job requires GET_JOB_RESOURCES.
     AC.GET_STUDY_RESOURCES: CommandCategory.VIEW,
     AC.SYS_INFO: CommandCategory.OPERATE,
     AC.REPORT_RESOURCES: CommandCategory.OPERATE,

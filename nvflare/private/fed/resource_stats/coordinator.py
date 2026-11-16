@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
@@ -423,6 +424,11 @@ class ResourceStatsCoordinator:
             try:
                 os.rmdir("staging", dir_fd=stats_fd)
             except FileNotFoundError:
+                return
+            except OSError as exc:
+                if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                    raise
+                _logger.warning("Resource handoff staging is not empty; preserving accepted reports")
                 return
             os.fsync(stats_fd)
         finally:

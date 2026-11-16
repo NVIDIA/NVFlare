@@ -126,7 +126,7 @@ def test_accept_is_idempotent_and_finalized_bundle_reads_from_workspace(started_
     assert not coordinator.has_job("job-1")
 
 
-@pytest.mark.parametrize("operation", ["fsync", "rename"])
+@pytest.mark.parametrize("operation", ["fsync", "rename", "rmdir"])
 def test_summary_write_failure_occurs_at_finalization_not_acceptance(started_job, operation):
     coordinator, run_dir = started_job
     data = canonical_json_bytes(_participant())
@@ -141,6 +141,23 @@ def test_summary_write_failure_occurs_at_finalization_not_acceptance(started_job
 
     assert not (run_dir / "resource_stats" / RESOURCE_SUMMARY_FILE).exists()
     assert list((run_dir / "resource_stats").iterdir()) == []
+
+
+@pytest.mark.parametrize("residue", ["terminal_handoff.old.json", ".terminal-abandoned.tmp"])
+def test_staging_residue_preserves_accepted_reports(started_job, caplog, residue):
+    coordinator, run_dir = started_job
+    data = canonical_json_bytes(_participant())
+    assert (
+        coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": data}) == RESOURCE_REPORT_ACCEPTED
+    )
+    staging = run_dir / "resource_stats" / "staging"
+    staging.mkdir()
+    (staging / residue).write_bytes(b"incomplete old handoff")
+    summary = coordinator.finalize_job("job-1")
+    reader = WorkspaceResourceStatsReader(_workspace_zip(run_dir))
+    assert reader.read_resource_summary() == summary
+    assert reader.read_participant_summary("site-1") == _participant()
+    assert "staging is not empty" in caplog.text
 
 
 def test_start_job_rejects_resource_stats_symlink(tmp_path):

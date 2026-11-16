@@ -151,8 +151,8 @@ authenticity. Each launch owns a private
 `resource_stats/staging/terminal_handoff.<generation>.json` file. Its bounded
 generation token is required for every handoff operation and never enters public
 records. Cleanup removes only that generation's file, so an
-older writer or failed launch cannot replace or remove a newer handoff. Private
-staging must be empty before public archival.
+older writer or failed launch cannot replace or remove a newer handoff. Cleanup
+removes empty staging directories; readers ignore any residual private files.
 
 The parent binds each handoff to the launch generation it owns, establishing the
 association before launch. It rejects stale or unverifiable handoffs, even when a
@@ -286,10 +286,14 @@ exist. Roster changes and newer measurements are rejected after closure.
 
 If publication fails, the incomplete statistics bundle is excluded or discarded
 and the normal job and archive failure policy continues. An optional statistics
-failure must not change the training result. A crash before publication can lose
-the in-memory ledger; the protocol provides neither server restart adoption nor
-durable delivery before archive publication. Unpublished child files are not an
-authoritative alternative to a committed server bundle.
+failure must not change the training result. A server crash before publication
+loses the in-memory accepted-report ledger; it is not recovered or replayed.
+An explicit job restore starts a fresh ledger. Continuing clients can still
+report their original execution window; restarted processes mark lost earlier
+observations partial. Participants without a new report remain missing.
+Status-only recovery without archive publication may leave no summary. This
+protocol does not implement automatic job recovery or durable report delivery.
+Unpublished child files cannot replace a committed server summary.
 
 ## Authorized reads and derived totals
 
@@ -302,9 +306,11 @@ active study. These methods extend the existing
 and [admin job
 commands](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/server/job_cmds.py)
 rather than introducing an HTTP service. The server authenticates the caller and
-applies existing job-ID, study, and submitter authorization before fetching a
-workspace. A study query also checks the resources-read right for each job and
-excludes denied jobs without exposing their IDs or counts.
+applies existing job-ID and study checks before fetching an archive. Job resource
+reads use the `download_job` authorization category, including its submitter and
+organization restrictions; explicit command policies can override that category.
+Study-query admission uses `view`, then checks the job resource-read permission
+for each job, excluding denied jobs without exposing their IDs or counts.
 
 Each server admits one archive-backed resource query at a time, shared by job and
 study queries. A concurrent request receives `resource query busy; retry later`
@@ -380,6 +386,10 @@ rounds only for display and lists affected metrics as incomplete or unavailable.
 JSON retains native numbers, per-metric status, and detailed scope-level issue codes.
 
 ## Compatibility and failure boundary
+
+Nonempty handoff staging is a logged diagnostic: it must not prevent publication
+or discard accepted reports. Other staging I/O failures retain the publication
+failure policy above.
 
 Public records use a strict schema: readers reject unknown fields and
 unsupported versions. Adding a field, including an optional field, or changing

@@ -16,6 +16,6 @@ from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.security.security import COMMAND_CATEGORIES, CommandCategory
 
 
-def test_resource_query_commands_use_view_authorization_category():
-    assert COMMAND_CATEGORIES[AdminCommandNames.GET_JOB_RESOURCES] == CommandCategory.VIEW
+def test_resource_queries_require_download_permission_for_each_job():
+    assert COMMAND_CATEGORIES[AdminCommandNames.GET_JOB_RESOURCES] == CommandCategory.DOWNLOAD_JOB
     assert COMMAND_CATEGORIES[AdminCommandNames.GET_STUDY_RESOURCES] == CommandCategory.VIEW

@@ -54,7 +54,7 @@ def policy(monkeypatch):
             "format_version": "1.0",
             "permissions": {
                 "owner": {"get_study_resources": "all", "get_job_resources": "name:submitter"},
-                "category_owner": {"view": "name:submitter", "get_study_resources": "all"},
+                "category_owner": {"download_job": "name:submitter", "get_study_resources": "all"},
                 "colleague": {"get_study_resources": "all", "get_job_resources": "org:submitter"},
                 "study_only": {"get_study_resources": "all", "get_job_resources": "none"},
                 "job_only": {"get_study_resources": "none", "get_job_resources": "all"},
@@ -64,6 +64,15 @@ def policy(monkeypatch):
     )
     monkeypatch.setattr(AuthorizationService, "the_authorizer", authorizer)
     return authorizer
+
+
+@pytest.fixture(params=["default_authz", "cc_authz"])
+def shipped_policy(request, monkeypatch):
+    template = Path(__file__).resolve().parents[5] / "nvflare/lighter/templates/master_template.yml"
+    policies = yaml.safe_load(template.read_text(encoding="utf-8"))
+    authorizer = FLAuthorizer("server-org", json.loads(policies[request.param]))
+    monkeypatch.setattr(AuthorizationService, "the_authorizer", authorizer)
+    return request.param
 
 
 def _job(number, *, submitter="alice", org="org-a", status=RunStatus.FINISHED_COMPLETED, study="default"):
@@ -332,13 +341,34 @@ def test_no_authorizer_preserves_existing_unrestricted_poc_behavior(monkeypatch)
     assert result["coverage"]["selected_jobs"] == 1
 
 
-@pytest.mark.parametrize("policy_name", ["default_authz", "cc_authz"])
+@pytest.mark.parametrize(
+    "role, expected", [("member", []), ("lead", [1]), ("org_admin", [1, 2]), ("project_admin", [1, 2, 3])]
+)
+def test_shipped_policies_match_download_access_before_reading_reports(shipped_policy, role, expected):
+    if shipped_policy == "cc_authz" and role != "project_admin":
+        expected = []
+    jobs = [_job(1), _job(2, submitter="bob"), _job(3, submitter="bob", org="org-b")]
+    conn = _connection(jobs, role=role)
+    result = _result(_dispatch(conn))
+    allowed_ids = [jobs[number - 1].job_id for number in expected]
+    assert [row["job_id"] for row in result["jobs"]] == allowed_ids
+    assert result["coverage"]["selected_jobs"] == len(expected)
+    assert [
+        call.kwargs["jid"] for call in conn.app_ctx.job_def_manager.get_storage_for_download.call_args_list
+    ] == allowed_ids
+    for job in jobs:
+        conn = _connection(jobs, role=role)
+        output = _dispatch(conn, f"get_job_resources {job.job_id}")
+        allowed = job.job_id in allowed_ids
+        assert (output[ProtoKey.META][MetaKey.STATUS] == MetaStatusValue.OK) is allowed
+        assert conn.app_ctx.job_def_manager.get_storage_for_download.call_count == int(allowed)
+        if not allowed:
+            assert job.meta[JobMetaKey.JOB_NAME.value] not in json.dumps(output)
+            assert job.job_id not in json.dumps(result)
+
+
 @pytest.mark.parametrize("name", ["Test Job 1", "肺部训练 — étude 🚀", "Example\x1b[2Jjob\nnext\u202e"])
-def test_shipped_view_policy_and_registered_queries_preserve_existing_display_names(monkeypatch, policy_name, name):
-    template = Path(__file__).resolve().parents[5] / "nvflare/lighter/templates/master_template.yml"
-    policies = yaml.safe_load(template.read_text(encoding="utf-8"))
-    authorizer = FLAuthorizer("server-org", json.loads(policies[policy_name]))
-    monkeypatch.setattr(AuthorizationService, "the_authorizer", authorizer)
+def test_shipped_policy_and_registered_queries_preserve_existing_display_names(shipped_policy, name):
     job = _job(1, submitter="bob")
     job.meta[JobMetaKey.JOB_NAME.value] = name
     job_data = BytesIO()
@@ -350,7 +380,7 @@ def test_shipped_view_policy_and_registered_queries_preserve_existing_display_na
     accepted, error, metadata = JobMetaValidator().validate("job1", job_data.getvalue())
     assert accepted, error
     assert metadata[JobMetaKey.JOB_NAME.value] == name
-    conn = _connection([job], role="member")
+    conn = _connection([job], role="project_admin")
     # Normal sessions have no previous single-job submitter fields.
     for key in (ConnProps.SUBMITTER_NAME, ConnProps.SUBMITTER_ORG, ConnProps.SUBMITTER_ROLE):
         conn.props.pop(key, None)
@@ -360,7 +390,7 @@ def test_shipped_view_policy_and_registered_queries_preserve_existing_display_na
     assert result["jobs"][0]["job_name"] == name
     assert result["coverage"]["included_jobs"] == 1
     assert json.loads(canonical_json_bytes(result))["jobs"][0]["job_name"] == name
-    output = _dispatch(_connection([job], role="member"), f"get_job_resources {job.job_id}")
+    output = _dispatch(_connection([job], role="project_admin"), f"get_job_resources {job.job_id}")
     assert output[ProtoKey.META][MetaKey.STATUS] == MetaStatusValue.OK
     data = output[ProtoKey.DATA][0][ProtoKey.DATA]
     assert data["job_name"] == name

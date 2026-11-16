@@ -98,6 +98,11 @@ observation unavailable. The host-backed resource manager retains its fallback
 to host inventory for unsupported masks. Externally managed pools retain their
 `ignore_host` behavior.
 
+In process mode, a missing or zero GPU reservation does not hide devices. The
+count follows the startup environment, so it can be positive without a GPU
+reservation. An explicitly empty `CUDA_VISIBLE_DEVICES` mask yields zero;
+statistics collection does not change launch policy.
+
 The statistics probe calls `get_host_gpu_ids(timeout=2.0)`. A missing command,
 command failure, timeout, malformed output, or empty inventory is unavailable,
 not an inferred zero. CPU and RAM observations remain usable independently.
