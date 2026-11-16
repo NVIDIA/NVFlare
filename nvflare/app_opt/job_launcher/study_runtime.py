@@ -14,8 +14,8 @@
 """Site-owned per-study runtime configuration (v2): local/study_runtime.yaml.
 
 Filename selects the format: this strict v2 parser never reads the frozen v1
-local/study_data.yaml (see study_data.py). Both files present is a launcher
-error, enforced by the launchers, not here.
+local/study_data.yaml (see study_data.py). Docker, Kubernetes, and Slurm reject
+coexistence of both files; process mode ignores the legacy file.
 """
 
 from __future__ import annotations
@@ -178,12 +178,14 @@ def _require_utf8_text(value, label: str, file_path: str, allow_empty: bool = Fa
 
 
 def _require_env_name(value, label: str, file_path: str, launcher_mode: str) -> str:
-    if launcher_mode == "slurm":
+    if launcher_mode in ("process", "slurm"):
         if not isinstance(value, str) or not _VALID_POSIX_ENV_NAME.fullmatch(value):
             raise _error(file_path, f"{label} {value!r} must be a valid POSIX environment variable name.")
-        reserved = value in SLURM_RESERVED_ENV_NAMES or value.startswith(SLURM_RESERVED_ENV_PREFIXES)
     else:
         _require_str(value, label, file_path)
+    if launcher_mode == "slurm":
+        reserved = value in SLURM_RESERVED_ENV_NAMES or value.startswith(SLURM_RESERVED_ENV_PREFIXES)
+    else:
         reserved = value in _RESERVED_ENV_NAMES
     if reserved:
         raise _error(file_path, f"{label} {value!r} is launcher-owned and cannot be set in study config.")
@@ -294,7 +296,7 @@ def _parse_env(study: str, entry, file_path: str, launcher_mode: str) -> dict:
             # str(True) is "True"; YAML users writing `true` expect "true"
             value = "true" if value else "false"
         value = str(value)
-        if launcher_mode == "slurm":
+        if launcher_mode in ("process", "slurm"):
             value = _require_utf8_text(value, f"studies.{study}.env.{name}", file_path, allow_empty=True)
         elif not value:
             # empty values behave differently per launcher and can silently lose
@@ -313,7 +315,7 @@ def _parse_secret_env(study: str, entry, file_path: str, launcher_mode: str) -> 
         ref = _require_dict(ref, label, file_path)
         _require_known_keys(ref, _SECRET_ENV_KEYS, label, file_path)
         source = ref.get("source")
-        if launcher_mode == "slurm":
+        if launcher_mode in ("process", "slurm"):
             source = _require_env_name(source, f"{label}.source", file_path, launcher_mode)
             key = ref.get("key")
             if key is not None:
@@ -421,10 +423,14 @@ def _parse_study(
     launcher_mode: str,
 ) -> StudyRuntime:
     _require_name(study, "study name", file_path)
-    entry = _require_dict(entry, f"studies.{study}", file_path)
+    entry = _require_dict({} if entry is None else entry, f"studies.{study}", file_path)
     _require_known_keys(entry, _STUDY_KEYS, f"studies.{study}", file_path)
     if "slurm" in entry and launcher_mode != "slurm":
         raise _error(file_path, "slurm is Slurm-only and is not supported by this launcher.")
+    if launcher_mode == "process":
+        unsupported = set(entry) - {"env", "secret_env"}
+        if unsupported:
+            raise _error(file_path, f"studies.{study}: process mode does not support {sorted(unsupported)}.")
 
     runtime = StudyRuntime(study=study)
     if "container" in entry:
@@ -511,3 +517,15 @@ def resolve_study_runtime(
             study,
         )
     return StudyRuntime(study=study or "")
+
+
+def study_block_reason(workspace_root: str, study: str) -> Optional[str]:
+    """A client site whose study runtime file lists studies runs only those studies."""
+    file_path = study_runtime_file_path(workspace_root)
+    if not os.path.exists(file_path):
+        return None
+    with open(file_path, "rt") as f:
+        studies = (yaml.safe_load(f) or {}).get("studies")
+    if not studies or study in studies:
+        return None
+    return f"study '{study}' is not configured at this site"

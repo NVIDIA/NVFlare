@@ -24,6 +24,7 @@ from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode
 from nvflare.private.defs import ClientRegMsgKey, new_cell_message
 from nvflare.private.fed.client.communicator import Communicator
+from tests.timing_utils import isolate_time
 
 
 def test_get_site_config_for_registration_from_loaded_client_config():
@@ -183,3 +184,8 @@ def test_cancelled_registration_preserves_existing_authentication():
         "old-signature",
         "old-session",
     )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clock(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.private.fed.client.communicator")

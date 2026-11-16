@@ -17,13 +17,14 @@ import ssl
 import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Thread
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from nvflare.fuel.f3.drivers import tcp_driver
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
 from nvflare.fuel.f3.drivers.net_utils import get_ssl_context, parse_url
+from nvflare.fuel.f3.drivers.socket_conn import ConnectionHandler
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver, TcpStreamServer
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
@@ -161,10 +162,61 @@ def test_idle_tls_peer_cannot_pin_or_survive_listener_shutdown(tls_listener):
             shutdown.join(2)
             assert not shutdown.is_alive(), "an idle TLS handshake blocked shutdown"
             assert driver.server.socket.fileno() == -1
-            # The accepted socket can still complete TLS after the shutdown snapshot.
-            context = get_ssl_context(connector.params, ssl_server=False)
-            with context.wrap_socket(peer) as secured_peer:
-                assert secured_peer.recv(1) == b""
+            # The driver wakes the pending handshake; socketserver closes
+            # the request socket after the handler returns.
+            assert peer.recv(1) == b""
+
+
+def test_shutdown_wakes_pending_tls_socket_without_closing_it(monkeypatch):
+    driver = TcpDriver()
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    raw, peer = socket.socketpair()
+    with raw, peer, context.wrap_socket(raw, do_handshake_on_connect=False) as owned:
+        assert driver.register_pending_socket(owned)
+        monkeypatch.setattr(ssl.SSLSocket, "shutdown", MagicMock(side_effect=AssertionError("SSL shutdown called")))
+
+        driver.shutdown()
+
+        assert owned.fileno() >= 0
+        assert owned._sslobj is not None
+        peer.settimeout(1)
+        assert peer.recv(1) == b""
+        driver.release_pending_socket(owned)
+
+
+def test_shutdown_leaves_unconnected_pending_socket_for_owner_to_close():
+    driver = TcpDriver()
+    with socket.socket() as owned:
+        assert driver.register_pending_socket(owned)
+
+        driver.shutdown()  # shutdown(SHUT_RDWR) can raise ENOTCONN here.
+
+        assert owned.fileno() >= 0
+        driver.release_pending_socket(owned)
+
+
+@pytest.mark.parametrize("timeout", [None, 10, "10"])
+def test_tls_handshake_uses_configured_budget_and_restores_blocking_socket(monkeypatch, timeout):
+    handler = ConnectionHandler.__new__(ConnectionHandler)
+    handler.server = MagicMock()
+    handler.server.connector.params = {"connect_timeout": timeout}
+    handler.server.connector.stopped.is_set.return_value = False
+    handler.request = MagicMock()
+    observed = []
+    handler.request.do_handshake.side_effect = lambda: observed.append(handler.request.settimeout.call_args.args[0])
+    connection = MagicMock()
+    monkeypatch.setattr("nvflare.fuel.f3.drivers.socket_conn.SocketConnection", lambda *_args: connection)
+
+    handler.handle()
+
+    assert observed == [None if timeout is None else float(timeout)]
+    assert handler.request.settimeout.call_args_list == [
+        call(None if timeout is None else float(timeout)),
+        call(None),
+    ]
+    connection.read_loop.assert_called_once()
 
 
 def test_tls_handshake_honors_longer_url_connection_timeout(tls_listener):

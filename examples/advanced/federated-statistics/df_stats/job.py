@@ -25,6 +25,8 @@ def define_parser():
     parser.add_argument("-d", "--data_root_dir", type=str, nargs="?", default="/tmp/nvflare/df_stats/data")
     parser.add_argument("-o", "--stats_output_path", type=str, nargs="?", default="statistics/adults_stats.json")
 
+    parser.add_argument("--execution_lifetime", choices=["job", "task"], default="job")
+
     return parser.parse_args()
 
 
@@ -61,6 +63,9 @@ def main():
     )
 
     env = SimEnv(clients=sites, num_threads=n_clients)
+    if args.execution_lifetime == "task":
+        recipe.add_client_config({"execution_lifetime": "task"})
+
     run = recipe.execute(env=env)
     run.get_result()
 

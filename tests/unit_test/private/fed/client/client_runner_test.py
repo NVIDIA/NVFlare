@@ -20,12 +20,27 @@ import pytest
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode, TaskResultReceipt
+from nvflare.apis.fl_constant import (
+    FilterKey,
+    FLContextKey,
+    ReservedKey,
+    ReservedTopic,
+    ReturnCode,
+    ServerCommandKey,
+    ServerCommandNames,
+    TaskResultReceipt,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.apis.task_launcher_spec import TaskExecutionInterrupted
+from nvflare.apis.utils.reliable_message import ReliableMessage
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.private.defs import RequestHeader, SpecialTaskName, TaskConstant
+from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_engine_executor_spec import TaskAssignment
 from nvflare.private.fed.client.client_runner import (
     _TASK_CHECK_RESULT_OK,
@@ -35,8 +50,10 @@ from nvflare.private.fed.client.client_runner import (
     ClientRunnerConfig,
     TaskRouter,
 )
+from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.json_configer import ConfigError
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
+from tests.timing_utils import isolate_time
 
 
 def _runner():
@@ -64,8 +81,186 @@ def _runner():
     return runner
 
 
+@pytest.mark.parametrize("initialization", ["ready", "exception", "aborted", "notification-failed"])
+def test_runner_notifies_readiness_only_after_successful_initialization(initialization):
+    runner = _runner()
+    ready = MagicMock()
+    if initialization == "notification-failed":
+        ready.side_effect = RuntimeError("notification failed")
+    runner.end_run_events_sequence = MagicMock()
+
+    def initialize(*_):
+        ready.assert_not_called()
+        if initialization == "exception":
+            raise RuntimeError("initialization failed")
+        if initialization == "aborted":
+            runner.run_abort_signal.trigger(True)
+
+    runner.init_run = initialize
+    runner._try_run = MagicMock()
+    with (
+        patch("nvflare.private.fed.client.client_runner.ReliableMessage.shutdown") as reliable_shutdown,
+        patch("nvflare.private.fed.client.client_runner.DownloadService.shutdown") as download_shutdown,
+    ):
+        if initialization == "exception":
+            with pytest.raises(RuntimeError, match="initialization failed"):
+                runner.run("/app", SimpleNamespace(), on_ready=ready)
+        else:
+            runner.run("/app", SimpleNamespace(), on_ready=ready)
+    assert ready.call_count == (1 if initialization in ("ready", "notification-failed") else 0)
+    if initialization != "exception":
+        runner.end_run_events_sequence.assert_called_once()
+        reliable_shutdown.assert_called_once()
+        runner.engine.shutdown_streamer.assert_called_once()
+        download_shutdown.assert_called_once()
+    if initialization == "notification-failed":
+        runner._try_run.assert_called_once()
+        runner.log_exception.assert_called_once()
+
+
+def test_cj_status_notifications_preserve_startup_abort_and_retry_without_crashing(monkeypatch):
+    app = ClientAppRunner()
+    runner = MagicMock()
+    app.create_client_runner = MagicMock(return_value=runner)
+    app.start_command_agent = MagicMock()
+    client = MagicMock()
+    client.cell.core_cell.get_fqcn.return_value = "site-1.job-1"
+    clock = isolate_time(monkeypatch, "nvflare.private.fed.client.client_app_runner")
+    now = [0]
+    clock.time = lambda: now[0]
+    clock.sleep = lambda _: None
+    statuses = []
+
+    def send(**kwargs):
+        status = kwargs["request"].payload.get_header(RequestHeader.JOB_STATUS)
+        statuses.append(status)
+        now[0] += 6
+        # Lose every READY acknowledgement and the first STOPPED delivery.
+        rc = CellReturnCode.OK
+        if status == ClientStatus.READY or (status == ClientStatus.STOPPED and statuses.count(status) == 1):
+            rc = CellReturnCode.TIMEOUT
+        return CellMessage({MessageHeaderKey.RETURN_CODE: rc})
+
+    def run(*_, on_ready):
+        assert statuses == [ClientStatus.STARTED]
+        assert client.status == ClientStatus.STARTED  # Commands available during initialization.
+        on_ready()
+
+    client.cell.send_request.side_effect = send
+    runner.run.side_effect = run
+    app.start_run(
+        "/app", SimpleNamespace(job_id="job-1", sp_target="server", sp_scheme="grpc"), "config", client, True, []
+    )
+    assert statuses == [ClientStatus.STARTED] + [ClientStatus.READY] * 3 + [ClientStatus.STOPPED] * 2
+    assert client.status == ClientStatus.STOPPED
+    client.stop_cell.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "return_code,payload,finished",
+    [
+        (CellReturnCode.OK, {ServerCommandKey.JOB_ID: "job-1", ServerCommandKey.CLIENTS: None}, True),
+        (CellReturnCode.OK, {ServerCommandKey.JOB_ID: "job-1", ServerCommandKey.CLIENTS: {"site": "client"}}, False),
+        (CellReturnCode.OK, {ServerCommandKey.JOB_ID: "job-1", ServerCommandKey.CLIENTS: {}}, False),
+        (CellReturnCode.OK, {ServerCommandKey.JOB_ID: "other-job", ServerCommandKey.CLIENTS: None}, False),
+        (CellReturnCode.OK, {ServerCommandKey.JOB_ID: "job-1"}, False),
+        (CellReturnCode.OK, None, False),
+        (CellReturnCode.TIMEOUT, {ServerCommandKey.JOB_ID: "job-1", ServerCommandKey.CLIENTS: None}, False),
+        (CellReturnCode.UNAUTHENTICATED, {ServerCommandKey.JOB_ID: "job-1", ServerCommandKey.CLIENTS: None}, False),
+    ],
+)
+def test_sync_failure_requires_parent_confirmation_before_finishing(monkeypatch, return_code, payload, finished):
+    runner = _runner()
+    ready = MagicMock()
+    runner._try_run = MagicMock()
+    runner.end_run_events_sequence = MagicMock()
+    # A replacement whose server job has ended never enables ReliableMessage.
+    monkeypatch.setattr(ReliableMessage, "_executor", None)
+    monkeypatch.setattr(ReliableMessage, "_shutdown_asked", False)
+    runner.get_positive_float_var = MagicMock(return_value=1)
+    runner.engine.send_aux_request.return_value = {}
+    cell = runner.engine.get_cell.return_value
+    cell.send_request.return_value = CellMessage({MessageHeaderKey.RETURN_CODE: return_code}, payload)
+    clock = isolate_time(monkeypatch, "nvflare.private.fed.client.client_runner")
+    ticks = iter([0, 2])
+    clock.time = lambda: next(ticks)
+    clock.sleep = lambda _: None
+    with (
+        patch("nvflare.private.fed.client.client_runner.DownloadService.initialize"),
+        patch("nvflare.private.fed.client.client_runner.DownloadService.shutdown") as download_shutdown,
+    ):
+        if finished:
+            runner.run("/app", SimpleNamespace(), on_ready=ready)
+            runner.engine.shutdown_streamer.assert_called_once()
+            download_shutdown.assert_called_once()
+        else:
+            with pytest.raises(RuntimeError, match="cannot sync"):
+                runner.init_run("/app", SimpleNamespace())
+    assert runner.run_abort_signal.triggered is finished
+    assert cell.send_request.call_args.kwargs["topic"] == ServerCommandNames.GET_CLIENTS
+    ready.assert_not_called()
+    runner._try_run.assert_not_called()
+    runner.end_run_events_sequence.assert_not_called()
+    runner.fire_event.assert_not_called()
+
+
 def _task(name="train", task_id="task-1", data=None):
     return TaskAssignment(name=name, task_id=task_id, data=data or Shareable())
+
+
+@pytest.mark.parametrize("failure", ["worker-lost", "application-error", "abort"])
+def test_worker_loss_exits_cj_without_reporting_a_failed_task_or_stopped_status(failure):
+    runner = _runner()
+    context, peer = FLContext(), FLContext()
+    peer.set_prop(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
+    context.set_peer_context(peer)
+    runner.engine.get_task_assignment.return_value = _task()
+    runner.init_run = MagicMock()
+    runner.end_run_events_sequence = MagicMock()
+    runner._send_task_result = MagicMock(return_value=True)
+    runner._try_run = lambda: runner.fetch_and_run_one_task(context)
+
+    def execute(_name, _data, _ctx, abort_signal):
+        if failure == "application-error":
+            raise ValueError("bad input")
+        if failure == "abort":
+            abort_signal.trigger(True)
+        raise TaskExecutionInterrupted("worker timed out")
+
+    executor = MagicMock(execute=MagicMock(side_effect=execute))
+    runner.task_router.add_executor(["train"], executor)
+    app = ClientAppRunner()
+    app.create_client_runner = MagicMock(return_value=runner)
+    app.start_command_agent = MagicMock()
+    app.sync_up_parents_process = MagicMock()
+    app.notify_job_status = MagicMock()
+    with (
+        patch("nvflare.private.fed.client.client_runner.add_job_audit_event"),
+        patch("nvflare.private.fed.client.client_runner.ReliableMessage.shutdown"),
+        patch("nvflare.private.fed.client.client_runner.DownloadService.shutdown"),
+    ):
+        args = (
+            "/app",
+            SimpleNamespace(job_id="job-1", sp_target="server", sp_scheme="grpc"),
+            "config",
+            MagicMock(),
+            True,
+            [],
+        )
+        if failure == "worker-lost":
+            with pytest.raises(TaskExecutionInterrupted, match="worker timed out"):
+                app.start_run(*args)
+            runner._send_task_result.assert_not_called()
+        else:
+            app.start_run(*args)
+            expected = ReturnCode.TASK_ABORTED if failure == "abort" else ReturnCode.EXECUTION_EXCEPTION
+            assert runner._send_task_result.call_args.args[0].get_return_code() == expected
+    statuses = [call.args[2] for call in app.notify_job_status.call_args_list]
+    assert statuses == [ClientStatus.STARTED, ClientStatus.READY] + (
+        [] if failure == "worker-lost" else [ClientStatus.STOPPED]
+    )
+    runner.end_run_events_sequence.assert_called_once()
+    runner.engine.shutdown_streamer.assert_called_once()
 
 
 def test_task_router_prefers_exact_match_then_patterns():
@@ -406,6 +601,9 @@ def test_explicit_retry_keeps_same_saved_result_until_received(tmp_path):
     ctx = FLContext()
     saved = tmp_path / "result"
     saved.write_bytes(b"finished task output")
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.write_bytes(b"matching committed state")
+    committed_at = checkpoint.stat().st_mtime_ns
     result = Shareable({"result_file": str(saved)})
     result.add_cookie(ReservedHeaderKey.TASK_ATTEMPT_ID, "attempt")
     observed = []
@@ -413,6 +611,8 @@ def test_explicit_retry_keeps_same_saved_result_until_received(tmp_path):
     def send(current, fl_ctx, **kwargs):
         observed.append(current)
         assert saved.read_bytes() == b"finished task output"
+        assert checkpoint.read_bytes() == b"matching committed state"
+        assert checkpoint.stat().st_mtime_ns == committed_at
         receipt = TaskResultReceipt.RETRY if len(observed) == 1 else TaskResultReceipt.RECEIVED
         fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, receipt, private=True, sticky=False)
         return True
@@ -558,3 +758,159 @@ def test_handle_event_reports_running_tasks_and_aborts_on_fatal_error():
     fl_ctx.set_prop(FLContextKey.EVENT_DATA, "fatal", private=True, sticky=False)
     runner.handle_event(EventType.FATAL_SYSTEM_ERROR, fl_ctx)
     assert runner.run_abort_signal.triggered
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.private.fed.client.client_runner",
+    )
+
+
+@pytest.mark.parametrize("filter_kind", ["none", "data", "result", "site-data"])
+def test_task_resolver_precedes_events_and_release_follows_result_filters(tmp_path, filter_kind):
+    import torch
+    from safetensors.torch import save_file
+
+    from nvflare.app_common.widgets.job_stats_reporter import _estimate_payload_mb
+    from nvflare.app_opt.pt.lazy_tensor_dict import safetensors_refs
+    from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+
+    runner = _runner()
+    context, peer = FLContext(), FLContext()
+    peer.set_prop(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
+    context.set_peer_context(peer)
+    file = tmp_path / "received.safetensors"
+    save_file({"w": torch.ones(4)}, str(file))
+    ref = safetensors_refs(str(file))["w"]
+    expected_eager = filter_kind in ("data", "site-data")
+    release = MagicMock()
+    executor = MagicMock()
+
+    def resolve(data, fl_ctx, *, abort_signal):
+        assert not expected_eager
+        data["w"] = ref
+        return data, release
+
+    def resolve_eager(data, cell, abort_signal):
+        assert expected_eager
+        data["w"] = torch.ones(4)
+        return data
+
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: None))
+
+    executor.resolve_task_data.side_effect = resolve
+    executor.execute.return_value = Shareable({"w": torch.ones(4)})
+    runner.task_router.add_executor(["train"], executor)
+    input_filter = MagicMock()
+    input_filter.process.side_effect = lambda data, ctx: data
+    result_filter = MagicMock()
+
+    def filter_result(data, ctx):
+        assert isinstance(data["w"], torch.Tensor)
+        release.assert_not_called()
+        data["w"].add_(2)
+        return data
+
+    result_filter.process.side_effect = filter_result
+    if filter_kind == "data":
+        runner.task_data_filters["tra*" + FilterKey.DELIMITER + FilterKey.IN] = [input_filter]
+    elif filter_kind == "site-data":
+        context.set_prop(
+            FLContextKey.SCOPE_OBJECT,
+            SimpleNamespace(task_data_filters={FilterKey.IN: [input_filter]}, task_result_filters={}),
+        )
+    elif filter_kind == "result":
+        runner.task_result_filters["train" + FilterKey.DELIMITER + FilterKey.OUT] = [result_filter]
+    events = []
+
+    def event(event_type, ctx):
+        if event_type in (
+            EventType.BEFORE_TASK_DATA_FILTER,
+            EventType.AFTER_TASK_DATA_FILTER,
+            EventType.BEFORE_TASK_EXECUTION,
+        ):
+            data = ctx.get_prop(FLContextKey.TASK_DATA)
+            assert isinstance(data["w"], torch.Tensor) if expected_eager else data["w"] is ref
+            assert _estimate_payload_mb(data) > 0
+            release.assert_not_called()
+            events.append(event_type)
+
+    runner.fire_event.side_effect = event
+    task = _task(data=Shareable({"w": LazyDownloadRef("server", "tx", "T0")}))
+    with (
+        patch("nvflare.private.fed.client.client_runner.add_job_audit_event"),
+        patch("nvflare.private.fed.client.client_runner.materialize_lazy_download_refs", side_effect=resolve_eager),
+    ):
+        result = runner._do_task(task, context, Signal())
+    assert len(events) == 3
+    if expected_eager:
+        release.assert_not_called()
+        executor.resolve_task_data.assert_not_called()
+    else:
+        release.assert_called_once_with()
+    assert torch.equal(result["w"], torch.full((4,), 3.0 if filter_kind == "result" else 1.0))
+
+
+@pytest.mark.parametrize("failure", ["abort", "invalid"])
+@pytest.mark.parametrize("data_filter", [False, True])
+def test_task_resolution_maps_failure_before_executor(failure, data_filter):
+    from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+
+    runner = _runner()
+    context, peer = FLContext(), FLContext()
+    peer.set_prop(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
+    context.set_peer_context(peer)
+    context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: None))
+    executor = MagicMock()
+    runner.task_router.add_executor(["train"], executor)
+    if data_filter:
+        runner.task_data_filters["train" + FilterKey.DELIMITER + FilterKey.IN] = [MagicMock()]
+
+    def resolve(data, ctx, abort_signal):
+        if failure == "abort":
+            abort_signal.trigger(True)
+        raise RuntimeError("resolution failed")
+
+    executor.resolve_task_data.side_effect = resolve
+    task = _task(data=Shareable({"w": LazyDownloadRef("server", "tx", "T0")}))
+    with (
+        patch("nvflare.private.fed.client.client_runner.add_job_audit_event"),
+        patch("nvflare.private.fed.client.client_runner.materialize_lazy_download_refs", side_effect=resolve),
+    ):
+        result = runner._do_task(task, context, Signal())
+    expected = {"abort": ReturnCode.TASK_ABORTED, "invalid": ReturnCode.BAD_TASK_DATA}
+    assert result.get_return_code() == expected[failure]
+    executor.execute.assert_not_called()
+    runner.fire_event.assert_not_called()
+
+
+@pytest.mark.parametrize("phase", ["event", "filter", "executor"])
+def test_task_resolver_releases_input_on_later_failure(phase):
+    from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+
+    runner = _runner()
+    context, peer = FLContext(), FLContext()
+    peer.set_prop(ReservedKey.RUN_NUM, "job-1", private=False, sticky=False)
+    context.set_peer_context(peer)
+    release, executor = MagicMock(), MagicMock()
+    executor.resolve_task_data.return_value = (Shareable({"w": 1}), release)
+    executor.execute.return_value = Shareable()
+    runner.task_router.add_executor(["train"], executor)
+    if phase == "event":
+        runner.fire_event.side_effect = RuntimeError("hook failed")
+    elif phase == "filter":
+        filter_object = MagicMock()
+        filter_object.process.side_effect = RuntimeError("filter failed")
+        runner.task_result_filters["train" + FilterKey.DELIMITER + FilterKey.OUT] = [filter_object]
+    else:
+        executor.execute.side_effect = RuntimeError("executor failed")
+    task = _task(data=Shareable({"w": LazyDownloadRef("server", "tx", "T0")}))
+    with patch("nvflare.private.fed.client.client_runner.add_job_audit_event"):
+        if phase == "event":
+            with pytest.raises(RuntimeError, match="hook failed"):
+                runner._do_task(task, context, Signal())
+        else:
+            assert runner._do_task(task, context, Signal()).get_return_code() != ReturnCode.OK
+    release.assert_called_once_with()

@@ -28,7 +28,7 @@ from nvflare.app_common.ccwf.server_ctl import ServerSideController
 from nvflare.app_common.ccwf.val_result_manager import EvalResultManager
 from nvflare.fuel.utils.validation_utils import (
     DefaultValuePolicy,
-    check_non_negative_int,
+    check_positive_int,
     check_positive_number,
     check_str,
     validate_candidate,
@@ -86,7 +86,7 @@ class CrossSiteEvalServerController(ServerSideController):
 
         check_str("eval_result_dir", eval_result_dir)
         check_positive_number("eval_task_timeout", eval_task_timeout)
-        check_non_negative_int("max_parallel_actions", max_parallel_actions)
+        check_positive_int("max_parallel_actions", max_parallel_actions)
 
         if not global_model_client:
             global_model_client = ""

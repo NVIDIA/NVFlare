@@ -56,6 +56,11 @@ After clicking ``Sign Up`` on the Home Page, the User Registration page has fiel
 Proceeding to the next page, fill out the field for organization and select a role. If these values need to be updated later, you will need to contact the Project
 Admin to help you update them.
 
+Selecting ``Org Admin`` requests the ability to manage client sites. The request remains pending until the
+Project Admin reviews and approves the displayed role and organization. It does not grant project-administrator
+access. Your role and organization cannot be changed through self-service after they have been set, including
+after approval; contact the Project Admin to correct them.
+
 .. figure:: ../../../resources/dashboard_user_registration_2.png
     :height: 500px
 
@@ -109,6 +114,11 @@ Org Admin Registration - Configure Client Sites
 :ref:`Home Page with Login and Sign Up <dashboard_homepage>` and the first part of creating an account and then specifying an organization and role for
 :ref:`New User Registration <dashboard_new_user_reg>` are the same as for ``Member`` and ``Lead`` users. After choosing a role of ``Org Admin``, users
 should see an interface to specify client sites.
+
+While the request is pending, you can register, view, edit, and delete your own pending client sites in your
+registered organization. You cannot access another participant's sites, even if that participant selected the
+same organization. Site registrations also remain pending until the Project Admin approves them. Returning to
+your User Dashboard preserves these registrations, so you can finish onboarding without waiting for approval.
 
 .. figure:: ../../../resources/dashboard_org_admin_reg_clients.png
     :height: 500px
@@ -212,6 +222,15 @@ Users Dashboard
 
 On the Users Dashboard, the Project Admin can see all of the users that have registered with the system and their name, email, organization,
 role, created time, approval status, and download count for their FLARE Console.
+
+Pending site-owner requests are labeled ``Org Admin (requested)``. Approval authorizes the role and organization
+shown in that row; review both before selecting ``Approve User``. An incomplete registration cannot be approved.
+Here, incomplete means that this user's organization or role field is empty or invalid. An organization does not
+need to contain every role or a client site. The Project Admin decides whether the person should receive the
+requested permissions; approval never authorizes that person to promote themselves later through the API.
+If the registration has changed since the table was loaded, reload it and review the current values before
+approving again. User approval and client-site approval are separate actions. Client kits require both approvals
+and a frozen project; the participant can then download the ZIP and record the PIN shown in the download dialog.
 
 .. figure:: ../../../resources/dashboard_users_dashboard.png
     :height: 500px

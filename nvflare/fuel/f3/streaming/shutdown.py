@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.fuel.f3.streaming.byte_receiver import RxTask
 from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer, reliable_retry_scheduler
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.stream_utils import stream_shutdown
@@ -30,6 +31,7 @@ def shutdown_f3_streaming() -> None:
         ("active byte streams", ByteStreamer.shutdown),
         ("reliable retry scheduler", reliable_retry_scheduler.shutdown),
         ("stream executors", stream_shutdown),
+        ("receive cleanup", RxTask.shutdown),
     ):
         try:
             shutdown()

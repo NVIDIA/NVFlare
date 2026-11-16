@@ -21,6 +21,7 @@ from nvflare.fuel.f3.cellnet.connector_manager import ConnectorData
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent, SubnetMonitor, _Member
 from nvflare.fuel.f3.message import Message
+from tests.timing_utils import isolate_time
 
 
 class _RecordingMonitor(SubnetMonitor):
@@ -301,3 +302,11 @@ def test_broadcast_to_subcells_filters_admin_clients_and_adjusts_timeout():
 
     agent._broadcast_to_subs("topic", timeout=0.0)
     cell.fire_and_forget.assert_called_once()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.fuel.f3.cellnet.net_agent",
+    )

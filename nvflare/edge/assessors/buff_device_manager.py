@@ -65,6 +65,17 @@ class BuffDeviceManager(DeviceManager):
         self.used_devices = {}
         # keep a map of device_id -> client_name
         self.device_client_map = {}
+        # track the last model version each device has *contributed* to (i.e. reported an update for).
+        # this is the core of the issue #5347 Option B fix: a device that already contributed to the
+        # current model version must not be re-selected for that same version, otherwise the server
+        # keeps assigning it the same selection id (== model version) and BaseState.is_device_selected
+        # rejects it forever ("RETRY: Device not selected") -> indefinite stall. A single per-device
+        # version is enough because model versions are monotonic and each device has at most one
+        # in-flight assignment.
+        self.device_last_contributed_version = {}
+        # cache of the current model version, kept in sync by the assessor (via fill_selection and
+        # model_update.py) so that eligibility checks can use the correct version.
+        self.current_model_version = 0
 
     def _balanced_device_sampling(self, usable_devices: Set[str], num_holes: int) -> Set[str]:
         """Sample devices while balancing across clients.
@@ -172,13 +183,37 @@ class BuffDeviceManager(DeviceManager):
             if client_name:
                 self.device_client_map[device_id] = client_name
 
+    def _compute_usable_devices(self) -> Set[str]:
+        """Compute devices eligible to be (re)selected for the current model version.
+
+        A device is eligible only if it is:
+          - available, and
+          - not currently in-flight for the current model version (tracked in ``used_devices``), and
+          - has not already contributed to the current model version (tracked in
+            ``device_last_contributed_version``).
+
+        Excluding devices that already contributed to the current model version is the fix for the
+        indefinite RETRY stall from issue #5347 (Option B): otherwise a device that reported back for
+        model version V would be immediately re-selected for the same V, and since the server stores
+        the selection id as the model version, ``BaseState.is_device_selected`` would keep rejecting it
+        (``sid == selection_id``) forever.
+        """
+        used = set(self.used_devices.keys())
+        already_contributed = {
+            device_id
+            for device_id, version in self.device_last_contributed_version.items()
+            if version == self.current_model_version
+        }
+        return set(self.available_devices.keys()) - used - already_contributed
+
     def fill_selection(self, current_model_version: int, fl_ctx) -> None:
+        self.current_model_version = current_model_version
         num_holes = self.device_selection_size - len(self.current_selection)
         self.log_info(fl_ctx, f"filling {num_holes} holes in selection list")
         if num_holes > 0:
             self.current_selection_version += 1
-            # remove all used devices from available devices
-            usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
+            # eligible devices = available - in-flight (used) - already contributed to this model version
+            usable_devices = self._compute_usable_devices()
 
             if usable_devices:
                 if self.device_sampling_strategy == "balanced":
@@ -210,13 +245,27 @@ class BuffDeviceManager(DeviceManager):
             f"current selection with {len(self.current_selection)} items: V{self.current_selection_version}; {dict(sorted(self.current_selection.items()))}",
         )
         if len(self.current_selection) < self.device_selection_size:
-            self.log_warning(
-                fl_ctx,
-                f"current selection has only {len(self.current_selection)} devices, which is less than the expected {self.device_selection_size} devices. Please check the configuration to make sure this is expected.",
-            )
+            if self.current_selection_version == 1:
+                # initial dispatch could not fill the full selection
+                self.log_warning(
+                    fl_ctx,
+                    f"current selection has only {len(self.current_selection)} devices, which is less than the expected {self.device_selection_size} devices. Please check the configuration to make sure this is expected.",
+                )
+            else:
+                # partial refill: the eligible device pool is smaller than the number of holes.
+                # this is expected - the remaining holes are filled by future reports.
+                self.log_info(
+                    fl_ctx,
+                    f"current selection has {len(self.current_selection)} of {self.device_selection_size} devices: eligible device pool exhausted, remaining holes will be filled by future reports",
+                )
 
     def remove_devices_from_selection(self, devices: Set[str], fl_ctx) -> None:
         for device_id in devices:
+            assigned_version = self.current_selection.get(device_id)
+            if assigned_version is not None:
+                # record that this device has now contributed to the model version it was selected for.
+                # this prevents it from being re-selected for the same model version (issue #5347, Option B).
+                self.device_last_contributed_version[device_id] = assigned_version
             self.current_selection.pop(device_id, None)
 
     def remove_devices_from_used(self, devices: Set[str], fl_ctx) -> None:
@@ -224,15 +273,40 @@ class BuffDeviceManager(DeviceManager):
             self.used_devices.pop(device_id, None)
 
     def has_enough_devices_and_clients(self, fl_ctx) -> bool:
+        """Determine whether the device selection can be filled now.
+
+        Startup (no selection has been dispatched yet) requires enough eligible devices to fill
+        the *entire* selection, so the initial model dispatch starts with the full set of
+        concurrent devices.
+
+        After startup, a refill only requires at least one eligible device: the sampler fills
+        up to ``min(num_holes, num_usable_devices)`` and the remaining holes simply wait for
+        future reports. Requiring every hole to be fillable would stall the job whenever the
+        eligible pool is temporarily smaller than the number of holes - e.g. when one report
+        carries several buffered updates at once and the other eligible devices already
+        contributed to the current model version (follow-up to issue #5347).
+
+        Args:
+            fl_ctx: FL context
+
+        Returns:
+            bool: True if the selection can be (re)filled, False otherwise
+        """
         num_holes = self.device_selection_size - len(self.current_selection)
-        usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
+        usable_devices = self._compute_usable_devices()
         num_usable_devices = len(usable_devices)
-        if num_usable_devices < num_holes:
-            return False
 
         # Further check if we have enough clients
         unique_clients = set(self.device_client_map.values())
-        return len(unique_clients) >= self.initial_min_client_num
+        if len(unique_clients) < self.initial_min_client_num:
+            return False
+
+        if self.current_selection_version == 0:
+            # startup: the initial dispatch must be able to fill the whole selection
+            return num_usable_devices >= num_holes
+
+        # refill: partial fill is allowed - fill as many holes as the eligible pool allows
+        return num_usable_devices >= 1
 
     def should_fill_selection(self, fl_ctx) -> bool:
         num_holes = self.device_selection_size - len(self.current_selection)
@@ -240,3 +314,9 @@ class BuffDeviceManager(DeviceManager):
 
     def get_active_model_versions(self, fl_ctx) -> Set[int]:
         return set(self.current_selection.values())
+
+    def get_usable_devices(self, fl_ctx) -> Set[str]:
+        # eligible devices = available - in-flight (used) - already contributed to current model version.
+        # Overrides the base default so status logging / timeout diagnostics agree with scheduling
+        # (Option B requirement that status logging matches eligibility).
+        return self._compute_usable_devices()

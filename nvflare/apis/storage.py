@@ -20,6 +20,8 @@ META = "meta"
 META_JSON = "meta.json"
 WORKSPACE = "workspace"
 WORKSPACE_ZIP = "workspace.zip"
+OUTPUTS = "outputs"  # the job's outputs, stored apart from the rest of the workspace when the job ends
+OUTPUTS_ZIP = "outputs.zip"  # the outputs archive in a full download, unzipped into the workspace folder
 
 
 class DataTypes(Enum):
@@ -54,6 +56,17 @@ class StorageSpec(ABC):
         - meta info that describes the control info of the object.
 
     """
+
+    def object_exists(self, uri: str) -> bool:
+        """Return authoritative object presence for deletion recovery.
+
+        Implementations must return a bool only when presence or absence is
+        confirmed and propagate permission, I/O, and availability errors.
+        This optional method preserves existing custom storage providers;
+        without it, interrupted client-log deletion retains its staging data
+        until an operator resolves the state or the provider is upgraded.
+        """
+        raise NotImplementedError("authoritative object presence is not supported by this storage provider")
 
     @abstractmethod
     def create_object(self, uri: str, data, meta: dict, overwrite_existing: bool):
@@ -258,7 +271,7 @@ class StorageSpec(ABC):
         Args:
             component_name: component name
         """
-        valid_components = {DATA, META, WORKSPACE, *VALID_COMPONENT_PREFIXES}
+        valid_components = {DATA, META, WORKSPACE, OUTPUTS, *VALID_COMPONENT_PREFIXES}
         if component_name in valid_components:
             return True
         if any(component_name.startswith(prefix + "_") for prefix in VALID_COMPONENT_PREFIXES):

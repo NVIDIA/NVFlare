@@ -30,6 +30,7 @@ from nvflare.client.cell.attach_rendezvous import (
     attach_claim_dir,
     wait_for_attach_endpoint,
 )
+from tests.timing_utils import isolate_time
 
 
 def _make_listener(root_dir, name="lst_12345678"):
@@ -211,3 +212,11 @@ def test_wait_can_be_cancelled_without_a_timeout(tmp_path):
 
     with pytest.raises(attach_rendezvous.AttachRendezvousCancelled, match="stopped"):
         wait_for_attach_endpoint(str(tmp_path), "site-1", "trainer_a", timeout=None, stop_event=stopped)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.client.cell.attach_rendezvous",
+    )

@@ -1,0 +1,40 @@
+{
+    "format_version": 2,
+    "executors": [
+        {
+            "tasks": [
+                "*"
+            ],
+            "executor": {
+                "path": "cvm_client_api_executor.CVMClientAPIExecutor",
+                "args": {
+                    "params_exchange_format": "pytorch",
+                    "server_expected_format": "numpy"
+                }
+            }
+        }
+    ],
+    "components": [
+        {
+            "id": "progress_log_streamer",
+            "path": "nvflare.app_common.logging.job_log_streamer.JobLogStreamer",
+            "args": {"log_file_name": "log.txt", "target_parent_server": true}
+        },
+        {
+            "id": "error_log_streamer",
+            "path": "nvflare.app_common.logging.job_log_streamer.JobLogStreamer",
+            "args": {"log_file_name": "error_log.txt", "target_parent_server": true}
+        },
+        {
+            "id": "event_to_fed",
+            "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+            "args": {
+                "events_to_convert": [
+                    "analytix_log_stats"
+                ]
+            }
+        }
+    ],
+    "task_data_filters": [],
+    "task_result_filters": []
+}

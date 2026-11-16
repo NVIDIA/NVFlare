@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+from contextlib import contextmanager
 from dataclasses import replace
 
 import pytest
@@ -134,6 +135,62 @@ def test_bootstrap_publish_tolerates_temporary_file_disappearing(tmp_path, boots
     assert protocol.read_bootstrap(path) == bootstrap
 
 
+@pytest.mark.parametrize("boundary", ["writer", "file_fsync", "guard", "link", "directory_fsync"])
+def test_publication_cleanup_preserves_primary_failure(tmp_path, monkeypatch, boundary, caplog):
+    primary = RuntimeError(f"primary {boundary} failure")
+    unlink = protocol.os.unlink
+    fsync = protocol.os.fsync
+    fsync_calls = 0
+
+    def write(stream):
+        if boundary == "writer":
+            raise primary
+        stream.write(b"payload")
+
+    @contextmanager
+    def guard():
+        if boundary == "guard":
+            raise primary
+        yield
+
+    def fail_fsync(fd):
+        nonlocal fsync_calls
+        fsync_calls += 1
+        if (boundary == "file_fsync" and fsync_calls == 1) or (boundary == "directory_fsync" and fsync_calls == 2):
+            raise primary
+        return fsync(fd)
+
+    def fail_link(*args, **kwargs):
+        raise primary
+
+    def fail_cleanup(path, **kwargs):
+        unlink(path, **kwargs)
+        raise PermissionError("secondary temporary cleanup failure")
+
+    monkeypatch.setattr(protocol.os, "fsync", fail_fsync)
+    monkeypatch.setattr(protocol.os, "unlink", fail_cleanup)
+    if boundary == "link":
+        monkeypatch.setattr(protocol.os, "link", fail_link)
+    with pytest.raises(RuntimeError, match=f"primary {boundary} failure") as raised:
+        protocol._publish_exclusive(str(tmp_path), "result", write, publication_guard=guard)
+    assert raised.value is primary
+    assert "secondary temporary cleanup failure" in caplog.text
+    assert not list(tmp_path.glob(".result.*"))
+
+
+def test_publication_cleanup_failure_is_reported_when_publication_succeeded(tmp_path, monkeypatch):
+    unlink = protocol.os.unlink
+
+    def fail_cleanup(path, **kwargs):
+        unlink(path, **kwargs)
+        raise PermissionError("temporary cleanup failure")
+
+    monkeypatch.setattr(protocol.os, "unlink", fail_cleanup)
+    with pytest.raises(PermissionError, match="temporary cleanup failure"):
+        protocol._publish_exclusive(str(tmp_path), "result", lambda stream: stream.write(b"payload"))
+    assert (tmp_path / "result").read_bytes() == b"payload"
+
+
 @pytest.mark.parametrize("field", ["state_names", "state_revision", "state_records", "script"])
 def test_bootstrap_rejects_future_state_and_script_fields(bootstrap, field):
     record = bootstrap.to_dict()
@@ -227,3 +284,50 @@ def test_bootstrap_carries_optional_site_payload_policy(tmp_path, bootstrap, lim
 def test_bootstrap_rejects_invalid_payload_policy(bootstrap, limit):
     with pytest.raises(ValueError, match="max_payload_bytes"):
         replace(bootstrap, max_payload_bytes=limit)
+
+
+CELL_SESSION = {"connect_url": "tcp://127.0.0.1:1", "worker_fqcn": "site-1.job-1.task_worker_1"}
+SECURE_CELL_SESSION = {
+    **CELL_SESSION,
+    "connect_url": "stcp://localhost:1",
+    "connection_security": "mtls",
+    "identity": "site-1",
+    "credentials": {
+        "ca_cert": "/kit/rootCA.pem",
+        "client_cert": "/run/job.crt",
+        "client_key": "/run/job.key",
+        "server_cert": "/run/job.crt",
+        "server_key": "/run/job.key",
+    },
+}
+
+
+@pytest.mark.parametrize("cell_session", [CELL_SESSION, SECURE_CELL_SESSION], ids=["clear", "secure"])
+def test_bootstrap_carries_the_optional_cell_session(tmp_path, bootstrap, cell_session):
+    configured = replace(bootstrap, cell_session=cell_session)
+    path = str(tmp_path / "bootstrap.json")
+    protocol.write_bootstrap(path, configured)
+    assert protocol.read_bootstrap(path).cell_session == cell_session
+    record = configured.to_dict()
+    record.pop("cell_session")
+    assert WorkerBootstrap.from_dict(record).cell_session is None
+
+
+@pytest.mark.parametrize(
+    "cell_session",
+    [
+        {**CELL_SESSION, "connect_url": ""},
+        {**CELL_SESSION, "token": "t"},
+        {**CELL_SESSION, "cj_fqcn": "x"},
+        {**CELL_SESSION, "worker_fqcn": "worker"},
+        dict(list(CELL_SESSION.items())[:-1]),
+        "tcp://x",
+        {**SECURE_CELL_SESSION, "secure": True},
+        {**SECURE_CELL_SESSION, "connection_security": ""},
+        {**SECURE_CELL_SESSION, "credentials": {"custom_ca_cert": "/kit/customRootCA.pem"}},
+        {**SECURE_CELL_SESSION, "credentials": {"client_key": "job.key"}},
+    ],
+)
+def test_bootstrap_rejects_an_invalid_cell_session(bootstrap, cell_session):
+    with pytest.raises(ValueError, match="cell_session"):
+        replace(bootstrap, cell_session=cell_session)

@@ -70,6 +70,7 @@ def test_job_log_receiver_uses_trusted_peer_identity_for_storage(tmp_path, file_
     fl_ctx.put(key=ReservedKey.IDENTITY_NAME, value="server", private=True, sticky=False)
     fl_ctx.put(key=ReservedKey.RUN_NUM, value="server_job", private=True, sticky=False)
     fl_ctx.put(key=ReservedKey.ENGINE, value=engine, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.CLIENT_NAME, "trusted_client", private=True, sticky=False)
     fl_ctx.set_peer_context(peer_ctx)
 
     stream_ctx = {
@@ -115,6 +116,7 @@ def _make_recv_fl_ctx(client_name="trusted_client", site_allows: bool = True):
     fl_ctx = FLContext()
     fl_ctx.put(key=ReservedKey.IDENTITY_NAME, value="server", private=True, sticky=False)
     fl_ctx.put(key=ReservedKey.ENGINE, value=engine, private=True, sticky=False)
+    fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client_name, private=True, sticky=False)
     fl_ctx.set_peer_context(peer_ctx)
     return fl_ctx
 

@@ -130,17 +130,23 @@ The following is a sample cc_site-1.yml file, which is used with project.yml for
 also shown in the following.  Note this project.yml includes the server's cc configuration yaml file, which is described
 in the :ref:`confidential_azure_container_instances_deployment` - Secure Aggregation on FLARE Server with Azure ACI (Azure Container Instance)
 
-The AZCVMAuthorizer uses sharedeus2.eus2.attest.azure.net as the default Microsoft Azure Attestation endpoint.
+The client selects the common Azure CC deployment mode. Define the Microsoft
+Azure Attestation endpoint once in ``cc_project.yml`` as shown in
+:ref:`cc_deployment`; do not rely on an authorizer default.
 
 .. code-block:: yaml
 
-  compute_env: azure_cvm
-  cc_cpu_mechanism: amd_sev_snp
-  role: client
-  cc_issuers:
-    - id: az_cvm_authorizer
-      path: nvflare.app_opt.confidential_computing.az_cvm_authorizer.AZCVMAuthorizer
-      token_expiration: 100 # seconds, needs to be less than check_frequency
+  schema_version: 1
+  cc_deployment_mode: azure_cc
+  cpu_tee: amd_sev_snp
+  gpu_tee: none
+  attestation:
+    service: azure_maa
+  workload:
+    source:
+      type: external
+  azure_cc:
+    deployment_target: confidential_vm
 
 
 The following is the sample project.yml file.
@@ -150,6 +156,7 @@ The following is the sample project.yml file.
   api_version: 3
   name: example_project
   description: NVIDIA FLARE sample project yaml file
+  cc_project_config: cc_project.yml
   participants:
     # Change the name of the server (server1) to the Fully Qualified Domain Name
     # (FQDN) of the server, for example: server1.example.com.
@@ -188,3 +195,5 @@ The following is the sample project.yml file.
     - path: nvflare.lighter.impl.cert.CertBuilder
     - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
     - path: nvflare.lighter.impl.signature.SignatureBuilder
+  packager:
+    path: nvflare.lighter.cc_provision.impl.cc_packager.CCPackager

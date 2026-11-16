@@ -14,15 +14,23 @@
 import logging
 import os
 import shlex
+import signal
 import subprocess
+import time
 from abc import abstractmethod
 from typing import Optional
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import get_job_meta_study
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
+from nvflare.app_opt.job_launcher.study_runtime import (
+    load_study_runtime_file,
+    resolve_study_runtime,
+    study_runtime_file_path,
+)
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path, get_credential_env
 from nvflare.utils.process_utils import ProcessAdapter, spawn_process
 
@@ -35,8 +43,12 @@ class ProcessHandle(JobHandleSpec):
         process: Optional[subprocess.Popen] = None,
         pid: Optional[int] = None,
         process_adapter: Optional[ProcessAdapter] = None,
+        owns_process_group: bool = False,
+        app_dir: Optional[str] = None,
     ):
         super().__init__()
+        self.owns_process_group = owns_process_group
+        self.app_dir = app_dir
 
         if process_adapter:
             self.adapter = process_adapter
@@ -46,7 +58,16 @@ class ProcessHandle(JobHandleSpec):
             raise ValueError("ProcessHandle requires a process object, a pid, or a ProcessAdapter.")
 
     def terminate(self):
-        self.adapter.terminate()
+        if not self.owns_process_group:
+            self.adapter.terminate()
+            return
+        try:
+            # The leader may already be reaped while its owned group still exists.
+            os.killpg(self.adapter.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except (OSError, AttributeError) as e:
+            logging.getLogger(__name__).warning("Could not terminate process group %s: %s", self.adapter.pid, e)
 
     def poll(self):
         code = self.adapter.poll()
@@ -56,6 +77,47 @@ class ProcessHandle(JobHandleSpec):
 
     def wait(self):
         self.adapter.wait()
+        if self.owns_process_group and self.adapter.poll() not in (None, 0):
+            # Allow children to exit, then bound cleanup of any remaining members.
+            if not self._wait_for_group_exit():
+                self.terminate()
+                self._wait_for_group_exit()
+
+    def _wait_for_group_exit(self):
+        deadline = time.monotonic() + 10.0
+        while not self._group_exited():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            time.sleep(min(0.1, remaining))
+        return True
+
+    def can_restart(self):
+        if not self._group_exited():
+            return False
+        if self.app_dir is None:
+            return True
+        try:
+            # Written before Popen and cleared only after detached-trainer exit.
+            # Its presence makes CJ group exit insufficient evidence for recovery.
+            return not any(
+                name.startswith("client_api_bootstrap_") and name.endswith(".json") for name in os.listdir(self.app_dir)
+            )
+        except OSError:
+            return False
+
+    def _group_exited(self):
+        # The launcher starts a new session. Other supplied processes need not
+        # own their group.
+        if not self.owns_process_group or self.adapter.poll() is None:
+            return False
+        try:
+            os.killpg(self.adapter.pid, 0)
+        except ProcessLookupError:
+            return True
+        except (OSError, AttributeError):
+            return False
+        return False
 
 
 class ProcessJobLauncher(JobLauncherSpec):
@@ -67,6 +129,21 @@ class ProcessJobLauncher(JobLauncherSpec):
 
         new_env = os.environ.copy()
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        runtime_file = study_runtime_file_path(workspace_obj.get_root_dir())
+        if os.path.exists(runtime_file):
+            runtime_map = load_study_runtime_file(runtime_file, launcher_mode="process", logger=self.logger)
+            study = get_job_meta_study(job_meta)
+            runtime = resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
+            for ref in runtime.secret_env:
+                value = new_env.get(ref.source)
+                if value is None:
+                    raise ValueError(
+                        f"secret_env '{ref.name}' for study '{study}' requires env var "
+                        f"'{ref.source}' in the launcher environment, but it is not set"
+                    )
+                runtime.env[ref.name] = value
+            new_env.update(runtime.env)
+
         job_id = job_meta.get(JobConstants.JOB_ID)
         app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
         if app_custom_folder != "":
@@ -80,7 +157,9 @@ class ProcessJobLauncher(JobLauncherSpec):
         # Use the spawn_process utility which handles the choice between posix_spawn and subprocess
         process_adapter = spawn_process(argv, new_env)
 
-        return ProcessHandle(process_adapter=process_adapter)
+        return ProcessHandle(
+            process_adapter=process_adapter, owns_process_group=True, app_dir=workspace_obj.get_app_dir(job_id)
+        )
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:

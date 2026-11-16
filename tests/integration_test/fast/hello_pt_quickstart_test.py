@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 
+import pytest
 import torch
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
@@ -25,6 +26,7 @@ from tests.hello_pt_test_utils import load_hello_pt_module
 INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(INTEGRATION_TEST_ROOT))
 EXAMPLE_DIR = os.path.join(REPO_ROOT, "examples", "hello-world", "hello-pt")
+pytestmark = pytest.mark.usefixtures("single_threaded_torch")
 
 
 def test_zero_flag_hello_pt_produces_learned_loadable_final_model(tmp_path, monkeypatch):

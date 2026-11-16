@@ -24,6 +24,7 @@ from tests.hello_pt_test_utils import REPO_ROOT, load_hello_pt_module
 
 ADVANCED_DIR = REPO_ROOT / "examples" / "advanced" / "hello-pt-environments"
 POC_MONITOR_TIMEOUT = 15 * 60
+pytestmark = pytest.mark.usefixtures("single_threaded_torch")
 
 
 def _read_final_accuracies(result_path):

@@ -2,7 +2,8 @@
 
 The server gives each client assignment a task ID and a separate attempt ID.
 Resending an assignment preserves both. This change supports ordinary job-lifetime
-executors and the future task-worker path without changing executor configuration.
+executors and task workers. In task execution mode, a fresh worker computes one
+assignment while the resident Client Job (CJ) owns result submission and receipt.
 
 ## Client contract
 
@@ -79,6 +80,16 @@ differs. A first recognized late result within its issuing workflow still follow
 the established unknown-task hook. Exceptions after receipt do not repeat effects.
 Fatal results record receipt before panic handling.
 
+During the unknown-task callback and its surrounding events, a private, non-sticky
+`FLContextKey.TASK_RESULT_IS_LATE` property identifies a recognized retired
+assignment whose client, task, attempt, peer, and job identities match. The property
+is removed when callback processing exits. The default ModelController logs an
+ignored non-training result at INFO for these expected late assignments, while
+genuinely unknown non-training tasks retain ERROR diagnostics. Training-result
+handling and duplicate-result suppression are unchanged.
+This logging policy applies only to the default `BaseModelController` hook;
+other controller overrides retain their existing behavior.
+
 There is one workflow assignment history, with identity and receipt metadata,
 never result payloads. Active assignments hold their own receipt marker; retired
 assignments enter a bounded LRU history. Configure `task_result_history_size` in
@@ -101,10 +112,10 @@ Before assigning a task or claiming receipt, the parent binds the child's identi
 and job to its exact job-cell origin using the server-provided client table. This
 also applies to relay paths where the client-name authentication header is stripped.
 
-Task-worker artifact cleanup must wait for terminal receipt or closure and for
-outstanding transfer readers to release the source. Worker supervision, launchers,
-declared-state promotion, adapters, and recipes remain separate work in #5352.
-Its integration must consume this receipt contract and decide state promotion
-locally; it cannot gate promotion on a server aggregation-admission boolean.
-In particular, `TASK_CLOSED` cannot be interpreted as proof that an earlier result
-was not received or used; closure alone cannot decide state promotion.
+Task-mode CJ retains saved output through submission retries. Payload release
+requires physical worker settlement, terminal receipt/closure and quiescent
+readers. Optional application checkpoint promotion is a local commit after output
+validation, independent of server receipt or aggregation. `TASK_CLOSED` cannot
+prove an earlier upload was unused. The [task execution design](task_worker_lifecycle.md)
+explains the worker, checkpoint and storage lifecycle; this document specifies
+the shared receipt protocol for both execution modes.

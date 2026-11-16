@@ -15,12 +15,15 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.statistics_spec import StatisticConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
 from nvflare.app_common.workflows.statistics_controller import StatisticsController
 from nvflare.fuel.utils import fobs
+from tests.timing_utils import isolate_time
 
 from .mock_statistics_controller import MockStatisticsController
 
@@ -220,3 +223,11 @@ class TestStatisticsController:
         wait_for_results.assert_not_called()
         controller.post_fn.assert_not_called()
         assert "✓ Federated statistics completed" not in "\n".join(call.args[1] for call in progress.call_args_list)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.app_common.workflows.statistics_controller",
+    )

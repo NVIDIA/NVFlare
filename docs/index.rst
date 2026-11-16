@@ -80,6 +80,7 @@ NVIDIA FLARE
    :caption: Deployment & Operations
 
    user_guide/admin_guide/deployment/overview
+   user_guide/admin_guide/deployment/certificate_models
    programming_guide/provisioning_system
    Multi-Study Support <user_guide/admin_guide/multi_study_guide>
    Distributed Provisioning <user_guide/nvflare_cli/distributed_provisioning>

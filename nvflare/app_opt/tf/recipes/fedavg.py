@@ -137,6 +137,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         best_model_filename: Optional[str] = None,
         save_filename: Optional[str] = None,
         server_memory_gc_rounds: int = 0,
+        sampling_seed: Optional[int] = None,
         client_memory_gc_rounds: int = 0,
     ):
         # Call the unified FedAvgRecipe with TensorFlow-specific settings
@@ -165,6 +166,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             best_model_filename=best_model_filename,
             save_filename=save_filename,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            sampling_seed=sampling_seed,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=False,
         )

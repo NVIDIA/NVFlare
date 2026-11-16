@@ -14,7 +14,7 @@
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, call
+from unittest.mock import Mock
 
 import pytest
 import yaml
@@ -27,7 +27,6 @@ from nvflare.fuel.hci.proto import MetaStatusValue
 from tests.integration_test.src import action_handlers, nvf_test_driver
 
 JOB_ID = "12345678-1234-5678-1234-567812345678"
-STARTING_INFO = f"Job {JOB_ID} is starting; retry abort."
 ABORT_CONFIG = yaml.safe_load(
     (Path(__file__).resolve().parents[2] / "integration_test/data/test_configs/authorization/abort_job.yml").read_text()
 )
@@ -82,43 +81,8 @@ def test_abort_succeeds_without_retry(controller, clock):
     assert clock.sleeps == []
 
 
-def test_abort_retries_starting_response_then_succeeds(controller, clock):
-    session = _session(_reply(MetaStatusValue.ERROR, STARTING_INFO), _reply())
-
-    action_handlers._AbortJobHandler().handle([], controller, session)
-
-    assert session.api.do_command.call_args_list == [call(f"abort_job {JOB_ID}", props=None)] * 2
-    assert controller.admin_api_response is None
-    assert clock.sleeps == [0.5]
-
-
-def test_abort_startup_retry_stops_at_deadline(controller, clock, monkeypatch):
-    monkeypatch.setattr(action_handlers, "_ABORT_STARTUP_RETRY_TIMEOUT", 0.75)
-    session = _session(
-        _reply(MetaStatusValue.ERROR, STARTING_INFO),
-        _reply(MetaStatusValue.ERROR, STARTING_INFO),
-        AssertionError("must not issue another abort after the retry deadline"),
-    )
-
-    with pytest.raises(InternalError) as caught:
-        action_handlers._AbortJobHandler().handle([], controller, session)
-
-    assert str(caught.value) == f"error: {STARTING_INFO}"
-    assert session.api.do_command.call_count == 2
-    assert clock.sleeps == [0.5, 0.25]
-    assert clock.now == 0.75
-
-
-@pytest.mark.parametrize(
-    "status,info",
-    [
-        (MetaStatusValue.ERROR, "Job another-job is starting; retry abort."),
-        (MetaStatusValue.ERROR, "unrelated abort failure"),
-        (MetaStatusValue.INTERNAL_ERROR, STARTING_INFO),
-    ],
-)
-def test_abort_does_not_retry_other_internal_errors(controller, clock, status, info):
-    session = _session(_reply(status, info))
+def test_abort_lets_other_errors_propagate(controller, clock):
+    session = _session(_reply(MetaStatusValue.ERROR, "unrelated abort failure"))
 
     with pytest.raises(InternalError):
         action_handlers._AbortJobHandler().handle([], controller, session)
@@ -127,20 +91,16 @@ def test_abort_does_not_retry_other_internal_errors(controller, clock, status, i
     assert clock.sleeps == []
 
 
-@pytest.mark.parametrize("starting_first", [False, True])
-def test_abort_preserves_authorization_denial(controller, clock, starting_first):
-    responses = [_reply(MetaStatusValue.NOT_AUTHORIZED, "not allowed")]
-    if starting_first:
-        responses.insert(0, _reply(MetaStatusValue.ERROR, STARTING_INFO))
-    session = _session(*responses, username="trainer@b.org")
+def test_abort_preserves_authorization_denial(controller, clock):
+    session = _session(_reply(MetaStatusValue.NOT_AUTHORIZED, "not allowed"), username="trainer@b.org")
 
     action_handlers._AbortJobHandler().handle([], controller, session)
 
     assert controller.admin_api_response == {
         "message": "Error: PermissionError: Authorization Error: user 'trainer@b.org' is not authorized for 'abort_job'"
     }
-    assert session.api.do_command.call_count == len(responses)
-    assert clock.sleeps == ([0.5] if starting_first else [])
+    session.api.do_command.assert_called_once_with(f"abort_job {JOB_ID}", props=None)
+    assert clock.sleeps == []
 
 
 def test_app_command_sends_release_to_current_job_and_records_response(controller):

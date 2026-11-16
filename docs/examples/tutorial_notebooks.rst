@@ -4,11 +4,10 @@
 Tutorial Notebooks
 ********************
 
-Tutorial notebooks on GitHub:
+The feature-tutorial notebook list has moved. The
+:github_nvflare_link:`tutorials directory <examples/tutorials>` is now the
+authoritative index, with each notebook's outcome, prerequisites, entry point,
+expected completion signal, and verification status.
 
-- :github_nvflare_link:`FL Simulator Notebook (GitHub) <examples/tutorials/flare_simulator.ipynb>`
-- :github_nvflare_link:`Hello FLARE API Notebook (GitHub) <examples/tutorials/flare_api.ipynb>`
-- :github_nvflare_link:`NVFLARE POC Mode in detail Notebook (GitHub) <examples/tutorials/setup_poc.ipynb>`
-- :github_nvflare_link:`NVFlare CLI Notebook (GitHub) <examples/tutorials/nvflare_cli.ipynb>`
-- :github_nvflare_link:`Job Recipe Notebook (GitHub) <examples/tutorials/job_recipe.ipynb>`
-- :github_nvflare_link:`FLARE Logging Notebook (GitHub) <examples/tutorials/logging.ipynb>`
+See :ref:`tutorials` for the complete learning path from the current
+onboarding sequence to the example catalog and structured training.

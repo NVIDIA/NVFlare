@@ -120,6 +120,8 @@ class StreamFuture:
     def __init__(self, stream_id: int, headers: Optional[dict] = None, task_handle: StreamTaskSpec = None):
         self.stream_id = stream_id
         self.headers = headers
+        # Receiver-owned transport provenance; never populated from wire headers.
+        self.receiving_endpoint = None
         self.waiter = threading.Event()
         self.lock = threading.Lock()
         self.error: Optional[StreamError] = None
@@ -159,11 +161,16 @@ class StreamFuture:
                 return False
 
             self.error = StreamCancelled(f"Stream {self.stream_id} is cancelled")
-            if self.task_handle:
-                self.task_handle.cancel()
+            task_handle = self.task_handle
             self.waiter.set()
 
-        self._invoke_callbacks()
+        # TxTask.cancel() completes this same StreamFuture. Calling it while
+        # holding the future's non-reentrant lock deadlocks in set_exception().
+        try:
+            if task_handle:
+                task_handle.cancel()
+        finally:
+            self._invoke_callbacks()
         return True
 
     def cancelled(self):

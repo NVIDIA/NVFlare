@@ -14,13 +14,16 @@
 
 from unittest.mock import MagicMock, patch
 
-from nvflare.apis.fl_constant import SystemComponents
+import pytest
+
+from nvflare.apis.fl_constant import FLContextKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
+from nvflare.apis.workspace import Workspace
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.client.scheduler_cmds import CheckResourceProcessor
+from nvflare.private.fed.client.scheduler_cmds import CheckResourceProcessor, StartJobProcessor
 from nvflare.private.scheduler_constants import ShareableHeader
 
 
@@ -46,3 +49,49 @@ def test_check_resource_processor_keeps_resource_manager_error_local():
     )
     engine.get_component.assert_called_once_with(SystemComponents.RESOURCE_MANAGER)
     logger.error.assert_called_once_with("Job job-1: resource check failed: sensitive detail")
+
+
+@pytest.mark.parametrize(
+    "runtime_file, job_meta, reason",
+    [
+        pytest.param("studies:\n  study-a:\n", {"study": "study-a"}, None, id="listed-study"),
+        pytest.param(
+            "studies:\n  study-a:\n", {"study": "study-b"}, "study 'study-b' is not configured", id="unlisted"
+        ),
+        pytest.param("studies:\n  study-a:\n", {}, "study 'default' is not configured", id="unlisted-default"),
+        pytest.param("studies: {}\n", {"study": "study-b"}, None, id="empty-studies"),
+        pytest.param(None, {"study": "study-b"}, None, id="no-file"),
+    ],
+)
+def test_client_runs_only_studies_listed_in_study_runtime(tmp_path, runtime_file, job_meta, reason):
+    (tmp_path / "startup").mkdir()
+    (tmp_path / "local").mkdir()
+    if runtime_file is not None:
+        (tmp_path / "local" / "study_runtime.yaml").write_text(f"format_version: 2\n{runtime_file}")
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, Workspace(str(tmp_path)), private=True)
+    resource_manager = MagicMock(spec=ResourceManagerSpec)
+    resource_manager.check_resources.return_value = (True, "token-1")
+    resource_manager.allocate_resources.return_value = None
+    engine = MagicMock(spec=ClientEngineInternalSpec)
+    engine.get_component.return_value = resource_manager
+    engine.new_context.return_value.__enter__.return_value = fl_ctx
+    engine.start_app.return_value = ""
+
+    replies = []
+    for topic, processor in [
+        (TrainingTopic.CHECK_RESOURCE, CheckResourceProcessor),
+        (TrainingTopic.START_JOB, StartJobProcessor),
+    ]:
+        request = Message(topic=topic, body={})
+        request.set_header(RequestHeader.JOB_ID, "job-1")
+        request.set_header(RequestHeader.JOB_META, job_meta)
+        request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, "token-1")
+        replies.append(processor().process(request, engine).body)
+    check_reply, start_reply = replies
+
+    assert check_reply.get_header(ShareableHeader.IS_RESOURCE_ENOUGH) is (reason is None)
+    assert engine.start_app.called is (reason is None)
+    if reason:
+        assert reason in check_reply.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
+        assert reason in start_reply

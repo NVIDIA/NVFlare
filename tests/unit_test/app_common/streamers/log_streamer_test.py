@@ -15,6 +15,7 @@
 import os
 import tempfile
 import threading
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
@@ -22,6 +23,7 @@ import pytest
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import StreamContextKey
+from nvflare.app_common.streamers import log_streamer
 from nvflare.app_common.streamers.log_streamer import (
     KEY_DATA,
     KEY_DATA_SIZE,
@@ -33,6 +35,7 @@ from nvflare.app_common.streamers.log_streamer import (
     _LogTailProducer,
     dispatch_stream_done,
 )
+from tests.timing_utils import ManualClock
 
 
 def _make_heartbeat():
@@ -111,7 +114,13 @@ def test_rejected_stream_does_not_start_a_consumer_or_watchdog():
     done.assert_not_called()
 
 
-def test_idle_timeout_ends_each_stream_independently():
+def test_idle_timeout_ends_each_stream_independently(monkeypatch):
+    clock = ManualClock()
+    monkeypatch.setattr(log_streamer, "time", clock)
+    # Drive the real watchdog body one pass at a time, without starting workers.
+    monkeypatch.setattr(
+        log_streamer, "threading", SimpleNamespace(Thread=Mock(), Event=threading.Event, Lock=threading.Lock)
+    )
     ended = []
     fl_ctx = Mock(spec=FLContext)
     fl_ctx.get_run_abort_signal.return_value = None
@@ -121,7 +130,7 @@ def test_idle_timeout_ends_each_stream_independently():
 
     factory = LogChunkConsumerFactory(
         chunk_received_cb=None,
-        idle_timeout=0.3,
+        idle_timeout=30.0,
         stream_done_cb=stream_done_cb,
         cb_kwargs={},
     )
@@ -150,20 +159,19 @@ def test_idle_timeout_ends_each_stream_independently():
     # Send a heartbeat to consumer_1 only — this resets its idle clock.
     consumer_1.consume(_make_heartbeat(), stream_ctx_1, fl_ctx)
 
-    # After 0.15s, send a heartbeat to consumer_2 to stagger the two clocks.
-    # consumer_1's last message is now 0.15s old; consumer_2's is fresh.
-    import time
-
-    time.sleep(0.15)
+    clock.advance(15.0)
     consumer_2.consume(_make_heartbeat(), stream_ctx_2, fl_ctx)
-
-    # consumer_1 should timeout first (0.3s since its last heartbeat).
-    assert stream1_event.wait(timeout=2.0)
-    # consumer_2 got a heartbeat 0.15s later, so it should still be alive.
+    clock.advance(15.0)
+    with patch.object(consumer_1._done, "wait", side_effect=[False, True]):
+        consumer_1._watchdog()
+    with patch.object(consumer_2._done, "wait", side_effect=[False, True]):
+        consumer_2._watchdog()
+    assert stream1_event.is_set()
     assert not stream2_event.is_set()
-
-    # Now wait for consumer_2 to timeout as well.
-    assert stream2_event.wait(timeout=2.0)
+    clock.advance(15.0)
+    with patch.object(consumer_2._done, "wait", side_effect=[False, True]):
+        consumer_2._watchdog()
+    assert stream2_event.is_set()
 
     assert ended == [
         ("one.log", "TIMEOUT"),

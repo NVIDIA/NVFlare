@@ -26,21 +26,26 @@ from nvflare.apis.fl_constant import (
     ReservedKey,
     ReservedTopic,
     ReturnCode,
+    ServerCommandKey,
+    ServerCommandNames,
     TaskResultReceipt,
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.apis.task_launcher_spec import TaskExecutionInterrupted
 from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
-from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.apis.utils.task_utils import apply_filters, get_filters, materialize_lazy_download_refs
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_download_ref
 from nvflare.fuel.utils.msg_root_utils import delete_msg_root
-from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, SpecialTaskName, TaskConstant, new_cell_message
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from nvflare.private.fed.tbi import TBI
 from nvflare.private.json_configer import ConfigError
@@ -265,6 +270,8 @@ class ClientRunner(TBI):
         abort_signal = Signal(parent=self.run_abort_signal)
         try:
             reply = self._do_task(task, fl_ctx, abort_signal)
+        except TaskExecutionInterrupted:
+            raise
         except Exception as ex:
             self.log_exception(fl_ctx, secure_format_exception(ex))
             reply = make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -335,6 +342,36 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.TASK_UNKNOWN}",
             )
 
+        release_task_data = None
+        try:
+            resolve = getattr(executor, "resolve_task_data", None)
+            if callable(resolve) and contains_lazy_download_ref(task.data):
+                try:
+                    if get_filters(
+                        Scope.TASK_DATA_FILTERS_NAME, fl_ctx, self.task_data_filters, task.name, FilterKey.IN
+                    ):
+                        task.data = materialize_lazy_download_refs(
+                            task.data, fl_ctx.get_engine().get_cell(), abort_signal
+                        )
+                    else:
+                        task.data, release_task_data = resolve(task.data, fl_ctx, abort_signal=abort_signal)
+                    fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
+                except Exception as e:
+                    self.log_exception(fl_ctx, f"task data resolution failed: {secure_format_exception(e)}")
+                    return self._reply_and_audit(
+                        reply=make_reply(
+                            ReturnCode.TASK_ABORTED if abort_signal.triggered else ReturnCode.BAD_TASK_DATA
+                        ),
+                        ref=server_audit_event_id,
+                        fl_ctx=fl_ctx,
+                        msg="task data resolution failed",
+                    )
+            return self._execute_task(task, fl_ctx, abort_signal, executor, server_audit_event_id)
+        finally:
+            if release_task_data is not None:
+                release_task_data()
+
+    def _execute_task(self, task, fl_ctx, abort_signal, executor, server_audit_event_id):
         executor_name = executor.__class__.__name__
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
@@ -438,6 +475,9 @@ class ClientRunner(TBI):
                     msg=f"submit result: {ReturnCode.EXECUTION_RESULT_ERROR}",
                 )
 
+        except TaskExecutionInterrupted:
+            # Do not close the outstanding server assignment with an error result.
+            raise
         except RuntimeError as e:
             self.log_exception(
                 fl_ctx, f"RuntimeError from executor {executor_name}: {secure_format_exception(e)}: Aborting the job!"
@@ -748,11 +788,27 @@ class ClientRunner(TBI):
             self.log_error(fl_ctx, f"bad task_check reply from {self.parent_target}: invalid resp {type(resp)}")
             return _TASK_CHECK_RESULT_TRY_AGAIN
 
-    def run(self, app_root, args):
-        self.init_run(app_root, args)
+    def run(self, app_root, args, on_ready=None):
+        if self.init_run(app_root, args) is False:
+            # The server job already ended; no application run or messaging was started.
+            self.engine.shutdown_streamer()
+            DownloadService.shutdown()
+            return
 
         try:
+            if on_ready and not self.run_abort_signal.triggered:
+                try:
+                    on_ready()
+                except Exception as e:
+                    with self.engine.new_context() as fl_ctx:
+                        self.log_exception(
+                            fl_ctx, f"could not notify CP of runner readiness: {secure_format_exception(e)}"
+                        )
             self._try_run()
+        except TaskExecutionInterrupted:
+            # Unwind through normal cleanup, but skip the successful STOPPED
+            # notification. The process monitor reports a recoverable nonzero exit.
+            raise
         except Exception as e:
             with self.engine.new_context() as fl_ctx:
                 self.log_exception(fl_ctx, f"processing error in RUN execution: {secure_format_exception(e)}")
@@ -837,6 +893,28 @@ class ClientRunner(TBI):
                     break
 
             if not synced:
+                # A replacement can arrive after the final result was accepted and
+                # SJ exited. Confirm that with SP; an unreachable SJ alone is not proof.
+                reply = None
+                if cell is not None:
+                    reply = cell.send_request(
+                        target=FQCN.ROOT_SERVER,
+                        channel=CellChannel.SERVER_PARENT_LISTENER,
+                        topic=ServerCommandNames.GET_CLIENTS,
+                        request=new_cell_message({CellMessageHeaderKeys.JOB_ID: self.job_id}, {}),
+                        timeout=sync_timeout,
+                        optional=True,
+                    )
+                if (
+                    reply is not None
+                    and reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
+                    and isinstance(reply.payload, dict)
+                    and reply.payload.get(ServerCommandKey.JOB_ID) == self.job_id
+                    and reply.payload.get(ServerCommandKey.CLIENTS, {}) is None
+                ):
+                    self.log_info(fl_ctx, "server job has ended; finishing this client runner")
+                    self.run_abort_signal.trigger(True)
+                    return False
                 raise RuntimeError(f"cannot sync with {target} Runner after {max_sync_timeout} seconds")
 
             self.log_info(fl_ctx, f"synced to parent {target} in {time.time() - sync_start} seconds")
@@ -1000,6 +1078,7 @@ class ClientRunner(TBI):
             # This happens when a task calls system_panic().
             reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")
             self.log_error(fl_ctx, "Stopped ClientRunner due to FATAL_SYSTEM_ERROR: {}".format(reason))
+            fl_ctx.set_prop(key=FLContextKey.FATAL_SYSTEM_ERROR, value=True, private=True, sticky=True)
             self._run_abort_requested = True
             self.run_abort_signal.trigger(True)
 

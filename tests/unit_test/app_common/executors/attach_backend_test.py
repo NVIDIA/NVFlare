@@ -27,6 +27,7 @@ from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.app_common.executors.client_api import attach_backend, cell_backend
 from nvflare.app_common.executors.client_api.attach_backend import AttachBackend
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
 from nvflare.client.cell.defs import CHANNEL, MsgKey, TaskState, Topic
@@ -41,6 +42,19 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.streaming.download_service import OBJ_DOWNLOADER_CHANNEL
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
+from tests.timing_utils import ManualClock, wait_for
+
+# Real failure guard for waits governed by a frozen policy clock.
+pytestmark = pytest.mark.timeout(60)
+
+
+@pytest.fixture
+def policy_clock(monkeypatch):
+    clock = ManualClock()
+    monkeypatch.setattr(attach_backend, "time", clock)
+    monkeypatch.setattr(cell_backend, "time", clock)
+    return clock
+
 
 CJ_FQCN = "site-1.job-1"
 TRAINER_FQCN = "site-1.-client_api_trainer_a"
@@ -429,7 +443,7 @@ def test_local_task_serialization_error_is_not_retried_or_probed():
     assert not any(topic == Topic.TASK_STATUS for topic, _, _ in cell.sent)
 
 
-def test_session_loss_is_terminal_when_reconnect_is_disabled():
+def test_session_loss_is_terminal_when_reconnect_is_disabled(policy_clock):
     cell = FakeCell()
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell)
@@ -437,14 +451,14 @@ def test_session_loss_is_terminal_when_reconnect_is_disabled():
     session = _wait_ready(backend)
 
     with session._activity_lock:
-        session._last_peer_activity = time.monotonic() - 1.0
+        session._last_peer_activity = policy_clock.monotonic() - 1.0
 
     assert _wait_until(lambda: bool(session.error))
     assert backend._get_session() is session
     backend.finalize(fl_ctx)
 
 
-def test_reconnect_uses_fresh_session_and_rejects_stale_traffic():
+def test_reconnect_uses_fresh_session_and_rejects_stale_traffic(policy_clock):
     cell = FakeCell()
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell)
@@ -455,7 +469,7 @@ def test_reconnect_uses_fresh_session_and_rejects_stale_traffic():
     first = _wait_ready(backend)
 
     with first._activity_lock:
-        first._last_peer_activity = time.monotonic() - 1.0
+        first._last_peer_activity = policy_clock.monotonic() - 1.0
 
     assert _wait_until(lambda: backend._get_session() is not first and backend._get_session().ready.is_set())
     second = backend._get_session()
@@ -471,7 +485,7 @@ def test_reconnect_uses_fresh_session_and_rejects_stale_traffic():
     backend.finalize(fl_ctx)
 
 
-def test_reconnect_waits_for_accepted_result_source_to_be_released():
+def test_reconnect_waits_for_accepted_result_source_to_be_released(policy_clock):
     cell = FakeCell()
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell)
@@ -487,8 +501,13 @@ def test_reconnect_waits_for_accepted_result_source_to_be_released():
     assert backend._current_task is None
 
     with first._activity_lock:
-        first._last_peer_activity = time.monotonic() - 1.0
-    time.sleep(0.15)
+        first._last_peer_activity = policy_clock.monotonic() - 1.0
+    # Exercise the expired heartbeat branch directly; an accepted source remains
+    # authoritative even though the peer has stopped sending heartbeats.
+    assert backend._liveness_error(first) is not None
+    assert backend._result_source_confirmed_disconnected(first) is False
+    policy_clock.advance(0.15)
+    assert backend._result_source_confirmed_disconnected(first) is False
     assert backend._get_session() is first
     assert first.error is None
 
@@ -499,13 +518,13 @@ def test_reconnect_waits_for_accepted_result_source_to_be_released():
     )
     assert heartbeat.payload[MsgKey.REPLY_TOPIC] == Topic.HEARTBEAT
     with first._activity_lock:
-        first._last_peer_activity = time.monotonic() - 1.0
+        first._last_peer_activity = policy_clock.monotonic() - 1.0
 
     assert _wait_until(lambda: backend._get_session() is not first and backend._get_session().ready.is_set())
     backend.finalize(fl_ctx)
 
 
-def test_reconnect_retires_accepted_result_source_after_confirmed_disconnect():
+def test_reconnect_retires_accepted_result_source_after_confirmed_disconnect(policy_clock):
     cell = FakeCell()
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell)
@@ -521,14 +540,16 @@ def test_reconnect_retires_accepted_result_source_after_confirmed_disconnect():
 
     cell.connected = False
     with first._activity_lock:
-        first._last_peer_activity = time.monotonic() - 1.0
+        first._last_peer_activity = policy_clock.monotonic() - 1.0
 
+    wait_for(lambda: first.result_source_disconnect_since is not None)
+    policy_clock.advance(0.1)
     assert _wait_until(lambda: backend._get_session() is not first and backend._get_session().ready.is_set())
     assert not first.result_source_live.is_set()
     backend.finalize(fl_ctx)
 
 
-def test_reconnect_preserves_accepted_result_source_during_transient_disconnect():
+def test_reconnect_preserves_accepted_result_source_during_transient_disconnect(policy_clock):
     cell = FakeCell()
     backend = AttachBackend()
     fl_ctx = _fl_ctx(cell)
@@ -542,11 +563,17 @@ def test_reconnect_preserves_accepted_result_source_during_transient_disconnect(
     assert result["answer"] == 42
     cell.connected = False
     with first._activity_lock:
-        first._last_peer_activity = time.monotonic() - 1.0
+        first._last_peer_activity = policy_clock.monotonic() - 1.0
 
-    assert _wait_until(lambda: first.result_source_disconnect_since is not None)
+    assert backend._result_source_confirmed_disconnected(first) is False
+    policy_clock.advance(0.25)
+    assert backend._result_source_confirmed_disconnected(first) is False
+    assert backend._get_session() is first
+    assert first.result_source_live.is_set()
     cell.connected = True
-    time.sleep(0.6)
+    wait_for(lambda: first.result_source_disconnect_since is None)
+    policy_clock.advance(0.6)
+    assert backend._result_source_confirmed_disconnected(first) is False
 
     assert backend._get_session() is first
     assert first.result_source_live.is_set()
@@ -572,7 +599,7 @@ def test_attach_rejects_heartbeat_disabled_session_before_shutdown_can_be_lost()
     assert not any(topic == Topic.SHUTDOWN for topic, _, _ in cell.sent)
 
 
-def test_reconnect_does_not_replay_task_interrupted_by_session_loss():
+def test_reconnect_does_not_replay_task_interrupted_by_session_loss(policy_clock):
     cell = FakeCell()
     cell.deliver_result = False
     backend = AttachBackend()
@@ -590,7 +617,7 @@ def test_reconnect_does_not_replay_task_interrupted_by_session_loss():
     assert _wait_until(lambda: cell.task_ready_count == 1)
 
     with first._activity_lock:
-        first._last_peer_activity = time.monotonic() - 1.0
+        first._last_peer_activity = policy_clock.monotonic() - 1.0
 
     execution.join(timeout=2.0)
     assert not execution.is_alive()
@@ -905,7 +932,7 @@ def test_finalize_unblocks_pending_result_wait():
     assert result_box["result"].get_return_code() == ReturnCode.EXECUTION_EXCEPTION
 
 
-def test_finalize_keeps_attach_route_until_accepted_result_source_disconnects():
+def test_finalize_keeps_attach_route_until_accepted_result_source_disconnects(policy_clock):
     cell = FakeCell()
     cell.shutdown_source_live = True
     backend = AttachBackend()
@@ -921,6 +948,8 @@ def test_finalize_keeps_attach_route_until_accepted_result_source_disconnects():
     cell.core_cell.communicator.remove_connector.assert_not_called()
 
     cell.connected = False
+    wait_for(lambda: session.result_source_disconnect_since is not None)
+    policy_clock.advance(0.1)
     finalizer.join(timeout=2.0)
 
     assert not finalizer.is_alive()

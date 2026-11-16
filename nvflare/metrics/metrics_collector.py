@@ -95,7 +95,8 @@ class MetricsCollector(FLComponent, ABC):
                 event=event, key=key, pair_events=pair_events, pair_start_events=pair_start_events
             )
             if pair_event_role == "start":
-                self.event_start_time[key] = current_time
+                pair_key = (key, tags["job_id"]) if tags.get("job_id") else key
+                self.event_start_time[pair_key] = current_time
             elif pair_event_role == "end":
                 self._publish_pair_duration(key, current_time, duration_metrics, tags, fl_ctx)
             else:
@@ -117,18 +118,19 @@ class MetricsCollector(FLComponent, ABC):
     def _collect_legacy_pair_event(
         self, key: str, current_time: float, duration_metrics: dict, tags, fl_ctx: FLContext
     ):
-        if self.event_start_time.get(key) is None:
-            self.event_start_time[key] = current_time
+        pair_key = (key, tags["job_id"]) if tags.get("job_id") else key
+        if self.event_start_time.get(pair_key) is None:
+            self.event_start_time[pair_key] = current_time
         else:
             self._publish_pair_duration(key, current_time, duration_metrics, tags, fl_ctx)
 
     def _publish_pair_duration(self, key: str, current_time: float, duration_metrics: dict, tags, fl_ctx: FLContext):
-        start_time = self.event_start_time.get(key)
+        pair_key = (key, tags["job_id"]) if tags.get("job_id") else key
+        start_time = self.event_start_time.pop(pair_key, None)
         if start_time is None:
             return
 
         time_taken = current_time - start_time
-        self.event_start_time[key] = None
         duration_metrics[MetricKeys.time_taken] = time_taken
         self.publish_metrics(duration_metrics, key, tags, fl_ctx)
 

@@ -137,6 +137,14 @@ class DeviceManager(FLComponent, ABC):
         """
         return self.current_selection
 
+    def get_usable_devices(self, fl_ctx: FLContext) -> Set[str]:
+        """Devices eligible to be selected right now (default: available minus used).
+
+        Subclasses with richer eligibility rules (e.g. contribution-based exclusion) should override
+        this so that status logging and timeout diagnostics agree with scheduling.
+        """
+        return set(self.available_devices.keys()) - set(self.used_devices.keys())
+
     def get_available_devices(self, fl_ctx: FLContext) -> Set[str]:
         """Get the available devices.
 

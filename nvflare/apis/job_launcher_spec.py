@@ -82,7 +82,29 @@ def add_launcher(launcher, fl_ctx: FLContext):
     fl_ctx.set_prop(FLContextKey.JOB_LAUNCHER, job_launcher, private=True, sticky=False)
 
 
+def publish_job_handle(job_handle, fl_ctx: FLContext):
+    """Give the parent a created runtime's handle before waiting for startup.
+
+    Launchers that wait for scheduling or startup must publish after runtime
+    creation and ownership setup, so a concurrent abort can reclaim it. Parents
+    without a callback continue to receive the handle from launch_job().
+    """
+    if not isinstance(job_handle, JobHandleSpec):
+        raise TypeError("job_handle must be a JobHandleSpec")
+    callback = fl_ctx.get_prop(FLContextKey.JOB_HANDLE_CALLBACK)
+    if callback is not None:
+        callback(job_handle)
+
+
 class JobHandleSpec(ABC):
+    def can_restart(self) -> bool:
+        """Confirm termination of this handle's execution (e.g. the CJ process group).
+
+        Missing records and communication failures are not proof. Unsupported
+        launchers return False. The caller separately applies the retry policy.
+        """
+        return False
+
     @abstractmethod
     def terminate(self):
         """To terminate the job run.

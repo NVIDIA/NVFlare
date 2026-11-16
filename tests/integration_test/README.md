@@ -20,11 +20,28 @@ export GRPC_ENABLE_FORK_SUPPORT=False
 
 Direct pytest suites are grouped by expected CI cadence:
 
+The Dashboard browser suite, ``fast/dashboard_validation_ui_test.py``, runs against the shipped static pages
+and an isolated live Flask backend. Premerge explicitly runs it with Playwright Chromium on Ubuntu 24.04 /
+Python 3.12. For local runs, install ``playwright`` and run ``python -m playwright install chromium``;
+``NVFLARE_TEST_BROWSER_CHANNEL=chrome`` selects an installed Google Chrome instead. The browser suite covers
+Org Admin signup, pending site registration, user/site approval, encrypted kit downloads, and correction of
+rejected form values. ``fast/dashboard_kit_test.py`` checks real provisioning/system ZIP execution in the
+shared process-contract matrix, preserving the former unit test's OS/Python coverage.
+
 ```bash
 cd tests/integration_test
 python -m pytest -v --log-cli-level=INFO --capture=no fast
 python -m pytest -v --log-cli-level=INFO --capture=no slow
 ```
+
+The fast suites also cover real worker/launcher process lifecycles, AutoFL child
+process output and cleanup, live mTLS certificate binding, pass-through streaming,
+and Hugging Face distributed contracts. These tests run serially; deadline policy
+and configuration cases remain in `tests/unit_test/`. Premerge explicitly runs the
+extracted lifecycle suites on the full unit-test OS/Python matrix, including the
+HF/Gloo suite that skips under pytest-xdist. Use a fresh pytest invocation rather
+than appending these cases to an xdist unit run. Run this shared CI selection with
+`python3 ci/run_process_contracts.py` from the repository root.
 
 The slow suite includes XGBoost recipe tests that require the federated XGBoost wheel. CI installs it
 through `ci/run_integration.sh slow`. For direct local pytest runs, install the wheel from

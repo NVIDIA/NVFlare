@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import datetime
+import json
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,6 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-from pyhocon import ConfigFactory as CF
 
 
 def _make_admin_startup_kit(parent: Path, name: str = "admin@nvidia.com") -> Path:
@@ -105,18 +105,19 @@ def _write_client_cert(
 
 
 def _entry_path(config, kit_id: str):
-    try:
-        value = config.get(f'startup_kits.entries."{kit_id}"')
-    except Exception:
-        return None
-    return Path(value).resolve()
+    value = config.get("startup_kits", {}).get("entries", {}).get(kit_id)
+    return Path(value).resolve() if value else None
 
 
-def _write_cli_config(home: Path, text: str) -> Path:
+def _active(config):
+    return config.get("startup_kits", {}).get("active")
+
+
+def _write_cli_config(home: Path, config: dict) -> Path:
     config_dir = home / ".nvflare"
     config_dir.mkdir(parents=True)
-    config_path = config_dir / "config.conf"
-    config_path.write_text(text.strip() + "\n")
+    config_path = config_dir / "config.json"
+    config_path.write_text(json.dumps(config))
     return config_path
 
 
@@ -131,29 +132,25 @@ def _assert_error_contains(exc_info, *parts: str):
 class TestStartupKitRegistryConfig:
     """Tests for the proposed nvflare.tool.kit.kit_config public helper surface."""
 
-    def test_add_email_id_is_quoted_when_saved_and_never_activates(self, tmp_path, monkeypatch):
+    def test_add_email_id_is_saved_as_one_key_and_never_activates(self, tmp_path, monkeypatch):
         from nvflare.tool.kit import kit_config
 
         home = tmp_path / "home"
         monkeypatch.setenv("HOME", str(home))
         kit_dir = _make_admin_startup_kit(tmp_path, "lead@nvidia.com")
 
-        config = CF.parse_string("version = 2")
-        updated = kit_config.add_startup_kit_entry(config, "lead@nvidia.com", str(kit_dir))
+        updated = kit_config.add_startup_kit_entry({"version": 2}, "lead@nvidia.com", str(kit_dir))
         assert _entry_path(updated, "lead@nvidia.com") == kit_dir.resolve()
-        assert updated.get("startup_kits.active", None) is None
+        assert _active(updated) is None
 
         kit_config.save_cli_config(updated)
 
-        config_path = home / ".nvflare" / "config.conf"
-        persisted = config_path.read_text()
-        assert '"lead@nvidia.com"' in persisted
+        loaded = json.loads((home / ".nvflare" / "config.json").read_text())
+        assert loaded["version"] == 2
+        assert _entry_path(loaded, "lead@nvidia.com") == kit_dir.resolve()
+        assert _active(loaded) is None
 
-        loaded = CF.parse_file(str(config_path))
-        assert Path(loaded.get('startup_kits.entries."lead@nvidia.com"')).resolve() == kit_dir.resolve()
-        assert loaded.get("startup_kits.active", None) is None
-
-    def test_simple_id_is_saved_unquoted_and_email_id_is_saved_quoted(self, tmp_path, monkeypatch):
+    def test_simple_and_email_ids_round_trip(self, tmp_path, monkeypatch):
         from nvflare.tool.kit import kit_config
 
         home = tmp_path / "home"
@@ -161,15 +158,9 @@ class TestStartupKitRegistryConfig:
         simple_kit = _make_admin_startup_kit(tmp_path / "simple", "simple@nvidia.com")
         email_kit = _make_admin_startup_kit(tmp_path / "email", "lead@nvidia.com")
 
-        config = CF.parse_string("version = 2")
-        config = kit_config.add_startup_kit_entry(config, "cancer_lead", str(simple_kit))
+        config = kit_config.add_startup_kit_entry({"version": 2}, "cancer_lead", str(simple_kit))
         config = kit_config.add_startup_kit_entry(config, "lead@nvidia.com", str(email_kit))
         kit_config.save_cli_config(config)
-
-        persisted = (home / ".nvflare" / "config.conf").read_text()
-        assert "cancer_lead = " in persisted
-        assert '"cancer_lead"' not in persisted
-        assert '"lead@nvidia.com" = ' in persisted
 
         loaded_entries = kit_config.get_startup_kit_entries(kit_config.load_cli_config())
         assert Path(loaded_entries["cancer_lead"]).resolve() == simple_kit.resolve()
@@ -180,14 +171,7 @@ class TestStartupKitRegistryConfig:
 
         old_kit = _make_admin_startup_kit(tmp_path / "old", "admin@nvidia.com")
         new_kit = _make_admin_startup_kit(tmp_path / "new", "admin@nvidia.com")
-        config = CF.parse_string(
-            """
-            version = 2
-            startup_kits {
-              active = "active_admin"
-            }
-            """
-        )
+        config = {"version": 2, "startup_kits": {"active": "active_admin"}}
 
         config = kit_config.add_startup_kit_entry(config, "active_admin", str(old_kit))
         with pytest.raises(Exception) as exc_info:
@@ -196,27 +180,24 @@ class TestStartupKitRegistryConfig:
 
         updated = kit_config.add_startup_kit_entry(config, "active_admin", str(new_kit), force=True)
         assert _entry_path(updated, "active_admin") == new_kit.resolve()
-        assert updated.get("startup_kits.active") == "active_admin"
+        assert _active(updated) == "active_admin"
         assert old_kit.exists()
 
     def test_set_active_validates_registered_path(self, tmp_path):
         from nvflare.tool.kit import kit_config
 
         kit_dir = _make_admin_startup_kit(tmp_path, "admin@nvidia.com")
-        config = CF.parse_string("version = 2")
-        config = kit_config.add_startup_kit_entry(config, "project_admin", str(kit_dir))
+        config = kit_config.add_startup_kit_entry({"version": 2}, "project_admin", str(kit_dir))
 
         updated = kit_config.set_active_startup_kit(config, "project_admin")
 
-        assert updated.get("startup_kits.active") == "project_admin"
+        assert _active(updated) == "project_admin"
 
     def test_admin_cert_provider_startup_kit_does_not_require_static_client_cert(self, tmp_path):
         from nvflare.tool.kit import kit_config
 
         kit_dir = _make_admin_cert_provider_startup_kit(tmp_path, "sso-admin-kit")
-        config = CF.parse_string("version = 2")
-
-        updated = kit_config.add_startup_kit_entry(config, "provider_admin", str(kit_dir))
+        updated = kit_config.add_startup_kit_entry({"version": 2}, "provider_admin", str(kit_dir))
 
         assert _entry_path(updated, "provider_admin") == kit_dir.resolve()
         assert kit_config.validate_admin_startup_kit(str(kit_dir / "startup")) == str(kit_dir.resolve())
@@ -229,27 +210,20 @@ class TestStartupKitRegistryConfig:
         from nvflare.tool.kit import kit_config
 
         kit_dir = _make_admin_startup_kit(tmp_path, "admin@nvidia.com")
-        config = CF.parse_string(
-            """
-            version = 2
-            startup_kits {
-              active = "project_admin"
-            }
-            """
-        )
+        config = {"version": 2, "startup_kits": {"active": "project_admin"}}
         config = kit_config.add_startup_kit_entry(config, "project_admin", str(kit_dir))
 
         with pytest.raises(Exception) as exc_info:
             kit_config.set_active_startup_kit(config, "missing_admin")
 
         _assert_error_contains(exc_info, "missing_admin")
-        assert config.get("startup_kits.active") == "project_admin"
+        assert _active(config) == "project_admin"
 
     def test_site_startup_kit_cannot_be_registered(self, tmp_path):
         from nvflare.tool.kit import kit_config
 
         site_kit = _make_site_startup_kit(tmp_path, "site-1")
-        config = CF.parse_string("version = 2")
+        config = {"version": 2}
 
         with pytest.raises(Exception) as exc_info:
             kit_config.add_startup_kit_entry(config, "site-1", str(site_kit))
@@ -347,25 +321,23 @@ class TestStartupKitRegistryConfig:
         for kit_dir in (real_admin, link_lead, external_admin):
             kit_dir.mkdir(parents=True, exist_ok=True)
 
-        config = CF.parse_string(
-            f"""
-            version = 2
-            startup_kits {{
-              active = "admin@nvidia.com"
-              entries {{
-                "admin@nvidia.com" = "{real_admin}"
-                "lead@nvidia.com" = "{link_lead}"
-                external_admin = "{external_admin}"
-              }}
-            }}
-            """
-        )
+        config = {
+            "version": 2,
+            "startup_kits": {
+                "active": "admin@nvidia.com",
+                "entries": {
+                    "admin@nvidia.com": str(real_admin),
+                    "lead@nvidia.com": str(link_lead),
+                    "external_admin": str(external_admin),
+                },
+            },
+        }
 
         updated, removed = kit_config.remove_entries_under_workspace(config, str(real_workspace))
 
         assert removed == {"admin@nvidia.com", "lead@nvidia.com"}
         assert kit_config.get_startup_kit_entries(updated) == {"external_admin": str(external_admin)}
-        assert updated.get("startup_kits.active", None) is None
+        assert _active(updated) is None
 
 
 class TestStartupKitResolution:
@@ -412,12 +384,7 @@ class TestStartupKitResolution:
         monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
         _write_cli_config(
             home,
-            """
-            version = 2
-            startup_kits {
-              entries {}
-            }
-            """,
+            {"version": 2, "startup_kits": {"entries": {}}},
         )
 
         with pytest.raises(Exception) as exc_info:
@@ -433,13 +400,7 @@ class TestStartupKitResolution:
         monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
         _write_cli_config(
             home,
-            """
-            version = 2
-            startup_kits {
-              active = "cancer_lead"
-              entries {}
-            }
-            """,
+            {"version": 2, "startup_kits": {"active": "cancer_lead", "entries": {}}},
         )
 
         with pytest.raises(Exception) as exc_info:
@@ -456,15 +417,7 @@ class TestStartupKitResolution:
         monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
         _write_cli_config(
             home,
-            f"""
-            version = 2
-            startup_kits {{
-              active = "cancer_lead"
-              entries {{
-                cancer_lead = "{missing_path}"
-              }}
-            }}
-            """,
+            {"version": 2, "startup_kits": {"active": "cancer_lead", "entries": {"cancer_lead": str(missing_path)}}},
         )
 
         with pytest.raises(Exception) as exc_info:
@@ -482,15 +435,7 @@ class TestStartupKitResolution:
         monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
         _write_cli_config(
             home,
-            f"""
-            version = 2
-            startup_kits {{
-              active = "bad_admin"
-              entries {{
-                bad_admin = "{invalid_kit}"
-              }}
-            }}
-            """,
+            {"version": 2, "startup_kits": {"active": "bad_admin", "entries": {"bad_admin": str(invalid_kit)}}},
         )
 
         with pytest.raises(Exception) as exc_info:
@@ -524,15 +469,7 @@ class TestStartupKitResolution:
         monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
         _write_cli_config(
             home,
-            f"""
-            version = 2
-            poc {{
-              startup_kit = "{legacy_kit}"
-            }}
-            prod {{
-              startup_kit = "{legacy_kit}"
-            }}
-            """,
+            {"version": 2, "poc": {"startup_kit": str(legacy_kit)}, "prod": {"startup_kit": str(legacy_kit)}},
         )
 
         with pytest.raises(Exception) as exc_info:

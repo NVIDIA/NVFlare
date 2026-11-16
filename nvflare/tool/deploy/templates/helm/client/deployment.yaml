@@ -1,3 +1,15 @@
+{{- $jobs := .Values.persistence.jobs | default dict -}}
+{{- if $jobs.claimName -}}
+{{- if eq $jobs.claimName .Values.persistence.workspace.claimName -}}
+{{- fail "persistence.jobs.claimName must differ from the private CP workspace claim" -}}
+{{- end -}}
+{{- $jobsMount := required "persistence.jobs.mountPath is required" $jobs.mountPath -}}
+{{- $jobsPath := clean $jobsMount -}}
+{{- $cpPath := clean .Values.persistence.workspace.mountPath -}}
+{{- if or (not (hasPrefix "/" $jobsMount)) (eq $jobsPath "/") (eq $jobsPath $cpPath) (hasPrefix (printf "%s/" $cpPath) $jobsPath) (hasPrefix (printf "%s/" $jobsPath) $cpPath) -}}
+{{- fail "persistence.jobs.mountPath must be a dedicated absolute directory outside the CP workspace mount" -}}
+{{- end -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -35,6 +47,11 @@ spec:
         - name: {{ .Values.persistence.workspace.volumeName }}
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.workspace.claimName }}
+        {{- if $jobs.claimName }}
+        - name: job-workspaces
+          persistentVolumeClaim:
+            claimName: {{ $jobs.claimName | quote }}
+        {{- end }}
         {{- with .Values.workspaceConfig }}
         {{- with .local }}
         {{- if .configMapName }}
@@ -77,6 +94,10 @@ spec:
           volumeMounts:
             - name: {{ .Values.persistence.workspace.volumeName }}
               mountPath: {{ .Values.persistence.workspace.mountPath }}
+            {{- if $jobs.claimName }}
+            - name: job-workspaces
+              mountPath: {{ $jobs.mountPath | quote }}
+            {{- end }}
             {{- with .Values.workspaceConfig }}
             {{- with .local }}
             {{- if .configMapName }}

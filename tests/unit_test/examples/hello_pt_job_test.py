@@ -21,6 +21,7 @@ import re
 import shlex
 import sys
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -70,10 +71,14 @@ def test_zero_flag_defaults_are_portable_and_bounded():
     args = job_module.define_parser().parse_args([])
 
     assert vars(args) == {
+        "execution_lifetime": "job",
         "data_root": "/tmp/nvflare/data",
         "dataset": "synthetic",
         "n_clients": 2,
         "num_rounds": 3,
+        "seed": 202610,
+        "torch_threads": None,
+        "resume_training": None,
     }
 
 
@@ -92,6 +97,24 @@ def test_help_includes_recipe_export_options():
 
     assert "--export" in help_text
     assert "--export-dir EXPORT_DIR" in help_text
+    assert "exported task jobs only" in " ".join(help_text.split())
+
+
+@pytest.mark.parametrize("resume_args", [[], ["--resume_training"], ["--no-resume_training"]])
+def test_local_task_run_rejected_before_recipe_or_simulator_creation(monkeypatch, capsys, resume_args):
+    job_module = _load_job_module()
+    monkeypatch.setattr(job_module, "is_export_requested", lambda: False)
+    create = Mock(side_effect=AssertionError("must reject before constructing the recipe"))
+    simulator = Mock(side_effect=AssertionError("must reject before starting the simulator"))
+    monkeypatch.setattr(job_module, "create_recipe", create)
+    monkeypatch.setattr(job_module, "SimEnv", simulator)
+
+    with pytest.raises(SystemExit, match="2"):
+        job_module.main(["--execution_lifetime", "task", *resume_args])
+
+    assert "task lifetime requires --export" in capsys.readouterr().err
+    create.assert_not_called()
+    simulator.assert_not_called()
 
 
 @pytest.mark.xdist_group(name="hello_pt_cli_export")
@@ -195,7 +218,7 @@ def test_default_recipe_uses_final_global_evaluation(monkeypatch):
         return recipe
 
     monkeypatch.setattr(job_module, "FedAvgRecipe", make_recipe)
-    monkeypatch.setattr(job_module, "create_model", lambda: "model")
+    monkeypatch.setattr(job_module, "create_model", lambda **kwargs: "model")
     monkeypatch.setattr(job_module, "add_final_global_evaluation", lambda value: calls.append(("final", value)))
 
     result = job_module.create_recipe(job_module.define_parser().parse_args([]))
@@ -243,7 +266,7 @@ def test_cifar_recipe_preserves_data_root_with_spaces(monkeypatch):
     recipe = object()
 
     monkeypatch.setattr(job_module, "FedAvgRecipe", lambda **kwargs: recipe_kwargs.update(kwargs) or recipe)
-    monkeypatch.setattr(job_module, "create_model", lambda: "model")
+    monkeypatch.setattr(job_module, "create_model", lambda **kwargs: "model")
     monkeypatch.setattr(job_module, "add_final_global_evaluation", lambda value: None)
 
     args = job_module.define_parser().parse_args(["--dataset", "cifar10", "--data_root", "/data/cifar cache"])
@@ -268,7 +291,7 @@ def test_cifar_remains_an_explicit_option(monkeypatch):
         return recipe
 
     monkeypatch.setattr(job_module, "FedAvgRecipe", make_recipe)
-    monkeypatch.setattr(job_module, "create_model", lambda: "model")
+    monkeypatch.setattr(job_module, "create_model", lambda **kwargs: "model")
     monkeypatch.setattr(job_module, "add_final_global_evaluation", lambda value: calls.append(("final", value)))
     args = job_module.define_parser().parse_args(["--dataset", "cifar10", "--data_root", "/data/cifar"])
 

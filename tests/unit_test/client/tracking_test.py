@@ -19,6 +19,7 @@ from nvflare.apis.analytix import AnalyticsDataType, LogWriterName
 from nvflare.app_common.metrics_exchange.metrics_sender import MetricsSender
 from nvflare.client import tracking
 from nvflare.client.api_context import APIContext
+from tests.timing_utils import WAIT_TIMEOUT, ThreadGroup, join_thread
 
 
 def _reset_tracking_globals():
@@ -60,22 +61,27 @@ def test_concurrent_tracking_init_creates_one_context(tmp_path):
     _reset_tracking_globals()
     context = MagicMock(spec=MetricsSender)
     contexts = []
-    barrier = threading.Barrier(16)
+    barrier = threading.Barrier(16, timeout=WAIT_TIMEOUT)
 
     def initialize():
-        barrier.wait()
+        try:
+            barrier.wait()
+        except threading.BrokenBarrierError:
+            return
         contexts.append(tracking.init(config_file=str(tmp_path / "metrics.json")))
 
-    with (patch("nvflare.client.tracking.MetricsSender", return_value=context) as sender_cls,):
-        threads = [threading.Thread(target=initialize) for _ in range(16)]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=2.0)
-
     try:
-        assert contexts == [context] * 16
-        sender_cls.assert_called_once()
-        context.init.assert_called_once_with(rank=None)
+        with patch("nvflare.client.tracking.MetricsSender", return_value=context) as sender_cls:
+            with ThreadGroup() as workers:
+                try:
+                    for _ in range(16):
+                        workers.start(initialize)
+                    for thread in workers.threads:
+                        join_thread(thread)
+                finally:
+                    barrier.abort()
+            assert contexts == [context] * 16
+            sender_cls.assert_called_once()
+            context.init.assert_called_once_with(rank=None)
     finally:
         _reset_tracking_globals()

@@ -79,9 +79,7 @@ class ModelUpdateAssessor(Assessor):
         try:
             elapsed = time.time() - self.device_wait_start_time
             if elapsed > self.device_wait_timeout:
-                usable_devices = set(self.device_manager.get_available_devices(fl_ctx).keys()) - set(
-                    self.device_manager.get_used_devices(fl_ctx).keys()
-                )
+                usable_devices = self.device_manager.get_usable_devices(fl_ctx)
                 self.log_error(
                     fl_ctx,
                     f"Device wait timeout ({self.device_wait_timeout}s) exceeded. "
@@ -108,9 +106,7 @@ class ModelUpdateAssessor(Assessor):
         elapsed = current_time - self._last_device_status_log_time
 
         if elapsed >= self.device_status_log_interval:
-            usable_devices = set(self.device_manager.get_available_devices(fl_ctx).keys()) - set(
-                self.device_manager.get_used_devices(fl_ctx).keys()
-            )
+            usable_devices = self.device_manager.get_usable_devices(fl_ctx)
 
             # Add timeout info if we're actually waiting with a timeout
             timeout_msg = ""
@@ -185,6 +181,16 @@ class ModelUpdateAssessor(Assessor):
     def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
         report = StateUpdateReport.from_shareable(update)
 
+        # keep the device manager's view of the current model version in sync so its eligibility
+        # checks (fill_selection / has_enough_devices_and_clients) use the correct version. This is
+        # required for the issue #5347 Option B fix in BuffDeviceManager, which excludes devices that
+        # already contributed to the current model version. Only set it when the device manager
+        # actually consumes this attribute, so unrelated device managers are left untouched.
+        # Note: it is synchronized again after process_updates below, because aggregation may
+        # advance the model version in the middle of this update.
+        if hasattr(self.device_manager, "current_model_version"):
+            self.device_manager.current_model_version = self.model_manager.current_model_version
+
         # Update available devices
         if report.available_devices:
             self.device_manager.update_available_devices(report.available_devices, fl_ctx)
@@ -196,9 +202,7 @@ class ModelUpdateAssessor(Assessor):
         # Check for device wait timeout if we are waiting for devices
         if self.device_wait_start_time is not None and self._is_device_wait_timeout_exceeded(fl_ctx):
             # Timeout exceeded, prepare an empty reply and stop the job
-            usable_devices = set(self.device_manager.get_available_devices(fl_ctx).keys()) - set(
-                self.device_manager.get_used_devices(fl_ctx).keys()
-            )
+            usable_devices = self.device_manager.get_usable_devices(fl_ctx)
             self.log_error(
                 fl_ctx,
                 f"Total devices: {len(self.device_manager.available_devices)}, usable: {len(usable_devices)}, expected: {self.device_manager.device_selection_size}. "
@@ -231,6 +235,14 @@ class ModelUpdateAssessor(Assessor):
 
         else:
             self.log_debug(fl_ctx, "no model updates")
+
+        # process_updates above may have advanced the model version (enough buffered updates were
+        # aggregated). Re-synchronize the device manager's view of the current model version so
+        # the eligibility checks below use the new version - otherwise devices that contributed
+        # to the *previous* version would be wrongly excluded and the selection could not be
+        # refilled, leaving it empty.
+        if hasattr(self.device_manager, "current_model_version"):
+            self.device_manager.current_model_version = self.model_manager.current_model_version
 
         # Handle device selection
         if self.device_manager.should_fill_selection(fl_ctx):
@@ -265,14 +277,17 @@ class ModelUpdateAssessor(Assessor):
         return accepted, reply.to_shareable()
 
     def assess(self, fl_ctx: FLContext) -> Assessment:
-        # Check if we're waiting for devices and timeout exceeded
-        self._log_device_status(fl_ctx)
-        if self._is_device_wait_timeout_exceeded(fl_ctx):
-            self.log_error(fl_ctx, "Job stopped due to insufficient devices joining within timeout period")
-            return Assessment.WORKFLOW_DONE
-        elif self.model_manager.current_model_version >= self.max_model_version:
-            model_version = self.model_manager.current_model_version
-            self.log_info(fl_ctx, f"Max model version {self.max_model_version} reached: {model_version=}")
-            return Assessment.WORKFLOW_DONE
-        else:
-            return Assessment.CONTINUE
+        # These reads touch the same shared state that process_child_update mutates, so they must be
+        # serialized with it to avoid racing against a concurrent child update.
+        with self.update_lock:
+            # Check if we're waiting for devices and timeout exceeded
+            self._log_device_status(fl_ctx)
+            if self._is_device_wait_timeout_exceeded(fl_ctx):
+                self.log_error(fl_ctx, "Job stopped due to insufficient devices joining within timeout period")
+                return Assessment.WORKFLOW_DONE
+            elif self.model_manager.current_model_version >= self.max_model_version:
+                model_version = self.model_manager.current_model_version
+                self.log_info(fl_ctx, f"Max model version {self.max_model_version} reached: {model_version=}")
+                return Assessment.WORKFLOW_DONE
+            else:
+                return Assessment.CONTINUE

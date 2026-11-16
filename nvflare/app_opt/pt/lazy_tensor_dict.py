@@ -34,6 +34,7 @@ import os
 import shutil
 import struct
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Iterable, Mapping, Optional, Tuple
@@ -202,11 +203,17 @@ class _LazyRef:
         self._metadata = metadata
         self._model_id = model_id
 
-    def materialize(self):
-        """Load one tensor, rejecting replacement of a fixed checkpoint slot."""
-        with safe_open(self.file_path, framework="pt") as f:
+    @contextmanager
+    def open(self, file_path=None):
+        """Open the backing file or a pinned hard link, rejecting a replaced model."""
+        with safe_open(self.file_path if file_path is None else file_path, framework="pt") as f:
             if (f.metadata() or {}).get(_MODEL_ID) != self._model_id:
                 raise RuntimeError("disk-backed model was replaced before tensor read")
+            yield f
+
+    def materialize(self):
+        """Load one tensor, rejecting replacement of a fixed checkpoint slot."""
+        with self.open() as f:
             return f.get_tensor(self.key)
 
     def get_metadata(self) -> TensorMetadata:
@@ -217,6 +224,10 @@ class _LazyRef:
             except KeyError as e:
                 raise ValueError(f"safetensors file '{self.file_path}' has no tensor '{self.key}'") from e
         return self._metadata
+
+    @property
+    def nbytes(self) -> int:
+        return self.get_metadata().nbytes
 
     def release(self) -> None:
         """Delete the owned temp directory behind this ref now; refs into user checkpoints are left alone."""

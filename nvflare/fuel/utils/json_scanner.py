@@ -13,10 +13,10 @@
 # limitations under the License.
 
 import copy
+import json
 from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
-from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -115,10 +115,7 @@ class JsonScanner(object):
 
         except Exception as e:
             secure_log_traceback(self.logger)
-            config = ConfigFactory.load_config(self.location[0])
-            elmt_str = config.to_str(node.element)
-            location = config.get_location()
-            raise ConfigError(self.get_process_err_msg(e, elmt_str, location, node))
+            raise ConfigError(self.get_process_err_msg(e, json.dumps(node.element), self.location[0], node))
 
         element = node.element
 

@@ -53,6 +53,6 @@ class SimpleNetwork(nn.Module):
         return x
 
 
-def create_model():
+def create_model(seed=MODEL_SEED):
     """Create the recipe model with an explicitly serialized initialization seed."""
-    return SimpleNetwork(seed=MODEL_SEED)
+    return SimpleNetwork(seed=seed)

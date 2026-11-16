@@ -31,7 +31,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import SSL_ROOT_CERT, enhance_credential_info
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.fuel.sec.authn import set_add_auth_headers_filters
+from nvflare.fuel.sec.authn import add_authentication_headers, add_server_path_reply_authentication_headers
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService, search_file
 from nvflare.fuel.utils.log_utils import configure_logging
@@ -51,6 +51,52 @@ class CellnetMonitor:
         with open(touch_file, "a"):
             os.utime(touch_file, None)
         self.stop_event.set()
+
+
+class _RelayAuth:
+    def __init__(self, authenticator, shared_fl_ctx, auth_result, stop_event, logger):
+        self.authenticator = authenticator
+        # Recovery is bounded independently of startup authentication retries.
+        self.authenticator.timeout = 5.0
+        self.shared_fl_ctx = shared_fl_ctx
+        self.auth_result = auth_result
+        self.stop_event = stop_event
+        self.logger = logger
+        self.refresh_needed = threading.Event()
+
+    def add_request_headers(self, message):
+        add_authentication_headers(message, self.authenticator.client_name, *self.auth_result[:3])
+
+    def add_reply_headers(self, message):
+        add_server_path_reply_authentication_headers(message, self.authenticator.client_name, *self.auth_result[:3])
+
+    def validate(self, message, **kwargs):
+        result = _validate_auth_headers(message, self.auth_result[3], self.logger, **kwargs)
+        if result is not None:
+            # The receive path must remain fail-closed and cannot wait for a
+            # challenge reply on the same connection. Recover in the main loop.
+            self.refresh_needed.set()
+        return result
+
+    def refresh(self):
+        if not self.refresh_needed.is_set() or self.stop_event.is_set():
+            return
+        self.refresh_needed.clear()
+        try:
+            _, verifier = self.authenticator.challenge_server()
+            if verifier is None or self.stop_event.is_set():
+                return
+            if verifier.verify(self.authenticator.client_name, *self.auth_result[:2], log_error=False):
+                return  # Same-key outages do not require a replacement token.
+            auth_result = self.authenticator.authenticate(self.shared_fl_ctx, Signal())
+            if self.stop_event.is_set():
+                return
+            self.auth_result = auth_result
+            self.logger.info("Refreshed relay authentication after server key replacement")
+        except Exception:
+            # Keep the last authenticated state; a later rejected message can
+            # request another bounded attempt. Never log credential material.
+            self.logger.warning("Could not refresh relay server authentication")
 
 
 class _ConfigKey:
@@ -204,23 +250,24 @@ def main(args):
     abort_signal = Signal()
     shared_fl_ctx = FLContext()
     shared_fl_ctx.set_public_props({ReservedKey.IDENTITY_NAME: my_identity})
-    token, token_signature, ssid, token_verifier = authenticator.authenticate(
+    auth_result = authenticator.authenticate(
         shared_fl_ctx=shared_fl_ctx,
         abort_signal=abort_signal,
     )
 
+    _, _, ssid, token_verifier = auth_result
+    relay_auth = None
     if secure_train:
         if not isinstance(token_verifier, TokenVerifier):
             raise RuntimeError(f"expect token_verifier to be TokenVerifier but got {type(token_verifier)}")
 
-        set_add_auth_headers_filters(cell, my_identity, token, token_signature, ssid)
-
+        relay_auth = _RelayAuth(authenticator, shared_fl_ctx, auth_result, stop_event, logger)
+        cell.core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=relay_auth.add_request_headers)
+        cell.core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=relay_auth.add_reply_headers)
         cell.core_cell.add_incoming_filter(
             channel="*",
             topic="*",
-            cb=_validate_auth_headers,
-            token_verifier=token_verifier,
-            logger=logger,
+            cb=relay_auth.validate,
             local_cell_fqcn=my_fqcn,
             core_cell=cell.core_cell,
         )
@@ -229,7 +276,9 @@ def main(args):
 
     # wait until stopped
     logger.info(f"Started relay {my_identity=} {my_fqcn=} {root_url=} {parent_url=} {parent_fqcn=}")
-    stop_event.wait()
+    while not stop_event.wait(2.0):
+        if relay_auth:
+            relay_auth.refresh()
     cell.stop()
     logger.info(f"Relay {my_fqcn} stopped.")
 

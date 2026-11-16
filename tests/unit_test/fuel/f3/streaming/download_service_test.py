@@ -31,6 +31,7 @@ from nvflare.fuel.f3.streaming.download_service import (
 )
 from nvflare.fuel.f3.streaming.transfer_outcome import compute_transfer_outcome
 from nvflare.fuel.utils.network_utils import get_open_ports
+from tests.timing_utils import isolate_time
 from tests.unit_test.fuel.f3.streaming.download_test_utils import (
     MockDownloadable,
     make_isolated_download_service,
@@ -1143,3 +1144,8 @@ class TestDownloadService:
             TransferProgressState.COMPLETED,
         ]
         assert events[-1]["bytes_done"] == 0
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clock(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.fuel.f3.streaming.download_service")

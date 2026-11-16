@@ -1,0 +1,6 @@
+{
+  "streaming_chunk_size": "1M",
+  "streaming_window_size": "64M",
+  "streaming_ack_interval": "16M",
+  "streaming_retry_max_pending_bytes": "128M"
+}

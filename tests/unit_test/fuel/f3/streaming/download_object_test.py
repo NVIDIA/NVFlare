@@ -32,6 +32,7 @@ from nvflare.fuel.f3.streaming.download_service import (
     _SourceFailureKey,
     download_object,
 )
+from tests.timing_utils import isolate_time
 
 
 class MockConsumer(Consumer):
@@ -587,3 +588,11 @@ class TestDownloadObject:
         assert cell.send_request.call_count == 1
         assert errors.keys() == {"server.job-1", "site-3.job-1", "site-4.job-1"}
         assert all(error for error in errors.values())
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.fuel.f3.streaming.download_service",
+    )

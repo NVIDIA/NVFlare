@@ -235,7 +235,7 @@ def test_default_allow_list_allows_metrics_artifact_writer():
         "nvflare.app_opt.pt.fedopt_ctl.FedOpt",
     ],
 )
-def test_default_allow_list_allows_components_used_by_shipped_job_templates(component_path):
+def test_default_allow_list_allows_common_builtin_components(component_path):
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx({"path": component_path, "args": {}}, job_meta={AppValidationKey.BYOC: False})
 

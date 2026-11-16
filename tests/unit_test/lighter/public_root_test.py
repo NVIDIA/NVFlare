@@ -87,6 +87,11 @@ def test_public_root_distributed_without_issuance_or_reading_previous_keys(tmp_p
             assert all(name in relay_readme for name in ("client.crt", "client.key", "server.crt", "server.key"))
             admin = json.loads((prod / "admin-sso/startup/fed_admin.json").read_text())
             assert "admin_cert_provider" in admin["admin"]
+            file_admin = json.loads((prod / "automation@example.com/startup/fed_admin.json").read_text())["admin"]
+            assert file_admin["client_cert"] == "client.crt"
+            assert file_admin["client_key"] == "client.key"
+            assert file_admin["username"] == "automation@example.com"
+            assert "admin_cert_provider" not in file_admin
             if stage == 0:
                 # Deployment-installed credentials and old legacy state are never imported.
                 (prod / "server/startup/server.key").write_text("deployment-owned key")
@@ -362,3 +367,14 @@ def test_python_api_resolves_public_root_from_current_directory(tmp_path, projec
     kit = Path(ctx[CtxKey.CURRENT_PROD_DIR]) / "server/startup"
     assert (kit / "rootCA.pem").read_bytes() == serialize_cert(project[2])
     assert not list(kit.glob("*.key"))
+
+
+@pytest.mark.parametrize("public_root", [False, True])
+def test_admin_credential_sources_are_mutually_exclusive(tmp_path, project, public_root):
+    p, _, _ = project
+    if not public_root:
+        p.set_prop("builders", None)
+    p.get_admins()[0].set_prop(PropKey.EXTERNAL_CERT, True)
+    ctx = provision(tmp_path, p)
+    assert ctx[CtxKey.BUILD_ERROR]
+    assert "external_cert and admin_cert_provider are mutually exclusive" in str(ctx[CtxKey.ERRORS])

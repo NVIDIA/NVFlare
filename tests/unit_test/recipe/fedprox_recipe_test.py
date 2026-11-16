@@ -106,6 +106,7 @@ class TestFedProxRecipe:
             enable_tensor_disk_offload=True,
             client_memory_gc_rounds=4,
             cuda_empty_cache=True,
+            execution_lifetime="task",
         )
         controller = _get_controller(recipe)
 
@@ -118,5 +119,6 @@ class TestFedProxRecipe:
         assert recipe.enable_tensor_disk_offload is True
         assert recipe.client_memory_gc_rounds == 4
         assert recipe.cuda_empty_cache is True
+        assert recipe._job.execution_lifetime == "task"
         assert controller.memory_gc_rounds == 3
         assert controller.enable_tensor_disk_offload is True

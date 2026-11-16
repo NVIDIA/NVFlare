@@ -8,18 +8,17 @@ tracking service.
 ## Install
 
 Create and activate a virtual environment. If you downloaded this directory
-with `nvflare examples get hello-pt`, add the `PT` extra to the same
-NVFlare distribution already in use by running the matching command:
+with `nvflare examples get hello-pt` using a released package, add its `PT` extra:
 
 ```bash
 # Stable installation
 python -m pip install "nvflare[PT]"
-
-# Nightly installation
-python -m pip install "nvflare-nightly[PT]"
 ```
 
-Do not run both commands. If you are working from a source checkout instead,
+For a local wheel installation, install the same wheel with `[PT]` appended to
+its filename; see the [installation guide](https://nvflare.readthedocs.io/en/main/installation.html#building-wheels).
+
+If you are working from a source checkout instead,
 install that checkout in editable mode so the example and NVFlare revision
 stay aligned:
 
@@ -232,6 +231,40 @@ the preparation command in its error log. This happens after the simulator start
 `job.py` does not validate the cache. Use an absolute client-local `--data_root` path
 to avoid depending on a client process's working directory. Exporting a job does
 not require a local cache; prepare the data on its execution clients instead.
+
+Local simulation uses job lifetime. Process/Docker task mode is deferred.
+To compare compute lifetimes, export a task job and run it on a configured
+scheduler-backed site (Kubernetes; Slurm integration is separate), using the same
+initial weights and training order:
+
+```bash
+CUDA_VISIBLE_DEVICES="" python job.py --torch_threads 1 --dataset cifar10 --data_root /data/cifar --seed 731
+python job.py --torch_threads 1 --dataset cifar10 --data_root /data/cifar --seed 731 --execution_lifetime task --export
+```
+
+PyTorch thread settings are unchanged by default; pass `--torch_threads 1` explicitly
+for a controlled CPU comparison. Both lifetimes run the same `client.py`. Job mode
+keeps its optimizer and DataLoader alive; task mode explicitly restores optimizer
+momentum, the DataLoader generator and PyTorch RNG state with `torch.load` /
+`torch.save`. `flare.system_info()["task_checkpoint"]` provides an
+isolated input path (or `None` initially) and a pending output path. The checkpoint
+stays client-local and is not sent to the server. The incoming global model
+always supplies the next round's weights. The `--resume_training` and
+`--no-resume_training` options apply only to exported task jobs for configured
+scheduler-backed sites. Add `--no-resume_training` to the task export command
+above to choose fresh optimizer and RNG state for every assignment.
+
+The script chooses the checkpoint contents and writes the pending file after
+training. The runtime binds it to the completed result and promotes it only after
+worker finalization, physical settlement and result validation. A failed attempt
+cannot overwrite committed state. Result-submission retries reuse the saved result
+without training again. The last earlier successful checkpoint is accepted after
+missed rounds; without a previous checkpoint, a site starts fresh. Same-round,
+future-round and foreign job/site checkpoints are rejected. This preserves the
+explicit checkpoint-aware example's successful-round training semantics; switching lifetime alone cannot preserve arbitrary state in
+unchanged scripts. Automatic worker retries and recovery after Client Job death
+are outside this example's contract. Other frameworks can use their native tools
+to write one opaque checkpoint file containing their relevant state.
 
 All simulated clients then read the same logical CIFAR-10 training and test
 datasets from that shared cache. This option is useful for experimentation but

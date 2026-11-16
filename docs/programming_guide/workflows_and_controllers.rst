@@ -19,19 +19,21 @@ To address this concern, NVFlare introduces Client Controlled Workflows (CCWF) t
 
 Controllers can be configured in ``config_fed_server.json`` in the workflows section:
 
-.. code-block::
+.. code-block:: json
 
-  workflows = [
+  {
+    "workflows": [
       {
-          id = "fedavg_ctl",
-          path = "nvflare.app_common.workflows.fedavg.FedAvg",
-          args {
-              min_clients = 2,
-              num_rounds = 3,
-              persistor_id = "persistor"
-          }
+        "id": "fedavg_ctl",
+        "path": "nvflare.app_common.workflows.fedavg.FedAvg",
+        "args": {
+          "min_clients": 2,
+          "num_rounds": 3,
+          "persistor_id": "persistor"
+        }
       }
-  ]
+    ]
+  }
 
 To configure controllers using the JobAPI, define the controller and send it to the server.
 This code will automatically generate the server configuration for the controller:

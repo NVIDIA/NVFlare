@@ -37,7 +37,7 @@ from cryptography.x509.oid import NameOID
 # Ensure parsers are initialized by importing cert_cli (registers module-level parser refs)
 import nvflare.tool.cert.cert_cli  # noqa: F401
 from nvflare.lighter.constants import PropKey
-from nvflare.lighter.utils import load_crt, load_private_key_file, serialize_cert
+from nvflare.lighter.utils import load_crt, load_private_key_file, serialize_cert, verify_cert_chain
 from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_commands import (
     _generate_csr,
@@ -842,13 +842,12 @@ class TestCertInit:
         bc = cert.extensions.get_extension_for_class(BasicConstraints)
         assert bc.value.ca is True
 
-    def test_rootca_is_self_signed(self, tmp_path):
-        _run_init(tmp_path)
+    @pytest.mark.parametrize("org", [None, "NVIDIA"])
+    def test_rootca_is_self_signed(self, tmp_path, org):
+        _run_init(tmp_path, org=org)
         cert = load_crt(str(tmp_path / "rootCA.pem"))
-        # For a self-signed cert, subject CN == issuer CN
-        subject_cn = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
-        issuer_cn = cert.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
-        assert subject_cn == issuer_cn
+        assert cert.subject == cert.issuer
+        cert.verify_directly_issued_by(cert)
 
     def test_org_in_cert(self, tmp_path):
         _run_init(tmp_path, org="NVIDIA")
@@ -3608,6 +3607,11 @@ class TestDistributedCertRequestApprove:
             cert_bytes = zf.read("site-3.crt")
             rootca_bytes = zf.read("rootCA.pem")
             site_yaml_bytes = zf.read("site.yaml")
+        cert = x509.load_pem_x509_certificate(cert_bytes)
+        rootca = x509.load_pem_x509_certificate(rootca_bytes)
+        assert cert.issuer == rootca.subject
+        cert.verify_directly_issued_by(rootca)
+        verify_cert_chain(cert, [], rootca)
         assert signed_json["name"] == "site-3"
         assert signed_json["org"] == "nvidia"
         assert signed_json["kind"] == "site"

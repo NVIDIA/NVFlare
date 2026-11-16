@@ -343,6 +343,25 @@ def setup_and_teardown(request):
 
 
 class TestDefaultJobScheduler:
+    def test_scheduling_keeps_job_id_local_to_each_context(self):
+        server = create_servers(1, [Site("site1", create_resource(2, 2))])[0]
+        scheduler = DefaultJobScheduler(max_jobs=2, min_schedule_interval=0)
+        scheduler.fire_event = Mock()
+        manager = server.fl_ctx_mgr
+        for job_id in ("job-A", "job-B"):
+            job = create_job(job_id, {}, {"app": ["server", "site1"]}, min_sites=1)
+            ctx = manager.new_context()
+            scheduled, _dispatch = scheduler.schedule_job(Mock(spec=JobDefManagerSpec), [job], ctx)
+            assert scheduled is job
+        contexts = [
+            call.args[1]
+            for call in scheduler.fire_event.call_args_list
+            if call.args[0] == EventType.BEFORE_CHECK_CLIENT_RESOURCES
+        ]
+
+        assert [ctx.get_prop(FLContextKey.CURRENT_JOB_ID) for ctx in contexts] == ["job-A", "job-B"]
+        assert manager.new_context().get_prop(FLContextKey.CURRENT_JOB_ID) is None
+
     def test_lifecycle_event_uses_explicit_job_id_over_sticky_job_id(self):
         scheduler = DefaultJobScheduler(max_jobs=20)
         fl_ctx = FLContext()

@@ -67,12 +67,15 @@ class FedProxRecipe(FedAvgRecipe):
         exclude_vars: Optional regex for variables excluded from aggregation.
         aggregation_weights: Optional per-client aggregation weights.
         server_memory_gc_rounds: Server garbage-collection interval.
+        sampling_seed: Seed for client sampling when min_clients is below the number of connected clients;
+            the same seed and the same available clients give the same sampling schedule. Defaults to None.
         enable_tensor_disk_offload: Enable incoming server tensor disk offload. None selects True
             with disk aggregation and False otherwise. Explicit False is incompatible with disk aggregation.
         client_memory_gc_rounds: Client garbage-collection interval.
         cuda_empty_cache: Whether clients empty the CUDA cache during cleanup.
         fedprox_mu: Finite positive proximal coefficient. Defaults to 0.01.
         enable_disk_aggregation: Enable disk-backed server aggregation and safetensors model persistence.
+        execution_lifetime: Keep client compute for the job or recreate it for each task.
     """
 
     def __init__(
@@ -106,11 +109,13 @@ class FedProxRecipe(FedAvgRecipe):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
+        sampling_seed: Optional[int] = None,
         enable_tensor_disk_offload: Optional[bool] = None,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
         fedprox_mu: float = 0.01,
         enable_disk_aggregation: bool = False,
+        execution_lifetime: str = "job",
     ):
         # FedAvgRecipe builds the controller through _get_controller_kwargs(), so this must precede super().__init__.
         self.fedprox_mu = validate_fedprox_mu(fedprox_mu)
@@ -143,10 +148,12 @@ class FedProxRecipe(FedAvgRecipe):
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            sampling_seed=sampling_seed,
             enable_tensor_disk_offload=enable_tensor_disk_offload,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
             enable_disk_aggregation=enable_disk_aggregation,
+            execution_lifetime=execution_lifetime,
         )
 
     def _get_controller_kwargs(self) -> dict[str, Any]:

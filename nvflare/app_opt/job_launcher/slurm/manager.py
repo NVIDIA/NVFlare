@@ -346,7 +346,7 @@ class SlurmJobManager:
         handle._set_terminal(result)
         return result
 
-    def _poll_accounting(self, handle: "SlurmJobHandle") -> int:
+    def _poll_accounting(self, handle: "SlurmJobHandle", allocation_gone=False) -> int:
         now = self._monotonic()
         if now - handle.accounting_last_query < _ACCOUNTING_RETRY_INTERVAL:
             return JobReturnCode.UNKNOWN
@@ -370,6 +370,13 @@ class SlurmJobManager:
         handle.accounting_misses = 0
         record = result.records[0]
         if _is_terminal(record.state):
+            # Accounting absence and node loss do not prove the old writers stopped.
+            # Wait for the allocation to leave squeue as well: it may still be
+            # completing cleanup even though sacct already reports TIMEOUT.
+            if record.state in {"COMPLETED", "FAILED", "TIMEOUT", "OUT_OF_MEMORY", "PREEMPTED"}:
+                if not allocation_gone:
+                    return JobReturnCode.UNKNOWN
+                handle.exit_confirmed = True
             return self._finish(handle, self._result_for(handle, record))
         return JobReturnCode.UNKNOWN
 
@@ -387,7 +394,7 @@ class SlurmJobManager:
             if active.status == LookupStatus.UNAVAILABLE:
                 return JobReturnCode.UNKNOWN
             if active.status == LookupStatus.NOT_FOUND:
-                return self._poll_accounting(handle)
+                return self._poll_accounting(handle, allocation_gone=True)
             record = active.records[0]
             handle.accounting_misses = 0
             if _is_terminal(record.state):
@@ -448,6 +455,7 @@ class SlurmJobHandle(JobHandleSpec):
         self.cancel_requested = False
         self.user_abort = False
         self.terminal_result = None
+        self.exit_confirmed = False
         self.pending_started_at = None
         self.accounting_last_query = float("-inf")
         self.accounting_misses = 0
@@ -466,6 +474,9 @@ class SlurmJobHandle(JobHandleSpec):
     def terminate(self):
         if self.terminal_result is None:
             self.manager._abort_handle(self)
+
+    def can_restart(self):
+        return self.exit_confirmed and not self.cancel_requested
 
     def _terminate_for_heartbeat_cleanup(self):
         if self.terminal_result is None:

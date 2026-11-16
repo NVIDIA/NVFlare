@@ -107,11 +107,20 @@ SJ/CJ containers do not receive the Docker socket, which limits lateral movement
 
 ### Resource Management
 
-Docker mode should use **`PassthroughResourceManager` — it approves every resource request unconditionally; no pre-scheduling check is done at scheduling time. If a requested resource (e.g. GPU) is unavailable, the job container fails at startup.
+**Docker with NVFlare GPU reservations** and **Docker without NVFlare GPU reservations** use the same Docker launcher. The resource manager selects the GPU admission policy; CPU and host-memory limits are separate.
 
-`GPUResourceManager` is not suitable for Docker mode: it would require the SP/CP container itself to have GPU passthrough just to count available GPUs, but SP/CP never uses GPUs — it only manages the federation.
+| Runtime / GPU policy | Resource manager | Resource consumer | GPU admission |
+|---|---|---|---|
+| Process, existing default | `GPUResourceManager` | `GPUResourceConsumer` | NVFlare checks/reserves the configured GPU memory budget; sharing remains the default unless exclusive allocation is enabled. |
+| Docker with NVFlare GPU reservations | `GPUResourceManager(exclusive=True, ignore_host=True)` | `PassthroughResourceConsumer` (no-op) | NVFlare reserves whole devices; Docker receives the reserved IDs. |
+| Docker without NVFlare GPU reservations | `PassthroughResourceManager` | None | Requests go directly to Docker; concurrent jobs may share GPUs. |
+| Kubernetes / Slurm | `PassthroughResourceManager` | None | The cluster scheduler allocates resources and queues work. |
 
-The default provisioning injects `GPUResourceManager`. If a site is **exclusively** running Docker-mode jobs, override it in `workspace/local/resources.json` **before starting SP/CP** — the resource manager is loaded once at startup and is not re-read at job submission time:
+The **manager** checks capacity and tracks reservations. The **consumer** applies an allocation at job start. Process mode's `GPUResourceConsumer` queries host GPUs and sets `CUDA_VISIBLE_DEVICES`, which the subprocess inherits. It should not be used unchanged in the Docker parent. Docker with reservations uses the existing `PassthroughResourceConsumer`, the no-op consumer, because the launcher applies `FLContextKey.ALLOCATED_RESOURCES` through Docker `DeviceIDs`. A passthrough manager returns an empty allocation, so startup skips consumption and requires no consumer.
+
+For a client kit with the built-in `GPUResourceManager` and positive provisioned GPU capacity, `nvflare deploy prepare` retains that capacity, sets `ignore_host=True` and `exclusive=True`, and installs the no-op consumer. Other prepared Docker clients use passthrough without a consumer. The parent uses the configured count and optional numeric `CUDA_VISIBLE_DEVICES` mask without GPU passthrough or host discovery. Process mode retains its existing manager/consumer pair and memory-sharing default.
+
+Existing passthrough GPU configurations remain valid and do not need reprovisioning to keep their behavior. To enable reservations, provision positive GPU capacity and prepare the kit again before restarting the parent. To run **Docker without NVFlare GPU reservations**, configure `PassthroughResourceManager` in `workspace/local/resources.json` and omit `resource_consumer` **before starting CP** — components are loaded once at startup:
 
 ```json
 {
@@ -125,11 +134,13 @@ The default provisioning injects `GPUResourceManager`. If a site is **exclusivel
 }
 ```
 
-Remove the `resource_consumer` component (`GPUResourceConsumer`) as well — it is only needed alongside `GPUResourceManager`.
+Jobs can inherit `docker_kwargs.device_requests` from their study without declaring a GPU count. An explicit job GPU count overrides study and site defaults; zero declines GPUs. With reservations, defaults are resolved before admission: count requests reserve free devices and `Count: -1` reserves the client's entire pool. These defaults must use `Count`; select the site's pool with `CUDA_VISIBLE_DEVICES`. Without reservations, GPU counts and site/study requests, including pinned `DeviceIDs`, go directly to Docker; `Count: -1` exposes all Docker-visible GPUs.
 
-If a job package is intended to be portable across deployments and carries both Docker- and process-related resource entries, the site's configured launcher still determines which mode is active at runtime. On a Docker-configured site, prefer `PassthroughResourceManager` because the Docker launcher bypasses the process-mode GPU scheduler and passes GPU settings directly via `device_requests`.
+Exclusive host-independent GPU pools use nonempty integer `CUDA_VISIBLE_DEVICES` masks; unsupported UUID or MIG masks fail at startup instead of selecting different GPUs. An empty mask only hides GPUs from the parent and leaves the configured pool unchanged. Existing non-exclusive `ignore_host=True` managers continue to ignore the host mask. Server job containers retain their existing Docker GPU requests: client resource-manager admission applies only to clients.
 
-**Future:** A `DockerResourceManager` that queries the host GPU inventory without needing SP/CP GPU passthrough is a natural follow-up.
+With reservations, the client reserves GPU IDs during the server's scheduling check and consumes the reservation token at job start. It releases the allocation after confirmed container termination; pending tokens are cancelled on failed startup or expire if unused. A required client without available capacity can keep the federated job pending. After a GPU is released, a waiting job can acquire it on a subsequent server scheduling pass. This is not a local FIFO queue or a guaranteed immediate handoff. Kubernetes/Slurm delegate acquisition and queuing to their cluster schedulers; Docker without NVFlare GPU reservations provides no GPU capacity waiting or exclusivity.
+
+**GPU reservations coordinate only jobs tracked by this client's resource manager.** They do not prevent other applications, containers, or independent NVFlare clients from using the same GPUs. Exclusive allocation does not provide a host-wide GPU lock or enforce a physical GPU memory quota. Operators must prevent overlapping GPU use or rely on an external scheduler. Allocation state lives in client memory: clients sharing a host need disjoint pools, and job containers must be stopped before restarting the parent. See [Resource Manager and Resource Consumer](https://github.com/NVIDIA/NVFlare/blob/main/docs/programming_guide/resource_manager_and_consumer.rst) for host discovery and external-process usage.
 
 ### Workspace / Storage
 - SP/CP containers receive a read-write bind mount of the host workspace directory.
@@ -256,7 +267,7 @@ Allowlisted job-controlled Docker options live under `launcher_spec[site][docker
 }
 ```
 
-`DockerJobLauncher` translates the flat `resource_spec[site].num_of_gpus` field to `device_requests: [{"Count": N, "Capabilities": [["gpu"]]}]` before calling `docker run`. Fine-grained `device_requests` are site-owned and can be configured in `default_job_container_kwargs` or the study's `docker_kwargs`.
+`GPUResourceManager` reserves devices for the flat `resource_spec[site].num_of_gpus` request, or for the study/site GPU default when the job omits its count. `DockerJobLauncher` translates the client's allocated IDs to `device_requests: [{"DeviceIDs": [...], "Capabilities": [["gpu"]]}]`. With `PassthroughResourceManager`, GPU requests go directly to Docker without reservations. Study defaults take precedence over site defaults; explicit job counts take precedence over both.
 
 New jobs should put launcher/container settings in `launcher_spec` and scheduler resource requests such as `num_of_gpus` in `resource_spec`. Do not use `resource_spec[site][docker]` for new metadata; that shape mixes scheduler resources with launcher settings and was only part of earlier migration experiments.
 
@@ -667,19 +678,14 @@ this — a site is committed to one launcher.
 The nvflare tool (Decision 1) accepts a `--mode docker|k8s|process` flag per site. This
 single flag sets everything needed for that mode:
 
-| `mode` | Launcher | Resource manager | Resource consumer | Start script |
+| `mode` / GPU policy | Launcher | Resource manager | Resource consumer | Start script |
 |---|---|---|---|---|
 | `process` | `ProcessJobLauncher` | `GPUResourceManager` | `GPUResourceConsumer` | `start.sh` (unchanged) |
-| `docker` | `DockerJobLauncher` | `PassthroughResourceManager` | none | `start_docker.sh` |
+| `docker` with NVFlare GPU reservations | `DockerJobLauncher` | `GPUResourceManager(exclusive=True, ignore_host=True)` | `PassthroughResourceConsumer` (no-op) | `start_docker.sh` |
+| `docker` without NVFlare GPU reservations | `DockerJobLauncher` | `PassthroughResourceManager` | None | `start_docker.sh` |
 | `k8s` | `K8sJobLauncher` | `PassthroughResourceManager` | none | Helm charts |
 
-The tool removes **both** `GPUResourceManager` and `GPUResourceConsumer` for Docker/K8s mode
-and replaces them with `PassthroughResourceManager`. This is important: `GPUResourceConsumer` sets
-`CUDA_VISIBLE_DEVICES` in the SP/CP process
-environment, which is correct for process mode (subprocess inherits it) but wrong for
-Docker/K8s mode (SJ/CJ runs in a separate container/pod with its own environment — GPU
-assignment is handled by `device_requests` / pod resource limits instead). Site admin cannot
-accidentally leave `GPUResourceConsumer` in place when the tool handles both together.
+Preparation selects the Docker policy and configures the manager and consumer together as described in [Resource Management](#resource-management). K8s delegates GPU allocation to its scheduler.
 
 ### Decision 4: Parent image is thin; job image is required with no default
 
@@ -709,7 +715,7 @@ Neither is universally better — the right choice depends on the deployment con
 | Job isolation | Per-job container; each job gets its own image | Shared SP/CP environment; all jobs see the same Python packages |
 | Custom environments | Different image (Python version, CUDA, ML framework) per job | Must match SP/CP environment |
 | Startup overhead | Container launch (~seconds, longer with image pull) | Subprocess (~instant) |
-| GPU access | Via Docker `device_requests`; requires `PassthroughResourceManager` | Direct; `GPUResourceManager` + `GPUResourceConsumer` assign `CUDA_VISIBLE_DEVICES` |
+| GPU access | With NVFlare GPU reservations: Docker receives reserved `DeviceIDs`. Without reservations: native Docker requests may share GPUs. See [Resource Management](#resource-management). | `GPUResourceManager` checks/reserves the GPU memory budget; `GPUResourceConsumer` sets `CUDA_VISIBLE_DEVICES`. Sharing is the default. |
 | File permissions | Requires `--user` alignment between SP/CP and SJ/CJ | Native; no extra setup |
 | Operational complexity | Higher (Docker network, socket mount, image management, container lifecycle) | Lower |
 | Security posture | Elevated (socket access is root-equivalent with standard Docker) | Least privilege (normal OS user) |

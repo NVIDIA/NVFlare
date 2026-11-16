@@ -20,6 +20,7 @@ import pytest
 
 from nvflare.dashboard import cli as dashboard_cli
 from nvflare.tool.cli_output import set_output_format
+from tests.timing_utils import isolate_time
 
 
 @pytest.fixture(autouse=True)
@@ -114,6 +115,17 @@ class TestDashboardCli:
         assert "model" not in run_kwargs["volumes"][str(dashboard_cli.os.getcwd())]
         assert "Dashboard container started" in capsys.readouterr().out
 
+    def test_start_local_reports_missing_dashboard_extra(self):
+        with (
+            patch("nvflare.fuel.utils.optional_dependencies.find_spec", return_value=None),
+            patch.object(dashboard_cli.subprocess, "run") as run_mock,
+            pytest.raises(ImportError, match="NVFlare Dashboard requires optional dependencies") as exc_info,
+        ):
+            dashboard_cli.start_local({})
+
+        assert "flask, flask_jwt_extended, flask_sqlalchemy" in str(exc_info.value)
+        run_mock.assert_not_called()
+
     @pytest.mark.parametrize("status", ["dead", "exited", "removing"])
     def test_start_reports_immediate_container_exit(self, capsys, status):
         args = _parse_dashboard_args(["--start", "-i", "nvflare-parent:test", "--cred", "admin@example.com:pw:org"])
@@ -163,3 +175,8 @@ class TestDashboardCli:
         output = capsys.readouterr().out
         assert "Dashboard container exited immediately and was removed." in output
         container.logs.assert_not_called()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clock(monkeypatch):
+    isolate_time(monkeypatch, "nvflare.dashboard.cli")

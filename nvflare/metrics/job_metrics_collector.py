@@ -15,6 +15,7 @@
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.utils.job_utils import get_event_job_id
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.metrics.metrics_collector import MetricsCollector
 from nvflare.metrics.metrics_publisher import collect_metrics
@@ -84,9 +85,8 @@ class JobMetricsCollector(MetricsCollector):
         )
 
     def handle_event(self, event: str, fl_ctx: FLContext):
-        job_id = fl_ctx.get_job_id()
-        tags: dict = self.tags
-        tags["job_id"] = job_id
+        job_id = get_event_job_id(fl_ctx) or fl_ctx.get_job_id()
+        tags = {**self.tags, "job_id": job_id}
         super().collect_event_metrics(event=event, tags=tags, fl_ctx=fl_ctx)
 
     def publish_metrics(self, metrics: dict, metric_name: str, tags: dict, fl_ctx: FLContext):

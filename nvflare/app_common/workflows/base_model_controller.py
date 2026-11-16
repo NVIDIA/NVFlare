@@ -18,7 +18,7 @@ from typing import Callable, List, Optional, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
@@ -42,6 +42,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         ignore_result_error: Optional[bool] = None,
         allow_empty_global_weights: bool = False,
         task_check_period: float = 0.5,
+        sampling_seed: Optional[int] = None,
     ):
         """FLModel based controller.
 
@@ -55,6 +56,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
                 empty global weights at first round, such that clients start training from scratch without any global info.
                 Defaults to False.
             task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
+            sampling_seed (int, optional): seed for client sampling in `sample_clients`. When set, sampling uses
+                its own random generator and sorts the available client names before drawing, so the sequence of
+                sampled subsets is the same on every run with the same seed and the same available clients. It
+                does not affect any other use of randomness. Defaults to None, which keeps the unseeded behavior.
         """
         super().__init__(task_check_period=task_check_period)
 
@@ -67,6 +72,12 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self._task_check_period = task_check_period
         self._persistor_id = persistor_id
         self.persistor = None
+
+        # client sampling
+        if sampling_seed is not None:
+            check_non_negative_int("sampling_seed", sampling_seed)
+        self._sampling_seed = sampling_seed
+        self._sampling_rng = random.Random(sampling_seed) if sampling_seed is not None else None
 
         # config data
         self._ignore_result_error = ignore_result_error
@@ -304,8 +315,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             )
             if accepted:
                 self.info(f"Result of unknown task {task_name} sent to aggregator.")
+        elif fl_ctx.get_prop(FLContextKey.TASK_RESULT_IS_LATE, False):
+            self.log_info(fl_ctx, f"Ignoring late result from completed task {task_name}")
         else:
-            self.error("Ignoring result from unknown task.")
+            self.log_error(fl_ctx, "Ignoring result from unknown task.")
 
     def _accept_train_result(
         self, client_name: str, result: Shareable, fl_ctx: FLContext, is_unknown_task: bool = False
@@ -449,12 +462,31 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             self.error("persistor not configured, model will not be saved")
 
     def sample_clients(self, num_clients: int = None) -> List[str]:
+        """Returns a list of `num_clients` clients.
+
+        With no `sampling_seed`, a subset is drawn with the global `random` module, as before. With a
+        `sampling_seed`, the available client names are sorted and the subset is drawn with the controller's
+        own generator, so repeated runs with the same seed and the same available clients produce the same
+        sequence of subsets, call after call. The guarantee covers the sampling schedule only; it does not
+        make the rest of the run reproducible, and it never touches the global random state.
+
+        Args:
+            num_clients: number of clients to return. If None or > number available clients,
+                returns all available clients. Defaults to None.
+
+        Returns:
+            A list of clients names.
+        """
         clients = [client.name for client in self.engine.get_clients()]
 
         if num_clients:
             check_positive_int("num_clients", num_clients)
             if num_clients < len(clients):
-                random.shuffle(clients)
+                if self._sampling_rng is None:
+                    random.shuffle(clients)
+                else:
+                    clients.sort()
+                    self._sampling_rng.shuffle(clients)
                 clients = clients[0:num_clients]
                 self.info(
                     f"num_clients ({num_clients}) is less than the number of available clients. Returning a random subset of ({num_clients}) clients."

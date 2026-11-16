@@ -46,6 +46,7 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES
 from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.server_engine import ServerEngine
+from tests.timing_utils import isolate_time
 
 
 def _stuck_pending_handle(pending_timeout=0):
@@ -276,3 +277,11 @@ def test_sj_exit_after_fail_run_does_not_clobber_exception_status(_mock_sleep, s
     status = runner._get_finished_job_status(engine, job, fl_ctx)
 
     assert status == RunStatus.FINISHED_EXECUTION_EXCEPTION
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.app_opt.job_launcher.k8s_launcher",
+    )

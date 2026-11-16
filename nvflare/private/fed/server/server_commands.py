@@ -182,11 +182,6 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
 
         # we also need to make TASK_ID available to the client
         shareable.set_header(key=FLContextKey.TASK_ID, value=task_id)
-        workflow_id = fl_ctx.get_prop(FLContextKey.WORKFLOW)
-        if task_id and workflow_id is not None:
-            # Preserve the exact issuing workflow even when an OUT filter
-            # returned a fresh payload. Its echoed cookie scopes result ACKs.
-            shareable.add_cookie(ReservedHeaderKey.WORKFLOW, workflow_id)
         attempt_id = fl_ctx.get_prop(FLContextKey.TASK_ATTEMPT_ID) or shareable.get_task_attempt_id()
         if task_id and attempt_id is not None:
             shareable.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, attempt_id)

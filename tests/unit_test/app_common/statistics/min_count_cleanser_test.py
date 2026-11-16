@@ -81,3 +81,33 @@ class TestMinCountChecker:
         checker = MinCountCleanser(min_count=min_count)
         results = checker.apply(statistics=statistics, client_name="site-1")
         assert results == expected_result
+
+
+class TestMinCountWithheldFeatures:
+    @pytest.mark.parametrize(
+        "statistics, min_count, expected",
+        [
+            ({"count": {"train": {"age": 6}}, "failure_count": {"train": {"age": 0}}}, 7, {"train": ["age"]}),
+            ({"count": {"train": {"age": 8}}, "failure_count": {"train": {"age": 0}}}, 7, {}),
+            (
+                {"count": {"train": {"age": 8, "edu": 5}}, "failure_count": {"train": {"age": 0, "edu": 0}}},
+                7,
+                {"train": ["edu"]},
+            ),
+            ({"count": {"train": {"age": 9}}, "failure_count": {"train": {"age": 3}}}, 7, {"train": ["age"]}),
+            ({"sum": {"train": {"age": 1.0}}}, 7, {}),
+        ],
+    )
+    def test_withheld_features(self, statistics, min_count, expected):
+        assert MinCountCleanser(min_count=min_count).withheld_features(statistics, "site-1") == expected
+
+    def test_reporting_does_not_change_the_statistics(self):
+        statistics = {
+            "count": {"train": {"age": 6}},
+            "failure_count": {"train": {"age": 0}},
+            "sum": {"train": {"age": 3}},
+        }
+
+        MinCountCleanser(min_count=7).withheld_features(statistics, "site-1")
+
+        assert statistics["sum"] == {"train": {"age": 3}}

@@ -25,7 +25,7 @@ from nvflare.apis.fl_constant import (
     WorkspaceConstants,
 )
 from nvflare.apis.fl_exception import FLCommunicationError
-from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
+from nvflare.apis.job_def import DEFAULT_STUDY, OUTPUTS_ONLY_PROP, JobMetaKey
 from nvflare.apis.utils.format_check import name_check
 from nvflare.apis.utils.job_submit_token import validate_submit_token
 from nvflare.apis.workspace import Workspace
@@ -82,6 +82,8 @@ _STATE_CHANGE_CONNECT_TIMEOUT = 1.0
 _CONNECTION_RETRY_COMMANDS = {AdminCommandNames.ABORT_JOB, AdminCommandNames.SHUTDOWN}
 _CONNECTION_RETRY_ATTEMPTS = 3
 _CONNECTION_RETRY_BACKOFF = 0.5
+_ABORT_STARTING_RETRY_SECS = 30.0
+_ABORT_STARTING_RETRY_DELAY = 0.5
 
 
 def _command_name(command: str) -> str:
@@ -126,6 +128,19 @@ def _validate_target_strs(targets: List[str]) -> None:
     names back into a single token (see NVBug 6098943).
     """
     process_targets_into_str(targets)
+
+
+# an outputs-only request whose reply lacks the outputs_only mark: the server returned the whole job
+_FULL_DOWNLOAD_NOTE = "the whole job was downloaded because the server does not support outputs-only downloads"
+
+
+def _outputs_download_notice(meta: dict, job_id: str, outputs_only: bool = False) -> Optional[str]:
+    """What to tell the user when a download is not what was asked for: an outputs-only request that returned the
+    whole job, or a job whose stored outputs are missing from the download. None otherwise."""
+    note = meta.get(MetaKey.OUTPUTS_NOTE)
+    if not note and outputs_only and meta.get(MetaKey.OUTPUTS_ONLY) is not True:
+        note = _FULL_DOWNLOAD_NOTE
+    return f"Job {job_id}: {note}." if note else None
 
 
 class Session(SessionSpec):
@@ -490,32 +505,50 @@ class Session(SessionSpec):
         jobs_list = meta.get(MetaKey.JOBS, [])
         return jobs_list
 
-    def download_job_result(self, job_id: str, destination: str = None) -> str:
+    def download_job_result(self, job_id: str, destination: str = None, outputs_only: bool = False) -> str:
         """Download result of the job.
 
         Args:
             job_id (str): ID of the job
             destination (str): optional directory to move the downloaded result into.
                 If not specified, result is left in the download_dir from the admin config.
+            outputs_only (bool): download only the job's outputs, at the same paths under ``workspace/`` as a full
+                download: the files the job produced on the server (models, metrics, evaluation results). Left
+                out: the submitted job, its config and code, and the logs; use the full download when you need the
+                logs. The server returns the whole job when the job did not complete or produced no output files; a
+                notice saying why is logged.
+                A notice is also logged for any download that lacks the job's stored outputs.
 
         Returns: folder path to the location of the job result
 
         """
+        location, notice = self._download_job_result(job_id, destination, outputs_only)
+        if notice:
+            get_obj_logger(self).warning(notice)
+        return location
+
+    def _download_job_result(self, job_id: str, destination: str = None, outputs_only: bool = False):
+        """Download the job's result; returns its location and a notice when the download is not what was asked
+        for (an outputs-only request that returned the whole job, or stored outputs missing from it), else None."""
         import shutil
 
         self._validate_job_id(job_id)
-        result = self._do_command(AdminCommandNames.DOWNLOAD_JOB + " " + job_id)
+        if not isinstance(outputs_only, bool):
+            raise InvalidArgumentError(f"outputs_only must be bool but got {type(outputs_only)}")
+        props = {OUTPUTS_ONLY_PROP: True} if outputs_only else None
+        result = self._do_command(AdminCommandNames.DOWNLOAD_JOB + " " + job_id, props=props)
         meta = result[ResultKey.META]
         location = meta.get(MetaKey.LOCATION)
+        notice = _outputs_download_notice(meta, job_id, outputs_only) if location else None
 
         if destination and location and os.path.exists(location):
             destination = os.path.abspath(destination)
             os.makedirs(destination, exist_ok=True)
             final_path = os.path.join(destination, os.path.basename(location))
             shutil.move(location, final_path)
-            return final_path
+            return final_path, notice
 
-        return location
+        return location, notice
 
     def list_job_components(self, job_id: str) -> List[str]:
         """Get the list of additional job components for the specified job.
@@ -559,10 +592,22 @@ class Session(SessionSpec):
         If the job is already done, no effect;
         If job is not started yet, it will be cancelled and won't be scheduled.
         If the job is being executed, it will be aborted.
+        If the job is still starting, the server asks the caller to retry; this method retries for up to
+        30 seconds before raising the server's response.
 
         """
         self._validate_job_id(job_id)
-        result = self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
+        starting_error = f"{MetaStatusValue.ERROR}: Job {job_id} {ReplyKeyword.JOB_STARTING_RETRY_ABORT}"
+        deadline = time.monotonic() + _ABORT_STARTING_RETRY_SECS
+        while True:
+            try:
+                result = self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
+                break
+            except InternalError as e:
+                remaining = deadline - time.monotonic()
+                if str(e) != starting_error or remaining <= 0:
+                    raise
+                time.sleep(min(_ABORT_STARTING_RETRY_DELAY, remaining))
         meta = result[ResultKey.META]
         status = meta.get(MetaKey.STATUS)
         info = meta.get(MetaKey.INFO)
@@ -1041,7 +1086,8 @@ class Session(SessionSpec):
         parts = [cmd, target]
         if options:
             options = validate_options_string(options)
-            parts.append(options)
+            # each option must reach the server as its own token; join_args would quote "-l -a" as one
+            parts.extend(options.split())
 
         if pattern_required:
             if not pattern:
@@ -1520,14 +1566,22 @@ class Session(SessionSpec):
 
         Args:
             config: str log level or built-in LogMode
-            target (str): target site name or "all"
+            target (str): "all", "server", or a client site name. A client
+                site name is sent to the server as "client <name>".
 
         Returns: None
 
         """
         config_str = validate_site_log_config(config)
 
-        command = join_args([AdminCommandNames.CONFIGURE_SITE_LOG, target, config_str])
+        parts = [AdminCommandNames.CONFIGURE_SITE_LOG]
+        if target in ("all", "server", "client"):
+            parts.append(target)
+        else:
+            # the server expects "client <name>" for a single client site
+            parts.extend(["client", target])
+        parts.append(config_str)
+        command = join_args(parts)
         self._do_command(command, enforce_meta=False)
 
     def wait_for_job(self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0) -> dict:

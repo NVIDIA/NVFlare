@@ -35,6 +35,7 @@ from nvflare.tool.job.job_cli import (
     _parse_monitor_duration_seconds,
     _parse_monitor_start_ts,
 )
+from tests.timing_utils import isolate_time
 
 
 def _configure_active_startup_kit(tmp_path, monkeypatch):
@@ -48,16 +49,13 @@ def _configure_active_startup_kit(tmp_path, monkeypatch):
 
     config_dir = home / ".nvflare"
     config_dir.mkdir(parents=True)
-    (config_dir / "config.conf").write_text(
-        f"""
-        version = 2
-        startup_kits {{
-          active = "admin@nvidia.com"
-          entries {{
-            "admin@nvidia.com" = "{admin_dir}"
-          }}
-        }}
-        """,
+    (config_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "startup_kits": {"active": "admin@nvidia.com", "entries": {"admin@nvidia.com": str(admin_dir)}},
+            }
+        ),
         encoding="utf-8",
     )
     monkeypatch.setenv("HOME", str(home))
@@ -1042,3 +1040,11 @@ class TestJobMonitorOutput:
         )
         assert args.stats_target == "client"
         assert args.metrics == ["loss", "accuracy"]
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_clocks(monkeypatch):
+    isolate_time(
+        monkeypatch,
+        "nvflare.tool.job.job_cli",
+    )

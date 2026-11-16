@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-import time
 from threading import Event
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -30,6 +29,7 @@ from nvflare.fuel.f3.message import Message, MessageReceiver
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager
 from nvflare.fuel.f3.sfm.constants import FLARE_PROTOCOL_VERSION, HandshakeKeys, Types
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
+from tests.timing_utils import wait_for
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +42,7 @@ MESSAGE_FROM_B = "Test message from b"
 
 class CommState:
     def __init__(self):
+        self.received = {}
         self.a_ready_event = Event()
         self.a_received_event = Event()
         self.b_ready_event = Event()
@@ -65,12 +66,10 @@ class Receiver(MessageReceiver):
         self.comm_state = comm_state
 
     def process_message(self, endpoint: Endpoint, connection: Connection, app_id: int, message: Message):
-        text = message.payload.decode("utf-8")
+        self.comm_state.received[endpoint.name] = message.payload
         if endpoint.name == NODE_A:
-            assert text == MESSAGE_FROM_A
             self.comm_state.a_received_event.set()
         else:
-            assert text == MESSAGE_FROM_B
             self.comm_state.b_received_event.set()
 
 
@@ -189,31 +188,27 @@ class TestCommunicator:
         comm_a = get_comm_a(comm_state)
         comm_b = get_comm_b(comm_state)
 
-        _, url, _ = comm_a.start_listener(scheme, {"ports": port_range})
-        comm_a.start()
+        try:
+            _, url, _ = comm_a.start_listener(scheme, {"ports": port_range})
+            comm_a.start()
 
-        # Check port is in the range
-        if port_range:
             parts = port_range.split("-")
-            lo = int(parts[0])
-            hi = int(parts[1])
-            params = parse_url(url)
-            port = int(params.get("port"))
+            lo, hi = int(parts[0]), int(parts[1])
+            port = int(parse_url(url).get("port"))
             assert lo <= port <= hi
 
-        comm_b.add_connector(url, Mode.ACTIVE)
-        comm_b.start()
-
-        while not comm_state.a_ready_event.wait(10) or not comm_state.b_ready_event.wait(10):
-            log.info("Waiting for both endpoints to be ready")
-            time.sleep(0.1)
-
-        comm_a.send(Endpoint(NODE_B), APP_ID, Message({}, MESSAGE_FROM_A.encode("utf-8")))
-        comm_b.send(Endpoint(NODE_A), APP_ID, Message({}, MESSAGE_FROM_B.encode("utf-8")))
-
-        time.sleep(1)
-
-        assert comm_state.a_received_event.is_set() and comm_state.b_received_event.is_set()
-
-        comm_b.stop()
-        comm_a.stop()
+            comm_b.add_connector(url, Mode.ACTIVE)
+            comm_b.start()
+            wait_for(
+                lambda: comm_state.a_ready_event.is_set() and comm_state.b_ready_event.is_set(),
+                message="communicator endpoints did not become ready",
+            )
+            comm_a.send(Endpoint(NODE_B), APP_ID, Message({}, MESSAGE_FROM_A.encode("utf-8")))
+            comm_b.send(Endpoint(NODE_A), APP_ID, Message({}, MESSAGE_FROM_B.encode("utf-8")))
+            assert comm_state.a_received_event.wait(10), "message from A was not delivered"
+            assert comm_state.b_received_event.wait(10), "message from B was not delivered"
+            # Callbacks may swallow exceptions; check payloads on the test thread.
+            assert comm_state.received == {NODE_A: MESSAGE_FROM_A.encode(), NODE_B: MESSAGE_FROM_B.encode()}
+        finally:
+            comm_b.stop()
+            comm_a.stop()

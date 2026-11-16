@@ -56,6 +56,7 @@ class JobMetaKey(str, Enum):
     DATA_STORAGE_FORMAT = "data_storage_format"
     DEPLOY_MAP = "deploy_map"
     RESOURCE_SPEC = "resource_spec"
+    CJ_RESOURCE_SPEC = "cj_resource_spec"
     CONTENT_LOCATION = "content_location"
     RESULT_LOCATION = "result_location"
     APPROVALS = "approvals"
@@ -77,6 +78,7 @@ class JobMetaKey(str, Enum):
     JOB_CLIENTS = "job_clients"  # clients that participated the job
     STUDY = "study"
     JOB_LAUNCHER_SPEC = "launcher_spec"
+    JOB_OUTPUTS_STORED = "job_outputs_stored"  # set by the server: the outputs are stored apart from the workspace
 
     def __repr__(self):
         return self.value
@@ -96,11 +98,15 @@ class JobMetaKey(str, Enum):
 USER_SETTABLE_JOB_META_KEYS = frozenset(
     {
         JobMetaKey.RESOURCE_SPEC,
+        JobMetaKey.CJ_RESOURCE_SPEC,
         JobMetaKey.JOB_LAUNCHER_SPEC,
         JobMetaKey.SCOPE,
         JobMetaKey.CUSTOM_PROPS,
     }
 )
+
+# download_job command property asking the server for only the job's outputs
+OUTPUTS_ONLY_PROP = "outputs_only"
 
 
 class SubmitRecordState(str, Enum):

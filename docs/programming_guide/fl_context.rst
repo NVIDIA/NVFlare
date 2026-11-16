@@ -83,6 +83,13 @@ Job ID (fl_ctx.get_job_id())
 FL application is always running within a RUN, which has a unique ID number. From NVIDIA FLARE version 2.1.0, job ID is
 used as the run number, and it no longer has to be an integer.
 
+The server parent process manages multiple jobs and has no permanent job ID. Its
+``FLContextKey.CURRENT_JOB_ID`` property is non-sticky and applies only to the context
+of the scheduling, deployment, completion, abort, or failure operation. A fresh parent
+context does not inherit the last processed job's ID, even when only one job is running.
+For job lifecycle events, use ``nvflare.apis.utils.job_utils.get_event_job_id(fl_ctx)``
+to read the explicit event job ID. Within a job process, continue to use ``fl_ctx.get_job_id()``.
+
 Identity Name (fl_ctx.get_identity_name())
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Each running endpoint has a unique identity name. You can get the identity name of the endpoint your application is

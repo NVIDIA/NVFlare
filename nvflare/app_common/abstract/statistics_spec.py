@@ -197,11 +197,13 @@ class Statistics(InitFinalComponent, ABC):
             dataset_name: dataset name
             feature_name: feature name
 
-        Returns: local standard deviation
+        Returns: local sample standard deviation, with N - 1 in the denominator (what pandas std() returns)
 
         Raises:
             NotImplementedError will be raised when stddev statistic is configured but not implemented. If the stddev is not
             configured to be calculated, no need to implement this method and NotImplementedError will not be raised.
+            HierarchicalStatisticsController also needs this method when only var is configured, since it computes
+            the var of each hierarchical level from the clients' local stddev.
         """
         raise NotImplementedError
 
