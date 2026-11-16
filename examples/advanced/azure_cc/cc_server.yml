@@ -1,0 +1,13 @@
+schema_version: 1
+cc_deployment_mode: azure_cc
+cpu_tee: amd_sev_snp
+gpu_tee: none
+attestation:
+  service: azure_maa
+workload:
+  source:
+    type: external
+azure_cc:
+  deployment_target: confidential_container
+  cce_policy_file: ./approved-cce-policy.txt
+  startup_kit_signing_key_file: ./deployment-private-key.pem

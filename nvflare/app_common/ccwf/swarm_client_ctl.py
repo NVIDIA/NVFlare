@@ -99,6 +99,7 @@ class Gatherer(FLComponent):
         self.wait_time_after_min_resps_received = wait_time_after_min_resps_received
         self.min_resps_received_time = None
         self.lock = threading.Lock()
+        self.closed = False
         self.perm_lock = threading.Lock()
         self.current_best_client = task_data.get_header(Constant.CLIENT)
         self.current_best_global_metric = task_data.get_header(Constant.METRIC)
@@ -116,6 +117,11 @@ class Gatherer(FLComponent):
     def gather(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> Shareable:
         with self.lock:
             try:
+                if self.closed:
+                    # A submission may retain this gatherer after the monitor closes it.
+                    # Do not leave a late contribution in the aggregator for the next round.
+                    self.log_info(fl_ctx, f"dropped result from late {client_name} for closed round {self.for_round}")
+                    return make_reply(ReturnCode.OK)
                 return self._do_gather(client_name, result, fl_ctx)
             except:
                 self.log_error(fl_ctx, f"exception gathering: {secure_format_traceback()}")
@@ -128,6 +134,11 @@ class Gatherer(FLComponent):
 
     def can_accept_submission(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> str:
         with self.perm_lock:
+            if self.closed:
+                self.log_debug(
+                    fl_ctx, f"reject submission request from late {client_name} for closed round {self.for_round}"
+                )
+                return ReturnCode.MODEL_UNRECOGNIZED
             result_round = result.get_header(AppConstants.CURRENT_ROUND)
             client_status = self.trainer_statuses.get(client_name)
             if not client_status:
@@ -222,6 +233,14 @@ class Gatherer(FLComponent):
         return make_reply(ReturnCode.OK)
 
     def aggregate(self):
+        with self.lock:
+            # Wait for in-flight acceptance, then prevent stale submissions from
+            # modifying the aggregator after this round has been consumed.
+            # Publish closure under both readers' locks, in gather -> permission order.
+            with self.perm_lock:
+                self.closed = True
+        # The closed guard excludes further contributions. Run aggregation and
+        # extension callbacks without holding the gather lock.
         fl_ctx = self.fl_ctx
         self.log_info(fl_ctx, f"Start aggregation for round {self.for_round}")
         self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
@@ -261,6 +280,16 @@ class Gatherer(FLComponent):
         return aggr_result
 
     def is_done(self):
+        # Keep the monitor responsive to shutdown while acceptance is busy.
+        # reply_time alone does not mean acceptance and its event handlers finished.
+        if not self.lock.acquire(blocking=False):
+            return False
+        try:
+            return self._is_done()
+        finally:
+            self.lock.release()
+
+    def _is_done(self):
         unfinished = 0
         for c, s in self.trainer_statuses.items():
             if not s.reply_time:
@@ -285,6 +314,8 @@ class Gatherer(FLComponent):
                 f"since received minimum responses",
             )
             return True
+
+        return False
 
 
 class SwarmClientController(ClientSideController):

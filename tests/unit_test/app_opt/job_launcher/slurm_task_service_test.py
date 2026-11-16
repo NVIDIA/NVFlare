@@ -574,3 +574,26 @@ def test_definitive_rejection_allows_cj_and_system_shutdown(owned):
     assert cj.poll() == 1
     assert not owned.owner.thread.is_alive()
     assert owned.service.shutdown(timeout=0.05) == ()
+
+
+def test_cj_recovery_waits_for_workers_to_settle(owned):
+    _launch(owned)
+    native = Mock()
+    native.can_restart.return_value = True
+    cj = _TaskCJHandle(native, owned.owner, cleanup_timeout=0.05)
+    assert cj.can_restart() is False
+    assert owned.owner.thread.is_alive()
+    _settle(owned)
+    cj.cleanup_timeout = 5
+    assert cj.can_restart() is True
+    assert not owned.owner.thread.is_alive()
+    assert "job-1" not in owned.service.jobs
+
+
+def test_cj_recovery_requires_confirmed_cj_exit(owned):
+    native = Mock()
+    native.can_restart.return_value = False
+    cj = _TaskCJHandle(native, owned.owner, cleanup_timeout=0.05)
+    assert cj.can_restart() is False
+    assert not owned.owner.released
+    owned.owner.release()
