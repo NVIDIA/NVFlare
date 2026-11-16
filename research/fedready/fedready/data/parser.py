@@ -334,7 +334,6 @@ class FileRecord:
     container_path: Path
     logical_path: str
     extension: str
-    size_bytes: int | None = None
     member_name: str | None = None
 
 
@@ -595,14 +594,12 @@ def _scan_dataset(root: Path, config: DataParserConfig) -> ScanResult:
                 logical_path = file_path.relative_to(base).as_posix()
             except ValueError:
                 logical_path = file_path.name
-            size = _safe_file_size(file_path)
             if not add_record(
                 FileRecord(
                     storage="file",
                     container_path=file_path,
                     logical_path=logical_path,
                     extension=file_path.suffix.lower(),
-                    size_bytes=size,
                 )
             ):
                 break
@@ -677,7 +674,6 @@ def _scan_zip(container_path: Path) -> tuple[list[FileRecord], list[str]]:
                         container_path=container_path,
                         logical_path=f"{container_path.name}!/{member}",
                         extension=PurePosixPath(member).suffix.lower(),
-                        size_bytes=info.file_size,
                         member_name=member,
                     )
                 )
@@ -700,7 +696,6 @@ def _scan_tar(container_path: Path) -> tuple[list[FileRecord], list[str]]:
                         container_path=container_path,
                         logical_path=f"{container_path.name}!/{member}",
                         extension=PurePosixPath(member).suffix.lower(),
-                        size_bytes=info.size,
                         member_name=member,
                     )
                 )
@@ -742,13 +737,6 @@ def _archive_kind(path: Path) -> str | None:
     if name.endswith((".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2")):
         return "tar"
     return None
-
-
-def _safe_file_size(path: Path) -> int | None:
-    try:
-        return path.stat().st_size
-    except OSError:
-        return None
 
 
 def _is_image_record(record: FileRecord) -> bool:

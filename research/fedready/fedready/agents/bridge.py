@@ -32,7 +32,6 @@ from fedready.utils.logging import payload_digest, timestamp_utc
 
 FILE_AGENT_REQUEST_SCHEMA = "fedready.file_agent_request.v1"
 FILE_AGENT_RESPONSE_SCHEMA = "fedready.file_agent_response.v1"
-LOCAL_VISION_API_BASE_URL = "http://127.0.0.1:8001/v1"
 # The research contribution deliberately exposes one live backend. Keeping the
 # backend surface narrow makes agent behavior and failure accounting comparable.
 DEFAULT_CODEX_NVFLARE_SKILL = "nvflare-orient"
@@ -117,10 +116,8 @@ def _is_codex_sandbox_unavailable(text: str) -> bool:
 
 def _is_codex_startup_transient(text: str) -> bool:
     normalized = " ".join(text.casefold().split())
-    return (
-        "timed out waiting for cloud config bundle" in normalized
-        or "cloud config bundle" in normalized
-        and any(token in normalized for token in ("timeout", "timed out", "temporarily unavailable"))
+    return "cloud config bundle" in normalized and any(
+        token in normalized for token in ("timeout", "timed out", "temporarily unavailable")
     )
 
 
@@ -207,9 +204,7 @@ class CodexWorkerBackend:
             output_schema=output_schema,
             prompt=prompt,
             context=context,
-            backend="codex",
             model=self.model,
-            base_url=None,
         )
         if agent_skills:
             request_payload["agent_skills"] = agent_skills
@@ -221,8 +216,8 @@ class CodexWorkerBackend:
                 "retry_of_request_id": _retry_of_request_id,
                 "reason": "request-local filesystem sandbox was unavailable before command execution",
             }
-        _write_json(request_dir / "request.json", request_payload)
-        _write_json(request_dir / "context.json", context)
+        atomic_write_json(request_dir / "request.json", request_payload)
+        atomic_write_json(request_dir / "context.json", context)
         (request_dir / "prompt.md").write_text(_render_prompt(request_payload, prompt), encoding="utf-8")
 
         codex_dir = request_dir / "codex_worker"
@@ -248,7 +243,7 @@ class CodexWorkerBackend:
             agent_skills=agent_skills,
         )
         task_path.write_text(task_text, encoding="utf-8")
-        _write_json(
+        atomic_write_json(
             request_dir / "status.json",
             {
                 "schema_version": "fedready.file_agent_status.v1",
@@ -274,7 +269,7 @@ class CodexWorkerBackend:
                 last_message_path=last_message_path,
                 add_dirs=add_dirs,
             )
-            _write_json(
+            atomic_write_json(
                 codex_dir / "codex_command.json",
                 {
                     "schema_version": "fedready.codex_worker_command.v1",
@@ -308,7 +303,7 @@ class CodexWorkerBackend:
             )
             stdout_path.write_text(result.stdout or "", encoding="utf-8")
             stderr_path.write_text(result.stderr or "", encoding="utf-8")
-            _write_json(
+            atomic_write_json(
                 codex_dir / "codex_result.json",
                 {
                     "schema_version": "fedready.codex_worker_result.v1",
@@ -339,29 +334,23 @@ class CodexWorkerBackend:
                     last_message_path.read_text(encoding="utf-8"),
                     request_id=request_id,
                 )
-                _write_json(response_path, response_from_message)
-            response = _parse_agent_response(
-                json.dumps(_read_json_object(response_path)),
-                request_id=request_id,
-            )
+                atomic_write_json(response_path, response_from_message)
+            response = _parse_agent_response(response_path.read_text(encoding="utf-8"), request_id=request_id)
             _apply_file_writes(response=response, context=execution_context, request_dir=request_dir)
             status = response.get("status")
             if status != "completed" and not _can_return_failed_output(
                 action=action, response=response, output_schema=output_schema
             ):
                 raise RuntimeError(f"Agent request {request_id} returned status {status}: {response.get('reason')}")
-            output = response.get("output")
-            if not isinstance(output, dict):
-                raise ValueError(f"Agent response {request_id} missing object output")
-            output = _resolve_local_output_paths(output, context=execution_context)
+            output = _resolve_local_output_paths(response["output"], context=execution_context)
             response["output"] = output
-            _write_json(response_path, response)
+            atomic_write_json(response_path, response)
         except Exception as exc:
             retryable_sandbox_failure = _is_retryable_codex_worker_startup_failure(exc)
             should_retry_sandbox_failure = (
                 retryable_sandbox_failure and _sandbox_retry_attempt < self.sandbox_retry_attempts
             )
-            _write_json(
+            atomic_write_json(
                 request_dir / "status.json",
                 {
                     "schema_version": "fedready.file_agent_status.v1",
@@ -390,7 +379,7 @@ class CodexWorkerBackend:
                     _retry_of_request_id=request_id,
                 )
             raise
-        _write_json(
+        atomic_write_json(
             request_dir / "status.json",
             {
                 "schema_version": "fedready.file_agent_status.v1",
@@ -639,11 +628,9 @@ def _request_payload(
     output_schema: str,
     prompt: str,
     context: dict[str, Any],
-    backend: str | None = None,
-    model: str | None = None,
-    base_url: str | None = None,
+    model: str | None,
 ) -> dict[str, Any]:
-    payload = {
+    return {
         "schema_version": FILE_AGENT_REQUEST_SCHEMA,
         "request_id": request_id,
         "session_id": session_id,
@@ -676,10 +663,8 @@ def _request_payload(
             "request_is_local_to_simulation": True,
             "do_not_add_local_paths_or_raw_samples_to_response": True,
         },
+        "backend": {"kind": "codex", "model": model},
     }
-    if backend is not None:
-        payload["backend"] = {"kind": backend, "model": model, "base_url": base_url}
-    return payload
 
 
 def _render_prompt(request: dict[str, Any], prompt: str) -> str:
@@ -712,18 +697,6 @@ def _env_text(name: str) -> str | None:
     if not cleaned or cleaned.lower() in {"0", "false", "no", "none", "off"}:
         return None
     return cleaned
-
-
-def _read_json_object(path: Path) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise RuntimeError(f"Expected JSON file does not exist: {path}") from exc
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Expected valid JSON object at {path}") from exc
-    if not isinstance(value, dict):
-        raise ValueError(f"Expected JSON object at {path}")
-    return value
 
 
 def _parse_agent_response(content: str, *, request_id: str) -> dict[str, Any]:
@@ -811,11 +784,7 @@ def _apply_file_writes(*, response: dict[str, Any], context: dict[str, Any], req
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
         written.append(str(target))
-    _write_json(request_dir / "agent_file_writes.json", {"files": written})
-
-
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    atomic_write_json(path, payload)
+    atomic_write_json(request_dir / "agent_file_writes.json", {"files": written})
 
 
 def _agent_error_summary(exc: Exception) -> dict[str, Any]:

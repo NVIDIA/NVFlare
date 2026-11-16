@@ -360,7 +360,7 @@ def available_contract_summaries() -> dict[str, dict[str, Any]]:
 
 
 def _tokens(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9]+", text.replace("_", " ").replace("-", " ").lower())
+    return re.findall(r"[a-z0-9]+", text.lower())
 
 
 def _record_type_text(value: Any) -> str:

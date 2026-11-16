@@ -22,7 +22,6 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from fedready.agents import ClientAgent, _query_local_vlm_image
 from fedready.agents.bridge import CodexWorkerBackend
 from fedready.agents.local_adapter import (
     DEFAULT_LOCAL_ADAPTER_MAX_ATTEMPTS,
@@ -34,6 +33,8 @@ from fedready.agents.local_adapter import (
     sanitize_adapter_diagnostic,
     task_example_context,
 )
+from fedready.agents.local_vlm import DEFAULT_LOCAL_VISION_MODEL, LOCAL_VISION_API_BASE_URL, _query_local_vlm_image
+from fedready.agents.roles import ClientAgent
 from fedready.data.contracts import (
     available_contract_summaries,
     generated_contract_box_field,
@@ -61,14 +62,12 @@ from fedready.flare.channel import (
     ROUND_EXTRACTION,
     ROUND_PROFILE,
     TASK_QUERY_TASK_NAME,
-    TOTAL_DATA_ROUNDS,
     FlareMessage,
 )
 from fedready.flare.channel import current_round_from_shareable as _current_round_from_shareable
 from fedready.flare.channel import from_shareable
 from fedready.flare.channel import set_fl_ctx_round as _set_fl_ctx_round
 from fedready.flare.channel import to_shareable
-from fedready.flare.channel import total_rounds_from_shareable as _total_rounds_from_shareable
 from fedready.prompts import render_client_prompt, render_client_prompt_object
 from fedready.utils.io import contained_path
 from fedready.utils.logging import FlowLogger
@@ -136,7 +135,7 @@ class FedReadyTaskQueryExecutor(Executor):
                 return make_reply(ReturnCode.BAD_PEER_CONTEXT)
             if request_message.site_id is not None and request_message.site_id != client_id:
                 return make_reply(ReturnCode.BAD_PEER_CONTEXT)
-            _set_fl_ctx_round(fl_ctx, current_round, TOTAL_DATA_ROUNDS)
+            _set_fl_ctx_round(fl_ctx, current_round)
             if current_round == ROUND_PROFILE:
                 response_message = self._execute_inquiry(client_id, request_message, fl_ctx)
             elif current_round == ROUND_EXTRACTION:
@@ -367,7 +366,6 @@ class FedReadyTaskQueryExecutor(Executor):
             payload={
                 "policy": _safe_policy_summary(policy),
                 "current_round": current_round,
-                "total_rounds": _total_rounds_from_shareable(shareable, TOTAL_DATA_ROUNDS),
             },
             schema_ref=request_message.schema_ref,
             status="received",
@@ -821,16 +819,7 @@ class FedReadyTaskQueryExecutor(Executor):
             next_step={"action": "client_agent_return_extraction_result", "reason": "extractor completed"},
         )
 
-        client_turn = client_agent.report_extraction_result(
-            policy=policy,
-            extraction_result=result,
-            execution_summary={
-                **execution_payload,
-                "result_schema": result.get("schema_version"),
-                "safe_result_summary": result_summary,
-            },
-        )
-        extraction_response = _redact_server_visible_extraction_response(client_turn.output)
+        extraction_response = _redact_server_visible_extraction_response(result)
         outgoing_guardrail = client_agent.authorize_outgoing_extraction_response(response=extraction_response)
         write_event(
             step_id=f"harmonization.client_outgoing_guardrail.{client_id}",
@@ -843,7 +832,6 @@ class FedReadyTaskQueryExecutor(Executor):
                 "action": "return_response_via_nvflare" if outgoing_guardrail.allowed else "return_denial_via_nvflare",
                 "reason": outgoing_guardrail.reason,
             },
-            agent_prompt=client_turn.prompt,
         )
         response_payload = (
             outgoing_guardrail.effective_payload(extraction_response)
@@ -875,7 +863,6 @@ class FedReadyTaskQueryExecutor(Executor):
                     )
                 ),
             },
-            agent_prompt=client_turn.prompt,
         )
         return FlareMessage(
             session_id=request_message.session_id,
@@ -1095,11 +1082,8 @@ def _run_shared_local_adapter_pipeline(
 ) -> AdapterRuntimeResult:
     """Apply the same harness-owned acceptance pipeline to every live backend."""
 
-    model = os.environ.get("FEDREADY_VISION_AGENT_MODEL", "Qwen/Qwen3-VL-8B-Instruct").strip()
-    base_url = os.environ.get(
-        "FEDREADY_VISION_AGENT_API_BASE_URL",
-        "http://127.0.0.1:8001/v1",
-    ).strip()
+    model = os.environ.get("FEDREADY_VISION_AGENT_MODEL", DEFAULT_LOCAL_VISION_MODEL).strip()
+    base_url = os.environ.get("FEDREADY_VISION_AGENT_API_BASE_URL", LOCAL_VISION_API_BASE_URL).strip()
     api_key_env = os.environ.get(
         "FEDREADY_VISION_AGENT_API_KEY_ENV",
         "FEDREADY_LOCAL_VISION_API_KEY",
@@ -1492,6 +1476,5 @@ def _flare_round_context(
         "task_id": request_message.task_id,
         "site_id": client_id,
         "current_round": _current_round_from_shareable(shareable),
-        "total_rounds": _total_rounds_from_shareable(shareable, TOTAL_DATA_ROUNDS),
         "round_action": shareable.get_header(HEADER_ROUND_ACTION),
     }

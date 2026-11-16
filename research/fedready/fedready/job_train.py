@@ -30,7 +30,6 @@ import math
 import os
 import py_compile
 import re
-import shlex
 import shutil
 import signal
 import subprocess
@@ -40,8 +39,8 @@ from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import quote
 
-from fedready.agents import ServerAgent
 from fedready.agents.bridge import CodexWorkerBackend
+from fedready.agents.roles import ServerAgent
 from fedready.agents.training_reference import (
     NVFLARE_EXAMPLE_SELECTION_ID,
     NVFLARE_EXAMPLE_SELECTION_PATTERN,
@@ -163,14 +162,6 @@ def _attach_generated_contract_from_sibling_strategy(payload: dict[str, Any], *,
         }
 
 
-def _training_contract_from_task(*, task: str, extraction_summary: dict[str, Any] | None = None) -> TrainingContract:
-    return training_contracts.contract_from_task(task, extraction_summary=extraction_summary)
-
-
-def _training_contract_from_plan(training_plan: dict[str, Any]) -> TrainingContract:
-    return training_contracts.contract_from_plan(training_plan)
-
-
 def _training_data_contract_payload(
     *,
     task: str,
@@ -275,7 +266,7 @@ def build_training_mock_dataset_contract(
 ) -> dict[str, Any]:
     """Describe the fake prepared-client dataset used for local NVFlare preflight."""
 
-    task_contract = _training_contract_from_plan(training_plan)
+    task_contract = training_contracts.contract_from_plan(training_plan)
     local_training = training_plan.get("local_training", {}) if isinstance(training_plan, dict) else {}
     target_size = local_training.get("target_size") if isinstance(local_training, dict) else None
     if not (
@@ -369,7 +360,7 @@ def _ready_client_training_entries(extraction_summary: dict[str, Any], *, task: 
     results = extraction_summary.get("extraction_results", {})
     if not isinstance(results, dict):
         return []
-    task_contract = _training_contract_from_task(task=task, extraction_summary=extraction_summary)
+    task_contract = training_contracts.contract_from_task(task, extraction_summary=extraction_summary)
     qc_required = bool(task_contract.qc_contract.get("visual_qc_required"))
     entries: list[dict[str, Any]] = []
     for client_id in ready_training_clients(extraction_summary, task=task):
@@ -464,7 +455,7 @@ def build_training_plan(
 ) -> dict[str, Any]:
     """Build a FedAvg server training plan from safe extraction outcomes."""
 
-    task_contract = _training_contract_from_task(task=task, extraction_summary=extraction_summary)
+    task_contract = training_contracts.contract_from_task(task, extraction_summary=extraction_summary)
     client_entries = _ready_client_training_entries(extraction_summary, task=task)
     clients = [entry["client_id"] for entry in client_entries]
     if not clients:
@@ -537,7 +528,7 @@ def ready_training_clients(extraction_summary: dict[str, Any], *, task: str | No
     extracted = extraction_summary.get("extracted_clients")
     qc = extraction_summary.get("visual_qc", {})
     qc_passed = qc.get("passed_clients") if isinstance(qc, dict) else None
-    task_contract = _training_contract_from_task(task=task or "", extraction_summary=extraction_summary)
+    task_contract = training_contracts.contract_from_task(task or "", extraction_summary=extraction_summary)
     visual_qc_required = bool(task_contract.qc_contract.get("visual_qc_required"))
     results = extraction_summary.get("extraction_results", {})
     if not isinstance(results, dict) or not results:
@@ -648,7 +639,7 @@ def prepare_training_code_with_server_agent(
                 )
             if runtime_revision:
                 feedback["source_runtime_feedback"] = runtime_feedback
-            _write_json(
+            atomic_write_json(
                 feedback_dir / f"{prefix}training_code_validation_attempt_{attempt}.json",
                 feedback,
             )
@@ -690,7 +681,7 @@ def _validate_training_code_with_local_preflight(
     )
     feedback_dir = Path(run_dir) / "training_phase" / "server"
     stage_slug = _preflight_stage_slug(stage)
-    _write_json(
+    atomic_write_json(
         feedback_dir / f"training_code_preflight_{stage_slug}_attempt_{attempt}.json",
         preflight,
     )
@@ -926,7 +917,7 @@ def _run_preflight_recipe_with_terminal_watchdog(
         "log_config": "concise",
         "result_path": str(result_path),
     }
-    _write_json(input_path, payload)
+    atomic_write_json(input_path, payload)
 
     research_root = Path(__file__).resolve().parents[1]
     env = dict(os.environ)
@@ -1169,7 +1160,7 @@ def _preflight_client_training_config(
 ) -> dict[str, Any]:
     dataset_dir = Path(config.dataset_root) / PREFLIGHT_CLIENT_ID
     summary = summarize_prepared_dataset(dataset_dir, client_id=PREFLIGHT_CLIENT_ID)
-    task_contract = _training_contract_from_plan(training_plan)
+    task_contract = training_contracts.contract_from_plan(training_plan)
     qc_required = bool(task_contract.qc_contract.get("visual_qc_required"))
     qc = summary.get("visual_qc", {}) if isinstance(summary.get("visual_qc"), dict) else {}
     verification = summary.get("verification", {}) if isinstance(summary.get("verification"), dict) else {}
@@ -1273,7 +1264,7 @@ def _write_mock_preflight_dataset(*, dataset_root: str | Path, contract: dict[st
         sample_count=sample_count,
         client_id=PREFLIGHT_CLIENT_ID,
     )
-    _write_json(
+    atomic_write_json(
         site_dir / "manifest.json",
         {
             "schema_version": "fedready.prepared_dataset_manifest.v1",
@@ -1293,7 +1284,7 @@ def _write_mock_preflight_dataset(*, dataset_root: str | Path, contract: dict[st
             },
         },
     )
-    _write_json(
+    atomic_write_json(
         site_dir / "training_transforms.json",
         {
             "schema_version": "fedready.training_transforms.v1",
@@ -1445,9 +1436,9 @@ def export_fedavg_training_job(
     min_count = len(client_ids) if min_clients is None else min_clients
 
     job_path = export_fed_job_recipe(job, job_root)
-    _write_json(job_path / "fedready_training_plan.json", training_plan)
-    _write_json(job_path / "fedready_training_code_spec.json", _safe_code_spec(code_spec))
-    _write_json(job_path / "fedready_client_training_configs.json", ready_configs)
+    atomic_write_json(job_path / "fedready_training_plan.json", training_plan)
+    atomic_write_json(job_path / "fedready_training_code_spec.json", _safe_code_spec(code_spec))
+    atomic_write_json(job_path / "fedready_client_training_configs.json", ready_configs)
     return {
         "schema_version": TRAINING_JOB_SCHEMA_VERSION,
         "job_name": job.name,
@@ -1483,7 +1474,7 @@ def prepare_and_export_fedavg_training_job(
     run_dir.mkdir(parents=True, exist_ok=True)
     extraction_summary = load_extraction_summary(extraction_summary_path)
     training_plan = build_training_plan(task=task, extraction_summary=extraction_summary, config=cfg)
-    _write_json(run_dir / "training_phase" / "server" / "training_plan.json", training_plan)
+    atomic_write_json(run_dir / "training_phase" / "server" / "training_plan.json", training_plan)
 
     if training_code_spec_path is not None:
         code_spec = validate_training_code_spec(_read_json(training_code_spec_path))
@@ -1502,7 +1493,7 @@ def prepare_and_export_fedavg_training_job(
         training_code_spec=code_spec,
         config=cfg,
     )
-    _write_json(
+    atomic_write_json(
         run_dir / "training_phase" / "server" / "client_training_configs.json",
         client_configs,
     )
@@ -1515,7 +1506,7 @@ def prepare_and_export_fedavg_training_job(
         client_configs=client_configs,
         min_clients=min_clients,
     )
-    _write_json(run_dir / "training_phase" / "server" / "fedavg_job_export.json", export)
+    atomic_write_json(run_dir / "training_phase" / "server" / "fedavg_job_export.json", export)
     return {
         **export,
         "session_id": session,
@@ -1593,7 +1584,7 @@ def run_fedavg_training_job(
                     "error_type": type(exc).__name__,
                     "error": str(exc),
                 }
-        _write_json(
+        atomic_write_json(
             run_dir / "training_phase" / "server" / f"simulator_status_attempt_{runtime_attempt}.json",
             simulator_status,
         )
@@ -1621,7 +1612,7 @@ def run_fedavg_training_job(
             attempt=runtime_attempt,
             max_attempts=runtime_attempts,
         )
-        _write_json(
+        atomic_write_json(
             run_dir / "training_phase" / "server" / f"training_runtime_feedback_attempt_{runtime_attempt}.json",
             runtime_feedback,
         )
@@ -1658,11 +1649,11 @@ def run_fedavg_training_job(
             "runtime_retry_of": base_job_name,
             "runtime_attempt": runtime_attempt + 1,
         }
-        _write_json(
+        atomic_write_json(
             run_dir / "training_phase" / "server" / f"fedavg_job_export_attempt_{runtime_attempt + 1}.json",
             export,
         )
-        _write_json(run_dir / "training_phase" / "server" / "fedavg_job_export.json", export)
+        atomic_write_json(run_dir / "training_phase" / "server" / "fedavg_job_export.json", export)
 
     error_suffix = f": {last_error}" if last_error is not None else ""
     raise RuntimeError(f"NVFlare simulator training did not finish successfully: {last_status}{error_suffix}")
@@ -2395,7 +2386,7 @@ def _client_runtime_training_config(
     config: FedAvgTrainingConfig,
 ) -> dict[str, Any]:
     client_id = str(client_entry["client_id"])
-    task_contract = _training_contract_from_plan(training_plan)
+    task_contract = training_contracts.contract_from_plan(training_plan)
     train_count = int(client_entry.get("train_sample_count") or 0)
     validation_count = int(client_entry.get("validation_sample_count") or 0)
     test_count = int(client_entry.get("test_sample_count") or 0)
@@ -2463,7 +2454,7 @@ def _format_client_runtime_task_args(
     validation_sample_count: int,
     test_sample_count: int,
 ) -> str:
-    task_contract = _training_contract_from_plan(training_plan)
+    task_contract = training_contracts.contract_from_plan(training_plan)
     training_args = _format_task_args(
         template=str(training_code_spec.get("task_script_args_template") or ""),
         client_id=client_id,
@@ -2471,7 +2462,7 @@ def _format_client_runtime_task_args(
     )
     launcher_args = [
         "--fedready-entry-script",
-        shlex.quote(str(training_code_spec["entry_script"])),
+        _task_arg_token("entry_script", training_code_spec["entry_script"]),
         "--fedready-expected-train",
         str(int(train_sample_count)),
         "--fedready-expected-validation",
@@ -2479,13 +2470,13 @@ def _format_client_runtime_task_args(
         "--fedready-expected-test",
         str(int(test_sample_count)),
         "--fedready-package-dir",
-        shlex.quote(Path(str(training_code_spec["package_dir"])).name),
+        _task_arg_token("package_dir", Path(str(training_code_spec["package_dir"])).name),
         "--fedready-record-type",
-        shlex.quote(str(task_contract.record_type)),
+        _task_arg_token("record_type", task_contract.record_type),
         "--fedready-samples-file",
-        shlex.quote(str(task_contract.samples_file)),
+        _task_arg_token("samples_file", task_contract.samples_file),
         "--fedready-sample-manifest-format",
-        shlex.quote(str(task_contract.sample_manifest_format)),
+        _task_arg_token("sample_manifest_format", task_contract.sample_manifest_format),
         "--fedready-required-fields",
         json.dumps(list(task_contract.sample_fields), separators=(",", ":")),
         "--fedready-visual-qc-required",
@@ -2503,26 +2494,39 @@ def _add_client_runtime_launcher(job: FedJob, *, target: str) -> None:
     )
 
 
+def _task_arg_token(name: str, value: Any) -> str:
+    """Return one TaskScriptRunner argument token.
+
+    TaskScriptRunner splits task arguments on whitespace without shell quote
+    handling, so shell quoting would leak literal quote characters into argv.
+    Values are passed through unchanged and must not contain whitespace.
+    """
+
+    text = str(value)
+    if not text or any(char.isspace() for char in text):
+        raise ValueError(f"task argument {name} must be non-empty and contain no whitespace: {text!r}")
+    return text
+
+
 def _format_task_args(
     *,
     template: str,
     client_id: str,
     config: FedAvgTrainingConfig,
-    dataset_root: str | None = None,
 ) -> str:
     values = {
         # TaskScriptRunner uses whitespace splitting, so encode the path as one
         # token; the client runtime launcher decodes it before local access.
-        "dataset_root": quote(dataset_root or config.dataset_root, safe="/"),
-        "client_id": shlex.quote(client_id),
+        "dataset_root": quote(config.dataset_root, safe="/"),
+        "client_id": _task_arg_token("client_id", client_id),
         "local_epochs": config.local_epochs,
         "batch_size": config.batch_size,
         "learning_rate": config.learning_rate,
         "target_width": config.target_size[0],
         "target_height": config.target_size[1],
         "num_workers": config.num_workers,
-        "device": shlex.quote(config.device),
-        "metrics_jsonl": shlex.quote(DEFAULT_METRICS_JSONL),
+        "device": _task_arg_token("device", config.device),
+        "metrics_jsonl": DEFAULT_METRICS_JSONL,
     }
     if not template:
         template = (
@@ -2584,10 +2588,6 @@ def _read_json(path: str | Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"JSON payload must be an object: {path}")
     return payload
-
-
-def _write_json(path: str | Path, payload: dict[str, Any]) -> None:
-    atomic_write_json(path, payload)
 
 
 def _default_training_session_id(task: str) -> str:

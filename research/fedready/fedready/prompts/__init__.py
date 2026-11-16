@@ -40,12 +40,7 @@ def _prompt_bundle(scope: str) -> dict[str, Any]:
     prompts = payload.get("prompts")
     if not isinstance(prompts, dict):
         raise ValueError(f"prompt bundle missing prompts object: {path}")
-    rendered: dict[str, Any] = {}
-    for key, value in prompts.items():
-        if not isinstance(key, str):
-            raise ValueError(f"prompt bundle has non-string key: {path}:{key}")
-        rendered[key] = value
-    return rendered
+    return prompts
 
 
 def render_prompt(scope: str, key: str, **values: Any) -> str:

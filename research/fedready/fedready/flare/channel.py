@@ -35,7 +35,6 @@ EXTRACTION_RESPONSE_SCHEMA = "FedReadyClientExtractionResponse@v1"
 EXTRACTION_SUMMARY_SCHEMA = "FedReadyExtractionRoundSummary@v1"
 LOCAL_EXECUTION_SCHEMA = "FedReadyLocalExecution@v1"
 
-TOTAL_DATA_ROUNDS = 2
 ROUND_PROFILE = 1
 ROUND_EXTRACTION = 2
 
@@ -45,7 +44,6 @@ HEADER_SCHEMA_REF = "fedready.schema_ref"
 HEADER_TASK_ID = "fedready.task_id"
 HEADER_SITE_ID = "fedready.site_id"
 HEADER_CURRENT_ROUND = "fedready.current_round"
-HEADER_TOTAL_ROUNDS = "fedready.total_rounds"
 HEADER_ROUND_ACTION = "fedready.round_action"
 
 
@@ -105,23 +103,20 @@ def _required_text_header(shareable: Shareable, key: str) -> str:
     return text
 
 
-def set_round_headers(shareable: Shareable, *, current_round: int, total_rounds: int, action: str) -> None:
+def set_round_headers(shareable: Shareable, *, current_round: int, action: str) -> None:
     shareable.set_header(HEADER_CURRENT_ROUND, current_round)
-    shareable.set_header(HEADER_TOTAL_ROUNDS, total_rounds)
     shareable.set_header(HEADER_ROUND_ACTION, action)
 
 
-def round_props(current_round: int, total_rounds: int, action: str) -> dict[str, Any]:
+def round_props(current_round: int, action: str) -> dict[str, Any]:
     return {
         HEADER_CURRENT_ROUND: current_round,
-        HEADER_TOTAL_ROUNDS: total_rounds,
         HEADER_ROUND_ACTION: action,
     }
 
 
-def set_fl_ctx_round(fl_ctx: FLContext, current_round: int, total_rounds: int) -> None:
+def set_fl_ctx_round(fl_ctx: FLContext, current_round: int) -> None:
     fl_ctx.set_prop(HEADER_CURRENT_ROUND, current_round, private=False, sticky=False)
-    fl_ctx.set_prop(HEADER_TOTAL_ROUNDS, total_rounds, private=False, sticky=False)
 
 
 def current_round_from_shareable(shareable: Shareable) -> int:
@@ -132,13 +127,3 @@ def current_round_from_shareable(shareable: Shareable) -> int:
         return int(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Shareable header {HEADER_CURRENT_ROUND} is malformed") from exc
-
-
-def total_rounds_from_shareable(shareable: Shareable, default: int) -> int:
-    value = shareable.get_header(HEADER_TOTAL_ROUNDS, default)
-    if value is None:
-        raise ValueError(f"Shareable missing required header {HEADER_TOTAL_ROUNDS}")
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"Shareable header {HEADER_TOTAL_ROUNDS} is malformed") from exc

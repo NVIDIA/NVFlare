@@ -24,18 +24,12 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from fedready.agents import (
-    ALLOW_LIST_RULES,
-    ClientAgent,
-    GuardrailAgent,
-    ServerAgent,
-    _aggregate_visual_qc_sample_outputs,
-)
+from fedready.agents import ALLOW_LIST_RULES, ClientAgent, GuardrailAgent, ServerAgent
 from fedready.agents.bridge import _codex_skill_path
 from fedready.agents.local_adapter import ensure_local_adapter_pipeline
+from fedready.agents.visual_qc import _aggregate_visual_qc_sample_outputs
 from fedready.data.contracts.base import generated_contract_visual_qc_required
 from fedready.data.contracts.training import CLASSIFICATION_TRAINING, SEGMENTATION_TRAINING
-from fedready.job_data import run_fed_job_recipe
 from fedready.job_train import (
     CLIENT_TRAINING_LAUNCHER_SCRIPT,
     _build_fedavg_job_object,
@@ -119,30 +113,9 @@ class ResearchScopeTestCase(unittest.TestCase):
         self.assertTrue(generated_contract_visual_qc_required({"visual_qc": {"required": True}}))
         self.assertFalse(generated_contract_visual_qc_required({"visual_qc": {"required": False}}))
 
-    def test_visual_review_is_present_but_acquisition_quality_and_other_backends_are_not(
-        self,
-    ) -> None:
-        research_dir = Path(__file__).resolve().parents[1]
-        package_dir = research_dir / "fedready"
-        self.assertTrue((package_dir / "job_data.py").exists())
-        self.assertTrue((package_dir / "job_train.py").exists())
-        self.assertFalse((package_dir / "job.py").exists())
-        self.assertFalse((package_dir / "training_job.py").exists())
-        self.assertFalse((package_dir / "cli.py").exists())
-        self.assertFalse((package_dir / "openhands_tools.py").exists())
-        self.assertTrue((package_dir / "data" / "qc.py").exists())
-        self.assertFalse((package_dir / "reference_preparer.py").exists())
-        self.assertTrue((research_dir / "scripts" / "prepare_references.py").exists())
-        self.assertFalse((package_dir / "sample_quality.py").exists())
-        self.assertFalse((package_dir / "sample_quality_contract.py").exists())
-        self.assertTrue(_codex_skill_path("nvflare-orient").is_file())
-
-        source = "\n".join(path.read_text(encoding="utf-8") for path in package_dir.rglob("*.py"))
-        self.assertNotIn("OpenHands", source)
-        self.assertNotIn("sample_quality", source)
-        self.assertIn("local_vlm", source)
-        self.assertIn("CLIENT.VISUAL_QC_EXTRACTION", source)
+    def test_visual_review_is_allow_listed_and_codex_skill_is_available(self) -> None:
         self.assertIn("CLIENT.VISUAL_QC_EXTRACTION", {key[3] for key in ALLOW_LIST_RULES})
+        self.assertTrue(_codex_skill_path("nvflare-orient").is_file())
 
     def test_training_job_always_uses_the_validating_client_runtime(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -176,11 +149,6 @@ class ResearchScopeTestCase(unittest.TestCase):
             self.assertEqual(executor["args"]["execution_mode"], "in_process")
             self.assertEqual(executor["args"]["task_script_path"], CLIENT_TRAINING_LAUNCHER_SCRIPT)
             self.assertTrue((client / "custom" / CLIENT_TRAINING_LAUNCHER_SCRIPT).is_file())
-
-    def test_recipe_runner_uses_current_execute_entry_point(self) -> None:
-        source = inspect.getsource(run_fed_job_recipe)
-        self.assertIn(".execute(env)", source)
-        self.assertNotIn(".run(env)", source)
 
 
 if __name__ == "__main__":

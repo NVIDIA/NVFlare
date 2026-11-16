@@ -117,7 +117,15 @@ research/fedready/
 |   |-- job_train.py          # Generated trainer validation and FedAvg execution
 |   |-- server.py             # NVFlare Controller and two-round data workflow
 |   |-- client.py             # NVFlare client Executor and local validation
-|   |-- agents/               # Codex bridge, agent logic, VLM/adapters, preflight
+|   |-- agents/
+|   |   |-- roles.py          # ServerAgent and ClientAgent
+|   |   |-- guardrail.py      # Allow-list rules, GuardrailAgent, and redaction
+|   |   |-- visual_qc.py      # Visual QC templates, local VLM review, and voting
+|   |   |-- local_vlm.py      # Loopback VLM transport
+|   |   |-- bridge.py         # Codex worker backend
+|   |   |-- local_adapter.py  # Client-local adapter pipeline
+|   |   |-- preflight.py      # Live runtime preflight
+|   |   `-- training_reference.py # NVFlare example selection for generated trainers
 |   |-- data/                 # Profiling, extraction, QC, and typed contracts
 |   |-- flare/                # FLARE messages and client/preflight runtimes
 |   |-- prompts/              # Prompt loader and scoped JSON prompt bundles

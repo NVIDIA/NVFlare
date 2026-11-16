@@ -441,7 +441,7 @@ def review_local_adapter_preflight(
         records = manifest.get("records")
         if not isinstance(records, list) or not records:
             raise ValueError("preflight manifest does not contain sample records")
-        record_type = adapter_manifest_record_type(manifest, data_contract=data_contract)
+        record_type = manifest_record_type(manifest, generated_contract=data_contract)
         selected = _adapter_preflight_qc_records(records, review_count=ADAPTER_PREFLIGHT_QC_REVIEW_COUNT)
         fallback_selected = _adapter_preflight_qc_records(records, review_count=2)[1] if len(records) > 1 else None
 
@@ -1045,7 +1045,7 @@ def validate_adapter_manifest(
     if len(records) > max_records:
         raise ValueError(f"adapter manifest contains {len(records)} records, exceeding bound max_records={max_records}")
     generated_roots = _normalized_generated_roots(allowed_generated_roots)
-    record_type = adapter_manifest_record_type(manifest, data_contract=data_contract)
+    record_type = manifest_record_type(manifest, generated_contract=data_contract)
     if record_type == "classification":
         return validate_classification_adapter_manifest_records(
             records=records,
@@ -1077,14 +1077,6 @@ def validate_adapter_manifest(
     raise ValueError("adapter manifest record_type must match the active built-in or generated data contract")
 
 
-def adapter_manifest_record_type(
-    manifest: Mapping[str, Any],
-    *,
-    data_contract: Mapping[str, Any] | None = None,
-) -> str:
-    return manifest_record_type(manifest, generated_contract=data_contract)
-
-
 def _normalized_generated_roots(roots: Sequence[Path] | None) -> tuple[Path, ...]:
     if not roots:
         return ()
@@ -1099,10 +1091,6 @@ def _normalized_generated_roots(roots: Sequence[Path] | None) -> tuple[Path, ...
 
 def _path_is_relative_to_any(path: Path, roots: Sequence[Path]) -> bool:
     return any(path.is_relative_to(root) for root in roots)
-
-
-def _adapter_record_type(record: Mapping[str, Any]) -> str:
-    return infer_record_type(record)
 
 
 def validate_segmentation_adapter_manifest_records(
@@ -1122,7 +1110,7 @@ def validate_segmentation_adapter_manifest_records(
     for index, record in enumerate(records):
         if not isinstance(record, dict):
             raise ValueError(f"adapter manifest record {index} must be an object")
-        if _adapter_record_type(record) != "segmentation":
+        if infer_record_type(record) != "segmentation":
             raise ValueError(f"adapter manifest record {index} does not match record_type=segmentation")
         image_path = resolve_adapter_record_path(record.get("image_path"), manifest_path.parent)
         label_source_path = resolve_adapter_record_path(record.get("label_source_path"), manifest_path.parent)
@@ -1279,7 +1267,7 @@ def validate_classification_adapter_manifest_records(
     for index, record in enumerate(records):
         if not isinstance(record, dict):
             raise ValueError(f"adapter manifest record {index} must be an object")
-        if _adapter_record_type(record) != "classification":
+        if infer_record_type(record) != "classification":
             raise ValueError(f"adapter manifest record {index} does not match record_type=classification")
         image_path = resolve_adapter_record_path(record.get("image_path"), manifest_path.parent)
         label_source_path = resolve_adapter_record_path(record.get("label_source_path"), manifest_path.parent)

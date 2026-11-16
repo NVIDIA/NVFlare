@@ -19,9 +19,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fedready.agents import ACTION_CHECKS, DEFAULT_LOCAL_VISION_MODEL, GuardrailAgent, _query_local_vlm_image
-from fedready.agents.bridge import LOCAL_VISION_API_BASE_URL, CodexWorkerBackend
+from fedready.agents.bridge import CodexWorkerBackend
+from fedready.agents.guardrail import ACTION_CHECKS, GuardrailAgent
 from fedready.agents.local_adapter import is_local_http_url, task_example_context, task_example_image_path
+from fedready.agents.local_vlm import DEFAULT_LOCAL_VISION_MODEL, LOCAL_VISION_API_BASE_URL, _query_local_vlm_image
 from fedready.utils.io import atomic_write_json
 from fedready.utils.logging import timestamp_utc
 

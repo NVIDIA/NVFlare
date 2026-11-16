@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -29,8 +30,9 @@ from fedready.flare import fedready_training_client_runtime
 from fedready.job_data import (
     _default_session_id,
     _safe_workspace_slug,
-    export_agent_task_query_job,
-    resolve_experiment_workspace,
+    build_agent_task_query_recipe,
+    export_fed_job_recipe,
+    resolve_recipe_workspace_root,
 )
 from fedready.job_train import (
     LOCAL_TRAINING_SIMULATION_SCHEMA_VERSION,
@@ -311,6 +313,32 @@ class NVFlareJobTestCase(unittest.TestCase):
             dataset_arg = forwarded_argv.index("--dataset-root")
             self.assertEqual(forwarded_argv[dataset_arg + 1], str(dataset_root.resolve()))
 
+    def test_task_script_runner_receives_unquoted_task_arguments(self) -> None:
+        package_dir = Path(job_train.__file__).resolve().parent
+        kwargs = dict(
+            training_plan={"data_contract": {"record_type": "classification"}},
+            training_code_spec={"entry_script": "train&eval.py", "package_dir": str(package_dir)},
+            train_sample_count=1,
+            validation_sample_count=1,
+            test_sample_count=0,
+        )
+        script_args = _format_client_runtime_task_args(
+            client_id="SITE&A", config=FedAvgTrainingConfig(device="cuda:0"), **kwargs
+        )
+        launcher_path = Path(fedready_training_client_runtime.__file__).resolve()
+        argv = TaskScriptRunner(
+            custom_dir=str(launcher_path.parent),
+            script_path=launcher_path.name,
+            script_args=script_args,
+            redirect_print_to_log=False,
+        ).get_sys_argv()
+
+        self.assertEqual(argv[argv.index("--fedready-entry-script") + 1], "train&eval.py")
+        self.assertEqual(argv[argv.index("--client-id") + 1], "SITE&A")
+        self.assertEqual(argv[argv.index("--device") + 1], "cuda:0")
+        with self.assertRaisesRegex(ValueError, "client_id"):
+            _format_client_runtime_task_args(client_id="SITE A", config=FedAvgTrainingConfig(), **kwargs)
+
     def test_exact_task_session_ids_fit_one_filesystem_component(self) -> None:
         task = "binary glaucoma classification " + ("with explicit local evidence " * 80)
         data_session = _default_session_id(task)
@@ -431,21 +459,21 @@ class NVFlareJobTestCase(unittest.TestCase):
             workspace_root = project / "workspace"
 
             self.assertEqual(
-                resolve_experiment_workspace(
+                resolve_recipe_workspace_root(
                     workspace_root,
                     session_id="disc_segmentation_round2",
                     job_name="fedready_task_query",
                 ),
-                workspace_root / "disc_segmentation_round2" / "fedready_task_query",
+                workspace_root / "disc_segmentation_round2",
             )
             explicit_workspace = workspace_root / "smoke_test"
             self.assertEqual(
-                resolve_experiment_workspace(
+                resolve_recipe_workspace_root(
                     explicit_workspace,
                     session_id="disc_segmentation_round2",
                     job_name="fedready_task_query",
                 ),
-                explicit_workspace / "fedready_task_query",
+                explicit_workspace,
             )
 
     def test_exports_task_query_job_with_server_controller_and_client_executors(
@@ -468,8 +496,7 @@ class NVFlareJobTestCase(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = export_agent_task_query_job(
-                job_root=project / "jobs",
+            recipe, client_ids = build_agent_task_query_recipe(
                 site_meta_path=meta,
                 project_root=project,
                 output_dir=project / "runs",
@@ -484,10 +511,9 @@ class NVFlareJobTestCase(unittest.TestCase):
                 extraction_overwrite=True,
             )
 
-            job_path = Path(result["job_path"])
-            self.assertEqual(result["client_ids"], ["SITE_A"])
-            self.assertEqual(result["job_name"], "unit_fedready_query")
-            self.assertEqual(result["recipe_api"], "nvflare.recipe")
+            job_path = export_fed_job_recipe(recipe.job, project / "jobs")
+            self.assertEqual(client_ids, ["SITE_A"])
+            self.assertEqual(recipe.job.name, "unit_fedready_query")
             self.assertTrue((job_path / "meta.json").exists())
 
             server_config = json.loads(
@@ -525,6 +551,31 @@ class NVFlareJobTestCase(unittest.TestCase):
             self.assertTrue((client_custom / "data" / "extractor.py").exists())
             self.assertTrue((client_custom / "prompts" / "client.json").exists())
             self.assertFalse((client_custom / "server.py").exists())
+
+            for package_dir, entry_module in ((server_custom, "server"), (client_custom, "client")):
+                with self.subTest(entry_module=entry_module):
+                    for module in ("roles", "guardrail", "visual_qc", "local_vlm"):
+                        self.assertTrue((package_dir / "agents" / f"{module}.py").is_file())
+                    result = subprocess.run(
+                        [
+                            sys.executable,
+                            "-I",
+                            "-c",
+                            "import importlib, pathlib, sys; "
+                            "sys.path[:0] = sys.argv[1:3]; "
+                            "module = importlib.import_module('fedready.' + sys.argv[3]); "
+                            "assert pathlib.Path(module.__file__).is_relative_to(sys.argv[1]); "
+                            "from fedready.agents import ClientAgent, GuardrailAgent, ServerAgent",
+                            str(package_dir.parent),
+                            str(Path(__file__).resolve().parents[3]),
+                            entry_module,
+                        ],
+                        cwd=tmp,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

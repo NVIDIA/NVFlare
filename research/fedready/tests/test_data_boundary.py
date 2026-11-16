@@ -204,7 +204,7 @@ class DataBoundaryTestCase(unittest.TestCase):
                     with self.subTest(header=header, value=value):
                         message = to_shareable(FlareMessage("session", "correlation", "schema", "task", {}))
                         message.set_header(header, value)
-                        set_round_headers(message, current_round=1, total_rounds=2, action="profile")
+                        set_round_headers(message, current_round=1, action="profile")
                         with self.assertRaises(ValueError):
                             from_shareable(message)
                         reply = executor.execute(executor.task_name, message, Mock(), Signal())

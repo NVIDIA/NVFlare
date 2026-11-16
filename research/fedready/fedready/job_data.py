@@ -119,14 +119,9 @@ def build_agent_task_query_job(
     job = FedJob(name=job_name, min_clients=len(client_ids), mandatory_clients=client_ids)
     controller_kwargs: dict[str, Any] = dict(
         site_meta_path=str(meta_path),
+        session_id=session_id or _default_session_id(task),
         task=task,
-        project_root=str(root),
         output_dir=str(run_output),
-        session_id=session_id,
-        min_count=min_count,
-        max_scan_files=max_scan_files,
-        max_image_samples=max_image_samples,
-        histogram_bins=histogram_bins,
         max_clients=max_clients,
         result_wait_timeout=result_wait_timeout,
         extraction_output_root=extraction_output_root,
@@ -160,7 +155,7 @@ def build_agent_task_query_job(
             id="fedready_task_query_executor",
             tasks=[TASK_QUERY_TASK_NAME],
         )
-    _add_prompt_assets(job, client_ids=client_ids)
+    _add_runtime_assets(job, client_ids=client_ids)
     return job, client_ids
 
 
@@ -171,38 +166,24 @@ def build_agent_task_query_recipe(**kwargs: Any) -> tuple[FedReadyRecipe, list[s
     return FedReadyRecipe(job), client_ids
 
 
-def _add_prompt_assets(job: FedJob, *, client_ids: list[str]) -> None:
-    """Package non-Python prompt assets beside the collected prompt module."""
+def _add_runtime_assets(job: FedJob, *, client_ids: list[str]) -> None:
+    """Include package entry points, contract modules and prompt assets in exported jobs."""
 
-    prompt_dir = Path(__file__).resolve().parent / "prompts"
-    for filename in ("client.json", "server.json"):
-        source = str(prompt_dir / filename)
-        job.add_file_to_server(source, dest_dir="fedready/prompts", app_folder_type="custom")
+    package_dir = Path(__file__).resolve().parent
+    # Dependency scanning does not follow package initializers or their re-exports.
+    sources = set(package_dir.rglob("__init__.py"))
+    sources.update((package_dir / "data" / "contracts").glob("*.py"))
+    sources.update((package_dir / "prompts").glob("*.json"))
+    for source in sorted(sources):
+        dest_dir = (Path("fedready") / source.relative_to(package_dir).parent).as_posix()
+        job.add_file_to_server(str(source), dest_dir=dest_dir, app_folder_type="custom")
         for client_id in client_ids:
             job.add_file_to(
-                source,
+                str(source),
                 client_id,
-                dest_dir="fedready/prompts",
+                dest_dir=dest_dir,
                 app_folder_type="custom",
             )
-
-
-def export_agent_task_query_job(
-    *,
-    job_root: str | Path,
-    **kwargs: Any,
-) -> dict[str, Any]:
-    """Export a FedReady NVFlare recipe job folder."""
-
-    recipe, client_ids = build_agent_task_query_recipe(**kwargs)
-    job_path = export_fed_job_recipe(recipe.job, job_root)
-    return {
-        "schema_version": SIMULATION_SCHEMA_VERSION,
-        "job_name": recipe.job.name,
-        "job_path": str(job_path),
-        "client_ids": client_ids,
-        "recipe_api": "nvflare.recipe",
-    }
 
 
 def run_agent_task_query_job(
@@ -263,12 +244,6 @@ def resolve_recipe_workspace_root(workspace: str | Path, *, session_id: str, job
     return workspace_path
 
 
-def resolve_experiment_workspace(workspace: str | Path, *, session_id: str, job_name: str) -> Path:
-    """Resolve the concrete NVFlare recipe simulator workspace for one experiment."""
-
-    return resolve_recipe_workspace_root(workspace, session_id=session_id, job_name=job_name) / job_name
-
-
 def _default_session_id(task: str) -> str:
     timestamp = timestamp_utc().replace(":", "").replace(".", "_")
     return f"{_safe_workspace_slug(task)}_{timestamp}"
@@ -306,8 +281,7 @@ def main(argv: list[str] | None = None) -> int:
     project_root = Path(args[2] if len(args) == 3 else ".").resolve()
     session_id = _default_session_id(task)
 
-    from fedready.agents import DEFAULT_LOCAL_VISION_MODEL
-    from fedready.agents.bridge import LOCAL_VISION_API_BASE_URL
+    from fedready.agents.local_vlm import DEFAULT_LOCAL_VISION_MODEL, LOCAL_VISION_API_BASE_URL
     from fedready.agents.preflight import run_live_runtime_preflight
 
     run_live_runtime_preflight(

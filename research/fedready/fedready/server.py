@@ -22,8 +22,9 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fedready.agents import ACTION_CHECKS, GuardrailAgent, ServerAgent
 from fedready.agents.bridge import CodexWorkerBackend
+from fedready.agents.guardrail import ACTION_CHECKS, GuardrailAgent
+from fedready.agents.roles import ServerAgent
 from fedready.data.extractor import ExtractionConfig
 from fedready.data.parser import list_client_ids
 from fedready.flare.channel import (
@@ -41,13 +42,11 @@ from fedready.flare.channel import (
     HEADER_SESSION_ID,
     HEADER_SITE_ID,
     HEADER_TASK_ID,
-    HEADER_TOTAL_ROUNDS,
     ROUND_EXTRACTION,
     ROUND_PROFILE,
     SERVER_STATE_SCHEMA,
     SIMULATION_SCHEMA_VERSION,
     TASK_QUERY_TASK_NAME,
-    TOTAL_DATA_ROUNDS,
     FlareMessage,
     from_shareable,
 )
@@ -55,7 +54,7 @@ from fedready.flare.channel import round_props as _round_props
 from fedready.flare.channel import set_fl_ctx_round as _set_fl_ctx_round
 from fedready.flare.channel import set_round_headers as _set_round_headers
 from fedready.flare.channel import to_shareable
-from fedready.utils.logging import FlowLogger, payload_digest, timestamp_utc
+from fedready.utils.logging import FlowLogger, payload_digest
 
 from nvflare.apis.controller_spec import Task, TaskCompletionStatus
 from nvflare.apis.fl_constant import ReturnCode
@@ -71,14 +70,9 @@ class FedReadyTaskQueryController(Controller):
     def __init__(
         self,
         site_meta_path: str,
+        session_id: str,
         task: str = "<TASK_DESCRIPTION>",
-        project_root: str | None = None,
         output_dir: str = "runs",
-        session_id: str | None = None,
-        min_count: int = 5,
-        max_scan_files: int = 200_000,
-        max_image_samples: int = 8,
-        histogram_bins: int = 8,
         max_clients: int | None = None,
         task_name: str = TASK_QUERY_TASK_NAME,
         result_wait_timeout: int = 600,
@@ -93,13 +87,8 @@ class FedReadyTaskQueryController(Controller):
         super().__init__()
         self.site_meta_path = site_meta_path
         self.task = task
-        self.project_root = project_root
         self.output_dir = output_dir
         self.session_id = session_id
-        self.min_count = min_count
-        self.max_scan_files = max_scan_files
-        self.max_image_samples = max_image_samples
-        self.histogram_bins = histogram_bins
         self.max_clients = max_clients
         self.task_name = task_name
         self.result_wait_timeout = result_wait_timeout
@@ -121,7 +110,7 @@ class FedReadyTaskQueryController(Controller):
         if abort_signal.triggered:
             return
 
-        session = self.session_id or f"{_task_slug(self.task)}_{timestamp_utc().replace(':', '').replace('.', '_')}"
+        session = self.session_id
         run_dir = Path(self.output_dir) / session
         logger = FlowLogger(run_dir)
         user_task = {"task": self.task}
@@ -139,7 +128,7 @@ class FedReadyTaskQueryController(Controller):
         )
         server_agent = ServerAgent(agent_backend)
         server_guardrail = GuardrailAgent(party_role="server", party_id="server", agent_backend=agent_backend)
-        _set_fl_ctx_round(fl_ctx, ROUND_PROFILE, TOTAL_DATA_ROUNDS)
+        _set_fl_ctx_round(fl_ctx, ROUND_PROFILE)
         server_turn = server_agent.compose_client_inquiry(task=user_task, client_ids=client_ids)
         client_payload = _client_inquiry_payload(server_turn.output)
         job_id = fl_ctx.get_job_id() or session
@@ -159,7 +148,7 @@ class FedReadyTaskQueryController(Controller):
                 payload=client_payload,
             )
         )
-        _set_round_headers(request, current_round=ROUND_PROFILE, total_rounds=TOTAL_DATA_ROUNDS, action="profile")
+        _set_round_headers(request, current_round=ROUND_PROFILE, action="profile")
 
         write_event = partial(logger.write_server_event, session_id=session, phase_id="profile")
         write_event(
@@ -182,7 +171,6 @@ class FedReadyTaskQueryController(Controller):
                 "task_name": self.task_name,
                 "targets": client_ids,
                 "current_round": ROUND_PROFILE,
-                "total_rounds": TOTAL_DATA_ROUNDS,
             },
         )
         write_event(
@@ -205,7 +193,6 @@ class FedReadyTaskQueryController(Controller):
                 "task_name": self.task_name,
                 "targets": client_ids,
                 "current_round": ROUND_PROFILE,
-                "total_rounds": TOTAL_DATA_ROUNDS,
             },
         )
         if not outgoing_guardrail.allowed:
@@ -218,7 +205,7 @@ class FedReadyTaskQueryController(Controller):
         task = Task(
             name=self.task_name,
             data=request,
-            props=_round_props(ROUND_PROFILE, TOTAL_DATA_ROUNDS, "profile"),
+            props=_round_props(ROUND_PROFILE, "profile"),
             timeout=self.result_wait_timeout,
         )
         self.broadcast_and_wait(
@@ -269,7 +256,6 @@ class FedReadyTaskQueryController(Controller):
                     "site_id": client_id,
                     "return_code": reply.get_return_code() if reply is not None else ReturnCode.EMPTY_RESULT,
                     "current_round": ROUND_PROFILE,
-                    "total_rounds": TOTAL_DATA_ROUNDS,
                 },
             )
             if not incoming_guardrail.allowed:
@@ -294,7 +280,6 @@ class FedReadyTaskQueryController(Controller):
                     "site_id": client_id,
                     "return_code": reply.get_return_code() if reply is not None else ReturnCode.EMPTY_RESULT,
                     "current_round": ROUND_PROFILE,
-                    "total_rounds": TOTAL_DATA_ROUNDS,
                 },
             )
 
@@ -324,12 +309,10 @@ class FedReadyTaskQueryController(Controller):
                     HEADER_TASK_ID,
                     HEADER_SITE_ID,
                     HEADER_CURRENT_ROUND,
-                    HEADER_TOTAL_ROUNDS,
                     HEADER_ROUND_ACTION,
                 ],
             },
             "rounds": {
-                "total_rounds": TOTAL_DATA_ROUNDS,
                 "completed": [ROUND_PROFILE],
                 "round_1": {
                     "name": "profile",
@@ -358,7 +341,6 @@ class FedReadyTaskQueryController(Controller):
                 "job_id": job_id,
                 "task_name": self.task_name,
                 "current_round": ROUND_PROFILE,
-                "total_rounds": TOTAL_DATA_ROUNDS,
             },
         )
 
@@ -393,7 +375,7 @@ class FedReadyTaskQueryController(Controller):
             return
 
         write_event = partial(logger.write_server_event, session_id=session, phase_id="harmonization")
-        _set_fl_ctx_round(fl_ctx, ROUND_EXTRACTION, TOTAL_DATA_ROUNDS)
+        _set_fl_ctx_round(fl_ctx, ROUND_EXTRACTION)
         applicable_clients = [
             client_id for client_id in extraction_strategy.get("applicable_clients", []) if isinstance(client_id, str)
         ]
@@ -455,7 +437,6 @@ class FedReadyTaskQueryController(Controller):
                     "job_id": job_id,
                     "task_name": self.task_name,
                     "current_round": ROUND_EXTRACTION,
-                    "total_rounds": TOTAL_DATA_ROUNDS,
                 },
             )
 
@@ -490,7 +471,6 @@ class FedReadyTaskQueryController(Controller):
                 "task_name": self.task_name,
                 "targets": target_clients,
                 "current_round": ROUND_EXTRACTION,
-                "total_rounds": TOTAL_DATA_ROUNDS,
             },
         )
 
@@ -523,7 +503,6 @@ class FedReadyTaskQueryController(Controller):
                     "task_name": self.task_name,
                     "site_id": client_id,
                     "current_round": ROUND_EXTRACTION,
-                    "total_rounds": TOTAL_DATA_ROUNDS,
                 },
             )
             if outgoing_guardrail.allowed:
@@ -552,13 +531,12 @@ class FedReadyTaskQueryController(Controller):
             _set_round_headers(
                 request,
                 current_round=ROUND_EXTRACTION,
-                total_rounds=TOTAL_DATA_ROUNDS,
                 action="extract",
             )
             task = Task(
                 name=self.task_name,
                 data=request,
-                props=_round_props(ROUND_EXTRACTION, TOTAL_DATA_ROUNDS, "extract"),
+                props=_round_props(ROUND_EXTRACTION, "extract"),
                 timeout=self.result_wait_timeout,
             )
             self.send(
@@ -610,7 +588,6 @@ class FedReadyTaskQueryController(Controller):
                     "site_id": client_id,
                     "return_code": reply.get_return_code() if reply is not None else ReturnCode.EMPTY_RESULT,
                     "current_round": ROUND_EXTRACTION,
-                    "total_rounds": TOTAL_DATA_ROUNDS,
                 },
             )
             if not incoming_guardrail.allowed:
@@ -635,7 +612,6 @@ class FedReadyTaskQueryController(Controller):
                     "site_id": client_id,
                     "return_code": reply.get_return_code() if reply is not None else ReturnCode.EMPTY_RESULT,
                     "current_round": ROUND_EXTRACTION,
-                    "total_rounds": TOTAL_DATA_ROUNDS,
                 },
             )
 
@@ -673,7 +649,6 @@ class FedReadyTaskQueryController(Controller):
                 "job_id": job_id,
                 "task_name": self.task_name,
                 "current_round": ROUND_EXTRACTION,
-                "total_rounds": TOTAL_DATA_ROUNDS,
             },
         )
 
@@ -810,12 +785,6 @@ def _validated_reply_message(
 def _require_matching_value(field: str, observed: str, expected: str | None) -> None:
     if expected is not None and observed != expected:
         raise ValueError(f"FLARE reply {field} did not match expected value")
-
-
-def _task_slug(task_text: str) -> str:
-    slug = "_".join(token for token in task_text.lower().replace("-", " ").split() if token)
-    slug = "".join(char for char in slug if char.isalnum() or char == "_")
-    return slug or "task_query"
 
 
 def _strategy_needs_generated_materializer(extraction_strategy: dict[str, Any]) -> bool:

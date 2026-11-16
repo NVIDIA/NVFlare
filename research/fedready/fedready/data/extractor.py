@@ -49,7 +49,6 @@ from fedready.data.contracts import (
     generated_contract_record_type,
     generated_contract_visual_qc_required,
     generated_data_contract_validation_errors,
-    infer_record_type,
     manifest_record_type,
     runtime_contract_for_record_type,
     task_family_from_policy,
@@ -287,7 +286,7 @@ def extract_dataset(
         )
 
     adapter_record_type = (
-        _adapter_manifest_record_type(adapter_manifest, generated_contract=generated_contract)
+        manifest_record_type(adapter_manifest, generated_contract=generated_contract)
         if adapter_manifest is not None
         else "unknown"
     )
@@ -331,13 +330,8 @@ def extract_dataset(
         shutil.rmtree(output_dir)
     _ensure_split_dirs(output_dir, root_names=contract_runtime.split_roots())
 
-    scan_warnings: list[str] = []
     adapter_pairs, label_warnings = contract_runtime.manifest_pairs(adapter_manifest)
-    candidate_pairs = adapter_pairs
-    pair_warnings: list[str] = []
     valid_pairs, split_plan = _organize_adapter_pairs_for_fl_splits(adapter_pairs, policy, cfg)
-    primary_record_count = len(adapter_pairs)
-    selected_label_record_count = len(adapter_pairs)
     full_valid_case_count = len(valid_pairs)
     label_orientation = contract_runtime.orientation_rule(adapter_manifest)
     if cfg.max_samples is not None:
@@ -351,9 +345,7 @@ def extract_dataset(
     else:
         pairs = valid_pairs
     screening = _extraction_screening(
-        primary_record_count=primary_record_count,
-        selected_label_record_count=selected_label_record_count,
-        paired_case_count=len(candidate_pairs),
+        record_count=len(adapter_pairs),
         valid_case_count=full_valid_case_count,
         execution_pair_count=len(pairs),
         target_terms=target_terms,
@@ -425,7 +417,7 @@ def extract_dataset(
                 ],
             },
             "visual_qc_artifacts": _visual_qc_safe_summary(visual_qc),
-            "warnings": _dedupe(scan_warnings + label_warnings + pair_warnings + adapter_warnings),
+            "warnings": _dedupe(label_warnings + adapter_warnings),
         }
 
     counts: Counter[str] = Counter()
@@ -466,7 +458,7 @@ def extract_dataset(
     )
     storage_sections = contract_runtime.storage_sections(policy, sample_rows)
     intensity_stats = _finalize_intensity_accumulator(intensity_accumulator)
-    training_transform_policy = _write_training_transform_policy(
+    _write_training_transform_policy(
         output_dir=output_dir,
         client_id=client_id,
         policy=policy,
@@ -538,7 +530,7 @@ def extract_dataset(
     return _extraction_result(
         manifest,
         label_rule_applied=contract_runtime.label_rule_applied(policy),
-        warnings=_dedupe(scan_warnings + label_warnings + pair_warnings + adapter_warnings),
+        warnings=_dedupe(label_warnings + adapter_warnings),
         extraction_details={
             "preview_available": preview["available"],
             "preview_label_value_scale": preview.get("label_value_scale"),
@@ -687,9 +679,7 @@ def _extraction_verification(
 
 def _extraction_screening(
     *,
-    primary_record_count: int,
-    selected_label_record_count: int,
-    paired_case_count: int,
+    record_count: int,
     valid_case_count: int,
     execution_pair_count: int,
     target_terms: set[str],
@@ -697,14 +687,10 @@ def _extraction_screening(
     status = "usable"
     reason_code = None
     reason = "Local label validation found usable image-label pairs for the extraction policy."
-    if selected_label_record_count == 0:
+    if record_count == 0:
         status = "screened_out"
         reason_code = "NO_USABLE_LABEL_RECORDS"
         reason = "No local label records matched the round-2 extraction policy during local validation."
-    elif paired_case_count == 0:
-        status = "screened_out"
-        reason_code = "NO_IMAGE_LABEL_PAIRS"
-        reason = "Local label records existed, but generic local pairing found no usable image-label pairs."
     elif valid_case_count == 0:
         status = "screened_out"
         reason_code = "NO_VALID_CASES_AFTER_SPLIT_RULE"
@@ -716,9 +702,7 @@ def _extraction_screening(
         "reason_code": reason_code,
         "reason": reason,
         "target_concepts": sorted(target_terms),
-        "primary_record_count": primary_record_count,
-        "selected_label_record_count": selected_label_record_count,
-        "paired_case_count": paired_case_count,
+        "record_count": record_count,
         "valid_case_count": valid_case_count,
         "execution_pair_count": execution_pair_count,
         "safe_to_share": True,
@@ -891,18 +875,6 @@ def _load_local_adapter_manifest(
         return None, ["Local adapter manifest did not contain any records."]
     manifest["_manifest_path"] = str(manifest_path.resolve())
     return manifest, []
-
-
-def _adapter_manifest_record_type(
-    manifest: dict[str, Any],
-    *,
-    generated_contract: dict[str, Any] | None = None,
-) -> str:
-    return manifest_record_type(manifest, generated_contract=generated_contract)
-
-
-def _adapter_record_type(record: dict[str, Any]) -> str:
-    return infer_record_type(record)
 
 
 def _organize_adapter_pairs_for_fl_splits(
@@ -1152,9 +1124,7 @@ def _extract_generated_contract_dataset(
     extracted_count = sum(counts.values())
     failed_pair_count = max(adapter_record_count - extracted_count, 0)
     screening = _extraction_screening(
-        primary_record_count=adapter_record_count,
-        selected_label_record_count=adapter_record_count,
-        paired_case_count=adapter_record_count,
+        record_count=adapter_record_count,
         valid_case_count=extracted_count,
         execution_pair_count=extracted_count,
         target_terms=target_terms,
@@ -1183,14 +1153,14 @@ def _extract_generated_contract_dataset(
             reason=f"Generated materializer wrote invalid visual QC artifacts: {exc}",
             warnings=adapter_warnings,
         )
-    if _generated_contract_requires_visual_qc(generated_contract) and not visual_qc.get("available"):
+    if generated_contract_visual_qc_required(generated_contract) and not visual_qc.get("available"):
         verification = {**verification, "passed": False, "generated_contract_visual_qc_missing": True}
     preview = _generated_preview(output_dir=output_dir, rows=sample_rows, report=report)
     storage_sections = _generated_storage_sections(
         generated_contract=generated_contract, rows=sample_rows, report=report
     )
     intensity_stats = _generated_intensity_stats(output_dir=output_dir, rows=sample_rows)
-    training_transform_policy = _write_training_transform_policy(
+    _write_training_transform_policy(
         output_dir=output_dir,
         client_id=client_id,
         policy=policy,
@@ -1594,7 +1564,7 @@ def _generated_visual_qc_bundle(
             "available": bool(artifacts),
             "sample_count": len(artifacts),
             "requested_sample_count": len(artifacts),
-            "review_required": _generated_contract_requires_visual_qc(generated_contract),
+            "review_required": generated_contract_visual_qc_required(generated_contract),
             "visual_qc_owner": "generated_materializer",
             "reviewer": "client_agent_visual_review",
             "transform_candidates": transform_candidates,
@@ -1610,7 +1580,7 @@ def _generated_visual_qc_bundle(
         "reason": "generated materializer did not provide local visual QC artifacts",
         "sample_count": 0,
         "artifacts": [],
-        "review_required": _generated_contract_requires_visual_qc(generated_contract),
+        "review_required": generated_contract_visual_qc_required(generated_contract),
         "visual_qc_owner": "generated_materializer",
         "transform_candidates": ["as_is"],
         "local_output_path_redacted": True,
@@ -1644,10 +1614,6 @@ def _generated_visual_qc_artifact(value: Any) -> dict[str, Any]:
         return {}
     artifact["local_artifact_path_redacted"] = True
     return artifact
-
-
-def _generated_contract_requires_visual_qc(generated_contract: dict[str, Any]) -> bool:
-    return generated_contract_visual_qc_required(generated_contract)
 
 
 def _generated_preview(*, output_dir: Path, rows: list[dict[str, Any]], report: dict[str, Any]) -> dict[str, Any]:
