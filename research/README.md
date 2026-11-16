@@ -34,6 +34,7 @@ local or upstream README for setup, data, and run instructions.
 | [FedBN: Federated Learning on Non-IID Features via Local Batch Normalization](./fed-bn/README.md) | Local batch normalization for feature-shifted federated learning ([ICLR 2021](https://arxiv.org/abs/2102.07623)). |
 | [Privacy-preserving Federated Brain Tumour Segmentation](./brats18/README.md) | Federated brain tumor segmentation with privacy-preserving training ([MLMI 2019](https://arxiv.org/abs/1910.00962)). |
 | [telltale: cross-round client drift monitoring](https://github.com/rybrennan/telltale/tree/main/examples/nvflare) | Externally maintained experimental example of cross-round client drift monitoring, with measured detection delay and false-alarm rates ([results](https://github.com/rybrennan/telltale/blob/main/examples/nvflare/README.md#results)). |
+| [FDS: Federated Dataset Simulation](https://github.com/siomvas/fds/tree/main/examples/nvflare) | Externally maintained. Label-free partitioning of centralized datasets into heterogeneous clients for classification, segmentation and detection, trained with the Recipe and Client APIs ([NeurIPS 2026](https://openreview.net/forum?id=oIgrH55uFj)). |
 
 ## Agent-Assisted Research Workflow
 
