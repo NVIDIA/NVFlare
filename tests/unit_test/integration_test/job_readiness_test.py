@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+from logging.handlers import RotatingFileHandler
 from unittest.mock import Mock
 
 import pytest
@@ -43,6 +45,7 @@ def driver(monkeypatch):
     driver.super_admin_api = Mock()
     driver.super_admin_api.get_job_meta.return_value = {"status": RunStatus.RUNNING.value}
     driver.super_admin_api.cat_target.return_value = "Server runner starting ...\n"
+    driver.super_admin_api.ls_target.return_value = ""
     driver.super_admin_api.show_stats.return_value = STATS
     driver.server_status = Mock(return_value="started")
     driver.client_status = Mock(return_value=[])
@@ -154,3 +157,90 @@ def test_workflow_assertions_in_event_results_still_collect_statistics(driver):
     driver.run_event_sequence([event])
     assert driver.test_done
     driver.super_admin_api.show_stats.assert_called_once_with(JOB_ID, "server")
+
+
+@pytest.fixture
+def rotating_job_log(driver, tmp_path):
+    job_dir = tmp_path / JOB_ID
+    job_dir.mkdir()
+    logger = logging.Logger("readiness-rotation", level=logging.INFO)
+    handler = RotatingFileHandler(job_dir / "log.txt", maxBytes=128, backupCount=2)
+    logger.addHandler(handler)
+
+    def cat_log(target, file):
+        assert target == "server"
+        path = tmp_path / file
+        return path.read_text() if path.is_file() else "No such file"
+
+    def list_logs(target, path):
+        assert target == "server"
+        folder = tmp_path / path
+        return "\n".join(p.name for p in folder.iterdir()) if folder.is_dir() else "No such directory"
+
+    driver.super_admin_api.cat_target.side_effect = cat_log
+    driver.super_admin_api.ls_target.side_effect = list_logs
+    try:
+        yield logger, handler, job_dir
+    finally:
+        logger.removeHandler(handler)
+        handler.close()
+
+
+def test_observed_readiness_survives_rotation_and_expired_backups(driver, rotating_job_log):
+    logger, handler, job_dir = rotating_job_log
+    logger.info("Server runner starting ...")
+    assert driver._get_workflow_state(_state())["workflows"] == WORKFLOWS
+    # Rotate enough times that even the retained backups no longer hold startup.
+    for _ in range(3):
+        handler.doRollover()
+        logger.info("Training continues")
+    assert all("Server runner starting ..." not in p.read_text() for p in job_dir.iterdir())
+    driver.super_admin_api.cat_target.reset_mock()
+    driver.super_admin_api.ls_target.reset_mock()
+
+    driver.run_event_sequence([_event({"workflows": WORKFLOWS})])
+
+    assert driver.test_done
+    assert driver.super_admin_api.show_stats.call_count == 2
+    driver.super_admin_api.cat_target.assert_not_called()
+    driver.super_admin_api.ls_target.assert_not_called()
+
+
+@pytest.mark.parametrize("rotations", [1, 2])
+def test_first_workflow_poll_finds_startup_in_rotated_log(driver, rotating_job_log, rotations):
+    logger, handler, job_dir = rotating_job_log
+    logger.info("Server runner starting ...")
+    for _ in range(rotations):
+        handler.doRollover()
+        logger.info("Training continues")
+    assert "Server runner starting ..." not in (job_dir / "log.txt").read_text()
+    assert "Server runner starting ..." in (job_dir / f"log.txt.{rotations}").read_text()
+
+    driver.run_event_sequence([_event({"workflows": WORKFLOWS})])
+
+    assert driver.test_done
+    driver.super_admin_api.show_stats.assert_called_once_with(JOB_ID, "server")
+    driver.super_admin_api.ls_target.assert_called_once_with("server", path=JOB_ID)
+
+
+def test_readiness_from_one_job_cannot_authorize_another_job(driver, rotating_job_log):
+    logger, _handler, _job_dir = rotating_job_log
+    logger.info("Server runner starting ...")
+    assert driver._get_workflow_state(_state())["workflows"] == WORKFLOWS
+    driver.super_admin_api.show_stats.reset_mock()
+    driver.job_id = "another-job"
+
+    with pytest.raises(nvf_test_driver.NVFTestError, match="Event sequence timed out"):
+        driver.run_event_sequence([_event({"workflows": WORKFLOWS})])
+
+    driver.super_admin_api.show_stats.assert_not_called()
+
+
+def test_rotated_log_lookup_ignores_other_files_and_jobs(driver):
+    driver.super_admin_api.cat_target.return_value = "Loading server app"
+    driver.super_admin_api.ls_target.return_value = "log.txt\nlog.json.1\n../other/log.txt.1\nold_log.txt.1\n"
+
+    assert driver._get_workflow_state(_state())["workflows"] is None
+
+    driver.super_admin_api.cat_target.assert_called_once_with("server", file=f"{JOB_ID}/log.txt")
+    driver.super_admin_api.show_stats.assert_not_called()
