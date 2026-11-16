@@ -155,9 +155,9 @@ class Cifar10Observer:
             json.dump(self._test_history, history_file, indent=2)
         return accuracy
 
-    def _evaluate_snapshots(self) -> None:
-        self.logger.info(f"evaluating {self.num_rounds + 1} saved global model versions on the server")
-        for model_version in range(self.num_rounds + 1):
+    def _evaluate_snapshots(self, completed_version: int) -> None:
+        self.logger.info(f"evaluating {completed_version + 1} saved global model versions on the server")
+        for model_version in range(completed_version + 1):
             snapshot_path = os.path.join(self._eval_snapshot_dir, f"model_version_{model_version}.pt")
             snapshot = torch.load(snapshot_path, map_location="cpu", weights_only=True)
             self._evaluate_model(snapshot, round_index=model_version - 1)
@@ -184,7 +184,7 @@ class Cifar10Observer:
             trace.write(json.dumps(asdict(event)) + "\n")
 
     def on_finish(self, model, version):
-        self._evaluate_snapshots()
+        self._evaluate_snapshots(version)
         final_dir = os.path.join(self._run_dir, "final_model")
         os.makedirs(final_dir, exist_ok=True)
         torch.save(model, os.path.join(final_dir, "global_model.pt"))

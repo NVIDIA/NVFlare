@@ -67,6 +67,30 @@ def test_exported_task_app_is_rejected_before_simulator_services_start(tmp_path,
     create_client.assert_not_called()
 
 
+def test_async_plan_allows_explicit_site_job_with_smaller_physical_pool(tmp_path, monkeypatch):
+    source = Path(__file__).resolve().parents[4] / "data" / "jobs" / "valid_job"
+    job = tmp_path / "explicit_job"
+    shutil.copytree(source, job)
+    meta_path = job / "meta.json"
+    meta = json.loads(meta_path.read_text())
+    meta[JobMetaKey.MIN_CLIENTS] = 2
+    meta[JobMetaKey.DEPLOY_MAP] = {"sag": ["server", "site-1"]}
+    meta_path.write_text(json.dumps(meta))
+    monkeypatch.setattr(simulator_runner_module, "SimulatorDeployer", Mock())
+    runner = SimulatorRunner(str(job), str(tmp_path / "workspace"), clients="site-1")
+    runner.args = Namespace(job_folder=str(job))
+
+    with pytest.raises(RuntimeError, match="min 2 clients required"):
+        runner.validate_job_data()
+    plan = {
+        "format_version": 1,
+        "async_execution": {"logical_sequence": ["a", "b"], "arrival_sequence": [1, 0]},
+    }
+    _, _, validated_meta = runner.validate_job_data(plan)
+    assert validated_meta[JobMetaKey.MIN_CLIENTS] == 2
+    assert json.loads(meta_path.read_text())[JobMetaKey.MIN_CLIENTS] == 2
+
+
 @pytest.fixture
 def simulator_gpu_setup(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)

@@ -62,7 +62,7 @@ def run_simulator(simulator_args):
         log_config=log_config,
         max_clients=simulator_args.max_clients,
         end_run_for_all=simulator_args.end_run_for_all,
-        simulation_plan=simulator_args.simulation_plan,
+        simulation_plan=getattr(simulator_args, "simulation_plan", None),
     )
     run_status = simulator.run()
 

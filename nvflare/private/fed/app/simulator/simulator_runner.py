@@ -87,6 +87,22 @@ POOL_STATS_DIR = "pool_stats"
 SIMULATOR_POOL_STATS = "simulator_cell_stats.json"
 
 
+class _SimulationJobMetaValidator(JobMetaValidator):
+    """Allow an async plan to use fewer physical sites than logical concurrency."""
+
+    def _validate_min_clients(self, job_name, meta, clients):
+        original = meta.get(JobMetaKey.MIN_CLIENTS)
+        if original is None or ALL_SITES in clients:
+            return super()._validate_min_clients(job_name, meta, clients)
+        # Validate the exported value's bounds before lowering it for simulation.
+        super()._validate_min_clients(job_name, meta, {ALL_SITES})
+        try:
+            meta[JobMetaKey.MIN_CLIENTS] = min(self._convert_value_to_int(original), len(clients))
+            return super()._validate_min_clients(job_name, meta, clients)
+        finally:
+            meta[JobMetaKey.MIN_CLIENTS] = original
+
+
 class SimulatorRunner(FLComponent):
     def __init__(
         self,
@@ -232,7 +248,7 @@ class SimulatorRunner(FLComponent):
         )
 
         try:
-            data_bytes, job_name, meta = self.validate_job_data()
+            data_bytes, job_name, meta = self.validate_job_data(plan)
 
             if not self.client_names:
                 self.client_names = self._extract_client_names_from_meta(meta)
@@ -368,12 +384,14 @@ class SimulatorRunner(FLComponent):
             shutil.copytree(workspace_local, local_dir, dirs_exist_ok=True)
         shutil.copytree(os.path.join(self.simulator_root, "startup"), startup)
 
-    def validate_job_data(self):
+    def validate_job_data(self, plan=None):
         # Validate the simulate job
         job_name = split_path(self.args.job_folder)[1]
         data = zip_directory_to_bytes("", self.args.job_folder)
         data_bytes = convert_legacy_zipped_app_to_job(data)
-        job_validator = JobMetaValidator()
+        job_validator = (
+            _SimulationJobMetaValidator() if plan is not None and ASYNC_EXECUTION in plan else JobMetaValidator()
+        )
         valid, error, meta = job_validator.validate(job_name, data_bytes)
         if not valid:
             raise RuntimeError(error)

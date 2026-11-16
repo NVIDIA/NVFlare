@@ -59,6 +59,7 @@ class _Observer:
 
     def on_finish(self, model, version):
         self.finished = True
+        self.finish_version = version
 
     def close(self):
         self.closed = True
@@ -274,11 +275,30 @@ def test_timed_plan_stops_acceptance_at_horizon_and_drains_started_results(tmp_p
         },
         tmp_path,
     )
-    output = _execute(_Observer(), [_Client()], runtime=runtime, num_updates=2, concurrency=2, buffer_size=1)
+    observer = _Observer()
+    output = _execute(observer, [_Client()], runtime=runtime, num_updates=2, concurrency=2, buffer_size=1)
     assert output["w"].item() == 0
+    assert observer.finish_version == 0
     assert runtime.virtual_time == 0.5
     assert len(list((tmp_path / "results").glob("*.pkl"))) == 1
     assert not (tmp_path / "accepted.jsonl").exists()
+
+
+def test_planned_replay_rejects_repeated_active_logical_client(tmp_path):
+    runtime = SimulationPlanRuntime(
+        {
+            "format_version": 1,
+            "async_execution": {
+                "logical_sequence": ["a", "b", "a"],
+                "arrival_sequence": [1, 2, 0],
+            },
+        },
+        tmp_path,
+    )
+    with pytest.raises(ValueError, match="logical clients already active: \\['a'\\]"):
+        _execute(_Observer(), [_Client(), _Client()], runtime=runtime, num_updates=3, concurrency=2, buffer_size=1)
+    assignments = [json.loads(line) for line in (tmp_path / "assignments.jsonl").read_text().splitlines()]
+    assert [entry["assignment_id"] for entry in assignments] == [0, 1]
 
 
 def test_optional_transform_runs_through_collab_recipe_workflow():

@@ -219,6 +219,10 @@ class FedBuffTrainingCoordinator:
             raise ValueError("logical client names must be unique within a reservation")
         if metadata is not None and len(metadata) != len(logical_names):
             raise ValueError("metadata must match logical client names")
+        busy = {assignment.logical_name for assignment in self.active.values()}
+        overlapping = busy.intersection(logical_names[: self.available_slots])
+        if overlapping:
+            raise ValueError(f"logical clients already active: {sorted(overlapping)}")
         assignments = []
         for index, name in enumerate(logical_names[: self.available_slots]):
             details = deepcopy(metadata[index]) if metadata is not None else {}

@@ -24,6 +24,7 @@ from nvflare.apis.fl_constant import FLMetaKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.apis.signal import Signal
+from nvflare.apis.simulation_plan import SIMULATION_PLAN_PROP, SimulationPlanRuntime
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import AggregationShapeError, AggregationStatsKey
 from nvflare.app_common.app_constant import AppConstants
@@ -173,6 +174,44 @@ def test_no_accepted_contributions_prevents_update_and_save(monkeypatch, empty_r
     assert controller._received_count == 0
     assert controller._params_type is None
     assert controller._site_metric_weights == {}
+
+
+@pytest.mark.parametrize("reject_second", [False, True])
+def test_planned_round_publishes_only_after_all_selected_results_are_accepted(tmp_path, monkeypatch, reject_second):
+    controller = FedAvg(num_clients=2, num_rounds=1, model=FLModel(params={"w": np.zeros(1)}))
+    controller.fl_ctx = FLContext()
+    controller.abort_signal = Signal()
+    controller.engine = Mock()
+    controller.engine.get_clients.return_value = [Client("site-1", "token-1"), Client("site-2", "token-2")]
+    runtime = SimulationPlanRuntime({"format_version": 1, "round_participation": {"0": ["site-2", "site-1"]}}, tmp_path)
+    controller.fl_ctx.set_prop(SIMULATION_PLAN_PROP, runtime)
+    update = Mock(return_value=FLModel(params={"w": np.ones(1)}))
+    save = Mock()
+    monkeypatch.setattr(controller, "event", Mock())
+    monkeypatch.setattr(controller, "get_num_standing_tasks", lambda: 0)
+    monkeypatch.setattr(controller, "update_model", update)
+    monkeypatch.setattr(controller, "save_model", save)
+
+    def send_model(*, targets, callback, **kwargs):
+        assert targets == ["site-2", "site-1"]
+        for name in targets:
+            params = {} if reject_second and name == "site-1" else {"w": np.ones(1)}
+            accepted = callback(FLModel(params=params, meta={"client_name": name}))
+            assert accepted is bool(params)
+
+    monkeypatch.setattr(controller, "send_model", send_model)
+    if reject_second:
+        with pytest.raises(RuntimeError, match="expected exactly"):
+            controller.run()
+        update.assert_not_called()
+        save.assert_not_called()
+        assert not (tmp_path / "models" / "00000001.pkl").exists()
+    else:
+        controller.run()
+        runtime.assert_consumed()
+        update.assert_called_once()
+        save.assert_called_once()
+        assert (tmp_path / "models" / "00000001.pkl").exists()
 
 
 def test_shape_error_after_parameter_accumulation_is_fatal(monkeypatch):
