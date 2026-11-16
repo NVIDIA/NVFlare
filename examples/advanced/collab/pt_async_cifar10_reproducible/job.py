@@ -25,18 +25,18 @@ from nvflare.collab import FedBuffRecipe, collab
 from nvflare.recipe import SimEnv
 
 
-class ResearchModelLoader:
+class NumpyModelLoader:
     def load_model(self):
         return {"weights": np.zeros(3, dtype=np.float32)}
 
 
-class ResearchObserver:
+class FinalWeightsObserver:
     def on_finish(self, model, version):
         run_dir = Path(collab.workspace.get_run_dir(collab.fl_ctx.get_job_id()))
         np.save(run_dir / "final_weights.npy", model["weights"])
 
 
-class ResearchClient:
+class SeededNumpyClient:
     @collab.publish
     def train(self, assignment_ids, model_version, global_model, logical_assignments, train_seeds=None):
         site = collab.site_name
@@ -68,9 +68,9 @@ class ResearchClient:
 def make_recipe(run_seed=10):
     recipe = FedBuffRecipe(
         job_name="collab_pt_async_cifar10_reproducible",
-        client=ResearchClient(),
-        model_loader=ResearchModelLoader(),
-        observer=ResearchObserver(),
+        client=SeededNumpyClient(),
+        model_loader=NumpyModelLoader(),
+        observer=FinalWeightsObserver(),
         model_ops=NumpyModelOps(),
         num_updates=4,
         concurrency=2,

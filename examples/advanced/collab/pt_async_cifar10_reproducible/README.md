@@ -4,7 +4,7 @@ This dataset-free companion to the [asynchronous CIFAR-10 example](../pt_async_c
 shows the complete `FedBuffRecipe` + `SimEnv(reprod=True, plan=...)` path. It uses
 small NumPy models so replay can be checked without downloading CIFAR-10 or
 installing PyTorch. The package name is retained for continuity with the earlier
-research example.
+example.
 
 `job.py` constructs an ordinary `FedBuffRecipe`. Its workflow has no simulation
 arguments or branches: the shared async execution port in `FedBuffWorkflow`
@@ -63,7 +63,7 @@ run = recipe.execute(SimEnv(
 `make_plan()` lists logical names, acceptance IDs, and per-assignment training
 seeds. In timed mode it replaces acceptance IDs with starts, delay profiles,
 and a horizon. `SeedPolicy` derives independent seed streams from the run seed,
-assignment ID, and logical name. `ResearchClient.train()` applies the supplied
+assignment ID, and logical name. `SeededNumpyClient.train()` applies the supplied
 plan seed; without a plan it derives the same seed locally. A client with
 persistent data or optimizer state must separate or reset it by logical name.
 The NumPy model operations are example code and can be replaced for another

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Research PyTorch RNG helpers; importing SeedPolicy alone needs no torch."""
+"""Example PyTorch RNG helpers; importing SeedPolicy alone needs no torch."""
 
 import random
 import threading

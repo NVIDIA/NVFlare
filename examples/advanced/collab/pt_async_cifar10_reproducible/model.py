@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""NumPy model arithmetic for the standalone research smoke example."""
+"""NumPy model arithmetic for the reproducible simulation example."""
 
 import numpy as np
 

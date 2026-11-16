@@ -187,7 +187,7 @@ distinct within that module.
        budget; result/weight validation; exact-base deltas; buffered publication;
        update-transform context.
      - Collab RPCs, execution environments, result arrival timing,
-       framework-specific arithmetic and research policies.
+       framework-specific arithmetic and simulation plans.
    * - Example model helpers
      - Snapshots, shape/dtype/finite checks, differences, update application and
        non-floating buffer rules.
@@ -200,7 +200,7 @@ distinct within that module.
      - Simulator-only participation, logical starts, acceptance, virtual time,
        disk evidence and model history.
      - Recipe construction, exported job configuration and production arrivals.
-   * - :github_nvflare_link:`Research example
+   * - :github_nvflare_link:`Reproducible simulation example
        <examples/advanced/collab/pt_async_cifar10_reproducible>`
      - A complete ``FedBuffRecipe`` composition with independent client seed
        streams and simulator plans for fixed acceptance or virtual timing.
@@ -209,7 +209,7 @@ distinct within that module.
 
 ``FedBuffRecipe`` builds ``FedBuffWorkflow``, which invokes ``FedBuffTrainingCoordinator``.
 The coordinator performs no Collab calls and uses caller-supplied model arithmetic.
-Both production and research use the same numerical acceptance/publication path.
+Both live and planned runs use the same numerical acceptance/publication path.
 ``SimEnv`` selects planned execution and owns retained bases/results; core never
 imports the examples.
 
@@ -222,8 +222,8 @@ import ``FedBuffTrainingCoordinator`` from ``nvflare.collab.fedbuff_recipe``. Pr
 workflow methods are implementation reuse points rather than a public scheduler/storage
 plugin API.
 
-Reproducible Research
----------------------
+Reproducible Simulation
+-----------------------
 
 Actual arrivals depend on training/RPC timing; fixed seeds alone do not make them
 reproducible. :ref:`Reproducible Simulation Plans <reproducible_simulation>`
