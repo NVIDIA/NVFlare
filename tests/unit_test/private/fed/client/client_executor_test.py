@@ -1570,7 +1570,7 @@ def test_failed_launch_observes_published_handle_even_when_cancel_fails(tmp_path
     assert find_job_cert(str(tmp_path / "job-1")) is not None
     resources.free_resources.assert_not_called()
     client.send_request_before_shutdown.assert_not_called()
-    accepted.terminate.assert_called_once()
+    assert accepted.terminate.call_count == (2 if failure == "saved-abort" else 1)
     accepted.wait.assert_called_once()
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
@@ -1601,6 +1601,7 @@ def test_launch_cleanup_timeout_retains_owner_and_does_not_block_observation(tmp
     release = threading.Event()
     finished = threading.Event()
     errors = []
+    cleanup_history = []
 
     def block():
         entered.set()
@@ -1655,6 +1656,8 @@ def test_launch_cleanup_timeout_retains_owner_and_does_not_block_observation(tmp
                 assert len(errors) == 1 and isinstance(errors[0], JobCleanupPending)
                 assert executor.get_run_processes_keys() == ["job-1"]
                 assert not release.is_set()
+                pending = executor.run_processes["job-1"][RunProcessKey.JOB_HANDLE]
+                cleanup_history.append(pending.cleanup_calls)
                 aborted = threading.Event()
 
                 def abort_again():
@@ -1663,17 +1666,18 @@ def test_launch_cleanup_timeout_retains_owner_and_does_not_block_observation(tmp
 
                 threads.start(abort_again)
                 assert aborted.wait(2)
-                accepted.terminate.assert_called_once()
-                accepted.wait.assert_called_once()
+                assert accepted.terminate.call_count == (2 if blocked == "wait" else 1)
+                assert accepted.wait.call_count == (1 if blocked == "wait" else 2)
         finally:
             release.set()
             pending = executor.run_processes.get("job-1", {}).get(RunProcessKey.JOB_HANDLE)
             if pending and pending.cleanup_calls:
-                for call in pending.cleanup_calls:
-                    call.thread.join(2)
-                    assert not call.thread.is_alive()
-    accepted.terminate.assert_called_once()
-    accepted.wait.assert_called_once()
+                cleanup_history.append(pending.cleanup_calls)
+            from tests.client_executor_test_utils import join_cleanup_calls
+
+            join_cleanup_calls(*cleanup_history)
+    assert accepted.terminate.call_count == (2 if blocked == "wait" else 1)
+    assert accepted.wait.call_count == (1 if blocked == "wait" else 2)
     # Late completion does not silently unregister or resubmit a retained run.
     assert executor.get_run_processes_keys() == ["job-1"]
 
@@ -1978,3 +1982,264 @@ def test_retained_admin_abort_logs_observed_completion_without_releasing_owner(t
     assert executor.get_status("job-1") == ClientStatus.CLEANUP_PENDING
     assert find_job_cert(str(tmp_path / "job-1")) is not None
     resources.free_resources.assert_not_called()
+
+
+@pytest.mark.parametrize("raises", [False, True], ids=["ineffective-cancel", "cancel-error"])
+def test_admin_retries_finished_cancel_while_original_observation_is_still_running(tmp_path, raises):
+    from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
+    from tests.client_executor_test_utils import ControlledProcessAdapter, join_cleanup_calls
+
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    client.cell.get_fqcn.return_value = "site-1"
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    executor.job_launch_cleanup_timeout = 0.02
+    cancelled_again = threading.Event()
+    initial_done = threading.Event()
+    admin_done = threading.Event()
+    initial_errors = []
+    resources = MagicMock()
+
+    def terminate(adapter, attempt):
+        if attempt == 1:
+            if raises:
+                raise RuntimeError("first cancellation failed")
+            return  # A backend can return without having stopped its runtime.
+        adapter.exited.set()
+        cancelled_again.set()
+
+    adapter = ControlledProcessAdapter(terminate)
+    adapter.release_wait.clear()  # Keep the first honest observer alive even after exit.
+    accepted = ProcessHandle(process_adapter=adapter)
+    launcher = MagicMock()
+
+    def launch(_meta, context):
+        publish_job_handle(accepted, context)
+        raise RuntimeError("startup failed after acceptance")
+
+    launcher.launch_job.side_effect = launch
+
+    def initial_launch():
+        try:
+            executor.start_app(
+                client,
+                "job-1",
+                meta,
+                SimpleNamespace(workspace=str(tmp_path), set=[]),
+                {"gpu": 1},
+                "token",
+                resources,
+                ctx,
+            )
+        except Exception as error:
+            initial_errors.append(error)
+        finally:
+            initial_done.set()
+
+    def admin_abort():
+        executor.abort_app("job-1")
+        admin_done.set()
+
+    original_calls = None
+    write_job_cert(str(tmp_path / "job-1"), b"cert", b"key")
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        try:
+            with ThreadGroup(adapter.exited, adapter.release_wait) as threads:
+                threads.start(initial_launch)
+                assert adapter.wait_entered.wait(5)
+                assert initial_done.wait(5)
+                assert len(initial_errors) == 1 and isinstance(initial_errors[0], JobCleanupPending)
+                pending = executor.run_processes["job-1"][RunProcessKey.JOB_HANDLE]
+                original_calls = pending.cleanup_calls
+                assert original_calls[0].done.wait(5)
+                assert not original_calls[1].done.is_set()
+                threads.start(admin_abort)
+                assert cancelled_again.wait(5)
+                assert admin_done.wait(5)
+                assert adapter.terminate_count == 2
+                assert adapter.wait_count == 1
+                assert pending.cleanup_calls[0] is not original_calls[0]
+                assert pending.cleanup_calls[1] is original_calls[1]
+                assert adapter.exited.is_set()
+                assert find_job_cert(str(tmp_path / "job-1")) is not None
+                resources.free_resources.assert_not_called()
+        finally:
+            pending = executor.run_processes.get("job-1", {}).get(RunProcessKey.JOB_HANDLE)
+            join_cleanup_calls(original_calls, pending.cleanup_calls if pending else None)
+
+
+def test_admin_retries_finished_observation_while_original_cancel_is_still_running(tmp_path):
+    from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
+    from tests.client_executor_test_utils import ControlledProcessAdapter, join_cleanup_calls
+
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    client.cell.get_fqcn.return_value = "site-1"
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    executor.job_launch_cleanup_timeout = 0.02
+    cancel_entered = threading.Event()
+    release_cancel = threading.Event()
+    observed_again = threading.Event()
+    initial_done = threading.Event()
+    admin_done = threading.Event()
+    initial_errors = []
+
+    def terminate(adapter, _attempt):
+        cancel_entered.set()
+        release_cancel.wait()
+        adapter.exited.set()
+
+    def observe(_adapter, attempt):
+        if attempt == 1:
+            raise RuntimeError("first observation failed")
+        observed_again.set()
+
+    adapter = ControlledProcessAdapter(terminate, observe)
+    accepted = ProcessHandle(process_adapter=adapter)
+    launcher = MagicMock()
+
+    def launch(_meta, context):
+        publish_job_handle(accepted, context)
+        raise RuntimeError("startup failed after acceptance")
+
+    launcher.launch_job.side_effect = launch
+
+    def initial_launch():
+        try:
+            executor.start_app(
+                client, "job-1", meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, ctx
+            )
+        except Exception as error:
+            initial_errors.append(error)
+        finally:
+            initial_done.set()
+
+    def abort():
+        executor.abort_app("job-1")
+        admin_done.set()
+
+    original_calls = None
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        try:
+            with ThreadGroup(adapter.exited, adapter.release_wait, release_cancel) as threads:
+                threads.start(initial_launch)
+                assert cancel_entered.wait(5)
+                assert initial_done.wait(5)
+                assert len(initial_errors) == 1 and isinstance(initial_errors[0], JobCleanupPending)
+                pending = executor.run_processes["job-1"][RunProcessKey.JOB_HANDLE]
+                original_calls = pending.cleanup_calls
+                assert not original_calls[0].done.is_set()
+                assert original_calls[1].done.wait(5)
+                threads.start(abort)
+                assert observed_again.wait(5)
+                assert admin_done.wait(5)
+                assert adapter.terminate_count == 1
+                assert adapter.wait_count == 2
+                assert pending.cleanup_calls[0] is original_calls[0]
+                assert pending.cleanup_calls[1] is not original_calls[1]
+        finally:
+            pending = executor.run_processes.get("job-1", {}).get(RunProcessKey.JOB_HANDLE)
+            join_cleanup_calls(original_calls, pending.cleanup_calls if pending else None)
+
+
+def test_saved_abort_retries_transient_cancel_and_processor_frees_admission(tmp_path):
+    from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
+    from nvflare.private.admin_defs import Message
+    from nvflare.private.defs import TrainingTopic
+    from nvflare.private.fed.client.scheduler_cmds import StartJobProcessor
+    from nvflare.private.scheduler_constants import ShareableHeader
+    from tests.client_executor_test_utils import ControlledProcessAdapter, join_cleanup_calls
+
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    executor.job_launch_cleanup_timeout = 1.0
+    resources = MagicMock()
+    resources.allocate_resources.return_value = {"gpu": 1}
+    launcher = MagicMock()
+    handles = []
+
+    def terminate(adapter, attempt):
+        if attempt == 1:
+            raise RuntimeError("transient saved abort failure")
+        adapter.exited.set()
+
+    adapter = ControlledProcessAdapter(terminate)
+    accepted = ProcessHandle(process_adapter=adapter)
+
+    def launch(_meta, context):
+        executor.abort_app("job-1")  # Save the abort before publication.
+        publish_job_handle(accepted, context)
+        handles.append(executor.run_processes["job-1"][RunProcessKey.JOB_HANDLE])
+        assert handles[-1].cancel_call.done.wait(5)  # Establish the completed transient failure.
+        return accepted
+
+    launcher.launch_job.side_effect = launch
+    engine = MagicMock(spec=ClientEngine)
+    engine.client_executor = executor
+    engine.args = SimpleNamespace(workspace=str(tmp_path), set=[])
+    engine.client = client
+    engine.rank = 0
+    engine.logger = MagicMock()
+    engine.new_context.return_value = ctx
+    engine.start_app.side_effect = lambda *args, **kwargs: ClientEngine.start_app(engine, *args, **kwargs)
+    Path(workspace.get_app_dir("job-1")).mkdir()
+    request = Message(topic=TrainingTopic.START_JOB, body={"gpu": 1})
+    request.set_header(RequestHeader.JOB_ID, "job-1")
+    request.set_header(RequestHeader.JOB_META, meta)
+    request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, "token")
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch("nvflare.private.fed.client.scheduler_cmds._get_resource_manager", return_value=resources),
+        patch("nvflare.private.fed.client.scheduler_cmds._get_resource_consumer"),
+    ):
+        try:
+            reply = StartJobProcessor().process(request, engine)
+            assert adapter.exited.is_set()
+            assert adapter.terminate_count == 2
+            assert adapter.wait_count == 1
+            assert executor.get_run_processes_keys() == []
+            resources.free_resources.assert_called_once()
+            assert "transient saved abort failure" in reply.body
+            assert "JobCleanupPending" not in reply.body
+        finally:
+            adapter.exited.set()
+            adapter.release_wait.set()
+            for handle in handles:
+                join_cleanup_calls(handle.cleanup_calls)
+
+
+def test_concurrent_retained_admin_abort_cannot_enter_cleanup_twice(tmp_path):
+    _, workspace, client, _ = _make_start_app_inputs(tmp_path)
+    client.cell.get_fqcn.return_value = "site-1"
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    cleanup_entered = threading.Event()
+    release_cleanup = threading.Event()
+    first_done = threading.Event()
+    second_done = threading.Event()
+    entries = []
+    pending = _PendingJobHandle()
+    pending.attach(MagicMock(spec=JobHandleSpec))
+    executor.run_processes["job-1"] = {
+        RunProcessKey.JOB_HANDLE: pending,
+        RunProcessKey.STATUS: ClientStatus.STARTED,
+    }
+    executor._retain_cleanup_owner("job-1")
+
+    def cleanup(*args, **kwargs):
+        entries.append((args, kwargs))
+        cleanup_entered.set()
+        release_cleanup.wait()  # Keep the first admin request inside cleanup.
+        return False
+
+    def abort(done):
+        executor.abort_app("job-1")
+        done.set()
+
+    with patch.object(executor, "_cleanup_failed_launch", side_effect=cleanup), ThreadGroup(release_cleanup) as threads:
+        threads.start(abort, first_done)
+        assert cleanup_entered.wait(5)
+        threads.start(abort, second_done)
+        assert second_done.wait(5)
+        assert not first_done.is_set()
+        assert len(entries) == 1
+        assert client.cell.fire_and_forget.call_count == 1
+        release_cleanup.set()
+        assert first_done.wait(5)

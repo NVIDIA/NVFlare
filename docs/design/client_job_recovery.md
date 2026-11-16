@@ -180,9 +180,10 @@ same cleanup path.
 10 seconds, finite and positive). Configure it on CP through
 `NVFLARE_JOB_LAUNCH_CLEANUP_TIMEOUT` or `--set job_launch_cleanup_timeout=<seconds>`;
 `--set` takes precedence. A saved abort has its own bounded wait; cleanup reuses
-that cancellation rather than starting another. Control calls and the ordinary
-CJ monitor use daemon threads so an unavailable backend cannot indefinitely hold
-CP process exit. This does not make a runtime disappear when CP exits.
+its cancellation while running or after success, and retries a completed failure
+once. Control calls and the ordinary CJ monitor use daemon threads so an
+unavailable backend cannot indefinitely hold CP process exit. This does not make
+a runtime disappear when CP exits.
 Slurm cancellation waits requery at most one second apart during the first
 10 seconds after the initial cancellation request, then return to `poll_interval`.
 Repeated cancellation requests do not extend that fast window. This permits
@@ -206,10 +207,13 @@ reuse of that directory while heartbeats and other jobs continue normally.
 The original launch failure is logged before cleanup errors.
 
 An explicit admin abort still sends a cooperative abort and makes a bounded
-cancellation/observation attempt. It reuses in-flight cleanup calls, and another
-explicit request may retry completed failed calls. Concurrent admin requests do
-not stack control operations. If completion is observed after an admin abort, a
-log records that evidence and explicitly states that registration, admission
+cancellation/observation attempt. Reuse is decided independently for each call:
+an in-flight observation does not suppress a new cancel after the previous cancel
+returns (even if it returned without error but did not stop the runtime), and an
+in-flight cancel does not suppress a new observation after a query failure.
+Only a call that is still running is reused on an explicit retry. Concurrent admin
+requests do not stack control operations. If completion is observed after an admin
+abort, a log records that evidence and explicitly states that registration, admission
 resources and credentials remain retained for operator reconciliation. Heartbeats
 neither retry retained cleanup nor emit repeated warnings. A different start
 request that fails before acquiring a runtime still frees its own admission

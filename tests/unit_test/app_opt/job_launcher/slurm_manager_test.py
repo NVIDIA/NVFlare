@@ -964,3 +964,44 @@ def test_cancel_fast_polling_backs_off_without_synthesizing_settlement(tmp_path)
     assert sum(call[0] == "cancel" for call in adapter.calls) == 13
     assert handle.terminal_result == JobReturnCode.ABORTED
     assert not manager._handles
+
+
+def test_cancel_request_wakes_a_handle_already_waiting_at_normal_poll_interval(tmp_path):
+    import threading
+
+    from tests.timing_utils import ThreadGroup
+
+    adapter = Adapter()
+    adapter.live = _query(LookupStatus.FOUND, _record())
+    adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="CANCELLED"))
+    manager = _manager(tmp_path, adapter)
+    manager.config = replace(manager.config, poll_interval=10.0)
+    handle = manager.launch(_plan(tmp_path))
+    waiting = threading.Event()
+    finished = threading.Event()
+
+    class ObservedCondition(threading.Condition):
+        def wait(self, timeout=None):
+            # The caller holds this condition lock. A concurrent cancel cannot
+            # acquire it until super().wait() atomically releases it to wait.
+            waiting.set()
+            return super().wait(timeout)
+
+    handle.condition = ObservedCondition()
+
+    def observe():
+        handle.wait()
+        finished.set()
+
+    with ThreadGroup() as threads:
+        try:
+            threads.start(observe)
+            assert waiting.wait(5)
+            adapter.live = _query(LookupStatus.NOT_FOUND)
+            handle._request_cancel(user_abort=True)
+            assert finished.wait(5)
+            assert handle.terminal_result == JobReturnCode.ABORTED
+        finally:
+            adapter.live = _query(LookupStatus.NOT_FOUND)
+            handle.accounting_last_query = float("-inf")
+            handle.poll()  # Native terminal evidence also wakes the waiter on failure.

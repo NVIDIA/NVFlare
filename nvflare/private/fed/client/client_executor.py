@@ -448,15 +448,19 @@ class JobExecutor(ClientExecutor):
         # fails or blocks. The retained registration owns both calls after timeout;
         # neither elapsed time nor cancellation acknowledgement authorizes release.
         previous = pending_handle.cleanup_calls
-        if retry and previous and any(not call.done.is_set() for call in previous):
-            cancel, observe = previous
-        else:
-            cancel = None if retry else pending_handle.cancel_call
-            cancel = cancel or _CleanupCall(pending_handle.terminate)
-            pending_handle.cancel_call = cancel
-            cancel.done.wait(self.job_launch_cleanup_timeout)
+        cancel = previous[0] if previous else pending_handle.cancel_call
+        # A blocked observer must not suppress another completed cancel attempt.
+        # Initial cleanup may reuse a successful saved abort, but never its error.
+        if cancel is None or (cancel.done.is_set() and (retry or cancel.error is not None)):
+            cancel = _CleanupCall(pending_handle.terminate)
+        pending_handle.cancel_call = cancel
+        cancel.done.wait(self.job_launch_cleanup_timeout)
+        # Conversely, a blocked cancel must not suppress a failed observation's
+        # retry. Only an observation that is still running is safe to reuse.
+        observe = previous[1] if previous else None
+        if observe is None or observe.done.is_set():
             observe = _CleanupCall(pending_handle.wait)
-            pending_handle.cleanup_calls = (cancel, observe)
+        pending_handle.cleanup_calls = (cancel, observe)
         observe.done.wait(self.job_launch_cleanup_timeout)
         for name, call in (("cancellation", cancel), ("observation", observe)):
             if not call.done.is_set():
