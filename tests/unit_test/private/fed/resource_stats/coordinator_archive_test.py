@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import io
 import stat
 import threading
 from contextlib import nullcontext
@@ -44,13 +43,13 @@ def _participant(job_id="job-1", participant_name="site-1", reported_at="2026-09
 
 
 def _workspace_zip(run_dir):
-    stream = io.BytesIO()
-    with ZipFile(stream, "w", ZIP_DEFLATED) as archive:
+    archive_path = run_dir / "workspace.zip"
+    with ZipFile(archive_path, "w", ZIP_DEFLATED) as archive:
         stats_dir = run_dir / "resource_stats"
         archive.write(stats_dir, stats_dir.relative_to(run_dir).as_posix())
         for path in sorted(stats_dir.rglob("*")):
             archive.write(path, path.relative_to(run_dir).as_posix())
-    return stream.getvalue()
+    return archive_path
 
 
 @pytest.fixture
@@ -127,11 +126,12 @@ def test_accept_is_idempotent_and_finalized_bundle_reads_from_workspace(started_
     assert not coordinator.has_job("job-1")
 
 
-def test_summary_write_failure_occurs_at_finalization_not_acceptance(started_job):
+@pytest.mark.parametrize("operation", ["fsync", "rename"])
+def test_summary_write_failure_occurs_at_finalization_not_acceptance(started_job, operation):
     coordinator, run_dir = started_job
     data = canonical_json_bytes(_participant())
 
-    with patch.object(ResourceStatsCoordinator, "_atomic_write_resource", side_effect=OSError("disk full")):
+    with patch.object(coordinator_module.os, operation, side_effect=OSError("disk full")):
         assert (
             coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": data})
             == RESOURCE_REPORT_ACCEPTED
@@ -140,35 +140,7 @@ def test_summary_write_failure_occurs_at_finalization_not_acceptance(started_job
             coordinator.finalize_job("job-1")
 
     assert not (run_dir / "resource_stats" / RESOURCE_SUMMARY_FILE).exists()
-
-
-def test_finalization_publishes_only_resource_summary(tmp_path):
-    writes = []
-
-    class RecordingCoordinator(ResourceStatsCoordinator):
-        @classmethod
-        def _atomic_write_resource(cls, run_dir, file_name, data):
-            writes.append(file_name)
-            return super()._atomic_write_resource(run_dir, file_name, data)
-
-    run_dir = tmp_path / "run_job-1"
-    coordinator = RecordingCoordinator()
-    coordinator.start_job("job-1", ["site-1"], run_dir)
-    coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": canonical_json_bytes(_participant())})
-
-    coordinator.finalize_job("job-1")
-
-    assert writes == [RESOURCE_SUMMARY_FILE]
-
-
-def test_workspace_reader_accepts_archive_path_and_open_file(tmp_path, published_job):
-    run_dir, summary = published_job
-    archive_path = tmp_path / "workspace.zip"
-    archive_path.write_bytes(_workspace_zip(run_dir))
-
-    assert WorkspaceResourceStatsReader(archive_path).read_resource_summary() == summary
-    with archive_path.open("rb") as archive_file:
-        assert WorkspaceResourceStatsReader(archive_file).read_participant_summary("site-1") == _participant()
+    assert list((run_dir / "resource_stats").iterdir()) == []
 
 
 def test_start_job_rejects_resource_stats_symlink(tmp_path):
@@ -308,13 +280,13 @@ def test_repeated_finalization_returns_frozen_state_without_disk_io(tmp_path, re
 )
 def test_reader_ignores_unrequested_members(published_job, member, payloads):
     run_dir, summary = published_job
-    workspace = io.BytesIO(_workspace_zip(run_dir))
+    workspace = _workspace_zip(run_dir)
     warning = pytest.warns(UserWarning, match="Duplicate name") if len(payloads) > 1 else nullcontext()
     with warning, ZipFile(workspace, "a", ZIP_DEFLATED) as archive:
         for payload in payloads:
             archive.writestr(member, payload)
 
-    reader = WorkspaceResourceStatsReader(workspace.getvalue())
+    reader = WorkspaceResourceStatsReader(workspace)
     assert reader.read_resource_summary() == summary
     assert reader.read_participant_summary("site-1") == _participant()
 
@@ -325,13 +297,13 @@ def test_reader_rejects_duplicate_requested_resource_summary(tmp_path):
     coordinator.start_job("job-1", [], run_dir)
     coordinator.finalize_job("job-1")
 
-    workspace = io.BytesIO(_workspace_zip(run_dir))
+    workspace = _workspace_zip(run_dir)
     with pytest.warns(UserWarning, match="Duplicate name"):
         with ZipFile(workspace, "a", ZIP_DEFLATED) as archive:
             archive.writestr("resource_stats/resource_summary.json", "{}")
 
     with pytest.raises(WorkspaceResourceStatsError, match="exactly one.*found 2"):
-        WorkspaceResourceStatsReader(workspace.getvalue()).read_resource_summary()
+        WorkspaceResourceStatsReader(workspace).read_resource_summary()
 
 
 def test_accept_rejects_report_that_would_exceed_per_job_payload_cap(tmp_path):
@@ -358,7 +330,7 @@ def test_accept_rejects_report_that_would_exceed_per_job_payload_cap(tmp_path):
 
 
 def test_atomic_write_fsyncs_file_before_rename_and_directory_after(tmp_path, monkeypatch):
-    target = tmp_path / "resource_stats" / "participant.json"
+    target = tmp_path / "resource_stats" / RESOURCE_SUMMARY_FILE
     events = []
     fsync = coordinator_module.os.fsync
 
@@ -367,7 +339,7 @@ def test_atomic_write_fsyncs_file_before_rename_and_directory_after(tmp_path, mo
         fsync(descriptor)
 
     monkeypatch.setattr(coordinator_module.os, "fsync", record_fsync)
-    ResourceStatsCoordinator._atomic_write_resource(tmp_path, target.name, b"report")
+    ResourceStatsCoordinator._write_summary(tmp_path, b"report")
     assert target.read_bytes() == b"report"
     assert events == [(False, False), (True, True)]
 
@@ -380,12 +352,12 @@ def test_finalizing_one_job_does_not_block_report_for_another_job(tmp_path):
 
     class BlockingCoordinator(ResourceStatsCoordinator):
         @classmethod
-        def _atomic_write_resource(cls, run_dir, file_name, data):
-            if Path(run_dir) == run_a and file_name == RESOURCE_SUMMARY_FILE:
+        def _write_summary(cls, run_dir, data):
+            if Path(run_dir) == run_a:
                 final_write_started.set()
                 if not allow_final_write.wait(timeout=5):
                     raise TimeoutError("test did not release the blocked finalization")
-            return super()._atomic_write_resource(run_dir, file_name, data)
+            return super()._write_summary(run_dir, data)
 
     coordinator = BlockingCoordinator()
     coordinator.start_job("job-a", [], run_a)
@@ -434,12 +406,12 @@ def test_finalization_cutoff_remains_atomic_for_reports_to_same_job(tmp_path):
 
     class BlockingCoordinator(ResourceStatsCoordinator):
         @classmethod
-        def _atomic_write_resource(cls, run_dir, file_name, data):
-            if Path(run_dir) == target_run_dir and file_name == RESOURCE_SUMMARY_FILE:
+        def _write_summary(cls, run_dir, data):
+            if Path(run_dir) == target_run_dir:
                 final_write_started.set()
                 if not allow_final_write.wait(timeout=5):
                     raise TimeoutError("test did not release the blocked finalization")
-            return super()._atomic_write_resource(run_dir, file_name, data)
+            return super()._write_summary(run_dir, data)
 
     coordinator = BlockingCoordinator()
     coordinator.start_job("job-1", ["site-1"], run_dir)

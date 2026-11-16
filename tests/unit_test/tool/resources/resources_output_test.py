@@ -23,7 +23,7 @@ from nvflare.private.fed.resource_stats.measurements import (
     sum_job_totals,
     sum_study_totals,
 )
-from nvflare.private.fed.resource_stats.report_reader import read_resource_report
+from nvflare.private.fed.resource_stats.report_reader import KIND_RESOURCE_SUMMARY, read_resource_report
 from nvflare.tool.resources.resources_output import render_job_resources, render_study_resources
 from tests.resource_stats_report_test_utils import _accepted_entry, _resource_summary
 
@@ -405,7 +405,7 @@ def test_large_native_integer_bytes_remain_in_json_when_display_is_unavailable()
     participant["resource_utilization"]["message_traffic"] = {"sent_bytes": huge_bytes, "received_bytes": 0}
     summary = _job_summary(participant)
     summary["kind"] = "nvflare.resource_stats.resource_summary"
-    read_resource_report(canonical_json_bytes(summary))
+    read_resource_report(canonical_json_bytes(summary), KIND_RESOURCE_SUMMARY)
 
     output = render_job_resources(summary)
 
@@ -423,7 +423,7 @@ def test_extreme_finite_cpu_values_do_not_publish_nonfinite_averages(cpu_seconds
     participant["resource_utilization"]["cpu_consumed"] = {"cpu_seconds": cpu_seconds}
     summary = _job_summary(participant)
     summary["kind"] = "nvflare.resource_stats.resource_summary"
-    read_resource_report(canonical_json_bytes(summary))
+    read_resource_report(canonical_json_bytes(summary), KIND_RESOURCE_SUMMARY)
 
     output = render_job_resources(summary)
 

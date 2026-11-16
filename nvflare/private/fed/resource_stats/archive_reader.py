@@ -16,9 +16,8 @@
 
 from __future__ import annotations
 
-import io
 import os
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from typing import Any, BinaryIO
 from zipfile import BadZipFile, ZipFile
 
@@ -68,7 +67,7 @@ class _MetadataBoundedReader:
 class WorkspaceResourceStatsReader:
     """Bounded fixed-member reader; arbitrary workspace paths are never accepted."""
 
-    def __init__(self, workspace_zip: bytes | str | os.PathLike[str] | BinaryIO, *, outputs_archive=None):
+    def __init__(self, workspace_zip: str | os.PathLike[str], *, outputs_archive=None):
         self._workspace_zip = workspace_zip
         self._outputs_archive = outputs_archive  # Stage lazily, only for an absent member.
         self._summary: dict[str, Any] | None = None
@@ -131,12 +130,8 @@ class WorkspaceResourceStatsReader:
 
     @contextmanager
     def _open_archive(self, source):
-        with ExitStack() as stack:
-            if isinstance(source, bytes):
-                source = stack.enter_context(io.BytesIO(source))
-            elif isinstance(source, (str, os.PathLike)):
-                source = stack.enter_context(open(source, "rb"))
-            guarded = _MetadataBoundedReader(source)
+        with open(source, "rb") as stream:
+            guarded = _MetadataBoundedReader(stream)
             with ZipFile(guarded, "r") as archive:
                 guarded.remaining = None
                 yield archive

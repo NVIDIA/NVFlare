@@ -228,11 +228,11 @@ def _json_object(pairs):
     return value
 
 
-def read_resource_report(data, expected_kind=None):
+def read_resource_report(data, expected_kind):
     """Decode one incoming report, checking its shape, bounds and arithmetic."""
     if not isinstance(data, bytes):
         raise ValueError("resource report input must be bytes")
-    if len(data) > MAX_RECORD_BYTES.get(expected_kind, max(MAX_RECORD_BYTES.values())):
+    if len(data) > MAX_RECORD_BYTES[expected_kind]:
         raise ValueError("resource report exceeds the JSON byte limit")
     try:
         record = json.loads(data.decode("utf-8"), object_pairs_hook=_json_object)
@@ -240,15 +240,10 @@ def read_resource_report(data, expected_kind=None):
         raise ValueError(f"invalid resource JSON: {error}") from error
     if not isinstance(record, dict):
         raise ValueError("resource report must be an object")
-    kind = record.get("kind")
-    if not isinstance(kind, str) or kind not in MAX_RECORD_BYTES or record.get("schema_version") != SCHEMA_VERSION:
-        raise ValueError("unsupported resource report kind or schema_version")
-    if expected_kind is not None and kind != expected_kind:
+    if record.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("unsupported resource report schema_version")
+    if record.get("kind") != expected_kind:
         raise ValueError("resource report does not match the expected record kind")
-    if len(data) > MAX_RECORD_BYTES[kind]:
-        raise ValueError("resource report exceeds its serialized size limit")
-    readers = {
-        KIND_PARTICIPANT_SUMMARY: _read_participant_summary,
-        KIND_RESOURCE_SUMMARY: _read_resource_summary,
-    }
-    return readers[kind](record)
+    if expected_kind == KIND_PARTICIPANT_SUMMARY:
+        return _read_participant_summary(record)
+    return _read_resource_summary(record)

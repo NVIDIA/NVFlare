@@ -67,7 +67,7 @@ def test_report_boundary_rejects_invalid_record_contents(change):
 @pytest.mark.parametrize("data", [b'{"kind":1,"kind":2}', b'{"value":NaN}', b"\xff", b"not JSON"])
 def test_decoder_rejects_ambiguous_or_invalid_json(data):
     with pytest.raises(ValueError):
-        read_resource_report(data)
+        read_resource_report(data, KIND_PARTICIPANT_SUMMARY)
 
 
 def test_reader_enforces_size_kind_and_record_shape(monkeypatch):
@@ -84,7 +84,7 @@ def test_reader_enforces_size_kind_and_record_shape(monkeypatch):
         nested["extra"] = {}
         nested = nested["extra"]
     with pytest.raises(ValueError, match="unexpected fields"):
-        read_resource_report(canonical_json_bytes(record))
+        read_resource_report(canonical_json_bytes(record), KIND_PARTICIPANT_SUMMARY)
 
 
 def test_reader_sorts_known_collections_without_mutating_original():
@@ -96,7 +96,7 @@ def test_reader_sorts_known_collections_without_mutating_original():
     ]
     record = _resource_summary(participants=[second, first])
     original = deepcopy(record)
-    normalized = read_resource_report(canonical_json_bytes(record))
+    normalized = read_resource_report(canonical_json_bytes(record), KIND_RESOURCE_SUMMARY)
     assert record == original
     assert normalized["participants"][0]["participant_name"] == "site-1"
     assert normalized["participants"][0]["issues"] == [
@@ -129,7 +129,9 @@ def test_job_totals_sum_explicit_time_and_keep_missing_report_coverage():
         )
     ]
     with pytest.raises(ValueError, match="unique"):
-        read_resource_report(canonical_json_bytes(_resource_summary(participants=[first, first])))
+        read_resource_report(
+            canonical_json_bytes(_resource_summary(participants=[first, first])), KIND_RESOURCE_SUMMARY
+        )
 
 
 @pytest.mark.parametrize("change", ["missing", "nested", "wrong_metric"])
@@ -143,7 +145,7 @@ def test_participant_report_requires_one_consistent_scope_issue_list(change):
         record["resource_utilization"]["cpu_consumed"] = {"status": "unavailable"}
         record["issues"] = [{"metric": "unknown_metric", "code": "unsupported"}]
     with pytest.raises(ValueError):
-        read_resource_report(canonical_json_bytes(record))
+        read_resource_report(canonical_json_bytes(record), KIND_PARTICIPANT_SUMMARY)
 
 
 @pytest.mark.parametrize(
@@ -172,10 +174,10 @@ def test_all_unavailable_time_derives_observation_issue_and_missing_rows_have_no
     assert totals["resource_time"] == {"status": "unavailable"}
     assert totals["issues"] == [{"metric": "resource_time", "code": "observation_incomplete"}]
     missing = {"participant_name": "site-2", "role": "client", "status": "missing"}
-    read_resource_report(canonical_json_bytes(_resource_summary(participants=[missing])))
+    read_resource_report(canonical_json_bytes(_resource_summary(participants=[missing])), KIND_RESOURCE_SUMMARY)
     missing["issues"] = []
     with pytest.raises(ValueError):
-        read_resource_report(canonical_json_bytes(_resource_summary(participants=[missing])))
+        read_resource_report(canonical_json_bytes(_resource_summary(participants=[missing])), KIND_RESOURCE_SUMMARY)
 
 
 @pytest.mark.parametrize("field", ["reported_at", "received_at"])
@@ -186,7 +188,9 @@ def test_report_timestamps_preserve_supported_utc_precision(field, timestamp):
     record = _participant_summary() if field == "reported_at" else _resource_summary()
     target = record if field == "reported_at" else record["participants"][0]
     target[field] = timestamp
-    decoded = read_resource_report(canonical_json_bytes(record))
+    decoded = read_resource_report(
+        canonical_json_bytes(record), KIND_PARTICIPANT_SUMMARY if field == "reported_at" else KIND_RESOURCE_SUMMARY
+    )
     assert (decoded if field == "reported_at" else decoded["participants"][0])[field] == timestamp
 
 
@@ -214,7 +218,9 @@ def test_report_timestamps_reject_other_iso_forms_and_invalid_dates(field, times
     target = record if field == "reported_at" else record["participants"][0]
     target[field] = timestamp
     with pytest.raises(ValueError, match="timestamp"):
-        read_resource_report(canonical_json_bytes(record))
+        read_resource_report(
+            canonical_json_bytes(record), KIND_PARTICIPANT_SUMMARY if field == "reported_at" else KIND_RESOURCE_SUMMARY
+        )
 
 
 @pytest.mark.parametrize("value", [True, -1, "2", 1.5, float("inf")])
@@ -222,4 +228,4 @@ def test_incoming_byte_counters_require_nonnegative_integers(value):
     record = _participant_summary()
     record["resource_utilization"]["message_traffic"]["sent_bytes"] = value
     with pytest.raises(ValueError):
-        read_resource_report(json.dumps(record).encode())
+        read_resource_report(json.dumps(record).encode(), KIND_PARTICIPANT_SUMMARY)

@@ -29,7 +29,7 @@ from nvflare.private.fed.resource_stats.coordinator import (
     ResourceStatsCoordinator,
 )
 from nvflare.private.fed.resource_stats.measurements import canonical_json_bytes, capacity_to_resource_time
-from nvflare.private.fed.resource_stats.report_reader import read_resource_report
+from nvflare.private.fed.resource_stats.report_reader import KIND_PARTICIPANT_SUMMARY, read_resource_report
 from tests.resource_stats_report_test_utils import _accepted_entry, _participant_summary
 
 
@@ -84,7 +84,9 @@ def test_equivalent_input_is_normalized_and_retry_is_duplicate_even_after_finali
     saved = tmp_path / "resource_stats" / "resource_summary.json"
     assert saved.read_bytes() == canonical_json_bytes(summary)
     entry = summary["participants"][0]
-    assert entry == _accepted_entry(received_at=entry["received_at"], record=read_resource_report(first))
+    assert entry == _accepted_entry(
+        received_at=entry["received_at"], record=read_resource_report(first, KIND_PARTICIPANT_SUMMARY)
+    )
     assert (
         coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": retry})
         == RESOURCE_REPORT_DUPLICATE

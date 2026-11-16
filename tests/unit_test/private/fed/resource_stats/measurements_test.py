@@ -18,10 +18,9 @@
 import pytest
 
 from nvflare.private.fed.resource_stats.measurements import (
-    aggregate_cpu_consumed,
-    aggregate_message_traffic,
     aggregate_resource_time,
     aggregate_scope_issues,
+    aggregate_usage,
     capacity_to_resource_time,
     scoped_measurement,
     sum_job_totals,
@@ -59,12 +58,13 @@ def test_product_overflow_preserves_other_capacity_time_dimensions():
 
 def test_aggregation_retains_missing_coverage_and_exact_integer_bytes():
     missing = {"status": "unavailable"}
-    assert aggregate_cpu_consumed([{"cpu_seconds": 2.5}, missing]) == {
+    assert aggregate_usage([{"cpu_seconds": 2.5}, missing], ("cpu_seconds",)) == {
         "status": "partial",
         "cpu_seconds": 2.5,
     }
-    assert aggregate_message_traffic(
-        [{"sent_bytes": 10**50, "received_bytes": 7}, {"sent_bytes": 2, "received_bytes": 4}]
+    assert aggregate_usage(
+        [{"sent_bytes": 10**50, "received_bytes": 7}, {"sent_bytes": 2, "received_bytes": 4}],
+        ("sent_bytes", "received_bytes"),
     ) == {"sent_bytes": 10**50 + 2, "received_bytes": 11}
     capacity = {"cpu": {"units": 2}, "memory": {"bytes": 8}, "gpu": {"count": 1}}
     values = [capacity_to_resource_time(capacity, duration) for duration in (2, 3)]
@@ -78,7 +78,7 @@ def test_aggregation_retains_missing_coverage_and_exact_integer_bytes():
     assert aggregate_resource_time(values, complete=False) == {**expected, "status": "partial"}
     assert aggregate_resource_time([missing]) == missing
     with pytest.raises(ValueError):
-        aggregate_cpu_consumed([{"cpu_seconds": 1e308}, {"cpu_seconds": 1e308}])
+        aggregate_usage([{"cpu_seconds": 1e308}, {"cpu_seconds": 1e308}], ("cpu_seconds",))
 
 
 def test_scope_assembly_moves_private_codes_once_without_mutating_the_producer():

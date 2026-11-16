@@ -68,8 +68,6 @@ _SECURE_DIR_FD = (
     and os.rename in os.supports_dir_fd
     and os.unlink in os.supports_dir_fd
     and os.rmdir in os.supports_dir_fd
-    and os.stat in os.supports_dir_fd
-    and os.listdir in os.supports_fd
 )
 
 
@@ -322,7 +320,7 @@ class ResourceStatsCoordinator:
                 raise ValueError("resource summary exceeds its size limit")
 
             self._remove_empty_staging_directory(state.run_dir)
-            self._atomic_write_resource(state.run_dir, RESOURCE_SUMMARY_FILE, summary_data)
+            self._write_summary(state.run_dir, summary_data)
             state.finalized = True
             status_counts: dict[str, int] = {}
             for participant in participants:
@@ -355,35 +353,25 @@ class ResourceStatsCoordinator:
                 self._jobs.pop(job_id, None)
 
     @classmethod
-    def _atomic_write_resource(
-        cls,
-        run_dir: Path,
-        file_name: str,
-        data: bytes,
-    ) -> None:
+    def _write_summary(cls, run_dir: Path, data: bytes) -> None:
+        temp_name = f".{RESOURCE_SUMMARY_FILE}-{secrets.token_hex(16)}.tmp"
         directory_fd = cls._open_resource_directory(run_dir)
         try:
-            cls._atomic_write_at(directory_fd, file_name, data)
+            fd = os.open(temp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=directory_fd)
+            try:
+                with os.fdopen(fd, "wb") as stream:
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(fd)
+                os.rename(temp_name, RESOURCE_SUMMARY_FILE, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+                os.fsync(directory_fd)
+            finally:
+                try:
+                    os.unlink(temp_name, dir_fd=directory_fd)
+                except FileNotFoundError:
+                    pass
         finally:
             os.close(directory_fd)
-
-    @staticmethod
-    def _atomic_write_at(directory_fd: int, file_name: str, data: bytes) -> None:
-        temp_name = f".{file_name}-{secrets.token_hex(16)}.tmp"
-        fd = os.open(temp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=directory_fd)
-        try:
-            with os.fdopen(fd, "wb", closefd=False) as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(fd)
-            os.rename(temp_name, file_name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
-            os.fsync(directory_fd)
-        finally:
-            os.close(fd)
-            try:
-                os.unlink(temp_name, dir_fd=directory_fd)
-            except FileNotFoundError:
-                pass
 
     @classmethod
     def _open_resource_directory(cls, run_dir: Path) -> int:

@@ -135,14 +135,6 @@ def aggregate_usage(values, fields, *, complete=True):
     return result
 
 
-def aggregate_cpu_consumed(values, *, complete=True):
-    return aggregate_usage(values, ("cpu_seconds",), complete=complete)
-
-
-def aggregate_message_traffic(values, *, complete=True):
-    return aggregate_usage(values, ("sent_bytes", "received_bytes"), complete=complete)
-
-
 def merge_resource_time(previous, contribution, issues):
     """Keep independent dimension subtotals when another one exceeds bounds."""
     values = [value for value in (previous, contribution) if value is not None]
