@@ -26,7 +26,7 @@ EUNOMIA_URL = (
     "https://raw.githubusercontent.com/OHDSI/EunomiaDatasets/"
     "a11ad148a6b1b1fafb75a1e40c504c887db76fa4/datasets/GiBleed/GiBleed_5.3.zip"
 )
-DATA_ROOT = "/tmp/nvflare/dataset/omop"
+DATA_ROOT = Path.home() / ".cache" / "nvflare" / "omop"
 SITE_FRACTIONS = (0.55, 0.3, 0.15)
 
 

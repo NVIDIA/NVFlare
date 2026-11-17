@@ -42,7 +42,7 @@ To study something else, edit the concept IDs in `cohort.py`, which you can look
 
 Without a hospital network at hand, `prepare_data.py` stands in for one.
 It downloads [Eunomia GiBleed](https://github.com/OHDSI/EunomiaDatasets), an OHDSI teaching dataset of 2,694 synthetic patients (Apache 2.0), and splits it at random into one DuckDB CDM per site holding 55%, 30%, and 15% of the patients.
-By default `job.py` sets `--cdm` to `/tmp/nvflare/dataset/omop/{SITE_NAME}.duckdb`, and NVFlare fills in each site's name.
+By default `job.py` sets `--cdm` to `~/.cache/nvflare/omop/{SITE_NAME}.duckdb`, and NVFlare fills in each site's name.
 
 ```bash
 pip install -r requirements.txt
