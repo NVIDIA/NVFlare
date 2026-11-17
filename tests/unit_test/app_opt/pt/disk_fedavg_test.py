@@ -418,6 +418,42 @@ def test_existing_controller_runs_multiple_diff_rounds_and_stopping(tmp_path, st
     assert AppEventType.AFTER_LEARNABLE_PERSIST in events
 
 
+def test_existing_controller_keeps_saved_model_when_every_site_reports_zero_steps(tmp_path):
+    save_file({"w": torch.zeros(1)}, tmp_path / "initial.safetensors")
+    ctx = context(tmp_path)
+    aggr = disk.DiskFedAvgAggregator()
+    aggr.fl_ctx = ctx
+    ctl = FedAvg(num_clients=2, num_rounds=3, aggregator=aggr, enable_tensor_disk_offload=True)
+    ctl.persistor = disk.DiskFedAvgPersistor(str(tmp_path / "initial.safetensors"))
+    ctl.engine = ctx.get_engine()
+    ctl.fl_ctx = ctx
+    ctl.abort_signal = ctx.get_run_abort_signal()
+    ctl.event = lambda event: None
+    ctl.fire_event_with_data = lambda *args: None
+    ctl.info = lambda *_: None
+    ctl.warning = MagicMock()
+    ctl.sample_clients = lambda _: ["site-1", "site-2"]
+    ctl.get_num_standing_tasks = lambda: 0
+    ctl._accept_train_result = lambda **_: True
+
+    def send(task_name, targets, data, callback):
+        task = Task(task_name, FLModelUtils.to_shareable(data))
+        task.set_prop(AppConstants.TASK_PROP_CALLBACK, callback)
+        task.set_prop(AppConstants.META_DATA, {})
+        steps = 0 if ctl.current_round == 1 else 1
+        for client in targets:
+            params = refs(tmp_path, f"{ctl.current_round}-{client}", {"w": torch.ones(1)})
+            ct = ClientTask(Client(client, client), task)
+            ct.result = FLModelUtils.to_shareable(model(params, client=client, steps=steps, kind=ParamsType.DIFF))
+            ctl._process_result(ct, ctx)
+
+    ctl.send_model = send
+    ctl.run()
+
+    assert load_file(tmp_path / disk.SAVED_MODEL)["w"].item() == 2.0
+    assert any("keeping the global model" in call.args[0] for call in ctl.warning.call_args_list)
+
+
 @pytest.mark.parametrize("recipe_cls", [FedAvgRecipe, FedProxRecipe])
 def test_recipe_composes_disk_components_and_preserves_memory_default(tmp_path, recipe_cls):
     initial = str(tmp_path / "initial.safetensors")

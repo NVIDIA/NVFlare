@@ -116,9 +116,9 @@ In step mode:
 - `train_with_evaluation=True` in the job config raises `ValueError` when `patch()` runs.
 - A site that stops on its own (`EarlyStopping`, `max_time`, `trainer.should_stop`) sends its open round, which may be
   shorter than N steps, and leaves. A round with no optimizer step yet is not sent: it would carry the received model
-  unchanged, which FedAvg counts with weight 1 (it treats `NUM_STEPS_CURRENT_ROUND <= 0` as 1), and SCAFFOLD cannot
-  compute a control update from zero steps. The callback logs a warning instead. The server then handles the missing
-  site as it handles any client that stops responding.
+  unchanged, which FedAvg would skip anyway, and SCAFFOLD cannot compute a control update from zero steps. The
+  callback logs a warning instead. The server then handles the missing site as it handles any client that stops
+  responding.
 - A site that stops on its own right after a sync (`EarlyStopping` on the validation that follows it) has sent that
   round and leaves without answering later rounds. In the simulator (FedAvg recipe, 2 sites, external process), the
   next task sent to that site failed about 40 s later ("trainer process exited while TASK_READY was pending"), and
