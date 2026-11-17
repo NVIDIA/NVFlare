@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import io
 import json
 import os
 import threading
@@ -33,38 +32,12 @@ class Auditor(object):
 
         Args:
             audit_file_name (str): the location to save audit log file
-
-        Raises:
-            ValueError: if a nonempty file does not start with a JSON object
-                or its last record has no terminating newline. Select a new
-                file when upgrading from bracketed text records.
         """
         assert isinstance(audit_file_name, str), "audit_file_name must be str"
         if os.path.exists(audit_file_name):
             assert os.path.isfile(audit_file_name), "audit_file_name is not a valid file"
 
-        # Inspect the same file that will receive new records. Never mix legacy
-        # text with JSONL or append to an unterminated record.
-        audit_file = open(audit_file_name, "a+b")
-        try:
-            audit_file.seek(0)
-            first_line = audit_file.readline()
-            if first_line:
-                if not isinstance(json.loads(first_line), dict):
-                    raise ValueError("the first record must be a JSON object")
-                audit_file.seek(-1, os.SEEK_END)
-                if audit_file.read(1) != b"\n":
-                    raise ValueError("the last record must end with a newline")
-            audit_file.seek(0, os.SEEK_END)
-            self.audit_file = io.TextIOWrapper(audit_file, encoding="utf-8")
-        except (ValueError, UnicodeError) as exc:
-            audit_file.close()
-            raise ValueError(
-                "existing audit file must contain newline-terminated JSONL; " "preserve it and choose a new audit file"
-            ) from exc
-        except BaseException:
-            audit_file.close()
-            raise
+        self.audit_file = open(audit_file_name, "a", encoding="utf-8")
         self._lock = threading.Lock()
 
     def add_event(self, user: str, action: str, ref: str = "", msg: str = "") -> str:

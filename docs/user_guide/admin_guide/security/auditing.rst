@@ -46,10 +46,10 @@ The final ``+00:00`` indicates an offset of zero hours and zero minutes from UTC
 Event Fields
 ^^^^^^^^^^^^
 Field names use snake_case: lowercase words separated by underscores. The following mapping uses the
-meanings of the existing text-format codes. No additional event information is introduced.
+established meanings of the documented field codes. No additional event information is introduced.
 
 .. csv-table::
-    :header: Previous code,Field name,Meaning
+    :header: Documented code,Field name,Meaning
     :widths: 10, 20, 70
 
     E,event_id,Identifier of the event
@@ -67,11 +67,8 @@ Job events always include ``event_id``, ``timestamp`` and ``job``. The optional 
 ``action`` only when a task name is supplied. The task action retains the task name followed by a
 number sign (``#``) and the task identifier. It is not split into new fields.
 
-The ``reference`` field preserves the old reference value. It commonly identifies a related event on
-another site, allowing events to be correlated across the system. Some existing callers supply a
+The ``reference`` field commonly identifies a related event on another site, allowing events to be correlated across the system. Some existing callers supply a
 resource identifier instead; the field does not establish that every reference identifies an event.
-The old documentation called the message code ``M``, although the text writer appended the message
-without a bracketed code. That same message is now stored in ``message``.
 
 In the examples below, braces enclose each object, double quotes enclose field names and string values,
 a colon separates each field name from its value, and commas separate fields. The event identifiers
@@ -84,20 +81,12 @@ job values. The task action ``train#task-1`` combines the task name ``train`` an
     {"event_id": "16392ed4-d6c7-490a-a84b-12685297e912", "timestamp": "2026-11-16T12:59:47.691957+00:00", "user": "trainer@b.org", "action": "train.deploy"}
     {"event_id": "636ee230-3534-45a2-9689-d0ec6c90ed45", "reference": "16392ed4-d6c7-490a-a84b-12685297e912", "timestamp": "2026-11-16T15:08:33.181712+00:00", "scope": "training", "job": "job-1", "action": "train#task-1", "message": "received task from server"}
 
-Existing Files and Upgrades
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-New default output uses ``audit.jsonl``. Earlier bracketed text records remain in ``audit.log``;
-they are not converted, deleted or assigned an inferred timezone. Historical timestamps without
-an offset retain an unknown timezone. Directory-based job downloads and workspace archives retain
-the historical files alongside the new output.
+File Writing
+^^^^^^^^^^^^
+The default filename is ``audit.jsonl``. Callers that supply their own audit filename can use any
+filename extension. The writer creates the file when needed and appends events when the service
+restarts. It does not read or convert previously written records.
 
-Callers that supply their own audit filename can use any filename extension, but must select a new
-file when the old file contains bracketed text. Before appending to a nonempty supplied file, the writer
-checks that its first record is a JSON object and its last byte is a line break. Otherwise initialization
-raises ``ValueError`` without changing the file; preserve it and choose a new destination. These checks
-protect the append boundary and do not validate every existing record in a previously written file.
-
-Existing readers of the bracketed format must be updated to read JSONL. Event identifiers, references,
-excluded actions, synchronous writing and flushing, and the simulator's inactive auditor retain their
-existing behavior. Flushing passes buffered data to the operating system; it is not a guarantee that
-the record will survive a machine failure.
+Each call waits for the local write and flush before returning the event identifier. Flushing passes
+buffered data to the operating system; it is not a guarantee that the record will survive a machine
+failure. Excluded actions are not written, and the simulator's auditor remains inactive.

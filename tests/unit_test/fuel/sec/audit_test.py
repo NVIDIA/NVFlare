@@ -25,7 +25,7 @@ from tests.timing_utils import WAIT_TIMEOUT, ObservedLock, ThreadGroup
 
 
 def test_auditor_ignores_events_after_close(tmp_path):
-    auditor = Auditor(str(tmp_path / "audit.log"))
+    auditor = Auditor(str(tmp_path / "audit.jsonl"))
     auditor.close()
 
     assert auditor.add_event("user", "action") == ""
@@ -226,32 +226,6 @@ def test_reopening_audit_file_preserves_records_and_ids(tmp_path):
     assert records[1]["event_id"] == second_id
     assert records[1]["reference"] == first_id
     assert first_id != second_id
-
-
-@pytest.mark.parametrize(
-    "existing_content",
-    [
-        b"[E:legacy][T:2026-11-17 01:02:03][U:alice][A:submit]\n",
-        b"{malformed}\n",
-        b"[]\n",
-        b'"not an object"\n',
-        b'{"event_id":"previous"}',
-        b'{}\n{"event_id":"previous"}',
-    ],
-)
-def test_rejects_incompatible_existing_file_without_mutation(tmp_path, existing_content):
-    path = tmp_path / "existing.audit"
-    path.write_bytes(existing_content)
-
-    # Close even an incorrectly accepted file before reporting the regression.
-    auditor = None
-    try:
-        with pytest.raises(ValueError, match="(?i)choose.*new.*file"):
-            auditor = Auditor(str(path))
-    finally:
-        if auditor is not None:
-            auditor.close()
-    assert path.read_bytes() == existing_content
 
 
 @pytest.mark.parametrize("action", sorted(audit_module.EXCLUDED_ACTIONS))

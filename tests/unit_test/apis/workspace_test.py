@@ -72,19 +72,6 @@ class TestWorkspace:
 
             assert result == expected
 
-    @pytest.mark.parametrize("job_id", [None, "job-1"])
-    def test_audit_path_keeps_legacy_file_separate(self, tmp_path, job_id):
-        ws = self._make_workspace(str(tmp_path))
-        audit_root = ws.get_audit_root(job_id)
-        os.makedirs(audit_root, exist_ok=True)
-        legacy_path = os.path.join(audit_root, "audit.log")
-        with open(legacy_path, "w") as stream:
-            stream.write("legacy audit record\n")
-
-        assert ws.get_audit_file_path(job_id) == os.path.join(audit_root, "audit.jsonl")
-        with open(legacy_path) as stream:
-            assert stream.read() == "legacy audit record\n"
-
     def test_study_registry_path_defaults_to_root_when_absent(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             ws = self._make_workspace(tmp_dir)
