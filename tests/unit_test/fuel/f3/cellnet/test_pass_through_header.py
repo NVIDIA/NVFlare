@@ -69,6 +69,69 @@ from nvflare.fuel.utils.waiter_utils import WaiterRC
 _TEST_CHANNEL = "aux_communication"
 
 
+def test_duplicate_exception_crosses_real_fobs_decode_without_exiting_job(isolated_fobs, monkeypatch, caplog):
+    import logging
+
+    import numpy as np
+
+    from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
+    from nvflare.app_common.np.np_downloader import ArrayDownloadable
+    from nvflare.fuel.f3.cellnet.utils import encode_payload, make_reply
+    from nvflare.fuel.f3.streaming import cacheable, download_service
+    from nvflare.fuel.f3.streaming.download_service import _Transaction
+    from nvflare.fuel.utils import fobs
+    from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef, LazyDownloadRefDecomposer
+    from tests.unit_test.fuel.f3.streaming.download_test_utils import make_service_no_monitor, pull_to_terminal
+
+    service = make_service_no_monitor()
+    monkeypatch.setattr(download_service, "DownloadService", service)
+    monkeypatch.setattr(cacheable, "DownloadService", service)
+    tx = _Transaction(timeout=300.0, num_receivers=1)
+    service._tx_table[tx.tid] = tx
+    ref = tx.add_object(ArrayDownloadable({"T0": np.arange(4)}, 1024))
+    service._ref_table[ref.rid] = ref
+    pull_to_terminal(service, ref.rid, "server.job-1")
+    fobs.register(NumpyArrayDecomposer)
+    fobs.register(LazyDownloadRefDecomposer)
+
+    cell = _make_mock_cell({})
+    cell.get_fobs_context.side_effect = lambda props=None: {FOBSContextKey.CELL: cell, **(props or {})}
+
+    def send_request(**kwargs):
+        request = kwargs["request"]
+        request.set_header(MessageHeaderKey.ORIGIN, "server.job-1")
+        return service._handle_download(request)
+
+    cell.send_request.side_effect = send_request
+    message = F3Message(
+        _stream_headers(CellChannel.SERVER_COMMAND, ServerCommandNames.SUBMIT_UPDATE),
+        {"weights": LazyDownloadRef("source", ref.rid, "T0", NumpyArrayDecomposer().get_download_dot())},
+    )
+    encode_payload(message, StreamHeaderKey.PAYLOAD_ENCODING)
+    future = _make_future(message.headers, message.payload)
+    callback = MagicMock(return_value=make_reply(ReturnCode.OK))
+    adapter = Adapter(callback, SimpleNamespace(fqcn="server.job-1"), cell)
+    with (
+        caplog.at_level(logging.INFO),
+        patch("nvflare.fuel.f3.cellnet.cell.os._exit") as exit_process,
+        patch.object(adapter, "_send_response") as respond,
+    ):
+        adapter.call(future)
+        callback.assert_not_called()
+        assert respond.call_args.args[0].get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.SERVICE_UNAVAILABLE
+        assert not any(record.levelno >= logging.ERROR for record in caplog.records)
+        assert "request download unavailable" in caplog.text
+
+        healthy = F3Message(_stream_headers(CellChannel.SERVER_COMMAND, ServerCommandNames.SUBMIT_UPDATE), {"ok": 1})
+        encode_payload(healthy, StreamHeaderKey.PAYLOAD_ENCODING)
+        adapter.call(_make_future(healthy.headers, healthy.payload))
+        callback.assert_called_once()
+        assert respond.call_args.args[0].get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+    cell.send_request.assert_called_once()
+    cell.fire_and_forget.assert_not_called()
+    exit_process.assert_not_called()
+
+
 def _make_mock_cell(
     captured_ctx: dict,
     decode_pass_through_channels: set = None,

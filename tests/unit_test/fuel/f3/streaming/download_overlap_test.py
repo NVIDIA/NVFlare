@@ -18,16 +18,11 @@ from unittest.mock import Mock
 import pytest
 
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
-from nvflare.fuel.f3.streaming.download_service import (
-    Consumer,
-    DownloadStatus,
-    ProduceRC,
-    _Transaction,
-    download_object,
-)
+from nvflare.fuel.f3.streaming.download_service import Consumer, DownloadStatus, ProduceRC, download_object
 from nvflare.fuel.f3.streaming.stream_types import DownloadUnavailable
 from tests.unit_test.fuel.f3.streaming.download_test_utils import (
     MockDownloadable,
+    cancel_request,
     confirm_request,
     make_service_no_monitor,
     pull_request,
@@ -38,9 +33,9 @@ from tests.unit_test.fuel.f3.streaming.download_test_utils import (
 
 def _source():
     service = make_service_no_monitor()
-    tx = _Transaction(timeout=300.0, num_receivers=1)
+    tx_id = service.new_transaction(cell=Mock(), timeout=300.0, num_receivers=1)
+    tx = service._tx_table[tx_id]
     ref = tx.add_object(MockDownloadable([b"a", b"b", b"c"]))
-    service._tx_table[tx.tid] = tx
     service._ref_table[ref.rid] = ref
     return service, tx, ref
 
@@ -197,3 +192,40 @@ def test_unknown_and_expired_refs_still_fail_as_invalid_requests():
     service._finished_refs[ref.rid].last_active_time = time.time() - service.FINISHED_REFS_TTL - 1
     expired = service._handle_download(pull_request(ref.rid, "receiver"))
     assert expired.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+
+
+@pytest.mark.parametrize("confirm", [False, True])
+def test_legacy_duplicate_cancel_cannot_fail_an_unfinished_sibling(confirm):
+    service, tx, first = _source()
+    sibling = tx.add_object(MockDownloadable([b"later"]))
+    service._ref_table[sibling.rid] = sibling
+    state = None
+    for _ in range(4):
+        terminal = service._handle_download(pull_request(first.rid, "receiver", confirm_capable=confirm, state=state))
+        state = terminal.payload.get("state")
+    assert terminal.payload["status"] == ProduceRC.EOF
+    if confirm:
+        service._handle_download(confirm_request(first.rid, "receiver", DownloadStatus.SUCCESS, serve_nonce(terminal)))
+    assert first.snapshot_receiver_statuses() == {"receiver": DownloadStatus.SUCCESS}
+
+    data = service._handle_download(pull_request(sibling.rid, "receiver", confirm_capable=confirm))
+    assert data.payload["data"] == b"later"
+    rejected = service._handle_download(pull_request(first.rid, "receiver"))
+    assert rejected.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.SERVICE_UNAVAILABLE
+    # A pre-fix receiver treats this response as a generic failure and sends CANCEL.
+    service._handle_download(cancel_request(first.rid, "receiver"))
+    assert sibling.snapshot_receiver_statuses() == {}
+    assert tx.tid in service._tx_table
+
+    terminal = service._handle_download(
+        pull_request(sibling.rid, "receiver", confirm_capable=confirm, state=data.payload["state"])
+    )
+    assert terminal.payload["status"] == ProduceRC.EOF
+    if confirm:
+        service._submit_finished_settlement = service._settle_finished_transaction
+        service._handle_download(
+            confirm_request(sibling.rid, "receiver", DownloadStatus.SUCCESS, serve_nonce(terminal))
+        )
+    else:
+        run_monitor_once(service, time.time())
+    assert service.get_transaction_outcome(tx.tid).completed

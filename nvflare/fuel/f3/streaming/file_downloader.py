@@ -19,7 +19,7 @@ from typing import Any, Optional, Tuple
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.streaming.download_service import Consumer, Downloadable, ProduceRC, download_object
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
-from nvflare.fuel.f3.streaming.stream_types import DownloadUnavailable
+from nvflare.fuel.f3.streaming.stream_types import DownloadUnavailable, DownloadUnavailableReason
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_callable, check_positive_int
 
@@ -218,7 +218,8 @@ class _ChunkConsumer(Consumer):
         return {_StateKey.RECEIVED_BYTES: self.total_bytes}
 
     def download_failed(self, ref_id, reason: str):
-        self.logger.error(f"failed to download file with ref {ref_id}: {reason}")
+        log = self.logger.info if isinstance(reason, DownloadUnavailableReason) else self.logger.error
+        log(f"failed to download file with ref {ref_id}: {reason}")
         self.error = reason
         self.file.close()
 

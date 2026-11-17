@@ -28,7 +28,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled, DownloadUnavailable
+from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled, DownloadUnavailable, DownloadUnavailableReason
 from nvflare.fuel.f3.streaming.stream_utils import callback_thread_pool, download_request_thread_pool
 from nvflare.fuel.f3.streaming.transfer_outcome import (  # noqa: F401 (re-exported legacy names)
     DownloadStatus,
@@ -1876,6 +1876,12 @@ class DownloadService:
         accepted = False
         try:
             tx = ref.tx
+            if ref.snapshot_receiver_statuses().get(requester) == DownloadStatus.SUCCESS:
+                # An older receiver treats a retryable duplicate rejection as a
+                # generic error and sends CANCEL. Completion of this ref is final;
+                # that stale cancellation must not fail a live sibling download.
+                cls._logger.debug(f"ignoring cancellation of completed ref {rid} from {requester}")
+                return make_reply(ReturnCode.OK)
             with tx._stats_lock:
                 acquired = requester in tx._acquired_receivers
             if not acquired:
@@ -2055,6 +2061,8 @@ def download_object(
 
     Raises DownloadCancelled when local service shutdown cancels the download,
     after notifying the consumer so it can release partial data/resources.
+    Raises DownloadUnavailable when a completed attempt has retired the source
+    needed by this duplicate. Retry the enclosing submission, not the retired ref.
     """
     source_signal = DownloadService._register_source_download(cell, from_fqcn, ref_id, abort_signal)
     try:
@@ -2286,7 +2294,7 @@ def _download_object(
                 and isinstance(reply.payload, dict)
                 and reply.payload.get(_PropKey.RETRYABLE) is True
             ):
-                reason = f"source for ref={ref_id} was already downloaded by another attempt"
+                reason = DownloadUnavailableReason(f"source for ref={ref_id} was already downloaded by another attempt")
                 # Do not CANCEL: the other attempt successfully received the source.
                 # Notify consumers first so partially written files/tensors are cleaned up.
                 consumer.download_failed(ref_id, reason)

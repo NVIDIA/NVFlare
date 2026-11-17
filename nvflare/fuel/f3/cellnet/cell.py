@@ -119,7 +119,8 @@ class Adapter:
         try:
             decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=decode_ctx)
         except (DownloadCancelled, DownloadUnavailable) as ex:
-            self.logger.debug(f"request download unavailable: {secure_format_exception(ex)}")
+            log = self.logger.info if isinstance(ex, DownloadUnavailable) else self.logger.debug
+            log(f"request download unavailable: {secure_format_exception(ex)}")
             self._send_response(
                 make_reply(ReturnCode.SERVICE_UNAVAILABLE), stream_req_id, req_id, channel, topic, origin, secure
             )
