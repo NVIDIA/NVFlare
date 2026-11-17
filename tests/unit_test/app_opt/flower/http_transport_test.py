@@ -22,6 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -170,9 +171,11 @@ def test_only_loopback_targets(address):
 
 
 def context(site):
-    ctx = MagicMock(spec=FLContext)
-    ctx.get_peer_context.return_value = MagicMock(spec=FLContext)
-    ctx.get_peer_context.return_value.get_identity_name.return_value = site
+    ctx = FLContext()
+    ctx.set_prop(FLContextKey.CLIENT_NAME, site, private=True, sticky=False)
+    peer = FLContext()
+    peer.set_prop(ReservedKey.IDENTITY_NAME, site, private=False, sticky=False)
+    ctx.set_peer_context(peer)
     return ctx
 
 

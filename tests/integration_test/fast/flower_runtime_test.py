@@ -27,13 +27,17 @@ from nvflare.app_opt.flower.applet import _validate_flwr_runtime
 from tests.process_test_utils import run_owned_process
 
 
-def test_real_flower_round_through_nvflare(tmp_path):
+@pytest.fixture(autouse=True)
+def require_flower_runtime():
     try:
         _validate_flwr_runtime()
     except RuntimeError as error:
         if os.environ.get("NVFLARE_REQUIRE_FLOWER_RUNTIME") == "1":
             pytest.fail(str(error))
         pytest.skip(str(error))
+
+
+def test_real_flower_round_through_nvflare(tmp_path):
     repo = Path(__file__).resolve().parents[3]
     result = run_owned_process(
         [sys.executable, "-m", "tests.flower_runtime_test_utils", str(tmp_path), str(repo / "tests/data/flower_http")],
@@ -44,3 +48,16 @@ def test_real_flower_round_through_nvflare(tmp_path):
     logs = list(tmp_path.rglob("server_app_log.txt"))
     assert len(logs) == 1, result.stdout + result.stderr
     assert "FLOWER_RUNTIME_ROUND_OK clients=2" in logs[0].read_text(), logs[0].read_text()
+
+
+def test_signed_flower_request_cannot_spoof_site(tmp_path):
+    repo = Path(__file__).resolve().parents[3]
+    result = run_owned_process(
+        [sys.executable, "-m", "tests.flower_security_test_utils", str(tmp_path)],
+        cwd=str(repo),
+        timeout=120,
+    )
+    log = tmp_path / "superlink.log"
+    diagnostics = result.stdout + result.stderr + (log.read_text() if log.exists() else "")
+    assert result.returncode == 0, diagnostics
+    assert "FLOWER_SITE_OWNERSHIP_OK" in result.stdout, diagnostics

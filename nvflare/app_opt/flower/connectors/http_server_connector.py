@@ -17,6 +17,7 @@
 import http.client
 import threading
 
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.shareable import ReturnCode, make_reply
 from nvflare.app_opt.flower.connectors.flower_connector import FlowerServerConnector
 from nvflare.app_opt.flower.defs import Constant
@@ -69,10 +70,13 @@ class HttpServerConnector(FlowerServerConnector):
     def send_request_to_flower(self, request, fl_ctx):
         try:
             path, headers, _ = validate_request(request, self.max_message_bytes)
-            peer = fl_ctx.get_peer_context()
-            site = peer.get_identity_name() if peer else None
+            # The server sets this private property from the authenticated transport.
+            # Peer context comes from the sender and cannot establish key ownership.
+            site = fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
+            if not isinstance(site, str) or not site:
+                return http_response(403)
             key = headers.get("flwr-public-key")
-            if not site or not key or not headers.get("flwr-signature") or not headers.get("flwr-timestamp"):
+            if not key or not headers.get("flwr-signature") or not headers.get("flwr-timestamp"):
                 return http_response(403)
             # A Flower key may only be used by its registering NVFlare site in
             # this job. SuperLink verifies signatures and node/body identity.
