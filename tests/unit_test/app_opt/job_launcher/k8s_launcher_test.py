@@ -3405,7 +3405,18 @@ spec:
             launcher.launch_job(_make_launch_job_meta(), fl_ctx)
 
             self.mock_transfer_cls.get_or_create.assert_called_once_with(owner_cell)
-            self.mock_transfer.add_job.assert_called_once_with(_JOB_UUID, "/fake/workspace")
+            self.mock_transfer.add_job.assert_called_once_with(_JOB_UUID, "/fake/workspace", "default")
+        finally:
+            _exit_patches(patches)
+
+    def test_launch_job_transfers_the_jobs_study_part_of_the_dataset_configuration(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(study="oncology"), _make_launch_fl_ctx())
+
+            self.mock_transfer.add_job.assert_called_once_with(_JOB_UUID, "/fake/workspace", "oncology")
         finally:
             _exit_patches(patches)
 
@@ -4036,7 +4047,7 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
         assert spec["serviceAccountName"] == "task-no-api"
     # Existing credential ownership and workspace-transfer mechanisms are retained.
     launcher._own_credential_secret.assert_called_once()
-    transfer.get_or_create.return_value.add_job.assert_called_once_with(_TASK_JOB_ID, str(tmp_path))
+    transfer.get_or_create.return_value.add_job.assert_called_once_with(_TASK_JOB_ID, str(tmp_path), "default")
     launcher._prepare_workspace_subpath.assert_called_once_with(_TASK_JOB_ID, _TASK_SITE, None)
     job_dir = pvc_root / workspace_mount["subPath"]
     (job_dir / "committed-checkpoint").write_bytes(b"persist across CJ deletion")
