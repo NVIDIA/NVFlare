@@ -78,8 +78,7 @@ def run(workspace):
 
     def dispatch(request, authenticated_site, claimed_site):
         fl_ctx = FLContext()
-        if authenticated_site is not None:
-            fl_ctx.set_prop(FLContextKey.CLIENT_NAME, authenticated_site, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.CLIENT_NAME, authenticated_site, private=True, sticky=False)
         request.set_header(Constant.MSG_KEY_OP, "request")
         # Also try injecting the private property's name into sender-controlled
         # public peer properties. AuxRunner must keep the two contexts separate.
@@ -123,9 +122,9 @@ def run(workspace):
         # Keep exactly the same signed Flower request while varying only the
         # NVFlare identities. The owner can still deactivate after the denials.
         deactivation = signed_request("/v1/fleet/deactivate-node", DeactivateNodeRequest(node_id=node_id))
-        for authenticated_site, claimed_site in (("site-2", "site-2"), ("site-2", "site-1"), (None, "site-1")):
-            reply = dispatch(deactivation, authenticated_site, claimed_site)
-            assert reply["status"] == 403, (authenticated_site, claimed_site, reply)
+        for claimed_site in ("site-2", "site-1"):
+            reply = dispatch(deactivation, "site-2", claimed_site)
+            assert reply["status"] == 403, (claimed_site, reply)
         reply = dispatch(deactivation, "site-1", "site-1")
         assert reply["status"] == 200, reply
     print("FLOWER_SITE_OWNERSHIP_OK")

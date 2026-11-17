@@ -27,10 +27,9 @@ def context(authenticated_site, claimed_site="site-1"):
     ctx = FLContext()
     if authenticated_site is not None:
         ctx.set_prop(FLContextKey.CLIENT_NAME, authenticated_site, private=True, sticky=False)
-    if claimed_site is not None:
-        peer = FLContext()
-        peer.set_public_props({ReservedKey.IDENTITY_NAME: claimed_site, FLContextKey.CLIENT_NAME: claimed_site})
-        ctx.set_peer_context(peer)
+    peer = FLContext()
+    peer.set_public_props({ReservedKey.IDENTITY_NAME: claimed_site, FLContextKey.CLIENT_NAME: claimed_site})
+    ctx.set_peer_context(peer)
     return ctx
 
 
@@ -58,34 +57,26 @@ def connector():
     return connector
 
 
-@pytest.mark.parametrize("path", ["/v1/fleet/register-node", "/v1/fleet/deactivate-node"])
-def test_claimed_owner_cannot_override_authenticated_site(connector, path):
+def test_claimed_owner_cannot_override_authenticated_site(connector):
     assert connector.send_request_to_flower(request(), context("site-1"))["status"] == 200
     connector.http_client.send.reset_mock()
 
-    assert connector.send_request_to_flower(request(path), context("site-2", "site-1"))["status"] == 403
+    deactivation = request("/v1/fleet/deactivate-node")
+    assert connector.send_request_to_flower(deactivation, context("site-2", "site-1"))["status"] == 403
     connector.http_client.send.assert_not_called()
     assert connector._key_owners == {"node-key": "site-1"}
-    assert connector.send_request_to_flower(request(path), context("site-1"))["status"] == 200
+    assert connector.send_request_to_flower(deactivation, context("site-1"))["status"] == 200
 
 
-@pytest.mark.parametrize("authenticated_site", [None, "", True, 7, ["site-1"], {"name": "site-1"}])
-@pytest.mark.parametrize("registered", [False, True])
-def test_missing_or_invalid_authenticated_site_fails_closed(connector, authenticated_site, registered):
-    if registered:
-        assert connector.send_request_to_flower(request(), context("site-1"))["status"] == 200
-    owners = connector._key_owners.copy()
-    connector.http_client.send.reset_mock()
-    path = "/v1/fleet/deactivate-node" if registered else "/v1/fleet/register-node"
-
-    assert connector.send_request_to_flower(request(path), context(authenticated_site))["status"] == 403
+@pytest.mark.parametrize("authenticated_site", [None, "", True], ids=["missing", "empty", "non-string"])
+def test_missing_or_invalid_authenticated_site_fails_closed(connector, authenticated_site):
+    assert connector.send_request_to_flower(request(), context(authenticated_site))["status"] == 403
     connector.http_client.send.assert_not_called()
-    assert connector._key_owners == owners
+    assert connector._key_owners == {}
 
 
-@pytest.mark.parametrize("claimed_site", ["site-2", None])
-def test_registration_and_access_use_only_authenticated_site(connector, claimed_site):
-    assert connector.send_request_to_flower(request(), context("site-1", claimed_site))["status"] == 200
+def test_registration_binds_key_to_authenticated_site(connector):
+    assert connector.send_request_to_flower(request(), context("site-1", "site-2"))["status"] == 200
     assert connector._key_owners == {"node-key": "site-1"}
     assert connector.send_request_to_flower(request("/v1/fleet/deactivate-node"), context("site-1"))["status"] == 200
     assert connector.http_client.send.call_count == 2

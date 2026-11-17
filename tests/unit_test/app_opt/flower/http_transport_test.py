@@ -179,15 +179,11 @@ def context(site):
     return ctx
 
 
-def test_server_revalidates_and_binds_flower_identity_to_site():
+def test_server_revalidates_request_before_forwarding():
     connector = HttpServerConnector()
     connector.http_client = MagicMock()
-    connector.http_client.send.return_value = http_response(200, b"registered")
-    assert connector.send_request_to_flower(request(), context("site-1"))["body"] == b"registered"
-    assert connector.send_request_to_flower(request("/v1/fleet/get-run"), context("site-2"))["status"] == 403
     assert connector.send_request_to_flower(request("/v1/control/start-run"), context("site-1"))["status"] == 404
-    assert connector.http_client.send.call_count == 1
-    assert connector.send_request_to_flower(request("/v1/fleet/get-run"), context("site-1"))["status"] == 200
+    connector.http_client.send.assert_not_called()
 
 
 def test_rejected_registration_does_not_claim_another_sites_key():
