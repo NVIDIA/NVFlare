@@ -709,3 +709,14 @@ class TestIntegrationScenarios:
         np.testing.assert_allclose(
             aggr_result.params["newton_raphson_updates"], single_result.params["newton_raphson_updates"], rtol=1e-10
         )
+
+
+def test_update_model_keeps_model_when_every_site_reports_zero_steps():
+    from nvflare.app_common.workflows.base_fedavg import _make_unchanged_model_result
+
+    controller = FedAvgLR(damping_factor=0.5, epsilon=1.0, n_features=2)
+    model = FLModel(params={NPConstants.NUMPY_KEY: np.array([1.0, 2.0, 3.0])}, meta={})
+
+    updated = controller.update_model(model, _make_unchanged_model_result(0))
+
+    np.testing.assert_array_equal(updated.params[NPConstants.NUMPY_KEY], [1.0, 2.0, 3.0])

@@ -209,7 +209,9 @@ data loading, training, and evaluation code:
 
 For FedAvg, ``NUM_STEPS_CURRENT_ROUND`` lets the server weight each update by
 the amount of local work completed. The maintained Hello PyTorch client records
-this value directly from its local training loop.
+this value directly from its local training loop. An update that reports 0
+steps is skipped, and if every update in a round reports 0, the global model
+stays unchanged.
 
 Define the collaboration with a Recipe and execute it in an environment:
 

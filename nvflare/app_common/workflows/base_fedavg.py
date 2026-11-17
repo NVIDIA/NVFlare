@@ -16,7 +16,7 @@ import math
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.fl_constant import FLMetaKey
-from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.model import make_model_learnable
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
     AggregationStatsKey,
@@ -99,9 +99,28 @@ def _get_num_steps_weight(result: FLModel) -> float:
         weight = float(value)
     except (TypeError, ValueError, OverflowError):
         return 1.0
+    if weight == 0:
+        return 0.0
     if not math.isfinite(weight) or weight <= 0:
         return 1.0
     return weight
+
+
+def _is_zero_step_result(result: FLModel) -> bool:
+    return _get_num_steps_weight(result) == 0.0
+
+
+def _make_unchanged_model_result(current_round) -> FLModel:
+    return FLModel(
+        params={},
+        params_type=ParamsType.DIFF,
+        current_round=current_round,
+        meta={
+            "nr_aggregated": 0,
+            "current_round": current_round,
+            AppConstants.METRICS_AGGREGATION_INFO: make_fedavg_metrics_aggregation_info(),
+        },
+    )
 
 
 def _aggregate_fl_model_metrics(results: List[FLModel]) -> Optional[Dict[str, Any]]:
@@ -246,6 +265,15 @@ class BaseFedAvg(ModelController):
         if self.fl_ctx:
             self._set_ctx_prop_preserving_attrs(fl_ctx=self.fl_ctx, key=AppConstants.AGGREGATION_STATS, value=None)
         self.event(AppEventType.BEFORE_AGGREGATION)
+        results = self._drop_zero_step_results(results)
+        if not results:
+            self.warning(f"All results reported 0 steps at round {self.current_round}, keeping the global model.")
+            aggr_result = _make_unchanged_model_result(self.current_round)
+            self._results = []
+            self.fire_event_with_data(
+                AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggr_result
+            )
+            return aggr_result
         self._check_results(results)
 
         if not aggregate_fn:
@@ -282,6 +310,17 @@ class BaseFedAvg(ModelController):
         self.debug("End aggregation.")
 
         return aggr_result
+
+    def _drop_zero_step_results(self, results: List[FLModel]) -> List[FLModel]:
+        kept = []
+        for _result in results:
+            if _is_zero_step_result(_result):
+                self.warning(
+                    f"Skipping result from client {_get_client_name(_result)} at round {self.current_round}: 0 steps."
+                )
+            else:
+                kept.append(_result)
+        return kept
 
     def _set_metrics_aggregation_info(self, aggr_result: FLModel):
         if not isinstance(aggr_result, FLModel):

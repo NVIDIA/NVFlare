@@ -40,6 +40,8 @@ from .base_fedavg import (
     BaseFedAvg,
     _get_client_name,
     _get_num_steps_weight,
+    _is_zero_step_result,
+    _make_unchanged_model_result,
     make_fedavg_metrics_aggregation_info,
     make_key_metric_info_from_stop_condition,
 )
@@ -61,6 +63,8 @@ class FedAvg(BaseFedAvg):
     metric shapes are incompatible, and continues with accepted clients. A round with no
     accepted contributions fails without updating or saving. Errors during accumulation
     still fail the round because they may have partially changed its state.
+    A result reporting ``NUM_STEPS_CURRENT_ROUND == 0`` is skipped; if every result does, the
+    global model is kept unchanged and not saved.
 
     Supports custom aggregators via the ModelAggregator interface.
 
@@ -156,6 +160,7 @@ class FedAvg(BaseFedAvg):
         self._warned_metric_keys: Set[str] = set()  # warn at most once per key (across clients/rounds)
         self._received_count: int = 0
         self._expected_count: int = 0
+        self._zero_step_count: int = 0
         self._params_type = None  # Only store params_type, not full result
         self._site_metric_weights: Dict[str, Dict[str, Any]] = {}
 
@@ -217,6 +222,7 @@ class FedAvg(BaseFedAvg):
                 # Shared state for both aggregator types
                 self._received_count = 0
                 self._expected_count = len(clients)
+                self._zero_step_count = 0
                 self._params_type = None
                 self._site_metric_weights = {}
 
@@ -268,6 +274,10 @@ class FedAvg(BaseFedAvg):
                     AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggregate_results
                 )
 
+                if self._all_results_zero_step():
+                    self._maybe_cleanup_memory()
+                    continue
+
                 model = self.update_model(model, aggregate_results)
 
                 # Early stopping: check if current model is better
@@ -306,6 +316,11 @@ class FedAvg(BaseFedAvg):
             return False
 
         client_name = _get_client_name(result)
+        if _is_zero_step_result(result):
+            self.warning(f"Skipping result from client {client_name} at round {self.current_round}: 0 steps.")
+            self._zero_step_count += 1
+            return False
+
         if self.aggregator:
             # Use custom aggregator
             self.aggregator.accept_model(result)
@@ -373,8 +388,14 @@ class FedAvg(BaseFedAvg):
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
         return True
 
+    def _all_results_zero_step(self) -> bool:
+        return self._received_count == 0 and self._zero_step_count > 0
+
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""
+        if self._all_results_zero_step():
+            self.warning(f"All results reported 0 steps at round {self.current_round}, keeping the global model.")
+            return _make_unchanged_model_result(self.current_round)
         if self.aggregator:
             # Use custom aggregator
             result: FLModel = self.aggregator.aggregate_model()

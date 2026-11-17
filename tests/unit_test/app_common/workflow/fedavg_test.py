@@ -2516,3 +2516,103 @@ class TestBaseFedAvgMemoryManagement:
         # Can be customized
         controller2 = CyclicController(memory_gc_rounds=3)
         assert controller2._memory_gc_rounds == 3
+
+
+def _steps_result(client, w, steps, ctrl_diff=None):
+    meta = {"client_name": client}
+    if steps is not None:
+        meta[FLMetaKey.NUM_STEPS_CURRENT_ROUND] = steps
+    if ctrl_diff is not None:
+        meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF] = {"w": np.array([ctrl_diff])}
+    return FLModel(params={"w": np.array([w])}, params_type=ParamsType.FULL, current_round=0, meta=meta)
+
+
+def _streaming_fedavg():
+    from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+    controller = FedAvg(num_clients=2)
+    controller._aggr_helper = WeightedAggregationHelper()
+    controller._aggr_metrics_helper = WeightedAggregationHelper()
+    controller.current_round = 0
+    controller.warning = MagicMock()
+    return controller
+
+
+def _base_fedavg():
+    controller = _TestBaseFedAvg()
+    controller.fl_ctx = FLContext()
+    controller.event = lambda _: None
+    controller.fire_event_with_data = lambda *args, **kwargs: None
+    controller.current_round = 0
+    controller.warning = MagicMock()
+    return controller
+
+
+class TestZeroStepResults:
+    def test_streaming_skips_zero_step_site(self):
+        controller = _streaming_fedavg()
+
+        assert controller._aggregate_one_result(_steps_result("site-1", 1.0, 0)) is False
+        assert controller._aggregate_one_result(_steps_result("site-2", 3.0, 10)) is True
+
+        assert controller._get_aggregated_result().params["w"] == pytest.approx([3.0])
+        controller.warning.assert_called_once()
+        assert "site-1" in controller.warning.call_args.args[0]
+        assert "round 0" in controller.warning.call_args.args[0]
+
+    def test_streaming_all_zero_steps_keeps_model(self):
+        controller = _streaming_fedavg()
+        controller._aggregate_one_result(_steps_result("site-1", 1.0, 0))
+        controller._aggregate_one_result(_steps_result("site-2", 3.0, 0.0))
+
+        assert controller._all_results_zero_step()
+        aggr_result = controller._get_aggregated_result()
+        model = FLModel(params={"w": np.array([5.0])}, params_type=ParamsType.FULL, meta={})
+        assert FLModelUtils.update_model(model, aggr_result).params["w"] == pytest.approx([5.0])
+
+    def test_streaming_missing_steps_keeps_weight_one(self):
+        controller = _streaming_fedavg()
+        controller._aggregate_one_result(_steps_result("site-1", 1.0, None))
+        controller._aggregate_one_result(_steps_result("site-2", 3.0, -5))
+
+        assert controller._get_aggregated_result().params["w"] == pytest.approx([2.0])
+        controller.warning.assert_not_called()
+
+    def test_base_aggregate_skips_zero_step_site(self):
+        controller = _base_fedavg()
+
+        aggr_result = controller.aggregate([_steps_result("site-1", 1.0, 0), _steps_result("site-2", 3.0, 2)])
+
+        assert aggr_result.params["w"] == pytest.approx([3.0])
+        assert aggr_result.meta["nr_aggregated"] == 1
+        controller.warning.assert_called_once()
+
+    def test_base_aggregate_all_zero_steps_keeps_model(self):
+        controller = _base_fedavg()
+
+        aggr_result = controller.aggregate([_steps_result("site-1", 1.0, 0), _steps_result("site-2", 3.0, 0)])
+
+        model = FLModel(params={"w": np.array([5.0])}, params_type=ParamsType.FULL, meta={})
+        assert FLModelUtils.update_model(model, aggr_result).params["w"] == pytest.approx([5.0])
+        assert controller.warning.call_count == 3
+
+    def test_scaffold_zero_step_site_does_not_change_control_variates(self):
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        controller = _base_fedavg()
+        aggr_result = controller.aggregate(
+            [_steps_result("site-1", 1.0, 0, ctrl_diff=100.0), _steps_result("site-2", 3.0, 2, ctrl_diff=0.5)],
+            aggregate_fn=scaffold_aggregate_fn,
+        )
+
+        assert aggr_result.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]["w"] == pytest.approx([0.5])
+
+    def test_scaffold_all_zero_steps_has_no_control_delta(self):
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        controller = _base_fedavg()
+        aggr_result = controller.aggregate(
+            [_steps_result("site-1", 1.0, 0, ctrl_diff=100.0)], aggregate_fn=scaffold_aggregate_fn
+        )
+
+        assert aggr_result.meta.get(AlgorithmConstants.SCAFFOLD_CTRL_DIFF, {}) == {}
