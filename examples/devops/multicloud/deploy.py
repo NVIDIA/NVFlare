@@ -333,6 +333,11 @@ def load_config(config_path: Path) -> DeployConfig:
             raise ValueError(f"{config_path}: participant {entry['name']} prepare.runtime must be '{K8S_RUNTIME}'")
         kc_path = _kubeconfig_path(cloud, cloud_cfg, config_dir=config_path.parent)
         pvc_config = merged.get("pvc_config") or {}
+        if "study_data" in merged:
+            raise ValueError(
+                f"{config_path}: participant {entry['name']} uses the removed 'study_data' key; rename it to "
+                "'study_runtime' (see 'Study Data File Removed' in docs/migration_guide.rst)."
+            )
         study_datasets = _normalize_study_datasets(merged.get("study_runtime"))
         create_namespace, delete_namespace = _namespace_options(config_path, cloud, cloud_cfg, entry)
 
