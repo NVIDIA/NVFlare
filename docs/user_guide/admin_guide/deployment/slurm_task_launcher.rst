@@ -149,25 +149,22 @@ each task allocation. Inherited federation-wide CJ budgets are subject to the
 same rejection; jobs targeting this profile must omit nonzero CJ budgets.
 The default ``cj_runtime: slurm`` profile continues to require a Slurm CJ allocation.
 
-Process and Docker login node profiles refuse job-lifetime applications by default,
-including applications that omit ``execution_lifetime``. This check occurs at
-client-job launch, after application deployment and before starting any CJ.
-A site that permits
-resident applications on its login node can explicitly set
-``task_execution.allow_job_lifetime`` to ``true`` in its canonical site file.
-Those applications then use the ordinary job launcher's behavior and site
-image defaults. Native Slurm and Kubernetes profiles retain their existing
-job-lifetime behavior unless the site explicitly disables it.
+Enabling task execution preserves existing job-lifetime applications, including
+applications that omit ``execution_lifetime``. Those applications use the
+ordinary job launcher's workspace, networking, study settings and image selection.
+A site may explicitly set ``task_execution.allow_job_lifetime`` to ``false`` to
+refuse resident applications, for example on a shared login node. This refusal
+occurs at client-job launch, after deployment and before starting any CJ.
 
-Docker CJs on a login node
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+Docker CP and CJs with Slurm workers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-For clusters whose compute nodes all have GPUs, CP can keep each task-mode CJ
-in a CPU-only Docker container on its own login node host. Only compute workers
-use Slurm allocations. The site independently selects the ordinary
-Docker job launcher and the Slurm task launcher. CP establishes task ownership
-around job launch; neither job launcher implements Slurm submission.
-Job-lifetime applications require the explicit site opt-in described above.
+An existing Docker CP can opt into task execution with Docker CJs and Slurm task
+workers. CP remains a persistent Docker container on its user-defined network.
+Job-lifetime applications continue to run in ordinary Docker CJs. For task-lifetime
+applications, each CPU-only Docker CJ coordinates workers in separate Slurm
+allocations. CP owns scheduler access and cleanup. A host Process CP with a Docker
+CJ is outside this profile.
 
 After preparing the client workspace, replace its job-launcher component in
 the active ``local/resources.json`` with the component below. Keep the other
@@ -183,7 +180,7 @@ site components. Configure the task launcher in that same file with
           "path": "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
           "args": {
             "workspace": "/shared/private/site-1",
-            "network": "host",
+            "network": "nvflare-network",
             "default_image": "registry.example/nvflare-coordinator:tested",
             "default_python_path": "/usr/local/bin/python",
             "default_job_container_kwargs": {
@@ -214,13 +211,14 @@ site components. Configure the task launcher in that same file with
 
 This initial profile requires:
 
-* A Linux login node, a local Docker daemon with CPU/memory limit support, the
-  Docker Python SDK on CP, and a nonroot CP UID. CP needs permission to use
-  Docker and all four Slurm commands. Docker CJs need neither interface.
+* A Linux Docker host and a persistent, nonroot Docker CP, using the prepared
+  Docker workspace layout and ``NVFL_DOCKER_WORKSPACE`` host-path setting.
+  CP's image needs the Docker SDK and Slurm client commands compatible with the
+  cluster. Supply the cluster's client configuration and authentication socket
+  through site-managed mounts; never embed scheduler credentials in the image.
+  CP needs permission to use Docker and all four Slurm commands. Docker CJs need neither interface.
   The task backend requires a Unix-socket daemon endpoint and checks its Linux
   CPU-quota and memory-limit capabilities before creating the container.
-  Do not submit CP with ``parent.slurm`` when placing it on the login node;
-  run the prepared ``startup/start_slurm.sh`` as a persistent login node service.
 * Exactly one ``ClientDockerJobLauncher`` in the canonical site file.
   The login node task profile applies to ``execution_lifetime="task"`` applications.
   Explicit per-site and legacy job Docker options, including
@@ -232,21 +230,30 @@ This initial profile requires:
   embed scheduler or site credentials. Study environment/setup still belongs
   to the Slurm workers; study container images, mounts and secrets remain
   unsupported by the shared-path Slurm task profile.
-* The same canonical absolute workspace path on CP, the Docker daemon host,
-  and compute hosts, with coherent atomic file operations. If CP itself is a
-  container, mount the workspace at that path in CP too. CJ receives a tmpfs
+  On a site serving both job lifetimes, keep the shared study file compatible
+  with the Docker job launcher. Configure Slurm-only partition/setup defaults
+  in ``task_execution.launcher.args``; the ordinary Docker launcher rejects
+  Slurm-only keys in ``study_runtime.yaml``.
+* A canonical shared workspace on the Docker daemon host and compute hosts,
+  with coherent atomic file operations. Docker CP retains its ordinary internal
+  ``/var/tmp/nvflare/workspace`` mount and also needs that workspace mounted at
+  its canonical native path. The generated Docker startup script supplies both
+  views; site-managed startup must do the same. CP binds the Slurm backend through
+  the native view, without rewriting staged worker records. A task CJ receives a tmpfs
   root at that path, read-only ``local`` and permitted startup files, and only
   its own job directory as a persistent writable bind. Other job directories,
   startup private keys, scheduler sockets and the Docker socket are not mounted.
   Do not place scheduler credentials in ``local`` or permitted startup files.
   The existing per-job certificate requirement applies in secure mode.
-* Linux host networking for each CJ. CJ uses CP's actual TCP or mTLS TCP
-  parent address, including loopback when CP listens there. Independently,
-  ``worker_listener_host`` advertises CJ's listener to compute hosts and must
-  be reachable from them. Do not override the configured host
-  network through ``NVFL_DOCKER_NETWORK``. CJ opens its own dynamic listener
-  port, so the login node firewall must permit those worker connections. Bridge networking, Docker
-  Desktop, shared-file parent transport and automatic host discovery are
+* A user-defined Docker network for CP and ordinary job-mode CJs. Task-mode CJs
+  use Linux host networking so Slurm workers can reach their dynamic listeners.
+  CP obtains its own container's address on its configured Docker network and
+  installs a per-container host entry for its site name in each task CJ. This
+  preserves ordinary TCP/mTLS parent naming. CP must listen on its container
+  interface, as configured by the prepared Docker runtime, rather than only on
+  container loopback. ``worker_listener_host`` independently advertises the task CJ's
+  compute-reachable host address. The firewall must permit these worker connections.
+  Docker Desktop, shared-file parent transport and remote Docker daemons are
   unsupported in this profile. Host networking does not isolate network access;
   qualify it under the site's network and job-code trust policy.
 

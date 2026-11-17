@@ -209,9 +209,7 @@ class TaskExecutionPolicy:
         launcher = _SiteBuilder().build_component(launcher_config)
         if not isinstance(launcher, TaskLauncherSpec) or not _supported_native_launcher(launcher):
             raise ValueError("task execution requires a supported Kubernetes or Slurm TaskLauncher")
-        allow_job_lifetime = config.get(
-            "allow_job_lifetime", getattr(launcher, "cj_runtime", None) not in ("process", "docker")
-        )
+        allow_job_lifetime = config.get("allow_job_lifetime", True)
         if not isinstance(allow_job_lifetime, bool):
             raise ValueError("allow_job_lifetime must be a boolean")
         return cls(

@@ -213,8 +213,6 @@ def test_process_policy_and_system_shutdown(profile):
 @pytest.mark.parametrize("lifetime", [None, "job"])
 def test_ordinary_process_launcher_keeps_resident_jobs_independent_of_task_policy(profile, lifetime):
     p = profile
-    p.site["task_execution"]["allow_job_lifetime"] = True
-    (p.root / "local/resources.json").write_text(json.dumps(p.site))
     config = {} if lifetime is None else {"execution_lifetime": lifetime}
     Path(p.workspace.get_client_app_config_file_path("job-1")).write_text(json.dumps(config))
     handle = launch_job(p.launcher, p.meta, p.context)
@@ -231,8 +229,10 @@ def test_cp_owns_a_physical_backend_that_reaches_native_task_launch(profile, mon
     assert_physical_task_dispatch(handle, p.root, monkeypatch)
 
 
-def test_process_cp_host_refuses_resident_jobs_by_default(profile):
+def test_process_cp_host_can_explicitly_refuse_resident_jobs(profile):
     p = profile
+    p.site["task_execution"]["allow_job_lifetime"] = False
+    (p.root / "local/resources.json").write_text(json.dumps(p.site))
     Path(p.workspace.get_client_app_config_file_path("job-1")).write_text("{}")
     with pytest.raises(ValueError, match="refuses job-lifetime"):
         launch_job(p.launcher, p.meta, p.context)

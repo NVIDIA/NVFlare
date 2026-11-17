@@ -195,7 +195,9 @@ def _prepare_docker_slurm_cj(launcher, job_meta, fl_ctx):
     from nvflare.app_opt.job_launcher.slurm.task_launcher import _prepare_task_binding
 
     options = launcher._task_coordinator_options(job_meta, fl_ctx)
-    prepared = _prepare_task_binding(job_meta, fl_ctx, options)
+    prepared = _prepare_task_binding(
+        job_meta, fl_ctx, options, workspace=Workspace(launcher.workspace, fl_ctx.get_identity_name())
+    )
     site = fl_ctx.get_identity_name()
     # Only the physical CJ copy drops compute budgets and job image selection.
     # The ordinary Docker launcher then uses its validated site default image.

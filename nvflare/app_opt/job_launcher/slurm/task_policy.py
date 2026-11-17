@@ -78,10 +78,12 @@ def validate_slurm_site(launcher, site_config):
             for item in components
         ):
             raise ValueError("Docker Slurm task profile requires exactly one ClientDockerJobLauncher")
-        cj = ClientDockerJobLauncher(**component_args(matches[0]))
-        cj._validate_task_coordinator_profile(
-            launcher.manager.config.workspace_path, network=component_args(matches[0]).get("network")
-        )
+        args = dict(component_args(matches[0]))
+        # Ordinary Docker sites obtain this from CP's environment. CJ has no
+        # parent-only environment, so validate against the native site path.
+        args["workspace"] = args.get("workspace") or launcher.manager.config.workspace_path
+        cj = ClientDockerJobLauncher(**args)
+        cj._validate_task_coordinator_profile(launcher.manager.config.workspace_path, network=cj.network)
         return
     matches = [item for item in components if component_path(item) == CJ_LAUNCHER_PATH]
     if len(matches) != 1:

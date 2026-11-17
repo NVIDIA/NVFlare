@@ -42,13 +42,19 @@ from nvflare.private.fed.utils.job_cert_utils import JobCertError
 @pytest.fixture
 def profile(tmp_path, monkeypatch):
     root = tmp_path.resolve()
+    cp_root = root / "cp-view"
+    cp_root.symlink_to(root, target_is_directory=True)
+    monkeypatch.setattr(docker_module.DockerJobLauncher, "WORKSPACE_MOUNT", str(cp_root))
+    monkeypatch.setattr(docker_module, "socket", SimpleNamespace(gethostname=lambda: "cp-container"))
+    monkeypatch.setenv("NVFL_DOCKER_WORKSPACE", str(root))
+    monkeypatch.setenv("NVFL_DOCKER_NETWORK", "site-net")
     for name in ("startup", "local", "job-1/app_site-1/config", "job-1/job_cert", "other-job"):
         (root / name).mkdir(parents=True, exist_ok=True)
     for name in ("fed_client.json", "rootCA.pem", "client.key"):
         (root / "startup" / name).write_text(name)
     for name in ("job.crt", "job.key"):
         (root / "job-1/job_cert" / name).write_text(name)
-    workspace = Workspace(str(root), "site-1")
+    workspace = Workspace(str(cp_root), "site-1")
     app_config = root / "job-1/app_site-1/config/config_fed_client.json"
     app_config.write_text(json.dumps({"execution_lifetime": "task"}))
     site = {
@@ -59,7 +65,7 @@ def profile(tmp_path, monkeypatch):
                 "args": {
                     "workspace": str(root),
                     "default_image": "site/coordinator:tested",
-                    "network": "host",
+                    "network": "site-net",
                     "default_job_container_kwargs": {"nano_cpus": 1_000_000_000, "mem_limit": 1024**3},
                 },
             }
@@ -84,6 +90,12 @@ def profile(tmp_path, monkeypatch):
     dc = Mock()
     dc.api.base_url = "http+docker://localhost"
     dc.info.return_value = {"OSType": "linux", "MemoryLimit": True, "CpuCfsPeriod": True, "CpuCfsQuota": True}
+    parent_container = Mock()
+    parent_container.attrs = {
+        "Mounts": [{"Source": str(root), "Destination": str(cp_root)}],
+        "NetworkSettings": {"Networks": {"site-net": {"IPAddress": "172.20.0.2"}}},
+    }
+    dc.containers.get.return_value = parent_container
     launcher._docker_client = dc
     native = Mock(spec=docker_module.DockerJobHandle)
     native.poll.return_value = JobReturnCode.UNKNOWN
@@ -108,8 +120,8 @@ def profile(tmp_path, monkeypatch):
         FLContextKey.JOB_PROCESS_ARGS,
         {
             JobProcessArgs.EXE_MODULE: ("-m", "nvflare.private.fed.app.client.worker_process"),
-            JobProcessArgs.WORKSPACE: ("-m", str(root)),
-            JobProcessArgs.STARTUP_DIR: ("-w", str(root / "startup")),
+            JobProcessArgs.WORKSPACE: ("-m", str(cp_root)),
+            JobProcessArgs.STARTUP_DIR: ("-w", str(cp_root / "startup")),
             JobProcessArgs.PARENT_URL: ("-p", "tcp://127.0.0.1:8102"),
         },
     )
@@ -122,6 +134,8 @@ def profile(tmp_path, monkeypatch):
     try:
         yield SimpleNamespace(
             root=root,
+            cp_root=cp_root,
+            parent_container=parent_container,
             workspace=workspace,
             app_config=app_config,
             site=site,
@@ -149,6 +163,7 @@ def test_cp_host_container_uses_cj_budget_and_isolated_canonical_paths(profile, 
     (image,) = p.dc.containers.run.call_args.args
     run = p.dc.containers.run.call_args.kwargs
     assert image == "site/coordinator:tested" and run["network"] == "host"
+    assert run["extra_hosts"] == {"site-1": "172.20.0.2"}
     assert (run["nano_cpus"], run["mem_limit"]) == (500_000_000, 512 * 1024**2)
     assert not run.get("device_requests") and not run.get("devices")
     assert run["cap_drop"] == ["ALL"] and run["security_opt"] == ["no-new-privileges:true"]
@@ -168,8 +183,10 @@ def test_cp_host_container_uses_cj_budget_and_isolated_canonical_paths(profile, 
     assert all(not m["Target"].endswith(".key") for m in run["mounts"])
     assert not any("docker.sock" in m["Target"] or "other-job" in m["Target"] for m in run["mounts"])
     command = run["command"]
-    assert command[command.index("-p") + 1] == "tcp://127.0.0.1:8102"
+    assert command[command.index("-p") + 1] == "tcp://site-1:8102"
     assert str(p.root) in command and str(p.root / "startup") in command
+    assert command[command.index("-m", 3) + 1] == str(p.root)
+    assert p.context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.WORKSPACE][1] == str(p.cp_root)
     assert p.meta == original
     assert not handle.can_restart()  # CP host recovery is disabled for this initial profile.
     handle.terminate()
@@ -205,6 +222,8 @@ def test_lost_docker_start_response_retains_owner_until_cleanup(profile, monkeyp
         raise error("Docker start response lost")
 
     def lookup(identity):
+        if identity == "cp-container":
+            return p.parent_container
         lookups.append(identity)
         if cleanup_failure == "lookup" and not allow_cleanup.is_set():
             cleanup_attempted.set()
@@ -329,15 +348,52 @@ def test_job_cannot_override_cp_host_container(profile, docker_spec):
 def test_resident_job_uses_ordinary_docker_without_task_ownership(profile):
     p = profile
     p.app_config.write_text("{}")
-    p.site["task_execution"]["allow_job_lifetime"] = True
-    (p.root / "local/resources.json").write_text(json.dumps(p.site))
     p.meta.pop("cj_resource_spec")
     p.meta["resource_spec"] = {"site-1": {"num_of_gpus": 0}}
     p.meta["launcher_spec"] = {"site-1": {"docker": {"image": "resident/image"}}}
+    p.meta["study"] = "resident-study"
+    (p.root / "local/study_runtime.yaml").write_text(
+        json.dumps({"format_version": 2, "studies": {"resident-study": {"env": {"RESIDENT_STUDY": "loaded"}}}})
+    )
     handle = launch_job(p.launcher, p.meta, p.context)
     assert handle is p.native
     assert not hasattr(p.cell, "_slurm_task_service")
     assert p.dc.containers.run.call_args.args == ("resident/image",)
+    run = p.dc.containers.run.call_args.kwargs
+    assert run["network"] == "site-net" and "extra_hosts" not in run
+    command = run["command"]
+    assert command[command.index("-p") + 1] == "tcp://site-1:8102"
+    assert command[command.index("-m", 3) + 1] == str(p.cp_root)
+    assert str(p.cp_root) in {mount["Target"] for mount in run["mounts"]}
+    assert run["environment"]["RESIDENT_STUDY"] == "loaded"
+
+
+@pytest.mark.parametrize("mutation", ["host-cp", "wrong-mount", "missing-network"])
+def test_docker_task_profile_requires_owning_docker_cp(profile, monkeypatch, mutation):
+    p = profile
+    if mutation == "host-cp":
+        monkeypatch.delenv("NVFL_DOCKER_WORKSPACE")
+    elif mutation == "wrong-mount":
+        p.parent_container.attrs["Mounts"] = []
+    else:
+        p.parent_container.attrs["NetworkSettings"]["Networks"] = {}
+    with pytest.raises(ValueError, match="Docker CP|CP container"):
+        launch_job(p.launcher, p.meta, p.context)
+    p.dc.containers.run.assert_not_called()
+
+
+@pytest.mark.parametrize("explicit_null", [False, True])
+def test_cj_validates_ordinary_docker_site_without_parent_environment(profile, monkeypatch, explicit_null):
+    p = profile
+    p.site["components"][0]["args"].pop("workspace")
+    if explicit_null:
+        p.site["components"][0]["args"]["workspace"] = None
+    (p.root / "local/resources.json").write_text(json.dumps(p.site))
+    monkeypatch.delenv("NVFL_DOCKER_WORKSPACE")
+    monkeypatch.delenv("NVFL_DOCKER_NETWORK")
+    policy = TaskExecutionPolicy.from_workspace(p.workspace)
+    assert policy.allow_job_lifetime and policy.launcher.cj_runtime == "docker"
+    p.dc.containers.run.assert_not_called()
 
 
 def test_secure_cj_requires_own_job_certificate_and_preserves_mtls(profile):
@@ -355,7 +411,7 @@ def test_secure_cj_requires_own_job_certificate_and_preserves_mtls(profile):
     p.cell._slurm_task_service.shutdown(timeout=5)
     launch_job(p.launcher, p.meta, p.context)
     command = p.dc.containers.run.call_args.kwargs["command"]
-    assert command[command.index("-p") + 1] == "stcp://127.0.0.1:8102"
+    assert command[command.index("-p") + 1] == "stcp://site-1:8102"
     assert command[command.index("--parent_conn_sec") + 1] == "mtls"
 
 
@@ -403,7 +459,7 @@ def test_cp_host_admission_does_not_reserve_compute_gpus(profile):
 def test_unsupported_cp_host_host_is_rejected(profile, monkeypatch, platform, uid):
     monkeypatch.setattr(docker_module.sys, "platform", platform)
     monkeypatch.setattr(docker_module.os, "getuid", lambda: uid)
-    with pytest.raises(ValueError, match="Linux host networking and a nonroot"):
+    with pytest.raises(ValueError, match="Linux Docker CP with a nonroot"):
         launch_job(profile.launcher, profile.meta, profile.context)
     profile.dc.containers.run.assert_not_called()
 
@@ -548,8 +604,10 @@ def test_federation_docker_default_does_not_replace_site_coordinator(profile):
 
 
 @pytest.mark.parametrize("image", [None, "resident/image"])
-def test_cp_host_refuses_resident_jobs_unless_site_opts_in(profile, image):
+def test_site_can_explicitly_refuse_resident_jobs(profile, image):
     p = profile
+    p.site["task_execution"]["allow_job_lifetime"] = False
+    (p.root / "local/resources.json").write_text(json.dumps(p.site))
     p.app_config.write_text("{}")
     p.meta.pop("cj_resource_spec")
     if image:
@@ -559,13 +617,22 @@ def test_cp_host_refuses_resident_jobs_unless_site_opts_in(profile, image):
     p.dc.containers.run.assert_not_called()
 
 
-@pytest.mark.parametrize("url", ["tcp://0.0.0.0:8102", "tcp://host", "file:///tmp/parent"])
+@pytest.mark.parametrize("url", ["tcp://host", "file:///tmp/parent"])
 def test_cp_host_rejects_unconnectable_parent_address(profile, url):
     p = profile
     p.context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.PARENT_URL] = ("-p", url)
     with pytest.raises(ValueError, match="parent"):
         launch_job(p.launcher, p.meta, p.context)
     p.dc.containers.run.assert_not_called()
+
+
+def test_docker_parent_wildcard_listener_uses_cp_container_address(profile):
+    p = profile
+    p.context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.PARENT_URL] = ("-p", "tcp://0.0.0.0:8102")
+    launch_job(p.launcher, p.meta, p.context)
+    run = p.dc.containers.run.call_args.kwargs
+    assert run["command"][run["command"].index("-p") + 1] == "tcp://site-1:8102"
+    assert run["extra_hosts"] == {"site-1": "172.20.0.2"}
 
 
 @pytest.mark.parametrize("creation_fails", [False, True])

@@ -827,13 +827,13 @@ class _SlurmTaskBackend(TaskLauncherSpec):
     max_attempts = 10000
 
 
-def _prepare_task_binding(job_meta, fl_ctx, options):
+def _prepare_task_binding(job_meta, fl_ctx, options, *, workspace=None):
     """Bind the CP's physical backend independently of the CJ's proxy."""
     from nvflare.app_opt.job_launcher.slurm.task_policy import component_args
     from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN, SlurmTaskService
     from nvflare.private.fed.client.task_runtime import TaskExecutionBinding
 
-    workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+    workspace = workspace or fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
     site_config = ConfigService.load_config_dict(workspace.get_resources_file_path())
     backend = _SlurmTaskBackend(**component_args(site_config["task_execution"]["launcher"]))
     backend.bind_job(job_meta[JobConstants.JOB_ID], fl_ctx.get_identity_name(), workspace, job_meta)

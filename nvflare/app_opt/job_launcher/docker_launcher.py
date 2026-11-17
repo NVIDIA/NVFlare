@@ -16,6 +16,7 @@ import logging
 import os
 import posixpath
 import re
+import socket
 import sys
 import threading
 import time
@@ -194,10 +195,8 @@ def _get_gpu_request(docker_spec, resource_spec, container_kwargs):
     return requests[0] if requests else None
 
 
-def _rewrite_parent_url(
-    job_args: dict, site_name: str, secure_mode: bool = False, *, preserve_parent_url: bool = False
-) -> tuple[dict, str | None]:
-    """Validate parent transport/security, then preserve it or select Docker DNS."""
+def _rewrite_parent_url(job_args: dict, site_name: str, secure_mode: bool = False) -> tuple[dict, str | None]:
+    """Validate parent transport/security, then select the owning Docker CP."""
     entry = job_args.get(JobProcessArgs.PARENT_URL)
     if not entry:
         return job_args, None
@@ -241,11 +240,7 @@ def _rewrite_parent_url(
     if (parsed.scheme == "stcp") != (connection_security == ConnectionSecurity.MTLS):
         raise ValueError("parent URL scheme does not match parent connection security")
 
-    parent_url = (
-        str(original_url)
-        if preserve_parent_url
-        else urlunsplit((parsed.scheme, f"{site_name}:{port}", parsed.path, parsed.query, parsed.fragment))
-    )
+    parent_url = urlunsplit((parsed.scheme, f"{site_name}:{port}", parsed.path, parsed.query, parsed.fragment))
     copied = dict(job_args)
     copied[JobProcessArgs.PARENT_URL] = (flag, parent_url)
     return copied, None
@@ -742,8 +737,21 @@ class DockerJobLauncher(JobLauncherSpec):
             job_args,
             site_name,
             secure_mode=fl_ctx.get_prop(FLContextKey.SECURE_MODE, False),
-            preserve_parent_url=options.preserve_parent_url,
         )
+        if options.workspace_mount:
+            # CP retains its Docker workspace; native task workers and their
+            # coordinator share the canonical host path instead.
+            job_args = dict(job_args)
+            parent_workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT).get_root_dir()
+            for key in (JobProcessArgs.WORKSPACE, JobProcessArgs.STARTUP_DIR):
+                if key in job_args:
+                    flag, path = job_args[key]
+                    if os.path.commonpath((parent_workspace, path)) != parent_workspace:
+                        raise ValueError("Docker job path is outside the parent workspace")
+                    job_args[key] = (
+                        flag,
+                        os.path.normpath(os.path.join(workspace_mount, os.path.relpath(path, parent_workspace))),
+                    )
         if file_parent_dir and file_parent_dir.startswith(workspace_mount):
             raise ValueError(f"shared-file parent directory {file_parent_dir} overlaps the container workspace mount")
 
@@ -792,10 +800,10 @@ class DockerJobLauncher(JobLauncherSpec):
             python_paths = []
             app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
             if app_custom_folder:
-                python_paths.append(app_custom_folder.replace(workspace, workspace_mount, 1))
+                python_paths.append(app_custom_folder.replace(workspace_obj.get_root_dir(), workspace_mount, 1))
             site_custom_folder = workspace_obj.get_site_custom_dir()
             if site_custom_folder and os.path.isdir(site_custom_folder):
-                python_paths.append(site_custom_folder.replace(workspace, workspace_mount, 1))
+                python_paths.append(site_custom_folder.replace(workspace_obj.get_root_dir(), workspace_mount, 1))
             if python_paths:
                 environment["PYTHONPATH"] = os.pathsep.join(python_paths)
 
@@ -932,7 +940,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 job_image,
                 command=command,
                 name=container_name,
-                network=self.network,
+                network=merged_container_kwargs.pop("network", self.network),
                 detach=True,
                 auto_remove=True,
                 environment=environment if environment else None,
@@ -1036,11 +1044,11 @@ class ClientDockerJobLauncher(DockerJobLauncher):
         if (
             self.workspace != workspace_path
             or self.workspace != os.path.realpath(self.workspace)
-            or network != "host"
+            or network in (None, "host", "bridge", "none")
             or not self.default_image
         ):
             raise ValueError(
-                "Docker task profile requires the same canonical shared workspace, host networking and default_image"
+                "Docker task profile requires a canonical shared workspace, a user-defined CP network and default_image"
             )
         docker_cj_site_settings(self)
 
@@ -1050,8 +1058,18 @@ class ClientDockerJobLauncher(DockerJobLauncher):
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         site = fl_ctx.get_identity_name()
         if sys.platform != "linux" or os.getuid() == 0:
-            raise ValueError("CP host Docker CJ requires Linux host networking and a nonroot CP UID")
-        self._validate_task_coordinator_profile(workspace.get_root_dir(), network=self.network)
+            raise ValueError("Docker task profile requires a Linux Docker CP with a nonroot UID")
+        self._validate_task_coordinator_profile(self.workspace, network=self.network)
+        try:
+            shared_workspace = os.path.samefile(self.workspace, workspace.get_root_dir())
+        except OSError:
+            shared_workspace = False
+        if (
+            os.environ.get("NVFL_DOCKER_WORKSPACE") != self.workspace
+            or workspace.get_root_dir() != self.WORKSPACE_MOUNT
+            or not shared_workspace
+        ):
+            raise ValueError("Docker task profile requires Docker CP with internal and native shared workspace mounts")
         # Federation images target other runtimes. This coordinator uses the
         # site's image; explicit per-site/legacy Docker overrides are rejected.
         docker_meta = copy.deepcopy(job_meta)
@@ -1065,8 +1083,6 @@ class ClientDockerJobLauncher(DockerJobLauncher):
         parent_url = urlsplit(str(parent[1]))
         if parent_url.scheme not in ("tcp", "stcp") or not parent_url.hostname or not parent_url.port:
             raise ValueError("CP host Docker CJ requires a TCP or mTLS TCP parent connection with host and port")
-        if parent_url.hostname in ("0.0.0.0", "::"):
-            raise ValueError("CP host Docker CJ parent URL must advertise a connectable CP host")
         limits = docker_cj_limits(self, job_meta, site)
         client = self._get_docker_client()
         info = client.info()
@@ -1076,14 +1092,24 @@ class ClientDockerJobLauncher(DockerJobLauncher):
             or not all(info.get(key) is True for key in ("MemoryLimit", "CpuCfsPeriod", "CpuCfsQuota"))
         ):
             raise ValueError("CP host Docker daemon must be local and enforce Linux CPU/memory limits")
+        parent_container = client.containers.get(socket.gethostname())
+        if not any(
+            mount.get("Source") == self.workspace and mount.get("Destination") == self.WORKSPACE_MOUNT
+            for mount in parent_container.attrs.get("Mounts", ())
+        ):
+            raise ValueError("Docker task profile requires the owning CP container's workspace mount")
+        parent_address = (
+            parent_container.attrs.get("NetworkSettings", {}).get("Networks", {}).get(self.network, {}).get("IPAddress")
+        )
+        if not parent_address:
+            raise ValueError("Docker CP must have an address on its configured network")
         environment = dict(self.default_job_env)
         environment.update({name: "void" if name == "NVIDIA_VISIBLE_DEVICES" else "" for name in GPU_ENVIRONMENT_NAMES})
         return JobLaunchOptions(
             environment=environment,
             apply_study_runtime=False,
-            workspace_mount=workspace.get_root_dir(),
-            preserve_parent_url=True,
-            container_kwargs=limits,
+            workspace_mount=self.workspace,
+            container_kwargs={**limits, "network": "host", "extra_hosts": {site: parent_address}},
         )
 
     def get_module_args(self, job_args: dict) -> dict:
