@@ -17,6 +17,7 @@
 import http.client
 import json
 import os
+import queue
 import shlex
 import signal
 import socket
@@ -33,16 +34,18 @@ import pytest
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.tie.process_mgr import CommandDescriptor
+from nvflare.app_opt.flower import http_transport
 from nvflare.app_opt.flower.http_transport import (
     FleetHttpClient,
     FleetHttpServer,
     HttpError,
     _FleetHandler,
+    _RequestReader,
     http_response,
 )
 from nvflare.app_opt.flower.process import FlowerProcessManager
 from tests.process_test_utils import OwnedProcesses, process_running
-from tests.timing_utils import ThreadGroup, wait_for
+from tests.timing_utils import ManualClock, ThreadGroup, wait_for
 
 
 def envelope(path, body=b""):
@@ -69,6 +72,86 @@ def server_factory():
     yield create
     for server in reversed(servers):
         server.close()
+
+
+@pytest.fixture
+def request_reads(monkeypatch):
+    """Observe received bytes before advancing policy time or closing the server."""
+    received = queue.Queue()
+    readinto = _RequestReader.readinto
+
+    def observe(reader, buffer):
+        size = readinto(reader, buffer)
+        received.put(size)
+        return size
+
+    monkeypatch.setattr(_RequestReader, "readinto", observe)
+
+    def wait_for_bytes(count):
+        deadline = time.monotonic() + 10
+        while count > 0:
+            count -= received.get(timeout=max(0, deadline - time.monotonic()))
+
+    return wait_for_bytes
+
+
+@pytest.mark.parametrize(
+    "phase,path",
+    [
+        ("request-line", "/v1/fleet/get-run"),
+        ("headers", "/v1/fleet/get-run"),
+        ("body", "/v1/fleet/get-run"),
+        ("body", "/v1/fleet/push-object"),
+    ],
+)
+def test_trickled_request_expires_and_releases_capacity(server_factory, request_reads, monkeypatch, phase, path):
+    clock = ManualClock()
+    monkeypatch.setattr(http_transport, "time", clock)
+    seen = []
+
+    def forward(req):
+        seen.append(req)
+        return http_response(200, b"ok")
+
+    server = server_factory(forward)
+    server._slots = threading.BoundedSemaphore(1)
+    server.bulk_slots = threading.BoundedSemaphore(1)
+    server.control_slots = threading.BoundedSemaphore(1)
+    content_type = b"Content-Type: application/protobuf\r\n"
+    request_headers = f"POST {path} HTTP/1.1\r\n".encode() + content_type
+    if phase == "request-line":
+        chunks = [b"POST /v1/fleet/get-", b"r", b"u", b"n HTTP/1.1\r\n" + content_type + b"Content-Length: 0\r\n\r\n"]
+    elif phase == "headers":
+        chunks = [request_headers + b"Content-Length: ", b"0", b"0", b"0\r\n\r\n"]
+    else:
+        chunks = [request_headers + b"Content-Length: 4\r\n\r\na", b"b", b"c", b"d"]
+    # Completing this valid request also bounds the negative case: without the
+    # total deadline it is forwarded, rather than leaving a test worker blocked.
+    with socket.create_connection(("127.0.0.1", server.server_port), timeout=5) as conn:
+        for index, chunk in enumerate(chunks):
+            if index:
+                clock.advance(11 if index == 3 else 10)
+            conn.sendall(chunk)
+            if index < 3:
+                request_reads(len(chunk))
+        response = bytearray()
+        while True:
+            chunk = conn.recv(4096)
+            if not chunk:
+                break
+            response.extend(chunk)
+    if phase == "body":
+        assert response.startswith(b"HTTP/1.1 504")
+    else:
+        assert not response
+    assert not seen
+    wait_for(lambda: not server._sockets)
+    client = FleetHttpClient(server.address)
+    try:
+        assert client.send(envelope(path))["status"] == 200
+        assert len(seen) == 1
+    finally:
+        client.close()
 
 
 def test_binary_roundtrip_and_error_semantics(server_factory):
@@ -231,13 +314,19 @@ def test_bulk_response_writes_keep_slots_and_heartbeat_capacity(server_factory):
         client.close()
 
 
-def test_close_unblocks_partial_http_body():
-    server = FleetHttpServer(lambda req: http_response(200))
-    server.start()
-    conn = socket.create_connection(("127.0.0.1", server.server_port), timeout=5)
-    try:
-        conn.sendall(b"POST /v1/fleet/get-run HTTP/1.1\r\nContent-Length: 1000\r\n\r\n")
-        wait_for(lambda: bool(server._sockets))
+@pytest.mark.parametrize(
+    "partial_request",
+    [
+        b"POST /v1/fleet/",
+        b"POST /v1/fleet/get-run HTTP/1.1\r\nContent-Length: ",
+        b"POST /v1/fleet/get-run HTTP/1.1\r\nContent-Length: 1000\r\n\r\n",
+    ],
+)
+def test_close_unblocks_partial_http_request(server_factory, request_reads, partial_request):
+    server = server_factory(lambda req: http_response(200))
+    with socket.create_connection(("127.0.0.1", server.server_port), timeout=5) as conn:
+        conn.sendall(partial_request)
+        request_reads(len(partial_request))
         start = time.monotonic()
         with ThreadGroup() as workers:
             worker = workers.start(server.close)
@@ -245,9 +334,6 @@ def test_close_unblocks_partial_http_body():
             assert not worker.is_alive()
         assert time.monotonic() - start < 5
         assert not server._sockets
-    finally:
-        conn.close()
-        server.close()
 
 
 @pytest.fixture

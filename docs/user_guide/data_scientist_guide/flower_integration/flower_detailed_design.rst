@@ -20,6 +20,13 @@ Each job has its own SuperLink, and each participating site has its own SuperNod
 and local Fleet endpoint. Flower ports bind only to ``127.0.0.1``. HTTP on these
 local connections does not replace NVFlare's transport or TLS between sites.
 As with the previous integration, the host and its local processes are trusted.
+Any process that can reach the client loopback listener can register its own
+Flower key and submit Fleet requests under that site's NVFlare identity.
+Flower signatures verify possession of the key, not that requests came from the
+expected local SuperNode process. Production deployments must use trusted local
+execution and host or network-namespace isolation to control access to these
+listeners. This integration does not configure Flower's authenticated SuperNode
+provisioning.
 
 Protocol boundary
 =================
@@ -65,12 +72,25 @@ Limits, concurrency, and failure
 
 ``max_message_bytes`` defaults to 512 MiB per request or response and is passed by
 FlowerRecipe to both connectors. Flower transfers complete object protobufs;
-this bridge buffers them in memory. Size the host for simultaneous transfers
-and training. The local server admits at most 32 connections, with four bulk
-request workers and separate capacity for heartbeat and metadata requests.
+this bridge buffers them in memory. The local server admits at most 32
+connections, with four bulk request workers and 16 control workers for heartbeat
+and metadata requests. The same size limit applies to every route. At the
+default limit, these 20 workers can retain 10 GiB of request bodies plus up to
+10 GiB of response bodies per client endpoint. This is a payload budget, not a
+process memory cap: serialization, messaging copies, and training require
+additional memory. Size each host for its simultaneous transfers and training;
+the server also receives traffic from multiple sites. Lower ``max_message_bytes``
+when the application's largest request and response permit it.
 Each worker slot remains held until its response has been written, including
 when a slow local reader blocks the write.
 Excess requests receive a busy response or connection close.
+
+The local endpoint has a 30-second total deadline for receiving the request line,
+headers, and body. Incoming bytes do not restart this deadline. Expiry while
+reading the request line or headers closes the connection; expiry during a POST
+body returns HTTP 504 and releases the worker slot. Forwarding deadlines below
+and the 30-second response-write socket timeout are separate from this read
+budget. Shutdown interrupts pending reads without waiting for the deadline.
 
 ReliableMessage owns retransmission and transaction deduplication between sites.
 The HTTP forwarding layer sends each accepted operation once; it does not follow

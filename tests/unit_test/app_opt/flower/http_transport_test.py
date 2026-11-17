@@ -25,6 +25,7 @@ import pytest
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.app_opt.flower import http_transport
 from nvflare.app_opt.flower.applet import FlowerClientApplet
 from nvflare.app_opt.flower.connectors.http_client_connector import HttpClientConnector
 from nvflare.app_opt.flower.connectors.http_server_connector import HttpServerConnector
@@ -34,12 +35,70 @@ from nvflare.app_opt.flower.http_transport import (
     FleetHttpClient,
     HttpError,
     _FleetHandler,
+    _RequestReader,
     filter_headers,
     http_response,
     split_address,
     validate_request,
 )
-from tests.timing_utils import ObservedLock, ThreadGroup
+from tests.timing_utils import ManualClock, ObservedLock, ThreadGroup
+
+
+def test_request_reader_keeps_one_deadline_across_buffered_receives(monkeypatch):
+    clock = ManualClock()
+    monkeypatch.setattr(http_transport, "time", clock)
+    sock = MagicMock()
+    sock.gettimeout.return_value = 30.0
+    budgets = []
+
+    def receive(buffer):
+        budgets.append(sock.settimeout.call_args.args[0])
+        buffer[0] = ord("x")
+        clock.advance(10)
+        return 1
+
+    sock.recv_into.side_effect = receive
+    with io.BufferedReader(_RequestReader(sock)) as reader:
+        with pytest.raises(TimeoutError, match="request read deadline"):
+            reader.read(4)
+    assert budgets == [30, 20, 10]
+    sock.settimeout.assert_called_with(30.0)
+
+
+def test_request_reader_budget_starts_before_first_receive(monkeypatch):
+    clock = ManualClock()
+    monkeypatch.setattr(http_transport, "time", clock)
+    sock = MagicMock()
+    sock.gettimeout.return_value = 30.0
+    with _RequestReader(sock) as reader:
+        clock.advance(30)
+        with pytest.raises(TimeoutError, match="request read deadline"):
+            reader.read(1)
+    sock.recv_into.assert_not_called()
+
+
+@pytest.mark.parametrize("error", [None, TimeoutError("idle read"), ConnectionResetError("peer closed")])
+def test_request_reader_restores_socket_timeout(monkeypatch, error):
+    clock = ManualClock()
+    monkeypatch.setattr(http_transport, "time", clock)
+    sock = MagicMock()
+    sock.gettimeout.return_value = 30.0
+
+    def receive(buffer):
+        if error:
+            raise error
+        buffer[0] = ord("x")
+        return 1
+
+    sock.recv_into.side_effect = receive
+    with _RequestReader(sock) as reader:
+        clock.advance(29)
+        if error:
+            with pytest.raises(type(error), match=str(error)):
+                reader.read(1)
+        else:
+            assert reader.read(1) == b"x"
+    assert [call.args[0] for call in sock.settimeout.call_args_list] == [1, 30]
 
 
 def request(path="/v1/fleet/register-node"):

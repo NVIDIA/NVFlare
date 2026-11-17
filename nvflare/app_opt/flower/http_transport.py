@@ -21,6 +21,7 @@ HTTP operation or follows redirects.
 
 import errno
 import http.client
+import io
 import selectors
 import socket
 import threading
@@ -221,8 +222,42 @@ def _shutdown_socket(sock):
         pass
 
 
+class _RequestReader(io.RawIOBase):
+    """Share one socket timeout budget across request-line, header and body reads."""
+
+    def __init__(self, sock):
+        super().__init__()
+        self._socket = sock
+        self._timeout = sock.gettimeout()
+        self._deadline = time.monotonic() + self._timeout
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Fleet request read deadline exceeded")
+        self._socket.settimeout(remaining)
+        try:
+            size = self._socket.recv_into(buffer)
+            if time.monotonic() >= self._deadline:
+                raise TimeoutError("Fleet request read deadline exceeded")
+            return size
+        finally:
+            # Ingestion must not shorten the subsequent response-write timeout.
+            self._socket.settimeout(self._timeout)
+
+
 class _FleetHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    def setup(self):
+        super().setup()
+        self.rfile.close()
+        # BufferedReader can receive repeatedly in one read()/readline(). Apply
+        # the remaining budget at each underlying receive, before parsing starts.
+        self.rfile = io.BufferedReader(_RequestReader(self.connection))
 
     def log_message(self, *args):
         # Requests contain signed identity headers and model data: do not log them.
