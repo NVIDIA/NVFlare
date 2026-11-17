@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Real worker, test-only local launcher, sidecar and participant rollup."""
+"""Real worker, test-only local launcher, diagnostics and participant rollup."""
 
 import json
 import os
@@ -184,8 +184,7 @@ def test_task_worker_resource_report_reconciles_without_double_counting(tmp_path
         assert worker["duration_contained"]
         assert not Path(attempt["store"].attempt_dir(attempt["bootstrap"].identity), "resource_stats.json").exists()
         if not fail:
-            assert float(str(outcome.completion.diagnostics["cpu_seconds"])) == worker_cpu
-            assert float(str(outcome.completion.diagnostics["elapsed_seconds"])) == float(record["duration_seconds"])
+            assert outcome.completion.diagnostics["elapsed_seconds"] >= float(record["duration_seconds"])
             before_retry = job._task_reducer.snapshot()
             assert supervisor.read_saved_result(outcome.identity)["total"] == outcome.result["total"]
             assert job._task_reducer.snapshot() == before_retry

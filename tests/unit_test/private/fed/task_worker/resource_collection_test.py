@@ -16,6 +16,7 @@
 
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -112,6 +113,16 @@ def test_worker_snapshots_use_completion_diagnostics_without_extra_files(tmp_pat
     phases = []
     _controlled_worker(monkeypatch, phases)
     store, identity, path = _stage(tmp_path, cell=True)
+    monkeypatch.setattr(
+        worker, "time", SimpleNamespace(time=worker.time.time, monotonic=Mock(side_effect=[20.0, 25.5]))
+    )
+    monkeypatch.setattr(
+        worker,
+        "resource",
+        SimpleNamespace(
+            RUSAGE_SELF=0, getrusage=lambda _: SimpleNamespace(ru_utime=0.125, ru_stime=0.25, ru_maxrss=64)
+        ),
+    )
     checkpoint = FileTaskArtifactStore.stage_checkpoint
     commit = FileTaskArtifactStore.commit_staged_result
 
@@ -139,8 +150,13 @@ def test_worker_snapshots_use_completion_diagnostics_without_extra_files(tmp_pat
     ]
     report = completion.to_dict()["diagnostics"]["resource_stats"]
     assert set(report) == {"duration_seconds", "resource_capacity", "cpu_consumed", "message_traffic", "issues"}
-    assert completion.diagnostics["elapsed_seconds"] == 10.0
-    assert completion.diagnostics["cpu_seconds"] == 4.0
+    assert {key: value for key, value in completion.diagnostics.items() if key != "resource_stats"} == {
+        "elapsed_seconds": 5.5,
+        "user_cpu_seconds": 0.125,
+        "system_cpu_seconds": 0.25,
+        "max_rss_native_units": 64,
+        "max_rss_unit": "bytes" if worker.sys.platform == "darwin" else "kibibytes",
+    }
     assert report["duration_seconds"] == 10
     assert report["cpu_consumed"] == {"cpu_seconds": 4}
     assert report["message_traffic"] == {"sent_bytes": 7, "received_bytes": 11, "status": "partial"}
@@ -261,8 +277,6 @@ def test_task_worker_freezes_startup_gpu_observation_on_success_or_failure(tmp_p
     else:
         completion = worker.run_worker(path)
         assert store.read_result(identity)[0]["value"] == 2
-        assert completion.diagnostics["elapsed_seconds"] == 1.0
-        assert completion.diagnostics["cpu_seconds"] == 1.0
         report = completion.to_dict()["diagnostics"]["resource_stats"]
     gpu_query.assert_called_once_with()
     assert events == ["gpu", "clock", "cpu", "cpu", "clock"]

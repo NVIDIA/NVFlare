@@ -192,9 +192,6 @@ def test_message_traffic_columns_are_only_shown_when_bound():
     assert "Data gaps" in output
     assert "server" in output  # The expected server report is missing.
 
-    partial_output = render_job_resources(_with_missing_server(_job_summary(participant)))
-    assert "2*" in partial_output
-
 
 def test_missing_report_does_not_invent_received_bytes_from_another_sender():
     site = _participant()

@@ -15,7 +15,6 @@
 """Execute one staged assignment without a federation Cell or live job engine."""
 
 import logging
-import math
 import os
 import resource
 import sys
@@ -355,26 +354,16 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
         checkpoint = store.stage_checkpoint(identity)
         if bootstrap.resource_reporting:
             resource_snapshot = _stop_resources(collection)
-            diagnostics = _resource_diagnostics(resource_snapshot, transport)
-            # Optional diagnostic conversion cannot prevent publishing a valid result.
-            for target, source in (("elapsed_seconds", "duration_seconds"), ("cpu_seconds", "cpu_consumed")):
-                try:
-                    value = resource_snapshot[source]
-                    value = value["cpu_seconds"] if source == "cpu_consumed" else value
-                    value = float(value)
-                    if math.isfinite(value) and value >= 0:
-                        diagnostics[target] = value
-                except (KeyError, TypeError, ValueError, OverflowError):
-                    pass
-        else:
-            usage = resource.getrusage(resource.RUSAGE_SELF)
-            diagnostics = {
-                "elapsed_seconds": time.monotonic() - started_monotonic,
-                "user_cpu_seconds": usage.ru_utime,
-                "system_cpu_seconds": usage.ru_stime,
-                "max_rss_native_units": usage.ru_maxrss,
-                "max_rss_unit": "bytes" if sys.platform == "darwin" else "kibibytes",
-            }
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        diagnostics = {
+            "elapsed_seconds": time.monotonic() - started_monotonic,
+            "user_cpu_seconds": usage.ru_utime,
+            "system_cpu_seconds": usage.ru_stime,
+            "max_rss_native_units": usage.ru_maxrss,
+            "max_rss_unit": "bytes" if sys.platform == "darwin" else "kibibytes",
+        }
+        if bootstrap.resource_reporting:
+            diagnostics.update(_resource_diagnostics(resource_snapshot, transport))
         completed_at = time.time()
         if checkpoint is not None:
             diagnostics["checkpoint"] = checkpoint.to_dict()

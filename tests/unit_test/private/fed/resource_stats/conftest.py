@@ -16,24 +16,14 @@
 
 import pytest
 
+from nvflare.private.fed.resource_stats.measurements import participant_measurements
+from tests.resource_stats_report_test_utils import _participant_summary
+
 
 @pytest.fixture
 def make_handoff():
     def make(*, complete=False):
-        record = {
-            "duration_seconds": 10,
-            "resource_capacity": {"cpu": {"units": 2}, "memory": {"bytes": 4096}, "gpu": {"count": 0}},
-            "resource_time": {
-                "cpu": {"unit_seconds": 20},
-                "memory": {"byte_seconds": 40960},
-                "gpu": {"instance_seconds": 0},
-            },
-            "resource_utilization": {
-                "cpu_consumed": {"cpu_seconds": 2},
-                "message_traffic": {"sent_bytes": 512, "received_bytes": 128},
-            },
-            "issues": [],
-        }
+        record = participant_measurements(_participant_summary())
         if not complete:
             for container, names in (
                 (record, ("resource_capacity", "resource_time")),
