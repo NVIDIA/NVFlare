@@ -26,6 +26,7 @@ log = logging.getLogger(__name__)
 HEARTBEAT_TICK = 5
 DEFAULT_HEARTBEAT_INTERVAL = 60
 DEFAULT_SEND_STALL_CONSECUTIVE_CHECKS = 3
+DEFAULT_RECEIVE_IDLE_TIMEOUT_MULTIPLIER = 3
 
 
 class HeartbeatMonitor(Thread):
@@ -36,12 +37,16 @@ class HeartbeatMonitor(Thread):
         self.curr_time = 0
         config = CommConfigurator()
         self.interval = config.get_heartbeat_interval(DEFAULT_HEARTBEAT_INTERVAL)
+        self.receive_idle_timeout = config.get_sfm_receive_idle_timeout(
+            self.interval * DEFAULT_RECEIVE_IDLE_TIMEOUT_MULTIPLIER
+        )
         self.send_stall_timeout = config.get_sfm_send_stall_timeout(45.0)
         self.close_stalled_connection = config.get_sfm_close_stalled_connection(False)
         self.stall_consecutive_checks = max(
             1, config.get_sfm_send_stall_consecutive_checks(DEFAULT_SEND_STALL_CONSECUTIVE_CHECKS)
         )
         self.stall_counts = {}
+        self.last_heartbeat = {}
         if self.interval < HEARTBEAT_TICK:
             log.warning(f"Heartbeat interval is too small ({self.interval} < {HEARTBEAT_TICK})")
 
@@ -52,7 +57,7 @@ class HeartbeatMonitor(Thread):
 
         while not self.stopped.is_set():
             try:
-                self.curr_time = time.time()
+                self.curr_time = time.monotonic()
                 self._check_heartbeat()
             except Exception as ex:
                 log.error(f"Heartbeat check failed: {ex}")
@@ -67,6 +72,28 @@ class HeartbeatMonitor(Thread):
         for sfm_conn in list(self.conns.values()):
             conn_key = sfm_conn.get_name() if hasattr(sfm_conn, "get_name") else str(id(sfm_conn))
             active_keys.add(conn_key)
+            driver = sfm_conn.conn.connector.driver
+            caps = driver.capabilities()
+            sends_heartbeat = not caps or caps.get(DriverCap.SEND_HEARTBEAT.value, False)
+            last_activity = sfm_conn.get_last_activity()
+
+            if (
+                self.receive_idle_timeout > 0
+                and sends_heartbeat
+                and sfm_conn.sfm_endpoint is not None
+                and last_activity > 0
+                and self.curr_time - last_activity > self.receive_idle_timeout
+            ):
+                if not sfm_conn.receive_idle_timeout_triggered:
+                    sfm_conn.receive_idle_timeout_triggered = True
+                    idle_seconds = self.curr_time - last_activity
+                    log.warning(
+                        f"Closing inactive connection {sfm_conn.conn}: "
+                        f"no frame received for {idle_seconds:.1f}s "
+                        f"(timeout {self.receive_idle_timeout:.1f}s)"
+                    )
+                    sfm_conn.conn.force_close()
+                continue
 
             stall_sec = sfm_conn.get_send_stall_seconds()
             if stall_sec > self.send_stall_timeout:
@@ -82,15 +109,19 @@ class HeartbeatMonitor(Thread):
 
             self.stall_counts[conn_key] = 0
 
-            driver = sfm_conn.conn.connector.driver
-            caps = driver.capabilities()
-            if caps and not caps.get(DriverCap.SEND_HEARTBEAT.value, False):
+            if not sends_heartbeat:
                 continue
 
-            if self.curr_time - sfm_conn.last_activity > self.interval:
-                sfm_conn.send_heartbeat(Types.PING)
+            # Incoming DATA may occupy the peer's outgoing stream longer than
+            # its receive deadline. Keep the reverse direction alive even while
+            # local receive progress is fresh; PING/PONG cannot overtake DATA.
+            last_heartbeat = self.last_heartbeat.setdefault(conn_key, last_activity)
+            if self.curr_time - last_heartbeat > self.interval:
+                sfm_conn.send_heartbeat_async(Types.PING)
+                self.last_heartbeat[conn_key] = self.curr_time
                 log.debug(f"Heartbeat sent to connection: {sfm_conn.conn}")
 
-        stale_keys = [k for k in self.stall_counts.keys() if k not in active_keys]
-        for k in stale_keys:
-            self.stall_counts.pop(k, None)
+        for state in (self.stall_counts, self.last_heartbeat):
+            stale_keys = [k for k in state if k not in active_keys]
+            for k in stale_keys:
+                state.pop(k, None)
