@@ -15,16 +15,14 @@
 import unittest
 
 import numpy as np
-import pytest
 import torch
 
-pytest.importorskip("bitsandbytes")
-
-from nvflare.apis.dxo import DXO, DataKind, MetaKey  # noqa: E402
-from nvflare.apis.fl_context import FLContext  # noqa: E402
-from nvflare.apis.shareable import Shareable  # noqa: E402
-from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer  # noqa: E402
-from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer  # noqa: E402
+from nvflare.apis.dxo import DXO, DataKind, MetaKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
+from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer
+from nvflare.app_opt.pt.quantization.int4_block import Int4BlockQuantizer
+from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
 
 
 class TestModelDequantizer(unittest.TestCase):
@@ -331,6 +329,180 @@ class TestModelDequantizer(unittest.TestCase):
         )
 
         self.assertIsInstance(dequantized_params["layer1.weight"], torch.Tensor)
+
+    def test_roundtrip_int4_numpy(self):
+        """Test full quantization-dequantization roundtrip with int4 and numpy arrays."""
+        quantizer = ModelQuantizer(quantization_type="int4", block_size=64)
+        rng = np.random.default_rng(42)
+        original_params = {
+            "layer1.weight": rng.standard_normal((10, 20)).astype(np.float32),
+            "layer1.bias": rng.standard_normal(64).astype(np.float16),
+            "small_diff": np.full((8, 16), 1e-9, dtype=np.float32),
+            "zero_block": np.zeros((8, 16), dtype=np.float32),
+        }
+
+        quantized_params, quant_state, source_datatype = quantizer.quantization(
+            {k: v.copy() for k, v in original_params.items()}, self.fl_ctx
+        )
+        dequantized_params = self.dequantizer.dequantization(
+            quantized_params, quant_state, "int4", source_datatype, self.fl_ctx
+        )
+
+        for key, orig in original_params.items():
+            self.assertEqual(dequantized_params[key].shape, orig.shape)
+            self.assertEqual(dequantized_params[key].dtype, orig.dtype)
+
+        mse = np.mean((original_params["layer1.weight"] - dequantized_params["layer1.weight"]) ** 2)
+        self.assertLess(mse, 0.05)
+        np.testing.assert_allclose(dequantized_params["small_diff"], 1e-9, atol=1e-12)
+        np.testing.assert_array_equal(dequantized_params["zero_block"], original_params["zero_block"])
+
+    def test_roundtrip_int4_torch_cpu(self):
+        """Test full quantization-dequantization roundtrip with int4 and torch tensors on CPU."""
+        quantizer = ModelQuantizer(quantization_type="int4", block_size=64)
+        torch.manual_seed(42)
+        original_params = {
+            "w_fp32": torch.randn(10, 20, dtype=torch.float32),
+            "w_fp16": torch.randn(8, 16, dtype=torch.float16),
+            "w_bf16": torch.randn(8, 16, dtype=torch.bfloat16),
+        }
+
+        quantized_params, quant_state, source_datatype = quantizer.quantization(
+            {k: v.clone() for k, v in original_params.items()}, self.fl_ctx
+        )
+        dequantized_params = self.dequantizer.dequantization(
+            quantized_params, quant_state, "int4", source_datatype, self.fl_ctx
+        )
+
+        for key, orig in original_params.items():
+            self.assertIsInstance(dequantized_params[key], torch.Tensor)
+            self.assertEqual(dequantized_params[key].shape, orig.shape)
+            self.assertEqual(dequantized_params[key].dtype, orig.dtype)
+
+    def test_roundtrip_int4_float64_extreme_ranges(self):
+        """Test int4 roundtrip on float64 values outside float32 dynamic range."""
+        quantizer = ModelQuantizer(quantization_type="int4", block_size=64)
+        original_params = {
+            "tiny": np.full((8, 8), 1e-100, dtype=np.float64),
+            "huge": np.full((8, 8), 1e100, dtype=np.float64),
+            "max_f64": np.full((8, 8), np.finfo(np.float64).max, dtype=np.float64),
+        }
+
+        quantized_params, quant_state, source_datatype = quantizer.quantization(
+            {k: v.copy() for k, v in original_params.items()}, self.fl_ctx
+        )
+        dequantized_params = self.dequantizer.dequantization(
+            quantized_params, quant_state, "int4", source_datatype, self.fl_ctx
+        )
+
+        for key, orig in original_params.items():
+            self.assertEqual(dequantized_params[key].dtype, np.float64)
+            self.assertTrue(np.all(np.isfinite(dequantized_params[key])))
+            np.testing.assert_allclose(dequantized_params[key], orig, rtol=1e-6)
+
+    def test_roundtrip_int4_non_native_byte_order_float64(self):
+        """Test int4 roundtrip preserves range and dtype on byte-swapped (>f8) float64 arrays."""
+        quantizer = ModelQuantizer(quantization_type="int4", block_size=64)
+        original_params = {
+            "big_endian_huge": np.full((8, 8), 1e100, dtype=">f8"),
+            "big_endian_tiny": np.full((8, 8), 1e-100, dtype=">f8"),
+        }
+
+        quantized_params, quant_state, source_datatype = quantizer.quantization(
+            {k: v.copy() for k, v in original_params.items()}, self.fl_ctx
+        )
+        dequantized_params = self.dequantizer.dequantization(
+            quantized_params, quant_state, "int4", source_datatype, self.fl_ctx
+        )
+
+        for key, orig in original_params.items():
+            self.assertEqual(dequantized_params[key].dtype, np.dtype(">f8"))
+            self.assertTrue(np.all(np.isfinite(dequantized_params[key])))
+            np.testing.assert_allclose(dequantized_params[key], orig, rtol=1e-6)
+
+    def test_roundtrip_int4_skips_integer_buffers(self):
+        """Test int4 passes non-floating buffers (e.g. int64 num_batches_tracked) through untouched."""
+        quantizer = ModelQuantizer(quantization_type="int4", block_size=64)
+        np_params = {
+            "bn.weight": np.ones(64, dtype=np.float32),
+            "bn.num_batches_tracked": np.array([42], dtype=np.int64),
+        }
+        q_np, state_np, dt_np = quantizer.quantization({k: v.copy() for k, v in np_params.items()}, self.fl_ctx)
+        self.assertEqual(q_np["bn.num_batches_tracked"].dtype, np.int64)
+        deq_np = self.dequantizer.dequantization(q_np, state_np, "int4", dt_np, self.fl_ctx)
+        np.testing.assert_array_equal(deq_np["bn.num_batches_tracked"], np_params["bn.num_batches_tracked"])
+
+        pt_params = {
+            "bn.weight": torch.ones(64, dtype=torch.float32),
+            "bn.num_batches_tracked": torch.tensor([42], dtype=torch.int64),
+        }
+        q_pt, state_pt, dt_pt = quantizer.quantization({k: v.clone() for k, v in pt_params.items()}, self.fl_ctx)
+        self.assertEqual(q_pt["bn.num_batches_tracked"].dtype, torch.int64)
+        deq_pt = self.dequantizer.dequantization(q_pt, state_pt, "int4", dt_pt, self.fl_ctx)
+        self.assertTrue(torch.equal(deq_pt["bn.num_batches_tracked"], pt_params["bn.num_batches_tracked"]))
+
+    def test_int4_decoder_validates_scale_count_before_multiply(self):
+        """Verify decoder rejects mismatched scale counts before broadcasting/multiplying."""
+        codec = Int4BlockQuantizer(block_size=64)
+        packed = np.zeros(32, dtype=np.uint8)  # 1 block of 64 elements
+
+        # Too many scales (e.g. 1000 scales for 1 block) would broadcast (1, 64) * (1000, 1) -> (1000, 64) if unchecked
+        bad_state = {
+            "scales": np.ones(1000, dtype=np.float32),
+            "shape": (64,),
+            "pad_len": 0,
+            "block_size": 64,
+            "orig_dtype": "float32",
+        }
+        with self.assertRaisesRegex(ValueError, "Scale count mismatch"):
+            codec.dequantize(packed, bad_state)
+
+        # 2D scales array with matching total size must also be rejected
+        bad_2d_state = {
+            "scales": np.ones((1, 1), dtype=np.float32),
+            "shape": (64,),
+            "pad_len": 0,
+            "block_size": 64,
+            "orig_dtype": "float32",
+        }
+        with self.assertRaisesRegex(ValueError, "Scale count mismatch"):
+            codec.dequantize(packed, bad_2d_state)
+
+    def test_int4_decoder_rejects_untrusted_orig_dtype(self):
+        """Verify decoder rejects arbitrary or non-floating dtypes."""
+        codec = Int4BlockQuantizer(block_size=64)
+        packed = np.zeros(32, dtype=np.uint8)
+
+        for bad_dtype in ("U100000000", "int32", "object"):
+            bad_state = {
+                "scales": np.ones(1, dtype=np.float32),
+                "shape": (64,),
+                "pad_len": 0,
+                "block_size": 64,
+                "orig_dtype": bad_dtype,
+            }
+            with self.assertRaises(ValueError):
+                codec.dequantize(packed, bad_state)
+
+    def test_process_dxo_int4_roundtrip(self):
+        """Test end-to-end process_dxo roundtrip with int4."""
+        quantizer = ModelQuantizer(quantization_type="int4", block_size=64)
+        original_params = {
+            "layer1.weight": np.random.default_rng(7).standard_normal((8, 16)).astype(np.float32),
+        }
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data={"layer1.weight": original_params["layer1.weight"].copy()})
+        shareable = Shareable()
+
+        quantized_dxo = quantizer.process_dxo(dxo, shareable, self.fl_ctx)
+        self.assertEqual(quantized_dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM), "int4")
+        self.assertTrue(quantized_dxo.get_meta_prop("quantized_flag"))
+        self.assertEqual(quantized_dxo.data["layer1.weight"].dtype, np.uint8)
+
+        dequantized_dxo = self.dequantizer.process_dxo(quantized_dxo, shareable, self.fl_ctx)
+        self.assertEqual(dequantized_dxo.data["layer1.weight"].dtype, np.float32)
+        self.assertEqual(dequantized_dxo.data["layer1.weight"].shape, (8, 16))
+        self.assertIsNone(dequantized_dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM))
+        self.assertIsNone(dequantized_dxo.get_meta_prop("quant_state"))
 
 
 if __name__ == "__main__":

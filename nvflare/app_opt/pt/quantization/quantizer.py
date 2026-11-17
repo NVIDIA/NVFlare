@@ -18,7 +18,12 @@ from typing import Union
 
 import numpy as np
 import torch
-from bitsandbytes.functional import quantize_4bit, quantize_blockwise
+
+try:
+    from bitsandbytes.functional import quantize_4bit, quantize_blockwise
+except ImportError:
+    quantize_4bit = None
+    quantize_blockwise = None
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
@@ -27,17 +32,20 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.pt.quantization.constant import DATA_TYPE, QUANTIZATION_TYPE
 
 from .ada_quant import AdaQuantizer
+from .int4_block import Int4BlockQuantizer
 
 
 class ModelQuantizer(DXOFilter):
     def __init__(
         self,
         quantization_type="float16",
+        block_size: int = 64,
     ):
         """Filter to quantize Shareable object to reduce communication burden.
 
         Args:
             quantization_type: method used for quantization
+            block_size: number of elements per quantization block for int4 mode (default 64)
 
         """
 
@@ -47,11 +55,16 @@ class ModelQuantizer(DXOFilter):
 
         # assign quantization type and check if it is valid
         self.logger.info("Using model quantizer.")
+        if not isinstance(quantization_type, str):
+            raise ValueError(f"Invalid quantization type: {quantization_type}, valid: {QUANTIZATION_TYPE}")
         quantization_type = quantization_type.lower()
         if quantization_type.upper() not in QUANTIZATION_TYPE:
             raise ValueError(f"Invalid quantization type: {quantization_type}, valid: {QUANTIZATION_TYPE}")
 
         self.quantization_type = quantization_type
+        # Validate block_size early
+        Int4BlockQuantizer(block_size=block_size)
+        self.block_size = block_size
 
         # quantization constants
         self.NP_FP16_MIN = np.finfo(np.float16).min
@@ -98,10 +111,20 @@ class ModelQuantizer(DXOFilter):
                 source_data_type = str(values.dtype).split(".")[1]
             source_datatype[param_name] = source_data_type
 
+            if self.quantization_type == "int4":
+                is_non_floating = (
+                    not np.issubdtype(values.dtype, np.floating)
+                    if source_data_format == "numpy"
+                    else not torch.is_floating_point(values)
+                )
+                if is_non_floating:
+                    continue
+
             # check if the data type is valid, bool can be returned by adaquant so treating as exception
-            if source_data_type != "bool" and source_data_type.upper() not in DATA_TYPE:
+            valid_data_types = DATA_TYPE + (["FLOAT64"] if self.quantization_type == "int4" else [])
+            if source_data_type != "bool" and source_data_type.upper() not in valid_data_types:
                 raise ValueError(
-                    f"Invalid source data type: {source_data_type}, valid: {DATA_TYPE}, param_name: {param_name}"
+                    f"Invalid source data type: {source_data_type}, valid: {valid_data_types}, param_name: {param_name}"
                 )
 
             if source_data_type == "bool":
@@ -135,6 +158,8 @@ class ModelQuantizer(DXOFilter):
                     values = values.to(torch.float16)
                 params[param_name] = values
             elif self.quantization_type in ["blockwise8", "float4", "normfloat4"]:
+                if quantize_blockwise is None or quantize_4bit is None:
+                    raise ImportError(f"bitsandbytes is required for {self.quantization_type} quantization")
                 # use bitsandbytes to quantize the values
                 # input is a tensor, output is a tuple of (quantized tensor, quantized_state)
 
@@ -206,6 +231,27 @@ class ModelQuantizer(DXOFilter):
                     quant_state[param_name] = quantized_state_dict
 
                 for state_name, state in quantized_state_dict.items():
+                    if isinstance(state, (torch.Tensor, np.ndarray)):
+                        n_bytes_meta += state.nbytes
+            elif self.quantization_type == "int4":
+                if source_data_format == "numpy":
+                    values_np = values
+                elif source_data_format == "torch":
+                    detached = values.detach().cpu()
+                    values_np = detached.float().numpy() if detached.dtype == torch.bfloat16 else detached.numpy()
+
+                quantized_np, quantized_state_dict = Int4BlockQuantizer(block_size=self.block_size).quantize(values_np)
+                if source_data_format == "numpy":
+                    params[param_name] = quantized_np
+                    quant_state[param_name] = quantized_state_dict
+                elif source_data_format == "torch":
+                    params[param_name] = torch.from_numpy(quantized_np)
+                    quant_state[param_name] = {
+                        k: (torch.from_numpy(v) if isinstance(v, np.ndarray) else v)
+                        for k, v in quantized_state_dict.items()
+                    }
+
+                for state in quant_state[param_name].values():
                     if isinstance(state, (torch.Tensor, np.ndarray)):
                         n_bytes_meta += state.nbytes
             n_bytes_after += params[param_name].nbytes
