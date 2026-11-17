@@ -30,11 +30,15 @@ from nvflare.tool.deploy.docker_deploy import _write_docker_start_script
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="Docker startup requires Bash and Unix sockets")
 
 
-def test_docker_parent_keeps_job_workspace_and_mounts_native_task_view(tmp_path):
-    workspace = tmp_path / "prepared site"
+@pytest.mark.parametrize("role", ["client", "server"])
+@pytest.mark.parametrize("workspace_name", ["prepared site", "prepared, site"])
+def test_docker_parent_keeps_job_workspace_and_mounts_native_task_view(tmp_path, role, workspace_name):
+    workspace = tmp_path / workspace_name
     (workspace / "startup").mkdir(parents=True)
     script = _write_docker_start_script(
-        SimpleNamespace(kit_dir=workspace, name="site-1", role="client", org="nvidia"),
+        SimpleNamespace(
+            kit_dir=workspace, name="site-1", role=role, org="nvidia", fed_learn_port=8002, admin_port=8003
+        ),
         docker_image="site/parent:tested",
         network="site-network",
     )
@@ -63,7 +67,10 @@ def test_docker_parent_keeps_job_workspace_and_mounts_native_task_view(tmp_path)
         result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
     args = json.loads(record.read_text())
-    assert f"{workspace}:/var/tmp/nvflare/workspace" in args
-    assert f"type=bind,src={workspace},dst={workspace}" in args
-    module_index = args.index("nvflare.private.fed.app.client.client_train")
+    # Unlike --mount's CSV fields, -v keeps commas and spaces in bind paths.
+    volumes = [args[i + 1] for i, arg in enumerate(args) if arg == "-v"]
+    assert f"{workspace}:/var/tmp/nvflare/workspace" in volumes
+    assert f"{workspace}:{workspace}" in volumes
+    module = "server.server_train" if role == "server" else "client.client_train"
+    module_index = args.index(f"nvflare.private.fed.app.{module}")
     assert args[args.index("-m", module_index + 1) + 1] == "/var/tmp/nvflare/workspace"

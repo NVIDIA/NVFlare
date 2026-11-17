@@ -146,7 +146,7 @@ fi
 # an alias while preserving the ordinary Docker workspace and job-mode layout.
 SHARED_WORKSPACE_ARGS=()
 if [ "$HOST_WORKSPACE" != "@@NVFLARE_WORKSPACE_MOUNT_PATH@@" ]; then
-    SHARED_WORKSPACE_ARGS=(--mount "type=bind,src=$HOST_WORKSPACE,dst=$HOST_WORKSPACE")
+    SHARED_WORKSPACE_ARGS=(-v "$HOST_WORKSPACE:$HOST_WORKSPACE")
 fi
 
 docker "${DOCKER_CLI_ARGS[@]}" run --name "$CONTAINER_NAME" \
