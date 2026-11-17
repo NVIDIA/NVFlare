@@ -52,8 +52,10 @@ Two cases need attention before starting 2.10 on an existing kit and workspace:
 - **Kits prepared with 2.8 are affected even if no study data was configured.**
   2.8 ``nvflare deploy prepare`` wrote a comment-only ``local/study_data.yaml``
   into every Docker and K8s kit and always set ``study_data_pvc_file_path`` on
-  the K8s launcher. Delete the file and remove the argument from the launcher
-  configuration (or re-run ``nvflare deploy prepare`` with 2.10).
+  the K8s launcher. Delete the file even if it is comment-only, and remove the
+  argument from the launcher configuration. Re-running ``nvflare deploy prepare``
+  with 2.10 replaces the launcher argument but leaves the old file in place, so
+  the file must still be deleted.
 - **A client's** ``study_runtime.yaml`` **is also its study allow-list.** When
   the file lists at least one study, jobs for every unlisted study are rejected
   at the resource check, including ``default`` (jobs submitted without a
