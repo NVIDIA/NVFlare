@@ -47,6 +47,7 @@ class FrozenReferenceScorer:
     Inference tensors lack version counters and are content-hashed before every
     score, including cache hits, with CPU transfer/hashing cost. Construct the
     reference outside inference_mode to retain inexpensive version checks.
+    Cache identity includes all registered buffers, including nonpersistent ones.
     Cached scores are potentially sensitive local artifacts.
     """
 
@@ -55,7 +56,10 @@ class FrozenReferenceScorer:
         if not tokenizer_fingerprint or not scoring_identity:
             raise ValueError("Tokenizer and scoring identities are required")
         self.model = model.eval().requires_grad_(False)
-        self.reference_fingerprint = tensor_digest(model.state_dict())
+        # state_dict omits nonpersistent buffers, which can still affect logits.
+        reference_state = model.state_dict()
+        reference_state.update(model.named_buffers(remove_duplicate=False))
+        self.reference_fingerprint = tensor_digest(reference_state)
         self.identity = json.dumps(
             ["trap-reference-v1", self.reference_fingerprint, tokenizer_fingerprint, scoring_identity], sort_keys=True
         )

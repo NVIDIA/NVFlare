@@ -88,8 +88,11 @@ parameters out of the target optimizer and transmitted state. A same-task refere
 that has not trained on the protected records is the intended starting point.
 Provenance cannot rule out unknown exposure during pretraining.
 
-Cache identity includes checkpoint tensor contents, tokenizer/scoring identities,
-and all supplied tokenized inputs, labels, and tensor model inputs. Callers must
+Cache identity includes checkpoint tensor contents and all registered buffers,
+including nonpersistent buffers omitted by ``state_dict()``. Recreating a scorer
+after changing such a buffer selects a new cache identity. It also includes
+tokenizer/scoring identities and all supplied tokenized inputs, labels, and tensor
+model inputs. Callers must
 include model configuration, context construction, and scoring settings in the
 scoring identity. Cached values are local tensors loaded with ``weights_only=True``.
 Treat them as potentially sensitive artifacts.

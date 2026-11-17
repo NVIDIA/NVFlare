@@ -57,6 +57,44 @@ def test_cache_equivalence_and_input_tokenizer_context_invalidation(tmp_path):
     assert model.calls == 5
 
 
+def test_recreated_reference_invalidates_cache_after_nonpersistent_buffer_change(tmp_path):
+    class ScaledLM(TinyLM):
+        def __init__(self):
+            super().__init__()
+            self.embed.register_buffer("scale", torch.ones(()), persistent=False)
+            with torch.no_grad():
+                self.embed.weight.copy_(torch.arange(8.0).expand(8, 8))
+
+        def forward(self, input_ids, **kwargs):
+            output = super().forward(input_ids, **kwargs)
+            return SimpleNamespace(logits=output.logits * self.embed.scale)
+
+    model = ScaledLM()
+    assert "embed.scale" not in model.state_dict()
+    inputs = torch.tensor([[1, 2, 3]])
+    original = FrozenReferenceScorer(model, "tokenizer", "context", tmp_path)
+    before, _ = original.score(inputs, inputs)
+    unchanged = FrozenReferenceScorer(model, "tokenizer", "context", tmp_path)
+    unchanged.score(inputs, inputs)
+    assert unchanged.cache_hits == 1 and model.calls == 1
+
+    model.embed.scale.mul_(2)
+    with pytest.raises(ValueError, match="Reference changed"):
+        original.score(inputs, inputs)
+    recreated = FrozenReferenceScorer(model, "tokenizer", "context", tmp_path)
+    actual, mask = recreated.score(inputs, inputs)
+    logits = model.embed(inputs) * model.embed.scale
+    expected = logits[:, :-1].log_softmax(-1).gather(-1, inputs[:, 1:, None]).squeeze(-1)
+    torch.testing.assert_close(actual, expected)
+    assert not torch.allclose(actual, before)
+    assert mask.all()
+    assert recreated.reference_fingerprint != original.reference_fingerprint
+    assert recreated.cache_hits == 0 and recreated.cache_misses == 1
+    again, _ = recreated.score(inputs, inputs)
+    torch.testing.assert_close(again, expected)
+    assert recreated.cache_hits == 1 and model.calls == 2
+
+
 def test_cached_optional_none_matches_online_and_has_distinct_key(tmp_path, monkeypatch):
     model = TinyLM()
     inputs = torch.tensor([[1, 2, 3]])

@@ -1,6 +1,6 @@
 # Experimental memorization mitigation and auditing
 
-Status: draft for API and design review, updated November 16, 2026.
+Status: draft for API and design review, updated November 17, 2026.
 
 Issue: [NVIDIA/NVFlare#5680](https://github.com/NVIDIA/NVFlare/issues/5680).
 
@@ -113,8 +113,10 @@ adds CPU transfer/hashing cost proportional to the inference tensors' size.
 Construct the reference outside `inference_mode()` to use ordinary version checks;
 scoring can still run inside it.
 
-Optional cache keys bind checkpoint tensor contents, tokenizer and scoring
-identities, tokenized inputs, labels and supplied tensor model inputs. The caller's
+Optional cache keys bind checkpoint tensor contents and all registered buffers,
+including nonpersistent buffers omitted by `state_dict()`, so recreating a scorer
+after changing those buffers cannot reuse its old entries. Keys also bind tokenizer
+and scoring identities, tokenized inputs, labels and supplied tensor model inputs. The caller's
 scoring identity must cover model configuration, context construction, precision
 and other settings affecting inference. Entries are written atomically and read
 with `weights_only=True`. The cache is trusted local storage, not an authenticated
