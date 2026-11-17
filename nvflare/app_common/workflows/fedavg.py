@@ -395,6 +395,7 @@ class FedAvg(BaseFedAvg):
         """Get the final aggregated result after all clients have responded."""
         if self._all_results_zero_step():
             self.warning(f"All results reported 0 steps at round {self.current_round}, keeping the global model.")
+            self._publish_zero_contribution_stats()
             return _make_unchanged_model_result(self.current_round)
         if self.aggregator:
             # Use custom aggregator
