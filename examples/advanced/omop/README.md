@@ -7,7 +7,7 @@ Every site runs the same cohort query against its own tables, turns the result i
 
 ## What is OMOP?
 
-The [OMOP Common Data Model](https://ohdsi.github.io/CommonDataModel/), maintained by [OHDSI](https://www.ohdsi.org/), gives every site the same tables and a standard vocabulary.
+The [OMOP Common Data Model](https://ohdsi.github.io/CommonDataModel/), maintained by [OHDSI](https://www.ohdsi.org/), gives every site the same tables and a standard vocabulary, whichever database the site runs it on, such as PostgreSQL, SQL Server, Oracle or Spark.
 Each site converts its own EHR into the CDM with an ETL pipeline that maps local codes to standard concepts, so an ICD-10-CM `K92.2` and a SNOMED `74474003` diagnosis are both stored as concept `192671` (Gastrointestinal hemorrhage).
 That ETL happens once at each hospital, outside this example, and afterwards a study written against the CDM runs unchanged at every site and yields the same features in the same order, which is exactly what federated learning needs.
 
@@ -28,14 +28,15 @@ NVFlare ships `cohort.py` with [client.py](./client.py) to every site.
 
 ## Connect your OMOP CDM
 
-`--cdm` points each site at its CDM, either a DuckDB file or a PostgreSQL connection string read through DuckDB's [postgres extension](https://duckdb.org/docs/stable/core_extensions/postgres), and `--cdm_schema` names the schema holding the CDM tables.
-The job can refer to the connection string as an NVFlare secret, so each site's credentials stay in that site's environment:
+This tutorial reads each site's CDM from a DuckDB file so that it runs without a database server.
+Sites keep their CDM in their own database, and `load_cohort()` in `cohort.py` is the one place to adapt to it.
+`--cdm` is the CDM file at each site, `--cdm_schema` names the schema holding the CDM tables, and `--n_clients` sets how many sites take part:
 
 ```bash
-python job.py --cdm '${secret:OMOP_CDM}' --cdm_schema cdm --export --export-dir /tmp/omop_job
+python job.py --cdm /data/omop/cdm.duckdb --cdm_schema cdm --n_clients 4 --export --export-dir omop_job
 ```
 
-Each site sets the variable before starting its NVFlare client, for example `export OMOP_CDM=postgres:postgresql://flare:password@omop-db:5432/omop`, and you submit `/tmp/omop_job` to your deployment.
+You then submit `omop_job` to your deployment.
 To study something else, edit the concept IDs in `cohort.py`, which you can look up in [Athena](https://athena.ohdsi.org/).
 
 ## Try it with simulated sites

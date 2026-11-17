@@ -36,7 +36,7 @@ def newton_raphson_terms(theta: np.ndarray, features: np.ndarray, labels: np.nda
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cdm", required=True, help="DuckDB file or PostgreSQL connection string of the site's CDM")
+    parser.add_argument("--cdm", required=True, help="DuckDB file of the site's CDM")
     parser.add_argument("--cdm_schema", help="schema holding the CDM tables, if not the default one")
     args = parser.parse_args()
 

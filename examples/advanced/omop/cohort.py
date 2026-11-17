@@ -115,15 +115,15 @@ def load_cohort(cdm: str | Path, schema: str | None = None) -> tuple[np.ndarray,
     """Run the study query against one site's OMOP CDM.
 
     Args:
-        cdm: The site's CDM as a DuckDB file or a PostgreSQL connection string such as ``postgres:dbname=omop``.
+        cdm: The site's CDM as a DuckDB file.
         schema: The schema holding the CDM tables, if not the database's default schema.
 
     Returns:
         Person ids, the covariate matrix with columns ``FEATURES``, and the outcome as a column vector.
     """
-    with duckdb.connect() as con:
-        con.execute("attach '{}' as cdm (read_only)".format(str(cdm).replace("'", "''")))
-        con.execute(f"use cdm.{schema}" if schema else "use cdm")
+    with duckdb.connect(str(cdm), read_only=True) as con:
+        if schema:
+            con.execute(f"use {schema}")
         rows = con.execute(COHORT_SQL).fetchnumpy()
     features = np.column_stack([rows[name] for name in FEATURES]).astype(np.float64)
     return rows["person_id"], features, rows["outcome"].astype(np.float64).reshape(-1, 1)
