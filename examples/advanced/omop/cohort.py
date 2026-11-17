@@ -111,7 +111,7 @@ order by t.person_id
 """
 
 
-def load_cohort(cdm: str | Path, schema: str | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def load_cohort(cdm: str | Path, schema: str | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Run the study query against one site's OMOP CDM.
 
     Args:
@@ -119,11 +119,11 @@ def load_cohort(cdm: str | Path, schema: str | None = None) -> tuple[np.ndarray,
         schema: The schema holding the CDM tables, if not the database's default schema.
 
     Returns:
-        Person ids, the covariate matrix with columns ``FEATURES``, and the outcome as a column vector.
+        The covariate matrix with columns ``FEATURES`` and the outcome as a column vector, one row per patient.
     """
     with duckdb.connect(str(cdm), read_only=True) as con:
         if schema:
             con.execute(f"use {schema}")
         rows = con.execute(COHORT_SQL).fetchnumpy()
     features = np.column_stack([rows[name] for name in FEATURES]).astype(np.float64)
-    return rows["person_id"], features, rows["outcome"].astype(np.float64).reshape(-1, 1)
+    return features, rows["outcome"].astype(np.float64).reshape(-1, 1)

@@ -61,12 +61,11 @@ def cdm(request: pytest.FixtureRequest, tmp_path: Path) -> tuple[Path, str | Non
 
 
 def test_cohort_applies_washout_follow_up_prior_outcome_and_concept_hierarchy(cdm: tuple[Path, str | None]) -> None:
-    person_ids, features, labels = load_cohort(*cdm)
+    features, labels = load_cohort(*cdm)
 
     expected = np.zeros((3, len(FEATURES)))
     expected[:, FEATURES.index("age_decades")] = [0.5, -0.4, 0.0]
     expected[0, [FEATURES.index(name) for name in ("male", "celecoxib", "peptic_ulcer", "aspirin")]] = 1
     expected[2, FEATURES.index("celecoxib")] = 1
-    np.testing.assert_array_equal(person_ids, [1, 2, 7])
     np.testing.assert_allclose(features, expected)
     np.testing.assert_array_equal(labels, [[1.0], [0.0], [0.0]])

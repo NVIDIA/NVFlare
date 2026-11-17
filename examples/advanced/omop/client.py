@@ -42,7 +42,7 @@ def main() -> None:
 
     flare.init()
     site = flare.get_site_name()
-    _, features, labels = load_cohort(args.cdm, args.cdm_schema)
+    features, labels = load_cohort(args.cdm, args.cdm_schema)
     print(f"{site}: {len(labels)} patients in the cohort, {int(labels.sum())} with GI hemorrhage")
 
     while flare.is_running():

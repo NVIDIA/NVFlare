@@ -9,7 +9,7 @@ Every site runs the same cohort query against its own tables, turns the result i
 
 The [OMOP Common Data Model](https://ohdsi.github.io/CommonDataModel/), maintained by [OHDSI](https://www.ohdsi.org/), gives every site the same tables and a standard vocabulary, whichever database the site runs it on, such as PostgreSQL, SQL Server, Oracle or Spark.
 Each site converts its own EHR into the CDM with an ETL pipeline that maps local codes to standard concepts, so an ICD-10-CM `K92.2` and a SNOMED `74474003` diagnosis are both stored as concept `192671` (Gastrointestinal hemorrhage).
-That ETL happens once at each hospital, outside this example, and afterwards a study written against the CDM runs unchanged at every site and yields the same features in the same order, which is exactly what federated learning needs.
+That ETL happens at each hospital outside this example, after which one study runs unchanged at every site and yields the same features in the same order.
 
 ## Cohort and model
 
@@ -26,10 +26,10 @@ where ca.ancestor_concept_id = 192671  -- Gastrointestinal hemorrhage and every 
 NVFlare ships `cohort.py` with [client.py](./client.py) to every site.
 `client.py` runs the query with `load_cohort()`, computes the gradient and Hessian of a logistic regression on the resulting features, and sends only those to the server, where `FedAvgLrRecipe` takes a Newton-Raphson step with their average.
 
-## Connect your OMOP CDM
+## Deployment
 
 This tutorial reads each site's CDM from a DuckDB file so that it runs without a database server.
-Sites keep their CDM in their own database, and on another platform they adapt the connection in `load_cohort()` and the DuckDB SQL dialect of `COHORT_SQL`, both in `cohort.py`.
+A site on another database keeps its data there and adapts the connection and the DuckDB SQL dialect in `cohort.py`.
 `--cdm` is the CDM file at each site, `--cdm_schema` names the schema holding the CDM tables, and `--n_clients` sets how many sites take part:
 
 ```bash
@@ -39,15 +39,14 @@ python job.py --cdm /data/omop/cdm.duckdb --cdm_schema cdm --n_clients 4 --expor
 You then submit `omop_job` to your deployment.
 To study something else, edit the concept IDs in `cohort.py`, which you can look up in [Athena](https://athena.ohdsi.org/).
 
-## Try it with simulated sites
+## Simulation
 
-Without a hospital network at hand, `prepare_data.py` stands in for one.
-It downloads [Eunomia GiBleed](https://github.com/OHDSI/EunomiaDatasets), an OHDSI teaching dataset of 2,694 synthetic patients (Apache 2.0), and splits it at random into one DuckDB CDM per site holding 55%, 30%, and 15% of the patients.
+`prepare_data.py` simulates the sites: it downloads [Eunomia GiBleed](https://github.com/OHDSI/EunomiaDatasets), an OHDSI teaching dataset of 2,694 synthetic patients (Apache 2.0), and splits it at random into one DuckDB CDM per site holding 55%, 30%, and 15% of the patients.
 By default `job.py` sets `--cdm` to `~/.cache/nvflare/omop/{SITE_NAME}.duckdb`, and NVFlare fills in each site's name.
 
 ```bash
 pip install -r requirements.txt
-python prepare_data.py   # simulation setup: one DuckDB OMOP CDM per site
+python prepare_data.py   # one DuckDB OMOP CDM per site
 python job.py            # run the federated study in the NVFlare simulator
 python evaluate.py       # compare with a pooled fit and with each site alone
 ```

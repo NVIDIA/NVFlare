@@ -38,7 +38,7 @@ def client_update(
         send=sent.append,
     )
     monkeypatch.setattr(client, "flare", flare)
-    monkeypatch.setattr(client, "load_cohort", Mock(return_value=(np.arange(len(labels)), features, labels)))
+    monkeypatch.setattr(client, "load_cohort", Mock(return_value=(features, labels)))
     monkeypatch.setattr(sys, "argv", ["client.py", "--cdm", "unused"])
     client.main()
     return sent[0]

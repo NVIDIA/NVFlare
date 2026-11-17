@@ -48,7 +48,7 @@ def main() -> None:
     parser.add_argument("--model", default=MODEL)
     args = parser.parse_args()
 
-    sites = {path.stem: load_cohort(path)[1:] for path in sorted(Path(args.data_root).glob("site-*.duckdb"))}
+    sites = {path.stem: load_cohort(path) for path in sorted(Path(args.data_root).glob("site-*.duckdb"))}
     features = np.vstack([x for x, _ in sites.values()])
     labels = np.vstack([y for _, y in sites.values()])
     federated = np.load(args.model).astype(np.float64)
