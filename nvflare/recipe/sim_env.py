@@ -219,8 +219,11 @@ class SimEnv(ExecEnv):
         """Abort job - not supported in simulation environment."""
         _print_output("abort is not supported in a simulation environment, it will always run to completion.")
 
-    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
-        """Get job result workspace path."""
+    def get_job_result(self, job_id: str, timeout: float = 0.0, outputs_only: bool = False) -> Optional[str]:
+        """Get job result workspace path.
+
+        The simulator runs locally, so ``outputs_only`` has no effect: the local workspace is returned unchanged.
+        """
         if self.workspace_root is None:
             raise RuntimeError("Simulation workspace_root is None - SimEnv may not be properly initialized")
         if self.get_job_status(job_id) != RunStatus.FINISHED_COMPLETED.value:

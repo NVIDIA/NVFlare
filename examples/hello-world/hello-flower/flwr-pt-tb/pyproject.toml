@@ -15,7 +15,8 @@ version = "1.0.0"
 description = ""
 license = "Apache-2.0"
 dependencies = [
-    "flwr>=1.26",
+    # Flower 1.40+ removes the gRPC-adapter transport used by NVFlare.
+    "flwr>=1.26,<1.40",
     "torch",
     "torchvision",
     "tensorboard"

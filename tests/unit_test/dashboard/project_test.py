@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pytest
 
 from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
+from nvflare.dashboard.application.models import Project, db
 
 
 class TestProject:
@@ -58,6 +60,31 @@ class TestProject:
 
         assert response.status_code == 200
         assert response.json["project"]
+        assert "cc_mode" not in response.json["project"]
+
+    @pytest.mark.parametrize("legacy_cc_mode", [False, True])
+    def test_patch_project_ignores_legacy_cc_mode(self, app, client, auth_header, legacy_cc_mode):
+        with app.app_context():
+            project = Project.query.first()
+            original_cc_mode = project.cc_mode
+            try:
+                project.cc_mode = legacy_cc_mode
+                db.session.commit()
+
+                response = client.patch(
+                    FLARE_DASHBOARD_NAMESPACE + "/api/v1/project",
+                    headers=auth_header,
+                    json={"cc_mode": not legacy_cc_mode},
+                )
+
+                assert response.status_code == 200
+                assert response.json["status"] == "ok"
+                assert "cc_mode" not in response.json["project"]
+                db.session.expire_all()
+                assert Project.query.first().cc_mode is legacy_cc_mode
+            finally:
+                project.cc_mode = original_cc_mode
+                db.session.commit()
 
     def test_get_orgs(self, client, auth_header):
         response = client.get(FLARE_DASHBOARD_NAMESPACE + "/api/v1/organizations", headers=auth_header)

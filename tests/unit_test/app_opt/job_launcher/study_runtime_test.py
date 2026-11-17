@@ -614,3 +614,11 @@ class TestResolveStudyRuntime:
 
 def test_study_runtime_file_path():
     assert study_runtime_file_path("/ws") == "/ws/local/study_runtime.yaml"
+
+
+@pytest.mark.parametrize("launcher_mode", ["process", "docker", "k8s", "slurm"])
+@pytest.mark.parametrize("entry", ["", " {}"], ids=["null-entry", "empty-mapping"])
+def test_study_entry_without_settings_is_valid(tmp_path, launcher_mode, entry):
+    file_path = _write(tmp_path, f"format_version: 2\nstudies:\n  study-a:{entry}\n")
+
+    assert load_study_runtime_file(file_path, launcher_mode=launcher_mode)["study-a"].env == {}

@@ -352,7 +352,8 @@ result to CP. The acknowledgement permits a new assignment but never marks the
 previous allocation settled. CP retains that allocation and its replay fence and
 requests cancellation when release is still unconfirmed. Missing completion or
 invalid payloads remain failures; cleanup uncertainty is a warning. Task-mode CJ
-recovery remains disabled. The CJ handle preserves CJ outcome and bounds its join
+recovery follows [client job recovery](client_job_recovery.md): a retryable worker
+loss exits CJ, and CP replaces it once every worker allocation has settled. The CJ handle preserves CJ outcome and bounds its join
 of background task cleanup; shutdown expiry does not fabricate resource release.
 
 ### Backend contract

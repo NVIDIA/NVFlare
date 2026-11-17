@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1520" height="1485" viewBox="0 0 1520 1485" role="img" aria-labelledby="diagram-title diagram-description">
+  <title id="diagram-title">CoCo and NVFlare security architecture and trust boundaries</title>
+  <desc id="diagram-description">A trusted platform authority approves reference profiles and a launch contract, then hands them to the NVFlare provisioning node. Provisioning publishes encrypted images and delivers approved references and private release material to independently administered secure services. Only the public runtime kit and final Pod go to the adversarial CoCo cluster operator. Inside that cluster, an approved Kata confidential guest uses AMD SEV-SNP or Intel TDX, optionally with a confidential NVIDIA GPU. The guest sends evidence and its attested public key to Trustee. The Attestation Service appraises evidence against RVPS references. KBS separately authorizes workload-bound resources and encrypts them to the attested guest key. Image decryption and execution occur in the guest, not the host. NVFlare participants exchange mutual-TLS traffic and peer proofs, with a separate local participant-verification decision. Confidentiality depends on the approved hardware, guest stack, application and independent policies; host denial of service remains possible. The 2.9 implementation includes SNP and TDX, CPU-only or with a confidential NVIDIA GPU. TDX is experimental pending hardware acceptance.</desc>
+  <defs>
+    <marker id="arrow-neutral" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+      <path d="M1,1 L9,5 L1,9 Z" fill="#475569"/>
+    </marker>
+    <marker id="arrow-teal" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+      <path d="M1,1 L9,5 L1,9 Z" fill="#087f8c"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+      <path d="M1,1 L9,5 L1,9 Z" fill="#3757a6"/>
+    </marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #172b45; }
+      .title { font-size: 32px; font-weight: 700; }
+      .subtitle { font-size: 20px; fill: #52647a; }
+      .role { font-size: 25px; font-weight: 700; }
+      .heading { font-size: 22px; font-weight: 700; }
+      .body { font-size: 21px; }
+      .small { font-size: 19px; }
+      .label { font-size: 20px; font-weight: 600; text-anchor: middle; }
+      .decision { font-size: 18px; font-weight: 700; letter-spacing: 0.6px; }
+      .muted { fill: #52647a; }
+      .teal { fill: #096674; }
+      .blue { fill: #3757a6; }
+      .danger { fill: #983f3f; }
+      .link { fill: none; stroke: #475569; stroke-width: 2.5; stroke-linejoin: round; marker-end: url(#arrow-neutral); }
+      .attestation { fill: none; stroke: #087f8c; stroke-width: 2.8; stroke-linejoin: round; marker-end: url(#arrow-teal); }
+      .peer { fill: none; stroke: #3757a6; stroke-width: 2.8; stroke-linejoin: round; marker-start: url(#arrow-blue); marker-end: url(#arrow-blue); }
+    </style>
+  </defs>
+
+  <rect width="1520" height="1450" fill="#ffffff"/>
+  <text x="40" y="52" class="title">CoCo + NVFlare: two independent authorization decisions</text>
+  <text x="40" y="84" class="subtitle">Protect the workload with attestation-gated key release; verify federation participants with peer proofs.</text>
+
+  <!-- Trusted preparation roles. -->
+  <rect x="40" y="120" width="550" height="245" rx="16" fill="#f0f5ff" stroke="#7d9bc9" stroke-width="2"/>
+  <text x="65" y="160" class="role">Trusted platform authority</text>
+  <text x="65" y="194" class="small muted">Approve the platform, not just collect its claims</text>
+  <text x="65" y="236" class="body">Review runtime, firmware and TCB baseline</text>
+  <text x="65" y="270" class="body">Rehearse the intended measured launch</text>
+  <text x="65" y="304" class="body">Verify evidence; approve reference profiles</text>
+  <text x="65" y="338" class="small muted">CPU-only or CPU + GPU; SNP or TDX</text>
+
+  <rect x="830" y="120" width="650" height="245" rx="16" fill="#f5f2fc" stroke="#9d8abf" stroke-width="2"/>
+  <text x="855" y="160" class="role">NVFlare provisioning node</text>
+  <text x="855" y="194" class="small muted">Trusted workload owner and handoff coordinator</text>
+  <text x="855" y="236" class="body">Build application image and participant startup kit</text>
+  <text x="855" y="270" class="body">Encrypt layers; sign encrypted-image digest</text>
+  <text x="855" y="304" class="body">Generate guest policy, InitData and final Pod</text>
+  <text x="855" y="338" class="small muted">Retain publishing, signing and release credentials</text>
+
+  <path d="M590 272 H830" class="link"/>
+  <text x="710" y="194" class="label">Approved references</text>
+  <text x="710" y="222" class="label">+ launch contract</text>
+  <text x="710" y="305" class="small muted" text-anchor="middle">Authenticated handoff</text>
+
+  <!-- One coordinator supplies two deliberately different handoffs. -->
+  <path d="M925 365 V420 H315 V530" class="link"/>
+  <text x="534" y="454" class="label">Ciphertext + approved references</text>
+  <text x="534" y="482" class="label">+ private release material</text>
+  <path d="M1230 365 V530" class="link"/>
+  <rect x="1100" y="412" width="275" height="76" rx="10" fill="#ffffff"/>
+  <text x="1237" y="440" class="label">Public runtime kit</text>
+  <text x="1237" y="468" class="label">+ final Pod YAML only</text>
+
+  <!-- Independent resource authorization domain. -->
+  <rect x="40" y="530" width="550" height="615" rx="16" fill="#eff9f8" stroke="#53a398" stroke-width="2"/>
+  <text x="65" y="570" class="role">Independent secure services</text>
+  <text x="65" y="603" class="small muted">Administrator installs approved references / policies</text>
+
+  <rect x="65" y="625" width="500" height="96" rx="12" fill="#ffffff" stroke="#acd4cd" stroke-width="1.5"/>
+  <text x="85" y="659" class="heading">TLS private registry</text>
+  <text x="85" y="691" class="body">Encrypted image layers + signatures</text>
+
+  <text x="65" y="764" class="heading teal">Trustee (TLS endpoint)</text>
+  <rect x="65" y="784" width="225" height="116" rx="12" fill="#ffffff" stroke="#acd4cd" stroke-width="1.5"/>
+  <text x="85" y="817" class="heading">RVPS</text>
+  <text x="85" y="851" class="small">Approved profiles</text>
+  <text x="85" y="880" class="small">and reference values</text>
+  <rect x="315" y="784" width="250" height="116" rx="12" fill="#ffffff" stroke="#acd4cd" stroke-width="1.5"/>
+  <text x="335" y="817" class="heading">AS</text>
+  <text x="335" y="851" class="small">CPU / GPU appraisal</text>
+  <text x="335" y="880" class="small">Signed result (EAR)</text>
+  <path d="M290 838 H315" class="attestation"/>
+  <path d="M440 900 V950" class="attestation"/>
+  <text x="455" y="932" class="small teal">result</text>
+
+  <rect x="65" y="950" width="500" height="145" rx="12" fill="#d9efea" stroke="#53a398" stroke-width="1.5"/>
+  <text x="85" y="980" class="decision teal">DECISION 1 · WORKLOAD RELEASE</text>
+  <text x="85" y="1015" class="heading">KBS: keys + resource-release policy</text>
+  <text x="85" y="1047" class="small">Appraisal + workload / resource-path authorization</text>
+  <text x="85" y="1077" class="small">Resources encrypted to the attested guest key</text>
+  <text x="65" y="1125" class="small teal">KBS administrative authority stays outside the cluster.</text>
+
+  <!-- An adversarial host surrounds, but does not administer, the trusted guest. -->
+  <rect x="830" y="530" width="650" height="615" rx="16" fill="#fff6f4" stroke="#bb6560" stroke-width="2.5" stroke-dasharray="10 7"/>
+  <text x="855" y="570" class="role danger">CoCo IT: adversarial cluster</text>
+  <text x="855" y="605" class="small">Controls host OS, Kubernetes, containerd, hypervisor,</text>
+  <text x="855" y="632" class="small">storage, CNI, DNS, routing and scheduling</text>
+
+  <rect x="860" y="650" width="590" height="440" rx="14" fill="#eaf5ef" stroke="#39805b" stroke-width="2.5"/>
+  <text x="880" y="685" class="heading">Approved Kata confidential guest</text>
+  <text x="880" y="720" class="body">CPU TEE: AMD SEV-SNP or Intel TDX</text>
+  <text x="880" y="752" class="body">GPU targets: add a confidential NVIDIA GPU</text>
+
+  <rect x="880" y="775" width="550" height="86" rx="10" fill="#ffffff" stroke="#b4d6c2" stroke-width="1.5"/>
+  <text x="900" y="809" class="heading">Kata agent + attestation agent + CDH</text>
+  <text x="900" y="840" class="small">Guest policy · evidence · image verification / decryption</text>
+
+  <rect x="880" y="880" width="550" height="185" rx="10" fill="#ffffff" stroke="#b4d6c2" stroke-width="1.5"/>
+  <text x="900" y="918" class="heading">NVFlare client or protected server</text>
+  <text x="900" y="953" class="body">Application + CoCoAuthorizer + CCManager</text>
+  <text x="900" y="990" class="small">Policy-constrained workload execution</text>
+  <text x="900" y="1022" class="small">Decryption and plaintext execution happen here</text>
+  <text x="900" y="1051" class="small muted">Peer verification is separate from KBS authorization</text>
+
+  <text x="855" y="1125" class="small danger">Dashed border: untrusted host / operator boundary</text>
+
+  <!-- Every sensitive runtime exchange terminates at the confidential guest. -->
+  <path d="M565 694 H860" class="link"/>
+  <text x="713" y="650" class="label">TLS pull</text>
+  <text x="713" y="677" class="label">Ciphertext + signature</text>
+
+  <path d="M860 825 H565" class="attestation"/>
+  <text x="713" y="756" class="label teal">CPU (+ GPU) evidence</text>
+  <text x="713" y="783" class="label teal">+ bound guest public key</text>
+  <text x="713" y="855" class="small teal" text-anchor="middle">Nonce-bound attestation</text>
+
+  <path d="M565 1038 H860" class="attestation"/>
+  <text x="713" y="973" class="label teal">Authorized resources</text>
+  <text x="713" y="1000" class="label teal">Encrypted to guest</text>
+  <text x="713" y="1075" class="small teal" text-anchor="middle">Not plaintext to the host</text>
+
+  <!-- Federation participation is a second decision made by peer verifiers. -->
+  <rect x="40" y="1195" width="550" height="165" rx="16" fill="#f0f4fb" stroke="#879bbd" stroke-width="2"/>
+  <text x="65" y="1234" class="role">Other FL participants</text>
+  <text x="65" y="1268" class="body">Ordinary or protected clients / server</text>
+  <text x="65" y="1300" class="small">CCManager + CoCoAuthorizer verify peer proofs</text>
+  <text x="65" y="1331" class="small muted">An ordinary verifier is not itself TEE-protected.</text>
+
+  <path d="M1430 1090 V1266 H590" class="peer"/>
+  <text x="872" y="1207" class="decision blue" text-anchor="middle">DECISION 2 · PARTICIPANT VERIFICATION</text>
+  <text x="872" y="1237" class="label blue">FL mTLS + peer proofs</text>
+  <text x="872" y="1300" class="small blue" text-anchor="middle">Local signature, identity, freshness and policy checks</text>
+  <text x="872" y="1330" class="small muted" text-anchor="middle">Verifying a received proof does not require a Trustee call.</text>
+
+  <path d="M40 1390 H1480" stroke="#dbe3ec" stroke-width="1.5"/>
+  <text x="40" y="1424" class="small muted">Conditional on approved hardware, guest stack, application and independent policies. The host can still deny service.</text>
+  <text x="40" y="1460" class="small muted">2.9: SNP/TDX, CPU-only or GPU. TDX is experimental pending hardware acceptance.</text>
+</svg>

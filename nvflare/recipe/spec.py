@@ -97,12 +97,16 @@ class ExecEnv(ABC):
         pass
 
     @abstractmethod
-    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+    def get_job_result(self, job_id: str, timeout: float = 0.0, outputs_only: bool = False) -> Optional[str]:
         """Get the result workspace of a job.
 
         Args:
             job_id: The job ID to get results for.
             timeout: The timeout for the job to complete. Defaults to 0.0 (no timeout).
+            outputs_only: download only the files the job produced on the server, without the submitted job, its
+                config and code, or the logs, where the environment downloads the result.
+                ``Run`` passes this argument only when it is True, so an environment written before it existed
+                keeps working.
 
         Returns:
             Optional[str]: The result workspace path if job completed, None if still running or stopped early.

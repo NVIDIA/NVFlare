@@ -35,7 +35,7 @@ class SignatureBuilder(Builder):
     provisioned standard kits and for kits assembled via the Manual Workflow (nvflare package).
     """
 
-    def build(self, project: Project, ctx: ProvisionContext):
+    def finalize(self, project: Project, ctx: ProvisionContext):
         root_pri_key = ctx.get(CtxKey.ROOT_PRI_KEY)
         for p in project.get_all_participants():
             kit_dir = ctx.get_kit_dir(p)
@@ -62,3 +62,20 @@ class SignatureBuilder(Builder):
                 # else: plain non-CC, non-HE — no signature.json generated.
                 # mTLS is the trust anchor; signature.json adds no security and would
                 # prevent local config customization and break the Manual Workflow.
+
+
+def order_builders_for_signing(builders):
+    """Place signature builders so they finalize after the other kit builders.
+
+    Builders finalize in reverse order. WorkspaceBuilder must still finalize
+    last to relocate the completed workspace.
+    """
+    from nvflare.lighter.impl.workspace import WorkspaceBuilder
+
+    if not builders or not isinstance(builders[0], WorkspaceBuilder):
+        return builders
+    signers = [b for b in builders if isinstance(b, SignatureBuilder)]
+    if not signers:
+        return builders
+    others = [b for b in builders if not isinstance(b, SignatureBuilder)]
+    return others[:1] + signers + others[1:]

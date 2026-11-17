@@ -9,6 +9,11 @@ on:
       - "[0-9]+.[0-9]+"
     paths:
       - 'web/**'
+  # Read the Docs publishes docs per release (2.9.0), not per branch (2.9).
+  # Refresh deployed release branches daily so their documentation links
+  # follow each new release without rebuilding or editing the site.
+  schedule:
+    - cron: "23 7 * * *"
   workflow_dispatch:
 
 env:
@@ -23,14 +28,30 @@ permissions:
 
 jobs:
   build:
+    if: ${{ github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
+    # All writers share the lock, including refreshes on other branches.
+    # Queue pending jobs instead of canceling another branch's deployment.
+    concurrency:
+      group: gh-pages-publication
+      queue: max
+      cancel-in-progress: false
     steps:
-      - name: Update version_path for non-main branches
-        if: ${{ github.ref_type == 'branch' && github.ref_name != 'main'}}
-        run: echo version_path=/version/${{ github.ref_name }}/ >> $GITHUB_ENV
+      - name: Validate branch and set version_path
+        env:
+          GH_BRANCH: ${{ github.ref_name }}
+          GH_REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [ "$GH_REF_TYPE" != branch ] || { [ "$GH_BRANCH" != main ] && ! [[ "$GH_BRANCH" =~ ^[0-9]+\.[0-9]+$ ]]; }; then
+            echo "::error::Deployments require main or an X.Y release branch"
+            exit 1
+          fi
+          if [ "$GH_BRANCH" != main ]; then
+            echo "version_path=/version/$GH_BRANCH/" >> "$GITHUB_ENV"
+          fi
 
       - name: Checkout your repository
-        uses: NVIDIA/spark-rapids-common/checkout@main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -49,6 +70,15 @@ jobs:
           VITE_PUBLIC_GH_BRANCH: ${{ github.ref_name }}
         working-directory: ${{ env.site_path }}
 
+      - name: Point documentation links to the branch's latest release
+        if: ${{ github.ref_type == 'branch' && github.ref_name != 'main'}}
+        env:
+          GH_BRANCH: ${{ github.ref_name }}
+        run: >-
+          python3 .github/scripts/point_web_docs_to_release.py
+          --branch "$GH_BRANCH"
+          --site-dir "$site_path/dist"
+
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4.8.0
         with:
@@ -56,3 +86,44 @@ jobs:
           folder: ${{ env.site_path }}/dist
           target-folder: ${{ env.version_path }}
           clean-exclude: version
+
+  refresh-docs-links:
+    # Run after this run's build; the shared lock also excludes other runs.
+    needs: build
+    if: ${{ always() && github.event_name != 'push' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: gh-pages-publication
+      queue: max
+      cancel-in-progress: false
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Point each deployed release branch to its latest release docs
+        run: |
+          for site_dir in gh-pages/version/*/; do
+            [ -d "$site_dir" ] || continue
+            python3 .github/scripts/point_web_docs_to_release.py \
+              --branch "$(basename "$site_dir")" --site-dir "$site_dir"
+          done
+
+      - name: Push updated links
+        working-directory: gh-pages
+        run: |
+          if git diff --quiet; then
+            echo "Documentation links are already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Point release branch pages to their latest release docs"
+          # Build and refresh jobs hold the same lock from checkout through push.
+          # Fail on an unexpected external writer rather than rebasing generated HTML.
+          git push origin HEAD:gh-pages
