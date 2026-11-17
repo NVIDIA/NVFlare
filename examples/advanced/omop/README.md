@@ -29,7 +29,7 @@ NVFlare ships `cohort.py` with [client.py](./client.py) to every site.
 ## Connect your OMOP CDM
 
 This tutorial reads each site's CDM from a DuckDB file so that it runs without a database server.
-Sites keep their CDM in their own database, and `load_cohort()` in `cohort.py` is the one place to adapt to it.
+Sites keep their CDM in their own database, and on another platform they adapt the connection in `load_cohort()` and the DuckDB SQL dialect of `COHORT_SQL`, both in `cohort.py`.
 `--cdm` is the CDM file at each site, `--cdm_schema` names the schema holding the CDM tables, and `--n_clients` sets how many sites take part:
 
 ```bash
