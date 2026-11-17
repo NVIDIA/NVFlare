@@ -362,10 +362,7 @@ class ResourceStatsCoordinator:
             try:
                 with os.fdopen(fd, "wb") as stream:
                     stream.write(data)
-                    stream.flush()
-                    os.fsync(fd)
                 os.rename(temp_name, RESOURCE_SUMMARY_FILE, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
-                os.fsync(directory_fd)
             finally:
                 try:
                     os.unlink(temp_name, dir_fd=directory_fd)
@@ -430,6 +427,5 @@ class ResourceStatsCoordinator:
                     raise
                 _logger.warning("Resource handoff staging is not empty; preserving accepted reports")
                 return
-            os.fsync(stats_fd)
         finally:
             os.close(stats_fd)

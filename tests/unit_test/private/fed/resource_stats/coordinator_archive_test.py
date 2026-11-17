@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import stat
 import threading
 from contextlib import nullcontext
 from pathlib import Path
@@ -126,7 +125,7 @@ def test_accept_is_idempotent_and_finalized_bundle_reads_from_workspace(started_
     assert not coordinator.has_job("job-1")
 
 
-@pytest.mark.parametrize("operation", ["fsync", "rename", "rmdir"])
+@pytest.mark.parametrize("operation", ["rename", "rmdir"])
 def test_summary_write_failure_occurs_at_finalization_not_acceptance(started_job, operation):
     coordinator, run_dir = started_job
     data = canonical_json_bytes(_participant())
@@ -344,21 +343,6 @@ def test_accept_rejects_report_that_would_exceed_per_job_payload_cap(tmp_path):
     statuses = {entry["participant_name"]: entry.get("status") for entry in summary["participants"]}
     assert statuses["site-1"] is None
     assert statuses["site-2"] == "missing"
-
-
-def test_atomic_write_fsyncs_file_before_rename_and_directory_after(tmp_path, monkeypatch):
-    target = tmp_path / "resource_stats" / RESOURCE_SUMMARY_FILE
-    events = []
-    fsync = coordinator_module.os.fsync
-
-    def record_fsync(descriptor):
-        events.append((stat.S_ISDIR(coordinator_module.os.fstat(descriptor).st_mode), target.exists()))
-        fsync(descriptor)
-
-    monkeypatch.setattr(coordinator_module.os, "fsync", record_fsync)
-    ResourceStatsCoordinator._write_summary(tmp_path, b"report")
-    assert target.read_bytes() == b"report"
-    assert events == [(False, False), (True, True)]
 
 
 def test_finalizing_one_job_does_not_block_report_for_another_job(tmp_path):

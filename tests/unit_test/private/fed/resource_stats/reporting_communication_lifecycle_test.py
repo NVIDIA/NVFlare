@@ -110,7 +110,9 @@ def test_job_samples_actual_cell_before_existing_archive(module, callbacks_drain
     monkeypatch.setattr(module, "parse_vars", parse_options)
     monkeypatch.setattr(module, "Workspace", lambda *_, **__: workspace)
     monkeypatch.setattr(module, "JobResourceCollector", lambda *_, **__: collector)
-    monkeypatch.setattr(module.threading, "Thread", MagicMock())
+    local_threading = SimpleNamespace(**vars(module.threading))
+    local_threading.Thread = MagicMock()
+    monkeypatch.setattr(module, "threading", local_threading)
     for name in (
         "download_workspace",
         "refresh_custom_dir_import_path",

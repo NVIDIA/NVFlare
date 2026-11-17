@@ -93,6 +93,7 @@ class _Attempt:
     released: bool = False
     result_readers: int = 0
     resource_registered: bool = False
+    resource_record: Optional[dict] = None
     launch_called: bool = False
     resource_unresolved: bool = False
     cleanup_delegated: bool = False
@@ -189,7 +190,7 @@ class TaskSupervisor:
             late_resources = attempt.resource_unresolved
             attempt.resource_unresolved = False
         if late_resources:
-            self._resource_call("settle", attempt.identity, attempt.store, started=True, settled=True)
+            self._resource_call("settle", attempt.identity, attempt.resource_record, started=True, settled=True)
         return status
 
     def _cancel(self, attempt):
@@ -326,6 +327,9 @@ class TaskSupervisor:
             except IncompleteTaskArtifactError as e:
                 failure = store.read_failure(identity)
                 if failure is not None:
+                    diagnostics = failure.get("diagnostics")
+                    if isinstance(diagnostics, dict):
+                        attempt.resource_record = diagnostics.get("resource_stats")
                     raise RuntimeError(
                         f"task worker {identity.attempt_id} failed: {failure['error_type']}: {failure['message']} "
                         f"(diagnostics: {store.attempt_dir(identity)})"
@@ -347,6 +351,7 @@ class TaskSupervisor:
             worker_pid = getattr(handle, "process_group_id", None)
             if worker_pid is not None and completion.worker_pid != worker_pid:
                 raise ValueError("task completion worker PID does not match launched process")
+            attempt.resource_record = completion.to_dict()["diagnostics"].get("resource_stats")
             with self._state_lock:
                 if self._aborted(attempt, abort_signal):
                     attempt.failed = True
@@ -375,7 +380,7 @@ class TaskSupervisor:
                 self._resource_call(
                     "settle",
                     attempt.identity,
-                    attempt.store,
+                    attempt.resource_record,
                     started=True if attempt.handle is not None else (None if attempt.launch_called else False),
                     settled=attempt.settled,
                 )

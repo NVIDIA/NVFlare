@@ -36,6 +36,7 @@ from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.resource_stats.collector import JobResourceCollector
 from nvflare.private.fed.resource_stats.handoff import launch_generation_from_options, write_terminal_handoff
 from nvflare.private.fed.resource_stats.message_traffic import snapshot_message_traffic
+from nvflare.private.fed.resource_stats.optional_io import optional_io
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.fed_utils import (
@@ -152,12 +153,13 @@ def main(args):
             def _archive_results():
                 if resource_collector:
                     try:
-                        write_terminal_handoff(
-                            workspace.get_run_dir(args.job_id),
-                            resource_collector.finish(
-                                message_traffic=snapshot_message_traffic(cell, incomplete=message_traffic_incomplete)
-                            ),
-                            launch_generation=launch_generation,
+                        report = resource_collector.finish(
+                            message_traffic=snapshot_message_traffic(cell, incomplete=message_traffic_incomplete)
+                        )
+                        optional_io(
+                            lambda: write_terminal_handoff(
+                                workspace.get_run_dir(args.job_id), report, launch_generation=launch_generation
+                            )
                         )
                     except Exception as e:
                         if logger:

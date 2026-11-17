@@ -37,7 +37,7 @@ def test_execution_installs_its_own_managed_descendant_coverage(usage_reader, mo
     accountant = CpuConsumedAccountant(usage_reader=usage_reader(("0", "0"), ("2", "0")))
     monkeypatch.setattr(collector, "CpuConsumedAccountant", lambda **_kwargs: accountant)
     instance = ExecutionResourceCollector(capacity_probe=lambda: {}, clock_ns=lambda: 0)
-    cpu_module.mark_unwaited_managed_children()
+    cpu_module.mark_child_cpu_coverage_uncertain()
     assert instance.stop()["cpu_consumed"] == {"status": "partial", "cpu_seconds": 2}
     assert [issue["code"] for issue in instance.stop()["issues"] if issue["metric"] == "cpu_consumed"] == [
         "attribution_incomplete"
@@ -199,7 +199,7 @@ def test_gpu_snapshot_precedes_cpu_and_duration_baselines(monkeypatch, gpu_value
     assert events == ["gpu", "clock", "cpu", "cpu", "clock"]
 
 
-@pytest.mark.parametrize("limit", ["_MAX_SCOPES", "_MAX_STATE_BYTES", "_MAX_PENDING_BYTES"])
+@pytest.mark.parametrize("limit", ["_MAX_SCOPES", "_MAX_STATE_BYTES"])
 def test_rejected_worker_omits_containing_duration_but_keeps_observed_work(tmp_path, monkeypatch, limit):
     ticks = iter((0, 10_000_000_000))
     job = collector.JobResourceCollector(clock_ns=lambda: next(ticks), capacity_probe=lambda: {"cpu": {"units": 2}})

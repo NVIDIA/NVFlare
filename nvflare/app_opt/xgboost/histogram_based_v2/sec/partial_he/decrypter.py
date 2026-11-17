@@ -14,7 +14,7 @@
 
 import concurrent.futures
 
-from nvflare.private.fed.resource_stats.cpu_consumed import mark_unwaited_managed_children
+from nvflare.private.fed.resource_stats.cpu_consumed import mark_child_cpu_coverage_uncertain
 
 
 class Decrypter:
@@ -22,7 +22,7 @@ class Decrypter:
         self.max_workers = max_workers
         self.private_key = private_key
         self.exe = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
-        mark_unwaited_managed_children()
+        mark_child_cpu_coverage_uncertain()
 
     def decrypt(self, encrypted_number_groups):
         """

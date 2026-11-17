@@ -14,7 +14,7 @@
 
 import concurrent.futures
 
-from nvflare.private.fed.resource_stats.cpu_consumed import mark_unwaited_managed_children
+from nvflare.private.fed.resource_stats.cpu_consumed import mark_child_cpu_coverage_uncertain
 
 
 class Encryptor:
@@ -22,7 +22,7 @@ class Encryptor:
         self.max_workers = max_workers
         self.pubkey = pubkey
         self.exe = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
-        mark_unwaited_managed_children()
+        mark_child_cpu_coverage_uncertain()
 
     def encrypt(self, numbers):
         """

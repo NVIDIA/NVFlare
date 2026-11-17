@@ -122,8 +122,6 @@ def write_terminal_handoff(run_dir: str | Path, handoff: Mapping[str, Any], *, l
         fd = os.open(temp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode=0o600, dir_fd=directory_fd)
         with os.fdopen(fd, "wb", closefd=False) as stream:
             stream.write(data)
-            stream.flush()
-            os.fsync(fd)
         os.replace(temp_name, filename, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
         return path
     finally:

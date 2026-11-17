@@ -85,7 +85,7 @@ class CpuConsumedAccountant:
             pass
 
     def mark_attribution_incomplete(self) -> None:
-        """Record a lifecycle path that may outlive the final boundary."""
+        """Keep observed CPU work but mark descendant coverage uncertain."""
 
         with self._lock:
             self._known_attribution_incomplete = True
@@ -128,8 +128,8 @@ def install_cpu_accountant(accountant: CpuConsumedAccountant) -> None:
         _active = accountant
 
 
-def mark_unwaited_managed_children() -> None:
-    """Mark managed children whose CPU attribution may be incomplete."""
+def mark_child_cpu_coverage_uncertain() -> None:
+    """Mark CPU coverage partial without tracking, waiting for, or reaping children."""
 
     with _active_lock:
         accountant = _active

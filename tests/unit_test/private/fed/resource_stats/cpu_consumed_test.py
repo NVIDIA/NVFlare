@@ -29,7 +29,7 @@ def test_self_and_waited_children_are_added_once_without_parent_cpu(usage_reader
 def test_managed_children_gap_keeps_the_observed_subtotal_partial(usage_reader, monkeypatch):
     accountant = CpuConsumedAccountant(usage_reader=usage_reader(("0", "0"), ("1", "0.25")))
     monkeypatch.setattr(cpu_module, "_active", accountant)
-    cpu_module.mark_unwaited_managed_children()
+    cpu_module.mark_child_cpu_coverage_uncertain()
     assert accountant.finish() == {"status": "partial", "issues": ["attribution_incomplete"], "cpu_seconds": 1.25}
 
 

@@ -27,10 +27,12 @@ and visibility are established. The existing [worker](https://github.com/NVIDIA/
 and [supervisor](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/task_worker/supervisor.py)
 remain responsible for the lifecycle. Statistics may observe accepted executions
 and their settlement, but may not reap, signal, retry, promote results, or delay
-settlement while awaiting a report. An optional worker artifact can be missing
+settlement while awaiting a report. An optional worker observation can be missing
 even when task completion is valid. The worker stops its CPU and capacity window
 after application finalization and result or checkpoint staging, but before the
-completion commit. Its final traffic snapshot follows normal Cell close.
+completion commit. Traffic is sampled before Cell close and attached to the
+existing diagnostics; a live transport's subtotal is partial because shutdown
+traffic falls outside that snapshot.
 
 ## CPU and RAM capacity probes
 
@@ -130,6 +132,8 @@ final counters. It includes children normally waited before finalization; known
 live, detached, unwaited, or incompletely observed managed descendants make CPU
 attribution partial. A negative, nonfinite, or unreadable delta is unavailable
 and is never clamped to zero. The shared parent process is excluded.
+`mark_child_cpu_coverage_uncertain()` only annotates this uncertainty; it does
+not track children or change their waiting, cancellation, or cleanup.
 
 For task lifetime, the coordinator switches to self-only accounting over its
 original window. Disjoint worker deltas are added, each including only its own
@@ -143,16 +147,15 @@ Each physical worker session contributes once, even across several assignments o
 saved-result retransmissions. A retry that executes again adds work, including
 observable failed or aborted work. The reducer retains accepted scope identities;
 it does not deduplicate by task name, result identity, PID alone, or hardware UUID
-across sessions. Missing artifacts leave known subtotals with incomplete quality.
+across sessions. Missing observations leave known subtotals with incomplete quality.
 The ledger cannot establish lifecycle ownership. Its retention is capped at
 10,000 scopes and a 4 MiB budget for encoded identities, accepted records, and
-totals, with at most
-8 MiB of outstanding worker artifacts and 64 KiB per accepted artifact. On
+totals, with at most 64 KiB per worker record. On
 exhaustion, accepted subtotals are frozen and marked incomplete; replay keys are
 never evicted to admit duplicate work. These bounds limit serialized state, not
 total Python heap. Records stay decoded for duplicate comparison; their encoded
 size is charged once when retained. The launcher owns backend handles; the
-reducer tracks only the attempt identity, settlement, and artifact reservation.
+reducer tracks only the attempt identity, settlement, and accepted measurements.
 
 ## Duration, capacity-time, and aggregation
 

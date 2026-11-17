@@ -22,7 +22,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_object_type, check_str
-from nvflare.private.fed.resource_stats.cpu_consumed import mark_unwaited_managed_children
+from nvflare.private.fed.resource_stats.cpu_consumed import mark_child_cpu_coverage_uncertain
 
 
 class StopMethod:
@@ -146,7 +146,7 @@ class ProcessManager:
             env=env,
             stdout=subprocess.PIPE,
         )
-        mark_unwaited_managed_children()
+        mark_child_cpu_coverage_uncertain()
         log_writer = threading.Thread(target=self._write_log, daemon=True)
         log_writer.start()
 
@@ -249,7 +249,7 @@ def run_command(cmd_desc: CommandDescriptor) -> str:
         env=env,
         stdout=subprocess.PIPE,
     )
-    mark_unwaited_managed_children()
+    mark_child_cpu_coverage_uncertain()
 
     output = []
     while True:

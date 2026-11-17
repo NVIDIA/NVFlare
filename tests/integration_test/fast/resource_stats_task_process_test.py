@@ -120,15 +120,14 @@ def test_task_worker_resource_report_reconciles_without_double_counting(tmp_path
     attempt["options"] = TaskSupervisorOptions(worker_timeout=30, poll_interval=0.01)
     repo_root = Path(__file__).resolve().parents[3]
     records = []
-    read = attempt["store"].read_resource_stats
+    settle = job._task_reducer.settle
 
-    def capture(identity):
-        record = read(identity)
+    def capture(identity, record=None, **kwargs):
         if record is not None:
             records.append(record)
-        return record
+        return settle(identity, record, **kwargs)
 
-    monkeypatch.setattr(attempt["store"], "read_resource_stats", capture)
+    monkeypatch.setattr(job._task_reducer, "settle", capture)
 
     def request_factory(identity, bootstrap_path):
         return TaskLaunchRequest(
@@ -168,7 +167,7 @@ def test_task_worker_resource_report_reconciles_without_double_counting(tmp_path
             assert outcome.execution_status.settled
             assert outcome.result["total"] == sum(range(2000000))
         worker = job._task_reducer.snapshot()
-        assert records, "the real worker must publish its sidecar before settlement returns"
+        assert records, "the real worker must report through completion or failure diagnostics"
         record = records[0]
         assert inventory_reads.read_text() == "1"
         assert record["resource_capacity"]["gpu"] == {"count": 1}

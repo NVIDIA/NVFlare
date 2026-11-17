@@ -62,6 +62,7 @@ from nvflare.private.fed.resource_stats.handoff import (
     remove_terminal_handoff,
 )
 from nvflare.private.fed.resource_stats.message_traffic import retire_job_traffic
+from nvflare.private.fed.resource_stats.optional_io import optional_io
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.job_outputs import link_job_outputs
 from nvflare.private.fed.server.server_state import HotState
@@ -78,7 +79,6 @@ from nvflare.private.fed.utils.job_cert_utils import (
 from nvflare.security.logging import secure_format_exception
 
 WORKSPACE_SAVE_RETRY_GRACE_TIME = 60
-FAILED_JOB_REPORT_GRACE_TIME = 20.0
 
 
 @dataclass
@@ -186,14 +186,22 @@ class JobRunner(FLComponent):
     def _accept_server_resource_report(self, job_id: str, fl_ctx: FLContext) -> None:
         """Use the parent-owned launch generation to consume the server-child report."""
 
-        run_dir = fl_ctx.get_workspace().get_run_dir(job_id)
+        workspace = fl_ctx.get_workspace()
         with self.lock:
             expected_generation = self._server_resource_generations.get(job_id) or ""
+
+        def read_handoff():
+            run_dir = workspace.get_run_dir(job_id)
+            try:
+                return read_terminal_handoff(run_dir, expected_generation=expected_generation)
+            finally:
+                remove_terminal_handoff(run_dir, expected_generation=expected_generation)
+
         try:
             report = assemble_participant_summary(
                 job_id=job_id,
                 participant_name=SiteType.SERVER,
-                child_handoff=read_terminal_handoff(run_dir, expected_generation=expected_generation),
+                child_handoff=optional_io(read_handoff),
             )
             status = self.resource_stats.accept_resource_report(
                 job_id,
@@ -207,8 +215,6 @@ class JobRunner(FLComponent):
             self.log_exception(
                 fl_ctx, f"Failed to collect server resource statistics for job ({job_id}): {secure_format_exception(e)}"
             )
-        finally:
-            remove_terminal_handoff(run_dir, expected_generation=expected_generation)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:
@@ -607,33 +613,22 @@ class JobRunner(FLComponent):
                             RunStatus.FINISHED_EXECUTION_EXCEPTION,
                             RunStatus.FINISHED_ABNORMAL,
                         )
-                        abnormal = job.run_aborted or server_failed or server_status == RunStatus.FINISHED_ABORTED
-                        if (
-                            abnormal
-                            and self._pending_client_outcomes.get(job_id)
-                            and job_id not in self._finished_job_states
-                        ):
-                            with engine.new_context() as completion_ctx:
-                                completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, sticky=False)
-                                # On server failure, cancel clients before waiting for their reports.
-                                status = (
-                                    RunStatus.FINISHED_ABORTED
-                                    if job.run_aborted
-                                    else self._get_finished_job_status(engine, job, completion_ctx)
-                                )
-                                self._finished_job_states[job_id] = _FinishedJobState(status=status)
-                        wait_timeout = self.client_outcome_wait_timeout
-                        if abnormal:
-                            wait_timeout = min(wait_timeout, FAILED_JOB_REPORT_GRACE_TIME)
                         with self.lock:
                             pending = self._pending_client_outcomes.get(job_id)
-                            if pending:
+                            if server_failed:
+                                if pending:
+                                    self.logger.info(
+                                        f"Server failure for job ({job_id}); "
+                                        f"skipping client outcome wait for: {sorted(pending)}"
+                                    )
+                                self._pending_client_outcomes.pop(job_id, None)
+                                self._client_outcome_deadlines.pop(job_id, None)
+                                pending = None
+                            if pending and not job.run_aborted:
                                 now = time.monotonic()
-                                # Shorten a normal-outcome deadline on failure; never extend it.
-                                deadline = min(
-                                    self._client_outcome_deadlines.get(job_id, now + wait_timeout), now + wait_timeout
+                                deadline = self._client_outcome_deadlines.setdefault(
+                                    job_id, now + self.client_outcome_wait_timeout
                                 )
-                                self._client_outcome_deadlines[job_id] = deadline
                                 if now < deadline:
                                     continue
                                 unresolved = sorted(pending)
@@ -642,7 +637,7 @@ class JobRunner(FLComponent):
                                 unresolved = None
                         if unresolved:
                             self.logger.warning(
-                                f"Timed out after {wait_timeout} seconds waiting for client outcomes "
+                                f"Timed out after {self.client_outcome_wait_timeout} seconds waiting for client outcomes "
                                 f"for job ({job_id}): {unresolved}. Finalizing from the server outcome."
                             )
                         with engine.new_context() as completion_ctx:
@@ -655,16 +650,6 @@ class JobRunner(FLComponent):
                                     status = self._get_finished_job_status(engine, job, completion_ctx)
                                 finished_state = _FinishedJobState(status=status)
                                 self._finished_job_states[job.job_id] = finished_state
-                            elif not finished_state.resource_stats_finalized:
-                                # Outcomes received during the grace can strengthen the failure status.
-                                with engine.lock:
-                                    finished_state.status = (
-                                        RunStatus.FINISHED_ABORTED
-                                        if job.run_aborted
-                                        else self._classify_finished_job_status(
-                                            engine.exception_run_processes.get(job_id)
-                                        )
-                                    )
                             status = finished_state.status
                             # Publish terminal status only after artifacts are ready for download.
                             if not finished_state.workspace_archival_complete:
@@ -1231,8 +1216,12 @@ class JobRunner(FLComponent):
             if not job_is_active:
                 self.log_info(fl_ctx, f"Job {job_id} is not running. It can not be failed.")
                 return f"Job {job_id} is not running."
-            # Keep the reporting roster until completion. The completion loop caps
-            # failed-job waiting without delaying the cancellation below.
+            # fail_run establishes an authoritative terminal failure. Remaining
+            # client reports cannot change that status and must not hold terminal
+            # publication behind the normal outcome grace period (900 seconds by
+            # default); _stop_run below drives their cleanup independently.
+            self._pending_client_outcomes.pop(job_id, None)
+            self._client_outcome_deadlines.pop(job_id, None)
         self._stop_run(job_id, fl_ctx)
 
         job = self.running_jobs.get(job_id)

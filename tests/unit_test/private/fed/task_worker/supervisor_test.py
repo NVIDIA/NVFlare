@@ -40,6 +40,14 @@ def test_resources_register_before_launch_and_fold_once_before_result_receipts(t
     supervisor = TaskSupervisor(resource_reducer=reducer)
     attempt, _ = _attempt(tmp_path)
     launch = attempt["launcher"].launch_task.side_effect
+    read_result = attempt["store"].read_result
+    record = {"cpu_consumed": {"cpu_seconds": 2}}
+
+    def with_resources(identity):
+        result, completion = read_result(identity)
+        return result, replace(completion, diagnostics={"resource_stats": record})
+
+    attempt["store"].read_result = Mock(side_effect=with_resources)
 
     def checked_launch(request):
         reducer.register.assert_called_once_with(attempt["bootstrap"].identity)
@@ -47,22 +55,19 @@ def test_resources_register_before_launch_and_fold_once_before_result_receipts(t
 
     attempt["launcher"].launch_task.side_effect = checked_launch
     outcome = supervisor.run(**attempt)
-    reducer.settle.assert_called_once_with(outcome.identity, attempt["store"], started=True, settled=True)
+    reducer.settle.assert_called_once_with(outcome.identity, record, started=True, settled=True)
     assert supervisor.read_saved_result(outcome.identity)["value"] == 2
     supervisor.record_receipt(outcome.identity, TaskResultReceipt.RECEIVED)
     supervisor.end_run()
     assert reducer.settle.call_count == 1
 
 
-def test_retirement_budget_exhaustion_disables_reporting_without_blocking_the_next_task(tmp_path, monkeypatch):
-    monkeypatch.setattr(task_rollup, "_MAX_PENDING_BYTES", task_rollup.MAX_SIDECAR_BYTES)
+def test_statistics_memory_budget_disables_reporting_without_blocking_the_next_task(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_rollup, "_MAX_SCOPES", 1)
     reducer = task_rollup.TaskResourceReducer()
     supervisor = TaskSupervisor(resource_reducer=reducer)
     first, _ = _attempt(tmp_path)
-    first["store"].read_resource_stats = Mock(side_effect=OSError("unreadable statistics file"))
-    first["store"].remove_resource_stats = Mock(side_effect=OSError("unremovable statistics file"))
     assert supervisor.run(**first).result["value"] == 2
-    assert reducer._pending_bytes == task_rollup.MAX_SIDECAR_BYTES
 
     second, _ = _attempt(tmp_path, attempt_id="attempt-2")
     launch = second["launcher"].launch_task.side_effect
@@ -74,7 +79,7 @@ def test_retirement_budget_exhaustion_disables_reporting_without_blocking_the_ne
     second["launcher"].launch_task.side_effect = without_reporting
     assert supervisor.run(**second).result["value"] == 2
     second["launcher"].launch_task.assert_called_once()
-    assert reducer._pending_bytes == task_rollup.MAX_SIDECAR_BYTES
+    assert len(reducer._scopes) == 1
 
 
 def test_resource_collection_failure_cannot_invalidate_a_valid_result(tmp_path):
@@ -87,14 +92,29 @@ def test_resource_collection_failure_cannot_invalidate_a_valid_result(tmp_path):
     reducer.settle.assert_not_called()
 
 
-def test_worker_statistics_fold_even_when_training_result_cannot_be_read(tmp_path):
+def test_unreadable_training_result_leaves_statistics_gap(tmp_path):
     reducer = Mock(register=Mock(return_value=True))
     supervisor = TaskSupervisor(resource_reducer=reducer)
     attempt, _ = _attempt(tmp_path)
     attempt["store"].read_result = Mock(side_effect=ValueError("bad training payload"))
     with pytest.raises(ValueError, match="bad training payload"):
         supervisor.run(**attempt)
-    reducer.settle.assert_called_once_with(attempt["bootstrap"].identity, attempt["store"], started=True, settled=True)
+    reducer.settle.assert_called_once_with(attempt["bootstrap"].identity, None, started=True, settled=True)
+
+
+@pytest.mark.parametrize("diagnostics", [None, [], {"resource_stats": 42}])
+def test_malformed_failure_statistics_preserve_the_training_error(tmp_path, diagnostics):
+    reducer = task_rollup.TaskResourceReducer()
+    supervisor = TaskSupervisor(resource_reducer=reducer)
+    attempt, _ = _attempt(tmp_path)
+    attempt["store"].read_result = Mock(side_effect=IncompleteTaskArtifactError("no result"))
+    attempt["store"].read_failure = Mock(
+        return_value={"error_type": "ValueError", "message": "training failed", "diagnostics": diagnostics}
+    )
+    with pytest.raises(RuntimeError, match="ValueError: training failed"):
+        supervisor.run(**attempt)
+    assert not supervisor.owns_execution
+    assert reducer.snapshot()["cpu_consumed"]["status"] == "unavailable"
 
 
 def test_accepted_launch_failure_folds_only_after_normal_owner_cancels(tmp_path):
@@ -110,7 +130,7 @@ def test_accepted_launch_failure_folds_only_after_normal_owner_cancels(tmp_path)
     with pytest.raises(TaskLaunchError, match="post-spawn failure"):
         supervisor.run(**attempt)
     handle.cancel.assert_called_once_with()
-    reducer.settle.assert_called_once_with(attempt["bootstrap"].identity, attempt["store"], started=True, settled=True)
+    reducer.settle.assert_called_once_with(attempt["bootstrap"].identity, None, started=True, settled=True)
 
 
 def test_ambiguous_launch_error_is_not_reported_as_observed_zero_work(tmp_path):
@@ -120,7 +140,7 @@ def test_ambiguous_launch_error_is_not_reported_as_observed_zero_work(tmp_path):
     attempt["launcher"].launch_task.side_effect = OSError("lost launch response")
     with pytest.raises(OSError, match="lost launch response"):
         supervisor.run(**attempt)
-    reducer.settle.assert_called_once_with(attempt["bootstrap"].identity, attempt["store"], started=None, settled=False)
+    reducer.settle.assert_called_once_with(attempt["bootstrap"].identity, None, started=None, settled=False)
 
 
 def test_late_cleanup_proof_folds_resources_without_clearing_the_runtime_fence(tmp_path):
@@ -137,7 +157,7 @@ def test_late_cleanup_proof_folds_resources_without_clearing_the_runtime_fence(t
     handle.cancel.side_effect = [TaskSettlementError("still alive", UNSETTLED), SETTLED]
     with pytest.raises(TaskSettlementError, match="still alive"):
         supervisor.run(**attempt)
-    reducer.settle.assert_called_once_with(attempt["bootstrap"].identity, attempt["store"], started=True, settled=False)
+    reducer.settle.assert_called_once_with(attempt["bootstrap"].identity, None, started=True, settled=False)
     supervisor.end_run()
     assert reducer.settle.call_count == 2
     assert reducer.settle.call_args.kwargs == {"started": True, "settled": True}
@@ -158,9 +178,7 @@ def test_cancelled_staging_is_known_never_started_not_a_missing_worker(tmp_path)
     attempt["request_factory"] = cancel_before_launch
     assert supervisor.run(**attempt).aborted
     attempt["launcher"].launch_task.assert_not_called()
-    reducer.settle.assert_called_once_with(
-        attempt["bootstrap"].identity, attempt["store"], started=False, settled=False
-    )
+    reducer.settle.assert_called_once_with(attempt["bootstrap"].identity, None, started=False, settled=False)
 
 
 @pytest.mark.parametrize("cleanup", ["timeout", "unsettled", "error", "settled"])
@@ -184,7 +202,7 @@ def test_parent_owned_completion_survives_unconfirmed_cleanup(tmp_path, cleanup)
     assert not outcome.aborted
     assert outcome.execution_status.settled is (cleanup == "settled")
     reducer.settle.assert_called_once_with(
-        attempt["bootstrap"].identity, attempt["store"], started=True, settled=cleanup == "settled"
+        attempt["bootstrap"].identity, None, started=True, settled=cleanup == "settled"
     )
     assert not supervisor.settlement_unconfirmed
     assert not supervisor.owns_execution

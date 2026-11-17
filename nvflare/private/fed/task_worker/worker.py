@@ -46,14 +46,20 @@ from nvflare.job_config.task_execution import (
     task_constructor_args,
 )
 from nvflare.private.fed.resource_stats.collector import ExecutionResourceCollector
-from nvflare.private.fed.resource_stats.measurements import SCHEMA_VERSION, ordered_issues, scoped_measurement
+from nvflare.private.fed.resource_stats.measurements import (
+    SCHEMA_VERSION,
+    canonical_json_bytes,
+    ordered_issues,
+    scoped_measurement,
+)
+from nvflare.private.fed.resource_stats.task_rollup import MAX_WORKER_RECORD_BYTES
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
 from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
 from .artifacts import ArtifactReference, FileTaskArtifactStore, TaskCompletion
 from .cell_session import CellWorkerTransport
-from .protocol import WorkerBootstrap, _thaw_json, read_bootstrap
+from .protocol import WorkerBootstrap, _load_json, _thaw_json, read_bootstrap
 from .runtime import TaskRuntime
 
 _PROTECTED_CONTEXT_KEYS = {
@@ -255,6 +261,37 @@ def _stop_resources(collection):
     }
 
 
+def _resource_diagnostics(identity, snapshot, transport):
+    """Attach bounded JSON to existing artifacts without adding statistics I/O."""
+    try:
+        traffic = (
+            transport.traffic_snapshot(incomplete=True)
+            if transport is not None
+            else {"sent_bytes": 0, "received_bytes": 0}
+        )
+    except Exception:
+        traffic = {"status": "unavailable", "issues": ["observation_incomplete"]}
+    try:
+        issues = list(snapshot.get("issues", []))
+        traffic = scoped_measurement("message_traffic", traffic, issues)
+        record = {
+            "schema_version": SCHEMA_VERSION,
+            "identity": identity.to_dict(),
+            "scope": "worker",
+            **snapshot,
+            "message_traffic": traffic,
+            "issues": ordered_issues(issues),
+        }
+        encoded = canonical_json_bytes({"diagnostics": {"resource_stats": record}})
+        if len(encoded) <= MAX_WORKER_RECORD_BYTES:
+            # Apply the existing artifact JSON/depth rules before attaching
+            # optional data, so it cannot invalidate a successful completion.
+            return _load_json(encoded)["diagnostics"]
+    except Exception:
+        pass
+    return {}
+
+
 def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_keys=()) -> TaskCompletion:
     """Run one bootstrap and commit its result after successful finalization."""
 
@@ -326,7 +363,7 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
         checkpoint = store.stage_checkpoint(identity)
         if bootstrap.resource_reporting:
             resource_snapshot = _stop_resources(collection)
-            diagnostics = {}
+            diagnostics = _resource_diagnostics(identity, resource_snapshot, transport)
             # Optional diagnostic conversion cannot prevent publishing a valid result.
             for target, source in (("elapsed_seconds", "duration_seconds"), ("cpu_seconds", "cpu_consumed")):
                 try:
@@ -360,6 +397,8 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             publication_guard=runtime.completion_guard,
         )
     except BaseException as e:
+        if bootstrap.resource_reporting and resource_snapshot is None:
+            resource_snapshot = _stop_resources(collection)
         try:
             store.record_failure(
                 identity,
@@ -369,54 +408,23 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
                 failed_at=time.time(),
                 error_type=type(e).__name__,
                 message=secure_format_exception(e),
+                diagnostics=(
+                    _resource_diagnostics(identity, resource_snapshot, transport) if resource_snapshot else None
+                ),
             )
         except Exception:
             pass
         raise
     finally:
-        if bootstrap.resource_reporting and resource_snapshot is None:
-            resource_snapshot = _stop_resources(collection)
         sys.path[:] = old_sys_path
         if owns_auditor:
             AuditService.close()
-        close_failed = False
         if transport is not None:
             # The outcome is already on disk; a session that will not close cleanly must not replace it.
             try:
                 transport.close()
             except Exception as e:
-                close_failed = True
                 logging.getLogger(__name__).warning("could not close the cell session: %s", secure_format_exception(e))
-        if bootstrap.resource_reporting:
-            try:
-                traffic = (
-                    transport.traffic_snapshot(incomplete=close_failed)
-                    if transport is not None
-                    else {"sent_bytes": 0, "received_bytes": 0}
-                )
-            except Exception:
-                traffic = {"status": "unavailable", "issues": ["observation_incomplete"]}
-            traffic_issues = []
-            try:
-                traffic = scoped_measurement("message_traffic", traffic, traffic_issues)
-            except Exception:
-                pass  # The receiving reducer checks malformed observations.
-            try:
-                issues = ordered_issues(resource_snapshot.get("issues", []) + traffic_issues)
-                store.write_resource_stats(
-                    identity,
-                    {
-                        "schema_version": SCHEMA_VERSION,
-                        "identity": identity.to_dict(),
-                        "scope": "worker",
-                        **resource_snapshot,
-                        "message_traffic": traffic,
-                        "issues": issues,
-                    },
-                )
-            except Exception:
-                # A missing sidecar becomes a gap, never a changed training result.
-                pass
 
 
 def main():

@@ -44,6 +44,7 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey, RequestHeader
+from nvflare.private.fed.client import client_executor as client_executor_module
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_executor import (
@@ -62,8 +63,18 @@ from nvflare.private.fed.client.communicator import Communicator
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.resource_stats.handoff import terminal_handoff_path, write_terminal_handoff
 from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_cert
+from tests.resource_stats_io_test_utils import stalled_resource_io
 from tests.resource_stats_report_test_utils import _participant_summary
-from tests.timing_utils import isolate_time
+from tests.timing_utils import isolate_time, join_thread
+
+_THREAD_START = threading.Thread.start
+
+
+def _start_without_job_wait(thread, launched_threads=None):
+    if thread._target.__name__ != "_wait_child_process_finish":
+        _THREAD_START(thread)
+    elif launched_threads is not None:
+        launched_threads.append(thread)
 
 
 def _run_recovery(tmp_path, outcomes, on_wait=None, limit=3, confirmed=True, is_leaf=True, on_launch=None):
@@ -120,7 +131,7 @@ def _run_recovery(tmp_path, outcomes, on_wait=None, limit=3, confirmed=True, is_
     launcher.launch_job.side_effect = launch
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda self: None),
+        patch.object(threading.Thread, "start", _start_without_job_wait),
     ):
         executor.start_app(
             client, "job-1", meta, SimpleNamespace(workspace=str(tmp_path), set=[]), {"gpu": 1}, "token", resources, ctx
@@ -616,7 +627,7 @@ def test_start_app_pending_handle_operations_before_launcher_returns(tmp_path):
 
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda self: None),
+        patch.object(threading.Thread, "start", _start_without_job_wait),
     ):
         executor.start_app(
             client,
@@ -642,7 +653,7 @@ def test_start_app_does_not_create_an_unused_client_parent_counter(tmp_path):
 
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", side_effect=get_job_launcher),
-        patch.object(threading.Thread, "start", lambda self: None),
+        patch.object(threading.Thread, "start", _start_without_job_wait),
     ):
         executor.start_app(
             client,
@@ -700,7 +711,7 @@ def test_client_cpu_attempt_marker_survives_parent_restart_and_redeployment(tmp_
     launched_threads = []
 
     def start_without_wait(thread):
-        launched_threads.append(thread)
+        _start_without_job_wait(thread, launched_threads)
 
     def launch_with_fresh_parent():
         executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
@@ -743,7 +754,7 @@ def test_client_cpu_attempt_marker_failure_does_not_claim_complete_or_block_laun
     with (
         patch("nvflare.private.fed.client.client_executor.os.open", side_effect=OSError("disk unavailable")),
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda thread: launched_threads.append(thread)),
+        patch.object(threading.Thread, "start", lambda thread: _start_without_job_wait(thread, launched_threads)),
     ):
         executor.start_app(
             client,
@@ -788,7 +799,7 @@ def test_start_app_preserves_abort_intent_while_launcher_is_running(tmp_path, he
 
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda self: None),
+        patch.object(threading.Thread, "start", _start_without_job_wait),
     ):
         executor.start_app(
             client,
@@ -842,7 +853,7 @@ def test_start_app_can_abort_published_runtime_before_launcher_returns(
     launcher.launch_job.side_effect = launch_job
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda self: None),
+        patch.object(threading.Thread, "start", _start_without_job_wait),
     ):
         executor.start_app(
             client, job_id, job_meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, fl_ctx
@@ -990,7 +1001,7 @@ def test_start_app_allows_scheduler_metadata(tmp_path):
 
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda self: None),
+        patch.object(threading.Thread, "start", _start_without_job_wait),
     ):
         JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
             client,
@@ -1039,7 +1050,7 @@ def test_start_app_uses_deployed_byoc_when_rewriting_job_meta(tmp_path, deployed
 
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda self: None),
+        patch.object(threading.Thread, "start", _start_without_job_wait),
     ):
         JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
             client,
@@ -1480,7 +1491,7 @@ def test_wait_child_process_cleans_up_when_terminal_outcome_report_fails():
 
 @pytest.mark.parametrize("return_code", [JobReturnCode.SUCCESS, JobReturnCode.ABORTED, ProcessExitCode.EXCEPTION])
 @pytest.mark.parametrize("release_fails", [False, True])
-def test_wait_child_process_attempts_release_after_handoff_before_terminal_request(return_code, release_fails, caplog):
+def test_wait_child_process_releases_before_handoff_and_terminal_request(return_code, release_fails, caplog):
     order = []
     client = MagicMock()
     client.client_name = "site-1"
@@ -1525,7 +1536,7 @@ def test_wait_child_process_attempts_release_after_handoff_before_terminal_reque
             fl_ctx=fl_ctx,
         )
 
-    assert order == ["wait", "handoff", "free", "send", "retire"]
+    assert order == ["wait", "free", "handoff", "send", "retire"]
     resource_manager.free_resources.assert_called_once_with(
         resources={"gpu": [0]}, token="token-1", fl_ctx=client.engine.new_context.return_value
     )
@@ -1957,3 +1968,57 @@ def test_client_relaunch_preserves_values_and_marks_only_usable_measurements_par
         assert codes == expected
     assert report["duration_seconds"] == handoff["duration_seconds"]
     assert not terminal_handoff_path(run_dir, launch_generation="test-launch").exists()
+
+
+def test_delayed_attempt_marker_does_not_hold_launch_or_claim_complete(tmp_path):
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    launcher = MagicMock()
+    launched_threads = []
+    with (
+        stalled_resource_io(client_executor_module.os, "mkdir") as (entered, threads),
+        patch.object(client_executor_module, "get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", lambda thread: _start_without_job_wait(thread, launched_threads)),
+    ):
+        caller = threads.start(
+            executor.start_app,
+            client,
+            "job-1",
+            meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            ctx,
+        )
+        assert entered.wait(10)
+        join_thread(caller)
+        launcher.launch_job.assert_called_once()
+        assert launched_threads[-1]._args[-1] is True
+
+
+@pytest.mark.parametrize("operation", ["read_terminal_handoff", "_remove_cpu_attempt_marker"])
+def test_delayed_statistics_preserve_outcome_resource_release_and_retirement(operation):
+    client = MagicMock(client_name="site-1")
+    client.send_request_before_shutdown.return_value.get_header.return_value = ReturnCode.OK
+    client.send_request_before_shutdown.return_value.payload = {JobOutcomeMsgKey.RESOURCE_REPORT_STATUS: "accepted"}
+    executor = JobExecutor(client, "startup")
+    executor._cpu_seen_job_launches.add("job-1")
+    handle = MagicMock()
+    executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: handle}}
+    manager, ctx = MagicMock(), MagicMock()
+    with (
+        stalled_resource_io(client_executor_module, operation) as (entered, threads),
+        patch.object(client_executor_module, "get_return_code", return_value=JobReturnCode.SUCCESS),
+    ):
+        caller = threads.start(
+            executor._wait_child_process_finish, client, "job-1", {"gpu": [0]}, None, manager, "/tmp/workspace", ctx
+        )
+        assert entered.wait(10)
+        manager.free_resources.assert_called_once()
+        join_thread(caller)
+        assert "job-1" not in executor.run_processes
+        assert "job-1" in executor._cpu_seen_job_launches
+        payload = client.send_request_before_shutdown.call_args.kwargs["request"].payload
+        assert payload[JobOutcomeMsgKey.CODE] == JobReturnCode.SUCCESS
+        ctx.get_engine.return_value.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, ctx)

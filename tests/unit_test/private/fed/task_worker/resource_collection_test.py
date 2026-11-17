@@ -39,10 +39,10 @@ _SNAPSHOT = {
 }
 
 
-def _settle_resources(store, identity):
+def _settle_resources(record, identity):
     reducer = TaskResourceReducer()
     assert reducer.register(identity)
-    reducer.settle(identity, store, started=True, settled=True)
+    reducer.settle(identity, record, started=True, settled=True)
     return reducer.snapshot()
 
 
@@ -95,21 +95,25 @@ def _controlled_worker(monkeypatch, phases, *, fail=False):
 
         def traffic_snapshot(self, *, incomplete=False):
             phases.append("traffic")
-            assert not incomplete
-            return {"sent_bytes": 7, "received_bytes": 11}
+            assert incomplete
+            return {
+                "sent_bytes": 7,
+                "received_bytes": 11,
+                "status": "partial",
+                "issues": ["observation_incomplete"],
+            }
 
     monkeypatch.setattr(worker, "_build_executor", lambda _config: Trainer())
     monkeypatch.setattr(worker, "ExecutionResourceCollector", Collection)
     monkeypatch.setattr(worker, "CellWorkerTransport", Transport)
 
 
-def test_worker_shared_snapshot_precedes_commit_and_traffic_follows_close(tmp_path, monkeypatch):
+def test_worker_snapshots_use_completion_diagnostics_without_extra_files(tmp_path, monkeypatch):
     phases = []
     _controlled_worker(monkeypatch, phases)
     store, identity, path = _stage(tmp_path, cell=True)
     checkpoint = FileTaskArtifactStore.stage_checkpoint
     commit = FileTaskArtifactStore.commit_staged_result
-    write = FileTaskArtifactStore.write_resource_stats
 
     def checkpoint_stage(self, expected):
         phases.append("checkpoint")
@@ -119,13 +123,8 @@ def test_worker_shared_snapshot_precedes_commit_and_traffic_follows_close(tmp_pa
         phases.append("commit")
         return commit(self, *args, **kwargs)
 
-    def write_report(self, *args, **kwargs):
-        phases.append("sidecar")
-        return write(self, *args, **kwargs)
-
     monkeypatch.setattr(FileTaskArtifactStore, "stage_checkpoint", checkpoint_stage)
     monkeypatch.setattr(FileTaskArtifactStore, "commit_staged_result", commit_result)
-    monkeypatch.setattr(FileTaskArtifactStore, "write_resource_stats", write_report)
     completion = worker.run_worker(path)
     assert phases == [
         "start",
@@ -134,17 +133,19 @@ def test_worker_shared_snapshot_precedes_commit_and_traffic_follows_close(tmp_pa
         "finalize",
         "checkpoint",
         "stop",
+        "traffic",
         "commit",
         "close",
-        "traffic",
-        "sidecar",
     ]
-    assert completion.diagnostics == {"elapsed_seconds": 10.0, "cpu_seconds": 4.0}
-    report = store.read_resource_stats(identity)
+    report = completion.to_dict()["diagnostics"]["resource_stats"]
+    assert completion.diagnostics["elapsed_seconds"] == 10.0
+    assert completion.diagnostics["cpu_seconds"] == 4.0
     assert report["duration_seconds"] == 10
     assert report["cpu_consumed"] == {"cpu_seconds": 4}
-    assert report["message_traffic"] == {"sent_bytes": 7, "received_bytes": 11}
+    assert report["message_traffic"] == {"sent_bytes": 7, "received_bytes": 11, "status": "partial"}
+    assert report["issues"] == [{"metric": "message_traffic", "code": "observation_incomplete"}]
     assert store.read_result(identity)[0]["value"] == 2
+    assert not Path(store.attempt_dir(identity), "resource_stats.json").exists()
 
 
 def test_python_failure_still_reports_work_without_committing_result(tmp_path, monkeypatch):
@@ -153,25 +154,39 @@ def test_python_failure_still_reports_work_without_committing_result(tmp_path, m
     store, identity, path = _stage(tmp_path, cell=True)
     with pytest.raises(ValueError, match="training failure"):
         worker.run_worker(path)
-    assert phases == ["start", "open", "execute", "finalize", "stop", "close", "traffic"]
-    assert store.read_resource_stats(identity)["cpu_consumed"] == {"cpu_seconds": 4}
+    assert phases == ["start", "open", "execute", "finalize", "stop", "traffic", "close"]
+    assert store.read_failure(identity)["diagnostics"]["resource_stats"]["cpu_consumed"] == {"cpu_seconds": 4}
     with pytest.raises(IncompleteTaskArtifactError):
         store.read_result(identity)
     assert Path(store.attempt_dir(identity), "failure.json").exists()
 
 
-def test_sidecar_failure_cannot_replace_successful_training_result(tmp_path, monkeypatch):
+def _nested_value():
+    value = 0
+    for _ in range(62):
+        value = {"nested": value}
+    return value
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [object(), float("nan"), "x" * (64 * 1024), _nested_value()],
+    ids=["non-json", "non-finite", "oversized", "too-deep"],
+)
+@pytest.mark.parametrize("fail", [False, True])
+def test_unserializable_or_oversized_statistics_do_not_replace_application_outcome(tmp_path, monkeypatch, bad, fail):
     phases = []
-    _controlled_worker(monkeypatch, phases)
+    _controlled_worker(monkeypatch, phases, fail=fail)
     store, identity, path = _stage(tmp_path)
-
-    def fail_stats(*_args):
-        raise OSError("statistics write failed")
-
-    monkeypatch.setattr(FileTaskArtifactStore, "write_resource_stats", fail_stats)
-    worker.run_worker(path)
-    assert store.read_result(identity)[0]["value"] == 2
-    assert store.read_resource_stats(identity) is None
+    monkeypatch.setattr(worker, "ExecutionResourceCollector", lambda: Mock(stop=lambda: {**_SNAPSHOT, "bad": bad}))
+    if fail:
+        with pytest.raises(ValueError, match="training failure"):
+            worker.run_worker(path)
+        assert "diagnostics" not in store.read_failure(identity)
+    else:
+        completion = worker.run_worker(path)
+        assert store.read_result(identity)[0]["value"] == 2
+        assert "resource_stats" not in completion.diagnostics
 
 
 def test_unregistered_worker_does_not_start_collection(tmp_path, monkeypatch):
@@ -180,9 +195,9 @@ def test_unregistered_worker_does_not_start_collection(tmp_path, monkeypatch):
     store, identity, path = _stage(tmp_path, reporting=False)
     collection = Mock(side_effect=AssertionError("unexpected measurement"))
     monkeypatch.setattr(worker, "ExecutionResourceCollector", collection)
-    worker.run_worker(path)
+    completion = worker.run_worker(path)
     collection.assert_not_called()
-    assert store.read_resource_stats(identity) is None
+    assert "resource_stats" not in completion.diagnostics
 
 
 @pytest.mark.parametrize("snapshot", [None, {}, {"resource_capacity": {}, "cpu_consumed": {"cpu_seconds": "bad"}}])
@@ -191,12 +206,11 @@ def test_bad_optional_snapshot_cannot_fail_training(tmp_path, monkeypatch, snaps
     _controlled_worker(monkeypatch, phases)
     store, identity, path = _stage(tmp_path)
     monkeypatch.setattr(worker, "ExecutionResourceCollector", lambda **_kwargs: Mock(stop=lambda: snapshot))
-    worker.run_worker(path)
+    completion = worker.run_worker(path)
     assert store.read_result(identity)[0]["value"] == 2
-    totals = _settle_resources(store, identity)
+    totals = _settle_resources(completion.to_dict()["diagnostics"].get("resource_stats"), identity)
     assert totals["cpu_consumed"]["status"] == "unavailable"
     assert totals["resource_time"]["status"] == "unavailable"
-    assert store.read_resource_stats(identity) is None
 
 
 @pytest.mark.parametrize("fail", [False, True], ids=["completed", "python-failure"])
@@ -242,13 +256,15 @@ def test_task_worker_freezes_startup_gpu_observation_on_success_or_failure(tmp_p
             worker.run_worker(path)
         with pytest.raises(IncompleteTaskArtifactError):
             store.read_result(identity)
+        report = store.read_failure(identity)["diagnostics"]["resource_stats"]
     else:
         completion = worker.run_worker(path)
         assert store.read_result(identity)[0]["value"] == 2
-        assert completion.diagnostics == {"elapsed_seconds": 1.0, "cpu_seconds": 1.0}
+        assert completion.diagnostics["elapsed_seconds"] == 1.0
+        assert completion.diagnostics["cpu_seconds"] == 1.0
+        report = completion.to_dict()["diagnostics"]["resource_stats"]
     gpu_query.assert_called_once_with()
     assert events == ["gpu", "clock", "cpu", "cpu", "clock"]
-    report = store.read_resource_stats(identity)
     assert report["cpu_consumed"] == {"cpu_seconds": 1}
     assert report["duration_seconds"] == 1
     assert report["resource_capacity"]["cpu"] == {"units": 2}

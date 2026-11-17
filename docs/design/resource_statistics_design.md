@@ -206,12 +206,13 @@ capacity by the coordinator's lifetime.
 Task-mode CPU uses coordinator self CPU plus disjoint worker CPU; workers are
 not also added through the coordinator's waited-child counters. A reused worker
 session contributes once, even when it runs several assignments. Saved-result
-retransmission adds actual traffic but no compute; failed physical work still
-contributes. Multi-rank adapters avoid repeating shared capacity per rank.
+retransmission adds actual traffic but no compute; available measurements from
+failed physical work still contribute. Multi-rank adapters avoid repeating shared
+capacity per rank.
 
 The runtime owns worker launch, task completion and settlement. Worker observations
-contribute once after settlement and remain separate from task results, checkpoints
-and receipts. Missing or invalid observations mark affected rollups incomplete
+travel in existing completion or failure diagnostics and contribute once after
+settlement. They do not control result publication, checkpoints or receipts. Missing or invalid observations mark affected rollups incomplete
 without invalidating a task result. If a worker execution remains unresolved, the
 report omits participant duration and CPU average because containment in the
 participant window cannot be established. Valid CPU and capacity-time totals remain

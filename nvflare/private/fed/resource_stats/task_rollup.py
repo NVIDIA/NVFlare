@@ -26,10 +26,9 @@ from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 
 from .measurements import aggregate_scope_issues, capacity_to_resource_time, merge_worker_measurement
 
-MAX_SIDECAR_BYTES = 64 * 1024
+MAX_WORKER_RECORD_BYTES = 64 * 1024
 _MAX_SCOPES = 10_000
 _MAX_STATE_BYTES = 4 * 1024 * 1024
-_MAX_PENDING_BYTES = 8 * 1024 * 1024
 _UNAVAILABLE = {"status": "unavailable"}
 _ACTIVE = None
 _ACTIVE_LOCK = threading.Lock()
@@ -70,14 +69,13 @@ class _Scope:
     identity: TaskAttemptIdentity
     settled: bool = False
     record: dict | None = None
-    reserved: bool = True
 
 
 class TaskResourceReducer:
     """Count each trusted singleton session once without controlling its lifecycle.
 
     The launcher owns all handles, waiting, cancellation and settlement. This
-    ledger only consumes optional final files after that owner confirms exit.
+    ledger consumes diagnostics already read by that owner, after confirmed exit.
     No identities are evicted: losing one could let a replay add work twice.
     """
 
@@ -85,7 +83,6 @@ class TaskResourceReducer:
         self._lock = threading.Lock()
         self._scopes = {}
         self._state_bytes = 0
-        self._pending_bytes = 0
         self._totals = {"resource_time": None, "cpu_consumed": None, "message_traffic": None, "issues": []}
         self._incomplete = False
         self._frozen = False
@@ -104,14 +101,14 @@ class TaskResourceReducer:
             self._incomplete = True
 
     def register(self, identity):
-        """Reserve one sidecar before launch; false disables only statistics."""
+        """Reserve bounded in-memory accounting; false disables only statistics."""
         key = _key(identity)
         with self._lock:
             previous = self._scopes.get(key)
             if previous is not None:
                 if previous.identity != identity:
                     self._incomplete = True
-                return previous.identity == identity and previous.reserved and not previous.settled
+                return previous.identity == identity and not previous.settled
             if self._frozen:
                 self._containment_lost = True
                 return False
@@ -121,13 +118,8 @@ class TaskResourceReducer:
                 self._freeze()
                 self._containment_lost = True
                 return False
-            if self._pending_bytes + MAX_SIDECAR_BYTES > _MAX_PENDING_BYTES:
-                self._incomplete = True
-                self._containment_lost = True
-                return False
             self._scopes[key] = scope
             self._state_bytes += size
-            self._pending_bytes += MAX_SIDECAR_BYTES
             return True
 
     def _updated_totals(self, record):
@@ -151,8 +143,8 @@ class TaskResourceReducer:
         )
         return totals
 
-    def settle(self, identity, store, *, started=None, settled=False):
-        """Consume independently of result validity, only after physical settlement."""
+    def settle(self, identity, record=None, *, started=None, settled=False):
+        """Fold available diagnostics only after confirmed physical settlement."""
         key = _key(identity)
         with self._lock:
             scope = self._scopes.get(key)
@@ -162,14 +154,6 @@ class TaskResourceReducer:
                 # The unresolved row itself marks snapshots incomplete. A later
                 # normal cleanup proof can still supply its final contribution.
                 return
-        record = None
-        if started is not False:
-            try:
-                record = store.read_resource_stats(identity)
-            except Exception:
-                pass
-        with self._lock:
-            scope = self._scopes[key]
             if scope.settled:
                 if record is not None and scope.record != record:
                     self._incomplete = True
@@ -181,6 +165,8 @@ class TaskResourceReducer:
                     else:
                         try:
                             record_size = len(_encoded(record))
+                            if record_size > MAX_WORKER_RECORD_BYTES:
+                                raise ValueError("worker resource record exceeds 64 KiB")
                             totals = self._updated_totals(record)
                             if self._fits(self._state_bytes + record_size, totals):
                                 scope.record = record
@@ -189,25 +175,8 @@ class TaskResourceReducer:
                             else:
                                 self._freeze()
                         except (KeyError, TypeError, ValueError, OverflowError):
-                            # Keep earlier totals and retire the optional file below.
+                            # Malformed optional diagnostics leave earlier totals intact.
                             self._incomplete = True
-        retired = started is False
-        if started is not False:
-            try:
-                # This optional file is outside checkpoint/result commit and receipts.
-                store.remove_resource_stats(identity)
-                retired = True
-            except Exception:
-                with self._lock:
-                    self._incomplete = True
-        if retired:
-            with self._lock:
-                scope = self._scopes[key]
-                if scope.reserved:
-                    # A failed deletion still occupies this generation's disk budget.
-                    # Successful retries release it exactly once without recounting.
-                    scope.reserved = False
-                    self._pending_bytes -= MAX_SIDECAR_BYTES
 
     def snapshot(self):
         """Return worker-only subtotals; None means no contribution and no gap."""

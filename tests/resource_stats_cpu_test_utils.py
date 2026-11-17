@@ -34,10 +34,10 @@ def cleanup_subprocess(process):
 def exercise_forked_cpu_hooks(connection):
     try:
         inherited_discarded = cpu_module._active is None
-        cpu_module.mark_unwaited_managed_children()
+        cpu_module.mark_child_cpu_coverage_uncertain()
         fresh = CpuConsumedAccountant(usage_reader=lambda: (float(0), float(0)))
         cpu_module.install_cpu_accountant(fresh)
-        cpu_module.mark_unwaited_managed_children()
+        cpu_module.mark_child_cpu_coverage_uncertain()
         connection.send((inherited_discarded, cpu_module._active is fresh, fresh.finish()))
     finally:
         connection.close()

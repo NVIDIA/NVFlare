@@ -153,6 +153,8 @@ generation token is required for every handoff operation and never enters public
 records. Cleanup removes only that generation's file, so an
 older writer or failed launch cannot replace or remove a newer handoff. Cleanup
 removes empty staging directories; readers ignore any residual private files.
+Handoffs and summaries use atomic file publication without separate statistics
+`fsync` calls; durability follows normal workspace archival.
 
 The parent binds each handoff to the launch generation it owns, establishing the
 association before launch. It rejects stale or unverifiable handoffs, even when a
@@ -223,9 +225,26 @@ acknowledgement protocol. Older peers may omit the report or its reply status;
 this indicates absent statistics rather than an outcome failure. An older archive
 without the bundle is unavailable, not a zero measurement.
 
-The client removes its persisted attempt marker and in-memory launch entry after
-an `accepted` or `duplicate` acknowledgement. Unacknowledged attempts retain their
-history so a later execution does not claim complete coverage of lost work.
+Attempt markers and terminal handoffs use best-effort file I/O. Each process
+allows one daemon operation at a time, waits at most 50 ms per operation, and
+skips immediately while an earlier operation is unfinished. A timeout stops
+waiting; it does not cancel the syscall. No I/O worker is joined at shutdown.
+Late read results are ignored, and missing observations remain gaps.
+
+Attempt markers are not fsynced. A failed, skipped or delayed marker operation
+marks the current execution's prior coverage uncertain. An accepted or duplicate
+acknowledgement permits marker cleanup; incomplete cleanup retains in-memory
+history. This detects ordinary restarts when the marker is available, but does
+not guarantee history across a crash or overlapping delayed cleanup. The separate
+launch-generation check still rejects stale terminal handoffs.
+
+Worker measurements use the existing completion or failure diagnostics, with no
+separate statistics-file write, read or removal. Invalid optional measurements
+are omitted without changing the application outcome. Traffic is sampled before
+transport shutdown, so a live transport's usable subtotal is marked partial for
+the unobserved final interval. A missing or unreadable completion/failure record
+can leave a worker contribution unavailable. Cancellation paths that do not read
+those records also leave gaps rather than adding a statistics-only read.
 
 ## Server ledger and archive publication
 
@@ -243,15 +262,10 @@ OPEN: accept one record per trusted slot
   -> ARCHIVED: existing job archives saved
 ```
 
-After the server job process exits, aborted and failed jobs allow up to 20 seconds
-for outstanding client outcomes, capped by a shorter configured
-`client_outcome_wait_timeout`. Client cancellation starts before this wait. The
-completion loop continues processing other jobs and closes the report as soon as
-all expected outcomes arrive. At expiry, absent reports remain gaps; they do not
-change the abort or failure outcome. Final status, archive availability, and release
-of the scheduler's job slot follow closure, so a queued job can wait for this grace
-when the concurrency limit is reached. Successful jobs retain the normal outcome
-wait policy.
+Statistics add no client-report grace to job completion. Server failures and
+requested aborts retain the existing completion policy, finalizing reports already
+accepted and recording missing participants as gaps. The normal client-outcome
+wait and archive policy remain unchanged.
 
 At closure, each roster entry contains either an accepted value or a gap. An
 accepted entry contains `participant_name`, the original `reported_at`,
