@@ -114,7 +114,8 @@ research/fedready/
 |-- docs/assets/fedready_overview.png # Federation-formation overview
 |-- fedready/
 |   |-- job_data.py           # Data preflight, FedJob construction, and execution
-|   |-- job_train.py          # Generated trainer validation and FedAvg execution
+|   |-- job_train.py          # Training plan, coding loop, and FedAvg execution
+|   |-- training_code.py      # Generated package validation and integrity
 |   |-- server.py             # NVFlare Controller and two-round data workflow
 |   |-- client.py             # NVFlare client Executor and local validation
 |   |-- agents/
@@ -126,8 +127,21 @@ research/fedready/
 |   |   |-- local_adapter.py  # Client-local adapter pipeline
 |   |   |-- preflight.py      # Live runtime preflight
 |   |   `-- training_reference.py # NVFlare example selection for generated trainers
-|   |-- data/                 # Profiling, extraction, QC, and typed contracts
-|   |-- flare/                # FLARE messages and client/preflight runtimes
+|   |-- data/
+|   |   |-- parser.py         # Client-local dataset profiling
+|   |   |-- extractor.py      # Extraction orchestration and policy handling
+|   |   |-- extraction_artifacts.py # Configuration, manifests, and safe summaries
+|   |   |-- materializer.py   # Generated materializer execution and validation
+|   |   |-- visual_qc.py      # Local QC artifacts, decisions, and orientation repair
+|   |   |-- splits.py         # Bounded sampling and train/validation/test splits
+|   |   |-- qc.py             # Shared visual-QC vocabulary and admission checks
+|   |   `-- contracts/        # Typed data and training contracts
+|   |-- flare/
+|   |   |-- training_job.py   # FedAvg construction and simulator results
+|   |   |-- training_preflight.py # Mock-data validation of generated trainers
+|   |   |-- training_preflight_runner.py # Preflight subprocess entry point
+|   |   |-- fedready_training_client_runtime.py # Client-local data validation
+|   |   `-- channel.py        # FLARE message envelopes and headers
 |   |-- prompts/              # Prompt loader and scoped JSON prompt bundles
 |   `-- utils/                # Atomic I/O, audit logging, and training metrics
 `-- tests/                    # Compact critical-path acceptance tests

@@ -25,7 +25,7 @@ from uuid import uuid4
 from fedready.agents.bridge import CodexWorkerBackend
 from fedready.agents.guardrail import ACTION_CHECKS, GuardrailAgent
 from fedready.agents.roles import ServerAgent
-from fedready.data.extractor import ExtractionConfig
+from fedready.data.extraction_artifacts import ExtractionConfig
 from fedready.data.parser import list_client_ids
 from fedready.flare.channel import (
     CLIENT_INQUIRY_SCHEMA,

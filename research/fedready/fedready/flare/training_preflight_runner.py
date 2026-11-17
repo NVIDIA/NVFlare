@@ -21,8 +21,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from fedready.flare.training_job import _build_fedavg_job_object
 from fedready.job_data import run_fed_job_recipe
-from fedready.job_train import _build_fedavg_job_object
 
 
 def _read_input(path: str | Path) -> dict[str, Any]:

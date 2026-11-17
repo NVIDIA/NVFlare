@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from fedready.client import FedReadyTaskQueryExecutor
-from fedready.data.extractor import ExtractionConfig
+from fedready.data.extraction_artifacts import ExtractionConfig
 from fedready.data.parser import list_client_ids
 from fedready.flare.channel import SIMULATION_SCHEMA_VERSION, TASK_QUERY_TASK_NAME
 from fedready.server import FedReadyTaskQueryController
@@ -167,12 +167,12 @@ def build_agent_task_query_recipe(**kwargs: Any) -> tuple[FedReadyRecipe, list[s
 
 
 def _add_runtime_assets(job: FedJob, *, client_ids: list[str]) -> None:
-    """Include package entry points, contract modules and prompt assets in exported jobs."""
+    """Include package entry points, extraction sources and prompt assets in exported jobs."""
 
     package_dir = Path(__file__).resolve().parent
-    # Dependency scanning does not follow package initializers or their re-exports.
+    # Scanning misses initializers and the files read by the extraction fingerprint.
     sources = set(package_dir.rglob("__init__.py"))
-    sources.update((package_dir / "data" / "contracts").glob("*.py"))
+    sources.update((package_dir / "data").rglob("*.py"))
     sources.update((package_dir / "prompts").glob("*.json"))
     for source in sorted(sources):
         dest_dir = (Path("fedready") / source.relative_to(package_dir).parent).as_posix()

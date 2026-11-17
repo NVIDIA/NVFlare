@@ -29,7 +29,7 @@ from fedready.agents.bridge import CodexWorkerBackend
 from fedready.agents.local_adapter import sanitize_adapter_diagnostic
 from fedready.client import FedReadyTaskQueryExecutor
 from fedready.data.contracts.classification import label_value
-from fedready.data.extractor import _run_generated_data_materializer
+from fedready.data.materializer import _run_generated_data_materializer
 from fedready.data.parser import DataParserConfig, list_client_ids, parse_site_dataset
 from fedready.flare.channel import (
     HEADER_SESSION_ID,

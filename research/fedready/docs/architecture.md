@@ -31,6 +31,19 @@ running loop, load the received parameters, compute and send a model diff, and
 set `NUM_STEPS_CURRENT_ROUND`. The built-in server workflow aggregates those
 validated updates.
 
+`job_train.py` owns the training plan and bounded agent revision loop.
+`training_code.py` validates generated packages and binds preflight approval to
+their contents. `flare/training_job.py` owns the shared FedAvg job builder,
+client arguments, and simulator reporting; both the main workflow and
+`flare/training_preflight.py` use that builder.
+
+`data/extractor.py` coordinates extraction. Generated materializer execution
+and verification live in `data/materializer.py`; `data/visual_qc.py` owns local
+review artifacts, persisted decisions, and orientation repair. Sample selection
+and splitting live in `data/splits.py`. Shared manifests, configuration, safe
+result summaries, and extraction-source fingerprints live in
+`data/extraction_artifacts.py`.
+
 ## Trust boundaries
 
 - The server sees client identifiers, aggregate profiles, counts, validation

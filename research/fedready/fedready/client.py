@@ -44,15 +44,14 @@ from fedready.data.contracts import (
     normalize_record_type,
     runtime_contract_for_record_type,
 )
-from fedready.data.extractor import (
-    ExtractionConfig,
-    _resolve_site_data_path,
+from fedready.data.extraction_artifacts import ExtractionConfig
+from fedready.data.extractor import _resolve_site_data_path, extract_site_dataset
+from fedready.data.parser import DataParserConfig, parse_site_dataset
+from fedready.data.visual_qc import (
     apply_automatic_orientation_repair,
     build_visual_qc_context,
-    extract_site_dataset,
     persist_visual_qc_decision,
 )
-from fedready.data.parser import DataParserConfig, parse_site_dataset
 from fedready.flare.channel import (
     CLIENT_RESPONSE_SCHEMA,
     EXTRACTION_RESPONSE_SCHEMA,

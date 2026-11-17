@@ -28,6 +28,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fedready import job_data, job_train
 from fedready.data.contracts import segmentation, training
 from fedready.flare import fedready_training_client_runtime
+from fedready.flare.training_job import (
+    FedAvgTrainingConfig,
+    _add_training_package,
+    _format_client_runtime_task_args,
+    summarize_simulator_status,
+)
+from fedready.flare.training_preflight import _completed_preflight_before_aio_cleanup_error
 from fedready.job_data import (
     _default_session_id,
     _safe_workspace_slug,
@@ -35,16 +42,10 @@ from fedready.job_data import (
     export_fed_job_recipe,
     resolve_recipe_workspace_root,
 )
-from fedready.job_train import (
+from fedready.job_train import _dataset_root_from_extraction_summary_path, _default_training_session_id
+from fedready.training_code import (
     LOCAL_TRAINING_SIMULATION_SCHEMA_VERSION,
-    FedAvgTrainingConfig,
-    _add_training_package,
-    _completed_preflight_before_aio_cleanup_error,
-    _dataset_root_from_extraction_summary_path,
-    _default_training_session_id,
-    _format_client_runtime_task_args,
     build_training_package_integrity,
-    summarize_simulator_status,
     validate_training_code_spec,
 )
 from fedready.utils.io import safe_path_slug
@@ -593,7 +594,13 @@ class NVFlareJobTestCase(unittest.TestCase):
                             "sys.path[:0] = sys.argv[1:3]; "
                             "module = importlib.import_module('fedready.' + sys.argv[3]); "
                             "assert pathlib.Path(module.__file__).is_relative_to(sys.argv[1]); "
-                            "from fedready.agents import ClientAgent, GuardrailAgent, ServerAgent",
+                            "from fedready.agents import ClientAgent, GuardrailAgent, ServerAgent; "
+                            "from fedready.data.extraction_artifacts import _extractor_logic_fingerprint\n"
+                            "for name in ('extractor', 'materializer', 'visual_qc', 'splits', 'extraction_artifacts'):\n"
+                            "    path = pathlib.Path(sys.argv[1]) / 'fedready' / 'data' / (name + '.py')\n"
+                            "    before = _extractor_logic_fingerprint()\n"
+                            "    path.write_text(path.read_text() + '\\n# fingerprint regression\\n')\n"
+                            "    assert _extractor_logic_fingerprint() != before\n",
                             str(package_dir.parent),
                             str(Path(__file__).resolve().parents[3]),
                             entry_module,

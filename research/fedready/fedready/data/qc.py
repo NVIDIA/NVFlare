@@ -51,3 +51,14 @@ def visual_qc_result_ready_for_training(result: Mapping[str, Any]) -> bool:
         visual_qc if isinstance(visual_qc, Mapping) else None,
         label_orientation=label_orientation if isinstance(label_orientation, Mapping) else None,
     )
+
+
+VISUAL_QC_BUNDLE_SCHEMA = "fedready.local_visual_qc_bundle.v1"
+
+
+def _safe_visual_qc_transform_candidates(value: Any, *, default: tuple[str, ...]) -> list[str]:
+    if not isinstance(value, list):
+        return list(default)
+    selected = {item for item in value if isinstance(item, str)}
+    candidates = [transform for transform in VISUAL_QC_TRANSFORMS if transform in selected]
+    return candidates or list(default)

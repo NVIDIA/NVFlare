@@ -30,12 +30,8 @@ from fedready.agents.local_adapter import ensure_local_adapter_pipeline
 from fedready.agents.visual_qc import _aggregate_visual_qc_sample_outputs
 from fedready.data.contracts.base import generated_contract_visual_qc_required
 from fedready.data.contracts.training import CLASSIFICATION_TRAINING, SEGMENTATION_TRAINING
-from fedready.job_train import (
-    CLIENT_TRAINING_LAUNCHER_SCRIPT,
-    _build_fedavg_job_object,
-    _training_code_spec_validation_errors,
-    _training_local_simulation_errors,
-)
+from fedready.flare.training_job import CLIENT_TRAINING_LAUNCHER_SCRIPT, _build_fedavg_job_object
+from fedready.training_code import _training_code_spec_validation_errors, _training_local_simulation_errors
 
 
 class ResearchScopeTestCase(unittest.TestCase):
