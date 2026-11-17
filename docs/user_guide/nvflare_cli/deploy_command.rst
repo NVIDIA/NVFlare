@@ -253,8 +253,8 @@ Prepare the parent server or client kit first:
 After ``deploy prepare`` and before staging or starting the parent pod, deployment
 owners may edit the generated ``local/study_runtime.yaml`` to configure per-study
 datasets, env vars, secrets, and Pod templates in one auto-discovered file — no
-launcher arguments are needed. A kit that still carries the removed v1
-``local/study_data.yaml`` is rejected by ``deploy prepare``; move its studies into
+launcher arguments are needed. The removed v1
+``local/study_data.yaml`` is no longer read; move its studies into
 ``study_runtime.yaml`` and delete the old file. Stage or
 copy any referenced files under ``local/`` so the parent process can read them
 at the in-pod paths.

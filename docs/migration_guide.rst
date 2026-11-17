@@ -32,13 +32,12 @@ Study Data File Removed
 
 The v1 ``local/study_data.yaml`` and the K8s launcher argument
 ``study_data_pvc_file_path`` are removed. The Docker, Kubernetes, and Slurm
-launchers refuse to launch jobs while ``local/study_data.yaml`` exists,
-``nvflare deploy prepare`` rejects a kit that carries it, and
-``K8sJobLauncher`` rejects ``study_data_pvc_file_path``. Move each study's
-datasets into ``local/study_runtime.yaml`` (``format_version: 2``), delete
-``study_data.yaml``, and remove ``study_data_pvc_file_path`` from the launcher
-configuration. For example, ``default: {data: {source: nvfldata, mode: ro}}``
-becomes::
+launchers refuse to launch jobs while ``local/study_data.yaml`` exists, and
+``K8sJobLauncher`` no longer accepts ``study_data_pvc_file_path``. Move each
+study's datasets into ``local/study_runtime.yaml`` (``format_version: 2``),
+delete ``study_data.yaml``, and remove ``study_data_pvc_file_path`` from the
+launcher configuration. For example,
+``default: {data: {source: nvfldata, mode: ro}}`` becomes::
 
     format_version: 2
     studies:
@@ -47,6 +46,20 @@ becomes::
           data: {source: nvfldata, mode: ro}
 
 Process mode never read ``study_data.yaml``.
+
+Two cases need attention before starting 2.10 on an existing kit and workspace:
+
+- **Kits prepared with 2.8 are affected even if no study data was configured.**
+  2.8 ``nvflare deploy prepare`` wrote a comment-only ``local/study_data.yaml``
+  into every Docker and K8s kit and always set ``study_data_pvc_file_path`` on
+  the K8s launcher. Delete the file and remove the argument from the launcher
+  configuration (or re-run ``nvflare deploy prepare`` with 2.10).
+- **A client's** ``study_runtime.yaml`` **is also its study allow-list.** When
+  the file lists at least one study, jobs for every unlisted study are rejected
+  at the resource check, including ``default`` (jobs submitted without a
+  study). List every study the site should run, not only those that had dataset
+  mounts; an entry such as ``default: {}`` is enough for a study without
+  datasets.
 
 .. _multi_process_executor_migration:
 

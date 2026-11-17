@@ -39,7 +39,6 @@ FED_ADMIN_JSON = "fed_admin.json"
 RESOURCES_JSON_DEFAULT = "resources.json.default"
 RESOURCES_JSON = "resources.json"
 COMM_CONFIG_JSON = "comm_config.json"
-STUDY_DATA_YAML = "study_data.yaml"
 STUDY_RUNTIME_YAML = "study_runtime.yaml"
 START_SH = "start.sh"
 SUB_START_SH = "sub_start.sh"
@@ -322,13 +321,6 @@ def _internal_resources(comm_config: dict[str, Any]) -> dict[str, Any]:
 
 def _ensure_study_runtime_template(kit_dir: Path) -> None:
     local_dir = kit_dir / "local"
-    if (local_dir / STUDY_DATA_YAML).exists():
-        _fail(
-            "INVALID_KIT",
-            f"The kit has a legacy local/{STUDY_DATA_YAML}, which is no longer supported.",
-            f"Move its studies into local/{STUDY_RUNTIME_YAML} (format_version: 2), delete "
-            f"local/{STUDY_DATA_YAML}, and re-run. See the 2.10 migration guide.",
-        )
     if (local_dir / STUDY_RUNTIME_YAML).exists():
         return
     (local_dir / STUDY_RUNTIME_YAML).write_bytes(_STUDY_RUNTIME_TEMPLATE_PATH.read_bytes())

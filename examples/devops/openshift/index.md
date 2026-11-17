@@ -570,8 +570,8 @@ After preparation, verify that `local/resources.json.default` contains `k8s_laun
 Before staging or starting the parent pods, you may edit the generated
 `local/study_runtime.yaml` — the auto-discovered file for per-study datasets,
 env vars, secrets, and Pod templates (`studies.<study>.pod_template`); no
-launcher arguments are needed. A kit that still carries the removed
-`local/study_data.yaml` is rejected: move its studies into
+launcher arguments are needed. The removed
+`local/study_data.yaml` is no longer read: move its studies into
 `study_runtime.yaml` and delete it. Stage any referenced pod template files with
 `local/`.
 

@@ -157,19 +157,14 @@ def study_runtime_file_path(workspace_root: str) -> str:
     return os.path.join(workspace_root, *STUDY_RUNTIME_FILE.split("/"))
 
 
-def legacy_study_data_error(legacy_file: str) -> str:
-    """The message for a site that still has the removed v1 study data file."""
-    return (
-        f"legacy study data file '{legacy_file}' is no longer supported; move its studies into "
-        f"{STUDY_RUNTIME_FILE} (format_version: 2) and delete it. See the 2.10 migration guide."
-    )
-
-
 def reject_legacy_study_data(workspace_root: str) -> None:
     """Raise if the removed v1 local/study_data.yaml is still present, so its mounts are never silently dropped."""
     legacy_file = os.path.join(workspace_root, *LEGACY_STUDY_DATA_FILE.split("/"))
     if os.path.exists(legacy_file):
-        raise RuntimeError(legacy_study_data_error(legacy_file))
+        raise RuntimeError(
+            f"legacy study data file '{legacy_file}' is no longer supported; move its studies into "
+            f"{STUDY_RUNTIME_FILE} (format_version: 2) and delete it. See the 2.10 migration guide."
+        )
 
 
 def _error(file_path: str, message: str) -> ValueError:

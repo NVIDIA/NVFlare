@@ -1936,21 +1936,6 @@ def test_prepare_docker_rejects_reserved_default_container_kwargs(tmp_path, caps
     assert "container.image" in err
 
 
-@pytest.mark.parametrize("runtime", ["docker", "k8s"])
-def test_prepare_rejects_legacy_study_data_kit(tmp_path, capsys, runtime):
-    kit = _make_client_kit(tmp_path)
-    (kit / "local" / "study_data.yaml").write_text("default:\n  data:\n    source: nvfldata\n    mode: ro\n")
-    output = tmp_path / f"site-1-{runtime}"
-
-    with pytest.raises(SystemExit):
-        _run_prepare(kit, output, {"runtime": runtime, "parent": {"docker_image": "repo/nvflare:dev"}})
-
-    err = capsys.readouterr().err
-    assert "INVALID_KIT" in err
-    assert "study_data.yaml" in err
-    assert "no longer supported" in err
-
-
 @pytest.mark.parametrize(
     "make_kit, template_name",
     [

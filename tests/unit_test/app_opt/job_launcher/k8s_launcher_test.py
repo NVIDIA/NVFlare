@@ -1561,10 +1561,10 @@ class TestK8sJobLauncherInit:
                 workspace_mount_path=1,
             )
 
-    def test_init_rejects_legacy_study_data_pvc_file_path(self):
+    def test_init_rejects_removed_study_data_pvc_file_path(self):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
-        with pytest.raises(ValueError, match="no longer supported"):
+        with pytest.raises(TypeError, match="study_data_pvc_file_path"):
             ClientK8sJobLauncher(
                 config_file_path="/fake/kube/config",
                 study_data_pvc_file_path="/fake/study_data.yaml",

@@ -527,7 +527,7 @@ uses PVC names. `deploy prepare` creates a commented template when the file is
 absent in the prepared output, and preserves an existing file when the input
 kit already contains one. The earlier `local/study_data.yaml`,
 `local/study_data.json` (Docker), and `local/study_data_pvc.yaml` (K8s) formats
-are removed; `deploy prepare` rejects a kit that still has `study_data.yaml`.
+are removed.
 
 For the shipped multi-study design and study-scoped behavior, see
 [Multi-Study Support](../user_guide/admin_guide/multi_study_guide.rst). For

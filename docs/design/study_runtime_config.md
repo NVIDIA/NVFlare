@@ -248,7 +248,7 @@ For Docker, Kubernetes, and Slurm:
 
 ```text
 local/study_runtime.yaml present  → v2 strict parser (format_version: 2 required)
-local/study_data.yaml present (alone or with v2), or the study_data_pvc_file_path launcher arg → hard error
+local/study_data.yaml present (alone or with v2) → hard error
 ```
 
 - `format_version: 2` required — the gate for future format evolution.
@@ -258,12 +258,11 @@ local/study_data.yaml present (alone or with v2), or the study_data_pvc_file_pat
   `docker_kwargs` on Kubernetes/Slurm, `slurm` on Docker/Kubernetes), a leftover `study_data.yaml` outside process mode.
 - Missing referenced Secrets are not validated pre-launch (the launcher holds no Secret-read RBAC); the pending-pod
   failure classification already fails the job fast (`CreateContainerConfigError`, `FailedMount`).
-- Migration is wholesale: move all studies to `study_runtime.yaml`, delete `study_data.yaml` and any
-  `study_data_pvc_file_path` launcher arg (see the 2.10 migration guide).
+- Migration is wholesale: move all studies to `study_runtime.yaml`, delete `study_data.yaml` and remove the
+  `study_data_pvc_file_path` launcher arg, which the K8s launcher no longer accepts (see the 2.10 migration guide).
 - Workspace transfer: job workspace downloads exclude `study_runtime.yaml` plus any path-form `pod_template` files,
   read from this one well-known YAML. The `resources.json`-scraping exclusion logic is deleted.
-- `nvflare deploy prepare` generates a commented `study_runtime.yaml` template in new kits and rejects a kit that still has a legacy
-  `study_data.yaml`. POC
+- `nvflare deploy prepare` generates a commented `study_runtime.yaml` template in new kits. POC
   Docker provisioning writes its data mapping into `study_runtime.yaml`. The file travels with the startup kit's
   `local/`.
 

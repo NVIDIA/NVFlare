@@ -517,9 +517,8 @@ templates; the launcher re-reads it on every job launch. Any template files
 referenced by ``pod_template`` must be staged with ``local/``.
 
 The v1 ``local/study_data.yaml`` format and the launcher's
-``study_data_pvc_file_path`` argument were removed in 2.10. A kit that still has
-the file is rejected by ``nvflare deploy prepare``, and a launcher refuses to
-start jobs while it is present; move all studies into ``study_runtime.yaml``
+``study_data_pvc_file_path`` argument were removed in 2.10. A launcher refuses to
+start jobs while the file is present; move all studies into ``study_runtime.yaml``
 and delete ``study_data.yaml``.
 
 When a study's ``local/study_runtime.yaml`` entry sets ``pod_template``,

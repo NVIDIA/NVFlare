@@ -413,7 +413,6 @@ Constructor parameters:
 | Parameter | Default | Purpose |
 |-----------|---------|---------|
 | `config_file_path` | required | Path to kubeconfig. Loaded lazily on first `launch_job`. |
-| `study_data_pvc_file_path` | `None` | Removed in 2.10 with the v1 `study_data.yaml`; passing a value raises `ValueError`. Study runtime config comes from the auto-discovered `local/study_runtime.yaml`, which needs no launcher argument. |
 | `timeout` | `None` | Wall-clock seconds for `enter_states([RUNNING])`. |
 | `namespace` | `"default"` | Kubernetes namespace. |
 | `pending_timeout` | `120` | Seconds to wait while the scheduler reports insufficient CPU, memory, or GPU resources. Use `0` to fail fast or `None` to wait indefinitely unless `timeout` is set. Job meta can override with `launcher_spec[site][k8s].pending_timeout`. |

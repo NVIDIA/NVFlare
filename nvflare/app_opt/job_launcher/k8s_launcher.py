@@ -48,7 +48,6 @@ from nvflare.app_opt.job_launcher.k8s_pod import (
     pod_shutdown_confirmed,
 )
 from nvflare.app_opt.job_launcher.study_runtime import (
-    legacy_study_data_error,
     load_study_runtime_file,
     reject_legacy_study_data,
     resolve_study_runtime,
@@ -743,7 +742,6 @@ class K8sJobLauncher(JobLauncherSpec):
     def __init__(
         self,
         config_file_path: str,
-        study_data_pvc_file_path: str = None,
         timeout=None,
         namespace=DEFAULT_NAMESPACE,
         pending_timeout=DEFAULT_PENDING_TIMEOUT,
@@ -758,9 +756,6 @@ class K8sJobLauncher(JobLauncherSpec):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config_file_path = config_file_path
-        if study_data_pvc_file_path is not None:
-            # Removed in 2.10 with the v1 study_data.yaml; the slot stays so a stale launcher config fails clearly.
-            raise ValueError(legacy_study_data_error(study_data_pvc_file_path))
         self.timeout = timeout
         self.namespace = namespace
         self.startup_secret_name = (
