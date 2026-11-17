@@ -19,7 +19,7 @@ import math
 import re
 from datetime import datetime
 
-from .measurements import SCHEMA_VERSION, ordered_issues
+from .measurements import PARTICIPANT_MEASUREMENT_FIELDS, SCHEMA_VERSION, ordered_issues
 
 KIND_PARTICIPANT_SUMMARY = "nvflare.resource_stats.participant_summary"
 KIND_RESOURCE_SUMMARY = "nvflare.resource_stats.resource_summary"
@@ -152,30 +152,21 @@ def _read_participants(participants):
     if not isinstance(participants, list) or not 1 <= len(participants) <= MAX_PARTICIPANTS:
         raise ValueError("resource report requires a bounded nonempty participant list")
     names = set()
-    result = []
     for entry in participants:
         if not isinstance(entry, dict):
             raise ValueError("resource participant must be an object")
         base = {"participant_name", "role"}
         status = entry.get("status")
         if "status" not in entry:
-            entry = _read_fields(
+            _read_fields(
                 entry,
-                base
-                | {
-                    "received_at",
-                    "reported_at",
-                    "resource_capacity",
-                    "resource_time",
-                    "resource_utilization",
-                    "issues",
-                },
+                base | {"received_at", "reported_at"} | set(PARTICIPANT_MEASUREMENT_FIELDS),
                 {"duration_seconds"},
             )
             _read_measurements(entry)
             _read_timestamp(entry["reported_at"])
         elif status in ("missing", "disabled", "invalid"):
-            entry = _read_fields(entry, base | {"status"} | ({"received_at"} if status == "invalid" else set()))
+            _read_fields(entry, base | {"status"} | ({"received_at"} if status == "invalid" else set()))
         else:
             raise ValueError("invalid resource participant status")
         name = _read_identifier(entry["participant_name"], PARTICIPANT_NAME_PATTERN)
@@ -186,24 +177,13 @@ def _read_participants(participants):
             raise ValueError("invalid resource participant role")
         if "received_at" in entry:
             _read_timestamp(entry["received_at"])
-        result.append(entry)
-    return sorted(result, key=lambda entry: (entry["role"], entry["participant_name"]))
+    return sorted(participants, key=lambda entry: (entry["role"], entry["participant_name"]))
 
 
 def _read_participant_summary(record):
     record = _read_fields(
         record,
-        {
-            "schema_version",
-            "kind",
-            "job_id",
-            "participant_name",
-            "reported_at",
-            "resource_capacity",
-            "resource_time",
-            "resource_utilization",
-            "issues",
-        },
+        {"schema_version", "kind", "job_id", "participant_name", "reported_at"} | set(PARTICIPANT_MEASUREMENT_FIELDS),
         {"duration_seconds"},
     )
     _read_identifier(record["job_id"], JOB_ID_PATTERN)

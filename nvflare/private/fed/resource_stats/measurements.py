@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 SCHEMA_VERSION = "1.0"
+PARTICIPANT_MEASUREMENT_FIELDS = ("resource_capacity", "resource_time", "resource_utilization", "issues")
 _DIMENSIONS = {"cpu", "memory", "gpu"}
 
 
@@ -222,11 +223,7 @@ def _sum_totals(entries, *, complete):
 
 def participant_measurements(record):
     """Select measurement fields from an already owned, decoded report."""
-    return {
-        field: record[field]
-        for field in ("resource_capacity", "resource_time", "resource_utilization", "issues", "duration_seconds")
-        if field in record
-    }
+    return {field: record[field] for field in (*PARTICIPANT_MEASUREMENT_FIELDS, "duration_seconds") if field in record}
 
 
 def sum_job_totals(participants):

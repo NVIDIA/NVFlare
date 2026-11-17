@@ -25,6 +25,7 @@ from typing import Any, Optional
 
 from .cpu_consumed import CpuConsumedAccountant, install_cpu_accountant
 from .measurements import (
+    PARTICIPANT_MEASUREMENT_FIELDS,
     SCHEMA_VERSION,
     aggregate_scope_issues,
     capacity_to_resource_time,
@@ -143,8 +144,7 @@ class ExecutionResourceCollector:
         try:
             return self._clock_ns()
         except Exception:
-            pass
-        return None
+            return None
 
     def mark_cpu_consumption_incomplete(self) -> None:
         """Mark an unfinished job callback as a CPU accounting coverage gap."""
@@ -311,9 +311,6 @@ def assemble_participant_summary(
         "job_id": job_id,
         "participant_name": participant_name,
         "reported_at": utc_timestamp(),
-        **{
-            name: child_handoff[name]
-            for name in ("resource_capacity", "resource_time", "resource_utilization", "issues")
-        },
+        **{name: child_handoff[name] for name in PARTICIPANT_MEASUREMENT_FIELDS},
         **({"duration_seconds": child_handoff["duration_seconds"]} if "duration_seconds" in child_handoff else {}),
     }

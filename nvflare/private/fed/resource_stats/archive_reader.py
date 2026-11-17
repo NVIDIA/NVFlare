@@ -123,8 +123,6 @@ class WorkspaceResourceStatsReader:
                         raise WorkspaceResourceStatsError(f"workspace member length is inconsistent: {member_name}")
                     return data
             raise WorkspaceResourceStatsError(f"workspace must contain exactly one {member_name!r} member; found 0")
-        except WorkspaceResourceStatsError:
-            raise
         except (BadZipFile, KeyError, OSError, RuntimeError, EOFError, TypeError) as exc:
             raise WorkspaceResourceStatsError(f"cannot read workspace archive: {exc}") from exc
 

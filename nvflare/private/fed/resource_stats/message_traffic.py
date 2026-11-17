@@ -55,11 +55,7 @@ def record_external_trainer_traffic(job_cell, trainer_fqcn, traffic, *, incomple
         checked = _read_usage(
             {key: value for key, value in traffic.items() if key != "issues"}, ("sent_bytes", "received_bytes")
         )
-        values = (
-            checked["sent_bytes"],
-            checked["received_bytes"],
-            incomplete or checked.get("status") == "partial",
-        )
+        values = (checked["sent_bytes"], checked["received_bytes"], incomplete or checked.get("status") == "partial")
         with _LOCK:
             state = _TRAINERS.get(job_cell)
             if state is None or trainer_fqcn not in state.pending:
@@ -149,12 +145,7 @@ def snapshot_message_traffic(cell, *, incomplete=False):
     values = []
     try:
         counters = list(cell.get_traffic_stats().values())
-        values.append(
-            (
-                sum(item["sent"] for item in counters),
-                sum(item["received"] for item in counters),
-            )
-        )
+        values.append((sum(item["sent"] for item in counters), sum(item["received"] for item in counters)))
     except Exception:
         incomplete = True
     try:
@@ -174,10 +165,7 @@ def snapshot_message_traffic(cell, *, incomplete=False):
         incomplete = True
     if not values:
         return {"status": "unavailable", "issues": ["observation_incomplete"]}
-    result = {
-        "sent_bytes": sum(value[0] for value in values),
-        "received_bytes": sum(value[1] for value in values),
-    }
+    result = {"sent_bytes": sum(value[0] for value in values), "received_bytes": sum(value[1] for value in values)}
     if incomplete:
         result.update(status="partial", issues=["observation_incomplete"])
     return result

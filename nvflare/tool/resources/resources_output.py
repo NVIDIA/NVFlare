@@ -223,12 +223,7 @@ def render_job_resources(summary: dict, participant: dict | None = None, *, job_
     for entry in visible_entries:
         metrics = _capacity_row(entry) if ("status" not in entry) else [_MISSING] * 4
         rows.append([entry["participant_name"], *metrics])
-    metric_headers = [
-        "TIME",
-        "CPU VISIBLE core-h",
-        "MEM VISIBLE GiB-h",
-        "GPU-h",
-    ]
+    metric_headers = ["TIME", "CPU VISIBLE core-h", "MEM VISIBLE GiB-h", "GPU-h"]
     lines.extend(_table(["SITE", *metric_headers], rows))
     other_headers = ["SITE", "AVG CPU USED (cores)"]
     if show_message_traffic:
@@ -247,13 +242,7 @@ def render_job_resources(summary: dict, participant: dict | None = None, *, job_
     if show_legend:
         lines.extend(["", "* = incomplete; — = unavailable."])
     if selected and participant:
-        lines.extend(
-            [
-                "",
-                f"Job-process startup capacity for {selected}",
-                "",
-            ]
-        )
+        lines.extend(["", f"Job-process startup capacity for {selected}", ""])
         lines.extend(_startup_capacity(participant))
     return "\n".join(lines)
 
