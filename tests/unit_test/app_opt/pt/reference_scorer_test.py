@@ -20,6 +20,7 @@ import torch
 
 from nvflare.app_opt.pt import reference_scorer
 from nvflare.app_opt.pt.reference_scorer import FrozenReferenceScorer
+from nvflare.app_opt.pt.trap_loss import PTTRAPLoss
 
 
 class TinyLM(torch.nn.Module):
@@ -191,3 +192,24 @@ def test_online_scoring_does_not_hash_inputs(monkeypatch):
     scores, mask = scorer.score(inputs, inputs)
     assert torch.isfinite(scores).all() and mask.all()
     assert model.calls == 1
+
+
+@pytest.mark.parametrize("use_cache", [False, True])
+def test_inference_scoring_mask_can_be_used_for_training(tmp_path, use_cache):
+    model = TinyLM()
+    scorer = FrozenReferenceScorer(model, "tokenizer", "context", tmp_path if use_cache else None)
+    inputs = torch.tensor([[1, 2, 3, 4]])
+    labels = torch.tensor([[-100, 2, -100, 4]])
+    loss = PTTRAPLoss(weight=0.5, threshold=0.5)
+    for _ in range(2):
+        with torch.inference_mode():
+            reference, mask = scorer.score(inputs, labels)
+        assert torch.is_inference(mask)
+        target = (reference.clone() + torch.tensor([[1.0, 99.0, -1.0]])).requires_grad_(True)
+        penalty = loss(target, reference, mask)
+        penalty.backward()
+        assert penalty.item() == pytest.approx(0.125)
+        torch.testing.assert_close(target.grad, torch.tensor([[0.25, 0.0, 0.0]]))
+        assert torch.equal(mask, torch.tensor([[True, False, True]]))
+    assert model.calls == (1 if use_cache else 2)
+    assert scorer.cache_hits == int(use_cache)

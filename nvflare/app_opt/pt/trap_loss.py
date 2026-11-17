@@ -41,7 +41,8 @@ class PTTRAPLoss(nn.Module):
     """Experimental Target Reference Advantage Penalty, added to ordinary CE.
 
     Computes weight * mean(relu(target_log_probs - reference_log_probs - threshold))
-    over valid tokens. Reference values are detached. With gradient accumulation,
+    over valid tokens. Reference values are detached; inference masks are copied
+    for autograd. With gradient accumulation,
     pass the total valid-token count of the accumulation window as normalizer and
     sum microbatch losses (use the same normalization for ordinary CE).
     """
@@ -56,6 +57,9 @@ class PTTRAPLoss(nn.Module):
 
     def forward(self, target_log_probs, reference_log_probs, mask, normalizer=None):
         self._validate(target_log_probs, reference_log_probs, mask)
+        # Autograd saves the mask for backward; inference tensors cannot be saved.
+        if torch.is_inference(mask):
+            mask = mask.clone()
         selected = target_log_probs.masked_select(mask)
         count = mask.sum() if normalizer is None else torch.as_tensor(normalizer, device=mask.device)
         if count.ndim or not torch.isfinite(count) or count < mask.sum():
