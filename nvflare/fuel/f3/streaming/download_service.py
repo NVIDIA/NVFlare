@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import dataclasses
 import functools
 import threading
@@ -27,7 +28,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled
+from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled, DownloadUnavailable
 from nvflare.fuel.f3.streaming.stream_utils import callback_thread_pool, download_request_thread_pool
 from nvflare.fuel.f3.streaming.transfer_outcome import (  # noqa: F401 (re-exported legacy names)
     DownloadStatus,
@@ -207,6 +208,7 @@ class _PropKey:
     STATE = "state"
     DATA = "data"
     STATUS = "status"
+    RETRYABLE = "retryable"
     # Receiver-confirmed completion. All three keys are OPTIONAL on the wire so both
     # version skews interop with legacy peers: an old receiver never sends CONFIRM_CAPABLE and
     # gets today's producer-served semantics; an old producer never sends CONFIRM_EXPECTED so a
@@ -285,6 +287,9 @@ class _Ref:
         self.obj = obj
         self.num_receivers_done = 0
         self.receiver_statuses = {}
+        # Only the terminal request may be replayed as EOF after source cleanup.
+        # A second download by the same receiver can still be requesting earlier data.
+        self._terminal_states = {}
         # producer-served terminal statuses awaiting the receiver's confirmation; only
         # finalized (confirmed or legacy-served) statuses live in receiver_statuses
         self._pending_confirms = {}
@@ -433,6 +438,17 @@ class _Ref:
     def snapshot_receiver_statuses(self) -> dict:
         with self._progress_lock:
             return dict(self.receiver_statuses)
+
+    def finished_reply(self, requester: str, state) -> Optional[Message]:
+        with self._progress_lock:
+            if self.receiver_statuses.get(requester) != DownloadStatus.SUCCESS or not self._completion_reached_locked():
+                return None
+            return _finished_download_reply(self.receiver_statuses, self._terminal_states, requester, state)
+
+    def record_terminal_state(self, requester: str, state):
+        with self._progress_lock:
+            if requester not in self.receiver_statuses:
+                self._terminal_states[requester] = state
 
     def snapshot_pending_confirms(self) -> dict:
         with self._progress_lock:
@@ -656,10 +672,24 @@ def _invoke_cb_safely(logger, what: str, cb, *args, **kwargs):
         logger.warning(f"{what} failed: {secure_format_exception(ex)}")
 
 
+def _finished_download_reply(receiver_statuses, terminal_states, requester, state):
+    status = receiver_statuses.get(requester)
+    if status == DownloadStatus.SUCCESS:
+        if requester in terminal_states and state == terminal_states[requester]:
+            return make_reply(ReturnCode.OK, body={_PropKey.STATUS: ProduceRC.EOF})
+        # The source is already delivered, but this attempt has not consumed it.
+        # Fail only this enclosing request; it must never decode partial data as success.
+        return make_reply(ReturnCode.SERVICE_UNAVAILABLE, body={_PropKey.RETRYABLE: True})
+    if status == DownloadStatus.FAILED:
+        return make_reply(ReturnCode.OK, body={_PropKey.STATUS: ProduceRC.ERROR})
+    return None
+
+
 class _FinishedRef:
 
-    def __init__(self, receiver_statuses: dict[str, str], timestamp: float):
+    def __init__(self, receiver_statuses: dict[str, str], terminal_states: dict, timestamp: float):
         self.receiver_statuses = receiver_statuses
+        self.terminal_states = terminal_states
         self.last_active_time = timestamp
 
     def expired(self, now: float, ttl: float) -> bool:
@@ -1546,7 +1576,8 @@ class DownloadService:
         for r in tx.snapshot_refs():
             cls._ref_table.pop(r.rid, None)
             if tombstone_finished_refs:
-                cls._finished_refs[r.rid] = _FinishedRef(r.snapshot_receiver_statuses(), now)
+                with r._progress_lock:
+                    cls._finished_refs[r.rid] = _FinishedRef(dict(r.receiver_statuses), dict(r._terminal_states), now)
             else:
                 cls._finished_refs.pop(r.rid, None)
 
@@ -1640,7 +1671,7 @@ class DownloadService:
             cls._finished_refs.pop(rid, None)
 
     @classmethod
-    def _get_finished_ref_status(cls, rid: str, requester: str) -> Optional[str]:
+    def _get_finished_ref_reply(cls, rid: str, requester: str, state) -> Optional[Message]:
         now = time.time()
         finished_ref = cls._finished_refs.get(rid)
         if not finished_ref:
@@ -1650,8 +1681,7 @@ class DownloadService:
             cls._finished_refs.pop(rid, None)
             return None
 
-        status = finished_ref.receiver_statuses.get(requester)
-        return status
+        return _finished_download_reply(finished_ref.receiver_statuses, finished_ref.terminal_states, requester, state)
 
     @classmethod
     def get_transaction_info(cls, transaction_id: str) -> Optional[TransactionInfo]:
@@ -1695,19 +1725,18 @@ class DownloadService:
                 # as already gone (tombstone/missing handling)
                 ref = None
             if not ref:
-                finished_status = cls._get_finished_ref_status(rid, requester)
-                if finished_status == DownloadStatus.SUCCESS:
-                    cls._logger.debug(f"finished ref {rid} from {requester} retried - returning EOF")
-                    return make_reply(ReturnCode.OK, body={_PropKey.STATUS: ProduceRC.EOF})
-                elif finished_status == DownloadStatus.FAILED:
-                    cls._logger.debug(f"finished ref {rid} from {requester} retried - returning ERROR")
-                    return make_reply(ReturnCode.OK, body={_PropKey.STATUS: ProduceRC.ERROR})
+                finished_reply = cls._get_finished_ref_reply(rid, requester, current_state)
+                if finished_reply is not None:
+                    return finished_reply
 
                 cls._logger.error(f"no ref found for {rid} from {requester}")
                 return make_reply(ReturnCode.INVALID_REQUEST)
 
         try:
             assert isinstance(ref, _Ref)
+            finished_reply = ref.finished_reply(requester, current_state)
+            if finished_reply is not None:
+                return finished_reply
             ref.mark_active()
             ref.mark_receiver_active(requester)
             ref.emit_progress(receiver_id=requester, state=TransferProgressState.ACTIVE)
@@ -1722,16 +1751,28 @@ class DownloadService:
             # does not block unrelated downloads. Timeout/delete cleanup can release the
             # source concurrently; if that happens, the produce exception is reported as
             # a download failure for this requester.
+            # Downloadable.produce may mutate its input. Preserve the request,
+            # rather than the returned state, to recognize a lost terminal reply.
+            request_state = copy.deepcopy(current_state)
             try:
                 rc, data, new_state = ref.obj.produce(current_state, requester)
             except Exception as ex:
+                finished_reply = ref.finished_reply(requester, request_state)
+                if finished_reply is not None:
+                    return finished_reply
                 ref.emit_progress(receiver_id=requester, state=TransferProgressState.FAILED, force=True)
                 cls._logger.error(
                     f"Object {type(ref.obj)} encountered exception when produce: {secure_format_exception(ex)}"
                 )
                 return make_reply(ReturnCode.PROCESS_EXCEPTION)
 
+            # Another attempt may have finalized this receiver during produce().
+            finished_reply = ref.finished_reply(requester, request_state)
+            if finished_reply is not None:
+                return finished_reply
+
             if rc != ProduceRC.OK:
+                ref.record_terminal_state(requester, request_state)
                 # already done -- for a confirm-capable receiver this record is PROVISIONAL and the
                 # receiver's confirmation finalizes it; for a legacy receiver it is final (today's
                 # producer-served semantics)
@@ -2240,6 +2281,17 @@ def _download_object(
         assert isinstance(reply, Message)
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         if rc != ReturnCode.OK:
+            if (
+                rc == ReturnCode.SERVICE_UNAVAILABLE
+                and isinstance(reply.payload, dict)
+                and reply.payload.get(_PropKey.RETRYABLE) is True
+            ):
+                reason = f"source for ref={ref_id} was already downloaded by another attempt"
+                # Do not CANCEL: the other attempt successfully received the source.
+                # Notify consumers first so partially written files/tensors are cleaned up.
+                consumer.download_failed(ref_id, reason)
+                _emit_progress("failed", force=True)
+                raise DownloadUnavailable(reason)
             # Retry on TIMEOUT: streaming transport may intermittently lose
             # responses.  Resending the same state re-generates the same
             # chunk, making retry data-safe (see docstring for caveats).

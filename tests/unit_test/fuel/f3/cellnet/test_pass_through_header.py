@@ -54,9 +54,10 @@ import pytest
 
 from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.fuel.f3.cellnet.cell import Adapter, Cell
-from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message as F3Message
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+from nvflare.fuel.f3.streaming.stream_types import DownloadUnavailable
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.waiter_utils import WaiterRC
 
@@ -328,6 +329,24 @@ class TestAdapterPassThroughHeader:
         # Verify the cell method was called with props, not without
         cell = adapter.cell
         cell.get_fobs_context.assert_called_once_with(props={FOBSContextKey.PASS_THROUGH: True})
+
+    @pytest.mark.parametrize("fqcn", ["server.job-1", "server.job-1.worker"])
+    def test_duplicate_download_rejects_only_its_request(self, fqcn):
+        cell = _make_mock_cell({})
+        cb = MagicMock()
+        adapter = Adapter(cb=cb, my_info=SimpleNamespace(fqcn=fqcn), cell=cell)
+        future = _make_future(_stream_headers(CellChannel.SERVER_COMMAND, ServerCommandNames.SUBMIT_UPDATE))
+        with (
+            patch("nvflare.fuel.f3.cellnet.cell.decode_payload", side_effect=DownloadUnavailable("duplicate")),
+            patch("nvflare.fuel.f3.cellnet.cell.os._exit") as exit_process,
+            patch.object(adapter, "_send_response") as send_response,
+        ):
+            adapter.call(future)
+        exit_process.assert_not_called()
+        cb.assert_not_called()
+        assert (
+            send_response.call_args.args[0].get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.SERVICE_UNAVAILABLE
+        )
 
     @pytest.mark.parametrize("fqcn", ["server.job-1", "server.job-1.worker"])
     @pytest.mark.parametrize(

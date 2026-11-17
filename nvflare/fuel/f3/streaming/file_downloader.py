@@ -19,6 +19,7 @@ from typing import Any, Optional, Tuple
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.streaming.download_service import Consumer, Downloadable, ProduceRC, download_object
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
+from nvflare.fuel.f3.streaming.stream_types import DownloadUnavailable
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_callable, check_positive_int
 
@@ -179,16 +180,21 @@ def download_file(
         location = tempfile.gettempdir()
 
     consumer = _ChunkConsumer(location)
-    download_object(
-        from_fqcn=from_fqcn,
-        ref_id=ref_id,
-        consumer=consumer,
-        per_request_timeout=per_request_timeout,
-        cell=cell,
-        secure=secure,
-        optional=optional,
-        abort_signal=abort_signal,
-    )
+    try:
+        download_object(
+            from_fqcn=from_fqcn,
+            ref_id=ref_id,
+            consumer=consumer,
+            per_request_timeout=per_request_timeout,
+            cell=cell,
+            secure=secure,
+            optional=optional,
+            abort_signal=abort_signal,
+        )
+    except DownloadUnavailable:
+        # The consumer has recorded the error and closed its partial file.
+        # Preserve the error/path return contract so callers can remove that file.
+        pass
 
     return consumer.error, consumer.file_path
 
