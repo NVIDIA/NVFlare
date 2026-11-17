@@ -23,7 +23,6 @@ is safe to share."""
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import shutil
@@ -44,7 +43,6 @@ from fedready.data.contracts import (
 )
 from fedready.data.extraction_artifacts import (
     EXTRACTION_RESULT_SCHEMA,
-    EXTRACTOR_LOGIC_VERSION,
     ExtractionConfig,
     _dedupe,
     _extraction_output_dir,
@@ -52,6 +50,7 @@ from fedready.data.extraction_artifacts import (
     _extraction_result,
     _extraction_screening,
     _extraction_verification,
+    _extractor_logic_fingerprint,
     _failed_extraction_result,
     _finalize_intensity_accumulator,
     _generated_data_contract,
@@ -80,44 +79,7 @@ except ImportError:  # pragma: no cover - minimal environments
     Image = None  # type: ignore[assignment]
 
 
-SITE_EXTRACTION_POLICY_SCHEMA = "fedready.site_extraction_policy.v1"
 LOCAL_ADAPTER_MANIFEST_SCHEMA = "fedready.local_adapter_manifest.v1"
-
-
-def load_site_extraction_policy(strategy_path: str | Path, client_id: str) -> dict[str, Any]:
-    """Extract one client's site policy from a full server state or strategy JSON."""
-
-    raw = _load_json(Path(strategy_path))
-    strategy = raw.get("extraction_strategy") if isinstance(raw.get("extraction_strategy"), dict) else raw
-    if not isinstance(strategy, dict):
-        raise ValueError("extraction strategy must be a JSON object")
-
-    per_site = strategy.get("per_site_label_mapping")
-    if not isinstance(per_site, dict):
-        if strategy.get("site_label_mapping"):
-            return strategy
-        raise ValueError("extraction strategy missing per_site_label_mapping")
-
-    site_mapping = per_site.get(client_id)
-    if not isinstance(site_mapping, dict):
-        return {
-            "schema_version": SITE_EXTRACTION_POLICY_SCHEMA,
-            "client_id": client_id,
-            "applicable": False,
-            "reason": "client_id is not present in per_site_label_mapping",
-            "strategy_digest": strategy.get("strategy_digest"),
-        }
-
-    return {
-        "schema_version": SITE_EXTRACTION_POLICY_SCHEMA,
-        "client_id": client_id,
-        "applicable": True,
-        "strategy_digest": strategy.get("strategy_digest") or payload_digest(strategy),
-        "image_rule": strategy.get("image_rule", {}),
-        "label_rule": strategy.get("label_rule", {}),
-        "split_rule": strategy.get("split_rule", {}),
-        "site_label_mapping": site_mapping,
-    }
 
 
 def extract_site_dataset(
@@ -439,7 +401,7 @@ def extract_dataset(
 
     manifest = {
         "schema_version": "fedready.local_extracted_manifest.v1",
-        "extractor_logic_version": EXTRACTOR_LOGIC_VERSION,
+        "extractor_logic_version": _extractor_logic_fingerprint(),
         "client_id": client_id,
         "policy_digest": policy.get("strategy_digest") or payload_digest(policy),
         "extraction_policy_digest": _extraction_policy_digest(policy),
@@ -814,51 +776,3 @@ def _not_applicable_result(client_id: str, policy: dict[str, Any], reason: str) 
             "redacted": ["source_local_paths", "source_filenames", "raw_images", "raw_masks"],
         },
     }
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Extract a local FedReady client dataset.")
-    parser.add_argument("data_path", nargs="?", help="Local dataset path to extract.")
-    parser.add_argument("--site-meta", help="Resolve data_path from a site-meta.json file.")
-    parser.add_argument("--client-id", required=True, help="Client id to extract.")
-    parser.add_argument("--project-root", help="Project root for relative site metadata paths.")
-    parser.add_argument("--strategy", required=True, help="Server final_state.json or extraction_strategy.json.")
-    parser.add_argument("--output-root", default=ExtractionConfig.output_root)
-    parser.add_argument("--output-name", help="Optional extracted output folder name.")
-    parser.add_argument("--max-samples", type=int)
-    parser.add_argument("--validation-fraction", type=float, default=ExtractionConfig.validation_fraction)
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite an existing extracted output folder.")
-    args = parser.parse_args(argv)
-
-    policy = load_site_extraction_policy(args.strategy, args.client_id)
-    config = ExtractionConfig(
-        output_root=args.output_root,
-        output_name=args.output_name,
-        max_samples=args.max_samples,
-        validation_fraction=args.validation_fraction,
-        overwrite=args.overwrite,
-    )
-    if args.site_meta:
-        result = extract_site_dataset(
-            args.site_meta,
-            args.client_id,
-            policy=policy,
-            project_root=args.project_root,
-            config=config,
-        )
-    else:
-        if not args.data_path:
-            parser.error("data_path is required unless --site-meta is used")
-        result = extract_dataset(
-            args.data_path,
-            client_id=args.client_id,
-            policy=policy,
-            config=config,
-            project_root=args.project_root,
-        )
-    print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

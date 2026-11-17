@@ -39,12 +39,6 @@ from fedready.prompts import render_server_prompt, render_server_prompt_object
 
 TRAINING_CODE_SPEC_OUTPUT_SCHEMA = "fedready.training_code_spec.v1"
 DATA_MATERIALIZER_SPEC_OUTPUT_SCHEMA = "fedready.data_materializer_spec.v1"
-GENERIC_TRAINING_TASK_ARGS_TEMPLATE = (
-    "--dataset-root {dataset_root} --client-id {client_id} "
-    "--local-epochs {local_epochs} --batch-size {batch_size} "
-    "--learning-rate {learning_rate} --target-size {target_width} {target_height} "
-    "--num-workers {num_workers} --device {device} --metrics-jsonl {metrics_jsonl}"
-)
 
 
 def _required_training_package_contract(training_plan: dict[str, Any]) -> dict[str, Any]:
@@ -699,7 +693,6 @@ def _generic_training_code_spec_template() -> dict[str, Any]:
         "model_class_path": None,
         "model_args": {},
         "mock_record_template": None,
-        "task_script_args_template": GENERIC_TRAINING_TASK_ARGS_TEMPLATE,
         "framework": None,
         "base_reference": NVFLARE_EXAMPLE_SELECTION_ID,
         "selected_reference_example_path": None,

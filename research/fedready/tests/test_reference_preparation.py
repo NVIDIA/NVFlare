@@ -110,8 +110,19 @@ class ReferencePreparationTestCase(unittest.TestCase):
                 with mock.patch.dict(os.environ, {"FEDREADY_TASK_EXAMPLE_ID": "disc_seg"}):
                     self.assertEqual(references.task_example_image_path(), root / "task_example/disc_seg/image.png")
                     self.assertIsNone(references.adapter_preflight_task_example_path(record_type="classification"))
+                    context = references.task_example_context()
+                    snapshot = root / "request" / "task_example"
+                    references.write_task_example_snapshot(snapshot, context)
+                    copied = {p.relative_to(snapshot).as_posix() for p in snapshot.rglob("*") if p.is_file()}
+                    self.assertEqual(copied, {"manifest.json", "disc_seg/image.png", "disc_seg/mask.png"})
+                    selected = json.loads((snapshot / "manifest.json").read_text())["examples"]
+                    self.assertEqual([item["task_key"] for item in selected], ["disc_seg"])
                     (root / "task_example/disc_seg/image.png").write_bytes(b"changed")
                     self.assertIsNone(references.task_example_image_path())
+                    with self.assertRaisesRegex(ValueError, "valid task example"):
+                        references.write_task_example_snapshot(root / "bad_request" / "task_example", context)
+                    with mock.patch.object(references, "TASK_EXAMPLE_DIR", snapshot):
+                        self.assertIsNotNone(references.task_example_image_path())
                 for task_key in ("", "disc", "unknown"):
                     with mock.patch.dict(os.environ, {"FEDREADY_TASK_EXAMPLE_ID": task_key}):
                         self.assertIsNone(references.task_example_image_path())

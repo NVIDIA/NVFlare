@@ -19,11 +19,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from fedready.agents.common import adapter_source_digest
+from fedready.utils.io import atomic_write_json, contained_path
 
 _PACKAGED_TASK_EXAMPLE_DIR = Path(__file__).resolve().parent / "task_example"
 _SOURCE_TASK_EXAMPLE_DIR = Path(__file__).resolve().parents[2] / "task_example"
@@ -53,6 +55,26 @@ def task_example_context() -> dict[str, Any]:
         "examples": [_public_task_example(example)] if example is not None else [],
         "safe_to_share": True,
     }
+
+
+def write_task_example_snapshot(destination: Path, context: dict[str, Any]) -> None:
+    """Copy only the selected reference, preserving independent, digest-bound assets."""
+    example = _select_task_example()
+    if example is None or context.get("examples") != [_public_task_example(example)]:
+        raise ValueError("request reference does not match the selected, valid task example")
+    destination.mkdir(parents=True)
+    for field, expected_digest in example["asset_sha256"].items():
+        source = _task_example_asset_path(example, field)
+        if source is None:
+            raise ValueError("selected reference asset is missing or changed")
+        relative_path = Path(example["final_expected_form"][field])
+        target = contained_path(destination, *relative_path.parts)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        if adapter_source_digest(target) != expected_digest:
+            raise ValueError("reference asset changed while creating the request snapshot")
+    manifest = {**_load_task_example_manifest(), "examples": [dict(example)]}
+    atomic_write_json(destination / "manifest.json", manifest)
 
 
 def _load_task_example_manifest() -> dict[str, Any]:

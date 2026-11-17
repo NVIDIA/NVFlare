@@ -334,6 +334,12 @@ custom `FedJob` objects to NVFlare's public `SimEnv` and launch them with
 uploads model differences with `NUM_STEPS_CURRENT_ROUND` metadata for FedAvg
 aggregation.
 
+The generated trainer has one interface: `fedready_task_training/` contains
+`__init__.py`, `train.py`, and `model.py`. Its entry script is `train.py` and its
+model class is `fedready_task_training.model.<ModelClass>`. The harness supplies
+the fixed training arguments described in the server prompt; the agent chooses
+the model, data loading, loss, and augmentation within that interface.
+
 On some hosts, SimEnv may print `could not stop AIO loop` during process cleanup
 after `Finished FedAvg`. The run is reported as completed with warnings only when
 all client results were aggregated, the global model was persisted, and non-empty

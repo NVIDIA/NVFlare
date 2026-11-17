@@ -178,6 +178,7 @@ class NVFlareJobTestCase(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             package_dir = Path(tmp) / "fedready_task_training"
             package_dir.mkdir()
+            (package_dir / "__init__.py").touch()
             (package_dir / "train.py").write_text("print('preflighted')\n", encoding="utf-8")
             (package_dir / "model.py").write_text("class Model:\n    pass\n", encoding="utf-8")
             spec = {
@@ -201,6 +202,46 @@ class NVFlareJobTestCase(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "changed after local SimEnv preflight"):
                 validate_training_code_spec(spec)
+
+    def test_training_package_requires_the_fixed_program_interface(self) -> None:
+        with TemporaryDirectory() as tmp:
+            package = Path(tmp) / "fedready_task_training"
+            package.mkdir()
+            (package / "__init__.py").touch()
+            (package / "train.py").write_text("pass\n")
+            (package / "model.py").write_text("class Model: pass\n")
+            spec = {
+                "schema_version": "fedready.training_code_spec.v1",
+                "status": "implemented",
+                "package_dir": str(package),
+                "entry_script": "train.py",
+                "model_class_path": "fedready_task_training.model.Model",
+            }
+            validate_training_code_spec(spec, code_workspace=tmp, require_local_simulation=False)
+            validate_training_code_spec(
+                {**spec, "package_dir": "fedready_task_training"},
+                code_workspace=os.path.relpath(tmp),
+                require_local_simulation=False,
+            )
+            for change in (
+                {"entry_script": "fedready_task_training/train.py"},
+                {"entry_script": str(package / "train.py")},
+                {"model_class_path": "model.Model"},
+                {"model_class_path": "fedready_task_training.other.Model"},
+            ):
+                with self.subTest(change=change), self.assertRaises(ValueError):
+                    validate_training_code_spec({**spec, **change}, require_local_simulation=False)
+            other_root = Path(tmp) / "other_workspace"
+            with self.assertRaisesRegex(ValueError, "under code_workspace"):
+                validate_training_code_spec(spec, code_workspace=other_root, require_local_simulation=False)
+            alternate = package.with_name("src")
+            package.rename(alternate)
+            with self.assertRaisesRegex(ValueError, "package_dir must"):
+                validate_training_code_spec({**spec, "package_dir": str(alternate)}, require_local_simulation=False)
+            alternate.rename(package)
+            (package / "__init__.py").unlink()
+            with self.assertRaisesRegex(FileNotFoundError, "__init__.py"):
+                validate_training_code_spec(spec, require_local_simulation=False)
 
     def test_simulator_status_requires_valid_finite_metric_records(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -296,12 +337,15 @@ class NVFlareJobTestCase(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             dataset_root = Path(tmp) / "my project" / "mock_data"
             dataset_root.mkdir(parents=True)
-            package_dir = Path(job_train.__file__).resolve().parent
+            custom_dir = Path(tmp) / "custom"
+            package_dir = custom_dir / "fedready_task_training"
+            package_dir.mkdir(parents=True)
+            (package_dir / "train.py").write_text("pass\n")
             script_args = _format_client_runtime_task_args(
                 client_id="MOCK_CLIENT",
                 training_plan={"data_contract": {"record_type": "classification"}},
                 training_code_spec={
-                    "entry_script": "../job_train.py",
+                    "entry_script": "train.py",
                     "package_dir": str(package_dir),
                 },
                 config=FedAvgTrainingConfig(dataset_root=str(dataset_root)),
@@ -323,6 +367,7 @@ class NVFlareJobTestCase(unittest.TestCase):
                 forwarded_argv.extend(sys.argv)
 
             with (
+                mock.patch.object(fedready_training_client_runtime, "__file__", str(custom_dir / launcher_path.name)),
                 mock.patch.object(sys, "argv", ["test_job.py"]),
                 mock.patch.object(
                     fedready_training_client_runtime,
@@ -346,7 +391,7 @@ class NVFlareJobTestCase(unittest.TestCase):
         package_dir = Path(job_train.__file__).resolve().parent
         kwargs = dict(
             training_plan={"data_contract": {"record_type": "classification"}},
-            training_code_spec={"entry_script": "train&eval.py", "package_dir": str(package_dir)},
+            training_code_spec={"entry_script": "train.py", "package_dir": str(package_dir)},
             train_sample_count=1,
             validation_sample_count=1,
             test_sample_count=0,
@@ -362,7 +407,7 @@ class NVFlareJobTestCase(unittest.TestCase):
             redirect_print_to_log=False,
         ).get_sys_argv()
 
-        self.assertEqual(argv[argv.index("--fedready-entry-script") + 1], "train&eval.py")
+        self.assertEqual(argv[argv.index("--fedready-entry-script") + 1], "fedready_task_training/train.py")
         self.assertEqual(argv[argv.index("--client-id") + 1], "SITE&A")
         self.assertEqual(argv[argv.index("--device") + 1], "cuda:0")
         with self.assertRaisesRegex(ValueError, "client_id"):
@@ -599,11 +644,14 @@ class NVFlareJobTestCase(unittest.TestCase):
                             "assert not any(name.startswith('fedready.agents.' + other + '.') for name in sys.modules); "
                             "from fedready.agents.guardrail import GuardrailAgent; "
                             "from fedready.data.extraction_artifacts import EXTRACTION_SOURCE_FILES, _extractor_logic_fingerprint\n"
-                            "for relative_path in EXTRACTION_SOURCE_FILES:\n"
-                            "    path = pathlib.Path(sys.argv[1]) / 'fedready' / relative_path\n"
-                            "    before = _extractor_logic_fingerprint()\n"
-                            "    path.write_text(path.read_text() + '\\n# fingerprint regression\\n')\n"
-                            "    assert _extractor_logic_fingerprint() != before\n",
+                            "if sys.argv[3] == 'client':\n"
+                            "    for relative_path in EXTRACTION_SOURCE_FILES:\n"
+                            "        path = pathlib.Path(sys.argv[1]) / 'fedready' / relative_path\n"
+                            "        before = _extractor_logic_fingerprint()\n"
+                            "        path.write_text(path.read_text() + '\\n# fingerprint regression\\n')\n"
+                            "        assert _extractor_logic_fingerprint() != before\n"
+                            "else:\n"
+                            "    assert not (pathlib.Path(sys.argv[1]) / 'fedready/agents/client/adapter.py').exists()\n",
                             str(package_dir.parent),
                             str(Path(__file__).resolve().parents[3]),
                             entry_module,

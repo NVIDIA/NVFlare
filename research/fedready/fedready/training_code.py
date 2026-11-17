@@ -23,6 +23,9 @@ from typing import Any
 
 from fedready.prompts import render_server_prompt
 
+TRAINING_PACKAGE_NAME = "fedready_task_training"
+TRAINING_ENTRY_SCRIPT = "train.py"
+
 TRAINING_CODE_SPEC_SCHEMA_VERSION = "fedready.training_code_spec.v1"
 LOCAL_TRAINING_SIMULATION_SCHEMA_VERSION = "fedready.local_training_simulation.v1"
 MOCK_TRAINING_DATASET_SCHEMA_VERSION = "fedready.mock_training_dataset.v1"
@@ -48,7 +51,7 @@ def build_training_code_validation_feedback(
     if not errors:
         errors = [{"kind": type(error).__name__, "message": str(error)}]
     code_workspace_path = Path(code_workspace).resolve()
-    expected_package_dir = code_workspace_path / "fedready_task_training"
+    expected_package_dir = code_workspace_path / TRAINING_PACKAGE_NAME
     return {
         "schema_version": "fedready.training_code_validation_feedback.v1",
         "status": "failed",
@@ -84,7 +87,6 @@ def build_training_code_validation_feedback(
             "model_class_path",
             "selected_reference_example_path",
             "reference_api_evidence",
-            "task_script_args_template",
             "mock_record_template",
         ],
         "agent_instruction": render_server_prompt("training_validation_agent_instruction"),
@@ -176,41 +178,42 @@ def _training_code_spec_validation_errors(
             }
         ]
 
-    entry_path = _training_entry_path(package_dir=package_dir, entry_script=spec["entry_script"])
-    if not entry_path.exists():
-        error: dict[str, Any] = {
-            "kind": "entry_script_not_found",
-            "message": f"training entry script not found under package_dir: {spec['entry_script']}",
-            "package_dir": str(package_dir),
-            "expected_entry_path": str(entry_path),
-            "entry_script": spec["entry_script"],
-        }
-        nested_entry_path = package_dir / spec["entry_script"]
-        if nested_entry_path.exists():
-            parts = Path(spec["entry_script"]).parts
-            if len(parts) >= 2:
-                suggested_package_dir = package_dir / parts[0]
-                error["likely_cause"] = (
-                    "package_dir points at the parent code workspace instead of the Python package directory"
-                )
-                error["suggested_package_dir"] = str(suggested_package_dir.resolve())
-        errors.append(error)
-
-    model_file = _training_model_file_path(package_dir=package_dir, model_class_path=spec["model_class_path"])
-    if model_file is not None and not model_file.exists():
-        error = {
-            "kind": "model_file_not_found",
-            "message": f"training model module not found for model_class_path: {spec['model_class_path']}",
-            "expected_model_file": str(model_file),
-        }
-        model_class_path = str(spec["model_class_path"])
-        if "/" in model_class_path or model_class_path.endswith(".py"):
-            error["likely_cause"] = (
-                "model_class_path is a filesystem path; NVFlare requires a dotted Python import path "
-                "that includes the model class"
+    if package_dir.name != TRAINING_PACKAGE_NAME or (
+        code_workspace is not None and package_dir.parent != Path(code_workspace).resolve()
+    ):
+        errors.append(
+            {
+                "kind": "package_layout_invalid",
+                "message": f"package_dir must be the {TRAINING_PACKAGE_NAME} directory under code_workspace",
+            }
+        )
+    if spec["entry_script"] != TRAINING_ENTRY_SCRIPT:
+        errors.append(
+            {
+                "kind": "entry_script_invalid",
+                "message": f"entry_script must be {TRAINING_ENTRY_SCRIPT}, relative to package_dir",
+            }
+        )
+    model_parts = spec["model_class_path"].split(".")
+    if (
+        len(model_parts) != 3
+        or model_parts[:2] != [TRAINING_PACKAGE_NAME, "model"]
+        or not model_parts[-1].isidentifier()
+    ):
+        errors.append(
+            {
+                "kind": "model_class_path_invalid",
+                "message": f"model_class_path must be {TRAINING_PACKAGE_NAME}.model.<ModelClass>",
+            }
+        )
+    for filename in ("__init__.py", TRAINING_ENTRY_SCRIPT, "model.py"):
+        if not (package_dir / filename).is_file():
+            errors.append(
+                {
+                    "kind": "required_file_not_found",
+                    "message": f"generated training package is missing {filename}",
+                }
             )
-            error["required_format"] = f"{package_dir.name}.model.ModelClass"
-        errors.append(error)
 
     model_args = spec.get("model_args", {})
     if not isinstance(model_args, dict):
@@ -388,31 +391,10 @@ def _reference_api_evidence(spec: dict[str, Any]) -> Any:
 
 
 def _resolve_training_package_dir(package_dir: str, *, code_workspace: str | Path | None = None) -> Path:
-    path = Path(package_dir)
-    if path.is_absolute() or code_workspace is None:
-        return path
-    return Path(code_workspace) / path
-
-
-def _training_entry_path(*, package_dir: Path, entry_script: str) -> Path:
-    entry_path = package_dir / Path(entry_script).name
-    if "/" in entry_script:
-        parts = Path(entry_script).parts
-        if parts[-2:] and parts[-2] == package_dir.name:
-            entry_path = package_dir / parts[-1]
-    return entry_path
-
-
-def _training_model_file_path(*, package_dir: Path, model_class_path: str) -> Path | None:
-    parts = model_class_path.split(".")
-    if len(parts) < 2:
-        return None
-    module_parts = parts[:-1]
-    if module_parts and module_parts[0] == package_dir.name:
-        module_parts = module_parts[1:]
-    if not module_parts:
-        return None
-    return package_dir.joinpath(*module_parts).with_suffix(".py")
+    path = Path(package_dir).expanduser()
+    if not path.is_absolute() and code_workspace is not None:
+        path = Path(code_workspace) / path
+    return path.resolve()
 
 
 def _safe_code_spec(spec: dict[str, Any]) -> dict[str, Any]:
@@ -423,7 +405,6 @@ def _safe_code_spec(spec: dict[str, Any]) -> dict[str, Any]:
         "entry_script": spec.get("entry_script"),
         "model_class_path": spec.get("model_class_path"),
         "model_args": spec.get("model_args", {}),
-        "task_script_args_template": spec.get("task_script_args_template"),
         "framework": spec.get("framework"),
         "base_reference": spec.get("base_reference"),
         "selected_reference_example_path": spec.get("selected_reference_example_path"),

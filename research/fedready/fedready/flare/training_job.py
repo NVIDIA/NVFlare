@@ -26,7 +26,7 @@ from urllib.parse import quote
 
 from fedready.data.contracts import training as training_contracts
 from fedready.job_data import export_fed_job_recipe
-from fedready.training_code import _safe_code_spec, validate_training_code_spec
+from fedready.training_code import TRAINING_PACKAGE_NAME, _safe_code_spec, validate_training_code_spec
 from fedready.utils.io import atomic_write_json
 
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
@@ -588,13 +588,12 @@ def _format_client_runtime_task_args(
 ) -> str:
     task_contract = training_contracts.contract_from_plan(training_plan)
     training_args = _format_task_args(
-        template=str(training_code_spec.get("task_script_args_template") or ""),
         client_id=client_id,
         config=config,
     )
     launcher_args = [
         "--fedready-entry-script",
-        _task_arg_token("entry_script", training_code_spec["entry_script"]),
+        _task_arg_token("entry_script", f"{TRAINING_PACKAGE_NAME}/{training_code_spec['entry_script']}"),
         "--fedready-expected-train",
         str(int(train_sample_count)),
         "--fedready-expected-validation",
@@ -602,7 +601,7 @@ def _format_client_runtime_task_args(
         "--fedready-expected-test",
         str(int(test_sample_count)),
         "--fedready-package-dir",
-        _task_arg_token("package_dir", Path(str(training_code_spec["package_dir"])).name),
+        TRAINING_PACKAGE_NAME,
         "--fedready-record-type",
         _task_arg_token("record_type", task_contract.record_type),
         "--fedready-samples-file",
@@ -642,7 +641,6 @@ def _task_arg_token(name: str, value: Any) -> str:
 
 def _format_task_args(
     *,
-    template: str,
     client_id: str,
     config: FedAvgTrainingConfig,
 ) -> str:
@@ -660,24 +658,16 @@ def _format_task_args(
         "device": _task_arg_token("device", config.device),
         "metrics_jsonl": DEFAULT_METRICS_JSONL,
     }
-    if not template:
-        template = (
-            "--dataset-root {dataset_root} --client-id {client_id} "
-            "--local-epochs {local_epochs} --batch-size {batch_size} "
-            "--learning-rate {learning_rate} --target-size {target_width} {target_height} "
-            "--num-workers {num_workers} --device {device} --metrics-jsonl {metrics_jsonl}"
-        )
-    args = template.format(**values)
-    return args
+    return (
+        "--dataset-root {dataset_root} --client-id {client_id} "
+        "--local-epochs {local_epochs} --batch-size {batch_size} "
+        "--learning-rate {learning_rate} --target-size {target_width} {target_height} "
+        "--num-workers {num_workers} --device {device} --metrics-jsonl {metrics_jsonl}"
+    ).format(**values)
 
 
 def _add_training_package(job: FedJob, *, package_dir: Path, target: str) -> None:
-    if package_dir.name == "src":
-        job.add_file_to(str(package_dir), target, dest_dir="src", app_folder_type="custom")
-    elif (package_dir / "__init__.py").exists():
-        job.add_file_to(str(package_dir), target, dest_dir=package_dir.name, app_folder_type="custom")
-    else:
-        job.add_file_to(str(package_dir), target, app_folder_type="custom")
+    job.add_file_to(str(package_dir), target, dest_dir=TRAINING_PACKAGE_NAME, app_folder_type="custom")
 
 
 def _safe_adapter_summary(value: Any) -> dict[str, Any] | None:

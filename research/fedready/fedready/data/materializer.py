@@ -34,13 +34,13 @@ from fedready.data.contracts import (
     generated_data_contract_validation_errors,
 )
 from fedready.data.extraction_artifacts import (
-    EXTRACTOR_LOGIC_VERSION,
     ExtractionConfig,
     _dedupe,
     _extraction_policy_digest,
     _extraction_result,
     _extraction_screening,
     _extraction_verification,
+    _extractor_logic_fingerprint,
     _failed_extraction_result,
     _finalize_intensity_accumulator,
     _generated_data_contract,
@@ -242,7 +242,7 @@ def _extract_generated_contract_dataset(
     }
     manifest = {
         "schema_version": "fedready.local_extracted_manifest.v1",
-        "extractor_logic_version": EXTRACTOR_LOGIC_VERSION,
+        "extractor_logic_version": _extractor_logic_fingerprint(),
         "client_id": client_id,
         "policy_digest": policy.get("strategy_digest") or payload_digest(policy),
         "extraction_policy_digest": _extraction_policy_digest(policy),

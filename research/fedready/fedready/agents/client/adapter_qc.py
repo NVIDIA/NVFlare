@@ -70,16 +70,10 @@ def ensure_local_adapter_pipeline(
     local_vlm_api_key_env: str,
     local_vlm_max_tokens: int,
     query_image: Callable[..., tuple[str, dict[str, Any]]],
-    reuse_existing_attestations: bool = False,
     provenance_snapshot: ClientDataProvenanceSnapshot | None = None,
     data_contract: Mapping[str, Any] | None = None,
 ) -> AdapterRuntimeResult:
-    """Execute the same bounded preflight/QC pipeline for any backend.
-
-    The client acceptance boundary leaves ``reuse_existing_attestations`` false
-    because an agent with workspace write access must not be able to mint its
-    own runtime verdict. Reuse is available only to trusted harness callers.
-    """
+    """Run fresh executable and visual checks; an agent cannot mint its own verdict."""
 
     workspace = workspace.resolve()
     local_data_path = local_data_path.resolve()
@@ -98,45 +92,34 @@ def ensure_local_adapter_pipeline(
             status="failed",
             diagnostic="adapter.py does not exist in the adapter workspace",
         )
-    source_digest = adapter_source_digest(script_path)
-    preflight_state = read_adapter_state(workspace / ADAPTER_PREFLIGHT_STATE_FILE)
-    if not reuse_existing_attestations or not state_attests_pass(
-        preflight_state,
-        source_digest=source_digest,
-    ):
-        preflight = execute_local_adapter(
-            workspace=workspace,
-            local_data_path=local_data_path,
-            max_records=min(DEFAULT_LOCAL_ADAPTER_PREFLIGHT_RECORDS, bounded_max),
-            min_records=min(bounded_min, DEFAULT_LOCAL_ADAPTER_PREFLIGHT_RECORDS),
-            timeout_seconds=timeout_seconds,
-            manifest_name="adapter_preflight_manifest.json",
-            output_dir_name="preflight_generated_labels",
-            state_file_name=ADAPTER_PREFLIGHT_STATE_FILE,
-            stage="representative_sample_preflight",
-            provenance_snapshot=provenance_snapshot,
-            data_contract=data_contract,
-        )
-        if not preflight.passed:
-            return preflight
+    preflight = execute_local_adapter(
+        workspace=workspace,
+        local_data_path=local_data_path,
+        max_records=min(DEFAULT_LOCAL_ADAPTER_PREFLIGHT_RECORDS, bounded_max),
+        min_records=min(bounded_min, DEFAULT_LOCAL_ADAPTER_PREFLIGHT_RECORDS),
+        timeout_seconds=timeout_seconds,
+        manifest_name="adapter_preflight_manifest.json",
+        output_dir_name="preflight_generated_labels",
+        state_file_name=ADAPTER_PREFLIGHT_STATE_FILE,
+        stage="representative_sample_preflight",
+        provenance_snapshot=provenance_snapshot,
+        data_contract=data_contract,
+    )
+    if not preflight.passed:
+        return preflight
 
-    qc_state = read_adapter_state(workspace / ADAPTER_PREFLIGHT_QC_STATE_FILE)
-    if not reuse_existing_attestations or not state_attests_pass(
-        qc_state,
-        source_digest=source_digest,
-    ):
-        qc = review_local_adapter_preflight(
-            workspace=workspace,
-            task=task,
-            model=local_vlm_model,
-            base_url=local_vlm_base_url,
-            api_key_env=local_vlm_api_key_env,
-            max_tokens=local_vlm_max_tokens,
-            query_image=query_image,
-            data_contract=data_contract,
-        )
-        if not qc.passed:
-            return qc
+    qc = review_local_adapter_preflight(
+        workspace=workspace,
+        task=task,
+        model=local_vlm_model,
+        base_url=local_vlm_base_url,
+        api_key_env=local_vlm_api_key_env,
+        max_tokens=local_vlm_max_tokens,
+        query_image=query_image,
+        data_contract=data_contract,
+    )
+    if not qc.passed:
+        return qc
 
     latest_qc_state = read_adapter_state(workspace / ADAPTER_PREFLIGHT_QC_STATE_FILE)
     return result_from_state(latest_qc_state, default_stage="representative_sample_visual_qc")

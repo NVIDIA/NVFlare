@@ -22,7 +22,6 @@ records are never included in the returned profile.
 
 from __future__ import annotations
 
-import argparse
 import csv
 import io
 import json
@@ -1441,40 +1440,3 @@ def _dedupe(values: list[str] | tuple[str, ...]) -> list[str]:
             seen.add(value)
             deduped.append(value)
     return deduped
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Profile a local FedReady client dataset.")
-    parser.add_argument("data_path", nargs="?", help="Local dataset path to profile.")
-    parser.add_argument("--site-meta", help="Resolve data_path from a site-meta.json file.")
-    parser.add_argument("--client-id", help="Client id to use for the profile.")
-    parser.add_argument("--project-root", help="Project root for relative site metadata paths.")
-    parser.add_argument("--min-count", type=int, default=DataParserConfig.min_count)
-    parser.add_argument("--max-image-samples", type=int, default=DataParserConfig.max_image_samples)
-    parser.add_argument("--histogram-bins", type=int, default=DataParserConfig.histogram_bins)
-    args = parser.parse_args(argv)
-
-    config = DataParserConfig(
-        min_count=args.min_count,
-        max_image_samples=args.max_image_samples,
-        histogram_bins=args.histogram_bins,
-    )
-    if args.site_meta:
-        if not args.client_id:
-            parser.error("--client-id is required with --site-meta")
-        profile = parse_site_dataset(
-            args.site_meta,
-            args.client_id,
-            project_root=args.project_root,
-            config=config,
-        )
-    else:
-        if not args.data_path:
-            parser.error("data_path is required unless --site-meta is used")
-        profile = parse_dataset(args.data_path, client_id=args.client_id, config=config)
-    print(json.dumps(profile, indent=2, sort_keys=True))
-    return 0
-
-
-if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(main())

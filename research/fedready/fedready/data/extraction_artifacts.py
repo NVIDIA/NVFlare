@@ -55,7 +55,7 @@ EXTRACTION_SOURCE_FILES = (
 
 
 def _extractor_logic_fingerprint() -> str:
-    """Fingerprint extraction sources so cache invalidation cannot rely on a manual bump."""
+    """Record source provenance when the client materializes prepared data."""
 
     package_root = Path(__file__).resolve().parents[1]
     digest = sha256()
@@ -66,9 +66,6 @@ def _extractor_logic_fingerprint() -> str:
         digest.update(source.read_bytes())
         digest.update(b"\0")
     return f"source-sha256:{digest.hexdigest()}"
-
-
-EXTRACTOR_LOGIC_VERSION = _extractor_logic_fingerprint()
 
 
 @dataclass(frozen=True)

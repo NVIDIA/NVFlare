@@ -43,6 +43,8 @@ review artifacts, persisted decisions, and orientation repair. Sample selection
 and splitting live in `data/splits.py`. Shared manifests, configuration, safe
 result summaries, and extraction-source fingerprints live in
 `data/extraction_artifacts.py`.
+Fingerprints are computed during client materialization for provenance; merely
+importing the server's extraction configuration does not read client source files.
 
 Agent implementations are grouped by where they execute. `agents/server/`
 owns task negotiation and server-side code-generation requests;
@@ -77,6 +79,9 @@ digests. Agent responses must use the documented fields; missing fields and
 invalid visual-decision JSON are returned as validation failures. Training
 consumes the label IDs and meanings established during data preparation.
 Extraction counts and readiness summaries are computed by the verifier.
+Each request snapshot contains only the selected reference's manifest entry
+and digest-verified assets. Adapter execution and visual checks run fresh even
+when an adapter workspace already contains pass records.
 
 Shared action descriptors retain the full allow-list identity tuple. Each
 phase binds its fixed audit context once, while event payloads and privacy

@@ -25,9 +25,12 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fedready.agents.bridge import _codex_skill_path
+from fedready.agents.client import adapter_qc
+from fedready.agents.client.adapter import AdapterRuntimeResult
 from fedready.agents.client.adapter_qc import ensure_local_adapter_pipeline
 from fedready.agents.client.agent import ClientAgent
 from fedready.agents.client.visual_qc import _aggregate_visual_qc_sample_outputs
+from fedready.agents.common import adapter_source_digest
 from fedready.agents.guardrail import ALLOW_LIST_RULES, GuardrailAgent
 from fedready.agents.server.agent import ServerAgent
 from fedready.data.contracts.base import generated_contract_visual_qc_required
@@ -94,6 +97,7 @@ class ResearchScopeTestCase(unittest.TestCase):
 
     def test_adapter_pipeline_requires_local_visual_backend_inputs(self) -> None:
         parameters = inspect.signature(ensure_local_adapter_pipeline).parameters
+        self.assertNotIn("reuse_existing_attestations", parameters)
         for required in (
             "local_vlm_model",
             "local_vlm_base_url",
@@ -102,6 +106,47 @@ class ResearchScopeTestCase(unittest.TestCase):
             "query_image",
         ):
             self.assertIn(required, parameters)
+
+    def test_adapter_pipeline_rechecks_forged_pass_states(self) -> None:
+        for failed_stage in ("executable_preflight", "visual_review"):
+            with self.subTest(stage=failed_stage), TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                script = root / "adapter.py"
+                script.write_text("pass\n")
+                forged = {"status": "passed", "adapter_sha256": adapter_source_digest(script)}
+                for name in (adapter_qc.ADAPTER_PREFLIGHT_STATE_FILE, adapter_qc.ADAPTER_PREFLIGHT_QC_STATE_FILE):
+                    (root / name).write_text(json.dumps(forged))
+                preflight = AdapterRuntimeResult(
+                    stage="executable_preflight",
+                    status="failed" if failed_stage == "executable_preflight" else "passed",
+                    diagnostic="fresh executable check",
+                )
+                with (
+                    mock.patch.object(adapter_qc, "execute_local_adapter", return_value=preflight) as execute,
+                    mock.patch.object(
+                        adapter_qc,
+                        "review_local_adapter_preflight",
+                        return_value=AdapterRuntimeResult(
+                            stage="visual_review", status="failed", diagnostic="fresh visual check"
+                        ),
+                    ) as review,
+                ):
+                    result = ensure_local_adapter_pipeline(
+                        workspace=root,
+                        local_data_path=root,
+                        task="optic disc segmentation",
+                        max_records=10,
+                        min_records=1,
+                        timeout_seconds=1,
+                        local_vlm_model="local",
+                        local_vlm_base_url="http://127.0.0.1:8001/v1",
+                        local_vlm_api_key_env="LOCAL_KEY",
+                        local_vlm_max_tokens=1,
+                        query_image=mock.Mock(),
+                    )
+                    self.assertFalse(result.passed)
+                    execute.assert_called_once()
+                    self.assertEqual(review.call_count, int(failed_stage == "visual_review"))
 
     def test_training_contracts_require_visual_review_only_for_spatial_labels(
         self,
@@ -118,7 +163,7 @@ class ResearchScopeTestCase(unittest.TestCase):
     def test_training_job_always_uses_the_validating_client_runtime(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            package = root / "generated_training"
+            package = root / "fedready_task_training"
             package.mkdir()
             (package / "__init__.py").touch()
             (package / "train.py").write_text("pass\n")
@@ -128,7 +173,7 @@ class ResearchScopeTestCase(unittest.TestCase):
                 training_plan={"algorithm": {"num_rounds": 2}},
                 training_code_spec={
                     "package_dir": str(package),
-                    "model_class_path": "generated_training.model.Model",
+                    "model_class_path": "fedready_task_training.model.Model",
                     "entry_script": "train.py",
                 },
                 client_configs={

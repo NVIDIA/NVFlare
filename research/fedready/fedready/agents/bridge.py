@@ -18,14 +18,13 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fedready.agents.references import TASK_EXAMPLE_DIR
+from fedready.agents.references import TASK_EXAMPLE_DIR, write_task_example_snapshot
 from fedready.prompts import render_server_prompt
 from fedready.utils.io import atomic_write_json, contained_path
 from fedready.utils.logging import payload_digest, timestamp_utc
@@ -478,13 +477,8 @@ def _ensure_request_local_task_example_snapshot(*, request_dir: Path, context: d
     task_examples = _context_task_examples(context)
     if task_examples is None or task_examples.get("safe_to_share") is not True:
         return
-    if not TASK_EXAMPLE_DIR.is_dir():
-        return
     destination = request_dir / "task_example"
-    if destination.is_symlink():
-        destination.unlink()
-    if not destination.exists():
-        shutil.copytree(TASK_EXAMPLE_DIR.resolve(), destination)
+    write_task_example_snapshot(destination, task_examples)
     task_examples["root"] = "task_example"
     task_examples["path_scope"] = "request_local_task_example_snapshot"
 
