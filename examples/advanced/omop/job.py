@@ -29,18 +29,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cdm", default=f"{DATA_ROOT}/{{SITE_NAME}}.duckdb", help="each site's CDM")
     parser.add_argument("--cdm_schema", help="schema holding the CDM tables, if not the default one")
+    parser.add_argument("--n_clients", type=int, default=len(SITE_FRACTIONS))
     parser.add_argument("--num_rounds", type=int, default=15)
     args = parser.parse_args()
 
     recipe = FedAvgLrRecipe(
         name=JOB_NAME,
-        min_clients=len(SITE_FRACTIONS),
+        min_clients=args.n_clients,
         num_rounds=args.num_rounds,
         num_features=len(FEATURES),
         train_script="client.py",
         train_args=f"--cdm {args.cdm}" + (f" --cdm_schema {args.cdm_schema}" if args.cdm_schema else ""),
     )
-    run = recipe.execute(SimEnv(num_clients=len(SITE_FRACTIONS)))
+    run = recipe.execute(SimEnv(num_clients=args.n_clients))
     print("result location =", run.get_result())
 
 
