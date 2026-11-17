@@ -1,6 +1,6 @@
 # Federated Learning on OMOP CDM Data
 
-This tutorial connects NVFlare to hospitals that already store their records in an OMOP Common Data Model (CDM) database.
+This tutorial shows how to use NVFlare with data in the OMOP Common Data Model (CDM).
 Every site runs the same cohort query against its own tables, turns the result into features, and trains a shared GI bleeding risk model, while patient rows never leave the site.
 
 <img src="./figs/omop_federated.svg" alt="Each site maps its local EHR codes to the same standard OMOP concept with its own ETL, runs cohort.py against its OMOP CDM, and client.py shares only gradients and Hessians with the NVFlare server" width="900"/>
