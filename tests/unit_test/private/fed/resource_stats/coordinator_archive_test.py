@@ -34,7 +34,7 @@ from nvflare.private.fed.resource_stats.coordinator import (
     ResourceStatsCoordinator,
 )
 from nvflare.private.fed.resource_stats.measurements import canonical_json_bytes
-from tests.resource_stats_report_test_utils import _participant_summary
+from tests.resource_stats_report_test_utils import _accepted_entry, _participant_summary, _resource_summary
 
 
 def _participant(job_id="job-1", participant_name="site-1", reported_at="2026-09-17T12:00:00Z"):
@@ -342,6 +342,59 @@ def test_accept_rejects_report_that_would_exceed_per_job_payload_cap(tmp_path):
     statuses = {entry["participant_name"]: entry.get("status") for entry in summary["participants"]}
     assert statuses["site-1"] is None
     assert statuses["site-2"] == "missing"
+
+
+@pytest.mark.parametrize("spare", [-1, 0], ids=["one-byte-over", "exact-fit"])
+@pytest.mark.parametrize("gap_status", ["missing", "invalid", "disabled"])
+def test_summary_budget_preserves_accepted_reports_and_roster(tmp_path, monkeypatch, spare, gap_status):
+    received_at = "2026-09-17T12:00:01.000000Z"
+    monkeypatch.setattr(coordinator_module, "utc_timestamp", lambda: received_at)
+    reports = [_participant(participant_name=name) for name in ("site-1", "site-2")]
+    for report in reports:
+        report["resource_utilization"]["message_traffic"]["sent_bytes"] = 10**200
+    payloads = [canonical_json_bytes(report) for report in reports]
+    gap_names = ["waiting-" + "x" * 100, "waiting-2"]
+    gaps = [
+        {"participant_name": name, "role": role, "status": "invalid", "received_at": received_at}
+        for name, role in [(name, "client") for name in gap_names] + [("server", "server")]
+    ]
+    entries = [
+        _accepted_entry(report["participant_name"], received_at=received_at, record=report) for report in reports
+    ]
+    limit = len(canonical_json_bytes(_resource_summary(participants=entries + gaps))) + spare
+    assert sum(map(len, payloads)) < limit  # Standalone bytes miss the final encoding overhead.
+    monkeypatch.setattr(coordinator_module, "MAX_RESOURCE_SUMMARY_BYTES", limit)
+    coordinator = ResourceStatsCoordinator()
+    names = ["site-1", "site-2", *gap_names]
+    accept = coordinator.accept_resource_report
+    coordinator.start_job("job-1", names, tmp_path)
+    for name in ["server", *gap_names] if gap_status == "invalid" else ["server"]:
+        assert accept("job-1", name, {"participant_summary": b"{}"}) == RESOURCE_REPORT_INVALID
+    if gap_status == "disabled":
+        coordinator.disable_clients("job-1", gap_names)
+
+    assert accept("job-1", "site-1", {"participant_summary": payloads[0]}) == RESOURCE_REPORT_ACCEPTED
+    assert accept("job-1", "site-1", {"participant_summary": payloads[0]}) == RESOURCE_REPORT_DUPLICATE
+    assert accept("job-1", "site-1", {"participant_summary": payloads[0] + b" "}) == RESOURCE_REPORT_DUPLICATE
+    conflict = canonical_json_bytes({**reports[0], "reported_at": received_at})
+    assert accept("job-1", "site-1", {"participant_summary": conflict}) == RESOURCE_REPORT_CONFLICT
+    expected = RESOURCE_REPORT_ACCEPTED if spare == 0 else RESOURCE_REPORT_SERVER_ERROR
+    assert accept("job-1", "site-2", {"participant_summary": payloads[1]}) == expected
+
+    summary = coordinator.finalize_job("job-1")
+    assert len(canonical_json_bytes(summary)) <= limit
+    if spare == 0 and gap_status == "invalid":
+        assert len(canonical_json_bytes(summary)) == limit
+    statuses = {entry["participant_name"]: entry.get("status") for entry in summary["participants"]}
+    assert statuses["site-2"] == (None if spare == 0 else "missing")
+    assert all(statuses[name] == gap_status for name in gap_names)
+    reader = WorkspaceResourceStatsReader(_workspace_zip(tmp_path))
+    assert reader.read_resource_summary() == summary
+    assert reader.read_participant_summary("site-1") == reports[0]
+    if spare == 0:
+        assert reader.read_participant_summary("site-2") == reports[1]
+    coordinator.start_job("job-1", names, tmp_path, reset_existing=True)
+    assert accept("job-1", "site-1", {"participant_summary": payloads[0]}) == RESOURCE_REPORT_ACCEPTED
 
 
 def test_finalizing_one_job_does_not_block_report_for_another_job(tmp_path):

@@ -257,6 +257,11 @@ do not hold the registry lock during I/O or block unrelated jobs. The ledger ret
 canonical report bytes, rather than an additional decoded copy for every
 participant.
 
+Acceptance also reserves the final summary's encoded size, including indentation,
+server-owned metadata, and space for every roster entry to remain missing,
+disabled or invalid. If either byte budget is exhausted, only the new contribution
+is rejected; already accepted reports remain publishable.
+
 ```text
 OPEN: accept one record per trusted slot
   -> CLOSED: freeze roster and accepted bytes; later changes are too_late

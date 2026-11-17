@@ -54,8 +54,7 @@ RESOURCE_STATS_DIR = "resource_stats"
 RESOURCE_SUMMARY_FILE = "resource_summary.json"
 # The schema permits many individually bounded reports, but the root process
 # must not retain an unbounded aggregate while it waits for job finalization.
-# Keep the total accepted canonical payload no larger than the maximum public
-# summary that can ultimately be published for the job.
+# Bound retained standalone reports separately from their final summary size.
 MAX_ACCEPTED_REPORT_BYTES_PER_JOB = MAX_RESOURCE_SUMMARY_BYTES
 _DIRECTORY_OPEN_FLAGS = (
     os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
@@ -83,10 +82,48 @@ class _JobState:
     disabled: set[str] = field(default_factory=set)
     accepted: dict[str, _AcceptedReport] = field(default_factory=dict)
     accepted_bytes: int = 0
+    summary_bytes: int = 0
     invalid_at: dict[str, str] = field(default_factory=dict)
     closed: bool = False
     finalized: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+
+def _summary(job_id, participants):
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "kind": KIND_RESOURCE_SUMMARY,
+        "job_id": job_id,
+        "participants": participants,
+    }
+
+
+def _reserved_gap(participant_name, role):
+    # Invalid reports have the largest gap entry, including a server receipt
+    # timestamp. utc_timestamp() always emits this fixed-width representation.
+    return {
+        "participant_name": participant_name,
+        "role": role,
+        "status": "invalid",
+        "received_at": "9999-12-31T23:59:59.999999Z",
+    }
+
+
+def _accepted_entry(participant_name, role, received_at, record):
+    return {
+        "participant_name": participant_name,
+        "role": role,
+        "received_at": received_at,
+        "reported_at": record["reported_at"],
+        **participant_measurements(record),
+    }
+
+
+def _entry_bytes(entry):
+    data = canonical_json_bytes(entry)
+    # A participant sits two indentation levels below a standalone object.
+    # Roster length and separators are fixed, so entry-size deltas are exact.
+    return len(data) + 4 * data.count(b"\n")
 
 
 class ResourceStatsCoordinator:
@@ -125,12 +162,15 @@ class ResourceStatsCoordinator:
             if len(expected) >= MAX_PARTICIPANTS:
                 raise ValueError(f"resource participant count cannot exceed {MAX_PARTICIPANTS}")
             expected[name] = "client"
+        summary_bytes = len(
+            canonical_json_bytes(_summary(job_id, [_reserved_gap(name, role) for name, role in expected.items()]))
+        )
         run_dir = Path(run_dir)
         while True:
             with self._jobs_lock:
                 state = self._jobs.get(job_id)
                 if state is None:
-                    state = _JobState(run_dir=run_dir, expected=expected)
+                    state = _JobState(run_dir=run_dir, expected=expected, summary_bytes=summary_bytes)
                     # Publish an already-locked state so same-job operations
                     # wait for setup while unrelated jobs keep using the short
                     # registry lock independently.
@@ -178,6 +218,7 @@ class ResourceStatsCoordinator:
                 state.disabled.clear()
                 state.accepted.clear()
                 state.accepted_bytes = 0
+                state.summary_bytes = summary_bytes
                 state.invalid_at.clear()
                 state.finalized = False
                 state.closed = False
@@ -262,10 +303,20 @@ class ResourceStatsCoordinator:
                 if existing.data == data or json.loads(existing.data) == record:
                     return RESOURCE_REPORT_DUPLICATE
                 return RESOURCE_REPORT_TOO_LATE if state.closed else RESOURCE_REPORT_CONFLICT
-            if len(data) > MAX_ACCEPTED_REPORT_BYTES_PER_JOB - state.accepted_bytes:
+            role = state.expected[participant_name]
+            summary_bytes = (
+                state.summary_bytes
+                + _entry_bytes(_accepted_entry(participant_name, role, received_at, record))
+                - _entry_bytes(_reserved_gap(participant_name, role))
+            )
+            if (
+                len(data) > MAX_ACCEPTED_REPORT_BYTES_PER_JOB - state.accepted_bytes
+                or summary_bytes > MAX_RESOURCE_SUMMARY_BYTES
+            ):
                 return RESOURCE_REPORT_SERVER_ERROR
             state.accepted[participant_name] = _AcceptedReport(received_at, data)
             state.accepted_bytes += len(data)
+            state.summary_bytes = summary_bytes
             state.invalid_at.pop(participant_name, None)
             return RESOURCE_REPORT_ACCEPTED
 
@@ -285,14 +336,7 @@ class ResourceStatsCoordinator:
                     # These immutable bytes already passed the receiving reader.
                     # Decode them without replaying the input checks.
                     record = json.loads(accepted.data)
-                    participants.append(
-                        {
-                            **base,
-                            "received_at": accepted.received_at,
-                            "reported_at": record["reported_at"],
-                            **participant_measurements(record),
-                        }
-                    )
+                    participants.append(_accepted_entry(participant_name, role, accepted.received_at, record))
                 elif participant_name in state.disabled:
                     participants.append({**base, "status": "disabled"})
                 elif participant_name in state.invalid_at:
@@ -306,12 +350,7 @@ class ResourceStatsCoordinator:
                 else:
                     participants.append({**base, "status": "missing"})
             participants.sort(key=lambda item: (item["role"], item["participant_name"]))
-            summary = {
-                "schema_version": SCHEMA_VERSION,
-                "kind": KIND_RESOURCE_SUMMARY,
-                "job_id": job_id,
-                "participants": participants,
-            }
+            summary = _summary(job_id, participants)
             if state.finalized:
                 return summary
             summary_data = canonical_json_bytes(summary)
