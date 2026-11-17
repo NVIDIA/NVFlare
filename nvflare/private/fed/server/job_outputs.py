@@ -58,7 +58,8 @@ _SYSTEM_FILE_RE = re.compile(
     )
     + ")$"
 )
-_SYSTEM_FILE_NAMES = {WorkspaceConstants.AUDIT_LOG}
+# Keep pre-JSONL audit history with the workspace during upgrades.
+_SYSTEM_FILE_NAMES = {WorkspaceConstants.AUDIT_LOG, "audit.log"}
 _SYSTEM_FOLDERS = {"__pycache__", "job_cert"}  # job_cert: the job's credentials (job_cert_utils.JOB_CERT_DIR_NAME)
 # written beside the server app when the job is deployed
 _DEPLOYED_RUN_FILES = {WorkspaceConstants.JOB_META_FILE, "fl_app.txt"}

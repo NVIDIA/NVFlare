@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
+import json
 import os
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 EXCLUDED_ACTIONS = {
     "scheduler.check_resource",
@@ -27,17 +29,42 @@ EXCLUDED_ACTIONS = {
 
 class Auditor(object):
     def __init__(self, audit_file_name: str):
-        """Manages the audit file to log events.
+        """Writes audit events as JSONL records with UTC timestamps.
 
         Args:
             audit_file_name (str): the location to save audit log file
+
+        Raises:
+            ValueError: if a nonempty file does not start with a JSON object
+                or its last record has no terminating newline. Select a new
+                file when upgrading from bracketed text records.
         """
         assert isinstance(audit_file_name, str), "audit_file_name must be str"
         if os.path.exists(audit_file_name):
             assert os.path.isfile(audit_file_name), "audit_file_name is not a valid file"
 
-        # create/open the file
-        self.audit_file = open(audit_file_name, "a")
+        # Inspect the same file that will receive new records. Never mix legacy
+        # text with JSONL or append to an unterminated record.
+        audit_file = open(audit_file_name, "a+b")
+        try:
+            audit_file.seek(0)
+            first_line = audit_file.readline()
+            if first_line:
+                if not isinstance(json.loads(first_line), dict):
+                    raise ValueError("the first record must be a JSON object")
+                audit_file.seek(-1, os.SEEK_END)
+                if audit_file.read(1) != b"\n":
+                    raise ValueError("the last record must end with a newline")
+            audit_file.seek(0, os.SEEK_END)
+            self.audit_file = io.TextIOWrapper(audit_file, encoding="utf-8")
+        except (ValueError, UnicodeError) as exc:
+            audit_file.close()
+            raise ValueError(
+                "existing audit file must contain newline-terminated JSONL; " "preserve it and choose a new audit file"
+            ) from exc
+        except BaseException:
+            audit_file.close()
+            raise
         self._lock = threading.Lock()
 
     def add_event(self, user: str, action: str, ref: str = "", msg: str = "") -> str:
@@ -50,20 +77,21 @@ class Auditor(object):
             if self.audit_file is None:
                 return ""
 
-            event_id = uuid.uuid4()
-            parts = [
-                f"[E:{event_id}]",
-                f"[R:{ref}]" if ref else "",
-                f"[T:{datetime.now()}]",
-                f"[U:{user}]",
-                f"[A:{action}]",
-                msg if msg else "",
-            ]
+            event_id = str(uuid.uuid4())
+            record = {"event_id": event_id}
+            if ref:
+                record["reference"] = str(ref)
+            record.update(
+                timestamp=datetime.now(timezone.utc).isoformat(timespec="microseconds"),
+                user=str(user),
+                action=str(action),
+            )
+            if msg:
+                record["message"] = str(msg)
 
-            line = "".join(parts)
-            self.audit_file.write(line + "\n")
+            self.audit_file.write(json.dumps(record) + "\n")
             self.audit_file.flush()
-            return str(event_id)
+            return event_id
 
     def add_job_event(
         self, job_id: str, scope_name: str = "", task_name: str = "", task_id: str = "", ref: str = "", msg: str = ""
@@ -72,21 +100,22 @@ class Auditor(object):
             if self.audit_file is None:
                 return ""
 
-            event_id = uuid.uuid4()
-            parts = [
-                f"[E:{event_id}]",
-                f"[R:{ref}]" if ref else "",
-                f"[T:{datetime.now()}]",
-                f"[S:{scope_name}]" if scope_name else "",
-                f"[J:{job_id}]",
-                f"[A:{task_name}#{task_id}]" if task_name else "",
-                msg if msg else "",
-            ]
+            event_id = str(uuid.uuid4())
+            record = {"event_id": event_id}
+            if ref:
+                record["reference"] = str(ref)
+            record["timestamp"] = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+            if scope_name:
+                record["scope"] = str(scope_name)
+            record["job"] = str(job_id)
+            if task_name:
+                record["action"] = f"{task_name}#{task_id}"
+            if msg:
+                record["message"] = str(msg)
 
-            line = "".join(parts)
-            self.audit_file.write(line + "\n")
+            self.audit_file.write(json.dumps(record) + "\n")
             self.audit_file.flush()
-            return str(event_id)
+            return event_id
 
     def close(self):
         with self._lock:

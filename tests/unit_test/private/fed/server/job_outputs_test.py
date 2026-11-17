@@ -312,6 +312,7 @@ class TestProducedFiles:
             "results/log.txt",
             # system file names below the log and audit roots, e.g. MetricsArtifactWriter(round_file_name="audit.log")
             "metrics/audit.log",
+            "metrics/audit.jsonl",
             "reports/stats_pool_summary.json",
             "metrics/server.stats_pool_records.csv",
             "site-1/log.txt",  # a client's log folder only for a client of the job
@@ -334,6 +335,7 @@ class TestProducedFiles:
             "applet_log.txt",  # a py applet's log
             "XGBoost_error_log.txt",  # the XGBoost adaptor's log
             "audit.log",
+            "audit.jsonl",
             "stats_pool_summary.json",
             "server.stats_pool_records.csv",
             "app_server/custom/__pycache__/net.cpython-312.pyc",
@@ -409,10 +411,12 @@ class TestLinkProducedOutputs:
             {
                 "model.pt": b"model",
                 "log.txt": b"server log",
-                "audit.log": b"audit",
+                "audit.log": b"historical audit",
+                "audit.jsonl": b"audit",
                 "site-1/log.txt": b"client training log",  # streamed by JobLogReceiver
                 "site-1/error_log.txt": b"client errors",
                 "metrics/audit.log": b"round metrics",  # MetricsArtifactWriter(round_file_name="audit.log")
+                "metrics/audit.jsonl": b"new round metrics",
                 "metrics/metrics_summary.json": b"{}",
             },
         )
@@ -420,8 +424,14 @@ class TestLinkProducedOutputs:
         split = link_job_outputs([str(run_dir)], clients=["site-1"])
         split.link_rest()
 
-        assert split.found == ["metrics/audit.log", "metrics/metrics_summary.json", "model.pt"]
-        assert _files(split.rest_dirs[0]) == ["audit.log", "log.txt", "site-1/error_log.txt", "site-1/log.txt"]
+        assert split.found == ["metrics/audit.jsonl", "metrics/audit.log", "metrics/metrics_summary.json", "model.pt"]
+        assert _files(split.rest_dirs[0]) == [
+            "audit.jsonl",
+            "audit.log",
+            "log.txt",
+            "site-1/error_log.txt",
+            "site-1/log.txt",
+        ]
 
     def test_nothing_produced_keeps_the_workspace_whole(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"app_server/config/c.json": b"{}", "log.txt": b"log"})

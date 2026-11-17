@@ -35,7 +35,7 @@ A server run folder holds three kinds of files:
 | Kind | Examples | Written by |
 | --- | --- | --- |
 | Deployed with the job | `app_server/config/config_fed_server.json`, `app_server/custom/net.py`, `meta.json`, `fl_app.txt` | The server, when it deploys the job's server app |
-| Server logs and system files | `log.txt`, `error_log.txt`, `log.json`, `log_fl.txt`, `stats_pool_summary.json`, `audit.log`, `job_cert/` | The server's logging and runtime |
+| Server logs and system files | `log.txt`, `error_log.txt`, `log.json`, `log_fl.txt`, `stats_pool_summary.json`, `audit.jsonl` (and historical `audit.log`), `job_cert/` | The server's logging and runtime |
 | Produced by the job | `app_server/FL_global_model.pt`, `models/server.npy`, `metrics/`, `cross_site_val/`, `tb_events/`, a custom persistor's file | The job's components: persistors, controllers, writers, receivers |
 
 The common results are at stable paths, but they are set by each component's
@@ -155,7 +155,7 @@ unless it is:
   including the copies written by a task worker (`task_<attempt>_`), a py
   applet (`applet_`) or the XGBoost adaptor (`XGBoost_`) and rotated `.<n>`
   copies; the stats-pool summary and records (with any prefix); and
-  `audit.log`. The same names in a subfolder, such as `metrics/log.json` or
+  `audit.jsonl` or historical `audit.log`. The same names in a subfolder, such as `metrics/log.json` or
   `metrics/audit.log`, are outputs;
 - **a client's streamed log**: one of those log names in `<client>/`, for a
   client of the job, where `JobLogReceiver` writes the logs a client streams
@@ -443,7 +443,7 @@ Unit tests:
 - Produced files: models, metrics, evaluation results, TensorBoard events and
   a new file under `custom/` and a deployed file the job rewrote are outputs;
   `meta.json`, `fl_app.txt`, server logs (prefixed and rotated), stats-pool
-  files, `audit.log`, the signature file, `__pycache__`, `job_cert/` and the
+  files, `audit.jsonl` and historical `audit.log`, the signature file, `__pycache__`, `job_cert/` and the
   deployed app's unchanged files are not. Log, stats-pool and audit names in a
   subfolder are outputs, except a log in a job client's `<client>/` folder,
   which stays in the workspace archive.
