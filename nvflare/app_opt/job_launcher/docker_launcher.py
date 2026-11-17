@@ -45,15 +45,11 @@ from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobPr
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.app_common.resource_managers.passthrough_resource_manager import PassthroughResourceManager
-from nvflare.app_opt.job_launcher.study_data import (
-    load_study_data_file,
-    resolve_study_dataset_mounts,
-    should_mount_study_data,
-)
 from nvflare.app_opt.job_launcher.study_runtime import (
     RESERVED_DOCKER_KWARGS,
     STUDY_RUNTIME_FILE,
     load_study_runtime_file,
+    reject_legacy_study_data,
     resolve_study_runtime,
 )
 from nvflare.fuel.f3.comm_error import CommError
@@ -468,7 +464,6 @@ class DockerJobLauncher(JobLauncherSpec):
     """
 
     WORKSPACE_MOUNT = "/var/tmp/nvflare/workspace"
-    STUDY_DATA_PATH_FILE = "local/study_data.yaml"
     NETWORK_ENV = "NVFL_DOCKER_NETWORK"
 
     DEFAULT_PYTHON_PATH = "/usr/local/bin/python"
@@ -540,15 +535,10 @@ class DockerJobLauncher(JobLauncherSpec):
     def _resolve_study_runtime(self, study):
         # Reads use WORKSPACE_MOUNT (container-internal path) because launch_job runs inside
         # the SP/CP container; the host path (self.workspace) is not visible here.
+        reject_legacy_study_data(self.WORKSPACE_MOUNT)
         runtime_file = os.path.join(self.WORKSPACE_MOUNT, *STUDY_RUNTIME_FILE.split("/"))
         if not os.path.exists(runtime_file):
             return None
-        legacy_file = os.path.join(self.WORKSPACE_MOUNT, self.STUDY_DATA_PATH_FILE)
-        if os.path.exists(legacy_file):
-            raise RuntimeError(
-                f"study runtime file '{runtime_file}' cannot be combined with the legacy study data file "
-                f"'{legacy_file}'; migrate all studies to study_runtime.yaml and remove the v1 file."
-            )
         runtime_map = load_study_runtime_file(runtime_file, launcher_mode="docker", logger=self.logger)
         study_runtime = resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
         self._validate_docker_kwargs_keys(study_runtime.docker_kwargs, runtime_file)
@@ -766,13 +756,7 @@ class DockerJobLauncher(JobLauncherSpec):
         container_local_dir = posixpath.join(self.WORKSPACE_MOUNT, WorkspaceConstants.SITE_FOLDER_NAME)
         # Dataset sources are host paths for Docker (bind sources go to the daemon API);
         # each dataset is mounted at /data/<study>/<dataset>.
-        data_mounts = []
-        if study_runtime is not None:
-            data_mounts = study_runtime.datasets
-        elif should_mount_study_data(study):
-            study_data_file = os.path.join(self.WORKSPACE_MOUNT, self.STUDY_DATA_PATH_FILE)
-            study_data_map = load_study_data_file(study_data_file, logger=self.logger)
-            data_mounts = resolve_study_dataset_mounts(study_data_map, study, study_data_file, logger=self.logger)
+        data_mounts = study_runtime.datasets if study_runtime is not None else []
         for dataset_mount in data_mounts:
             self.logger.info(
                 "mounting study '%s' dataset '%s' from %s -> %s",

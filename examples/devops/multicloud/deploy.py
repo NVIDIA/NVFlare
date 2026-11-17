@@ -117,7 +117,7 @@ class Participant:
     helm_overrides: list = field(default_factory=list)
     pvc_config: dict = field(default_factory=dict)
     pod_annotations: dict = field(default_factory=dict)
-    study_data: dict = field(default_factory=dict)
+    study_datasets: dict = field(default_factory=dict)  # study -> dataset -> {source, mode}
     # Kubernetes imagePullPolicy override. `None` keeps whatever the helm chart
     # defaults to (typically IfNotPresent). Set to "Always" on mutable dev tags.
     pull_policy: str | None = None
@@ -214,17 +214,26 @@ def patch_resources_for_system_monitoring(
         active_resources.unlink()
 
 
-def _normalize_study_data(study_data: dict | None) -> dict:
+def _normalize_study_datasets(study_runtime: dict | None) -> dict:
+    """Read the study_runtime config key: study -> {datasets: {dataset: {source: <pvc>, mode}}}."""
     result = {}
-    for study, datasets in (study_data or {}).items():
+    for study, study_cfg in (study_runtime or {}).items():
         result[study] = {}
-        for dataset, cfg in datasets.items():
-            pvc = cfg.get("pvc")
-            mode = cfg.get("mode")
-            if not pvc or not mode:
-                raise ValueError(f"study_data entry '{study}/{dataset}' must define pvc and mode.")
-            result[study][dataset] = {"source": pvc, "mode": mode}
+        for dataset, cfg in ((study_cfg or {}).get("datasets") or {}).items():
+            source = (cfg or {}).get("source")
+            mode = (cfg or {}).get("mode")
+            if not source or not mode:
+                raise ValueError(f"study_runtime dataset '{study}/{dataset}' must define source (a PVC name) and mode.")
+            result[study][dataset] = {"source": source, "mode": mode}
     return result
+
+
+def _study_runtime_file(study_datasets: dict) -> dict:
+    """The local/study_runtime.yaml (format_version 2) content that mounts these PVC datasets."""
+    return {
+        "format_version": 2,
+        "studies": {study: {"datasets": datasets} for study, datasets in study_datasets.items()},
+    }
 
 
 def _namespace_options(config_path: Path, cloud: str, cloud_cfg: dict, entry: dict) -> tuple[bool, bool]:
@@ -324,7 +333,7 @@ def load_config(config_path: Path) -> DeployConfig:
             raise ValueError(f"{config_path}: participant {entry['name']} prepare.runtime must be '{K8S_RUNTIME}'")
         kc_path = _kubeconfig_path(cloud, cloud_cfg, config_dir=config_path.parent)
         pvc_config = merged.get("pvc_config") or {}
-        study_data = _normalize_study_data(merged.get("study_data"))
+        study_datasets = _normalize_study_datasets(merged.get("study_runtime"))
         create_namespace, delete_namespace = _namespace_options(config_path, cloud, cloud_cfg, entry)
 
         participants.append(
@@ -339,7 +348,7 @@ def load_config(config_path: Path) -> DeployConfig:
                 helm_overrides=list(merged.get("helm_overrides") or []),
                 pvc_config=pvc_config,
                 pod_annotations=merged.get("pod_annotations") or {},
-                study_data=study_data,
+                study_datasets=study_datasets,
                 pull_policy=merged.get("pull_policy"),
                 create_namespace=create_namespace,
                 delete_namespace=delete_namespace,
@@ -541,7 +550,7 @@ def _participant_state(p: Participant) -> dict:
 
 def _participant_cleanup_pvc_names(p: Participant) -> list[str]:
     names = list(p.pvc_config)
-    for datasets in (p.study_data or {}).values():
+    for datasets in (p.study_datasets or {}).values():
         for dataset in (datasets or {}).values():
             source = (dataset or {}).get("source")
             if source:
@@ -778,8 +787,8 @@ def prepare_runtime_kits(
         kit_dir = prod_dir / p.name
         prepare_config = copy.deepcopy(p.prepare)
         prepare_config["namespace"] = p.namespace
-        if p.study_data:
-            _write_yaml_file(kit_dir / "local" / "study_data.yaml", p.study_data)
+        if p.study_datasets:
+            _write_yaml_file(kit_dir / "local" / "study_runtime.yaml", _study_runtime_file(p.study_datasets))
 
         config_path = config_dir / f"{p.name}.yaml"
         output_dir = kit_dir / "prepared" / K8S_RUNTIME

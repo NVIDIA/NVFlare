@@ -413,7 +413,7 @@ Constructor parameters:
 | Parameter | Default | Purpose |
 |-----------|---------|---------|
 | `config_file_path` | required | Path to kubeconfig. Loaded lazily on first `launch_job`. |
-| `study_data_pvc_file_path` | `None` | Optional YAML file mapping study/dataset names to PVC claim names (v1 legacy). Validated lazily; missing study entries skip data PVC mounts and log a warning. Ignored — and a hard error if its file exists — when the site uses `local/study_runtime.yaml` (v2), which is auto-discovered under the parent workspace and needs no launcher argument. |
+| `study_data_pvc_file_path` | `None` | Removed in 2.10 with the v1 `study_data.yaml`; passing a value raises `ValueError`. Study runtime config comes from the auto-discovered `local/study_runtime.yaml`, which needs no launcher argument. |
 | `timeout` | `None` | Wall-clock seconds for `enter_states([RUNNING])`. |
 | `namespace` | `"default"` | Kubernetes namespace. |
 | `pending_timeout` | `120` | Seconds to wait while the scheduler reports insufficient CPU, memory, or GPU resources. Use `0` to fail fast or `None` to wait indefinitely unless `timeout` is set. Job meta can override with `launcher_spec[site][k8s].pending_timeout`. |
@@ -428,8 +428,8 @@ Launch sequence:
 |------|--------|
 | 0 | Lazy init: load kubeconfig and create `CoreV1Api`. |
 | 1 | Sanitize job ID via `uuid4_to_rfc1123`. Extract `site_name`, `job_image` from `get_job_launcher_spec(job_meta, site_name, "k8s")`. Raise if `WORKSPACE_OBJECT` missing. |
-| 2 | Read `JOB_PROCESS_ARGS`; raise if absent or `EXE_MODULE` missing. If `<workspace>/local/study_runtime.yaml` exists, parse it (strict v2) and resolve the job study's datasets, env, secret_env, secret_mounts, container name, and pod template from it; coexistence with a v1 study data file is a hard error. Otherwise resolve dataset PVC mounts from `study_data_pvc_file_path` when configured and the YAML file contains entries for the job study. |
-| 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Mount the job workspace at `workspace_mount_path`, mount the startup-kit Secret at `<workspace_mount_path>/startup`, and set custom-code `PYTHONPATH` under `workspace_mount_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s CPU and memory limits from `launcher_spec`; add GPU limits from the flat `resource_spec[site].num_of_gpus` GPU resource requirement. Apply `launcher_spec[site][k8s].pending_timeout` when present. Missing study entries skip data PVC mounts and log a warning. If a pod template is resolved, preserve template pod fields and sidecars while replacing NVFlare-owned fields such as pod name, job container image/command/args, workspace mounts, transfer env vars, image pull secrets, and resources. |
+| 2 | Read `JOB_PROCESS_ARGS`; raise if absent or `EXE_MODULE` missing. If `<workspace>/local/study_runtime.yaml` exists, parse it (strict v2) and resolve the job study's datasets, env, secret_env, secret_mounts, container name, and pod template from it; a legacy `local/study_data.yaml` is a hard error. Without the file, no study runtime config applies. |
+| 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Mount the job workspace at `workspace_mount_path`, mount the startup-kit Secret at `<workspace_mount_path>/startup`, and set custom-code `PYTHONPATH` under `workspace_mount_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s CPU and memory limits from `launcher_spec`; add GPU limits from the flat `resource_spec[site].num_of_gpus` GPU resource requirement. Apply `launcher_spec[site][k8s].pending_timeout` when present. If a pod template is resolved, preserve template pod fields and sidecars while replacing NVFlare-owned fields such as pod name, job container image/command/args, workspace mounts, transfer env vars, image pull secrets, and resources. |
 | 3.5 | Create the per-job credential Secret `nvflare-cred-<pod_name>` (bootstrap credentials, the workspace transfer token, and — when the job has one — the per-job certificate and key as `NVFLARE_JOB_CERT` / `NVFLARE_JOB_KEY`) and reference it from the job container via `env[].valueFrom.secretKeyRef` — credential values never appear in the pod object. The startup Secret never includes `*.key`; in secure mode a job without a credential is refused. |
 | 4 | Create `K8sJobHandle` (carries the credential Secret name). |
 | 5 | `core_v1.create_namespaced_pod()`, then patch the credential Secret with an ownerReference to the created pod (GC backstop). On any exception: delete the credential Secret if the pod was never created, set `terminal_state = TERMINATED`, preserve `EXCEPTION` as the return code, and return handle. |
@@ -448,15 +448,12 @@ control, resource, settlement and retention contract; the
 [Kubernetes operator guide](../user_guide/admin_guide/deployment/kubernetes_task_launcher.rst)
 contains deployment instructions.
 
-The K8s launcher loads the v1 `study_data_pvc_file_path` file once per launcher
-instance; restart the parent site process to pick up hand edits. The v2
-`local/study_runtime.yaml` is re-read on every launch, so edits (including
+The `local/study_runtime.yaml` file is re-read on every launch, so edits (including
 referenced pod template files) take effect on the next job.
 
 Study-specific configuration:
 
-- v1 (`study_data_pvc_file_path`): use the built-in pod manifest and add matching study-data PVC mounts under `/data/<study>/<dataset>`.
-- v2 (`local/study_runtime.yaml`): all study runtime config — datasets, env, secret-backed env vars and mounts, site default job image (`container.image`; a job-supplied image wins), and per-study pod template — comes from the one file. If typed entries are configured and a multi-container template has no main container marked with the `nvflare_job` sentinel, the launch fails rather than falling back to the first container.
+- `local/study_runtime.yaml`: all study runtime config — datasets, env, secret-backed env vars and mounts, site default job image (`container.image`; a job-supplied image wins), and per-study pod template — comes from the one file. If typed entries are configured and a multi-container template has no main container marked with the `nvflare_job` sentinel, the launch fails rather than falling back to the first container.
 
 When a Pod template is used, `workspace-job` and `startup-kit` remain launcher-owned reserved names. Any same-named template `spec.volumes` or selected job-container `volumeMounts` are replaced by the launcher-generated `emptyDir` workspace and startup-kit Secret mounts. Other named template volumes and mounts are preserved.
 
@@ -630,7 +627,7 @@ Each site configures exactly one launcher in `resources.json` (or `local/resourc
 }
 ```
 
-See [docker_job_launcher_design.md](docker_job_launcher_design.md) for the full deployment guide including `start_docker.sh`, Docker network setup, and `study_data.yaml`.
+See [docker_job_launcher_design.md](docker_job_launcher_design.md) for the full deployment guide including `start_docker.sh`, Docker network setup, and `study_runtime.yaml`.
 
 ### 9.3 Kubernetes Launcher
 
@@ -641,7 +638,6 @@ See [docker_job_launcher_design.md](docker_job_launcher_design.md) for the full 
   "args": {
     "config_file_path": "/path/to/kubeconfig",
     "workspace_pvc": "nvflare-workspace-pvc",
-    "study_data_pvc_file_path": "/path/to/study_data.yaml",
     "workspace_mount_path": "/var/tmp/nvflare/workspace",
     "timeout": 120,
     "namespace": "nvflare"
@@ -649,23 +645,19 @@ See [docker_job_launcher_design.md](docker_job_launcher_design.md) for the full 
 }
 ```
 
-The `study_data_pvc_file_path` YAML maps study and dataset names to PVC claim names. Missing study entries mean no data PVC is mounted, and the launcher logs a warning:
+Study datasets are configured in the site-local `local/study_runtime.yaml`, which is auto-discovered and needs no launcher argument. For K8s, each dataset `source` is a trusted PVC claim name that is inserted into the pod manifest; for Docker it is a trusted host path. Site operators should validate these site-local values before running jobs.
 
 ```yaml
-default:
-  training:
-    source: default-data-pvc
-    mode: ro
-study-alpha:
-  training:
-    source: alpha-training-pvc
-    mode: ro
-  output:
-    source: alpha-output-pvc
-    mode: rw
+format_version: 2
+studies:
+  default:
+    datasets:
+      training: {source: default-data-pvc, mode: ro}
+  study-alpha:
+    datasets:
+      training: {source: alpha-training-pvc, mode: ro}
+      output: {source: alpha-output-pvc, mode: rw}
 ```
-
-For K8s, each dataset `source` is a trusted PVC claim name that is inserted into the pod manifest. For Docker, the same YAML shape is used but `source` is a trusted host path instead of a PVC claim name. Site operators should validate these site-local values before running jobs.
 
 ### 9.4 Slurm Launcher
 

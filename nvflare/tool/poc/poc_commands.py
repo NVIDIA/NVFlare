@@ -519,9 +519,8 @@ def _write_poc_docker_study_runtime(kit_dir: Path, poc_workspace: str, site_stud
     legacy_file = kit_dir / "local" / "study_data.yaml"
     if legacy_file.exists():
         raise CLIException(
-            f"POC Docker kit '{kit_dir}' has a legacy study data file '{legacy_file}'; POC now writes "
-            "study_runtime.yaml (v2) and the two files must not coexist. Delete the v1 file "
-            "(or migrate its entries into study_runtime.yaml) and re-run."
+            f"POC Docker kit '{kit_dir}' has a legacy study data file '{legacy_file}', which is no longer "
+            "supported. Delete it (or move its entries into study_runtime.yaml) and re-run."
         )
     study_runtime_file = kit_dir / "local" / "study_runtime.yaml"
     try:

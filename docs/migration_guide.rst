@@ -27,6 +27,27 @@ Verify with ``nvflare system version``. Leftover 2.9 peers are rejected before
 endpoint attachment and cannot replace a 2.10 connection. This procedure
 includes a server outage and does not resume running jobs across the upgrade.
 
+Study Data File Removed
+-----------------------
+
+The v1 ``local/study_data.yaml`` and the K8s launcher argument
+``study_data_pvc_file_path`` are removed. The Docker, Kubernetes, and Slurm
+launchers refuse to launch jobs while ``local/study_data.yaml`` exists,
+``nvflare deploy prepare`` rejects a kit that carries it, and
+``K8sJobLauncher`` rejects ``study_data_pvc_file_path``. Move each study's
+datasets into ``local/study_runtime.yaml`` (``format_version: 2``), delete
+``study_data.yaml``, and remove ``study_data_pvc_file_path`` from the launcher
+configuration. For example, ``default: {data: {source: nvfldata, mode: ro}}``
+becomes::
+
+    format_version: 2
+    studies:
+      default:
+        datasets:
+          data: {source: nvfldata, mode: ro}
+
+Process mode never read ``study_data.yaml``.
+
 .. _multi_process_executor_migration:
 
 Multi-process Executor Deprecation

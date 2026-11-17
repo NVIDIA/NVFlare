@@ -320,7 +320,7 @@ studies:
 
 At launch time, `DockerJobLauncher` looks up the study name and bind-mounts each configured dataset into the SJ/CJ container at `/data/<study>/<dataset>`. In Docker mode, `source` is the host path passed to Docker and `mode` must be `ro` or `rw`. If the file doesn't exist or the study has no entry, no data volume is added and the launcher logs a warning. The same file also configures per-study `env`, `secret_env` (launcher-env pass-through), and `secret_mounts`; see `docs/design/study_runtime_config.md`.
 
-The legacy v1 `study_data.yaml` (`study -> dataset -> {source, mode}`) remains supported for existing sites; the two files must not coexist. If a configured dataset host `source` path does not exist, Docker reports the bind-mount failure when the job container is created.
+The v1 `study_data.yaml` was removed in 2.10; Docker refuses to launch while that file is present. If a configured dataset host `source` path does not exist, Docker reports the bind-mount failure when the job container is created.
 
 ---
 
