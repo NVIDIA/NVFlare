@@ -69,7 +69,7 @@ SEGMENTATION_TRAINING = TrainingContract(
     sample_fields=("image", "mask", "split"),
     record_shape={
         "image": "relative RGB PNG path under the site folder",
-        "mask": "relative single-channel binary PNG path under the site folder",
+        "mask": "relative single-channel PNG path under the site folder; stored values 0=background, 1=target",
         "split": "train, validation, or test",
     },
     qc_contract={
@@ -96,7 +96,7 @@ SEGMENTATION_TRAINING = TrainingContract(
             "format": "png",
             "channels": 1,
             "value": "random_binary_label",
-            "stored_values": [0, 255],
+            "stored_values": [0, 1],
         },
         "splits": {"train": 2, "validation": 1},
     },
@@ -595,7 +595,7 @@ def _write_binary_mask(path: Path, *, width: int, height: int) -> None:
     mask = Image.new("L", (width, height), 0)
     draw = ImageDraw.Draw(mask)
     margin = max(2, min(width, height) // 4)
-    draw.ellipse((margin, margin, width - margin - 1, height - margin - 1), fill=255)
+    draw.ellipse((margin, margin, width - margin - 1, height - margin - 1), fill=1)
     mask.save(path)
 
 

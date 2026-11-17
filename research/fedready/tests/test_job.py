@@ -26,6 +26,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fedready import job_data, job_train
+from fedready.data.contracts import segmentation, training
 from fedready.flare import fedready_training_client_runtime
 from fedready.job_data import (
     _default_session_id,
@@ -47,11 +48,38 @@ from fedready.job_train import (
     validate_training_code_spec,
 )
 from fedready.utils.io import safe_path_slug
+from PIL import Image
 
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 
 
 class NVFlareJobTestCase(unittest.TestCase):
+    def test_segmentation_preflight_matches_materialized_mask_encoding(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            Image.new("RGB", (16, 16)).save(root / "image.png")
+            mask = Image.new("L", (16, 16), 0)
+            mask.putpixel((8, 8), 255)
+            mask.save(root / "mask.png")
+            record = segmentation.materialize_pair(
+                pair={"image_path": root / "image.png", "mask_path": root / "mask.png", "split": "train"},
+                output_dir=root / "prepared",
+                source_label_type="disc",
+                update_intensity=lambda accumulator, image: None,
+                intensity_accumulator={},
+            )
+            with Image.open(root / "prepared" / record["mask"]) as stored_mask:
+                stored_values = sorted(value for _, value in stored_mask.getcolors())
+            self.assertEqual(stored_values, [0, 1])
+            contract = training.SEGMENTATION_TRAINING
+            training.write_mock_preflight_dataset(
+                dataset_root=root / "mock", contract=contract, client_id="SITE", target_size=(16, 16)
+            )
+            for mask_path in (root / "mock" / "SITE" / "masks").rglob("*.png"):
+                with Image.open(mask_path) as mock_mask:
+                    self.assertEqual(sorted(value for _, value in mock_mask.getcolors()), stored_values)
+            self.assertEqual(contract.mock_preflight["target"]["stored_values"], stored_values)
+
     def test_training_validation_preserves_stage_feedback_and_attempt_budget(self) -> None:
         for runtime_feedback in (None, {"failure": "simulator failed"}):
             for budget in (1, 2):
