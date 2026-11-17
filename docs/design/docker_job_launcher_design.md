@@ -497,7 +497,7 @@ studies:
         mode: ro
 ```
 
-`studies` keys are study names from `meta.json`; `datasets` keys are dataset names. Each dataset entry defines the host `source` path and mount `mode`. Dataset names appear in the container path as `/data/<study>/<dataset>`. If the file is absent or the job's study has no entry, no data volume is added, the launcher logs a warning, and the job runs without a data mount. Legacy v1 `study_data.yaml` files remain supported but must not coexist with `study_runtime.yaml`.
+`studies` keys are study names from `meta.json`; `datasets` keys are dataset names. Each dataset entry defines the host `source` path and mount `mode`. Dataset names appear in the container path as `/data/<study>/<dataset>`. If the file is absent or the job's study has no entry, no data volume is added, the launcher logs a warning, and the job runs without a data mount. A legacy v1 `study_data.yaml` is no longer read; Docker refuses to launch while it exists.
 
 ### Step 5 — Submit a job
 
