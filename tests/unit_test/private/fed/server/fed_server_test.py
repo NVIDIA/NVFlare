@@ -20,7 +20,15 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey, SecureTrainConst, ServerCommandKey, ServerCommandNames
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import (
+    ConnPropKey,
+    FLContextKey,
+    RunProcessKey,
+    SecureTrainConst,
+    ServerCommandKey,
+    ServerCommandNames,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
@@ -34,7 +42,14 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
-from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobOutcomeMsgKey, new_cell_message
+from nvflare.private.defs import (
+    CellChannel,
+    CellMessageHeaderKeys,
+    ClientRegMsgKey,
+    ClientType,
+    JobOutcomeMsgKey,
+    new_cell_message,
+)
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.client_manager import ClientManager
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
@@ -66,6 +81,36 @@ def auth_server(auth_identity):
     server.client_manager = SimpleNamespace(clients={})
     server._get_id_asserter = lambda: identity
     return server, private_key
+
+
+@pytest.mark.parametrize("client_name", ["site-1", "site-2"])
+def test_registration_event_receives_client_name_from_request(client_name):
+    server = object.__new__(FederatedServer)
+    server.logger = MagicMock()
+    server.engine = MagicMock()
+    context = FLContext()
+    server.engine.new_context.return_value = nullcontext(context)
+    server._ready_for_registration = MagicMock(return_value=None)
+    server.client_manager = MagicMock()
+    server.client_manager.authenticate.return_value = None
+    server._generate_reply = MagicMock(return_value="registration reply")
+
+    def check_registration_event(event_type, fl_ctx):
+        if event_type == EventType.CLIENT_REGISTER_RECEIVED:
+            assert fl_ctx.get_prop_detail(FLContextKey.CLIENT_NAME) == {
+                "value": client_name,
+                "private": True,
+                "sticky": False,
+            }
+
+    server.engine.fire_event.side_effect = check_registration_event
+    request = new_cell_message(
+        {CellMessageHeaderKeys.CLIENT_NAME: client_name, CellMessageHeaderKeys.CLIENT_TYPE: ClientType.REGULAR},
+        Shareable(),
+    )
+
+    assert server.register_client(request) == "registration reply"
+    server.engine.fire_event.assert_any_call(EventType.CLIENT_REGISTER_RECEIVED, fl_ctx=context)
 
 
 @pytest.fixture
