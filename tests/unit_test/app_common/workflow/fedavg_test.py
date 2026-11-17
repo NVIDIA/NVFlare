@@ -2616,3 +2616,41 @@ class TestZeroStepResults:
         )
 
         assert aggr_result.meta.get(AlgorithmConstants.SCAFFOLD_CTRL_DIFF, {}) == {}
+
+    def test_base_aggregate_empty_results_keeps_error_path(self):
+        controller = _base_fedavg()
+        controller.exception = MagicMock()
+        controller.panic = MagicMock()
+
+        aggr_result = controller.aggregate([])
+
+        controller.panic.assert_called_once()
+        assert aggr_result.params is None
+        controller.warning.assert_not_called()
+
+    def test_base_aggregate_all_zero_steps_publishes_zero_contribution_stats(self):
+        controller = _base_fedavg()
+        controller.current_round = 3
+
+        controller.aggregate([_steps_result("site-1", 1.0, 0)])
+
+        stats = controller.fl_ctx.get_prop(AppConstants.AGGREGATION_STATS)
+        assert stats[AggregationStatsKey.ROUND] == 3
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 0
+        assert stats[AggregationStatsKey.CONTRIBUTORS] == []
+
+    def test_streaming_all_zero_steps_replaces_previous_round_stats(self):
+        controller = _streaming_fedavg()
+        controller.fl_ctx = FLContext()
+        controller.fl_ctx.set_prop(
+            AppConstants.AGGREGATION_STATS, {AggregationStatsKey.ROUND: 0}, private=True, sticky=False
+        )
+        controller.current_round = 1
+        controller._aggregate_one_result(_steps_result("site-1", 1.0, 0))
+
+        controller._get_aggregated_result()
+
+        stats = controller.fl_ctx.get_prop(AppConstants.AGGREGATION_STATS)
+        assert stats[AggregationStatsKey.ROUND] == 1
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 0
+        assert stats[AggregationStatsKey.CONTRIBUTORS] == []

@@ -265,15 +265,17 @@ class BaseFedAvg(ModelController):
         if self.fl_ctx:
             self._set_ctx_prop_preserving_attrs(fl_ctx=self.fl_ctx, key=AppConstants.AGGREGATION_STATS, value=None)
         self.event(AppEventType.BEFORE_AGGREGATION)
-        results = self._drop_zero_step_results(results)
-        if not results:
+        kept_results = self._drop_zero_step_results(results)
+        if results and not kept_results:
             self.warning(f"All results reported 0 steps at round {self.current_round}, keeping the global model.")
             aggr_result = _make_unchanged_model_result(self.current_round)
+            self._publish_zero_contribution_stats()
             self._results = []
             self.fire_event_with_data(
                 AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggr_result
             )
             return aggr_result
+        results = kept_results
         self._check_results(results)
 
         if not aggregate_fn:
@@ -310,6 +312,12 @@ class BaseFedAvg(ModelController):
         self.debug("End aggregation.")
 
         return aggr_result
+
+    def _publish_zero_contribution_stats(self):
+        if self.fl_ctx:
+            aggr_stats = compute_key_match_stats({})
+            aggr_stats[AggregationStatsKey.ROUND] = self.current_round
+            self.fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, aggr_stats, private=True, sticky=False)
 
     def _drop_zero_step_results(self, results: List[FLModel]) -> List[FLModel]:
         kept = []
