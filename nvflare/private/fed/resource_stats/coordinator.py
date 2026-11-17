@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import errno
 import json
 import logging
 import os
@@ -68,7 +67,6 @@ _SECURE_DIR_FD = (
     and os.mkdir in os.supports_dir_fd
     and os.rename in os.supports_dir_fd
     and os.unlink in os.supports_dir_fd
-    and os.rmdir in os.supports_dir_fd
 )
 
 
@@ -320,7 +318,6 @@ class ResourceStatsCoordinator:
             if len(summary_data) > MAX_RESOURCE_SUMMARY_BYTES:
                 raise ValueError("resource summary exceeds its size limit")
 
-            self._remove_empty_staging_directory(state.run_dir)
             self._write_summary(state.run_dir, summary_data)
             state.finalized = True
             status_counts: dict[str, int] = {}
@@ -413,19 +410,3 @@ class ResourceStatsCoordinator:
         if not getattr(shutil.rmtree, "avoids_symlink_attacks", False):
             raise OSError("cannot safely reset the resource statistics directory on this platform")
         shutil.rmtree(stats_path)
-
-    @classmethod
-    def _remove_empty_staging_directory(cls, run_dir: Path) -> None:
-        stats_fd = cls._open_resource_directory(run_dir)
-        try:
-            try:
-                os.rmdir("staging", dir_fd=stats_fd)
-            except FileNotFoundError:
-                return
-            except OSError as exc:
-                if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST):
-                    raise
-                _logger.warning("Resource handoff staging is not empty; preserving accepted reports")
-                return
-        finally:
-            os.close(stats_fd)

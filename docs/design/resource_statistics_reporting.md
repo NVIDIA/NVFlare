@@ -151,8 +151,8 @@ authenticity. Each launch owns a private
 `resource_stats/staging/terminal_handoff.<generation>.json` file. Its bounded
 generation token is required for every handoff operation and never enters public
 records. Cleanup removes only that generation's file, so an
-older writer or failed launch cannot replace or remove a newer handoff. Cleanup
-removes empty staging directories; readers ignore any residual private files.
+older writer or failed launch cannot replace or remove a newer handoff. Staging
+directories remain in place; readers ignore them and any residual private files.
 Handoffs and summaries use atomic file publication without separate statistics
 `fsync` calls; durability follows normal workspace archival.
 
@@ -239,7 +239,9 @@ not guarantee history across a crash or overlapping delayed cleanup. The separat
 launch-generation check still rejects stale terminal handoffs.
 
 Worker measurements use the existing completion or failure diagnostics, with no
-separate statistics-file write, read or removal. Invalid optional measurements
+separate statistics-file write, read or removal. The enclosing record supplies
+identity and version; the nested worker data contains only measurements and issues.
+Invalid optional measurements
 are omitted without changing the application outcome. Traffic is sampled before
 transport shutdown, so a live transport's usable subtotal is marked partial for
 the unobserved final interval. A missing or unreadable completion/failure record
@@ -401,9 +403,8 @@ JSON retains native numbers, per-metric status, and detailed scope-level issue c
 
 ## Compatibility and failure boundary
 
-Nonempty handoff staging is a logged diagnostic: it must not prevent publication
-or discard accepted reports. Other staging I/O failures retain the publication
-failure policy above.
+Summary publication does not inspect or remove handoff staging. Residual private
+files cannot prevent publication or discard accepted reports.
 
 Public records use a strict schema: readers reject unknown fields and
 unsupported versions. Adding a field, including an optional field, or changing

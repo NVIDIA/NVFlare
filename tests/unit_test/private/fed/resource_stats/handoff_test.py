@@ -198,7 +198,7 @@ def test_generation_paths_preserve_replacement_against_late_writer_and_old_clean
     assert new.exists()
     assert module.read_terminal_handoff(tmp_path, expected_generation="new-launch")["duration_seconds"] == 3
     module.remove_terminal_handoff(tmp_path, expected_generation="new-launch")
-    assert not new.parent.exists()
+    assert list(new.parent.iterdir()) == []
 
 
 @pytest.mark.parametrize("field_generation", [None, "old-launch"])

@@ -138,6 +138,7 @@ def test_worker_snapshots_use_completion_diagnostics_without_extra_files(tmp_pat
         "close",
     ]
     report = completion.to_dict()["diagnostics"]["resource_stats"]
+    assert set(report) == {"duration_seconds", "resource_capacity", "cpu_consumed", "message_traffic", "issues"}
     assert completion.diagnostics["elapsed_seconds"] == 10.0
     assert completion.diagnostics["cpu_seconds"] == 4.0
     assert report["duration_seconds"] == 10

@@ -46,12 +46,7 @@ from nvflare.job_config.task_execution import (
     task_constructor_args,
 )
 from nvflare.private.fed.resource_stats.collector import ExecutionResourceCollector
-from nvflare.private.fed.resource_stats.measurements import (
-    SCHEMA_VERSION,
-    canonical_json_bytes,
-    ordered_issues,
-    scoped_measurement,
-)
+from nvflare.private.fed.resource_stats.measurements import canonical_json_bytes, ordered_issues, scoped_measurement
 from nvflare.private.fed.resource_stats.task_rollup import MAX_WORKER_RECORD_BYTES
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
 from nvflare.security.logging import secure_format_exception
@@ -261,7 +256,7 @@ def _stop_resources(collection):
     }
 
 
-def _resource_diagnostics(identity, snapshot, transport):
+def _resource_diagnostics(snapshot, transport):
     """Attach bounded JSON to existing artifacts without adding statistics I/O."""
     try:
         traffic = (
@@ -275,9 +270,6 @@ def _resource_diagnostics(identity, snapshot, transport):
         issues = list(snapshot.get("issues", []))
         traffic = scoped_measurement("message_traffic", traffic, issues)
         record = {
-            "schema_version": SCHEMA_VERSION,
-            "identity": identity.to_dict(),
-            "scope": "worker",
             **snapshot,
             "message_traffic": traffic,
             "issues": ordered_issues(issues),
@@ -363,7 +355,7 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
         checkpoint = store.stage_checkpoint(identity)
         if bootstrap.resource_reporting:
             resource_snapshot = _stop_resources(collection)
-            diagnostics = _resource_diagnostics(identity, resource_snapshot, transport)
+            diagnostics = _resource_diagnostics(resource_snapshot, transport)
             # Optional diagnostic conversion cannot prevent publishing a valid result.
             for target, source in (("elapsed_seconds", "duration_seconds"), ("cpu_seconds", "cpu_consumed")):
                 try:
@@ -408,9 +400,7 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
                 failed_at=time.time(),
                 error_type=type(e).__name__,
                 message=secure_format_exception(e),
-                diagnostics=(
-                    _resource_diagnostics(identity, resource_snapshot, transport) if resource_snapshot else None
-                ),
+                diagnostics=(_resource_diagnostics(resource_snapshot, transport) if resource_snapshot else None),
             )
         except Exception:
             pass

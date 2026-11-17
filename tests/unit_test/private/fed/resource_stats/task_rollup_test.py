@@ -28,11 +28,8 @@ def _identity(attempt="first"):
     return TaskAttemptIdentity("job", "site", "task", "train", attempt)
 
 
-def _report(identity, *, seconds=10, cpu_seconds=8, **changes):
+def _report(*, seconds=10, cpu_seconds=8, **changes):
     record = {
-        "schema_version": "1.0",
-        "identity": identity.to_dict(),
-        "scope": "worker",
         "duration_seconds": seconds,
         "resource_capacity": {"cpu": {"units": 2}, "memory": {"bytes": 1024}, "gpu": {"count": 1}},
         "cpu_consumed": {"cpu_seconds": cpu_seconds},
@@ -69,8 +66,8 @@ def test_no_workers_adds_nothing_and_never_started_work_does_not_create_a_gap():
 def test_distinct_physical_workers_sum_their_own_lifetimes():
     reducer = task_rollup.TaskResourceReducer()
     first, second = _identity(), _identity("second")
-    _fold(reducer, first, _report(first))
-    _fold(reducer, second, _report(second, seconds=5, cpu_seconds=4))
+    _fold(reducer, first, _report())
+    _fold(reducer, second, _report(seconds=5, cpu_seconds=4))
     values = reducer.snapshot()
     assert values["resource_time"] == {
         "cpu": {"unit_seconds": 30},
@@ -85,9 +82,9 @@ def test_distinct_physical_workers_sum_their_own_lifetimes():
 def test_equivalent_repeated_reports_do_not_add_compute_or_traffic():
     reducer = task_rollup.TaskResourceReducer()
     identity = _identity()
-    _fold(reducer, identity, _report(identity))
+    _fold(reducer, identity, _report())
     expected = reducer.snapshot()
-    reducer.settle(identity, _report(identity, seconds=10.0, cpu_seconds=8.0), started=True, settled=True)
+    reducer.settle(identity, _report(seconds=10.0, cpu_seconds=8.0), started=True, settled=True)
     assert reducer.snapshot() == expected
     assert not reducer.register(identity)
 
@@ -95,8 +92,8 @@ def test_equivalent_repeated_reports_do_not_add_compute_or_traffic():
 def test_conflicting_repeat_retains_first_subtotal_and_marks_a_gap():
     reducer = task_rollup.TaskResourceReducer()
     identity = _identity()
-    _fold(reducer, identity, _report(identity))
-    reducer.settle(identity, _report(identity, seconds=20, cpu_seconds=16), started=True, settled=True)
+    _fold(reducer, identity, _report())
+    reducer.settle(identity, _report(seconds=20, cpu_seconds=16), started=True, settled=True)
     values = reducer.snapshot()
     assert values["resource_time"]["gpu"]["instance_seconds"] == 10
     assert values["cpu_consumed"] == {"status": "partial", "cpu_seconds": 8}
@@ -110,7 +107,7 @@ def test_conflicting_repeat_retains_first_subtotal_and_marks_a_gap():
 def test_missing_or_unsettled_worker_keeps_existing_values_and_marks_quality(settled):
     reducer = task_rollup.TaskResourceReducer()
     identity = _identity()
-    _fold(reducer, identity, _report(identity))
+    _fold(reducer, identity, _report())
     missing = _identity("missing")
     assert reducer.register(missing)
     reducer.settle(missing, started=True, settled=settled)
@@ -127,7 +124,7 @@ def test_incomplete_snapshot_preserves_values_without_changing_stored_totals():
     _fold(
         reducer,
         identity,
-        _report(identity, seconds=0, cpu_seconds=0, message_traffic={"sent_bytes": 0, "received_bytes": 10**50}),
+        _report(seconds=0, cpu_seconds=0, message_traffic={"sent_bytes": 0, "received_bytes": 10**50}),
     )
     complete = reducer.snapshot()
     stored = deepcopy(reducer._totals)
@@ -152,7 +149,7 @@ def test_incomplete_snapshot_preserves_values_without_changing_stored_totals():
 def test_late_confirmed_settlement_can_resolve_a_temporary_scope_gap():
     reducer = task_rollup.TaskResourceReducer()
     identity = _identity()
-    record = _report(identity)
+    record = _report()
     assert reducer.register(identity)
     reducer.settle(identity, record, started=True, settled=False)
     assert not reducer.snapshot()["duration_contained"]
@@ -169,7 +166,7 @@ def test_partial_cpu_does_not_discard_complete_capacity_or_traffic():
     _fold(
         reducer,
         identity,
-        _report(identity, cpu_consumed={"status": "partial", "issues": ["attribution_incomplete"], "cpu_seconds": 8}),
+        _report(cpu_consumed={"status": "partial", "issues": ["attribution_incomplete"], "cpu_seconds": 8}),
     )
     values = reducer.snapshot()
     assert "status" not in values["resource_time"]
@@ -183,11 +180,11 @@ def test_partial_cpu_does_not_discard_complete_capacity_or_traffic():
 def test_unavailable_capacity_keeps_prior_capacity_and_this_workers_cpu_and_traffic(reason):
     reducer = task_rollup.TaskResourceReducer()
     first, second = _identity(), _identity("second")
-    _fold(reducer, first, _report(first))
+    _fold(reducer, first, _report())
     _fold(
         reducer,
         second,
-        _report(second, resource_capacity={"status": "unavailable", "issues": [reason]}),
+        _report(resource_capacity={"status": "unavailable", "issues": [reason]}),
     )
     values = reducer.snapshot()
     assert values["resource_time"]["gpu"]["instance_seconds"] == 10
@@ -201,7 +198,7 @@ def test_unavailable_capacity_keeps_prior_capacity_and_this_workers_cpu_and_traf
 def test_unregistered_or_mismatched_claims_never_add_a_new_execution():
     reducer = task_rollup.TaskResourceReducer()
     identity = _identity()
-    reducer.settle(identity, _report(identity), started=True, settled=True)
+    reducer.settle(identity, _report(), started=True, settled=True)
     assert reducer.snapshot()["resource_time"] is None
     assert reducer.register(identity)
     assert not reducer.register(replace(identity, task_name="different"))
@@ -212,7 +209,7 @@ def test_key_limit_freezes_without_evicting_or_recounting_existing_sources(monke
     monkeypatch.setattr(task_rollup, "_MAX_SCOPES", 1)
     reducer = task_rollup.TaskResourceReducer()
     identity = _identity()
-    record = _fold(reducer, identity, _report(identity))
+    record = _fold(reducer, identity, _report())
     assert not reducer.register(_identity("new"))
     reducer.settle(identity, record, started=True, settled=True)
     assert len(reducer._scopes) == 1
@@ -225,7 +222,7 @@ def test_serialized_ledger_limit_rejects_growth_before_storing_a_contribution(mo
     monkeypatch.setattr(task_rollup, "_MAX_STATE_BYTES", 1700)
     reducer = task_rollup.TaskResourceReducer()
     identity = TaskAttemptIdentity("job", "site", "task", "t" * 300, "first")
-    _fold(reducer, identity, _report(identity))
+    _fold(reducer, identity, _report())
     assert reducer._frozen
     assert reducer._scopes[task_rollup._key(identity)].record is None
     assert reducer.snapshot()["cpu_consumed"]["status"] == "unavailable"
@@ -237,8 +234,8 @@ def test_serialized_ledger_limit_rejects_growth_before_storing_a_contribution(mo
 def test_overflow_preserves_valid_dimensions_and_the_previous_cpu_subtotal():
     reducer = task_rollup.TaskResourceReducer()
     first, second = _identity(), _identity("second")
-    _fold(reducer, first, _report(first, seconds=1, cpu_seconds=1e308))
-    _fold(reducer, second, _report(second, seconds=1e308, cpu_seconds=1e308))
+    _fold(reducer, first, _report(seconds=1, cpu_seconds=1e308))
+    _fold(reducer, second, _report(seconds=1e308, cpu_seconds=1e308))
     values = reducer.snapshot()
     assert values["resource_time"]["gpu"]["instance_seconds"] == 1e308
     assert values["resource_time"]["memory"]["byte_seconds"] == 1024
@@ -251,13 +248,13 @@ def test_overflow_preserves_valid_dimensions_and_the_previous_cpu_subtotal():
 
 @pytest.mark.parametrize(
     "record",
-    [None, {}, 42, {"issues": None}, _report(_identity("second"), extra="x" * task_rollup.MAX_WORKER_RECORD_BYTES)],
+    [None, {}, 42, {"issues": None}, _report(extra="x" * task_rollup.MAX_WORKER_RECORD_BYTES)],
     ids=["missing", "empty", "non-object", "invalid-issues", "oversized"],
 )
 def test_missing_or_malformed_diagnostics_keep_prior_subtotals(record):
     reducer = task_rollup.TaskResourceReducer()
     identity = _identity()
-    _fold(reducer, identity, _report(identity))
+    _fold(reducer, identity, _report())
     _fold(reducer, _identity("second"), record)
     assert reducer.snapshot()["cpu_consumed"] == {"cpu_seconds": 8, "status": "partial"}
     assert reducer.snapshot()["duration_contained"]

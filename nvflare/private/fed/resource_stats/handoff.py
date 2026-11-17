@@ -44,7 +44,6 @@ _SECURE_HANDOFF_DIR_FD = (
     and bool(getattr(os, "O_DIRECTORY", 0))
     and os.open in os.supports_dir_fd
     and os.unlink in os.supports_dir_fd
-    and os.rmdir in os.supports_dir_fd
 )
 _SECURE_HANDOFF_WRITE_DIR_FD = (
     _SECURE_HANDOFF_DIR_FD and os.mkdir in os.supports_dir_fd and os.rename in os.supports_dir_fd
@@ -79,11 +78,10 @@ def terminal_handoff_path(run_dir: str | Path, *, launch_generation: str) -> Pat
     return Path(run_dir) / RESOURCE_STATS_DIR / STAGING_DIR / _handoff_filename(launch_generation)
 
 
-def _open_handoff_directory(run_dir: str | Path, *, include_staging: bool, create: bool = False) -> int:
+def _open_handoff_directory(run_dir: str | Path, *, create: bool = False) -> int:
     """Open every parent component without following an untrusted symlink."""
 
     root = Path(run_dir)
-    components = (RESOURCE_STATS_DIR, STAGING_DIR) if include_staging else (RESOURCE_STATS_DIR,)
     if not _SECURE_HANDOFF_DIR_FD or (create and not _SECURE_HANDOFF_WRITE_DIR_FD):
         raise OSError("resource handoff requires directory-relative filesystem operations")
     if create:
@@ -91,7 +89,7 @@ def _open_handoff_directory(run_dir: str | Path, *, include_staging: bool, creat
 
     current_fd = os.open(root, _DIRECTORY_OPEN_FLAGS)
     try:
-        for component in components:
+        for component in (RESOURCE_STATS_DIR, STAGING_DIR):
             if create:
                 try:
                     os.mkdir(component, mode=0o700, dir_fd=current_fd)
@@ -115,7 +113,7 @@ def write_terminal_handoff(run_dir: str | Path, handoff: Mapping[str, Any], *, l
     if len(data) > MAX_TERMINAL_HANDOFF_BYTES:
         raise InvalidTerminalHandoff("terminal handoff exceeds its size limit")
     path = Path(run_dir) / RESOURCE_STATS_DIR / STAGING_DIR / filename
-    directory_fd = _open_handoff_directory(run_dir, include_staging=True, create=True)
+    directory_fd = _open_handoff_directory(run_dir, create=True)
     temp_name = f".terminal-{secrets.token_hex(16)}.tmp"
     fd = None
     try:
@@ -147,7 +145,7 @@ def read_terminal_handoff(run_dir: str | Path, *, expected_generation: str) -> O
     directory_fd = None
     fd = None
     try:
-        directory_fd = _open_handoff_directory(run_dir, include_staging=True)
+        directory_fd = _open_handoff_directory(run_dir)
         # The job process owns this self-report, so treat the path as untrusted:
         # do not follow any path-component symlink and do not let a FIFO/device
         # block the parent.
@@ -193,23 +191,11 @@ def remove_terminal_handoff(run_dir: str | Path, *, expected_generation: str) ->
 
     directory_fd = None
     try:
-        directory_fd = _open_handoff_directory(run_dir, include_staging=True)
+        directory_fd = _open_handoff_directory(run_dir)
         os.unlink(filename, dir_fd=directory_fd)
-    except FileNotFoundError:
-        pass
     except OSError:
         # Unsafe job-owned paths are left untouched.
         return
     finally:
         if directory_fd is not None:
             os.close(directory_fd)
-
-    stats_fd = None
-    try:
-        stats_fd = _open_handoff_directory(run_dir, include_staging=False)
-        os.rmdir(STAGING_DIR, dir_fd=stats_fd)
-    except OSError:
-        pass
-    finally:
-        if stats_fd is not None:
-            os.close(stats_fd)
