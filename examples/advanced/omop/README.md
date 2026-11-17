@@ -11,7 +11,7 @@ The [OMOP Common Data Model](https://ohdsi.github.io/CommonDataModel/), maintain
 Each site converts its own EHR into the CDM with an ETL pipeline that maps local codes to standard concepts, so an ICD-10-CM `K92.2` and a SNOMED `74474003` diagnosis are both stored as concept `192671` (Gastrointestinal hemorrhage).
 That ETL happens once at each hospital, outside this example, and afterwards a study written against the CDM runs unchanged at every site and yields the same features in the same order, which is exactly what federated learning needs.
 
-## What each site runs
+## Cohort and model
 
 The study is defined once in [cohort.py](./cohort.py), named after the OHDSI term for the patients a study includes: patients starting celecoxib or diclofenac, whether they had a GI hemorrhage within a year, and their age, sex, NSAID, prior GI conditions and painkiller use as covariates.
 Its SQL selects conditions and drugs through the vocabulary's hierarchy, so one concept also catches every more specific concept a site recorded:
