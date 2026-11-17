@@ -80,6 +80,8 @@ DEFAULT_CLASS_ALLOW_LIST = (
     "nvflare.app_common.workflows.scaffold.Scaffold",
     "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
     "nvflare.app_common.workflows.statistics_controller.StatisticsController",
+    "nvflare.app_opt.catalog.classic.CatalogController",
+    "nvflare.app_opt.catalog.classic.CatalogExecutor",
     "nvflare.app_opt.he.intime_accumulate_model_aggregator.HEInTimeAccumulateWeightedAggregator",
     "nvflare.app_opt.he.model_decryptor.HEModelDecryptor",
     "nvflare.app_opt.he.model_encryptor.HEModelEncryptor",

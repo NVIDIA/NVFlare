@@ -1,0 +1,24 @@
+# The contract site-1's data steward maintains for its omop dataset (Open Data Contract Standard).
+apiVersion: v3.1.0
+kind: DataContract
+id: site-1.omop
+name: omop
+version: 1.0.0
+status: active
+description:
+  purpose: OMOP-shaped synthetic oncology cohort
+schema:
+- name: person
+  physicalType: table
+  description: One row per patient
+  properties:
+  - name: person_id
+    physicalType: bigint
+    logicalType: integer
+    primaryKey: true
+  - name: year_of_birth
+    physicalType: integer
+    logicalType: integer
+  - name: gender_concept_id
+    physicalType: integer
+    logicalType: integer

@@ -1,0 +1,6 @@
+# What site-1 publishes to the catalog, per Study. On a deployed site this file is <site>/local/catalog.yaml.
+studies:
+  default:
+    datasets:
+      omop:
+        contract: contracts/omop.odcs.yaml
