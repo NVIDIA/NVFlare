@@ -67,7 +67,10 @@ from nvflare.private.fed.authenticator import validate_auth_headers
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(nvflare.__file__)))
 _TRAINER_SCRIPT = textwrap.dedent(
     """
+    import os
     import sys
+    import time
+    from pathlib import Path
 
     if "--deny-network" in sys.argv:
         denied_events = {
@@ -91,7 +94,24 @@ _TRAINER_SCRIPT = textwrap.dedent(
     from nvflare.app_common.np.constants import NPConstants
 
     config_file = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != "--deny-network" else None
-    flare.init(config_file=config_file)
+    api_context = flare.init(config_file=config_file)
+    settlement_gate_ready = os.environ.get("NVFLARE_TEST_SETTLEMENT_GATE_READY")
+    settlement_gate_release = os.environ.get("NVFLARE_TEST_SETTLEMENT_GATE_RELEASE")
+    if settlement_gate_ready and settlement_gate_release:
+        api = api_context.api
+        notify_settled = api._notify_result_source_settled
+        settlement_count = [0]
+
+        def pause_before_final_settlement(task_id):
+            settlement_count[0] += 1
+            if settlement_count[0] == 2:
+                Path(settlement_gate_ready).write_text("ready")
+                release_path = Path(settlement_gate_release)
+                while not release_path.exists():
+                    time.sleep(0.01)
+            return notify_settled(task_id)
+
+        api._notify_result_source_settled = pause_before_final_settlement
     try:
         while flare.is_running():
             model = flare.receive()
@@ -221,9 +241,18 @@ def _make_cell_credentials(root_dir, root_key, root_cert, identity):
 
 
 @pytest.mark.timeout(60)
-@pytest.mark.parametrize("transport", ["tcp", "grpc", "http", "shared-file"])
-@pytest.mark.parametrize("startup_order", ["trainer-first", "cj-first"])
-def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatch, transport, startup_order):
+@pytest.mark.parametrize(
+    ("transport", "startup_order", "pause_before_final_settlement"),
+    [
+        (transport, startup_order, False)
+        for transport in ("tcp", "grpc", "http", "shared-file")
+        for startup_order in ("trainer-first", "cj-first")
+    ]
+    + [("shared-file", "cj-first", True)],
+)
+def test_external_trainer_attaches_and_completes_numpy_task(
+    tmp_path, monkeypatch, transport, startup_order, pause_before_final_settlement
+):
     flare_decomposers.register()
     common_decomposers.register()
     server_url = f"tcp://127.0.0.1:{get_open_ports(1)[0]}"
@@ -234,6 +263,7 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
     cells = []
     backend = None
     trainer = None
+    finalizer = None
     secure_job = transport == "shared-file"
     completed = False
 
@@ -330,6 +360,11 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
         trainer_script.write_text(_TRAINER_SCRIPT)
         env = os.environ.copy()
         env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
+        settlement_gate_ready = tmp_path / "settlement-ready"
+        settlement_gate_release = tmp_path / "settlement-release"
+        if pause_before_final_settlement:
+            env["NVFLARE_TEST_SETTLEMENT_GATE_READY"] = str(settlement_gate_ready)
+            env["NVFLARE_TEST_SETTLEMENT_GATE_RELEASE"] = str(settlement_gate_release)
 
         def start_trainer():
             return subprocess.Popen(
@@ -427,14 +462,49 @@ def test_external_trainer_attaches_and_completes_numpy_task(tmp_path, monkeypatc
             result_dxo = from_shareable(received["result"])
             np.testing.assert_array_equal(result_dxo.data[NPConstants.NUMPY_KEY], initial + 1)
             initial = result_dxo.data[NPConstants.NUMPY_KEY]
+        if pause_before_final_settlement:
+            deadline = time.monotonic() + 10.0
+            while not settlement_gate_ready.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert settlement_gate_ready.exists(), "trainer did not reach the final settlement gate"
+
+            session = backend._get_session()
+            shutdown_acknowledged = threading.Event()
+            original_request_shutdown = backend._request_shutdown
+
+            def observe_shutdown_acknowledgement(current_session):
+                original_request_shutdown(current_session)
+                shutdown_acknowledged.set()
+
+            backend._request_shutdown = observe_shutdown_acknowledgement
+            finalize_errors = []
+
+            def finalize_backend():
+                try:
+                    backend.finalize(_fl_ctx(cj, site_name, job_id, secure_mode=secure_job))
+                except BaseException as error:
+                    finalize_errors.append(error)
+
+            finalizer = threading.Thread(target=finalize_backend, name="attach-finalizer")
+            finalizer.start()
+            assert shutdown_acknowledged.wait(10.0), "Attach did not receive SHUTDOWN acknowledgement"
+            assert session.result_source_live.is_set(), "SHUTDOWN retired the source before settlement was acknowledged"
+            settlement_gate_release.write_text("release")
+            finalizer.join(timeout=20.0)
+            assert not finalizer.is_alive(), "Attach finalization did not finish after source release"
+            assert finalize_errors == []
         completed = True
     finally:
+        if pause_before_final_settlement:
+            settlement_gate_release.touch()
         if backend is not None:
             if not completed:
                 session = backend._get_session()
                 if session is not None:
                     session.result_source_live.clear()
             backend.finalize(_fl_ctx(cells[-1], site_name, job_id, secure_mode=secure_job))
+            if finalizer is not None:
+                finalizer.join(timeout=10.0)
         stdout, stderr = _stop_process(trainer) if trainer is not None else ("", "")
         for cell in reversed(cells):
             fqcn = cell.get_fqcn()

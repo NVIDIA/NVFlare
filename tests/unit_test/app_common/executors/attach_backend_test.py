@@ -292,6 +292,54 @@ def test_attach_session_executes_task_and_finalize_only_closes_protocol():
     assert TRAINER_FQCN not in cell.core_cell.identity_resolver.exact_identity_map
 
 
+def test_settlement_ack_keeps_attach_source_live_until_trainer_confirms_receipt():
+    cell = FakeCell()
+    backend = AttachBackend()
+    fl_ctx = _fl_ctx(cell)
+    backend.initialize(_context(), fl_ctx)
+    session = _wait_ready(backend)
+
+    backend.execute("train", Shareable(), fl_ctx, Signal())
+    task_id = cell.pending_task[1][MsgKey.TASK_ID]
+    settled = cell.deliver(
+        Topic.RESULT_SOURCE_SETTLED,
+        TRAINER_FQCN,
+        {MsgKey.SESSION_ID: session.session_id, MsgKey.TASK_ID: task_id},
+    )
+
+    assert settled.payload == {MsgKey.REPLY_TOPIC: Topic.RESULT_SOURCE_SETTLED, MsgKey.TASK_ID: task_id}
+    assert session.result_source_live.is_set()
+    assert session.result_source_task_id == task_id
+
+    stale_heartbeat = cell.deliver(
+        Topic.HEARTBEAT,
+        TRAINER_FQCN,
+        {
+            MsgKey.SESSION_ID: session.session_id,
+            MsgKey.TASK_ID: "previous-task",
+            MsgKey.RESULT_SOURCE_LIVE: False,
+        },
+    )
+    assert stale_heartbeat.payload[MsgKey.REPLY_TOPIC] == Topic.HEARTBEAT
+    assert session.result_source_live.is_set()
+    assert session.result_source_task_id == task_id
+
+    heartbeat = cell.deliver(
+        Topic.HEARTBEAT,
+        TRAINER_FQCN,
+        {
+            MsgKey.SESSION_ID: session.session_id,
+            MsgKey.TASK_ID: task_id,
+            MsgKey.RESULT_SOURCE_LIVE: False,
+        },
+    )
+
+    assert heartbeat.payload[MsgKey.REPLY_TOPIC] == Topic.HEARTBEAT
+    assert not session.result_source_live.is_set()
+    assert session.result_source_task_id is None
+    backend.finalize(fl_ctx)
+
+
 def test_cp_routed_trainer_does_not_mutate_cj_identity_map():
     cell = FakeCell()
     backend = AttachBackend()

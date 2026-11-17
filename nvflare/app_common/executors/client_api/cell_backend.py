@@ -302,11 +302,14 @@ class CellBackendBase(ClientAPIBackendSpec):
                     Topic.ERROR,
                     **{MsgKey.REASON: f"no live result source matching task_id {task_id!r}"},
                 )
-            session.result_source_live.clear()
-            session.result_source_task_id = None
-            self._on_result_source_settled(session, task_id)
-            if self.result_attempts:
-                self._trim_result_authority()
+            if not self.result_attempts:
+                session.result_source_live.clear()
+                session.result_source_task_id = None
+                self._on_result_source_settled(session, task_id)
+            # Attach closes its listener after the source latch clears. Keep the
+            # latch until the trainer has received this reply and reports release
+            # in a follow-up heartbeat; otherwise listener close can cut off the
+            # acknowledgement that lets the trainer leave send().
         return self._protocol_reply(Topic.RESULT_SOURCE_SETTLED, **{MsgKey.TASK_ID: task_id})
 
     def _on_result_accepted(self, session: CellSession, task: CellTask, result: Shareable) -> None:
@@ -364,12 +367,18 @@ class CellBackendBase(ClientAPIBackendSpec):
         # already-shipped behavior changed by a delayed heartbeat.
         if self.result_attempts:
             source_live = payload.get(MsgKey.RESULT_SOURCE_LIVE)
-            if source_live is True:
-                session.result_source_live.set()
-            elif source_live is False:
-                session.result_source_live.clear()
-                session.result_source_task_id = None
-                with self._task_lock:
+            task_id_supplied = MsgKey.TASK_ID in payload
+            task_id = payload.get(MsgKey.TASK_ID)
+            with self._task_lock:
+                matches_current_source = not task_id_supplied or task_id == session.result_source_task_id
+                if matches_current_source and source_live is True:
+                    session.result_source_live.set()
+                elif matches_current_source and source_live is False:
+                    settled_task_id = session.result_source_task_id
+                    session.result_source_live.clear()
+                    session.result_source_task_id = None
+                    if settled_task_id:
+                        self._on_result_source_settled(session, settled_task_id)
                     self._trim_result_authority()
         return self._protocol_reply(Topic.HEARTBEAT, **{MsgKey.SESSION_ID: session.session_id})
 

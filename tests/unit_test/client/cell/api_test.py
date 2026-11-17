@@ -2130,6 +2130,60 @@ class TestReceiveSend:
             release_settlement.set()
             api.shutdown()
 
+    def test_attach_keeps_source_live_until_settlement_ack_and_then_releases(self, attach_bootstrap_path, attach_env):
+        settlement_started = threading.Event()
+        release_settlement = threading.Event()
+
+        def on_request(topic, target, request):
+            if topic == Topic.RESULT_READY:
+                return make_cell_reply(
+                    CellReturnCode.OK,
+                    body={
+                        MsgKey.REPLY_TOPIC: Topic.RESULT_ACCEPTED,
+                        MsgKey.RESULT_ID: request.payload[MsgKey.RESULT_ID],
+                        MsgKey.ACCEPTED_ATTEMPT_ID: request.payload[MsgKey.ATTEMPT_ID],
+                    },
+                )
+            if topic == Topic.RESULT_SOURCE_SETTLED:
+                settlement_started.set()
+                assert release_settlement.wait(1.0)
+            return make_cell_reply(CellReturnCode.OK)
+
+        attach_env.on_request = on_request
+        api = _init_api(attach_bootstrap_path, attach_env)
+        errors = []
+        try:
+            _deliver_attach_task(attach_env)
+            task_id = "task-1"
+            api.receive()
+            sender = threading.Thread(target=lambda: _send_and_capture_error(api, FLModel(params={"w": [2.0]}), errors))
+            sender.start()
+            assert settlement_started.wait(0.5)
+
+            reply = attach_env.deliver(Topic.SHUTDOWN, CJ_FQCN, {MsgKey.SESSION_ID: SESSION_ID})
+
+            assert reply.payload == {MsgKey.RESULT_SOURCE_LIVE: True}
+            assert sender.is_alive()
+            release_settlement.set()
+            sender.join(timeout=1.0)
+            assert not sender.is_alive()
+            assert errors == []
+            releases = [
+                payload
+                for topic, _, payload in attach_env.fired
+                if topic == Topic.HEARTBEAT and payload.get(MsgKey.RESULT_SOURCE_LIVE) is False
+            ]
+            assert releases == [
+                {
+                    MsgKey.SESSION_ID: SESSION_ID,
+                    MsgKey.TASK_ID: task_id,
+                    MsgKey.RESULT_SOURCE_LIVE: False,
+                }
+            ]
+        finally:
+            release_settlement.set()
+            api.shutdown()
+
     def test_result_source_settled_retries_until_task_correlated_ack(self, bootstrap_path, env, monkeypatch):
         monkeypatch.setattr(cell_api, "_RESULT_SOURCE_SETTLED_RETRY_BACKOFF", 0.0)
         attempts = 0

@@ -174,6 +174,7 @@ class CellClientAPI(APISpec):
         self._result_transfer_waiters = ()
         # Under _lock, this tells SHUTDOWN whether send() still owns a live result source.
         self._result_send_active = False
+        self._result_source_task_id: Optional[str] = None
         self._params_conversion_state = {}
 
     # ------------------------------------------------------------------ lifecycle
@@ -506,6 +507,7 @@ class CellClientAPI(APISpec):
         with self._lock:
             self._check_session_alive()
             self._result_send_active = True
+            self._result_source_task_id = task.get(MsgKey.TASK_ID)
         try:
             self._clear_result_transfer_waiters()
             if self._attach:
@@ -574,20 +576,28 @@ class CellClientAPI(APISpec):
                 self._clear_result_transfer_waiters()
                 self._maybe_cleanup_memory()
             finally:
-                # Downstream transfer cleanup is the send barrier. Publish that transition
-                # before the separately acknowledged settlement request so a concurrent
-                # SHUTDOWN can report the source as settled even when that request is delayed.
-                with self._lock:
-                    self._result_send_active = False
-                if result_accepted:
-                    self._notify_result_source_settled(task.get(MsgKey.TASK_ID))
+                try:
+                    if result_accepted:
+                        task_id = task.get(MsgKey.TASK_ID)
+                        # Attach finalization can close the listener as soon as it sees
+                        # RESULT_SOURCE_LIVE=False. Keep the source live until its
+                        # settlement acknowledgement has reached this trainer.
+                        if not self._attach:
+                            with self._lock:
+                                self._result_send_active = False
+                        settled = self._notify_result_source_settled(task_id)
+                        if self._attach and settled:
+                            self._notify_result_source_released(task_id)
+                finally:
+                    with self._lock:
+                        self._result_send_active = False
                 with self._lock:
                     should_shutdown = self._stopped or (result_accepted and not self._launch_once)
                 # One-shot sessions close only after acceptance and downstream settlement.
                 if should_shutdown:
                     self.shutdown()
 
-    def _notify_result_source_settled(self, task_id: str) -> None:
+    def _notify_result_source_settled(self, task_id: str) -> bool:
         """Publish the send-barrier transition before a one-shot trainer closes its Cell."""
         request = new_cell_message({}, {MsgKey.SESSION_ID: self._session_id, MsgKey.TASK_ID: task_id})
         for attempt in range(_RESULT_SOURCE_SETTLED_ATTEMPTS):
@@ -609,7 +619,7 @@ class CellClientAPI(APISpec):
                     and body.get(MsgKey.REPLY_TOPIC) == Topic.RESULT_SOURCE_SETTLED
                     and body.get(MsgKey.TASK_ID) == task_id
                 ):
-                    return
+                    return True
             except Exception as e:
                 # The CJ keeps the source live until it receives this explicit
                 # acknowledgement. A process exit without it is treated as source
@@ -620,6 +630,31 @@ class CellClientAPI(APISpec):
         self.logger.warning(
             f"result-source settlement was not acknowledged after {_RESULT_SOURCE_SETTLED_ATTEMPTS} attempts"
         )
+        return False
+
+    def _notify_result_source_released(self, task_id: str) -> None:
+        """Release Attach's source latch after the settlement acknowledgement arrives."""
+        try:
+            errors = self._cell.fire_and_forget(
+                channel=CHANNEL,
+                topic=Topic.HEARTBEAT,
+                targets=[self._cj_fqcn],
+                message=new_cell_message(
+                    {},
+                    {
+                        MsgKey.SESSION_ID: self._session_id,
+                        MsgKey.TASK_ID: task_id,
+                        MsgKey.RESULT_SOURCE_LIVE: False,
+                    },
+                ),
+                optional=True,
+                secure=self._protocol_secure,
+            )
+            error = errors.get(self._cj_fqcn) if isinstance(errors, dict) else None
+            if error:
+                self.logger.debug(f"result-source release notification failed: {error}")
+        except Exception as e:
+            self.logger.debug(f"result-source release notification failed: {e}")
 
     def _wait_for_result_transfers(self, result_waiters) -> None:
         """Wait for strict terminal success of every result DownloadService transaction."""
@@ -1062,6 +1097,7 @@ class CellClientAPI(APISpec):
             try:
                 with self._lock:
                     result_source_live = self._result_send_active
+                    result_source_task_id = self._result_source_task_id
                 reply = self._cell.send_request(
                     channel=CHANNEL,
                     topic=Topic.HEARTBEAT,
@@ -1070,6 +1106,7 @@ class CellClientAPI(APISpec):
                         {},
                         {
                             MsgKey.SESSION_ID: self._session_id,
+                            MsgKey.TASK_ID: result_source_task_id,
                             MsgKey.RESULT_SOURCE_LIVE: result_source_live,
                         },
                     ),
