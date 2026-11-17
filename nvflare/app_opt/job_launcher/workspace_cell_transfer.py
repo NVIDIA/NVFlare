@@ -697,8 +697,14 @@ def workspace_download_complete(workspace_root: str) -> bool:
 def _initialize_workspace_config(workspace_root: str) -> None:
     """Use site communication settings for both downloaded and retained workspaces."""
     # A job's comm_config.json must not override the site, even if the site has no config.
+    # Search only site-owned directories; never walk the whole workspace (job folders live there).
     site_config_dir = os.path.join(workspace_root, "local")
-    config_path = [site_config_dir, workspace_root] if os.path.isdir(site_config_dir) else [workspace_root]
+    startup_dir = os.path.join(workspace_root, "startup")
+    config_path = []
+    if os.path.isdir(startup_dir):
+        config_path.append(startup_dir)
+    if os.path.isdir(site_config_dir):
+        config_path.append(site_config_dir)
     CommConfigurator.reload_from_dir(site_config_dir)
     # Clear scalar values last so bootstrap reads during reload cannot leave cached defaults.
     ConfigService.refresh_config_path(config_path)
