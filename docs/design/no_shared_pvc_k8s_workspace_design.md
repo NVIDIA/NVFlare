@@ -51,7 +51,7 @@ Secret at `/var/tmp/nvflare/workspace/startup`.
 | `local/` | Included in the per-job workspace bundle | Bundled whole so local config, resources, and custom code remain available |
 | `<job_id>/` | Included in the per-job workspace bundle | Private runnable job state for exactly one job |
 
-The job pod still mounts study-data PVCs separately at `/data/<study>/<dataset>` when `study_data.yaml` contains dataset mappings for the job study.
+The job pod still mounts study-data PVCs separately at `/data/<study>/<dataset>` when `study_runtime.yaml` contains dataset mappings for the job study.
 The shared workspace PVC is not mounted into the job pod.
 
 ## Kubernetes Resources
