@@ -310,6 +310,11 @@ class TestProducedFiles:
             "metrics/val_log.json",
             "metrics/log.json",  # a log name below the log root: MetricsArtifactWriter(round_file_name="log.json")
             "results/log.txt",
+            # system file names below the log and audit roots, e.g. MetricsArtifactWriter(round_file_name="audit.log")
+            "metrics/audit.log",
+            "reports/stats_pool_summary.json",
+            "metrics/server.stats_pool_records.csv",
+            "site-1/log.txt",  # a client's log folder only for a client of the job
         ],
     )
     def test_files_the_job_wrote_are_produced(self, path):
@@ -338,6 +343,14 @@ class TestProducedFiles:
     )
     def test_job_files_logs_and_system_files_are_not(self, path):
         assert not is_produced(path)
+
+    @pytest.mark.parametrize("path", ["site-1/log.txt", "site-1/error_log.txt", "site-1/log.json", "site-2/log.txt.1"])
+    def test_logs_streamed_from_the_jobs_clients_are_not(self, path):
+        assert not is_produced(path, clients={"site-1", "site-2"})
+
+    @pytest.mark.parametrize("path", ["site-1/model.pt", "site-1/results/log.txt", "metrics/log.json"])
+    def test_other_files_beside_client_logs_are(self, path):
+        assert is_produced(path, clients={"site-1", "metrics_writer"})
 
     def test_unchanged_deployed_files_are_not(self, tmp_path):
         net = tmp_path / "net.py"
@@ -389,6 +402,26 @@ class TestLinkProducedOutputs:
             "log.txt",
             "meta.json",
         ]
+
+    def test_client_logs_stay_with_the_workspace_and_nested_system_names_are_outputs(self, tmp_path):
+        run_dir = _run_folder(
+            tmp_path / "run",
+            {
+                "model.pt": b"model",
+                "log.txt": b"server log",
+                "audit.log": b"audit",
+                "site-1/log.txt": b"client training log",  # streamed by JobLogReceiver
+                "site-1/error_log.txt": b"client errors",
+                "metrics/audit.log": b"round metrics",  # MetricsArtifactWriter(round_file_name="audit.log")
+                "metrics/metrics_summary.json": b"{}",
+            },
+        )
+
+        split = link_job_outputs([str(run_dir)], clients=["site-1"])
+        split.link_rest()
+
+        assert split.found == ["metrics/audit.log", "metrics/metrics_summary.json", "model.pt"]
+        assert _files(split.rest_dirs[0]) == ["audit.log", "log.txt", "site-1/error_log.txt", "site-1/log.txt"]
 
     def test_nothing_produced_keeps_the_workspace_whole(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"app_server/config/c.json": b"{}", "log.txt": b"log"})

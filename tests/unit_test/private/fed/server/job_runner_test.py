@@ -418,6 +418,20 @@ def test_save_workspace_stores_the_jobs_outputs_once_apart_from_the_rest(tmp_pat
     assert _no_link_folders_left(tmp_path)
 
 
+def test_save_workspace_keeps_the_running_jobs_client_logs_in_the_workspace(tmp_path):
+    run_dir = _run_dir_with_model(tmp_path)
+    (run_dir / "site-1").mkdir()
+    (run_dir / "site-1" / "log.txt").write_text("client training log")  # streamed by JobLogReceiver
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(str(run_dir), str(run_dir), str(run_dir), str(run_dir))
+    _deployed_job(job_manager)  # the stored meta lacks the job's clients
+    runner.running_jobs["job-1"] = MagicMock(meta={JobMetaKey.JOB_CLIENTS: [{"name": "site-1"}]})
+    archived = _capture_archives(job_manager)
+
+    runner._save_workspace(fl_ctx)
+
+    assert archived == {"outputs": ["app_server/FL_global_model.pt"], "workspace": ["log.txt", "site-1/log.txt"]}
+
+
 def test_save_workspace_keeps_everything_in_the_workspace_when_nothing_was_produced(tmp_path):
     run_dir = tmp_path / "run"
     (run_dir / "app_server" / "config").mkdir(parents=True)

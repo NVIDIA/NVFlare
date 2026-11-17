@@ -222,6 +222,7 @@ def test_abort_config_releases_only_after_verifying_permission_denial(
 
     release_session.api.do_command.side_effect = release
     driver._get_run_state = Mock(side_effect=poll_state)
+    driver._get_workflow_state = Mock(side_effect=lambda state: state)
     monkeypatch.setattr(action_handlers, "check_job_done", Mock(return_value=True))
 
     if abort_incorrectly_allowed:

@@ -384,6 +384,9 @@ class SimpleJobDefManager(JobDefManagerSpec):
         except StorageException:
             return None
 
+    def job_exists(self, jid: str, fl_ctx: FLContext) -> bool:
+        return self._get_job_store(fl_ctx).object_exists(self.job_uri(jid))
+
     def set_results_uri(self, jid: str, result_uri: str, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
         updated_meta = {JobMetaKey.RESULT_LOCATION.value: result_uri}

@@ -32,7 +32,7 @@ import os
 import re
 import shutil
 import zlib
-from typing import Dict, List, Mapping, Optional, Tuple
+from typing import Collection, Dict, List, Mapping, Optional, Tuple
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey, RunStatus
@@ -41,9 +41,9 @@ from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 # Files the server writes for itself, not the job's result. A log file may carry a ".<n>" rotation suffix and the
 # "<file_prefix>_" of a process that configures its own logging (log_utils.configure_logging): a task worker
 # ("task_<attempt>"), a py applet ("applet", tie.py_applet) or the XGBoost adaptor ("XGBoost", its app name).
-# "log_fl.txt" is the default config's federated-learning log. The server writes its logs at the top of the job's
-# workspace folder (its log root), so only a file there is a log: "metrics/log.json" is a result. Logs stay in the
-# workspace archive, where the server's log commands read them.
+# "log_fl.txt" is the default config's federated-learning log. The server writes its logs, audit log and stats-pool
+# files at the top of the job's workspace folders (its log and audit roots), so only a file there is one of them:
+# "metrics/log.json" is a result. They stay in the workspace archive, where the server's log commands read them.
 _SYSTEM_LOG_RE = re.compile(
     r"^(?:(?:task_[^/]+|applet|XGBoost)_)?(?:log\.txt|error_log\.txt|log\.json|log_fl\.txt)(?:\.\d+)?$"
 )
@@ -58,7 +58,7 @@ _SYSTEM_FILE_RE = re.compile(
     )
     + ")$"
 )
-_SYSTEM_FILE_NAMES = {WorkspaceConstants.AUDIT_LOG, NVFLARE_SIG_FILE}
+_SYSTEM_FILE_NAMES = {WorkspaceConstants.AUDIT_LOG}
 _SYSTEM_FOLDERS = {"__pycache__", "job_cert"}  # job_cert: the job's credentials (job_cert_utils.JOB_CERT_DIR_NAME)
 # written beside the server app when the job is deployed
 _DEPLOYED_RUN_FILES = {WorkspaceConstants.JOB_META_FILE, "fl_app.txt"}
@@ -79,13 +79,20 @@ def outputs_only_refusal(meta: dict) -> Optional[str]:
 DeployedFiles = Mapping[str, Tuple[int, int]]
 
 
-def is_produced(relative: str, deployed: Optional[DeployedFiles] = None, path: Optional[str] = None) -> bool:
+def is_produced(
+    relative: str,
+    deployed: Optional[DeployedFiles] = None,
+    path: Optional[str] = None,
+    clients: Collection[str] = (),
+) -> bool:
     """Whether a file at ``relative`` (a ``/``-separated path in a workspace folder) was produced by the job.
 
     Not produced: a file deployed with the job and left unchanged (``deployed``; ``path`` is the file on disk, compared
-    with its deployed size and CRC-32), the job files written beside the server app, the server's logs and system
-    files, the server's logs at the top of the folder, and anything in a ``__pycache__`` or ``job_cert`` folder. A deployed file the job rewrote, such as a seed
-    checkpoint replaced by the trained model, is produced.
+    with its deployed size and CRC-32), the job files written beside the server app, the job signature file, and
+    anything in a ``__pycache__`` or ``job_cert`` folder. Nor are the server's logs and system files at the top of the
+    folder, where the server writes them, or a client's log streamed to the server into ``<client>/``, for a client
+    of the job (``clients``). The same names elsewhere, such as ``metrics/log.json`` or ``metrics/audit.log``, are
+    produced. A deployed file the job rewrote, such as a seed checkpoint replaced by the trained model, is produced.
     """
     if relative in _DEPLOYED_RUN_FILES:
         return False
@@ -95,9 +102,12 @@ def is_produced(relative: str, deployed: Optional[DeployedFiles] = None, path: O
     if any(part in _SYSTEM_FOLDERS for part in parts[:-1]):
         return False
     name = parts[-1]
-    if len(parts) == 1 and _SYSTEM_LOG_RE.match(name):
+    if name == NVFLARE_SIG_FILE:  # written in each signed folder
         return False
-    return not (name in _SYSTEM_FILE_NAMES or _SYSTEM_FILE_RE.match(name))
+    if len(parts) == 1:
+        return not (name in _SYSTEM_FILE_NAMES or _SYSTEM_LOG_RE.match(name) or _SYSTEM_FILE_RE.match(name))
+    # JobLogReceiver writes a client's streamed logs to <client>/<log file> in the job's workspace
+    return not (len(parts) == 2 and parts[0] in clients and _SYSTEM_LOG_RE.match(name))
 
 
 def _differs(path: str, deployed: Tuple[int, int]) -> bool:
@@ -124,11 +134,13 @@ class SplitWorkspace:
         source_dirs: the job's workspace folders.
         deployed: the files deployed with the job, by path relative to a workspace folder, with their deployed size
             and CRC-32.
+        clients: the names of the job's clients, whose streamed logs the server keeps in ``<client>/``.
     """
 
-    def __init__(self, source_dirs: List[str], deployed: Optional[DeployedFiles] = None):
+    def __init__(self, source_dirs: List[str], deployed: Optional[DeployedFiles] = None, clients: Collection[str] = ()):
         self.source_dirs = list(source_dirs)
         self.deployed: Dict[str, Tuple[int, int]] = dict(deployed or {})
+        self.clients = frozenset(clients)
         self.output_dirs = [_link_folder(d, _OUTPUTS_LINKS) for d in source_dirs]
         self.rest_dirs = [_link_folder(d, _WORKSPACE_LINKS) for d in source_dirs]
         self.found: List[str] = []  # the output files found, by path relative to their workspace folder
@@ -159,7 +171,9 @@ class SplitWorkspace:
 
     def _is_output(self, source: str, relative: str) -> bool:
         # a symlink is never an output: it stays with the rest
-        return not os.path.islink(source) and is_produced(relative.replace(os.sep, "/"), self.deployed, source)
+        return not os.path.islink(source) and is_produced(
+            relative.replace(os.sep, "/"), self.deployed, source, self.clients
+        )
 
     def link_rest(self):
         """Name everything but the outputs in the rest folders, from a fresh walk of the workspace.
@@ -241,7 +255,9 @@ def _link(source: str, target: str):
         os.link(source, target)  # another name for the same file: nothing is copied
 
 
-def link_job_outputs(source_dirs: List[str], deployed: Optional[DeployedFiles] = None) -> Optional[SplitWorkspace]:
+def link_job_outputs(
+    source_dirs: List[str], deployed: Optional[DeployedFiles] = None, clients: Collection[str] = ()
+) -> Optional[SplitWorkspace]:
     """Name the files the job produced in ``source_dirs`` (see :func:`is_produced`) in hard-link folders beside them.
 
     Each source folder gets an outputs link folder with the same relative paths, so storing the link folders gives
@@ -252,7 +268,7 @@ def link_job_outputs(source_dirs: List[str], deployed: Optional[DeployedFiles] =
         The split, or None when no output exists or the links cannot be made (for example across filesystems); the
         caller then stores the source folders whole.
     """
-    split = SplitWorkspace(source_dirs, deployed)
+    split = SplitWorkspace(source_dirs, deployed, clients)
     split.remove()  # left over from an interrupted attempt: links only
     try:
         split.link_outputs()

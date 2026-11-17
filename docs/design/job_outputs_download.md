@@ -150,13 +150,17 @@ unless it is:
   from the submitted job (`app_server/<path in the app>`, read from the stored
   job) whose size and CRC-32 still match the deployed copy, or `meta.json` and
   `fl_app.txt`, which deployment writes beside it;
-- **a server log**: `log.txt`, `error_log.txt`, `log.json` or `log_fl.txt`,
+- **a server log or system file at the top of a workspace folder**, where the
+  server writes them: `log.txt`, `error_log.txt`, `log.json` or `log_fl.txt`,
   including the copies written by a task worker (`task_<attempt>_`), a py
-  applet (`applet_`) or the XGBoost adaptor (`XGBoost_`), and rotated `.<n>`
-  copies, at the top of the workspace folder, where the server writes its
-  logs. The same name in a subfolder, such as `metrics/log.json`, is an output;
-- **a system file**: the stats-pool summary and records (with any prefix),
-  `audit.log`, the job signature file, or anything in a `__pycache__` or
+  applet (`applet_`) or the XGBoost adaptor (`XGBoost_`) and rotated `.<n>`
+  copies; the stats-pool summary and records (with any prefix); and
+  `audit.log`. The same names in a subfolder, such as `metrics/log.json` or
+  `metrics/audit.log`, are outputs;
+- **a client's streamed log**: one of those log names in `<client>/`, for a
+  client of the job, where `JobLogReceiver` writes the logs a client streams
+  to the server. The stored-log commands read them from the workspace archive;
+- **a system file**: the job signature file, or anything in a `__pycache__` or
   `job_cert` folder; or
 - **a symlink**, which stays with the rest, as before.
 
@@ -440,7 +444,9 @@ Unit tests:
   a new file under `custom/` and a deployed file the job rewrote are outputs;
   `meta.json`, `fl_app.txt`, server logs (prefixed and rotated), stats-pool
   files, `audit.log`, the signature file, `__pycache__`, `job_cert/` and the
-  deployed app's unchanged files are not.
+  deployed app's unchanged files are not. Log, stats-pool and audit names in a
+  subfolder are outputs, except a log in a job client's `<client>/` folder,
+  which stays in the workspace archive.
 - The deployed app is read from the stored job for a `server` or `@ALL`
   deployment; when it cannot be read, the workspace is stored whole. A retry that cannot read the job clears a record
   an earlier attempt left.

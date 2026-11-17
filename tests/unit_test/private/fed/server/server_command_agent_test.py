@@ -13,14 +13,17 @@
 # limitations under the License.
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.core_cell import ReturnCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.private.defs import CellMessageHeaderKeys
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_commands import ServerCommands
 
@@ -49,6 +52,26 @@ class TestAuxCommunicateAuthCheck:
         assert not mock_engine.dispatch.called, "engine.dispatch should NOT be called when authentication fails"
         assert result is not None, "aux_communicate should return an error reply, not None"
         assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.AUTHENTICATION_ERROR
+
+
+def test_aux_communicate_binds_authenticated_sender_for_job_log_streams():
+    engine = MagicMock()
+    fl_ctx = FLContext()
+    fl_ctx.put(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    engine.new_context.return_value.__enter__.return_value = fl_ctx
+    engine.server.server_state.aux_communicate.return_value = {}
+    engine.server.authentication_check.return_value = None
+    engine.dispatch.return_value = Shareable()
+    request = CellMessage(
+        {MessageHeaderKey.TOPIC: "log_stream", CellMessageHeaderKeys.CLIENT_NAME: "site-1"}, Shareable()
+    )
+
+    with patch("nvflare.private.fed.server.server_command_agent.gen_new_peer_ctx", return_value=FLContext()):
+        result = ServerCommandAgent(engine=engine, cell=MagicMock()).aux_communicate(request)
+
+    assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+    assert fl_ctx.get_prop(FLContextKey.CLIENT_NAME) == "site-1"
+    engine.dispatch.assert_called_once_with(topic="log_stream", request=request.payload, fl_ctx=fl_ctx)
 
 
 def test_stopped_server_command_agent_rejects_requests_without_engine_access():

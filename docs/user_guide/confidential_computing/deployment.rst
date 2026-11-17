@@ -1,0 +1,305 @@
+.. _cc_deployment:
+
+Unified Confidential Computing Deployment
+==========================================
+
+NVIDIA FLARE provisions all confidential participants through one interface.
+Each protected server or client names a ``cc_config`` file, and the project
+names one ``cc_project_config`` file. The required ``cc_deployment_mode`` is
+one of ``bare_metal_cvm``, ``coco``, or ``azure_cc``.
+
+The interface standardizes configuration, signing, peer verification, private
+staging, and result manifests. The deliverables remain different: a complete
+CVM OCI artifact, a CoCo Pod plus encrypted image identity, or a signed Azure
+startup kit.
+
+Common project configuration
+----------------------------
+
+Add the common builder and packager to ``project.yml``. A participant's role
+comes from its ``type`` and is never repeated in its CC file.
+
+.. code-block:: yaml
+
+   api_version: 3
+   name: cc_project
+   cc_project_config: cc_project.yml
+
+   participants:
+     - name: server.example.com
+       type: server
+       org: example
+       fed_learn_port: 8002
+       admin_port: 8003
+       cc_config: cc_server.yml
+     - name: site-1
+       type: client
+       org: example
+       cc_config: cc_site-1.yml
+     - name: admin@example.com
+       type: admin
+       org: example
+       role: project_admin
+
+   builders:
+     - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+     - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+     - path: nvflare.lighter.impl.cert.CertBuilder
+     - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
+     - path: nvflare.lighter.impl.signature.SignatureBuilder
+
+   packager:
+     path: nvflare.lighter.cc_provision.impl.cc_packager.CCPackager
+
+``cc_project.yml`` owns services, credentials, approval keys, registries, and
+trusted build commands. Paths in this file resolve relative to this file.
+
+.. code-block:: yaml
+
+   schema_version: 1
+   attestation_services:
+     trustee:
+       type: trustee
+       kbs_endpoint: https://trustee.example.org:8443
+       ca_cert_file: ./credentials/kbs-ca.pem
+       # Required only when this service is selected by bare_metal_cvm.
+       admin_token_file: ./credentials/kbs-resource-token.jwt
+       expiry_warning_seconds: 604800
+       attestation_token_endpoint: http://127.0.0.1:8006/aa/token
+       attestation_signing_public_key_file: ./credentials/trustee-as-public.pem
+       token_expiration_seconds: 300
+       check_frequency_seconds: 120
+       registration_token_timeout_seconds: 300
+       refresh_token_timeout_seconds: 30
+       get_token_request_timeout_seconds: 45
+       # Optional verifier policy shared by bare-metal CVM and CoCo.
+       proof_iat_leeway_seconds: 180
+       # Use the same CPU TEE names as participant cc_config files.
+       workload_constraints:
+         server:
+           cpu_tee: intel_tdx
+           tdx_mr_td: <approved-96-character-lowercase-hex-value>
+         site-1:
+           cpu_tee: amd_sev_snp
+           init_data: <approved-64-character-lowercase-hex-value>
+       retry:
+         max_attempts: 10
+         initial_delay_seconds: 1.0
+         max_delay_seconds: 15.0
+         backoff_multiplier: 2.0
+         jitter_ratio: 0.5
+     azure_maa:
+       type: azure_maa
+       endpoint: https://sharedeus2.eus2.attest.azure.net
+       token_expiration_seconds: 100
+       check_frequency_seconds: 60
+
+   container_registries:
+     coco_workloads:
+       endpoint: registry.example.org:5000
+       ca_cert_file: ./credentials/registry-ca.pem
+       publisher_username_file: ./credentials/registry-username
+       publisher_password_file: ./credentials/registry-password
+
+   approval:
+     public_key_files:
+       - ./credentials/acceptance-signing.pub
+
+   build_tools:
+     bare_metal_cvm:
+       cvm_builder_dir: ../../../nvflare/lighter/cc/image_builder
+       # output_root is optional.
+     coco:
+       build_command: ./admin/build_coco_image.sh
+       build_timeout_seconds: 3600
+
+The loopback attestation endpoint is inside a CoCo confidential guest. It is
+not the provisioning host or remote Trustee address. Bare-metal CVM and CoCo
+both select ``attestation.service: trustee`` and therefore consume this same
+object. Trustee settings must not be repeated in participant files.
+``admin_token_file`` is required only for a service selected by a bare-metal
+CVM participant, whose builder registers resources. CoCo provisioning does not
+use this credential: omit it from CoCo-only configurations and keep the KBS
+administrative token with the Trustee administrator for release registration.
+If supplied, the file must exist. The KBS TLS CA/bundle, AS signing public key,
+registry TLS CA/bundle, and registry publisher credential files must also exist;
+the registry CA/bundle file is required even if its root is already in system
+trust. Certificate and public-key files come from the corresponding service
+administrator; publisher credentials stay on trusted provisioning infrastructure.
+
+``expiry_warning_seconds`` defaults to seven days. Provisioning warns when the
+parseable administration JWT enters that window and rejects it after expiry;
+CVM publication applies the
+same window to reviewed RVPS references.
+
+Use the same reviewed NVFlare package in the provisioner and every workload
+image. Provisioning writes canonical ``intel_tdx`` and ``amd_sev_snp``
+values into the signed workload constraints.
+If ``workload_constraints`` is present, it must contain exactly every protected
+participant that selects this service. Use logical name ``server`` for the root
+server and participant names for clients. ``proof_iat_leeway_seconds`` accepts
+0 through 180 and defaults to 180. Constraint values pin signed Trustee EAR
+claims; obtain them from authenticated reference measurements. Do not set
+``gpu_required`` in this mapping. Provisioning derives that internal signed-claim
+constraint from each participant's ``gpu_tee``: ``nvidia_cc`` requires CPU plus
+GPU evidence and ``none`` requires CPU-only evidence.
+
+``token_expiration_seconds`` is the maximum accepted EAR age. For a bare-metal
+CVM, provisioning also places this limit in the measured guest so renewal uses
+the earlier of signed ``exp`` and ``iat + token_expiration_seconds``. It must be
+at least 90 seconds for a CPU-only CVM or 270 seconds for a GPU CVM, covering
+one complete bounded appraisal, the 15-second expiry margin, and the 15-second
+issuance, retrieval, and publication margin.
+
+Common participant fields
+-------------------------
+
+Every ``cc_config`` starts with these fields:
+
+.. code-block:: yaml
+
+   schema_version: 1
+   cc_deployment_mode: coco
+   cpu_tee: amd_sev_snp
+   gpu_tee: nvidia_cc
+   attestation:
+     service: trustee
+   class_allow_list: []
+
+``cpu_tee`` is ``intel_tdx`` or ``amd_sev_snp``.
+``gpu_tee`` is ``none`` or
+``nvidia_cc`` and also controls the peer attestation GPU requirement. An empty
+``class_allow_list`` adds no custom classes; it never
+means unrestricted. Entries must be complete reviewed Python class paths.
+
+Workload sources form a closed enum:
+
+* ``docker_archive`` supplies ``path`` and is valid only for
+  ``bare_metal_cvm``.
+* ``docker_build`` supplies ``context`` and a context-relative ``dockerfile``
+  and is valid only for ``coco``.
+* ``external`` has no other fields and is valid only for ``azure_cc``. Azure
+  tooling owns image and resource creation while NVFlare signs the kit and
+  installs attestation components.
+
+Bare-metal CVM
+--------------
+
+Start with the :github_nvflare_link:`single-platform CPU-only example
+<examples/advanced/cvm_builder/cpu_only/README.md>`. The mixed TDX/SNP GPU
+example is an advanced topology.
+
+.. literalinclude:: ../../../examples/advanced/cvm_builder/cpu_only/cc_server.yml
+   :language: yaml
+
+``cvm_image`` is an immutable registry reference or a pulled CVM directory.
+Its approved contract must match ``cpu_tee`` and ``gpu_tee``. The application
+image identity is read from the Docker archive. Federation, admin, relay, and
+listener ports are derived from the signed kit and merged with the requested
+network additions.
+
+``bare_metal_cvm.hosts_entries`` optionally maps hostnames to literal IPv4 or
+IPv6 addresses, for example ``server.example.invalid: 192.0.2.10`` (replace the
+documentation address). The builder carries these authenticated mappings into
+both the guest's and the application's ``/etc/hosts``. Use the client-reachable
+server host address when QEMU forwards the server's FL port. This does not alter
+the admin host's resolver, replace TLS certificate-name checks, or change the
+generic profile's measured KBS hostname. Configure those independently.
+
+The vault retains the Docker archive and stores its expanded layers plus
+application data. Size it as ``archive bytes + imported image bytes + application
+files + expected runtime writes + safety margin``. Use at least the larger of 2
+GiB or 20 percent of the static content for the safety margin, round the result up
+to GiB, and increase it for write-heavy workloads. CVM Builder rejects a value
+below its startup estimate, but operators must supply the headroom for runtime
+writes. See the :github_nvflare_link:`CVM Builder build guide
+<nvflare/lighter/cc/image_builder/BUILD_GUIDE.md>` for commands and details.
+
+The application container receives the measured ``kbs-client`` read-only and
+uses it to generate Trustee-backed, identity-bound NVFlare peer proofs. Vault
+key release remains a separate Trustee authorization decision.
+
+CoCo
+----
+
+.. literalinclude:: ../../../examples/devops/coco/provision/cc_site-1.yml
+   :language: yaml
+
+``registry`` selects the project-level registry; ``registry_repository`` is
+only its repository path. ``platform_config_file`` supplies the captured
+Kata runtime profile and existing genpolicy/rules/settings paths; it must not
+own registry credentials. The trusted project
+``build_command`` consumes a generated request containing the participant's
+staged source. It cannot replace or override that source.
+
+The example starts with a CoCo-ready cluster and configured Trustee. Its
+:github_nvflare_link:`four-step workflow <examples/devops/coco/README.md>`
+captures the installed runtime, sets Trustee reference values, provisions the
+images and Pod YAML, then registers the generated release resources before launch.
+It does not install infrastructure or configure Trustee automatically during
+provisioning.
+
+The CPU/GPU pair selects one of ``kata-qemu-snp``,
+``kata-qemu-nvidia-gpu-snp``, ``kata-qemu-tdx``, or
+``kata-qemu-nvidia-gpu-tdx``. Startup stdout and stderr are redirected to
+``/dev/null`` before signing so the host cannot collect application console
+output; guest-local NVFlare logs remain available.
+
+Azure CC
+--------
+
+.. code-block:: yaml
+
+   schema_version: 1
+   cc_deployment_mode: azure_cc
+   cpu_tee: amd_sev_snp
+   gpu_tee: none
+   attestation:
+     service: azure_maa
+   workload:
+     source:
+       type: external
+   azure_cc:
+     deployment_target: confidential_vm
+
+``deployment_target`` is ``confidential_vm`` or
+``confidential_container``. The Azure integration accepts only AMD
+SEV-SNP with ``gpu_tee: none``. Intel TDX and NVIDIA confidential GPU targets
+fail validation until the authorizer, claim policy, deployment workflow, and
+end-to-end tests support them together.
+
+For ``confidential_container``, only one protected server is supported. Clients
+use confidential virtual machines or Confidential Containers. The server's
+``azure_cc`` block additionally requires ``cce_policy_file``, the prepared,
+decoded enforcement policy, and ``startup_kit_signing_key_file``, the private
+deployment-signing key. Relative paths resolve against the participant
+configuration file.
+
+Provisioning treats the invocation as approval of that exact policy. It reads
+the policy once, calculates its SHA-256 fingerprint without changing its bytes,
+and configures every ACI verifier with ``expected_policy_hash``. The signed
+``x-ms-sevsnpvm-hostdata`` claim must match that fingerprint. Missing policy
+configuration or a missing, malformed, or different claim is rejected.
+
+The server image contains a fixed bootstrap program and public deployment key;
+the final startup kit is delivered separately, through a read-only Azure secret
+volume, when the administrator launches ACI. This avoids the circular dependency
+that would result from copying the final kit and its policy fingerprint into
+the image measured by that policy. Follow
+:ref:`confidential_azure_container_instances_deployment` for the complete order
+of operations. Existing ACI configurations must be reprovisioned; there is no
+signature-only compatibility mode. Confidential-VM configuration is unchanged.
+
+Delivery manifests
+------------------
+
+``CCPackager`` verifies every signed kit, moves all confidential plaintext
+kits to private state, and publishes ``cc_manifests/<participant>.json``.
+Each manifest uses schema ``nvflare-cc-delivery/v1`` and records the mode, TEE
+selection, attestation service, artifact checksum, and mode-specific immutable
+identities. Private paths, credentials, and receipts never enter a manifest.
+
+Use the project and participant schemas documented above. The provisioner
+rejects unknown fields and mode-specific fields placed in another mode.
+Participant roles come from ``project.yml``; attestation implementation
+classes are selected by the deployment mode.
