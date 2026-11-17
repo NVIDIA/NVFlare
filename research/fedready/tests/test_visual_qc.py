@@ -19,7 +19,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from fedready.agents.visual_qc import _parse_local_vlm_visual_qc_response
+from fedready.agents.client.visual_qc import _parse_local_vlm_visual_qc_response
 from fedready.data.qc import visual_qc_decision_passed
 from fedready.data.visual_qc import apply_automatic_orientation_repair
 from fedready.job_train import ready_training_clients

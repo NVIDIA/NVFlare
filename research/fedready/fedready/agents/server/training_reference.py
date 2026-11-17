@@ -14,6 +14,8 @@
 
 """Reference-selection guidance for agent-generated FL training code."""
 
+from __future__ import annotations
+
 NVFLARE_EXAMPLE_SELECTION_ID = "agent_selected_nvflare_example"
 NVFLARE_EXAMPLE_SELECTION_PROMPT = (
     "Search NVIDIA FLARE examples for the closest implementation pattern instead of assuming "
@@ -26,7 +28,6 @@ NVFLARE_EXAMPLE_SELECTION_PROMPT = (
     "metrics, IO, and privacy-safe logging to the FedReady training plan and "
     "extracted-data contract."
 )
-
 NVFLARE_EXAMPLE_SELECTION_PATTERN = (
     "Agent selects the closest NVFlare example by modality, application domain, task type, "
     "FL workflow, and execution style."

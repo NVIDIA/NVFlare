@@ -26,7 +26,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from fedready.agents import local_adapter
+from fedready.agents import references
 from prepare_references import _write_mask_png, prepare_reference_bundle
 
 
@@ -106,15 +106,15 @@ class ReferencePreparationTestCase(unittest.TestCase):
                 with Image.open(root / "task_example" / task_key / "mask.png") as prepared_mask:
                     self.assertEqual({value for _, value in prepared_mask.getcolors(maxcolors=3) or []}, {0, 255})
 
-            with mock.patch.object(local_adapter, "TASK_EXAMPLE_DIR", root / "task_example"):
+            with mock.patch.object(references, "TASK_EXAMPLE_DIR", root / "task_example"):
                 with mock.patch.dict(os.environ, {"FEDREADY_TASK_EXAMPLE_ID": "disc_seg"}):
-                    self.assertEqual(local_adapter.task_example_image_path(), root / "task_example/disc_seg/image.png")
-                    self.assertIsNone(local_adapter.adapter_preflight_task_example_path(record_type="classification"))
+                    self.assertEqual(references.task_example_image_path(), root / "task_example/disc_seg/image.png")
+                    self.assertIsNone(references.adapter_preflight_task_example_path(record_type="classification"))
                     (root / "task_example/disc_seg/image.png").write_bytes(b"changed")
-                    self.assertIsNone(local_adapter.task_example_image_path())
+                    self.assertIsNone(references.task_example_image_path())
                 for task_key in ("", "disc", "unknown"):
                     with mock.patch.dict(os.environ, {"FEDREADY_TASK_EXAMPLE_ID": task_key}):
-                        self.assertIsNone(local_adapter.task_example_image_path())
+                        self.assertIsNone(references.task_example_image_path())
 
     def test_reference_mask_rejects_multiclass_values(self) -> None:
         with TemporaryDirectory() as tmp:

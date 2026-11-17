@@ -23,18 +23,21 @@ from pathlib import Path
 from typing import Any
 
 from fedready.agents.bridge import CodexWorkerBackend
-from fedready.agents.local_adapter import (
-    DEFAULT_LOCAL_ADAPTER_MAX_ATTEMPTS,
-    DEFAULT_LOCAL_ADAPTER_PREFLIGHT_RECORDS,
+from fedready.agents.client.adapter import (
     AdapterRuntimeResult,
     ClientDataProvenanceSnapshot,
     capture_client_data_provenance,
-    ensure_local_adapter_pipeline,
     sanitize_adapter_diagnostic,
-    task_example_context,
 )
-from fedready.agents.local_vlm import DEFAULT_LOCAL_VISION_MODEL, LOCAL_VISION_API_BASE_URL, _query_local_vlm_image
-from fedready.agents.roles import ClientAgent
+from fedready.agents.client.adapter_qc import DEFAULT_LOCAL_ADAPTER_PREFLIGHT_RECORDS, ensure_local_adapter_pipeline
+from fedready.agents.client.agent import ClientAgent
+from fedready.agents.client.local_vlm import (
+    DEFAULT_LOCAL_VISION_MODEL,
+    LOCAL_VISION_API_BASE_URL,
+    _query_local_vlm_image,
+)
+from fedready.agents.common import DEFAULT_LOCAL_ADAPTER_MAX_ATTEMPTS
+from fedready.agents.references import task_example_context
 from fedready.data.contracts import (
     available_contract_summaries,
     generated_contract_box_field,

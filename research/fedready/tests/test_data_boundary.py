@@ -24,9 +24,10 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 from fedready import server
-from fedready.agents import ClientAgent, bridge
+from fedready.agents import bridge
 from fedready.agents.bridge import CodexWorkerBackend
-from fedready.agents.local_adapter import sanitize_adapter_diagnostic
+from fedready.agents.client.adapter import sanitize_adapter_diagnostic
+from fedready.agents.client.agent import ClientAgent
 from fedready.client import FedReadyTaskQueryExecutor
 from fedready.data.contracts.classification import label_value
 from fedready.data.materializer import _run_generated_data_materializer

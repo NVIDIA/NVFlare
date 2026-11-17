@@ -583,8 +583,9 @@ class NVFlareJobTestCase(unittest.TestCase):
 
             for package_dir, entry_module in ((server_custom, "server"), (client_custom, "client")):
                 with self.subTest(entry_module=entry_module):
-                    for module in ("roles", "guardrail", "visual_qc", "local_vlm"):
+                    for module in ("guardrail", "bridge", "common", "references"):
                         self.assertTrue((package_dir / "agents" / f"{module}.py").is_file())
+                    self.assertTrue((package_dir / "agents" / entry_module / "agent.py").is_file())
                     result = subprocess.run(
                         [
                             sys.executable,
@@ -594,10 +595,12 @@ class NVFlareJobTestCase(unittest.TestCase):
                             "sys.path[:0] = sys.argv[1:3]; "
                             "module = importlib.import_module('fedready.' + sys.argv[3]); "
                             "assert pathlib.Path(module.__file__).is_relative_to(sys.argv[1]); "
-                            "from fedready.agents import ClientAgent, GuardrailAgent, ServerAgent; "
-                            "from fedready.data.extraction_artifacts import _extractor_logic_fingerprint\n"
-                            "for name in ('extractor', 'materializer', 'visual_qc', 'splits', 'extraction_artifacts'):\n"
-                            "    path = pathlib.Path(sys.argv[1]) / 'fedready' / 'data' / (name + '.py')\n"
+                            "other = 'client' if sys.argv[3] == 'server' else 'server'; "
+                            "assert not any(name.startswith('fedready.agents.' + other + '.') for name in sys.modules); "
+                            "from fedready.agents.guardrail import GuardrailAgent; "
+                            "from fedready.data.extraction_artifacts import EXTRACTION_SOURCE_FILES, _extractor_logic_fingerprint\n"
+                            "for relative_path in EXTRACTION_SOURCE_FILES:\n"
+                            "    path = pathlib.Path(sys.argv[1]) / 'fedready' / relative_path\n"
                             "    before = _extractor_logic_fingerprint()\n"
                             "    path.write_text(path.read_text() + '\\n# fingerprint regression\\n')\n"
                             "    assert _extractor_logic_fingerprint() != before\n",

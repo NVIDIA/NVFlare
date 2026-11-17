@@ -21,40 +21,19 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fedready.agents.guardrail import _short_error
-from fedready.agents.local_adapter import task_example_image_path
-from fedready.agents.local_vlm import (
+from fedready.agents.client.local_vlm import (
     LOCAL_VISION_API_BASE_URL,
     _is_local_vlm_base_url,
     _local_vlm_model_name,
     _query_local_vlm_image,
 )
-from fedready.data.contracts import CLASSIFICATION
+from fedready.agents.guardrail import _short_error
+from fedready.agents.references import task_example_image_path
 from fedready.data.qc import VISUAL_QC_TRANSFORM_SET, VISUAL_QC_TRANSFORMS
 from fedready.prompts import render_client_prompt
 
 VISUAL_QC_ALLOWED_SELECTIONS = VISUAL_QC_TRANSFORM_SET | {"undecided"}
-
-
 LOCAL_VLM_QC_SCHEMA = "fedready.local_vlm_visual_qc.v1"
-
-
-def _visual_qc_required_for_training_result(result: dict[str, Any]) -> bool:
-    visual_qc = result.get("visual_qc") if isinstance(result.get("visual_qc"), dict) else {}
-    if visual_qc.get("review_required") is False:
-        return False
-    if result.get("record_type") == CLASSIFICATION:
-        return False
-    extraction = result.get("extraction") if isinstance(result.get("extraction"), dict) else {}
-    if extraction.get("classification_storage") is not None:
-        return False
-    if extraction.get("sample_manifest_format") == "monai_decathlon_datalist_json":
-        return False
-    if visual_qc.get("status") == "not_performed":
-        reason = str(visual_qc.get("reason") or "").lower()
-        if "not applicable" in reason or "not required" in reason or "classification" in reason:
-            return False
-    return True
 
 
 def _adapter_preflight_visual_qc_decision(*, client_id: str, qc_context: dict[str, Any]) -> dict[str, Any]:
@@ -81,17 +60,6 @@ def _adapter_preflight_visual_qc_decision(*, client_id: str, qc_context: dict[st
         }
     )
     return output
-
-
-def _default_visual_qc_rule() -> dict[str, Any]:
-    return {
-        "required": True,
-        "sample_count": 3,
-        "reviewer": "client_local_vlm",
-        "purpose": "verify local image/label correspondence and task alignment before training use",
-        "if_ambiguous": "sample_additional_cases_or_hold_client_for_review",
-        "if_failed": "return qc failure and require local adapter correction",
-    }
 
 
 def _normalize_visual_qc_output(output: dict[str, Any], qc_context: dict[str, Any] | None = None) -> dict[str, Any]:

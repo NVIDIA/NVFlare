@@ -24,10 +24,12 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from fedready.agents import ALLOW_LIST_RULES, ClientAgent, GuardrailAgent, ServerAgent
 from fedready.agents.bridge import _codex_skill_path
-from fedready.agents.local_adapter import ensure_local_adapter_pipeline
-from fedready.agents.visual_qc import _aggregate_visual_qc_sample_outputs
+from fedready.agents.client.adapter_qc import ensure_local_adapter_pipeline
+from fedready.agents.client.agent import ClientAgent
+from fedready.agents.client.visual_qc import _aggregate_visual_qc_sample_outputs
+from fedready.agents.guardrail import ALLOW_LIST_RULES, GuardrailAgent
+from fedready.agents.server.agent import ServerAgent
 from fedready.data.contracts.base import generated_contract_visual_qc_required
 from fedready.data.contracts.training import CLASSIFICATION_TRAINING, SEGMENTATION_TRAINING
 from fedready.flare.training_job import CLIENT_TRAINING_LAUNCHER_SCRIPT, _build_fedavg_job_object

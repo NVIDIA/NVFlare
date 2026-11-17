@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from fedready.client import FedReadyTaskQueryExecutor
-from fedready.data.extraction_artifacts import ExtractionConfig
+from fedready.data.extraction_artifacts import EXTRACTION_SOURCE_FILES, ExtractionConfig
 from fedready.data.parser import list_client_ids
 from fedready.flare.channel import SIMULATION_SCHEMA_VERSION, TASK_QUERY_TASK_NAME
 from fedready.server import FedReadyTaskQueryController
@@ -173,6 +173,7 @@ def _add_runtime_assets(job: FedJob, *, client_ids: list[str]) -> None:
     # Scanning misses initializers and the files read by the extraction fingerprint.
     sources = set(package_dir.rglob("__init__.py"))
     sources.update((package_dir / "data").rglob("*.py"))
+    sources.update(package_dir / relative_path for relative_path in EXTRACTION_SOURCE_FILES)
     sources.update((package_dir / "prompts").glob("*.json"))
     for source in sorted(sources):
         dest_dir = (Path("fedready") / source.relative_to(package_dir).parent).as_posix()
@@ -281,7 +282,7 @@ def main(argv: list[str] | None = None) -> int:
     project_root = Path(args[2] if len(args) == 3 else ".").resolve()
     session_id = _default_session_id(task)
 
-    from fedready.agents.local_vlm import DEFAULT_LOCAL_VISION_MODEL, LOCAL_VISION_API_BASE_URL
+    from fedready.agents.client.local_vlm import DEFAULT_LOCAL_VISION_MODEL, LOCAL_VISION_API_BASE_URL
     from fedready.agents.preflight import run_live_runtime_preflight
 
     run_live_runtime_preflight(

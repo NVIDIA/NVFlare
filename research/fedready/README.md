@@ -119,14 +119,20 @@ research/fedready/
 |   |-- server.py             # NVFlare Controller and two-round data workflow
 |   |-- client.py             # NVFlare client Executor and local validation
 |   |-- agents/
-|   |   |-- roles.py          # ServerAgent and ClientAgent
+|   |   |-- server/
+|   |   |   |-- agent.py      # Task negotiation, dispatch, and training-code requests
+|   |   |   `-- training_reference.py # NVFlare example selection for trainers
+|   |   |-- client/
+|   |   |   |-- agent.py      # Local authorization, responses, and adapter requests
+|   |   |   |-- adapter.py    # Execution, provenance, and manifest validation
+|   |   |   |-- adapter_qc.py # Representative-data preflight and visual inspection
+|   |   |   |-- visual_qc.py  # Extracted-sample review and voting
+|   |   |   `-- local_vlm.py  # Loopback VLM transport
 |   |   |-- guardrail.py      # Allow-list rules, GuardrailAgent, and redaction
-|   |   |-- visual_qc.py      # Visual QC templates, local VLM review, and voting
-|   |   |-- local_vlm.py      # Loopback VLM transport
 |   |   |-- bridge.py         # Codex worker backend
-|   |   |-- local_adapter.py  # Client-local adapter pipeline
-|   |   |-- preflight.py      # Live runtime preflight
-|   |   `-- training_reference.py # NVFlare example selection for generated trainers
+|   |   |-- references.py     # Shared reference selection and integrity checks
+|   |   |-- common.py         # Shared agent turns and safe payload helpers
+|   |   `-- preflight.py      # Operator-side runtime readiness checks
 |   |-- data/
 |   |   |-- parser.py         # Client-local dataset profiling
 |   |   |-- extractor.py      # Extraction orchestration and policy handling

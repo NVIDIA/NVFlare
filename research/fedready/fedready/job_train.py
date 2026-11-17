@@ -29,8 +29,8 @@ from pathlib import Path
 from typing import Any
 
 from fedready.agents.bridge import CodexWorkerBackend
-from fedready.agents.roles import ServerAgent
-from fedready.agents.training_reference import (
+from fedready.agents.server.agent import ServerAgent
+from fedready.agents.server.training_reference import (
     NVFLARE_EXAMPLE_SELECTION_ID,
     NVFLARE_EXAMPLE_SELECTION_PATTERN,
     NVFLARE_EXAMPLE_SELECTION_PROMPT,

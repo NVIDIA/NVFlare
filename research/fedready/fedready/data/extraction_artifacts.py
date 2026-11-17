@@ -35,27 +35,32 @@ except ImportError:  # pragma: no cover - minimal environments
 
 EXTRACTION_RESULT_SCHEMA = "fedready.local_extraction_result.v1"
 TRAINING_TRANSFORM_SCHEMA = "fedready.training_transform_policy.v1"
+EXTRACTION_SOURCE_FILES = (
+    "data/extraction_artifacts.py",
+    "data/extractor.py",
+    "data/materializer.py",
+    "data/visual_qc.py",
+    "data/splits.py",
+    "data/parser.py",
+    "data/contracts/base.py",
+    "data/contracts/segmentation.py",
+    "data/contracts/classification.py",
+    "agents/client/adapter.py",
+    "agents/client/adapter_qc.py",
+    "agents/client/local_vlm.py",
+    "agents/common.py",
+    "agents/references.py",
+    "data/qc.py",
+)
 
 
 def _extractor_logic_fingerprint() -> str:
     """Fingerprint extraction sources so cache invalidation cannot rely on a manual bump."""
 
     package_root = Path(__file__).resolve().parents[1]
-    sources = (
-        Path(__file__).resolve(),
-        package_root / "data" / "extractor.py",
-        package_root / "data" / "materializer.py",
-        package_root / "data" / "visual_qc.py",
-        package_root / "data" / "splits.py",
-        package_root / "data" / "parser.py",
-        package_root / "data" / "contracts" / "base.py",
-        package_root / "data" / "contracts" / "segmentation.py",
-        package_root / "data" / "contracts" / "classification.py",
-        package_root / "agents" / "local_adapter.py",
-        package_root / "data" / "qc.py",
-    )
     digest = sha256()
-    for source in sources:
+    for relative_path in EXTRACTION_SOURCE_FILES:
+        source = package_root / relative_path
         digest.update(source.relative_to(package_root).as_posix().encode("utf-8"))
         digest.update(b"\0")
         digest.update(source.read_bytes())

@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fedready.agents.local_adapter import TASK_EXAMPLE_DIR
+from fedready.agents.references import TASK_EXAMPLE_DIR
 from fedready.prompts import render_server_prompt
 from fedready.utils.io import atomic_write_json, contained_path
 from fedready.utils.logging import payload_digest, timestamp_utc

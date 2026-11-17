@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Transport for the client-local vision-language model (VLM).
+"""Backend-neutral execution contract for client-local data adapters.
 
-Sends one candidate image, optionally with a reference image, to an OpenAI-compatible
-loopback endpoint, retries transient failures, and appends each call to a JSONL log.
-"""
+Agent backends may differ in how they generate ``adapter.py``, but the harness
+owns the representative real-data preflight, local visual review, deferred data-dir
+execution, and manifest validation that determine whether an implementation is accepted."""
 
 from __future__ import annotations
 
@@ -36,21 +36,24 @@ from fedready.agents.guardrail import _short_error
 from fedready.utils.logging import timestamp_utc
 from PIL import Image
 
+
+def is_local_http_url(value: str) -> bool:
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return False
+    return parsed.scheme == "http" and parsed.hostname in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }
+
+
 LOCAL_VLM_MAX_TRANSPORT_ATTEMPTS = 3
-
-
 LOCAL_VLM_RETRY_DELAY_SECONDS = 1.0
-
-
 LOCAL_VLM_TRANSPORT_MAX_LONG_SIDE = 768
-
-
 LOCAL_VLM_TRANSPORT_JPEG_QUALITY = 90
-
-
 LOCAL_VISION_API_BASE_URL = "http://127.0.0.1:8001/v1"
-
-
 DEFAULT_LOCAL_VISION_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
 
 

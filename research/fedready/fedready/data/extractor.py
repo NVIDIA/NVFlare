@@ -31,7 +31,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from fedready.agents.local_adapter import (
+from fedready.agents.client.adapter import (
     UNLIMITED_LOCAL_ADAPTER_RECORDS,
     ClientDataProvenanceSnapshot,
     execute_local_adapter,

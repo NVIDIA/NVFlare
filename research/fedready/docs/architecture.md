@@ -44,6 +44,14 @@ and splitting live in `data/splits.py`. Shared manifests, configuration, safe
 result summaries, and extraction-source fingerprints live in
 `data/extraction_artifacts.py`.
 
+Agent implementations are grouped by where they execute. `agents/server/`
+owns task negotiation and server-side code-generation requests;
+`agents/client/` owns client responses, adapter execution, and local visual
+inspection. `agents/guardrail.py` provides one shared implementation that is
+instantiated with the server or client identity. Both sides use the single
+Codex bridge in `agents/bridge.py` and shared reference and payload helpers.
+The NVFlare entry points and data utilities retain their locations above.
+
 ## Trust boundaries
 
 - The server sees client identifiers, aggregate profiles, counts, validation
