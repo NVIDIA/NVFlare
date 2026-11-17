@@ -16,10 +16,13 @@
 
 import copy
 import json
+import threading
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from docker.models.containers import ContainerCollection
+from requests.exceptions import ConnectionError, ReadTimeout
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
@@ -27,7 +30,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher import docker_launcher as docker_module
-from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher
+from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher, DockerJobHandle
 from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher, SlurmTaskManager
 from nvflare.app_opt.job_launcher.slurm.task_policy import DOCKER_CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
@@ -172,6 +175,83 @@ def test_cp_host_container_uses_cj_budget_and_isolated_canonical_paths(profile, 
     handle.terminate()
     assert owner.released and owner.closed
     p.native.terminate.assert_called_once_with()
+
+
+@pytest.mark.parametrize("launch_error", ["api", "timeout", "connection"])
+@pytest.mark.parametrize("cleanup_failure", ["lookup", "stop"])
+def test_lost_docker_start_response_retains_owner_until_cleanup(profile, monkeypatch, launch_error, cleanup_failure):
+    p = profile
+    monkeypatch.setattr(docker_module, "DockerJobHandle", DockerJobHandle)
+    p.site["task_execution"]["finalization_timeout"] = 0.03
+    (p.root / "local/resources.json").write_text(json.dumps(p.site))
+    containers = ContainerCollection(p.dc)
+    p.dc.containers = containers
+    container = Mock()
+    container.status = "created"
+    exists = False
+    allow_cleanup, cleanup_attempted = threading.Event(), threading.Event()
+    lookups, published = [], []
+    p.context.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, published.append, sticky=False)
+
+    def start():
+        nonlocal exists
+        exists = True
+        container.status = "running"
+        error = {
+            "api": docker_module.docker.errors.APIError,
+            "timeout": ReadTimeout,
+            "connection": ConnectionError,
+        }[launch_error]
+        raise error("Docker start response lost")
+
+    def lookup(identity):
+        lookups.append(identity)
+        if cleanup_failure == "lookup" and not allow_cleanup.is_set():
+            cleanup_attempted.set()
+            raise docker_module.docker.errors.APIError("Docker query unavailable")
+        if not exists:
+            raise docker_module.docker.errors.NotFound("auto-removed")
+        return container
+
+    def stop(**kwargs):
+        nonlocal exists
+        if not allow_cleanup.is_set():
+            cleanup_attempted.set()
+            raise docker_module.docker.errors.APIError("Docker stop unavailable")
+        exists = False  # auto_remove after the successful stop
+
+    monkeypatch.setattr(containers, "create", Mock(return_value=container))
+    monkeypatch.setattr(containers, "get", Mock(side_effect=lookup))
+    container.start.side_effect = start
+    container.stop.side_effect = stop
+    service = None
+    try:
+        with pytest.raises((RuntimeError, ReadTimeout, ConnectionError), match="Docker start response lost"):
+            launch_job(p.launcher, p.meta, p.context)
+        container.start.assert_called_once_with()
+        assert exists and container.status == "running"
+        assert len(published) == 1
+        owner = published[0].owner
+        service = p.cell._slurm_task_service
+        name = containers.create.call_args.kwargs["name"]
+        assert owner.cj_handle.container_id == name
+        assert cleanup_attempted.wait(5)
+        assert lookups and set(lookups) == {name}
+        assert not owner.cj_handle.is_cleanup_complete()
+        assert owner.thread.is_alive() and service.jobs["job-1"] is owner
+        assert owner.released and not owner.cj_settled
+
+        allow_cleanup.set()
+        owner.wake.set()
+        owner.thread.join(5)
+        assert not owner.thread.is_alive() and not service.jobs
+        assert owner.cj_settled and not exists
+        container.stop.assert_called()
+    finally:
+        allow_cleanup.set()
+        service = service or getattr(p.cell, "_slurm_task_service", None)
+        if service:
+            assert service.shutdown(timeout=5) == ()
 
 
 def test_handle_is_published_before_waiting_for_docker_startup(profile):
@@ -529,11 +609,8 @@ def test_shutdown_retains_inflight_creation_and_cleans_late_container(profile, c
         join_thread(owner.thread)
         assert "job-1" not in service.jobs
     published.assert_not_called()
-    if not creation_fails:
-        p.native.terminate.assert_called_once()
-        p.native.wait.assert_not_called()
-    else:
-        p.native.terminate.assert_not_called()
+    p.native.terminate.assert_called_once()
+    p.native.wait.assert_not_called()
 
 
 def test_system_shutdown_terminates_already_attached_coordinator(profile):

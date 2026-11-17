@@ -873,6 +873,7 @@ class DockerJobLauncher(JobLauncherSpec):
         require_job_cert(fl_ctx, workspace_obj.get_run_dir(job_id))
 
         docker_client = self._get_docker_client()
+        launch_attempted = False
         try:
             # bind the kit file by file: site private keys never enter the job container;
             # the job credential arrives through the read-write job workspace bind
@@ -926,6 +927,7 @@ class DockerJobLauncher(JobLauncherSpec):
                             read_only=True,
                         )
                     )
+            launch_attempted = True
             container = docker_client.containers.run(
                 job_image,
                 command=command,
@@ -944,8 +946,26 @@ class DockerJobLauncher(JobLauncherSpec):
             )
         except docker.errors.ImageNotFound:
             raise RuntimeError(f"image '{job_image}' not found for job {job_id}")
-        except docker.errors.APIError as e:
-            raise RuntimeError(f"error creating container for job {job_id}: {e}")
+        except Exception as e:
+            if launch_attempted:
+                # Docker may have started the container before losing its reply.
+                # Give CP its unique name so cleanup survives the failed launch.
+                try:
+                    publish_job_handle(
+                        DockerJobHandle(
+                            container_id=container_name,
+                            container_name=container_name,
+                            docker_client=docker_client,
+                            timeout=self.timeout,
+                            watch_exit=False,
+                        ),
+                        fl_ctx,
+                    )
+                except Exception:
+                    self.logger.exception("Error publishing cleanup handle for container %s", container_name)
+            if isinstance(e, docker.errors.APIError):
+                raise RuntimeError(f"error creating container for job {job_id}: {e}") from e
+            raise
 
         job_handle = DockerJobHandle(
             container_id=container.id,
