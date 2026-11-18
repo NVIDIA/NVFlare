@@ -19,7 +19,6 @@ from processors.cifar10_pt_task_processor import Cifar10PTTaskProcessor
 from processors.models.cifar10_model import Cifar10ConvNet
 
 from nvflare.edge.tools.edge_fed_buff_recipe import (
-    DeviceManagerConfig,
     EdgeFedBuffRecipe,
     EvaluatorConfig,
     ModelManagerConfig,
@@ -66,51 +65,32 @@ def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds,
         device_speed=device_speed,
     )
 
-    # Configure model manager based on FL mode
+    # Keep the existing version budgets and update scales in each mode.
     if fl_mode == "sync":
-        model_manager_config = ModelManagerConfig(
-            global_lr=1.0,
-            # need all devices to train for one global model version
-            num_updates_for_model=total_devices,
-            max_model_version=global_rounds,
-        )
-        device_manager_config = DeviceManagerConfig(
-            # each leaf node has devices_per_leaf devices
-            device_selection_size=total_devices,
-            # wait for all devices to finish training before starting
-            # dispatching the next global model version
-            min_hole_to_fill=total_devices,
-            # always reuse the same devices for federated learning
-            device_reuse=True,
-        )
+        server_lr = 1.0
+        buffer_size = total_devices
+        num_rounds = global_rounds - 1  # Initial model is version 1.
+        min_open_slots = total_devices
+        model_manager_config = ModelManagerConfig()
         eval_frequency = 1
     else:  # async mode
-        model_manager_config = ModelManagerConfig(
-            global_lr=0.05,
-            num_updates_for_model=1,
-            # to be comparable to sync mode w.r.t. the data amount visited by global model,
-            # sync - each global model covers total_devices data
-            # async - each global model covers 1 device's data
-            max_model_version=global_rounds * total_devices,
-            # increase the update timeout to allow for the slowest device to finish
-            update_timeout=500,
-        )
-        device_manager_config = DeviceManagerConfig(
-            # each leaf node has devices_per_leaf devices
-            device_selection_size=total_devices,
-            # immediately dispatch the current global model
-            # once receiving an update from device
-            min_hole_to_fill=1,
-            # always reuse the same devices for federated learning
-            device_reuse=True,
-        )
+        server_lr = 0.05
+        buffer_size = 1
+        num_rounds = global_rounds * total_devices - 1
+        min_open_slots = 1
+        # Allow for the slowest device to finish.
+        model_manager_config = ModelManagerConfig(update_timeout=500)
         eval_frequency = total_devices
 
     recipe = EdgeFedBuffRecipe(
-        job_name=f"pt_job_{fl_mode}{suffix}",
+        name=f"pt_job_{fl_mode}{suffix}",
         model=Cifar10ConvNet(),
+        num_rounds=num_rounds,
+        buffer_size=buffer_size,
+        concurrency=total_devices,
+        min_open_slots=min_open_slots,
+        server_lr=server_lr,
         model_manager_config=model_manager_config,
-        device_manager_config=device_manager_config,
         evaluator_config=EvaluatorConfig(
             torchvision_dataset={"name": "CIFAR10", "path": dataset_root}, eval_frequency=eval_frequency
         ),

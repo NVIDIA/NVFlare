@@ -114,31 +114,31 @@ These settings express related concepts, but the execution units differ:
    * - Job name
      - ``name``
      - ``name``
-     - ``job_name``
+     - ``name`` (legacy ``job_name``)
    * - Global publication budget
      - ``num_rounds``
      - ``num_rounds``
-     - ``model_manager_config.max_model_version``
+     - ``num_rounds`` (maps to ``max_model_version=num_rounds+1``)
    * - Contributions per publication
      - Selected clients in a round
      - ``buffer_size`` (exact count)
-     - ``model_manager_config.num_updates_for_model`` (threshold)
+     - ``buffer_size`` (threshold)
    * - Participants in flight
      - Selected clients in a round
      - ``concurrency``
-     - ``device_manager_config.device_selection_size``
+     - ``concurrency`` (devices across the hierarchy)
    * - Refill threshold
      - Not applicable
      - ``min_open_slots``
-     - ``device_manager_config.min_hole_to_fill``
+     - ``min_open_slots``
    * - Global update scaling
      - No direct recipe argument
      - ``server_lr`` (default 1.0)
-     - ``model_manager_config.global_lr`` (default 0.01)
+     - ``server_lr`` (default 0.01)
 
 Edge starts with model version 1; FedBuff starts at version 0. For 100 learned
-publications, use ``num_rounds=100`` in FedBuff and
-``max_model_version=101`` in Edge's model manager configuration. Edge counts
+publications, use ``num_rounds=100`` in either recipe. Edge translates this to
+``max_model_version=101`` in its model manager configuration. Edge counts
 devices behind hierarchical clients, and a batched report can cross its
 publication threshold. FedBuff accepts exactly ``buffer_size`` contributions.
 Their scaling defaults should not be equated.
@@ -148,9 +148,9 @@ number selected per round; FedBuff uses it for startup, while ``concurrency``
 limits active assignments. FedAvg weights contributions by client step count
 and optional per-site weights. FedBuff uses equal weights unless
 ``weight_metric`` selects a client metric. Matching scheduling settings alone
-does not make their aggregation equivalent. The Edge configuration names in
-the table belong to its model and device manager objects; this recipe does not
-change those APIs.
+does not make their aggregation equivalent. Edge's legacy manager config fields
+remain supported; see :ref:`edge-fedbuff-naming` for migration and precedence.
+Edge retains its independent model history and client aggregation limits.
 
 Model Operations and Ownership
 ------------------------------

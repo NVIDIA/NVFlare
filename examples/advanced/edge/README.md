@@ -185,6 +185,23 @@ bash start_all.sh
 #### Step2: Generate Jobs and Submit Using the EdgeFedBuffRecipe API
 Next, let's generate job configs for cifar10 via EdgeFedBuffRecipe API.
 
+Both `EdgeFedBuffRecipe` and `ETFedBuffRecipe` use `name`, `num_rounds`,
+`buffer_size`, `concurrency`, `min_open_slots`, and `server_lr`, matching the
+Collab FedBuff recipe names. Existing positional calls, `job_name`, and manager
+config fields remain supported without deprecation warnings. Explicit non-`None`
+recipe keywords override corresponding fields on copies of supplied manager
+configs; omitted keywords preserve their values. If both job names are supplied,
+they must agree.
+
+To preserve an existing `max_model_version=V`, use `num_rounds=V-1`: Edge starts
+at version 1. The updated job scripts keep their previous budgets and settings.
+`buffer_size` is a device-update threshold; batched hierarchical reports may
+exceed it and all buffered updates are consumed. `concurrency` counts selected
+devices across the whole hierarchy, while simulated `num_devices` is per leaf.
+The Edge `server_lr` default stays **0.01** (Collab defaults to 1.0).
+`max_model_history` and `max_num_active_model_versions` remain separate advanced
+manager settings; naming changes do not alter their limits.
+
 **Model Input Options:**
 The `EdgeFedBuffRecipe` accepts model input in two formats:
 - Class instance: `model=Cifar10ConvNet()` - convenient for development
@@ -193,6 +210,7 @@ The `EdgeFedBuffRecipe` accepts model input in two formats:
 To resume from pre-trained weights, use `initial_ckpt` (absolute path on server):
 ```python
 recipe = EdgeFedBuffRecipe(
+    name="edge-job",
     model=Cifar10ConvNet(),
     initial_ckpt="/server/path/to/pretrained.pt",
     ...

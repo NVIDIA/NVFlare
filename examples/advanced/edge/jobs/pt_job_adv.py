@@ -28,7 +28,7 @@ from nvflare.recipe.prod_env import ProdEnv
 def main():
     # FL global and local parameters
     devices_per_leaf = 10000
-    device_selection_size = 200
+    concurrency = 200
     num_leaf_nodes = 4
     startup_kit_location = "/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com"
     username = "admin@nvidia.com"
@@ -37,11 +37,11 @@ def main():
     subset_size = 100
     communication_delay = {"mean": 0.0, "std": 0.0}
     device_speed = {"mean": [0.0], "std": [0.0]}
-    global_lr = 0.1
-    num_updates_for_model = 20
-    max_model_version = 200
+    server_lr = 0.1
+    buffer_size = 20
+    num_rounds = 200 - 1  # Preserve the version-200 stop (initial model is version 1).
     max_model_history = None
-    min_hole_to_fill = 10
+    min_open_slots = 10
     eval_frequency = 1
     local_batch_size = 10
     local_epochs = 4
@@ -63,23 +63,23 @@ def main():
 
     # Model manager and device manager configurations
     model_manager_config = ModelManagerConfig(
-        global_lr=global_lr,
-        num_updates_for_model=num_updates_for_model,
-        max_model_version=max_model_version,
         max_model_history=max_model_history,
         max_num_active_model_versions=max_model_history,
         update_timeout=500,
     )
     device_manager_config = DeviceManagerConfig(
-        device_selection_size=device_selection_size,
-        min_hole_to_fill=min_hole_to_fill,
         device_reuse=False,
     )
     eval_frequency = eval_frequency
 
     # Generate recipe
     recipe = EdgeFedBuffRecipe(
-        job_name="pt_job_adv",
+        name="pt_job_adv",
+        num_rounds=num_rounds,
+        buffer_size=buffer_size,
+        concurrency=concurrency,
+        min_open_slots=min_open_slots,
+        server_lr=server_lr,
         model=Cifar10ConvNet(),
         model_manager_config=model_manager_config,
         device_manager_config=device_manager_config,
@@ -89,7 +89,7 @@ def main():
         simulation_config=SimulationConfig(
             task_processor=task_processor,
             job_timeout=20.0,
-            num_workers=device_selection_size // num_leaf_nodes + 1,
+            num_workers=concurrency // num_leaf_nodes + 1,
             num_devices=devices_per_leaf,
         ),
         custom_source_root=None,
