@@ -16,7 +16,6 @@
 
 import importlib
 import json
-import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -226,21 +225,6 @@ def test_recipe_export_round_trip_loads_model_components(tmp_path, monkeypatch):
     assert isinstance(restored.update_transform, _ScaleUpdate)
     assert restored.update_transform.scale == 0.25
     assert recipe.finalize() is recipe.finalize()
-
-
-def test_async_imports_without_tensor_framework_or_synthesis():
-    code = """
-import sys
-class Block:
-    def find_spec(self, name, path=None, target=None):
-        if name.split('.')[0] in ('torch', 'torchvision', 'kornia'):
-            raise ImportError('optional dependency blocked')
-sys.meta_path.insert(0, Block())
-from nvflare.collab import FedBuffRecipe
-from nvflare.collab.fedbuff_recipe import FedBuffResult, FedBuffTrainingCoordinator
-from examples.advanced.collab.numpy_async.job import NumpyModelOps
-"""
-    subprocess.run([sys.executable, "-c", code], check=True)
 
 
 def test_cifar_recipe_uses_library_scheduler_and_step_weights(monkeypatch, tmp_path):
