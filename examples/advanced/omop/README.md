@@ -23,7 +23,7 @@ join concept_ancestor ca on ca.descendant_concept_id = co.condition_concept_id
 where ca.ancestor_concept_id = 192671  -- Gastrointestinal hemorrhage and every more specific concept
 ```
 
-NVFlare ships `cohort.py` with [client.py](./client.py) to every site.
+The job packages `cohort.py` with [client.py](./client.py), and NVFlare deploys both to every site.
 `client.py` runs the query with `load_cohort()`, computes the gradient and Hessian of a logistic regression on the resulting features, and sends only those to the server, where `FedAvgLrRecipe` takes a Newton-Raphson step with their average.
 
 ## Deployment
