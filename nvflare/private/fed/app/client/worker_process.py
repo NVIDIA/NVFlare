@@ -36,7 +36,6 @@ from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.resource_stats.collector import JobResourceCollector
 from nvflare.private.fed.resource_stats.handoff import launch_generation_from_options, write_terminal_handoff
 from nvflare.private.fed.resource_stats.message_traffic import snapshot_message_traffic
-from nvflare.private.fed.resource_stats.optional_io import optional_io
 from nvflare.private.fed.utils.fed_utils import (
     create_stats_pool_files_for_job,
     fobs_initialize,
@@ -155,10 +154,8 @@ def main(args):
                             getattr(federated_client, "cell", None), incomplete=message_traffic_incomplete
                         )
                     )
-                    optional_io(
-                        lambda: write_terminal_handoff(
-                            workspace.get_run_dir(args.job_id), report, launch_generation=launch_generation
-                        )
+                    write_terminal_handoff(
+                        workspace.get_run_dir(args.job_id), report, launch_generation=launch_generation
                     )
                 except Exception as e:
                     if logger:

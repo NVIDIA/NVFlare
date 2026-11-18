@@ -20,8 +20,6 @@ import pytest
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.private.fed.app.client import worker_process
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
-from tests.resource_stats_io_test_utils import stalled_resource_io
-from tests.timing_utils import join_thread
 from tests.worker_process_utils import _worker_runtime
 
 
@@ -98,17 +96,3 @@ def test_failed_worker_still_archives_after_command_close_failure(tmp_path, capl
     assert calls == ["close", "abort", "archive", "runtime"]
     assert "command gate failed" in caplog.text
     client.terminate.assert_called_once()
-
-
-def test_delayed_terminal_statistics_do_not_hold_worker_cleanup(tmp_path):
-    with (
-        _worker_runtime(tmp_path, MagicMock()) as (args, client),
-        stalled_resource_io(worker_process, "write_terminal_handoff") as (entered, threads),
-        patch("nvflare.private.fed.app.job_process_cleanup.shutdown_f3_streaming"),
-        patch("nvflare.private.fed.app.job_process_cleanup.security_close"),
-    ):
-        caller = threads.start(worker_process.main, args)
-        assert entered.wait(10)
-        join_thread(caller)
-        client.terminate.assert_called_once()
-        worker_process.upload_results_on_shutdown.assert_called_once()

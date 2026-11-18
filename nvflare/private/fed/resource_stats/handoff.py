@@ -15,8 +15,8 @@
 """Publish and read the private terminal handoff for one launch.
 
 Measurements are self-reported. The parent supplies public identity and checks
-launch generation to exclude stale attempts. Directory-relative operations and
-bounded regular-file reads prevent job-owned paths from redirecting parent I/O.
+launch generation to exclude stale attempts. A trusted run-directory handle and
+bounded regular-file reads prevent file symlinks from redirecting parent I/O.
 """
 
 from __future__ import annotations
@@ -33,8 +33,6 @@ from .measurements import canonical_json_bytes
 
 MAX_TERMINAL_HANDOFF_BYTES = 1024 * 1024
 
-RESOURCE_STATS_DIR = "resource_stats"
-STAGING_DIR = "staging"
 LAUNCH_GENERATION_OPTION = "resource_launch_generation"
 _DIRECTORY_OPEN_FLAGS = (
     os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
@@ -45,9 +43,7 @@ _SECURE_HANDOFF_DIR_FD = (
     and os.open in os.supports_dir_fd
     and os.unlink in os.supports_dir_fd
 )
-_SECURE_HANDOFF_WRITE_DIR_FD = (
-    _SECURE_HANDOFF_DIR_FD and os.mkdir in os.supports_dir_fd and os.rename in os.supports_dir_fd
-)
+_SECURE_HANDOFF_WRITE_DIR_FD = _SECURE_HANDOFF_DIR_FD and os.rename in os.supports_dir_fd
 
 
 class InvalidTerminalHandoff(ValueError):
@@ -75,11 +71,11 @@ def _handoff_filename(generation: str) -> str:
 
 
 def terminal_handoff_path(run_dir: str | Path, *, launch_generation: str) -> Path:
-    return Path(run_dir) / RESOURCE_STATS_DIR / STAGING_DIR / _handoff_filename(launch_generation)
+    return Path(run_dir) / _handoff_filename(launch_generation)
 
 
 def _open_handoff_directory(run_dir: str | Path, *, create: bool = False) -> int:
-    """Open every parent component without following an untrusted symlink."""
+    """Anchor file operations to the assigned run directory without following a symlink."""
 
     root = Path(run_dir)
     if not _SECURE_HANDOFF_DIR_FD or (create and not _SECURE_HANDOFF_WRITE_DIR_FD):
@@ -87,21 +83,7 @@ def _open_handoff_directory(run_dir: str | Path, *, create: bool = False) -> int
     if create:
         root.mkdir(parents=True, exist_ok=True)
 
-    current_fd = os.open(root, _DIRECTORY_OPEN_FLAGS)
-    try:
-        for component in (RESOURCE_STATS_DIR, STAGING_DIR):
-            if create:
-                try:
-                    os.mkdir(component, mode=0o700, dir_fd=current_fd)
-                except FileExistsError:
-                    pass
-            next_fd = os.open(component, _DIRECTORY_OPEN_FLAGS, dir_fd=current_fd)
-            os.close(current_fd)
-            current_fd = next_fd
-        return current_fd
-    except BaseException:
-        os.close(current_fd)
-        raise
+    return os.open(root, _DIRECTORY_OPEN_FLAGS)
 
 
 def write_terminal_handoff(run_dir: str | Path, handoff: Mapping[str, Any], *, launch_generation: str) -> Path:
@@ -112,7 +94,7 @@ def write_terminal_handoff(run_dir: str | Path, handoff: Mapping[str, Any], *, l
     data = canonical_json_bytes(handoff)
     if len(data) > MAX_TERMINAL_HANDOFF_BYTES:
         raise InvalidTerminalHandoff("terminal handoff exceeds its size limit")
-    path = Path(run_dir) / RESOURCE_STATS_DIR / STAGING_DIR / filename
+    path = Path(run_dir) / filename
     directory_fd = _open_handoff_directory(run_dir, create=True)
     temp_name = f".terminal-{secrets.token_hex(16)}.tmp"
     fd = None
@@ -147,8 +129,7 @@ def read_terminal_handoff(run_dir: str | Path, *, expected_generation: str) -> O
     try:
         directory_fd = _open_handoff_directory(run_dir)
         # The job process owns this self-report, so treat the path as untrusted:
-        # do not follow any path-component symlink and do not let a FIFO/device
-        # block the parent.
+        # reject a file symlink and do not let a FIFO/device block the parent.
         flags = os.O_RDONLY
         flags |= getattr(os, "O_CLOEXEC", 0)
         flags |= getattr(os, "O_NONBLOCK", 0)

@@ -35,6 +35,7 @@ def test_atomic_writer_round_trip_and_replacement_without_leftover_temp_files(ma
     original = make_handoff()
     original["duration_seconds"] = 1
     path = module.write_terminal_handoff(run, original, launch_generation=_GENERATION)
+    assert path.parent == run
     assert module.read_terminal_handoff(run, expected_generation=_GENERATION) == {
         **original,
         "launch_generation": _GENERATION,
@@ -62,22 +63,13 @@ def test_reader_contains_plain_decoder_value_error(make_handoff, tmp_path, monke
     assert decoder.call_args.args[0] == payload
 
 
-@pytest.mark.parametrize("component", ["run", "resource_stats", "staging"])
-def test_writer_rejects_preexisting_directory_symlink_without_outside_writes(
-    make_handoff, tmp_path, monkeypatch, component
-):
+def test_writer_rejects_run_directory_symlink_without_outside_writes(make_handoff, tmp_path):
     run = tmp_path / "run"
     outside = tmp_path / "outside"
     outside.mkdir()
     sentinel = outside / _HANDOFF_FILE
     sentinel.write_bytes(b"outside sentinel")
-    link = {
-        "run": run,
-        "resource_stats": run / module.RESOURCE_STATS_DIR,
-        "staging": run / module.RESOURCE_STATS_DIR / module.STAGING_DIR,
-    }[component]
-    link.parent.mkdir(parents=True, exist_ok=True)
-    _link(link, outside, directory=True)
+    _link(run, outside, directory=True)
     with pytest.raises(OSError):
         module.write_terminal_handoff(run, make_handoff(), launch_generation=_GENERATION)
     assert sentinel.read_bytes() == b"outside sentinel"
@@ -112,7 +104,7 @@ def test_open_directory_cannot_be_redirected_to_outside_after_check(make_handoff
     def replaced_directory(*args, **kwargs):
         descriptor = open_directory(*args, **kwargs)
         path = module.terminal_handoff_path(run, launch_generation=_GENERATION).parent
-        path.rename(path.with_name("original-staging"))
+        path.rename(path.with_name("original-run"))
         _link(path, outside, directory=True)
         return descriptor
 
@@ -120,7 +112,7 @@ def test_open_directory_cannot_be_redirected_to_outside_after_check(make_handoff
     module.write_terminal_handoff(run, make_handoff(), launch_generation=_GENERATION)
     assert sentinel.read_bytes() == b"outside sentinel"
     assert list(outside.iterdir()) == [sentinel]
-    original = run / module.RESOURCE_STATS_DIR / "original-staging"
+    original = run.with_name("original-run")
     assert [path.name for path in original.iterdir()] == [_HANDOFF_FILE]
 
 
@@ -204,7 +196,7 @@ def test_generation_paths_preserve_replacement_against_late_writer_and_old_clean
 @pytest.mark.parametrize("field_generation", [None, "old-launch"])
 def test_bound_read_rejects_missing_or_mismatched_envelope_generation(make_handoff, tmp_path, field_generation):
     path = module.terminal_handoff_path(tmp_path, launch_generation="new-launch")
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     handoff = make_handoff()
     if field_generation is not None:
         handoff["launch_generation"] = field_generation
@@ -218,7 +210,7 @@ def test_generation_tokens_cannot_redirect_or_expand_private_paths(make_handoff,
         module.write_terminal_handoff(tmp_path, make_handoff(), launch_generation=generation)
     assert module.read_terminal_handoff(tmp_path, expected_generation=generation) is None
     module.remove_terminal_handoff(tmp_path, expected_generation=generation)
-    assert not (tmp_path / "resource_stats").exists()
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_launch_option_keeps_exact_token_before_generic_type_coercion():

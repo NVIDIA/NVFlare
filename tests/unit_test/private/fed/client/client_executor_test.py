@@ -62,10 +62,10 @@ from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.communicator import Communicator
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.resource_stats.handoff import terminal_handoff_path, write_terminal_handoff
+from nvflare.private.fed.resource_stats.measurements import participant_measurements
 from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_cert
-from tests.resource_stats_io_test_utils import stalled_resource_io
 from tests.resource_stats_report_test_utils import _participant_summary
-from tests.timing_utils import isolate_time, join_thread
+from tests.timing_utils import ThreadGroup, isolate_time, join_thread
 
 _THREAD_START = threading.Thread.start
 
@@ -456,6 +456,62 @@ def test_build_participant_resource_report_binds_parent_identity_and_removes_han
     assert report["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 12.5}
     assert report["resource_utilization"]["message_traffic"] == {"sent_bytes": 1200, "received_bytes": 800}
     assert not terminal_handoff_path(run_dir, launch_generation="test-launch").exists()
+
+
+def test_slow_handoff_preserves_its_report_without_skipping_another_job(tmp_path):
+    client = MagicMock(client_name="site-1")
+    client.send_request_before_shutdown.return_value.get_header.return_value = ReturnCode.OK
+    client.send_request_before_shutdown.return_value.payload = {}
+    executor = JobExecutor(client, "startup")
+    for job_id in ("job-1", "job-2"):
+        write_terminal_handoff(
+            tmp_path / job_id,
+            participant_measurements(_participant_summary(job_id=job_id)),
+            launch_generation="test-launch",
+        )
+        executor.run_processes[job_id] = {
+            RunProcessKey.JOB_HANDLE: MagicMock(),
+            _RESTART_KEY: SimpleNamespace(launch_id="test-launch"),
+        }
+    manager, ctx = MagicMock(), MagicMock()
+    entered, release = threading.Event(), threading.Event()
+    read_handoff = client_executor_module.read_terminal_handoff
+
+    def slow_read(run_dir, **kwargs):
+        if Path(run_dir).name == "job-1":
+            if threading.current_thread() not in threads.threads:
+                threads.threads.append(threading.current_thread())
+            entered.set()
+            release.wait()
+        return read_handoff(run_dir, **kwargs)
+
+    with (
+        ThreadGroup(release) as threads,
+        patch.object(client_executor_module, "read_terminal_handoff", slow_read),
+        patch.object(client_executor_module, "get_return_code", return_value=JobReturnCode.SUCCESS),
+    ):
+        caller = threads.start(
+            executor._wait_child_process_finish, client, "job-1", {"gpu": [0]}, None, manager, str(tmp_path), ctx
+        )
+        assert entered.wait(10)
+        manager.free_resources.assert_called_once()
+        executor._wait_child_process_finish(client, "job-2", None, None, manager, str(tmp_path), ctx)
+        second = client.send_request_before_shutdown.call_args.kwargs["request"].payload
+        assert second[JobOutcomeMsgKey.JOB_ID] == "job-2"
+        assert JobOutcomeMsgKey.RESOURCE_REPORT in second
+        release.set()
+        join_thread(caller)
+
+    for call in client.send_request_before_shutdown.call_args_list:
+        payload = call.kwargs["request"].payload
+        report = json.loads(payload[JobOutcomeMsgKey.RESOURCE_REPORT][JobOutcomeMsgKey.PARTICIPANT_SUMMARY])
+        assert report["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 1.5}
+        assert payload[JobOutcomeMsgKey.CODE] == JobReturnCode.SUCCESS
+        assert not terminal_handoff_path(
+            tmp_path / payload[JobOutcomeMsgKey.JOB_ID], launch_generation="test-launch"
+        ).exists()
+    assert client.send_request_before_shutdown.call_count == 2
+    assert executor.run_processes == {}
 
 
 def test_build_participant_resource_report_survives_missing_workspace(tmp_path):
@@ -1968,57 +2024,3 @@ def test_client_relaunch_preserves_values_and_marks_only_usable_measurements_par
         assert codes == expected
     assert report["duration_seconds"] == handoff["duration_seconds"]
     assert not terminal_handoff_path(run_dir, launch_generation="test-launch").exists()
-
-
-def test_delayed_attempt_marker_does_not_hold_launch_or_claim_complete(tmp_path):
-    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
-    executor = JobExecutor(client, workspace.get_startup_kit_dir())
-    launcher = MagicMock()
-    launched_threads = []
-    with (
-        stalled_resource_io(client_executor_module.os, "mkdir") as (entered, threads),
-        patch.object(client_executor_module, "get_job_launcher", return_value=launcher),
-        patch.object(threading.Thread, "start", lambda thread: _start_without_job_wait(thread, launched_threads)),
-    ):
-        caller = threads.start(
-            executor.start_app,
-            client,
-            "job-1",
-            meta,
-            SimpleNamespace(workspace=str(tmp_path), set=[]),
-            None,
-            None,
-            None,
-            ctx,
-        )
-        assert entered.wait(10)
-        join_thread(caller)
-        launcher.launch_job.assert_called_once()
-        assert launched_threads[-1]._args[-1] is True
-
-
-@pytest.mark.parametrize("operation", ["read_terminal_handoff", "_remove_cpu_attempt_marker"])
-def test_delayed_statistics_preserve_outcome_resource_release_and_retirement(operation):
-    client = MagicMock(client_name="site-1")
-    client.send_request_before_shutdown.return_value.get_header.return_value = ReturnCode.OK
-    client.send_request_before_shutdown.return_value.payload = {JobOutcomeMsgKey.RESOURCE_REPORT_STATUS: "accepted"}
-    executor = JobExecutor(client, "startup")
-    executor._cpu_seen_job_launches.add("job-1")
-    handle = MagicMock()
-    executor.run_processes = {"job-1": {RunProcessKey.JOB_HANDLE: handle}}
-    manager, ctx = MagicMock(), MagicMock()
-    with (
-        stalled_resource_io(client_executor_module, operation) as (entered, threads),
-        patch.object(client_executor_module, "get_return_code", return_value=JobReturnCode.SUCCESS),
-    ):
-        caller = threads.start(
-            executor._wait_child_process_finish, client, "job-1", {"gpu": [0]}, None, manager, "/tmp/workspace", ctx
-        )
-        assert entered.wait(10)
-        manager.free_resources.assert_called_once()
-        join_thread(caller)
-        assert "job-1" not in executor.run_processes
-        assert "job-1" in executor._cpu_seen_job_launches
-        payload = client.send_request_before_shutdown.call_args.kwargs["request"].payload
-        assert payload[JobOutcomeMsgKey.CODE] == JobReturnCode.SUCCESS
-        ctx.get_engine.return_value.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, ctx)

@@ -19,8 +19,6 @@ import pytest
 from nvflare.private.fed.resource_stats import collector
 from nvflare.private.fed.resource_stats.collector import JobResourceCollector, assemble_participant_summary
 from nvflare.private.fed.resource_stats.handoff import (
-    RESOURCE_STATS_DIR,
-    STAGING_DIR,
     read_terminal_handoff,
     remove_terminal_handoff,
     terminal_handoff_path,
@@ -180,14 +178,12 @@ def test_handoff_reader_rejects_symlink(make_handoff, tmp_path):
     assert read_terminal_handoff(link_run, expected_generation="test-launch") is None
 
 
-def test_handoff_parent_does_not_follow_intermediate_staging_symlink(make_handoff, tmp_path):
+def test_handoff_parent_does_not_follow_run_directory_symlink(make_handoff, tmp_path):
     outside_run = tmp_path / "outside"
     outside_handoff = write_terminal_handoff(outside_run, make_handoff(), launch_generation="test-launch")
     run_dir = tmp_path / "run"
-    stats_dir = run_dir / RESOURCE_STATS_DIR
-    stats_dir.mkdir(parents=True)
     try:
-        (stats_dir / STAGING_DIR).symlink_to(outside_handoff.parent, target_is_directory=True)
+        run_dir.symlink_to(outside_handoff.parent, target_is_directory=True)
     except (NotImplementedError, OSError):
         pytest.skip("symlinks are unavailable on this platform")
 

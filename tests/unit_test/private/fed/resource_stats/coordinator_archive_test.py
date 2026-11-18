@@ -141,17 +141,14 @@ def test_summary_write_failure_occurs_at_finalization_not_acceptance(started_job
     assert list((run_dir / "resource_stats").iterdir()) == []
 
 
-@pytest.mark.parametrize("residue", ["", "terminal_handoff.old.json", ".terminal-abandoned.tmp"])
-def test_staging_directory_is_ignored_when_reading_accepted_reports(started_job, residue):
+@pytest.mark.parametrize("residue", ["terminal_handoff.old.json", ".terminal-abandoned.tmp"])
+def test_private_handoff_residue_is_ignored_when_reading_accepted_reports(started_job, residue):
     coordinator, run_dir = started_job
     data = canonical_json_bytes(_participant())
     assert (
         coordinator.accept_resource_report("job-1", "site-1", {"participant_summary": data}) == RESOURCE_REPORT_ACCEPTED
     )
-    staging = run_dir / "resource_stats" / "staging"
-    staging.mkdir()
-    if residue:
-        (staging / residue).write_bytes(b"incomplete old handoff")
+    (run_dir / residue).write_bytes(b"incomplete old handoff")
     summary = coordinator.finalize_job("job-1")
     reader = WorkspaceResourceStatsReader(_workspace_zip(run_dir))
     assert reader.read_resource_summary() == summary
@@ -289,7 +286,7 @@ def test_repeated_finalization_returns_frozen_state_without_disk_io(tmp_path, re
     [
         ("resource_stats/README.txt", [b"{}"]),
         ("resource_stats/unexpected.json", [b"{}"]),
-        ("resource_stats/staging/", [b""]),
+        ("unrelated-directory/", [b""]),
         ("resource_stats/README.txt", [b"first", b"second"]),
     ],
 )

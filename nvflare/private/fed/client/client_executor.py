@@ -52,7 +52,6 @@ from nvflare.private.fed.resource_stats.handoff import (
 )
 from nvflare.private.fed.resource_stats.measurements import ordered_issues
 from nvflare.private.fed.resource_stats.message_traffic import retire_job_traffic
-from nvflare.private.fed.resource_stats.optional_io import optional_io
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.private.fed.utils.job_cert_utils import remove_job_cert
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -120,11 +119,13 @@ def _record_client_cpu_attempt(workspace: Workspace, job_id: str, logger) -> boo
 
 
 def _remove_cpu_attempt_marker(workspace, job_id):
-    marker = Workspace._join_under_root(workspace, _CPU_ATTEMPT_DIR, Workspace._check_job_id(job_id))
     try:
+        marker = Workspace._join_under_root(workspace, _CPU_ATTEMPT_DIR, Workspace._check_job_id(job_id))
         os.unlink(marker)
     except FileNotFoundError:
         pass
+    except (OSError, ValueError):
+        return False
     return True
 
 
@@ -140,7 +141,7 @@ def _build_participant_resource_report(
 
     Identity comes from the authenticated client parent, never from the child
     file. Reporting errors are contained so they cannot change the terminal
-    outcome. The caller bounds this optional I/O after compute-resource release.
+    outcome. The caller releases compute resources before reading the handoff.
     """
 
     expected_generation = expected_generation or ""
@@ -481,10 +482,7 @@ class JobExecutor(ClientExecutor):
                 _ABORT_REQUESTED_KEY: False,
                 _RESTART_KEY: restart,
             }
-        # A missing, delayed, or failed marker leaves attempt coverage uncertain.
-        prior_attempt_incomplete |= optional_io(
-            _record_client_cpu_attempt, workspace, job_id, self.logger, default=True
-        )
+        prior_attempt_incomplete |= _record_client_cpu_attempt(workspace, job_id, self.logger)
         try:
             self._launch_job(job_id, restart, pending_handle, fl_ctx)
         except BaseException:
@@ -897,11 +895,9 @@ class JobExecutor(ClientExecutor):
         try:
             # The next process must not inherit an earlier process's final
             # measurements if its own handoff is lost.
-            optional_io(
-                lambda: remove_terminal_handoff(
-                    Workspace.run_dir_path(restart.args[JobProcessArgs.WORKSPACE][1], job_id),
-                    expected_generation=previous_generation,
-                )
+            remove_terminal_handoff(
+                Workspace.run_dir_path(restart.args[JobProcessArgs.WORKSPACE][1], job_id),
+                expected_generation=previous_generation,
             )
         except Exception as e:
             _log_resource_warning(self.logger, f"could not retire prior resource handoff: {secure_format_exception(e)}")
@@ -986,8 +982,7 @@ class JobExecutor(ClientExecutor):
             if payload is not None:
                 participant_summary = None
                 try:
-                    participant_summary = optional_io(
-                        _build_participant_resource_report,
+                    participant_summary = _build_participant_resource_report(
                         job_id=job_id,
                         participant_name=client.client_name,
                         workspace=workspace,
@@ -1028,7 +1023,7 @@ class JobExecutor(ClientExecutor):
                     elif isinstance(reply.payload, dict):
                         report_status = reply.payload.get(JobOutcomeMsgKey.RESOURCE_REPORT_STATUS)
                         if report_status in ("accepted", "duplicate"):
-                            if optional_io(_remove_cpu_attempt_marker, workspace, job_id, default=False):
+                            if _remove_cpu_attempt_marker(workspace, job_id):
                                 with self.lock:
                                     self._cpu_seen_job_launches.discard(job_id)
                         elif report_status:

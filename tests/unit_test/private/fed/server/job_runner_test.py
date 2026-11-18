@@ -31,13 +31,10 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.zip_utils import get_all_file_paths
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.fed.resource_stats.handoff import terminal_handoff_path, write_terminal_handoff
-from nvflare.private.fed.server import job_runner as job_runner_module
 from nvflare.private.fed.server.job_runner import JobRunner, _FinishedJobState
 from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.utils.job_cert_utils import write_job_cert
-from tests.resource_stats_io_test_utils import stalled_resource_io
 from tests.resource_stats_report_test_utils import _participant_summary
-from tests.timing_utils import join_thread
 
 
 def _patch_job_runner_sleep(side_effect):
@@ -2133,20 +2130,3 @@ def test_server_missing_generation_or_report_never_uses_old_or_unbound_file(tmp_
     assert server["resource_utilization"]["cpu_consumed"] == unavailable
     assert old_path.exists()
     assert diagnostic_path.exists()
-
-
-def test_delayed_server_handoff_does_not_late_accept_or_hold_the_caller(tmp_path):
-    runner = JobRunner(workspace_root=str(tmp_path))
-    runner.resource_stats = MagicMock()
-    runner.resource_stats.accept_resource_report.return_value = "accepted"
-    ctx = MagicMock()
-    ctx.get_workspace.return_value.get_run_dir.return_value = str(tmp_path / "job-1")
-    runner.bind_server_resource_generation("job-1", "server-launch")
-    with stalled_resource_io(job_runner_module, "read_terminal_handoff", _participant_summary()) as (entered, threads):
-        caller = threads.start(runner._accept_server_resource_report, "job-1", ctx)
-        assert entered.wait(10)
-        join_thread(caller)
-        runner.resource_stats.accept_resource_report.assert_called_once()
-        report = json.loads(runner.resource_stats.accept_resource_report.call_args.args[2]["participant_summary"])
-        assert report["resource_capacity"] == {"status": "unavailable"}
-    runner.resource_stats.accept_resource_report.assert_called_once()

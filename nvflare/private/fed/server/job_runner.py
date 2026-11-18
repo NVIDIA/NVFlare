@@ -62,7 +62,6 @@ from nvflare.private.fed.resource_stats.handoff import (
     remove_terminal_handoff,
 )
 from nvflare.private.fed.resource_stats.message_traffic import retire_job_traffic
-from nvflare.private.fed.resource_stats.optional_io import optional_io
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.job_outputs import link_job_outputs
 from nvflare.private.fed.server.server_state import HotState
@@ -190,18 +189,16 @@ class JobRunner(FLComponent):
         with self.lock:
             expected_generation = self._server_resource_generations.get(job_id) or ""
 
-        def read_handoff():
+        try:
             run_dir = workspace.get_run_dir(job_id)
             try:
-                return read_terminal_handoff(run_dir, expected_generation=expected_generation)
+                handoff = read_terminal_handoff(run_dir, expected_generation=expected_generation)
             finally:
                 remove_terminal_handoff(run_dir, expected_generation=expected_generation)
-
-        try:
             report = assemble_participant_summary(
                 job_id=job_id,
                 participant_name=SiteType.SERVER,
-                child_handoff=optional_io(read_handoff),
+                child_handoff=handoff,
             )
             status = self.resource_stats.accept_resource_report(
                 job_id,

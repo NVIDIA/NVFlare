@@ -148,11 +148,12 @@ adds the job and site identity, and serializes the participant record once.
 Local producers and reducers do not repeat the server's measurement checks.
 Measurements remain self-reported; validating a local file cannot establish their
 authenticity. Each launch owns a private
-`resource_stats/staging/terminal_handoff.<generation>.json` file. Its bounded
+`terminal_handoff.<generation>.json` file directly in the run directory. Its bounded
 generation token is required for every handoff operation and never enters public
 records. Cleanup removes only that generation's file, so an
-older writer or failed launch cannot replace or remove a newer handoff. Staging
-directories remain in place; readers ignore them and any residual private files.
+older writer or failed launch cannot replace or remove a newer handoff. File
+operations use one run-directory handle; reads reject symlinks and nonregular or
+oversized files. Readers ignore unrelated private files.
 Handoffs and summaries use atomic file publication without separate statistics
 `fsync` calls; durability follows normal workspace archival.
 
@@ -225,18 +226,17 @@ acknowledgement protocol. Older peers may omit the report or its reply status;
 this indicates absent statistics rather than an outcome failure. An older archive
 without the bundle is unavailable, not a zero measurement.
 
-Attempt markers and terminal handoffs use best-effort file I/O. Each process
-allows one daemon operation at a time, waits at most 50 ms per operation, and
-skips immediately while an earlier operation is unfinished. A timeout stops
-waiting; it does not cancel the syscall. No I/O worker is joined at shutdown.
-Late read results are ignored, and missing observations remain gaps.
+Attempt markers and terminal handoffs use ordinary synchronous file I/O, like
+return-code files and workspace archival. There is no statistics deadline or
+shared I/O slot. Slow filesystem calls can delay launch, reporting or process
+exit; the client parent releases compute resources before reading the handoff.
+Missing or malformed handoffs remain measurement gaps.
 
-Attempt markers are not fsynced. A failed, skipped or delayed marker operation
-marks the current execution's prior coverage uncertain. An accepted or duplicate
-acknowledgement permits marker cleanup; incomplete cleanup retains in-memory
-history. This detects ordinary restarts when the marker is available, but does
-not guarantee history across a crash or overlapping delayed cleanup. The separate
-launch-generation check still rejects stale terminal handoffs.
+Attempt markers are not fsynced. A failed marker operation marks prior coverage
+uncertain. An accepted or duplicate acknowledgement permits marker cleanup;
+failed cleanup retains in-memory history. This detects ordinary restarts when
+the marker is available, but does not guarantee history across a host crash.
+The separate launch-generation check still rejects stale terminal handoffs.
 
 Worker measurements use the existing completion or failure diagnostics, with no
 separate statistics-file write, read or removal. The enclosing record supplies
@@ -408,8 +408,8 @@ JSON retains native numbers, per-metric status, and detailed scope-level issue c
 
 ## Compatibility and failure boundary
 
-Summary publication does not inspect or remove handoff staging. Residual private
-files cannot prevent publication or discard accepted reports.
+Summary publication uses accepted reports from the parent ledger. Residual private
+handoff files cannot prevent publication or discard accepted reports.
 
 Public records use a strict schema: readers reject unknown fields and
 unsupported versions. Adding a field, including an optional field, or changing
