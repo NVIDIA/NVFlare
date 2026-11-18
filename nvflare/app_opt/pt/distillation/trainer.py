@@ -16,7 +16,7 @@
 
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
-from itertools import islice
+from itertools import chain, islice
 
 import torch
 from torch import nn
@@ -31,6 +31,35 @@ def _model(value):
     if not isinstance(model, nn.Module):
         raise TypeError("model instances/factories must produce torch.nn.Module")
     return model
+
+
+def _iter_batches(batches):
+    if isinstance(batches, torch.Tensor):
+        raise TypeError("batches must be an iterable of batches. For one tensor batch, use fit([tensor]).")
+    iterator = iter(batches)
+    try:
+        first = next(iterator)
+    except StopIteration:
+        raise ValueError("no batches were supplied") from None
+    return chain((first,), iterator)
+
+
+def _load_checkpoint(components):
+    # Validate every component before changing any live state. Use PyTorch's
+    # own loaders to check lazy modules, extra state and optimizer groups.
+    for component, state in components:
+        memo = {}
+        if isinstance(component, nn.Module):
+            # Lazy buffers lack deepcopy support in PyTorch. Give the validation
+            # copy its own placeholders so loading cannot materialize the live ones.
+            memo = {
+                id(buffer): type(buffer)(buffer.requires_grad, buffer.device, buffer.dtype)
+                for buffer in component.buffers()
+                if is_lazy(buffer)
+            }
+        deepcopy(component, memo).load_state_dict(deepcopy(state))
+    for component, state in components:
+        component.load_state_dict(state)
 
 
 def _prepare_inputs(batch, batch_adapter, device):
@@ -159,6 +188,7 @@ class DistillationTrainer:
         self._check_open()
         if max_steps is not None and (isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps < 1):
             raise ValueError("max_steps must be a positive integer or None")
+        batches = _iter_batches(batches)
         self.student.train()
         total_loss, samples, steps = 0.0, 0, 0
         selected = batches if max_steps is None else islice(batches, max_steps)
@@ -192,8 +222,6 @@ class DistillationTrainer:
             samples += count
             steps += 1
             self.num_steps += 1
-        if not steps:
-            raise ValueError("no batches were supplied")
         return {"loss": total_loss / samples, "steps": steps, "samples": samples}
 
     def _check_open(self):
@@ -231,8 +259,10 @@ class DistillationTrainer:
     def load_state_dict(self, state: dict) -> None:
         """Restore into matching architectures, teacher order and configuration.
 
-        Construct models/optimizer first, then restore caller-owned RNG and data
-        state after loading. This is component restoration, not workflow recovery.
+        The checkpoint is validated on disposable copies before applying it to
+        the existing models and optimizer. Custom state loaders should support
+        deepcopy and behave the same on the copies and the live components.
+        Restore caller-owned RNG and data state after loading.
         """
         self._check_open()
         if len(state["teachers"]) != len(self.teachers):
@@ -240,8 +270,11 @@ class DistillationTrainer:
         count = state["num_steps"]
         if isinstance(count, bool) or not isinstance(count, int) or count < 0:
             raise ValueError("checkpoint num_steps must be a nonnegative integer")
-        self.student.load_state_dict(state["student"])
-        for model, teacher_state in zip(self.teachers, state["teachers"]):
-            model.load_state_dict(teacher_state)
-        self.optimizer.load_state_dict(deepcopy(state["optimizer"]))
+        _load_checkpoint(
+            [
+                (self.student, state["student"]),
+                *zip(self.teachers, state["teachers"]),
+                (self.optimizer, deepcopy(state["optimizer"])),
+            ]
+        )
         self.num_steps = count

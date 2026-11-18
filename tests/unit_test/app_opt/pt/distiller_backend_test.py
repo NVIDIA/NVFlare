@@ -173,6 +173,8 @@ def test_rejected_loss_restores_student_buffers(backend):
     inputs = torch.ones(8, 4)
     session = make_session(backend, network(), network(), temperature=1.0)
     try:
+        with pytest.raises(TypeError, match=r"use fit\(\[tensor\]\)"):
+            session.fit(inputs)
         session.fit([(inputs, None)])
         previous_state = session.export_student_state()
         student = session.student if backend == "native" else session._student
@@ -184,6 +186,38 @@ def test_rejected_loss_restores_student_buffers(backend):
             hook.remove()
         torch.testing.assert_close(session.export_student_state(), previous_state, rtol=0, atol=0)
         assert session.fit([(inputs, None)])["steps"] == 1
+    finally:
+        session.close()
+
+
+def test_torchdistill_only_starts_nonempty_passes_and_finishes_on_error(monkeypatch):
+    require_backend("torchdistill")
+    session = make_session("torchdistill", network(), network(), temperature=1.0)
+    events = []
+
+    def record(name, callback):
+        def wrapped(*args, **kwargs):
+            events.append(name)
+            return callback(*args, **kwargs)
+
+        return wrapped
+
+    monkeypatch.setattr(session._box, "pre_epoch_process", record("start", session._box.pre_epoch_process))
+    monkeypatch.setattr(session._box, "post_epoch_process", record("finish", session._box.post_epoch_process))
+    inputs = torch.ones(8, 4)
+    try:
+        with pytest.raises(ValueError, match="no batches"):
+            session.fit(iter(()))
+        assert events == []
+
+        bad = torch.full_like(inputs, float("nan"))
+        with pytest.raises(ValueError, match="finite inputs"):
+            session.fit(iter([(inputs, None), (bad, None)]))
+        assert events == ["start", "finish"]
+        assert session.export_student_state()["1.num_batches_tracked"].item() == 1
+
+        assert session.fit([(inputs, None)])["steps"] == 1
+        assert events == ["start", "finish", "start", "finish"]
     finally:
         session.close()
 

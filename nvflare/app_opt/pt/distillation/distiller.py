@@ -35,8 +35,11 @@ class Distiller(Protocol):
     a finally block on both success and failure. Sessions are not thread-safe.
 
     Student snapshots are detached, independent CPU state dictionaries compatible
-    with the application's original student. Snapshotting does not finalize the
-    session. Backend checkpoints, if provided, are a separate capability: model,
+    with the application's original student. To publish the trained weights,
+    always load the exported snapshot into the application model. The native
+    trainer trains the supplied student in place, and other backends may train a
+    private copy. Snapshotting does not finalize the session. Backend checkpoints,
+    if provided, are a separate capability: model,
     optimizer, configuration and RNG portability across libraries is not promised.
     Teachers supplied by the caller must retain their state, mode and gradients.
     Backend-owned teacher copies may be frozen, wrapped and moved.
@@ -46,7 +49,10 @@ class Distiller(Protocol):
     """
 
     def fit(self, batches) -> dict:
-        """Consume supplied batches and return loss/steps/samples metrics."""
+        """Consume an iterable of batches and return loss/steps/samples metrics.
+
+        Pass a single tensor as a one-element iterable, for example fit([tensor]).
+        """
         ...
 
     def export_student_state(self) -> dict:

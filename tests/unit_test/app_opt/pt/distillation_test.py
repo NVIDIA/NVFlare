@@ -185,10 +185,11 @@ def test_checkpoint_restores_optimizer_teachers_and_caller_owned_rng():
 
 
 def test_empty_inputs_and_nonfinite_loss_do_not_step_the_optimizer():
-    student = nn.Linear(3, 2)
+    student = nn.Linear(3, 2).eval()
     trainer = DistillationTrainer(student, [nn.Linear(3, 2)], partial(torch.optim.SGD, lr=0.1))
     with pytest.raises(ValueError, match="no batches"):
         trainer.fit([])
+    assert not student.training
     trainer.loss_fn = lambda logits, target: logits.sum() * float("nan")
     original = deepcopy(student.state_dict())
     with pytest.raises(ValueError, match="finite scalar"):
@@ -198,6 +199,63 @@ def test_empty_inputs_and_nonfinite_loss_do_not_step_the_optimizer():
         torch.testing.assert_close(value, original[name])
     with pytest.raises(ValueError, match="teacher"):
         DistillationTrainer(student, [], partial(torch.optim.SGD, lr=0.1))
+
+
+@pytest.mark.parametrize("owner", ["student", "generator"])
+@pytest.mark.parametrize("invalid_component", ["teacher", "optimizer"])
+def test_incompatible_checkpoint_leaves_models_and_optimizer_unchanged(owner, invalid_component):
+    from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
+
+    model = nn.Linear(3, 2)
+    optimizer_factory = partial(torch.optim.Adam, lr=0.1)
+    if owner == "student":
+        session = DistillationTrainer(model, [nn.Linear(3, 2)], optimizer_factory)
+        session.fit([torch.ones(4, 3)])
+    else:
+        session = DataFreeSynthesizer(
+            [nn.Linear(2, 2)],
+            generator=model,
+            objective=lambda inputs, teachers, student, targets: teachers[0](inputs).square().mean(),
+            optimizer_factory=optimizer_factory,
+            latent_size=3,
+        )
+        session.synthesize(batch_size=4, steps=1)
+
+    before = session.state_dict()
+    checkpoint = deepcopy(before)
+    checkpoint[owner]["weight"].add_(1)
+    checkpoint["teachers"][0]["bias"].add_(1)
+    checkpoint["num_steps"] += 1
+    if invalid_component == "teacher":
+        checkpoint["teachers"][0]["weight"] = torch.zeros(1, 1)
+        error, message = RuntimeError, "size mismatch"
+    else:
+        checkpoint["optimizer"]["param_groups"][0]["params"].pop()
+        error, message = ValueError, "parameter group"
+
+    with pytest.raises(error, match=message):
+        session.load_state_dict(checkpoint)
+    assert getattr(session, owner) is model
+    torch.testing.assert_close(session.state_dict(), before, rtol=0, atol=0)
+
+
+def test_checkpoint_validation_preserves_lazy_student_until_restore_succeeds():
+    optimizer = partial(torch.optim.SGD, lr=0.1, momentum=0.9)
+    source = DistillationTrainer(nn.Sequential(nn.BatchNorm1d(3), nn.Linear(3, 2)), [nn.Linear(3, 2)], optimizer)
+    inputs = torch.arange(12, dtype=torch.float32).reshape(4, 3)
+    source.fit([inputs])
+    checkpoint = source.state_dict()
+    student = nn.Sequential(nn.LazyBatchNorm1d(), nn.Linear(3, 2))
+    restored = DistillationTrainer(student, [nn.Linear(3, 2)], optimizer)
+    with pytest.raises(RuntimeError, match="size mismatch"):
+        restored.load_state_dict({**checkpoint, "teachers": [{"weight": torch.zeros(1, 1)}]})
+    assert student[0].has_uninitialized_params()
+
+    restored.load_state_dict(checkpoint)
+    assert restored.student is student
+    assert all(a is b for a, b in zip(student.parameters(), restored.optimizer.param_groups[0]["params"]))
+    torch.testing.assert_close(restored.state_dict(), checkpoint, rtol=0, atol=0)
+    assert restored.fit([inputs])["steps"] == 1
 
 
 @pytest.mark.parametrize("reject_first_step", [False, True])

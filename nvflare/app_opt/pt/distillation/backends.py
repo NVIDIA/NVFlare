@@ -38,7 +38,7 @@ import torch
 from torch import nn
 
 from .teachers import _snapshot_state
-from .trainer import _model, _prepare_inputs, _restore_student_buffers_on_error
+from .trainer import _iter_batches, _model, _prepare_inputs, _restore_student_buffers_on_error
 
 
 def _backend(module, package):
@@ -84,18 +84,19 @@ class _Session:
         Checkpoints/gradient accumulation are outside these adapters' contract.
         """
         self._check_open()
+        batches = _iter_batches(batches)
         self._start_pass()
         total_loss, samples, steps = 0.0, 0, 0
-        for batch in batches:
-            inputs = _prepare_inputs(batch, self._batch_adapter, self._device)
-            with _restore_student_buffers_on_error(self._student):
-                value = self._step(inputs)
-            total_loss += value * inputs.shape[0]
-            samples += inputs.shape[0]
-            steps += 1
-        self._finish_pass()
-        if not steps:
-            raise ValueError("no batches were supplied")
+        try:
+            for batch in batches:
+                inputs = _prepare_inputs(batch, self._batch_adapter, self._device)
+                with _restore_student_buffers_on_error(self._student):
+                    value = self._step(inputs)
+                total_loss += value * inputs.shape[0]
+                samples += inputs.shape[0]
+                steps += 1
+        finally:
+            self._finish_pass()
         return {"loss": total_loss / samples, "steps": steps, "samples": samples}
 
     def _finish_pass(self):

@@ -20,7 +20,7 @@ import torch
 from torch import nn
 
 from .teachers import _snapshot_state
-from .trainer import _model
+from .trainer import _load_checkpoint, _model
 
 
 class DataFreeSynthesizer:
@@ -196,7 +196,11 @@ class DataFreeSynthesizer:
         }
 
     def load_state_dict(self, state):
-        """Restore matching components; restore caller-owned RNG after loading."""
+        """Validate a checkpoint on copies, then restore matching components.
+
+        Custom state loaders should support deepcopy and behave the same on the
+        copies and the live components. Restore caller-owned RNG after loading.
+        """
         if len(state["teachers"]) != len(self.teachers) or (state["student"] is None) != (self.student is None):
             raise ValueError("checkpoint teacher/student configuration does not match")
         if (state["transform"] is None) != (not isinstance(self.transform, nn.Module)):
@@ -204,12 +208,11 @@ class DataFreeSynthesizer:
         count = state["num_steps"]
         if isinstance(count, bool) or not isinstance(count, int) or count < 0:
             raise ValueError("checkpoint num_steps must be a nonnegative integer")
-        self.generator.load_state_dict(state["generator"])
-        for model, teacher_state in zip(self.teachers, state["teachers"]):
-            model.load_state_dict(teacher_state)
+        components = [(self.generator, state["generator"]), *zip(self.teachers, state["teachers"])]
         if self.student is not None:
-            self.student.load_state_dict(state["student"])
+            components.append((self.student, state["student"]))
         if isinstance(self.transform, nn.Module):
-            self.transform.load_state_dict(state["transform"])
-        self.optimizer.load_state_dict(deepcopy(state["optimizer"]))
+            components.append((self.transform, state["transform"]))
+        components.append((self.optimizer, deepcopy(state["optimizer"])))
+        _load_checkpoint(components)
         self.num_steps = count
