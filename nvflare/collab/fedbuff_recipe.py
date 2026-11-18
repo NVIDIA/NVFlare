@@ -539,6 +539,11 @@ class FedBuffWorkflow:
 class FedBuffRecipe(CollabRecipe):
     """FedBuff-style buffered aggregation in actual client arrival order.
 
+    Reference: John Nguyen, Kshitiz Malik, Hongyuan Zhan, Ashkan Yousefpour,
+    Mike Rabbat, Mani Malek, and Dzmitry Huba (2022), "Federated Learning with
+    Buffered Asynchronous Aggregation":
+    https://proceedings.mlr.press/v151/nguyen22b/nguyen22b.pdf
+
     num_rounds counts global aggregations/publications, without a synchronization
     barrier. Concurrency limits concurrent client assignments; buffer_size counts
     accepted contributions per publication; min_open_slots sets the refill
