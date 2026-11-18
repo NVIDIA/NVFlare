@@ -99,7 +99,7 @@ class _ScaleUpdate:
 
 def _execute(observer, clients, *, abort=None, **options):
     signal = abort or Signal()
-    settings = dict(num_updates=2, concurrency=len(clients), call_timeout=0.5)
+    settings = dict(num_rounds=2, concurrency=len(clients), call_timeout=0.5)
     settings.update(options)
     workflow = FedBuffWorkflow(_ModelLoader(), NumpyModelOps(), observer=observer, **settings)
     server = ServerApp(workflow)
@@ -200,7 +200,7 @@ def _numpy_module(monkeypatch):
 
 def test_recipe_export_round_trip_loads_model_components(tmp_path, monkeypatch):
     module = _numpy_module(monkeypatch)
-    recipe = module.make_recipe(num_clients=2, num_updates=3, buffer_size=2)
+    recipe = module.make_recipe(num_clients=2, num_rounds=3, buffer_size=2)
     recipe.server.update_transform = _ScaleUpdate(0.25)
     recipe.export(str(tmp_path))
     configs = list(tmp_path.rglob("config_fed_server.json"))
@@ -210,7 +210,7 @@ def test_recipe_export_round_trip_loads_model_components(tmp_path, monkeypatch):
     assert server["path"] == "nvflare.collab.fedbuff_recipe.FedBuffWorkflow"
     assert server["args"]["model_loader"]["path"].endswith("ArrayModelLoader")
     assert server["args"]["observer"]["path"].endswith("ArrayObserver")
-    assert server["args"]["num_updates"] == 3
+    assert server["args"]["num_rounds"] == 3
     assert server["args"]["model_ops"]["path"].endswith("NumpyModelOps")
     from nvflare.fuel.utils.component_builder import ComponentBuilder
 

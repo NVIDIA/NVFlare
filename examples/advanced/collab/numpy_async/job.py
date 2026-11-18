@@ -93,14 +93,14 @@ class ArrayClient:
         return updated, {}, metadata
 
 
-def make_recipe(num_clients=2, num_updates=4, buffer_size=2, min_open_slots=1):
+def make_recipe(num_clients=2, num_rounds=4, buffer_size=2, min_open_slots=1):
     return FedBuffRecipe(
-        job_name="numpy_async",
+        name="numpy_async",
         model_loader=ArrayModelLoader(),
         observer=ArrayObserver(),
         client=ArrayClient(),
         model_ops=NumpyModelOps(),
-        num_updates=num_updates,
+        num_rounds=num_rounds,
         concurrency=num_clients,
         buffer_size=buffer_size,
         min_open_slots=min_open_slots,
@@ -111,11 +111,11 @@ def make_recipe(num_clients=2, num_updates=4, buffer_size=2, min_open_slots=1):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--num-clients", type=int, default=2)
-    parser.add_argument("--num-updates", type=int, default=4)
+    parser.add_argument("--num-rounds", type=int, default=4)
     parser.add_argument("--buffer-size", type=int, default=2)
     parser.add_argument("--min-open-slots", type=int, default=1)
     args = parser.parse_args()
-    recipe = make_recipe(args.num_clients, args.num_updates, args.buffer_size, args.min_open_slots)
+    recipe = make_recipe(args.num_clients, args.num_rounds, args.buffer_size, args.min_open_slots)
     run = recipe.execute(SimEnv(num_clients=args.num_clients))
     print("Job status:", run.get_status())
     print("Results:", run.get_result())

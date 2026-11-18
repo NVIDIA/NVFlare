@@ -119,12 +119,10 @@ class AcceptedUpdate:
         return self.current_version - self.assignment.base_version
 
 
-def _validate_options(
-    num_updates, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
-):
+def _validate_options(num_rounds, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform):
     """Share early recipe validation with standalone coordinator construction."""
     for name, value in (
-        ("num_updates", num_updates),
+        ("num_rounds", num_rounds),
         ("concurrency", concurrency),
         ("buffer_size", buffer_size),
         ("min_open_slots", min_open_slots),
@@ -145,7 +143,7 @@ class FedBuffTrainingCoordinator:
     """Track active clients, buffered contributions and the refill threshold.
 
     Single-owner: invoke dispatch/accept on the workflow thread.
-    Stops after num_updates global publications, issuing no speculative work
+    Stops after num_rounds global publications, issuing no speculative work
     beyond that accepted-contribution budget. Errors are fail-fast; there is no
     automatic retry. Duplicate/stale terminal events are ignored by assignment
     identity. close() discards partial accumulation and releases base snapshots.
@@ -155,7 +153,7 @@ class FedBuffTrainingCoordinator:
         self,
         initial_model: dict,
         model_ops: ModelOps,
-        num_updates: int,
+        num_rounds: int,
         concurrency: int,
         buffer_size: int = 1,
         min_open_slots: int = 1,
@@ -165,12 +163,12 @@ class FedBuffTrainingCoordinator:
         update_observer=None,
     ):
         _validate_options(
-            num_updates, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
+            num_rounds, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
         )
         self.model_ops = model_ops
         self.model = model_ops.snapshot(initial_model)
         model_ops.validate(self.model, self.model)
-        self.num_updates = num_updates
+        self.num_rounds = num_rounds
         self.concurrency = concurrency
         self.buffer_size = buffer_size
         self.min_open_slots = min_open_slots
@@ -187,7 +185,7 @@ class FedBuffTrainingCoordinator:
 
     @property
     def finished(self):
-        return self.version >= self.num_updates
+        return self.version >= self.num_rounds
 
     @property
     def buffered_count(self):
@@ -199,7 +197,7 @@ class FedBuffTrainingCoordinator:
         slots = self.concurrency - len(self.active)
         if self._closed or self.finished or slots < self.min_open_slots:
             return 0
-        remaining = self.num_updates * self.buffer_size - self.accepted_count - len(self.active)
+        remaining = self.num_rounds * self.buffer_size - self.accepted_count - len(self.active)
         return min(slots, remaining)
 
     def dispatch(self, available_clients: list[str]) -> list[Assignment]:
@@ -295,7 +293,7 @@ class FedBuffWorkflow:
         self,
         model_loader,
         model_ops,
-        num_updates: int,
+        num_rounds: int,
         concurrency: int,
         buffer_size: int = 1,
         min_open_slots: int = 1,
@@ -306,7 +304,7 @@ class FedBuffWorkflow:
         observer=None,
     ):
         _validate_options(
-            num_updates, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
+            num_rounds, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
         )
         if not math.isfinite(call_timeout) or call_timeout <= 0:
             raise ValueError("call_timeout must be finite and positive")
@@ -315,7 +313,7 @@ class FedBuffWorkflow:
         self.model_loader = model_loader
         self.model_ops = model_ops
         self.observer = observer
-        self.num_updates = num_updates
+        self.num_rounds = num_rounds
         self.concurrency = concurrency
         self.buffer_size = buffer_size
         self.min_open_slots = min_open_slots
@@ -349,7 +347,7 @@ class FedBuffWorkflow:
         return self._coordinator_class(
             initial,
             self.model_ops,
-            self.num_updates,
+            self.num_rounds,
             self.concurrency,
             self.buffer_size,
             self.min_open_slots,
@@ -504,7 +502,8 @@ class FedBuffWorkflow:
 class FedBuffRecipe(CollabRecipe):
     """FedBuff-style buffered aggregation in actual client arrival order.
 
-    concurrency limits concurrent client assignments; buffer_size counts
+    num_rounds counts global aggregations/publications, without a synchronization
+    barrier. Concurrency limits concurrent client assignments; buffer_size counts
     accepted contributions per publication; min_open_slots sets the refill
     threshold. A threshold of one refills each completed slot immediately.
     Setting all three counts equal gives a synchronous training boundary.
@@ -517,11 +516,12 @@ class FedBuffRecipe(CollabRecipe):
 
     def __init__(
         self,
-        job_name: str,
+        *,
+        name: str,
         client,
         model_loader,
         model_ops,
-        num_updates: int,
+        num_rounds: int,
         concurrency: int,
         buffer_size: int = 1,
         min_open_slots: int = 1,
@@ -535,7 +535,7 @@ class FedBuffRecipe(CollabRecipe):
         workflow = FedBuffWorkflow(
             model_loader,
             model_ops,
-            num_updates,
+            num_rounds,
             concurrency,
             buffer_size,
             min_open_slots,
@@ -546,4 +546,4 @@ class FedBuffRecipe(CollabRecipe):
             observer,
         )
         collab_options.setdefault("min_clients", concurrency)
-        super().__init__(job_name=job_name, server=workflow, client=client, **collab_options)
+        super().__init__(job_name=name, server=workflow, client=client, **collab_options)
