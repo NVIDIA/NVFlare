@@ -837,7 +837,6 @@ def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path
         "TEST_TOKEN",
         {"job_id": "job-1"},
         JobLaunchOptions(),
-        2.0,
     )
     process = subprocess.Popen(
         [sys.executable, "-c", leader_code, child_code, str(child_pid_path)],
@@ -859,7 +858,7 @@ def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path
 
     def launch():
         with pytest.raises(RuntimeError, match="shut down during"):
-            _launch_job_with_task_workers(runtime, Mock(launch_job=create), context)
+            _launch_job_with_task_workers(runtime, Mock(launch_job=create), context, cleanup_timeout=2.0)
 
     try:
         with ThreadGroup(finish, timeout=30) as threads:

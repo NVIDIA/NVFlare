@@ -117,10 +117,9 @@ class TaskExecutionBinding:
     token_env: str
     meta: dict
     options: JobLaunchOptions
-    cleanup_timeout: float
 
 
-def _launch_job_with_task_workers(prepared, launcher, fl_ctx):
+def _launch_job_with_task_workers(prepared, launcher, fl_ctx, *, cleanup_timeout):
     engine = fl_ctx.get_engine()
     cell = engine.get_cell()
     state = engine._task_execution_state
@@ -131,7 +130,7 @@ def _launch_job_with_task_workers(prepared, launcher, fl_ctx):
         service = prepared.service_class.get_or_create(cell)
         # Register and admit atomically with CP shutdown, so shutdown cannot
         # miss an owner created just after its services snapshot.
-        state.services[prepared.service_class] = (service, prepared.cleanup_timeout)
+        state.services[prepared.service_class] = (service, cleanup_timeout)
         owner = service.add_job(
             prepared.backend,
             prepared.meta[JobConstants.JOB_ID],
@@ -149,7 +148,7 @@ def _launch_job_with_task_workers(prepared, launcher, fl_ctx):
             if result.handle is not native:
                 raise RuntimeError("launcher published a different coordinator handle")
             return result
-        result = JobHandleWithTaskWorkers(native, owner, prepared.cleanup_timeout, allow_restart=False)
+        result = JobHandleWithTaskWorkers(native, owner, cleanup_timeout, allow_restart=False)
         with state.lock:
             owner.attach_cj(native)
             if state.closing:
@@ -175,7 +174,7 @@ def _launch_job_with_task_workers(prepared, launcher, fl_ctx):
             except Exception:
                 logging.getLogger(__name__).exception("Coordinator termination failed; CP retains cleanup")
             owner.finish_cj_launch()
-            owner.thread.join(prepared.cleanup_timeout)
+            owner.thread.join(cleanup_timeout)
             if owner.thread.is_alive():
                 logging.getLogger(__name__).warning("Coordinator cleanup unconfirmed; CP retains job ownership")
         raise
@@ -237,8 +236,9 @@ def launch_job(launcher, job_meta, fl_ctx):
             policy = TaskExecutionPolicy.from_workspace(workspace)
             runtime = _prepare_cp_host_cj(policy.launcher, launcher, job_meta, fl_ctx)
             if runtime is not None:
-                runtime.cleanup_timeout = policy.finalization_timeout
-                return _launch_job_with_task_workers(runtime, launcher, fl_ctx)
+                return _launch_job_with_task_workers(
+                    runtime, launcher, fl_ctx, cleanup_timeout=policy.finalization_timeout
+                )
     return launcher.launch_job(job_meta, fl_ctx)
 
 

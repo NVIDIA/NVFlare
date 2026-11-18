@@ -75,7 +75,6 @@ def profile(tmp_path, monkeypatch):
                 "path": TASK_LAUNCHER_PATH,
                 "args": {
                     "workspace_path": str(root),
-                    "cj_runtime": "docker",
                     "shared_filesystem": True,
                     "cgroup_enforced": True,
                     "worker_listener_host": "cp-host.example",
@@ -104,7 +103,6 @@ def profile(tmp_path, monkeypatch):
     native.enter_states.return_value = True
     native.can_restart.return_value = True
     monkeypatch.setattr(docker_module, "DockerJobHandle", Mock(return_value=native))
-    monkeypatch.setattr(docker_module.sys, "platform", "linux")
     monkeypatch.setattr(docker_module.os, "getuid", lambda: 1001)
     monkeypatch.setattr(SlurmTaskManager, "initialize", Mock(side_effect=AssertionError("no Slurm CLI in CJ")))
     cell = SimpleNamespace(get_fqcn=lambda: "site-1", register_request_cb=Mock())
@@ -409,6 +407,36 @@ def test_resident_job_uses_ordinary_docker_without_task_ownership(profile):
     assert run["environment"]["RESIDENT_STUDY"] == "loaded"
 
 
+@pytest.mark.parametrize("resident_defaults", [{}, {"shm_size": "4g", "ipc_mode": "host", "runtime": "nvidia"}])
+def test_coordinator_resources_are_independent_of_resident_container_defaults(profile, resident_defaults):
+    p = profile
+    p.launcher.default_job_container_kwargs = dict(resident_defaults)
+    p.site["components"][0]["args"]["default_job_container_kwargs"] = dict(resident_defaults)
+    (p.root / "local/resources.json").write_text(json.dumps(p.site))
+    TaskExecutionPolicy.from_workspace(p.workspace)
+    p.meta["cj_resource_spec"] = {"site-1": {"num_of_cpus": 64, "memory": "512Gi"}}
+    handle = launch_job(p.launcher, p.meta, p.context)
+    run = p.dc.containers.run.call_args.kwargs
+    assert run["nano_cpus"] == 64_000_000_000
+    assert run["mem_limit"] == 512 * 1024**3
+    assert not set(resident_defaults).intersection(run)
+    assert run["cap_drop"] == ["ALL"]
+    assert run["security_opt"] == ["no-new-privileges:true"]
+    handle.terminate()
+    handle.owner.thread.join(5)
+    assert not handle.owner.thread.is_alive()
+
+    p.app_config.write_text("{}")
+    p.meta.pop("cj_resource_spec")
+    p.meta["resource_spec"] = {}
+    launch_job(p.launcher, p.meta, p.context)
+    run = p.dc.containers.run.call_args.kwargs
+    assert "nano_cpus" not in run and "mem_limit" not in run
+    assert {key: run[key] for key in resident_defaults} == resident_defaults
+    assert "cap_drop" not in run and "security_opt" not in run
+    assert p.launcher.default_job_container_kwargs == resident_defaults
+
+
 @pytest.mark.parametrize("mutation", ["host-cp", "wrong-mount", "missing-network"])
 def test_docker_task_profile_requires_owning_docker_cp(profile, monkeypatch, mutation):
     p = profile
@@ -496,11 +524,9 @@ def test_cp_host_admission_does_not_reserve_compute_gpus(profile):
     p.dc.containers.run.assert_not_called()
 
 
-@pytest.mark.parametrize("platform, uid", [("darwin", 1001), ("linux", 0)])
-def test_unsupported_cp_host_host_is_rejected(profile, monkeypatch, platform, uid):
-    monkeypatch.setattr(docker_module.sys, "platform", platform)
-    monkeypatch.setattr(docker_module.os, "getuid", lambda: uid)
-    with pytest.raises(ValueError, match="Linux Docker CP with a nonroot"):
+def test_root_cp_is_rejected(profile, monkeypatch):
+    monkeypatch.setattr(docker_module.os, "getuid", lambda: 0)
+    with pytest.raises(ValueError, match="Docker CP with a nonroot"):
         launch_job(profile.launcher, profile.meta, profile.context)
     profile.dc.containers.run.assert_not_called()
 
@@ -511,7 +537,7 @@ def test_unsupported_cp_host_host_is_rejected(profile, monkeypatch, platform, ui
 def test_docker_requires_explicit_worker_reachable_listener(profile, host):
     args = {**profile.site["task_execution"]["launcher"]["args"], "worker_listener_host": host}
     with pytest.raises((ValueError, RuntimeError)):
-        SlurmTaskLauncher(**args)
+        SlurmTaskLauncher(**args).validate_site_config(profile.site)
 
 
 @pytest.mark.parametrize("mutation", ["combined-launcher", "wrong-workspace", "mixed-launchers"])
@@ -537,13 +563,11 @@ def test_task_policy_selects_the_ordinary_client_docker_launcher(profile):
     launch_job(profile.launcher, profile.meta, profile.context)
 
 
-@pytest.mark.parametrize("unsupported", ["remote", "windows", "MemoryLimit", "CpuCfsQuota", "CpuCfsPeriod"])
+@pytest.mark.parametrize("unsupported", ["remote", "MemoryLimit", "CpuCfsQuota", "CpuCfsPeriod"])
 def test_unsupported_daemon_is_rejected_before_container_creation(profile, unsupported):
     p = profile
     if unsupported == "remote":
         p.dc.api.base_url = "http://remote:2375"
-    elif unsupported == "windows":
-        p.dc.info.return_value["OSType"] = "windows"
     else:
         p.dc.info.return_value[unsupported] = False
     with pytest.raises(ValueError, match="daemon"):
@@ -562,9 +586,9 @@ def test_nonstandard_cpu_capability_keys_cannot_satisfy_daemon_check(profile):
 @pytest.mark.parametrize(
     "spec, expected",
     [
-        ({}, (1_000_000_000, 1024**3)),
-        ({"num_of_cpus": 0.75}, (750_000_000, 1024**3)),
-        ({"memory": "256Mi"}, (1_000_000_000, 256 * 1024**2)),
+        ({}, (None, None)),
+        ({"num_of_cpus": 0.75}, (750_000_000, None)),
+        ({"memory": "256Mi"}, (None, 256 * 1024**2)),
     ],
 )
 def test_cj_defaults_are_independent_of_compute(profile, spec, expected):
@@ -572,7 +596,7 @@ def test_cj_defaults_are_independent_of_compute(profile, spec, expected):
     p.meta["cj_resource_spec"]["site-1"] = spec
     launch_job(p.launcher, p.meta, p.context)
     run = p.dc.containers.run.call_args.kwargs
-    assert (run["nano_cpus"], run["mem_limit"]) == expected
+    assert (run.get("nano_cpus"), run.get("mem_limit")) == expected
 
 
 def test_cp_owns_a_physical_backend_that_reaches_native_task_launch(profile, monkeypatch):
@@ -583,12 +607,14 @@ def test_cp_owns_a_physical_backend_that_reaches_native_task_launch(profile, mon
     assert_physical_task_dispatch(handle, p.root, monkeypatch)
 
 
-@pytest.mark.parametrize("budget", [{"num_of_cpus": 64}, {"memory": "512Gi"}])
-def test_job_cannot_raise_site_coordinator_ceilings(profile, budget):
+@pytest.mark.parametrize(
+    "budget, key, value",
+    [({"num_of_cpus": 64}, "nano_cpus", 64_000_000_000), ({"memory": "512Gi"}, "mem_limit", 512 * 1024**3)],
+)
+def test_cj_budget_is_not_capped_by_resident_defaults(profile, budget, key, value):
     profile.meta["cj_resource_spec"]["site-1"] = budget
-    with pytest.raises(ValueError, match="ceiling"):
-        launch_job(profile.launcher, profile.meta, profile.context)
-    profile.dc.containers.run.assert_not_called()
+    launch_job(profile.launcher, profile.meta, profile.context)
+    assert profile.dc.containers.run.call_args.kwargs[key] == value
 
 
 def test_site_security_profiles_survive_mandatory_restrictions(profile):
@@ -605,17 +631,11 @@ def test_site_security_profiles_survive_mandatory_restrictions(profile):
 @pytest.mark.parametrize(
     "settings, error",
     [
-        ({"nano_cpus": 0}, "nano_cpus"),
-        ({"nano_cpus": True}, "nano_cpus"),
-        ({"mem_limit": "bad"}, "mem_limit"),
-        ({"mem_limit": False}, "mem_limit"),
-        ({"mem_limit": -1}, "mem_limit"),
-        ({"privileged": True}, "unsupported"),
         ({"cap_drop": "ALL"}, "cap_drop"),
         ({"security_opt": ["no-new-privileges:false"]}, "cannot disable"),
     ],
 )
-def test_site_container_mistakes_are_rejected_when_loading_policy(profile, settings, error):
+def test_site_security_mistakes_are_rejected_when_loading_policy(profile, settings, error):
     p = profile
     p.site["components"][0]["args"]["default_job_container_kwargs"].update(settings)
     (p.root / "local/resources.json").write_text(json.dumps(p.site))
@@ -633,7 +653,7 @@ def test_docker_memory_string_is_valid_at_policy_load_and_launch(profile):
     p.launcher.default_job_container_kwargs["mem_limit"] = "1g"
     p.meta["cj_resource_spec"]["site-1"] = {}
     launch_job(p.launcher, p.meta, p.context)
-    assert p.dc.containers.run.call_args.kwargs["mem_limit"] == 1024**3
+    assert "mem_limit" not in p.dc.containers.run.call_args.kwargs
 
 
 def test_federation_docker_default_does_not_replace_site_coordinator(profile):
@@ -718,12 +738,9 @@ def test_system_shutdown_terminates_already_attached_coordinator(profile):
 
 
 @pytest.mark.parametrize("cpus", [0.067, 8.3])
-@pytest.mark.parametrize("request_budget", [False, True])
-def test_fractional_site_ceiling_accepts_defaults_and_exactly_equal_budget(profile, cpus, request_budget):
+def test_fractional_cj_budget_uses_nanocpu_quotas(profile, cpus):
     p = profile
-    p.launcher.default_job_container_kwargs["nano_cpus"] = round(cpus * 1_000_000_000)
-    spec = {"num_of_cpus": cpus} if request_budget else {}
-    p.meta["cj_resource_spec"]["site-1"] = spec
+    p.meta["cj_resource_spec"]["site-1"] = {"num_of_cpus": cpus}
     launch_job(p.launcher, p.meta, p.context)
     assert p.dc.containers.run.call_args.kwargs["nano_cpus"] == round(cpus * 1_000_000_000)
 
@@ -735,14 +752,14 @@ def test_optional_null_launcher_spec_keeps_site_default_coordinator(profile):
     assert p.dc.containers.run.call_args.args == ("site/coordinator:tested",)
 
 
-def test_client_engine_checks_invalid_site_limits_before_accepting_jobs(profile):
+def test_client_engine_checks_coordinator_security_before_accepting_jobs(profile):
     from nvflare.private.fed.client.client_engine import ClientEngine
 
     p = profile
-    p.site["components"][0]["args"]["default_job_container_kwargs"]["mem_limit"] = "invalid"
+    p.site["components"][0]["args"]["default_job_container_kwargs"]["security_opt"] = "invalid"
     (p.root / "local/resources.json").write_text(json.dumps(p.site))
     client = Mock(client_name="site-1", client_args={}, components={}, secure_train=False)
     engine = ClientEngine(client, SimpleNamespace(workspace=str(p.root)), rank=0)
-    with pytest.raises(ValueError, match="site mem_limit"):
+    with pytest.raises(ValueError, match="site security_opt"):
         engine.fire_event(EventType.SYSTEM_BOOTSTRAP, engine.new_context())
     p.dc.info.assert_not_called()

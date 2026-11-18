@@ -61,43 +61,32 @@ def validate_slurm_site(launcher, site_config):
     if not isinstance(site_config, dict) or not isinstance(site_config.get("components", []), list):
         raise ValueError("Slurm canonical site configuration must contain a component list")
     components = site_config.get("components", [])
-    if launcher.cj_runtime == "process":
-        matches = [item for item in components if component_path(item) == PROCESS_CJ_LAUNCHER_PATH]
-        if len(matches) != 1 or any(
-            component_path(item) != PROCESS_CJ_LAUNCHER_PATH and str(component_path(item)).endswith("JobLauncher")
-            for item in components
-        ):
-            raise ValueError("process Slurm task profile requires exactly one ClientProcessJobLauncher")
-        return
-    if launcher.cj_runtime == "docker":
+    matches = [item for item in components if str(component_path(item)).endswith("JobLauncher")]
+    runtimes = {PROCESS_CJ_LAUNCHER_PATH: "process", DOCKER_CJ_LAUNCHER_PATH: "docker", CJ_LAUNCHER_PATH: "slurm"}
+    if len(matches) != 1 or component_path(matches[0]) not in runtimes:
+        raise ValueError(
+            "Slurm task profile requires exactly one supported Process, Docker or Slurm client job launcher; "
+            "different CP/CJ job launchers cannot be combined"
+        )
+    runtime = runtimes[component_path(matches[0])]
+    if runtime == "process":
+        return runtime
+    if runtime == "docker":
         from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher
 
-        matches = [item for item in components if component_path(item) == DOCKER_CJ_LAUNCHER_PATH]
-        if len(matches) != 1 or any(
-            component_path(item) != DOCKER_CJ_LAUNCHER_PATH and str(component_path(item)).endswith("JobLauncher")
-            for item in components
-        ):
-            raise ValueError("Docker Slurm task profile requires exactly one ClientDockerJobLauncher")
         args = dict(component_args(matches[0]))
         # Ordinary Docker sites obtain this from CP's environment. CJ has no
         # parent-only environment, so validate against the native site path.
         args["workspace"] = args.get("workspace") or launcher.manager.config.workspace_path
         cj = ClientDockerJobLauncher(**args)
         cj._validate_task_coordinator_profile(launcher.manager.config.workspace_path, network=cj.network)
-        return
-    matches = [item for item in components if component_path(item) == CJ_LAUNCHER_PATH]
-    if len(matches) != 1:
-        raise ValueError("Slurm task profile requires exactly one ClientSlurmJobLauncher")
-    if any(
-        component_path(item) != CJ_LAUNCHER_PATH and str(component_path(item)).endswith("JobLauncher")
-        for item in components
-    ):
-        raise ValueError("Slurm task profile cannot combine different CP/CJ job launchers")
+        return runtime
     cj = ClientSlurmJobLauncher(**component_args(matches[0]))
     if cj.config.workspace_path != launcher.manager.config.workspace_path or cj.config.sandbox != "none":
         raise ValueError("Slurm CP/CJ/task profile requires the same bare shared workspace")
     if cj.config.image:
         raise ValueError("Slurm task profile does not support a CJ container image")
+    return runtime
 
 
 def task_resources(launcher, meta, site_name):

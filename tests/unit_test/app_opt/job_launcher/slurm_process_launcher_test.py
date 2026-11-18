@@ -53,7 +53,6 @@ def profile(tmp_path, monkeypatch):
                 "path": TASK_LAUNCHER_PATH,
                 "args": {
                     "workspace_path": str(root),
-                    "cj_runtime": "process",
                     "shared_filesystem": True,
                     "cgroup_enforced": True,
                     "worker_listener_host": "cp-host.example",
@@ -169,12 +168,10 @@ def test_unenforced_cj_budget_is_rejected_before_spawn(profile, budget):
     p.spawn.assert_not_called()
 
 
-@pytest.mark.parametrize("mutation", ["slurm-runtime", "mixed-launchers", "wrong-launcher", "combined-launcher"])
+@pytest.mark.parametrize("mutation", ["mixed-launchers", "wrong-launcher", "combined-launcher"])
 def test_process_cj_requires_explicit_canonical_profile(profile, mutation):
     p = profile
-    if mutation == "slurm-runtime":
-        p.site["task_execution"]["launcher"]["args"].pop("cj_runtime")
-    elif mutation == "mixed-launchers":
+    if mutation == "mixed-launchers":
         p.site["components"].append({"path": "other.OtherJobLauncher"})
     elif mutation == "combined-launcher":
         p.site["components"][0][
@@ -188,12 +185,10 @@ def test_process_cj_requires_explicit_canonical_profile(profile, mutation):
     p.spawn.assert_not_called()
 
 
-@pytest.mark.parametrize("runtime", ["slurm", "docker"])
-def test_known_launcher_pair_must_match_configured_cj_runtime(profile, runtime):
+def test_cj_runtime_is_derived_from_the_configured_job_launcher(profile):
     policy = TaskExecutionPolicy.from_workspace(profile.workspace)
-    policy.launcher.cj_runtime = runtime
-    with pytest.raises(ValueError, match="unsupported client-job/task launcher pairing"):
-        _get_cj_preparer(policy.launcher, profile.launcher)
+    assert policy.launcher.cj_runtime == "process"
+    assert callable(_get_cj_preparer(policy.launcher, profile.launcher))
     profile.spawn.assert_not_called()
 
 

@@ -17,7 +17,6 @@ import os
 import posixpath
 import re
 import socket
-import sys
 import threading
 import time
 import uuid
@@ -84,29 +83,9 @@ from nvflare.utils.job_launcher_utils import (
 )
 
 
-def docker_cj_site_settings(launcher):
-    """Validate site limits without a daemon; these are per-CJ ceilings."""
-    from docker.errors import DockerException
-    from docker.utils import parse_bytes
-
+def docker_cj_security_settings(launcher):
+    """Preserve site security profiles and enforce coordinator restrictions."""
     defaults = launcher.default_job_container_kwargs
-    unsupported = set(defaults) - {"nano_cpus", "mem_limit", "cap_drop", "security_opt"}
-    if unsupported:
-        raise ValueError(f"CP host Docker CJ has unsupported site container settings: {sorted(unsupported)}")
-    cpu = defaults.get("nano_cpus")
-    if isinstance(cpu, bool) or not isinstance(cpu, int) or cpu <= 0:
-        raise ValueError("CP host Docker CJ site nano_cpus must be a positive integer")
-    memory = defaults.get("mem_limit")
-    try:
-        if isinstance(memory, bool) or not isinstance(memory, (int, str)):
-            raise ValueError()
-        memory = parse_bytes(memory)
-        if memory <= 0:
-            raise ValueError()
-    except (DockerException, ValueError, TypeError, OverflowError) as error:
-        raise ValueError(
-            "CP host Docker CJ site mem_limit must be positive bytes or a Docker size such as '1g'"
-        ) from error
     security = {}
     for key in ("cap_drop", "security_opt"):
         value = defaults.get(key, [])
@@ -124,25 +103,22 @@ def docker_cj_site_settings(launcher):
         security["cap_drop"].append("ALL")
     if not any(v.startswith("no-new-privileges") for v in security["security_opt"]):
         security["security_opt"].append("no-new-privileges:true")
-    return {"nano_cpus": cpu, "mem_limit": memory, **security}
+    return security
 
 
-def docker_cj_limits(launcher, job_meta, site):
+def docker_cj_limits(job_meta, site):
     requested = get_cj_resource_spec(job_meta, site)
     if requested.get("num_of_gpus", 0) or requested.get("mem_per_gpu_in_GiB", 0):
         raise ValueError("CP host Docker CJ must be CPU-only; request GPUs for tasks")
-    defaults = docker_cj_site_settings(launcher)
-    cpu = (
-        int(Decimal(str(requested["num_of_cpus"])) * 1_000_000_000)
-        if "num_of_cpus" in requested
-        else defaults["nano_cpus"]
-    )
-    memory = portable_memory_to_bytes(requested["memory"]) if "memory" in requested else defaults["mem_limit"]
-    if cpu < 1:
-        raise ValueError("CP host Docker CJ requires at least one nanocpu")
-    if cpu > defaults["nano_cpus"] or memory > defaults["mem_limit"]:
-        raise ValueError("CP host Docker CJ cj_resource_spec exceeds the site's CPU or memory ceiling")
-    return {**defaults, "nano_cpus": int(cpu), "mem_limit": memory}
+    limits = {}
+    if "num_of_cpus" in requested:
+        cpu = int(Decimal(str(requested["num_of_cpus"])) * 1_000_000_000)
+        if cpu < 1:
+            raise ValueError("CP host Docker CJ requires at least one nanocpu")
+        limits["nano_cpus"] = cpu
+    if "memory" in requested:
+        limits["mem_limit"] = portable_memory_to_bytes(requested["memory"])
+    return limits
 
 
 # Docker container status strings
@@ -813,11 +789,11 @@ class DockerJobLauncher(JobLauncherSpec):
         # Site-level defaults (default_job_container_kwargs) are merged in; job-level takes precedence on conflict.
         job_container_kwargs = {k: docker_spec[k] for k in DOCKER_JOB_CONTAINER_KWARGS if k in docker_spec}
         study_docker_kwargs = study_runtime.docker_kwargs if study_runtime is not None else {}
+        defaults = self.default_job_container_kwargs if options.container_kwargs is None else options.container_kwargs
         merged_container_kwargs = {
-            **self.default_job_container_kwargs,
+            **defaults,
             **study_docker_kwargs,
             **job_container_kwargs,
-            **options.container_kwargs,
         }
 
         # Job counts override study and site GPU defaults. Passthrough clients and
@@ -1050,15 +1026,15 @@ class ClientDockerJobLauncher(DockerJobLauncher):
             raise ValueError(
                 "Docker task profile requires a canonical shared workspace, a user-defined CP network and default_image"
             )
-        docker_cj_site_settings(self)
+        docker_cj_security_settings(self)
 
     def _task_coordinator_options(self, job_meta, fl_ctx):
         from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES
 
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         site = fl_ctx.get_identity_name()
-        if sys.platform != "linux" or os.getuid() == 0:
-            raise ValueError("Docker task profile requires a Linux Docker CP with a nonroot UID")
+        if os.getuid() == 0:
+            raise ValueError("Docker task profile requires a Docker CP with a nonroot UID")
         self._validate_task_coordinator_profile(self.workspace, network=self.network)
         try:
             shared_workspace = os.path.samefile(self.workspace, workspace.get_root_dir())
@@ -1083,13 +1059,11 @@ class ClientDockerJobLauncher(DockerJobLauncher):
         parent_url = urlsplit(str(parent[1]))
         if parent_url.scheme not in ("tcp", "stcp") or not parent_url.hostname or not parent_url.port:
             raise ValueError("CP host Docker CJ requires a TCP or mTLS TCP parent connection with host and port")
-        limits = docker_cj_limits(self, job_meta, site)
+        limits = docker_cj_limits(job_meta, site)
         client = self._get_docker_client()
         info = client.info()
-        if (
-            client.api.base_url != "http+docker://localhost"
-            or info.get("OSType") != "linux"
-            or not all(info.get(key) is True for key in ("MemoryLimit", "CpuCfsPeriod", "CpuCfsQuota"))
+        if client.api.base_url != "http+docker://localhost" or not all(
+            info.get(key) is True for key in ("MemoryLimit", "CpuCfsPeriod", "CpuCfsQuota")
         ):
             raise ValueError("CP host Docker daemon must be local and enforce Linux CPU/memory limits")
         parent_container = client.containers.get(socket.gethostname())
@@ -1109,7 +1083,12 @@ class ClientDockerJobLauncher(DockerJobLauncher):
             environment=environment,
             apply_study_runtime=False,
             workspace_mount=self.workspace,
-            container_kwargs={**limits, "network": "host", "extra_hosts": {site: parent_address}},
+            container_kwargs={
+                **limits,
+                **docker_cj_security_settings(self),
+                "network": "host",
+                "extra_hosts": {site: parent_address},
+            },
         )
 
     def get_module_args(self, job_args: dict) -> dict:

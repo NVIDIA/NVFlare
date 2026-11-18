@@ -585,12 +585,9 @@ class _SlurmTaskBackend(TaskLauncherSpec):
         gpu_count=0,
         environment=None,
         worker_listener_host=None,
-        cj_runtime="slurm",
     ):
         super().__init__()
-        if cj_runtime not in ("slurm", "docker", "process"):
-            raise ValueError("Slurm task cj_runtime must be 'slurm', 'docker' or 'process'")
-        self.cj_runtime = cj_runtime
+        self.cj_runtime = "slurm"  # Replaced from the canonical job launcher when policy loads.
         if shared_filesystem is not True or cgroup_enforced is not True:
             raise ValueError("Slurm tasks require coherent shared paths and enforced Slurm cgroup tracking")
         config = SlurmConfig(
@@ -630,9 +627,12 @@ class _SlurmTaskBackend(TaskLauncherSpec):
         self._binding = None
         self._binding_lock = threading.Lock()
         self._initialization_lock = threading.Lock()
-        if cj_runtime in ("docker", "process"):
+
+    def _validate_cp_host_listener(self):
+        if self.cj_runtime in ("docker", "process"):
+            worker_listener_host = self.worker_listener_host
             if not worker_listener_host:
-                raise ValueError(f"{cj_runtime} CJ requires an explicit worker_listener_host on the CP host")
+                raise ValueError(f"{self.cj_runtime} CJ requires an explicit worker_listener_host on the CP host")
             host = self.get_worker_listener_host()
             try:
                 loopback = ipaddress.ip_address(host).is_loopback
@@ -640,7 +640,7 @@ class _SlurmTaskBackend(TaskLauncherSpec):
                 name = host.rstrip(".").lower()
                 loopback = name == "localhost" or name.endswith(".localhost")
             if loopback:
-                raise ValueError(f"{cj_runtime} CJ worker_listener_host must be reachable from compute nodes")
+                raise ValueError(f"{self.cj_runtime} CJ worker_listener_host must be reachable from compute nodes")
 
     def get_worker_listener_host(self):
         """Advertise this CJ's host to workers in independent Slurm allocations."""
@@ -666,7 +666,8 @@ class _SlurmTaskBackend(TaskLauncherSpec):
     def validate_site_config(self, site_config):
         from nvflare.app_opt.job_launcher.slurm.task_policy import validate_slurm_site
 
-        validate_slurm_site(self, site_config)
+        self.cj_runtime = validate_slurm_site(self, site_config)
+        self._validate_cp_host_listener()
 
     def runtime_policy(self, meta, *, runtime=None):
         from nvflare.app_opt.job_launcher.slurm.launcher import effective_slurm_study_values, load_slurm_study_runtime
@@ -848,7 +849,6 @@ def _prepare_task_binding(job_meta, fl_ctx, options, *, workspace=None):
         ENV_TASK_TOKEN,
         copy.deepcopy(job_meta),
         replace(options, environment=environment),
-        30.0,
     )
 
 

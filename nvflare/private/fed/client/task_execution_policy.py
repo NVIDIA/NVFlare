@@ -61,37 +61,28 @@ _NATIVE_TASK_LAUNCHERS = {
 
 # CP composition is private. Class paths keep unused optional backends out of
 # the import graph; exact supported launcher types are validated by policy.
-# Slurm pairings also require the site's configured CJ runtime.
 _CJ_PREPARERS = {
     (
         "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
         "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
-        "process",
     ): _prepare_process_slurm_cj,
     (
         "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
         "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
-        "docker",
     ): _prepare_docker_slurm_cj,
     (
         "nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher",
         "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
-        "slurm",
     ): None,
     (
         "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
         "nvflare.app_opt.task_launcher.k8s_launcher.K8sTaskLauncher",
-        None,
     ): None,
 }
 
 
 def _get_cj_preparer(task_launcher, job_launcher):
     pairing = tuple(f"{type(item).__module__}.{type(item).__qualname__}" for item in (job_launcher, task_launcher))
-    runtime = (
-        getattr(task_launcher, "cj_runtime", None) if getattr(task_launcher, "launch_mode", None) == "slurm" else None
-    )
-    pairing += (runtime,)
     if pairing not in _CJ_PREPARERS:
         raise ValueError(f"unsupported client-job/task launcher pairing: {pairing}")
     return _CJ_PREPARERS[pairing]

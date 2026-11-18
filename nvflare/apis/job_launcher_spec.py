@@ -13,7 +13,7 @@
 # limitations under the License.
 import os
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from nvflare.apis.fl_component import FLComponent
@@ -33,21 +33,20 @@ class JobLaunchOptions:
     container options affect this launch only, not the shared launcher instance.
     ``publish_failed_launch_handle`` opts into receiving an uncertain execution
     identity on launch errors; the caller must retain it for reconciliation.
+    ``container_kwargs`` replaces site container defaults when supplied.
     """
 
     environment: Optional[dict] = None
     apply_study_runtime: bool = True
     publish_failed_launch_handle: bool = False
     workspace_mount: Optional[str] = None
-    container_kwargs: dict = field(default_factory=dict)
+    container_kwargs: Optional[dict] = None
 
 
 def get_job_launch_options(fl_ctx):
     options = fl_ctx.get_prop(JOB_LAUNCH_OPTIONS)
     if options is None:
         return JobLaunchOptions()
-    if not isinstance(options, JobLaunchOptions):
-        raise TypeError("job launch options must be JobLaunchOptions")
     return options
 
 
