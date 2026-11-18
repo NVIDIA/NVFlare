@@ -1448,3 +1448,31 @@ def test_unmapped_signed_token_cannot_authorize_application_traffic(auth_server,
     request.set_prop(MessagePropKey.ENDPOINT, Endpoint(origin))
     reply = server._validate_auth_headers(request)
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+
+
+def test_registration_reply_retains_live_delegated_token():
+    server = object.__new__(FederatedServer)
+    server.logger = MagicMock()
+    server.engine = MagicMock()
+    context = FLContext()
+    server.engine.new_context.return_value = nullcontext(context)
+    server._ready_for_registration = MagicMock(return_value=None)
+    server.client_manager = MagicMock()
+    client = Client("relay-1", "proposed-token")
+    client.set_fqcn("relay-1")
+    server.client_manager.authenticate.return_value = client
+    server.server_state = SimpleNamespace(ssid="session")
+    server.sign_auth_token = MagicMock(return_value="signature")
+    server._generate_reply = lambda headers, payload, fl_ctx: payload
+    server._non_regular_auth_clients = NonRegularAuthRegistry()
+    peer = Endpoint("relay-1")
+    server._non_regular_auth_clients.register("relay-1", "live-token", "relay-1", peer)
+    request = new_cell_message(
+        {CellMessageHeaderKeys.CLIENT_NAME: "relay-1", CellMessageHeaderKeys.CLIENT_TYPE: ClientType.RELAY}, Shareable()
+    )
+    request.set_prop(MessagePropKey.ENDPOINT, peer)
+    result = server.register_client(request)
+    assert result[CellMessageHeaderKeys.TOKEN] == "live-token"
+    server.sign_auth_token.assert_called_once_with("relay-1", "live-token")
+    assert server._non_regular_auth_clients.resolve("relay-1", "live-token") == "relay-1"
+    assert server._non_regular_auth_clients.resolve("relay-1", "proposed-token") is None

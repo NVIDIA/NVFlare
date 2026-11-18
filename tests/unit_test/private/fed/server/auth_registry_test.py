@@ -16,14 +16,16 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.private.fed.server.auth_registry import NonRegularAuthRegistry
 
 
-def test_re_registration_replaces_old_token_but_keeps_separate_admin_sessions():
+def test_live_renewal_keeps_in_flight_token_and_separate_admin_sessions():
     registry = NonRegularAuthRegistry()
     first, second = Endpoint("_admin_first"), Endpoint("_admin_second")
     registry.register("lead@test.org", "other-session", second.name, second)
     for n in range(100):
-        registry.register("lead@test.org", str(n), first.name, first)
-    assert registry.resolve("lead@test.org", "0") is None
-    assert registry.resolve("lead@test.org", "99") == first.name
+        effective_token = registry.register("lead@test.org", str(n), first.name, first)
+        assert effective_token == "0"
+        # The relay has not received the renewal response yet and still uses 0.
+        assert registry.resolve("lead@test.org", "0") == first.name
+    assert registry.resolve("lead@test.org", "99") is None
     assert registry.resolve("lead@test.org", "other-session") == second.name
     assert registry.resolve("other@test.org", "99") is None
     assert len(registry._bindings) == 2

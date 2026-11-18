@@ -18,7 +18,7 @@ from nvflare.fuel.f3.endpoint import EndpointMonitor, EndpointState
 
 
 class NonRegularAuthRegistry(EndpointMonitor):
-    """Track active delegated tokens, replacing old tokens for the same Cell."""
+    """Track active delegated tokens and preserve live bindings during renewal."""
 
     def __init__(self, endpoint_lookup=None):
         self._endpoint_lookup = endpoint_lookup
@@ -31,9 +31,15 @@ class NonRegularAuthRegistry(EndpointMonitor):
                 return
             if self._endpoint_lookup and self._endpoint_lookup(peer.name) is not peer:
                 return
+            for existing_token, binding in self._bindings.items():
+                if binding == (name, fqcn, peer):
+                    # Keep in-flight messages valid until the renewal reply is
+                    # received. Reconnects still retire the old transport's token.
+                    return existing_token
             # Admin sessions have distinct FQCNs even when they share a user.
             self._bindings = {k: v for k, v in self._bindings.items() if v[1] != fqcn}
             self._bindings[token] = (name, fqcn, peer)
+            return token
 
     def resolve(self, name, token):
         with self._lock:

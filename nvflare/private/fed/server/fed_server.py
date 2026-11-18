@@ -920,9 +920,13 @@ class FederatedServer(BaseServer):
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:
                     if client_type != ClientType.REGULAR:
-                        self._non_regular_auth_clients.register(
+                        client.token = self._non_regular_auth_clients.register(
                             client.name, client.token, client.get_fqcn(), request.get_prop(MessagePropKey.ENDPOINT)
                         )
+                        if not client.token:
+                            return make_cellnet_reply(
+                                rc=F3ReturnCode.UNAUTHENTICATED, error="registration transport is no longer active"
+                            )
                     accepted_site_config = client.get_site_config()
                     if accepted_site_config:
                         self.logger.info(
