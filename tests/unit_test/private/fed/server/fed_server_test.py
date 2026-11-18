@@ -51,6 +51,7 @@ from nvflare.private.defs import (
     new_cell_message,
 )
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
+from nvflare.private.fed.server.auth_registry import NonRegularAuthRegistry
 from nvflare.private.fed.server.client_manager import ClientManager
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
@@ -688,7 +689,8 @@ class TestFederatedServer:
         server.client_manager = ClientManager()
         if origin == "admin":
             origin = peer = new_admin_client_name()
-            server._non_regular_auth_clients = {"delegated": (name, origin, "admin")}
+            server._non_regular_auth_clients = NonRegularAuthRegistry()
+            server._non_regular_auth_clients.register(name, "delegated", origin, Endpoint(peer))
         request = new_cell_message(
             {
                 MessageHeaderKey.CHANNEL: CellChannel.SERVER_MAIN,

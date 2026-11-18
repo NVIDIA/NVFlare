@@ -18,6 +18,7 @@ import logging
 import os
 import sys
 import threading
+import time
 
 from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, ReservedKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
@@ -61,6 +62,8 @@ class CellnetMonitor:
 
 
 class _RelayAuth(EndpointMonitor):
+    REGISTRATION_INTERVAL = 60.0
+
     def __init__(self, authenticator, shared_fl_ctx, auth_result, stop_event, logger, parent_fqcn=FQCN.ROOT_SERVER):
         self.authenticator = authenticator
         # Recovery is bounded independently of startup authentication retries.
@@ -72,6 +75,7 @@ class _RelayAuth(EndpointMonitor):
         self.refresh_needed = threading.Event()
         self.registration_needed = threading.Event()
         self.parent_fqcn = parent_fqcn
+        self.next_registration = time.monotonic() + self.REGISTRATION_INTERVAL
 
     def state_change(self, endpoint):
         if endpoint.name in (FQCN.ROOT_SERVER, self.parent_fqcn) and endpoint.state == EndpointState.READY:
@@ -95,7 +99,14 @@ class _RelayAuth(EndpointMonitor):
         return result
 
     def refresh(self):
-        if not self.refresh_needed.is_set() or self.stop_event.is_set():
+        if self.stop_event.is_set():
+            return
+        if time.monotonic() >= self.next_registration:
+            # A nested relay's parent can stay connected across root restarts.
+            # Renew independently of local endpoint notifications or key changes.
+            self.registration_needed.set()
+            self.refresh_needed.set()
+        if not self.refresh_needed.is_set():
             return
         self.refresh_needed.clear()
         registration_needed = self.registration_needed.is_set()
@@ -115,6 +126,7 @@ class _RelayAuth(EndpointMonitor):
             if self.stop_event.is_set():
                 return
             self.auth_result = auth_result
+            self.next_registration = time.monotonic() + self.REGISTRATION_INTERVAL
             self.logger.info("Refreshed relay authentication after server reconnect or key replacement")
         except Exception:
             # Keep the last authenticated state; a later rejected message can
@@ -323,6 +335,7 @@ def _validate_auth_headers(
     Returns:
     """
     if core_cell and not is_message_origin_trusted(message, local_cell_fqcn, allow_unverified_client=True):
+        logger.warning("rejected message: origin does not belong to sending peer")
         return make_reply(ReturnCode.UNAUTHENTICATED, "origin does not belong to sending peer")
     if core_cell and core_cell.is_server_transit_return(message):
         logger.debug("accepting sanitized server-transit message from configured upstream parent")

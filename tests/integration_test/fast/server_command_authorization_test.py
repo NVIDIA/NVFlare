@@ -50,8 +50,8 @@ def wait_for(check, description, timeout=60):
 
 
 @pytest.fixture(
-    params=[(False, "mtls"), (True, "mtls"), (False, "tls"), (True, "tls")],
-    ids=["direct-mtls", "relay-mtls", "direct-tls", "relay-tls"],
+    params=[(0, "mtls"), (1, "mtls"), (2, "mtls"), (0, "tls"), (1, "tls"), (2, "tls")],
+    ids=["direct-mtls", "relay-mtls", "nested-mtls", "direct-tls", "relay-tls", "nested-tls"],
 )
 def federation(tmp_path, monkeypatch, request):
     via_relay, connection_security = request.param
@@ -78,21 +78,26 @@ def federation(tmp_path, monkeypatch, request):
                 "default_host": "localhost",
                 "connection_security": connection_security,
             }
+    for depth in range(1, via_relay + 1):
+        relay = {
+            "name": f"relay-{depth}",
+            "type": "relay",
+            "org": "nvidia",
+            "listening_host": {
+                "scheme": "stcp",
+                "default_host": "localhost",
+                "port": get_open_ports(1)[0],
+                "connection_security": connection_security,
+            },
+        }
+        if depth > 1:
+            relay["connect_to"] = {"name": f"relay-{depth - 1}", "connection_security": connection_security}
+        project["participants"].append(relay)
     if via_relay:
-        project["participants"].append(
-            {
-                "name": "relay-1",
-                "type": "relay",
-                "org": "nvidia",
-                "listening_host": {
-                    "scheme": "stcp",
-                    "default_host": "localhost",
-                    "port": get_open_ports(1)[0],
-                    "connection_security": connection_security,
-                },
-            }
-        )
-        project["participants"][1]["connect_to"] = {"name": "relay-1", "connection_security": connection_security}
+        project["participants"][1]["connect_to"] = {
+            "name": f"relay-{via_relay}",
+            "connection_security": connection_security,
+        }
     Provisioner(str(tmp_path), prepare_builders(project)).provision(prepare_project(project))
     kits = tmp_path / project["name"] / "prod_00"
     for name in ["localhost", "site-1", "site-2"]:
@@ -105,8 +110,7 @@ def federation(tmp_path, monkeypatch, request):
     server_launch = None
     try:
         sites = [("localhost", "server")]
-        if via_relay:
-            sites.append(("relay-1", "relay"))
+        sites.extend((f"relay-{depth}", "relay") for depth in range(1, via_relay + 1))
         sites.extend([("site-1", "client"), ("site-2", "client")])
         for name, kind in sites:
             workspace = kits / name
@@ -182,9 +186,17 @@ def runner_aborted(result_dir):
     return any("asked to abort - triggered abort_signal" in p.read_text() for p in result_dir.rglob("log.txt"))
 
 
+def nested_relay_peers(session):
+    reply = session.do_command("cellnet.peers relay-1.relay-2")
+    text = json.dumps(reply)
+    return "relay-1.relay-2.site-1" in text and "Total Agents:" in text
+
+
 @pytest.mark.timeout(300)
 def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     kits, module, victim_session, attacker_session, via_relay, restart_server = federation
+    if via_relay == 2:
+        assert nested_relay_peers(victim_session), "nested relay must answer root's NetAgent query before restart"
     victim = submit(kits, module, victim_session, "victim", "site-2")
     run = holding(kits, victim, victim_session)
     peer_run = holding(kits, victim, victim_session, "site-1")
@@ -213,8 +225,9 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     attack = json.loads(attack_file.read_text())
     evidence["attack"] = attack
     assert str(Path(attack["source"]).resolve()) == evidence["source"]
-    assert attack["origin"] == f"{'relay-1.' if via_relay else ''}site-1.{attacker}"
-    assert ("relay-1" in attack["parent_reply_route"]) is via_relay
+    relay_prefix = "".join(f"relay-{depth}." for depth in range(1, via_relay + 1))
+    assert attack["origin"] == f"{relay_prefix}site-1.{attacker}"
+    assert ("relay-1" in attack["parent_reply_route"]) is bool(via_relay)
     assert attack["target"] == f"server.{victim}"
     assert victim != attacker
     wait_for(lambda: status(attacker_session, attacker) == "FINISHED:COMPLETED", "attacker task/update completion")
@@ -274,6 +287,9 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
         "client/relay recovery after restart",
         timeout=90,
     )
+    if via_relay == 2:
+        # Its parent never disconnects, so recovery must not rely on READY events.
+        wait_for(lambda: nested_relay_peers(victim_session), "nested relay NetAgent recovery", timeout=90)
 
 
 @pytest.mark.timeout(40)

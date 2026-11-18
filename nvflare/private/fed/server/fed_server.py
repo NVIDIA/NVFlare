@@ -73,6 +73,7 @@ from nvflare.private.defs import (
     new_cell_message,
 )
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, validate_auth_headers
+from nvflare.private.fed.server.auth_registry import NonRegularAuthRegistry
 from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
@@ -422,7 +423,9 @@ class FederatedServer(BaseServer):
 
         self.reg_lock = threading.Lock()
         self.name_to_reg = {}
-        self._non_regular_auth_clients = {}
+        self._non_regular_auth_clients = NonRegularAuthRegistry(
+            lambda name: self.cell.core_cell.communicator.find_endpoint(name)
+        )
         self.cred_keeper = CredKeeper()
 
         # Tracks per-job which client tokens have been positively observed running the job.
@@ -588,9 +591,10 @@ class FederatedServer(BaseServer):
         client = self.client_manager.clients.get(token)
         if client and client.name == client_name:
             return client.get_fqcn() or MISSING_CLIENT_FQCN
-        delegated = getattr(self, "_non_regular_auth_clients", {}).get(token)
-        if delegated and delegated[0] == client_name:
-            return delegated[1] or MISSING_CLIENT_FQCN
+        registry = getattr(self, "_non_regular_auth_clients", None)
+        delegated = registry.resolve(client_name, token) if registry else None
+        if delegated:
+            return delegated
         if client_name == private_defs.AUTH_CLIENT_NAME_FOR_SJ:
             # Bind both the job runner and its workspace bootstrap to the signed job ID.
             bootstrap = FQCN.join([FQCN.ROOT_SERVER, workspace_transfer_cell_name(token)])
@@ -916,7 +920,9 @@ class FederatedServer(BaseServer):
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:
                     if client_type != ClientType.REGULAR:
-                        self._non_regular_auth_clients[client.token] = (client.name, client.get_fqcn(), client_type)
+                        self._non_regular_auth_clients.register(
+                            client.name, client.token, client.get_fqcn(), request.get_prop(MessagePropKey.ENDPOINT)
+                        )
                     accepted_site_config = client.get_site_config()
                     if accepted_site_config:
                         self.logger.info(
@@ -1306,6 +1312,7 @@ class FederatedServer(BaseServer):
 
         core_cell = self.cell.core_cell
         if secure_train:
+            core_cell.communicator.register_monitor(self._non_regular_auth_clients)
             core_cell.add_incoming_filter(
                 channel="*",
                 topic="*",

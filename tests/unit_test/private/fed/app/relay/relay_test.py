@@ -257,3 +257,37 @@ def test_relay_retries_failed_registration_after_reconnect(relay_auth):
     relay_auth.refresh()
     assert relay_auth.authenticator.authenticate.call_count == 2
     assert not relay_auth.registration_needed.is_set()
+
+
+def test_nested_relay_renews_binding_without_parent_reconnect_or_key_change(relay_auth, monkeypatch):
+    import nvflare.private.fed.app.relay.relay as relay_module
+    from nvflare.private.fed.server.auth_registry import NonRegularAuthRegistry
+
+    now = [0.0]
+    monkeypatch.setattr(relay_module, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    registry = NonRegularAuthRegistry()  # The restarted root has no old binding.
+    nested = _RelayAuth(
+        relay_auth.authenticator,
+        FLContext(),
+        relay_auth.auth_result,
+        threading.Event(),
+        logging.getLogger(__name__),
+        parent_fqcn="outer-relay",
+    )
+    replacement = ("renewed", "signature", "ssid", nested.auth_result[3])
+
+    def authenticate(*_args):
+        registry.register("relay-1", replacement[0], "outer-relay.relay-1", Endpoint("outer-relay"))
+        return replacement
+
+    nested.authenticator.authenticate.side_effect = authenticate
+    nested.refresh()
+    nested.authenticator.authenticate.assert_not_called()
+    assert registry.resolve("relay-1", "token") is None
+    # No endpoint event and the signing key still verifies the old token.
+    now[0] = 60.0
+    nested.refresh()
+    assert nested.auth_result is replacement
+    assert registry.resolve("relay-1", "renewed") == "outer-relay.relay-1"
+    nested.refresh()
+    nested.authenticator.authenticate.assert_called_once()
