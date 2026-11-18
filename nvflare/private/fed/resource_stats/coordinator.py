@@ -140,6 +140,16 @@ class ResourceStatsCoordinator:
         with self._jobs_lock:
             return job_id in self._jobs
 
+    def has_missing_client_reports(self, job_id: str) -> bool:
+        state = self._get_job_state(job_id)
+        if state is None:
+            return False
+        with state.lock:
+            return not state.closed and any(
+                role == "client" and name not in state.disabled and name not in state.accepted
+                for name, role in state.expected.items()
+            )
+
     def _get_job_state(self, job_id: str) -> _JobState | None:
         with self._jobs_lock:
             return self._jobs.get(job_id)

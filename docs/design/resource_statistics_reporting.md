@@ -269,10 +269,14 @@ OPEN: accept one record per trusted slot
   -> ARCHIVED: existing job archives saved
 ```
 
-Statistics add no client-report grace to job completion. Server failures and
-requested aborts retain the existing completion policy, finalizing reports already
-accepted and recording missing participants as gaps. The normal client-outcome
-wait and archive policy remain unchanged.
+After the server job exits on failure or abort, the server allows up to 20 seconds
+for outstanding client resource reports before archiving. Cancellation starts
+immediately. A shorter `client_outcome_wait_timeout` or an earlier outcome
+deadline caps the wait. On each completion check, the server proceeds once it
+has accepted reports from all expected clients except those marked disabled.
+At expiry it archives the available reports and records any gaps. Terminal status
+and scheduler-slot release follow archival. Successful jobs use the normal
+client-outcome wait.
 
 At closure, each roster entry contains either an accepted value or a gap. An
 accepted entry contains `participant_name`, the original `reported_at`,

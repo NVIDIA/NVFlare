@@ -78,6 +78,7 @@ from nvflare.private.fed.utils.job_cert_utils import (
 from nvflare.security.logging import secure_format_exception
 
 WORKSPACE_SAVE_RETRY_GRACE_TIME = 60
+FAILED_JOB_REPORT_GRACE_TIME = 20.0
 
 
 @dataclass
@@ -88,6 +89,7 @@ class _FinishedJobState:
     workspace_save_started_at: float | None = None
     workspace_archive_written: bool = False
     workspace_archive_sources: Tuple[str, ...] = ()
+    report_deadline: float | None = None
 
 
 def _send_to_clients(admin_server, client_sites: List[str], engine, message, timeout=None, optional=False):
@@ -606,22 +608,13 @@ class JobRunner(FLComponent):
                         with engine.lock:
                             exception_process = engine.exception_run_processes.get(job_id)
                             server_status = self._classify_finished_job_status(exception_process)
-                        server_failed = server_status in (
-                            RunStatus.FINISHED_EXECUTION_EXCEPTION,
-                            RunStatus.FINISHED_ABNORMAL,
-                        )
+                        abnormal = job.run_aborted or server_status != RunStatus.FINISHED_COMPLETED
                         with self.lock:
-                            pending = self._pending_client_outcomes.get(job_id)
-                            if server_failed:
-                                if pending:
-                                    self.logger.info(
-                                        f"Server failure for job ({job_id}); "
-                                        f"skipping client outcome wait for: {sorted(pending)}"
-                                    )
+                            if abnormal:
                                 self._pending_client_outcomes.pop(job_id, None)
-                                self._client_outcome_deadlines.pop(job_id, None)
-                                pending = None
-                            if pending and not job.run_aborted:
+                                outcome_deadline = self._client_outcome_deadlines.pop(job_id, None)
+                            pending = self._pending_client_outcomes.get(job_id)
+                            if pending:
                                 now = time.monotonic()
                                 deadline = self._client_outcome_deadlines.setdefault(
                                     job_id, now + self.client_outcome_wait_timeout
@@ -641,13 +634,26 @@ class JobRunner(FLComponent):
                             completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, sticky=False)
                             finished_state = self._finished_job_states.get(job.job_id)
                             if finished_state is None:
+                                report_deadline = None
+                                if abnormal and self.resource_stats.has_job(job_id):
+                                    grace = min(FAILED_JOB_REPORT_GRACE_TIME, self.client_outcome_wait_timeout)
+                                    report_deadline = time.monotonic() + grace
+                                    if outcome_deadline is not None:
+                                        report_deadline = min(report_deadline, outcome_deadline)
                                 if job.run_aborted:
                                     status = RunStatus.FINISHED_ABORTED
                                 else:
                                     status = self._get_finished_job_status(engine, job, completion_ctx)
-                                finished_state = _FinishedJobState(status=status)
+                                finished_state = _FinishedJobState(status=status, report_deadline=report_deadline)
                                 self._finished_job_states[job.job_id] = finished_state
                             status = finished_state.status
+                            # Client cancellation has started. Other jobs can finish while these reports arrive.
+                            if (
+                                finished_state.report_deadline is not None
+                                and time.monotonic() < finished_state.report_deadline
+                                and self.resource_stats.has_missing_client_reports(job_id)
+                            ):
+                                continue
                             # Publish terminal status only after artifacts are ready for download.
                             if not finished_state.workspace_archival_complete:
                                 if not finished_state.resource_stats_finalized:
@@ -1213,12 +1219,8 @@ class JobRunner(FLComponent):
             if not job_is_active:
                 self.log_info(fl_ctx, f"Job {job_id} is not running. It can not be failed.")
                 return f"Job {job_id} is not running."
-            # fail_run establishes an authoritative terminal failure. Remaining
-            # client reports cannot change that status and must not hold terminal
-            # publication behind the normal outcome grace period (900 seconds by
-            # default); _stop_run below drives their cleanup independently.
+            # Cancel immediately. An existing deadline also caps the shorter statistics wait.
             self._pending_client_outcomes.pop(job_id, None)
-            self._client_outcome_deadlines.pop(job_id, None)
         self._stop_run(job_id, fl_ctx)
 
         job = self.running_jobs.get(job_id)
