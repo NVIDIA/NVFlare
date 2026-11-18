@@ -2654,3 +2654,25 @@ class TestZeroStepResults:
         assert stats[AggregationStatsKey.ROUND] == 1
         assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 0
         assert stats[AggregationStatsKey.CONTRIBUTORS] == []
+
+    @pytest.mark.parametrize(
+        "meta, expected",
+        [({}, 1.0), ({FLMetaKey.NUM_STEPS_CURRENT_ROUND: None}, 1.0), ({FLMetaKey.NUM_STEPS_CURRENT_ROUND: 0}, 0.0)]
+        + [({FLMetaKey.NUM_STEPS_CURRENT_ROUND: 7}, 7.0)],
+    )
+    def test_num_steps_weight_contract(self, meta, expected):
+        from nvflare.app_common.workflows.base_fedavg import _get_num_steps_weight
+
+        assert _get_num_steps_weight(FLModel(params={"w": 1.0}, meta=meta)) == expected
+
+    def test_base_aggregate_omitted_and_none_steps_weight_one(self):
+        controller = _base_fedavg()
+        explicit_none = _steps_result("site-2", 3.0, None)
+        explicit_none.meta[FLMetaKey.NUM_STEPS_CURRENT_ROUND] = None
+
+        aggr_result = controller.aggregate(
+            [_steps_result("site-1", 1.0, None), explicit_none, _steps_result("site-3", 5.0, 0)]
+        )
+
+        assert aggr_result.params["w"] == pytest.approx([2.0])
+        assert aggr_result.meta["nr_aggregated"] == 2

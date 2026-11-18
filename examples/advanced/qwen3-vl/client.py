@@ -49,6 +49,13 @@ def _abs_path(p: str) -> str:
     return os.path.abspath(os.path.expanduser(p))
 
 
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number <= 0:
+        raise argparse.ArgumentTypeError(f"must be a positive integer, got {value}")
+    return number
+
+
 def _params_size_mb(params) -> float:
     """Return size of params dict (state_dict) in MB. Handles torch tensors and numpy arrays."""
     if not params:
@@ -334,9 +341,9 @@ def main():
     )
     parser.add_argument(
         "--max_steps",
-        type=int,
+        type=_positive_int,
         default=None,
-        help="Max steps per FL round (omit to train one epoch per round)",
+        help="Max steps per FL round, a positive integer (omit to train one epoch per round)",
     )
     parser.add_argument(
         "--num_train_epochs",
