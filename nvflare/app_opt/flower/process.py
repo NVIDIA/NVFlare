@@ -37,6 +37,7 @@ from nvflare.app_common.tie.process_mgr import ProcessManager
 from nvflare.app_opt.flower.process_guard import OWNER_ENV as _OWNER_ENV
 from nvflare.app_opt.flower.process_guard import capture_owned
 from nvflare.fuel.utils.validation_utils import check_positive_number
+from nvflare.private.fed.resource_stats.cpu_consumed import mark_child_cpu_coverage_uncertain
 
 
 class FlowerProcessManager(ProcessManager):
@@ -88,6 +89,7 @@ class FlowerProcessManager(ProcessManager):
                 bufsize=0,
                 pass_fds=(self._spawn_fence,),
             )
+            mark_child_cpu_coverage_uncertain()
             try:
                 self._root = psutil.Process(self.process.pid)
                 self._guard.stdin.write(json.dumps((self._root.pid, self._root.create_time())).encode() + b"\n")
