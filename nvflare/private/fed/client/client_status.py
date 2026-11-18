@@ -20,7 +20,6 @@ class ClientStatus(object):
     STOPPED = 3
     EXCEPTION = 4
     READY = 5  # Runner initialization completed; CP keeps the public STARTED status.
-    CLEANUP_PENDING = 6
 
     status_messages = {
         NOT_STARTED: "not started",
@@ -28,7 +27,6 @@ class ClientStatus(object):
         STARTED: "started",
         STOPPED: "stopped",
         EXCEPTION: "exception",
-        CLEANUP_PENDING: "cleanup pending",
     }
 
 

@@ -147,7 +147,7 @@ def test_repeat_start_rejects_retained_job_and_frees_only_retry_allocation(tmp_p
     executor.notify_job_status("job-1", status)
     executor._retain_cleanup_owner("job-1")
     if status == ClientStatus.READY:
-        assert executor.get_status("job-1") == ClientStatus.CLEANUP_PENDING
+        assert executor.get_status("job-1") == ClientStatus.STARTED
     run_dir = tmp_path / "job-1"
     run_dir.mkdir()
     write_job_cert(str(run_dir), b"cert", b"key")

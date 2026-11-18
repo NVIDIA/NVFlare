@@ -68,18 +68,22 @@ _CLEANUP_REMINDER_INTERVAL = 300.0
 
 
 class _RunPhase(Enum):
-    STARTING = auto()
-    RUNNING = auto()
-    CLEANING_UP = auto()
+    """Client-parent control phases, independent of the CJ-reported ClientStatus."""
+
+    LAUNCHING = auto()
+    MONITORING = auto()
+    CANCELLING = auto()
     CLEANUP_PENDING = auto()
     OBSERVATION_PENDING = auto()
-    FINISHED = auto()
+    RELEASED = auto()
 
 
 @dataclass
 class _RunState:
+    """Coordinate one logical run's monitor, cleanup and ownership handoff."""
+
     monitor_args: tuple = ()
-    phase: _RunPhase = _RunPhase.STARTING
+    phase: _RunPhase = _RunPhase.LAUNCHING
     monitor: threading.Thread | None = None
     # The initial caller decides whether rollback or the monitor owns release.
     handoff: threading.Event = field(default_factory=threading.Event)
@@ -440,7 +444,7 @@ class JobExecutor(ClientExecutor):
             raise
 
         client.multi_gpu = False
-        state.phase = _RunPhase.RUNNING
+        state.phase = _RunPhase.MONITORING
         state.handoff.set()
         try:
             self._start_monitor(job_id, state)
@@ -502,7 +506,7 @@ class JobExecutor(ClientExecutor):
                 return True
             state = process[_RUN_STATE_KEY]
             if not retry:
-                state.phase = _RunPhase.CLEANING_UP
+                state.phase = _RunPhase.CANCELLING
                 state.launch_failed = True
             elif state.phase == _RunPhase.OBSERVATION_PENDING:
                 state.phase = _RunPhase.CLEANUP_PENDING
@@ -535,7 +539,7 @@ class JobExecutor(ClientExecutor):
                 # cannot finalize until this ownership decision is published.
                 if self.run_processes.get(job_id) is process:
                     self.run_processes.pop(job_id)
-                state.phase = _RunPhase.FINISHED
+                state.phase = _RunPhase.RELEASED
             elif not retry:
                 state.phase = _RunPhase.CLEANUP_PENDING
             state.handoff.set()
@@ -652,15 +656,19 @@ class JobExecutor(ClientExecutor):
                 state = process.get(_RUN_STATE_KEY)
                 if job_id in self._finalizing_runs:
                     return get_status_message(ClientStatus.STOPPED)
-                process_status = (
-                    ClientStatus.CLEANUP_PENDING
-                    if state and state.phase in (_RunPhase.CLEANUP_PENDING, _RunPhase.OBSERVATION_PENDING)
-                    else process.get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
-                )
-                if process_status == ClientStatus.CLEANUP_PENDING and state.cleanup_since is not None:
+                if state and state.phase in (
+                    _RunPhase.CANCELLING,
+                    _RunPhase.CLEANUP_PENDING,
+                    _RunPhase.OBSERVATION_PENDING,
+                ):
                     operation = "observation" if state.phase == _RunPhase.OBSERVATION_PENDING else "cleanup"
-                    return f"{operation} pending (age {time.monotonic() - state.cleanup_since:.0f}s)"
-            return get_status_message(process_status)
+                    age = (
+                        f" (age {time.monotonic() - state.cleanup_since:.0f}s)"
+                        if state.cleanup_since is not None
+                        else ""
+                    )
+                    return f"{operation} pending{age}"
+                return get_status_message(process.get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED))
         except Exception as e:
             self.logger.error(f"check_status execution exception: {secure_format_exception(e)}.")
             secure_log_traceback()
@@ -985,7 +993,7 @@ class JobExecutor(ClientExecutor):
             process[RunProcessKey.JOB_HANDLE] = pending_handle
             process[RunProcessKey.STATUS] = ClientStatus.STARTING
             state = process[_RUN_STATE_KEY]
-            state.phase = _RunPhase.STARTING
+            state.phase = _RunPhase.LAUNCHING
             state.observation_done.clear()
             state.observed = False
         self.logger.info(f"job {job_id}: restarting CJ (attempt {restart.attempts}/{self.max_cj_restart_failures})")
@@ -1016,7 +1024,7 @@ class JobExecutor(ClientExecutor):
         run_dir = Workspace.run_dir_path(workspace, job_id)
         while True:
             with self.lock:
-                if self.run_processes.get(job_id) is not process or state.phase == _RunPhase.FINISHED:
+                if self.run_processes.get(job_id) is not process or state.phase == _RunPhase.RELEASED:
                     return
                 job_handle = process.get(RunProcessKey.JOB_HANDLE)
             if job_handle is None:
@@ -1032,7 +1040,7 @@ class JobExecutor(ClientExecutor):
                     self.logger.error(f"job {job_id}: cannot observe CJ completion: {secure_format_exception(e)}")
                 state.observation_done.set()
                 state.handoff.wait()
-                if state.phase == _RunPhase.FINISHED:
+                if state.phase == _RunPhase.RELEASED:
                     return
                 self._retain_cleanup_owner(job_id, process, observation_only=not state.launch_failed)
                 state.wake.wait(interval)
@@ -1040,7 +1048,7 @@ class JobExecutor(ClientExecutor):
                 continue
             state.observation_done.set()
             state.handoff.wait()
-            if state.phase == _RunPhase.FINISHED:
+            if state.phase == _RunPhase.RELEASED:
                 return
             cancel = job_handle.cancel_call if isinstance(job_handle, _PendingJobHandle) else None
             if cancel is not None and not cancel.done.wait(interval):
@@ -1057,7 +1065,7 @@ class JobExecutor(ClientExecutor):
                 continue
             with self.lock:
                 if state.phase == _RunPhase.OBSERVATION_PENDING:
-                    state.phase = _RunPhase.RUNNING
+                    state.phase = _RunPhase.MONITORING
                     state.cleanup_since = None
                     state.reminded_at = 0.0
             if state.launch_failed:
@@ -1067,7 +1075,7 @@ class JobExecutor(ClientExecutor):
             elif state.phase != _RunPhase.CLEANUP_PENDING:
                 try:
                     if self._restart_job(job_id, job_handle, return_code, fl_ctx):
-                        state.phase = _RunPhase.RUNNING
+                        state.phase = _RunPhase.MONITORING
                         continue
                 except JobCleanupPending:
                     continue  # Observe the published replacement on this same monitor.
@@ -1087,7 +1095,7 @@ class JobExecutor(ClientExecutor):
                 abort_requested = process.get(_ABORT_REQUESTED_KEY, False)
                 self.run_processes.pop(job_id)
                 self._finalizing_runs.add(job_id)
-                state.phase = _RunPhase.FINISHED
+                state.phase = _RunPhase.RELEASED
                 # Reuse the directory fence until credentials and outcome handling
                 # finish; a same-ID start must not race removal of its new files.
                 self._deleting_runs.add(job_id)
@@ -1178,7 +1186,7 @@ class JobExecutor(ClientExecutor):
             process = self.run_processes.get(job_id, {})
             state = process.get(_RUN_STATE_KEY)
             if state and state.phase in (
-                _RunPhase.CLEANING_UP,
+                _RunPhase.CANCELLING,
                 _RunPhase.CLEANUP_PENDING,
                 _RunPhase.OBSERVATION_PENDING,
             ):
@@ -1188,16 +1196,9 @@ class JobExecutor(ClientExecutor):
             return process.get(RunProcessKey.STATUS, ClientStatus.STOPPED)
 
     def get_status(self, job_id):
+        """Return the existing CJ-reported status independently of parent cleanup."""
         with self.lock:
-            process = self.run_processes.get(job_id, {})
-            state = process.get(_RUN_STATE_KEY)
-            if state and state.phase in (
-                _RunPhase.CLEANING_UP,
-                _RunPhase.CLEANUP_PENDING,
-                _RunPhase.OBSERVATION_PENDING,
-            ):
-                return ClientStatus.CLEANUP_PENDING
-            return process.get(RunProcessKey.STATUS, ClientStatus.STOPPED)
+            return self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)
 
     def delete_run(self, job_id, job_dir):
         """Remove files only after the client parent has released the run."""

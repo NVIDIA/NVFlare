@@ -177,20 +177,27 @@ failure cannot skip observation. The original launch failure is logged first.
 
 ### Ownership and observation
 
-Each registered run has an explicit lifecycle, separate from the CJ's reported
-STARTING/STARTED/STOPPED status:
+Each registered run has an explicit client-parent lifecycle in `_RunState`.
+`ClientStatus` retains its existing CJ-reported STARTING/STARTED/STOPPED values;
+`get_status()` returns those values without overlaying parent cleanup phases.
+The human-readable `check_status()` can describe pending cleanup or observation.
+The parent phases describe launching, monitoring and ownership release:
 
 ```mermaid
 stateDiagram-v2
-    STARTING --> RUNNING: Launch succeeds
-    STARTING --> CLEANING_UP: Launch fails after publication
-    RUNNING --> STARTING: Replace a completed CJ
-    RUNNING --> OBSERVATION_PENDING: Observation fails
-    OBSERVATION_PENDING --> RUNNING: Observation recovers
+    [*] --> LAUNCHING: Register ownership
+    LAUNCHING --> MONITORING: Launch succeeds
+    LAUNCHING --> CANCELLING: Accepted launch fails
+    MONITORING --> CANCELLING: Monitor startup fails
+    MONITORING --> LAUNCHING: Replace a completed CJ
+    MONITORING --> OBSERVATION_PENDING: Observation fails
+    OBSERVATION_PENDING --> MONITORING: Observation and result recover
     OBSERVATION_PENDING --> CLEANUP_PENDING: Abort requested
-    CLEANING_UP --> FINISHED: Completion confirmed before caller deadline
-    CLEANING_UP --> CLEANUP_PENDING: Cleanup remains unresolved
-    CLEANUP_PENDING --> FINISHED: Completion confirmed later
+    CANCELLING --> RELEASED: Cleanup confirmed within caller bound
+    CANCELLING --> CLEANUP_PENDING: Cleanup remains unresolved
+    MONITORING --> CLEANUP_PENDING: Tracked cancellation still running
+    CLEANUP_PENDING --> RELEASED: Completion confirmed and cancellation finished
+    MONITORING --> RELEASED: Completion confirmed without restart
 ```
 
 `job_launch_cleanup_timeout` bounds each caller wait for cancellation and the

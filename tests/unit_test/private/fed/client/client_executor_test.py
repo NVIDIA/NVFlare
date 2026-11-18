@@ -62,7 +62,7 @@ def _skip_completion_monitor(thread):
     if getattr(thread._target, "__name__", "") == "_wait_child_process_finish":
         executor = thread._target.__self__
         state = executor.run_processes[thread._args[1]][_RUN_STATE_KEY]
-        if state.phase == _RunPhase.RUNNING:
+        if state.phase == _RunPhase.MONITORING:
             state.monitor = None
             return
     _start_thread(thread)
@@ -105,7 +105,7 @@ def cleanup_monitors(monkeypatch):
             if isinstance(handle, _PendingJobHandle) and handle.cancel_call and handle.cancel_call.thread.ident:
                 join_thread(handle.cancel_call.thread)
     for state in states:
-        state.phase = _RunPhase.FINISHED
+        state.phase = _RunPhase.RELEASED
         state.handoff.set()
         state.wake.set()
         if state.monitor and state.monitor.ident and state.monitor is not threading.current_thread():
@@ -1864,7 +1864,7 @@ def test_admin_abort_after_monitor_error_still_cancels_and_observes(tmp_path):
     write_job_cert(str(tmp_path / "job-1"), b"cert", b"key")
     _monitor_until_pending(executor, client, "job-1", {"gpu": 1}, "token", resources, str(tmp_path), ctx)
     assert executor.check_status("job-1").startswith("observation pending (age ")
-    assert executor.get_status("job-1") == ClientStatus.CLEANUP_PENDING
+    assert executor.get_status("job-1") == ClientStatus.STARTED
     accepted.terminate.assert_not_called()
     executor.abort_app("job-1")
     assert client.cell.fire_and_forget.call_args.kwargs["topic"] == AdminCommandNames.ABORT
@@ -1878,18 +1878,21 @@ def test_admin_abort_after_monitor_error_still_cancels_and_observes(tmp_path):
     resources.free_resources.assert_not_called()
 
 
-def test_retained_heartbeat_is_quiet_and_does_not_issue_new_control_calls(tmp_path, caplog):
+@pytest.mark.parametrize("status", [ClientStatus.STARTING, ClientStatus.STARTED, ClientStatus.STOPPED])
+def test_retained_heartbeat_is_quiet_and_does_not_issue_new_control_calls(tmp_path, caplog, status):
     _, workspace, client, _ = _make_start_app_inputs(tmp_path)
     executor = JobExecutor(client, workspace.get_startup_kit_dir())
     handle = MagicMock(spec=JobHandleSpec)
     executor.run_processes["job-1"] = {
         RunProcessKey.JOB_HANDLE: handle,
-        RunProcessKey.STATUS: ClientStatus.STARTED,
+        RunProcessKey.STATUS: status,
     }
     executor._retain_cleanup_owner("job-1")
+    assert executor.get_status("job-1") == status
+    assert executor.check_status("job-1").startswith("cleanup pending")
     caplog.clear()
     for _ in range(3):
-        executor.abort_app("job-1", heartbeat_cleanup=True)
+        ClientEngine.abort_app(SimpleNamespace(client_executor=executor), "job-1", heartbeat_cleanup=True)
     handle.terminate.assert_not_called()
     client.cell.fire_and_forget.assert_not_called()
     assert not caplog.records
@@ -2379,7 +2382,7 @@ def test_late_launch_cleanup_finalizes_without_admin_abort(tmp_path):
             adapter.exited.set()
             if "state" in locals():
                 join_thread(state.monitor)
-    assert state.phase == _RunPhase.FINISHED
+    assert state.phase == _RunPhase.RELEASED
     assert executor.get_run_processes_keys() == []
     resources.free_resources.assert_called_once()
     assert find_job_cert(str(run_dir)) is None
@@ -2457,7 +2460,7 @@ def test_monitor_retries_wait_on_the_same_thread_after_transient_query_errors(tm
             assert adapter.wait_count == 3
             assert len(set(adapter_threads)) == 1
             assert adapter.terminate_count == 0  # An observation error doesn't request cancellation.
-            assert executor.get_status("job-1") == ClientStatus.CLEANUP_PENDING
+            assert executor.get_status("job-1") == ClientStatus.STARTING
             resources.free_resources.assert_not_called()
         finally:
             for release in release_backoff:
@@ -2631,7 +2634,7 @@ def test_late_cleanup_cannot_mark_a_reused_job_id_pending(tmp_path):
     resources = MagicMock()
     launcher = MagicMock()
     retain = executor._retain_cleanup_owner
-    replacement_state = _RunState(phase=_RunPhase.RUNNING)
+    replacement_state = _RunState(phase=_RunPhase.MONITORING)
     replacement = {RunProcessKey.JOB_HANDLE: _PendingJobHandle(), _RUN_STATE_KEY: replacement_state}
     monitors = []
 
@@ -2667,7 +2670,7 @@ def test_late_cleanup_cannot_mark_a_reused_job_id_pending(tmp_path):
                     ctx,
                 )
             assert executor.run_processes["job-1"] is replacement
-            assert replacement_state.phase == _RunPhase.RUNNING
+            assert replacement_state.phase == _RunPhase.MONITORING
             assert replacement_state.cleanup_since is None
             resources.free_resources.assert_called_once()
         finally:
