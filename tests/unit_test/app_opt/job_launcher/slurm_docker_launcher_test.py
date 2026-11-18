@@ -617,32 +617,30 @@ def test_cj_budget_is_not_capped_by_resident_defaults(profile, budget, key, valu
     assert profile.dc.containers.run.call_args.kwargs[key] == value
 
 
-def test_site_security_profiles_survive_mandatory_restrictions(profile):
+@pytest.mark.parametrize(
+    "resident_security",
+    [["seccomp=unconfined"], ["no-new-privileges:false"], ["seccomp=/site/seccomp.json", "apparmor=site-profile"]],
+)
+def test_coordinator_security_does_not_inherit_resident_defaults(profile, resident_security):
     p = profile
-    p.launcher.default_job_container_kwargs.update(
-        cap_drop=["NET_RAW"], security_opt=["seccomp=/site/seccomp.json", "apparmor=site-profile"]
-    )
+    p.launcher.default_job_container_kwargs.update(cap_drop=["NET_RAW"], security_opt=resident_security)
+    (p.root / "local/resources.json").write_text(json.dumps(p.site))
+    TaskExecutionPolicy.from_workspace(p.workspace)
+    handle = launch_job(p.launcher, p.meta, p.context)
+    run = p.dc.containers.run.call_args.kwargs
+    assert run["cap_drop"] == ["ALL"]
+    assert run["security_opt"] == ["no-new-privileges:true"]
+    handle.terminate()
+    handle.owner.thread.join(5)
+    assert not handle.owner.thread.is_alive()
+
+    p.app_config.write_text("{}")
+    p.meta.pop("cj_resource_spec")
+    p.meta["resource_spec"] = {}
     launch_job(p.launcher, p.meta, p.context)
     run = p.dc.containers.run.call_args.kwargs
-    assert run["cap_drop"] == ["NET_RAW", "ALL"]
-    assert run["security_opt"] == ["seccomp=/site/seccomp.json", "apparmor=site-profile", "no-new-privileges:true"]
-
-
-@pytest.mark.parametrize(
-    "settings, error",
-    [
-        ({"cap_drop": "ALL"}, "cap_drop"),
-        ({"security_opt": ["no-new-privileges:false"]}, "cannot disable"),
-    ],
-)
-def test_site_security_mistakes_are_rejected_when_loading_policy(profile, settings, error):
-    p = profile
-    p.site["components"][0]["args"]["default_job_container_kwargs"].update(settings)
-    (p.root / "local/resources.json").write_text(json.dumps(p.site))
-    with pytest.raises(ValueError, match=error):
-        TaskExecutionPolicy.from_workspace(p.workspace)
-    p.dc.info.assert_not_called()
-    p.dc.containers.run.assert_not_called()
+    assert run["cap_drop"] == ["NET_RAW"]
+    assert run["security_opt"] == resident_security
 
 
 def test_docker_memory_string_is_valid_at_policy_load_and_launch(profile):
@@ -750,16 +748,3 @@ def test_optional_null_launcher_spec_keeps_site_default_coordinator(profile):
     p.meta["launcher_spec"] = None
     launch_job(p.launcher, p.meta, p.context)
     assert p.dc.containers.run.call_args.args == ("site/coordinator:tested",)
-
-
-def test_client_engine_checks_coordinator_security_before_accepting_jobs(profile):
-    from nvflare.private.fed.client.client_engine import ClientEngine
-
-    p = profile
-    p.site["components"][0]["args"]["default_job_container_kwargs"]["security_opt"] = "invalid"
-    (p.root / "local/resources.json").write_text(json.dumps(p.site))
-    client = Mock(client_name="site-1", client_args={}, components={}, secure_train=False)
-    engine = ClientEngine(client, SimpleNamespace(workspace=str(p.root)), rank=0)
-    with pytest.raises(ValueError, match="site security_opt"):
-        engine.fire_event(EventType.SYSTEM_BOOTSTRAP, engine.new_context())
-    p.dc.info.assert_not_called()

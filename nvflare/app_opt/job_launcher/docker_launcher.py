@@ -83,29 +83,6 @@ from nvflare.utils.job_launcher_utils import (
 )
 
 
-def docker_cj_security_settings(launcher):
-    """Preserve site security profiles and enforce coordinator restrictions."""
-    defaults = launcher.default_job_container_kwargs
-    security = {}
-    for key in ("cap_drop", "security_opt"):
-        value = defaults.get(key, [])
-        if not isinstance(value, list) or any(not isinstance(v, str) or not v.strip() for v in value):
-            raise ValueError(f"CP host Docker CJ site {key} must be a list of nonempty strings")
-        security[key] = list(value)
-    for option in security["security_opt"]:
-        if option.startswith("no-new-privileges") and option not in (
-            "no-new-privileges",
-            "no-new-privileges:true",
-            "no-new-privileges=true",
-        ):
-            raise ValueError("CP host Docker CJ site security_opt cannot disable no-new-privileges")
-    if not any(v.upper() == "ALL" for v in security["cap_drop"]):
-        security["cap_drop"].append("ALL")
-    if not any(v.startswith("no-new-privileges") for v in security["security_opt"]):
-        security["security_opt"].append("no-new-privileges:true")
-    return security
-
-
 def docker_cj_limits(job_meta, site):
     requested = get_cj_resource_spec(job_meta, site)
     if requested.get("num_of_gpus", 0) or requested.get("mem_per_gpu_in_GiB", 0):
@@ -1026,7 +1003,6 @@ class ClientDockerJobLauncher(DockerJobLauncher):
             raise ValueError(
                 "Docker task profile requires a canonical shared workspace, a user-defined CP network and default_image"
             )
-        docker_cj_security_settings(self)
 
     def _task_coordinator_options(self, job_meta, fl_ctx):
         from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES
@@ -1085,7 +1061,8 @@ class ClientDockerJobLauncher(DockerJobLauncher):
             workspace_mount=self.workspace,
             container_kwargs={
                 **limits,
-                **docker_cj_security_settings(self),
+                "cap_drop": ["ALL"],
+                "security_opt": ["no-new-privileges:true"],
                 "network": "host",
                 "extra_hosts": {site: parent_address},
             },

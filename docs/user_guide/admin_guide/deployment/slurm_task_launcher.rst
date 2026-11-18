@@ -256,10 +256,9 @@ Provision host capacity for the site's admitted jobs.
 
 ``default_job_container_kwargs`` continues to configure ordinary resident jobs,
 including GPU runtime, IPC and shared-memory defaults. Task coordinators do not
-inherit those defaults. Site ``cap_drop`` and ``security_opt`` lists are preserved
-and extended with ``ALL`` and ``no-new-privileges``; disabling the latter is rejected.
-Security settings are checked when loading canonical policy, without contacting
-Docker. Docker preserves fractional CPU shares as nanocpu quotas; a budget below
+inherit those defaults, including their security profiles. Coordinators always
+use ``cap_drop: ["ALL"]`` and ``security_opt: ["no-new-privileges:true"]``.
+Docker preserves fractional CPU shares as nanocpu quotas; a budget below
 one nanocpu is rejected. CJ GPU and per-GPU memory requests are rejected. Slurm
 tasks still require whole CPU cores and integer GPU counts.
 
