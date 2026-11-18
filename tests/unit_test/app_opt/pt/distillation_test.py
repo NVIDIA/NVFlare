@@ -200,6 +200,35 @@ def test_empty_inputs_and_nonfinite_loss_do_not_step_the_optimizer():
         DistillationTrainer(student, [], partial(torch.optim.SGD, lr=0.1))
 
 
+@pytest.mark.parametrize("reject_first_step", [False, True])
+def test_lazy_batchnorm_student_can_train_and_restore_first_step_buffers(reject_first_step):
+    norm = nn.LazyBatchNorm1d()
+    student = nn.Sequential(norm, nn.Linear(3, 2))
+    trainer = DistillationTrainer(student, [nn.Linear(3, 2)], partial(torch.optim.SGD, lr=0.1))
+    inputs = torch.arange(12, dtype=torch.float32).reshape(4, 3)
+
+    try:
+        assert norm.has_uninitialized_params()
+        if reject_first_step:
+            trainer.loss_fn = lambda logits, target: logits.sum() * float("nan")
+            with pytest.raises(ValueError, match="finite scalar"):
+                trainer.fit([inputs])
+            state = trainer.export_student_state()
+            torch.testing.assert_close(state["0.running_mean"], torch.zeros(3))
+            torch.testing.assert_close(state["0.running_var"], torch.ones(3))
+            assert state["0.num_batches_tracked"].item() == trainer.num_steps == 0
+            assert not norm._forward_pre_hooks
+            trainer.loss_fn = kl_divergence
+
+        assert trainer.fit([inputs])["steps"] == 1
+        state = trainer.export_student_state()
+        torch.testing.assert_close(state["0.running_mean"], norm.momentum * inputs.mean(0))
+        assert state["0.num_batches_tracked"].item() == trainer.num_steps == 1
+        assert not norm._forward_pre_hooks
+    finally:
+        trainer.close()
+
+
 def test_synthetic_pool_bounds_ownership_custom_sampling_and_state():
     from nvflare.app_opt.pt.distillation.pool import SyntheticPool
 

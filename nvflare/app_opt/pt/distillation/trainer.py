@@ -14,12 +14,13 @@
 
 """A local distillation loop over caller-supplied input batches."""
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from itertools import islice
 
 import torch
 from torch import nn
+from torch.nn.parameter import is_lazy
 
 from .losses import kl_divergence
 from .teachers import _snapshot_state
@@ -45,14 +46,34 @@ def _prepare_inputs(batch, batch_adapter, device):
 @contextmanager
 def _restore_student_buffers_on_error(student):
     # Train-mode forwards can change buffers before the loss has been checked.
-    snapshots = [(buffer, buffer.detach().clone()) for buffer in student.buffers()]
-    try:
-        yield
-    except BaseException:
-        with torch.no_grad():
-            for buffer, snapshot in snapshots:
-                buffer.copy_(snapshot)
-        raise
+    snapshots = {}
+
+    def snapshot_initialized(buffers):
+        has_lazy_buffers = False
+        for buffer in buffers:
+            if is_lazy(buffer):
+                has_lazy_buffers = True
+            elif id(buffer) not in snapshots:
+                snapshots[id(buffer)] = (buffer, buffer.detach().clone())
+        return has_lazy_buffers
+
+    def after_lazy_init(module, _):
+        snapshot_initialized(module.buffers(recurse=False))
+
+    with ExitStack() as cleanup:
+        if snapshot_initialized(student.buffers()):
+            for module in student.modules():
+                if any(is_lazy(buffer) for buffer in module.buffers(recurse=False)):
+                    # PyTorch's own pre-hook materializes buffers before this hook.
+                    handle = module.register_forward_pre_hook(after_lazy_init)
+                    cleanup.callback(handle.remove)
+        try:
+            yield
+        except BaseException:
+            with torch.no_grad():
+                for buffer, snapshot in snapshots.values():
+                    buffer.copy_(snapshot)
+            raise
 
 
 class DistillationTrainer:
