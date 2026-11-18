@@ -16,8 +16,6 @@
 
 import threading
 
-from tests.timing_utils import join_thread
-
 
 class ControlledProcessAdapter:
     def __init__(self, on_terminate, on_wait=None):
@@ -49,13 +47,3 @@ class ControlledProcessAdapter:
 
     def poll(self):
         return 9 if self.exited.is_set() else None
-
-
-def join_cleanup_calls(*pairs):
-    seen = set()
-    for pair in pairs:
-        for call in pair or ():
-            if call is not None and id(call) not in seen:
-                seen.add(id(call))
-                if call.thread.ident is not None:
-                    join_thread(call.thread)

@@ -401,7 +401,7 @@ class SlurmJobManager:
             if _is_terminal(record.state):
                 return self._poll_accounting(handle)
             if handle.cancel_requested:
-                self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
+                self._cancel_handle_once(handle)
                 return JobReturnCode.UNKNOWN
             if record.state in _PENDING_STATES:
                 now = self._monotonic()
@@ -411,8 +411,15 @@ class SlurmJobManager:
                     self.logger.warning("Slurm job %s exceeded pending_timeout", handle.job_id)
                     handle._request_cancel()
             if handle.cancel_requested:
-                self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
+                self._cancel_handle_once(handle)
             return JobReturnCode.UNKNOWN
+
+    def _cancel_handle_once(self, handle: "SlurmJobHandle") -> None:
+        # Called under operation_lock. Failed RPCs remain retryable; acknowledgement
+        # ends cancellation attempts, while observation continues independently.
+        if not handle.cancel_accepted:
+            result = self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
+            handle.cancel_accepted = result.status == LookupStatus.FOUND
 
     def _abort_handle(self, handle: "SlurmJobHandle", user_abort: bool = True) -> None:
         if user_abort:
@@ -454,6 +461,7 @@ class SlurmJobHandle(JobHandleSpec):
         self.operation_lock = threading.Lock()
         self.job_id = job_id
         self.cancel_requested = False
+        self.cancel_accepted = False
         self._cancel_requested_at = None
         self.user_abort = False
         self.terminal_result = None

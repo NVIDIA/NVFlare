@@ -171,95 +171,101 @@ See the [backend/lifetime matrix](task_worker_lifecycle.md#backend-and-recovery-
 This client-parent behavior applies to initial and replacement CJ launches whose
 launcher publishes an accepted handle through `publish_job_handle()` or returns
 one. CP attaches that handle before applying a saved abort. A launch exception,
-a missing return handle after publication, or an AFTER_JOB_LAUNCH failure triggers
-one cancellation attempt followed by one completion observation. Cancellation
-failure cannot skip observation. Failure to start the completion monitor uses the
-same cleanup path.
+a missing return handle after publication, an AFTER_JOB_LAUNCH failure, or monitor
+startup failure initiates cancellation and completion observation. Cancellation
+failure cannot skip observation. The original launch failure is logged first.
 
-`job_launch_cleanup_timeout` bounds each launch-cleanup control wait (default
-10 seconds, finite and positive). Configure it on CP through
-`NVFLARE_JOB_LAUNCH_CLEANUP_TIMEOUT` or `--set job_launch_cleanup_timeout=<seconds>`;
-`--set` takes precedence. A saved abort has its own bounded wait; cleanup reuses
-its cancellation while running or after success, and retries a completed failure
-once. Control calls and the ordinary CJ monitor use daemon threads so an
-unavailable backend cannot indefinitely hold CP process exit. This does not make
-a runtime disappear when CP exits.
-Slurm cancellation waits requery at most one second apart during the first
-10 seconds after the initial cancellation request, then return to `poll_interval`.
-Repeated cancellation requests do not extend that fast window. This permits
-prompt observation within the default parent cleanup bound without indefinitely
-increasing the scheduler query/cancel rate for stuck allocations. Query outages or
-slow scheduler settlement can still exceed the bound and require reconciliation.
+### Ownership and observation
 
-If cancellation is still running, observation raises, or observation exceeds its
-bound, CP logs a critical reconciliation message and keeps the run registration,
-handle, control-call state, admission allocation/token/resource-manager reference,
-and job credentials. The start request returns an error without freeing that
-allocation. Replacement failure keeps the same owner. Ordinary monitor wait/query
-errors also preserve the registration and credentials. Retained jobs stay in CP's
-job list and reject another launch of the same logical job, including runs whose
-CJ already reported STARTED. A repeated start releases only its new admission
-allocation; the retained run keeps its original allocation. Status queries expose
-`cleanup pending`. Deletion through the client parent rejects every registered
-run, preserving credentials and launch files even if the server has forgotten it.
-Filesystem removal runs outside the executor lock; a per-job deletion fence blocks
-reuse of that directory while heartbeats and other jobs continue normally.
-The original launch failure is logged before cleanup errors.
+Each registered run has an explicit lifecycle, separate from the CJ's reported
+STARTING/STARTED/STOPPED status:
 
-An explicit admin abort still sends a cooperative abort and makes a bounded
-cancellation/observation attempt. Reuse is decided independently for each call:
-an in-flight observation does not suppress a new cancel after the previous cancel
-returns (even if it returned without error but did not stop the runtime), and an
-in-flight cancel does not suppress a new observation after a query failure.
-Only a call that is still running is reused on an explicit retry. Concurrent admin
-requests do not stack control operations. If completion is observed after an admin
-abort, a log records that evidence and explicitly states that registration, admission
-resources and credentials remain retained for operator reconciliation. Heartbeats
-neither retry retained cleanup nor emit repeated warnings. A different start
-request that fails before acquiring a runtime still frees its own admission
-allocation.
+```mermaid
+stateDiagram-v2
+    STARTING --> RUNNING: Launch succeeds
+    STARTING --> CLEANING_UP: Launch fails after publication
+    RUNNING --> STARTING: Replace a completed CJ
+    RUNNING --> CLEANUP_PENDING: Observation fails
+    CLEANING_UP --> FINISHED: Completion confirmed before caller deadline
+    CLEANING_UP --> CLEANUP_PENDING: Cleanup remains unresolved
+    CLEANUP_PENDING --> FINISHED: Completion confirmed later
+```
 
-There is no automatic settlement retry loop or finalization of retained runs.
-An in-flight control call may later finish, but the run remains registered for
-operator reconciliation. A normal `JobHandleSpec.wait()` return is the launcher's
-existing completion contract; this change does not strengthen each backend's
-settlement evidence or claim GPU release. A failed cancellation followed by a
-successful completion observation preserves the original launch error and permits
-release. No cleanup error fabricates an application failure or authorizes another
-submission. Verified task results retain their existing success semantics; task
-outcome, cancellation intent, scheduler settlement and GPU availability are
-separate facts.
+`job_launch_cleanup_timeout` bounds each caller wait for cancellation and the
+first observation (default 10 seconds each, finite and positive). Configure it
+on CP through `NVFLARE_JOB_LAUNCH_CLEANUP_TIMEOUT` or
+`--set job_launch_cleanup_timeout=<seconds>`; `--set` takes precedence. A saved
+abort has its own bounded cancellation wait. Cleanup reuses a saved cancellation
+while it is running or after success, and retries a completed failure once.
 
-### Operator reconciliation and parent loss
+One daemon monitor owns observation for the logical run, including replacements
+and failed launches. The initial caller and an admin abort wait on that monitor's
+observation event; they do not create another observer. If `wait()` raises, the
+same monitor retries after the backend's `poll_interval` (10 seconds for backends
+without that setting). An explicit admin abort can wake this retry backoff and
+retry a completed cancellation, including one that returned without stopping the
+runtime. In-flight cancellation is reused and concurrent admin requests are
+serialized. Query failures do not themselves request cancellation.
 
-1. Keep the retained run's workspace, launch files and credentials intact. Preserve
-   the CP logs and the accepted handle's exact backend identity. Do not resubmit,
-   remove the run, or restart CP to clear its admission reservation while its
-   runtime may survive. If the control calls have not returned, involve the backend
-   operator rather than issuing competing cleanup operations.
-2. Have the backend operator establish ownership before any destructive action.
-   For Slurm, validate the exact allocation ID, submitting UID, job name, comment
-   marker, submission time, and command/work-directory paths against this site's
-   run and launch records. A shared job name or `nvfl:<job_id>` marker alone is
-   insufficient. After CP loss or a lost submission reply, candidate lookup must
-   reject foreign or ambiguous matches; missing records during accounting lag or
-   an outage do not establish rejection. Never cancel by a broad name match or
-   blindly repeat `sbatch`.
-3. Cancel only the verified owned runtime when necessary, then obtain backend
-   settlement evidence. `scancel` acknowledgement, elapsed time, a successful task
-   result, and a CJ's STOPPED notification do not prove allocation or GPU release.
-   Check the exact allocation's active queue/accounting records and, for unresolved
-   node/step cleanup, obtain scheduler/node-admin confirmation before declaring
-   capacity available. Preserve unresolved identity/files and keep the affected
-   capacity out of admission while evidence is unavailable.
-4. Once every retained runtime is reconciled, the operator may remove its stale
-   per-job credentials/control artifacts and rebuild the affected admission state
-   according to the site's resource manager. Restart CP only after this audit,
-   including any CP-owned task-worker allocations. There is no supported live
-   command to finalize a retained registration (admin abort requests cancellation
-   and observation, not finalization), and CP restart adoption is a
-   separate feature. If CP is lost, this reconciliation responsibility transfers
-   to the operator; in-memory ownership is not durable adoption.
+Slurm cancellation is retried until one `scancel` request is accepted. After that,
+CP continues observation without sending more cancellation requests, including
+while the allocation remains COMPLETING. Cancellation observation uses intervals
+of at most one second during the first 10 seconds after the initial request,
+then returns to `poll_interval`. Repeated requests do not extend this fast window.
+Scheduler query outages and slow settlement can exceed the caller deadline.
+
+If cleanup is unresolved, CP keeps the registration, exact handle, admission
+allocation/token/resource-manager references and credentials. The start request
+returns `JobCleanupPending`, transferring release responsibility to the monitor;
+the scheduler must not free the allocation, even if the monitor completes before
+that error reaches it. Cleanup that settles synchronously instead rolls back to
+the start caller. A failed replacement remains with the existing monitor and
+cannot report a terminal outcome before its accepted handle has settled.
+
+Once observation succeeds and cancellation is no longer in flight, the monitor
+uses its ordinary completion path. Removing the exact registration under the
+executor lock is the release commit point. It then frees admission resources,
+removes the credential and reports the outcome once, outside that lock. A per-job
+directory fence prevents another start or deletion from racing these actions;
+other jobs and heartbeats can continue. Errors releasing admission or removing
+credentials are logged critically for operator reconciliation; they do not
+suppress terminal outcome reporting or automatically repeat a possibly partial
+resource-manager release.
+
+A cleanup-pending run rejects repeat starts, including after a CJ reported
+STARTED. A repeated start releases only its new allocation. Deletion rejects all
+registered runs and runs whose directory cleanup is in progress. Status exposes
+`cleanup pending` with its age. The first unresolved cleanup emits a critical log;
+the existing heartbeat job-list read emits at most one reminder per run every
+five minutes, even if its backend wait remains blocked. Heartbeat aborts do not
+issue additional control calls. Confirmed late completion is logged and releases
+ownership automatically, without an admin abort.
+
+### Guarantees and operator escalation
+
+A normal `JobHandleSpec.wait()` return is the backend's existing completion
+contract. CP relies on that contract; it does not independently audit physical
+GPU reclamation. Cancellation acknowledgement, elapsed time, and a task's result
+are separate from runtime completion. Verified task results retain their existing
+success semantics. An observation error followed by recovery does not replay a
+CJ or fabricate an application failure.
+
+Uncertainty can persist indefinitely if the backend never provides reliable
+completion evidence. Preserve the exact runtime identity, workspace, launch files,
+credentials and CP logs, and involve the backend operator when reminders persist.
+For Slurm, cancel only a verified owned allocation and use its queue/accounting
+records according to the backend contract. A name match or absence during a query
+outage is insufficient. Stuck scheduler/node teardown may require cluster-admin
+action; CP cannot guarantee that the OS or scheduler will release resources by a
+deadline. Do not clear admission state or restart CP to bypass an unresolved run.
+
+Control operations and the monitor use daemon threads. This permits CP exit; it
+does not terminate an external runtime. Ownership is held in memory and automatic
+reconciliation operates only while CP lives. After CP loss, an operator must
+reconcile its owned runtimes and rebuild admission state before restarting or
+resubmitting. Restart adoption, uncertain submission before a handle exists and
+server-side ownership remain separate work. There is no force-finalize command
+that treats uncertain completion as proof of release.
 
 ### Resident Slurm submission gap and qualification
 

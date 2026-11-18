@@ -25,7 +25,7 @@ from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.client.client_executor import _RESOURCE_OWNER_KEY, JobCleanupPending, JobExecutor
+from nvflare.private.fed.client.client_executor import _RUN_STATE_KEY, JobCleanupPending, JobExecutor, _RunState
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.scheduler_cmds import CheckResourceProcessor, StartJobProcessor
 from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_cert
@@ -139,7 +139,9 @@ def test_repeat_start_rejects_retained_job_and_frees_only_retry_allocation(tmp_p
     owner = {
         RunProcessKey.JOB_HANDLE: retained_handle,
         RunProcessKey.STATUS: ClientStatus.STARTING,
-        _RESOURCE_OWNER_KEY: (old_resources, "old-token", resource_manager),
+        _RUN_STATE_KEY: _RunState(
+            monitor_args=(executor.client, "job-1", old_resources, "old-token", resource_manager)
+        ),
     }
     executor.run_processes["job-1"] = owner
     executor.notify_job_status("job-1", status)
@@ -176,7 +178,7 @@ def test_repeat_start_rejects_retained_job_and_frees_only_retry_allocation(tmp_p
     retained_handle.terminate.assert_not_called()
     retained_handle.wait.assert_not_called()
     assert executor.run_processes["job-1"] is owner
-    assert owner[_RESOURCE_OWNER_KEY] == (old_resources, "old-token", resource_manager)
+    assert owner[_RUN_STATE_KEY].monitor_args[2:5] == (old_resources, "old-token", resource_manager)
     assert find_job_cert(str(run_dir)) is not None
 
 

@@ -858,7 +858,8 @@ def _isolate_module_clocks(monkeypatch):
 def test_real_slurm_handle_cancel_observation_fits_default_parent_cleanup_bound(tmp_path):
     import threading
 
-    from nvflare.private.fed.client.client_executor import JobExecutor, _PendingJobHandle
+    from nvflare.apis.fl_constant import RunProcessKey
+    from nvflare.private.fed.client.client_executor import _RUN_STATE_KEY, JobExecutor, _PendingJobHandle, _RunState
     from tests.timing_utils import ThreadGroup
 
     adapter = Adapter()
@@ -887,6 +888,8 @@ def test_real_slurm_handle_cancel_observation_fits_default_parent_cleanup_bound(
     pending.attach(handle)
     executor = JobExecutor(MagicMock(), str(tmp_path / "startup"))
     assert executor.job_launch_cleanup_timeout == handle.poll_interval == 10.0
+    state = _RunState(monitor_args=(executor.client, "job-1", None, None, None, str(tmp_path), MagicMock()))
+    executor.run_processes["job-1"] = {RunProcessKey.JOB_HANDLE: pending, _RUN_STATE_KEY: state}
 
     def cleanup():
         results.append(executor._cleanup_failed_launch("job-1", pending))
@@ -911,10 +914,13 @@ def test_real_slurm_handle_cancel_observation_fits_default_parent_cleanup_bound(
                 handle.accounting_last_query = float("-inf")
                 handle.poll()
     finally:
-        for call in pending.cleanup_calls or ():
-            if call.thread.ident is not None:
-                call.thread.join(5)
-                assert not call.thread.is_alive()
+        state.handoff.set()
+        if state.monitor and state.monitor.ident:
+            state.monitor.join(5)
+            assert not state.monitor.is_alive()
+        if pending.cancel_call and pending.cancel_call.thread.ident:
+            pending.cancel_call.thread.join(5)
+            assert not pending.cancel_call.thread.is_alive()
 
 
 def test_cancel_fast_polling_backs_off_without_synthesizing_settlement(tmp_path):
@@ -961,7 +967,7 @@ def test_cancel_fast_polling_backs_off_without_synthesizing_settlement(tmp_path)
     assert waits == [1.0] * 10 + [10.0, 10.0]
     assert query_times[-3:] == [10.0, 20.0, 30.0]
     assert len(query_times) == 14  # Includes terminate()'s initial query.
-    assert sum(call[0] == "cancel" for call in adapter.calls) == 13
+    assert sum(call[0] == "cancel" for call in adapter.calls) == 1
     assert handle.terminal_result == JobReturnCode.ABORTED
     assert not manager._handles
 
@@ -1005,3 +1011,46 @@ def test_cancel_request_wakes_a_handle_already_waiting_at_normal_poll_interval(t
             adapter.live = _query(LookupStatus.NOT_FOUND)
             handle.accounting_last_query = float("-inf")
             handle.poll()  # Native terminal evidence also wakes the waiter on failure.
+
+
+@pytest.mark.parametrize("raises", [False, True], ids=["unavailable", "exception"])
+def test_cancellation_retries_until_accepted_then_only_observes(tmp_path, raises):
+    adapter = Adapter()
+    adapter.live = _query(LookupStatus.FOUND, _record(state="RUNNING"))
+    manager = _manager(tmp_path, adapter)
+    handle = manager.launch(_plan(tmp_path))
+    attempts = []
+
+    def cancel(job_id, timeout):
+        attempts.append((job_id, timeout))
+        if len(attempts) == 1:
+            if raises:
+                raise RuntimeError("transient scancel failure")
+            return _query(LookupStatus.UNAVAILABLE)
+        if len(attempts) == 2:
+            return _query(LookupStatus.UNAVAILABLE)
+        return _query(LookupStatus.FOUND)
+
+    adapter.cancel = cancel
+    if raises:
+        with pytest.raises(RuntimeError, match="transient scancel failure"):
+            handle.terminate()
+    else:
+        handle.terminate()
+    assert not handle.cancel_accepted
+    handle.poll()
+    assert not handle.cancel_accepted
+    handle.poll()
+    assert handle.cancel_accepted
+    assert len(attempts) == 3
+    adapter.live = _query(LookupStatus.FOUND, _record(state="COMPLETING"))
+    for _ in range(5):
+        handle.terminate()
+        assert handle.poll() == JobReturnCode.UNKNOWN
+    assert len(attempts) == 3
+    assert manager._handles["job-1"] is handle
+    assert handle.terminal_result is None
+    adapter.live = _query(LookupStatus.NOT_FOUND)
+    adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="CANCELLED"))
+    assert handle.poll() == JobReturnCode.ABORTED
+    assert not manager._handles
