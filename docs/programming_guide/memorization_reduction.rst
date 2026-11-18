@@ -150,18 +150,20 @@ The runnable `Hugging Face workflow
 prepares a pinned Pythia-70M reference on disjoint synthetic records, trains two
 clients with the SDK loss/scorer, performs paired likelihood/TRA audits, and
 separately evaluates the saved final global checkpoint on fixed final cohorts.
-On H100, 42 focused tests passed, including both CUDA tests, and the two-client,
-two-round workflow completed all four client audits and final global evaluation.
-It includes independent numerical parity checks and phase memory/runtime
-measurements. This is a bounded implementation/adoption example, not production
-certification or a replacement for the historical efficacy benchmark.
+The GB300 validation reran the complete two-client, two-round workflow at
+``6270840c1`` and, separately, the inference-mask fix at ``28c5defc4``. Both
+passed numerical parity, all four paired audits, coverage checking, job export
+and final global auditing; the later probe passed 65 focused tests and 24 CUDA
+regressions with zero skips. The historical H100 measurements remain pinned to
+``778d632e``. These are bounded implementation/adoption checks, not production
+certification or replacements for the historical efficacy benchmark.
 
 Budget for live trainer/reference models, the full baseline snapshot, materialized
 updates, reconstruction/evaluation models, activations, logits, gradients, optimizer
 state and temporary loading/hashing copies. Measure the actual model, sequence
 length, precision, concurrency and cadence; tensor state size alone is insufficient.
 The `SDK validation report
-<https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/huggingface/SDK_VALIDATION.md>`_
+<https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/SDK_VALIDATION_GB300.md>`_
 records the measured workload and explicitly limits extrapolation.
 
 The adapter checks deadlines between audit phases, and application evaluators
@@ -203,9 +205,10 @@ includes every strength and seed, zero-noise controls, CE results, unattainable
 leakage targets, scalar tables, costs, reference provenance, and PNG/PDF figures.
 TRAP has no formal DP guarantee, and this search does not establish optimal DP
 performance. The measurements used the frozen research implementation before the
-SDK refactor. The separate H100 workflow validates its recorded SDK revision;
-subsequent fixes are identified in the validation report. It does not
-rerun that efficacy study.
+SDK refactor. The separate GB300 SDK validation retrained and evaluated 24
+prespecified settings from the frozen 0.4 development-target operating points at
+``6270840c1``, with no retuning. Its individual results, historical comparisons
+and subset figure remain separate from the original study and H100 measurements.
 
 The :doc:`design document <../design/federated_memorization_reduction>` describes the
 API boundaries, reference assumptions, resource costs and remaining review gates.

@@ -30,11 +30,13 @@ arXiv:2609.32293. This design covers the NVFlare integration of the preprint's
 reference-based penalty and the supporting audit interfaces.
 
 The [benchmark report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/TRAP_DP_RESULTS.md)
-includes the completed GB300 research study. The November 6 H100 validation covers
-SDK revision `778d632e`; subsequent changes have focused local regression and
-simulator coverage and have not rerun that GPU workflow. The separate benchmark
-evidence and its limits are summarized below. TRAP is not differential privacy, and this proposal
-adds neither a DP mechanism nor a privacy accountant.
+includes the completed GB300 research study. A separate
+[SDK validation report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/SDK_VALIDATION_GB300.md)
+covers 24 fresh, prespecified workflows at `6270840c1` and a full GPU/Hugging Face
+probe of the subsequent inference-mask fix at `28c5defc4`. The November 6 H100
+measurements remain pinned to `778d632e`. These evidence scopes and their limits
+are summarized below. TRAP is not differential privacy, and this proposal adds
+neither a DP mechanism nor a privacy accountant.
 
 ## Components and ownership
 
@@ -307,9 +309,11 @@ frequency, device and cooperative deadlines must be set for the deployment.
 The [Hugging Face adoption example](https://github.com/NVIDIA/NVFlare/tree/main/research/memorization-reduction/huggingface)
 provides reference preparation, completion cohorts, likelihood/TRA attacks, final
 global-checkpoint evaluation, and an expected site/round coverage checker. Its
-[SDK validation report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/huggingface/SDK_VALIDATION.md)
-records numerical parity and memory/runtime scope for SDK revision `778d632e`.
-Those measurements do not cover subsequent revisions or establish capacity for
+[GB300 validation report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/SDK_VALIDATION_GB300.md)
+records numerical parity and measured memory/runtime scope for the actual SDK at
+`6270840c1`, plus a separate full probe at `28c5defc4`. The
+[historical H100 measurements](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/huggingface/SDK_VALIDATION.md)
+remain tied to `778d632e`. These bounded workloads do not establish capacity for
 arbitrary models or client concurrency.
 Operators must budget live trainer/reference/evaluation models, snapshots,
 materialized updates, activations/logits, optimizer state and temporary copies.
@@ -334,17 +338,23 @@ The draft tests loss values/gradients/masking/accumulation, cache identity and
 mutation rejection, audit scheduling, stale baselines, RNG isolation, unsupported
 inputs and local report behavior. The separate foundation owns model-filter
 representation and round-trip tests.
-SDK revision `778d632e` passed 42 focused tests on H100, including both CUDA tests,
-and a two-client/two-round Pythia workflow with four completed client audits and separate
-final global-checkpoint evaluation. Reference scores, loss and all 76 parameter
-gradients matched independent calculations with zero measured error. The
-[validation report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/huggingface/SDK_VALIDATION.md)
-records the measured memory/runtime scope and identifies subsequent fixes validated
-locally; those later revisions have not rerun the GPU workflow. The tiny model
-simulator passed at `62873bbcc` on November 10 after the baseline moved to a context
-attribute: two clients, two rounds and all four completed paired audits through
-the real ClientRunner. This smoke does not launch `MultiProcessExecutor` workers.
-Current-main Client API materialization tests cover the reused runtime paths.
+The [GB300 validation](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/SDK_VALIDATION_GB300.md)
+independently accepted all 24 prespecified fresh fits and final evaluations at
+`6270840c1`. Both that revision and the later inference-mask fix at `28c5defc4`
+passed the full GPU/Hugging Face gate: fresh reference preparation, reference/loss/
+all-parameter-gradient parity at unchanged tolerances, full/difference reconstruction,
+RNG isolation, two real clients, all four expected paired audits, coverage checking,
+job export and a separate final global audit. The report binds exact source,
+inputs, checkpoints, evidence and successful terminal jobs, and distinguishes the
+later probe from the original matrix. GPU and CPU measurements retain their scopes.
+
+The historical H100 run at `778d632e` passed 42 focused tests, including both CUDA
+tests; its numerical and resource measurements remain unchanged. The tiny-model
+simulator also passed at `62873bbcc` after the baseline moved to a context attribute.
+Neither the simulator nor the GPU/Hugging Face workflow launches actual
+`MultiProcessExecutor` workers; its message-builder/serialization regression covers
+that separate transport boundary in process. Current-main Client API materialization
+tests cover the reused runtime paths.
 
 Before removing experimental status, review the API and security contracts and
 publish paired utility/leakage measurements, all defense strengths and individual
@@ -367,9 +377,12 @@ described above.
 The [Pythia-70M benchmark report](https://github.com/NVIDIA/NVFlare/blob/main/research/memorization-reduction/TRAP_DP_RESULTS.md)
 provides all 525 fits and 210 final evaluations, complete strength/seed tables,
 negative outcomes, privacy and compute accounting, and eight PNG/PDF figure pairs.
-It uses the frozen research implementation preceding this SDK refactor; the
-separate H100 workflow validates its recorded SDK revision; later fixes have
-focused local regression and simulator coverage.
+It uses the frozen research implementation preceding this SDK refactor. The separate
+GB300 SDK report validates 24 settings chosen from the frozen 0.4 development-target
+operating points, retaining both individual seeds and unfavorable historical/fresh
+outcomes. It adds no tuning or parameter sweep. A separate full GPU/Hugging Face
+probe validates the later inference-mask fix; historical H100 measurements keep
+their original source identity.
 
 TRAP passed 60/84 paired accuracy-and-leakage screens, falling to 24/84 when the
 separate CE criterion was also required. The tested DP settings passed 0/84 in this

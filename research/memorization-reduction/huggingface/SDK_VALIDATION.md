@@ -1,37 +1,30 @@
 # SDK GPU validation and operating limits
 
-Validated November 6, 2026 at
+The [GB300 SDK validation report](../SDK_VALIDATION_GB300.md) covers the current
+nested-auditor API and context-attribute baseline. It includes 24 fresh, prespecified
+training-and-evaluation workflows at
+[`6270840c1`](https://github.com/holgerroth/NVFlare/commit/6270840c1d32510b22eb91a8a848bfb87246468d)
+and a separate complete GPU/Hugging Face probe of the inference-mask fix at
+[`28c5defc4`](https://github.com/holgerroth/NVFlare/commit/28c5defc4433d5ed8cf7c7dc47828d722230eed9).
+Both GPU probes reran fresh reference preparation, numerical parity, real two-client
+training, expected audit coverage, job export and final global-checkpoint auditing.
+The 24-workflow matrix was not replayed or relabeled as the later revision.
+
+**The H100 measurements below remain historical**, validated November 6, 2026 at
 [`778d632e35bd46c8b40a928837d43a55d0931373`](https://github.com/holgerroth/NVFlare/commit/778d632e35bd46c8b40a928837d43a55d0931373).
-[Machine-readable results, source hashes and artifact hashes](validation-h100.json)
-accompany this report and bind the Python sources at that commit. A subsequent
-coverage-checker fix handles SDK failure reports with unknown site/round identities;
-an in-process regression generates an actual filter report and checks JSON diagnostics
-and exit status 1. That fix was validated locally, without rerunning the H100 workflow.
-A later review tightened reference mutation detection, contained non-ValueError
-DXO decoding failures, made observer callbacks avoid model re-encoding, skipped
-input hashing when caching is off, and
-added deadline checks between audit phases. These changes have focused local
-regression coverage; the H100 workflow has not been
-rerun after them. The measurements below belong to the pinned revision, not the
-updated implementation. The current API also replaces the historical
-`AuditModelSnapshot`/component-ID wiring with a process-local attribute on the
-original task context and a nested auditor constructor argument. Its local export/reload and
-lifetime tests do not establish GPU runtime or memory parity. Current `validate.py`
-checks ownership through the public input/output filters and includes output-filter
-reporting in the full-audit measurement; the historical measurements below used
-the removed snapshot store and direct auditor calls. The TRAP equation and audit
-metric formulas are unchanged. Later local follow-up also adds matching input
-snapshot schedules, checks paired round identity in the generic filter, and loads
-one reference per HF audit for both evaluation phases, releasing it at exit. A
-worker-relay regression also checks the actual `MultiProcessExecutor` task/event
-message builders and FOBS serialization with a fake Cell boundary: the audit
-snapshot stays in the parent context and the paired audit still completes. It does
-not launch workers or establish end-to-end multiprocess/GPU validation. The H100
-workflow has not been rerun for these changes; the timings and memory figures
-below do not measure their effects.
-The historical [525-fit benchmark](../TRAP_DP_RESULTS.md) used the earlier research
-implementation; this run separately exercises the SDK classes at the pinned revision. Neither establishes
-general production readiness.
+Their [machine-readable results, source hashes and artifact hashes](validation-h100.json)
+are unchanged. That run used the former snapshot store and direct auditor calls;
+its timings and memory figures do not measure the later API. Current `validate.py`
+uses the public input/output filters and includes reporting in its full-audit measurement.
+Use the GB300 report for the newer implementation's evidence and resource scope.
+
+The historical [525-fit efficacy benchmark](../TRAP_DP_RESULTS.md) used the research
+implementation preceding the SDK refactor. The newer fixed subset is a validation
+of selected settings, not another search. None of these studies establishes general
+production readiness. The `MultiProcessExecutor` regression exercises its actual
+task/event message builders and FOBS serialization with a fake Cell boundary; it
+does not launch workers. Real ClientRunner baseline pairing is exercised by the
+simulator and GPU/Hugging Face workflows.
 
 ## Current API simulator smoke
 

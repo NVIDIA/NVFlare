@@ -3,8 +3,9 @@
 The TRAP components support **CPU and CUDA**. This research project composes
 `PTTRAPLoss`, `FrozenReferenceScorer` and report-only memorization filters with
 standard federated training. The [Hugging Face workflow](huggingface/README.md)
-is the representative GPU example, validated on **H100** at SDK revision `778d632e`.
-TRAP provides no differential privacy guarantee.
+is the representative GPU example. The [GB300 SDK validation](SDK_VALIDATION_GB300.md)
+covers revisions `6270840c1` and `28c5defc4`; historical H100 measurements remain
+pinned to `778d632e`. TRAP provides no differential privacy guarantee.
 
 The TRAP method is introduced by Muhammed Ustaomeroglu et al. (2026) in
 [TRAP: Understanding and Mitigating Privacy Memorization in Language Models](https://arxiv.org/abs/2609.32293),
@@ -17,13 +18,16 @@ The [Pythia Hugging Face workflow](huggingface/README.md) provides a larger runn
 integration: pinned model/tokenizer download, public-reference preparation,
 completion-masked TRAP training, paired likelihood/TRA audits on task-specific
 cohorts, expected-coverage checks, and separate final global-checkpoint evaluation.
-On H100, **42 focused tests passed**, including both CUDA tests, and the actual
-SDK completed two-client/two-round Pythia training, four paired client audits and
-separate final global-checkpoint evaluation. Reference scores, loss and all 76
-parameter-gradient tensors matched independent calculations with zero measured
-error. The [SDK validation report](huggingface/SDK_VALIDATION.md) records numerical
-checks, memory/runtime measurements and the bounded workload scope. It also records
-subsequent fixes with local regression coverage, without claiming a new GPU run.
+The [GB300 validation report](SDK_VALIDATION_GB300.md) records **24 independently
+accepted fresh fits and final evaluations**, using the actual SDK at `6270840c1`.
+The settings are a frozen subset of the original benchmark, with seeds 29/47 and
+2/8/32 clients; there was no retuning. Both that revision and the subsequent
+inference-mask fix at `28c5defc4` passed the complete GPU/Hugging Face workflow,
+including numerical reference/loss/gradient/audit checks, real paired client audits,
+coverage checking, export and final global auditing. Source and acceptance hashes,
+individual results, historical comparisons and resource measurements are linked
+from the report. The [H100 report](huggingface/SDK_VALIDATION.md) retains the
+separate November 6 measurements at `778d632e`.
 
 The audit adapter requires complete model state, including persistent buffers.
 Adapter-only/LoRA updates need application-specific reconstruction and auditing.
