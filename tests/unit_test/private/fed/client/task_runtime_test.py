@@ -411,8 +411,8 @@ def test_exited_process_leader_does_not_release_owned_children(monkeypatch, late
                 assert service.shutdown(timeout=5) == ()
 
 
-def test_cleanup_wait_reports_pending_and_never_claims_completion():
-    from nvflare.private.fed.client.task_runtime import JobHandleWithTaskWorkers, TaskCleanupPending
+def test_bounded_cleanup_wait_warns_and_keeps_the_physical_owner():
+    from nvflare.private.fed.client.task_runtime import JobHandleWithTaskWorkers
 
     p = runtime_fixture()
     p.owner.manage_cj = True
@@ -421,8 +421,9 @@ def test_cleanup_wait_reports_pending_and_never_claims_completion():
     p.owner.thread.is_alive.return_value = True
     native = Mock(spec=ProcessHandle)
     wrapped = JobHandleWithTaskWorkers(native, p.owner, cleanup_timeout=0.01)
-    with pytest.raises(TaskCleanupPending, match="retains unconfirmed"):
-        wrapped.wait()
+    assert wrapped.wait() is None
+    p.owner.warn_cleanup_pending.assert_called_once_with()
+    assert p.owner.thread.is_alive()
     native.wait.assert_not_called()
     p.owner.thread.join.assert_called_once_with(0.01)
     p.owner.thread.is_alive.return_value = False
@@ -471,7 +472,7 @@ def test_stalled_docker_control_cannot_block_worker_cancel_or_spawn_more_control
     from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskExecutionStatus
     from nvflare.app_opt.job_launcher.docker_launcher import DockerJobHandle
     from nvflare.app_opt.job_launcher.slurm.task_service import _Job
-    from nvflare.private.fed.client.task_runtime import JobHandleWithTaskWorkers, TaskCleanupPending
+    from nvflare.private.fed.client.task_runtime import JobHandleWithTaskWorkers
     from nvflare.private.fed.task_worker.task_service import _Attempt
 
     entered, unblock, cancelled = (threading.Event() for _ in range(3))
@@ -514,8 +515,8 @@ def test_stalled_docker_control_cannot_block_worker_cancel_or_spawn_more_control
             for _ in range(5):
                 owner.observe_cj()
                 assert owner.cj_control_thread is control
-            with pytest.raises(TaskCleanupPending):
-                wrapped.wait()
+            assert wrapped.wait() is None
+            assert owner.thread.is_alive()
             owner.on_done.assert_not_called()
         finally:
             unblock.set()

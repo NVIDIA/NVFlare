@@ -268,7 +268,9 @@ CP binds resources, invokes ``sbatch/squeue/sacct/scancel``, and retains cleanup
 after CJ loss, cancellation or a lost reply. CP shutdown fences new launches,
 keeps owners for in-flight coordinator creation, and stops late-created
 coordinators. Its cleanup wait uses ``task_execution.finalization_timeout``;
-unconfirmed cleanup remains owned and is reported. The Docker CJ needs no
+a timeout warns and returns while the task service retains physical cleanup
+ownership for as long as CP remains alive. This does not add caller-side retention
+of registration, admission resources or credentials. The Docker CJ needs no
 ``SLURM_JOB_ID`` or Slurm child marker. The existing Slurm CJ profile still
 requires them. Application success and scheduler-confirmed release remain
 separate outcomes. Automatic CJ recovery is disabled, and parent-crash
@@ -326,14 +328,36 @@ does not depend on an inventory command or automatic restart adoption.
 1. Fence new starts at the affected site. Record the site workspace, operating
    UID, federation job IDs and the time range of the failed CP. Preserve its logs
    and ``.nvflare_slurm/tasks/*/identity.json`` and ``scheduler.jsonl`` files.
-2. Match each worker's job/site/task/attempt identity to its control directory.
-   Its scheduler name is ``nvfl-task-`` followed by the first 48 characters of
-   the directory name; its comment is ``nvfl-task:`` followed by the full directory
-   name.
-   Use the allocation ID and cluster in the journal's ``execution_id`` when
-   available. An unresolved submission needs a scheduler search using that exact
-   name/comment, UID and submission time; absence of a recorded ID is not proof
-   that submission failed.
+2. Match each worker's job/site/task/attempt identity to its control records.
+   The attempt key is the last colon-separated field of ``execution_id`` in
+   ``scheduler.jsonl``. Its scheduler name is ``nvfl-task-`` followed by the first
+   48 characters of that key; its comment is ``nvfl-task:`` followed by the full
+   key. **Do not use the control directory name:** it is a second hash of the key.
+
+   If the journal is empty, recover the key from ``identity.json`` using the same
+   ordered, compact JSON encoding as the launcher:
+
+   .. code-block:: bash
+
+      python - /path/to/control/identity.json <<'PY'
+      import hashlib
+      import json
+      import sys
+
+      with open(sys.argv[1], encoding="utf-8") as stream:
+          record = json.load(stream)
+      fields = ("job_id", "site_name", "task_id", "attempt_id")
+      identity = [record[field] for field in fields]
+      encoded = json.dumps(identity, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+      key = hashlib.sha256(encoded).hexdigest()
+      print("name:", "nvfl-task-" + key[:48])
+      print("comment:", "nvfl-task:" + key)
+      PY
+
+   Use the journal's allocation ID and cluster when available. An unresolved
+   submission needs a scheduler search using the recovered name/comment, UID
+   and submission time; absence of a recorded ID is not proof of non-submission.
+   If identity and journal keys disagree, stop and investigate before cancelling.
 3. Query the owning Slurm controller (``scontrol show job``) and accounting
    (``sacct``) for each matched allocation. Verify the UID, name/comment and
    submission time before cancelling that specific ID with ``scancel``. Query

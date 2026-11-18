@@ -65,12 +65,12 @@ class _TaskExecutionState:
     services: dict = field(default_factory=dict)
 
 
-class TaskCleanupPending(TimeoutError):
-    """CP still owns coordinator or task cleanup after the bounded wait."""
-
-
 class JobHandleWithTaskWorkers(JobHandleSpec):
-    """Preserve CJ outcome while bounding the wait for parent-owned cleanup."""
+    """Preserve CJ outcome while bounding the wait for parent-owned cleanup.
+
+    A cleanup timeout warns and returns; CP's physical owner keeps retrying.
+    Caller registration/admission retention belongs to the shared executor.
+    """
 
     def __init__(self, handle, owner, cleanup_timeout=30.0, *, allow_restart=True):
         self.handle = handle
@@ -127,7 +127,7 @@ class JobHandleWithTaskWorkers(JobHandleSpec):
         if self.owner.thread.is_alive():
             if getattr(self.owner, "manage_cj", False):
                 self.owner.warn_cleanup_pending()
-                raise TaskCleanupPending(f"job {self.owner.job_id}: CP retains unconfirmed task/coordinator cleanup")
+                return
             with self.owner.lock:
                 pending = [a.execution_id for a in self.owner.attempts.values() if not a.status.settled]
             logging.getLogger(__name__).warning(
