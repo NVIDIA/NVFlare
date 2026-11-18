@@ -186,8 +186,8 @@ distinct within that module.
      - Assignment IDs, active bases and versions; client concurrency, refill and contribution
        budget; result/weight validation; exact-base deltas; buffered publication;
        update-transform context.
-     - Collab RPCs, execution environments, result arrival timing,
-       framework-specific arithmetic and research policies.
+     - Collab RPCs, execution environments, result arrival timing and
+       framework-specific arithmetic.
    * - Example model helpers
      - Snapshots, shape/dtype/finite checks, differences, update application and
        non-floating buffer rules.
@@ -196,18 +196,10 @@ distinct within that module.
      - Initial model construction, dataset/shards, training and optimizer state;
        evaluation, metrics and artifacts through observer hooks.
      - Core assignment/version accounting and buffered aggregation.
-   * - :github_nvflare_link:`Research workflow
-       <examples/advanced/collab/pt_async_cifar10_reproducible/workflow.py>`
-     - ``ResearchRecipe``, logical reservations, predefined replay, worker reuse,
-       seed streams, held results and append-only disk checkpoints.
-     - Core supplies shared acceptance/aggregation math and Collab call/lifecycle
-       implementation. Sampled FedRevive phases remain follow-up work.
-
 ``FedBuffRecipe`` builds ``FedBuffWorkflow``, which invokes ``FedBuffTrainingCoordinator``.
 The coordinator performs no Collab calls and uses caller-supplied model arithmetic.
-Both production and research use the same numerical acceptance/publication path.
-Research may choose when to submit or accept work and where to keep bases/results;
-core never imports the examples.
+The workflow accepts actual arrivals and the coordinator performs the numerical
+acceptance and publication. Core does not import the examples.
 
 The same module defines ``Assignment``, ``FedBuffResult``, ``AcceptedUpdate``,
 ``FedBuffEvent``. They describe server-local state and hook inputs, and introduce
@@ -218,25 +210,13 @@ import ``FedBuffTrainingCoordinator`` from ``nvflare.collab.fedbuff_recipe``. Pr
 workflow methods are implementation reuse points rather than a public scheduler/storage
 plugin API.
 
-Reproducible Research
----------------------
-
-Actual arrivals depend on training/RPC timing; fixed seeds alone do not make them
-reproducible. The
-:github_nvflare_link:`reproducible example <examples/advanced/collab/pt_async_cifar10_reproducible>`
-explains fixed replay, seed helpers and retained experiment files. Its
-``ResearchRecipe`` and workflow reuse core numerical acceptance and the protected
-``_coordinator_class``/``_run`` implementation points while sharing
-``_create_coordinator``, Collab calls and lifecycle. The research API and concrete
-model helpers remain examples, outside the installed SDK.
-
 Failure and Recovery Limits
 ---------------------------
 
 Errors/timeouts, missing or invalid results, invalid weights and hook exceptions
 stop the workflow without retry. Abort/failure discards partial buffers and
 stops queuing late replies. Submitted Collab calls finish or reach their configured
-timeout; cleanup does not cancel remote computation. Checkpoints do
+timeout; cleanup does not cancel remote computation. Saved observer artifacts do
 not restore assignments, buffers or client optimizer state. Existing Collab
 result context can supply starting weights but starts a fresh version-zero run.
 

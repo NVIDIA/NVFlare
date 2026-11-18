@@ -379,8 +379,7 @@ class FedBuffWorkflow:
 
         Callback admission defines receipt order. Per-call Collab handles hold
         only completion/error status; no result-reader threads stage payloads.
-        The protected call/coordinator/run methods share transport and lifecycle
-        with the research example, without a scheduler/storage plugin API.
+        The workflow owns the call lifecycle without a scheduler/storage plugin API.
         """
         stopped = False
         outcome_lock = threading.Lock()
@@ -512,8 +511,7 @@ class FedBuffRecipe(CollabRecipe):
 
     model_loader supplies the initial model; model_ops supplies arithmetic.
     An optional observer owns evaluation and artifacts.
-    An optional update_transform modifies accepted deltas. Replay, seed policies
-    and storage are research concerns. Other options pass to CollabRecipe;
+    An optional update_transform modifies accepted deltas. Other options pass to CollabRecipe;
     min_clients defaults to concurrency. Components must be reconstructible.
     """
 

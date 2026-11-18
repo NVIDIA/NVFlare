@@ -18,6 +18,4 @@ See [the FedBuff recipe guide](../../../../docs/user_guide/data_scientist_guide/
 imports, observer hooks, weighting, transformations, and failure behavior.
 
 Each successful run saves `schedule.json` and `final_weights.npy`. Actual arrival
-order depends on execution timing. For optional fixed replay, logical-client
-simulation and isolated seed streams, use the separate
-[async research example](../pt_async_cifar10_reproducible/README.md).
+order depends on execution timing.
