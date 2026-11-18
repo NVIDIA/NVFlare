@@ -1,3 +1,7 @@
+:html_title: Federated Learning in Python
+:html_description: Build federated learning and computing applications in Python with NVIDIA FLARE.
+                   Explore the quickstart, examples, APIs, and deployment guides.
+
 .. _user_guide:
 
 ############

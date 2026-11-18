@@ -1,3 +1,6 @@
+:html_description: Learn what federated learning is, how clients and servers collaborate,
+                   and how horizontal, vertical, and decentralized approaches work.
+
 .. _fl_introduction:
 
 ###########################
