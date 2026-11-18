@@ -33,7 +33,9 @@ from nvflare.app_common.utils.tensor_disk_offload_context import (
 )
 from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict, read_safetensors_metadata, tensor_metadata
 from nvflare.app_opt.pt.tensor_downloader import DiskTensorConsumer
-from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled
+from nvflare.fuel.f3.cellnet.defs import ReturnCode
+from nvflare.fuel.f3.cellnet.utils import make_reply
+from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled, DownloadUnavailable
 from tests.timing_utils import WAIT_TIMEOUT, ObservedLock, ThreadGroup
 
 
@@ -42,6 +44,25 @@ def temp_dir():
     d = tempfile.mkdtemp(prefix="nvflare_test_disk_")
     yield d
     shutil.rmtree(d, ignore_errors=True)
+
+
+def test_recoverable_duplicate_removes_partial_disk_tensors(tmp_path, caplog):
+    import logging
+
+    cell = Mock()
+    cell.get_fobs_context.return_value = {}
+    cell.send_request.side_effect = [
+        make_reply(
+            ReturnCode.OK,
+            body={"status": "ok", "data": [save_tensors({"T0": torch.ones(2)})], "state": {"start": 0, "count": 1}},
+        ),
+        make_reply(ReturnCode.SERVICE_UNAVAILABLE, body={"retryable": True}),
+    ]
+    with caplog.at_level(logging.INFO), pytest.raises(DownloadUnavailable):
+        tensor_downloader.download_tensors_to_disk("source", "ref", 5.0, cell, root_dir=str(tmp_path))
+    assert list(tmp_path.iterdir()) == []
+    assert not any(record.levelno >= logging.ERROR for record in caplog.records)
+    cell.fire_and_forget.assert_not_called()
 
 
 def test_root_close_waits_for_consumer_registration(tmp_path, monkeypatch):
