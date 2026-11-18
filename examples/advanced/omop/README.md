@@ -37,6 +37,7 @@ python job.py --cdm /data/omop/cdm.duckdb --cdm_schema cdm --n_clients 4 --expor
 ```
 
 You then submit `omop_job` to your deployment.
+Each site must allow this custom code (BYOC) in its [authorization policy](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/security/identity_security.html#federated-authorization).
 To study something else, edit the concept IDs in `cohort.py`, which you can look up in [Athena](https://athena.ohdsi.org/).
 
 ## Simulation
