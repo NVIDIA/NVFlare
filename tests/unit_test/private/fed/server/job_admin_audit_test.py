@@ -16,13 +16,19 @@
 
 import json
 from contextlib import contextmanager, nullcontext
-from types import SimpleNamespace
+from threading import Lock
+from types import MethodType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.apis.fl_constant import ReservedKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_def_manager_spec import RunStatus
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.admin_audit import AdminContext, audit_context, snapshot
@@ -30,7 +36,9 @@ from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import MsgHeader, error_reply, ok_reply
 from nvflare.private.fed.server import job_cmds
 from nvflare.private.fed.server.job_cmds import JobCommandModule
+from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.message_send import ClientReply
+from nvflare.private.fed.server.server_engine import ServerEngine
 
 JOB_ID = "123e4567-e89b-42d3-a456-426614174000"
 ALLOWED_FIELDS = {"event_id", "reference", "timestamp", "user", "action", "job", "scope", "message"}
@@ -187,8 +195,8 @@ def test_running_job_delete_is_rejected_without_effect(audit_records, status):
         (RunStatus.SUBMITTED.value, None, "job.abort.before_execution", "aborted_before_execution"),
         (RunStatus.DISPATCHED.value, None, "job.abort.before_execution", "aborted_before_execution"),
         (RunStatus.FINISHED_COMPLETED.value, None, "job.abort.unchanged", "already_finished"),
-        (RunStatus.RUNNING.value, None, "job.abort.signal_sent", "signal_sent"),
-        (None, "exception-private", "job.abort.error", "signal_failed"),
+        (RunStatus.RUNNING.value, None, "job.abort.requested", "abort_requested"),
+        (None, "exception-private", "job.abort.error", "abort_request_failed"),
         ("exception", None, "job.abort.error", "processing_error"),
     ],
 )
@@ -247,7 +255,7 @@ def test_job_log_configuration_reports_each_remote_result_without_recording_cont
     events = records()
     assert len(events) == 4
     assert {event["message"] for event in events} == {
-        "reason=acknowledged site=server",
+        "reason=unknown_outcome site=server",
         "reason=acknowledged site=site-a",
         "reason=remote_error site=site-b",
         "reason=no_reply site=site-c",
@@ -405,3 +413,79 @@ def test_direct_job_log_invalid_input_is_rejected_once_without_raw_arguments(aud
     assert event["action"] == "download.setup.rejected"
     assert event["message"] == "reason=invalid_arguments component=job_log"
     assert "job" not in event
+
+
+def test_abort_request_after_server_exit_does_not_claim_dispatch(audit_records, tmp_path):
+    records, _writer = audit_records
+    manager = SimpleNamespace(get_job=lambda *args: make_job(RunStatus.RUNNING.value))
+    engine = make_engine(manager)
+    engine.run_processes = {}
+    engine.abort_app_on_server = MagicMock()
+    runner = JobRunner(str(tmp_path))
+    runner.abort_client_run = MagicMock()
+    tracked_job = SimpleNamespace(job_id=JOB_ID, run_aborted=False)
+    runner.running_jobs[JOB_ID] = tracked_job
+    runner._pending_client_outcomes[JOB_ID] = {"site-a"}
+    engine.job_runner = runner
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    engine.new_context = lambda: nullcontext(fl_ctx)
+    conn = job_connection(engine, RunStatus.RUNNING.value)
+
+    JobCommandModule().abort_job(conn, ["abort_job", JOB_ID])
+
+    assert tracked_job.run_aborted
+    assert runner._pending_client_outcomes[JOB_ID] == {"site-a"}
+    engine.abort_app_on_server.assert_not_called()
+    runner.abort_client_run.assert_not_called()
+    [event] = records()
+    assert event["action"] == "job.abort.requested"
+    assert event["message"] == "reason=abort_requested"
+    assert event["job"] == JOB_ID
+    assert not conn.errors
+    # Preserve the existing command response; only the new audit evidence changes.
+    assert conn.strings == [("Abort signal has been sent to the server app.", None)]
+    assert conn.successes[0][1][MetaKey.STATUS] == MetaStatusValue.OK
+
+
+@pytest.mark.parametrize(
+    "transport_code, payload, expected_reason",
+    [
+        (CellReturnCode.TIMEOUT, None, "unknown_outcome"),
+        (CellReturnCode.SERVICE_UNAVAILABLE, None, "unknown_outcome"),
+        (CellReturnCode.OK, None, "unknown_outcome"),
+        (CellReturnCode.OK, "", "unknown_outcome"),
+        (CellReturnCode.OK, "exception-private /private/config", "remote_error"),
+    ],
+)
+def test_job_log_audits_actual_child_transport_without_inventing_acknowledgement(
+    audit_records, monkeypatch, transport_code, payload, expected_reason
+):
+    records, _writer = audit_records
+    engine = make_engine(SimpleNamespace(get_job=lambda *args: make_job(RunStatus.RUNNING.value)))
+    engine.lock = Lock()
+    cell = SimpleNamespace(
+        send_request=MagicMock(return_value=CellMessage({MessageHeaderKey.RETURN_CODE: transport_code}, payload))
+    )
+    engine.server = SimpleNamespace(cell=cell)
+    engine.logger = MagicMock()
+    # Exercise both real engine methods; only the network boundary is controlled.
+    engine.send_command_to_child_runner_process = MethodType(ServerEngine.send_command_to_child_runner_process, engine)
+    engine.configure_job_log = MethodType(ServerEngine.configure_job_log, engine)
+    monkeypatch.setattr(job_cmds, "ServerEngine", SimpleNamespace)
+    conn = job_connection(engine, RunStatus.RUNNING.value)
+    config = "/private/secret-logging-configuration"
+
+    JobCommandModule().configure_job_log(conn, ["configure_job_log", JOB_ID, "server", config])
+
+    cell.send_request.assert_called_once()
+    assert cell.send_request.call_args.kwargs["request"].payload == config
+    [event] = records()
+    assert event["action"] == "logging.job.remote_reported"
+    assert event["message"] == "reason=" + expected_reason + " site=server"
+    assert event["job"] == JOB_ID
+    assert event["scope"] == "job-scope"
+    assert bool(conn.errors) == bool(payload)
+    assert bool(conn.strings) == (not bool(payload))
+    if not payload:
+        assert conn.strings == [(f"successfully configured server job {JOB_ID} log", None)]

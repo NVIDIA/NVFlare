@@ -50,7 +50,7 @@ A command-handling function returning does not establish business completion.
 | Permission checks | Policy denial, policy-evaluation error, explicit role denial, and preprocessing rejection. Record failures before the ordinary command-audit filter without changing filter order. Emit one rejection per decision. |
 | Command handling | Sensitive-command dispatch, handler return, and processing error. Distinguish failures before, during, and after handler execution. |
 | Client administration | Rejected origins, client-side permission denials/errors, sensitive-request receipt, and immediate handling results. Legitimate child-status notifications gain no additional administrative records. |
-| Job deletion and abort | Record completed manager deletion even if later bookkeeping fails. Distinguish abort before execution, already finished, starting/retry required, signal sent, and error. |
+| Job deletion and abort | Record completed manager deletion even if later bookkeeping fails. Distinguish abort before execution, already finished, starting/retry required, abort requested, and error. |
 | Study and client access | Study creation/removal and user/site membership changes; client enable/disable/remove. Record per-target results and unchanged state; preserve an applied change separately from later cleanup failure. |
 | Logging configuration | Local application or error and remote reported results for site/job logging changes, excluding configuration contents and paths. |
 | Shutdown and restart | Rejection, scheduling, and remote acknowledgement where observed; never report that a program stopped or restarted without that evidence. |
@@ -136,11 +136,11 @@ These details do not add JSON object fields.
 | `client.command.{received,rejected,handler_returned,error}` | Sensitive receipt, unknown topic, and immediate handling; `private/fed/client/admin.py`. Error stages distinguish `pre_handler`, `handler`, and `post_handler`. |
 | `client.permission.{denied,rejected,error}` | Site policy or authorization-service decision/error; `private/fed/client/admin.py`. A policy event error records the observed error without changing the existing permission decision. |
 | `job.delete.{applied,rejected,error,cleanup_error}` | Configured manager deletion completed, precondition rejected, or later bookkeeping failed; `private/fed/server/job_cmds.py`. Applied deletion is recorded before later bookkeeping. |
-| `job.abort.{before_execution,unchanged,retry_required,signal_sent,error}` | Status update before execution, already finished, starting/retry, abort signal submission, or error; `private/fed/server/job_cmds.py`. Signal submission does not prove execution stopped. |
+| `job.abort.{before_execution,unchanged,retry_required,requested,error}` | Status update before execution, already finished, starting/retry, a handled abort request, or error; `private/fed/server/job_cmds.py`. A handled abort request does not establish that a signal was dispatched or execution stopped. |
 | `study.{register,remove,site_add,site_remove,user_add,user_remove}.{applied,unchanged,rejected,error,persisted,reload_error}` | Registry mutation and each requested membership target; `private/fed/server/study_cmds.py`. `persisted` followed by `reload_error` distinguishes saved file state from failed live reload. Records are emitted outside the registry lock. |
 | `client.{enable,disable,remove}.{applied,unchanged,error,cleanup_error}` | Actual policy persistence/removal and later cleanup, where applicable; `private/fed/server/client_manager.py` and `server_engine.py`. Per-target mixed results remain separate. |
 | `client.policy.rejected` | Invalid client-policy request; `private/fed/server/training_cmds.py`. |
-| `logging.{site,job}.{applied,error,rejected,remote_reported}` | Local application at its owner, setup rejection, or explicit remote response; server `sys_cmd.py`, `job_cmds.py`, `server_commands.py`, and client `sys_cmd.py`, `admin_commands.py`, `training_cmds.py`. `remote_reported` describes acknowledgement/error/no reply, not confirmed application. |
+| `logging.{site,job}.{applied,error,rejected,remote_reported}` | Local application at its owner, setup rejection, or explicit remote response; server `sys_cmd.py`, `job_cmds.py`, `server_commands.py`, and client `sys_cmd.py`, `admin_commands.py`, `training_cmds.py`. `remote_reported` describes explicit acknowledgement/error/no reply/unknown outcome, not confirmed application. |
 | `admin.{shutdown,restart}.rejected` | Command preconditions rejected; `private/fed/server/training_cmds.py`. |
 | `server.{shutdown,restart}.{rejected,scheduled,error}` | Existing server preconditions or submission to the executor; `private/fed/server/server_engine.py`. |
 | `client.{shutdown,restart}.{scheduled,error,cleanup_error,acknowledged,reported_error,no_reply,reply_received}` | Local scheduling or immediate remote reply; `private/fed/client/client_engine.py` and server `training_cmds.py`. No action claims that the program stopped or restarted. |
@@ -188,6 +188,24 @@ Only explicit sensitive command names in `admin_audit.py` gain dispatch/handling
 records. Successful routine polling adds none. Existing unrelated job/task audit
 callers retain their behavior; task execution, workflow results and model-artifact
 coverage remain later increments.
+
+For site logging and remote shutdown/restart, retain an audit-only copy of the
+selected client tokens and approved names before sending. Correlate returned
+entries by token without recording the token itself. A selected target omitted
+from the returned list receives one `no_reply` observation, as does a target with
+an explicit absent reply. Unknown site-logging reply codes are `unknown_outcome`;
+only an explicit built-in success code establishes acknowledgement.
+
+The existing job-child command helper represents both an ordinary empty child
+response and some failed transport responses with the same absent value. Parent
+job-logging observations therefore use `unknown_outcome` for falsy results;
+truthy errors remain remote errors. The original command responses are unchanged.
+An owner-side `logging.job.applied` record is a separate local fact.
+
+For a running job, `job.abort.requested` means the existing stop request returned
+without an error. A job can remain tracked while its server process is already
+absent, so this does not establish signal dispatch. The existing administrator
+reply is preserved; new audit records do not infer evidence from that reply.
 
 ## Administrative recording failures
 

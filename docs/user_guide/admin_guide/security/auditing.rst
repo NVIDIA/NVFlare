@@ -117,7 +117,11 @@ Download terminal records describe only the transfer service's reported result;
 they do not establish confirmed receiver receipt or successful extraction. The
 direct job-log reply records preparation only, because it has no transfer-service
 completion callback. Likewise, scheduled shutdown/restart and remote
-acknowledgements do not prove that a program stopped or restarted.
+acknowledgements do not prove that a program stopped or restarted. A handled
+job-abort request likewise does not establish that an abort signal was dispatched.
+Selected remote targets omitted from the reply list are recorded as no reply;
+ambiguous empty job-child results and unknown site-logging reply codes are
+recorded as unknown outcomes, rather than acknowledgements.
 
 See the `security and administration event catalog
 <../../../design/audit_security_admin_coverage.md>`_ for action names, capture

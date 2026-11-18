@@ -183,11 +183,12 @@ class ConfigureJobLogProcessor(RequestProcessor):
         job_id = req.get_header(RequestHeader.JOB_ID)
 
         err = engine.configure_job_log(job_id, req.body)
+        # A falsy child result does not establish that its request was acknowledged.
         record(
             "logging.job.remote_reported",
             job_id=job_id,
-            status="error" if err else "acknowledged",
-            reason="remote_error" if err else "reply_received",
+            status="error" if err else "unknown_outcome",
+            reason="remote_error" if err else "unknown_outcome",
         )
         if err:
             return error_reply(err)

@@ -14,15 +14,36 @@
 
 import os
 import tempfile
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
+from nvflare.fuel.f3.cellnet.defs import ReturnCode
+from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.streaming.download_service import DownloadStatus
 from nvflare.fuel.f3.streaming.file_downloader import FileDownloadable, add_file, download_file
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from nvflare.fuel.utils.network_utils import get_open_ports
+
+
+def test_duplicate_file_download_returns_error_and_partial_path(tmp_path):
+    cell = Mock()
+    cell.send_request.side_effect = [
+        make_reply(ReturnCode.OK, body={"status": "ok", "data": b"partial", "state": {"received_bytes": 7}}),
+        make_reply(ReturnCode.SERVICE_UNAVAILABLE, body={"retryable": True}),
+    ]
+
+    error, file_path = download_file("source", "ref", 5.0, cell, location=str(tmp_path))
+
+    assert "another attempt" in error
+    assert Path(file_path).read_bytes() == b"partial"
+    assert cell.send_request.call_count == 2
+    cell.fire_and_forget.assert_not_called()
+    # HCI and other callers use the returned path to remove the partial file.
+    Path(file_path).unlink()
+    assert list(tmp_path.iterdir()) == []
 
 
 class TestFileDownloadable:

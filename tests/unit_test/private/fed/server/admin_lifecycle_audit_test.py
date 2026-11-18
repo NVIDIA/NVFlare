@@ -19,9 +19,15 @@ from unittest.mock import MagicMock
 import pytest
 
 from nvflare.apis.client import Client
+from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.admin_audit import audit_context
 from nvflare.fuel.sec.audit import Auditor, AuditService
-from nvflare.private.admin_defs import error_reply, ok_reply
+from nvflare.private.admin_defs import Message, MsgHeader, error_reply, ok_reply
+from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.client_manager import ClientManager
 from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.server.server_engine import ServerEngine
@@ -206,12 +212,14 @@ def test_server_control_records_submission_not_process_exit(operation, state, au
 def test_remote_control_records_only_observed_acknowledgement(operation, audit_records):
     _, read = audit_records
     replies = [
-        ClientReply("secret-token", "site-1", None, ok_reply(body="private-path")),
-        ClientReply("secret-token", "site-2", None, error_reply("private-path")),
-        ClientReply("secret-token", "site-3", None, None),
+        ClientReply("secret-token-1", "site-1", None, ok_reply(body="private-path")),
+        ClientReply("secret-token-2", "site-2", None, error_reply("private-path")),
+        ClientReply("secret-token-3", "site-3", None, None),
     ]
     with _context(operation):
-        TrainingCommandModule._record_control_replies(operation, replies)
+        TrainingCommandModule._record_control_replies(
+            operation, replies, {"secret-token-1": "site-1", "secret-token-2": "site-2", "secret-token-3": "site-3"}
+        )
     assert [item["action"] for item in read()] == [
         f"client.{operation}.acknowledged",
         f"client.{operation}.reported_error",
@@ -266,7 +274,9 @@ def test_remote_ack_audit_preparation_failure_does_not_escape(audit_records):
     reply = MagicMock()
     reply.get_header.side_effect = RuntimeError("private-path")
     with _context("shutdown"):
-        TrainingCommandModule._record_control_replies("shutdown", [ClientReply("secret-token", "site-1", None, reply)])
+        TrainingCommandModule._record_control_replies(
+            "shutdown", [ClientReply("secret-token", "site-1", None, reply)], {"secret-token": "site-1"}
+        )
     assert read() == []
 
 
@@ -295,4 +305,164 @@ def test_automatic_client_removal_is_silent(tmp_path, audit_records):
     engine = _engine(manager)
     engine._remove_dead_client("secret-token")
     assert manager.clients == {}
+    assert read() == []
+
+
+@pytest.mark.parametrize("operation", ["shutdown", "restart"])
+def test_selected_disconnected_control_targets_survive_real_send(operation, audit_records):
+    _, read = audit_records
+    module = TrainingCommandModule()
+    selected = {
+        "secret-token-alive": "site-alive",
+        "secret-token-gone": "site-gone",
+        "secret-token-empty": "site-empty",
+    }
+    clients = {token: SimpleNamespace(token=token, name=name, fqcn=name) for token, name in selected.items()}
+    admin = FedAdminServer.__new__(FedAdminServer)
+    admin.clients = clients
+    admin.timeout = 2.0
+    admin.sai = SimpleNamespace(new_context=FLContext, fire_event=MagicMock())
+    broadcast = MagicMock(
+        return_value={
+            "site-alive": CellMessage(payload=ok_reply(body="response")),
+            "site-empty": CellMessage(payload=None),
+        }
+    )
+    admin.cell = SimpleNamespace(broadcast_multi_requests=broadcast)
+    original_send = admin.send_requests
+    conn = Connection(
+        app_ctx=MagicMock(spec=ServerEngine),
+        props={
+            module.TARGET_CLIENT_TOKENS: list(selected),
+            module.TARGET_CLIENTS: selected,
+            ConnProps.ADMIN_SERVER: admin,
+        },
+    )
+
+    def disconnect_before_send(requests, fl_ctx, **kwargs):
+        clients.pop("secret-token-gone")
+        selected.pop("secret-token-gone")
+        return original_send(requests, fl_ctx, **kwargs)
+
+    admin.send_requests = MagicMock(side_effect=disconnect_before_send)
+    with _context(operation):
+        result = module._shutdown_app_on_clients(conn) if operation == "shutdown" else module._restart_clients(conn)
+    admin.send_requests.assert_called_once()
+    broadcast.assert_called_once()
+    assert set(broadcast.call_args.args[0]) == {"site-alive", "site-empty"}
+    records = read()
+    assert [event["action"] for event in records] == [
+        f"client.{operation}.acknowledged",
+        f"client.{operation}.no_reply",
+        f"client.{operation}.no_reply",
+    ]
+    for event, site in zip(records, ["site-alive", "site-gone", "site-empty"]):
+        assert "site=" + site in event["message"]
+    if operation == "shutdown":
+        assert result is True
+        assert conn.buffer.data == [
+            {
+                ProtoKey.TYPE: ProtoKey.TABLE,
+                ProtoKey.ROWS: [["CLIENT", "RESPONSE"], ["site-alive", "response"], ["site-empty", ""]],
+            }
+        ]
+    else:
+        assert result == "client:site-alive : response\nclient:site-empty : No replies\n"
+        assert conn.buffer.meta[MetaKey.CLIENT_STATUS] == {
+            "site-alive": "response",
+            "site-empty": MetaStatusValue.NO_REPLY,
+        }
+
+
+@pytest.mark.parametrize("target_type", ["server", "all"])
+def test_server_restart_uses_selected_live_clients_not_stale_target_names(target_type, audit_records):
+    _, read = audit_records
+    module = TrainingCommandModule()
+    selected_clients = [Client("site-alive", "secret-token-alive"), Client("site-gone", "secret-token-gone")]
+    engine = ServerEngine.__new__(ServerEngine)
+    engine.job_runner = SimpleNamespace(running_jobs={})
+    engine.get_clients = MagicMock(return_value=selected_clients)
+    engine.restart_server = MagicMock(return_value="")
+    conn = Connection(
+        app_ctx=engine,
+        props={module.TARGET_CLIENTS: {"secret-token-alive": "stale-name", "secret-token-unselected": "private-path"}},
+    )
+    returned = ClientReply("secret-token-alive", "site-alive", None, ok_reply(body="response"))
+
+    def disconnect_during_send(connection, message):
+        selected_clients.pop()
+        return [returned]
+
+    module.send_request_to_clients = MagicMock(side_effect=disconnect_during_send)
+    with _context("restart"):
+        module.restart(conn, ["restart", target_type])
+    records = read()
+    assert [event["action"] for event in records] == ["client.restart.acknowledged", "client.restart.no_reply"]
+    assert "site=site-alive" in records[0]["message"]
+    assert "site=site-gone" in records[1]["message"]
+    assert "stale-name" not in json.dumps(records)
+    engine.get_clients.assert_called_once()
+    engine.restart_server.assert_called_once()
+    module.send_request_to_clients.assert_called_once()
+    assert conn.get_prop(module.TARGET_CLIENTS) == {
+        "secret-token-alive": "stale-name",
+        "secret-token-unselected": "private-path",
+    }
+    assert conn.buffer.data[-1][ProtoKey.TYPE] == ProtoKey.SUCCESS
+
+
+@pytest.mark.parametrize("operation", ["shutdown", "restart"])
+def test_control_unknown_codes_are_not_acknowledgements_and_tokens_are_deduplicated(operation, audit_records):
+    _, read = audit_records
+    missing = Message("reply", "private-path")
+    unknown = Message("reply", "private-path")
+    unknown.set_header(MsgHeader.RETURN_CODE, "private-path")
+    replies = [
+        ClientReply("secret-token-1", "unapproved-name", None, missing),
+        ClientReply("secret-token-1", "unapproved-duplicate", None, ok_reply()),
+        ClientReply("secret-token-2", "site-2", None, unknown),
+        ClientReply("secret-token-other", "private-path", None, ok_reply()),
+    ]
+    with _context(operation):
+        TrainingCommandModule._record_control_replies(
+            operation, replies, {"secret-token-1": "site-1", "secret-token-2": "site-2", "secret-token-3": "site-3"}
+        )
+    records = read()
+    assert [event["action"] for event in records] == [
+        f"client.{operation}.reply_received",
+        f"client.{operation}.reply_received",
+        f"client.{operation}.no_reply",
+    ]
+    for event, site in zip(records, ["site-1", "site-2", "site-3"]):
+        assert "site=" + site in event["message"]
+    assert "unapproved-" not in json.dumps(records)
+
+
+@pytest.mark.parametrize("operation", ["shutdown", "restart"])
+@pytest.mark.parametrize("failure", ["getter", "iteration"])
+def test_control_target_snapshot_failure_preserves_send_and_reply(operation, failure, audit_records):
+    _, read = audit_records
+    module = TrainingCommandModule()
+
+    class BrokenMapping:
+        def __iter__(self):
+            raise RuntimeError("private-path")
+
+    class AuditConnection(Connection):
+        def get_prop(self, key, default=None):
+            if key == module.TARGET_CLIENTS and failure == "getter":
+                raise RuntimeError("private-path")
+            return super().get_prop(key, default)
+
+    conn = AuditConnection(
+        app_ctx=MagicMock(spec=ServerEngine),
+        props={module.TARGET_CLIENT_TOKENS: ["secret-token"], module.TARGET_CLIENTS: BrokenMapping()},
+    )
+    module.send_request_to_clients = MagicMock(
+        return_value=[ClientReply("secret-token", "site-1", None, ok_reply(body="response"))]
+    )
+    with _context(operation):
+        result = module._shutdown_app_on_clients(conn) if operation == "shutdown" else module._restart_clients(conn)
+    module.send_request_to_clients.assert_called_once()
+    assert result is True if operation == "shutdown" else result == "client:site-1 : response\n"
     assert read() == []

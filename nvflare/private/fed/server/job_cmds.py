@@ -428,9 +428,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             err = engine.configure_job_log(str(job_id), config)
+            # Clean child completion and transport failures can both return None.
+            # Keep the existing reply behavior without claiming acknowledgement.
             record(
                 "logging.job.remote_reported",
-                reason="remote_error" if err else "acknowledged",
+                reason="remote_error" if err else "unknown_outcome",
                 site=SERVER_SITE_NAME,
             )
             if err:
@@ -1202,10 +1204,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 else:
                     message = job_runner.stop_run(job_id, fl_ctx)
                     if message:
-                        audit_action, audit_reason = "job.abort.error", "signal_failed"
+                        audit_action, audit_reason = "job.abort.error", "abort_request_failed"
                         conn.append_error(message, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, message))
                     else:
-                        audit_action, audit_reason = "job.abort.signal_sent", "signal_sent"
+                        audit_action, audit_reason = "job.abort.requested", "abort_requested"
                         message = "Abort signal has been sent to the server app."
                         conn.append_string(message)
                         conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
