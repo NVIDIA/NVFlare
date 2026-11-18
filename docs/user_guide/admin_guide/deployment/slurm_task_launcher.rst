@@ -315,6 +315,47 @@ disabled in this initial implementation. CP continues cleanup while alive;
 CP crash/restart adoption is not implemented for any Slurm profile. Persistent
 files alone do not authorize automatic physical retry.
 
+Manual cleanup after CP exits
+-----------------------------
+
+Before restarting a failed CP or resubmitting affected jobs, an operator must
+reconcile its coordinators and worker allocations. Do not delete the workspace,
+credentials or Slurm control records while cleanup is unconfirmed. This procedure
+does not depend on an inventory command or automatic restart adoption.
+
+1. Fence new starts at the affected site. Record the site workspace, operating
+   UID, federation job IDs and the time range of the failed CP. Preserve its logs
+   and ``.nvflare_slurm/tasks/*/identity.json`` and ``scheduler.jsonl`` files.
+2. Match each worker's job/site/task/attempt identity to its control directory.
+   Its scheduler name is ``nvfl-task-`` followed by the first 48 characters of
+   the directory name; its comment is ``nvfl-task:`` followed by the full directory
+   name.
+   Use the allocation ID and cluster in the journal's ``execution_id`` when
+   available. An unresolved submission needs a scheduler search using that exact
+   name/comment, UID and submission time; absence of a recorded ID is not proof
+   that submission failed.
+3. Query the owning Slurm controller (``scontrol show job``) and accounting
+   (``sacct``) for each matched allocation. Verify the UID, name/comment and
+   submission time before cancelling that specific ID with ``scancel``. Query
+   the recorded cluster when one is present. Inspect the allocation and all its
+   batch, extern and application steps until terminal accounting is confirmed.
+   An empty queue, a cancellation acknowledgement or unavailable accounting is
+   insufficient evidence of release; ask the site's Slurm operators to reconcile
+   missing evidence and confirm that owned compute processes/GPU use are gone.
+4. Reconcile CJs separately: worker records do not inventory them. For a Process
+   CJ, match the UID, full job ID, workspace and command in the process listing;
+   terminate its verified process group and confirm that no members remain,
+   including children of an exited leader. For a Docker CJ, use the same Docker
+   daemon as CP, inspect its exact container ID/name, job command and workspace
+   mounts, then stop/remove that container and confirm its absence. A saved PID
+   or container-name prefix alone is insufficient ownership evidence. Native
+   Slurm CJs and server allocations require their own allocation/step checks.
+5. Retain a record of the matched identities, cancellation actions and final
+   scheduler/process/container evidence. Only after every owned execution is
+   confirmed absent should the site clear stale admission state, retire job
+   credentials and restart CP. Ambiguous identity or release evidence requires
+   operator investigation rather than automatic resubmission.
+
 Live worker connections and credentials
 ---------------------------------------
 

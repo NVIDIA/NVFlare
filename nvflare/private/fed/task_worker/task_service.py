@@ -43,7 +43,7 @@ from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 _TOPIC = "request"
 _MAX_MESSAGE = 65536
 _CJ_OBSERVATION_INTERVAL = 10.0
-_CJ_CLEANUP_INTERVAL = 1.0
+_MANAGED_CJ_OBSERVATION_INTERVAL = 1.0
 logger = logging.getLogger(__name__)
 
 
@@ -117,14 +117,18 @@ class _Job:
 
     def _control_cj(self, handle, cleanup):
         try:
-            if cleanup:
-                if handle._is_cleanup_complete() is not True:
-                    handle.terminate()
-                settled = handle._is_cleanup_complete() is True
-                with self.lock:
-                    self.cj_settled = settled
-            elif self._cj_is_dead(handle):
+            if not cleanup:
+                if not self._cj_is_dead(handle):
+                    return
                 self.release()
+                cleanup = True
+            # Confirm physical exit in the same observation. An exited Process
+            # leader can still own children that need group termination.
+            if handle._is_cleanup_complete() is not True:
+                handle.terminate()
+            settled = handle._is_cleanup_complete() is True
+            with self.lock:
+                self.cj_settled = settled
         except Exception:
             # Unavailable control cannot prove death; retain this job for retry.
             pass
@@ -178,7 +182,7 @@ class _Job:
             if self.manage_cj:
                 if self.cj_control_thread is not None and self.cj_control_thread.is_alive():
                     return
-                self.next_cj_observation = now + (_CJ_CLEANUP_INTERVAL if cleanup else _CJ_OBSERVATION_INTERVAL)
+                self.next_cj_observation = now + _MANAGED_CJ_OBSERVATION_INTERVAL
                 # One in-flight operation, owned by this job. A stalled Docker
                 # daemon must not prevent cancellation of Slurm task workers.
                 self.cj_control_thread = threading.Thread(
@@ -259,7 +263,7 @@ class _Job:
                 return
             self.wake.wait(
                 min(self.backend.poll_interval, 1.0)
-                if settlement_waiting or (self.manage_cj and self.released)
+                if settlement_waiting or self.manage_cj
                 else self.backend.poll_interval
             )
             self.wake.clear()

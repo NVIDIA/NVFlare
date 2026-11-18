@@ -566,3 +566,54 @@ def test_lost_launch_reply_returns_while_docker_stop_is_blocked():
             service = getattr(p.cell, "_slurm_task_service", None)
             if service:
                 assert service.shutdown(timeout=5) == ()
+
+
+@pytest.mark.parametrize("scheduler_poll_interval", [10.0, 60.0])
+def test_managed_completion_does_not_wait_for_scheduler_poll_interval(monkeypatch, scheduler_poll_interval):
+    from nvflare.apis.job_launcher_spec import JobReturnCode
+    from nvflare.app_opt.job_launcher.slurm.task_service import _Job
+    from nvflare.private.fed.client.task_runtime import JobHandleWithTaskWorkers
+    from nvflare.private.fed.task_worker import task_service
+    from tests.timing_utils import ManualClock, isolate_time
+
+    clock = ManualClock()
+    monkeypatch.setattr(isolate_time(monkeypatch, task_service), "monotonic", clock.monotonic)
+    observed, exited, returned = (threading.Event() for _ in range(3))
+    native = Mock(spec=ProcessHandle)
+
+    def poll():
+        code = JobReturnCode.SUCCESS if exited.is_set() else JobReturnCode.UNKNOWN
+        observed.set()
+        return code
+
+    native.poll.side_effect = poll
+    native._is_cleanup_complete.return_value = True
+    owner = _Job(SimpleNamespace(poll_interval=scheduler_poll_interval), "job-1", "site-1", "token", "site-1.job-1")
+    owner.manage_cj = True
+    owner.attach_cj(native)
+    owner.on_done = Mock()
+    wrapped = JobHandleWithTaskWorkers(native, owner, cleanup_timeout=5, allow_restart=False)
+
+    def wait():
+        wrapped.wait()
+        returned.set()
+
+    with ThreadGroup() as threads:
+        owner.thread = threads.start(owner.run)
+        try:
+            waiter = threads.start(wait)
+            assert observed.wait(5)
+            join_thread(owner.cj_control_thread)
+            # No explicit wake: the owner must discover exit through its normal
+            # loop, even when the site's scheduler interval is one minute.
+            exited.set()
+            clock.advance(1.0)
+            assert owner.released_event.wait(3), "CJ exit waited for the scheduler polling interval"
+            join_thread(waiter)
+            assert returned.is_set()
+            owner.on_done.assert_called_once_with()
+            native.wait.assert_not_called()
+        finally:
+            exited.set()
+            clock.advance(20.0)
+            owner.release()
