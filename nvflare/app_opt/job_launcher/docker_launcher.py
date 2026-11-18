@@ -363,6 +363,9 @@ class DockerJobHandle(JobHandleSpec):
         exit_code = container.attrs.get("State", {}).get("ExitCode", 1)
         return _exit_code_to_return_code(exit_code)
 
+    def _is_cleanup_complete(self):
+        return self.poll() != JobReturnCode.UNKNOWN
+
     def can_restart(self):
         return self._exit_confirmed and not self._is_terminating()
 
@@ -992,6 +995,18 @@ class DockerJobLauncher(JobLauncherSpec):
 
 
 class ClientDockerJobLauncher(DockerJobLauncher):
+    def launch_job(self, job_meta, fl_ctx):
+        options = get_job_launch_options(fl_ctx)
+        if options.workspace_mount is not None:
+            # CP has already bound workers to the original compute metadata.
+            # This physical coordinator uses only site image and launch options.
+            job_meta = copy.deepcopy(job_meta)
+            site = fl_ctx.get_identity_name()
+            job_meta[JobMetaKey.RESOURCE_SPEC.value] = {}
+            job_meta[JobMetaKey.CJ_RESOURCE_SPEC.value] = {site: {}}
+            job_meta[JobMetaKey.JOB_LAUNCHER_SPEC.value] = {site: {"docker": {}}}
+        return super().launch_job(job_meta, fl_ctx)
+
     def _validate_task_coordinator_profile(self, workspace_path, *, network):
         if (
             self.workspace != workspace_path

@@ -68,7 +68,6 @@ from nvflare.app_opt.job_launcher.slurm.task_scheduler import SlurmTaskCliAdapte
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN, SlurmTaskService
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
-from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.fed.client.task_runtime import TaskExecutionBinding
 from nvflare.private.fed.task_worker.protocol import CELL_SESSION_CREDENTIALS, _open_regular, read_bootstrap
 from nvflare.private.fed.utils.job_cert_utils import job_cert_paths
@@ -831,11 +830,10 @@ class _SlurmTaskBackend(TaskLauncherSpec):
     max_attempts = 10000
 
 
-def _prepare_task_binding(job_meta, fl_ctx, options, *, workspace=None):
+def _prepare_task_binding(job_meta, fl_ctx, options, *, launcher_config, workspace=None):
     """Bind the CP's physical backend independently of the CJ's proxy."""
     workspace = workspace or fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-    site_config = ConfigService.load_config_dict(workspace.get_resources_file_path())
-    backend = _SlurmTaskBackend(**component_args(site_config["task_execution"]["launcher"]))
+    backend = _SlurmTaskBackend(**component_args(launcher_config))
     backend.bind_job(job_meta[JobConstants.JOB_ID], fl_ctx.get_identity_name(), workspace, job_meta)
     environment = dict(options.environment or {})
     for name in tuple(environment):

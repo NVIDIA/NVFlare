@@ -43,6 +43,7 @@ from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 _TOPIC = "request"
 _MAX_MESSAGE = 65536
 _CJ_OBSERVATION_INTERVAL = 10.0
+_CJ_CLEANUP_INTERVAL = 1.0
 logger = logging.getLogger(__name__)
 
 
@@ -95,7 +96,8 @@ class _Job:
         self.cj_settled = False
         self._cj_cleanup_pending = False
         self._cj_cleanup_warning_logged = False
-        self.cj_termination_lock = threading.Lock()
+        self.cj_control_thread = None
+        self.released_event = threading.Event()
 
     def attach_cj(self, handle):
         with self.lock:
@@ -109,18 +111,40 @@ class _Job:
         self.wake.set()
 
     def terminate_cj(self):
-        # The wrapper and owner thread may both request cleanup. Serialize the
-        # native call and require an observed exit before forgetting the owner.
-        with self.cj_termination_lock:
-            with self.lock:
-                handle = self.cj_handle
-            if handle is None:
+        """Request cleanup without blocking the caller on coordinator I/O."""
+        self.release()
+        self.observe_cj()
+
+    def _control_cj(self, handle, cleanup):
+        try:
+            if cleanup:
+                if handle._is_cleanup_complete() is not True:
+                    handle.terminate()
+                settled = handle._is_cleanup_complete() is True
+                with self.lock:
+                    self.cj_settled = settled
+            elif self._cj_is_dead(handle):
+                self.release()
+        except Exception:
+            # Unavailable control cannot prove death; retain this job for retry.
+            pass
+        finally:
+            if cleanup:
+                with self.lock:
+                    # Give a successful signal a second observation to settle.
+                    warn = self._cj_cleanup_pending and not self.cj_settled
+                    self._cj_cleanup_pending = not self.cj_settled
+                if warn:
+                    self.warn_cleanup_pending()
+            if cleanup and self.cj_settled:
+                self.wake.set()
+
+    def warn_cleanup_pending(self):
+        with self.lock:
+            if self._cj_cleanup_warning_logged:
                 return
-            if handle.is_cleanup_complete() is not True:
-                handle.terminate()
-            settled = handle.is_cleanup_complete() is True
-            with self.lock:
-                self.cj_settled = settled
+            self._cj_cleanup_warning_logged = True
+        logger.warning("Coordinator cleanup unconfirmed for job %s; CP retains ownership and retries", self.job_id)
 
     def close(self):
         with self.lock:
@@ -132,7 +156,10 @@ class _Job:
     def release(self):
         self.close()
         with self.lock:
+            if not self.released:
+                self.next_cj_observation = 0.0
             self.released = True
+            self.released_event.set()
         self.wake.set()
 
     def _cj_is_dead(self, handle):
@@ -146,29 +173,26 @@ class _Job:
             handle, released = self.cj_handle, self.released
             now = time.monotonic()
             cleanup = self.manage_cj and released and not self.cj_settled
-            if handle is None or (not cleanup and (released or now < self.next_cj_observation)):
+            if handle is None or (released and not cleanup) or now < self.next_cj_observation:
+                return
+            if self.manage_cj:
+                if self.cj_control_thread is not None and self.cj_control_thread.is_alive():
+                    return
+                self.next_cj_observation = now + (_CJ_CLEANUP_INTERVAL if cleanup else _CJ_OBSERVATION_INTERVAL)
+                # One in-flight operation, owned by this job. A stalled Docker
+                # daemon must not prevent cancellation of Slurm task workers.
+                self.cj_control_thread = threading.Thread(
+                    target=self._control_cj, args=(handle, cleanup), name="cj-control", daemon=True
+                )
+                self.cj_control_thread.start()
                 return
             self.next_cj_observation = now + _CJ_OBSERVATION_INTERVAL
+        # Keep the native Slurm and Kubernetes observation paths unchanged.
         try:
-            if cleanup:
-                self.terminate_cj()
-            elif self._cj_is_dead(handle):
+            if self._cj_is_dead(handle):
                 self.release()
         except Exception:
-            # An unavailable scheduler cannot prove CJ death. The owner remains.
             pass
-        if cleanup:
-            with self.lock:
-                # A successful signal can take a pass to settle. Warn only
-                # after a second observation still cannot confirm cleanup.
-                warn = self._cj_cleanup_pending and not self.cj_settled and not self._cj_cleanup_warning_logged
-                self._cj_cleanup_pending = not self.cj_settled
-                if warn:
-                    self._cj_cleanup_warning_logged = True
-            if warn:
-                logger.warning(
-                    "Coordinator cleanup unconfirmed for job %s; CP retains ownership and retries", self.job_id
-                )
 
     def run(self):
         while True:
@@ -224,6 +248,7 @@ class _Job:
                     self.released
                     and not self.cj_launch_pending
                     and (not self.manage_cj or self.cj_handle is None or self.cj_settled)
+                    and (self.cj_control_thread is None or not self.cj_control_thread.is_alive())
                     and all(a.status.settled for a in self.attempts.values())
                 )
                 settlement_waiting = any(

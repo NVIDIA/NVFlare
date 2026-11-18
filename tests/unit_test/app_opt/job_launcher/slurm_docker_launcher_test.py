@@ -98,7 +98,7 @@ def profile(tmp_path, monkeypatch):
     launcher._docker_client = dc
     native = Mock(spec=docker_module.DockerJobHandle)
     native.poll.return_value = JobReturnCode.UNKNOWN
-    native.is_cleanup_complete.side_effect = lambda: native.poll() != JobReturnCode.UNKNOWN
+    native._is_cleanup_complete.side_effect = lambda: native.poll() != JobReturnCode.UNKNOWN
     native.terminate.side_effect = lambda: setattr(native.poll, "return_value", JobReturnCode.ABORTED)
     native.enter_states.return_value = True
     native.can_restart.return_value = True
@@ -295,7 +295,7 @@ def test_lost_docker_start_response_retains_owner_until_cleanup(
         assert owner.cj_handle.container_id == name
         assert cleanup_attempted.wait(5)
         assert lookups and set(lookups) == {name}
-        assert not owner.cj_handle.is_cleanup_complete()
+        assert not owner.cj_handle._is_cleanup_complete()
         assert owner.thread.is_alive() and service.jobs["job-1"] is owner
         assert owner.released and not owner.cj_settled
 

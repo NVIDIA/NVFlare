@@ -443,5 +443,5 @@ def test_physical_cleanup_does_not_require_restart_eligibility(tmp_path):
     handle = ProcessHandle(process_adapter=adapter, owns_process_group=True, app_dir=str(tmp_path))
     (tmp_path / bootstrap_file_name(1)).write_text("uncleared application marker")
     with mock.patch("nvflare.app_common.job_launcher.process_launcher.os.killpg", side_effect=ProcessLookupError):
-        assert handle.is_cleanup_complete()
+        assert handle._is_cleanup_complete()
         assert not handle.can_restart()

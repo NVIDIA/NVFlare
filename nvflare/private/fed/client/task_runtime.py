@@ -21,7 +21,6 @@ import threading
 from dataclasses import dataclass, field, replace
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
-from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.config_service import ConfigService
@@ -66,6 +65,10 @@ class _TaskExecutionState:
     services: dict = field(default_factory=dict)
 
 
+class TaskCleanupPending(TimeoutError):
+    """CP still owns coordinator or task cleanup after the bounded wait."""
+
+
 class JobHandleWithTaskWorkers(JobHandleSpec):
     """Preserve CJ outcome while bounding the wait for parent-owned cleanup."""
 
@@ -87,12 +90,6 @@ class JobHandleWithTaskWorkers(JobHandleSpec):
             return self.owner.terminate_cj()
         cleanup = getattr(self.handle, "_terminate_for_heartbeat_cleanup", self.handle.terminate)
         return cleanup()
-
-    def is_cleanup_complete(self):
-        if self.handle.is_cleanup_complete() is not True:
-            return False
-        self.owner.release()
-        return not self.owner.thread.is_alive()
 
     def can_restart(self):
         """Replace the CJ only after CP-owned workers have all settled."""
@@ -119,19 +116,22 @@ class JobHandleWithTaskWorkers(JobHandleSpec):
         return code
 
     def wait(self):
-        # After failed launch or abort, CP's owner retries physical cleanup.
-        # Re-entering the native wait here would bypass the cleanup deadline.
-        if not (getattr(self.owner, "manage_cj", False) and self.owner.released):
+        if getattr(self.owner, "manage_cj", False):
+            # Normal training has no cleanup deadline. Observation or abort
+            # releases the owner; only its subsequent finalization is bounded.
+            self.owner.released_event.wait()
+        else:
             self.handle.wait()
         self.owner.release()
         self.owner.thread.join(self.cleanup_timeout)
         if self.owner.thread.is_alive():
+            if getattr(self.owner, "manage_cj", False):
+                self.owner.warn_cleanup_pending()
+                raise TaskCleanupPending(f"job {self.owner.job_id}: CP retains unconfirmed task/coordinator cleanup")
             with self.owner.lock:
                 pending = [a.execution_id for a in self.owner.attempts.values() if not a.status.settled]
             logging.getLogger(__name__).warning(
-                "Task cleanup unconfirmed for job %s allocations %s; CP retains cleanup",
-                self.owner.job_id,
-                pending,
+                "Task cleanup unconfirmed for job %s allocations %s; CP retains cleanup", self.owner.job_id, pending
             )
 
 
@@ -214,27 +214,24 @@ def _launch_job_with_task_workers(prepared, launcher, fl_ctx, *, cleanup_timeout
                 fl_ctx.set_prop(key, **detail)
 
 
-def _prepare_process_slurm_cj(launcher, job_meta, fl_ctx):
+def _prepare_process_slurm_cj(launcher, job_meta, fl_ctx, launcher_config=None):
     from nvflare.app_opt.job_launcher.slurm.task_launcher import _prepare_task_binding
 
     options = launcher._task_coordinator_options(job_meta, fl_ctx)
-    return _prepare_task_binding(job_meta, fl_ctx, options)
+    return _prepare_task_binding(job_meta, fl_ctx, options, launcher_config=launcher_config)
 
 
-def _prepare_docker_slurm_cj(launcher, job_meta, fl_ctx):
+def _prepare_docker_slurm_cj(launcher, job_meta, fl_ctx, launcher_config=None):
     from nvflare.app_opt.job_launcher.slurm.task_launcher import _prepare_task_binding
 
     options = launcher._task_coordinator_options(job_meta, fl_ctx)
-    prepared = _prepare_task_binding(
-        job_meta, fl_ctx, options, workspace=Workspace(launcher.workspace, fl_ctx.get_identity_name())
+    return _prepare_task_binding(
+        job_meta,
+        fl_ctx,
+        options,
+        workspace=Workspace(launcher.workspace, fl_ctx.get_identity_name()),
+        launcher_config=launcher_config,
     )
-    site = fl_ctx.get_identity_name()
-    # Only the physical CJ copy drops compute budgets and job image selection.
-    # The ordinary Docker launcher then uses its validated site default image.
-    prepared.meta[JobMetaKey.RESOURCE_SPEC.value] = {}
-    prepared.meta[JobMetaKey.CJ_RESOURCE_SPEC.value] = {site: {}}
-    prepared.meta[JobMetaKey.JOB_LAUNCHER_SPEC.value] = {site: {"docker": {}}}
-    return prepared
 
 
 def validate_task_site(workspace):
@@ -262,7 +259,9 @@ def launch_job(launcher, job_meta, fl_ctx):
             from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy, _prepare_cp_host_cj
 
             policy = TaskExecutionPolicy.from_workspace(workspace)
-            runtime = _prepare_cp_host_cj(policy.launcher, launcher, job_meta, fl_ctx)
+            runtime = _prepare_cp_host_cj(
+                policy.launcher, launcher, job_meta, fl_ctx, launcher_config=policy.launcher_config
+            )
             if runtime is not None:
                 return _launch_job_with_task_workers(
                     runtime, launcher, fl_ctx, cleanup_timeout=policy.finalization_timeout

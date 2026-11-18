@@ -14,6 +14,7 @@
 
 """Site-owned selection and resource policy for disposable task execution."""
 
+import copy
 import importlib
 import os
 from dataclasses import dataclass
@@ -88,12 +89,12 @@ def _get_cj_preparer(task_launcher, job_launcher):
     return _CJ_PREPARERS[pairing]
 
 
-def _prepare_cp_host_cj(task_launcher, job_launcher, job_meta, fl_ctx):
+def _prepare_cp_host_cj(task_launcher, job_launcher, job_meta, fl_ctx, *, launcher_config=None):
     target = _get_cj_preparer(task_launcher, job_launcher)
     if target is None:
         # Existing native launchers retain their own ownership setup.
         return None
-    return target(job_launcher, job_meta, fl_ctx)
+    return target(job_launcher, job_meta, fl_ctx, launcher_config=launcher_config)
 
 
 def _supported_native_launcher(launcher):
@@ -137,6 +138,7 @@ class TaskExecutionPolicy:
     poll_interval: float = 0.05
     max_payload_bytes: int | None = None
     finalization_timeout: float = 30.0
+    launcher_config: dict | None = None
 
     @classmethod
     def from_workspace(cls, workspace):
@@ -200,6 +202,7 @@ class TaskExecutionPolicy:
             raise ValueError("task execution requires a supported Kubernetes or Slurm TaskLauncher")
         return cls(
             launcher=launcher,
+            launcher_config=copy.deepcopy(launcher_config),
             artifact_cleanup=cleanup,
             worker_timeout=options.worker_timeout,
             settlement_timeout=options.settlement_timeout,

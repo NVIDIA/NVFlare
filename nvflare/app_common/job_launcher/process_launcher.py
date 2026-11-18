@@ -93,7 +93,7 @@ class ProcessHandle(JobHandleSpec):
             time.sleep(min(0.1, remaining))
         return True
 
-    def is_cleanup_complete(self):
+    def _is_cleanup_complete(self):
         if self.owns_process_group:
             return self._group_exited()
         return self.poll() != JobReturnCode.UNKNOWN

@@ -67,7 +67,7 @@ _docker_mock.from_env = MagicMock
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobReturnCode
@@ -1870,8 +1870,8 @@ class TestDockerJobLauncherStudyRuntime:
 
 def test_local_job_mode_still_delegates_to_docker_launcher():
     launcher = _make_launcher()
-    context = MagicMock()
-    context.get_identity_name.return_value = "site-1"
+    context = FLContext()
+    context.set_prop(ReservedKey.IDENTITY_NAME, "site-1")
     meta = {"resource_spec": {"site-1": {"num_of_gpus": 1}}}
     with patch.object(DockerJobLauncher, "launch_job", return_value="job-handle") as launch:
         assert launcher.launch_job(meta, context) == "job-handle"

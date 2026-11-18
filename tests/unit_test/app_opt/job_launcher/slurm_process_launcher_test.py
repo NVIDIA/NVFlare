@@ -222,3 +222,28 @@ def test_cp_owns_a_physical_backend_that_reaches_native_task_launch(profile, mon
     p = profile
     handle = launch_job(p.launcher, p.meta, p.context)
     assert_physical_task_dispatch(handle, p.root, monkeypatch)
+
+
+def test_each_launch_reads_site_policy_once_and_creates_a_fresh_physical_backend(profile, monkeypatch):
+    from nvflare.fuel.utils.config_service import ConfigService
+
+    p = profile
+    load = ConfigService.load_config_dict
+    reads = []
+
+    def load_config(path, *args, **kwargs):
+        if path == p.workspace.get_resources_file_path():
+            reads.append(path)
+        return load(path, *args, **kwargs)
+
+    monkeypatch.setattr(ConfigService, "load_config_dict", load_config)
+    backends = []
+    for _ in range(2):
+        p.adapter.poll.return_value = None
+        handle = launch_job(p.launcher, p.meta, p.context)
+        backends.append(handle.owner.backend)
+        handle.terminate()
+        handle.wait()
+    assert len(reads) == 2
+    assert backends[0] is not backends[1]
+    assert all(type(backend).__name__ == "_SlurmTaskBackend" for backend in backends)

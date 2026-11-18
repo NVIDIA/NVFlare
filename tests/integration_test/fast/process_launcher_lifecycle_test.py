@@ -867,7 +867,7 @@ def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path
             assert entered.wait(25), "coordinator did not exit after its child reached readiness"
             child_pid = int(child_pid_path.read_text())
             assert native.poll() == JobReturnCode.SUCCESS
-            assert not native.is_cleanup_complete()
+            assert not native._is_cleanup_complete()
             assert _process_running(psutil.Process(child_pid))
             owner = cell._slurm_task_service.jobs["job-1"]
             shutdown_task_execution(engine, timeout=0.01)
@@ -877,11 +877,11 @@ def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path
             join_thread(owner.thread, timeout=20)
             native.wait.assert_not_called()
             _assert_pid_not_running(child_pid)
-            assert native.is_cleanup_complete()
+            assert native._is_cleanup_complete()
             assert not cell._slurm_task_service.jobs
     finally:
         finish.set()
-        if not native.is_cleanup_complete():
+        if not native._is_cleanup_complete():
             native.terminate()
         process.wait(timeout=10)
         service = getattr(cell, "_slurm_task_service", None)
@@ -918,8 +918,8 @@ def test_running_process_coordinator_aborts_settle_without_cleanup_warnings(tmp_
                 handle = JobHandleWithTaskWorkers(native, owner, allow_restart=False)
                 handle.terminate()
                 join_thread(owner.thread, timeout=10)
-                assert native.is_cleanup_complete()
-                assert handle.is_cleanup_complete()
+                assert native._is_cleanup_complete()
+                handle.wait()
                 assert not service.jobs
         assert not [
             record
