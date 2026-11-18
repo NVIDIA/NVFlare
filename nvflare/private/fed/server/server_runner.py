@@ -27,6 +27,7 @@ from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.sec import task_audit
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_download_ref
 from nvflare.fuel.utils.job_utils import build_client_hierarchy
 from nvflare.private.defs import SpecialTaskName, TaskConstant
@@ -128,11 +129,20 @@ class ServerRunner(TBI):
         self._report_client_active("syncRunner", fl_ctx)
         return make_reply(ReturnCode.OK)
 
+    def _audit_context(self, fl_ctx=None, **overrides):
+        return task_audit.prepare(
+            lambda: task_audit.build_context(fl_ctx, job_id=self.job_id, **overrides),
+            default=task_audit.TaskAuditContext(),
+        )
+
     def _execute_run(self):
         while self.current_wf_index < len(self.config.workflows):
             wf = self.config.workflows[self.current_wf_index]
+            audit_context = task_audit.prepare(lambda: self._audit_context(workflow_id=wf.id))
+            stage = "initialize"
             try:
                 with self.engine.new_context() as fl_ctx:
+                    audit_context = self._audit_context(fl_ctx, workflow_id=wf.id)
                     self.log_info(fl_ctx, "starting workflow {} ({}) ...".format(wf.id, type(wf.controller)))
 
                     fl_ctx.set_prop(FLContextKey.WORKFLOW, wf.id, sticky=True)
@@ -148,10 +158,22 @@ class ServerRunner(TBI):
                     with self.wf_lock:
                         # we only set self.current_wf to open for business after successful initialize_run!
                         self.current_wf = wf
+                    initialized_id = task_audit.record("workflow.execution.initialized", context=audit_context)
+                    audit_context = self._audit_context(fl_ctx, workflow_id=wf.id, reference=initialized_id)
 
+                stage = "control"
                 with self.engine.new_context() as fl_ctx:
                     wf.controller.control_flow(self.abort_signal, fl_ctx)
+                    task_audit.record("workflow.control.returned", context=audit_context)
+                    if self.abort_signal.triggered:
+                        task_audit.record(
+                            "workflow.control.abort_observed", context=audit_context, reason="abort_signal"
+                        )
+                    stage = "after_control"
             except Exception as e:
+                task_audit.record(
+                    "workflow.execution.error", context=audit_context, reason="processing_error", stage=stage
+                )
                 with self.engine.new_context() as fl_ctx:
                     self.log_exception(fl_ctx, "Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)))
                 self.system_panic("Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)), fl_ctx)
@@ -167,10 +189,19 @@ class ServerRunner(TBI):
                         self.current_wf = None
 
                     self.log_info(fl_ctx, f"Workflow: {wf.id} finalizing ...")
+                    finalize_stage = "stop_controller"
                     try:
                         wf.controller.stop_controller(fl_ctx)
+                        finalize_stage = "finalize_run"
                         wf.controller.communicator.finalize_run(fl_ctx)
+                        task_audit.record("workflow.finalization.returned", context=audit_context)
                     except Exception as e:
+                        task_audit.record(
+                            "workflow.finalization.error",
+                            context=audit_context,
+                            reason="processing_error",
+                            stage=finalize_stage,
+                        )
                         self.log_exception(
                             fl_ctx, "Error finalizing workflow {}: {}".format(wf.id, secure_format_exception(e))
                         )
@@ -261,7 +292,13 @@ class ServerRunner(TBI):
         task_data.set_header(TaskConstant.WAIT_TIME, self.config.task_request_interval)
         return SpecialTaskName.TRY_AGAIN, "", task_data
 
+    @task_audit.collect_events
     def process_task_request(self, client: Client, fl_ctx: FLContext) -> (str, str, Shareable):
+        """Process a task request and flush observations after its locks exit."""
+        with task_audit.use_context(self._audit_context(fl_ctx)):
+            return self._process_task_request(client, fl_ctx)
+
+    def _process_task_request(self, client: Client, fl_ctx: FLContext) -> (str, str, Shareable):
         """Process task request from a client.
 
         NOTE: the Engine will create a new fl_ctx and call this method:
@@ -293,6 +330,7 @@ class ServerRunner(TBI):
 
         peer_ctx = fl_ctx.get_peer_context()
         if not isinstance(peer_ctx, FLContext):
+            task_audit.record("task.assignment.rejected", reason="missing_peer_context")
             self.log_debug(fl_ctx, "invalid task request: no peer context - asked client to try again later")
             return self._task_try_again()
 
@@ -301,6 +339,7 @@ class ServerRunner(TBI):
         peer_job_id = peer_ctx.get_job_id()
         if not peer_job_id or peer_job_id != self.job_id:
             # the client is in a different RUN
+            task_audit.record("task.assignment.rejected", reason="job_mismatch")
             self.log_info(fl_ctx, "invalid task request: not the same job_id - asked client to end the run")
             return SpecialTaskName.END_RUN, "", None
 
@@ -325,6 +364,20 @@ class ServerRunner(TBI):
 
             # Preserve the issuing workflow if filters replace the payload or cookie jar.
             workflow_id = task_data.get_cookie(ReservedHeaderKey.WORKFLOW)
+            # Snapshot locally issued assignment identity before a filter can
+            # replace its payload or context properties.
+            assignment_context = task_audit.prepare(
+                lambda: self._audit_context(
+                    fl_ctx,
+                    task_name=task_name,
+                    task_id=task_id,
+                    workflow_id=workflow_id or "",
+                    attempt_id=task_data.get_task_attempt_id() or "",
+                    site=client.name,
+                ),
+                default=task_audit.current_context(),
+            )
+            task_audit.set_context(assignment_context)
 
             # Mark this task as being processed to prevent duplicate assignments
             with self._processing_tasks_lock:
@@ -346,6 +399,7 @@ class ServerRunner(TBI):
                     abort_signal=self.abort_signal,
                 )
             except Exception as e:
+                task_audit.record("task.assignment.error", reason="data_filter_error")
                 self.log_exception(
                     fl_ctx,
                     "processing error in task data filter {}; "
@@ -373,8 +427,23 @@ class ServerRunner(TBI):
                 self._processing_tasks.pop(client.name, None)
 
             task_data.add_cookie(ReservedHeaderKey.WORKFLOW, workflow_id)
+            prepared_context = task_audit.prepare(
+                lambda: task_audit.build_context(
+                    job_id=assignment_context.job_id,
+                    scope_name=assignment_context.scope_name,
+                    task_name=assignment_context.task_name,
+                    task_id=assignment_context.task_id,
+                    workflow_id=assignment_context.workflow_id,
+                    attempt_id=assignment_context.attempt_id,
+                    site=assignment_context.site,
+                    reference=audit_event_id,
+                ),
+                default=assignment_context,
+            )
+            task_audit.record("task.assignment.prepared", context=prepared_context)
             return task_name, task_id, task_data
         except Exception as e:
+            task_audit.record("task.assignment.error", reason="preparation_error")
             self.log_exception(
                 fl_ctx,
                 f"Error processing client task request: {secure_format_exception(e)}; asked client to try again later",
@@ -453,20 +522,34 @@ class ServerRunner(TBI):
                     fl_ctx, f"Error processing dead job by workflow {self.current_wf.id}: {secure_format_exception(e)}"
                 )
 
+    @task_audit.collect_events
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         """Confirm complete result receipt independently of application processing."""
+        # The collector encloses the gate: no new record or diagnostic holds it.
+        with task_audit.use_context(self._audit_context(fl_ctx)):
+            return self._process_submission_request(client, task_name, task_id, result, fl_ctx)
+
+    def _process_submission_request(self, client, task_name, task_id, result, fl_ctx):
         with self.wf_lock:
             fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.TASK_CLOSED, private=True, sticky=False)
             if self.status != "started" or self.current_wf is None:
+                task_audit.record("task.result.rejected", reason="workflow_closed")
                 self.log_info(fl_ctx, f"result submission dropped: runner={self.status}, workflow={self.current_wf}")
                 return
-            return self._process_submission(client, task_name, task_id, result, fl_ctx)
+            try:
+                return self._process_submission(client, task_name, task_id, result, fl_ctx)
+            except Exception:
+                # Preserve existing propagation, including activity bookkeeping,
+                # legacy audit calls and submission cleanup outside the inner catch.
+                task_audit.record("task.result.handling_error", reason="processing_error", stage="admission_or_cleanup")
+                raise
 
     def _process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"got result from client {client.name} for task: name={task_name}, id={task_id}")
         self._report_client_active("submitTaskResult", fl_ctx)
 
         if not isinstance(result, Shareable):
+            task_audit.record("task.result.rejected", reason="invalid_result_type")
             self.log_error(fl_ctx, "invalid result submission: must be Shareable but got {}".format(type(result)))
             return
 
@@ -481,35 +564,60 @@ class ServerRunner(TBI):
 
         peer_ctx = fl_ctx.get_peer_context()
         if not isinstance(peer_ctx, FLContext):
+            task_audit.record("task.result.rejected", reason="missing_peer_context")
             self.log_info(fl_ctx, "invalid result submission: no peer context - dropped")
             return
 
         peer_job_id = peer_ctx.get_job_id()
         if not peer_job_id or peer_job_id != self.job_id:
             # the client is on a different RUN
+            task_audit.record("task.result.rejected", reason="job_mismatch")
             self.log_info(fl_ctx, "invalid result submission: not the same job id - dropped")
             return
         if peer_ctx.get_identity_name() != client.name:
+            task_audit.record("task.result.rejected", reason="peer_identity_mismatch")
             self.log_warning(fl_ctx, "invalid result submission: client and peer identity differ - dropped")
             return
 
         try:
             attempt_id = result.get_task_attempt_id()
         except ValueError as e:
+            task_audit.record("task.result.rejected", reason="invalid_attempt")
             self.log_warning(fl_ctx, f"invalid result submission: {e} - dropped")
             return
         fl_ctx.set_prop(FLContextKey.TASK_ATTEMPT_ID, value=attempt_id, private=True, sticky=False)
         wf_id = result.get_cookie(ReservedHeaderKey.WORKFLOW, None)
         if (attempt_id is not None or wf_id is not None) and wf_id != self.current_wf.id:
+            task_audit.record("task.result.rejected", reason="workflow_mismatch")
             self.log_info(fl_ctx, f"result workflow {wf_id} does not match {self.current_wf.id} - dropped")
             return
         workflow = self.current_wf
         communicator = workflow.controller.communicator
         if not communicator.check_submission(client, task_name, task_id, result, fl_ctx):
             return
+        # The communicator refines context only for matched active/retired
+        # assignments, not the established unfenced unknown-task hook.
+        approved = task_audit.current_context()
+        if task_audit.prepare(lambda: approved.task_id == task_id and approved.task_name == task_name, default=False):
+            task_audit.set_context(
+                task_audit.prepare(
+                    lambda: task_audit.build_context(
+                        job_id=approved.job_id,
+                        scope_name=approved.scope_name,
+                        task_name=approved.task_name,
+                        task_id=approved.task_id,
+                        workflow_id=approved.workflow_id,
+                        attempt_id=approved.attempt_id,
+                        site=approved.site,
+                        reference=result.get_header(ReservedHeaderKey.AUDIT_EVENT_ID, "") or "",
+                    ),
+                    default=approved,
+                )
+            )
         # FOBS normally resolves streamed references before dispatch. Never
         # acknowledge a forwarding envelope while the client still owns its bytes.
         if contains_lazy_download_ref(result):
+            task_audit.record("task.result.retry_required", reason="lazy_payload")
             fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RETRY, private=True, sticky=False)
             self.log_warning(fl_ctx, "result payload is not fully downloaded - retry required")
             return
@@ -518,6 +626,9 @@ class ServerRunner(TBI):
 
         rc = result.get_return_code(default=ReturnCode.OK)
         if rc in self.ABORT_RETURN_CODES:
+            task_audit.record(
+                "task.result.abort_requested", status=task_audit.code_status(rc), reason="fatal_return_code"
+            )
             try:
                 self.log_error(fl_ctx, f"aborting ServerRunner due to fatal return code {rc} from client {client.name}")
                 self.system_panic(
@@ -533,13 +644,16 @@ class ServerRunner(TBI):
         result.set_peer_props(peer_ctx.get_all_public_props())
 
         with self.wf_lock:
+            handling_stage = "before_filter"
             try:
                 if self.current_wf is None:
+                    task_audit.record("task.result.rejected", reason="workflow_closed")
                     self.log_info(fl_ctx, "no current workflow - dropped submission.")
                     return
 
                 wf_id = result.get_cookie(ReservedHeaderKey.WORKFLOW, None)
                 if wf_id is not None and wf_id != self.current_wf.id:
+                    task_audit.record("task.result.rejected", reason="workflow_mismatch")
                     self.log_info(
                         fl_ctx,
                         "Got result for workflow {}, but we are running {} - dropped submission.".format(
@@ -553,6 +667,7 @@ class ServerRunner(TBI):
                 self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
                 try:
+                    handling_stage = "filter"
                     filter_name = Scope.TASK_RESULT_FILTERS_NAME
                     result = apply_filters(
                         filter_name,
@@ -564,12 +679,14 @@ class ServerRunner(TBI):
                         abort_signal=self.abort_signal,
                     )
                 except Exception as e:
+                    task_audit.record("task.result.filter_error", reason="result_filter_error")
                     self.log_exception(
                         fl_ctx,
                         "processing error in task result filter {}; ".format(secure_format_exception(e)),
                     )
                     result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
+                handling_stage = "after_filter"
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")
                 result.set_header(ReservedHeaderKey.TASK_NAME, task_name)
                 if attempt_id is not None:
@@ -592,9 +709,12 @@ class ServerRunner(TBI):
                 self.log_debug(fl_ctx, "firing event EventType.BEFORE_PROCESS_SUBMISSION")
                 self.fire_event(EventType.BEFORE_PROCESS_SUBMISSION, fl_ctx)
 
+                handling_stage = "communicator"
                 communicator.process_submission(
                     client=client, task_name=task_name, task_id=task_id, result=result, fl_ctx=fl_ctx
                 )
+                task_audit.record("task.result.handling_returned")
+                handling_stage = "after_communicator"
                 self.log_info(
                     fl_ctx,
                     f"finished processing received result by {workflow.id}; "
@@ -604,6 +724,7 @@ class ServerRunner(TBI):
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_SUBMISSION")
                 self.fire_event(EventType.AFTER_PROCESS_SUBMISSION, fl_ctx)
             except Exception as e:
+                task_audit.record("task.result.handling_error", reason="processing_error", stage=handling_stage)
                 self.log_exception(
                     fl_ctx,
                     "Error processing received client result by {}: {}".format(workflow.id, secure_format_exception(e)),

@@ -122,3 +122,27 @@ acknowledgements do not prove that a program stopped or restarted.
 See the `security and administration event catalog
 <../../../design/audit_security_admin_coverage.md>`_ for action names, capture
 boundaries, attribution limits, and validation coverage.
+
+
+Task Execution and Workflow Results
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Task and workflow records retain the same eight possible fields. New actions
+distinguish assignment preparation, executor handling, result preparation,
+publication, complete receipt, callback processing, task retirement, and workflow
+handling/finalization. A received result does not establish successful processing
+or aggregation; an executor or callback returning does not prove training success.
+
+Task records use the established local job/scope and ``unknown`` for an
+unavailable administrator actor. Approved task identifiers appear in ``message``;
+new records exclude task/result contents, credentials, paths and exception text.
+Existing task audit headers and combined task actions keep their behavior.
+
+New records are buffered while shared locks are held and written afterwards.
+Their timestamps are writing times, so they do not establish exact observation
+order across workers. New recording failures allow the operation to continue;
+existing unrelated and legacy audit caller failure behavior remains unchanged.
+
+See the `task and workflow coverage contract
+<../../../design/audit_task_workflow_coverage.md>`_ for capture owners, evidence
+limits, failure behavior, dependencies and validation coverage. Model saving and
+loading remain a later increment.

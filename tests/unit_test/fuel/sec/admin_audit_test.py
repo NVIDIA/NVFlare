@@ -180,7 +180,7 @@ def test_diagnostics_throttled_with_protected_fixed_fallback(writer, monkeypatch
     for _ in range(4):
         assert audit.record("admin.command.dispatched") == ""
     assert len(calls) == warning.call_count == 1
-    assert calls[0] == (2, b"Administrative audit recording failed; operation continued.\n")
+    assert calls[0] == (2, b"Audit recording failed; operation continued.\n")
     clock.return_value = 70.0
     assert audit.record("admin.command.dispatched") == ""
     assert len(calls) == warning.call_count == 2

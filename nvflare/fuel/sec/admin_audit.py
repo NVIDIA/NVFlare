@@ -98,10 +98,10 @@ def _failure():
             _last_warning = now
             attempts = _failed_attempts
         try:
-            _logger.warning("Administrative audit recording failed; failed attempts since startup: %d", attempts)
+            _logger.warning("Audit recording failed; failed attempts since startup: %d", attempts)
         except Exception:
             try:
-                os.write(2, b"Administrative audit recording failed; operation continued.\n")
+                os.write(2, b"Audit recording failed; operation continued.\n")
             except Exception:
                 pass
     except Exception:
