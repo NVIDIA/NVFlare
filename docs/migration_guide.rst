@@ -27,6 +27,42 @@ Verify with ``nvflare system version``. Leftover 2.9 peers are rejected before
 endpoint attachment and cannot replace a 2.10 connection. This procedure
 includes a server outage and does not resume running jobs across the upgrade.
 
+Study Data File Removed
+-----------------------
+
+The v1 ``local/study_data.yaml`` and the K8s launcher argument
+``study_data_pvc_file_path`` are removed. The Docker, Kubernetes, and Slurm
+launchers refuse to launch jobs while ``local/study_data.yaml`` exists, and
+``K8sJobLauncher`` no longer accepts ``study_data_pvc_file_path``. Move each
+study's datasets into ``local/study_runtime.yaml`` (``format_version: 2``),
+delete ``study_data.yaml``, and remove ``study_data_pvc_file_path`` from the
+launcher configuration. For example,
+``default: {data: {source: nvfldata, mode: ro}}`` becomes::
+
+    format_version: 2
+    studies:
+      default:
+        datasets:
+          data: {source: nvfldata, mode: ro}
+
+Process mode never read ``study_data.yaml``.
+
+Two cases need attention before starting 2.10 on an existing kit and workspace:
+
+- **Kits prepared with 2.8 are affected even if no study data was configured.**
+  2.8 ``nvflare deploy prepare`` wrote a comment-only ``local/study_data.yaml``
+  into every Docker and K8s kit and always set ``study_data_pvc_file_path`` on
+  the K8s launcher. Delete the file even if it is comment-only, and remove the
+  argument from the launcher configuration. Re-running ``nvflare deploy prepare``
+  with 2.10 replaces the launcher argument but leaves the old file in place, so
+  the file must still be deleted.
+- **A client's** ``study_runtime.yaml`` **is also its study allow-list.** When
+  the file lists at least one study, jobs for every unlisted study are rejected
+  at the resource check, including ``default`` (jobs submitted without a
+  study). List every study the site should run, not only those that had dataset
+  mounts; an entry such as ``default: {}`` is enough for a study without
+  datasets.
+
 .. _multi_process_executor_migration:
 
 Multi-process Executor Deprecation

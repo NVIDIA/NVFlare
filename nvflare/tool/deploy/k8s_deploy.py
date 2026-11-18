@@ -35,7 +35,6 @@ from nvflare.tool.deploy.deploy_common import (
     RESOURCES_JSON_DEFAULT,
     ROLE_SERVER,
     RUNTIME_K8S,
-    STUDY_DATA_YAML,
     WORKSPACE_MOUNT_PATH,
     KitInfo,
     _ensure_study_runtime_template,
@@ -144,9 +143,6 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
         "default_python_path": job_launcher.get("default_python_path", K8S_PARENT_PYTHON_PATH),
         "workspace_mount_path": workspace_mount_path,
     }
-    if (kit_info.kit_dir / "local" / STUDY_DATA_YAML).exists():
-        # legacy v1 kit: keep the study data mounts working; new kits use study_runtime.yaml
-        launcher_args["study_data_pvc_file_path"] = f"{workspace_mount_path}/local/{STUDY_DATA_YAML}"
     if "pending_timeout" in job_launcher:
         launcher_args["pending_timeout"] = job_launcher["pending_timeout"]
     if job_launcher.get("job_pod_security_context"):

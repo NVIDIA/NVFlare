@@ -401,8 +401,8 @@ not written to the batch script or scheduler command.
 Mount sources must be absolute paths outside the runtime workspace and must
 exist on the compute nodes that can run the job. Bare mode
 rejects container, dataset, and secret-mount settings because it has no mount
-namespace. Migrate legacy
-``local/study_data.yaml`` files to ``study_runtime.yaml`` before using Slurm.
+namespace. The Slurm launcher refuses to launch while a legacy
+``local/study_data.yaml`` is present; move its studies into ``study_runtime.yaml``.
 
 Job Settings
 ============

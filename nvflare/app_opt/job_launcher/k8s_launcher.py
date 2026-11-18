@@ -47,13 +47,9 @@ from nvflare.app_opt.job_launcher.k8s_pod import (
     normalize_image_pull_secrets,
     pod_shutdown_confirmed,
 )
-from nvflare.app_opt.job_launcher.study_data import (
-    load_study_data_file,
-    resolve_study_dataset_mounts,
-    should_mount_study_data,
-)
 from nvflare.app_opt.job_launcher.study_runtime import (
     load_study_runtime_file,
+    reject_legacy_study_data,
     resolve_study_runtime,
     study_runtime_file_path,
 )
@@ -746,7 +742,6 @@ class K8sJobLauncher(JobLauncherSpec):
     def __init__(
         self,
         config_file_path: str,
-        study_data_pvc_file_path: str = None,
         timeout=None,
         namespace=DEFAULT_NAMESPACE,
         pending_timeout=DEFAULT_PENDING_TIMEOUT,
@@ -761,11 +756,6 @@ class K8sJobLauncher(JobLauncherSpec):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config_file_path = config_file_path
-        if study_data_pvc_file_path is not None and (
-            not isinstance(study_data_pvc_file_path, str) or not study_data_pvc_file_path
-        ):
-            raise ValueError("study_data_pvc_file_path must be a non-empty string or None")
-        self.study_data_pvc_file_path = study_data_pvc_file_path
         self.timeout = timeout
         self.namespace = namespace
         self.startup_secret_name = (
@@ -785,22 +775,13 @@ class K8sJobLauncher(JobLauncherSpec):
             raise ValueError("workspace_mount_path must be a non-empty string")
         self.workspace_mount_path = workspace_mount_path
         self.image_pull_secrets = normalize_image_pull_secrets(image_pull_secrets)
-        self.study_data_pvc_dict = None
         self.core_v1 = None
 
     def _resolve_study_runtime(self, workspace_root: str, study):
+        reject_legacy_study_data(workspace_root)
         runtime_file = study_runtime_file_path(workspace_root)
         if not os.path.exists(runtime_file):
             return None
-        legacy_files = {os.path.join(workspace_root, "local", "study_data.yaml")}
-        if self.study_data_pvc_file_path:
-            legacy_files.add(self.study_data_pvc_file_path)
-        conflicts = sorted(path for path in legacy_files if os.path.exists(path))
-        if conflicts:
-            raise RuntimeError(
-                f"study runtime file '{runtime_file}' cannot be combined with the legacy study data "
-                f"file(s) {conflicts}; migrate all studies to study_runtime.yaml and delete the v1 file."
-            )
         runtime_map = load_study_runtime_file(runtime_file, launcher_mode="k8s", logger=self.logger)
         return resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
 
@@ -1016,12 +997,6 @@ class K8sJobLauncher(JobLauncherSpec):
         else:
             pod_manifest_template = None
             data_mounts = []
-            if should_mount_study_data(study) and self.study_data_pvc_file_path:
-                if self.study_data_pvc_dict is None:
-                    self.study_data_pvc_dict = load_study_data_file(self.study_data_pvc_file_path, logger=self.logger)
-                data_mounts = resolve_study_dataset_mounts(
-                    self.study_data_pvc_dict, study, self.study_data_pvc_file_path, logger=self.logger
-                )
         native_resources = k8s_spec
         if execution_lifetime == "task":
             # Existing fields describe compute; none leak into the persistent CJ.

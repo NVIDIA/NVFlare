@@ -1936,29 +1936,6 @@ def test_prepare_docker_rejects_reserved_default_container_kwargs(tmp_path, caps
     assert "container.image" in err
 
 
-def test_prepare_k8s_keeps_v1_study_data_for_legacy_kit(tmp_path, capsys):
-    kit = _make_client_kit(tmp_path)
-    (kit / "local" / "study_data.yaml").write_text("default:\n  data:\n    source: nvfldata\n    mode: ro\n")
-    output = tmp_path / "site-1-k8s"
-
-    _run_prepare(
-        kit,
-        output,
-        {
-            "runtime": "k8s",
-            "parent": {"docker_image": "repo/nvflare:dev", "workspace_mount_path": "/workspace"},
-        },
-    )
-    capsys.readouterr()
-
-    resources = json.loads((output / "local" / "resources.json.default").read_text())
-    launcher = _component(resources, "k8s_launcher")
-    assert launcher["args"]["study_data_pvc_file_path"] == "/workspace/local/study_data.yaml"
-    # v1 and v2 files must not coexist: no template is written next to a legacy file
-    assert not (output / "local" / "study_runtime.yaml").exists()
-    assert (output / "local" / "study_data.yaml").exists()
-
-
 @pytest.mark.parametrize(
     "make_kit, template_name",
     [

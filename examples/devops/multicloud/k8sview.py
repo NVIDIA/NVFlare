@@ -195,9 +195,9 @@ def load_participants(config_path: Path) -> list[Participant]:
 
 def _participant_pvc_names(config: dict) -> tuple[str, ...]:
     names = list((config.get("pvc_config") or {}).keys())
-    for datasets in (config.get("study_data") or {}).values():
-        for dataset in (datasets or {}).values():
-            pvc = (dataset or {}).get("pvc") or (dataset or {}).get("source")
+    for study_cfg in (config.get("study_runtime") or {}).values():
+        for dataset in ((study_cfg or {}).get("datasets") or {}).values():
+            pvc = (dataset or {}).get("source")
             if pvc:
                 names.append(pvc)
     return tuple(dict.fromkeys(names))
