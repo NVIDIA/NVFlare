@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -103,6 +105,7 @@ def collect_files(root: Path) -> tuple[dict[str, tuple[bytes, int]], dict]:
         files[path] = read_file(root, path)
     files["README.md"] = read_file(root, "PLUGIN.md")
     files["plugin-card.md"] = read_file(root, "plugin-card.md")
+    files["evals.json"] = read_file(root, "evals.json")
     files["LICENSE"] = read_file(root, "LICENSE")
     canonical = json.loads(files["plugin.json"][0])
     if canonical["name"] != "nvidia-nvflare" or not re.fullmatch(r"\d+\.\d+\.\d+", canonical["version"]):
@@ -112,7 +115,14 @@ def collect_files(root: Path) -> tuple[dict[str, tuple[bytes, int]], dict]:
         if any(manifest.get(field) != canonical.get(field) for field in IDENTITY_FIELDS):
             raise ValueError(f"Shared plugin metadata differs: {path}")
     count = verify_resources(files)
-    packaging_paths = [*MANIFESTS, "PLUGIN.md", "plugin-card.md", "LICENSE", "dev_tools/agent/package_plugin.py"]
+    packaging_paths = [
+        *MANIFESTS,
+        "PLUGIN.md",
+        "plugin-card.md",
+        "evals.json",
+        "LICENSE",
+        "dev_tools/agent/package_plugin.py",
+    ]
     committed_packaging = set(git(root, "ls-tree", "-r", "--name-only", "HEAD", "--", *packaging_paths).splitlines())
     metadata = {
         "plugin": canonical["name"],

@@ -118,6 +118,7 @@ signatures, were preserved.
 | Component integrity | All 165 resource hashes in nine retained signature manifests matched packaged files; cryptographic signing trust was not checked locally |
 | Native loading and routing | Passed the host probes listed above |
 | Plugin security scan | Earlier candidate blocked: OSS SkillEvaluator 0.8.0 with SkillSpector 2.13.3 reported findings and incomplete analysis; final package scan remains required |
+| Plugin evaluation inputs | Native NVCARPS precheck passed for 107 canonical cases; the planned Codex/Claude skill and baseline matrix contains 428 attempts |
 | Plugin-level quality, lift, and agent/arm coverage | Not established; full workflow and formal plugin evaluation remain pending |
 
 Packaging and discovery checks do not constitute agent-driven conversion tests
@@ -135,11 +136,13 @@ Auto-FL report requires a stopped or interrupted campaign with complete candidat
 records; an active campaign must not be represented as a completed experiment.
 
 The report component's unchanged four-case dataset represents **one positive and
-three target-relative negatives**. The tested evaluator loader normalizes all
-four as positive for the report skill. That classification issue remains open;
-a successful execution or green gate alone would not establish correct negative
-case interpretation. The component's benchmark and card need regeneration through
-the supported evaluation service once the interpretation is resolved.
+three target-relative negatives**. Earlier evaluator loaders normalized all four
+as positive for the report skill. The plugin-level suite explicitly expects the
+report skill for the stopped campaign, Auto-FL for the two ongoing-work cases,
+and no skill for the global negative. It also prohibits report-skill routing on
+the two Auto-FL cases. Native schema validation passes; live evaluation and the
+generated report must still confirm correct interpretation. The retained member
+benchmark and card describe their earlier evaluation and are not plugin results.
 
 The incomplete security scan also requires review and resolution. Retained
 per-skill signatures cover component content; they do not attest to the plugin's
@@ -149,8 +152,8 @@ new manifests, this card, or catalog-generated metadata.
 
 Before a Verified release, retain complete official scan and evaluation evidence
 for the final package, a publication-ready Plugin Card, and the accepted
-plugin-level signature or attestation. Record approval covering plugin distribution
-and the corresponding nSpect association. The separately approved marketplace
+plugin-level signature or attestation. Confirm the applicable OSRB scope and
+record catalog distribution through the program's tracking process. The separately approved marketplace
 icon, repository review, catalog synchronization, and marketplace installation
 checks also remain outstanding.
 

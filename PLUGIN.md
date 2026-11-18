@@ -58,7 +58,8 @@ for desktop execution.
 
 The build copies real files and preserves executable permissions. It packages
 only tracked skill files, the four manifests, this guide as `README.md`,
-`plugin-card.md`, and `LICENSE`. Repository development settings and unrelated source code are excluded.
+`plugin-card.md`, the plugin-level `evals.json`, and `LICENSE`. Repository
+development settings and unrelated source code are excluded.
 No component symlinks are used.
 
 ## Build and validate
@@ -77,7 +78,7 @@ packaged file's SHA-256 digest, and the archive digest. ZIP entries use fixed
 timestamps so identical inputs produce identical archives with the same toolchain.
 No private keys, credentials, or local logs are required by the build.
 During preparation, `packaging_matches_source_commit` is false if the manifests,
-guide, card, license, or builder have not been committed. Commit the reviewed packaging and
+guide, card, evaluation suite, license, or builder have not been committed. Commit the reviewed packaging and
 rebuild before using the source commit as provenance for a release.
 
 The builder requires all nine skills and checks every bundled skill file against
@@ -119,18 +120,57 @@ all nine components, routing, and shared references. Record the host/model
 versions, archive digest, and outcomes. See the host references below and the
 Plugin Card for checks already completed.
 
-Complete workflow evaluation and official scanning/signing through the supported
-NVIDIA service before publication. Loading probes do not establish conversions
-or Tier 3 coverage. Retain complete reports and triage findings; an incomplete
-scan remains a release blocker. Do not edit signed resources or suppress findings
-merely to obtain a passing scan.
+### Local evaluation and publication CI
+
+The root `evals.json` adapts all 107 canonical member cases to the native NVCARPS
+plugin schema. Member datasets and their signatures remain unchanged. The suite
+promotes routing expectations into `expected_skill` and `routing`, retains
+assertions and expected outcomes as private grading references, and rebases
+fixture paths. Prompts with fixtures identify the staged working directory;
+conversion and statistics tasks can write to their fresh project copies. The
+package check compares this projection with every signed source case.
+
+Use the current NVCARPS CLI, configured with model credentials outside the
+repository, and its supported local container runtime. The compute image also
+needs NVFlare and the frameworks exercised by the tasks; precheck does not check
+these application dependencies. Select the same compatible image for skill and
+baseline attempts. From the plugin root:
+
+```bash
+nvcarps update
+nvcarps --version
+nvcarps plugin precheck . --evals
+nvcarps plugin eval .
+nvcarps plugin eval verify .eval-results/<run-id>/eval-result.json
+```
+
+The default Codex and Claude configuration runs skill and baseline arms once,
+giving 428 expected attempts. Inspect the effective plan and retained results:
+all canonical cases, both agents and arms, execution and grading errors, scores,
+and security findings. A structurally valid result does not establish a pass.
+Copy the unedited generated `eval-result.json` to the plugin root and commit it
+with the exact plugin content evaluated. Never commit credentials or private logs.
+
+A maintainer comments `/nvskills-ci` on the PR to request official scanning and
+result verification. CI generates `benchmark.md`, the final Plugin Card, and the
+plugin signature. Read the benchmark's verdict and publication checks; a green
+workflow alone is insufficient. `PUBLISHABLE` and `PASS WITH WARNINGS` permit
+publication subject to repository review and approval requirements; `INCOMPLETE`
+and `NOT PUBLISHABLE` require resolution. Local results are self-assessed.
+Re-evaluate changed plugin content before requesting CI again.
+
+Loading probes do not establish conversions or full workflow coverage. Retain
+complete reports and triage findings; an incomplete scan remains a release
+blocker. Do not edit signed resources or suppress findings to obtain a pass.
 
 ## Release evidence checklist
 
 - [ ] Review the exact package inventory, license notices, dependencies, and model
   or dataset references; retain third-party attribution where applicable.
-- [ ] Record explicit approval covering this plugin and its distribution, and
-  associate the approved OSRB record with the appropriate nSpect registration.
+- [ ] Confirm existing OSRB approval covers the content and record catalog
+  distribution in the program's OSRB tracking spreadsheet. Follow the current
+  IP review, attribution, and VP approval requirements; seek additional OSRB
+  review for new content, licensing, third-party components, or uncovered scope.
 - [ ] Complete native loading and workflow smoke tests for the supported hosts.
 - [ ] Add an approved square marketplace icon and confirm each marketplace's
   presentation requirements and final installation entry. The current candidate
@@ -142,6 +182,8 @@ merely to obtain a passing scan.
   task-polarity concern tracked in [NVFlare #5294](https://github.com/NVIDIA/NVFlare/pull/5294).
   Its four canonical cases represent one positive and three target-relative
   negatives. A report labeling all four positive does not validate that distinction.
+  The plugin suite now declares these expectations explicitly; live evaluation
+  and the generated plugin report must still confirm their interpretation.
   The current `2.9` benchmark also retains a legacy internal container-image path;
   regenerate this report through the evaluation service instead of manually
   editing signed artifacts. Verify the final benchmark and card together.

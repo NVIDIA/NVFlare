@@ -18,6 +18,7 @@ on:
   pull_request:
     paths:
       - 'plugin.json'
+      - 'evals.json'
       - 'plugin-card.md'
       - 'PLUGIN.md'
       - 'LICENSE'

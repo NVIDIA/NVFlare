@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +23,7 @@ These checks do not establish security-scan completeness or publication approval
 import argparse
 import hashlib
 import json
+import posixpath
 import stat
 import subprocess
 import sys
@@ -40,6 +43,44 @@ SCHEMA_SHA256 = "0a4aad95ce337878ad38802ebf0daa3fde76abe3f65400c86bcbb1ec0b3ab88
 def require(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def validate_evaluation_cases(files):
+    """Require a lossless native projection of the signed member cases and their routing."""
+    expected = []
+    for skill in package_plugin.SKILLS:
+        suite_path = f"skills/{skill}/evals/evals.json"
+        suite = json.loads(files[suite_path][0])
+        for original in suite["evals"]:
+            row = dict(original)
+            metadata = row.pop("nvflare")
+            row["expected_skill"] = metadata["expected_skill"]
+            negative = metadata.get("negative_for")
+            if negative == "*":
+                row["routing"] = {"prohibits_any_skill": True}
+            elif negative:
+                row["routing"] = {"prohibited_skills": [negative]}
+            references = {k: v for k, v in metadata.items() if k not in ("expected_skill", "negative_for")}
+            if references:
+                row["expected_behavior"] = "Source NVFlare grading references: " + json.dumps(
+                    references, sort_keys=True
+                )
+            row["files"] = [f"skills/{skill}/evals/{name}" for name in original["files"]]
+            for name in row["files"]:
+                require(name in files, f"Missing plugin evaluation fixture: {name}")
+            if row["files"]:
+                directory = posixpath.commonpath([posixpath.dirname(name) for name in row["files"]])
+                row["prompt"] += (
+                    f"\n\nThe supplied input files are staged under `{directory}`."
+                    " Use that directory as the working directory for commands referring to those files."
+                )
+                if skill.startswith("nvflare-convert-") or skill == "nvflare-fed-stats":
+                    row["setup"] = {"workspace_writable": True}
+            expected.append(row)
+    actual = json.loads(files["evals.json"][0])["evals"]
+    require(len({row["id"] for row in expected}) == len(expected), "Member case IDs must be globally unique")
+    require(actual == expected, "Plugin evals.json differs from the signed member cases or native routing projection")
+    return len(expected)
 
 
 def validate_contained_package(package, schema):
@@ -73,11 +114,17 @@ def validate_contained_package(package, schema):
         if path.is_file()
     }
     count = package_plugin.verify_resources(files)
+    case_count = validate_evaluation_cases(files)
     require(bool(files.get("plugin-card.md", (b"", 0))[0].strip()), "Plugin card is missing or empty")
     docs = [path for path in paths if path.suffix in (".md", ".html") and path.is_file()]
     problems = check_relative_doc_links(docs, package)
     require(not problems, "Broken package links: " + "; ".join(f"{p.file_path}:{p.line}: {p.target}" for p in problems))
-    return {"component_count": len(inventory), "matched_resource_hashes": count, "documents_checked": len(docs)}
+    return {
+        "component_count": len(inventory),
+        "matched_resource_hashes": count,
+        "documents_checked": len(docs),
+        "canonical_evaluation_cases": case_count,
+    }
 
 
 def run(output, schema_path):
