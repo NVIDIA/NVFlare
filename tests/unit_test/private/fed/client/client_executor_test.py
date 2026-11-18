@@ -1644,6 +1644,7 @@ def test_failed_launch_observes_published_handle_even_when_cancel_fails(tmp_path
     assert process[_RUN_STATE_KEY].monitor_args[2:5] == ({"gpu": 1}, "token", resources)
     assert process[_RUN_STATE_KEY].phase == _RunPhase.CLEANUP_PENDING
     executor.abort_app("job-1", heartbeat_cleanup=True)  # Retry the completed cancel while reusing the monitor.
+    assert process[RunProcessKey.JOB_HANDLE].cancel_call.done.wait(5)
     assert ctx.get_prop(FLContextKey.JOB_HANDLE_CALLBACK) is None
     assert find_job_cert(str(tmp_path / "job-1")) is not None
     resources.free_resources.assert_not_called()
@@ -2850,6 +2851,7 @@ def test_transient_observation_error_does_not_disable_heartbeat_abort(tmp_path):
             state = executor.run_processes["job-1"][_RUN_STATE_KEY]
             assert second_wait.wait(5)
             executor.abort_app("job-1", heartbeat_cleanup=True)
+            assert release_wait.wait(5)
             accepted._terminate_for_heartbeat_cleanup.assert_called_once()
             accepted.terminate.assert_not_called()
             assert len(set(attempts)) == 1
@@ -2912,6 +2914,9 @@ def test_heartbeat_retries_completed_cancel_after_transient_observation_error(tm
             calls = []
             for _ in range(6):
                 ClientEngine.abort_app(engine, "job-1", heartbeat_cleanup=True)
+                if not adapter.exited.is_set():
+                    pending = executor.run_processes["job-1"][RunProcessKey.JOB_HANDLE]
+                    assert pending.cancel_call.done.wait(5)
                 calls.append(adapter.terminate_count)
                 if adapter.exited.is_set():
                     adapter.release_wait.set()
@@ -3278,3 +3283,72 @@ def test_heartbeat_reuses_ordinary_abort_across_observation_error(tmp_path, clea
             join_thread(state.monitor)
     resources.free_resources.assert_called_once()
     assert executor.get_run_processes_keys() == []
+
+
+@pytest.mark.parametrize("blocked", ["cancel", "observation"])
+def test_pending_cleanup_returns_to_heartbeat_while_backend_is_blocked(tmp_path, cleanup_deadlines, blocked):
+    from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
+    from tests.client_executor_test_utils import ControlledProcessAdapter
+
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    client.cell.get_fqcn.return_value = "site-1"
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    resources = MagicMock()
+    cancellation_entered = threading.Event()
+    release_cancel = threading.Event()
+    heartbeat_returned = threading.Event()
+
+    def terminate(adapter, attempt):
+        if attempt == 1:
+            return  # The first stop returned without stopping the runtime.
+        cancellation_entered.set()
+        if blocked == "cancel":
+            release_cancel.wait()
+            adapter.exited.set()
+
+    adapter = ControlledProcessAdapter(terminate)
+    cleanup_deadlines.observation_pending = adapter.wait_entered
+    launcher = MagicMock()
+
+    def launch(_meta, fl_ctx):
+        publish_job_handle(ProcessHandle(process_adapter=adapter), fl_ctx)
+        raise RuntimeError("launch failed after publication")
+
+    launcher.launch_job.side_effect = launch
+    engine = SimpleNamespace(client_executor=executor)
+    engine.abort_app = ClientEngine.abort_app.__get__(engine)
+    communicator = Communicator(client_config={"client_name": "site-1"})
+
+    def receive_heartbeat():
+        communicator._clean_up_runs(engine, ["job-1"])
+        heartbeat_returned.set()
+
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        state = None
+        try:
+            with ThreadGroup(release_cancel, adapter.exited) as threads:
+                with pytest.raises(JobCleanupPending):
+                    executor.start_app(
+                        client,
+                        "job-1",
+                        meta,
+                        SimpleNamespace(workspace=str(tmp_path), set=[]),
+                        {"gpu": 1},
+                        "token",
+                        resources,
+                        ctx,
+                    )
+                state = executor.run_processes["job-1"][_RUN_STATE_KEY]
+                # The first start bound expired using the gated test wait. Any
+                # later wait would exceed the heartbeat's independent watchdog.
+                executor.job_launch_cleanup_timeout = 30
+                threads.start(receive_heartbeat)
+                assert cancellation_entered.wait(5)
+                assert heartbeat_returned.wait(5), "heartbeat waited for backend cleanup"
+                assert not adapter.exited.is_set()
+                assert executor.get_run_processes_keys() == ["job-1"]
+                resources.free_resources.assert_not_called()
+        finally:
+            if state is not None:
+                join_thread(state.monitor)
+    resources.free_resources.assert_called_once()

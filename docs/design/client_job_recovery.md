@@ -177,6 +177,12 @@ failure cannot skip observation. The original launch failure is logged first.
 
 ### Ownership and observation
 
+While CP lives, each accepted handle it owns has one registration that holds the
+admission allocation and credentials. Release requires backend completion
+evidence and no cancellation still in flight. The start caller and monitor
+coordinate so only one claims release. Heartbeat presence continues through
+outcome reporting, even after the monitor has claimed release.
+
 Each registered run has an explicit client-parent lifecycle in `_RunState`.
 `ClientStatus` retains its existing CJ-reported STARTING/STARTED/STOPPED values;
 `get_status()` returns those values without overlaying parent cleanup phases.
@@ -208,8 +214,10 @@ abort has its own bounded cancellation wait. Cleanup reuses a saved cancellation
 while it is running or after success, and retries a completed failure once.
 
 One daemon monitor owns observation for the logical run, including replacements
-and failed launches. The initial caller and subsequent cleanup requests wait on
-that monitor's observation event; they do not create another observer. If `wait()` raises, the
+and failed launches. The initial caller and explicit admin retries can wait on
+that monitor's observation event. Pending heartbeat cleanup schedules a stop
+and ensures the monitor is started, then returns without waiting on either
+backend operation. If `wait()` raises, the
 same monitor retries after the backend's `poll_interval` (10 seconds for backends
 without that setting). Heartbeat cleanup and reachable admin aborts can wake this
 retry backoff and retry a completed cancellation, including one that raised or

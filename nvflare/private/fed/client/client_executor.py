@@ -532,6 +532,9 @@ class JobExecutor(ClientExecutor):
             self._start_monitor(job_id, state)
         except BaseException as e:
             self.logger.error(f"job {job_id}: cannot start cleanup monitor: {secure_format_exception(e)}")
+        if heartbeat_cleanup:
+            # The stop and monitor run independently of the heartbeat loop.
+            return False
         cancel.done.wait(self.job_launch_cleanup_timeout)
         state.observation_done.wait(self.job_launch_cleanup_timeout)
         with self.lock:
