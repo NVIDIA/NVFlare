@@ -25,7 +25,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReturnCode, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import DataTypes
-from nvflare.apis.streaming import StreamContext
+from nvflare.apis.streaming import StreamContext, StreamContextKey
 from nvflare.app_common.logging.constants import (
     ALLOW_LOG_STREAMING_VAR,
     LIVE_LOG_TOPIC,
@@ -45,6 +45,9 @@ from nvflare.widgets.widget import Widget
 # repeat violation from a long-quiescent job.
 _UNAUTHORIZED_LOG_CAP = 4096
 
+# Set once a stream's file is closed. A sender that forges it only rejects its own stream.
+_STREAM_ENDED = "JobLogReceiver.stream_ended"
+
 
 class JobLogReceiver(Widget):
     """Receives live log data streamed by :class:`JobLogStreamer`.
@@ -54,6 +57,8 @@ class JobLogReceiver(Widget):
     ``tail -f`` on the server while the job runs. Successful streams are handed
     to the job manager for storage. Interrupted streams retain partial logs;
     explicit job deletion removes managed logs after active streams drain.
+    A new stream from the same client for the same job and file ends the
+    unfinished one, so a restarted job process can re-send its log.
     The storage backend may consume the staging file.
 
     By default the staging file is written to
@@ -290,11 +295,30 @@ class JobLogReceiver(Widget):
             self._quiet_since = None
             self._quiet_period = None
 
+    def _end_superseded_stream(self, client, job_id, file_name, fl_ctx):
+        """Hand the log to its owner's newest stream. Caller holds the stream lock.
+
+        A job process that dies never closes its stream, and its replacement
+        re-sends the whole log. Runs before the staging mutex is taken because
+        ending a stream finalizes it under that mutex.
+        """
+        for state in list(self._stream_files.values()):
+            end_stream = state["end_stream"]
+            if (state["client"], state["job_id"], state["file_name"]) == (client, job_id, file_name) and callable(
+                end_stream
+            ):
+                self.log_info(fl_ctx, f"New live log stream replaces '{file_name}' from {client} for job {job_id}")
+                end_stream(ReturnCode.TASK_ABORTED, fl_ctx)
+
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         client, job_id = self._get_trusted_stream_identity(fl_ctx)
         with self._stream_lock:
             state = self._stream_files.get(id(stream_ctx))
             if state is None:
+                # A chunk can pass the consumer's closed check just before its
+                # stream ends; it must not reopen and truncate the log.
+                if stream_ctx.get(_STREAM_ENDED):
+                    raise ValueError("Log stream has already ended")
                 if not self._is_site_allowed_to_stream(client, fl_ctx):
                     if self._record_unauthorized((client, job_id)):
                         self.log_error(
@@ -306,6 +330,7 @@ class JobLogReceiver(Widget):
                 file_name = LogStreamer.get_file_name(stream_ctx) or WorkspaceConstants.LOG_FILE_NAME
                 workspace = getattr(fl_ctx.get_engine(), "get_workspace", lambda: None)()
                 staging = ClientLogStaging(workspace) if self._dest_dir is None and workspace is not None else None
+                self._end_superseded_stream(client, job_id, file_name, fl_ctx)
                 with staging.locked() if staging else nullcontext():
                     job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
                     if staging and staging.is_deleting(job_id) and job_manager is not None:
@@ -328,6 +353,7 @@ class JobLogReceiver(Widget):
                     "job_id": job_id,
                     "file_name": file_name,
                     "staging": staging,
+                    "end_stream": stream_ctx.get(StreamContextKey.END_STREAM),
                 }
                 self._stream_files[id(stream_ctx)] = state
             elif (state["client"], state["job_id"]) != (client, job_id):
@@ -344,6 +370,7 @@ class JobLogReceiver(Widget):
     def _finalize_stream(self, stream_ctx: StreamContext, fl_ctx: FLContext):
         with self._stream_lock:
             state = self._stream_files.pop(id(stream_ctx), None)
+            stream_ctx[_STREAM_ENDED] = True
         if state is None:
             if LogStreamer.get_file_name(stream_ctx) == WorkspaceConstants.ERROR_LOG_FILE_NAME:
                 return
