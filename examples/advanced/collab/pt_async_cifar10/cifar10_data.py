@@ -28,8 +28,10 @@ def download_cifar10(data_root: str) -> None:
 
 
 def _partition(labels: np.ndarray, num_sites: int, alpha: float, seed: int) -> list[list[int]]:
-    if alpha <= 0:
-        raise ValueError("alpha must be greater than zero")
+    if not np.isfinite(alpha) or alpha <= 0:
+        raise ValueError("alpha must be finite and greater than zero")
+    if num_sites < 1 or num_sites > len(labels) // 10:
+        raise ValueError("num_sites must allow at least 10 samples per site")
     random = np.random.default_rng(seed)
     minimum_size = 0
     while minimum_size < 10:
