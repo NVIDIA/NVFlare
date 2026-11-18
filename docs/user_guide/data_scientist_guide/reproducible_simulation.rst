@@ -13,19 +13,19 @@ Buffered Asynchronous Execution
 -------------------------------
 
 The :github_nvflare_link:`runnable NumPy example
-<examples/advanced/collab/pt_async_cifar10_reproducible>` constructs a
+<examples/advanced/collab/numpy_async_reproducible>` constructs a
 ``FedBuffRecipe`` and runs it from ``examples/advanced/collab`` with:
 
 .. code-block:: bash
 
-   python -m pt_async_cifar10_reproducible.job --num-clients 2 --run-seed 10
+   python -m numpy_async_reproducible.job --num-clients 2 --run-seed 10
 
 Its ``make_recipe()`` returns a regular ``FedBuffRecipe`` and ``make_plan()``
 supplies only the simulator. The equivalent import path is:
 
 .. code-block:: python
 
-   from pt_async_cifar10_reproducible.job import make_plan, make_recipe
+   from numpy_async_reproducible.job import make_plan, make_recipe
    from nvflare.recipe import SimEnv
 
    recipe = make_recipe(run_seed=10)

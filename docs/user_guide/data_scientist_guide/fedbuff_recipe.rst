@@ -201,7 +201,7 @@ distinct within that module.
        disk evidence and model history.
      - Recipe construction, exported job configuration and production arrivals.
    * - :github_nvflare_link:`Reproducible simulation example
-       <examples/advanced/collab/pt_async_cifar10_reproducible>`
+       <examples/advanced/collab/numpy_async_reproducible>`
      - A complete ``FedBuffRecipe`` composition with independent client seed
        streams and simulator plans for fixed acceptance or virtual timing.
      - Shared execution controls, retained model/result evidence and numerical
@@ -229,7 +229,7 @@ Actual arrivals depend on training/RPC timing; fixed seeds alone do not make the
 reproducible. :ref:`Reproducible Simulation Plans <reproducible_simulation>`
 describe simulator-owned fixed acceptance and virtual-time controls for this
 same recipe. The
-:github_nvflare_link:`reproducible example <examples/advanced/collab/pt_async_cifar10_reproducible>`
+:github_nvflare_link:`reproducible example <examples/advanced/collab/numpy_async_reproducible>`
 shows an ordinary ``FedBuffRecipe`` run with a simulator-owned plan, seed
 helpers and retained experiment evidence. Its concrete model and seed helpers
 remain example code, outside the installed SDK. A new async algorithm can
@@ -242,7 +242,7 @@ Failure and Recovery Limits
 Errors/timeouts, missing or invalid results, invalid weights and hook exceptions
 stop the workflow without retry. Abort/failure discards partial buffers and
 stops queuing late replies. Submitted Collab calls finish or reach their configured
-timeout; cleanup does not cancel remote computation. Checkpoints do
+timeout; cleanup does not cancel remote computation. Saved observer artifacts do
 not restore assignments, buffers or client optimizer state. Existing Collab
 result context can supply starting weights but starts a fresh version-zero run.
 

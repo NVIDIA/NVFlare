@@ -18,8 +18,8 @@ import argparse
 from pathlib import Path
 
 import numpy as np
-from pt_async_cifar10_reproducible.model import NumpyModelOps
-from pt_async_cifar10_reproducible.seed_policy import SeedPolicy
+from numpy_async_reproducible.model import NumpyModelOps
+from numpy_async_reproducible.seed_policy import SeedPolicy
 
 from nvflare.collab import FedBuffRecipe, collab
 from nvflare.recipe import SimEnv
@@ -67,7 +67,7 @@ class SeededNumpyClient:
 
 def make_recipe(run_seed=10):
     recipe = FedBuffRecipe(
-        job_name="collab_pt_async_cifar10_reproducible",
+        job_name="collab_numpy_async_reproducible",
         client=SeededNumpyClient(),
         model_loader=NumpyModelLoader(),
         observer=FinalWeightsObserver(),

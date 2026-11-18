@@ -399,8 +399,7 @@ class FedBuffWorkflow:
 
         Callback admission defines receipt order. Per-call Collab handles hold
         only completion/error status; no result-reader threads stage payloads.
-        The protected call/coordinator/run methods share transport and lifecycle
-        with the research example, without a scheduler/storage plugin API.
+        The workflow owns the call lifecycle without a scheduler/storage plugin API.
         """
         stopped = False
         outcome_lock = threading.Lock()

@@ -233,7 +233,7 @@ example does not impose per-assignment RNG scopes or replay.
 Actual arrivals depend on training and RPC timing. `schedule.jsonl` records the
 observed assignment IDs, physical/logical clients and base versions. For
 simulator-owned replay and assignment seed helpers, see the separate
-[reproducible simulation example](../pt_async_cifar10_reproducible/README.md). Its client contract can
+[reproducible simulation example](../numpy_async_reproducible/README.md). Its client contract can
 be adopted explicitly when building a reproducible training experiment.
 
 ## Outputs

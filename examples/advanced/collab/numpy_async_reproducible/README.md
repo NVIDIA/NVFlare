@@ -1,10 +1,9 @@
 # Async with reproducible simulation
 
-This dataset-free companion to the [asynchronous CIFAR-10 example](../pt_async_cifar10/README.md)
+This dataset-free companion to the [basic NumPy FedBuff example](../numpy_async/README.md)
 shows the complete `FedBuffRecipe` + `SimEnv(reprod=True, plan=...)` path. It uses
-small NumPy models so replay can be checked without downloading CIFAR-10 or
-installing PyTorch. The package name is retained for continuity with the earlier
-example.
+small NumPy models so replay can be checked without downloading a dataset or
+installing PyTorch.
 
 `job.py` constructs an ordinary `FedBuffRecipe`. Its workflow has no simulation
 arguments or branches: the shared async execution port in `FedBuffWorkflow`
@@ -19,10 +18,10 @@ From the repository root:
 
 ```bash
 cd examples/advanced/collab
-python -m pt_async_cifar10_reproducible.job --num-clients 2 --run-seed 10
-python -m pt_async_cifar10_reproducible.job --num-clients 1 --run-seed 10 \
+python -m numpy_async_reproducible.job --num-clients 2 --run-seed 10
+python -m numpy_async_reproducible.job --num-clients 1 --run-seed 10 \
   --workspace-root /tmp/nvflare/collab-replay-one-worker
-python -m pt_async_cifar10_reproducible.job --plan-mode timed --num-clients 2 \
+python -m numpy_async_reproducible.job --plan-mode timed --num-clients 2 \
   --workspace-root /tmp/nvflare/collab-replay-timed
 ```
 
@@ -39,9 +38,9 @@ For a downloaded example, enter the parent of the package and run the same
 module:
 
 ```bash
-nvflare examples get collab-pt-async-reproducible
-cd collab-pt-async-reproducible/collab
-python -m pt_async_cifar10_reproducible.job --num-clients 2 --run-seed 10
+nvflare examples get collab-numpy-async-reproducible
+cd collab-numpy-async-reproducible/collab
+python -m numpy_async_reproducible.job --num-clients 2 --run-seed 10
 ```
 
 ## Compose
@@ -49,7 +48,7 @@ python -m pt_async_cifar10_reproducible.job --num-clients 2 --run-seed 10
 The complete program is in [job.py](job.py). Its essential wiring is:
 
 ```python
-from pt_async_cifar10_reproducible.job import make_plan, make_recipe
+from numpy_async_reproducible.job import make_plan, make_recipe
 from nvflare.recipe import SimEnv
 
 recipe = make_recipe(run_seed=10)  # Returns FedBuffRecipe.
@@ -72,7 +71,7 @@ task. The recipe and plan can be imported independently for experiments.
 The simulator stores the plan in the workspace and writes `assignments.jsonl`,
 `dispatch.jsonl`, `accepted.jsonl`, retained `models/` and `results/`, and
 `run.jsonl` under
-`<workspace-root>/collab_pt_async_cifar10_reproducible/server/simulate_job/simulation/`.
+`<workspace-root>/collab_numpy_async_reproducible/server/simulate_job/simulation/`.
 Timed runs also write `phases.jsonl`. The observer saves `final_weights.npy` in
 the server run directory. Use a fresh workspace root for independent runs.
 These artifacts are run evidence; they are not restart checkpoints.
