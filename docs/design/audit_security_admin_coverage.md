@@ -1,12 +1,11 @@
 # Audit log improvements, part 2: security and administration coverage
 
-**Status: implemented in the dependent draft pull request; do not merge before part 1.**
+**Status: implemented; part 1 has merged and this follow-up is based on NVIDIA's refreshed `main`.**
 
-**Dependency:** [Part 1, pull request #5806](https://github.com/NVIDIA/NVFlare/pull/5806),
-introduces UTC timestamps and JSONL records. This follow-up depends on that change.
-The implementation branch includes part 1 as a dependency. Refresh the branch
-from NVIDIA/NVFlare's current `main` after #5806 merges. Keep this follow-up in
-draft until its dependency and required review are complete.
+**Dependency:** [Part 1, pull request #5806](https://github.com/NVIDIA/NVFlare/pull/5806)
+introduced UTC timestamps and JSONL records and has merged. This follow-up builds
+on that change and includes NVIDIA/NVFlare's refreshed `main`. Required review
+and validation remain prerequisites for merging this follow-up.
 
 ## Recording contract
 
@@ -110,9 +109,8 @@ that forwards communication. Add bounded real-transfer coverage for download
 records and explicitly select it in the existing automated test runner.
 
 The implementation is on `improving_audit_coverage`, with signed commits and
-sign-offs. Refresh it against NVIDIA's current `main` after #5806 merges. Keep
-this pull request in draft as requested; run affected tests, style/license checks,
-and independent review before considering it for merge.
+sign-offs, and includes NVIDIA's refreshed `main` after #5806 merged. Run affected
+tests, style/license checks and independent review before considering it for merge.
 
 
 ## Implemented event catalog
