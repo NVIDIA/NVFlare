@@ -247,6 +247,12 @@ Visit your W&B dashboard at https://wandb.ai
 
 ## Adding Tracking to Your Own Recipe
 
+MLflow receivers use a job-local SQLite store by default. A remote tracking URI
+or a path outside the job result directory requires an exact entry in the
+receiving site's `mlflow_tracking_uris` list in `local/resources.json` (or its
+`.default` fallback). See the [tracking configuration guide](../../../docs/programming_guide/experiment_tracking/experiment_tracking_apis.rst)
+for the operator configuration and upgrade requirements.
+
 ### Server-Side Tracking (Centralized)
 
 ```python
@@ -254,7 +260,7 @@ from nvflare.recipe.utils import add_experiment_tracking
 
 # After creating your recipe
 add_experiment_tracking(recipe, "mlflow", tracking_config={
-    "tracking_uri": "file:///tmp/mlruns",
+    "tracking_uri": None,
     "kw_args": {
         "experiment_name": "my-experiment",
         "run_name": "my-run",

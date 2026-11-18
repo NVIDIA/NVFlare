@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
+import pathlib
 import time
 import timeit
 from typing import Dict, List, Optional
+from urllib.parse import urlsplit
+from urllib.request import url2pathname
 
-import mlflow
 from mlflow.entities import Metric, Param, RunTag
 from mlflow.tracking.client import MlflowClient
 
@@ -27,6 +30,7 @@ from nvflare.apis.fl_constant import ProcessType, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 DEFAULT_RUN_NAME = "FLARE FL Run"
@@ -64,7 +68,9 @@ class MLflowReceiver(AnalyticsReceiver):
         Args:
             tracking_uri (Optional[str], optional): MLflow tracking server URI. When this is not specified, metrics
                 are written to a local SQLite database in the job result directory. If the tracking URI is specified,
-                the MLflow tracking server must be started before running the job. Defaults to None.
+                local file and SQLite stores must stay inside the job result directory. Other URIs require
+                an exact entry in the site's resources.json ``mlflow_tracking_uris`` list. Remote tracking
+                servers must be started before running the job. Defaults to None.
             kw_args (Optional[dict], optional): keyword arguments:
                 "experiment_name" (str): Specifies the experiment name. If not specified, the default name of "FLARE FL Experiment" will be used.
                 "run_name" (str): Specifies the run name
@@ -92,6 +98,7 @@ class MLflowReceiver(AnalyticsReceiver):
 
         self.kw_args = kw_args if kw_args else {}
         self.tracking_uri = tracking_uri
+        self._site_approved_tracking_uri = False
         self.mlflow_clients: Dict[str, MlflowClient] = {}
         self.experiment_id = None
         self.run_ids = {}
@@ -101,13 +108,45 @@ class MLflowReceiver(AnalyticsReceiver):
         self.buff_flush_time = buffer_flush_time
 
     def _get_tracking_uri(self, fl_ctx: FLContext):
-        if self.tracking_uri:
-            return self.tracking_uri
-
+        self._site_approved_tracking_uri = False
         workspace = fl_ctx.get_workspace()
         job_id = fl_ctx.get_job_id()
-        mlflow_db = os.path.abspath(os.path.join(workspace.get_result_root(job_id), "mlflow.db"))
-        return f"sqlite:///{mlflow_db}"
+        result_root = os.path.realpath(workspace.get_result_root(job_id))
+        if not self.tracking_uri:
+            mlflow_db = resolve_path_under_root(result_root, "mlflow.db", "MLflow database")
+            return f"sqlite:///{mlflow_db}"
+
+        # Read only the canonical site file. Job config and ConfigService search
+        # paths must not grant authority to choose a credential-bearing backend.
+        resources_file = workspace.get_resources_file_path()
+        resources = {}
+        if resources_file and os.path.isfile(resources_file):
+            with open(resources_file) as f:
+                resources = json.load(f)
+        if not isinstance(resources, dict):
+            raise ValueError("site resources must be a JSON object")
+        allowed_uris = resources.get("mlflow_tracking_uris", [])
+        if not isinstance(allowed_uris, list) or any(not isinstance(uri, str) or not uri for uri in allowed_uris):
+            raise ValueError("site mlflow_tracking_uris must be a list of nonempty strings")
+        if self.tracking_uri in allowed_uris:
+            self._site_approved_tracking_uri = True
+            return self.tracking_uri
+
+        uri = urlsplit(self.tracking_uri)
+        if uri.query or uri.fragment or uri.netloc:
+            raise ValueError("tracking_uri requires approval in site mlflow_tracking_uris")
+        if self.tracking_uri.startswith("sqlite:///"):
+            path = self.tracking_uri[len("sqlite:///") :]
+        elif uri.scheme == "file":
+            path = url2pathname(uri.path)
+        else:
+            raise ValueError("tracking_uri requires approval in site mlflow_tracking_uris")
+
+        # Canonicalize once and pass that same destination to MLflow. This also
+        # checks existing leaf/parent symlinks before opening a local backend.
+        relative_path = os.path.relpath(os.path.abspath(path), result_root)
+        path = resolve_path_under_root(result_root, relative_path, "tracking_uri")
+        return f"sqlite:///{path}" if uri.scheme == "sqlite" else pathlib.Path(path).as_uri()
 
     def initialize(self, fl_ctx: FLContext):
         """Initializes MlflowClient for each site.
@@ -123,15 +162,14 @@ class MLflowReceiver(AnalyticsReceiver):
             fl_ctx (FLContext): The FLContext containing runtime information
 
         Raises:
-            ValueError: If experiment name is empty
+            ValueError: If the backend or artifact path is not permitted, or experiment name is empty
             RuntimeError: If unable to determine participating sites
         """
         # Initialize context and timing
         self.time_start = 0
 
-        mlflow.set_tracking_uri(uri=self._get_tracking_uri(fl_ctx))
-
         # Validate and prepare experiment configuration
+        tracking_uri = self._get_tracking_uri(fl_ctx)
         art_full_path = self._get_artifact_location(self.artifact_location, fl_ctx)
         experiment_name = self.kw_args.get(TrackConst.EXPERIMENT_NAME, "FLARE FL Experiment")
         if not experiment_name:
@@ -156,14 +194,22 @@ class MLflowReceiver(AnalyticsReceiver):
         self.log_info(fl_ctx, f"Initializing MLflow tracking for sites: {site_names}")
 
         # Set up MLflow for each site
-        self._mlflow_setup(art_full_path, experiment_name, experiment_tags, site_names, fl_ctx)
+        self._mlflow_setup(art_full_path, experiment_name, experiment_tags, site_names, fl_ctx, tracking_uri)
 
         # Initialize data buffers
         self._init_buffer(site_names)
 
         self.log_info(fl_ctx, "MLflow tracking initialization completed successfully")
 
-    def _mlflow_setup(self, art_full_path, experiment_name, experiment_tags, site_names: List[str], fl_ctx: FLContext):
+    def _mlflow_setup(
+        self,
+        art_full_path,
+        experiment_name,
+        experiment_tags,
+        site_names: List[str],
+        fl_ctx: FLContext,
+        tracking_uri: str,
+    ):
         """Set up an MlflowClient for each receiving site and create an experiment and run.
 
         Args:
@@ -172,14 +218,15 @@ class MLflowReceiver(AnalyticsReceiver):
             experiment_tags (dict): Experiment tags.
             sites (List[str]): List of sites.
             fl_ctx (FLContext): An FLContext.
+            tracking_uri (str): Validated tracking backend for this receiver.
         """
         for site_name in site_names:
             mlflow_client = self.mlflow_clients.get(site_name, None)
             if not mlflow_client:
-                mlflow_client = MlflowClient()
+                mlflow_client = MlflowClient(tracking_uri=tracking_uri)
                 self.mlflow_clients[site_name] = mlflow_client
                 self.experiment_id = self._get_or_create_experiment(
-                    mlflow_client, experiment_name, art_full_path, experiment_tags
+                    mlflow_client, experiment_name, art_full_path, experiment_tags, fl_ctx
                 )
 
                 job_id_tag = self._get_job_id_tag(fl_ctx)
@@ -188,6 +235,7 @@ class MLflowReceiver(AnalyticsReceiver):
                 run_name = self._get_run_name(self.kw_args, site_name, job_id_tag, job_name)
                 tags = self._get_run_tags(self.kw_args, job_id_tag, run_name)
                 run = mlflow_client.create_run(experiment_id=self.experiment_id, run_name=run_name, tags=tags)
+                self._validate_artifact_uri(run.info.artifact_uri, fl_ctx)
                 self.run_ids[site_name] = run.info.run_id
 
     def _init_buffer(self, site_names: List[str]):
@@ -232,22 +280,31 @@ class MLflowReceiver(AnalyticsReceiver):
     def _get_artifact_location(self, relative_path: str, fl_ctx: FLContext):
         workspace = fl_ctx.get_engine().get_workspace()
         run_dir = workspace.get_run_dir(fl_ctx.get_job_id())
-        root_log_dir = os.path.join(run_dir, relative_path)
-        return root_log_dir
+        return resolve_path_under_root(run_dir, relative_path, "artifact_location")
+
+    def _validate_artifact_uri(self, artifact_uri: str, fl_ctx: FLContext):
+        if self._site_approved_tracking_uri:
+            # The operator-approved backend owns its artifact routing too.
+            return None
+        uri = urlsplit(artifact_uri)
+        if uri.scheme != "file" or uri.netloc or uri.query or uri.fragment:
+            raise ValueError("unapproved MLflow backend must use job-local artifact storage")
+        run_dir = os.path.realpath(fl_ctx.get_workspace().get_run_dir(fl_ctx.get_job_id()))
+        path = os.path.realpath(url2pathname(uri.path))
+        return resolve_path_under_root(run_dir, os.path.relpath(path, run_dir), "MLflow artifact storage")
 
     def _get_or_create_experiment(
         self,
         mlflow_client: MlflowClient,
         experiment_name: str,
         artifact_location: str,
-        experiment_tags: Optional[dict] = None,
+        experiment_tags: Optional[dict],
+        fl_ctx: FLContext,
     ) -> Optional[str]:
         experiment_id = None
         experiment = mlflow_client.get_experiment_by_name(name=experiment_name)
         if not experiment:
             self.logger.info(f"Experiment with name '{experiment_name}' does not exist. Creating a new experiment.")
-            import pathlib
-
             artifact_location_uri = pathlib.Path(artifact_location).as_uri()
             experiment_id = mlflow_client.create_experiment(
                 name=experiment_name, artifact_location=artifact_location_uri, tags=experiment_tags
@@ -256,6 +313,8 @@ class MLflowReceiver(AnalyticsReceiver):
         else:
             experiment_id = experiment.experiment_id
 
+        # A job-local database can contain job-supplied experiment metadata.
+        self._validate_artifact_uri(experiment.artifact_location, fl_ctx)
         self.logger.info(f"Experiment={experiment}")
         return experiment_id
 
@@ -277,7 +336,11 @@ class MLflowReceiver(AnalyticsReceiver):
                 raise RuntimeError(f"run_id is missing for site {record_origin}.")
 
             if data.kwargs.get("path", None):
-                mlflow_client.log_text(run_id=run_id, text=data.value, artifact_file=data.kwargs.get("path"))
+                artifact_file = data.kwargs["path"]
+                artifact_root = self._validate_artifact_uri(mlflow_client.get_run(run_id).info.artifact_uri, fl_ctx)
+                if artifact_root is not None:
+                    resolve_path_under_root(artifact_root, artifact_file, "MLflow artifact file")
+                mlflow_client.log_text(run_id=run_id, text=data.value, artifact_file=artifact_file)
         elif data.data_type == AnalyticsDataType.MODEL:
             # not currently supported
             pass

@@ -98,11 +98,10 @@ For example, here we add the ``MLflowReceiver`` component to the components conf
 .. code-block:: json
 
   {
-    "id": "mlflow_receiver_with_tracking_uri",
+    "id": "mlflow_receiver",
     "path": "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver",
     "args": {
-      "tracking_uri": "file:///{WORKSPACE}/{JOB_ID}/mlruns",
-      "kwargs": {
+      "kw_args": {
         "experiment_name": "hello-pt-experiment",
         "run_name": "hello-pt-with-mlflow",
         "experiment_tags": {
@@ -118,20 +117,50 @@ For example, here we add the ``MLflowReceiver`` component to the components conf
 
 Notice the ``args`` are user defined, such as tracking_uri, experiment_name, tags etc., and will be specific to which receiver is configured.
 
-The MLflow tracking URL argument ``tracking_uri`` is None by default, which uses the MLflow default URL, ``http://localhost:5000``.
-To make this accessible from another machine, make sure to change it in the receiver ``args`` to the correct URL, or point to to the ``mlruns`` directory in the workspace.
+By default, ``tracking_uri=None`` creates ``mlflow.db`` in the receiving site's job
+result directory. Each receiver binds its MLflow clients to its validated URI;
+process-global MLflow URI settings do not select the receiver's backend.
+
+A job may select a local ``sqlite:///`` or ``file:///`` URI only when its resolved
+path stays within that job's result directory. Existing file and directory
+symlinks are checked. SQLite URI query parameters, other backends, and external
+paths require site approval. ``artifact_location`` must remain a relative path
+within the job run directory, including after resolving symlinks.
+Experiment and run artifact destinations read from unapproved local stores are
+also confined to that directory. This includes destinations already stored in
+a job-supplied database and the destination checked before each text upload.
+
+To use an external MLflow backend, a site operator must add its exact URI to
+``mlflow_tracking_uris`` in that site's ``local/resources.json`` (or
+``resources.json.default`` when no override exists):
 
 .. code-block:: json
 
   {
-    "tracking_uri": "<the Mlflow Server endpoint URL>"
+    "mlflow_tracking_uris": ["https://mlflow.example.com:5000"]
   }
+
+Merge this key into the existing site resource configuration. Configure it on
+every receiving site: the server for server-side tracking, or each client for
+client-side tracking. The job may then select that same URI:
 
 .. code-block:: json
 
   {
-    "tracking_uri": "file:///{WORKSPACE}/{JOB_ID}/mlruns"
+    "tracking_uri": "https://mlflow.example.com:5000"
   }
+
+Approval matches the entire URI exactly; it does not use prefixes, host-only
+matching, or wildcards. Job configuration, job-local resource files, and MLflow
+environment variables cannot add approvals. Operators should approve only
+backends trusted to receive the site's MLflow credentials and tracking data.
+Approving a backend also trusts its stored artifact routing.
+Without approval, initialization disables the receiver before creating an
+MLflow client; the analytics receiver logs the initialization error.
+
+Existing jobs that select external paths or remote tracking URIs need this site
+configuration before upgrading. Jobs using the default local store need no
+additional configuration.
 
 You can change other arguments such as experiments, run_name, tags (using Markdown syntax), and artifact location.
 
