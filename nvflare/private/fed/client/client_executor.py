@@ -490,7 +490,7 @@ class JobExecutor(ClientExecutor):
             continuation = (
                 "Background observation will continue; operator attention is required if cleanup remains pending. "
                 if monitor_available
-                else "Automatic observation unavailable; an explicit admin abort can retry monitor startup. "
+                else "Automatic observation unavailable; later cleanup requests retry monitor startup. "
                 "Operator attention is required. "
             )
             self.logger.critical(
@@ -813,12 +813,15 @@ class JobExecutor(ClientExecutor):
                     _RunPhase.OBSERVATION_PENDING,
                 )
             if cleanup_pending:
-                # Failed-launch cleanup already requested cancellation. A normal
-                # observation outage must still accept the server's first abort.
-                if heartbeat_cleanup and state.phase == _RunPhase.CLEANUP_PENDING:
-                    return
                 with self.lock:
                     if self.run_processes.get(job_id) is not process or state.retry_active:
+                        return
+                    # A completed stop may have failed or returned ineffectively.
+                    # Heartbeat cleanup remains reachable after the server drops
+                    # the job, so it must be able to retry that stop. Reuse an
+                    # in-flight call; if monitor startup failed, also retry startup.
+                    cancel = job_handle.cancel_call
+                    if heartbeat_cleanup and cancel and not cancel.done.is_set() and state.monitor is not None:
                         return
                     state.retry_active = True
                     state.wake.set()

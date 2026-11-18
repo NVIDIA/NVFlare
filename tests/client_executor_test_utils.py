@@ -16,6 +16,64 @@
 
 import threading
 
+from tests.timing_utils import WAIT_TIMEOUT
+
+
+class ControlledCleanupDeadlines:
+    """Expire caller waits only after the test observes its blocked backend boundary.
+
+    Completion waits retain an independent real watchdog. Monitor waits and test
+    readiness waits use their original events; only the product's caller budget
+    is intercepted. No deadline depends on a worker being scheduled in 0.1s.
+    """
+
+    def __init__(self, monkeypatch, subject):
+        self.timeout = 10.0
+        self.cancel_pending = None
+        self.observation_pending = None
+        self.before_observation_result = None
+        controller = self
+        original_call = subject._CleanupCall
+        original_state = subject._RunState
+
+        class CleanupCall(original_call):
+            def __init__(self, operation):
+                super().__init__(operation)
+                controller._watch(self.done, "cancel")
+
+        class RunState(original_state):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                controller._watch(self.observation_done, "observation")
+
+        monkeypatch.setattr(subject, "_CleanupCall", CleanupCall)
+        monkeypatch.setattr(subject, "_RunState", RunState)
+
+    def _watch(self, event, operation):
+        original_wait = event.wait
+
+        def wait(timeout=None):
+            if timeout is None:
+                result = original_wait(WAIT_TIMEOUT)
+                assert result, f"unbounded {operation} wait exceeded the independent watchdog"
+                return result
+            if timeout != self.timeout:
+                return original_wait(timeout)
+            ready = getattr(self, operation + "_pending")
+            if event.is_set():
+                result = True
+            elif ready is None:
+                result = original_wait(WAIT_TIMEOUT)
+                assert result, f"{operation} did not complete within the independent watchdog"
+            else:
+                assert ready.wait(WAIT_TIMEOUT), f"{operation} never reached its blocked boundary"
+                result = event.is_set()
+            if operation == "observation" and self.before_observation_result:
+                self.before_observation_result()
+            return result
+
+        event.wait = wait
+
 
 class ControlledProcessAdapter:
     def __init__(self, on_terminate, on_wait=None):

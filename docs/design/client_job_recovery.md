@@ -208,13 +208,14 @@ abort has its own bounded cancellation wait. Cleanup reuses a saved cancellation
 while it is running or after success, and retries a completed failure once.
 
 One daemon monitor owns observation for the logical run, including replacements
-and failed launches. The initial caller and an admin abort wait on that monitor's
-observation event; they do not create another observer. If `wait()` raises, the
+and failed launches. The initial caller and subsequent cleanup requests wait on
+that monitor's observation event; they do not create another observer. If `wait()` raises, the
 same monitor retries after the backend's `poll_interval` (10 seconds for backends
-without that setting). An explicit admin abort can wake this retry backoff and
-retry a completed cancellation, including one that returned without stopping the
-runtime. In-flight cancellation is reused and concurrent admin requests are
-serialized. Query failures do not themselves request cancellation. A healthy run
+without that setting). Heartbeat cleanup and reachable admin aborts can wake this
+retry backoff and retry a completed cancellation, including one that raised or
+returned without stopping the runtime. A running cancellation is reused, and
+concurrent cleanup requests are serialized. Heartbeat retries stay quiet while
+that call and the monitor are already running. Query failures do not themselves request cancellation. A healthy run
 uses OBSERVATION_PENDING during an observation outage, preserving heartbeat
 abort handling and normal CJ recovery once observation succeeds. This is distinct
 from CLEANUP_PENDING after a failed launch or requested cancellation.
@@ -256,11 +257,16 @@ STARTED. A repeated start releases only its new allocation. Deletion rejects all
 registered runs and runs whose directory cleanup is in progress. Status exposes
 `cleanup pending` with its age. The first unresolved cleanup emits a critical log;
 the existing heartbeat job-list read emits at most one reminder per run every
-five minutes, even if its backend wait remains blocked. Heartbeat aborts do not
-issue additional control calls for a run already in failed-launch cleanup. An
-observation outage alone preserves the server's ability to request its first
-abort. Confirmed late completion is logged and releases
-ownership automatically, without an admin abort.
+five minutes, even if its backend wait remains blocked. Heartbeat cleanup keeps
+retrying completed cancellation attempts while the client still owns the run;
+an observation outage or failed launch must not disable this path. Confirmed late
+completion is logged and releases ownership automatically, without an admin abort.
+
+Admin abort is available only while the server can route the command to that job.
+After the server drops a job, an explicit admin abort cannot be relied on as the
+remedy. The client continues advertising its owned run, allowing server-triggered
+heartbeat cleanup to retry cancellation. Persistent backend failures require the
+backend operator to reconcile the exact owned runtime.
 
 ### Guarantees and operator escalation
 
@@ -274,8 +280,9 @@ evidence satisfies the existing recovery rules.
 
 If the normal monitor cannot start, launch cleanup retries monitor startup. If
 that attempt also fails, the run remains owned and logs that automatic observation
-is unavailable. An explicit admin abort can retry startup; no observer is claimed
-to be running while thread creation is failing.
+is unavailable. A later heartbeat cleanup request or a reachable admin abort
+retries startup, reusing a cancellation that is still running. No observer is
+claimed to be running while thread creation is failing.
 
 Uncertainty can persist indefinitely if the backend never provides reliable
 completion evidence. Preserve the exact runtime identity, workspace, launch files,
