@@ -22,11 +22,39 @@ from dataclasses import dataclass, field, replace
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JOB_LAUNCH_OPTIONS, JobHandleSpec, JobLaunchOptions, JobReturnCode
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.defs import ExecutionLifetime
 from nvflare.job_config.task_execution import get_client_execution_lifetime
+
+JOB_LAUNCH_OPTIONS = "_job_launch_options"
+
+
+@dataclass(frozen=True)
+class JobLaunchOptions:
+    """Trusted parent settings for one launch, never job-selected site policy.
+
+    ``environment`` replaces the launcher's initial environment when supplied.
+    Launchers still add job credentials and application import paths. Paths and
+    container options affect this launch only, not the shared launcher instance.
+    ``publish_failed_launch_handle`` opts into receiving an uncertain execution
+    identity on launch errors; the caller must retain it for reconciliation.
+    ``container_kwargs`` replaces site container defaults when supplied.
+    """
+
+    environment: dict | None = None
+    apply_study_runtime: bool = True
+    publish_failed_launch_handle: bool = False
+    workspace_mount: str | None = None
+    container_kwargs: dict | None = None
+
+
+def get_job_launch_options(fl_ctx):
+    options = fl_ctx.get_prop(JOB_LAUNCH_OPTIONS)
+    if options is None:
+        return JobLaunchOptions()
+    return options
 
 
 @dataclass

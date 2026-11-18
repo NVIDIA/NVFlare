@@ -30,7 +30,6 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.task_launcher_spec import TaskLauncherError, TaskLaunchError, TaskResourceRequest
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.config import CommandResult, LookupStatus, QueryResult, SubmissionResult
-from nvflare.app_opt.job_launcher.slurm.launcher import _TaskCJHandle
 from nvflare.app_opt.job_launcher.slurm.task_service import (
     ENV_TASK_OWNER,
     ENV_TASK_TOKEN,
@@ -39,6 +38,7 @@ from nvflare.app_opt.job_launcher.slurm.task_service import (
 )
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.private.fed.client.task_runtime import JobHandleWithTaskWorkers
 from nvflare.private.fed.task_worker.protocol import read_bootstrap, write_bootstrap
 from tests.slurm_test_utils import _accounting, _backend, _query, _supervisor_case
 
@@ -147,7 +147,7 @@ def test_cj_completion_is_bounded_while_cp_retains_unconfirmed_cleanup(owned, ca
     remote = _launch(owned)
     native = Mock()
     native.poll.return_value = JobReturnCode.SUCCESS
-    cj = _TaskCJHandle(native, owned.owner, cleanup_timeout=0.01)
+    cj = JobHandleWithTaskWorkers(native, owned.owner, cleanup_timeout=0.01)
     cj.terminate()
     _eventually(lambda: owned.adapter.cancel.called)
     native.terminate.assert_called_once_with()
@@ -569,7 +569,7 @@ def test_definitive_rejection_allows_cj_and_system_shutdown(owned):
     assert reason in remote.poll().failure_reason
     native = Mock()
     native.poll.return_value = 1
-    cj = _TaskCJHandle(native, owned.owner)
+    cj = JobHandleWithTaskWorkers(native, owned.owner)
     cj.wait()
     assert cj.poll() == 1
     assert not owned.owner.thread.is_alive()
@@ -580,7 +580,7 @@ def test_cj_recovery_waits_for_workers_to_settle(owned):
     _launch(owned)
     native = Mock()
     native.can_restart.return_value = True
-    cj = _TaskCJHandle(native, owned.owner, cleanup_timeout=0.05)
+    cj = JobHandleWithTaskWorkers(native, owned.owner, cleanup_timeout=0.05)
     assert cj.can_restart() is False
     assert owned.owner.thread.is_alive()
     _settle(owned)
@@ -593,7 +593,7 @@ def test_cj_recovery_waits_for_workers_to_settle(owned):
 def test_cj_recovery_requires_confirmed_cj_exit(owned):
     native = Mock()
     native.can_restart.return_value = False
-    cj = _TaskCJHandle(native, owned.owner, cleanup_timeout=0.05)
+    cj = JobHandleWithTaskWorkers(native, owned.owner, cleanup_timeout=0.05)
     assert cj.can_restart() is False
     assert not owned.owner.released
     owned.owner.release()

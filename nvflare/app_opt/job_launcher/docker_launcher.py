@@ -47,11 +47,9 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import (
     JobHandleSpec,
     JobLauncherSpec,
-    JobLaunchOptions,
     JobProcessArgs,
     JobReturnCode,
     add_launcher,
-    get_job_launch_options,
     publish_job_handle,
 )
 from nvflare.apis.workspace import Workspace
@@ -67,6 +65,7 @@ from nvflare.app_opt.job_launcher.study_runtime import (
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
+from nvflare.private.fed.client.task_runtime import JobLaunchOptions, get_job_launch_options
 from nvflare.private.fed.utils.job_cert_utils import job_startup_files, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     DOCKER_JOB_CONTAINER_KWARGS,

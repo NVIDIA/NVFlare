@@ -13,41 +13,11 @@
 # limitations under the License.
 import os
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Optional
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.common.exit_codes import ProcessExitCode
-
-JOB_LAUNCH_OPTIONS = "_job_launch_options"
-
-
-@dataclass(frozen=True)
-class JobLaunchOptions:
-    """Trusted parent settings for one launch, never job-selected site policy.
-
-    ``environment`` replaces the launcher's initial environment when supplied.
-    Launchers still add job credentials and application import paths. Paths and
-    container options affect this launch only, not the shared launcher instance.
-    ``publish_failed_launch_handle`` opts into receiving an uncertain execution
-    identity on launch errors; the caller must retain it for reconciliation.
-    ``container_kwargs`` replaces site container defaults when supplied.
-    """
-
-    environment: Optional[dict] = None
-    apply_study_runtime: bool = True
-    publish_failed_launch_handle: bool = False
-    workspace_mount: Optional[str] = None
-    container_kwargs: Optional[dict] = None
-
-
-def get_job_launch_options(fl_ctx):
-    options = fl_ctx.get_prop(JOB_LAUNCH_OPTIONS)
-    if options is None:
-        return JobLaunchOptions()
-    return options
 
 
 class JobProcessArgs:

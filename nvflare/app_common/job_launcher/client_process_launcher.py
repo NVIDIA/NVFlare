@@ -14,8 +14,8 @@
 
 import os
 
-from nvflare.apis.job_launcher_spec import JobLaunchOptions
 from nvflare.app_common.job_launcher.process_launcher import ProcessJobLauncher
+from nvflare.private.fed.client.task_runtime import JobLaunchOptions
 from nvflare.utils.job_launcher_utils import generate_client_command
 
 

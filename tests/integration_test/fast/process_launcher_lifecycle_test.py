@@ -803,10 +803,11 @@ pytestmark = [pytest.mark.timeout(120), pytest.mark.skipif(os.name != "posix", r
 def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path):
     from nvflare.apis.fl_constant import ReservedKey
     from nvflare.apis.fl_context import FLContext
-    from nvflare.apis.job_launcher_spec import JobLaunchOptions, JobReturnCode, publish_job_handle
+    from nvflare.apis.job_launcher_spec import JobReturnCode, publish_job_handle
     from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
     from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskService
     from nvflare.private.fed.client.task_runtime import (
+        JobLaunchOptions,
         TaskExecutionBinding,
         _launch_job_with_task_workers,
         _TaskExecutionState,

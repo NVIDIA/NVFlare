@@ -24,19 +24,14 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import get_job_meta_study
-from nvflare.apis.job_launcher_spec import (
-    JobHandleSpec,
-    JobLauncherSpec,
-    JobReturnCode,
-    add_launcher,
-    get_job_launch_options,
-)
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.study_runtime import (
     load_study_runtime_file,
     resolve_study_runtime,
     study_runtime_file_path,
 )
+from nvflare.private.fed.client.task_runtime import get_job_launch_options
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path, get_credential_env
 from nvflare.utils.process_utils import ProcessAdapter, spawn_process
 
