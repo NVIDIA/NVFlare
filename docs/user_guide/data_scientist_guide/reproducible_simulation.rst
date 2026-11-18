@@ -50,7 +50,7 @@ physical completion order:
 
 The physical sites execute the logical assignments; their names do not
 determine the assignment base or acceptance order. The plan must have
-``num_updates * buffer_size`` assignments, and its acceptance order must be
+``num_rounds * buffer_size`` assignments, and its acceptance order must be
 compatible with the workflow's concurrency and refill threshold. A logical
 client cannot be reserved again while an earlier assignment for that client
 remains active, including across separate reservation batches. The runnable

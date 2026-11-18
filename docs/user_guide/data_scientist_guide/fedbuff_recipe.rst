@@ -26,12 +26,12 @@ Supply a client, model loader and model operations. An observer is optional:
    from nvflare.recipe import SimEnv
 
    recipe = FedBuffRecipe(
-       job_name="buffered_training",
+       name="buffered_training",
        client=MyClient(),
        model_loader=MyModelLoader(),
        model_ops=MyModelOps(),
        observer=MyObserver(),
-       num_updates=100,
+       num_rounds=100,
        concurrency=8,
        buffer_size=4,
        min_open_slots=1,
@@ -75,9 +75,11 @@ uses the symbol K for **buffer size**, not active-client count. This API uses
 full parameter names. The configurable refill threshold is an implementation
 extension; the immediate-refill FedBuff setting is ``min_open_slots=1``.
 
-Version zero is initial. The workflow stops after ``num_updates`` global
-publications, issuing exactly the remaining contribution budget
-``num_updates * buffer_size``. It accepts results in actual arrival order, with
+Version zero is initial. ``num_rounds`` counts global aggregation/publication
+steps; clients may remain in flight across rounds, so a round does not imply a
+synchronization barrier. The workflow stops after that many publications, with
+a total contribution budget of ``num_rounds * buffer_size``. It accepts results
+in actual arrival order, with
 one outstanding call per client. Successful Collab callbacks enqueue replies
 directly into one shared server queue; admission to that queue defines receipt
 order. Per-call handles track completion/errors without retaining model payloads
@@ -96,6 +98,59 @@ assignment base. The weighted average is applied to the current global model
 with ``server_lr``. Weights are equal unless ``weight_metric`` selects a finite,
 positive metric. CIFAR uses ``num_steps``. ``WeightedAggregationHelper`` maintains
 running sums.
+
+Comparison with Other Recipes
+-----------------------------
+
+These settings express related concepts, but the execution units differ:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Concept
+     - ``FedAvgRecipe``
+     - ``FedBuffRecipe``
+     - ``EdgeFedBuffRecipe``
+   * - Job name
+     - ``name``
+     - ``name``
+     - ``job_name``
+   * - Global publication budget
+     - ``num_rounds``
+     - ``num_rounds``
+     - ``model_manager_config.max_model_version``
+   * - Contributions per publication
+     - Selected clients in a round
+     - ``buffer_size`` (exact count)
+     - ``model_manager_config.num_updates_for_model`` (threshold)
+   * - Participants in flight
+     - Selected clients in a round
+     - ``concurrency``
+     - ``device_manager_config.device_selection_size``
+   * - Refill threshold
+     - Not applicable
+     - ``min_open_slots``
+     - ``device_manager_config.min_hole_to_fill``
+   * - Global update scaling
+     - No direct recipe argument
+     - ``server_lr`` (default 1.0)
+     - ``model_manager_config.global_lr`` (default 0.01)
+
+Edge starts with model version 1; FedBuff starts at version 0. For 100 learned
+publications, use ``num_rounds=100`` in FedBuff and
+``max_model_version=101`` in Edge's model manager configuration. Edge counts
+devices behind hierarchical clients, and a batched report can cross its
+publication threshold. FedBuff accepts exactly ``buffer_size`` contributions.
+Their scaling defaults should not be equated.
+
+``min_clients`` has different roles: FedAvg uses it for job startup and the
+number selected per round; FedBuff uses it for startup, while ``concurrency``
+limits active assignments. FedAvg weights contributions by client step count
+and optional per-site weights. FedBuff uses equal weights unless
+``weight_metric`` selects a client metric. Matching scheduling settings alone
+does not make their aggregation equivalent. The Edge configuration names in
+the table belong to its model and device manager objects; this recipe does not
+change those APIs.
 
 Model Operations and Ownership
 ------------------------------

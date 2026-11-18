@@ -134,11 +134,11 @@ def make_recipe(args) -> FedBuffRecipe:
         num_workers=args.num_workers,
     )
     recipe = FedBuffRecipe(
-        job_name=JOB_NAME,
+        name=JOB_NAME,
         model_loader=Cifar10ModelLoader(setup_seed=args.setup_seed, run_seed=args.run_seed),
         observer=observer,
         model_ops=PTModelOps(),
-        num_updates=args.num_rounds,
+        num_rounds=args.num_rounds,
         concurrency=concurrency,
         buffer_size=args.buffer_size,
         min_open_slots=args.min_open_slots,

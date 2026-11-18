@@ -29,7 +29,7 @@ def coordinator(**kwargs):
     options = dict(
         initial_model=model(10),
         model_ops=NumpyModelOps(),
-        num_updates=3,
+        num_rounds=3,
         concurrency=2,
         buffer_size=1,
         min_open_slots=1,
@@ -59,7 +59,7 @@ def test_stale_return_uses_assignment_base_and_publication_precedes_refill():
 
 
 def test_step_weighted_buffer_matches_cifar_formula_and_does_not_retain_models():
-    run = coordinator(num_updates=1, buffer_size=2, weight_metric="num_steps", server_lr=0.5)
+    run = coordinator(num_rounds=1, buffer_size=2, weight_metric="num_steps", server_lr=0.5)
     a, b = run.dispatch(["a", "b"])
     returned = result(a, 12, steps=1)
     assert not run.accept(a, returned)
@@ -72,7 +72,7 @@ def test_step_weighted_buffer_matches_cifar_formula_and_does_not_retain_models()
 
 
 def test_synchronous_boundary_and_exact_budget():
-    run = coordinator(num_updates=2, buffer_size=2, min_open_slots=2)
+    run = coordinator(num_rounds=2, buffer_size=2, min_open_slots=2)
     a, b = run.dispatch(["a", "b"])
     assert not run.accept(a, result(a, 11))
     assert run.dispatch(["a"]) == []
@@ -86,7 +86,7 @@ def test_synchronous_boundary_and_exact_budget():
 
 
 def test_buffer_can_exceed_active_clients_and_tail_does_not_overdispatch():
-    run = coordinator(num_updates=1, buffer_size=3)
+    run = coordinator(num_rounds=1, buffer_size=3)
     a, b = run.dispatch(["a", "b"])
     run.accept(a, result(a, 11))
     c = run.dispatch(["a"])[0]
@@ -115,7 +115,7 @@ def test_transform_observes_staleness_and_can_be_omitted():
         seen.append((update.staleness, float(update.current_model["w"][0]), update.weight))
         return {key: value * 0.5 for key, value in update.delta.items()}
 
-    run = coordinator(num_updates=2, update_transform=transform)
+    run = coordinator(num_rounds=2, update_transform=transform)
     a, b = run.dispatch(["a", "b"])
     run.accept(a, result(a, 12))
     run.accept(b, result(b, 14))
@@ -151,7 +151,7 @@ def test_delta_transform_reconstructs_original_full_model_only_on_demand(monkeyp
     monkeypatch.setattr(model_ops, "apply", record_apply)
     run = coordinator(
         model_ops=model_ops,
-        num_updates=1,
+        num_rounds=1,
         concurrency=1,
         server_lr=0.5,
         update_transform=lambda update: seen.append(update) or {"w": update.delta["w"] * 0.5},

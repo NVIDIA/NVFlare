@@ -106,7 +106,7 @@ class _ScaleUpdate:
 
 def _execute(observer, clients, *, abort=None, runtime=None, **options):
     signal = abort or Signal()
-    settings = dict(num_updates=2, concurrency=len(clients), call_timeout=0.5)
+    settings = dict(num_rounds=2, concurrency=len(clients), call_timeout=0.5)
     settings.update(options)
     workflow = FedBuffWorkflow(_ModelLoader(), NumpyModelOps(), observer=observer, **settings)
     server = ServerApp(workflow)
@@ -195,7 +195,7 @@ def test_planned_replay_binds_bases_before_physical_dispatch(tmp_path, physical_
         _Observer(),
         clients,
         runtime=runtime,
-        num_updates=4,
+        num_rounds=4,
         concurrency=2,
         buffer_size=1,
     )
@@ -217,7 +217,7 @@ def test_planned_replay_respects_explicit_physical_mapping(tmp_path):
         },
     }
     runtime = SimulationPlanRuntime(plan, tmp_path)
-    _execute(_Observer(), [_Client(), _Client()], runtime=runtime, num_updates=2, concurrency=2, buffer_size=1)
+    _execute(_Observer(), [_Client(), _Client()], runtime=runtime, num_rounds=2, concurrency=2, buffer_size=1)
     dispatched = [json.loads(line) for line in (tmp_path / "dispatch.jsonl").read_text().splitlines()]
     assert dispatched == [{"assignment_id": 1, "site": "site-1"}, {"assignment_id": 0, "site": "site-2"}]
 
@@ -248,7 +248,7 @@ def test_timed_plan_uses_virtual_events_independent_of_worker_pool(tmp_path, phy
         _Observer(),
         clients,
         runtime=runtime,
-        num_updates=4,
+        num_rounds=4,
         concurrency=2,
         buffer_size=1,
     )
@@ -276,7 +276,7 @@ def test_timed_plan_stops_acceptance_at_horizon_and_drains_started_results(tmp_p
         tmp_path,
     )
     observer = _Observer()
-    output = _execute(observer, [_Client()], runtime=runtime, num_updates=2, concurrency=2, buffer_size=1)
+    output = _execute(observer, [_Client()], runtime=runtime, num_rounds=2, concurrency=2, buffer_size=1)
     assert output["w"].item() == 0
     assert observer.finish_version == 0
     assert runtime.virtual_time == 0.5
@@ -296,7 +296,7 @@ def test_planned_replay_rejects_repeated_active_logical_client(tmp_path):
         tmp_path,
     )
     with pytest.raises(ValueError, match="logical clients already active: \\['a'\\]"):
-        _execute(_Observer(), [_Client(), _Client()], runtime=runtime, num_updates=3, concurrency=2, buffer_size=1)
+        _execute(_Observer(), [_Client(), _Client()], runtime=runtime, num_rounds=3, concurrency=2, buffer_size=1)
     assignments = [json.loads(line) for line in (tmp_path / "assignments.jsonl").read_text().splitlines()]
     assert [entry["assignment_id"] for entry in assignments] == [0, 1]
 
@@ -332,7 +332,7 @@ def _numpy_module(monkeypatch):
 
 def test_recipe_export_round_trip_loads_model_components(tmp_path, monkeypatch):
     module = _numpy_module(monkeypatch)
-    recipe = module.make_recipe(num_clients=2, num_updates=3, buffer_size=2)
+    recipe = module.make_recipe(num_clients=2, num_rounds=3, buffer_size=2)
     recipe.server.update_transform = _ScaleUpdate(0.25)
     recipe.export(str(tmp_path))
     configs = list(tmp_path.rglob("config_fed_server.json"))
@@ -342,7 +342,7 @@ def test_recipe_export_round_trip_loads_model_components(tmp_path, monkeypatch):
     assert server["path"] == "nvflare.collab.fedbuff_recipe.FedBuffWorkflow"
     assert server["args"]["model_loader"]["path"].endswith("ArrayModelLoader")
     assert server["args"]["observer"]["path"].endswith("ArrayObserver")
-    assert server["args"]["num_updates"] == 3
+    assert server["args"]["num_rounds"] == 3
     assert server["args"]["model_ops"]["path"].endswith("NumpyModelOps")
     from nvflare.fuel.utils.component_builder import ComponentBuilder
 

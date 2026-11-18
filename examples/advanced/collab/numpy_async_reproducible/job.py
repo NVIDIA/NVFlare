@@ -67,12 +67,12 @@ class SeededNumpyClient:
 
 def make_recipe(run_seed=10):
     recipe = FedBuffRecipe(
-        job_name="collab_numpy_async_reproducible",
+        name="collab_numpy_async_reproducible",
         client=SeededNumpyClient(),
         model_loader=NumpyModelLoader(),
         observer=FinalWeightsObserver(),
         model_ops=NumpyModelOps(),
-        num_updates=4,
+        num_rounds=4,
         concurrency=2,
         buffer_size=1,
         min_open_slots=1,
