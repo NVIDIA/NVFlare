@@ -91,7 +91,10 @@ class JobHandleWithTaskWorkers(JobHandleSpec):
         return code
 
     def wait(self):
-        self.handle.wait()
+        # After failed launch or abort, CP's owner retries physical cleanup.
+        # Re-entering the native wait here would bypass the cleanup deadline.
+        if not (getattr(self.owner, "manage_cj", False) and self.owner.released):
+            self.handle.wait()
         self.owner.release()
         self.owner.thread.join(self.cleanup_timeout)
         if self.owner.thread.is_alive():

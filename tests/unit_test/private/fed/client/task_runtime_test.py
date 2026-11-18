@@ -377,3 +377,22 @@ def test_wrapped_cleanup_requires_physical_execution_and_owned_workers_to_settle
     p.owner.release.assert_called_once()
     p.owner.thread.is_alive.return_value = False
     assert wrapped.is_cleanup_complete()
+
+
+@pytest.mark.parametrize("managed", [False, True], ids=["native-cj", "cp-host-cj"])
+@pytest.mark.parametrize("released", [False, True], ids=["running", "cleanup-requested"])
+def test_wait_preserves_native_wait_except_for_released_managed_coordinators(managed, released):
+    from nvflare.private.fed.client.task_runtime import JobHandleWithTaskWorkers
+
+    p = runtime_fixture()
+    p.owner.manage_cj = managed
+    p.owner.released = released
+    native = Mock(spec=JobHandleSpec)
+    wrapped = JobHandleWithTaskWorkers(native, p.owner, cleanup_timeout=7)
+    wrapped.wait()
+    if managed and released:
+        native.wait.assert_not_called()
+    else:
+        native.wait.assert_called_once_with()
+    p.owner.release.assert_called_once_with()
+    p.owner.thread.join.assert_called_once_with(7)

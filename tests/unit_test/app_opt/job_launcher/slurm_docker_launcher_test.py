@@ -196,7 +196,10 @@ def test_cp_host_container_uses_cj_budget_and_isolated_canonical_paths(profile, 
 
 @pytest.mark.parametrize("launch_error", ["api", "timeout", "connection"])
 @pytest.mark.parametrize("cleanup_failure", ["lookup", "stop"])
-def test_lost_docker_start_response_retains_owner_until_cleanup(profile, monkeypatch, launch_error, cleanup_failure):
+@pytest.mark.parametrize("via_executor", [False, True], ids=["runtime", "executor"])
+def test_lost_docker_start_response_retains_owner_until_cleanup(
+    profile, monkeypatch, launch_error, cleanup_failure, via_executor
+):
     p = profile
     monkeypatch.setattr(docker_module, "DockerJobHandle", DockerJobHandle)
     p.site["task_execution"]["finalization_timeout"] = 0.03
@@ -243,10 +246,35 @@ def test_lost_docker_start_response_retains_owner_until_cleanup(profile, monkeyp
     monkeypatch.setattr(containers, "get", Mock(side_effect=lookup))
     container.start.side_effect = start
     container.stop.side_effect = stop
+    native_wait = Mock(side_effect=AssertionError("failed start must not enter unbounded Docker wait"))
+    monkeypatch.setattr(DockerJobHandle, "wait", native_wait)
+    if via_executor:
+        from nvflare.private.fed.client.client_executor import JobExecutor, _JobRestart, _PendingJobHandle
+
+        client = SimpleNamespace(token="token", token_signature="signature", ssid="ssid")
+        executor = JobExecutor(client, p.workspace.get_startup_kit_dir())
+        pending = _PendingJobHandle()
+        p.context.set_prop(FLContextKey.ARGS, SimpleNamespace(set=[]), sticky=False)
+        args = dict(p.context.get_prop(FLContextKey.JOB_PROCESS_ARGS))
+        args.update(
+            {
+                JobProcessArgs.OPTIONS: ("--set", ""),
+                JobProcessArgs.AUTH_TOKEN: ("-t", "token"),
+                JobProcessArgs.TOKEN_SIGNATURE: ("-ts", "signature"),
+                JobProcessArgs.SSID: ("-d", "ssid"),
+            }
+        )
+        restart = _JobRestart(p.launcher, p.meta, args)
     service = None
     try:
         with pytest.raises((RuntimeError, ReadTimeout, ConnectionError), match="Docker start response lost"):
-            launch_job(p.launcher, p.meta, p.context)
+            if via_executor:
+                executor._launch_job("job-1", restart, pending, p.context)
+            else:
+                launch_job(p.launcher, p.meta, p.context)
+        if via_executor:
+            published.append(pending._job_handle)
+        native_wait.assert_not_called()
         container.start.assert_called_once_with()
         assert exists and container.status == "running"
         assert len(published) == 1
