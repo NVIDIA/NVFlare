@@ -955,9 +955,9 @@ class DockerJobLauncher(JobLauncherSpec):
         except docker.errors.ImageNotFound:
             raise RuntimeError(f"image '{job_image}' not found for job {job_id}")
         except Exception as e:
-            if launch_attempted:
+            if launch_attempted and options.publish_failed_launch_handle:
                 # Docker may have started the container before losing its reply.
-                # Give CP its unique name so cleanup survives the failed launch.
+                # Publish only to a caller that retains uncertain executions.
                 try:
                     publish_job_handle(
                         DockerJobHandle(

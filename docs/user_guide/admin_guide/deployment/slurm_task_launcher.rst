@@ -152,9 +152,6 @@ The default ``cj_runtime: slurm`` profile continues to require a Slurm CJ alloca
 Enabling task execution preserves existing job-lifetime applications, including
 applications that omit ``execution_lifetime``. Those applications use the
 ordinary job launcher's workspace, networking, study settings and image selection.
-A site may explicitly set ``task_execution.allow_job_lifetime`` to ``false`` to
-refuse resident applications, for example on a shared login node. This refusal
-occurs at client-job launch, after deployment and before starting any CJ.
 
 Docker CP and CJs with Slurm workers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

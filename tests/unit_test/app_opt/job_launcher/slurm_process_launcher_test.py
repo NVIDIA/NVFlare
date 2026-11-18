@@ -227,13 +227,3 @@ def test_cp_owns_a_physical_backend_that_reaches_native_task_launch(profile, mon
     p = profile
     handle = launch_job(p.launcher, p.meta, p.context)
     assert_physical_task_dispatch(handle, p.root, monkeypatch)
-
-
-def test_process_cp_host_can_explicitly_refuse_resident_jobs(profile):
-    p = profile
-    p.site["task_execution"]["allow_job_lifetime"] = False
-    (p.root / "local/resources.json").write_text(json.dumps(p.site))
-    Path(p.workspace.get_client_app_config_file_path("job-1")).write_text("{}")
-    with pytest.raises(ValueError, match="refuses job-lifetime"):
-        launch_job(p.launcher, p.meta, p.context)
-    p.spawn.assert_not_called()

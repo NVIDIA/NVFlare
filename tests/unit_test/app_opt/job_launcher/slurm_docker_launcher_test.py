@@ -197,13 +197,18 @@ def test_cp_host_container_uses_cj_budget_and_isolated_canonical_paths(profile, 
 @pytest.mark.parametrize("launch_error", ["api", "timeout", "connection"])
 @pytest.mark.parametrize("cleanup_failure", ["lookup", "stop"])
 @pytest.mark.parametrize("via_executor", [False, True], ids=["runtime", "executor"])
+@pytest.mark.parametrize("task_mode", [False, True], ids=["resident", "task"])
 def test_lost_docker_start_response_retains_owner_until_cleanup(
-    profile, monkeypatch, launch_error, cleanup_failure, via_executor
+    profile, monkeypatch, launch_error, cleanup_failure, via_executor, task_mode
 ):
     p = profile
     monkeypatch.setattr(docker_module, "DockerJobHandle", DockerJobHandle)
     p.site["task_execution"]["finalization_timeout"] = 0.03
     (p.root / "local/resources.json").write_text(json.dumps(p.site))
+    if not task_mode:
+        p.app_config.write_text("{}")
+        p.meta.pop("cj_resource_spec")
+        p.meta["resource_spec"] = {"site-1": {"num_of_gpus": 0}}
     containers = ContainerCollection(p.dc)
     p.dc.containers = containers
     container = Mock()
@@ -273,10 +278,18 @@ def test_lost_docker_start_response_retains_owner_until_cleanup(
             else:
                 launch_job(p.launcher, p.meta, p.context)
         if via_executor:
-            published.append(pending._job_handle)
+            if pending._job_handle is not None:
+                published.append(pending._job_handle)
         native_wait.assert_not_called()
         container.start.assert_called_once_with()
         assert exists and container.status == "running"
+        if not task_mode:
+            # Ordinary launches have no task owner that can reconcile an
+            # uncertain handle; preserve their original error-return path.
+            assert not published
+            assert not hasattr(p.cell, "_slurm_task_service")
+            container.stop.assert_not_called()
+            return
         assert len(published) == 1
         owner = published[0].owner
         service = p.cell._slurm_task_service
@@ -420,7 +433,7 @@ def test_cj_validates_ordinary_docker_site_without_parent_environment(profile, m
     monkeypatch.delenv("NVFL_DOCKER_WORKSPACE")
     monkeypatch.delenv("NVFL_DOCKER_NETWORK")
     policy = TaskExecutionPolicy.from_workspace(p.workspace)
-    assert policy.allow_job_lifetime and policy.launcher.cj_runtime == "docker"
+    assert policy.launcher.cj_runtime == "docker"
     p.dc.containers.run.assert_not_called()
 
 
@@ -629,20 +642,6 @@ def test_federation_docker_default_does_not_replace_site_coordinator(profile):
     launch_job(p.launcher, p.meta, p.context)
     assert p.dc.containers.run.call_args.args == ("site/coordinator:tested",)
     assert p.meta["launcher_spec"]["default"]["docker"]["image"] == "federation/compute"
-
-
-@pytest.mark.parametrize("image", [None, "resident/image"])
-def test_site_can_explicitly_refuse_resident_jobs(profile, image):
-    p = profile
-    p.site["task_execution"]["allow_job_lifetime"] = False
-    (p.root / "local/resources.json").write_text(json.dumps(p.site))
-    p.app_config.write_text("{}")
-    p.meta.pop("cj_resource_spec")
-    if image:
-        p.meta["launcher_spec"] = {"site-1": {"docker": {"image": image}}}
-    with pytest.raises(ValueError, match="refuses job-lifetime"):
-        launch_job(p.launcher, p.meta, p.context)
-    p.dc.containers.run.assert_not_called()
 
 
 @pytest.mark.parametrize("url", ["tcp://host", "file:///tmp/parent"])

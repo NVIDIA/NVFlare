@@ -31,10 +31,13 @@ class JobLaunchOptions:
     ``environment`` replaces the launcher's initial environment when supplied.
     Launchers still add job credentials and application import paths. Paths and
     container options affect this launch only, not the shared launcher instance.
+    ``publish_failed_launch_handle`` opts into receiving an uncertain execution
+    identity on launch errors; the caller must retain it for reconciliation.
     """
 
     environment: Optional[dict] = None
     apply_study_runtime: bool = True
+    publish_failed_launch_handle: bool = False
     workspace_mount: Optional[str] = None
     container_kwargs: dict = field(default_factory=dict)
 

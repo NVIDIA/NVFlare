@@ -160,7 +160,7 @@ def _launch_job_with_task_workers(prepared, launcher, fl_ctx):
 
     environment = dict(prepared.options.environment or {})
     environment.update({prepared.owner_env: cell.get_fqcn(), prepared.token_env: token})
-    options = replace(prepared.options, environment=environment)
+    options = replace(prepared.options, environment=environment, publish_failed_launch_handle=True)
     try:
         fl_ctx.remove_prop(JOB_LAUNCH_OPTIONS)
         fl_ctx.remove_prop(FLContextKey.JOB_HANDLE_CALLBACK)
@@ -231,16 +231,10 @@ def launch_job(launcher, job_meta, fl_ctx):
             )
             or {}
         )
-        lifetime = get_client_execution_lifetime(config)
-        policy = validate_task_site(workspace)
-        if lifetime == ExecutionLifetime.TASK or policy is not None:
+        if get_client_execution_lifetime(config) == ExecutionLifetime.TASK:
             from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy, _prepare_cp_host_cj
 
-            policy = policy or TaskExecutionPolicy.from_workspace(workspace)
-            if lifetime != ExecutionLifetime.TASK:
-                if not policy.allow_job_lifetime:
-                    raise ValueError("site task_execution policy refuses job-lifetime applications; use task lifetime")
-                return launcher.launch_job(job_meta, fl_ctx)
+            policy = TaskExecutionPolicy.from_workspace(workspace)
             runtime = _prepare_cp_host_cj(policy.launcher, launcher, job_meta, fl_ctx)
             if runtime is not None:
                 runtime.cleanup_timeout = policy.finalization_timeout
