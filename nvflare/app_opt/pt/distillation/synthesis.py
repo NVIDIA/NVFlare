@@ -40,6 +40,8 @@ class DataFreeSynthesizer:
 
     Teacher/student modules or factory results are copied, frozen and put in
     eval mode. Their forwards remain differentiable with respect to inputs.
+    For alternating synthesis and distillation, refresh the student copy with
+    update_student_state(distiller.export_student_state()) between calls.
     Only generator parameter gradients are accumulated. Custom callables own
     their configuration; module transforms are moved to device in place.
 
@@ -110,6 +112,19 @@ class DataFreeSynthesizer:
             raise TypeError("optimizer_factory must return a torch optimizer")
         self.latent_size, self.latent_sampler, self.rng = latent_size, latent_sampler, rng
         self.num_steps = 0
+
+    def update_student_state(self, state):
+        """Refresh the configured student from a matching state dict.
+
+        The student remains frozen and in eval mode. The generator, its
+        optimizer and the synthesis step count are preserved. An incompatible
+        state raises without replacing the current student.
+        """
+        if self.student is None:
+            raise ValueError("configure a student before updating its state")
+        student = deepcopy(self.student)
+        student.load_state_dict(state)
+        self.student = student.eval().requires_grad_(False)
 
     def synthesize(self, batch_size=64, steps=20, targets=None):
         """Return (best_transformed_CPU_inputs, loss/steps metrics).

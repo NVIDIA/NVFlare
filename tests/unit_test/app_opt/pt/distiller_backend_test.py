@@ -152,8 +152,10 @@ def test_session_updates_export_and_cleanup(backend, temperature, num_teachers):
         assert hook_count(student) == hook_count(teacher) == 0
         with pytest.raises(ValueError, match="no batches"):
             session.fit([])
-        with pytest.raises(ValueError, match="finite scalar"):
+        before_rejection = session.export_student_state()
+        with pytest.raises(ValueError, match="finite inputs"):
             session.fit([(torch.full((8, 4), float("nan")), None)])
+        torch.testing.assert_close(session.export_student_state(), before_rejection, rtol=0, atol=0)
     finally:
         reference.close()
         session.close()
@@ -163,6 +165,27 @@ def test_session_updates_export_and_cleanup(backend, temperature, num_teachers):
         session.export_student_state()
     with pytest.raises(RuntimeError, match="closed"):
         session.fit([(inputs[0], None)])
+
+
+@pytest.mark.parametrize("backend", ["native", "modelopt", "torchdistill"])
+def test_rejected_loss_restores_student_buffers(backend):
+    require_backend(backend)
+    inputs = torch.ones(8, 4)
+    session = make_session(backend, network(), network(), temperature=1.0)
+    try:
+        session.fit([(inputs, None)])
+        previous_state = session.export_student_state()
+        student = session.student if backend == "native" else session._student
+        hook = student[1].register_forward_pre_hook(lambda _, args: (torch.full_like(args[0], float("nan")),))
+        try:
+            with pytest.raises(ValueError, match="finite scalar"):
+                session.fit([(inputs, None)])
+        finally:
+            hook.remove()
+        torch.testing.assert_close(session.export_student_state(), previous_state, rtol=0, atol=0)
+        assert session.fit([(inputs, None)])["steps"] == 1
+    finally:
+        session.close()
 
 
 def test_native_export_is_separate_from_checkpoint_and_factories_can_replace_the_session():
@@ -210,15 +233,37 @@ def test_torchdistill_rejects_unsupported_training_semantics_before_optional_imp
         TorchDistillDistiller(network(), network(), train_config={"teacher": {"requires_grad": True}})
 
 
-def test_modelopt_supports_feature_loss_and_original_sequential_state():
+def test_modelopt_rejects_ambiguous_criterion_configuration_at_construction():
+    optimizer = partial(torch.optim.SGD, lr=0.01)
+    with pytest.raises(ValueError, match="multiple criteria require an explicit loss_balancer"):
+        ModelOptDistiller(
+            network(), network(), optimizer, criterion={("0", "0"): nn.MSELoss(), ("3", "3"): nn.MSELoss()}
+        )
+    with pytest.raises(ValueError, match="configure temperature on the custom criterion"):
+        ModelOptDistiller(network(), network(), optimizer, criterion=nn.MSELoss(), temperature=5.0)
+    with pytest.raises(ValueError, match="criterion mapping must contain at least one loss"):
+        ModelOptDistiller(network(), network(), optimizer, criterion={})
+
+
+@pytest.mark.parametrize("multiple_criteria", [False, True])
+def test_modelopt_supports_feature_loss_and_original_sequential_state(multiple_criteria):
     require_backend("modelopt")
+    from modelopt.torch.distill import StaticLossBalancer
+
     torch.manual_seed(21)
     student, teacher = network(), network()
     expected = deepcopy(student)
     inputs = torch.randn(8, 4)
     expected.train()
-    expected(inputs)  # Match the complete forward's BatchNorm state update.
+    logits = expected(inputs)  # Match the complete forward's BatchNorm state update.
     loss = nn.functional.mse_loss(expected[0](inputs), teacher[0](inputs).detach())
+    criteria = {("0", "0"): nn.MSELoss()}
+    balancer = None
+    if multiple_criteria:
+        teacher_logits = deepcopy(teacher).eval()(inputs).detach()
+        loss = 0.25 * loss + 0.75 * nn.functional.mse_loss(logits, teacher_logits)
+        criteria[("3", "3")] = nn.MSELoss()
+        balancer = StaticLossBalancer(kd_loss_weight=[0.25, 0.75])
     optimizer = torch.optim.SGD(expected.parameters(), lr=0.01)
     optimizer.zero_grad()
     loss.backward()
@@ -227,7 +272,8 @@ def test_modelopt_supports_feature_loss_and_original_sequential_state():
         student,
         teacher,
         partial(torch.optim.SGD, lr=0.01),
-        criterion={("0", "0"): nn.MSELoss()},
+        criterion=criteria,
+        loss_balancer=balancer,
     )
     try:
         metrics = session.fit([inputs])

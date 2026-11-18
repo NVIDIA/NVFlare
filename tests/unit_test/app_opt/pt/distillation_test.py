@@ -316,6 +316,43 @@ def test_custom_regression_synthesis_keeps_input_gradients_and_feeds_existing_kd
     assert trainer.fit([pool.sample(4)[0]] * 2)["steps"] == 2
 
 
+def test_synthesis_refreshes_distilled_student_and_preserves_generator_training():
+    from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
+
+    student, teacher = nn.Linear(2, 1), nn.Linear(2, 1)
+    synthesis = DataFreeSynthesizer(
+        [teacher],
+        student=student,
+        generator=nn.Linear(2, 2),
+        objective=lambda inputs, teachers, student, targets: student(inputs).square().mean(),
+        optimizer_factory=partial(torch.optim.SGD, lr=0.1, momentum=0.9),
+        latent_size=2,
+    )
+    inputs, _ = synthesis.synthesize(batch_size=4, steps=1)
+    trainer = DistillationTrainer(student, [teacher], partial(torch.optim.SGD, lr=0.1), loss_fn=nn.MSELoss())
+    try:
+        trainer.fit([inputs])
+        updated = trainer.export_student_state()
+    finally:
+        trainer.close()
+
+    before = synthesis.state_dict()
+    assert not torch.equal(updated["weight"], before["student"]["weight"])
+    synthesis.update_student_state(updated)
+    after = synthesis.state_dict()
+    for key in ("generator", "optimizer", "num_steps"):
+        torch.testing.assert_close(after[key], before[key], rtol=0, atol=0)
+    assert not synthesis.student.training and not any(p.requires_grad for p in synthesis.student.parameters())
+    torch.testing.assert_close(after["student"], updated, rtol=0, atol=0)
+
+    invalid = {"weight": torch.zeros_like(updated["weight"]), "bias": torch.zeros(2)}
+    with pytest.raises(RuntimeError, match="size mismatch"):
+        synthesis.update_student_state(invalid)
+    inputs, metrics = synthesis.synthesize(batch_size=4, steps=1)
+    assert metrics["loss"] == pytest.approx(student(inputs).square().mean().item())
+    assert synthesis.num_steps == 2
+
+
 def test_feature_adapters_and_adversarial_term_preserve_input_gradients_and_remove_hooks():
     from nvflare.app_opt.pt.distillation.classification import ClassificationObjective, adversarial_disagreement
     from nvflare.app_opt.pt.distillation.features import forward_with_feature_statistics

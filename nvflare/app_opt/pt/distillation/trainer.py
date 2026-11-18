@@ -14,6 +14,7 @@
 
 """A local distillation loop over caller-supplied input batches."""
 
+from contextlib import contextmanager
 from copy import deepcopy
 from itertools import islice
 
@@ -29,6 +30,29 @@ def _model(value):
     if not isinstance(model, nn.Module):
         raise TypeError("model instances/factories must produce torch.nn.Module")
     return model
+
+
+def _prepare_inputs(batch, batch_adapter, device):
+    inputs = batch_adapter(batch) if batch_adapter else batch
+    if not isinstance(inputs, torch.Tensor) or inputs.ndim < 1 or not inputs.shape[0]:
+        raise ValueError("batch_adapter must return a nonempty batched input tensor")
+    inputs = inputs.detach().to(device)
+    if (inputs.is_floating_point() or inputs.is_complex()) and not torch.isfinite(inputs).all():
+        raise ValueError("batch_adapter must return finite inputs")
+    return inputs
+
+
+@contextmanager
+def _restore_student_buffers_on_error(student):
+    # Train-mode forwards can change buffers before the loss has been checked.
+    snapshots = [(buffer, buffer.detach().clone()) for buffer in student.buffers()]
+    try:
+        yield
+    except BaseException:
+        with torch.no_grad():
+            for buffer, snapshot in snapshots:
+                buffer.copy_(snapshot)
+        raise
 
 
 class DistillationTrainer:
@@ -106,8 +130,10 @@ class DistillationTrainer:
         stateful forwards/adapters can make ordering observable; equivalence to
         student-first is only expected for independent deterministic forwards.
         max_steps never cycles or consumes an extra batch.
-        An empty input or non-finite/non-scalar loss raises. Completed optimizer
-        steps remain applied if a later batch fails; there is no rollback.
+        Empty or non-finite input and non-finite/non-scalar losses raise.
+        A failed student step restores in-place changes to registered student
+        buffers. Completed steps remain applied. Parameters, optimizer state
+        and other effects of user code are outside the buffer rollback.
         """
         self._check_open()
         if max_steps is not None and (isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps < 1):
@@ -116,10 +142,7 @@ class DistillationTrainer:
         total_loss, samples, steps = 0.0, 0, 0
         selected = batches if max_steps is None else islice(batches, max_steps)
         for batch in selected:
-            inputs = self.batch_adapter(batch) if self.batch_adapter else batch
-            if not isinstance(inputs, torch.Tensor) or inputs.ndim < 1 or inputs.shape[0] == 0:
-                raise ValueError("batch_adapter must return a nonempty batched input tensor")
-            inputs = inputs.detach().to(self.device)
+            inputs = _prepare_inputs(batch, self.batch_adapter, self.device)
             # Finish teacher inference before retaining the student's autograd
             # activations. Keep only the teacher targets for the loss reduction.
             targets = []
@@ -129,19 +152,20 @@ class DistillationTrainer:
                     if self.teacher_output_adapter:
                         target = self.teacher_output_adapter(target)
                 targets.append(target)
-            student_output = self.student(inputs)
-            if self.student_output_adapter:
-                student_output = self.student_output_adapter(student_output)
-            loss = None
-            for target in targets:
-                term = self.loss_fn(student_output, target)
-                loss = term if loss is None else loss + term
-            loss = loss / len(self.teachers)
-            if not isinstance(loss, torch.Tensor) or loss.ndim != 0 or not torch.isfinite(loss):
-                raise ValueError("loss_fn must return a finite scalar batch-mean loss")
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
+            with _restore_student_buffers_on_error(self.student):
+                student_output = self.student(inputs)
+                if self.student_output_adapter:
+                    student_output = self.student_output_adapter(student_output)
+                loss = None
+                for target in targets:
+                    term = self.loss_fn(student_output, target)
+                    loss = term if loss is None else loss + term
+                loss = loss / len(self.teachers)
+                if not isinstance(loss, torch.Tensor) or loss.ndim != 0 or not torch.isfinite(loss):
+                    raise ValueError("loss_fn must return a finite scalar batch-mean loss")
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
             count = inputs.shape[0]
             total_loss += loss.detach().item() * count
             samples += count

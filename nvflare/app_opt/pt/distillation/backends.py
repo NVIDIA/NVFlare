@@ -31,13 +31,14 @@ student/teacher and caller-controlled training passes. Synthesis is separate.
 
 import importlib
 import math
+from collections.abc import Mapping
 from copy import deepcopy
 
 import torch
 from torch import nn
 
 from .teachers import _snapshot_state
-from .trainer import _model
+from .trainer import _model, _prepare_inputs, _restore_student_buffers_on_error
 
 
 def _backend(module, package):
@@ -75,19 +76,20 @@ class _Session:
     def fit(self, batches) -> dict:
         """One pass; steps counts optimizer updates, samples counts input rows.
 
-        Empty/nonfinite batches fail. Prior completed updates are retained on
-        failure; close in the caller's finally block to release backend resources.
+        Empty or non-finite input and invalid losses raise. Prior completed
+        updates are retained. A failed student step restores in-place changes
+        to registered student buffers. Parameters, optimizer state and other
+        effects of user code are outside the buffer rollback. Close in the
+        caller's finally block to release backend resources.
         Checkpoints/gradient accumulation are outside these adapters' contract.
         """
         self._check_open()
         self._start_pass()
         total_loss, samples, steps = 0.0, 0, 0
         for batch in batches:
-            inputs = self._batch_adapter(batch) if self._batch_adapter else batch
-            if not isinstance(inputs, torch.Tensor) or inputs.ndim < 1 or not inputs.shape[0]:
-                raise ValueError("batch_adapter must return a nonempty batched input tensor")
-            inputs = inputs.detach().to(self._device)
-            value = self._step(inputs)
+            inputs = _prepare_inputs(batch, self._batch_adapter, self._device)
+            with _restore_student_buffers_on_error(self._student):
+                value = self._step(inputs)
             total_loss += value * inputs.shape[0]
             samples += inputs.shape[0]
             steps += 1
@@ -119,8 +121,10 @@ class ModelOptDistiller(_Session):
     criterion may instead be a modelopt loss or mapping from (student layer,
     teacher layer) names to losses. Student layer names are relative to the
     ORIGINAL student; the adapter prefixes its private shell automatically.
-    A caller-supplied loss_balancer controls custom loss combinations; its default
-    gives all weight to KD. These objects are copied before backend registration.
+    A single criterion defaults to a balancer that gives all weight to KD.
+    Multiple criteria require an explicit loss_balancer. A custom criterion
+    owns its temperature and reduction, so the adapter temperature must stay
+    at its default. These objects are copied before backend registration.
 
     export_student_state never calls modelopt.export: snapshots can be taken
     between fit calls. close performs final backend export to remove its hooks,
@@ -151,17 +155,25 @@ class ModelOptDistiller(_Session):
     ):
         if isinstance(temperature, bool) or not math.isfinite(temperature) or temperature <= 0:
             raise ValueError("temperature must be finite and positive")
+        if criterion is not None and temperature != 1.0:
+            raise ValueError("configure temperature on the custom criterion")
+        if isinstance(criterion, Mapping):
+            if not criterion:
+                raise ValueError("criterion mapping must contain at least one loss")
+            if len(criterion) > 1 and loss_balancer is None:
+                raise ValueError("multiple criteria require an explicit loss_balancer")
+
         self._mtd = _backend("modelopt.torch.distill", "nvidia-modelopt")
         super().__init__(student, teacher, device, batch_adapter)
         self._session = _StudentShell(self._student)
         self._optimizer = None
-        losses = self._mtd.LogitsDistillationLoss(temperature=temperature, reduction="batchmean")
-        if criterion is not None:
-            losses = deepcopy(criterion)
-        if isinstance(losses, nn.Module):
-            losses = {("model", ""): losses}
+        if criterion is None:
+            losses = {("model", ""): self._mtd.LogitsDistillationLoss(temperature=temperature, reduction="batchmean")}
+        elif isinstance(criterion, nn.Module):
+            losses = {("model", ""): deepcopy(criterion)}
         else:
-            losses = {(f"model.{s}" if s else "model", t): loss for (s, t), loss in losses.items()}
+            copied_criteria = deepcopy(dict(criterion))
+            losses = {(f"model.{s}" if s else "model", t): loss for (s, t), loss in copied_criteria.items()}
         for loss in losses.values():
             if isinstance(loss, nn.Module):
                 loss.to(self._device)

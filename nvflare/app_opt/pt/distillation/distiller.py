@@ -28,9 +28,11 @@ class Distiller(Protocol):
     Built-in implementations consume FP32 inputs in one pass. Their metrics are
     loss (sample-weighted mean of the configured scalar batch loss), steps
     (optimizer updates), and samples (input rows). They use one optimizer update
-    per batch; gradient accumulation is not implicit. Earlier updates remain
-    applied if a later batch fails. Call close in a finally block on both success
-    and failure. Sessions are not thread-safe.
+    per batch. They reject non-finite inputs before model forwards and restore
+    in-place changes to registered student buffers if a step raises. Earlier
+    completed updates remain applied. This does not roll back a partially
+    applied optimizer step or arbitrary user code side effects. Call close in
+    a finally block on both success and failure. Sessions are not thread-safe.
 
     Student snapshots are detached, independent CPU state dictionaries compatible
     with the application's original student. Snapshotting does not finalize the
