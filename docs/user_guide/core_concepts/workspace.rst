@@ -16,7 +16,7 @@ Server
 .. code-block:: shell
 
     /some_path_on_fl_server/fl_server_workspace_root/
-        admin_audit.log
+        audit.jsonl
         log.txt
         startup/
             authorization.json
