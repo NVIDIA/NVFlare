@@ -468,8 +468,10 @@ def test_abort_app_terminates_starting_job_without_worker_command():
     client = MagicMock()
     job_executor = JobExecutor(client=client, startup="startup")
     job_handle = MagicMock()
+    pending = _PendingJobHandle()
+    pending.attach(job_handle)
     job_executor.run_processes["job-1"] = {
-        RunProcessKey.JOB_HANDLE: job_handle,
+        RunProcessKey.JOB_HANDLE: pending,
         RunProcessKey.STATUS: ClientStatus.STARTING,
     }
 
@@ -514,9 +516,11 @@ def test_abort_app_does_not_terminate_unregistered_stopped_job():
 def test_terminate_job_gives_stopped_worker_bounded_cleanup_grace():
     job_executor = JobExecutor(client=MagicMock(), startup="startup")
     job_executor.logger = MagicMock()
-    job_handle = MagicMock()
+    job_handle = MagicMock(spec=JobHandleSpec)
+    pending = _PendingJobHandle()
+    pending.attach(job_handle)
     job_executor.run_processes["job-1"] = {
-        RunProcessKey.JOB_HANDLE: job_handle,
+        RunProcessKey.JOB_HANDLE: pending,
         RunProcessKey.STATUS: ClientStatus.STOPPED,
     }
 
@@ -524,10 +528,10 @@ def test_terminate_job_gives_stopped_worker_bounded_cleanup_grace():
         patch("nvflare.private.fed.client.client_executor.time.time", side_effect=[10.0, 10.0, 20.1]),
         patch("nvflare.private.fed.client.client_executor.time.sleep") as sleep,
     ):
-        job_executor._terminate_job(job_handle, "job-1", heartbeat_cleanup=True)
+        job_executor._terminate_job(pending, "job-1", heartbeat_cleanup=True)
 
     sleep.assert_called_once_with(0.05)
-    job_handle.terminate.assert_called_once_with(heartbeat_cleanup=True)
+    job_handle.terminate.assert_called_once_with()
 
 
 def test_terminate_job_allows_stopped_worker_to_finish_during_cleanup_grace():
@@ -3196,5 +3200,81 @@ def test_heartbeat_retries_monitor_startup_while_reusing_inflight_cancel(tmp_pat
             adapter.exited.set()
             if "state" in locals() and state.monitor and state.monitor.ident:
                 join_thread(state.monitor)
+    resources.free_resources.assert_called_once()
+    assert executor.get_run_processes_keys() == []
+
+
+@pytest.mark.parametrize("status", [ClientStatus.STARTING, ClientStatus.STARTED, ClientStatus.STOPPED])
+def test_heartbeat_reuses_ordinary_abort_across_observation_error(tmp_path, cleanup_deadlines, monkeypatch, status):
+    from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
+    from tests.client_executor_test_utils import ControlledProcessAdapter
+
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    client.cell.get_fqcn.return_value = "site-1"
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    resources = MagicMock()
+    first_stop = threading.Event()
+    finish_first_stop = threading.Event()
+    observing_again = threading.Event()
+    cleanup_deadlines.cancel_pending = first_stop
+
+    def terminate(adapter, attempt):
+        if attempt == 1:
+            first_stop.set()
+            finish_first_stop.wait()
+        adapter.exited.set()
+
+    def observe(_adapter, attempt):
+        if attempt == 1:
+            first_stop.wait()
+            raise RuntimeError("transient wait error while abort is running")
+        observing_again.set()
+
+    adapter = ControlledProcessAdapter(terminate, observe)
+    runtime = ProcessHandle(process_adapter=adapter)
+    launcher = MagicMock()
+    launcher.launch_job.return_value = runtime
+    clock = isolate_time(monkeypatch, "nvflare.private.fed.client.client_executor")
+    clock.time = Mock(side_effect=[0.0, 11.0])  # Expire the normal teardown grace.
+    engine = SimpleNamespace(client_executor=executor)
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        executor.start_app(
+            client,
+            "job-1",
+            meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            {"gpu": 1},
+            "token",
+            resources,
+            ctx,
+        )
+        state = executor.run_processes["job-1"][_RUN_STATE_KEY]
+        executor.notify_job_status("job-1", status)
+        try:
+            with ThreadGroup(first_stop, finish_first_stop, adapter.exited) as threads:
+                threads.start(ClientEngine.abort_app, engine, "job-1")
+                assert observing_again.wait(5)
+                cleanup_deadlines.cancel_pending = None
+                ClientEngine.abort_app(engine, "job-1", heartbeat_cleanup=True)
+                assert adapter.terminate_count == 1
+                assert not adapter.exited.is_set()
+                resources.free_resources.assert_not_called()
+                pending = executor.run_processes["job-1"][RunProcessKey.JOB_HANDLE]
+                cancel = pending.cancel_call
+                monitor_waiting = threading.Event()
+                original_wait = cancel.done.wait
+
+                def wait_for_stop(timeout=None):
+                    if threading.current_thread() is state.monitor:
+                        monitor_waiting.set()
+                    return original_wait(timeout)
+
+                with patch.object(cancel.done, "wait", side_effect=wait_for_stop):
+                    adapter.exited.set()  # Independent exit while the abort call is still blocked.
+                    assert monitor_waiting.wait(5)
+                    resources.free_resources.assert_not_called()
+                    assert executor.get_run_processes_keys() == ["job-1"]
+        finally:
+            join_thread(state.monitor)
     resources.free_resources.assert_called_once()
     assert executor.get_run_processes_keys() == []

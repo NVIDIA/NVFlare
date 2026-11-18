@@ -215,7 +215,12 @@ without that setting). Heartbeat cleanup and reachable admin aborts can wake thi
 retry backoff and retry a completed cancellation, including one that raised or
 returned without stopping the runtime. A running cancellation is reused, and
 concurrent cleanup requests are serialized. Heartbeat retries stay quiet while
-that call and the monitor are already running. Query failures do not themselves request cancellation. A healthy run
+that call and the monitor are already running. Ordinary abort, saved abort and
+failed launch cleanup use the same cancellation record for each handle. The
+executor registers the stop under its ownership lock before waiting for it, so a
+stop begun before an observation failure is visible to later retries and to the
+release check. The normal teardown grace for a started or stopped CJ still applies.
+Query failures do not themselves request cancellation. A healthy run
 uses OBSERVATION_PENDING during an observation outage, preserving heartbeat
 abort handling and normal CJ recovery once observation succeeds. This is distinct
 from CLEANUP_PENDING after a failed launch or requested cancellation.

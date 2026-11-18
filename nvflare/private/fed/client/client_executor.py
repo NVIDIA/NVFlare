@@ -166,6 +166,17 @@ class _PendingJobHandle(JobHandleSpec):
                 return terminate_for_heartbeat_cleanup()
         return job_handle.terminate()
 
+    def start_cancel(self, heartbeat_cleanup=False, retry_completed=True):
+        """Save or start cancellation while the executor lock guards ownership."""
+        if self._job_handle is None:
+            self.terminate(heartbeat_cleanup=heartbeat_cleanup)  # Save intent until publication.
+            return None
+        cancel = self.cancel_call
+        if cancel is None or (cancel.done.is_set() and (retry_completed or cancel.error is not None)):
+            cancel = _CleanupCall(lambda: self.terminate(heartbeat_cleanup=heartbeat_cleanup))
+            self.cancel_call = cancel
+        return cancel
+
     def poll(self):
         with self._lock:
             job_handle = self._job_handle
@@ -510,16 +521,7 @@ class JobExecutor(ClientExecutor):
                 state.launch_failed = True
             elif state.phase == _RunPhase.OBSERVATION_PENDING:
                 state.phase = _RunPhase.CLEANUP_PENDING
-            cancel = pending_handle.cancel_call
-            if cancel is None or (cancel.done.is_set() and (retry or cancel.error is not None)):
-                cancel = _CleanupCall(
-                    lambda: (
-                        pending_handle.terminate(heartbeat_cleanup=True)
-                        if heartbeat_cleanup
-                        else pending_handle.terminate()
-                    )
-                )
-                pending_handle.cancel_call = cancel
+            cancel = pending_handle.start_cancel(heartbeat_cleanup, retry_completed=retry)
 
         # A replacement is already on the monitor thread. It will observe the new
         # handle in its next iteration; never create a second observer or wait on itself.
@@ -572,16 +574,17 @@ class JobExecutor(ClientExecutor):
             job_args[key] = (job_args[key][0], value)
         fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
         job_handle = None
+        saved_cancel = None
 
         def register_handle(handle):
-            nonlocal job_handle
-            heartbeat_cleanup = pending_handle.attach(handle)
-            job_handle = handle
-            if heartbeat_cleanup is not None:
-                # Attach and remember ownership before applying the saved abort.
-                # Reuse this cancellation during launch cleanup if it fails or hangs.
-                cancel = _CleanupCall(lambda: pending_handle.terminate(heartbeat_cleanup=heartbeat_cleanup))
-                pending_handle.cancel_call = cancel
+            nonlocal job_handle, saved_cancel
+            with self.lock:
+                heartbeat_cleanup = pending_handle.attach(handle)
+                job_handle = handle
+                cancel = None
+                if heartbeat_cleanup is not None:
+                    cancel = saved_cancel = pending_handle.start_cancel(heartbeat_cleanup)
+            if cancel is not None:
                 cancel.done.wait(self.job_launch_cleanup_timeout)
                 # Do not raise through publication: some launchers catch callback
                 # errors and enter their own blocking cleanup. Check after return.
@@ -594,12 +597,11 @@ class JobExecutor(ClientExecutor):
             if handle is None:
                 raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
             register_handle(handle)
-            cancel = pending_handle.cancel_call
-            if cancel is not None:
-                if not cancel.done.is_set():
+            if saved_cancel is not None:
+                if not saved_cancel.done.is_set():
                     raise TimeoutError("saved abort did not complete within job_launch_cleanup_timeout")
-                if cancel.error is not None:
-                    raise cancel.error
+                if saved_cancel.error is not None:
+                    raise saved_cancel.error
             self.logger.info(f"Launched job {job_id} with job launcher: {type(restart.launcher)}")
             fl_ctx.set_prop(FLContextKey.JOB_META, restart.meta, private=True, sticky=False)
             fl_ctx.get_engine().fire_event(EventType.AFTER_JOB_LAUNCH, fl_ctx)
@@ -844,32 +846,18 @@ class JobExecutor(ClientExecutor):
             if process_status in (ClientStatus.STARTING, ClientStatus.STARTED, ClientStatus.STOPPED):
                 try:
                     if process_status == ClientStatus.STARTING:
-                        if heartbeat_cleanup:
-                            job_handle.terminate(heartbeat_cleanup=True)
-                        else:
-                            job_handle.terminate()
-                        break
-                    if process_status == ClientStatus.STOPPED:
-                        # STOPPED means the runner returned, not that the OS
-                        # process exited. Give archival and process-local teardown
-                        # the normal bounded grace period before reclaiming the
-                        # still-registered owned process.
-                        t = threading.Thread(target=self._terminate_job, args=[job_handle, job_id, heartbeat_cleanup])
-                        t.start()
-                        t.join()
-                        break
-                    request = new_cell_message({}, {})
-                    self.client.cell.fire_and_forget(
-                        targets=self._job_fqcn(job_id),
-                        channel=CellChannel.CLIENT_COMMAND,
-                        topic=AdminCommandNames.ABORT,
-                        message=request,
-                        optional=True,
-                    )
-                    self.logger.debug("abort sent to worker")
-                    t = threading.Thread(target=self._terminate_job, args=[job_handle, job_id, heartbeat_cleanup])
-                    t.start()
-                    t.join()
+                        self._cancel_registered_job(job_handle, job_id, heartbeat_cleanup)
+                    else:
+                        if process_status == ClientStatus.STARTED:
+                            self.client.cell.fire_and_forget(
+                                targets=self._job_fqcn(job_id),
+                                channel=CellChannel.CLIENT_COMMAND,
+                                topic=AdminCommandNames.ABORT,
+                                message=new_cell_message({}, {}),
+                                optional=True,
+                            )
+                        # Give a started or stopped worker its normal grace period for teardown.
+                        self._terminate_job(job_handle, job_id, heartbeat_cleanup)
                     break
                 except Exception as e:
                     if retry == 0:
@@ -882,8 +870,6 @@ class JobExecutor(ClientExecutor):
             else:
                 self.logger.info(f"Client worker process for run: {job_id} was already terminated.")
                 break
-
-        self.logger.info("Client worker process is terminated.")
 
     def send_to_job(
         self,
@@ -923,7 +909,7 @@ class JobExecutor(ClientExecutor):
         while True:
             with self.lock:
                 process = self.run_processes.get(job_id)
-            if not process:
+            if not process or process.get(RunProcessKey.JOB_HANDLE) is not job_handle:
                 # already finished gracefully
                 return
 
@@ -933,11 +919,19 @@ class JobExecutor(ClientExecutor):
 
             time.sleep(0.05)  # we want to quickly check
 
-        if heartbeat_cleanup:
-            job_handle.terminate(heartbeat_cleanup=True)
-        else:
-            job_handle.terminate()
-        self.logger.info(f"run ({job_id}): child worker process terminated")
+        self._cancel_registered_job(job_handle, job_id, heartbeat_cleanup)
+
+    def _cancel_registered_job(self, job_handle, job_id, heartbeat_cleanup):
+        with self.lock:
+            process = self.run_processes.get(job_id)
+            if process is None or process.get(RunProcessKey.JOB_HANDLE) is not job_handle:
+                return
+            cancel = job_handle.start_cancel(heartbeat_cleanup)
+        if cancel is not None:
+            if not cancel.done.wait(self.job_launch_cleanup_timeout):
+                self.logger.warning(f"job {job_id}: cancellation still running after caller timeout")
+            elif cancel.error is not None:
+                self.logger.warning(f"job {job_id}: cancellation failed: {secure_format_exception(cancel.error)}")
 
     def abort_task(self, job_id):
         """Aborts the client executing task.
