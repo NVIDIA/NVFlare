@@ -1,3 +1,7 @@
+:html_title: Federated Learning in Python: Quick Start
+:html_description: Run your first federated learning job in Python with NVIDIA FLARE and PyTorch.
+                   Simulate two clients locally, inspect results, and choose your next steps.
+
 .. _quickstart:
 .. _get_started:
 .. _getting_started:

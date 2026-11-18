@@ -18,16 +18,25 @@ Note: Deep copy protection is now handled at broadcast level in WFCommServer,
 not in TensorDownloadable itself. These tests verify the Downloadable's basic behavior.
 """
 
+import os
 import threading
+from types import SimpleNamespace
 
+import psutil
 import pytest
 import torch
 from safetensors.torch import load as load_tensors
 from safetensors.torch import save_file
 
-from nvflare.app_opt.pt.lazy_tensor_dict import _LazyRef, safetensors_refs
+import nvflare.app_opt.pt.tensor_downloader as tensor_downloader
+from nvflare.app_opt.pt.lazy_tensor_dict import safetensors_refs
 from nvflare.app_opt.pt.tensor_downloader import TensorDownloadable
 from nvflare.fuel.f3.streaming.download_service import ProduceRC
+from tests.timing_utils import WAIT_TIMEOUT, ThreadGroup
+
+
+def _open_paths():
+    return {file.path for file in psutil.Process().open_files()}
 
 
 class TestTensorDownloadableBasic:
@@ -126,55 +135,129 @@ class TestTensorDownloadableBasic:
             downloadable.produce_item(0)
 
     @pytest.mark.parametrize("max_chunk_size", [1, 1024])
-    def test_lazy_refs_roundtrip_without_prefetch_or_cache(self, tmp_path, max_chunk_size):
+    def test_lazy_refs_reuse_reader_without_payload_cache(self, tmp_path, monkeypatch, max_chunk_size):
         tensors = {"a": torch.arange(4.0), "b": torch.ones(2)}
         save_file(tensors, tmp_path / "model.safetensors")
-        downloadable = TensorDownloadable(
-            tensors=safetensors_refs(str(tmp_path / "model.safetensors")), max_chunk_size=max_chunk_size
-        )
+        refs = safetensors_refs(str(tmp_path / "model.safetensors"))
+        # FOBS item IDs differ from checkpoint tensor names.
+        items_by_id = {f"T{i}": ref for i, ref in enumerate(refs.values())}
+        downloadable = TensorDownloadable(tensors=items_by_id, max_chunk_size=max_chunk_size)
+        real_open = tensor_downloader.safe_open
+        opens = []
+
+        def count_open(*args, **kwargs):
+            opens.append(kwargs["backend"])
+            return real_open(*args, **kwargs)
+
+        monkeypatch.setattr(tensor_downloader, "safe_open", count_open)
 
         assert downloadable.cache is None
-        assert downloadable.get_item_size(0) == 16
-        rc, items, state = downloadable.produce({}, "receiver")
-
-        assert rc == ProduceRC.OK
-        assert len(items) == (1 if max_chunk_size == 1 else 2)
-        if max_chunk_size == 1:
-            rc, remaining, _ = downloadable.produce(state, "receiver")
-            assert rc == ProduceRC.OK
-            items += remaining
-        restored = {key: value for item in items for key, value in load_tensors(item).items()}
-        assert set(restored) == set(tensors)
-        assert all(torch.equal(restored[key], value) for key, value in tensors.items())
+        first = tensors[next(iter(refs))]
+        assert downloadable.get_item_size(0) == first.numel() * first.element_size()
+        for client in ("site-1", "site-2"):
+            state, restored = {}, {}
+            for _ in range(len(tensors) + 1):
+                rc, items, state = downloadable.produce(state, client)
+                if rc == ProduceRC.EOF:
+                    break
+                assert rc == ProduceRC.OK
+                restored.update({key: value for item in items for key, value in load_tensors(item).items()})
+            assert rc == ProduceRC.EOF
+            assert set(restored) == set(items_by_id)
+            for key, ref in items_by_id.items():
+                torch.testing.assert_close(restored[key], tensors[ref.key])
+        assert opens == ["pread"]
         assert not downloadable._prefetch_futures
         downloadable.release()
 
-    def test_lazy_refs_serve_concurrent_receivers_without_serializing_them(self, tmp_path, monkeypatch):
-        barrier = threading.Barrier(2)
-        save_file({"only": torch.ones(1)}, tmp_path / "model.safetensors")
-        original = _LazyRef.materialize
+    def test_readers_reused_across_files_until_release(self, tmp_path, monkeypatch):
+        refs = {}
+        paths = []
+        for i in range(2):
+            path = str(tmp_path / f"{i}.safetensors")
+            paths.append(path)
+            save_file({str(i): torch.tensor(i)}, path)
+            refs.update(safetensors_refs(path))
+        downloadable = TensorDownloadable(refs, max_chunk_size=1)
+        real_open = tensor_downloader.safe_open
+        opens = []
 
-        def materialize(ref):
-            barrier.wait(timeout=2.0)
-            return original(ref)
+        def count_open(path, **kwargs):
+            opens.append(path)
+            return real_open(path, **kwargs)
 
-        monkeypatch.setattr(_LazyRef, "materialize", materialize)
-        downloadable = TensorDownloadable(safetensors_refs(str(tmp_path / "model.safetensors")), max_chunk_size=1)
+        monkeypatch.setattr(tensor_downloader, "safe_open", count_open)
+        try:
+            for _ in range(2):
+                for i in range(len(paths)):
+                    assert load_tensors(downloadable.produce_item(i))[str(i)].item() == i
+            assert opens == paths
+            assert _open_paths().intersection(paths) == set(paths)
+        finally:
+            downloadable.release()
+        assert not _open_paths().intersection(paths)
+
+    def test_concurrent_reads_survive_release(self, tmp_path, monkeypatch):
+        path = str(tmp_path / "model.safetensors")
+        save_file({"a": torch.tensor(1), "b": torch.tensor(2)}, path)
+        downloadable = TensorDownloadable(safetensors_refs(path), max_chunk_size=1)
+        entered = {key: threading.Event() for key in ("a", "b")}
+        finish = threading.Event()
+        released = threading.Event()
+        real_open = tensor_downloader.safe_open
+
+        def blocking_open(*args, **kwargs):
+            reader = real_open(*args, **kwargs)
+
+            def get_tensor(key):
+                entered[key].set()
+                finish.wait()
+                return reader.get_tensor(key)
+
+            return SimpleNamespace(metadata=reader.metadata, get_tensor=get_tensor)
+
+        monkeypatch.setattr(tensor_downloader, "safe_open", blocking_open)
         results = []
-        threads = [
-            threading.Thread(target=lambda client=client: results.append(downloadable.produce({}, client)))
-            for client in ("site-1", "site-2")
-        ]
 
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=3.0)
+        def release():
+            downloadable.release()
+            released.set()
 
-        assert all(not thread.is_alive() for thread in threads)
-        assert len(results) == 2
-        assert all(rc == ProduceRC.OK and len(items) == 1 for rc, items, _ in results)
+        with ThreadGroup(finish) as workers:
+            for index in range(2):
+                workers.start(lambda i=index: results.append(downloadable.produce_item(i)))
+            assert all(event.wait(WAIT_TIMEOUT) for event in entered.values())
+            workers.start(release)
+            assert released.wait(WAIT_TIMEOUT)
+            with pytest.raises(RuntimeError, match="released"):
+                downloadable.produce_item(0)
+            assert path in _open_paths()  # In-flight reads still own the reader.
+        restored = {key: value.item() for item in results for key, value in load_tensors(item).items()}
+        assert restored == {"a": 1, "b": 2}
+        assert path not in _open_paths()
+
+    @pytest.mark.parametrize("during_open", [False, True])
+    def test_rejects_replacement_when_initializing_reader(self, tmp_path, monkeypatch, during_open):
+        path, replacement = tmp_path / "model.safetensors", tmp_path / "next.safetensors"
+        save_file({"w": torch.ones(1)}, path, metadata={"nvflare_model_id": "old"})
+        refs = safetensors_refs(str(path))
+        save_file({"w": torch.zeros(1)}, replacement, metadata={"nvflare_model_id": "new"})
+        downloadable = TensorDownloadable(refs, max_chunk_size=1)
+        if during_open:
+            real_open = tensor_downloader.safe_open
+
+            def open_then_replace(*args, **kwargs):
+                reader = real_open(*args, **kwargs)
+                os.replace(replacement, path)
+                return reader
+
+            monkeypatch.setattr(tensor_downloader, "safe_open", open_then_replace)
+        else:
+            os.replace(replacement, path)
+        with pytest.raises(RuntimeError, match="model was replaced"):
+            downloadable.produce_item(0)
         downloadable.release()
+        assert str(path) not in _open_paths()
 
     def test_lazy_refs_reject_native_serialization(self, tmp_path):
         from nvflare.app_opt.pt.decomposers import TensorDecomposer

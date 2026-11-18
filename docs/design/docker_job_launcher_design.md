@@ -320,7 +320,7 @@ studies:
 
 At launch time, `DockerJobLauncher` looks up the study name and bind-mounts each configured dataset into the SJ/CJ container at `/data/<study>/<dataset>`. In Docker mode, `source` is the host path passed to Docker and `mode` must be `ro` or `rw`. If the file doesn't exist or the study has no entry, no data volume is added and the launcher logs a warning. The same file also configures per-study `env`, `secret_env` (launcher-env pass-through), and `secret_mounts`; see `docs/design/study_runtime_config.md`.
 
-The legacy v1 `study_data.yaml` (`study -> dataset -> {source, mode}`) remains supported for existing sites; the two files must not coexist. If a configured dataset host `source` path does not exist, Docker reports the bind-mount failure when the job container is created.
+The v1 `study_data.yaml` was removed in 2.10; Docker refuses to launch while that file is present. If a configured dataset host `source` path does not exist, Docker reports the bind-mount failure when the job container is created.
 
 ---
 
@@ -497,7 +497,7 @@ studies:
         mode: ro
 ```
 
-`studies` keys are study names from `meta.json`; `datasets` keys are dataset names. Each dataset entry defines the host `source` path and mount `mode`. Dataset names appear in the container path as `/data/<study>/<dataset>`. If the file is absent or the job's study has no entry, no data volume is added, the launcher logs a warning, and the job runs without a data mount. Legacy v1 `study_data.yaml` files remain supported but must not coexist with `study_runtime.yaml`.
+`studies` keys are study names from `meta.json`; `datasets` keys are dataset names. Each dataset entry defines the host `source` path and mount `mode`. Dataset names appear in the container path as `/data/<study>/<dataset>`. If the file is absent or the job's study has no entry, no data volume is added, the launcher logs a warning, and the job runs without a data mount. A legacy v1 `study_data.yaml` is no longer read; Docker refuses to launch while it exists.
 
 ### Step 5 — Submit a job
 

@@ -434,7 +434,7 @@ Expected behavior:
 - configure `DockerJobLauncher` with `job_launcher` values from `docker.yaml`
 - patch runtime communication settings so job containers can reach the parent
   container on the Docker network
-- use `local/study_data.yaml` to resolve study data host paths
+- use `local/study_runtime.yaml` to resolve study data host paths
 - switch `resource_manager` to `PassthroughResourceManager`, which replaces
   local resource scheduling with a no-op resource manager for launcher-based
   execution
@@ -458,7 +458,7 @@ Expected behavior:
 - configure `K8sJobLauncher` with `job_launcher` values from `k8s.yaml`
 - patch runtime communication settings so job pods can reach the parent pod
   through the generated Kubernetes Service
-- use `local/study_data.yaml` to resolve study data PVC names
+- use `local/study_runtime.yaml` to resolve study data PVC names
 - switch `resource_manager` to `PassthroughResourceManager`, which replaces
   local resource scheduling with a no-op resource manager for launcher-based
   execution
@@ -520,16 +520,14 @@ deploy command must preserve or reuse those communication patching behaviors.
 
 ## Study Data Mapping
 
-`local/study_data.yaml` is the site-local mapping from a study name to the
-storage location that contains that study's data. Docker uses host paths from
-this file, while K8s uses PVC names from this file. `deploy prepare` should
-create a commented template when the file is absent in the prepared output, and
-should preserve an existing file when the input kit already contains one.
-
-This replaces the separate per-runtime files used previously:
-`local/study_data.json` for Docker and `local/study_data_pvc.yaml` for K8s.
-Both launchers and `workspace_cell_transfer.py` must be updated to use
-`local/study_data.yaml`.
+`local/study_runtime.yaml` is the site-local mapping from a study name to the
+storage location that contains that study's data, plus per-study env vars,
+secrets, and Pod templates. Docker uses host paths from this file, while K8s
+uses PVC names. `deploy prepare` creates a commented template when the file is
+absent in the prepared output, and preserves an existing file when the input
+kit already contains one. The earlier `local/study_data.yaml`,
+`local/study_data.json` (Docker), and `local/study_data_pvc.yaml` (K8s) formats
+are removed.
 
 For the shipped multi-study design and study-scoped behavior, see
 [Multi-Study Support](../user_guide/admin_guide/multi_study_guide.rst). For

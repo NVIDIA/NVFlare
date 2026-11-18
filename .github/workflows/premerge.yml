@@ -193,7 +193,6 @@ jobs:
         if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         run: |
           ./runtest.sh --torch-backend=cpu -p
-          uv pip install --system --no-deps "flwr>=1.16,<1.26"
       # Installed outside NVFlare's development environment because SkillEvaluator
       # requires click>=8.3.3 while NVFlare pins click==8.1.7 below Python 3.14.
       # Keep every Tier 1 static scanner explicit: a missing scanner must fail the
@@ -304,6 +303,35 @@ jobs:
       - name: Run HF Client API checks (${{ matrix.name }})
         run: ${{ matrix.test_command }}
 
+  flower-runtime:
+    needs: full-ci-selection
+    if: needs.full-ci-selection.outputs.run-full-ci == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.11"
+            flower: "flwr==1.43.0"
+          - python-version: "3.13"
+            flower: "flwr>=1.43"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      # Keep Flower's complete runtime dependencies separate from development
+      # extras and the generic Python 3.10 matrix (Flower requires Python 3.11+).
+      - name: Install Flower (${{ matrix.flower }}) and NVFlare
+        run: python -m pip install -e . "${{ matrix.flower }}" pytest
+      - name: Exercise real Flower through the NVFlare HTTP adapters
+        env:
+          NVFLARE_REQUIRE_FLOWER_RUNTIME: "1"
+        run: python -m pytest -q -rs tests/integration_test/fast/flower_runtime_test.py
+
   coverage:
     runs-on: ubuntu-24.04
     needs: [full-ci-selection, unit-tests]
@@ -324,7 +352,6 @@ jobs:
       - name: Install dependencies
         run: |
           ./runtest.sh --torch-backend=cpu -p
-          uv pip install --system --no-deps "flwr>=1.16,<1.26"
       - name: Run unit test with coverage
         run: python3 -m pytest --numprocesses=auto -v --cov=nvflare --cov-report xml:cov.xml --dist loadgroup tests/unit_test
       - name: Include process and transport contract coverage
@@ -432,7 +459,6 @@ jobs:
         if: needs.full-ci-selection.outputs.run-full-ci == 'true'
         run: |
           ./runtest.sh --torch-backend=cpu -p
-          uv pip install --system --no-deps "flwr>=1.16,<1.26"
           uv pip install --system build twine
       - name: Run wheel build
         if: needs.full-ci-selection.outputs.run-full-ci == 'true'

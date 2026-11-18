@@ -26,7 +26,19 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 -->
 {% extends "!layout.html" %}
+  {# RST file metadata controls HTML head tags without changing headings or Markdown exports. #}
+  {% block htmltitle %}
+  {% if meta and meta.get("html_title") %}
+  <title>{{ meta["html_title"]|e }}{{ titlesuffix }}</title>
+  {% else %}
+  {{ super() }}
+  {% endif %}
+  {% endblock %}
+
   {% block extrahead %} {{ super() }}
+  {% if meta and meta.get("html_description") %}
+  <meta name="description" content="{{ meta["html_description"]|e }}" />
+  {% endif %}
   <meta name="google-site-verification" content="klpdyWFkf4W3vA_95MZTIp1-7hnVlNQvhLlIVLpn4t0" />
   {% endblock %}
 

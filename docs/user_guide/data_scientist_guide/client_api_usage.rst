@@ -154,6 +154,69 @@ Below is a table overview of key Client APIs.
      - Patches the PyTorch Lightning Trainer for usage with FLARE.
      - :func:`patch<nvflare.app_opt.lightning.api.patch>`
 
+Lightning step-level sync
+-------------------------
+
+By default, ``flare.patch(trainer)`` runs one FL round per ``trainer.fit()`` call, so the shortest
+round is one epoch. For models where an epoch takes hours, set ``sync_every_n_steps`` to exchange
+the model with the server every N optimizer steps within a single ``fit()``:
+
+.. code-block:: python
+
+    import nvflare.client.lightning as flare
+
+    flare.patch(trainer, sync_every_n_steps=10)
+    trainer.fit(model, datamodule=dm)
+
+Each received global model is loaded in place, so the optimizer, LR scheduler, AMP scaler and
+data position carry over between rounds. Rank 0 sends and receives the next task at the end of the
+sync batch, and every rank loads the next global model at the start of the next batch. ``fit()`` ends
+when the server stops sending training tasks. In-fit validation right after a sync waits for the next
+global model, and Lightning runs one validation pass when training stops, as it does for ``EarlyStopping``.
+
+A train-only job needs no code after ``fit()``. If the job also sends evaluate tasks (cross-site
+evaluation), answer them after ``fit()``. The loop stops on any other task, and rank 0 decides for all
+ranks, since only rank 0 can call ``is_evaluate()``:
+
+.. code-block:: python
+
+    trainer.fit(model, datamodule=dm)
+    while True:
+        evaluate = trainer.global_rank == 0 and flare.is_running() and flare.is_evaluate()
+        if not trainer.strategy.broadcast(evaluate, src=0):
+            break
+        trainer.validate(model, datamodule=dm)
+
+The server's ``num_rounds`` decides how long training runs: step mode lifts the trainer's ``max_epochs``
+and ``max_steps``, so epochs keep cycling the data until the server stops sending training tasks. A site
+that stops on its own (``EarlyStopping``, ``max_time``) sends its open round and leaves. Each site reports
+N steps per round, so FedAvg weights sites equally.
+
+LR schedulers that count optimizer steps (warmup and decay, ``StepLR``, ``ExponentialLR``) work unchanged.
+A scheduler sized from the trainer's run length, such as ``OneCycleLR`` or ``CosineAnnealingLR`` with
+``T_max`` from ``trainer.estimated_stepping_batches``, must be sized for the run the server drives:
+``num_rounds * sync_every_n_steps`` optimizer steps. Pass ``num_rounds`` to the training script, for
+example as a script argument. ``OneCycleLR`` raises once it is stepped past ``total_steps``, and the
+callback logs a warning when training passes the trainer's own limit.
+
+In this mode, ``restore_state`` and ``update_fit_loop`` have no effect, and ``train_with_evaluation``
+is not supported. Optimizer state carries over between rounds only with job lifetime. With task lifetime
+(``launch_once=False``) each round starts a fresh optimizer, so step mode gives no benefit over
+``max_steps=N`` there.
+
+When the script runs in an external process, set ``shutdown_timeout`` (for example 30 seconds) in the
+recipe or ``ScriptRunner``. In step mode the script is still inside ``fit()`` when the job ends, and with
+the default of 0 the process is terminated at once, so the DataLoader workers are killed, a traceback is
+logged, and code after ``fit()`` does not run. With a timeout, ``fit()`` returns and the script ends normally.
+
+Any callback in ``trainer.callbacks`` can define these hooks, in both modes:
+
+* ``on_fl_receive(trainer, pl_module, fl_model)``: before the received model is loaded. Edits to
+  ``fl_model`` change what is loaded, not the copy the Client API keeps for ``DIFF`` transfers.
+* ``on_fl_model_loaded(trainer, pl_module, fl_model)``: after it is loaded.
+* ``on_fl_before_send(trainer, pl_module, fl_model)``: before the model is sent; ``fl_model`` is
+  ``None`` on ranks other than 0.
+
 .. list-table:: HuggingFace APIs
    :widths: 25 25 50
    :header-rows: 1

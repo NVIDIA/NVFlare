@@ -39,7 +39,10 @@ def get_file_ext(input_path: str) -> Optional[str]:
         return ext
 
 
-def resolve_path_under_root(root_dir: str, relative_path: str, path_name: str = "path") -> str:
+def resolve_path_under_root(
+    root_dir: str, relative_path: str, path_name: str = "path", preserve_leaf: bool = False
+) -> str:
+    """Resolve a relative path beneath a root, optionally retaining its final symlink name."""
     if not isinstance(root_dir, str):
         raise TypeError(f"root_dir must be str but got {type(root_dir)}")
     if not isinstance(relative_path, str):
@@ -48,7 +51,13 @@ def resolve_path_under_root(root_dir: str, relative_path: str, path_name: str = 
         raise ValueError(f"{path_name} {relative_path} must be relative to {root_dir}.")
 
     root_real = os.path.realpath(root_dir)
-    full_path = os.path.realpath(os.path.join(root_real, relative_path))
+    candidate_path = os.path.join(root_real, relative_path)
+    full_path = os.path.realpath(candidate_path)
     if os.path.commonpath([root_real, full_path]) != root_real:
         raise ValueError(f"{path_name} {relative_path} must stay inside {root_real}.")
+    if preserve_leaf:
+        parent_real = os.path.realpath(os.path.dirname(candidate_path))
+        if os.path.commonpath([root_real, parent_real]) != root_real:
+            raise ValueError(f"{path_name} {relative_path} must stay inside {root_real}.")
+        return os.path.join(parent_real, os.path.basename(candidate_path))
     return full_path

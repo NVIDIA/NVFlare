@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import tempfile
 from importlib.metadata import PackageNotFoundError
@@ -19,17 +20,40 @@ from unittest.mock import patch
 
 import pytest
 
+from nvflare.app_opt.flower.controller import FlowerController
 from nvflare.app_opt.flower.recipe import FlowerRecipe
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
 from nvflare.job_config.api import FedJob
 from nvflare.recipe import secret_ref
 
 
-@pytest.mark.parametrize("flwr_version", ["1.15.9", "1.16rc0", "1.25.9", "1.26.0rc0"])
+@patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.43.0")
+def test_cli_timeouts_survive_recipe_export_and_applet_construction(_version, tmp_path):
+    timeouts = {"flwr_run_timeout": 600, "flwr_command_timeout": 12, "flwr_log_timeout": 3}
+    recipe = FlowerRecipe(name="flower-timeouts", flower_app_path="local/custom/my_app", **timeouts)
+    recipe.export(str(tmp_path))
+    config = json.loads((tmp_path / "flower-timeouts/app/config/config_fed_server.json").read_text())
+    workflow = config["workflows"][0]
+    assert workflow["path"] == "nvflare.app_opt.flower.controller.FlowerController"
+    controller = FlowerController(**workflow["args"])
+    applet = controller.get_applet(None)
+    for name, value in timeouts.items():
+        assert workflow["args"][name] == value
+        assert getattr(applet, name) == value
+
+
+@pytest.mark.parametrize("name", ["flwr_run_timeout", "flwr_command_timeout", "flwr_log_timeout"])
+@patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.43.0")
+def test_recipe_rejects_invalid_cli_timeout(_version, name):
+    with pytest.raises(ValueError, match=name):
+        FlowerRecipe(flower_app_path="local/custom/my_app", **{name: float("inf")})
+
+
+@pytest.mark.parametrize("flwr_version", ["1.15.9", "1.16rc0", "1.26.0", "1.28.0", "1.40.0", "1.42.9", "1.43.0rc0"])
 def test_flower_recipe_rejects_incompatible_flwr_version(flwr_version):
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job") as mock_flower_job:
-            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.26'"):
+            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.43'"):
                 FlowerRecipe(flower_content="mock_flower_content")
 
             mock_flower_job.assert_not_called()
@@ -38,13 +62,13 @@ def test_flower_recipe_rejects_incompatible_flwr_version(flwr_version):
 def test_flower_recipe_rejects_missing_flwr_package():
     with patch("nvflare.app_opt.flower.recipe.get_package_version", side_effect=PackageNotFoundError):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job") as mock_flower_job:
-            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.26'"):
+            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.43'"):
                 FlowerRecipe(flower_content="mock_flower_content")
 
             mock_flower_job.assert_not_called()
 
 
-@pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
+@pytest.mark.parametrize("flwr_version", ["1.43.0", "1.43.1", "1.43.5", "1.44.0rc1", "1.44.0", "2.0.0"])
 def test_flower_recipe_accepts_compatible_flwr_version(flwr_version):
     fake_job = FedJob(name="test_flower", min_clients=1)
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
@@ -60,7 +84,7 @@ def test_flower_recipe_forwards_run_config():
     fake_job = FedJob(name="test_flower", min_clients=1)
     run_config = {"learning-rate": 0.01, "momentum": 0.9}
 
-    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
+    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.43.0"):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job) as mock_flower_job:
             recipe = FlowerRecipe(flower_content="mock_flower_content", run_config=run_config)
 
@@ -79,7 +103,7 @@ def test_flower_recipe_forwards_run_config():
 def test_flower_recipe_warns_on_secret_parameters(parameter, value):
     fake_job = FedJob(name="test_flower", min_clients=1)
 
-    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
+    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.43.0"):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job):
             with pytest.warns(PotentialSecretWarning, match=parameter):
                 FlowerRecipe(flower_content="mock_flower_content", **{parameter: value})
@@ -90,13 +114,13 @@ def test_flower_recipe_warns_on_unsupported_secret_refs(parameter):
     fake_job = FedJob(name="test_flower", min_clients=1)
     value = {"api_token": secret_ref("API_TOKEN")}
 
-    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
+    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.43.0"):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job):
             with pytest.warns(UnsupportedSecretRefWarning, match=parameter):
                 FlowerRecipe(flower_content="mock_flower_content", **{parameter: value})
 
 
-@pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
+@pytest.mark.parametrize("flwr_version", ["1.43.0", "1.43.1", "1.43.5"])
 def test_flower_recipe_forwards_extra_env_without_client_api_selector(flwr_version):
     fake_job = FedJob(name="test_flower", min_clients=1)
     user_env = {"MY_VAR": "123"}
@@ -110,7 +134,7 @@ def test_flower_recipe_forwards_extra_env_without_client_api_selector(flwr_versi
     assert kwargs["extra_env"] == user_env
 
 
-@pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
+@pytest.mark.parametrize("flwr_version", ["1.43.0", "1.43.1", "1.43.5"])
 def test_flower_recipe_does_not_treat_client_api_type_as_metrics_selector(flwr_version):
     user_env = {"CLIENT_API_TYPE": "caller-owned-value", "MY_VAR": "123"}
 
@@ -121,7 +145,7 @@ def test_flower_recipe_does_not_treat_client_api_type_as_metrics_selector(flwr_v
     assert mock_flower_job.call_args.kwargs["extra_env"] == user_env
 
 
-@pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
+@pytest.mark.parametrize("flwr_version", ["1.43.0", "1.43.1", "1.43.5"])
 def test_flower_recipe_with_predeployed_path(flwr_version):
     fake_job = FedJob(name="test_flower", min_clients=1)
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
@@ -135,7 +159,7 @@ def test_flower_recipe_with_predeployed_path(flwr_version):
 
 
 def test_flower_recipe_rejects_both_content_and_path():
-    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
+    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.43.0"):
         with patch(
             "nvflare.app_opt.flower.recipe._create_flower_job",
             side_effect=ValueError("Specify either 'flower_content'"),
@@ -145,7 +169,7 @@ def test_flower_recipe_rejects_both_content_and_path():
 
 
 def test_flower_recipe_rejects_neither_content_nor_path():
-    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
+    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.43.0"):
         with patch(
             "nvflare.app_opt.flower.recipe._create_flower_job",
             side_effect=ValueError("One of 'flower_content' or 'flower_app_path' must be provided"),
@@ -201,3 +225,22 @@ def test_flower_job_has_byoc_when_content_provided():
             assert "pyproject.toml" in os.listdir(
                 server_custom
             ), "Expected pyproject.toml in server custom/ for BYOC mode"
+
+
+def test_payload_limit_reaches_both_deployed_connectors(tmp_path):
+    import json
+
+    from nvflare.app_opt.flower.controller import FlowerController
+    from nvflare.app_opt.flower.executor import FlowerExecutor
+
+    limit = 1234567
+    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.43.0"):
+        recipe = FlowerRecipe(name="limits", flower_app_path="local/custom/app", max_message_bytes=limit)
+    recipe._job.export_job(str(tmp_path))
+    config_dir = tmp_path / "limits" / "app" / "config"
+    server = json.loads((config_dir / "config_fed_server.json").read_text())
+    client = json.loads((config_dir / "config_fed_client.json").read_text())
+    controller_args = server["workflows"][0]["args"]
+    executor_args = client["executors"][0]["executor"]["args"]
+    assert FlowerController(**controller_args).get_connector(None).max_message_bytes == limit
+    assert FlowerExecutor(**executor_args).get_connector(None).max_message_bytes == limit
