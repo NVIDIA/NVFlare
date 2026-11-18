@@ -22,6 +22,7 @@ from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
+from nvflare.fuel.sec.admin_audit import prepare, record
 from nvflare.fuel.utils.log_utils import dynamic_log_config, validate_site_log_config
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import SysCommandTopic
@@ -144,6 +145,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
 
     def configure_site_log(self, conn: Connection, args: [str]):
         if len(args) < 3:
+            record("logging.site.rejected", reason="invalid_arguments")
             conn.append_error("syntax error: please provide target_type and config")
             return
 
@@ -151,6 +153,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
         try:
             config = validate_site_log_config(args[-1])
         except ValueError as e:
+            record("logging.site.rejected", reason="invalid_config")
             conn.append_error(str(e), meta=make_meta(MetaStatusValue.SYNTAX_ERROR, info=str(e)))
             return
 
@@ -165,23 +168,44 @@ class SystemCommandModule(CommandModule, CommandUtil):
                     config=config, dir_path=workspace.get_root_dir(), reload_path=workspace.get_log_config_file_path()
                 )
             except Exception as e:
+                record("logging.site.error", site="server", reason="local_application_error")
                 conn.append_error(
                     secure_format_exception(e),
                     meta=make_meta(MetaStatusValue.INTERNAL_ERROR, info=secure_format_exception(e)),
                 )
                 return
+            record("logging.site.applied", site="server")
             conn.append_string("successfully configured server site log")
 
         if target_type in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
             message = new_message(conn, topic=SysCommandTopic.CONFIGURE_SITE_LOG, body=config, require_authz=True)
             replies = self.send_request_to_clients(conn, message)
+            prepare(lambda: self._record_logging_replies(replies))
             self.process_replies_to_table(conn, replies)
 
         if target_type not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
+            record("logging.site.rejected", reason="invalid_target")
             conn.append_error(
                 "invalid target type {}. Usage: configure_site_log server|client <client-name>...|all config".format(
                     target_type
                 )
+            )
+
+    @staticmethod
+    def _record_logging_replies(replies):
+        for client_reply in replies or []:
+            reply = client_reply.reply
+            if reply is None:
+                status, reason = "no_reply", "no_reply"
+            elif reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
+                status, reason = "error", "remote_error"
+            else:
+                status, reason = "acknowledged", "reply_received"
+            record(
+                "logging.site.remote_reported",
+                site=client_reply.client_name,
+                status=status,
+                reason=reason,
             )
 
     def _process_replies(self, conn, replies):

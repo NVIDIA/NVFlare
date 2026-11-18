@@ -72,6 +72,7 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.admin_audit import prepare, record, reject, update_context
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.log_utils import get_obj_logger, read_log_tail
 from nvflare.private.admin_defs import MsgHeader
@@ -333,6 +334,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             return PreAuthzReturnCode.ERROR
 
         conn.set_prop(self.JOB, job)
+        prepare(lambda: update_context(job_id=job_id, scope_name=job.meta.get(JobMetaKey.SCOPE, "")))
         conn.set_prop(ConnProps.SUBMITTER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME, ""))
         conn.set_prop(ConnProps.SUBMITTER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG, ""))
         conn.set_prop(ConnProps.SUBMITTER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE, ""))
@@ -386,7 +388,15 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         conn.append_success("")
 
     def configure_job_log(self, conn: Connection, args: List[str]):
+        try:
+            self._configure_job_log(conn, args)
+        except Exception:
+            record("logging.job.error", reason="processing_error")
+            raise
+
+    def _configure_job_log(self, conn: Connection, args: List[str]):
         if len(args) < 4:
+            record("logging.job.rejected", reason="invalid_arguments")
             conn.append_error("syntax error: please provide job_id, target_type, and config")
             return
 
@@ -403,10 +413,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 job_manager = engine.job_def_manager
                 job = job_manager.get_job(job_id, fl_ctx)
                 job_status = job.meta.get(JobMetaKey.STATUS)
+                prepare(lambda: update_context(job_id=job_id, scope_name=job.meta.get(JobMetaKey.SCOPE, "")))
                 if job_status != RunStatus.RUNNING.value:
+                    record("logging.job.rejected", reason="job_not_running")
                     conn.append_error(f"Job {job_id} must be running but is {job_status}")
                     return
         except Exception as e:
+            record("logging.job.error", reason="status_check_failed")
             conn.append_error(
                 f"Exception occurred trying to check job status {job_id} for configure_job_log: {secure_format_exception(e)}",
                 meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
@@ -415,6 +428,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             err = engine.configure_job_log(str(job_id), config)
+            record(
+                "logging.job.remote_reported",
+                reason="remote_error" if err else "acknowledged",
+                site=SERVER_SITE_NAME,
+            )
             if err:
                 conn.append_error(err)
                 return
@@ -433,9 +451,12 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             expected_clients = conn.get_prop(self.TARGET_CLIENTS, {}) or {}
             for client_token, client_name in expected_clients.items():
                 if client_token not in received_tokens:
+                    record("logging.job.remote_reported", reason="no_reply", site=client_name or "")
                     client_errors.append(f"{client_name or client_token}: no reply")
 
             for client_reply in client_replies:
+                # Audit-only inspection cannot change handling of a client reply.
+                prepare(lambda: self._record_job_log_reply(client_reply, expected_clients))
                 client_name = client_reply.client_name or client_reply.client_token or "client"
                 if client_reply.reply is None:
                     client_errors.append(f"{client_name}: no reply")
@@ -451,11 +472,23 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 conn.append_error(error_info, make_meta(MetaStatusValue.ERROR, info=error_info))
 
         if target_type not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
+            record("logging.job.rejected", reason="invalid_target")
             conn.append_error(
                 "invalid target type {}. Usage: configure_job_log job_id server|client <client-name>...|all config".format(
                     target_type
                 )
             )
+
+    @staticmethod
+    def _record_job_log_reply(client_reply, expected_clients):
+        # Client tokens are session secrets; only established site names may be recorded.
+        site = expected_clients.get(client_reply.client_token) or client_reply.client_name or ""
+        if client_reply.reply is None:
+            reason = "no_reply"
+        else:
+            code = client_reply.reply.get_header(MsgHeader.RETURN_CODE)
+            reason = "acknowledged" if code == AdminReturnCode.OK else "remote_error"
+        record("logging.job.remote_reported", reason=reason, site=site)
 
     def list_jobs(self, conn: Connection, args: List[str]):
         try:
@@ -532,6 +565,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def delete_job(self, conn: Connection, args: List[str]):
         job = conn.get_prop(self.JOB)
         if not job:
+            record("job.delete.rejected", reason="missing_job")
             conn.append_error(
                 "program error: job not set in conn", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "no job")
             )
@@ -539,12 +573,15 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         job_id = conn.get_prop(self.JOB_ID)
         if job.meta.get(JobMetaKey.STATUS, "") in [RunStatus.DISPATCHED.value, RunStatus.RUNNING.value]:
+            record("job.delete.rejected", reason="job_running", job_id=job_id)
             conn.append_error(
                 f"job: {job_id} is running, could not be deleted at this time.",
                 meta=make_meta(MetaStatusValue.JOB_RUNNING, job_id),
             )
             return
 
+        deleted = False
+        delete_error = False
         try:
             engine = conn.app_ctx
             job_def_manager = engine.job_def_manager
@@ -557,6 +594,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                         if staging:
                             staging.prepare_delete(job_id)
                         job_def_manager.delete(job_id, fl_ctx)
+                        deleted = True
                     except Exception:
                         if staging:
                             staging.cancel_delete(job_id)
@@ -573,11 +611,22 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 marked_count = len(marked_records)
                 conn.append_string(f"Job {job_id} deleted. Submit records marked deleted: {marked_count}.")
         except Exception as e:
+            delete_error = True
             conn.append_error(
                 f"exception occurred: {secure_format_exception(e)}",
                 meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
             )
             return
+        finally:
+            # All staging locks and context cleanup have completed before audit I/O.
+            if deleted:
+                record("job.delete.applied", reason="manager_completed", job_id=job_id)
+            if delete_error:
+                record(
+                    "job.delete.cleanup_error" if deleted else "job.delete.error",
+                    reason="bookkeeping_failed" if deleted else "deletion_failed",
+                    job_id=job_id,
+                )
         conn.append_success(
             "",
             meta=make_meta(
@@ -607,11 +656,19 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     def get_job_log(self, conn: Connection, args: List[str]):
         try:
+            self._get_job_log(conn, args)
+        except Exception:
+            record("download.job_log.error", reason="preparation_error")
+            raise
+
+    def _get_job_log(self, conn: Connection, args: List[str]):
+        try:
             parser = _create_get_job_log_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
             if parsed_args.tail_bytes is not None and parsed_args.tail_bytes <= 0:
                 raise ValueError("--tail-bytes must be a positive integer")
         except Exception as e:
+            reject("download.setup.rejected", reason="invalid_arguments", component="job_log")
             conn.append_error(
                 secure_format_exception(e),
                 meta=make_meta(MetaStatusValue.SYNTAX_ERROR, secure_format_exception(e)),
@@ -621,6 +678,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         prop_job_id = conn.get_prop(self.JOB_ID)
         parsed_job_id = parsed_args.job_id.lower() if isinstance(parsed_args.job_id, str) else parsed_args.job_id
         if prop_job_id is not None and parsed_job_id is not None and prop_job_id != parsed_job_id:
+            reject("download.setup.rejected", reason="job_mismatch", component="job_log")
             conn.append_error(
                 "job_id mismatch between connection property and parsed argument",
                 meta=make_meta(
@@ -674,6 +732,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     workspace_zip_loaded=workspace_zip_loaded,
                 )
         except TypeError as e:
+            reject("download.setup.rejected", reason="retrieval_failed", component="job_log")
             error = secure_format_exception(e)
             conn.append_error(error, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, error))
             return
@@ -682,6 +741,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             limit = min(parsed_args.tail_bytes, self.MAX_RETURNED_JOB_LOG_BYTES)
             payload["logs"] = {site: self._tail_log_text(text, limit) for site, text in payload["logs"].items()}
         conn.append_dict(payload, meta=make_meta(MetaStatusValue.OK))
+        record("download.job_log.prepared", reason="reply_prepared", component="job_log")
 
     @staticmethod
     def _normalize_log_file_name(log_file_name: str) -> str:
@@ -1115,29 +1175,37 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def abort_job(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
         job_runner = engine.job_runner
+        audit_action = "job.abort.error"
+        audit_reason = "processing_error"
+        job_id = None
 
         try:
             job_id = conn.get_prop(self.JOB_ID)
             with engine.new_context() as fl_ctx:
                 job_status = job_runner.abort_before_start(job_id, fl_ctx)
                 if job_status is job_runner.STARTING:
+                    audit_action, audit_reason = "job.abort.retry_required", "job_starting"
                     message = f"Job {job_id} {ReplyKeyword.JOB_STARTING_RETRY_ABORT}"
                     conn.append_error(message, meta=make_meta(MetaStatusValue.ERROR, message))
                     return
                 if job_status in [RunStatus.SUBMITTED.value, RunStatus.DISPATCHED.value]:
+                    audit_action, audit_reason = "job.abort.before_execution", "aborted_before_execution"
                     message = f"Aborted the job {job_id} before running it."
                     conn.append_string(message)
                     conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
                     return
                 elif job_status and job_status.startswith("FINISHED:"):
+                    audit_action, audit_reason = "job.abort.unchanged", "already_finished"
                     message = f"Job for {job_id} is already completed."
                     conn.append_string(message)
                     conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
                 else:
                     message = job_runner.stop_run(job_id, fl_ctx)
                     if message:
+                        audit_action, audit_reason = "job.abort.error", "signal_failed"
                         conn.append_error(message, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, message))
                     else:
+                        audit_action, audit_reason = "job.abort.signal_sent", "signal_sent"
                         message = "Abort signal has been sent to the server app."
                         conn.append_string(message)
                         conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
@@ -1147,6 +1215,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
             )
             return
+        finally:
+            record(audit_action, reason=audit_reason, job_id=job_id)
 
     def clone_job(self, conn: Connection, args: List[str]):
         job = conn.get_prop(self.JOB)
@@ -1753,6 +1823,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def _download_job_comps(
         self, conn: Connection, args: List[str], get_comps_f, require_finished: bool = False, outputs_only: bool = False
     ):
+        try:
+            self._prepare_job_download(conn, args, get_comps_f, require_finished, outputs_only)
+        except Exception:
+            reject("download.setup.rejected", reason="setup_error")
+            raise
+
+    def _prepare_job_download(self, conn, args, get_comps_f, require_finished, outputs_only):
         """
         Job download uses binary protocol for more efficient download.
         - Retrieve job data from job store. This puts job files (meta, data, and workspace) in a transfer folder
@@ -1765,6 +1842,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             self.logger.error(
                 f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
             )
+            reject("download.setup.rejected", reason="manager_unavailable")
             conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
             return
 
@@ -1781,10 +1859,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             if require_finished:
                 job = job_def_manager.get_job(job_id, fl_ctx)
                 if not job:
+                    reject("download.setup.rejected", reason="job_unavailable")
                     _append_no_such_job_error(conn, job_id)
                     return
+                prepare(lambda: update_context(job_id=job_id, scope_name=job.meta.get(JobMetaKey.SCOPE, "")))
                 job_status = job.meta.get(JobMetaKey.STATUS)
                 if not job_status or not job_status.startswith("FINISHED:"):
+                    reject("download.setup.rejected", reason="job_not_finished")
                     conn.append_error(
                         f"job {job_id} is not done",
                         meta=make_meta(MetaStatusValue.JOB_RUNNING, job_id),
@@ -1792,6 +1873,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     return
             comps = get_comps_f(job_def_manager, job_id, fl_ctx, job)
             if not comps:
+                reject("download.setup.rejected", reason="no_components")
                 conn.append_string(
                     "No components to download",
                     meta=make_meta(
@@ -1801,6 +1883,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 )
                 return
 
+            # A successful component lookup establishes the resource for component downloads too.
+            update_context(job_id=job_id)
             try:
                 reply_meta = {}
                 if outputs_only:
@@ -1831,8 +1915,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             except Exception as e:
                 secure_log_traceback()
                 self.logger.error(f"exception downloading job {job_id}: {secure_format_exception(e)}")
-                self._clean_up_download(conn, tx_id)
-                conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+                try:
+                    self._clean_up_download(conn, tx_id)
+                    conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+                finally:
+                    reject("download.setup.rejected", reason="preparation_error")
 
     @staticmethod
     def _outputs_stored_apart(meta: Optional[dict]) -> bool:

@@ -90,3 +90,35 @@ restarts. It does not read or convert previously written records.
 Each call waits for the local write and flush before returning the event identifier. Flushing passes
 buffered data to the operating system; it is not a guarantee that the record will survive a machine
 failure. Excluded actions are not written, and the simulator's auditor remains inactive.
+
+
+Security and Administration Coverage
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Administrator request records use the registered command name and exclude raw
+arguments. Sensitive commands additionally record dispatch and handling results.
+A handler returning does not establish that its requested operation completed.
+Security records cover identity and session checks, permission decisions, client
+administration, job deletion/abort, study membership, logging changes, scheduled
+shutdown/restart, and protected downloads.
+
+New records use only the eight fields above. Verified actors appear in ``user``;
+before verification or when administrator attribution is unavailable, it is
+``unknown``. Reasons and approved resource identifiers appear in ``message``.
+Study identifiers belong in that message, while ``scope`` remains a job scope.
+Server outcomes reference their request; client receipts reference the server
+request, and client outcomes reference their local receipt.
+
+Administrative recording failures allow the operation to continue and produce
+independent, rate-limited diagnostics. The diagnostic count represents failed
+attempts, not an exact number of lost records. Unrelated audit callers retain
+their existing error behavior. Intentional simulator silence is not a failure.
+
+Download terminal records describe only the transfer service's reported result;
+they do not establish confirmed receiver receipt or successful extraction. The
+direct job-log reply records preparation only, because it has no transfer-service
+completion callback. Likewise, scheduled shutdown/restart and remote
+acknowledgements do not prove that a program stopped or restarted.
+
+See the `security and administration event catalog
+<../../../design/audit_security_admin_coverage.md>`_ for action names, capture
+boundaries, attribution limits, and validation coverage.

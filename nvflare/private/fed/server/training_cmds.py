@@ -22,6 +22,7 @@ from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.sec.admin_audit import prepare, record
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import ClientStatusKey, ScopeInfoKey, TrainingTopic
@@ -121,6 +122,26 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             ],
         )
 
+    @staticmethod
+    def _record_control_replies(operation, replies):
+        # A reply acknowledges only immediate remote handling. It says nothing
+        # about the remote process actually exiting or restarting.
+        def record_reply(result):
+            if result.reply is None:
+                outcome, reason = "no_reply", "reply_missing"
+            else:
+                code = result.reply.get_header(MsgHeader.RETURN_CODE)
+                if code == ReturnCode.OK:
+                    outcome, reason = "acknowledged", "reply_ok"
+                elif code == ReturnCode.ERROR:
+                    outcome, reason = "reported_error", "reply_error"
+                else:
+                    outcome, reason = "reply_received", "unclassified_reply"
+            record(f"client.{operation}.{outcome}", site=result.client_name, reason=reason)
+
+        for result in replies:
+            prepare(lambda: record_reply(result))
+
     # Shutdown
     def _shutdown_app_on_server(self, conn: Connection) -> str:
         engine = conn.app_ctx
@@ -141,6 +162,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return True
 
         replies = self.send_request_to_clients(conn, message)
+        self._record_control_replies("shutdown", replies)
         self.process_replies_to_table(conn, replies)
 
         clients_to_be_removed = set(clients)
@@ -163,6 +185,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
         for _, job in engine.job_runner.running_jobs.items():
             if not job.run_aborted:
+                record("admin.shutdown.rejected", reason="jobs_running")
                 conn.append_error(
                     "There are still jobs running. Please let them finish or abort_job before shutdown.",
                     meta=make_meta(MetaStatusValue.JOB_RUNNING, info=job.job_id),
@@ -171,6 +194,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
         if target_type == self.TARGET_TYPE_SERVER:
             if engine.get_clients():
+                record("admin.shutdown.rejected", reason="clients_running")
                 conn.append_error(
                     "There are still active clients. Shutdown all clients first.",
                     meta=make_meta(MetaStatusValue.CLIENTS_RUNNING),
@@ -215,6 +239,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
     def _client_names_from_args(self, conn: Connection, args: List[str]) -> List[str]:
         if len(args) < 2:
+            record("client.policy.rejected", reason="missing_client")
             conn.append_error("missing client name", meta=make_meta(MetaStatusValue.SYNTAX_ERROR))
             return []
         return args[1:]
@@ -254,6 +279,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
         message = new_message(conn, topic=TrainingTopic.RESTART, body="", require_authz=True)
         replies = self.send_request_to_clients(conn, message)
+        self._record_control_replies("restart", replies)
         # engine.remove_clients(clients)
         return self._process_replies_to_string(conn, replies)
 
@@ -263,6 +289,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
 
         if engine.job_runner.running_jobs:
+            record("admin.restart.rejected", reason="jobs_running")
             msg = "There are still jobs running. Please let them finish or abort_job before restart."
             conn.append_error(msg, meta=make_meta(MetaStatusValue.JOB_RUNNING, msg))
             return
@@ -293,6 +320,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         elif target_type == self.TARGET_TYPE_CLIENT:
             clients = conn.get_prop(self.TARGET_CLIENT_TOKENS)
             if not clients:
+                record("admin.restart.rejected", reason="no_clients")
                 conn.append_error(
                     ReplyKeyword.NO_CLIENTS, meta=make_meta(MetaStatusValue.NO_CLIENTS, ReplyKeyword.NO_CLIENTS)
                 )

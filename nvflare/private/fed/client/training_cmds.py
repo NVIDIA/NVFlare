@@ -21,6 +21,7 @@ from typing import List
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
+from nvflare.fuel.sec.admin_audit import record
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
@@ -182,6 +183,12 @@ class ConfigureJobLogProcessor(RequestProcessor):
         job_id = req.get_header(RequestHeader.JOB_ID)
 
         err = engine.configure_job_log(job_id, req.body)
+        record(
+            "logging.job.remote_reported",
+            job_id=job_id,
+            status="error" if err else "acknowledged",
+            reason="remote_error" if err else "reply_received",
+        )
         if err:
             return error_reply(err)
 

@@ -56,6 +56,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.fuel.sec.admin_audit import prepare, record, snapshot
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
@@ -90,6 +91,11 @@ from .run_manager import RunManager
 from .server_commands import ServerCommands
 from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
+
+
+def _record_admin_control(action, *, reason):
+    if snapshot().command.rsplit(".", 1)[-1] in ("shutdown", "restart"):
+        record(action, reason=reason)
 
 
 class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
@@ -425,12 +431,18 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def shutdown_server(self) -> str:
         status = self.server.status
         if status == ServerStatus.STARTING:
+            _record_admin_control("server.shutdown.rejected", reason="starting")
             return "Server app is starting, please wait for started before shutdown."
 
         self.logger.info("FL server shutdown.")
 
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
-        _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
+        try:
+            _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
+        except Exception:
+            _record_admin_control("server.shutdown.error", reason="scheduling_failed")
+            raise
+        _record_admin_control("server.shutdown.scheduled", reason="submitted")
         # while self.server.status != ServerStatus.SHUTDOWN:
         #     time.sleep(1.0)
         return ""
@@ -438,12 +450,18 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def restart_server(self) -> str:
         status = self.server.status
         if status == ServerStatus.STARTING:
+            _record_admin_control("server.restart.rejected", reason="starting")
             return "Server is starting, please wait for started before restart."
 
         self.logger.info("FL server restart.")
 
         touch_file = os.path.join(self.args.workspace, "restart.fl")
-        _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
+        try:
+            _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
+        except Exception:
+            _record_admin_control("server.restart.error", reason="scheduling_failed")
+            raise
+        _record_admin_control("server.restart.scheduled", reason="submitted")
         # while self.server.status != ServerStatus.SHUTDOWN:
         #     time.sleep(1.0)
         return ""
@@ -636,9 +654,11 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def disable_clients(self, client_names: List[str]) -> dict:
         results = []
         for client_name in client_names:
+            policy_applied = False
             try:
                 already_disabled = self.server.client_manager.is_client_disabled(client_name)
                 removed_tokens = self.server.client_manager.disable_client(client_name)
+                policy_applied = True
                 for token in removed_tokens:
                     self.server.remove_client_data(token)
                     if self.server.admin_server:
@@ -654,6 +674,8 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                     }
                 )
             except Exception as e:
+                if policy_applied and snapshot().command.rsplit(".", 1)[-1] == "disable_client":
+                    record("client.disable.cleanup_error", site=client_name, reason="cleanup_failed")
                 if len(client_names) == 1:
                     raise
                 results.append(self._client_operation_error(client_name, e))
@@ -680,10 +702,27 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         return {"clients": results}
 
     def _remove_dead_client(self, token):
-        _ = self.server.client_manager.remove_client(token)
-        self.server.remove_client_data(token)
-        if self.server.admin_server:
-            self.server.admin_server.client_dead(token)
+        # Token removal is the operation; notification and data cleanup are later
+        # steps whose failure must not erase the already applied fact.
+        is_admin_removal = snapshot().command.rsplit(".", 1)[-1] == "remove_client"
+        try:
+            removed = self.server.client_manager.remove_client(token)
+        except Exception:
+            if is_admin_removal:
+                record("client.remove.error", reason="manager_failed")
+            raise
+        site = prepare(lambda: removed.name if removed else "", default="") if is_admin_removal else ""
+        if is_admin_removal:
+            outcome = "applied" if removed else "unchanged"
+            record(f"client.remove.{outcome}", site=site, reason="active_entry")
+        try:
+            self.server.remove_client_data(token)
+            if self.server.admin_server:
+                self.server.admin_server.client_dead(token)
+        except Exception:
+            if is_admin_removal:
+                record("client.remove.cleanup_error", site=site, reason="cleanup_failed")
+            raise
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.run_manager.aux_runner.register_aux_message_handler(topic, message_handle_func)

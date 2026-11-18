@@ -24,6 +24,7 @@ from nvflare.fuel.hci.proto import InternalCommands, ReplyKeyword
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.security import IdentityKey, get_identity_info
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.admin_audit import audit_context, record, reject, update_context
 from nvflare.fuel.sec.admin_cert import get_admin_study_entitlements, validate_admin_leaf_cert
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.lighter.utils import cert_to_dict, load_crt_chain_bytes
@@ -72,14 +73,23 @@ class LoginModule(CommandModule, CommandFilter):
         )
 
     def handle_cert_login(self, conn: Connection, args: List[str]):
-        def _reject(reason: str = "", code: str = ""):
+        with audit_context(user="unknown"):
+            try:
+                self._handle_cert_login(conn, args)
+            except Exception:
+                record("admin.login.error", reason="processing_error")
+                raise
+
+    def _handle_cert_login(self, conn: Connection, args: List[str]):
+        def _reject(reason: str = "", code: str = "", audit_reason: str = "verification_failed"):
+            record("admin.login.rejected", reason=audit_reason)
             if code:
                 conn.append_string(f"REJECT: {code}: {reason}" if reason else f"REJECT: {code}")
             else:
                 conn.append_string(f"REJECT: {reason}" if reason else "REJECT")
 
         if len(args) != 2:
-            _reject()
+            _reject(audit_reason="invalid_arguments")
             return
 
         user_name = args[1]
@@ -94,7 +104,11 @@ class LoginModule(CommandModule, CommandFilter):
         id_asserter = hci.get_id_asserter()
         if not identity_verifier or not id_asserter:
             self.logger.error("rejecting admin login because the server signing identity is not configured")
-            _reject("server signing identity is not configured", code="AUTH_SERVER_IDENTITY_UNAVAILABLE")
+            _reject(
+                "server signing identity is not configured",
+                code="AUTH_SERVER_IDENTITY_UNAVAILABLE",
+                audit_reason="server_identity_unavailable",
+            )
             return
 
         cert_chain = load_crt_chain_bytes(cert_data)
@@ -111,10 +125,17 @@ class LoginModule(CommandModule, CommandFilter):
         except Exception as ex:
             self.logger.error(f"identity_verifier.verify_common_name got exception: {ex}")
             traceback.print_exc()
+            record("admin.login.error", reason="verification_error")
+            verification_error = True
             ok = False
+        else:
+            verification_error = False
 
         if not ok:
-            _reject()
+            if verification_error:
+                conn.append_string("REJECT")
+            else:
+                _reject()
             return
 
         try:
@@ -122,33 +143,39 @@ class LoginModule(CommandModule, CommandFilter):
             cert_studies = get_admin_study_entitlements(cert)
         except Exception as ex:
             self.logger.error(f"admin certificate validation failed: {secure_format_exception(ex)}")
-            _reject()
+            _reject(audit_reason="invalid_admin_certificate")
             return
 
+        update_context(user=user_name, identity_source="locally_verified")
         if not isinstance(study, str):
-            _reject("study must be a string", code="AUTH_INVALID_STUDY")
+            _reject("study must be a string", code="AUTH_INVALID_STUDY", audit_reason="invalid_study")
             return
 
         invalid, _ = name_check(study, "study")
         if invalid:
-            _reject(f"invalid study name '{study}'", code="AUTH_INVALID_STUDY_NAME")
+            _reject(f"invalid study name '{study}'", code="AUTH_INVALID_STUDY_NAME", audit_reason="invalid_study")
             return
 
         registry = StudyRegistryService.get_registry()
         if study != DEFAULT_STUDY:
             if not registry:
                 self.logger.warning(f"rejecting login for user '{user_name}': no study registry for study '{study}'")
-                _reject(f"study '{study}' is not configured on the server", code="AUTH_STUDY_NOT_CONFIGURED")
+                _reject(
+                    f"study '{study}' is not configured on the server",
+                    code="AUTH_STUDY_NOT_CONFIGURED",
+                    audit_reason="study_not_configured",
+                )
                 return
             if not registry.has_study(study):
                 self.logger.warning(f"rejecting login for user '{user_name}': unknown study '{study}'")
-                _reject(f"unknown study '{study}'", code="AUTH_UNKNOWN_STUDY")
+                _reject(f"unknown study '{study}'", code="AUTH_UNKNOWN_STUDY", audit_reason="unknown_study")
                 return
             if not registry.has_user(user_name, study) and study not in cert_studies:
                 self.logger.warning(f"rejecting login for user '{user_name}': no mapping for study '{study}'")
                 _reject(
                     f"user '{user_name}' is not mapped to study '{study}'",
                     code="AUTH_STUDY_USER_NOT_MAPPED",
+                    audit_reason="study_membership_denied",
                 )
                 return
 
@@ -173,6 +200,7 @@ class LoginModule(CommandModule, CommandFilter):
         self.logger.info(f"Created user session for {user_name}")
         conn.append_string("OK")
         conn.append_token(token)
+        record("admin.login.succeeded", study=study)
 
     def handle_logout(self, conn: Connection, args: List[str]):
         if self.session_mgr:
@@ -189,6 +217,7 @@ class LoginModule(CommandModule, CommandFilter):
         # validate token
         token = conn.get_token()
         if token is None:
+            reject("admin.session.rejected", user="unknown", reason="missing_token")
             conn.append_error("not authenticated - no token")
             return False
 
@@ -206,6 +235,7 @@ class LoginModule(CommandModule, CommandFilter):
                 sess = self.session_mgr.recreate_session(token, origin, id_asserter)
                 self.logger.info(f"recreated admin session for {sess.user_name}")
             except Exception as ex:
+                reject("admin.session.rejected", user="unknown", reason="invalid_or_expired_token")
                 self.logger.error(f"cannot recreate admin session: {secure_format_exception(ex)}")
                 conn.append_error(ReplyKeyword.SESSION_INACTIVE)
                 conn.append_string(
@@ -216,6 +246,7 @@ class LoginModule(CommandModule, CommandFilter):
                 return False
 
         assert isinstance(sess, Session)
+        update_context(user=sess.user_name, identity_source="locally_verified")
         sess.mark_active()
         conn.set_prop(ConnProps.SESSION, sess)
         conn.set_prop(ConnProps.USER_NAME, sess.user_name)
