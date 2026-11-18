@@ -1,3 +1,7 @@
+:html_title: Federated Learning and Computing in Python
+:html_description: Learn how NVIDIA FLARE supports federated learning and computing through Python APIs,
+                   local simulation, and deployment across independently controlled sites.
+
 .. _welcome:
 
 ############################

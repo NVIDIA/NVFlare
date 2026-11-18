@@ -1,0 +1,4 @@
+# Preserve accepted CSV bytes and their SHA-256 provenance (standard CRLF records).
+*.csv -text whitespace=cr-at-eol
+# Keep the accepted human-readable table, including its final blank line, unchanged.
+individual-results.md -text whitespace=-blank-at-eof

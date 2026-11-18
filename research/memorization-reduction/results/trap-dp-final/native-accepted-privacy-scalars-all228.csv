@@ -1,0 +1,229 @@
+logical_fit,prior_attempt,epsilon,conditional_fixed_configuration_horizon_epsilon,observed_accountant_epsilon_not_dp_guarantee,observed_status,formal_status,tuning
+c12-dp1-h1-s13,False,0.9916141926224763,0.9916141926224763,0.9916141926224763,entire stopping process,full horizon,True
+c12-dp1-h2-s13,False,0.9930593180257442,0.9930593180257442,0.9930593180257442,entire stopping process,full horizon,True
+c12-dp1-h3-s13,False,0.9916141926224763,0.9916141926224763,0.9916141926224763,entire stopping process,full horizon,True
+c12-dp1-h4-s13,False,0.9930593180257442,0.9930593180257442,0.9930593180257442,entire stopping process,full horizon,True
+c12-dp1-h5-s13,False,0.9916141926224763,0.9916141926224763,0.9916141926224763,entire stopping process,full horizon,True
+c12-dp1-h5-s29,False,0.9930593180257442,0.9916141926224763,0.9916141926224763,entire stopping process,full horizon and all candidate batch policies,False
+c12-dp1-h5-s47,False,0.9930593180257442,0.9916141926224763,0.9916141926224763,entire stopping process,full horizon and all candidate batch policies,False
+c12-dp1-h6-s13,False,0.9930593180257442,0.9930593180257442,0.9930593180257442,entire stopping process,full horizon,True
+c12-dp2-h1-s13,False,1.9900936205899349,1.9900936205899349,1.9900936205899349,entire stopping process,full horizon,True
+c12-dp2-h2-s13,False,1.9950134721878534,1.9950134721878534,1.9950134721878534,entire stopping process,full horizon,True
+c12-dp2-h3-s13,False,1.9900936205899349,1.9900936205899349,1.9900936205899349,entire stopping process,full horizon,True
+c12-dp2-h4-s13,False,1.9950134721878534,1.9950134721878534,1.9950134721878534,entire stopping process,full horizon,True
+c12-dp2-h5-s13,False,1.9900936205899349,1.9900936205899349,1.9900936205899349,entire stopping process,full horizon,True
+c12-dp2-h5-s29,False,1.9950134721878534,1.9900936205899349,1.9900936205899349,entire stopping process,full horizon and all candidate batch policies,False
+c12-dp2-h5-s47,False,1.9950134721878534,1.9900936205899349,1.9900936205899349,entire stopping process,full horizon and all candidate batch policies,False
+c12-dp2-h6-s13,False,1.9950134721878534,1.9950134721878534,1.9950134721878534,entire stopping process,full horizon,True
+c12-dp4-h1-s13,False,3.9912690255071794,3.9912690255071794,3.9912690255071794,entire stopping process,full horizon,True
+c12-dp4-h2-s13,False,3.9974023916142407,3.9974023916142407,3.9974023916142407,entire stopping process,full horizon,True
+c12-dp4-h3-s13,False,3.9912690255071794,3.9912690255071794,3.9912690255071794,entire stopping process,full horizon,True
+c12-dp4-h4-s13,False,3.9974023916142407,3.9974023916142407,3.9974023916142407,entire stopping process,full horizon,True
+c12-dp4-h5-s13,False,3.9912690255071794,3.9912690255071794,3.9912690255071794,entire stopping process,full horizon,True
+c12-dp4-h5-s29,False,3.9974023916142407,3.9912690255071794,3.9912690255071794,entire stopping process,full horizon and all candidate batch policies,False
+c12-dp4-h5-s47,False,3.9974023916142407,3.9912690255071794,3.9912690255071794,entire stopping process,full horizon and all candidate batch policies,False
+c12-dp4-h6-s13,False,3.9974023916142407,3.9974023916142407,3.9974023916142407,entire stopping process,full horizon,True
+c12-dp8-h1-s13,False,7.9924007086435624,7.9924007086435624,7.9924007086435624,entire stopping process,full horizon,True
+c12-dp8-h2-s13,False,7.999723374860438,7.999723374860438,7.999723374860438,entire stopping process,full horizon,True
+c12-dp8-h3-s13,False,7.9924007086435624,7.9924007086435624,7.9924007086435624,entire stopping process,full horizon,True
+c12-dp8-h4-s13,False,7.999723374860438,7.999723374860438,7.999723374860438,entire stopping process,full horizon,True
+c12-dp8-h5-s13,False,7.9924007086435624,7.9924007086435624,7.9924007086435624,entire stopping process,full horizon,True
+c12-dp8-h5-s29,False,7.999723374860438,7.9924007086435624,7.9924007086435624,entire stopping process,full horizon and all candidate batch policies,False
+c12-dp8-h5-s47,False,7.999723374860438,7.9924007086435624,7.9924007086435624,entire stopping process,full horizon and all candidate batch policies,False
+c12-dp8-h6-s13,False,7.999723374860438,7.999723374860438,7.999723374860438,entire stopping process,full horizon,True
+c16-dp1-h1-s13,False,0.9939944355700382,0.9939944355700382,0.9939944355700382,entire stopping process,full horizon,True
+c16-dp1-h2-s13,False,0.9957838541900369,0.9957838541900369,0.9957838541900369,entire stopping process,full horizon,True
+c16-dp1-h3-s13,False,0.9939944355700382,0.9939944355700382,0.9939944355700382,entire stopping process,full horizon,True
+c16-dp1-h4-s13,False,0.9957838541900369,0.9957838541900369,0.9957838541900369,entire stopping process,full horizon,True
+c16-dp1-h5-s13,False,0.9939944355700382,0.9939944355700382,0.9939944355700382,entire stopping process,full horizon,True
+c16-dp1-h5-s29,False,0.9957838541900369,0.9939944355700382,0.9939944355700382,entire stopping process,full horizon and all candidate batch policies,False
+c16-dp1-h5-s47,False,0.9957838541900369,0.9939944355700382,0.9939944355700382,entire stopping process,full horizon and all candidate batch policies,False
+c16-dp1-h6-s13,False,0.9957838541900369,0.9957838541900369,0.9957838541900369,entire stopping process,full horizon,True
+c16-dp2-h1-s13,False,1.9942107092809702,1.9942107092809702,1.9942107092809702,entire stopping process,full horizon,True
+c16-dp2-h2-s13,False,1.993117786498095,1.993117786498095,1.993117786498095,entire stopping process,full horizon,True
+c16-dp2-h3-s13,False,1.9942107092809702,1.9942107092809702,1.9942107092809702,entire stopping process,full horizon,True
+c16-dp2-h4-s13,False,1.993117786498095,1.993117786498095,1.993117786498095,entire stopping process,full horizon,True
+c16-dp2-h5-s13,False,1.9942107092809702,1.9942107092809702,1.9942107092809702,entire stopping process,full horizon,True
+c16-dp2-h5-s29,False,1.9942107092809702,1.9942107092809702,1.9942107092809702,entire stopping process,full horizon and all candidate batch policies,False
+c16-dp2-h5-s47,False,1.9942107092809702,1.9942107092809702,1.9942107092809702,entire stopping process,full horizon and all candidate batch policies,False
+c16-dp2-h6-s13,False,1.993117786498095,1.993117786498095,1.993117786498095,entire stopping process,full horizon,True
+c16-dp4-h1-s13,False,3.99991530247938,3.99991530247938,3.99991530247938,entire stopping process,full horizon,True
+c16-dp4-h2-s13,False,3.9959510106207836,3.9959510106207836,3.9959510106207836,entire stopping process,full horizon,True
+c16-dp4-h3-s13,False,3.99991530247938,3.99991530247938,3.99991530247938,entire stopping process,full horizon,True
+c16-dp4-h4-s13,False,3.9959510106207836,3.9959510106207836,3.9959510106207836,entire stopping process,full horizon,True
+c16-dp4-h5-s13,False,3.99991530247938,3.99991530247938,3.99991530247938,entire stopping process,full horizon,True
+c16-dp4-h5-s29,False,3.99991530247938,3.99991530247938,3.99991530247938,entire stopping process,full horizon and all candidate batch policies,False
+c16-dp4-h5-s29,True,3.99991530247938,3.99991530247938,3.99991530247938,missing evidence; charged full horizon,full horizon and all candidate batch policies,False
+c16-dp4-h5-s47,False,3.99991530247938,3.99991530247938,3.99991530247938,entire stopping process,full horizon and all candidate batch policies,False
+c16-dp4-h6-s13,False,3.9959510106207836,3.9959510106207836,3.9959510106207836,entire stopping process,full horizon,True
+c16-dp8-h1-s13,False,7.993880226904387,7.993880226904387,7.993880226904387,entire stopping process,full horizon,True
+c16-dp8-h2-s13,False,7.997184356382523,7.997184356382523,7.997184356382523,entire stopping process,full horizon,True
+c16-dp8-h3-s13,False,7.993880226904387,7.993880226904387,7.993880226904387,entire stopping process,full horizon,True
+c16-dp8-h4-s13,False,7.997184356382523,7.997184356382523,7.997184356382523,entire stopping process,full horizon,True
+c16-dp8-h5-s13,False,7.993880226904387,7.993880226904387,7.993880226904387,entire stopping process,full horizon,True
+c16-dp8-h5-s29,False,7.997666090031424,7.993880226904387,7.993880226904387,entire stopping process,full horizon and all candidate batch policies,False
+c16-dp8-h5-s47,False,7.997666090031424,7.993880226904387,7.993880226904387,entire stopping process,full horizon and all candidate batch policies,False
+c16-dp8-h6-s13,False,7.997184356382523,7.997184356382523,7.997184356382523,entire stopping process,full horizon,True
+c2-dp1-h1-s13,False,0.9925433373126961,0.9925433373126961,0.9925433373126961,entire stopping process,full horizon,True
+c2-dp1-h2-s13,False,0.99065542002228,0.99065542002228,0.99065542002228,entire stopping process,full horizon,True
+c2-dp1-h3-s13,False,0.9925433373126961,0.9925433373126961,0.9925433373126961,entire stopping process,full horizon,True
+c2-dp1-h3-s29,False,0.9925433373126961,0.9925433373126961,0.9925433373126961,entire stopping process,full horizon and all candidate batch policies,False
+c2-dp1-h3-s47,False,0.9925433373126961,0.9925433373126961,0.9925433373126961,entire stopping process,full horizon and all candidate batch policies,False
+c2-dp1-h4-s13,False,0.99065542002228,0.99065542002228,0.99065542002228,entire stopping process,full horizon,True
+c2-dp1-h5-s13,False,0.9925433373126961,0.9925433373126961,0.29341309211964384,entire stopping process,full horizon,True
+c2-dp1-h6-s13,False,0.99065542002228,0.99065542002228,0.36138713784747833,entire stopping process,full horizon,True
+c2-dp2-h1-s13,False,1.9995062097362286,1.9995062097362286,1.9995062097362286,entire stopping process,full horizon,True
+c2-dp2-h2-s13,False,1.990164873872108,1.990164873872108,1.990164873872108,entire stopping process,full horizon,True
+c2-dp2-h3-s13,False,1.9995062097362286,1.9995062097362286,1.9995062097362286,entire stopping process,full horizon,True
+c2-dp2-h4-s13,False,1.990164873872108,1.990164873872108,1.990164873872108,entire stopping process,full horizon,True
+c2-dp2-h4-s29,False,1.9995062097362286,1.990164873872108,1.990164873872108,entire stopping process,full horizon and all candidate batch policies,False
+c2-dp2-h4-s47,False,1.9995062097362286,1.990164873872108,1.990164873872108,entire stopping process,full horizon and all candidate batch policies,False
+c2-dp2-h5-s13,False,1.9995062097362286,1.9995062097362286,0.6041335742511474,entire stopping process,full horizon,True
+c2-dp2-h6-s13,False,1.990164873872108,1.990164873872108,0.7328941500182724,entire stopping process,full horizon,True
+c2-dp4-h1-s13,False,3.994456102007229,3.994456102007229,3.994456102007229,entire stopping process,full horizon,True
+c2-dp4-h2-s13,False,3.9982076514018035,3.9982076514018035,3.9982076514018035,entire stopping process,full horizon,True
+c2-dp4-h3-s13,False,3.994456102007229,3.994456102007229,3.994456102007229,entire stopping process,full horizon,True
+c2-dp4-h4-s13,False,3.9982076514018035,3.9982076514018035,3.9982076514018035,entire stopping process,full horizon,True
+c2-dp4-h4-s29,False,3.9982076514018035,3.9982076514018035,3.9982076514018035,entire stopping process,full horizon and all candidate batch policies,False
+c2-dp4-h4-s47,False,3.9982076514018035,3.9982076514018035,3.9982076514018035,entire stopping process,full horizon and all candidate batch policies,False
+c2-dp4-h5-s13,False,3.994456102007229,3.994456102007229,1.3577594787884526,entire stopping process,full horizon,True
+c2-dp4-h6-s13,False,3.9982076514018035,3.9982076514018035,1.6178267447797694,entire stopping process,full horizon,True
+c2-dp8-h1-s13,False,7.994561632725263,7.994561632725263,7.994561632725263,entire stopping process,full horizon,True
+c2-dp8-h2-s13,False,7.996472644543506,7.996472644543506,7.996472644543506,entire stopping process,full horizon,True
+c2-dp8-h3-s13,False,7.994561632725263,7.994561632725263,7.994561632725263,entire stopping process,full horizon,True
+c2-dp8-h4-s13,False,7.996472644543506,7.996472644543506,7.996472644543506,entire stopping process,full horizon,True
+c2-dp8-h4-s29,False,8.001643238735605,7.996472644543506,7.996472644543506,entire stopping process,full horizon and all candidate batch policies,False
+c2-dp8-h4-s47,False,8.001643238735605,7.996472644543506,7.996472644543506,entire stopping process,full horizon and all candidate batch policies,False
+c2-dp8-h5-s13,False,7.994561632725263,7.994561632725263,3.1482554237047546,entire stopping process,full horizon,True
+c2-dp8-h6-s13,False,7.996472644543506,7.996472644543506,7.996472644543506,entire stopping process,full horizon,True
+c32-dp1-h1-s13,False,0.9964767416846262,0.9964767416846262,0.9964767416846262,entire stopping process,full horizon,True
+c32-dp1-h2-s13,False,0.998295719959663,0.998295719959663,0.998295719959663,entire stopping process,full horizon,True
+c32-dp1-h3-s13,False,0.9964767416846262,0.9964767416846262,0.9964767416846262,entire stopping process,full horizon,True
+c32-dp1-h4-s13,False,0.998295719959663,0.998295719959663,0.998295719959663,entire stopping process,full horizon,True
+c32-dp1-h5-s13,False,0.9964767416846262,0.9964767416846262,0.9964767416846262,entire stopping process,full horizon,True
+c32-dp1-h5-s29,False,0.998295719959663,0.9964767416846262,0.9964767416846262,entire stopping process,full horizon and all candidate batch policies,False
+c32-dp1-h5-s47,False,0.998295719959663,0.9964767416846262,0.9964767416846262,entire stopping process,full horizon and all candidate batch policies,False
+c32-dp1-h6-s13,False,0.998295719959663,0.998295719959663,0.998295719959663,entire stopping process,full horizon,True
+c32-dp2-h1-s13,False,1.9963869629021311,1.9963869629021311,1.9963869629021311,entire stopping process,full horizon,True
+c32-dp2-h2-s13,False,1.9997428661544214,1.9997428661544214,1.9997428661544214,entire stopping process,full horizon,True
+c32-dp2-h3-s13,False,1.9963869629021311,1.9963869629021311,1.9963869629021311,entire stopping process,full horizon,True
+c32-dp2-h4-s13,False,1.9997428661544214,1.9997428661544214,1.9997428661544214,entire stopping process,full horizon,True
+c32-dp2-h5-s13,False,1.9963869629021311,1.9963869629021311,1.9963869629021311,entire stopping process,full horizon,True
+c32-dp2-h5-s29,False,1.9997428661544214,1.9963869629021311,1.9963869629021311,entire stopping process,full horizon and all candidate batch policies,False
+c32-dp2-h5-s47,False,1.9997428661544214,1.9963869629021311,1.9963869629021311,entire stopping process,full horizon and all candidate batch policies,False
+c32-dp2-h6-s13,False,1.9997428661544214,1.9997428661544214,1.9997428661544214,entire stopping process,full horizon,True
+c32-dp4-h1-s13,False,3.9953099473786553,3.9953099473786553,3.9953099473786553,entire stopping process,full horizon,True
+c32-dp4-h2-s13,False,3.998066544065582,3.998066544065582,3.998066544065582,entire stopping process,full horizon,True
+c32-dp4-h3-s13,False,3.9953099473786553,3.9953099473786553,3.9953099473786553,entire stopping process,full horizon,True
+c32-dp4-h4-s13,False,3.998066544065582,3.998066544065582,3.998066544065582,entire stopping process,full horizon,True
+c32-dp4-h5-s13,False,3.9953099473786553,3.9953099473786553,3.9953099473786553,entire stopping process,full horizon,True
+c32-dp4-h5-s29,False,3.998404422111999,3.9953099473786553,3.9953099473786553,entire stopping process,full horizon and all candidate batch policies,False
+c32-dp4-h5-s47,False,3.998404422111999,3.9953099473786553,3.9953099473786553,entire stopping process,full horizon and all candidate batch policies,False
+c32-dp4-h6-s13,False,3.998066544065582,3.998066544065582,3.998066544065582,entire stopping process,full horizon,True
+c32-dp8-h1-s13,False,7.99797003217222,7.99797003217222,7.99797003217222,entire stopping process,full horizon,True
+c32-dp8-h2-s13,False,7.999470272746166,7.999470272746166,7.999470272746166,entire stopping process,full horizon,True
+c32-dp8-h3-s13,False,7.99797003217222,7.99797003217222,7.99797003217222,entire stopping process,full horizon,True
+c32-dp8-h4-s13,False,7.999470272746166,7.999470272746166,7.999470272746166,entire stopping process,full horizon,True
+c32-dp8-h5-s13,False,7.99797003217222,7.99797003217222,7.99797003217222,entire stopping process,full horizon,True
+c32-dp8-h5-s29,False,8.008191297748143,7.99797003217222,7.99797003217222,entire stopping process,full horizon and all candidate batch policies,False
+c32-dp8-h5-s47,False,8.008191297748143,7.99797003217222,7.99797003217222,entire stopping process,full horizon and all candidate batch policies,False
+c32-dp8-h6-s13,False,7.999470272746166,7.999470272746166,7.999470272746166,entire stopping process,full horizon,True
+c4-dp1-h1-s13,False,0.9957147439345063,0.9957147439345063,0.9957147439345063,entire stopping process,full horizon,True
+c4-dp1-h2-s13,False,0.9939944355700382,0.9939944355700382,0.9939944355700382,entire stopping process,full horizon,True
+c4-dp1-h3-s13,False,0.9957147439345063,0.9957147439345063,0.9957147439345063,entire stopping process,full horizon,True
+c4-dp1-h4-s13,False,0.9939944355700382,0.9939944355700382,0.9939944355700382,entire stopping process,full horizon,True
+c4-dp1-h5-s13,False,0.9957147439345063,0.9957147439345063,0.2940915471128349,entire stopping process,full horizon,True
+c4-dp1-h6-s13,False,0.9939944355700382,0.9939944355700382,0.9939944355700382,entire stopping process,full horizon,True
+c4-dp1-h6-s29,False,0.9957147439345063,0.9939944355700382,0.44844563248461683,entire stopping process,full horizon and all candidate batch policies,False
+c4-dp1-h6-s47,False,0.9957147439345063,0.9939944355700382,0.7211992111673453,entire stopping process,full horizon and all candidate batch policies,False
+c4-dp2-h1-s13,False,1.9953402031685616,1.9953402031685616,1.9953402031685616,entire stopping process,full horizon,True
+c4-dp2-h2-s13,False,1.9942107092809702,1.9942107092809702,1.9942107092809702,entire stopping process,full horizon,True
+c4-dp2-h3-s13,False,1.9953402031685616,1.9953402031685616,1.9953402031685616,entire stopping process,full horizon,True
+c4-dp2-h3-s29,False,1.9953402031685616,1.9953402031685616,1.9953402031685616,entire stopping process,full horizon and all candidate batch policies,False
+c4-dp2-h3-s47,False,1.9953402031685616,1.9953402031685616,1.9953402031685616,entire stopping process,full horizon and all candidate batch policies,False
+c4-dp2-h4-s13,False,1.9942107092809702,1.9942107092809702,1.9942107092809702,entire stopping process,full horizon,True
+c4-dp2-h5-s13,False,1.9953402031685616,1.9953402031685616,0.7368028294646446,entire stopping process,full horizon,True
+c4-dp2-h6-s13,False,1.9942107092809702,1.9942107092809702,1.9942107092809702,entire stopping process,full horizon,True
+c4-dp4-h1-s13,False,3.997436428170082,3.997436428170082,3.997436428170082,entire stopping process,full horizon,True
+c4-dp4-h2-s13,False,3.99991530247938,3.99991530247938,3.99991530247938,entire stopping process,full horizon,True
+c4-dp4-h3-s13,False,3.997436428170082,3.997436428170082,3.997436428170082,entire stopping process,full horizon,True
+c4-dp4-h3-s29,False,3.99991530247938,3.997436428170082,3.997436428170082,entire stopping process,full horizon and all candidate batch policies,False
+c4-dp4-h3-s47,False,3.99991530247938,3.997436428170082,3.997436428170082,entire stopping process,full horizon and all candidate batch policies,False
+c4-dp4-h4-s13,False,3.99991530247938,3.99991530247938,3.99991530247938,entire stopping process,full horizon,True
+c4-dp4-h5-s13,False,3.997436428170082,3.997436428170082,1.5201777260767675,entire stopping process,full horizon,True
+c4-dp4-h6-s13,False,3.99991530247938,3.99991530247938,2.5296600702566434,entire stopping process,full horizon,True
+c4-dp8-h1-s13,False,7.990066208094473,7.990066208094473,7.990066208094473,entire stopping process,full horizon,True
+c4-dp8-h2-s13,False,7.993880226904387,7.993880226904387,7.993880226904387,entire stopping process,full horizon,True
+c4-dp8-h3-s13,False,7.990066208094473,7.990066208094473,7.990066208094473,entire stopping process,full horizon,True
+c4-dp8-h4-s13,False,7.993880226904387,7.993880226904387,7.993880226904387,entire stopping process,full horizon,True
+c4-dp8-h5-s13,False,7.990066208094473,7.990066208094473,4.0687485954922495,entire stopping process,full horizon,True
+c4-dp8-h6-s13,False,7.993880226904387,7.993880226904387,7.993880226904387,entire stopping process,full horizon,True
+c4-dp8-h6-s29,False,7.995871405974584,7.993880226904387,5.791934656847376,entire stopping process,full horizon and all candidate batch policies,False
+c4-dp8-h6-s47,False,7.995871405974584,7.993880226904387,7.657670961595521,entire stopping process,full horizon and all candidate batch policies,False
+c6-dp1-h1-s13,False,0.9978915460476855,0.9978915460476855,0.9978915460476855,entire stopping process,full horizon,True
+c6-dp1-h2-s13,False,0.9946747779405966,0.9946747779405966,0.9946747779405966,entire stopping process,full horizon,True
+c6-dp1-h3-s13,False,0.9978915460476855,0.9978915460476855,0.9978915460476855,entire stopping process,full horizon,True
+c6-dp1-h4-s13,False,0.9946747779405966,0.9946747779405966,0.9946747779405966,entire stopping process,full horizon,True
+c6-dp1-h5-s13,False,0.9978915460476855,0.9978915460476855,0.394836497827757,entire stopping process,full horizon,True
+c6-dp1-h6-s13,False,0.9946747779405966,0.9946747779405966,0.9946747779405966,entire stopping process,full horizon,True
+c6-dp1-h6-s29,False,0.9978915460476855,0.9946747779405966,0.9946747779405966,entire stopping process,full horizon and all candidate batch policies,False
+c6-dp1-h6-s47,False,0.9978915460476855,0.9946747779405966,0.9946747779405966,entire stopping process,full horizon and all candidate batch policies,False
+c6-dp2-h1-s13,False,1.9959714055003643,1.9959714055003643,1.9959714055003643,entire stopping process,full horizon,True
+c6-dp2-h2-s13,False,1.9962551192201117,1.9962551192201117,1.9962551192201117,entire stopping process,full horizon,True
+c6-dp2-h3-s13,False,1.9959714055003643,1.9959714055003643,1.9959714055003643,entire stopping process,full horizon,True
+c6-dp2-h4-s13,False,1.9962551192201117,1.9962551192201117,1.9962551192201117,entire stopping process,full horizon,True
+c6-dp2-h5-s13,False,1.9959714055003643,1.9959714055003643,0.9576467638431782,entire stopping process,full horizon,True
+c6-dp2-h6-s13,False,1.9962551192201117,1.9962551192201117,1.9962551192201117,entire stopping process,full horizon,True
+c6-dp2-h6-s29,False,1.9962551192201117,1.9962551192201117,1.9962551192201117,entire stopping process,full horizon and all candidate batch policies,False
+c6-dp2-h6-s47,False,1.9962551192201117,1.9962551192201117,1.9962551192201117,entire stopping process,full horizon and all candidate batch policies,False
+c6-dp4-h1-s13,False,3.9927434471430105,3.9927434471430105,3.9927434471430105,entire stopping process,full horizon,True
+c6-dp4-h2-s13,False,3.9931798362310476,3.9931798362310476,3.9931798362310476,entire stopping process,full horizon,True
+c6-dp4-h3-s13,False,3.9927434471430105,3.9927434471430105,3.9927434471430105,entire stopping process,full horizon,True
+c6-dp4-h4-s13,False,3.9931798362310476,3.9931798362310476,3.9931798362310476,entire stopping process,full horizon,True
+c6-dp4-h5-s13,False,3.9927434471430105,3.9927434471430105,2.0294151201647495,entire stopping process,full horizon,True
+c6-dp4-h6-s13,False,3.9931798362310476,3.9931798362310476,3.9931798362310476,entire stopping process,full horizon,True
+c6-dp4-h6-s29,False,3.9931798362310476,3.9931798362310476,3.9931798362310476,entire stopping process,full horizon and all candidate batch policies,False
+c6-dp4-h6-s47,False,3.9931798362310476,3.9931798362310476,3.9931798362310476,entire stopping process,full horizon and all candidate batch policies,False
+c6-dp8-h1-s13,False,7.998718358504022,7.998718358504022,7.998718358504022,entire stopping process,full horizon,True
+c6-dp8-h2-s13,False,7.9981123248353905,7.9981123248353905,7.9981123248353905,entire stopping process,full horizon,True
+c6-dp8-h3-s13,False,7.998718358504022,7.998718358504022,7.998718358504022,entire stopping process,full horizon,True
+c6-dp8-h4-s13,False,7.9981123248353905,7.9981123248353905,7.9981123248353905,entire stopping process,full horizon,True
+c6-dp8-h5-s13,False,7.998718358504022,7.998718358504022,7.998718358504022,entire stopping process,full horizon,True
+c6-dp8-h6-s13,False,7.9981123248353905,7.9981123248353905,7.9981123248353905,entire stopping process,full horizon,True
+c6-dp8-h6-s29,False,7.998718358504022,7.9981123248353905,7.9981123248353905,entire stopping process,full horizon and all candidate batch policies,False
+c6-dp8-h6-s47,False,7.998718358504022,7.9981123248353905,7.9981123248353905,entire stopping process,full horizon and all candidate batch policies,False
+c8-dp1-h1-s13,False,0.99065542002228,0.99065542002228,0.99065542002228,entire stopping process,full horizon,True
+c8-dp1-h2-s13,False,0.9964767416846262,0.9964767416846262,0.9964767416846262,entire stopping process,full horizon,True
+c8-dp1-h3-s13,False,0.99065542002228,0.99065542002228,0.99065542002228,entire stopping process,full horizon,True
+c8-dp1-h4-s13,False,0.9964767416846262,0.9964767416846262,0.9964767416846262,entire stopping process,full horizon,True
+c8-dp1-h5-s13,False,0.99065542002228,0.99065542002228,0.99065542002228,entire stopping process,full horizon,True
+c8-dp1-h5-s29,False,0.9964767416846262,0.99065542002228,0.6650498028393049,entire stopping process,full horizon and all candidate batch policies,False
+c8-dp1-h5-s47,False,0.9964767416846262,0.99065542002228,0.6650498028393049,entire stopping process,full horizon and all candidate batch policies,False
+c8-dp1-h6-s13,False,0.9964767416846262,0.9964767416846262,0.9964767416846262,entire stopping process,full horizon,True
+c8-dp2-h1-s13,False,1.990164873872108,1.990164873872108,1.990164873872108,entire stopping process,full horizon,True
+c8-dp2-h2-s13,False,1.9963869629021311,1.9963869629021311,1.9963869629021311,entire stopping process,full horizon,True
+c8-dp2-h3-s13,False,1.990164873872108,1.990164873872108,1.990164873872108,entire stopping process,full horizon,True
+c8-dp2-h4-s13,False,1.9963869629021311,1.9963869629021311,1.9963869629021311,entire stopping process,full horizon,True
+c8-dp2-h5-s13,False,1.990164873872108,1.990164873872108,1.179530532978114,entire stopping process,full horizon,True
+c8-dp2-h6-s13,False,1.9963869629021311,1.9963869629021311,1.9963869629021311,entire stopping process,full horizon,True
+c8-dp2-h6-s29,False,1.9963869629021311,1.9963869629021311,1.9963869629021311,entire stopping process,full horizon and all candidate batch policies,False
+c8-dp2-h6-s47,False,1.9963869629021311,1.9963869629021311,1.9963869629021311,entire stopping process,full horizon and all candidate batch policies,False
+c8-dp4-h1-s13,False,3.9982076514018035,3.9982076514018035,3.9982076514018035,entire stopping process,full horizon,True
+c8-dp4-h2-s13,False,3.9953099473786553,3.9953099473786553,3.9953099473786553,entire stopping process,full horizon,True
+c8-dp4-h3-s13,False,3.9982076514018035,3.9982076514018035,3.9982076514018035,entire stopping process,full horizon,True
+c8-dp4-h4-s13,False,3.9953099473786553,3.9953099473786553,3.9953099473786553,entire stopping process,full horizon,True
+c8-dp4-h5-s13,False,3.9982076514018035,3.9982076514018035,3.9982076514018035,entire stopping process,full horizon,True
+c8-dp4-h5-s29,False,3.9982076514018035,3.9982076514018035,3.9982076514018035,entire stopping process,full horizon and all candidate batch policies,False
+c8-dp4-h5-s47,False,3.9982076514018035,3.9982076514018035,2.457346580508023,entire stopping process,full horizon and all candidate batch policies,False
+c8-dp4-h6-s13,False,3.9953099473786553,3.9953099473786553,3.9953099473786553,entire stopping process,full horizon,True
+c8-dp8-h1-s13,False,7.996472644543506,7.996472644543506,7.996472644543506,entire stopping process,full horizon,True
+c8-dp8-h2-s13,False,7.99797003217222,7.99797003217222,7.99797003217222,entire stopping process,full horizon,True
+c8-dp8-h3-s13,False,7.996472644543506,7.996472644543506,7.996472644543506,entire stopping process,full horizon,True
+c8-dp8-h4-s13,False,7.99797003217222,7.99797003217222,7.99797003217222,entire stopping process,full horizon,True
+c8-dp8-h5-s13,False,7.996472644543506,7.996472644543506,7.996472644543506,entire stopping process,full horizon,True
+c8-dp8-h6-s13,False,7.99797003217222,7.99797003217222,7.99797003217222,entire stopping process,full horizon,True
+c8-dp8-h6-s29,False,7.999934113495404,7.99797003217222,7.99797003217222,entire stopping process,full horizon and all candidate batch policies,False
+c8-dp8-h6-s47,False,7.999934113495404,7.99797003217222,7.99797003217222,entire stopping process,full horizon and all candidate batch policies,False
+smoke-c1-dp,False,3.9975456257202384,3.9975456257202384,1.4132969000608333,entire stopping process,full horizon,False
+smoke-c32-dp,False,3.9959510106207836,3.9959510106207836,0.8235109455532369,entire stopping process,full horizon,False
+smoke-c6-dp,False,3.9959510106207836,3.9959510106207836,0.8235109455532369,entire stopping process,full horizon,False
