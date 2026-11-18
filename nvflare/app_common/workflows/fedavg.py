@@ -63,8 +63,9 @@ class FedAvg(BaseFedAvg):
     metric shapes are incompatible, and continues with accepted clients. A round with no
     accepted contributions fails without updating or saving. Errors during accumulation
     still fail the round because they may have partially changed its state.
-    A result reporting ``NUM_STEPS_CURRENT_ROUND == 0`` is skipped; if every result does, the
-    global model is kept unchanged and not saved.
+    ``NUM_STEPS_CURRENT_ROUND`` is the number of optimizer steps a client completed this round:
+    a positive value is its weight, a missing or ``None`` value (count unknown) gets weight 1, and
+    ``0`` skips the result. If every result reports ``0``, the global model is kept unchanged and not saved.
 
     Supports custom aggregators via the ModelAggregator interface.
 
