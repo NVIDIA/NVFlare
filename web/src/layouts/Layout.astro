@@ -5,11 +5,15 @@ import "@fontsource-variable/inter/index.css";
 
 export interface Props {
   title: string;
+  description?: string;
 }
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site).toString();
 
-const { title } = Astro.props;
+const {
+  title,
+  description = "NVIDIA FLARE™ (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, and extensible SDK for Federated Learning.",
+} = Astro.props;
 
 const makeTitle = title ? title + " | " + "NVIDIA FLARE" : "NVIDIA FLARE";
 
@@ -23,10 +27,11 @@ const base_url = import.meta.env.BASE_URL;
     <meta name="viewport" content="width=device-width" />
     <link rel="icon" type="image/x-icon" href=`${base_url}/favicon.ico`>
     <meta name="generator" content={Astro.generator} />
+    <meta name="google-site-verification" content="plDTGNUx8Hj--T-J89zMZ7_xUhBnHSz0AWVp0-nRW_Q" />
 
     <SEO
       title={makeTitle}
-      description="NVIDIA FLARE™ (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, and extensible SDK for Federated Learning."
+      description={description}
       canonical={canonicalURL}
     />
 

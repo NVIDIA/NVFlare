@@ -7,6 +7,7 @@
     1. [Signing your work](#signing-your-work)
     1. [Commit signature verification](#commit-signature-verification)
   * [Submitting pull requests](#submitting-pull-requests)
+    * [Pull request description guidance](#pull-request-description-guidance)
 - [The code reviewing process (for the maintainers)](#the-code-reviewing-process)
   * [Reviewing pull requests](#reviewing-pull-requests)
 
@@ -162,11 +163,14 @@ By making a contribution to this project, I certify that:
 ### Submitting pull requests
 All code changes to the main branch must be done via [pull requests](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/proposing-changes-to-your-work-with-pull-requests).
 
-Every pull request must reference an existing GitHub issue in NVIDIA/NVFlare that describes the problem or proposed improvement, explains why the change is needed, and provides supporting evidence where applicable.
+Pull requests from external contributors (contributors without write, maintain, or admin access to NVIDIA/NVFlare) must reference an existing GitHub issue in NVIDIA/NVFlare that describes the problem or proposed improvement, explains why the change is needed, and provides supporting evidence where applicable.
 The issue must exist before the pull request is submitted, and the proposed changes must directly address it.
-Pull requests without a qualifying issue will not be accepted.
+Pull requests from external contributors without a qualifying issue will not be accepted.
 
-1. Create a new ticket or take a known ticket from [the issue list][NVIDIA FLARE issue list].
+Repository collaborators with write, maintain, or admin access may submit pull requests without a GitHub issue.
+Every pull request must describe the problem or proposed improvement and explain why the change is needed.
+
+1. For external contributions, create a new ticket or take a known ticket from [the issue list][NVIDIA FLARE issue list].
 2. If the task has not been taken, [create a new branch in your fork](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork)
 of the codebase.
 Ideally, the new branch should be based on the latest `main` branch.
@@ -182,21 +186,39 @@ Ideally, the new branch should be based on the latest `main` branch.
 9. Reviewer and contributor may have discussions back and forth until all comments addressed. All conversations must be resolved for PR to pass.
 10. Wait for the pull request to be merged.
 
+#### Pull request description guidance
+
+Every pull request must explain what changes, why the change is needed, and how it was validated.
+Include validation commands and results, and state anything that could not be verified.
+Scale the detail to the scope and impact of the change, rather than the number of changed lines.
+Use the relevant categories below; a pull request may span more than one category.
+Link existing design documents where useful and summarize the key decisions in the PR description.
+
+- **Small bug fix:** Describe the problem, root cause, fix approach, and regression test or verification.
+- **Complex bug fix:** Include a reproduction scenario, root cause, overall fix approach, changes across affected modules, compatibility risks, and regression coverage.
+- **Feature enhancement:** Explain the motivation, design, workflow, risks, validation, and documentation updates. Include architecture and alternatives considered with their tradeoffs where relevant.
+- **FL algorithm implementation:** Include paper references where applicable, the main research idea, implementation design and workflow, and deviations from the paper. Apply the relevant feature enhancement guidance, including architecture, alternatives, and risks. Describe the experiment setup, results, and limitations, and provide a runnable example and User Guide.
+- **FL algorithm / research example:** Include paper references where applicable, the main research idea, and experiment approach. Provide a README covering dependencies, setup, data preparation, execution commands, expected results, and limitations.
+- **Documentation, refactoring, dependency, or tooling change:** Briefly describe the purpose, affected areas, and relevant validation. Explain behavior or compatibility changes, if any.
+
+Benchmarks are optional for algorithm implementations and research examples unless needed to support performance claims.
+Include architecture and alternatives sections where relevant to the change; a small fix does not need a separate design document.
+
 ## The code reviewing process
 
 
 ### Reviewing pull requests
 All code review comments should be specific, constructive, and actionable.
 
-Before reviewing the code, verify that the linked GitHub issue exists, predates the pull request, and is directly addressed by the proposed changes.
-Maintainers must confirm that the issue identifies a valid problem or an improvement appropriate for the project before approving the pull request.
+For pull requests from external contributors, verify that the linked GitHub issue exists, predates the pull request, and is directly addressed by the proposed changes before reviewing the code.
+For every pull request, maintainers must confirm that the proposed changes address a valid problem or an improvement appropriate for the project before approving it.
 
 1. Check [the CI/CD status of the pull request][github ci], make sure all CI/CD tests passed before reviewing (contact the branch owner if needed).
 2. Read carefully the descriptions of the pull request and the files changed, write comments if needed.
 3. Make in-line comments to specific code segments, [request for changes](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-request-reviews) if needed.
 4. Review any further code changes until all comments addressed by the contributors.
 5. Merge the pull request to the main branch.
-6. Close the corresponding task ticket on [the issue list][NVIDIA FLARE issue list].
+6. Close the corresponding task ticket on [the issue list][NVIDIA FLARE issue list], if applicable.
 
 [github ci]: https://github.com/NVIDIA/NVFlare/actions
 [NVIDIA FLARE issue list]: https://github.com/NVIDIA/NVFlare/issues

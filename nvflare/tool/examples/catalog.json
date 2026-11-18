@@ -87,8 +87,12 @@
     "source_path": "examples/advanced/bionemo",
     "category": "advanced"
   },
-  "cc-provision": {
-    "source_path": "examples/advanced/cc_provision",
+  "cvm-builder": {
+    "source_path": "examples/advanced/cvm_builder",
+    "category": "advanced"
+  },
+  "azure-cc": {
+    "source_path": "examples/advanced/azure_cc",
     "category": "advanced"
   },
   "cifar10-pt": {
@@ -109,6 +113,11 @@
   },
   "collab-llm-sft": {
     "source_path": "examples/advanced/collab/pt_llm_sft",
+    "category": "advanced"
+  },
+  "collab-numpy-async": {
+    "source_path": "examples/advanced/collab/numpy_async",
+    "destination_path": "collab/numpy_async",
     "category": "advanced"
   },
   "collab-pt": {
@@ -272,10 +281,6 @@
     "source_path": "examples/advanced/swarm_learning",
     "category": "advanced"
   },
-  "tensor-stream": {
-    "source_path": "examples/advanced/tensor-stream",
-    "category": "advanced"
-  },
   "splitnn-cifar10": {
     "source_path": "examples/advanced/vertical_federated_learning/cifar10-splitnn",
     "category": "advanced"
@@ -297,6 +302,11 @@
   "devops-azure-aks": {
     "source_path": "examples/devops/azure/aks",
     "destination_path": "azure/aks",
+    "category": "deployment"
+  },
+  "devops-coco": {
+    "source_path": "examples/devops/coco",
+    "destination_path": "examples/devops/coco",
     "category": "deployment"
   },
   "devops-gcp-gke": {

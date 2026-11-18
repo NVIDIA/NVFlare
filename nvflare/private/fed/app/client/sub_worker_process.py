@@ -29,6 +29,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.executors.multi_process_executor import WorkerComponentBuilder
+from nvflare.fuel.common.excepts import ComponentNotAuthorized
 from nvflare.fuel.common.multi_process_executor_constants import (
     CommunicateData,
     CommunicationMetaData,
@@ -98,7 +99,12 @@ class EventRelayer(FLComponent):
             fl_ctx.set_prop(
                 FLContextKey.EVENT_ORIGIN_SITE, CommunicateData.MULTI_PROCESS_EXECUTOR, private=True, sticky=False
             )
+            if event_type == EventType.START_RUN:
+                # Only failures from this rank's startup handlers count here.
+                fl_ctx.remove_prop(FLContextKey.EXCEPTIONS, force_removal=True)
             self.fire_event(event_type=event_type, fl_ctx=fl_ctx)
+            if event_type == EventType.START_RUN and fl_ctx.get_prop(FLContextKey.EXCEPTIONS):
+                raise RuntimeError("rank startup handlers failed")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """To handle the event.
@@ -211,6 +217,11 @@ class SubWorkerExecutor(Runner):
 
         job_id = self.args.job_id
         self._get_client_run_manager(job_id)
+        self.run_manager.cell = self.cell
+        self.run_manager.conf = component_builder
+        component_builder.component_build_authorizer = self._authorize_component_build
+        with self.run_manager.new_context() as fl_ctx:
+            component_builder.fl_ctx = fl_ctx
 
         parent_fqcn = FQCN.join([self.args.client_name, self.args.job_id])
         relayer = EventRelayer(self.cell, parent_fqcn, self.local_rank)
@@ -228,6 +239,17 @@ class SubWorkerExecutor(Runner):
             relayer.relay_event(self.run_manager, event_data)
 
         return make_reply(ReturnCode.OK, "", None)
+
+    def _authorize_component_build(self, config_dict):
+        # Site-installed checkers live in the parent, not in the rank's handlers.
+        reply = self.cell.send_request(
+            target=FQCN.join([self.args.client_name, self.args.job_id]),
+            channel=CellChannel.MULTI_PROCESS_EXECUTOR,
+            topic=EventType.BEFORE_BUILD_COMPONENT,
+            request=new_cell_message({}, config_dict),
+        )
+        if reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK:
+            raise ComponentNotAuthorized(reply.get_header(MessageHeaderKey.ERROR, "Parent authorization failed"))
 
     def _get_client_run_manager(self, job_id):
         if self.args.simulator_engine.lower() == "true":

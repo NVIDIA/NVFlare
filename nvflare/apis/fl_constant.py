@@ -369,6 +369,7 @@ class NonSerializableKeys:
         ReservedKey.RUNNER,
         FLContextKey.SCOPE_PROPERTIES,
         FLContextKey.SCOPE_OBJECT,
+        FLContextKey.CLIENT_HIERARCHY,
         FLContextKey.WORKSPACE_OBJECT,
         FLContextKey.TASK_DATA,
         FLContextKey.SHAREABLE,
@@ -446,7 +447,7 @@ class WorkspaceConstants:
 
     LOGGING_CONFIG = "log_config.json"
     DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
-    AUDIT_LOG = "audit.log"
+    AUDIT_LOG = "audit.jsonl"
     LOG_FILE_NAME = "log.txt"
     ERROR_LOG_FILE_NAME = "error_log.txt"
     STATS_POOL_SUMMARY_FILE_NAME = "stats_pool_summary.json"

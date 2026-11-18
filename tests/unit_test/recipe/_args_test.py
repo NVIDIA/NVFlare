@@ -96,7 +96,7 @@ def test_shared_logging_argument_overrides_script_default(monkeypatch, flags):
 
 
 @pytest.mark.parametrize("flags", [["--log_config"], ["--log_config", "--rounds"], ["--log_config="]])
-def test_malformed_shared_logging_argument_does_not_raise_during_import(monkeypatch, flags):
+def test_malformed_shared_logging_argument_reports_usage_error(monkeypatch, capsys, flags):
     import sys
 
     import nvflare.recipe._args as args_module
@@ -105,16 +105,51 @@ def test_malformed_shared_logging_argument_does_not_raise_during_import(monkeypa
     monkeypatch.setenv("FL_LOG_LEVEL", "concise")
     original_argv = ["job.py", *flags]
     monkeypatch.setattr(sys, "argv", original_argv.copy())
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", UserWarning)
+    with pytest.raises(SystemExit) as exc_info:
         importlib.reload(args_module)
-    assert args_module._peek_recipe_args() == (False, args_module.DEFAULT_EXPORT_DIR)
+    assert exc_info.value.code == 2
+    assert "--log_config requires a non-empty configuration" in capsys.readouterr().err
     assert sys.argv == original_argv
     assert os.environ["FL_LOG_LEVEL"] == "concise"
-    from nvflare.recipe.sim_env import SimEnv
 
-    with pytest.raises(ValueError, match="--log_config requires a non-empty configuration"):
-        SimEnv(num_clients=1)
+
+@pytest.mark.parametrize("source", ["argument", "environment"])
+def test_invalid_log_selector_is_collected_without_runtime_validation(monkeypatch, source):
+    import sys
+
+    import nvflare.recipe._args as args_module
+
+    monkeypatch.setenv("FL_LOG_LEVEL", "progres" if source == "environment" else "concise")
+    argv = ["job.py", "--log_config", "progres"] if source == "argument" else ["job.py"]
+    monkeypatch.setattr(sys, "argv", argv.copy())
+    importlib.reload(args_module)
+    assert sys.argv == ["job.py"]
+    assert args_module._RECIPE_LOG_CONFIG == ("progres" if source == "argument" else None)
+    assert os.environ["FL_LOG_LEVEL"] == "progres"
+
+
+def test_empty_log_environment_is_treated_as_unset(monkeypatch):
+    import sys
+
+    import nvflare.recipe._args as args_module
+
+    monkeypatch.setattr(args_module, "_RECIPE_LOG_CONFIG", None)
+    monkeypatch.setenv("FL_LOG_LEVEL", "")
+    monkeypatch.setattr(sys, "argv", ["job.py"])
+    importlib.reload(args_module)  # an empty value must not be a usage error
+    assert args_module._peek_recipe_args() == (False, args_module.DEFAULT_EXPORT_DIR)
+
+
+def test_valid_cli_log_selector_overrides_invalid_environment(monkeypatch):
+    import sys
+
+    import nvflare.recipe._args as args_module
+
+    monkeypatch.setenv("FL_LOG_LEVEL", "progres")
+    monkeypatch.setattr(sys, "argv", ["job.py", "--log_config", "full"])
+    importlib.reload(args_module)
+    assert args_module._RECIPE_LOG_CONFIG == "full"
+    assert os.environ["FL_LOG_LEVEL"] == "full"
 
 
 def test_system_arguments_stop_at_double_dash(monkeypatch):

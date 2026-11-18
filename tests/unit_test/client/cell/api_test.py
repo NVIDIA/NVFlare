@@ -1107,11 +1107,14 @@ def test_shutdown_f3_streaming_is_ordered_and_safe_to_repeat(monkeypatch):
     monkeypatch.setattr(streaming_shutdown.ByteStreamer, "shutdown", lambda: calls.append("byte"))
     monkeypatch.setattr(streaming_shutdown.reliable_retry_scheduler, "shutdown", lambda: calls.append("retry"))
     monkeypatch.setattr(streaming_shutdown, "stream_shutdown", lambda: calls.append("stream"))
+    monkeypatch.setattr(
+        streaming_shutdown, "RxTask", SimpleNamespace(shutdown=lambda: calls.append("receive")), raising=False
+    )
 
     cell_api._shutdown_f3_streaming()
     cell_api._shutdown_f3_streaming()
 
-    assert calls == ["download", "byte", "retry", "stream", "download", "byte", "retry", "stream"]
+    assert calls == ["download", "byte", "retry", "stream", "receive"] * 2
 
 
 def test_shutdown_f3_streaming_attempts_every_stage_and_can_retry(monkeypatch):
@@ -1129,13 +1132,16 @@ def test_shutdown_f3_streaming_attempts_every_stage_and_can_retry(monkeypatch):
     monkeypatch.setattr(streaming_shutdown.ByteStreamer, "shutdown", lambda: calls.append("byte"))
     monkeypatch.setattr(streaming_shutdown.reliable_retry_scheduler, "shutdown", lambda: calls.append("retry"))
     monkeypatch.setattr(streaming_shutdown, "stream_shutdown", lambda: calls.append("stream"))
+    monkeypatch.setattr(
+        streaming_shutdown, "RxTask", SimpleNamespace(shutdown=lambda: calls.append("receive")), raising=False
+    )
 
     with pytest.raises(RuntimeError, match="download service"):
         cell_api._shutdown_f3_streaming()
-    assert calls == ["download", "byte", "retry", "stream"]
+    assert calls == ["download", "byte", "retry", "stream", "receive"]
 
     cell_api._shutdown_f3_streaming()
-    assert calls == ["download", "byte", "retry", "stream", "download", "byte", "retry", "stream"]
+    assert calls == ["download", "byte", "retry", "stream", "receive"] * 2
 
 
 def test_trainer_session_error_is_runtime_error():

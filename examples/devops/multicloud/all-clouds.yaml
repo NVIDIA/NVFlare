@@ -23,9 +23,10 @@ clouds:
     pvc_config:
       nvflws:   { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
       nvfldata: { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
-    study_data:
+    study_runtime:              # written to each kit as local/study_runtime.yaml
       default:
-        data: { pvc: nvfldata, mode: ro }
+        datasets:
+          data: { source: nvfldata, mode: ro }   # source: PVC claim name
   aws:
     prepare:
       runtime: k8s
@@ -44,9 +45,10 @@ clouds:
     pvc_config:
       nvflws:   { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
       nvfldata: { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
-    study_data:
+    study_runtime:              # written to each kit as local/study_runtime.yaml
       default:
-        data: { pvc: nvfldata, mode: ro }
+        datasets:
+          data: { source: nvfldata, mode: ro }   # source: PVC claim name
   azure:
     prepare:
       runtime: k8s
@@ -60,6 +62,7 @@ clouds:
     pvc_config:
       nvflws:   { sc: managed-csi,   access: ReadWriteOnce, size: 10Gi }
       nvfldata: { sc: managed-csi,   access: ReadWriteOnce, size: 1Gi  }
-    study_data:
+    study_runtime:              # written to each kit as local/study_runtime.yaml
       default:
-        data: { pvc: nvfldata, mode: ro }
+        datasets:
+          data: { source: nvfldata, mode: ro }   # source: PVC claim name

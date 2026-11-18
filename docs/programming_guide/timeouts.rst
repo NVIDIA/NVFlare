@@ -975,6 +975,15 @@ Flower-specific controller and executor timeouts (flower/controller.py, flower/e
    * - superlink_ready_timeout
      - 10.0
      - Time to wait for Flower superlink to become ready
+   * - flwr_run_timeout
+     - 300.0
+     - CLI startup, FAB preparation, and run submission
+   * - flwr_command_timeout
+     - 15.0
+     - Each local status or stop CLI command
+   * - flwr_log_timeout
+     - 5.0
+     - Best-effort ServerApp log snapshot before process cleanup
    * - superlink_min_query_interval
      - 10.0
      - Minimal interval for querying superlink status
@@ -982,14 +991,24 @@ Flower-specific controller and executor timeouts (flower/controller.py, flower/e
      - 0.5
      - How often to check Flower run status
    * - per_msg_timeout
-     - 10.0
+     - 2.0
      - Per-message timeout for ReliableMessage
    * - tx_timeout
-     - 100.0
+     - 25.0
      - Transaction timeout for ReliableMessage
    * - client_shutdown_timeout
      - 5.0
      - Max time for graceful client shutdown
+
+
+The CLI timeouts are positive, finite values configurable through FlowerRecipe,
+FlowerJob, and FlowerController. A status-command timeout fails the job without
+retrying. A stop-command or log snapshot timeout is logged and process cleanup
+continues. These settings do not override Flower's own HTTP timeouts.
+
+Flower HTTP caps ``per_msg_timeout`` and ``tx_timeout`` at 2 and 25 seconds and logs a warning when larger
+values are supplied. Heartbeats use tighter caps of 0.5 and 3.5 seconds. See
+:ref:`flower_http_design` for payload, timing, and shutdown requirements.
 
 
 Private Set Intersection (PSI)
@@ -1239,76 +1258,6 @@ one session-monitor interval. This keeps the source reference available through
 receiver request retries and backoff while allowing the session manager to own
 expiry. The transaction remains bound to its session and is removed immediately
 when that session logs out or expires.
-
-
-Tensor Streaming Timeouts
--------------------------
-
-Tensor streaming provides efficient transfer of large model weights. These timeouts control
-the streaming behavior (tensor_stream/server.py, client.py):
-
-.. list-table::
-   :header-rows: 1
-   :widths: 38 12 50
-
-   * - Parameter
-     - Default
-     - Purpose
-   * - tensor_send_timeout
-     - 30.0
-     - Timeout for each tensor entry transfer operation
-   * - wait_send_task_data_all_clients_timeout
-     - 300.0
-     - Timeout for sending tensors to all clients
-   * - wait_for_tensors timeout
-     - 5.0
-     - Time to wait for tensors to be received
-
-**Server-side configuration** (TensorServerStreamer):
-
-.. code-block:: python
-
-   from nvflare.app_opt.tensor_stream.server import TensorServerStreamer
-
-   streamer = TensorServerStreamer(
-       format="pytorch",
-       tensor_send_timeout=60.0,  # Per-tensor timeout
-       wait_send_task_data_all_clients_timeout=600.0,  # All clients timeout
-   )
-
-**Client-side configuration** (TensorClientStreamer):
-
-.. code-block:: python
-
-   from nvflare.app_opt.tensor_stream.client import TensorClientStreamer
-
-   streamer = TensorClientStreamer(
-       format="pytorch",
-       tensor_send_timeout=60.0,  # Per-tensor timeout
-   )
-
-.. warning::
-
-   **Critical Timeout Relationship for Tensor Streaming**
-   
-   When using tensor streaming, you **must** ensure that ``get_task_timeout`` is set and is 
-   greater than or equal to ``wait_send_task_data_all_clients_timeout``. If ``get_task_timeout`` 
-   is not set, it defaults to the communicator's timeout, which may be shorter than the tensor 
-   streaming timeout.
-   
-   **Problem**: If streaming timeout > communicator timeout and no ``get_task_timeout`` is set, 
-   some clients may receive weights while others are still waiting. The server may not send the 
-   task in time, causing a timeout that restarts the tensor streaming process. This can result 
-   in clients receiving empty tensors and job failure.
-   
-   **Solution**: Always set ``get_task_timeout`` when using tensor streaming:
-   
-   .. code-block:: python
-   
-      # Ensure get_task_timeout >= wait_send_task_data_all_clients_timeout
-      recipe.add_client_config({
-          "get_task_timeout": 600,  # Must be >= streaming timeout
-      })
 
 
 Streaming Download Timeouts
@@ -1866,8 +1815,8 @@ Hierarchical Relationships
    │                                                                 │
    │  Flower-Specific                                                │
    │  ├── superlink_ready_timeout (10s)                              │
-   │  ├── per_msg_timeout (10s)                                      │
-   │  ├── tx_timeout (100s)                                          │
+   │  ├── per_msg_timeout (2s)                                       │
+   │  ├── tx_timeout (25s)                                           │
    │  └── client_shutdown_timeout (5s)                               │
    │                                                                 │
    │  CCWF Server-Side                                               │
@@ -1902,12 +1851,6 @@ Hierarchical Relationships
    │  File/Container Streaming                                       │
    │  ├── chunk_timeout (5s per chunk)                               │
    │  └── entry_timeout (60s per entry)                              │
-   │                                                                 │
-   │  Tensor Streaming (CRITICAL RELATIONSHIP)                       │
-   │  ├── tensor_send_timeout (30s)                                  │
-   │  ├── wait_send_task_data_all_clients_timeout (300s)             │
-   │  └── get_task_timeout >= wait_send_task_data_all_clients_timeout│
-   │      (REQUIRED to prevent task fetch timeout during streaming)  │
    └─────────────────────────────────────────────────────────────────┘
 
 
@@ -2077,7 +2020,6 @@ Component parameters:
 
    # Streaming
    streaming_per_request_timeout = 900  # 15 min per chunk
-   tensor_send_timeout = 120.0
 
    # CCWF
    progress_timeout = 14400       # 4 hours
@@ -2222,12 +2164,14 @@ Settings for Flower framework integration:
    from nvflare.app_opt.flower.flower_job import FlowerJob
 
    job = FlowerJob(
+       name="flower_job",
+       flower_content="./flwr-pt",
        superlink_ready_timeout=30.0,    # 30 sec for Flower server
        configure_task_timeout=60,
        start_task_timeout=30,
        progress_timeout=7200,           # 2 hours for training
-       per_msg_timeout=30.0,
-       tx_timeout=300.0,
+       per_msg_timeout=2.0,
+       tx_timeout=25.0,
        client_shutdown_timeout=10.0,
    )
 
@@ -2560,14 +2504,13 @@ Flower Integration
    from nvflare.app_opt.flower.recipe import FlowerRecipe
 
    recipe = FlowerRecipe(
-       server_app=ServerApp(...),
-       client_app=ClientApp(...),
+       flower_content="./flwr-pt",
        superlink_ready_timeout=30.0,
        configure_task_timeout=300,
        start_task_timeout=30,
        progress_timeout=7200,
-       per_msg_timeout=30.0,
-       tx_timeout=300.0,
+       per_msg_timeout=2.0,
+       tx_timeout=25.0,
        client_shutdown_timeout=10.0,
    )
 
@@ -2698,23 +2641,6 @@ Notes and Best Practices
 - ``task_result_timeout`` must be **less than or equal to** ``task.timeout``
 - ``per_msg_timeout`` should be **less than or equal to** ``tx_timeout`` for retries to work
 - For out-of-process Client API modes, ``heartbeat_interval`` must be **less than** ``heartbeat_timeout``
-- **IMPORTANT**: When using tensor streaming, ``get_task_timeout`` must be **greater than or equal to** 
-  ``wait_send_task_data_all_clients_timeout`` to prevent task fetch timeouts while waiting for all 
-  clients to receive tensors
-
-**Tensor Streaming Timeout Warning:**
-
-When tensor streaming is enabled, if ``get_task_timeout`` is not explicitly set, it defaults to the 
-communicator's timeout. If the streaming timeout (``wait_send_task_data_all_clients_timeout``) exceeds 
-the communicator timeout, clients may timeout while waiting for other clients to receive weights. This 
-can cause the tensor streaming process to restart and clients may receive empty tensors, causing the 
-job to fail.
-
-**Recommended relationship for tensor streaming:**
-
-.. code-block:: text
-
-   get_task_timeout >= wait_send_task_data_all_clients_timeout >= tensor_send_timeout * num_clients
 
 **Hierarchy:**
 

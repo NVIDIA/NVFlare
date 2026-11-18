@@ -45,7 +45,7 @@ adopting an existing job and its workers after CP restarts, not starting a new C
 | Kubernetes | `job` | No; resident CJ Pod retains its allocation | With persistent jobs PVC and confirmed shutdown | Not provided | Application checkpoint restore after eligible CJ replacement |
 | Kubernetes | `task` | Yes, after worker Pod settlement | After confirmed CJ and worker shutdown | Not provided | Worker loss triggers CJ recovery; application restores its checkpoint |
 | Slurm | `job` | No; resident CJ allocation retains its resources | Conditional on confirmed allocation exit and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
-| Slurm | `task` (draft) | Designed per task allocation; native qualification required | Disabled in the draft; CP retains task cleanup | Not provided | Not implemented |
+| Slurm | `task` | Yes, after worker allocation settlement | After confirmed CJ exit and settled workers | Not provided | Worker loss triggers CJ recovery; application restores its checkpoint |
 
 Resident recovery relies on a live CP/server and a valid client registration.
 Restoring partial progress on the original assignment additionally needs a

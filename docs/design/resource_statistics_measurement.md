@@ -15,15 +15,14 @@ The collector starts after that preparation and before configuration constructs
 user components. It does not run in the persistent site or server parent, change
 Python startup, or count the initial workspace download as job Cell traffic.
 
-For each physical execution, the collector first probes capacity, then opens a
-monotonic duration window and records baseline CPU counters. For the job process,
-it closes the CPU and duration window and freezes traffic at the existing
-pre-streaming-shutdown publication boundary. If known callbacks or managed
-trainers can outlive that snapshot, the affected coverage is partial; a later
-callback drain does not extend the observation window retroactively. The collector
-scans retained files once per participant, before report files and the final
-archive are written. Probe and scan overhead is outside the CPU window, and there
-is no sampling thread or periodic report sender.
+For each physical execution, CPU, RAM, and the GPU inventory are observed before the
+monotonic duration window and CPU counters start. At the job process's
+pre-streaming-shutdown publication boundary, the collector freezes CPU, duration,
+and traffic. If known callbacks or managed trainers can outlive that snapshot,
+the affected coverage is partial; a later callback drain does not extend the
+observation window retroactively. The collector scans retained files once per
+participant after CPU and duration are frozen, before report files and the final
+archive are written. There is no sampling thread or periodic report sender.
 
 Task collection runs inside the actual worker environment after launcher limits
 and visibility are established. The existing [worker](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/task_worker/worker.py)
@@ -67,11 +66,13 @@ are not capacity bounds.
 For RAM, the probe takes the minimum of physical page count times page size and
 finite, readable ancestor limits: v2 `memory.max` or v1 `memory.limit_in_bytes`.
 It recognizes the kernel's v1 page-aligned unlimited sentinel rather than
-reporting it as usable RAM, and rejects malformed or nonpositive limits and
-overflow. It does not substitute `memory.high`, swap limits, free memory,
-resident set size, or GPU memory. A readable physical bound remains usable with
-partial quality when a cgroup limit is unreadable; if no bound is usable, the
-dimension is unavailable.
+reporting it as usable RAM, accepts zero as a valid hard limit, and rejects
+malformed or negative limits. A v1 ancestor applies only when its
+`memory.use_hierarchy` is `1`; `0` ends the ancestor chain. An unreadable or
+invalid hierarchy flag makes the retained bounds partial. The probe does
+not substitute `memory.high`, swap limits, free memory, resident set size, or
+GPU memory. A readable physical bound remains usable with partial quality when a
+cgroup limit is unreadable; if no bound is usable, the dimension is unavailable.
 
 An absent controller is different from inaccessible discovery or required files:
 an absent optional controller does not itself imply failure. Hidden ancestors
@@ -79,61 +80,38 @@ and limits changed after startup cannot be reconstructed. These snapshots descri
 the visible environment, which may be shared with other jobs. They are neither
 exclusive allocations nor an integral of changing limits.
 
-Optional architecture and model descriptions cannot invalidate numeric capacity.
-The probe splits heterogeneous affinity-visible CPU models only when every
-selected CPU is identified and no tighter shared quota needs to be allocated
-among models. Otherwise, it retains aggregate units without inventing per-model
-fractions. Non-Linux probes require tested equivalents; without them, affected
-dimensions are reported as unsupported rather than guessed from a host-wide count.
+CPU and GPU hardware descriptions are not collected. CPU/RAM probes expose
+scalar capacity values. Non-Linux probes require tested equivalents; without
+them, affected dimensions are unsupported rather than guessed.
 
-## CUDA visibility and classification
+## GPU inventory and visibility
 
-A fresh helper process calls the system CUDA Driver, inheriting the execution's
-final environment, namespaces, cgroup membership, and affinity. The probe does
-not initialize CUDA in the application process, import PyTorch, use a CUDA Runtime
-bundled with a job package, run `nvidia-smi`, or count tokens in
-`CUDA_VISIBLE_DEVICES`. The Driver applies visibility and enumeration rules.
+GPU capacity counts the `nvidia-smi` inventory IDs selected by the execution's
+`CUDA_VISIBLE_DEVICES` mask. The probe and `GPUResourceManager` share
+`gpu_utils.get_visible_gpu_ids`, so reporting follows the resource manager's
+integer-index selection rules.
 
-On Linux, the helper loads the versioned system Driver library, calls `cuInit`,
-and then calls `cuDeviceGetCount`. A successful zero count, including the explicit
-no-device result, is an observed zero and produces an empty GPU group list. A
-missing library, another initialization or enumeration failure, an invalid count,
-or a timeout makes the measurement unavailable rather than zero. Enumeration
-is bounded to 4,096 ordinals. Every counted ordinal is retained exactly once,
-even if all optional metadata calls fail.
+With no mask, the pool is the verified `nvidia-smi` inventory. An empty mask
+establishes zero without running `nvidia-smi`. Integer selectors keep their order,
+remove duplicates, and stop at the first negative index, empty item, or index
+absent from the inventory.
+A noninteger selector reached before selection stops leaves the statistics
+observation unavailable. The host-backed resource manager retains its fallback
+to host inventory for unsupported masks. Externally managed pools retain their
+`ignore_host` behavior.
 
-The helper reads the optional model and total device memory for each ordinal. It
-uses the MIG-aware Driver UUID entry point when available to match an NVML handle.
-NVML may classify that handle as a full GPU or MIG compute instance; it cannot
-add devices or substitute a host-wide count. Type must not be inferred from a
-UUID prefix, model name, memory size, or environment string. Missing or ambiguous
-UUID mappings, permission errors, and older APIs retain `cuda_device_unclassified`
-counts. UUIDs and host identifiers remain private and are discarded after matching.
+The statistics probe calls `get_host_gpu_ids(timeout=2.0)`. A missing command,
+command failure, timeout, malformed output, or empty inventory is unavailable,
+not an inferred zero. CPU and RAM observations remain usable independently.
+The probe runs once in each execution's established environment, before its
+measurement window, without initializing application CUDA, retaining a CUDA
+context, importing a framework, or changing resource assignments.
 
-CUDA-visible MIG enumeration depends on Driver/runtime capabilities and policy;
-it does not necessarily include every configured instance on the host. An ordinal
-does not prove exclusive allocation, actual kernels, GPU busy time, or an equal
-fraction of a full GPU. Full-GPU, MIG, and unclassified groups remain distinct,
-and only equivalent known descriptions are grouped. Missing classification cannot
-erase a successful count or fabricate hardware equivalence.
-
-The helper has a two-second observation wait and bounded one-second reap waits
-after a kill, including a final cleanup attempt. The collector accepts at most
-64 KiB of JSON output; oversized, invalid, or failed output makes only the GPU measurement
-unavailable. The helper consolidates overlarge optional descriptions into counts
-by kind. Output is captured in a temporary file rather than an unbounded in-memory
-pipe. The read limit is not a hard disk-write quota if interpreter startup itself
-writes output. There is no sampling loop, framework import, or change to the
-application's CUDA initialization. Helper startup is a fixed per-execution cost
-and can be significant for short tasks.
-
-This approach differs from copying [PyTorch's discovery implementation](https://github.com/pytorch/pytorch/blob/v2.9.0/torch/cuda/__init__.py#L894-L966):
-NVFlare does not need framework device caching or its NVML-based count and
-fallback machinery. The system Driver is the numeric authority inside the same
-execution environment; NVML only enriches already counted ordinals. The helper
-isolates Driver initialization without adding PyTorch as a dependency. It must
-inherit deployed container and scheduler visibility, because a host NVML count
-cannot substitute for observation inside the execution environment.
+`gpu.count` is an integer count of selected inventory IDs. `gpu.instance_seconds`
+records that count multiplied by execution seconds, expressed as GPU-seconds. Neither value measures
+GPU utilization, GPU memory, or exclusive hardware ownership. Inventory selection
+does not verify that the application can initialize or access those devices
+through CUDA.
 
 ## CPU work and disjoint execution scopes
 
@@ -164,7 +142,7 @@ observable failed or aborted work. The reducer retains accepted scope identities
 it does not deduplicate by task name, result identity, PID alone, or hardware UUID
 across sessions. Missing artifacts leave known subtotals with incomplete quality.
 The ledger cannot establish lifecycle ownership. Its retention is capped at
-10,000 scopes, 128 aggregate groups, and 4 MiB of encoded state, with at most
+10,000 scopes and 4 MiB of encoded state, with at most
 8 MiB of outstanding worker artifacts and 64 KiB per accepted artifact. On
 exhaustion, accepted subtotals are frozen and marked incomplete; replay keys are
 never evicted to admit duplicate work. These bounds limit serialized state, not
@@ -173,24 +151,24 @@ total Python heap.
 ## Duration, capacity-time, and aggregation
 
 Let execution `e` have monotonic interval `[s_e, f_e]`, duration `d_e`, CPU
-capacity group `c_e,g`, RAM capacity `m_e`, and GPU group count `n_e,g`. The
+capacity `c_e`, RAM capacity `m_e`, and GPU count `n_e`. The
 following values are computed before physical executions are reduced into a
 participant:
 
 ```text
 d_e = (finish_monotonic_ns - start_monotonic_ns) / 1,000,000,000
-CPU unit_seconds[g] = sum_e(c_e,g * d_e)
+CPU unit_seconds = sum_e(c_e * d_e)
 RAM byte_seconds = sum_e(m_e * d_e)
-GPU instance_seconds[g] = sum_e(n_e,g * d_e)
+GPU instance_seconds = sum_e(n_e * d_e)
 cpu_seconds = sum_disjoint_scopes(delta_user + delta_system)
 average logical CPUs = cpu_seconds / participant duration_seconds
 ```
 
-Calculations use checked decimal arithmetic. Values are nonnegative numeric
-strings no greater than the unsigned 128-bit maximum. Seconds and CPU quantities
-allow at most nine fractional digits, while bytes and device counts are integers.
-Precision is retained until the serialization boundary without binary floating-point
-multiplication. The reporting contract defines field bounds and rounding.
+Values are native JSON numbers. Byte/count values are integers; durations,
+CPU units/work and capacity-time may be fractional. Integer products and sums
+remain exact Python integers; mixed arithmetic uses floating point and rejects
+nonfinite results. There is no decimal-string conversion or fixed fractional
+precision. An invalid dimension does not erase independent valid subtotals.
 
 `duration_seconds` is one participant elapsed window, not the sum of worker
 durations. Coordinator and worker capacity-time uses their own physical windows;
@@ -199,14 +177,12 @@ worker capacity is not applied to coordinator waiting time. Startup
 successive workers' capacities. Job and study totals add already computed
 `resource_time`; they do not multiply startup capacity by duration again.
 
-CPU and GPU capacity-time is grouped by compatible kind and optional descriptions,
-with unknown descriptions distinct from known ones. RAM byte-seconds add directly.
-A full-GPU equivalent is not derived from heterogeneous or MIG groups. Multi-rank
+CPU-unit-seconds, RAM byte-seconds and GPU-seconds are summed as scalar
+quantities, without model/type grouping. Multi-rank
 adapters expose disjoint CPU scopes but only one capacity observation per shared
-execution environment; rank count cannot multiply shared GPU or node-wide CPU or
-RAM capacity. Multiple nodes require node-local observations rather than rank-zero
-capacity multiplied by node count. Coverage that cannot be attributed is marked
-as a gap.
+execution environment. Rank count cannot multiply shared GPU or node-wide CPU/RAM
+capacity. Multiple nodes require node-local observations rather than multiplying
+rank-zero capacity by node count. Unattributable coverage remains a gap.
 
 If lifecycle evidence cannot place every included execution inside the participant
 window, the duration and CPU average are omitted while valid work and capacity-time
@@ -233,10 +209,10 @@ unavailable rather than falling back to a followable path walk.
 
 The scan budgets are 100,000 visited entries, depth 64, and one second of
 monotonic traversal, checked between entries. Iterators are depth-bounded rather
-than materializing directory listings. A limit, permission error, vanishing entry,
-or overflow retains a partial subtotal. Failure before observing either an entry
-or an empty directory is unavailable; a successfully observed empty directory
-is zero. File contents are not opened.
+than materializing directory listings. A limit, permission error, or vanishing
+entry retains a partial subtotal. Failure before observing either an entry or an
+empty directory is unavailable; a successfully observed empty directory is zero.
+File contents are not opened.
 
 The scan is non-atomic: concurrent writes and renames, as well as ordinary mounted
 subtrees, affect it. The result measures logical retained content, not peak storage,
@@ -245,12 +221,16 @@ directory observes visible filesystem capacity without walking mounts or adding
 capacities.
 
 Filesystem observations run in an isolated process behind a bounded finalization
-wait. The cooperative scan deadline limits ordinary traversal; the outer wait also
-covers startup and filesystem calls that do not return. At expiry, cleanup proceeds
-with any safely captured measurement and marks unfinished observations unavailable.
-A captured scan subtotal retains partial quality. Late results are ignored. The
-runtime owns observer termination and cleanup, and job termination and resource
-release do not wait indefinitely for the observer.
+wait of two seconds, including helper startup, followed by at most 0.25 seconds
+of synchronous reaping. The cooperative scan deadline limits ordinary traversal;
+the outer wait also covers filesystem calls that do not return. At expiry,
+cleanup proceeds with any safely captured measurement and marks unfinished
+observations unavailable. A captured scan subtotal retains partial quality. Late
+results are ignored. The runtime owns observer termination and cleanup. A
+late-starting observer is also abandoned, and the helper monitors its owner
+process and control pipe. Job termination and resource release do not wait
+indefinitely for the observer. These bounds apply to optional filesystem
+observations, not to handoff or archive I/O.
 
 ## Message payload accounting
 
@@ -281,15 +261,18 @@ each source is retired once, with missing-source quality preserved independently
 ## Quality propagation and worked example
 
 Successful measurements omit `status`. A `partial` measurement retains usable
-values with `observation_incomplete` or `attribution_incomplete`; an `unavailable`
-measurement has no usable value and carries a supported issue such as `unsupported`
-or `malformed_source`. Only reporting-contract issue codes are used, never raw
-paths, native errors, or host data. Missing fields are not zero. Capacity and time
+values with `observation_incomplete` or `attribution_incomplete`; an
+`unavailable` measurement has no usable value. Its owning scope records a
+supported issue such as `unsupported` or `malformed_source`, tagged with the
+affected metric. Only reporting-contract issue codes are used, never raw paths,
+native errors, or host data. Missing fields are not zero. Capacity and time
 quality belongs to their owning objects rather than individual dimensions, so
 known CPU and RAM values are retained when GPU measurement fails. CPU work,
 retained content, and traffic each own their quality; filesystem is complete or
-unavailable. Derived values inherit relevant gaps, not unrelated errors or missing
-labels.
+unavailable. A participant, worker, handoff or aggregate owns one `issues` list;
+metrics retain their own status. Complete scopes use an empty list. Derived
+totals describe their own coverage gaps rather than copying source issue
+details.
 
 For example, unreadable worker GPU capacity makes capacity-time partial while
 valid CPU work and traffic can remain complete. A wholly missing worker report
@@ -298,18 +281,18 @@ startup snapshot or the final file scan.
 
 Consider these disjoint executions, all within one 60-second participant window:
 
-| Execution | Duration | CPU capacity | RAM capacity | Visible GPUs | CPU work |
+| Execution | Duration | CPU capacity | RAM capacity | GPU count | CPU work |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Coordinator | 60 s | 2 units | 2 GiB | 0 | 2 CPU s |
 | Worker A | 10 s | 2 units | 4 GiB | 1 | 8 CPU s |
 | Worker B | 5 s | 2 units | 4 GiB | 1 | 4 CPU s |
 
-Assuming compatible CPU and GPU descriptions, the participant records 150
-CPU-unit seconds, 180 GiB-seconds (`193273528320` byte-seconds), 15 GPU-instance-seconds,
-and 14 CPU seconds. Its duration remains 60 seconds and average CPU use is
-14/60, about 0.23 logical CPUs. Its startup snapshot remains 2 CPU units, 2 GiB
-RAM, and zero GPUs. Workers need not run consecutively: overlap changes neither
-the addition rule nor the meaning of observed capacity-time.
+The participant records 150 CPU-unit seconds, 180 GiB-seconds (`193273528320`
+byte-seconds), 15 GPU-seconds, and 14 CPU seconds. Its duration remains
+60 seconds and average CPU use is 14/60, about 0.23 logical CPUs. Its startup
+snapshot remains 2 CPU units, 2 GiB RAM, and zero GPUs. Workers need not run
+consecutively: overlap changes neither the addition rule nor the meaning of
+observed capacity-time.
 
 If Worker B is settled but its report is missing, the coordinator and A subtotals
 are retained with incomplete quality, along with the known containing duration.

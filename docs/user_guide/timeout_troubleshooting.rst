@@ -23,7 +23,6 @@ Task Fetch Timeout
 
 - Large model weights take too long to transfer
 - Network latency exceeds default timeout
-- Tensor streaming timeout exceeds task fetch timeout
 
 **Solution**: Set ``get_task_timeout`` in client config:
 
@@ -225,7 +224,7 @@ Most Commonly Adjusted Timeouts
      - When to Increase
    * - get_task_timeout
      - None
-     - Large models, slow networks, tensor streaming
+     - Large models, slow networks
    * - submit_task_result_timeout
      - None
      - Large result payloads

@@ -51,7 +51,7 @@ def test_plain_noncc_no_signature_json(tmp_path):
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
         mock_sign.assert_not_called()
 
 
@@ -66,7 +66,7 @@ def test_cc_enabled_generates_signature_json(tmp_path):
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
         mock_sign.assert_called_once_with(ws_dir, "fake_key", signature_file=ProvFileName.SIGNATURE_JSON)
 
 
@@ -82,7 +82,7 @@ def test_he_server_context_generates_signature_json(tmp_path):
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
         assert mock_sign.call_count == 2
         mock_sign.assert_any_call(kit_dir, "fake_key", signature_file=ProvFileName.SIGNATURE_JSON)
         mock_sign.assert_any_call(local_dir, "fake_key", signature_file=ProvFileName.SIGNATURE_JSON)
@@ -100,7 +100,7 @@ def test_he_client_context_generates_signature_json(tmp_path):
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
         assert mock_sign.call_count == 2
 
 
@@ -113,7 +113,7 @@ def test_no_tenseal_files_no_signature_json(tmp_path):
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
         mock_sign.assert_not_called()
 
 
@@ -127,7 +127,7 @@ def test_missing_root_pri_key_raises_for_content_signing(tmp_path, content_mode)
     builder = SignatureBuilder()
 
     with pytest.raises(RuntimeError, match="content signing requires"):
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
 
 
 @pytest.mark.parametrize(
@@ -139,10 +139,10 @@ def test_external_cert_only_supported_for_unsigned_kits(tmp_path, kit_type):
     project = _make_project([_make_participant(cc_enabled=kit_type == "cc", external_cert=True)])
     with patch("nvflare.lighter.impl.signature.sign_folders") as sign:
         if kit_type == "plain":
-            SignatureBuilder().build(project, _make_ctx(str(tmp_path)))
+            SignatureBuilder().finalize(project, _make_ctx(str(tmp_path)))
         else:
             with pytest.raises(ValueError, match="external_cert.*signed HE/CC"):
-                SignatureBuilder().build(project, _make_ctx(str(tmp_path)))
+                SignatureBuilder().finalize(project, _make_ctx(str(tmp_path)))
         sign.assert_not_called()
 
 
@@ -159,5 +159,5 @@ def test_he_both_contexts_generates_signature_json(tmp_path):
     builder = SignatureBuilder()
 
     with patch("nvflare.lighter.impl.signature.sign_folders") as mock_sign:
-        builder.build(proj, ctx)
+        builder.finalize(proj, ctx)
         assert mock_sign.call_count == 2
