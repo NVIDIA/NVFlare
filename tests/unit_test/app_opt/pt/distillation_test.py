@@ -156,10 +156,14 @@ def test_batch_and_output_adapters_respect_the_step_budget():
     assert next(batches) is batch
 
 
-def test_checkpoint_restores_optimizer_teachers_and_caller_owned_rng():
+@pytest.mark.parametrize("weight_norm", [False, True])
+def test_checkpoint_restores_optimizer_teachers_and_caller_owned_rng(weight_norm):
     def make_trainer():
+        linear = nn.Linear(3, 5)
+        if weight_norm:
+            linear = nn.utils.weight_norm(linear)
         return DistillationTrainer(
-            lambda: nn.Sequential(nn.Linear(3, 5), nn.ReLU(), nn.Dropout(0.3), nn.Linear(5, 2)),
+            nn.Sequential(linear, nn.ReLU(), nn.Dropout(0.3), nn.Linear(5, 2)),
             [lambda: nn.Linear(3, 2)],
             partial(torch.optim.SGD, lr=0.2, momentum=0.9),
         )
@@ -174,6 +178,8 @@ def test_checkpoint_restores_optimizer_teachers_and_caller_owned_rng():
     expected = deepcopy(trainer.student.state_dict())
 
     restored = make_trainer()
+    if weight_norm:
+        restored.fit([inputs])  # A forward caches a non-leaf weight on the module.
     stream.seek(0)
     restored.load_state_dict(torch.load(stream, weights_only=True))
     # Constructors can consume RNG. Restore it after model/state construction.
@@ -249,6 +255,16 @@ def test_checkpoint_validation_preserves_lazy_student_until_restore_succeeds():
     restored = DistillationTrainer(student, [nn.Linear(3, 2)], optimizer)
     with pytest.raises(RuntimeError, match="size mismatch"):
         restored.load_state_dict({**checkpoint, "teachers": [{"weight": torch.zeros(1, 1)}]})
+    assert student[0].has_uninitialized_params()
+    bad_student = deepcopy(checkpoint)
+    bad_student["student"]["1.bias"] = torch.zeros(1)
+    with pytest.raises(RuntimeError, match="size mismatch"):
+        restored.load_state_dict(bad_student)
+    assert student[0].has_uninitialized_params()
+    bad_optimizer = deepcopy(checkpoint)
+    bad_optimizer["optimizer"]["param_groups"][0]["params"].pop()
+    with pytest.raises(ValueError, match="parameter group"):
+        restored.load_state_dict(bad_optimizer)
     assert student[0].has_uninitialized_params()
 
     restored.load_state_dict(checkpoint)
@@ -478,13 +494,17 @@ def test_feature_adapters_and_adversarial_term_preserve_input_gradients_and_remo
     assert not failing[0]._forward_pre_hooks
 
 
-def test_synthesis_checkpoint_restores_optimizer_and_external_rng_continuation():
+@pytest.mark.parametrize("weight_norm", [False, True])
+def test_synthesis_checkpoint_restores_optimizer_and_external_rng_continuation(weight_norm):
     from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
 
     def make_synthesis():
+        generator = nn.Linear(2, 3)
+        if weight_norm:
+            generator = nn.utils.weight_norm(generator)
         return DataFreeSynthesizer(
             [nn.Linear(3, 1)],
-            generator=nn.Linear(2, 3),
+            generator=generator,
             objective=lambda inputs, teachers, student, targets: teachers[0](inputs).square().mean(),
             optimizer_factory=partial(torch.optim.Adam, lr=3e-3),
             latent_size=2,
@@ -498,6 +518,8 @@ def test_synthesis_checkpoint_restores_optimizer_and_external_rng_continuation()
     rng = synthesis.rng.get_state()
     expected, metrics = synthesis.synthesize(4, 3)
     restored = make_synthesis()
+    if weight_norm:
+        restored.synthesize(4, 1)
     stream.seek(0)
     restored.load_state_dict(torch.load(stream, weights_only=True))
     restored.rng.set_state(rng)

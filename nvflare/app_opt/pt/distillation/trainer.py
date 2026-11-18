@@ -16,6 +16,7 @@
 
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
+from functools import partial
 from itertools import chain, islice
 
 import torch
@@ -44,22 +45,56 @@ def _iter_batches(batches):
     return chain((first,), iterator)
 
 
+@torch.no_grad()
+def _validate_lazy_state(current, state):
+    if current.keys() != state.keys():
+        raise RuntimeError("checkpoint keys must match the model with uninitialized tensors")
+    for name, target in current.items():
+        if not isinstance(target, torch.Tensor):
+            continue
+        value = state[name]
+        if not isinstance(value, torch.Tensor) or is_lazy(value):
+            raise RuntimeError(f"checkpoint entry {name} must be an initialized tensor")
+        if is_lazy(target):
+            probe = torch.empty(value.shape, device=target.device, dtype=target.dtype)
+        else:
+            if value.shape != target.shape:
+                raise RuntimeError(f"size mismatch for {name}: checkpoint {value.shape}, model {target.shape}")
+            probe = torch.empty_like(target)
+        probe.copy_(value)
+
+
 def _load_checkpoint(components):
-    # Validate every component before changing any live state. Use PyTorch's
-    # own loaders to check lazy modules, extra state and optimizer groups.
+    # Capture serialized state without copying modules or their live attributes.
+    ready, lazy, applied = [], [], []
     for component, state in components:
-        memo = {}
+        current = component.state_dict()
         if isinstance(component, nn.Module):
-            # Lazy buffers lack deepcopy support in PyTorch. Give the validation
-            # copy its own placeholders so loading cannot materialize the live ones.
-            memo = {
-                id(buffer): type(buffer)(buffer.requires_grad, buffer.device, buffer.dtype)
-                for buffer in component.buffers()
-                if is_lazy(buffer)
-            }
-        deepcopy(component, memo).load_state_dict(deepcopy(state))
-    for component, state in components:
-        component.load_state_dict(state)
+            pending = [name for name, value in current.items() if is_lazy(value)]
+            if pending:
+                # Materializing a lazy tensor changes it in place. Check what can
+                # be checked ahead of time and apply lazy modules last.
+                _validate_lazy_state(current, state)
+                for name in pending:
+                    del current[name]
+            rollback = partial(component.load_state_dict, _snapshot_state(current), strict=not pending)
+            (lazy if pending else ready).append((component, state, rollback))
+        else:
+            ready.append((component, state, partial(component.load_state_dict, deepcopy(current))))
+    try:
+        for component, state, rollback in ready + lazy:
+            applied.append(rollback)
+            component.load_state_dict(state)
+    except BaseException:
+        rollback_error = None
+        for rollback in reversed(applied):
+            try:
+                rollback()
+            except Exception as error:
+                rollback_error = error
+        if rollback_error is not None:
+            raise RuntimeError("checkpoint rollback could not restore all component state") from rollback_error
+        raise
 
 
 def _prepare_inputs(batch, batch_adapter, device):
@@ -259,9 +294,10 @@ class DistillationTrainer:
     def load_state_dict(self, state: dict) -> None:
         """Restore into matching architectures, teacher order and configuration.
 
-        The checkpoint is validated on disposable copies before applying it to
-        the existing models and optimizer. Custom state loaders should support
-        deepcopy and behave the same on the copies and the live components.
+        The existing models and optimizer retain their identity. On failure,
+        previously initialized state is restored. Lazy tensors are checked before
+        loading and materialized after the other components.
+        Custom state loaders should be able to reload their own state snapshots.
         Restore caller-owned RNG and data state after loading.
         """
         self._check_open()

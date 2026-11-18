@@ -196,10 +196,11 @@ class DataFreeSynthesizer:
         }
 
     def load_state_dict(self, state):
-        """Validate a checkpoint on copies, then restore matching components.
+        """Restore a checkpoint into the existing models and optimizer.
 
-        Custom state loaders should support deepcopy and behave the same on the
-        copies and the live components. Restore caller-owned RNG after loading.
+        A failed load restores previously initialized state. Custom
+        state loaders should be able to reload their own state snapshots.
+        Restore caller-owned RNG after loading.
         """
         if len(state["teachers"]) != len(self.teachers) or (state["student"] is None) != (self.student is None):
             raise ValueError("checkpoint teacher/student configuration does not match")
