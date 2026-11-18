@@ -241,6 +241,12 @@ class JobResourceCollector(ExecutionResourceCollector):
         if self._prior_observation_incomplete and traffic.get("status") != "unavailable":
             traffic["status"] = "partial"
             issues.append({"metric": "message_traffic", "code": "observation_incomplete"})
+        measurements = {
+            "resource_capacity": resource_capacity,
+            "resource_time": resource_time,
+            "cpu_consumed": cpu_consumed,
+            "message_traffic": traffic,
+        }
         if self._task_reducer is not None or self._task_collection_failed:
             worker_totals = {
                 name: {"status": "unavailable"} for name in ("resource_time", "cpu_consumed", "message_traffic")
@@ -256,34 +262,20 @@ class JobResourceCollector(ExecutionResourceCollector):
                 except Exception:
                     pass
             issues.extend(worker_totals["issues"])
-            if worker_totals["resource_time"] is not None:
-                resource_time = merge_worker_measurement(
-                    "resource_time", resource_time, worker_totals["resource_time"], issues
-                )
-            if worker_totals["cpu_consumed"] is not None:
-                cpu_consumed = merge_worker_measurement(
-                    "cpu_consumed", cpu_consumed, worker_totals["cpu_consumed"], issues
-                )
-            if worker_totals["message_traffic"] is not None:
-                traffic = merge_worker_measurement("message_traffic", traffic, worker_totals["message_traffic"], issues)
+            for metric in ("resource_time", "cpu_consumed", "message_traffic"):
+                if worker_totals[metric] is not None:
+                    measurements[metric] = merge_worker_measurement(
+                        metric, measurements[metric], worker_totals[metric], issues
+                    )
             if not worker_totals["duration_contained"]:
                 timing = {}
-        measurements = {
-            "resource_capacity": resource_capacity,
-            "resource_time": resource_time,
-            "cpu_consumed": cpu_consumed,
-            "message_traffic": traffic,
-        }
         issues = aggregate_scope_issues(issues, measurements)
         return {
             **timing,
-            "resource_capacity": resource_capacity,
-            "resource_time": resource_time,
+            "resource_capacity": measurements["resource_capacity"],
+            "resource_time": measurements["resource_time"],
             "issues": issues,
-            "resource_utilization": {
-                "cpu_consumed": cpu_consumed,
-                "message_traffic": traffic,
-            },
+            "resource_utilization": {name: measurements[name] for name in ("cpu_consumed", "message_traffic")},
         }
 
 

@@ -33,16 +33,12 @@ except ImportError:
     resource = None
 
 _active: CpuConsumedAccountant | None = None
-_active_lock = threading.Lock()
 
 
 def _reset_accountant_after_fork() -> None:
-    # The child has different process counters, and a copied thread lock may
-    # have been held by a thread that did not survive the fork. Never acquire
-    # an inherited lock here or use the parent's measurement baseline.
-    global _active, _active_lock
+    # The child must not use its parent's CPU baseline or accountant lock.
+    global _active
     _active = None
-    _active_lock = threading.Lock()
 
 
 if hasattr(os, "register_at_fork"):
@@ -124,14 +120,12 @@ def install_cpu_accountant(accountant: CpuConsumedAccountant) -> None:
     """Make the current job process's collector available to managed launchers."""
 
     global _active
-    with _active_lock:
-        _active = accountant
+    _active = accountant
 
 
 def mark_child_cpu_coverage_uncertain() -> None:
     """Mark CPU coverage partial without tracking, waiting for, or reaping children."""
 
-    with _active_lock:
-        accountant = _active
+    accountant = _active
     if accountant is not None:
         accountant.mark_attribution_incomplete()

@@ -31,13 +31,11 @@ _MAX_SCOPES = 10_000
 _MAX_STATE_BYTES = 4 * 1024 * 1024
 _UNAVAILABLE = {"status": "unavailable"}
 _ACTIVE = None
-_ACTIVE_LOCK = threading.Lock()
 
 
 def _reset_after_fork():
-    global _ACTIVE, _ACTIVE_LOCK
+    global _ACTIVE
     _ACTIVE = None
-    _ACTIVE_LOCK = threading.Lock()
 
 
 if hasattr(os, "register_at_fork"):
@@ -47,13 +45,11 @@ if hasattr(os, "register_at_fork"):
 def install_task_resource_reducer(reducer):
     """Install the current physical Client Job's owner; never a site parent."""
     global _ACTIVE
-    with _ACTIVE_LOCK:
-        _ACTIVE = reducer
+    _ACTIVE = reducer
 
 
 def get_task_resource_reducer():
-    with _ACTIVE_LOCK:
-        return _ACTIVE
+    return _ACTIVE
 
 
 def _encoded(value):

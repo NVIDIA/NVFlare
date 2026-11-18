@@ -260,11 +260,9 @@ def test_missing_or_malformed_diagnostics_keep_prior_subtotals(record):
     assert reducer.snapshot()["duration_contained"]
 
 
-def test_fork_reset_discards_parent_ledger_without_acquiring_an_inherited_lock():
+def test_fork_reset_discards_parent_ledger():
     reducer = task_rollup.TaskResourceReducer()
     task_rollup.install_task_resource_reducer(reducer)
     assert task_rollup.get_task_resource_reducer() is reducer
-    old_lock = task_rollup._ACTIVE_LOCK
     task_rollup._reset_after_fork()
     assert task_rollup.get_task_resource_reducer() is None
-    assert task_rollup._ACTIVE_LOCK is not old_lock

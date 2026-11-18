@@ -91,21 +91,18 @@ assert CpuConsumedAccountant().finish() == {
 
 
 @pytest.mark.skipif("fork" not in multiprocessing.get_all_start_methods(), reason="requires POSIX fork")
-@pytest.mark.parametrize("held_lock", ["global", "accountant"])
-def test_fork_discards_inherited_accountant_and_locked_hooks_without_changing_parent(monkeypatch, held_lock):
+def test_fork_discards_inherited_accountant_without_changing_parent(monkeypatch):
     accountant = CpuConsumedAccountant(usage_reader=lambda: (float(0), float(0)))
     monkeypatch.setattr(cpu_module, "_active", accountant)
-    original_global_lock = cpu_module._active_lock
-    lock = original_global_lock if held_lock == "global" else accountant._lock
     context = multiprocessing.get_context("fork")
     reader, writer = context.Pipe(duplex=False)
     child = context.Process(target=exercise_forked_cpu_hooks, args=(writer,))
     try:
-        lock.acquire()
+        accountant._lock.acquire()
         try:
             child.start()
         finally:
-            lock.release()
+            accountant._lock.release()
         writer.close()
         assert reader.poll(5), "a CPU hook blocked on an inherited parent lock"
         assert reader.recv() == (
@@ -116,7 +113,6 @@ def test_fork_discards_inherited_accountant_and_locked_hooks_without_changing_pa
         child.join(5)
         assert child.exitcode == 0
         assert cpu_module._active is accountant
-        assert cpu_module._active_lock is original_global_lock
         assert accountant.finish() == {"cpu_seconds": 0}
     finally:
         try:
