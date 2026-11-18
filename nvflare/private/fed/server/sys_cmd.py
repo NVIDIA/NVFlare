@@ -179,8 +179,9 @@ class SystemCommandModule(CommandModule, CommandUtil):
 
         if target_type in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
             message = new_message(conn, topic=SysCommandTopic.CONFIGURE_SITE_LOG, body=config, require_authz=True)
+            expected_clients = prepare(lambda: self._logging_audit_targets(conn))
             replies = self.send_request_to_clients(conn, message)
-            prepare(lambda: self._record_logging_replies(replies))
+            prepare(lambda: self._record_logging_replies(replies, expected_clients))
             self.process_replies_to_table(conn, replies)
 
         if target_type not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
@@ -192,21 +193,37 @@ class SystemCommandModule(CommandModule, CommandUtil):
             )
 
     @staticmethod
-    def _record_logging_replies(replies):
+    def _logging_audit_targets(conn):
+        selected = dict(conn.get_prop(CommandUtil.TARGET_CLIENTS, {}) or {})
+        tokens = tuple(conn.get_prop(CommandUtil.TARGET_CLIENT_TOKENS, ()) or ())
+        return {token: selected.get(token, "") for token in tokens}
+
+    @staticmethod
+    def _record_logging_replies(replies, expected_clients):
+        if expected_clients is None:
+            return
+        by_token = {}
         for client_reply in replies or []:
-            reply = client_reply.reply
+            token = client_reply.client_token
+            if token in expected_clients:
+                by_token.setdefault(token, client_reply)
+
+        def record_reply(site, result):
+            reply = result.reply if result is not None else None
             if reply is None:
                 status, reason = "no_reply", "no_reply"
-            elif reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
-                status, reason = "error", "remote_error"
             else:
-                status, reason = "acknowledged", "reply_received"
-            record(
-                "logging.site.remote_reported",
-                site=client_reply.client_name,
-                status=status,
-                reason=reason,
-            )
+                code = reply.get_header(MsgHeader.RETURN_CODE)
+                if code == ReturnCode.OK:
+                    status, reason = "acknowledged", "reply_received"
+                elif code == ReturnCode.ERROR:
+                    status, reason = "error", "remote_error"
+                else:
+                    status, reason = "unknown_outcome", "unclassified_reply"
+            record("logging.site.remote_reported", site=site, status=status, reason=reason)
+
+        for token, site in expected_clients.items():
+            prepare(lambda: record_reply(site, by_token.get(token)))
 
     def _process_replies(self, conn, replies):
         if not replies:
