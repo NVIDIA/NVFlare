@@ -122,13 +122,27 @@ Plugin Card for checks already completed.
 
 ### Local evaluation and publication CI
 
-The root `evals.json` adapts all 107 canonical member cases to the native NVCARPS
-plugin schema. Member datasets and their signatures remain unchanged. The suite
-promotes routing expectations into `expected_skill` and `routing`, retains
+The root `evals.json` contains 107 cases in the native NVCARPS plugin schema.
+Member datasets retain their signatures. The suite promotes routing expectations into `expected_skill` and `routing`, retains
 assertions and expected outcomes as private grading references, and rebases
 fixture paths. Prompts with fixtures identify the staged working directory;
 conversion and statistics tasks can write to their fresh project copies. The
-package check compares this projection with every signed source case.
+package check verifies every row against its member case and the single plugin
+revision described below.
+
+The plugin runs `pytorch-convert-basic-v2` in the original conversion slot.
+The signed `pytorch-convert-basic` asks for equal partitions of eight rows across
+three sites. Asking which constraint to relax is appropriate for that prompt.
+Its source has no validation loader. A successful simulation on 300 replacement
+rows cannot establish conversion of the requested data.
+
+The v2 case uses the signed member's `eval-pt` project, which draws eight
+training rows and four separate validation rows and defines accuracy. The prompt fixes the data
+seed, authorizes a 3/3/2 training split and requires each site to evaluate on all four
+validation rows in every round. The four rows are a smoke check of metric plumbing. Preserve
+historical results under their original IDs. A new comparison needs fresh skill
+and baseline attempts on v2 with the same fixture, runtime and settings, plus
+retained partition, validation and completion evidence for each attempt.
 
 Use the current NVCARPS CLI, configured with model credentials outside the
 repository, and its supported local container runtime. The compute image also

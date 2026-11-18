@@ -27,7 +27,7 @@ on:
       - '.cursor-plugin/**'
       - 'skills/**'
       - 'dev_tools/agent/package_plugin.py'
-      - 'dev_tools/agent/plugin_validation/ci_check.py'
+      - 'dev_tools/agent/plugin_validation/**'
       - 'dev_tools/agent/skills/**'
       - 'ci/check_relative_doc_links.py'
       - '.github/workflows/plugin-package.yml'
