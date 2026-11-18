@@ -29,7 +29,14 @@ from prepare_data import add_dataset_arguments  # noqa: E402
 
 from nvflare.apis.job_def import RunStatus
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import PocEnv, ProdEnv, SimEnv, add_experiment_tracking, add_final_global_evaluation
+from nvflare.recipe import (
+    PocEnv,
+    ProdEnv,
+    SimEnv,
+    add_experiment_tracking,
+    add_final_global_evaluation,
+    is_export_requested,
+)
 from nvflare.recipe.prod_env import DEFAULT_ADMIN_USER
 from nvflare.recipe.utils import add_cross_site_evaluation
 
@@ -117,7 +124,7 @@ def define_parser() -> argparse.ArgumentParser:
         "--execution_lifetime",
         choices=("job", "task"),
         default="job",
-        help="Keep client compute for the job, or start a fresh CPU worker for each task.",
+        help="Keep client compute for the job, or export task workers for a configured Kubernetes/Slurm site.",
     )
     parser.add_argument(
         "--launch_external_process",
@@ -136,6 +143,9 @@ def define_parser() -> argparse.ArgumentParser:
 def parse_args(argv=None):
     parser = define_parser()
     args = parser.parse_args(argv)
+    # Recipe consumes --export before the application's parser sees argv.
+    if args.execution_lifetime == "task" and args.env in ("sim", "poc") and not is_export_requested():
+        parser.error("task lifetime requires --export or --env prod; local simulation and POC require job lifetime")
     if args.execution_lifetime == "task" and args.launch_external_process:
         parser.error("--execution_lifetime task requires the in-process client script")
     if args.execution_lifetime == "task" and args.evaluation == "cross-site":

@@ -171,34 +171,6 @@ class TestWorkspaceTransferManager:
             assert "local/study_data.yaml" not in names
             assert "local/study_runtime.yaml" not in names
 
-    def test_workspace_bundle_excludes_legacy_custom_study_data_path(self):
-        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
-            _make_workspace(ws_root, JOB_ID)
-            resource_config = {
-                "components": [
-                    {
-                        "id": "k8s_launcher",
-                        "path": "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
-                        "args": {
-                            "workspace_mount_path": "/workspace",
-                            "study_data_pvc_file_path": "/workspace/local/custom_data.yaml",
-                        },
-                    }
-                ]
-            }
-            _write_file(os.path.join(ws_root, "local", "resources.json"), json.dumps(resource_config).encode())
-            _write_file(os.path.join(ws_root, "local", "custom_data.yaml"), b"study-a: {}\n")
-            _write_file(os.path.join(ws_root, "local", "custom", "helper.py"), b"VALUE = 1\n")
-            zip_path = os.path.join(tmp, "workspace.zip")
-
-            _zip_workspace_to_file(ws_root, JOB_ID, zip_path)
-
-            with zipfile.ZipFile(zip_path) as zf:
-                names = set(zf.namelist())
-            assert "local/resources.json" in names
-            assert "local/custom/helper.py" in names
-            assert "local/custom_data.yaml" not in names
-
     def test_workspace_bundle_excludes_study_runtime_pod_templates(self):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
             _make_workspace(ws_root, JOB_ID)
@@ -990,7 +962,7 @@ def _isolate_communication_config(monkeypatch):
 
 
 @pytest.mark.parametrize("owner", ["site-1", "server"])
-@pytest.mark.parametrize("extension", ["json", "conf", "yaml"])
+@pytest.mark.parametrize("extension", ["json", "json.default"])
 @pytest.mark.parametrize("security", ["mtls", "clear"])
 @pytest.mark.parametrize("job_override", [False, True])
 def test_downloaded_site_security_replaces_bootstrap_defaults(
@@ -1015,8 +987,6 @@ def test_downloaded_site_security_replaces_bootstrap_defaults(
     }
     config["max_message_size"] = 16777216
     text = json.dumps(config)
-    if extension == "yaml":
-        text = f"max_message_size: 16777216\ninternal:\n  scheme: tcp\n  resources:\n    host: {owner}\n    port: 8102\n    connection_security: {security}\n"
     bundle = tmp_path / "bundle.zip"
     entries = {f"local/comm_config.{extension}": text.encode()}
     if job_override:

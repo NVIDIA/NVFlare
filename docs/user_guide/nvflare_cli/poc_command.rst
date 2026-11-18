@@ -92,7 +92,7 @@ Behavior notes:
 
 - If the workspace already exists and stdin is non-interactive, ``--force`` is
   required.
-- ``nvflare poc prepare`` updates ``~/.nvflare/config.conf`` with the POC
+- ``nvflare poc prepare`` updates ``~/.nvflare/config.json`` with the POC
   workspace, registers generated admin/user startup kits, and activates the
   default Project Admin kit. Site startup kits stay in the POC workspace and are
   not registered as CLI identities.
@@ -138,7 +138,7 @@ Behavior notes:
   ``project.yml`` and dynamically provisions only that new site with the
   existing POC CA. The generated site kit is placed in the current POC output
   directory, normally ``prod_00``, and is not registered in
-  ``~/.nvflare/config.conf`` because only admin/user kits are CLI identities.
+  ``~/.nvflare/config.json`` because only admin/user kits are CLI identities.
 - POC add uses the existing provision state/rootCA and does not regenerate
   existing participant startup kits.
 - Use ``--force`` only to replace an existing participant entry in the local
@@ -299,7 +299,7 @@ The default POC workspace is ``/tmp/nvflare/poc``.
 The workspace can also be controlled by:
 
 - ``NVFLARE_POC_WORKSPACE``
-- ``~/.nvflare/config.conf`` via ``nvflare poc config --pw <poc_workspace>``
+- ``~/.nvflare/config.json`` via ``nvflare poc config --pw <poc_workspace>``
 
 Use ``nvflare poc config`` to show or set the local POC workspace:
 

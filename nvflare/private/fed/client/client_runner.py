@@ -1078,6 +1078,7 @@ class ClientRunner(TBI):
             # This happens when a task calls system_panic().
             reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")
             self.log_error(fl_ctx, "Stopped ClientRunner due to FATAL_SYSTEM_ERROR: {}".format(reason))
+            fl_ctx.set_prop(key=FLContextKey.FATAL_SYSTEM_ERROR, value=True, private=True, sticky=True)
             self._run_abort_requested = True
             self.run_abort_signal.trigger(True)
 

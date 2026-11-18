@@ -516,11 +516,10 @@ also configures per-study env vars, secret-backed env vars and mounts, and Pod
 templates; the launcher re-reads it on every job launch. Any template files
 referenced by ``pod_template`` must be staged with ``local/``.
 
-Legacy v1 kits that still use ``local/study_data.yaml`` keep working:
-``nvflare deploy prepare`` then emits the launcher's
-``study_data_pvc_file_path`` pointing at that file and does not write a
-``study_runtime.yaml`` template. The two files must not coexist; to migrate,
-move all studies into ``study_runtime.yaml`` and delete ``study_data.yaml``.
+The v1 ``local/study_data.yaml`` format and the launcher's
+``study_data_pvc_file_path`` argument were removed in 2.10. A launcher refuses to
+start jobs while the file is present; move all studies into ``study_runtime.yaml``
+and delete ``study_data.yaml``.
 
 When a study's ``local/study_runtime.yaml`` entry sets ``pod_template``,
 matching jobs use the study-specific Pod template, and ``datasets`` entries

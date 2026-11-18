@@ -54,6 +54,34 @@ def wait_for(predicate, timeout=WAIT_TIMEOUT, message="condition did not become 
         _sleep(min(0.01, remaining))
 
 
+def expire_deadline_when_ready(monkeypatch, module, ready):
+    """Let a real child reach readiness before expiring its isolated policy clock.
+
+    The initial deadline starts at zero. Subsequent reads stay there until the
+    test observes readiness, then jump to the real monotonic clock. Cleanup uses
+    that advancing real clock. An independent real guard bounds missing readiness.
+    """
+    clock = isolate_time(monkeypatch, module)
+    started = _monotonic()
+    first_read = True
+    expired = False
+
+    def monotonic():
+        nonlocal first_read, expired
+        if first_read:
+            first_read = False
+            return 0.0
+        if expired or ready():
+            expired = True
+            return _monotonic()
+        if _monotonic() - started >= WAIT_TIMEOUT:
+            expired = True
+            raise AssertionError("child did not reach readiness before timeout injection")
+        return 0.0
+
+    monkeypatch.setattr(clock, "monotonic", monotonic)
+
+
 def join_thread(thread, timeout=WAIT_TIMEOUT):
     thread.join(timeout=timeout)
     assert not thread.is_alive(), f"test-owned thread {thread.name} did not stop"
@@ -91,7 +119,12 @@ class ThreadGroup:
     def start(self, target, *args, **kwargs):
         thread = CheckedThread(target=target, args=args, kwargs=kwargs)
         self.threads.append(thread)
-        thread.start()
+        try:
+            thread.start()
+        except BaseException:
+            if thread.ident is None:
+                self.threads.remove(thread)
+            raise
         return thread
 
     def __exit__(self, exc_type, exc_value, traceback):

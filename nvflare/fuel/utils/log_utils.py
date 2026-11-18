@@ -547,6 +547,44 @@ def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
     logging.captureWarnings(True)  # route Python warnings through logging so they reach file handlers
 
 
+def validate_log_config(config: str) -> str:
+    """Validate a logging selector without configuring logging or instantiating handlers.
+
+    JSON inputs are checked for an object with dictConfig version 1. Handler
+    construction and runtime-specific checks still happen when logging is applied.
+    """
+    if not isinstance(config, str) or not config.strip():
+        raise ValueError("logging configuration must be a non-empty string")
+    config = config.strip()
+    if config in logmode_config_dict or config == LogMode.RELOAD:
+        return config
+
+    if config.startswith("{") or os.path.isfile(config):
+        try:
+            if config.startswith("{"):
+                data = json.loads(config)
+            else:
+                with open(config) as stream:
+                    data = json.load(stream)
+        except (OSError, ValueError) as exc:
+            raise ValueError("logging configuration must contain readable, valid JSON") from exc
+        if not isinstance(data, dict) or data.get("version") != 1:
+            raise ValueError("logging JSON must be an object with dictConfig version 1")
+        return config
+
+    try:
+        level = int(config) if config.isdigit() else getattr(logging, config.upper(), None)
+    except ValueError:
+        level = None
+    if isinstance(level, int) and 0 <= level <= 50:
+        return config
+    modes = ", ".join(logmode_config_dict)
+    raise ValueError(
+        f"unknown logging configuration {config!r}; choose a mode ({modes}), "
+        "a logging level (e.g. INFO or DEBUG), or an existing logging JSON file"
+    )
+
+
 def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str, file_prefix: str = ""):
     # Dynamically configure log given a config (dict, filepath, LogMode, or level), apply the config to the proper locations.
 

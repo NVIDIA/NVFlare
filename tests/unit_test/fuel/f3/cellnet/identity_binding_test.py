@@ -21,6 +21,7 @@ from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.name import _ASN1Type
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import ConnectionSecurity
@@ -35,7 +36,14 @@ from nvflare.fuel.f3.cellnet.cell_cipher import (
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.credential_manager import CERT_CONTENT, CredentialManager
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
-from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY, CellIdentityResolver, cell_scopes, fqcn_in_scopes
+from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
+from nvflare.fuel.f3.cellnet.identity import (
+    ADMIN_LISTENER_KEY,
+    CellIdentityResolver,
+    cell_scopes,
+    fqcn_in_scopes,
+    load_job_ca_cert,
+)
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection
@@ -45,9 +53,10 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager
 from nvflare.fuel.f3.sfm.constants import HandshakeKeys
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
-from nvflare.fuel.sec.cert_uri import CELL_URI_KIND, cert_uri
+from nvflare.fuel.sec.cert_uri import CELL_URI_KIND, JOB_URI_KIND, cert_uri, job_ca_marker_uri
 from nvflare.fuel.utils.constants import Mode
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys
+from nvflare.private.fed.utils.job_cert_utils import job_cert_uris
 
 
 class _FakeConnection:
@@ -200,7 +209,7 @@ class _EmptyRegistry:
 
 def _receive_test_core_cell(reply):
     cell = CoreCell.__new__(CoreCell)
-    cell.my_info = SimpleNamespace(fqcn="server")
+    cell.my_info = FqcnInfo("server")
     cell.logger = logging.getLogger(__name__)
     cell.received_msg_counter_pool = _NoOpStats()
     cell.sent_msg_counter_pool = _NoOpStats()
@@ -582,6 +591,152 @@ def test_mtls_certificate_cache_enforces_certificate_scope():
         with pytest.raises(RuntimeError, match="outside that scope"):
             manager.process_response(Message(headers={MessageHeaderKey.ORIGIN: origin}, payload={CERT_CONTENT: cert}))
         assert origin not in manager.cert_cache
+
+
+_JOB_ID = "6f1c2b7e-3d4a-4f5b-9c8d-1e2f3a4b5c6d"
+_JOB_CA_IDENTITY_MAP = {"site-1": "site-1", "relay-1.site-1": "site-1", f"relay-1.{_JOB_ID}": "site-1"}
+
+
+def _make_job_ca_pki(issuer_variant="direct"):
+    root_key, root_pub_key = generate_keys()
+    root_cert = generate_cert(Identity("root"), Identity("root"), root_key, root_pub_key, ca=True)
+    job_ca_key, job_ca_pub_key = generate_keys()
+    job_ca_name = "caf\u00c3\u00a9" if issuer_variant == "t61" else "job_ca.demo"
+    job_ca_cert = generate_cert(
+        Identity(job_ca_name),
+        Identity("root"),
+        root_key,
+        job_ca_pub_key,
+        ca=True,
+        ca_path_length=0,
+        uri_names=[job_ca_marker_uri()],
+        server_default_host="job-ca.demo",
+    )
+
+    def _leaf(issuer_cert, issuer_key, uri_names=None):
+        _, pub_key = generate_keys()
+        return generate_cert(Identity("site-1"), issuer_cert.subject, issuer_key, pub_key, uri_names=uri_names)
+
+    site_cert = _leaf(root_cert, root_key)
+    job_cert = _leaf(job_ca_cert, job_ca_key, job_cert_uris("site-1", _JOB_ID))
+    issuer_name, issuer_key = job_ca_cert.subject, job_ca_key
+    if issuer_variant == "rollover":
+        issuer_key, issuer_pub_key = generate_keys()
+        rollover = generate_cert(
+            Identity(job_ca_name), issuer_name, job_ca_key, issuer_pub_key, ca=True, ca_path_length=0
+        )
+        rollover.verify_directly_issued_by(job_ca_cert)
+    elif issuer_variant in ("case", "space", "t61"):
+        cn = {"case": "JOB_CA.DEMO", "space": "  job_ca.demo  ", "t61": "caf\u00e9"}[issuer_variant]
+        asn1_type = _ASN1Type.T61String if issuer_variant == "t61" else _ASN1Type.UTF8String
+        issuer_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn, _type=asn1_type)])
+
+    def forge(uri_names):
+        _, pub_key = generate_keys()
+        return generate_cert(Identity("site-1"), issuer_name, issuer_key, pub_key, uri_names=uri_names)
+
+    return root_cert, job_ca_cert, site_cert, job_cert, forge
+
+
+def _job_ca_resolver(job_ca_cert):
+    return CellIdentityResolver(local_fqcn="server", prefix_identity_map=_JOB_CA_IDENTITY_MAP, job_ca_cert=job_ca_cert)
+
+
+@pytest.mark.parametrize(
+    "uri_names, fqcn",
+    [
+        ([], "site-1"),
+        ([cert_uri(CELL_URI_KIND, "site-1")], "site-1"),
+        ([cert_uri(JOB_URI_KIND, _JOB_ID), cert_uri(CELL_URI_KIND, "site-1")], "site-1"),
+        ([cert_uri(JOB_URI_KIND, _JOB_ID), cert_uri(CELL_URI_KIND, "site-1.other")], "site-1.other"),
+        ([cert_uri(JOB_URI_KIND, "site-1"), cert_uri(CELL_URI_KIND, "relay-1.site-1")], "relay-1.site-1"),
+        ([cert_uri(JOB_URI_KIND, _JOB_ID), cert_uri(CELL_URI_KIND, f"relay-1.{_JOB_ID}")], f"relay-1.{_JOB_ID}"),
+    ],
+)
+def test_identity_resolver_rejects_job_ca_issued_cert_without_job_scopes(uri_names, fqcn):
+    _, job_ca_cert, _, _, forge = _make_job_ca_pki()
+    resolver = _job_ca_resolver(job_ca_cert)
+
+    with pytest.raises(ValueError, match="job-CA-issued certificate without job cell scopes"):
+        resolver.require_match(fqcn, "site-1", "connection", peer_cert=forge(uri_names))
+
+
+def test_identity_resolver_accepts_site_and_job_certs_with_job_ca():
+    _, job_ca_cert, site_cert, job_cert, issue = _make_job_ca_pki()
+    resolver = _job_ca_resolver(job_ca_cert)
+
+    resolver.require_match("site-1", "site-1", "connection cp", peer_cert=site_cert)
+    resolver.require_match(f"site-1.{_JOB_ID}", "site-1", "connection cj", peer_cert=job_cert)
+    resolver.require_match(f"site-1.{_JOB_ID}.worker", "site-1", "connection worker", peer_cert=job_cert)
+    resolver.require_match(f"site-1.ws_transfer_{_JOB_ID}", "site-1", "connection ws", peer_cert=job_cert)
+    relay_job_cert = issue(job_cert_uris("relay-1.site-1", _JOB_ID))
+    resolver.require_match(f"relay-1.site-1.{_JOB_ID}", "site-1", "connection relayed cj", peer_cert=relay_job_cert)
+    with pytest.raises(ValueError, match="outside that scope"):
+        resolver.require_match("site-1", "site-1", "connection", peer_cert=job_cert)
+
+
+@pytest.mark.parametrize("broad_scope", [False, True])
+@pytest.mark.parametrize("issuer_variant", ["direct", "rollover", "case", "space", "t61"])
+def test_mtls_handshake_rejects_forged_job_ca_site_cert_without_evicting_site(broad_scope, issuer_variant):
+    _, job_ca_cert, site_cert, _, forge = _make_job_ca_pki(issuer_variant)
+    manager = ConnManager(Endpoint("server"), identity_resolver=_job_ca_resolver(job_ca_cert))
+    existing = _FakeConnection(peer_cn="site-1", peer_cert=site_cert.public_bytes(serialization.Encoding.DER))
+    existing_sfm_conn = SfmConnection(existing, Endpoint("server"))
+    manager.update_endpoint(existing_sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1"})
+    uris = [cert_uri(JOB_URI_KIND, _JOB_ID), cert_uri(CELL_URI_KIND, "site-1")] if broad_scope else []
+    conn = _FakeConnection(peer_cn="site-1", peer_cert=forge(uris).public_bytes(serialization.Encoding.DER))
+
+    with pytest.raises(CommError) as ex:
+        manager.update_endpoint(SfmConnection(conn, Endpoint("server")), {HandshakeKeys.ENDPOINT_NAME: "site-1"})
+
+    assert ex.value.code == CommError.BAD_DATA
+    assert manager.sfm_endpoints["site-1"].connections == [existing_sfm_conn]
+    assert not existing.closed
+    assert conn.closed
+
+
+@pytest.mark.parametrize("broad_scope", [False, True])
+@pytest.mark.parametrize("issuer_variant", ["direct", "rollover", "case", "space", "t61"])
+def test_mtls_certificate_cache_rejects_forged_job_ca_site_cert(broad_scope, issuer_variant):
+    _, job_ca_cert, _, _, forge = _make_job_ca_pki(issuer_variant)
+    manager = CredentialManager(
+        Endpoint("server"), identity_resolver=_job_ca_resolver(job_ca_cert), enforce_identity=True
+    )
+    uris = [cert_uri(JOB_URI_KIND, _JOB_ID), cert_uri(CELL_URI_KIND, "site-1")] if broad_scope else []
+    cert = forge(uris).public_bytes(serialization.Encoding.PEM)
+
+    with pytest.raises(RuntimeError, match="job-CA-issued"):
+        manager.process_response(Message(headers={MessageHeaderKey.ORIGIN: "site-1"}, payload={CERT_CONTENT: cert}))
+    assert "site-1" not in manager.cert_cache
+
+
+def test_load_job_ca_cert_from_root_cert_dir(tmp_path):
+    root_cert, job_ca_cert, _, _, _ = _make_job_ca_pki()
+    root_path = tmp_path / "rootCA.pem"
+    root_path.write_bytes(root_cert.public_bytes(serialization.Encoding.PEM))
+
+    assert load_job_ca_cert(str(root_path)) is None
+    assert load_job_ca_cert(None) is None
+
+    job_ca_path = tmp_path / "job_ca.crt"
+    job_ca_path.write_bytes(
+        job_ca_cert.public_bytes(serialization.Encoding.PEM) + root_cert.public_bytes(serialization.Encoding.PEM)
+    )
+    assert load_job_ca_cert(str(root_path)) == job_ca_cert
+
+    job_ca_path.write_bytes(b"")
+    with pytest.raises(ValueError, match="invalid job CA certificate"):
+        load_job_ca_cert(str(root_path))
+
+
+@pytest.mark.parametrize("ca, path_length", [(True, None), (True, 1), (False, None)])
+def test_load_job_ca_cert_requires_leaf_only_issuer(tmp_path, ca, path_length):
+    key, pub_key = generate_keys()
+    cert = generate_cert(Identity("job_ca.demo"), Identity("root"), key, pub_key, ca=ca, ca_path_length=path_length)
+    (tmp_path / "job_ca.crt").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+
+    with pytest.raises(ValueError, match="invalid job CA certificate"):
+        load_job_ca_cert(str(tmp_path / "rootCA.pem"))
 
 
 def test_connection_records_peer_cert_and_cn():

@@ -461,7 +461,7 @@ def get_example(version_info, catalog, *, name, destination=None):
             "message": "Preserve the installed NVFlare distribution when setting up this example.",
             "hint": (
                 "Skip any README or dependency-file instruction that installs nvflare or nvflare-nightly. "
-                "Add required extras to the same stable, nightly, or editable distribution, then install only "
+                "Add required extras to the same release, local wheel, or editable installation, then install only "
                 "the remaining dependencies."
             ),
         }

@@ -31,6 +31,7 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileName, EnvironmentKey
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.model_desc import ModelDescriptor
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
 from nvflare.fuel.utils import fobs
@@ -162,13 +163,32 @@ class PTFileModelPersistor(ModelPersistor):
                 )
 
         log_dir = fl_ctx.get_prop(AppConstants.LOG_DIR)
-        if log_dir:
-            self.log_dir = os.path.join(app_root, log_dir)
-        else:
-            self.log_dir = app_root
+        try:
+            app_root = os.path.realpath(app_root)
+            resolved_log_dir = (
+                resolve_path_under_root(app_root, log_dir, "checkpoint directory") if log_dir else app_root
+            )
 
-        self._ckpt_save_path = os.path.join(self.log_dir, self.global_model_file_name)
-        self._best_ckpt_save_path = os.path.join(self.log_dir, self.best_global_model_file_name)
+            def checkpoint_path(file_name: str, path_name: str) -> str:
+                if not isinstance(file_name, str):
+                    raise TypeError(f"{path_name} must be str but got {type(file_name)}")
+                if os.path.isabs(file_name):
+                    raise ValueError(f"{path_name} {file_name} must be relative to {resolved_log_dir}.")
+                candidate = os.path.normpath(os.path.join(resolved_log_dir, file_name))
+                if os.path.commonpath([resolved_log_dir, candidate]) != resolved_log_dir:
+                    raise ValueError(f"{path_name} {file_name} must stay inside {resolved_log_dir}.")
+                # Preserve symlinks and following ".." components for real path resolution.
+                relative_log_dir = os.path.relpath(resolved_log_dir, app_root)
+                return resolve_path_under_root(app_root, os.path.join(relative_log_dir, file_name), path_name)
+
+            ckpt_save_path = checkpoint_path(self.global_model_file_name, "global model file name")
+            best_ckpt_save_path = checkpoint_path(self.best_global_model_file_name, "best global model file name")
+        except (TypeError, ValueError) as error:
+            self.system_panic(reason=f"Invalid checkpoint path configuration: {error}", fl_ctx=fl_ctx)
+            return
+        self.log_dir = resolved_log_dir
+        self._ckpt_save_path = ckpt_save_path
+        self._best_ckpt_save_path = best_ckpt_save_path
 
         ckpt_preload_path = fl_ctx.get_prop(AppConstants.CKPT_PRELOAD_PATH)
         if ckpt_preload_path:

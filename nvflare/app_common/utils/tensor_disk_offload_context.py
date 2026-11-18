@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import hashlib
+import os
 import shutil
 import tempfile
 from dataclasses import dataclass, field
@@ -46,6 +48,19 @@ def _get_cell(engine):
     return engine.get_cell()
 
 
+def server_root_dir_prefix(workspace_root: str, job_id: str) -> str:
+    # The server parent removes roots by this prefix, so it must match only this server's roots of this job.
+    # The workspace digest keeps it from another server sharing the host and temp dir; "+" cannot occur in a
+    # job id, so it never matches a job whose id merely starts with this one, nor a client's root.
+    owner = hashlib.sha256(os.path.realpath(workspace_root).encode()).hexdigest()[:12]
+    return f"nvflare_tensor_offload_server_{owner}_{job_id}+"
+
+
+def _workspace_root(engine) -> str:
+    get_workspace = getattr(engine, "get_workspace", None)
+    return get_workspace().get_root_dir() if get_workspace else ""
+
+
 def setup_tensor_disk_offload(
     engine, enabled: bool, job_id: str = "job", root_dir: Optional[str] = None
 ) -> TensorDiskOffloadContext:
@@ -70,7 +85,7 @@ def setup_tensor_disk_offload(
     fobs_ctx = cell.get_fobs_context()
     previous_value = fobs_ctx.get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
     previous_root_dir = fobs_ctx.get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
-    offload_dir = tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{job_id}_", dir=root_dir)
+    offload_dir = tempfile.mkdtemp(prefix=server_root_dir_prefix(_workspace_root(engine), job_id), dir=root_dir)
     context = TensorDiskOffloadContext(
         previous_value=previous_value,
         previous_root_dir=previous_root_dir,

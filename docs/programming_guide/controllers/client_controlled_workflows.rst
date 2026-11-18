@@ -768,8 +768,8 @@ determine which parameters need adjustment for your large model workloads.
 
 These timeout values can be overridden in your job configuration files:
 
-- **Client-side parameters**: Set in ``config_fed_client.conf`` (or ``.json``) under the ``SwarmClientController`` executor args.
-- **Server-side parameters**: Set in ``config_fed_server.conf`` (or ``.json``) under the ``SwarmServerController`` workflow args.
+- **Client-side parameters**: Set in ``config_fed_client.json`` under the ``SwarmClientController`` executor args.
+- **Server-side parameters**: Set in ``config_fed_server.json`` under the ``SwarmServerController`` workflow args.
 - **Global streaming parameters**: Set at the top level of your config files (e.g., ``np_download_chunk_size``, ``tensor_download_chunk_size``).
 
 For **Recipe API users** (recommended), use the ``add_server_config()`` method:
@@ -879,28 +879,30 @@ The following SwarmClientController parameters are particularly important for la
 
 **Example client config for large models:**
 
-.. code-block::
+.. code-block:: json
 
-    executors = [
-      {
-        tasks = ["swarm_*"]
-        executor {
-          path = "nvflare.app_common.ccwf.SwarmClientController"
-          args {
-            learn_task_timeout = 3600
-            learn_task_ack_timeout = 300
-            final_result_ack_timeout = 300
-            request_to_submit_result_msg_timeout = 10.0
-            request_to_submit_result_interval = 2.0
-            request_to_submit_result_max_wait = 600.0
-            max_concurrent_submissions = 1
-            min_responses_required = 2
-            wait_time_after_min_resps_received = 120
-            enable_tensor_disk_offload = true
+    {
+      "executors": [
+        {
+          "tasks": ["swarm_*"],
+          "executor": {
+            "path": "nvflare.app_common.ccwf.SwarmClientController",
+            "args": {
+              "learn_task_timeout": 3600,
+              "learn_task_ack_timeout": 300,
+              "final_result_ack_timeout": 300,
+              "request_to_submit_result_msg_timeout": 10.0,
+              "request_to_submit_result_interval": 2.0,
+              "request_to_submit_result_max_wait": 600.0,
+              "max_concurrent_submissions": 1,
+              "min_responses_required": 2,
+              "wait_time_after_min_resps_received": 120,
+              "enable_tensor_disk_offload": true
+            }
           }
         }
-      }
-    ]
+      ]
+    }
 
 **Download and Chunking Behavior:**
 
@@ -910,10 +912,12 @@ The following SwarmClientController parameters are particularly important for la
   ``tensor_download_chunk_size`` path. The sender remains memory-backed, and the
   built-in weighted aggregator materializes one lazy tensor at a time.
 
-.. code-block::
+.. code-block:: json
 
-    np_download_chunk_size = 2097152
-    tensor_download_chunk_size = 2097152
+    {
+      "np_download_chunk_size": 2097152,
+      "tensor_download_chunk_size": 2097152
+    }
 
 Server-Side Parameters
 ----------------------
@@ -926,19 +930,21 @@ Server-Side Parameters
 
 **Example server config for large models:**
 
-.. code-block::
+.. code-block:: json
 
-    workflows = [
-      {
-        id = "swarm_controller"
-        path = "nvflare.app_common.ccwf.SwarmServerController"
-        args {
-          num_rounds = 25
-          start_task_timeout = 300
-          progress_timeout = 7200
+    {
+      "workflows": [
+        {
+          "id": "swarm_controller",
+          "path": "nvflare.app_common.ccwf.SwarmServerController",
+          "args": {
+            "num_rounds": 25,
+            "start_task_timeout": 300,
+            "progress_timeout": 7200
+          }
         }
-      }
-    ]
+      ]
+    }
 
 **CrossSiteEvalServerController (if enabled):**
 

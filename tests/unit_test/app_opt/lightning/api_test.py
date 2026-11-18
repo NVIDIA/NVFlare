@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import logging
 import threading
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -29,7 +31,7 @@ from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
 from nvflare.app_common.app_constant import AlgorithmConstants
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_opt.lightning.algorithm import _AlgorithmHandlerManager, _AlgorithmResult
-from nvflare.app_opt.lightning.api import FLCallback
+from nvflare.app_opt.lightning.api import FLCallback, _FLCallbackBase, _StepSyncFLCallback
 from nvflare.app_opt.lightning.api import patch as lightning_patch
 from nvflare.app_opt.lightning.callbacks import RestoreState
 from nvflare.app_opt.lightning.fedprox import _FedProxHandler
@@ -1707,6 +1709,16 @@ def test_patch_rejects_implicit_memory_restoration_in_task_workers(lightning_cli
         assert not any(isinstance(cb, RestoreState) for cb in trainer.callbacks)
 
 
+def test_patch_allows_restore_state_in_task_workers_in_step_mode(lightning_client):
+    trainer = SimpleNamespace(callbacks=[], global_rank=0)
+    lightning_client.sys_info["task_checkpoint"] = {"input": None}
+
+    lightning_patch(trainer, sync_every_n_steps=2)
+
+    assert any(isinstance(cb, _StepSyncFLCallback) for cb in trainer.callbacks)
+    assert not any(isinstance(cb, RestoreState) for cb in trainer.callbacks)
+
+
 def test_patch_existing_callback_without_client_context(lightning_client):
     callback = FLCallback()
     client_api.default_context = None
@@ -1715,3 +1727,781 @@ def test_patch_existing_callback_without_client_context(lightning_client):
     lightning_patch(trainer)
     assert trainer.callbacks[0] is callback
     assert any(isinstance(cb, RestoreState) for cb in trainer.callbacks)
+
+
+class _FakeFlare:
+    def __init__(self, tasks, events=None):
+        self._tasks = list(tasks)
+        self.events = [] if events is None else events
+        self.received = []
+        self.sent = []
+        self.sent_snapshots = []
+        self._current = None
+        self._receive_called = False
+
+    def receive(self, *args, **kwargs):
+        if self._current is None:
+            if not self._tasks:
+                self.events.append("receive:none")
+                return None
+            self._current = self._tasks.pop(0)
+            self.received.append(self._current[1])
+        self._receive_called = True
+        self.events.append("receive")
+        return self._current[1]
+
+    def _task(self):
+        return self._current[0] if self._current is not None else None
+
+    def is_train(self):
+        return self._task() == "train"
+
+    def is_evaluate(self):
+        return self._task() == "evaluate"
+
+    def is_submit_model(self):
+        return self._task() == "submit_model"
+
+    def send(self, model, clear_cache=True):
+        if not self._receive_called:
+            raise RuntimeError('"receive" needs to be called before sending model!')
+        self.sent.append(model)
+        self.sent_snapshots.append({k: v.clone() if torch.is_tensor(v) else v for k, v in (model.params or {}).items()})
+        self.events.append("send")
+        if clear_cache:
+            self.clear()
+
+    def clear(self):
+        self._current = None
+        self._receive_called = False
+
+    def steps(self):
+        return [model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] for model in self.sent]
+
+
+@contextmanager
+def _flare(fake, config=None):
+    api = "nvflare.app_opt.lightning.api"
+    with (
+        patch(f"{api}.init"),
+        patch(f"{api}.get_config", return_value=config or {}),
+        patch(f"{api}.receive", new=fake.receive),
+        patch(f"{api}.is_train", new=fake.is_train),
+        patch(f"{api}.is_evaluate", new=fake.is_evaluate),
+        patch(f"{api}.is_submit_model", new=fake.is_submit_model),
+        patch(f"{api}.send", new=fake.send),
+        patch(f"{api}.clear", new=fake.clear),
+    ):
+        yield fake
+
+
+class RecordingNet(TinyLightningNet):
+    def __init__(self):
+        super().__init__()
+        self.seen = []
+
+    def training_step(self, batch, batch_idx):
+        optimizer = self.trainer.optimizers[0]
+        momentum = optimizer.state.get(self.fc.weight, {}).get("momentum_buffer")
+        self.seen.append(
+            SimpleNamespace(
+                sample=int(batch[0][0, 0]),
+                weight=self.fc.weight.detach().clone(),
+                optimizer=optimizer,
+                momentum=None if momentum is None else momentum.clone(),
+                last_epoch=self.trainer.lr_scheduler_configs[0].scheduler.last_epoch,
+                epoch=self.trainer.current_epoch,
+            )
+        )
+        return super().training_step(batch, batch_idx)
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.SGD(self.parameters(), lr=0.1, momentum=0.9)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9)
+        return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "step"}}
+
+
+class RecordingHooks(pl.Callback):
+    def __init__(self, name, events):
+        self.name = name
+        self.events = events
+
+    def on_fl_receive(self, trainer, pl_module, fl_model):
+        self.events.append((self.name, "on_fl_receive", fl_model.current_round))
+
+    def on_fl_model_loaded(self, trainer, pl_module, fl_model):
+        self.events.append((self.name, "on_fl_model_loaded", fl_model.current_round))
+
+    def on_fl_before_send(self, trainer, pl_module, fl_model):
+        self.events.append((self.name, "on_fl_before_send", fl_model.params is None))
+
+
+class ValidationEvents(pl.Callback):
+    def __init__(self, events):
+        self.events = events
+
+    def on_validation_end(self, trainer, pl_module):
+        self.events.append("val")
+
+
+def _loader(num_samples):
+    inputs = torch.arange(num_samples, dtype=torch.float32).unsqueeze(1).repeat(1, 2)
+    return DataLoader(TensorDataset(inputs, torch.arange(num_samples) % 2), batch_size=1, shuffle=False)
+
+
+class _DataModule(pl.LightningDataModule):
+    def train_dataloader(self):
+        return _loader(4)
+
+    def val_dataloader(self):
+        return _loader(2)
+
+
+def _round_model(round_idx, weight=None, meta=None):
+    weight = float(round_idx) if weight is None else weight
+    params = {"fc.weight": torch.full((2, 2), weight), "fc.bias": torch.zeros(2)}
+    return FLModel(params=params, current_round=round_idx, meta={} if meta is None else meta)
+
+
+def _train_tasks(count, **kwargs):
+    return [("train", _round_model(round_idx, **kwargs)) for round_idx in range(count)]
+
+
+def _pl_trainer(**kwargs):
+    options = dict(
+        accelerator="cpu",
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+        num_sanity_val_steps=0,
+    )
+    options.update(kwargs)
+    return pl.Trainer(**options)
+
+
+def _fit_with_step_sync(fake, module, loader, sync_every_n_steps, val_loader=None, **trainer_kwargs):
+    with _flare(fake):
+        trainer = _pl_trainer(**trainer_kwargs)
+        lightning_patch(trainer, sync_every_n_steps=sync_every_n_steps)
+        trainer.fit(module, train_dataloaders=loader, val_dataloaders=val_loader)
+    return trainer
+
+
+def test_step_sync_sends_every_n_steps_within_one_fit():
+    fake = _FakeFlare(_train_tasks(4))
+
+    trainer = _fit_with_step_sync(fake, RecordingNet(), _loader(8), sync_every_n_steps=2, max_epochs=1)
+
+    assert fake.steps() == [2, 2, 2, 2]
+    assert len(fake.received) == 4
+    assert trainer.global_step == 8
+
+
+def test_step_sync_counts_optimizer_steps_with_gradient_accumulation():
+    fake = _FakeFlare(_train_tasks(2))
+
+    _fit_with_step_sync(fake, RecordingNet(), _loader(8), sync_every_n_steps=2, max_epochs=1, accumulate_grad_batches=2)
+
+    assert fake.steps() == [2, 2]
+
+
+def test_step_sync_trains_each_received_model_from_the_next_batch():
+    module = RecordingNet()
+    fake = _FakeFlare(_train_tasks(10))
+
+    _fit_with_step_sync(fake, module, _loader(8), sync_every_n_steps=2, max_epochs=1)
+
+    for round_idx in range(4):
+        assert torch.equal(module.seen[2 * round_idx].weight, torch.full((2, 2), float(round_idx)))
+
+
+class TwoStepsPerBatchNet(TinyLightningNet):
+    def __init__(self):
+        super().__init__()
+        self.automatic_optimization = False
+
+    def training_step(self, batch, batch_idx):
+        optimizer = self.optimizers()
+        for _ in range(2):
+            optimizer.zero_grad()
+            self.manual_backward(super().training_step(batch, batch_idx))
+            optimizer.step()
+
+
+def test_step_sync_rejects_a_batch_that_passes_the_sync_point():
+    fake = _FakeFlare(_train_tasks(2))
+
+    with pytest.raises(RuntimeError, match="took the round to 4 optimizer steps, past sync_every_n_steps=3"):
+        _fit_with_step_sync(fake, TwoStepsPerBatchNet(), _loader(8), sync_every_n_steps=3, max_epochs=1)
+
+    assert fake.sent == []
+
+
+def test_step_sync_supports_several_steps_per_batch_when_n_is_a_multiple():
+    fake = _FakeFlare(_train_tasks(2))
+
+    trainer = _fit_with_step_sync(fake, TwoStepsPerBatchNet(), _loader(8), sync_every_n_steps=4, max_epochs=1)
+
+    assert fake.steps() == [4, 4]
+    assert trainer.global_step == 8
+
+
+def test_step_sync_keeps_optimizer_scheduler_and_data_order_across_syncs():
+    module = RecordingNet()
+    fake = _FakeFlare(_train_tasks(4))
+
+    _fit_with_step_sync(fake, module, _loader(8), sync_every_n_steps=2, max_epochs=1)
+
+    assert len({id(record.optimizer) for record in module.seen}) == 1
+    assert all(record.momentum is not None for record in module.seen[1:])
+    assert [record.last_epoch for record in module.seen] == list(range(8))
+    assert [record.sample for record in module.seen] == list(range(8))
+    assert {record.epoch for record in module.seen} == {0}
+
+
+@pytest.mark.parametrize(
+    ("num_batches", "sync_every_n_steps", "num_rounds", "trainer_kwargs", "expected_epochs"),
+    [
+        pytest.param(4, 2, 4, {"max_epochs": 1}, 2, id="beyond-max-epochs"),
+        pytest.param(3, 2, 3, {"max_epochs": 1}, 2, id="round-crosses-an-epoch"),
+        pytest.param(2, 4, 2, {"max_epochs": 1}, 4, id="epochs-shorter-than-n"),
+        pytest.param(8, 2, 4, {"max_steps": 5}, 1, id="beyond-max-steps"),
+    ],
+)
+def test_step_sync_server_decides_how_many_rounds_run(
+    num_batches, sync_every_n_steps, num_rounds, trainer_kwargs, expected_epochs
+):
+    module = RecordingNet()
+    fake = _FakeFlare(_train_tasks(num_rounds))
+
+    trainer = _fit_with_step_sync(
+        fake, module, _loader(num_batches), sync_every_n_steps=sync_every_n_steps, **trainer_kwargs
+    )
+
+    assert fake.steps() == [sync_every_n_steps] * num_rounds
+    assert fake.events[-1] == "receive:none"
+    assert trainer.global_step == sync_every_n_steps * num_rounds
+    assert len({record.epoch for record in module.seen}) == expected_epochs
+
+
+class StopAtStep(pl.Callback):
+    def __init__(self, step):
+        self.step = step
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if trainer.global_step == self.step:
+            trainer.should_stop = True
+
+
+def test_step_sync_sends_the_open_round_when_the_trainer_stops_itself():
+    fake = _FakeFlare(_train_tasks(10))
+
+    trainer = _fit_with_step_sync(
+        fake, RecordingNet(), _loader(8), sync_every_n_steps=4, max_epochs=1, callbacks=[StopAtStep(6)]
+    )
+
+    assert fake.steps() == [4, 2]
+    assert trainer.global_step == 6
+
+
+class StopAtBatch(pl.Callback):
+    def __init__(self, batch_idx):
+        self.batch_idx = batch_idx
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if batch_idx == self.batch_idx:
+            trainer.should_stop = True
+
+
+@pytest.mark.parametrize("with_scaffold", [False, True])
+def test_step_sync_does_not_send_a_round_without_optimizer_steps(caplog, with_scaffold):
+    module = RecordingNet()
+    meta = {AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: _zero_controls(module)} if with_scaffold else None
+    fake = _FakeFlare(_train_tasks(10, meta=meta))
+
+    with caplog.at_level(logging.WARNING, logger="_StepSyncFLCallback"):
+        trainer = _fit_with_step_sync(
+            fake,
+            module,
+            _loader(8),
+            sync_every_n_steps=2,
+            max_epochs=1,
+            accumulate_grad_batches=2,
+            callbacks=[StopAtBatch(4)],
+        )
+
+    assert fake.steps() == [2]
+    assert len(fake.received) == 2
+    assert trainer.global_step == 2
+    assert [r for r in caplog.records if "stopped before the first optimizer step of round 1" in r.getMessage()]
+
+
+def test_step_sync_does_not_wait_for_the_next_task_when_the_trainer_stops_on_a_sync_batch():
+    fake = _FakeFlare(_train_tasks(10))
+
+    trainer = _fit_with_step_sync(
+        fake, RecordingNet(), _loader(8), sync_every_n_steps=2, max_epochs=1, callbacks=[StopAtStep(4)]
+    )
+
+    assert fake.steps() == [2, 2]
+    assert fake.events == ["receive", "send", "receive", "send"]
+    assert trainer.global_step == 4
+
+
+def test_step_sync_with_one_task_per_process_sends_one_round_and_returns():
+    fake = _FakeFlare(_train_tasks(1))
+
+    trainer = _fit_with_step_sync(fake, RecordingNet(), _loader(8), sync_every_n_steps=2, max_epochs=1)
+
+    assert fake.steps() == [2]
+    assert fake.events == ["receive", "send", "receive:none"]
+    assert trainer.global_step == 2
+
+
+class ClearStopAtStep(pl.Callback):
+    def __init__(self, step):
+        self.step = step
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if trainer.global_step == self.step:
+            trainer.should_stop = False
+
+
+@pytest.mark.parametrize("tasks, expected_steps", [(4, [2, 2, 2, 2]), (1, [2])])
+def test_step_sync_receives_at_batch_start_when_a_later_callback_clears_the_stop(tasks, expected_steps):
+    fake = _FakeFlare(_train_tasks(tasks))
+
+    with _flare(fake):
+        trainer = _pl_trainer(max_epochs=1, callbacks=[StopAtStep(2)])
+        lightning_patch(trainer, sync_every_n_steps=2)
+        trainer.callbacks.append(ClearStopAtStep(2))
+        module = RecordingNet()
+        trainer.fit(module, train_dataloaders=_loader(8))
+
+    assert fake.steps() == expected_steps
+    assert trainer.global_step == sum(expected_steps)
+    assert all(torch.equal(module.state_dict()[key], value) for key, value in fake.sent_snapshots[-1].items())
+    assert "on_train_batch_start" not in vars(module)
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize("trainer_kwargs", [{"min_steps": 100}, {"min_epochs": 5}], ids=["min-steps", "min-epochs"])
+def test_step_sync_stops_when_the_server_finishes_before_the_trainer_minimum(trainer_kwargs):
+    fake = _FakeFlare(_train_tasks(2))
+
+    trainer = _fit_with_step_sync(fake, RecordingNet(), _loader(4), sync_every_n_steps=2, **trainer_kwargs)
+
+    assert fake.steps() == [2, 2]
+    assert trainer.global_step == 4
+
+
+class FailAtStep(pl.Callback):
+    def __init__(self, step):
+        self.step = step
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if trainer.global_step == self.step:
+            raise RuntimeError("boom")
+
+
+def _trainer_limits(trainer):
+    fit_loop = trainer.fit_loop
+    return fit_loop.max_epochs, fit_loop.epoch_loop.max_steps, fit_loop.min_epochs, fit_loop.epoch_loop.min_steps
+
+
+@pytest.mark.parametrize("fails", [False, True], ids=["train-end", "exception"])
+def test_step_sync_restores_the_trainer_limits_after_fit(fails):
+    fake = _FakeFlare(_train_tasks(3))
+    callbacks = [FailAtStep(3)] if fails else []
+
+    with _flare(fake):
+        trainer = _pl_trainer(max_epochs=2, max_steps=7, min_epochs=1, min_steps=3, callbacks=callbacks)
+        limits = _trainer_limits(trainer)
+        lightning_patch(trainer, sync_every_n_steps=2)
+        if fails:
+            with pytest.raises(RuntimeError, match="boom"):
+                trainer.fit(RecordingNet(), train_dataloaders=_loader(4))
+        else:
+            trainer.fit(RecordingNet(), train_dataloaders=_loader(4))
+
+    assert _trainer_limits(trainer) == limits
+
+
+def test_step_sync_warns_once_when_training_passes_the_trainer_limit(caplog):
+    fake = _FakeFlare(_train_tasks(4))
+
+    with caplog.at_level(logging.WARNING, logger="_StepSyncFLCallback"):
+        _fit_with_step_sync(fake, RecordingNet(), _loader(4), sync_every_n_steps=2, max_epochs=1)
+
+    warnings = [r for r in caplog.records if "passed the trainer's own limit of 4" in r.getMessage()]
+    assert len(warnings) == 1
+    assert fake.steps() == [2, 2, 2, 2]
+
+
+def test_step_sync_does_not_warn_within_the_trainer_limit(caplog):
+    fake = _FakeFlare(_train_tasks(2))
+
+    with caplog.at_level(logging.WARNING, logger="_StepSyncFLCallback"):
+        _fit_with_step_sync(fake, RecordingNet(), _loader(4), sync_every_n_steps=2, max_epochs=1)
+
+    assert not [r for r in caplog.records if "passed the trainer's own limit" in r.getMessage()]
+
+
+class _UnsizedDataset(torch.utils.data.IterableDataset):
+    def __iter__(self):
+        return iter(_loader(4).dataset)
+
+
+def test_step_sync_does_not_warn_without_a_trainer_step_limit(caplog):
+    fake = _FakeFlare(_train_tasks(3))
+
+    with caplog.at_level(logging.WARNING, logger="_StepSyncFLCallback"):
+        _fit_with_step_sync(
+            fake, RecordingNet(), DataLoader(_UnsizedDataset(), batch_size=1), sync_every_n_steps=2, max_epochs=1
+        )
+
+    assert fake.steps() == [2, 2, 2]
+    assert not [r for r in caplog.records if "passed the trainer's own limit" in r.getMessage()]
+
+
+class ValidationWeights(pl.Callback):
+    def __init__(self):
+        self.weights = []
+
+    def on_validation_start(self, trainer, pl_module):
+        self.weights.append(pl_module.fc.weight.detach().clone())
+
+
+def test_step_sync_receives_after_send_and_validates_the_local_model():
+    events = []
+    weights = ValidationWeights()
+    fake = _FakeFlare(_train_tasks(2), events=events)
+
+    _fit_with_step_sync(
+        fake,
+        RecordingNet(),
+        _loader(4),
+        sync_every_n_steps=2,
+        val_loader=_loader(2),
+        max_epochs=1,
+        val_check_interval=2,
+        callbacks=[ValidationEvents(events), weights],
+    )
+
+    assert events == ["receive", "send", "receive", "val", "send", "receive:none", "val"]
+    assert not torch.equal(weights.weights[0], torch.full((2, 2), 1.0))
+
+
+def test_step_sync_validates_once_more_when_the_server_ends_between_validations():
+    events = []
+    fake = _FakeFlare(_train_tasks(2), events=events)
+
+    _fit_with_step_sync(
+        fake,
+        RecordingNet(),
+        _loader(6),
+        sync_every_n_steps=2,
+        val_loader=_loader(2),
+        max_epochs=1,
+        val_check_interval=3,
+        callbacks=[ValidationEvents(events)],
+    )
+
+    assert events == ["receive", "send", "receive", "val", "send", "receive:none", "val"]
+
+
+@pytest.mark.parametrize("with_scaffold", [False, True])
+def test_step_sync_stops_training_when_the_server_finishes_first(with_scaffold):
+    module = RecordingNet()
+    meta = {AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: _zero_controls(module)} if with_scaffold else None
+    fake = _FakeFlare(_train_tasks(2, meta=meta))
+
+    trainer = _fit_with_step_sync(fake, module, _loader(8), sync_every_n_steps=2, max_epochs=1)
+
+    assert fake.steps() == [2, 2]
+    assert fake.events[-1] == "receive:none"
+    assert trainer.global_step == 4
+    assert trainer.lr_scheduler_configs[0].scheduler.last_epoch == 4
+
+
+def test_step_sync_trains_nothing_when_the_server_has_no_task():
+    fake = _FakeFlare([])
+
+    trainer = _fit_with_step_sync(fake, RecordingNet(), _loader(4), sync_every_n_steps=2, max_epochs=1)
+
+    assert fake.events == ["receive:none"]
+    assert trainer.global_step == 0
+    assert fake.sent == []
+
+
+def test_step_sync_leaves_a_mid_fit_evaluate_task_for_a_later_validate():
+    module = RecordingNet()
+    evaluate_model = _round_model(9)
+    fake = _FakeFlare(_train_tasks(2) + [("evaluate", evaluate_model)])
+
+    with _flare(fake):
+        trainer = _pl_trainer(max_epochs=1)
+        lightning_patch(trainer, sync_every_n_steps=2)
+        trainer.fit(module, train_dataloaders=_loader(8))
+        assert trainer.global_step == 4
+        assert all(not torch.equal(record.weight, torch.full((2, 2), 9.0)) for record in module.seen)
+        trainer.validate(module, dataloaders=_loader(2))
+
+    assert len(fake.received) == 3
+    assert [model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] for model in fake.sent[:2]] == [2, 2]
+    assert fake.sent[2].params is None
+    assert fake.sent[2].metrics["val_loss"] >= 0.0
+    assert torch.equal(module.fc.weight.detach(), torch.full((2, 2), 9.0))
+
+
+def test_step_sync_runs_scaffold_and_fedprox_per_sync():
+    module = RecordingNet()
+    meta = {AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: _zero_controls(module), AlgorithmConstants.FEDPROX_MU: 0.2}
+    fake = _FakeFlare([("train", _round_model(r, meta=dict(meta))) for r in range(2)])
+
+    _fit_with_step_sync(fake, module, _loader(4), sync_every_n_steps=2, max_epochs=1)
+
+    assert fake.steps() == [2, 2]
+    assert all(AlgorithmConstants.SCAFFOLD_CTRL_DIFF in model.meta for model in fake.sent)
+
+
+def test_step_sync_sends_a_copy_that_later_training_does_not_change():
+    module = RecordingNet()
+    fake = _FakeFlare(_train_tasks(10))
+
+    _fit_with_step_sync(fake, module, _loader(4), sync_every_n_steps=2, max_epochs=1)
+
+    first_sent = fake.sent[0].params["fc.weight"]
+    assert torch.equal(first_sent, fake.sent_snapshots[0]["fc.weight"])
+    assert not torch.equal(first_sent, module.fc.weight.detach().cpu())
+
+
+def test_step_sync_does_not_install_restore_state():
+    with _flare(_FakeFlare([])):
+        trainer = _pl_trainer(max_epochs=1)
+        lightning_patch(trainer, sync_every_n_steps=2)
+
+    assert not any(isinstance(cb, RestoreState) for cb in trainer.callbacks)
+
+
+@pytest.mark.parametrize("invalid", [0, -1, True, 1.5, "2"])
+def test_patch_rejects_invalid_sync_every_n_steps(invalid):
+    with _flare(_FakeFlare([])):
+        trainer = _pl_trainer(max_epochs=1)
+        with pytest.raises(ValueError, match="sync_every_n_steps"):
+            lightning_patch(trainer, sync_every_n_steps=invalid)
+
+
+def test_patch_rejects_step_sync_with_train_with_evaluation():
+    config = {ConfigKey.TASK_EXCHANGE: {ConfigKey.TRAIN_WITH_EVAL: True}}
+    with _flare(_FakeFlare([]), config=config):
+        trainer = _pl_trainer(max_epochs=1)
+        with pytest.raises(ValueError, match="train_with_evaluation"):
+            lightning_patch(trainer, sync_every_n_steps=2)
+
+
+_ROUND_HOOKS = ["on_fl_receive", "on_fl_model_loaded", "on_fl_before_send"]
+
+
+def test_hooks_run_in_callback_order_once_per_round_in_step_mode():
+    events = []
+    fake = _FakeFlare(_train_tasks(2))
+
+    _fit_with_step_sync(
+        fake,
+        RecordingNet(),
+        _loader(4),
+        sync_every_n_steps=2,
+        max_epochs=1,
+        callbacks=[RecordingHooks("a", events), RecordingHooks("b", events)],
+    )
+
+    expected = []
+    for round_idx in range(2):
+        expected += [("a", "on_fl_receive", round_idx), ("b", "on_fl_receive", round_idx)]
+        expected += [("a", "on_fl_model_loaded", round_idx), ("b", "on_fl_model_loaded", round_idx)]
+        expected += [("a", "on_fl_before_send", False), ("b", "on_fl_before_send", False)]
+    assert events == expected
+
+
+def test_hooks_run_once_per_round_in_fit_per_round_mode():
+    events = []
+    module = RecordingNet()
+    fake = _FakeFlare(_train_tasks(2))
+
+    with _flare(fake):
+        trainer = _pl_trainer(max_epochs=1, callbacks=[RecordingHooks("a", events)])
+        lightning_patch(trainer)
+        trainer.fit(module, train_dataloaders=_loader(4))
+        trainer.fit(module, train_dataloaders=_loader(4))
+
+    assert [event[1] for event in events] == _ROUND_HOOKS * 2
+    assert [event[2] for event in events if event[1] == "on_fl_receive"] == [0, 1]
+
+
+def test_before_send_hook_sees_metrics_only_model_for_evaluate_task():
+    events = []
+    fake = _FakeFlare([("evaluate", _round_model(0))])
+
+    with _flare(fake):
+        trainer = _pl_trainer(max_epochs=1, callbacks=[RecordingHooks("a", events)])
+        lightning_patch(trainer)
+        trainer.validate(RecordingNet(), datamodule=_DataModule())
+
+    assert events == [("a", "on_fl_receive", 0), ("a", "on_fl_model_loaded", 0), ("a", "on_fl_before_send", True)]
+
+
+def test_hooks_are_not_called_for_an_empty_receive():
+    events = []
+    fake = _FakeFlare(_train_tasks(1))
+
+    _fit_with_step_sync(
+        fake, RecordingNet(), _loader(8), sync_every_n_steps=2, max_epochs=1, callbacks=[RecordingHooks("a", events)]
+    )
+
+    assert [event[1] for event in events] == _ROUND_HOOKS
+
+
+class EditingHooks(pl.Callback):
+    def __init__(self):
+        self.received_ema = []
+
+    def on_fl_receive(self, trainer, pl_module, fl_model):
+        self.received_ema.append(fl_model.meta.pop("ema"))
+        fl_model.params["fc.weight"] = torch.full((2, 2), 7.0)
+
+    def on_fl_before_send(self, trainer, pl_module, fl_model):
+        if fl_model is not None:
+            fl_model.meta["ema"] = torch.ones(1)
+
+
+def test_hook_edits_change_what_is_loaded_and_sent():
+    module = RecordingNet()
+    hooks = EditingHooks()
+    fake = _FakeFlare([("train", _round_model(r, meta={"ema": torch.full((1,), float(r))})) for r in range(2)])
+
+    _fit_with_step_sync(fake, module, _loader(4), sync_every_n_steps=2, max_epochs=1, callbacks=[hooks])
+
+    assert torch.equal(module.seen[0].weight, torch.full((2, 2), 7.0))
+    assert torch.equal(module.seen[2].weight, torch.full((2, 2), 7.0))
+    assert [ema.item() for ema in hooks.received_ema] == [0.0, 1.0]
+    assert all(torch.equal(model.meta["ema"], torch.ones(1)) for model in fake.sent)
+
+
+def test_hook_edits_do_not_change_the_received_model():
+    fake = _FakeFlare([("train", _round_model(r, meta={"ema": torch.full((1,), float(r))})) for r in range(10)])
+
+    _fit_with_step_sync(
+        fake, RecordingNet(), _loader(4), sync_every_n_steps=2, max_epochs=1, callbacks=[EditingHooks()]
+    )
+
+    for round_idx, received in enumerate(fake.received):
+        assert torch.equal(received.params["fc.weight"], torch.full((2, 2), float(round_idx)))
+        assert "ema" in received.meta
+
+
+def test_validate_before_step_sync_fit_runs_receive_hooks_once():
+    events = []
+    module = RecordingNet()
+    hooks = EditingHooks()
+    fake = _FakeFlare([("train", _round_model(r, meta={"ema": torch.full((1,), float(r))})) for r in range(2)])
+
+    with _flare(fake):
+        trainer = _pl_trainer(max_epochs=1, callbacks=[hooks, RecordingHooks("a", events)])
+        lightning_patch(trainer, sync_every_n_steps=2)
+        trainer.validate(module, dataloaders=_loader(2))
+        trainer.fit(module, train_dataloaders=_loader(4))
+
+    assert [event[2] for event in events if event[1] == "on_fl_receive"] == [0, 1]
+    assert [ema.item() for ema in hooks.received_ema] == [0.0, 1.0]
+    assert torch.equal(module.seen[0].weight, torch.full((2, 2), 7.0))
+
+
+class InPlaceHooks(pl.Callback):
+    def on_fl_receive(self, trainer, pl_module, fl_model):
+        fl_model.params["fc.weight"].add_(5.0)
+
+
+@pytest.mark.parametrize("transfer_type", ["DIFF", "FULL"])
+def test_in_place_hook_edits_change_the_received_model_only_without_diff(transfer_type):
+    module = RecordingNet()
+    fake = _FakeFlare(_train_tasks(10))
+    config = {ConfigKey.TASK_EXCHANGE: {ConfigKey.TRANSFER_TYPE: transfer_type}}
+
+    with _flare(fake, config=config):
+        trainer = _pl_trainer(max_epochs=1, callbacks=[InPlaceHooks()])
+        lightning_patch(trainer, sync_every_n_steps=2)
+        trainer.fit(module, train_dataloaders=_loader(4))
+
+    shift = 0.0 if transfer_type == "DIFF" else 5.0
+    for round_idx, received in enumerate(fake.received):
+        assert torch.equal(received.params["fc.weight"], torch.full((2, 2), round_idx + shift))
+    assert torch.equal(module.seen[0].weight, torch.full((2, 2), 5.0))
+
+
+class NestedMetaHooks(pl.Callback):
+    def on_fl_receive(self, trainer, pl_module, fl_model):
+        fl_model.meta["ctrl"]["fc.weight"].mul_(0.0)
+
+
+def test_in_place_hook_edits_of_nested_meta_do_not_change_the_received_model():
+    tasks = [("train", _round_model(r, meta={"ctrl": {"fc.weight": torch.ones(2, 2)}})) for r in range(2)]
+    fake = _FakeFlare(tasks)
+
+    _fit_with_step_sync(
+        fake, RecordingNet(), _loader(4), sync_every_n_steps=2, max_epochs=1, callbacks=[NestedMetaHooks()]
+    )
+
+    assert all(torch.equal(received.meta["ctrl"]["fc.weight"], torch.ones(2, 2)) for received in fake.received)
+
+
+class ExtraStateNet(RecordingNet):
+    def get_extra_state(self):
+        return {"version": 1}
+
+    def set_extra_state(self, state):
+        self.extra_state = state
+
+
+def test_step_sync_sends_non_tensor_extra_state():
+    tasks = _train_tasks(2)
+    for _, model in tasks:
+        model.params["_extra_state"] = {"version": 1}
+    fake = _FakeFlare(tasks)
+
+    _fit_with_step_sync(fake, ExtraStateNet(), _loader(4), sync_every_n_steps=2, max_epochs=1)
+
+    assert fake.steps() == [2, 2]
+    assert all(model.params["_extra_state"] == {"version": 1} for model in fake.sent)
+
+
+def test_patch_rejects_sync_every_n_steps_with_an_existing_fit_mode_callback():
+    with _flare(_FakeFlare([])):
+        trainer = _pl_trainer(max_epochs=1, callbacks=[FLCallback()])
+        with pytest.raises(ValueError, match="sync_every_n_steps=2 conflicts with the FLCallback"):
+            lightning_patch(trainer, sync_every_n_steps=2)
+
+
+def test_patch_keeps_an_existing_step_sync_callback_with_the_same_n():
+    with _flare(_FakeFlare([])):
+        callback = _StepSyncFLCallback(2)
+        trainer = _pl_trainer(max_epochs=1, callbacks=[callback])
+        lightning_patch(trainer, sync_every_n_steps=2)
+        lightning_patch(trainer)
+
+    assert [cb for cb in trainer.callbacks if isinstance(cb, _FLCallbackBase)] == [callback]
+    assert not any(isinstance(cb, RestoreState) for cb in trainer.callbacks)
+
+
+def test_fl_callback_keeps_its_public_surface():
+    assert list(inspect.signature(FLCallback.__init__).parameters) == [
+        "self",
+        "rank",
+        "load_state_dict_strict",
+        "update_fit_loop",
+    ]
+    for name in ("reset_state", "on_train_start", "on_train_end", "on_train_batch_end", "on_validation_start"):
+        assert callable(getattr(FLCallback, name))
+    assert issubclass(FLCallback, _FLCallbackBase)
+    assert not issubclass(_StepSyncFLCallback, FLCallback)

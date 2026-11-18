@@ -284,8 +284,10 @@ class _K8sTaskProfile(TaskLauncherSpec):
             raise ValueError(f"Kubernetes CJ launcher is not registered by short name; specify path={expected!r}")
         if len(launchers) != 1 or launchers[0][0] != expected:
             raise ValueError("Kubernetes task execution requires exactly one matching Kubernetes task CJ JobLauncher")
-        if site_config.get("task_execution", {}).get("environment_variables"):
-            raise ValueError("Kubernetes worker environment belongs to the site task launcher configuration")
+        if "environment_variables" in site_config.get("task_execution", {}):
+            raise ValueError(
+                "environment_variables is not supported; configure worker environment on the native backend"
+            )
         args = launchers[0][1].get("args", {})
         if not isinstance(args, dict):
             raise ValueError("Kubernetes task CJ launcher args must be a dict")

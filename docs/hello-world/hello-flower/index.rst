@@ -10,15 +10,12 @@ Get NVFlare and the Example
 
 For the complete installation instructions, see `Installation <https://nvflare.readthedocs.io/en/main/installation.html>`_.
 
-Install either the stable or nightly NVFlare distribution:
+Install a released NVFlare package:
 
 .. code-block:: bash
 
    # Stable
    python -m pip install nvflare
-
-   # Nightly (use instead of the stable command)
-   python -m pip install nvflare-nightly
 
 Then download the matching example revision:
 
@@ -44,16 +41,20 @@ Then install the remaining example dependencies:
    python -m pip install -r requirements.txt
 
 The requirements file intentionally does not install NVFlare. This preserves
-the stable, nightly, or editable distribution that selected the example revision.
+the release, local wheel, or editable installation that selected the example revision.
 
-.. warning::
+.. important::
 
-   This ``main`` branch example uses Flower 1.26+ and the newer Flower SuperLink
-   configuration flow.
+   This revision requires ``flwr>=1.43`` on the server and every client,
+   using the same Flower minor version. It supports the HTTP Fleet API on POSIX
+   hosts (Linux or macOS). Older Flower versions and the gRPC adapter are no
+   longer supported. Use the matching NVFlare release branch and example
+   dependencies for older deployments.
 
-   If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of
-   this example and use ``flwr>=1.16,<1.26``. NVFlare 2.7.x still uses Flower's
-   legacy ``--federation-config`` CLI option, which Flower 1.26+ ignores.
+HTTP endpoints bind to loopback; inter-site traffic still uses NVFlare's configured
+transport and security. Runtime dependency installation is disabled by default.
+Install the example dependencies at every site. See :ref:`flower_http_design`
+for protocol limits and migration guidance.
 
 Code Structure
 --------------
