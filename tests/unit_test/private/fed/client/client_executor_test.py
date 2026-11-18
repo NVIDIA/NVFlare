@@ -2939,7 +2939,8 @@ def test_heartbeat_retries_completed_cancel_after_transient_observation_error(tm
     client.send_request_before_shutdown.assert_called_once()
 
 
-def test_monitor_start_failure_keeps_release_with_caller_until_handoff(tmp_path, cleanup_deadlines):
+@pytest.mark.parametrize("late_cancel", [False, True], ids=["caller-rolls-back", "monitor-keeps-ownership"])
+def test_monitor_start_failure_keeps_release_with_caller_until_handoff(tmp_path, cleanup_deadlines, late_cancel):
     from nvflare.private.admin_defs import Message
     from nvflare.private.defs import TrainingTopic
     from nvflare.private.fed.client.scheduler_cmds import StartJobProcessor
@@ -2951,6 +2952,15 @@ def test_monitor_start_failure_keeps_release_with_caller_until_handoff(tmp_path,
     resources.allocate_resources.return_value = {"gpu": 1}
     accepted = MagicMock(spec=JobHandleSpec)
     accepted.poll.return_value = JobReturnCode.SUCCESS
+    second_cancel_entered = threading.Event()
+    finish_second_cancel = threading.Event()
+
+    def terminate():
+        if accepted.terminate.call_count == 2:
+            second_cancel_entered.set()
+            finish_second_cancel.wait()
+
+    accepted.terminate.side_effect = terminate
     launcher = MagicMock()
     owners = []
     failed_start = []
@@ -2971,6 +2981,10 @@ def test_monitor_start_failure_keeps_release_with_caller_until_handoff(tmp_path,
         # caller decides rollback. Correct code keeps the monitor behind the gate.
         if state.handoff.is_set():
             join_thread(state.monitor)
+        if late_cancel:
+            cleanup_deadlines.cancel_pending = second_cancel_entered
+            ClientEngine.abort_app(SimpleNamespace(client_executor=executor), "job-1")
+            assert second_cancel_entered.is_set()
 
     cleanup_deadlines.before_observation_result = before_decision
     launcher.launch_job.side_effect = launch
@@ -2993,17 +3007,26 @@ def test_monitor_start_failure_keeps_release_with_caller_until_handoff(tmp_path,
         patch("nvflare.private.fed.client.scheduler_cmds._get_resource_consumer"),
         patch.object(threading.Thread, "start", start),
     ):
-        reply = StartJobProcessor().process(request, engine)
-    state = owners[0][_RUN_STATE_KEY]
-    join_thread(state.monitor)
-    assert "monitor startup failed" in reply.body
-    assert "JobCleanupPending" not in reply.body
+        try:
+            reply = StartJobProcessor().process(request, engine)
+            assert "monitor startup failed" in reply.body
+            if late_cancel:
+                assert "JobCleanupPending" in reply.body
+                assert executor.get_run_processes_keys() == ["job-1"]
+                resources.free_resources.assert_not_called()
+            else:
+                assert "JobCleanupPending" not in reply.body
+        finally:
+            finish_second_cancel.set()
+            if owners and owners[0][_RUN_STATE_KEY].monitor:
+                join_thread(owners[0][_RUN_STATE_KEY].monitor)
     resources.free_resources.assert_called_once()
-    client.send_request_before_shutdown.assert_not_called()
+    assert client.send_request_before_shutdown.call_count == int(late_cancel)
     assert executor.get_run_processes_keys() == []
 
 
-def test_monitor_rechecks_cancel_installed_after_completion_query(tmp_path, cleanup_deadlines):
+@pytest.mark.parametrize("launch_failed", [False, True], ids=["normal-launch", "failed-launch"])
+def test_monitor_rechecks_cancel_installed_after_completion_query(tmp_path, cleanup_deadlines, launch_failed):
     from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
     from tests.client_executor_test_utils import ControlledProcessAdapter
 
@@ -3019,7 +3042,7 @@ def test_monitor_rechecks_cancel_installed_after_completion_query(tmp_path, clea
     release_cancel = threading.Event()
 
     def terminate(_adapter, attempt):
-        if attempt == 2:
+        if not launch_failed or attempt == 2:
             second_cancel.set()
             release_cancel.wait()
 
@@ -3035,13 +3058,17 @@ def test_monitor_rechecks_cancel_installed_after_completion_query(tmp_path, clea
     launcher = MagicMock()
 
     def launch(_meta, context):
-        publish_job_handle(ProcessHandle(process_adapter=adapter), context)
-        raise RuntimeError("launch failed after publication")
+        handle = ProcessHandle(process_adapter=adapter)
+        if launch_failed:
+            publish_job_handle(handle, context)
+            raise RuntimeError("launch failed after publication")
+        return handle
 
     launcher.launch_job.side_effect = launch
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
         try:
-            with pytest.raises(JobCleanupPending):
+
+            def start_app():
                 executor.start_app(
                     client,
                     "job-1",
@@ -3052,6 +3079,14 @@ def test_monitor_rechecks_cancel_installed_after_completion_query(tmp_path, clea
                     resources,
                     ctx,
                 )
+
+            if launch_failed:
+                with pytest.raises(JobCleanupPending):
+                    start_app()
+            else:
+                start_app()
+                rc_file = tmp_path / "job-1" / FLMetaKey.PROCESS_RC_FILE
+                rc_file.write_text(str(int(ProcessExitCode.UNSAFE_COMPONENT)))
             owner = executor.run_processes["job-1"]
             state = owner[_RUN_STATE_KEY]
             adapter.exited.set()
@@ -3082,6 +3117,9 @@ def test_monitor_rechecks_cancel_installed_after_completion_query(tmp_path, clea
                 join_thread(state.monitor)
     resources.free_resources.assert_called_once()
     assert executor.get_run_processes_keys() == []
+    expected = JobReturnCode.ABORTED if launch_failed else ProcessExitCode.UNSAFE_COMPONENT
+    client.send_request_before_shutdown.assert_called_once()
+    assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == expected
 
 
 @pytest.mark.parametrize("aborted", [False, True], ids=["launch-failed", "admin-aborted"])

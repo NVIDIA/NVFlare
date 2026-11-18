@@ -180,8 +180,10 @@ failure cannot skip observation. The original launch failure is logged first.
 While CP lives, each accepted handle it owns has one registration that holds the
 admission allocation and credentials. Release requires backend completion
 evidence and no cancellation still in flight. The start caller and monitor
-coordinate so only one claims release. Heartbeat presence continues through
-outcome reporting, even after the monitor has claimed release.
+coordinate so only one claims release. Both recheck the current cancellation
+under the executor lock before removing the registration. The monitor keeps
+the recorded CJ outcome if it has to wait for a later stop. Heartbeat presence
+continues through outcome reporting, even after the monitor has claimed release.
 
 Each registered run has an explicit client-parent lifecycle in `_RunState`.
 `ClientStatus` retains its existing CJ-reported STARTING/STARTED/STOPPED values;

@@ -538,6 +538,8 @@ class JobExecutor(ClientExecutor):
         cancel.done.wait(self.job_launch_cleanup_timeout)
         state.observation_done.wait(self.job_launch_cleanup_timeout)
         with self.lock:
+            # An ordinary abort can have installed a new stop during observation.
+            cancel = pending_handle.cancel_call
             settled = cancel.done.is_set() and state.observed
             if not retry and settled:
                 # Synchronous rollback belongs to the start caller. The observer
@@ -1068,11 +1070,7 @@ class JobExecutor(ClientExecutor):
                     state.phase = _RunPhase.MONITORING
                     state.cleanup_since = None
                     state.reminded_at = 0.0
-            if state.launch_failed:
-                return_code = (
-                    JobReturnCode.ABORTED if process.get(_ABORT_REQUESTED_KEY) else ProcessExitCode.INFRASTRUCTURE_ERROR
-                )
-            elif state.phase != _RunPhase.CLEANUP_PENDING:
+            if not state.launch_failed and state.phase != _RunPhase.CLEANUP_PENDING:
                 try:
                     if self._restart_job(job_id, job_handle, return_code, fl_ctx):
                         state.phase = _RunPhase.MONITORING
@@ -1083,22 +1081,24 @@ class JobExecutor(ClientExecutor):
                     # Acceptance before publication remains outside this ownership contract.
                     self.logger.error(f"job {job_id}: cannot restart CJ: {secure_format_exception(e)}")
                     return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
-            with self.lock:
-                if self.run_processes.get(job_id) is not process:
-                    return
-                # An admin may have installed a fresh cancellation since the check
-                # above. Commit release only when it can no longer touch the runtime.
-                cancel = job_handle.cancel_call if isinstance(job_handle, _PendingJobHandle) else None
-                if cancel is not None and not cancel.done.is_set():
-                    continue
-                process_status = process.get(RunProcessKey.STATUS)
-                abort_requested = process.get(_ABORT_REQUESTED_KEY, False)
-                self.run_processes.pop(job_id)
-                self._finalizing_runs.add(job_id)
-                state.phase = _RunPhase.RELEASED
-                # Reuse the directory fence until credentials and outcome handling
-                # finish; a same-ID start must not race removal of its new files.
-                self._deleting_runs.add(job_id)
+            # A stop may have started while we read the result. Retry only the
+            # release check: get_return_code already consumed the CJ result file.
+            while True:
+                with self.lock:
+                    if self.run_processes.get(job_id) is not process:
+                        return
+                    cancel = job_handle.cancel_call if isinstance(job_handle, _PendingJobHandle) else None
+                    if cancel is None or cancel.done.is_set():
+                        process_status = process.get(RunProcessKey.STATUS)
+                        abort_requested = process.get(_ABORT_REQUESTED_KEY, False)
+                        self.run_processes.pop(job_id)
+                        self._finalizing_runs.add(job_id)
+                        state.phase = _RunPhase.RELEASED
+                        # Fence the directory until credentials and outcome handling finish.
+                        self._deleting_runs.add(job_id)
+                        break
+                if not cancel.done.wait(interval):
+                    self._retain_cleanup_owner(job_id, process)
             break
 
         # Removing the exact registration above is the sole release commit point.
@@ -1129,7 +1129,9 @@ class JobExecutor(ClientExecutor):
             # A generic RC 1 is actionable only while a checked-in worker is still active.
             # STARTING remains an infrastructure failure, while STOPPED teardown noise and
             # launcher UNKNOWN retain their existing non-reportable behavior.
-            if return_code == JobReturnCode.EXECUTION_ERROR and not abort_requested:
+            if state.launch_failed:
+                return_code = JobReturnCode.ABORTED if abort_requested else ProcessExitCode.INFRASTRUCTURE_ERROR
+            elif return_code == JobReturnCode.EXECUTION_ERROR and not abort_requested:
                 if process_status == ClientStatus.STARTING:
                     return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
                 elif process_status == ClientStatus.STARTED:
