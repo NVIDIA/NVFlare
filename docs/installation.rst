@@ -200,7 +200,7 @@ You can build wheel packages for NVFlare using the following steps:
 This creates ``dist/nvflare-<version>-py3-none-any.whl``. Release builds,
 local development wheels, and editable installs all use the distribution name
 ``nvflare``. Versioneer derives the version and source revision from the
-checkout; ``NVFL_RELEASE`` no longer changes the NVFlare package name.
+checkout.
 This applies to the main package built by the repository-root ``setup.py``.
 The separate ``nvflight/setup.py`` packaging also uses one distribution name,
 ``nvflare-light``, for release and development builds.
@@ -253,7 +253,7 @@ Migrating an existing nvflare-light-nightly installation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 NVFlight builds use ``nvflare-light`` with the version supplied through
-``NVFL_VERSION``. ``NVFL_RELEASE`` no longer changes the package name.
+``NVFL_VERSION``.
 Older development builds used ``nvflare-light-nightly``; pip treats that name
 as a separate distribution even though both install the same Python modules.
 
