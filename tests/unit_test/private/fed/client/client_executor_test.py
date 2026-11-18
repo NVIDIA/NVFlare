@@ -116,8 +116,8 @@ def _monitor_until_pending(executor, *args, **kwargs):
     pending = threading.Event()
     retain = executor._retain_cleanup_owner
 
-    def retained(job_id, expected_owner=None):
-        retain(job_id, expected_owner)
+    def retained(job_id, expected_owner=None, **kwargs):
+        retain(job_id, expected_owner, **kwargs)
         pending.set()
 
     with patch.object(executor, "_retain_cleanup_owner", side_effect=retained):
@@ -1863,7 +1863,7 @@ def test_admin_abort_after_monitor_error_still_cancels_and_observes(tmp_path):
     executor.run_processes["job-1"] = owner
     write_job_cert(str(tmp_path / "job-1"), b"cert", b"key")
     _monitor_until_pending(executor, client, "job-1", {"gpu": 1}, "token", resources, str(tmp_path), ctx)
-    assert executor.check_status("job-1").startswith("cleanup pending (age ")
+    assert executor.check_status("job-1").startswith("observation pending (age ")
     assert executor.get_status("job-1") == ClientStatus.CLEANUP_PENDING
     accepted.terminate.assert_not_called()
     executor.abort_app("job-1")
@@ -2509,7 +2509,8 @@ def test_monitor_commits_removal_before_slow_release_and_fences_the_directory(tm
             assert adapter.wait_entered.wait(5)
             adapter.exited.set()
             assert releasing.wait(5)
-            assert executor.get_run_processes_keys() == []
+            assert executor.get_run_processes_keys() == ["job-1"]
+            assert "job-1" not in executor.run_processes
             assert executor.get_status("job-1") == ClientStatus.STOPPED
             with pytest.raises(RuntimeError, match="in progress"):
                 executor.check_start_app("job-1")
@@ -2673,3 +2674,129 @@ def test_late_cleanup_cannot_mark_a_reused_job_id_pending(tmp_path):
             adapter.exited.set()
             for monitor in monitors:
                 join_thread(monitor)
+
+
+@pytest.mark.parametrize("report_error", [False, True], ids=["acknowledged", "report-error"])
+def test_finalizing_job_stays_in_heartbeat_until_outcome_report_returns(tmp_path, report_error):
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    accepted = MagicMock(spec=JobHandleSpec)
+    accepted.poll.return_value = JobReturnCode.SUCCESS
+    waiter_entered = threading.Event()
+    process_exited = threading.Event()
+    report_entered = threading.Event()
+    release_report = threading.Event()
+    resources = MagicMock()
+    launcher = MagicMock()
+    launcher.launch_job.return_value = accepted
+
+    def observe():
+        waiter_entered.set()
+        process_exited.wait()
+
+    def report(**kwargs):
+        assert kwargs["request"].payload[JobOutcomeMsgKey.CODE] == JobReturnCode.SUCCESS
+        report_entered.set()
+        release_report.wait()
+        if report_error:
+            raise RuntimeError("outcome connection failed")
+        reply = MagicMock()
+        reply.get_header.return_value = ReturnCode.OK
+        return reply
+
+    accepted.wait.side_effect = observe
+    client.send_request_before_shutdown.side_effect = report
+    write_job_cert(str(tmp_path / "job-1"), b"cert", b"key")
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        try:
+            executor.start_app(
+                client,
+                "job-1",
+                meta,
+                SimpleNamespace(workspace=str(tmp_path), set=[]),
+                {"gpu": 1},
+                "token",
+                resources,
+                ctx,
+            )
+            state = executor.run_processes["job-1"][_RUN_STATE_KEY]
+            assert waiter_entered.wait(5)
+            process_exited.set()
+            assert report_entered.wait(5)
+            # Release already committed, but the server still awaits this client's outcome.
+            with executor.lock:
+                assert "job-1" not in executor.run_processes
+            assert executor.get_run_processes_keys() == ["job-1"]
+            resources.free_resources.assert_called_once()
+            assert find_job_cert(str(tmp_path / "job-1")) is None
+            with pytest.raises(RuntimeError, match="in progress"):
+                executor.check_start_app("job-1")
+        finally:
+            process_exited.set()
+            release_report.set()
+            if "state" in locals():
+                join_thread(state.monitor)
+    assert executor.get_run_processes_keys() == []
+    resources.free_resources.assert_called_once()
+    client.send_request_before_shutdown.assert_called_once()
+
+
+def test_transient_observation_error_preserves_normal_cj_recovery(tmp_path):
+    observed = []
+
+    def observe(_executor, index, _handle):
+        observed.append(index)
+        if len(observed) == 1:
+            raise RuntimeError("transient backend observation failure")
+
+    launcher, client, _ = _run_recovery(tmp_path, [(True, 104), (True, 0)], on_wait=observe)
+    assert observed == [0, 0, 1]
+    assert launcher.launch_job.call_count == 2
+    assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == 0
+
+
+def test_transient_observation_error_does_not_disable_heartbeat_abort(tmp_path):
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    accepted = MagicMock(spec=JobHandleSpec)
+    accepted.poll.return_value = JobReturnCode.SUCCESS
+    second_wait = threading.Event()
+    release_wait = threading.Event()
+    attempts = []
+    resources = MagicMock()
+    launcher = MagicMock()
+    launcher.launch_job.return_value = accepted
+
+    def observe():
+        attempts.append(threading.get_ident())
+        if len(attempts) == 1:
+            raise RuntimeError("transient backend observation failure")
+        second_wait.set()
+        release_wait.wait()
+
+    accepted.wait.side_effect = observe
+    accepted._terminate_for_heartbeat_cleanup = MagicMock(side_effect=release_wait.set)
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        try:
+            executor.start_app(
+                client,
+                "job-1",
+                meta,
+                SimpleNamespace(workspace=str(tmp_path), set=[]),
+                {"gpu": 1},
+                "token",
+                resources,
+                ctx,
+            )
+            state = executor.run_processes["job-1"][_RUN_STATE_KEY]
+            assert second_wait.wait(5)
+            executor.abort_app("job-1", heartbeat_cleanup=True)
+            accepted._terminate_for_heartbeat_cleanup.assert_called_once()
+            accepted.terminate.assert_not_called()
+            assert len(set(attempts)) == 1
+        finally:
+            release_wait.set()
+            if "state" in locals():
+                join_thread(state.monitor)
+    resources.free_resources.assert_called_once()
+    assert executor.get_run_processes_keys() == []

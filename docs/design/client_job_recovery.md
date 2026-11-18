@@ -185,7 +185,9 @@ stateDiagram-v2
     STARTING --> RUNNING: Launch succeeds
     STARTING --> CLEANING_UP: Launch fails after publication
     RUNNING --> STARTING: Replace a completed CJ
-    RUNNING --> CLEANUP_PENDING: Observation fails
+    RUNNING --> OBSERVATION_PENDING: Observation fails
+    OBSERVATION_PENDING --> RUNNING: Observation recovers
+    OBSERVATION_PENDING --> CLEANUP_PENDING: Abort requested
     CLEANING_UP --> FINISHED: Completion confirmed before caller deadline
     CLEANING_UP --> CLEANUP_PENDING: Cleanup remains unresolved
     CLEANUP_PENDING --> FINISHED: Completion confirmed later
@@ -205,11 +207,16 @@ same monitor retries after the backend's `poll_interval` (10 seconds for backend
 without that setting). An explicit admin abort can wake this retry backoff and
 retry a completed cancellation, including one that returned without stopping the
 runtime. In-flight cancellation is reused and concurrent admin requests are
-serialized. Query failures do not themselves request cancellation.
+serialized. Query failures do not themselves request cancellation. A healthy run
+uses OBSERVATION_PENDING during an observation outage, preserving heartbeat
+abort handling and normal CJ recovery once observation succeeds. This is distinct
+from CLEANUP_PENDING after a failed launch or requested cancellation.
 
 Slurm cancellation is retried until one `scancel` request is accepted. After that,
 CP continues observation without sending more cancellation requests, including
-while the allocation remains COMPLETING. Cancellation observation uses intervals
+while the allocation remains COMPLETING. This also applies to a later explicit
+admin abort: it does not force another accepted Slurm cancellation. Cancellation
+observation uses intervals
 of at most one second during the first 10 seconds after the initial request,
 then returns to `poll_interval`. Repeated requests do not extend this fast window.
 Scheduler query outages and slow settlement can exceed the caller deadline.
@@ -226,8 +233,13 @@ Once observation succeeds and cancellation is no longer in flight, the monitor
 uses its ordinary completion path. Removing the exact registration under the
 executor lock is the release commit point. It then frees admission resources,
 removes the credential and reports the outcome once, outside that lock. A per-job
-directory fence prevents another start or deletion from racing these actions;
-other jobs and heartbeats can continue. Errors releasing admission or removing
+directory fence prevents another start or deletion from racing these actions.
+A separate finalizing set keeps the job in heartbeat reports until the outcome
+report returns, including while admission release or credential removal is in
+progress. The server must continue seeing that presence while its outcome is
+pending. This set records protocol presence, not another resource-release owner;
+registration removal remains the release commit point. Other jobs and heartbeats
+can continue. Errors releasing admission or removing
 credentials are logged critically for operator reconciliation; they do not
 suppress terminal outcome reporting or automatically repeat a possibly partial
 resource-manager release.
@@ -238,7 +250,9 @@ registered runs and runs whose directory cleanup is in progress. Status exposes
 `cleanup pending` with its age. The first unresolved cleanup emits a critical log;
 the existing heartbeat job-list read emits at most one reminder per run every
 five minutes, even if its backend wait remains blocked. Heartbeat aborts do not
-issue additional control calls. Confirmed late completion is logged and releases
+issue additional control calls for a run already in failed-launch cleanup. An
+observation outage alone preserves the server's ability to request its first
+abort. Confirmed late completion is logged and releases
 ownership automatically, without an admin abort.
 
 ### Guarantees and operator escalation
@@ -247,8 +261,14 @@ A normal `JobHandleSpec.wait()` return is the backend's existing completion
 contract. CP relies on that contract; it does not independently audit physical
 GPU reclamation. Cancellation acknowledgement, elapsed time, and a task's result
 are separate from runtime completion. Verified task results retain their existing
-success semantics. An observation error followed by recovery does not replay a
-CJ or fabricate an application failure.
+success semantics. An observation error alone does not trigger CJ replay or an
+application failure; normal CJ recovery still applies if subsequent completion
+evidence satisfies the existing recovery rules.
+
+If the normal monitor cannot start, launch cleanup retries monitor startup. If
+that attempt also fails, the run remains owned and logs that automatic observation
+is unavailable. An explicit admin abort can retry startup; no observer is claimed
+to be running while thread creation is failing.
 
 Uncertainty can persist indefinitely if the backend never provides reliable
 completion evidence. Preserve the exact runtime identity, workspace, launch files,
