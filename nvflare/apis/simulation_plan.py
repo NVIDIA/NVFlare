@@ -207,6 +207,8 @@ class SimulationPlanRuntime:
     def claim(self, section: str) -> dict:
         if section not in self.plan:
             raise ValueError(f"simulation plan has no {section} section")
+        if section in self._consumed:
+            raise RuntimeError(f"simulation plan section {section} was already claimed")
         self._consumed.add(section)
         return self.plan[section]
 

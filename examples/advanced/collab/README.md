@@ -85,6 +85,7 @@ commands before launching training.
 |---|---|---|
 | [CIFAR-10: FedAvg, FedProx, and SCAFFOLD](pt_cifar10/README.md) | Comparing synchronous algorithms and their client/server state exchange | Prepare CIFAR-10 client shards |
 | [Asynchronous CIFAR-10](pt_async_cifar10/README.md) | Buffered aggregation (FedBuff), client scheduling, and a synchronous comparison | Prepare logical-client shards; TensorBoard |
+| [Reproducible asynchronous CIFAR-10](pt_async_cifar10_reproducible/README.md) | Fixed-order or timed replay with logical clients and seeded training | Prepare CIFAR-10 shards; TensorBoard |
 | [CIFAR-10 SplitNN](../vertical_federated_learning/cifar10-splitnn/README.md) | Two-party split learning with activation and gradient exchange | Prepare data; TensorBoard and PSI |
 | [LLM supervised fine-tuning](pt_llm_sft/README.md) | Full-parameter Hugging Face training with server-side FedAvg | Prepare text data; Hugging Face dependencies and model resources |
 

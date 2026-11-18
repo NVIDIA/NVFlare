@@ -48,6 +48,8 @@ def test_plan_runtime_requires_claim_and_finalizes_once(tmp_path):
         runtime.assert_consumed()
     assert runtime.claim(ASYNC_EXECUTION) == plan[ASYNC_EXECUTION]
     runtime.assert_consumed()
+    with pytest.raises(RuntimeError, match="already claimed"):
+        runtime.claim(ASYNC_EXECUTION)
     runtime.finalize()
     runtime.finalize()
     assert len((tmp_path / "run.jsonl").read_text().splitlines()) == 1

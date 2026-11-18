@@ -135,6 +135,11 @@
     "destination_path": "collab/pt_async_cifar10",
     "category": "advanced"
   },
+  "collab-pt-async-reproducible": {
+    "source_path": "examples/advanced/collab/pt_async_cifar10_reproducible",
+    "destination_path": "collab/pt_async_cifar10_reproducible",
+    "category": "advanced"
+  },
   "collab-simple-async": {
     "source_path": "examples/advanced/collab/simple_async",
     "category": "advanced"

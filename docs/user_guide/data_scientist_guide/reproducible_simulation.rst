@@ -20,6 +20,12 @@ The :github_nvflare_link:`runnable NumPy example
 
    python -m numpy_async_reproducible.job --num-clients 2 --run-seed 10
 
+The :github_nvflare_link:`CIFAR-10 replay example
+<examples/advanced/collab/pt_async_cifar10_reproducible>` uses the same
+``FedBuffRecipe`` and simulator port with a seeded PyTorch trainer and
+logical CIFAR data shards. It resets client optimizer and loader state per
+assignment so a logical client's result does not depend on its physical worker.
+
 Its ``make_recipe()`` returns a regular ``FedBuffRecipe`` and ``make_plan()``
 supplies only the simulator. The equivalent import path is:
 
