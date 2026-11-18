@@ -803,7 +803,12 @@ class TestK8sJobHandle:
 
     @pytest.mark.parametrize(
         "exit_code",
-        [ProcessExitCode.EXCEPTION, ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR],
+        [
+            ProcessExitCode.EXCEPTION,
+            ProcessExitCode.UNSAFE_COMPONENT,
+            ProcessExitCode.CONFIG_ERROR,
+            ProcessExitCode.INFRASTRUCTURE_ERROR,
+        ],
     )
     def test_wait_preserves_deliberate_process_exit_code(self, exit_code):
         api = _make_api_instance()
@@ -818,7 +823,7 @@ class TestK8sJobHandle:
 
         assert handle.poll() == exit_code
 
-    def test_wait_keeps_sigkill_exit_aborted(self):
+    def test_wait_reports_sigkill_as_execution_error(self):
         api = _make_api_instance()
         resp = _make_pod_response(
             phase=PodPhase.FAILED.value,
@@ -829,7 +834,7 @@ class TestK8sJobHandle:
 
         handle.wait()
 
-        assert handle.poll() == JobReturnCode.ABORTED
+        assert handle.poll() == JobReturnCode.EXECUTION_ERROR
 
     def test_wait_poll_consistent_after_wait(self):
         api = _make_api_instance()
@@ -869,6 +874,7 @@ class TestK8sJobHandle:
         api = _make_api_instance()
         ws_transfer = Mock()
         handle = _make_handle(api=api, workspace_transfer=ws_transfer, workspace_job_id="job-raw")
+        handle.terminate()
         handle.terminate()
         ws_transfer.remove_job.assert_called_once_with("job-raw")
 
@@ -1430,14 +1436,12 @@ class TestJobArgsDict:
 # ---------------------------------------------------------------------------
 def _make_k8s_launcher_patches(patch_open=True):
     # kubernetes is imported inside launch_job (not at module level), so we rely
-    # on the sys.modules stubs scoped by this module's fixture. The only
-    # YAML dependency we need to intercept is in the shared study_data helper,
-    # plus builtins.open for reading the study-data file. CoreV1Api on the
+    # on the sys.modules stubs scoped by this module's fixture. builtins.open is
+    # patched so no file is read. CoreV1Api on the
     # already-stubbed _k8s_core module is patched with patch.object so each
     # test gets a fresh, controllable mock and the original stub is restored.
     # WorkspaceTransferManager is patched so tests don't register real CellNet handlers.
     patches = [
-        patch("nvflare.app_opt.job_launcher.study_data.yaml"),
         patch.object(_k8s_core, "CoreV1Api"),
         patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager"),
     ]
@@ -1457,11 +1461,10 @@ def _exit_patches(patches):
 
 
 def _setup_launcher(launcher_cls):
-    # K8sJobLauncher.__init__ only stores parameters; kubernetes config and the
-    # PVC file are loaded lazily inside launch_job, so no mocks are needed here.
+    # K8sJobLauncher.__init__ only stores parameters; kubernetes config is
+    # loaded lazily inside launch_job, so no mocks are needed here.
     return launcher_cls(
         config_file_path="/fake/kube/config",
-        study_data_pvc_file_path="/fake/study_data.yaml",
     )
 
 
@@ -1470,7 +1473,7 @@ class TestK8sJobLauncherHandleEvent:
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        _mock_open, _mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
+        _mock_open, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
@@ -1492,7 +1495,7 @@ class TestK8sJobLauncherHandleEvent:
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        _mock_open, _mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
+        _mock_open, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
@@ -1514,32 +1517,27 @@ class TestK8sJobLauncherHandleEvent:
 # ---------------------------------------------------------------------------
 class TestK8sJobLauncherInit:
     def test_init_stores_parameters(self):
-        # __init__ only stores params; kubernetes config and PVC file are loaded
+        # __init__ only stores params; kubernetes config is loaded
         # lazily inside launch_job, so no mocks are needed.
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         launcher = ClientK8sJobLauncher(
             config_file_path="/fake/kube/config",
-            study_data_pvc_file_path="/fake/study_data.yaml",
             timeout=60,
             namespace="test-ns",
             image_pull_secrets=["job-regcred"],
         )
 
-        assert launcher.study_data_pvc_file_path == "/fake/study_data.yaml"
         assert launcher.timeout == 60
         assert launcher.namespace == "test-ns"
         assert launcher.workspace_mount_path == WORKSPACE_MOUNT_PATH
         assert launcher.image_pull_secrets == ["job-regcred"]
-        # study_data.yaml is populated lazily
-        assert launcher.study_data_pvc_dict is None
 
     def test_init_stores_custom_workspace_mount_path(self):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         launcher = ClientK8sJobLauncher(
             config_file_path="/fake/kube/config",
-            study_data_pvc_file_path="/fake/study_data.yaml",
             workspace_mount_path="/mnt/data/nvflare",
         )
 
@@ -1551,7 +1549,6 @@ class TestK8sJobLauncherInit:
         with pytest.raises(ValueError, match="workspace_mount_path"):
             ClientK8sJobLauncher(
                 config_file_path="/fake/kube/config",
-                study_data_pvc_file_path="/fake/study_data.yaml",
                 workspace_mount_path="",
             )
 
@@ -1561,18 +1558,16 @@ class TestK8sJobLauncherInit:
         with pytest.raises(ValueError, match="workspace_mount_path"):
             ClientK8sJobLauncher(
                 config_file_path="/fake/kube/config",
-                study_data_pvc_file_path="/fake/study_data.yaml",
                 workspace_mount_path=1,
             )
 
-    @pytest.mark.parametrize("study_data_pvc_file_path", ["", 1, False])
-    def test_init_rejects_invalid_study_data_pvc_file_path(self, study_data_pvc_file_path):
+    def test_init_rejects_removed_study_data_pvc_file_path(self):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
-        with pytest.raises(ValueError, match="study_data_pvc_file_path"):
+        with pytest.raises(TypeError, match="study_data_pvc_file_path"):
             ClientK8sJobLauncher(
                 config_file_path="/fake/kube/config",
-                study_data_pvc_file_path=study_data_pvc_file_path,
+                study_data_pvc_file_path="/fake/study_data.yaml",
             )
 
     def test_init_rejects_empty_ephemeral_storage(self):
@@ -1581,7 +1576,6 @@ class TestK8sJobLauncherInit:
         with pytest.raises(ValueError, match="ephemeral_storage"):
             ClientK8sJobLauncher(
                 config_file_path="/fake/kube/config",
-                study_data_pvc_file_path="/fake/study_data.yaml",
                 ephemeral_storage="",
             )
 
@@ -1591,7 +1585,6 @@ class TestK8sJobLauncherInit:
         with pytest.raises(ValueError, match="ephemeral_storage"):
             ClientK8sJobLauncher(
                 config_file_path="/fake/kube/config",
-                study_data_pvc_file_path="/fake/study_data.yaml",
                 ephemeral_storage=1,
             )
 
@@ -1602,7 +1595,6 @@ class TestK8sJobLauncherInit:
         with pytest.raises(ValueError, match="pending_timeout"):
             ClientK8sJobLauncher(
                 config_file_path="/fake/kube/config",
-                study_data_pvc_file_path="/fake/study_data.yaml",
                 pending_timeout=pending_timeout,
             )
 
@@ -1616,7 +1608,6 @@ class TestK8sJobLauncherInit:
         with pytest.raises(ValueError, match="image_pull_secrets"):
             ClientK8sJobLauncher(
                 config_file_path="/fake/kube/config",
-                study_data_pvc_file_path="/fake/study_data.yaml",
                 image_pull_secrets=image_pull_secrets,
             )
 
@@ -1629,7 +1620,7 @@ class TestClientK8sJobLauncherGetModuleArgs:
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        _mock_open, _mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
+        _mock_open, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
@@ -1653,7 +1644,7 @@ class TestClientK8sJobLauncherGetModuleArgs:
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        _mock_open, _mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
+        _mock_open, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
@@ -1671,7 +1662,7 @@ class TestServerK8sJobLauncherGetModuleArgs:
         from nvflare.app_opt.job_launcher.k8s_launcher import ServerK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        _mock_open, _mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
+        _mock_open, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             launcher = _setup_launcher(ServerK8sJobLauncher)
             fl_ctx = FLContext()
@@ -1696,7 +1687,7 @@ class TestServerK8sJobLauncherGetModuleArgs:
         from nvflare.app_opt.job_launcher.k8s_launcher import ServerK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        _mock_open, _mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
+        _mock_open, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             launcher = _setup_launcher(ServerK8sJobLauncher)
             fl_ctx = FLContext()
@@ -1779,7 +1770,6 @@ class TestK8sJobLauncherLaunchJob:
         self,
         patches,
         namespace="test-ns",
-        study_data_pvc_dict=None,
         default_python_path=None,
         ephemeral_storage=None,
         workspace_mount_path=None,
@@ -1789,12 +1779,8 @@ class TestK8sJobLauncherLaunchJob:
     ):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
-        mock_open, mock_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
-        if study_data_pvc_dict is None:
-            study_data_pvc_dict = {"study-a": {"training": {"source": "data-pvc", "mode": "ro"}}}
-        mock_yaml.safe_load.return_value = study_data_pvc_dict
+        mock_open, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
         self.mock_open = mock_open
-        self.mock_yaml = mock_yaml
         mock_api = MagicMock()
         mock_core_cls.return_value = mock_api
         self.mock_transfer_cls = mock_transfer_cls
@@ -1805,7 +1791,6 @@ class TestK8sJobLauncherLaunchJob:
         self.mock_transfer = mock_transfer
         launcher_kwargs = {
             "config_file_path": config_file_path,
-            "study_data_pvc_file_path": "/fake/study_data.yaml",
             "namespace": namespace,
             "default_python_path": default_python_path,
         }
@@ -1859,11 +1844,8 @@ class TestK8sJobLauncherLaunchJob:
                 patch.object(_k8s_client, "Configuration", FakeConfiguration),
             ]
         )
-        _mock_open, mock_yaml, mock_core_cls, mock_transfer_cls, mock_load_incluster_config, *_ = _enter_patches(
-            patches
-        )
+        _mock_open, mock_core_cls, mock_transfer_cls, mock_load_incluster_config, *_ = _enter_patches(patches)
         try:
-            mock_yaml.safe_load.return_value = {"study-a": {"training": {"source": "data-pvc", "mode": "ro"}}}
             mock_api = MagicMock()
             mock_core_cls.return_value = mock_api
             mock_transfer = MagicMock()
@@ -1874,7 +1856,6 @@ class TestK8sJobLauncherLaunchJob:
 
             launcher = ClientK8sJobLauncher(
                 config_file_path=None,
-                study_data_pvc_file_path="/fake/study_data.yaml",
                 namespace="test-ns",
             )
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
@@ -2161,7 +2142,7 @@ spec:
         )
 
         patches = _make_k8s_launcher_patches(patch_open=False)
-        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
         try:
             mock_api = MagicMock()
             mock_core_cls.return_value = mock_api
@@ -2231,7 +2212,6 @@ spec:
             assert resources["limits"]["cpu"] == "2"
             assert resources["limits"]["memory"] == "8Gi"
             assert resources["requests"]["ephemeral-storage"] == "8Gi"
-            _mock_study_data_yaml.safe_load.assert_not_called()
         finally:
             _exit_patches(patches)
 
@@ -2245,7 +2225,7 @@ spec:
             template_path = local_dir / rel_path
             template_path.parent.mkdir(parents=True, exist_ok=True)
             template_path.write_text(text, encoding="utf-8")
-        self._mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
         mock_api = MagicMock()
         mock_core_cls.return_value = mock_api
         self.mock_transfer_cls = mock_transfer_cls
@@ -2285,7 +2265,6 @@ spec:
             mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
             assert volume_names == {"workspace-job", "startup-kit"}
             assert mount_names == {"workspace-job", "startup-kit"}
-            self._mock_study_data_yaml.safe_load.assert_not_called()
         finally:
             _exit_patches(patches)
 
@@ -2568,45 +2547,24 @@ spec:
                 "mountPath": "/data/study-a/training",
                 "readOnly": True,
             }
-            self._mock_study_data_yaml.safe_load.assert_not_called()
         finally:
             _exit_patches(patches)
 
-    def test_study_runtime_conflicts_with_v1_file(self, tmp_path):
+    @pytest.mark.parametrize("with_runtime_file", [False, True])
+    def test_rejects_legacy_study_data_file(self, tmp_path, with_runtime_file):
         patches = _make_k8s_launcher_patches(patch_open=False)
-        launcher, mock_api = self._setup_v2(patches, tmp_path, "format_version: 2\nstudies: {}\n")
+        launcher, mock_api = self._setup_v2(
+            patches, tmp_path, "format_version: 2\nstudies: {}\n" if with_runtime_file else "format_version: 2\n"
+        )
+        if not with_runtime_file:
+            (tmp_path / "local" / "study_runtime.yaml").unlink()
         (tmp_path / "local" / "study_data.yaml").write_text("study-a: {}\n", encoding="utf-8")
         try:
-            with pytest.raises(RuntimeError, match="cannot be combined"):
+            with pytest.raises(RuntimeError, match="no longer supported"):
                 launcher.launch_job(
                     _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
                 )
             mock_api.create_namespaced_pod.assert_not_called()
-        finally:
-            _exit_patches(patches)
-
-    def test_study_runtime_conflicts_with_existing_pvc_file_arg(self, tmp_path):
-        legacy_file = tmp_path / "pvc_map.yaml"
-        legacy_file.write_text("study-a: {}\n", encoding="utf-8")
-        patches = _make_k8s_launcher_patches(patch_open=False)
-        launcher, mock_api = self._setup_v2(patches, tmp_path, "format_version: 2\nstudies: {}\n")
-        launcher.study_data_pvc_file_path = str(legacy_file)
-        try:
-            with pytest.raises(RuntimeError, match="cannot be combined"):
-                launcher.launch_job(
-                    _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
-                )
-            mock_api.create_namespaced_pod.assert_not_called()
-        finally:
-            _exit_patches(patches)
-
-    def test_study_runtime_allows_pvc_file_arg_pointing_to_missing_file(self, tmp_path):
-        patches = _make_k8s_launcher_patches(patch_open=False)
-        launcher, mock_api = self._setup_v2(patches, tmp_path, "format_version: 2\nstudies: {}\n")
-        launcher.study_data_pvc_file_path = str(tmp_path / "does-not-exist.yaml")
-        try:
-            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path)))
-            mock_api.create_namespaced_pod.assert_called_once()
         finally:
             _exit_patches(patches)
 
@@ -2959,20 +2917,20 @@ spec:
         finally:
             _exit_patches(patches)
 
-    def test_pod_manifest_uses_study_dataset_pvcs(self):
-        patches = _make_k8s_launcher_patches()
-        launcher, mock_api = self._setup(
+    def test_pod_manifest_uses_study_dataset_pvcs(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
             patches,
-            study_data_pvc_dict={
-                "study-a": {
-                    "training": {"source": "study-train-pvc", "mode": "ro"},
-                    "output": {"source": "study-output-pvc", "mode": "rw"},
-                }
-            },
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    datasets:\n"
+            "      training: {source: study-train-pvc, mode: ro}\n"
+            "      output: {source: study-output-pvc, mode: rw}\n",
         )
-        self._prime_running(mock_api)
         try:
-            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path)))
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             vol_map = {v["name"]: v for v in manifest["spec"]["volumes"]}
             mount_map = {m["mountPath"]: m for m in manifest["spec"]["containers"][0]["volumeMounts"]}
@@ -3007,30 +2965,19 @@ spec:
         finally:
             _exit_patches(patches)
 
-    def test_pod_manifest_omits_data_pvc_for_default_study(self):
-        patches = _make_k8s_launcher_patches()
-        launcher, mock_api = self._setup(patches)
-        self._prime_running(mock_api)
-        try:
-            launcher.launch_job(_make_launch_job_meta(study="default"), _make_launch_fl_ctx())
-            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            vol_names = {v["name"] for v in manifest["spec"]["volumes"]}
-            mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
-            assert vol_names == {"workspace-job", "startup-kit"}
-            assert mount_names == {"workspace-job", "startup-kit"}
-            self.mock_open.assert_called_once_with("/fake/study_data.yaml", "rt")
-        finally:
-            _exit_patches(patches)
-
-    def test_pod_manifest_uses_default_study_mapping_when_present(self):
-        patches = _make_k8s_launcher_patches()
-        launcher, mock_api = self._setup(
+    def test_pod_manifest_uses_default_study_mapping_when_present(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
             patches,
-            study_data_pvc_dict={"default": {"training": {"source": "default-train-pvc", "mode": "ro"}}},
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  default:\n"
+            "    datasets:\n"
+            "      training: {source: default-train-pvc, mode: ro}\n",
         )
-        self._prime_running(mock_api)
         try:
-            launcher.launch_job(_make_launch_job_meta(study="default"), _make_launch_fl_ctx())
+            launcher.launch_job(_make_launch_job_meta(study="default"), _make_launch_fl_ctx(workspace=str(tmp_path)))
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             vol_map = {v["name"]: v for v in manifest["spec"]["volumes"]}
             mount_map = {m["mountPath"]: m for m in manifest["spec"]["containers"][0]["volumeMounts"]}
@@ -3044,26 +2991,9 @@ spec:
         finally:
             _exit_patches(patches)
 
-    def test_pod_manifest_omits_data_pvc_when_study_mapping_is_missing(self, caplog):
-        patches = _make_k8s_launcher_patches()
-        launcher, mock_api = self._setup(patches, study_data_pvc_dict={"other-study": {}})
-        self._prime_running(mock_api)
-        try:
-            with caplog.at_level(logging.WARNING):
-                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
-            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            vol_names = {v["name"] for v in manifest["spec"]["volumes"]}
-            mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
-            assert vol_names == {"workspace-job", "startup-kit"}
-            assert mount_names == {"workspace-job", "startup-kit"}
-            assert "has no entry for study 'study-a'" in caplog.text
-        finally:
-            _exit_patches(patches)
-
-    def test_pod_manifest_omits_data_pvc_when_study_data_file_missing_for_study_job(self):
+    def test_pod_manifest_omits_data_pvc_without_study_runtime_file(self):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
-        self.mock_open.side_effect = FileNotFoundError("/fake/study_data.yaml")
         self._prime_running(mock_api)
         try:
             launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
@@ -3072,23 +3002,6 @@ spec:
             mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
             assert vol_names == {"workspace-job", "startup-kit"}
             assert mount_names == {"workspace-job", "startup-kit"}
-            self.mock_yaml.safe_load.assert_not_called()
-        finally:
-            _exit_patches(patches)
-
-    def test_pod_manifest_omits_data_pvc_when_study_data_file_missing_without_study(self):
-        patches = _make_k8s_launcher_patches()
-        launcher, mock_api = self._setup(patches)
-        self.mock_open.side_effect = FileNotFoundError("/fake/study_data.yaml")
-        self._prime_running(mock_api)
-        try:
-            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
-            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            vol_names = {v["name"] for v in manifest["spec"]["volumes"]}
-            mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
-            assert vol_names == {"workspace-job", "startup-kit"}
-            assert mount_names == {"workspace-job", "startup-kit"}
-            self.mock_open.assert_not_called()
         finally:
             _exit_patches(patches)
 
@@ -3474,35 +3387,6 @@ spec:
         finally:
             _exit_patches(patches)
 
-    # -- PVC file validation (lazy-loaded in launch_job) ----------------------
-
-    def test_raises_on_non_dict_pvc_file(self):
-        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
-
-        patches = _make_k8s_launcher_patches()
-        mock_open, mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
-        try:
-            mock_yaml.safe_load.return_value = "not-a-dict"
-            launcher = ClientK8sJobLauncher(
-                config_file_path="/fake/kube/config",
-                study_data_pvc_file_path="/fake/study_data.yaml",
-            )
-            with pytest.raises(ValueError, match="dictionary"):
-                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
-        finally:
-            _exit_patches(patches)
-
-    def test_raises_on_flat_study_data_map(self):
-        patches = _make_k8s_launcher_patches()
-        launcher, mock_api = self._setup(patches, study_data_pvc_dict={"study-a": "pvc-a"})
-        self._prime_running(mock_api)
-        try:
-            with pytest.raises(ValueError, match="study -> dataset"):
-                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
-            mock_api.create_namespaced_pod.assert_not_called()
-        finally:
-            _exit_patches(patches)
-
 
 # ---------------------------------------------------------------------------
 # Volume mount list shape (tested via _DEFAULT_VOLUME_MOUNT_LIST defined above)
@@ -3829,11 +3713,11 @@ def _task_profile(pvc_root, persist_resident_workspaces=True):
     )
 
 
-def _mock_job_workspace_owner(monkeypatch, launcher):
+def _mock_job_workspace_owner(monkeypatch, launcher, job_id=_TASK_JOB_ID):
     # Unit-test the valid PVC profile independently of the host runner's UID.
     # The separate ownership-guard tests continue to use real filesystem IDs.
     real_stat = os.stat
-    directory = os.path.join(launcher.job_workspace_pvc_root, job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE))
+    directory = os.path.join(launcher.job_workspace_pvc_root, job_workspace_subpath(job_id, _TASK_SITE))
 
     def stat(path, *args, **kwargs):
         info = real_stat(path, *args, **kwargs)
@@ -3846,12 +3730,32 @@ def _mock_job_workspace_owner(monkeypatch, launcher):
     monkeypatch.setattr(os, "stat", stat)
 
 
+def _exited_cj(handle, sandbox_down=True, exit_code=137):
+    return SimpleNamespace(
+        metadata=SimpleNamespace(uid=handle.pod_uid, deletion_timestamp=None),
+        spec=SimpleNamespace(
+            node_name="node-1",
+            containers=[SimpleNamespace(name=handle._job_container_name)],
+            init_containers=[],
+            ephemeral_containers=[],
+        ),
+        status=SimpleNamespace(
+            phase="Succeeded" if exit_code == 0 else "Failed",
+            reason="Error",
+            conditions=[SimpleNamespace(type="PodReadyToStartContainers", status="False" if sandbox_down else "True")],
+            container_statuses=[_make_terminated_container_status(handle._job_container_name, exit_code)],
+            init_container_statuses=[],
+            ephemeral_container_statuses=[],
+        ),
+    )
+
+
 @pytest.mark.parametrize("lifetime", ["job", "task"])
-@pytest.mark.parametrize("extension", ["json", "conf", "yml"])
+@pytest.mark.parametrize("extension", ["json", "json.default"])
 @pytest.mark.parametrize("budgets", ["defaults", "native_compute", "portable_compute", "cj_gpu"])
-@pytest.mark.parametrize("create_status", [None, 403, 500])
+@pytest.mark.parametrize("create_status, cleanup_status", [(None, None), (403, None), (500, None), (None, 503)])
 def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
-    tmp_path, monkeypatch, lifetime, extension, budgets, create_status
+    tmp_path, monkeypatch, lifetime, extension, budgets, create_status, cleanup_status
 ):
     if lifetime == "task" and _k8s_quantity is None:
         pytest.skip("Kubernetes quantity parser is required for the task backend binding")
@@ -3859,10 +3763,7 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
     (tmp_path / "local").mkdir()
     config = tmp_path / _TASK_JOB_ID / f"app_{_TASK_SITE}" / "config"
     config.mkdir(parents=True)
-    content = (
-        json.dumps({"execution_lifetime": lifetime}) if extension == "json" else f"execution_lifetime: {lifetime}\n"
-    )
-    (config / f"config_fed_client.{extension}").write_text(content)
+    (config / f"config_fed_client.{extension}").write_text(json.dumps({"execution_lifetime": lifetime}))
     workspace = Workspace(str(tmp_path), site_name=_TASK_SITE)
     fl_ctx = FLContext()
     fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, _TASK_SITE, private=False, sticky=True)
@@ -3918,6 +3819,7 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
     )
     launcher._prepare_workspace_subpath = Mock(wraps=launcher._prepare_workspace_subpath)
     api = launcher.core_v1 = Mock()
+    api.create_namespaced_pod.return_value.metadata.uid = "cj-uid-1"
     if create_status:
         from kubernetes.client.rest import ApiException
 
@@ -3963,8 +3865,7 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
         assert handle.terminal_return_code == JobReturnCode.EXCEPTION
         return
     assert (handle.task_owner is not None) == (lifetime == "task")
-    # Kubernetes does not opt into generic CJ recovery while old attempts and
-    # retained workspaces still require the CP's ownership fence.
+    # An active CJ cannot authorize replacement, even on a persistent volume.
     assert handle.can_restart() is False
     spec = manifest["spec"]
     container = spec["containers"][0]
@@ -4014,16 +3915,192 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
     # Existing credential ownership and workspace-transfer mechanisms are retained.
     launcher._own_credential_secret.assert_called_once()
     transfer.get_or_create.return_value.add_job.assert_called_once_with(_TASK_JOB_ID, str(tmp_path))
-    launcher._prepare_workspace_subpath.assert_called_once_with(_TASK_JOB_ID, _TASK_SITE)
+    launcher._prepare_workspace_subpath.assert_called_once_with(_TASK_JOB_ID, _TASK_SITE, None)
     job_dir = pvc_root / workspace_mount["subPath"]
     (job_dir / "committed-checkpoint").write_bytes(b"persist across CJ deletion")
     (tmp_path / "cp-private-state").write_bytes(b"private")
     assert not (job_dir / "cp-private-state").exists()
+    from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_PERSISTENT_WORKSPACE, WORKSPACE_READY_FILE
+
+    assert {item["name"]: item.get("value") for item in container["env"]}[ENV_PERSISTENT_WORKSPACE] == "1"
+    (job_dir / WORKSPACE_READY_FILE).touch()
+    api.read_namespaced_pod.return_value = _exited_cj(handle)
+    if handle.task_owner is not None:
+        handle.task_owner.backend.cleanup_timeout = 0.01
+        handle.task_owner.thread.is_alive.return_value = False
+    handle.wait()
+    assert handle.can_restart()
+    old_handle = handle
+    fl_ctx.set_prop(FLContextKey.JOB_RESTART_HANDLE, old_handle, private=True, sticky=False)
+    api.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
+    api.create_namespaced_pod.return_value.metadata.uid = "cj-uid-2"
+    if cleanup_status:
+        api.delete_namespaced_pod.side_effect = _FakeApiException(status=cleanup_status)
+    with (
+        patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager", transfer),
+        patch("nvflare.app_opt.task_launcher.k8s_task_service.K8sTaskService", service),
+    ):
+        handle = launcher.launch_job(meta, fl_ctx)
+    assert handle.pod_uid == "cj-uid-2"
+    assert handle.pod_name != old_handle.pod_name
+    api.delete_namespaced_pod.assert_called_once_with(
+        name=old_handle.pod_name,
+        namespace=old_handle.namespace,
+        body={"preconditions": {"uid": old_handle.pod_uid}},
+        _request_timeout=10.0,
+    )
+    assert handle.workspace_reservation == old_handle.workspace_reservation
+    assert handle.pod_manifest["spec"]["volumes"] == spec["volumes"]
+    assert handle.pod_manifest["spec"]["containers"][0]["volumeMounts"] == container["volumeMounts"]
+    assert launcher._ensure_job_credential_secret.call_args_list[0].args[0] != (
+        launcher._ensure_job_credential_secret.call_args_list[1].args[0]
+    )
+    assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
+    api.delete_namespaced_pod.side_effect = None
     handle.terminate()
     assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
     with pytest.raises(ValueError, match="already exists"):
         launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
     assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
+
+
+@pytest.fixture
+def recoverable_cj(tmp_path):
+    from nvflare.app_opt.job_launcher.workspace_cell_transfer import WORKSPACE_READY_FILE
+
+    handle = _make_handle(workspace_job_id="job-1")
+    handle.pod_uid = "cj-uid"
+    info = tmp_path.stat()
+    handle.workspace_reservation = (str(tmp_path), info.st_dev, info.st_ino)
+    (tmp_path / WORKSPACE_READY_FILE).touch()
+    handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle)
+    handle.wait()
+    return handle
+
+
+@pytest.mark.parametrize("task_mode", [False, True], ids=["resident", "task"])
+@pytest.mark.parametrize(
+    "exit_code, cancelled, restart_expected",
+    [
+        (0, False, False),
+        (1, False, True),
+        (9, False, False),
+        (101, False, True),
+        (102, False, False),
+        (103, False, False),
+        (104, False, True),
+        (137, False, True),
+        (143, False, True),
+        (137, True, False),
+    ],
+)
+def test_cp_monitor_recovers_confirmed_cj_failures(tmp_path, task_mode, exit_code, cancelled, restart_expected):
+    from nvflare.apis.job_launcher_spec import JobHandleSpec
+    from nvflare.app_opt.job_launcher.workspace_cell_transfer import WORKSPACE_READY_FILE
+    from nvflare.private.defs import JobOutcomeMsgKey
+    from nvflare.private.fed.client.client_executor import _RESTART_KEY, JobExecutor, _JobRestart
+    from nvflare.private.fed.client.client_status import ClientStatus
+
+    handle = _make_handle(workspace_job_id="job-1")
+    handle.pod_uid = "cj-uid"
+    info = tmp_path.stat()
+    handle.workspace_reservation = (str(tmp_path), info.st_dev, info.st_ino)
+    (tmp_path / WORKSPACE_READY_FILE).touch()
+    handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle, exit_code=exit_code)
+    if task_mode:
+        handle.task_owner = Mock()
+        handle.task_owner.backend.cleanup_timeout = 1
+        handle.task_owner.thread.is_alive.return_value = False
+    if cancelled:
+        handle.terminate()
+
+    client, ctx = MagicMock(), _make_launch_fl_ctx()
+    executor = JobExecutor(client, "startup")
+    executor.max_cj_restart_failures = 3
+    executor.run_processes["job-1"] = {
+        RunProcessKey.JOB_HANDLE: handle,
+        RunProcessKey.STATUS: ClientStatus.STARTED,
+        _RESTART_KEY: _JobRestart(Mock(), {}, {}),
+    }
+    replacement = MagicMock(spec=JobHandleSpec)
+    replacement.poll.return_value = JobReturnCode.SUCCESS
+
+    def launch(_job_id, _restart, pending, fl_ctx):
+        assert fl_ctx.get_prop(FLContextKey.JOB_RESTART_HANDLE) is handle
+        pending.attach(replacement)
+
+    executor._launch_job = Mock(side_effect=launch)
+    # An abrupt CJ exit leaves no process.rc in CP's separate private workspace.
+    executor._wait_child_process_finish(client, "job-1", None, None, None, str(tmp_path / "cp"), ctx)
+    assert executor._launch_job.call_count == int(restart_expected)
+    assert not executor.run_processes
+    assert ctx.get_prop(FLContextKey.JOB_RESTART_HANDLE) is None
+    outcome = client.send_request_before_shutdown.call_args.kwargs["request"].payload
+    assert outcome[JobOutcomeMsgKey.CODE] == (9 if cancelled else 0 if restart_expected else exit_code)
+
+
+@pytest.mark.parametrize(
+    "fault", ["ephemeral", "uninitialized", "node-lost", "missing", "api-error", "different-uid", "cancelled"]
+)
+def test_recovery_requires_durable_initialized_workspace_and_confirmed_cj(recoverable_cj, tmp_path, fault):
+    from nvflare.app_opt.job_launcher.workspace_cell_transfer import WORKSPACE_READY_FILE
+
+    handle = recoverable_cj
+    pod = handle.api_instance.read_namespaced_pod.return_value
+    if fault == "ephemeral":
+        handle.workspace_reservation = None
+    elif fault == "uninitialized":
+        (tmp_path / WORKSPACE_READY_FILE).unlink()
+    elif fault == "node-lost":
+        pod.status.reason = "NodeLost"
+    elif fault == "different-uid":
+        pod.metadata.uid = "replacement"
+    elif fault == "cancelled":
+        handle.terminate()
+    else:
+        handle.api_instance.read_namespaced_pod.side_effect = _FakeApiException(
+            status=404 if fault == "missing" else 503
+        )
+    assert handle.can_restart() is False
+
+
+@pytest.mark.parametrize("outcome", ["settled", "timeout", "cancelled"])
+@pytest.mark.parametrize("order", ["worker-first", "cj-first", "together"])
+def test_recovery_waits_for_cj_sandbox_and_cp_owned_tasks(recoverable_cj, monkeypatch, outcome, order):
+    handle = recoverable_cj
+    owner = handle.task_owner = Mock()
+    owner.backend.cleanup_timeout = 1
+    owner.thread.is_alive.return_value = order != "worker-first"
+    pod = handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle, sandbox_down=order == "cj-first")
+
+    def advance(_):
+        if outcome == "settled":
+            pod.status.conditions[0].status = "False"
+            owner.thread.is_alive.return_value = False
+        elif outcome == "cancelled":
+            handle.terminate()
+
+    with patch("nvflare.app_opt.job_launcher.k8s_launcher.time") as clock:
+        clock.monotonic.side_effect = [0, 0, 2]
+        clock.sleep.side_effect = advance
+        assert handle.can_restart() == (outcome == "settled")
+        clock.sleep.assert_called_once()
+
+
+@pytest.mark.parametrize("runner_uid", [0, 1000], ids=["root-runner", "nonroot-runner"])
+def test_recovery_cannot_adopt_a_replaced_workspace(tmp_path, monkeypatch, recoverable_cj, runner_uid):
+    with patch.object(os, "getuid", return_value=runner_uid), patch.object(os, "getgid", return_value=runner_uid):
+        launcher = _task_profile(tmp_path)
+    _mock_job_workspace_owner(monkeypatch, launcher, job_id="job-1")
+    subpath = launcher._prepare_workspace_subpath("job-1", _TASK_SITE)
+    directory = tmp_path / subpath
+    info = directory.stat()
+    recoverable_cj.workspace_reservation = (str(directory), info.st_dev, info.st_ino)
+    assert launcher._prepare_workspace_subpath("job-1", _TASK_SITE, recoverable_cj) == subpath
+    directory.rename(directory.with_name("old"))
+    directory.mkdir()
+    with pytest.raises(ValueError, match="differs"):
+        launcher._prepare_workspace_subpath("job-1", _TASK_SITE, recoverable_cj)
 
 
 @pytest.mark.parametrize("fault", ["sidecar", "host", "missing-volume", "wrong-mount", "unknown-lifetime"])

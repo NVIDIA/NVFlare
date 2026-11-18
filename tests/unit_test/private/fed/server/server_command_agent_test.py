@@ -12,12 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.core_cell import ReturnCode
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.private.defs import CellMessageHeaderKeys
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
+from nvflare.private.fed.server.server_commands import ServerCommands
 
 
 class TestAuxCommunicateAuthCheck:
@@ -46,6 +54,26 @@ class TestAuxCommunicateAuthCheck:
         assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.AUTHENTICATION_ERROR
 
 
+def test_aux_communicate_binds_authenticated_sender_for_job_log_streams():
+    engine = MagicMock()
+    fl_ctx = FLContext()
+    fl_ctx.put(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    engine.new_context.return_value.__enter__.return_value = fl_ctx
+    engine.server.server_state.aux_communicate.return_value = {}
+    engine.server.authentication_check.return_value = None
+    engine.dispatch.return_value = Shareable()
+    request = CellMessage(
+        {MessageHeaderKey.TOPIC: "log_stream", CellMessageHeaderKeys.CLIENT_NAME: "site-1"}, Shareable()
+    )
+
+    with patch("nvflare.private.fed.server.server_command_agent.gen_new_peer_ctx", return_value=FLContext()):
+        result = ServerCommandAgent(engine=engine, cell=MagicMock()).aux_communicate(request)
+
+    assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+    assert fl_ctx.get_prop(FLContextKey.CLIENT_NAME) == "site-1"
+    engine.dispatch.assert_called_once_with(topic="log_stream", request=request.payload, fl_ctx=fl_ctx)
+
+
 def test_stopped_server_command_agent_rejects_requests_without_engine_access():
     engine = MagicMock()
     agent = ServerCommandAgent(engine=engine, cell=MagicMock())
@@ -58,3 +86,41 @@ def test_stopped_server_command_agent_rejects_requests_without_engine_access():
     assert execute_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.SERVICE_UNAVAILABLE
     assert aux_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.SERVICE_UNAVAILABLE
     engine.new_context.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "origin,peer",
+    [
+        ("site-1.attacker", "server"),  # authenticated client traffic relayed by the server
+        ("server", "site-1.attacker"),  # claimed server origin on a direct client connection
+        ("server", None),
+    ],
+)
+def test_control_commands_require_parent_origin_and_transport_peer(monkeypatch, origin, peer):
+    engine = MagicMock()
+    command = MagicMock()
+    monkeypatch.setattr(ServerCommands, "get_command", lambda name: command)
+    request = CellMessage({MessageHeaderKey.TOPIC: "abort", MessageHeaderKey.ORIGIN: origin}, Shareable())
+    # A wire header with a property key is not receiver-owned transport provenance.
+    request.set_header(MessagePropKey.ENDPOINT, SimpleNamespace(name="server"))
+    if peer is not None:
+        request.set_prop(MessagePropKey.ENDPOINT, SimpleNamespace(name=peer))
+
+    reply = ServerCommandAgent(engine, MagicMock()).execute_command(request)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.AUTHENTICATION_ERROR
+    command.process.assert_not_called()
+    engine.new_context.assert_not_called()
+
+
+def test_parent_can_issue_status_command(monkeypatch):
+    command = MagicMock()
+    command.process.return_value = Shareable({"result": "parent command processed"})
+    monkeypatch.setattr(ServerCommands, "get_command", lambda name: command)
+    request = CellMessage({MessageHeaderKey.TOPIC: "show_stats", MessageHeaderKey.ORIGIN: "server"}, Shareable())
+    request.set_prop(MessagePropKey.ENDPOINT, SimpleNamespace(name="server"))
+
+    reply = ServerCommandAgent(MagicMock(), MagicMock()).execute_command(request)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+    assert reply.payload["result"] == "parent command processed"

@@ -3,7 +3,9 @@
 Welcome to the five-part course on Federated Learning with NVIDIA FLARE!  
 This course covers everything from the fundamentals to advanced applications, system deployment, privacy, security, and real-world industry use cases.
 
-> **NVFlare 2.10 course update:** [Running Federated Learning Applications](part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/README.md) uses the Recipe API and requires NVFlare 2.10. Other sections are being migrated incrementally; consult each section's README for its migration status. The [archived 2.6 course](https://github.com/NVIDIA/NVFlare/tree/2.6.0/examples/tutorials/self-paced-training) remains available for the original notebooks and videos.
+> **NVFlare 2.10 course update:** [Running Federated Learning Applications](part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/README.md) uses the Recipe API and requires NVFlare 2.10. Other sections are being migrated incrementally; consult each section's README for its migration status.
+
+> **Video notice:** All [Running Federated Learning Applications videos](part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/video.md) show the earlier Job API workflow and do not match the current Recipe API notebooks. Follow the notebooks for setup, commands, and code; see the video page for the matching archived course.
 
 ---
 

@@ -23,7 +23,6 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-from pyhocon import ConfigFactory as CF
 
 
 def _make_admin_startup_kit(parent: Path, name: str = "admin@nvidia.com") -> Path:
@@ -100,21 +99,24 @@ def _run_kit_command(argv, monkeypatch):
 
 
 def _read_config(home: Path):
-    return CF.parse_file(str(home / ".nvflare" / "config.conf"))
+    return json.loads((home / ".nvflare" / "config.json").read_text())
 
 
 def _entry(config, kit_id: str):
-    try:
-        return Path(config.get(f'startup_kits.entries."{kit_id}"')).resolve()
-    except Exception:
-        return None
+    value = config.get("startup_kits", {}).get("entries", {}).get(kit_id)
+    return Path(value).resolve() if value else None
 
 
-def _write_config(home: Path, text: str) -> Path:
+def _active(config):
+    return config.get("startup_kits", {}).get("active")
+
+
+def _write_config(home: Path, active: str, entries: dict) -> Path:
     config_dir = home / ".nvflare"
     config_dir.mkdir(parents=True)
-    config_path = config_dir / "config.conf"
-    config_path.write_text(text.strip() + "\n")
+    config_path = config_dir / "config.json"
+    entries = {kit_id: str(path) for kit_id, path in entries.items()}
+    config_path.write_text(json.dumps({"version": 2, "startup_kits": {"active": active, "entries": entries}}))
     return config_path
 
 
@@ -198,7 +200,7 @@ class TestKitCli:
 
         config = _read_config(home)
         assert _entry(config, "admin@nvidia.com") == kit_dir.resolve()
-        assert config.get("startup_kits.active", None) is None
+        assert _active(config) is None
 
         _run_kit_command(["inspect"], monkeypatch)
         out = capsys.readouterr().out
@@ -215,7 +217,7 @@ class TestKitCli:
         assert "*       admin@nvidia.com" in out
         assert "active_startup_kit:" not in out
         assert str(kit_dir) in out
-        assert _read_config(home).get("startup_kits.active") == "admin@nvidia.com"
+        assert _active(_read_config(home)) == "admin@nvidia.com"
 
         _run_kit_command(["inspect"], monkeypatch)
         out = capsys.readouterr().out
@@ -246,7 +248,7 @@ class TestKitCli:
         assert "nvflare config use <id>" in out
 
         config = _read_config(home)
-        assert config.get("startup_kits.active", None) is None
+        assert _active(config) is None
         assert _entry(config, "admin@nvidia.com") is None
         assert kit_dir.exists()
 
@@ -267,16 +269,13 @@ class TestKitCli:
         assert _entry(_read_config(home), "project_admin") == replacement_kit.resolve()
         assert first_kit.exists()
 
-    def test_email_id_is_persisted_with_hocon_quoting(self, tmp_path, monkeypatch):
+    def test_email_id_is_persisted_as_one_key(self, tmp_path, monkeypatch):
         home = Path.home()
         kit_dir = _make_admin_startup_kit(tmp_path, "lead@nvidia.com")
 
         _run_kit_command(["add", "lead@nvidia.com", kit_dir], monkeypatch)
 
-        config_path = home / ".nvflare" / "config.conf"
-        assert '"lead@nvidia.com"' in config_path.read_text()
-        config = CF.parse_file(str(config_path))
-        assert Path(config.get('startup_kits.entries."lead@nvidia.com"')).resolve() == kit_dir.resolve()
+        assert _entry(_read_config(home), "lead@nvidia.com") == kit_dir.resolve()
 
     @pytest.mark.parametrize("bad_path_kind", ["missing", "invalid"])
     def test_add_rejects_missing_or_invalid_startup_kit_paths(self, tmp_path, monkeypatch, bad_path_kind):
@@ -289,7 +288,7 @@ class TestKitCli:
             _run_kit_command(["add", "bad_admin", kit_path], monkeypatch)
 
         assert exc_info.value.code == 4
-        assert not (Path.home() / ".nvflare" / "config.conf").exists()
+        assert not (Path.home() / ".nvflare" / "config.json").exists()
 
     def test_list_marks_stale_entries_without_failing(self, tmp_path, monkeypatch, capsys):
         home = Path.home()
@@ -299,18 +298,13 @@ class TestKitCli:
         invalid_kit = _make_invalid_startup_kit(tmp_path, "invalid_admin@nvidia.com")
         _write_config(
             home,
-            f"""
-            version = 2
-            startup_kits {{
-              active = "missing_admin"
-              entries {{
-                project_admin = "{valid_kit}"
-                "site-1" = "{site_kit}"
-                missing_admin = "{missing_kit}"
-                invalid_admin = "{invalid_kit}"
-              }}
-            }}
-            """,
+            "missing_admin",
+            {
+                "project_admin": valid_kit,
+                "site-1": site_kit,
+                "missing_admin": missing_kit,
+                "invalid_admin": invalid_kit,
+            },
         )
 
         _run_kit_command(["list"], monkeypatch)
@@ -343,16 +337,8 @@ class TestKitCli:
         missing_kit = tmp_path / "missing_admin"
         _write_config(
             home,
-            f"""
-            version = 2
-            startup_kits {{
-              active = "project_admin"
-              entries {{
-                project_admin = "{valid_kit}"
-                missing_admin = "{missing_kit}"
-              }}
-            }}
-            """,
+            "project_admin",
+            {"project_admin": valid_kit, "missing_admin": missing_kit},
         )
         monkeypatch.setattr(cli_output, "_output_format", "json")
 
@@ -412,15 +398,8 @@ class TestKitCli:
         kit_dir = _make_admin_startup_kit(tmp_path, "admin@nvidia.com")
         _write_config(
             Path.home(),
-            f"""
-            version = 2
-            startup_kits {{
-              active = "project_admin"
-              entries {{
-                project_admin = "{kit_dir}"
-              }}
-            }}
-            """,
+            "project_admin",
+            {"project_admin": kit_dir},
         )
         monkeypatch.setenv("NVFLARE_STARTUP_KIT_DIR", str(kit_dir))
         monkeypatch.setattr(cli_output, "_output_format", "json")
@@ -438,24 +417,16 @@ class TestKitCli:
         invalid_kit = _make_invalid_startup_kit(tmp_path, "invalid_admin@nvidia.com")
         _write_config(
             home,
-            f"""
-            version = 2
-            startup_kits {{
-              active = "project_admin"
-              entries {{
-                project_admin = "{valid_kit}"
-                invalid_admin = "{invalid_kit}"
-              }}
-            }}
-            """,
+            "project_admin",
+            {"project_admin": valid_kit, "invalid_admin": invalid_kit},
         )
 
         with pytest.raises(SystemExit) as exc_info:
             _run_kit_command(["use", "missing_admin"], monkeypatch)
         assert exc_info.value.code == 4
-        assert _read_config(home).get("startup_kits.active") == "project_admin"
+        assert _active(_read_config(home)) == "project_admin"
 
         with pytest.raises(SystemExit) as exc_info:
             _run_kit_command(["use", "invalid_admin"], monkeypatch)
         assert exc_info.value.code == 4
-        assert _read_config(home).get("startup_kits.active") == "project_admin"
+        assert _active(_read_config(home)) == "project_admin"

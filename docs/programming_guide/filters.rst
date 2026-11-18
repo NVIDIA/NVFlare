@@ -83,6 +83,180 @@ Your subclass of DXOFilter benefits from the features of DXOFilter:
     - Filtering history recording. If a DXO node is processed by your filter, your filter's class name will be appended to the DXO's "filter_history"
     - Auditing. If your filter is applied, a job audit event will be created to record the fact that the filter is applied to data.
 
+.. _model_filter:
+
+Model Filters
+=============
+
+``nvflare.app_common.filters.model_filter.ModelFilter`` provides an ``FLModel`` callback
+for task filters used with Client API jobs. It extends ``DXOFilter`` and retains its
+registration, collection traversal, filter history, and audit events. Client scripts
+keep their existing ``flare.receive()`` and ``flare.send()`` calls.
+
+For example, this filter records the number of parameter entries in model metadata:
+
+.. code-block:: python
+
+    from nvflare.app_common.filters.model_filter import ModelFilter
+
+    class ParameterCountFilter(ModelFilter):
+        def process_model(self, model, fl_ctx):
+            if model.params is None:
+                return None
+            model.meta["parameter_entries"] = len(model.params)
+            return model
+
+Register it on an existing Recipe without changing its training script:
+
+.. code-block:: python
+
+    recipe.add_client_output_filter(ParameterCountFilter(), tasks=["train"])
+
+The same callback can be exercised directly with a small DXO:
+
+.. code-block:: python
+
+    from nvflare.apis.dxo import DXO, DataKind, from_shareable
+    from nvflare.apis.fl_context import FLContext
+
+    update = DXO(DataKind.WEIGHTS, {"weight": 2.0, "bias": 0.0}).to_shareable()
+    result = ParameterCountFilter().process(update, FLContext())
+    assert from_shareable(result).meta["parameter_entries"] == 2
+
+Supported encodings and identity
+--------------------------------
+
+The callback receives parameters, parameter type, metrics, round fields, and metadata.
+``WEIGHTS``, ``WEIGHT_DIFF``, ``METRICS``, and native ``FL_MODEL`` DXO leaves are supported.
+Each selected leaf of a collection is decoded independently; unselected siblings and
+collection structure are preserved. The adapter preserves the input data kind,
+unrelated headers/cookies and transport metadata, and unknown native model fields.
+Optimizer state can be carried only by native ``FL_MODEL`` encoding.
+
+Recognized envelope headers populate each callback model's ``meta``: ``validate_type``,
+``job_id``, and ``site_name``. When present, they take precedence over leaf metadata.
+Filter history is preserved independently of callback metadata, including when the
+callback returns a fresh ``FLModel``.
+
+The callback cannot change the parameter type or any round identity (``start_round``,
+``current_round``, ``total_rounds``). Specified rounds must be nonnegative integers;
+booleans are not accepted. For legacy encodings, task headers are authoritative and
+metadata supplies a fallback, which the callback must preserve when no task header
+is present. Aggregation metadata may describe an earlier round.
+Conflicting native model fields and task headers raise an error.
+
+For legacy weights or differences, ``ModelFilter`` writes the returned model's
+``metrics`` to the outgoing ``INITIAL_METRICS`` metadata entry, including an empty
+dict, and removes that entry when ``metrics`` is ``None``. This handling is local to
+the adapter. ``METRICS`` leaves keep their payload metrics and any separate
+``INITIAL_METRICS`` metadata entry distinct.
+
+Mutation, pass-through, and execution
+-------------------------------------
+
+Return an ``FLModel`` to apply callback changes and record filter history. Return
+``None`` to skip without recording processing; it never means suppressing an update.
+Callbacks returning ``None`` must leave shared data unchanged.
+
+Only the top-level metadata and metrics dictionaries are shallow-copied. Replacing
+entries in those two dictionaries is applied only when a model is returned. Their
+nested values, parameters, and native optimizer state are shared with the input.
+In-place mutations of shared objects are not rolled back on ``None`` or an exception;
+callbacks must copy the specific objects they need to isolate. Transport filter
+history is managed independently. Invalid callback return types or changes to
+encoding/identity raise an error.
+
+For example, SCAFFOLD's model-sized control tensors in ``model.meta`` are borrowed;
+enabling ``ModelFilter`` does not automatically copy those tensors.
+
+Like ``DXOFilter``, this adapter does not call the callback for non-OK task replies,
+non-DXO messages, empty DXO data, or excluded data kinds. An application needing status
+reporting or cleanup for those paths must implement it at its filter entry point.
+
+The callback runs in the NVFlare runtime process, which can be separate from the Client
+API training process. Existing Client API and client-runner paths materialize lazy
+parameters when their active filter chains need them, increasing runtime memory and
+transfer cost. No additional transport setting is required for ``ModelFilter``.
+
+Memorization Audits (Experimental)
+==================================
+
+``MemorizationAuditFilter`` uses ``ModelFilter`` to audit outgoing client models without
+changing updates. Pass a ``MemorizationAuditor`` instance directly to the filter.
+Job export serializes the auditor as a nested constructor argument; the runtime
+rebuilds it without registering it for component events. Auditors used this way
+must not depend on event callbacks.
+
+.. code-block:: python
+
+    from nvflare.app_common.filters.memorization_audit_filter import (
+        AuditSnapshotFilter, MemorizationAuditFilter,
+    )
+
+    recipe.add_client_input_filter(AuditSnapshotFilter(frequency=10), tasks=["train"])
+    recipe.add_client_output_filter(
+        MemorizationAuditFilter(auditor=my_auditor, frequency=10),
+        tasks=["train"],
+    )
+
+``AuditSnapshotFilter`` deep-copies the incoming baseline into a private Python
+attribute on the original task's ``FLContext``, outside its properties. The client
+runner passes that same object to the output filter. The snapshot is omitted from
+public metadata, worker task/event relays and the standard FOBS context encoding.
+Private/non-sticky context properties alone would still be serialized by
+``MultiProcessExecutor``. Install both filters on the parent client chains, in the
+same process, with the same original context. Clones, worker contexts and later
+task contexts do not inherit the snapshot. Neither filter retains it. Install one
+paired chain per task context. Missing baselines report ``unsupported``;
+for unpaired full-model or final global evaluation, call the auditor directly with
+``baseline=None``. The filter checks baseline/candidate round equality before
+calling any auditor. Match ``start_round`` and ``frequency`` on both filters to
+avoid baseline copies on skipped rounds; their defaults audit every round. An
+output round missing a capture still reports ``unsupported / missing_baseline``.
+
+The initial implementation supports sequential training tasks with a single full model
+or complete weight difference. It explicitly rejects collections and partial model updates
+for auditing. Place snapshot capture after incoming parameter transformations and the audit
+after outgoing privacy transformations, before encryption. Executor conversions must preserve
+the parameter values and names, or a custom adapter must capture the actual training baseline.
+
+``PTMemorizationAuditor`` supplies strict model loading, difference reconstruction,
+directional AUROC, normalized AUROC, and isolation of Python, NumPy, and PyTorch RNG state.
+Subclasses implement ``build_model()`` and ``evaluate()`` with bounded local audit data.
+Evaluation deadlines are cooperative and must be checked between batches; they do not
+preempt a blocked framework call. The same auditor can evaluate a selected global checkpoint.
+
+Reports are local JSON files in ``<job run directory>/memorization_audits``. Status values
+are ``completed``, ``skipped``, ``unsupported``, and ``failed``. Failed or unsupported audits
+have no valid privacy score. Empty updates, unsupported data kinds, collections, and
+non-model results are reported as unsupported; non-OK task replies are skipped.
+Every output path clears the baseline snapshot, including conversion and reporting
+failures. If the executor exits before output filtering, the baseline is released
+when its task context is released. Runtime audit failures preserve the outgoing
+update; reporting failures are logged. A DXO filter-application event alone is not
+a completed privacy audit.
+
+Report fields depend on the observation path: ``elapsed_seconds`` is present only
+when ``process_model`` runs, and scorer/fingerprint/cohort fields come from
+successful auditor results. Bypass and conversion-failure reports omit elapsed
+time; consumers must handle absent fields and null round identities.
+
+On POSIX, report files use owner-only ``mkstemp`` permissions. Only a newly created
+leaf report directory requests mode ``0o700``; existing directories are unchanged,
+and missing intermediate parents use default permissions and the process umask.
+After each JSON write, the reporter calls ``add_job_audit_event`` with status and
+file name, independently of analytics selection. The event is recorded when the
+job audit service is initialized. Component logging also records status and path.
+
+Only metrics explicitly listed in ``summary_metrics`` are emitted to analytics receivers;
+their configured event handling determines whether they remain local or are relayed.
+``MemorizationAuditReporter`` in ``nvflare.app_common.widgets`` can also persist a
+final evaluation job's aggregate report, using ``stage="global_model"`` to distinguish it
+from a periodic client audit.
+
+See :doc:`memorization_reduction` for the loss, reference scorer, and a runnable
+CPU workflow under ``research/memorization-reduction``. TRAP provides no differential privacy guarantee.
+
 Filter Behavior in 1-N Communication
 ====================================
 

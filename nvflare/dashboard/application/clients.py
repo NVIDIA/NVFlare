@@ -14,12 +14,23 @@
 
 from flask import current_app as app
 from flask import jsonify, make_response, request
-from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
+from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
 
 from .blob import gen_client_blob
-from .store import Store, check_role
+from .models import Client, User
+from .store import Store, is_project_admin
+from .validation import DashboardError
+
+
+def _owned_client(id):
+    user = Store.get_requester(get_jwt_identity())
+    client = Client.query.get(id)
+    if client is None:
+        raise DashboardError("Client site not found.", status_code=404)
+    Store.require_site_owner(user, client)
+    return user, client
 
 
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients", methods=["POST"])
@@ -39,32 +50,30 @@ def create_one_client():
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients", methods=["GET"])
 @jwt_required()
 def get_all_clients():
-    claims = get_jwt()
-    if not claims.get("approved"):
-        return jsonify({"status": "not approved yet"}), 403
-    result = Store.get_clients()
+    user = Store.get_requester(get_jwt_identity())
+    if not is_project_admin(user) and user.role.name != "org_admin":
+        return jsonify(status="ok", client_list=[])
+    Store.require_site_owner(user)
+    result = (
+        Store.get_clients()
+        if is_project_admin(user)
+        else Store.get_clients(org=user.organization.name, creator_id=user.id, pending_only=user.approval_state < 100)
+    )
     return jsonify(result)
 
 
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients/<id>", methods=["GET"])
 @jwt_required()
 def get_one_client(id):
-    claims = get_jwt()
-    if not claims.get("approved"):
-        return jsonify({"status": "not approved yet"}), 403
-    client = Store.get_client(id)
-    return jsonify(client)
+    _, client = _owned_client(id)
+    return jsonify(status="ok", client=client.asdict())
 
 
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients/<id>", methods=["PATCH", "DELETE"])
 @jwt_required()
 def update_client(id):
-    creator_id = Store.get_creator_id_by_client_id(id)
-    if creator_id is None:
-        return jsonify({"status": "error"}), 404
-    c, p = check_role(creator_id, get_jwt(), get_jwt_identity())
-    if not c and not p:
-        return jsonify({"status": "unauthorized"}), 403
+    user, client = _owned_client(id)
+    p = is_project_admin(user)
 
     if request.method == "PATCH":
         req = request.json
@@ -73,12 +82,18 @@ def update_client(id):
                 jsonify({"status": "error", "message": "Client props cannot be supplied through the Dashboard API"}),
                 400,
             )
+        if not p and "approval_state" in req:
+            raise DashboardError("Only the project administrator can approve or deny client sites.")
+        if not p and client.approval_state >= 100 and req.get("name", client.name) != client.name:
+            raise DashboardError("Only the project administrator can rename an approved client site.")
         if p:
             result = Store.patch_client_by_project_admin(id, req)
-        elif c:
+        else:
             result = Store.patch_client_by_creator(id, req)
     elif request.method == "DELETE":
-        result = Store.delete_client(id)
+        if not p and client.approval_state >= 100:
+            raise DashboardError("Only the project administrator can delete an approved client site.")
+        result = Store.delete_client(id, creator_id=None if p else user.id)
     else:
         result = {"status": "error"}
     if result is not None:
@@ -90,16 +105,15 @@ def update_client(id):
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients/<int:id>/blob", methods=["POST"])
 @jwt_required()
 def client_blob(id):
-    if not Store._is_approved_by_client_id(id):
-        return jsonify({"status": "not approved yet"}), 200
-    creator_id = Store.get_creator_id_by_client_id(id)
-    c, p = check_role(creator_id, get_jwt(), get_jwt_identity())
-    if p or c:
-        pin = request.json.get("pin")
-        fileobj, filename = gen_client_blob(pin, id)
-        response = make_response(fileobj.read())
-        response.headers.set("Content-Type", "zip")
-        response.headers.set("Content-Disposition", f'attachment; filename="{filename}"')
-        return response
-    else:
-        return jsonify({"status": "unauthorized"}), 403
+    user, client = _owned_client(id)
+    owner = User.query.get(client.creator_id)
+    if user.approval_state < 100 or owner is None or owner.approval_state < 100 or client.approval_state < 100:
+        raise DashboardError(
+            "The project administrator must approve both the site owner and the client site before download."
+        )
+    pin = request.json.get("pin")
+    fileobj, filename = gen_client_blob(pin, id)
+    response = make_response(fileobj.read())
+    response.headers.set("Content-Type", "zip")
+    response.headers.set("Content-Disposition", f'attachment; filename="{filename}"')
+    return response

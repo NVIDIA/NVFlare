@@ -105,7 +105,7 @@ Change runtime logging:
    All server-connected ``nvflare system`` commands resolve the startup kit in
    this order: ``--kit-id <id>``, ``--startup-kit <path>``,
    ``NVFLARE_STARTUP_KIT_DIR``, then ``startup_kits.active`` from
-   ``~/.nvflare/config.conf``. ``--kit-id`` and ``--startup-kit`` are optional
+   ``~/.nvflare/config.json``. ``--kit-id`` and ``--startup-kit`` are optional
    per-command overrides. When provided, they take precedence over the active
    startup kit for the current invocation only and do not change
    ``startup_kits.active``. Use ``nvflare config add`` and

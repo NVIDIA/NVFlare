@@ -17,7 +17,7 @@
 import json
 import os
 from argparse import Namespace
-from contextlib import ExitStack, contextmanager
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -46,37 +46,18 @@ def _configure_active_startup_kit(tmp_path, monkeypatch):
 
     config_dir = home / ".nvflare"
     config_dir.mkdir(parents=True)
-    (config_dir / "config.conf").write_text(
-        f"""
-        version = 2
-        startup_kits {{
-          active = "admin@nvidia.com"
-          entries {{
-            "admin@nvidia.com" = "{admin_dir}"
-          }}
-        }}
-        """,
+    (config_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "startup_kits": {"active": "admin@nvidia.com", "entries": {"admin@nvidia.com": str(admin_dir)}},
+            }
+        ),
         encoding="utf-8",
     )
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
     return admin_dir
-
-
-@contextmanager
-def _assert_no_active_session_created():
-    with ExitStack() as stack:
-        stack.enter_context(patch("nvflare.tool.cli_session.new_secure_session", side_effect=AssertionError))
-        stack.enter_context(
-            patch("nvflare.tool.cli_session.new_active_cli_session", side_effect=AssertionError, create=True)
-        )
-        stack.enter_context(
-            patch("nvflare.tool.job.job_cli.new_active_cli_session", side_effect=AssertionError, create=True)
-        )
-        stack.enter_context(
-            patch("nvflare.tool.job.job_cli.find_admin_user_and_dir", side_effect=AssertionError, create=True)
-        )
-        yield
 
 
 class TestResolveJobFolder:
@@ -92,13 +73,11 @@ class TestResolveJobFolder:
 
         args = Namespace(job_folder=job_folder, study="default", debug=False, config_file=None)
 
-        with patch("nvflare.tool.job.job_cli.get_app_dirs_from_job_folder", return_value=[]):
-            with patch("nvflare.tool.job.job_cli.prepare_job_config"):
-                with patch("nvflare.tool.job.job_cli.internal_submit_job") as submit:
-                    with patch("sys.argv", ["nvflare", "job", "submit", "-j", job_folder]):
-                        from nvflare.tool.job.job_cli import submit_job
+        with patch("nvflare.tool.job.job_cli.internal_submit_job") as submit:
+            with patch("sys.argv", ["nvflare", "job", "submit", "-j", job_folder]):
+                from nvflare.tool.job.job_cli import submit_job
 
-                        submit_job(args)
+                submit_job(args)
 
         submit.assert_called_once()
         assert submit.call_args.args[0] is None
@@ -153,19 +132,30 @@ class TestResolveJobFolder:
         captured = self._invoke_submit(parent, capsys, monkeypatch, tmp_path)
         assert "Using job folder" not in captured.out + captured.err
 
-    def test_yaml_meta_is_recognized(self, capsys, monkeypatch, tmp_path):
-        """meta.yaml is also a valid job meta file."""
-        job_dir = str(tmp_path / "myjob")
-        os.makedirs(job_dir)
-        with open(os.path.join(job_dir, "meta.yaml"), "w") as f:
-            f.write("{}")
-        config_dir = os.path.join(job_dir, "app", "config")
-        os.makedirs(config_dir)
-        with open(os.path.join(config_dir, "config_fed_server.yml"), "w") as f:
-            f.write("{}")
+    def test_submit_uploads_job_files_unchanged(self, monkeypatch, tmp_path):
+        """Submit does not parse or rewrite configs; an unused malformed fallback cannot block it."""
+        from nvflare.tool import cli_output
+        from nvflare.tool.job.job_cli import submit_job
 
-        captured = self._invoke_submit(job_dir, capsys, monkeypatch, tmp_path)
-        assert "Using job folder" not in captured.out + captured.err
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        job_dir = tmp_path / "myjob"
+        _make_valid_job(str(job_dir))
+        config_dir = job_dir / "app" / "config"
+        (config_dir / "config_fed_client.json").write_text('{\n  "format_version": 2,  "executors": []\n}')
+        (config_dir / "config_fed_client.json.default").write_text("{not json")
+        source_files = {p.relative_to(job_dir): p.read_bytes() for p in job_dir.rglob("*") if p.is_file()}
+        uploaded = {}
+
+        def capture_upload(admin_user_dir, username, temp_job_dir, cmd_args):
+            root = Path(temp_job_dir)
+            uploaded.update({p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()})
+
+        args = Namespace(job_folder=str(job_dir), study="default", debug=False)
+        with patch("nvflare.tool.job.job_cli.internal_submit_job", side_effect=capture_upload):
+            with patch("sys.argv", ["nvflare", "job", "submit", "-j", str(job_dir)]):
+                submit_job(args)
+
+        assert uploaded == source_files
 
     def test_invalid_job_folder_returns_structured_error_without_help(self, capsys, monkeypatch):
         """Invalid job folder should emit INVALID_ARGS and usage help in human mode."""
@@ -195,13 +185,11 @@ class TestResolveJobFolder:
 
         args = Namespace(job_folder=job_dir, study="default", debug=False, config_file=None)
 
-        with patch("nvflare.tool.job.job_cli.get_app_dirs_from_job_folder", return_value=[]):
-            with patch("nvflare.tool.job.job_cli.prepare_job_config"):
-                fake_session = MagicMock()
-                fake_session.submit_job.return_value = "job-123"
-                with patch("nvflare.tool.cli_session.new_secure_session", return_value=fake_session) as new_secure:
-                    with patch("sys.argv", ["nvflare", "job", "submit", "-j", job_dir]):
-                        submit_job(args)
+        fake_session = MagicMock()
+        fake_session.submit_job.return_value = "job-123"
+        with patch("nvflare.tool.cli_session.new_secure_session", return_value=fake_session) as new_secure:
+            with patch("sys.argv", ["nvflare", "job", "submit", "-j", job_dir]):
+                submit_job(args)
 
         assert new_secure.call_args.kwargs["username"] == "admin@nvidia.com"
         assert new_secure.call_args.kwargs["startup_kit_location"] == str(active_admin_dir)
@@ -250,64 +238,3 @@ def test_get_session_missing_startup_kit_still_exits_when_output_error_is_mocked
 
     assert exc_info.value.code == 2
     output_error.assert_called_once()
-
-
-def test_list_templates_does_not_require_active_startup_kit(monkeypatch):
-    from nvflare.tool.job import job_cli
-
-    args = MagicMock()
-    args.job_sub_cmd = "list-templates"
-    args.job_templates_dir = None
-    args.debug = False
-
-    with _assert_no_active_session_created():
-        monkeypatch.setattr(job_cli, "find_job_templates_location", lambda _path=None: "/tmp/templates")
-        monkeypatch.setattr(job_cli, "build_job_template_indices", lambda _path: MagicMock())
-        monkeypatch.setattr(job_cli, "display_available_templates", lambda _conf: None)
-        monkeypatch.setattr(job_cli, "update_job_templates_dir", lambda _path: None)
-        job_cli.list_templates(args)
-
-
-def test_show_variables_does_not_require_active_startup_kit(monkeypatch, tmp_path):
-    from nvflare.tool.job import job_cli
-
-    job_dir = tmp_path / "job"
-    job_dir.mkdir()
-    args = MagicMock()
-    args.job_sub_cmd = "show-variables"
-    args.job_folder = str(job_dir)
-    args.debug = False
-
-    with _assert_no_active_session_created():
-        monkeypatch.setattr(job_cli, "get_app_dirs_from_job_folder", lambda _path: [])
-        monkeypatch.setattr(job_cli, "build_config_file_indices", lambda _path, _apps: {})
-        monkeypatch.setattr(job_cli, "filter_indices", lambda app_indices_configs=None, **_kwargs: {})
-        monkeypatch.setattr(job_cli, "display_template_variables", lambda _job_folder, _values: None)
-        job_cli.show_variables(args)
-
-
-def test_create_job_does_not_require_active_startup_kit(monkeypatch, tmp_path):
-    from nvflare.tool.job import job_cli
-
-    args = MagicMock()
-    args.job_sub_cmd = "create"
-    args.job_folder = str(tmp_path / "job")
-    args.template = str(tmp_path / "template")
-    args.script_dir = None
-    args.force = False
-    args.debug = False
-
-    with _assert_no_active_session_created():
-        monkeypatch.setattr(job_cli, "get_src_template", lambda _args: args.template)
-        monkeypatch.setattr(job_cli, "get_app_dirs_from_template", lambda _template: [])
-        monkeypatch.setattr(job_cli, "prepare_job_folder", lambda _args: None)
-        monkeypatch.setattr(job_cli, "prepare_app_dirs", lambda _folder, _apps: [])
-        monkeypatch.setattr(job_cli, "prepare_app_scripts", lambda _folder, _dirs, _args: None)
-        monkeypatch.setattr(job_cli, "get_config_dirs", lambda _folder, _apps: [])
-        monkeypatch.setattr(job_cli.ConfigFactory, "search_config_format", lambda *_args, **_kwargs: (None, None))
-        monkeypatch.setattr(job_cli.shutil, "copytree", lambda *args, **kwargs: None)
-        monkeypatch.setattr(job_cli, "remove_extra_files", lambda _path: None)
-        monkeypatch.setattr(job_cli, "prepare_meta_config", lambda *_args, **_kwargs: None)
-        monkeypatch.setattr(job_cli, "prepare_job_config", lambda *_args, **_kwargs: {})
-        monkeypatch.setattr(job_cli, "display_template_variables", lambda _job_folder, _values: None)
-        job_cli.create_job(args)

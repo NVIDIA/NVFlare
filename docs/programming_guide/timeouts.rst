@@ -975,6 +975,15 @@ Flower-specific controller and executor timeouts (flower/controller.py, flower/e
    * - superlink_ready_timeout
      - 10.0
      - Time to wait for Flower superlink to become ready
+   * - flwr_run_timeout
+     - 300.0
+     - CLI startup, FAB preparation, and run submission
+   * - flwr_command_timeout
+     - 15.0
+     - Each local status or stop CLI command
+   * - flwr_log_timeout
+     - 5.0
+     - Best-effort ServerApp log snapshot before process cleanup
    * - superlink_min_query_interval
      - 10.0
      - Minimal interval for querying superlink status
@@ -982,14 +991,24 @@ Flower-specific controller and executor timeouts (flower/controller.py, flower/e
      - 0.5
      - How often to check Flower run status
    * - per_msg_timeout
-     - 10.0
+     - 2.0
      - Per-message timeout for ReliableMessage
    * - tx_timeout
-     - 100.0
+     - 25.0
      - Transaction timeout for ReliableMessage
    * - client_shutdown_timeout
      - 5.0
      - Max time for graceful client shutdown
+
+
+The CLI timeouts are positive, finite values configurable through FlowerRecipe,
+FlowerJob, and FlowerController. A status-command timeout fails the job without
+retrying. A stop-command or log snapshot timeout is logged and process cleanup
+continues. These settings do not override Flower's own HTTP timeouts.
+
+Flower HTTP caps ``per_msg_timeout`` and ``tx_timeout`` at 2 and 25 seconds and logs a warning when larger
+values are supplied. Heartbeats use tighter caps of 0.5 and 3.5 seconds. See
+:ref:`flower_http_design` for payload, timing, and shutdown requirements.
 
 
 Private Set Intersection (PSI)
@@ -1002,10 +1021,6 @@ For PSI operations, timeouts are controlled at lower levels:
 
 - **Task-level timeouts**: Use controller's general ``timeout`` parameter
 - **Communication timeouts**: Inherited from system ``heartbeat_timeout`` and ``peer_read_timeout``
-
-**Note**: For large-scale PSI operations, ensure adequate system-level timeouts in 
-``application.conf`` to handle the iterative Diffie-Hellman protocol exchanges.
-
 
 Aggregator Timeouts
 -------------------
@@ -1243,76 +1258,6 @@ one session-monitor interval. This keeps the source reference available through
 receiver request retries and backoff while allowing the session manager to own
 expiry. The transaction remains bound to its session and is removed immediately
 when that session logs out or expires.
-
-
-Tensor Streaming Timeouts
--------------------------
-
-Tensor streaming provides efficient transfer of large model weights. These timeouts control
-the streaming behavior (tensor_stream/server.py, client.py):
-
-.. list-table::
-   :header-rows: 1
-   :widths: 38 12 50
-
-   * - Parameter
-     - Default
-     - Purpose
-   * - tensor_send_timeout
-     - 30.0
-     - Timeout for each tensor entry transfer operation
-   * - wait_send_task_data_all_clients_timeout
-     - 300.0
-     - Timeout for sending tensors to all clients
-   * - wait_for_tensors timeout
-     - 5.0
-     - Time to wait for tensors to be received
-
-**Server-side configuration** (TensorServerStreamer):
-
-.. code-block:: python
-
-   from nvflare.app_opt.tensor_stream.server import TensorServerStreamer
-
-   streamer = TensorServerStreamer(
-       format="pytorch",
-       tensor_send_timeout=60.0,  # Per-tensor timeout
-       wait_send_task_data_all_clients_timeout=600.0,  # All clients timeout
-   )
-
-**Client-side configuration** (TensorClientStreamer):
-
-.. code-block:: python
-
-   from nvflare.app_opt.tensor_stream.client import TensorClientStreamer
-
-   streamer = TensorClientStreamer(
-       format="pytorch",
-       tensor_send_timeout=60.0,  # Per-tensor timeout
-   )
-
-.. warning::
-
-   **Critical Timeout Relationship for Tensor Streaming**
-   
-   When using tensor streaming, you **must** ensure that ``get_task_timeout`` is set and is 
-   greater than or equal to ``wait_send_task_data_all_clients_timeout``. If ``get_task_timeout`` 
-   is not set, it defaults to the communicator's timeout, which may be shorter than the tensor 
-   streaming timeout.
-   
-   **Problem**: If streaming timeout > communicator timeout and no ``get_task_timeout`` is set, 
-   some clients may receive weights while others are still waiting. The server may not send the 
-   task in time, causing a timeout that restarts the tensor streaming process. This can result 
-   in clients receiving empty tensors and job failure.
-   
-   **Solution**: Always set ``get_task_timeout`` when using tensor streaming:
-   
-   .. code-block:: python
-   
-      # Ensure get_task_timeout >= wait_send_task_data_all_clients_timeout
-      recipe.add_client_config({
-          "get_task_timeout": 600,  # Must be >= streaming timeout
-      })
 
 
 Streaming Download Timeouts
@@ -1870,8 +1815,8 @@ Hierarchical Relationships
    │                                                                 │
    │  Flower-Specific                                                │
    │  ├── superlink_ready_timeout (10s)                              │
-   │  ├── per_msg_timeout (10s)                                      │
-   │  ├── tx_timeout (100s)                                          │
+   │  ├── per_msg_timeout (2s)                                       │
+   │  ├── tx_timeout (25s)                                           │
    │  └── client_shutdown_timeout (5s)                               │
    │                                                                 │
    │  CCWF Server-Side                                               │
@@ -1906,12 +1851,6 @@ Hierarchical Relationships
    │  File/Container Streaming                                       │
    │  ├── chunk_timeout (5s per chunk)                               │
    │  └── entry_timeout (60s per entry)                              │
-   │                                                                 │
-   │  Tensor Streaming (CRITICAL RELATIONSHIP)                       │
-   │  ├── tensor_send_timeout (30s)                                  │
-   │  ├── wait_send_task_data_all_clients_timeout (300s)             │
-   │  └── get_task_timeout >= wait_send_task_data_all_clients_timeout│
-   │      (REQUIRED to prevent task fetch timeout during streaming)  │
    └─────────────────────────────────────────────────────────────────┘
 
 
@@ -1997,13 +1936,18 @@ Recommended Settings by Use Case
 Development Environment
 -----------------------
 
-Fast iteration with quick feedback:
+Fast iteration with quick feedback. Server ``fed_server.json`` (quick dead client detection,
+fast admin commands):
+
+.. code-block:: json
+
+   {
+     "servers": [{"heart_beat_timeout": 60, "admin_timeout": 5.0}]
+   }
+
+Component parameters:
 
 .. code-block:: python
-
-   # Server (fed_server.json)
-   heart_beat_timeout = 60        # Quick dead client detection
-   admin_timeout = 5.0            # Fast admin commands
 
    # Client API executor parameters
    heartbeat_timeout = 30.0
@@ -2018,19 +1962,36 @@ Fast iteration with quick feedback:
 Production - Standard Training
 ------------------------------
 
-Balanced settings for typical federated learning:
+Balanced settings for typical federated learning. Server ``fed_server.json``
+(``heart_beat_timeout``: 10 min before client considered dead):
+
+.. code-block:: json
+
+   {
+     "servers": [{"heart_beat_timeout": 600, "admin_timeout": 10.0}]
+   }
+
+Job ``config_fed_server.json``:
+
+.. code-block:: json
+
+   {
+     "server": {"task_request_interval": 2.0}
+   }
+
+``comm_config.json``:
+
+.. code-block:: json
+
+   {
+     "heartbeat_interval": 10,
+     "subnet_heartbeat_interval": 5,
+     "streaming_read_timeout": 300
+   }
+
+Component parameters:
 
 .. code-block:: python
-
-   # Server (fed_server.json)
-   heart_beat_timeout = 600       # 10 min before client considered dead
-   admin_timeout = 10.0
-   task_request_interval = 2.0
-
-   # comm_config.json
-   heartbeat_interval = 10
-   subnet_heartbeat_interval = 5
-   streaming_read_timeout = 300
 
    # Client API executor
    launch_timeout = 300.0
@@ -2040,12 +2001,18 @@ Balanced settings for typical federated learning:
 Production - Large Models (100M+ parameters)
 --------------------------------------------
 
-Extended timeouts for large model training:
+Extended timeouts for large model training. Server ``fed_server.json`` (20 min for large
+model operations):
+
+.. code-block:: json
+
+   {
+     "servers": [{"heart_beat_timeout": 1200}]
+   }
+
+Component parameters:
 
 .. code-block:: python
-
-   # Server
-   heart_beat_timeout = 1200      # 20 min for large model operations
 
    # Client API executor
    launch_timeout = 600.0      # 10 min for process launch and model init
@@ -2053,7 +2020,6 @@ Extended timeouts for large model training:
 
    # Streaming
    streaming_per_request_timeout = 900  # 15 min per chunk
-   tensor_send_timeout = 120.0
 
    # CCWF
    progress_timeout = 14400       # 4 hours
@@ -2198,12 +2164,14 @@ Settings for Flower framework integration:
    from nvflare.app_opt.flower.flower_job import FlowerJob
 
    job = FlowerJob(
+       name="flower_job",
+       flower_content="./flwr-pt",
        superlink_ready_timeout=30.0,    # 30 sec for Flower server
        configure_task_timeout=60,
        start_task_timeout=30,
        progress_timeout=7200,           # 2 hours for training
-       per_msg_timeout=30.0,
-       tx_timeout=300.0,
+       per_msg_timeout=2.0,
+       tx_timeout=25.0,
        client_shutdown_timeout=10.0,
    )
 
@@ -2306,9 +2274,6 @@ These files are located in the job's ``app/config/`` directory.
    * - File
      - Location
      - Timeouts Controlled
-   * - application.conf
-     - app/config/
-     - Task timeouts, streaming timeouts, runner sync timeouts
    * - config_fed_client.json
      - app/config/
      - Executor timeouts, Client API task exchange, pipe handler settings
@@ -2403,34 +2368,24 @@ Client API Configuration (config_fed_client.json)
    }
 
 
-application.conf Settings
--------------------------
+Job Configuration Settings
+--------------------------
 
-.. code-block::
+Set these as top-level entries in the job's ``config_fed_client.json``:
 
-   # Task communication timeouts
-   get_task_timeout = 60.0
-   submit_task_result_timeout = 120.0
-   task_check_timeout = 5.0
+.. code-block:: json
 
-   # Cell/messaging timeouts
-   cell_wait_timeout = 5.0
-
-   # Streaming timeouts
-   streaming_per_request_timeout = 600.0
-   np_download_chunk_size = 4194304
-   tensor_download_chunk_size = 4194304
-
-   # Runner sync timeouts
-   runner_sync_timeout = 10.0
-   max_runner_sync_timeout = 60.0
-
-   # Shutdown
-   end_run_readiness_timeout = 10.0
-
-   # Server startup/dead-job safety flags
-   strict_start_job_reply_check = false
-   sync_client_jobs_require_previous_report = true
+   {
+     "get_task_timeout": 60.0,
+     "submit_task_result_timeout": 120.0,
+     "task_check_timeout": 5.0,
+     "cell_wait_timeout": 5.0,
+     "np_download_chunk_size": 4194304,
+     "tensor_download_chunk_size": 4194304,
+     "runner_sync_timeout": 10.0,
+     "max_runner_sync_timeout": 60.0,
+     "end_run_readiness_timeout": 10.0
+   }
 
 
 .. _server_startup_dead_job_safety_flags:
@@ -2438,8 +2393,10 @@ application.conf Settings
 Server Startup and Dead-Job Safety Flags
 ----------------------------------------
 
-These ``application.conf`` flags are server-side safety controls used during job startup
-and client heartbeat synchronization:
+These flags are read by the server parent (SP). Set them before SP startup using
+``NVFLARE_STRICT_START_JOB_REPLY_CHECK`` and
+``NVFLARE_SYNC_CLIENT_JOBS_REQUIRE_PREVIOUS_REPORT``, or the corresponding
+``--set`` arguments on SP's Python launch command:
 
 .. list-table::
    :header-rows: 1
@@ -2547,14 +2504,13 @@ Flower Integration
    from nvflare.app_opt.flower.recipe import FlowerRecipe
 
    recipe = FlowerRecipe(
-       server_app=ServerApp(...),
-       client_app=ClientApp(...),
+       flower_content="./flwr-pt",
        superlink_ready_timeout=30.0,
        configure_task_timeout=300,
        start_task_timeout=30,
        progress_timeout=7200,
-       per_msg_timeout=30.0,
-       tx_timeout=300.0,
+       per_msg_timeout=2.0,
+       tx_timeout=25.0,
        client_shutdown_timeout=10.0,
    )
 
@@ -2685,23 +2641,6 @@ Notes and Best Practices
 - ``task_result_timeout`` must be **less than or equal to** ``task.timeout``
 - ``per_msg_timeout`` should be **less than or equal to** ``tx_timeout`` for retries to work
 - For out-of-process Client API modes, ``heartbeat_interval`` must be **less than** ``heartbeat_timeout``
-- **IMPORTANT**: When using tensor streaming, ``get_task_timeout`` must be **greater than or equal to** 
-  ``wait_send_task_data_all_clients_timeout`` to prevent task fetch timeouts while waiting for all 
-  clients to receive tensors
-
-**Tensor Streaming Timeout Warning:**
-
-When tensor streaming is enabled, if ``get_task_timeout`` is not explicitly set, it defaults to the 
-communicator's timeout. If the streaming timeout (``wait_send_task_data_all_clients_timeout``) exceeds 
-the communicator timeout, clients may timeout while waiting for other clients to receive weights. This 
-can cause the tensor streaming process to restart and clients may receive empty tensors, causing the 
-job to fail.
-
-**Recommended relationship for tensor streaming:**
-
-.. code-block:: text
-
-   get_task_timeout >= wait_send_task_data_all_clients_timeout >= tensor_send_timeout * num_clients
 
 **Hierarchy:**
 

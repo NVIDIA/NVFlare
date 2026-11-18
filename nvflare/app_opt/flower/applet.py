@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import functools
+import http.client
 import json
 import os
 import shlex
@@ -26,9 +26,10 @@ from nvflare.app_common.metrics_exchange.metrics_sender import ANALYTICS_BOOTSTR
 from nvflare.app_common.tie.applet import Applet
 from nvflare.app_common.tie.cli_applet import CLIApplet
 from nvflare.app_common.tie.defs import Constant as TieConstant
-from nvflare.app_common.tie.process_mgr import CommandDescriptor, ProcessManager, StopMethod, run_command, start_process
+from nvflare.app_common.tie.process_mgr import CommandDescriptor, ProcessManager, StopMethod
 from nvflare.app_opt.flower.defs import Constant
-from nvflare.fuel.utils.grpc_utils import create_channel
+from nvflare.app_opt.flower.http_transport import split_address
+from nvflare.app_opt.flower.process import run_command, start_process, validate_command_timeout
 from nvflare.security.logging import secure_format_exception
 
 from .path_utils import validate_flower_app_path, validate_flower_app_path_no_symlinks
@@ -39,7 +40,6 @@ FLOWER_SUPERNODE = "flower-supernode"
 FLOWER_CLI = "flwr"
 FLOWER_CONFIG_FILE = "config.toml"
 FLOWER_SUPERLINK_CONNECTION = "nvflare"
-MIN_FLWR_VERSION_FOR_RUNTIME_DEPS = "1.29.0"
 
 
 def get_partition_id(fl_ctx: FLContext):
@@ -77,7 +77,7 @@ def _validate_flower_executable(executable_name: str, executable_path: str):
             f"\n"
             f"This indicates Flower is not properly installed in your Python environment.\n"
             f"Please install a compatible Flower version:\n"
-            f"  pip install 'flwr>=1.26'\n"
+            f"  pip install 'flwr>=1.43'\n"
             f"\n"
             f"If using a virtual environment, ensure it's activated before installation.\n"
             f"Current Python: {sys.executable}"
@@ -94,27 +94,31 @@ def _validate_flower_executable(executable_name: str, executable_path: str):
         raise RuntimeError(error_msg)
 
 
-@functools.lru_cache()
-def _check_runtime_dependency_installation_support(logger):
-    """Check if Flower version is >= MIN_FLWR_VERSION_FOR_RUNTIME_DEPS to support runtime dependency installation."""
-    try:
-        import flwr
-        from packaging.version import parse
+def _validate_flwr_runtime():
+    # Check on every deployed site, not only where a Recipe is authored.
+    from nvflare.app_opt.flower.recipe import _validate_flwr_version
 
-        version_str = flwr.__version__
+    _validate_flwr_version()
 
-        if parse(version_str) >= parse(MIN_FLWR_VERSION_FOR_RUNTIME_DEPS):
-            return True
-        else:
-            logger.warning(
-                f"Flower version {version_str} is lower than {MIN_FLWR_VERSION_FOR_RUNTIME_DEPS}. "
-                "The '--allow-runtime-dependency-installation' option is not supported and will be ignored."
-            )
-            return False
 
-    except (ImportError, AttributeError) as e:
-        logger.warning(f"Could not verify Flower version for runtime dependency installation support: {e}")
-        return False
+def _wait_for_superlink(address, process, timeout):
+    host, port = split_address(address)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError("Flower SuperLink exited during startup; see superlink_log.txt")
+        conn = http.client.HTTPConnection(host, port, timeout=min(1.0, max(0.01, deadline - time.monotonic())))
+        try:
+            conn.request("GET", "/health")
+            response = conn.getresponse()
+            if response.status == 200:
+                return
+        except (OSError, http.client.HTTPException):
+            pass
+        finally:
+            conn.close()
+        time.sleep(0.1)
+    raise RuntimeError(f"Flower SuperLink was not healthy within {timeout} seconds")
 
 
 def _format_run_config_value(value) -> str:
@@ -156,7 +160,24 @@ class FlowerClientApplet(CLIApplet):
         if python_bin_dir not in current_path:
             extra_env["PATH"] = f"{python_bin_dir}{os.pathsep}{current_path}"
 
-        self.extra_env = extra_env
+        self.extra_env = extra_env.copy()
+
+    def start(self, app_ctx: dict):
+        _validate_flwr_runtime()
+        try:
+            self._proc_mgr = start_process(self.get_command(app_ctx), app_ctx[Constant.APP_CTX_FL_CONTEXT])
+        except Exception:
+            self._start_error = True
+            raise
+
+    def stop(self, timeout=5.0):
+        manager = self._proc_mgr
+        if not manager:
+            return 0
+        result = manager.stop(timeout)
+        # Incomplete cleanup retains owned workers/guards for another attempt.
+        self._proc_mgr = None
+        return result
 
     def get_command(self, ctx: dict) -> CommandDescriptor:
         """Implementation of the get_command method required by the super class CLIApplet.
@@ -185,13 +206,6 @@ class FlowerClientApplet(CLIApplet):
         job_id = fl_ctx.get_job_id()
         app_dir = ws.get_app_dir(job_id)
 
-        """ Example:
-        flower-supernode --insecure --grpc-adapter
-        --superlink 127.0.0.1:9092
-        --clientappio-api-address 127.0.0.1:9094
-        --node-config ...
-        """
-
         # Get the full path to flower-supernode from the current Python environment
         python_bin_dir = os.path.dirname(sys.executable)
         flower_supernode_path = os.path.join(python_bin_dir, FLOWER_SUPERNODE)
@@ -199,13 +213,21 @@ class FlowerClientApplet(CLIApplet):
         # Validate that flower-supernode is installed and executable
         _validate_flower_executable(FLOWER_SUPERNODE, flower_supernode_path)
 
-        cmd = (
-            f"{flower_supernode_path} --insecure --grpc-adapter "
-            f"--superlink {superlink_addr} "
-            f"--clientappio-api-address {clientapp_api_addr}"
+        host, port = split_address(clientapp_api_addr)
+        split_address(superlink_addr)
+        cmd = shlex.join(
+            [
+                flower_supernode_path,
+                "--insecure",
+                "--superlink",
+                superlink_addr,
+                "--host",
+                host,
+                "--port",
+                str(port),
+            ]
         )
-
-        if self.allow_runtime_dependency_installation and _check_runtime_dependency_installation_support(self.logger):
+        if self.allow_runtime_dependency_installation:
             cmd += " --allow-runtime-dependency-installation"
 
         # add node config
@@ -214,6 +236,7 @@ class FlowerClientApplet(CLIApplet):
             cmd += node_config_str
 
         env = self.extra_env.copy()
+        env["FLWR_HOME"] = os.path.join(ws.get_run_dir(job_id), "flwr_home")
         env[ANALYTICS_BOOTSTRAP_ENV] = os.path.join(ws.get_app_config_dir(job_id), ANALYTICS_BOOTSTRAP_FILE)
 
         # Use app_dir as the cwd for Flower's client app and its project files.
@@ -230,12 +253,12 @@ class FlowerClientApplet(CLIApplet):
     def _get_node_config(self, fl_ctx: FLContext):
         """Get the node config for the flower client app."""
         try:
-            cmd = f' client-name="{fl_ctx.get_identity_name()}"'
+            cmd = f"client-name={json.dumps(fl_ctx.get_identity_name())}"
             partition_id = get_partition_id(fl_ctx)
             if partition_id != -1:
                 cmd += f" partition-id={partition_id}"
             cmd += f" num-partitions={get_num_partitions(fl_ctx)}"
-            return f" --node-config '{cmd}'"
+            return " --node-config " + shlex.quote(cmd)
         except Exception as ex:
             self.log_error(fl_ctx, f"Exception getting node configuration from fl_ctx: {secure_format_exception(ex)}")
             return None
@@ -251,6 +274,9 @@ class FlowerServerApplet(Applet):
         run_config: Optional[dict] = None,
         allow_runtime_dependency_installation: bool = False,
         flower_app_path: Optional[str] = None,
+        flwr_run_timeout: float = Constant.FLWR_RUN_TIMEOUT,
+        flwr_command_timeout: float = Constant.FLWR_COMMAND_TIMEOUT,
+        flwr_log_timeout: float = Constant.FLWR_LOG_TIMEOUT,
     ):
         """Constructor of FlowerServerApplet.
 
@@ -260,10 +286,22 @@ class FlowerServerApplet(Applet):
             superlink_grace_period: how long to wait for superlink to gracefully shutdown
             superlink_min_query_interval: minimal interval for querying superlink for status
             run_config: optional dict for flwr run --run-config arguments
-            allow_runtime_dependency_installation: whether to allow dynamic dependency installation (flwr>=1.29)
+            allow_runtime_dependency_installation: whether to allow dynamic dependency installation
             flower_app_path: absolute path to pre-deployed Flower app on the server (clients receive via FAB)
+            flwr_run_timeout: seconds allowed for CLI startup, FAB preparation and run submission. Defaults to 300.
+            flwr_command_timeout: seconds allowed for each status or stop CLI command. Defaults to 15.
+            flwr_log_timeout: seconds allowed for the best-effort log snapshot during shutdown. Defaults to 5.
         """
         Applet.__init__(self)
+        for name, value in (
+            ("flwr_run_timeout", flwr_run_timeout),
+            ("flwr_command_timeout", flwr_command_timeout),
+            ("flwr_log_timeout", flwr_log_timeout),
+        ):
+            validate_command_timeout(name, value)
+        self.flwr_run_timeout = flwr_run_timeout
+        self.flwr_command_timeout = flwr_command_timeout
+        self.flwr_log_timeout = flwr_log_timeout
         self._superlink_process_mgr = None
         self.database = database
         self.run_config = run_config
@@ -279,6 +317,7 @@ class FlowerServerApplet(Applet):
         self.flower_app_dir = None
         self.exec_api_addr = None
         self.flwr_home_dir = None
+        self.run_dir = None
         self.flower_run_finished = False
         self.flwr_stop_called = False  # have we called 'flwr stop'?
         self.flower_run_rc = None
@@ -302,8 +341,9 @@ class FlowerServerApplet(Applet):
             server_app: this process performs server side of training.
 
         We start the superlink first, and wait for it to become ready, then start the server app.
-        Each process will have its own log file in the job's run dir. The superlink's log file is named
-        "superlink_log.txt". The server app's log file is named "server_app_log.txt".
+        SuperLink output is streamed to "superlink_log.txt" in the job's run dir.
+        "server_app_log.txt" is a best-effort snapshot fetched at shutdown while
+        SuperLink is still available; it can be absent after a SuperLink crash.
 
         Args:
             app_ctx: the run context of the applet.
@@ -312,9 +352,8 @@ class FlowerServerApplet(Applet):
 
         """
         # try to start superlink first
-        serverapp_api_addr = app_ctx.get(Constant.APP_CTX_SERVERAPP_API_ADDR)
-        fleet_api_addr = app_ctx.get(Constant.APP_CTX_FLEET_API_ADDR)
-        exec_api_addr = app_ctx.get(Constant.APP_CTX_EXEC_API_ADDR)
+        _validate_flwr_runtime()
+        superlink_addr = app_ctx[Constant.APP_CTX_SUPERLINK_ADDR]
         fl_ctx = app_ctx.get(Constant.APP_CTX_FL_CONTEXT)
         if not isinstance(fl_ctx, FLContext):
             self.logger.error(f"expect APP_CTX_FL_CONTEXT to be FLContext but got {type(fl_ctx)}")
@@ -347,7 +386,8 @@ class FlowerServerApplet(Applet):
         else:
             custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
             self.flower_app_dir = custom_dir
-        self.exec_api_addr = exec_api_addr
+        self.exec_api_addr = superlink_addr
+        self.run_dir = ws.get_run_dir(fl_ctx.get_job_id())
         self.flwr_home_dir = self._prepare_flwr_home(ws.get_run_dir(fl_ctx.get_job_id()))
 
         db_arg = ""
@@ -366,23 +406,15 @@ class FlowerServerApplet(Applet):
 
         # Ensure PATH includes venv bin directory for Flower's internal subprocesses
         # (flower-superlink internally spawns flower-superexec which needs to be in PATH)
-        env = self._build_flower_env(include_flwr_home=False)
+        env = self._build_flower_env(include_flwr_home=True)
 
-        """ Example:
-        flower-superlink --insecure --fleet-api-type grpc-adapter
-        --serverappio-api-address 127.0.0.1:9091
-        --fleet-api-address 127.0.0.1:9092
-        --control-api-address 127.0.0.1:9093
-        """
-        superlink_cmd = (
-            f"{shlex.quote(flower_superlink_path)} --insecure --fleet-api-type grpc-adapter {db_arg} "
-            f"--serverappio-api-address {serverapp_api_addr} "
-            f"--fleet-api-address {fleet_api_addr} "
-            f"--control-api-address {exec_api_addr} "
+        host, port = split_address(superlink_addr)
+        superlink_cmd = f"{shlex.quote(flower_superlink_path)} --insecure {db_arg} " f"--host {host} --port {port}"
+        superlink_cmd += (
+            " --allow-runtime-dependency-installation"
+            if self.allow_runtime_dependency_installation
+            else " --disable-runtime-dependency-installation"
         )
-
-        if self.allow_runtime_dependency_installation and _check_runtime_dependency_installation_support(self.logger):
-            superlink_cmd += "--allow-runtime-dependency-installation"
 
         run_dir = ws.get_run_dir(fl_ctx.get_job_id())
         if not os.path.exists(run_dir):
@@ -401,20 +433,11 @@ class FlowerServerApplet(Applet):
         if not self._superlink_process_mgr:
             raise RuntimeError("cannot start superlink process")
 
-        # wait until superlink's fleet_api_addr is ready before starting server app
-        # fleet_api_addr is superlink's gRPC server address for Flare to connect to.
-        start_time = time.time()
-        create_channel(
-            server_addr=fleet_api_addr,
-            grpc_options=None,
-            ready_timeout=self.superlink_ready_timeout,
-            test_only=True,
-        )
-        self.logger.info(f"superlink is ready for server app in {time.time() - start_time} seconds")
+        _wait_for_superlink(superlink_addr, self._superlink_process_mgr, self.superlink_ready_timeout)
 
         # submitting the server app using "flwr run" command
         flwr_run_cmd = self._flower_command("run")
-        run_info = self._run_flower_command(flwr_run_cmd, cwd=self.flower_app_dir)
+        run_info = self._run_flower_command(flwr_run_cmd, cwd=self.flower_app_dir, timeout=self.flwr_run_timeout)
         run_id = run_info.get("run-id")
         if not run_id:
             raise RuntimeError(f"invalid result from command '{flwr_run_cmd}': missing run-id")
@@ -477,7 +500,7 @@ class FlowerServerApplet(Applet):
             command_parts.extend([shlex.quote(cmd_args), shlex.quote(FLOWER_SUPERLINK_CONNECTION)])
         elif normalized_cmd_name == "list":
             if cmd_args:
-                command_parts.append(shlex.quote(cmd_args))
+                command_parts.extend(["--run-id", shlex.quote(str(cmd_args))])
             command_parts.append(shlex.quote(FLOWER_SUPERLINK_CONNECTION))
         elif cmd_args:
             command_parts.append(shlex.quote(cmd_args))
@@ -491,10 +514,10 @@ class FlowerServerApplet(Applet):
 
         return " ".join(command_parts)
 
-    def _run_flower_command(self, command: str, cwd: Optional[str] = None):
+    def _run_flower_command(self, command: str, cwd: Optional[str] = None, timeout: Optional[float] = None):
         self.logger.debug(f"running flower command: {command}")
         cmd_desc = CommandDescriptor(cmd=command, env=self._build_flower_env(include_flwr_home=True), cwd=cwd)
-        reply = run_command(cmd_desc)
+        reply = run_command(cmd_desc, timeout=self.flwr_command_timeout if timeout is None else timeout)
         if not isinstance(reply, str):
             raise RuntimeError(f"failed to run command '{command}': expect reply to be str but got {type(reply)}")
 
@@ -556,10 +579,28 @@ class FlowerServerApplet(Applet):
                 # wait a while to let superlink and supernodes gracefully stop the app
                 time.sleep(self.superlink_grace_period)
 
+            # Flower 1.43 stores ServerApp logs in SuperLink. Preserve them
+            # before shutting down its default in-memory database.
+            if self.run_id and self._superlink_process_mgr and self._superlink_process_mgr.poll() is None:
+                self._save_run_log()
+
             # stop the superlink
             self._stop_process(self._superlink_process_mgr)
             self._superlink_process_mgr = None
             return 0
+
+    def _save_run_log(self):
+        try:
+            executable = os.path.join(os.path.dirname(sys.executable), FLOWER_CLI)
+            command = shlex.join([executable, "log", str(self.run_id), FLOWER_SUPERLINK_CONNECTION, "--show"])
+            output = run_command(
+                CommandDescriptor(cmd=command, env=self._build_flower_env(include_flwr_home=True)),
+                timeout=self.flwr_log_timeout,
+            )
+            with open(os.path.join(self.run_dir, "server_app_log.txt"), "w", encoding="utf-8") as log:
+                log.write(output)
+        except Exception as ex:
+            self.logger.warning(f"could not save Flower ServerApp log: {secure_format_exception(ex)}")
 
     @staticmethod
     def _is_process_stopped(p: ProcessManager):
@@ -582,7 +623,7 @@ class FlowerServerApplet(Applet):
 
     def _query_for_run_status(self):
         # check whether the app is finished
-        flwr_ls_cmd = self._flower_command("list")
+        flwr_ls_cmd = self._flower_command("list", str(self.run_id))
         try:
             run_info = self._run_flower_command(flwr_ls_cmd)
         except Exception as ex:
@@ -638,7 +679,6 @@ class FlowerServerApplet(Applet):
 
         superlink_stopped, superlink_rc = self._is_process_stopped(self._superlink_process_mgr)
         if superlink_stopped:
-            self._superlink_process_mgr = None
             return True, superlink_rc
 
         if self.flower_run_finished:

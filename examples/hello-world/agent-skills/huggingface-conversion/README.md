@@ -7,7 +7,7 @@ converted to a two-site NVFLARE FedAvg job.
 ## Setup
 
 Install NVFLARE using the [Installation guide](https://nvflare.readthedocs.io/en/main/installation.html), keeping
-the stable, nightly, or editable distribution already selected. Then install the example dependencies:
+the release, local wheel, or editable installation already selected. Then install the example dependencies:
 
 ```bash
 python -m pip install -r source/requirements.txt

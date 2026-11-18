@@ -21,8 +21,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_scheduler_spec import DispatchInfo
+from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.fuel.hci.conn import Connection
 from nvflare.private.fed.server import job_runner as runner_module
 from nvflare.private.fed.server.job_cmds import JobCommandModule
@@ -37,6 +39,7 @@ def admission(tmp_path, monkeypatch):
     runner.log_debug = MagicMock()
     runner.log_info = MagicMock()
     runner.log_error = MagicMock()
+    runner.log_exception = MagicMock()
     runner.fire_event = MagicMock()
     runner._fire_job_lifecycle_event = MagicMock()
     engine, ctx, manager = MagicMock(), MagicMock(), MagicMock()
@@ -73,7 +76,9 @@ def admission(tmp_path, monkeypatch):
         JobCommandModule().abort_job(conn, [])
         return json.loads(conn.close())
 
-    return SimpleNamespace(runner=runner, engine=engine, ctx=ctx, manager=manager, statuses=statuses, abort=abort)
+    return SimpleNamespace(
+        runner=runner, engine=engine, ctx=ctx, manager=manager, statuses=statuses, abort=abort, sites=sites
+    )
 
 
 @pytest.mark.parametrize("window", ["control", "selection", "after_check", "deploy", "deploy_error"])
@@ -151,7 +156,7 @@ def test_abort_while_slow_operation_is_outstanding(admission, stage, secure_logg
         a.runner.stop_run.assert_called_once_with("job-1", a.ctx)
 
 
-@pytest.mark.parametrize("failure", ["deploy", "start", "stop"])
+@pytest.mark.parametrize("failure", ["deploy", "start", "stop", "cancel"])
 def test_failure_releases_start_claim_and_preserves_abort(admission, failure):
     a = admission
     if failure == "deploy":
@@ -160,7 +165,56 @@ def test_failure_releases_start_claim_and_preserves_abort(admission, failure):
         a.runner._start_run.side_effect = RuntimeError("start failed")
         if failure == "stop":
             a.runner._stop_run.side_effect = RuntimeError("stop failed")
+        if failure == "cancel":
+            a.engine.cancel_client_resources.side_effect = RuntimeError("cancellation failed")
     a.runner.run(a.ctx)
     assert not a.runner._starting_jobs
     assert a.statuses["job-1"] == RunStatus.FAILED_TO_RUN
+    a.engine.cancel_client_resources.assert_called_once()
     assert a.abort()["meta"]["status"] == "ok"
+
+
+@pytest.mark.parametrize("failure", ["server_error", "server_exception", "client_exception"])
+def test_start_failure_releases_pending_gpu_reservations(admission, monkeypatch, failure):
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    a = admission
+    ctx = FLContext()
+    managers = {
+        site: GPUResourceManager(2, 0, ignore_host=True, exclusive=True, expiration_period=300)
+        for site in ("site-1", "site-2")
+    }
+    requirement = {"num_of_gpus": 1}
+    a.sites.clear()
+    a.sites["server"] = DispatchInfo("app", {}, None)
+    for site, manager in managers.items():
+        enough, token = manager.check_resources(requirement, ctx)
+        assert enough
+        a.sites[site] = DispatchInfo("app", requirement, token)
+
+    def cancel(resource_check_results, resource_reqs, fl_ctx):
+        for site, (_, token) in resource_check_results.items():
+            managers[site].cancel_resources(resource_reqs[site], token, ctx)
+
+    a.engine.cancel_client_resources.side_effect = cancel
+    a.runner._start_run = JobRunner._start_run.__get__(a.runner)
+    a.engine.get_job_clients.return_value = {}
+    a.engine.start_app_on_server.return_value = "missing image" if failure == "server_error" else ""
+    if failure == "server_exception":
+        a.engine.start_app_on_server.side_effect = RuntimeError("missing image")
+    allocated = {}
+
+    def start_clients(*args):
+        allocated["site-1"] = managers["site-1"].allocate_resources(requirement, a.sites["site-1"].token, ctx)
+        raise RuntimeError("client startup failed")
+
+    a.engine.start_client_job.side_effect = start_clients
+    a.runner.run(a.ctx)
+
+    assert a.statuses["job-1"] == RunStatus.FAILED_TO_RUN
+    if failure != "client_exception":
+        a.engine.start_client_job.assert_not_called()
+    # No expiration thread or clock advance: pending reservations are reusable
+    # immediately, while a GPU already allocated to a started client stays held.
+    for site, manager in managers.items():
+        enough, _ = manager.check_resources({"num_of_gpus": 2}, ctx)
+        assert enough is (site not in allocated)

@@ -45,9 +45,69 @@ from nvflare.private.fed.task_worker.artifacts import ArtifactReference, FileTas
 from nvflare.private.fed.task_worker.protocol import read_bootstrap
 from tests.task_execution_test_utils import SCRIPT, _adapter, _config, _statistics_config
 from tests.task_execution_test_utils import native_task as _native_task
+from tests.timing_utils import WAIT_TIMEOUT, ThreadGroup, wait_for
 
 # Register the shared fixture in this collected module only.
 native_task = _native_task
+
+
+def test_parent_owned_result_and_checkpoint_survive_unconfirmed_cleanup(native_task, monkeypatch, caplog):
+    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+
+    root, custom, context, policy = native_task
+    monkeypatch.setattr(policy.launcher, "completion_requires_settlement", False, raising=False)
+    monkeypatch.setattr(policy.launcher, "cleanup_owned_by_parent", True, raising=False)
+    launch = policy.launcher.launch_task
+    owned = []
+
+    def unconfirmed(request):
+        handle = launch(request)
+        owned.append((handle, handle.poll, handle.wait_for_settlement))
+        handle.poll = Mock(return_value=TaskExecutionStatus(TaskExecutionPhase.RUNNING))
+        handle.wait_for_settlement = Mock(side_effect=TimeoutError("scheduler accounting unavailable"))
+        handle.result_received = Mock()
+        return handle
+
+    monkeypatch.setattr(policy.launcher, "launch_task", unconfirmed)
+    script = """
+from pathlib import Path
+import nvflare.client as flare
+flare.init()
+model = flare.receive()
+paths = flare.system_info()["task_checkpoint"]
+previous = int(Path(paths["input"]).read_text()) if paths["input"] else 0
+Path(paths["output"]).write_text(str(previous + 1))
+flare.send(flare.FLModel(params=model.params, metrics={"previous": previous}))
+"""
+    adapter, data = _adapter(custom, context, policy, script=script)
+    adapter.options = replace(adapter.options, settlement_timeout=0.01)
+    try:
+        for index in (1, 2):
+            context.set_prop(FLContextKey.TASK_ID, f"task-{index}")
+            context.set_prop(FLContextKey.TASK_ATTEMPT_ID, f"attempt-{index}")
+            result = adapter.execute("train", data, context, Signal())
+            assert result.get_return_code() == ReturnCode.OK
+            assert FLModelUtils.from_shareable(result).metrics == {"previous": index - 1}
+            assert not adapter.supervisor.owns_execution
+            assert not adapter.supervisor.settlement_unconfirmed
+        assert len(list(root.rglob("*.checkpoint"))) == 1
+        assert "cleanup unconfirmed" in caplog.text
+        assert all(handle.execution_id in caplog.text for handle, _, _ in owned)
+        for handle, _, _ in owned:
+            handle.result_received.assert_called_once_with()
+    finally:
+        failures = []
+        try:
+            adapter.handle_event(EventType.END_RUN, context)
+        except Exception as error:
+            failures.append(str(error))
+        for handle, poll, wait in owned:
+            handle.poll, handle.wait_for_settlement = poll, wait
+            try:
+                assert handle.cancel().settled
+            except Exception as error:
+                failures.append(str(error))
+        assert not failures, failures
 
 
 def test_script_owned_dataloader_is_recreated_for_each_assignment(native_task):
@@ -330,7 +390,7 @@ def test_shutdown_or_abort_during_result_decoding_keeps_cancellation_without_fal
 
     def blocked_read(store, identity):
         reading.set()
-        assert proceed.wait(5)
+        proceed.wait()
         return original(store, identity)
 
     monkeypatch.setattr(FileTaskArtifactStore, "read_result", blocked_read)
@@ -344,11 +404,50 @@ def test_shutdown_or_abort_during_result_decoding_keeps_cancellation_without_fal
         try:
             assert reading.wait(5)
             assert not adapter.supervisor.owns_execution
-            adapter.handle_event(event, context)
+            if event == EventType.END_RUN:
+                ending = pool.submit(adapter.handle_event, event, context)
+                wait_for(lambda: adapter._ending, message="END_RUN did not enter cleanup")
+            else:
+                adapter.handle_event(event, context)
             adapter.system_panic.assert_not_called()
         finally:
             proceed.set()
+        if event == EventType.END_RUN:
+            ending.result(timeout=5)
         assert running.result(timeout=5).get_return_code() == ReturnCode.TASK_ABORTED
+
+
+@pytest.mark.parametrize("parent_owned", [False, True])
+def test_real_worker_end_run_uses_native_shutdown_paths(native_task, monkeypatch, parent_owned):
+    from tests.process_launcher_test_utils import _assert_pid_not_running, _wait_for_file
+
+    _, custom, context, policy = native_task
+    ready = custom / "shutdown-worker.pid"
+    script = (
+        "import os, pathlib, time\nimport nvflare.client as flare\n"
+        "flare.init()\nflare.receive()\n"
+        f"pathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\n"
+        "while True: time.sleep(0.01)\n"
+    )
+    # The test-only launcher supplies real process settlement; this flag selects
+    # the same CJ shutdown branch as a parent-owned native proxy.
+    monkeypatch.setattr(policy.launcher, "cleanup_owned_by_parent", parent_owned, raising=False)
+    adapter, data = _adapter(custom, context, policy, script=script)
+    native_end = Mock(wraps=adapter._end_native_run)
+    monkeypatch.setattr(adapter, "_end_native_run", native_end)
+    results = []
+    with ThreadGroup(timeout=WAIT_TIMEOUT) as workers:
+        workers.start(lambda: results.append(adapter.execute("train", data, context, Signal())))
+        try:
+            _wait_for_file(ready)
+            pid = int(ready.read_text())
+        finally:
+            adapter.handle_event(EventType.END_RUN, context)
+
+    assert results[0].get_return_code() == ReturnCode.TASK_ABORTED
+    assert not adapter.supervisor.owns_execution
+    _assert_pid_not_running(pid)
+    assert native_end.call_count == (0 if parent_owned else 1)
 
 
 def test_worker_log_is_replayed_through_cj_logging(native_task):

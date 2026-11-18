@@ -86,7 +86,7 @@ federated analytics events directly; they do not require a separate
 ``MetricRelay``, metrics ``CellPipe``, or ``ExternalConfigurator``.
 
 
-On the server, configure the experiment tracking system in ``config_fed_server.conf`` using one of the following receivers.
+On the server, configure the experiment tracking system in ``config_fed_server.json`` using one of the following receivers.
 Note that any of the receivers can be used regardless of the which writer is used.
 
 - ``MLflowReceiver`` for MLflow
@@ -95,13 +95,13 @@ Note that any of the receivers can be used regardless of the which writer is use
 
 For example, here we add the ``MLflowReceiver`` component to the components configuration array:
 
-.. code-block:: yaml
+.. code-block:: json
 
   {
     "id": "mlflow_receiver_with_tracking_uri",
     "path": "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver",
     "args": {
-      tracking_uri = "file:///{WORKSPACE}/{JOB_ID}/mlruns"
+      "tracking_uri": "file:///{WORKSPACE}/{JOB_ID}/mlruns",
       "kwargs": {
         "experiment_name": "hello-pt-experiment",
         "run_name": "hello-pt-with-mlflow",
@@ -116,18 +116,22 @@ For example, here we add the ``MLflowReceiver`` component to the components conf
     }
   }
 
-Notice the args{} are user defined, such as tracking_uri, experiment_name, tags etc., and will be specific to which receiver is configured.
+Notice the ``args`` are user defined, such as tracking_uri, experiment_name, tags etc., and will be specific to which receiver is configured.
 
 The MLflow tracking URL argument ``tracking_uri`` is None by default, which uses the MLflow default URL, ``http://localhost:5000``.
-To make this accessible from another machine, make sure to change it to the correct URL, or point to to the ``mlruns`` directory in the workspace.
+To make this accessible from another machine, make sure to change it in the receiver ``args`` to the correct URL, or point to to the ``mlruns`` directory in the workspace.
 
-::
+.. code-block:: json
 
-  tracking_uri = <the Mlflow Server endpoint URL>
+  {
+    "tracking_uri": "<the Mlflow Server endpoint URL>"
+  }
 
-::
+.. code-block:: json
 
-  tracking_uri = "file:///{WORKSPACE}/{JOB_ID}/mlruns"
+  {
+    "tracking_uri": "file:///{WORKSPACE}/{JOB_ID}/mlruns"
+  }
 
 You can change other arguments such as experiments, run_name, tags (using Markdown syntax), and artifact location.
 
@@ -151,9 +155,9 @@ Additionally, since we're not streaming to the server side, there's no requireme
 
 Instead to receive records on the client side, configure the metrics receiver in the client configuration instead of the server configuration.
 
-For example, in the TensorBoard configuration, add this component to ``config_fed_client.conf``:
+For example, in the TensorBoard configuration, add this component to ``config_fed_client.json``:
 
-.. code-block:: yaml
+.. code-block:: json
 
   {
     "id": "tb_analytics_receiver",

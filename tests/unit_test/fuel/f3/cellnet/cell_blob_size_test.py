@@ -213,5 +213,5 @@ def test_single_frame_receiver_rejection_reports_generic_error_after_receive_com
             ByteStreamer.error_context_map.pop(101, None)
         with RxTask.map_lock:
             rx_task = RxTask.rx_task_map.pop(("server.job-id", 101), None)
-        if rx_task and rx_task.cleanup_timer:
-            rx_task.cleanup_timer.cancel()
+        if rx_task and rx_task.cleanup_deadline:
+            rx_task.cleanup_deadline.cancel()

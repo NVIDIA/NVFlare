@@ -20,6 +20,14 @@ export GRPC_ENABLE_FORK_SUPPORT=False
 
 Direct pytest suites are grouped by expected CI cadence:
 
+The Dashboard browser suite, ``fast/dashboard_validation_ui_test.py``, runs against the shipped static pages
+and an isolated live Flask backend. Premerge explicitly runs it with Playwright Chromium on Ubuntu 24.04 /
+Python 3.12. For local runs, install ``playwright`` and run ``python -m playwright install chromium``;
+``NVFLARE_TEST_BROWSER_CHANNEL=chrome`` selects an installed Google Chrome instead. The browser suite covers
+Org Admin signup, pending site registration, user/site approval, encrypted kit downloads, and correction of
+rejected form values. ``fast/dashboard_kit_test.py`` checks real provisioning/system ZIP execution in the
+shared process-contract matrix, preserving the former unit test's OS/Python coverage.
+
 ```bash
 cd tests/integration_test
 python -m pytest -v --log-cli-level=INFO --capture=no fast

@@ -808,7 +808,7 @@ def test_human_output_points_to_readme(monkeypatch, capsys, tmp_path):
     assert f"  cd {shlex.quote(str(destination))}" in output
     assert "pip install -r requirements.txt" not in output
     assert "Warning: Preserve the installed NVFlare distribution when setting up this example." in output
-    assert "same stable, nightly, or editable distribution" in output
+    assert "same release, local wheel, or editable installation" in output
     assert "Follow README.md for dependency, preparation, and run instructions." in output
     assert "python job.py" not in output
 

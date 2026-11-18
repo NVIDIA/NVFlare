@@ -13,10 +13,12 @@
 # limitations under the License.
 import os
 import shutil
+import stat
 import tempfile
 import threading
 import time
 from collections import OrderedDict
+from contextlib import nullcontext
 from functools import partial
 
 from nvflare.apis.event_type import EventType
@@ -24,14 +26,17 @@ from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReturnCode, Sy
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import DataTypes
 from nvflare.apis.streaming import StreamContext
-from nvflare.app_common.logging.constants import ALLOW_LOG_STREAMING_VAR, LIVE_LOG_TOPIC, Channels
+from nvflare.app_common.logging.constants import (
+    ALLOW_LOG_STREAMING_VAR,
+    LIVE_LOG_TOPIC,
+    Channels,
+    client_log_path,
+    client_log_staging_root,
+)
+from nvflare.app_common.logging.log_staging import ClientLogStaging, lock_file, private_directory
 from nvflare.app_common.streamers.log_streamer import LogStreamer
 from nvflare.fuel.utils.app_config_utils import get_positive_float_var
 from nvflare.widgets.widget import Widget
-
-# Keys for per-stream state stored in StreamContext
-_KEY_RECV_FILE = "JobLogReceiver.recv_file"
-_KEY_RECV_PATH = "JobLogReceiver.recv_path"
 
 # Cap on the number of (client, job_id) pairs we remember for "log once"
 # tracking. The receiver is a long-lived server-side widget; without a cap,
@@ -46,12 +51,15 @@ class JobLogReceiver(Widget):
 
     ``JobLogReceiver`` accepts a live stream: each chunk is written directly to
     a staging file as it arrives so that the log can be followed with
-    ``tail -f`` on the server while the job runs. When the stream closes
-    (normal EOF, job abort, or idle timeout) the file is handed to the job
-    manager for storage. The storage backend may consume the staging file.
+    ``tail -f`` on the server while the job runs. Successful streams are handed
+    to the job manager for storage. Interrupted streams retain partial logs;
+    explicit job deletion removes managed logs after active streams drain.
+    The storage backend may consume the staging file.
 
-    The staging file is written to ``{dest_dir}/{job_id}/{client_name}/{log_file_name}``,
-    making it easy to locate and tail during a run.
+    By default the staging file is written to
+    ``{workspace.get_log_root()}/.client_log_streams/{job_id}/{client_name}/{log_file_name}``,
+    outside per-job cleanup. The administrator's live-log reader uses this location. An explicit ``dest_dir``
+    instead selects ``{dest_dir}/{job_id}/{client_name}/{log_file_name}``.
 
     This widget can be placed in either of two locations:
 
@@ -79,7 +87,8 @@ class JobLogReceiver(Widget):
 
     Args:
         dest_dir: directory where incoming log staging files are written.
-            Defaults to the system temporary directory.
+            Defaults to private staging beside the workspace job log roots; uses
+            a private temporary directory only when no workspace is available.
         idle_timeout: seconds without any message (data or heartbeat) before
             the receiver declares the sender dead and closes the stream
             (default 30.0).  Set to 0 to disable.
@@ -89,14 +98,19 @@ class JobLogReceiver(Widget):
         super().__init__()
         self._dest_dir = dest_dir
         self._idle_timeout = idle_timeout
+        # StreamContext arrives from the sender. File handles, paths, and the
+        # validated owner must remain in receiver-owned state, never in it.
+        self._stream_files = {}
+        self._stream_lock = threading.RLock()
+        self._temporary_dest = None
         # Tracks (client, job_id) pairs we've already logged a "site does not allow
         # streaming" error for, so the warning is emitted at most once per job.
         # Bounded with FIFO eviction (see _UNAUTHORIZED_LOG_CAP) and guarded by a
         # lock so the check-then-add is atomic across concurrent stream chunks.
         self._unauthorized_logged: OrderedDict = OrderedDict()
         self._unauthorized_lock = threading.Lock()
-        # Keep receiver-owned references: stream_ctx comes from the sender and
-        # must not control admission or completion bookkeeping.
+        # Preserve main's end-run drain contract across the receiver update.
+        # Admission bookkeeping is receiver-owned, just like file state.
         self._active_streams = {}
         self._accepting_streams = True
         self._stream_generation = object()
@@ -122,8 +136,45 @@ class JobLogReceiver(Widget):
         self.register_event_handler(EventType.CHECK_END_RUN_READINESS, self._check_end_run_readiness)
         self.register_event_handler(EventType.END_RUN, self._on_end_run)
 
-    def _effective_dest_dir(self) -> str:
-        return self._dest_dir or tempfile.gettempdir()
+    def _staging_root(self, fl_ctx):
+        if self._dest_dir:
+            return self._dest_dir
+        workspace = getattr(fl_ctx.get_engine(), "get_workspace", lambda: None)()
+        if workspace is not None:
+            return client_log_staging_root(workspace)
+        if self._temporary_dest is None:
+            self._temporary_dest = tempfile.mkdtemp(prefix="nvflare-client-logs-")
+        return self._temporary_dest
+
+    @staticmethod
+    def _open_log(root, job_id, client, file_name, leased=False):
+        if leased and client in (ClientLogStaging.DELETED_MARKER, ClientLogStaging.DELETE_INTENT):
+            raise ValueError("Reserved client log path component")
+        path = client_log_path(root, job_id, client, file_name)
+        root = os.path.realpath(root)
+        for directory in (root, os.path.join(root, job_id), os.path.dirname(path)):
+            private_directory(directory)
+        # Recheck after creating directories; never follow a final symlink.
+        client_log_path(root, job_id, client, file_name)
+        if os.path.islink(path):
+            raise ValueError("Client log file must not be a symlink")
+        fd = os.open(
+            path,
+            os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
+            0o600,
+        )
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise ValueError("Client log must be a regular file")
+            if leased and not lock_file(fd):
+                raise ValueError("Client log already has an active stream")
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, 0o600)
+            os.ftruncate(fd, 0)
+            return path, os.fdopen(fd, "wb")
+        except BaseException:
+            os.close(fd)
+            raise
 
     @staticmethod
     def _sanitize_path_component(name: str) -> str:
@@ -140,12 +191,10 @@ class JobLogReceiver(Widget):
 
     def _get_trusted_stream_identity(self, fl_ctx: FLContext):
         peer_ctx = fl_ctx.get_peer_context()
-        if peer_ctx is None:
-            return "unknown", "unknown"
-
-        client = self._sanitize_path_component(peer_ctx.get_identity_name(default="unknown"))
-        job_id = self._sanitize_path_component(peer_ctx.get_job_id(default="unknown"))
-        return client, job_id
+        client = fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
+        if peer_ctx is None or not isinstance(client, str) or peer_ctx.get_identity_name() != client:
+            raise ValueError("Log stream identity does not match the authenticated sender")
+        return client, peer_ctx.get_job_id()
 
     def _is_site_allowed_to_stream(self, client_name: str, fl_ctx: FLContext) -> bool:
         """Look up the registered Client and check its site_config (forwarded
@@ -242,29 +291,49 @@ class JobLogReceiver(Widget):
             self._quiet_period = None
 
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
-        f = stream_ctx.get(_KEY_RECV_FILE)
-        if f is None:
-            client, job_id = self._get_trusted_stream_identity(fl_ctx)
-            if not self._is_site_allowed_to_stream(client, fl_ctx):
-                # Drop the chunk: the site has explicitly disabled streaming.
-                # Log once per (client, job_id) so the operator can see it
-                # without flooding the server log.
-                if self._record_unauthorized((client, job_id)):
-                    self.log_error(
-                        fl_ctx,
-                        f"Dropping live log chunk from {client} for job {job_id}: site has "
-                        f"'{ALLOW_LOG_STREAMING_VAR}' disabled in its resources.json",
+        client, job_id = self._get_trusted_stream_identity(fl_ctx)
+        with self._stream_lock:
+            state = self._stream_files.get(id(stream_ctx))
+            if state is None:
+                if not self._is_site_allowed_to_stream(client, fl_ctx):
+                    if self._record_unauthorized((client, job_id)):
+                        self.log_error(
+                            fl_ctx,
+                            f"Dropping live log chunk from {client} for job {job_id}: site has "
+                            f"'{ALLOW_LOG_STREAMING_VAR}' disabled in its resources.json",
+                        )
+                    return
+                file_name = LogStreamer.get_file_name(stream_ctx) or WorkspaceConstants.LOG_FILE_NAME
+                workspace = getattr(fl_ctx.get_engine(), "get_workspace", lambda: None)()
+                staging = ClientLogStaging(workspace) if self._dest_dir is None and workspace is not None else None
+                with staging.locked() if staging else nullcontext():
+                    job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+                    if staging and staging.is_deleting(job_id) and job_manager is not None:
+                        staging.recover_delete(job_id, job_manager, fl_ctx)
+                    if staging and staging.is_deleted(job_id):
+                        staging.remove_closed_job_logs(job_id)
+                        raise ValueError("Cannot stream logs for a deleted or unknown job")
+                    if staging and (
+                        staging.is_deleting(job_id)
+                        or (job_manager is not None and job_manager.get_job(job_id, fl_ctx) is None)
+                    ):
+                        raise ValueError("Cannot stream logs for a deleted or unknown job")
+                    path, stream = self._open_log(
+                        self._staging_root(fl_ctx), job_id, client, file_name, leased=staging is not None
                     )
-                return
-            log_file_name = self._sanitize_path_component(LogStreamer.get_file_name(stream_ctx) or "log.txt")
-            path = os.path.join(self._effective_dest_dir(), job_id, client, log_file_name)
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            self.log_debug(fl_ctx, f"Opening log file for {client} job {job_id}: {path}")
-            f = open(path, "wb")
-            stream_ctx[_KEY_RECV_FILE] = f
-            stream_ctx[_KEY_RECV_PATH] = path
-        f.write(data)
-        f.flush()
+                state = {
+                    "file": stream,
+                    "path": path,
+                    "client": client,
+                    "job_id": job_id,
+                    "file_name": file_name,
+                    "staging": staging,
+                }
+                self._stream_files[id(stream_ctx)] = state
+            elif (state["client"], state["job_id"]) != (client, job_id):
+                raise ValueError("Log stream owner changed")
+            state["file"].write(data)
+            state["file"].flush()
 
     def _on_stream_done(self, stream_ctx: StreamContext, fl_ctx: FLContext):
         try:
@@ -273,30 +342,46 @@ class JobLogReceiver(Widget):
             self._mark_stream_done(stream_ctx)
 
     def _finalize_stream(self, stream_ctx: StreamContext, fl_ctx: FLContext):
-        f = stream_ctx.get(_KEY_RECV_FILE)
-        if f is not None:
-            f.close()
-            stream_ctx[_KEY_RECV_FILE] = None
+        with self._stream_lock:
+            state = self._stream_files.pop(id(stream_ctx), None)
+        if state is None:
+            if LogStreamer.get_file_name(stream_ctx) == WorkspaceConstants.ERROR_LOG_FILE_NAME:
+                return
+            client, job_id = self._get_trusted_stream_identity(fl_ctx)
+            self.log_warning(fl_ctx, f"No log data received from {client} for job {job_id}")
+            return
+        staging = state["staging"]
+        with staging.locked() if staging else nullcontext():
+            state["file"].close()
+            job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+            if staging and staging.is_deleting(state["job_id"]):
+                try:
+                    if job_manager is None:
+                        raise RuntimeError("Job manager unavailable for deletion recovery")
+                    staging.recover_delete(state["job_id"], job_manager, fl_ctx)
+                except Exception:
+                    self.log_exception(fl_ctx, "Cannot confirm interrupted job deletion; partial log retained")
+                    return
+            if staging and staging.is_deleted(state["job_id"]):
+                staging.remove_closed_job_logs(state["job_id"])
+                return
+            if staging and job_manager is not None and job_manager.get_job(state["job_id"], fl_ctx) is None:
+                # Missing metadata can also mean a temporary storage failure.
+                # Only an explicit successful deletion authorizes removing logs.
+                self.log_warning(fl_ctx, f"Job {state['job_id']} unavailable; partial log retained at {state['path']}")
+                return
+            self._finish_stream(state, stream_ctx, fl_ctx)
 
+    def _finish_stream(self, state, stream_ctx, fl_ctx):
+        client, job_id, log_type = state["client"], state["job_id"], state["file_name"]
+        file_path = state["path"]
         rc = LogStreamer.get_rc(stream_ctx)
-        client, job_id = self._get_trusted_stream_identity(fl_ctx)
-
         if rc != ReturnCode.OK:
-            file_path = stream_ctx.get(_KEY_RECV_PATH)
             self.log_warning(
                 fl_ctx,
-                f"Live log stream from {client} job {job_id} ended with rc={rc}; partial log retained at {file_path}",
+                f"Live log stream from {client} job {job_id} ended with rc={rc}; "
+                f"partial log retained at {file_path}",
             )
-            return
-
-        file_path = stream_ctx.get(_KEY_RECV_PATH)
-        log_type = self._sanitize_path_component(
-            LogStreamer.get_file_name(stream_ctx) or WorkspaceConstants.LOG_FILE_NAME
-        )
-        if not file_path:
-            if log_type == WorkspaceConstants.ERROR_LOG_FILE_NAME:
-                return
-            self.log_warning(fl_ctx, f"No log data received from {client} for job {job_id}")
             return
 
         engine = fl_ctx.get_engine()
@@ -310,7 +395,8 @@ class JobLogReceiver(Widget):
                     dest_path = os.path.join(workspace.get_run_dir(job_id), client, log_type)
                     try:
                         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                        shutil.move(file_path, dest_path)
+                        if os.path.abspath(file_path) != os.path.abspath(dest_path):
+                            shutil.move(file_path, dest_path)
                         self.log_info(fl_ctx, f"Saved live log '{log_type}' from {client} to {dest_path}")
                         return
                     except Exception:
@@ -322,7 +408,39 @@ class JobLogReceiver(Widget):
         job_manager.set_client_data(job_id, file_path, client, data_type, fl_ctx)
         self.log_info(fl_ctx, f"Saved live log '{log_type}' from {client} for job {job_id}")
 
+    def _remove_deleted_job_logs(self, fl_ctx):
+        if self._dest_dir is not None:
+            return
+        engine = fl_ctx.get_engine()
+        if engine is None:
+            return
+        workspace = getattr(engine, "get_workspace", lambda: None)()
+        job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+        if workspace is None or job_manager is None:
+            return
+        staging = ClientLogStaging(workspace)
+        if not os.path.isdir(staging.root):
+            return
+        with staging.locked():
+            with os.scandir(staging.root) as entries:
+                for entry in entries:
+                    if not entry.is_dir(follow_symlinks=False):
+                        continue
+                    try:
+                        staging.recover_delete(entry.name, job_manager, fl_ctx)
+                        if staging.is_deleted(entry.name):
+                            staging.remove_closed_job_logs(entry.name)
+                    except Exception:
+                        self.log_exception(fl_ctx, f"Cannot recover job log deletion for {entry.name}; logs retained")
+
     def _register(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.SYSTEM_START:
+            # Recover abandoned leases after a server crash/restart. Logs for
+            # existing jobs remain available, including retained partial logs.
+            try:
+                self._remove_deleted_job_logs(fl_ctx)
+            except Exception:
+                self.log_exception(fl_ctx, "Failed to clean deleted-job log staging")
         # Re-register on every triggering event. The active ObjectStreamer is
         # owned by the current run_manager and is replaced whenever the engine
         # transitions to a new run, so caching a "registered once" flag would
@@ -331,8 +449,6 @@ class JobLogReceiver(Widget):
         # on the first incoming chunk.
         with self._active_stream_lock:
             if not self._accepting_streams:
-                # Old transport factories must stay closed after this widget
-                # is reopened for the next run.
                 self._stream_generation = object()
             self._accepting_streams = True
             generation = self._stream_generation
