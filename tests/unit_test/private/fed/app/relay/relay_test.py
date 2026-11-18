@@ -23,7 +23,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
-from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.drivers.connector_info import Mode
+from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
 from nvflare.private.defs import CellMessageHeaderKeys
@@ -41,6 +42,7 @@ def _relay_core_cell(fqcn="relay-1"):
 def _server_transit_message(incoming_endpoint):
     message = Message(
         headers={
+            MessageHeaderKey.ORIGIN: "site-1.job",
             MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
             MessageHeaderKey.ROUTE: [("site-1", 0.0), ("server", 1.0)],
         }
@@ -81,8 +83,8 @@ def test_relay_does_not_trust_forged_server_route_from_child():
             core_cell=core_cell,
         )
 
-    assert result is expected
-    validate.assert_called_once()
+    assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+    validate.assert_not_called()
 
 
 @pytest.fixture
@@ -218,3 +220,40 @@ def test_relay_registration_recovery_is_bounded_and_retries_after_later_rejectio
     relay_auth.refresh()
     assert auth.challenge_server.call_count == 3
     assert relay_auth.auth_result is old
+
+
+def test_relay_reauthenticates_on_same_key_server_reconnect(relay_auth):
+    old = relay_auth.auth_result
+    replacement = ("replacement-token", "replacement-signature", "ssid", old[3])
+    relay_auth.authenticator.authenticate.return_value = replacement
+    endpoint = Endpoint("server")
+    endpoint.state = EndpointState.READY
+    relay_auth.state_change(endpoint)
+    relay_auth.authenticator.authenticate.assert_not_called()
+    relay_auth.refresh()
+    relay_auth.authenticator.authenticate.assert_called_once()
+    assert relay_auth.auth_result is replacement
+    relay_auth.refresh()
+    relay_auth.authenticator.authenticate.assert_called_once()
+
+
+def test_relay_does_not_accept_tls_listener_as_sanitized_upstream():
+    message = _server_transit_message("server")
+    message.set_prop(
+        MessagePropKey.CONNECTION,
+        SimpleNamespace(connector=SimpleNamespace(mode=Mode.PASSIVE, params={"connection_security": "tls"})),
+    )
+    result = _validate_auth_headers(message, MagicMock(), MagicMock(), "relay-1", _relay_core_cell())
+    assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+
+
+def test_relay_retries_failed_registration_after_reconnect(relay_auth):
+    endpoint = Endpoint("server")
+    endpoint.state = EndpointState.READY
+    relay_auth.state_change(endpoint)
+    relay_auth.authenticator.authenticate.side_effect = [RuntimeError("server not ready"), relay_auth.auth_result]
+    relay_auth.refresh()
+    assert relay_auth.registration_needed.is_set()
+    relay_auth.refresh()
+    assert relay_auth.authenticator.authenticate.call_count == 2
+    assert not relay_auth.registration_needed.is_set()

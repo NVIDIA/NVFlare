@@ -13,16 +13,63 @@
 # limitations under the License.
 from typing import Optional
 
-from nvflare.apis.fl_constant import CellMessageAuthHeaderKey
+from nvflare.apis.fl_constant import CellMessageAuthHeaderKey, ConnectionSecurity
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo
+from nvflare.fuel.f3.cellnet.identity import get_param
+from nvflare.fuel.f3.drivers.connector_info import Mode
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.validation_utils import check_object_type, check_str
 
 
 def _is_server_fqcn(fqcn: str) -> bool:
     return bool(fqcn) and FqcnInfo(fqcn).is_on_server
+
+
+def _is_unverified_inbound_tls(msg: Message) -> bool:
+    connection = msg.get_prop(MessagePropKey.CONNECTION)
+    return bool(
+        connection
+        and connection.connector.mode == Mode.PASSIVE
+        and get_param(connection.connector.params, DriverParams.CONNECTION_SECURITY) == ConnectionSecurity.TLS
+    )
+
+
+def is_message_from_upstream(msg: Message, local_fqcn: str) -> bool:
+    peer = msg.get_prop(MessagePropKey.ENDPOINT)
+    if not isinstance(peer, Endpoint) or not local_fqcn or local_fqcn == FQCN.ROOT_SERVER:
+        return False
+    if _is_unverified_inbound_tls(msg):
+        return False
+    return peer.name == FQCN.ROOT_SERVER or (FqcnInfo(local_fqcn).gen > 1 and peer.name == FQCN.get_parent(local_fqcn))
+
+
+def is_message_origin_trusted(msg: Message, local_fqcn: str, allow_unverified_client: bool = False) -> bool:
+    """Bind a claimed origin to the actual transport peer or trusted topology parent."""
+    origin = msg.get_header(MessageHeaderKey.ORIGIN)
+    peer = msg.get_prop(MessagePropKey.ENDPOINT)
+    if not isinstance(peer, Endpoint) or not isinstance(origin, str) or FQCN.validate(origin):
+        return False
+    # A TLS listener does not authenticate its connecting peer. Server-bound
+    # traffic has a separate signed-token check; Collab receivers must instead
+    # use their established upstream or a mutually authenticated peer.
+    if local_fqcn != FQCN.ROOT_SERVER and _is_unverified_inbound_tls(msg):
+        if not allow_unverified_client or _is_server_fqcn(origin):
+            return False
+    return is_message_from_upstream(msg, local_fqcn) or origin == peer.name or FQCN.is_ancestor(peer.name, origin)
+
+
+def strip_authentication_headers(msg: Message):
+    for key in (
+        CellMessageAuthHeaderKey.CLIENT_NAME,
+        CellMessageAuthHeaderKey.TOKEN,
+        CellMessageAuthHeaderKey.TOKEN_SIGNATURE,
+        CellMessageAuthHeaderKey.SSID,
+    ):
+        msg.remove_header(key)
 
 
 def _get_client_family_fqcn(origin: str, client_name: Optional[str]) -> Optional[str]:

@@ -101,6 +101,8 @@ def federation(tmp_path, monkeypatch, request):
         assert internal["resources"]["connection_security"] == connection_security
     update_storage_locations(str(kits / "localhost/local"), str(tmp_path))
     processes, streams, sessions = OwnedProcesses(), [], []
+    server_process = None
+    server_launch = None
     try:
         sites = [("localhost", "server")]
         if via_relay:
@@ -126,7 +128,10 @@ def federation(tmp_path, monkeypatch, request):
             ]
             if kind == "client":
                 command.append(f"uid={name}")
-            processes.start(command, cwd=workspace, env=env, stdout=stream, stderr=subprocess.STDOUT)
+            process = processes.start(command, cwd=workspace, env=env, stdout=stream, stderr=subprocess.STDOUT)
+            if kind == "server":
+                server_process = process
+                server_launch = (command, workspace, stream)
         for name in ["victim@test.org", "attacker@test.org"]:
             sessions.append(
                 new_secure_session(name, str(kits / name), timeout=45, command_timeout=15, auto_login_max_tries=1)
@@ -134,7 +139,14 @@ def federation(tmp_path, monkeypatch, request):
             processes.callbacks.append(sessions[-1].close)
         victim, attacker = sessions
         wait_for(lambda: len(victim.get_system_info().client_info) == 2, "two enrolled clients")
-        yield kits, module, victim, attacker, via_relay
+
+        def restart_server():
+            server_process.terminate()
+            server_process.wait(timeout=15)
+            command, workspace, stream = server_launch
+            processes.start(command, cwd=workspace, env=env, stdout=stream, stderr=subprocess.STDOUT)
+
+        yield kits, module, victim, attacker, via_relay, restart_server
     finally:
         try:
             processes.close()
@@ -147,6 +159,8 @@ def submit(kits, module, session, name, site, victim=""):
     job = FedJob(name=name, min_clients=1)
     job.to(module.ControlController(victim=victim), "server")
     job.to(module.ControlExecutor(), site, tasks=["attack" if victim else "hold"])
+    if name == "victim":
+        job.to(module.ControlExecutor(), "site-1", tasks=["hold"])
     path = kits.parent / "exports" / name
     job.export_job(str(path))
     return session.submit_job(str(path / name))
@@ -170,9 +184,11 @@ def runner_aborted(result_dir):
 
 @pytest.mark.timeout(300)
 def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
-    kits, module, victim_session, attacker_session, via_relay = federation
+    kits, module, victim_session, attacker_session, via_relay, restart_server = federation
     victim = submit(kits, module, victim_session, "victim", "site-2")
     run = holding(kits, victim, victim_session)
+    peer_run = holding(kits, victim, victim_session, "site-1")
+    assert sorted(json.loads((run / "collab_calls.json").read_text())) == ["server", "site-1"]
     evidence = {
         "source": str(Path(nvflare.__file__).resolve()),
         "victim_job": victim,
@@ -205,9 +221,9 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     attacker_result = Path(attacker_session.download_job_result(attacker))
     evidence["forged_origin"] = json.loads(next(attacker_result.rglob("forged_origin.json")).read_text())
     assert evidence["forged_origin"]["sender"] == f"server.{attacker}"
-    rejection = "auth token for client server_job is bound to origin <missing>, not message origin server"
+    rejection = "rejected message: origin does not belong to sending peer"
     evidence["forged_origin_rejected"] = rejection in (kits / "localhost/log.txt").read_text()
-    rejection = "auth token for client server is bound to origin <missing>, not message origin server"
+    rejection = "rejected message: origin does not belong to sending peer"
     evidence["server_credential_replay_rejected"] = rejection in (kits / "localhost/log.txt").read_text()
     if (
         attack["rc"] == ReturnCode.AUTHENTICATION_ERROR
@@ -215,7 +231,9 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
         and evidence["server_credential_replay_rejected"]
     ):
         assert status(victim_session, victim) == "RUNNING"
+        assert sorted(json.loads((run / "collab_calls.json").read_text())) == ["server", "site-1"]
         (run / "release").touch()
+        (peer_run / "release").touch()
     evidence["after"] = wait_for(
         lambda: (s if (s := status(victim_session, victim)).startswith("FINISHED:") else None), "victim terminal state"
     )
@@ -239,12 +257,23 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     assert evidence["authorized_abort"] == "FINISHED:ABORTED"
     assert evidence["authorized_runner_aborted"] is True
     assert attack["rc"] == ReturnCode.AUTHENTICATION_ERROR
+    assert attack["collab_replay_rc"] != ReturnCode.OK
     assert evidence["forged_origin_rejected"] is True
     assert evidence["server_credential_replay_rejected"] is True
     assert evidence["runner_aborted"] is False
     assert evidence["after"] == "FINISHED:COMPLETED"
     received = json.loads(next(result_dir.rglob("received.json")).read_text())
     assert received["job"] == victim and received["aborted"] is False
+    # Same-key restart loses server-side token registrations. Existing admin
+    # sessions must re-register on login, and clients behind relays must recover.
+    restart_server()
+    wait_for(lambda: victim_session.api._cell_auth_monitor.reconnected.is_set(), "admin transport reconnection")
+    victim_session.try_connect(timeout=45)
+    wait_for(
+        lambda: len(victim_session.get_system_info().client_info) == 2,
+        "client/relay recovery after restart",
+        timeout=90,
+    )
 
 
 @pytest.mark.timeout(40)

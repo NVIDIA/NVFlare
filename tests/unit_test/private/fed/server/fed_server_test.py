@@ -35,7 +35,7 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
+from nvflare.fuel.f3.cellnet.defs import CellChannelTopic, MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
@@ -630,6 +630,7 @@ class TestFederatedServer:
             },
             None,
         )
+        request.set_prop(MessagePropKey.ENDPOINT, Endpoint(origin))
         reply = server._validate_auth_headers(request)
         if accepted:
             assert reply is None
@@ -687,8 +688,11 @@ class TestFederatedServer:
         server.client_manager = ClientManager()
         if origin == "admin":
             origin = peer = new_admin_client_name()
+            server._non_regular_auth_clients = {"delegated": (name, origin, "admin")}
         request = new_cell_message(
             {
+                MessageHeaderKey.CHANNEL: CellChannel.SERVER_MAIN,
+                MessageHeaderKey.TOPIC: CellChannelTopic.HEART_BEAT,
                 MessageHeaderKey.ORIGIN: origin,
                 MessageHeaderKey.DESTINATION: "server",
                 CellMessageHeaderKeys.CLIENT_NAME: name,
@@ -1423,3 +1427,22 @@ class TestGetValidatedSiteConfig:
         s = Shareable()
         s[ClientRegMsgKey.SITE_CONFIG] = site_config
         assert self._call(s) == site_config
+
+
+@pytest.mark.parametrize("origin", ["site-a", "relay-1.site-a", "site-a.job"])
+def test_unmapped_signed_token_cannot_authorize_application_traffic(auth_server, origin):
+    server, private_key = auth_server
+    request = new_cell_message(
+        {
+            MessageHeaderKey.ORIGIN: origin,
+            MessageHeaderKey.DESTINATION: "server.job-a",
+            MessageHeaderKey.CHANNEL: "collab",
+            CellMessageHeaderKeys.CLIENT_NAME: "site-a",
+            CellMessageHeaderKeys.TOKEN: "unmapped",
+            CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content("site-aunmapped", private_key),
+        },
+        None,
+    )
+    request.set_prop(MessagePropKey.ENDPOINT, Endpoint(origin))
+    reply = server._validate_auth_headers(request)
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED

@@ -40,6 +40,7 @@ from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.endpoint import EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.client.event import EventContext, EventHandler, EventPropKey, EventType
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
@@ -245,6 +246,15 @@ class _CmdListReplyProcessor(ReplyProcessor):
         api.server_cmd_received = True
 
 
+class _AdminCellReconnectMonitor(EndpointMonitor):
+    def __init__(self):
+        self.reconnected = threading.Event()
+
+    def state_change(self, endpoint):
+        if endpoint.name == FQCN.ROOT_SERVER and endpoint.state == EndpointState.READY:
+            self.reconnected.set()
+
+
 class AdminAPI(AdminAPISpec, StreamableEngine):
     def __init__(
         self,
@@ -379,6 +389,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.closed = False
         self.in_logout = False
         self.cell = None
+        self._cell_auth_monitor = None
         self.aux_runner = None
         self.object_streamer = None
         self.fl_ctx_mgr = FLContextManager(
@@ -427,6 +438,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.login_result = None
         cell = self.cell
         self.cell = None
+        self._cell_auth_monitor = None
         try:
             self.shutdown_streamer()
         finally:
@@ -540,6 +552,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             logger=self.logger,
             local_cell_fqcn=self.cell.get_fqcn(),
         )
+        self._cell_auth_monitor = _AdminCellReconnectMonitor()
+        self.cell.core_cell.communicator.register_monitor(self._cell_auth_monitor)
         self.debug(f"Successfully authenticated to {self.server_identity}: {token=} {ssid=}")
 
         self.aux_runner = AuxRunner(self)
@@ -769,6 +783,11 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             A dict of login status and details
         """
         self.ensure_client_cert_valid()
+        monitor = getattr(self, "_cell_auth_monitor", None)
+        if monitor and monitor.reconnected.is_set():
+            # A restarted server no longer has this Cell's delegated token binding.
+            # Re-register before CERT_LOGIN, outside the transport callback thread.
+            self._reset_cell()
         if not self.cell:
             self.connect()
         command = f"{InternalCommands.CERT_LOGIN} {self.user_name}"

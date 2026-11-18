@@ -39,8 +39,9 @@ from nvflare.collab.runtime.dispatch import (
     prepare_for_remote_call,
 )
 from nvflare.fuel.f3.cellnet.cell import Adapter
-from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessagePropKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamError, StreamFuture, StreamTargetUnreachable
@@ -131,6 +132,7 @@ def test_collab_stream_filter_rejects_before_receive_state_is_created():
         }
     )
 
+    message.set_prop(MessagePropKey.ENDPOINT, Endpoint("server"))
     response = stream_filter.filter(message)
 
     assert isinstance(response, Message)
@@ -564,3 +566,22 @@ def test_make_participant_map_uses_standard_job_cell_fqcns():
         "relay.site-1.job-1": "site-1",
         "relay.site-2.job-1": "site-2",
     }
+
+
+@pytest.mark.parametrize("peer", ["site-2.job", "site-1.job.intruder", "relay-1.site-2.job"])
+def test_collab_rejects_forged_server_job_origin_before_envelope_authorization(peer):
+    authorizer = MagicMock(local_fqcn="site-1.job")
+    authorizer._reject.return_value = StreamError("Collab call rejected")
+    receiver = MagicMock()
+    message = Message(
+        {
+            MessageHeaderKey.ORIGIN: "server.job",
+            MessageHeaderKey.DESTINATION: "site-1.job",
+            StreamHeaderKey.CHANNEL: MSG_CHANNEL,
+            StreamHeaderKey.TOPIC: MSG_TOPIC,
+        }
+    )
+    message.set_prop(MessagePropKey.ENDPOINT, Endpoint(peer))
+    assert isinstance(_CollabStreamFilter(authorizer, receiver).filter(message), Message)
+    authorizer.authorize.assert_not_called()
+    receiver.reject.assert_called_once_with(message, authorizer._reject.return_value)

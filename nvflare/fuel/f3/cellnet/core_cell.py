@@ -2083,6 +2083,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         self.logger.debug(f"{self.my_info.fqcn}: received message: {message.headers}")
         message.set_prop(MessagePropKey.ENDPOINT, endpoint)
+        message.set_prop(MessagePropKey.CONNECTION, connection)
 
         if connection:
             conn_props = connection.get_conn_properties()
