@@ -142,6 +142,38 @@ Under the :github_nvflare_link:`wandb <examples/advanced/experiment-tracking/wan
 "hello-pt-wandb" job shows how to use Weights and Biases for experiment tracking with
 the WandBWriter and WandBReceiver to log metrics.
 
+W&B backend approval
+--------------------
+
+``WandBReceiver`` uses the receiving site's ``WANDB_BASE_URL`` when set,
+otherwise the installed W&B SDK's default cloud endpoint. The receiver pins
+this URL explicitly before login and worker initialization. A job's
+``wandb_args.settings.base_url`` can select a different backend only when
+that URL is approved by the receiving site's operator.
+
+Add approvals to the canonical ``local/resources.json`` at each receiving site
+(server, client, or simulator workspace). If that file is absent,
+``local/resources.json.default`` is used:
+
+.. code-block:: json
+
+   {
+     "wandb_base_urls": ["https://tracking.example.org"]
+   }
+
+Entries match the complete URL after the installed SDK's URL normalization,
+including removal of trailing slashes. There are no prefix or wildcard matches.
+Only approve services trusted to receive the site's W&B credentials and tracking
+data. Job-local resources and application configuration cannot grant approval.
+Job settings cannot override HTTP(S) proxies or disable TLS verification;
+configure trusted proxies through the receiving process's environment instead.
+
+Approval checks apply to every receiver mode, including offline mode. A rejected
+initialization disables that receiver through the existing analytics lifecycle;
+it does not start a W&B worker or attempt login. Offline logging to local files
+continues to work for approved/default destinations.
+
+
 MONAI Integration
 =================
 

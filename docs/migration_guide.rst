@@ -27,6 +27,18 @@ Verify with ``nvflare system version``. Leftover 2.9 peers are rejected before
 endpoint attachment and cannot replace a 2.10 connection. This procedure
 includes a server outage and does not resume running jobs across the upgrade.
 
+Weights & Biases Backend Approval
+---------------------------------
+
+Jobs using ``WandBReceiver`` with a custom ``wandb_args.settings.base_url``
+now require receiving-site approval unless the URL matches that site's
+``WANDB_BASE_URL`` (or the SDK's default cloud endpoint when that variable is
+unset). Add trusted URLs to ``wandb_base_urls`` in the receiving site's canonical
+``local/resources.json`` or its default fallback. Apply this at every site
+running the receiver, including client-side tracking. Job settings cannot
+provide proxy overrides or disable TLS verification. See
+:ref:`experiment_tracking_log_writer` for experiment-tracking configuration.
+
 Study Data File Removed
 -----------------------
 
