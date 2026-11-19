@@ -122,6 +122,15 @@ def test_full_weights_scalar_buffers_metrics_and_cleanup(tmp_path, dtype):
     assert not (tmp_path / (disk.CURRENT_MODEL + ".next")).exists()
 
 
+def test_zero_step_contribution_with_disjoint_key_is_skipped(tmp_path):
+    aggr = aggregator(tmp_path)
+    aggr.accept_model(model(refs(tmp_path, "zero", {"b": torch.ones(1)}), client="site-1", steps=0))
+    aggr.accept_model(model(refs(tmp_path, "trained", {"a": torch.full((1,), 2.0)}), client="site-2", steps=4))
+    result = aggr.aggregate_model()
+    assert set(result.params) == {"a"}
+    assert result.params["a"].materialize().item() == 2.0
+
+
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("kind", [ParamsType.FULL, ParamsType.DIFF])
 @pytest.mark.parametrize("order", [(0, 1), (1, 0)])

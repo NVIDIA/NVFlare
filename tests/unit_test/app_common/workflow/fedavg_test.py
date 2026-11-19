@@ -2676,3 +2676,47 @@ class TestZeroStepResults:
 
         assert aggr_result.params["w"] == pytest.approx([2.0])
         assert aggr_result.meta["nr_aggregated"] == 2
+
+    def test_streaming_all_empty_zero_step_results_keep_model(self):
+        controller = _streaming_fedavg()
+        for client in ("site-1", "site-2"):
+            result = _steps_result(client, 1.0, 0)
+            result.params = {}
+            assert controller._aggregate_one_result(result) is False
+
+        assert controller._all_results_zero_step()
+        assert controller._get_aggregated_result().params == {}
+
+    def test_streaming_mixed_zero_step_and_rejected_result_fails_round(self):
+        controller = _streaming_fedavg()
+        rejected = _steps_result("site-2", 3.0, 5)
+        rejected.params = {}
+        controller._aggregate_one_result(_steps_result("site-1", 1.0, 0))
+        controller._aggregate_one_result(rejected)
+
+        assert not controller._all_results_zero_step()
+        with pytest.raises(RuntimeError, match="no accepted contributions"):
+            controller._get_aggregated_result()
+
+    def test_aggregate_fn_skips_zero_step_site_with_disjoint_keys(self):
+        trained = FLModel(params={"a": np.array([2.0])}, current_round=0, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 4})
+        skipped = FLModel(params={"b": np.array([9.0])}, current_round=0, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 0})
+
+        aggr_result = BaseFedAvg.aggregate_fn([skipped, trained])
+
+        assert set(aggr_result.params) == {"a"}
+        assert aggr_result.params["a"] == pytest.approx([2.0])
+
+    def test_aggregate_fn_all_zero_steps_keeps_model(self):
+        aggr_result = BaseFedAvg.aggregate_fn([_steps_result("site-1", 1.0, 0)])
+
+        model = FLModel(params={"w": np.array([5.0])}, params_type=ParamsType.FULL, meta={})
+        assert FLModelUtils.update_model(model, aggr_result).params["w"] == pytest.approx([5.0])
+
+    def test_scaffold_aggregate_fn_all_zero_steps_keeps_model(self):
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        aggr_result = scaffold_aggregate_fn([_steps_result("site-1", 1.0, 0, ctrl_diff=1.0)])
+
+        assert aggr_result.params == {}
+        assert aggr_result.meta.get(AlgorithmConstants.SCAFFOLD_CTRL_DIFF, {}) == {}
