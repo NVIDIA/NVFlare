@@ -87,10 +87,8 @@ exported/reloaded as a nested constructor argument and does not receive componen
 events. The baseline copy lives in a private Python attribute on the original task
 `FLContext`, outside its serialized properties, and is removed on every output
 path. Both filters must use that same context object in the parent client process.
-`MultiProcessExecutor` task/event relays omit the audit snapshot; context clones,
-worker contexts and subsequent tasks cannot inherit it. Private/non-sticky
-properties alone would not prevent worker serialization. If an executor exits
-before output filtering, only the original task context retains the copy until it
+The snapshot stays on the original context through cloning and serialization.
+If an executor exits before output filtering, the original task context retains the copy until it
 is released. Missing baselines are reported as unsupported.
 
 ## Complete state and adapter-only updates

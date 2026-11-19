@@ -65,16 +65,19 @@ Two cases need attention before starting 2.10 on an existing kit and workspace:
 
 .. _multi_process_executor_migration:
 
-Multi-process Executor Deprecation
----------------------------------
+Multi-process Executors Removed
+-------------------------------
 
-``MultiProcessExecutor`` and ``PTMultiProcessExecutor`` are deprecated in 2.10
-while their imports and configuration remain available. For PyTorch DDP training,
-use job-based Client API with ``launch_external_process=True`` and ``torchrun``,
-as in the :github_nvflare_link:`multi-GPU example <examples/advanced/multi-gpu/pt>`.
-Only global rank zero exchanges models with FLARE; the script synchronizes
-models and shutdown across ranks. Applications relying on the legacy wrapper's
-arbitrary FL events or component graph must adapt those explicitly before migrating.
+NVFlare 2.10 removes ``MultiProcessExecutor``, ``PTMultiProcessExecutor`` and their
+sub-worker runtime. Update jobs that import, subclass or configure either
+executor before upgrading to 2.10.
+
+For PyTorch DDP training, use the job-based Client API with
+``launch_external_process=True`` and ``torchrun``. The
+:github_nvflare_link:`multi-GPU example <examples/advanced/multi-gpu/pt>` shows how
+global rank zero exchanges models with FLARE and how the training script
+synchronizes models and shutdown across ranks. Port any custom component setup
+or FL event handling that relied on relaying between the parent and workers.
 
 Upgrading from 2.7.2 to 2.8.0
 =============================

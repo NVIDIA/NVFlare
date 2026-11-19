@@ -31,9 +31,9 @@ value = os.environ.pop(JobProcessEnv.AUTH_TOKEN, None)
 parser.add_argument("--token", default=value, required=value is None)
 ```
 
-CLI wins if supplied; missing-both keeps today's error; the env var is always removed, so
-job-spawned children never inherit it. Verify the CJ's multi-GPU `sub_worker_process` spawn
-does not re-emit credentials in argv; if it does, apply the same treatment.
+CLI values take precedence when supplied. Missing values still raise an error.
+The parser removes the credential variables from the environment before the job
+process can launch children.
 
 **Launchers** stop rendering credential flags into commands and deliver values as:
 

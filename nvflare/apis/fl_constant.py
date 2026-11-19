@@ -95,7 +95,6 @@ class ReservedKey:
     WORKFLOW = "__workflow__"
     REPLY = "__reply__"
     EVENT_ORIGIN = "__event_origin__"
-    EVENT_ORIGIN_SITE = "__event_origin_site__"
     EVENT_DATA = "__event_data__"
     EVENT_SCOPE = "__event_scope__"
     RUN_ABORT_SIGNAL = "__run_abort_signal__"
@@ -104,9 +103,6 @@ class ReservedKey:
     SHARED_FL_CONTEXT = "__shared_fl_context__"
     ARGS = "__args__"
     WORKSPACE_OBJECT = "__workspace_object__"
-    RANK_NUMBER = "__rank_number__"
-    NUM_OF_PROCESSES = "__num_of_processes__"
-    FROM_RANK_NUMBER = "__from_rank_number__"
     SECURE_MODE = "__secure_mode__"
     SIMULATE_MODE = "__simulate_mode__"
     JOB_INFO = "__job_info__"
@@ -137,7 +133,6 @@ class FLContextKey:
     TASK_ATTEMPT_REQUIRED = ReservedKey.TASK_ATTEMPT_REQUIRED
     EVENT_ID = ReservedKey.EVENT_ID
     EVENT_ORIGIN = ReservedKey.EVENT_ORIGIN
-    EVENT_ORIGIN_SITE = ReservedKey.EVENT_ORIGIN_SITE
     EVENT_DATA = ReservedKey.EVENT_DATA
     EVENT_SCOPE = ReservedKey.EVENT_SCOPE
     EXCEPTIONS = ReservedKey.EXCEPTIONS
@@ -156,9 +151,6 @@ class FLContextKey:
     ARGS = ReservedKey.ARGS
     REPLY = ReservedKey.REPLY
     WORKSPACE_OBJECT = ReservedKey.WORKSPACE_OBJECT
-    RANK_NUMBER = ReservedKey.RANK_NUMBER
-    NUM_OF_PROCESSES = ReservedKey.NUM_OF_PROCESSES
-    FROM_RANK_NUMBER = ReservedKey.FROM_RANK_NUMBER
     SECURE_MODE = ReservedKey.SECURE_MODE
     SIMULATE_MODE = ReservedKey.SIMULATE_MODE
     JOB_INFO = ReservedKey.JOB_INFO

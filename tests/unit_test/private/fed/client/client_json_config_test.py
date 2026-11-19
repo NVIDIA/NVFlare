@@ -54,6 +54,52 @@ def _external_executor():
     return ClientAPIExecutor(execution_mode="external_process", command="python custom/train.py")
 
 
+def _configurator_from_file(config_file):
+    workspace_root = config_file.parent
+    args = SimpleNamespace(
+        sp_scheme="grpc",
+        sp_target="localhost:8002",
+        client_name="site-1",
+        parent_url=None,
+        job_id="job-1",
+        workspace=str(workspace_root),
+    )
+    workspace = SimpleNamespace(
+        get_app_custom_dir=lambda job_id: str(workspace_root / job_id / "custom"),
+        get_app_config_dir=lambda job_id: str(workspace_root / job_id / "config"),
+    )
+    return ClientJsonConfigurator(
+        workspace_obj=workspace,
+        config_file_name=str(config_file),
+        args=args,
+        app_root=str(workspace_root),
+    )
+
+
+@pytest.mark.parametrize(
+    "executor",
+    [
+        {"name": "MultiProcessExecutor"},
+        {"name": "PTMultiProcessExecutor"},
+        {"path": "nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor"},
+        {"path": "nvflare.app_opt.pt.multi_process_executor.PTMultiProcessExecutor"},
+        {"path": "nvflare.app_opt.pt.PTMultiProcessExecutor"},
+        {"class_path": "nvflare.app_common.pt.pt_multi_process_executor.PTMultiProcessExecutor"},
+    ],
+)
+def test_removed_multi_process_executor_reports_migration_during_configure(tmp_path, executor, monkeypatch, caplog):
+    monkeypatch.setenv("NVFLARE_SECURE_LOGGING", "true")
+    config_file = tmp_path / "config_fed_client.json"
+    config_file.write_text(json.dumps({"format_version": 2, "executors": [{"tasks": ["train"], "executor": executor}]}))
+    configurator = _configurator_from_file(config_file)
+
+    with pytest.raises(
+        ConfigError, match=r"Executor .* was removed in NVFlare 2\.10.*Client API with external torchrun"
+    ):
+        configurator.configure()
+    assert "Use the Client API with external torchrun." in caplog.text
+
+
 class TestClientAPIExecutorRuntimeValidation:
     def test_raw_client_config_is_rejected_during_configure(self, tmp_path):
         config_file = tmp_path / "config_fed_client.json"
@@ -83,24 +129,7 @@ class TestClientAPIExecutorRuntimeValidation:
                 }
             )
         )
-        args = SimpleNamespace(
-            sp_scheme="grpc",
-            sp_target="localhost:8002",
-            client_name="site-1",
-            parent_url=None,
-            job_id="job-1",
-            workspace=str(tmp_path),
-        )
-        workspace = SimpleNamespace(
-            get_app_custom_dir=lambda job_id: str(tmp_path / job_id / "custom"),
-            get_app_config_dir=lambda job_id: str(tmp_path / job_id / "config"),
-        )
-        configurator = ClientJsonConfigurator(
-            workspace_obj=workspace,
-            config_file_name=str(config_file),
-            args=args,
-            app_root=str(tmp_path),
-        )
+        configurator = _configurator_from_file(config_file)
 
         with pytest.raises(ConfigError, match="only one ClientAPIExecutor.*per client job"):
             configurator.configure()
