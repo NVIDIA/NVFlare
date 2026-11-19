@@ -453,6 +453,7 @@ class K8sJobHandle(JobHandleSpec):
             statuses = getattr(getattr(pod, "status", None), "container_statuses", None)
             if not isinstance(statuses, (list, tuple)):
                 statuses = []
+            exit_code = None
             for container_status in statuses:
                 if getattr(container_status, "name", None) != job_container_name:
                     continue
@@ -469,6 +470,15 @@ class K8sJobHandle(JobHandleSpec):
                 elif isinstance(exit_code, int) and exit_code != 0:
                     self.terminal_return_code = JobReturnCode.EXECUTION_ERROR
                 break
+            if (
+                exit_code is None
+                and self.terminal_return_code is None
+                and not self._termination_requested
+                and getattr(getattr(pod, "status", None), "reason", None) == "Evicted"
+            ):
+                # The kubelet reports an eviction before the container exit.
+                # That is lost infrastructure, not an abort.
+                self.terminal_return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
         self._release_job_resources()
 
     def poll(self):
@@ -739,10 +749,11 @@ class K8sJobHandle(JobHandleSpec):
         timeout = self.task_owner.backend.cleanup_timeout if self.task_owner is not None else 60.0
         deadline = time.monotonic() + timeout
         api_error_logged = False
-        while not self._termination_requested:
+        # The bound covers the reads and sleeps too: evidence that arrives after it authorizes nothing.
+        while not self._termination_requested and (remaining := deadline - time.monotonic()) > 0:
             try:
                 pod = self.api_instance.read_namespaced_pod(
-                    name=self.pod_name, namespace=self.namespace, _request_timeout=10.0
+                    name=self.pod_name, namespace=self.namespace, _request_timeout=min(10.0, remaining)
                 )
                 if pod.metadata.uid != self.pod_uid or pod.status.reason in ("NodeLost", "Shutdown"):
                     return False
@@ -760,6 +771,9 @@ class K8sJobHandle(JobHandleSpec):
                     # An unreachable API proves nothing either way: keep observing within the cleanup bound.
                     self.logger.warning("cannot confirm CJ shutdown for recovery yet: %s", type(error).__name__)
                     api_error_logged = True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
             # The task owner's existing thread exits after all workers settle.
             if (
                 pod_state_known
@@ -767,10 +781,9 @@ class K8sJobHandle(JobHandleSpec):
                 and (self.task_owner is None or not self.task_owner.thread.is_alive())
             ):
                 return True
-            if time.monotonic() >= deadline:
-                self.logger.warning("CJ recovery cleanup timed out for job %s", self.job_id)
-                return False
-            time.sleep(POLL_INTERVAL)
+            time.sleep(min(POLL_INTERVAL, remaining))
+        if not self._termination_requested:
+            self.logger.warning("CJ recovery cleanup timed out for job %s", self.job_id)
         return False
 
 
