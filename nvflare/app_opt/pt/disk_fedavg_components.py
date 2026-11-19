@@ -41,6 +41,7 @@ from nvflare.app_common.workflows.base_fedavg import (
     _get_client_name,
     _get_num_steps_weight,
     _is_zero_step_result,
+    _release_params,
     make_fedavg_metrics_aggregation_info,
 )
 from nvflare.fuel.utils import fobs
@@ -98,26 +99,21 @@ class DiskFedAvgAggregator(ModelAggregator):
         self._metadata = {}
         self._skipped = set()
         self._params_type = None
+        self._zero_step_skipped = False
         self._all_metrics = True
         self._metrics.reset_stats()
 
     def accept_model(self, model):
         if _is_zero_step_result(model):
             self.warning(f"Skipping result from client {_get_client_name(model)}: 0 steps.")
-            self._release(model)
-            return
+            _release_params(model)
+            self._zero_step_skipped = True
+            return False
         try:
             self._accept_model(model)
         except Exception:
-            self._release(model)
+            _release_params(model)
             raise
-
-    @staticmethod
-    def _release(model):
-        if isinstance(model.params, dict):
-            for ref in model.params.values():
-                if isinstance(ref, _LazyRef):
-                    ref.release()
 
     def _accept_model(self, model):
         if model.params_type not in (ParamsType.FULL, ParamsType.DIFF):
@@ -205,7 +201,10 @@ class DiskFedAvgAggregator(ModelAggregator):
         next_path = current + ".next"
         try:
             if not self._contributions:
-                raise RuntimeError("no accepted contributions to aggregate")
+                if not self._zero_step_skipped:
+                    raise RuntimeError("no accepted contributions to aggregate")
+                self.warning("All results reported 0 steps, keeping the global model.")
+                self._params_type = ParamsType.DIFF
             base = {}
             if self._params_type == ParamsType.DIFF:
                 model = self.fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)

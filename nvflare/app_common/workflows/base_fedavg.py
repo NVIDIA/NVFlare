@@ -84,6 +84,9 @@ def make_key_metric_info_from_stop_condition(stop_cond, stop_condition) -> Optio
     }
 
 
+UNCHANGED_MODEL_META_KEY = "fedavg_unchanged_model"
+
+
 def _get_client_name(result: FLModel) -> str:
     meta = result.meta or {}
     value = meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
@@ -110,8 +113,27 @@ def _is_zero_step_result(result: FLModel) -> bool:
     return _get_num_steps_weight(result) == 0.0
 
 
-def _without_zero_step_results(results: List[FLModel]) -> List[FLModel]:
-    return [r for r in results if not _is_zero_step_result(r)]
+def _release_params(result: FLModel):
+    for value in (result.params or {}).values():
+        release = getattr(value, "release", None)
+        if callable(release):
+            release()
+
+
+def _without_zero_step_results(results: List[FLModel], on_skip=None) -> List[FLModel]:
+    kept = []
+    for result in results:
+        if not _is_zero_step_result(result):
+            kept.append(result)
+            continue
+        if on_skip:
+            on_skip(result)
+        _release_params(result)
+    return kept
+
+
+def _is_unchanged_model_result(result: FLModel) -> bool:
+    return isinstance(result, FLModel) and (result.meta or {}).get(UNCHANGED_MODEL_META_KEY) is True
 
 
 def _make_unchanged_model_result(current_round) -> FLModel:
@@ -121,6 +143,7 @@ def _make_unchanged_model_result(current_round) -> FLModel:
         current_round=current_round,
         meta={
             "nr_aggregated": 0,
+            UNCHANGED_MODEL_META_KEY: True,
             "current_round": current_round,
             AppConstants.METRICS_AGGREGATION_INFO: make_fedavg_metrics_aggregation_info(),
         },
@@ -135,7 +158,9 @@ def _aggregate_fl_model_metrics(results: List[FLModel]) -> Optional[Dict[str, An
     predictions across all clients.
     """
     aggr_metrics_helper = WeightedAggregationHelper()
-    for _result in _without_zero_step_results(results):
+    for _result in results:
+        if _is_zero_step_result(_result):
+            continue
         if _result.metrics is None:
             return None
         aggregatable = filter_aggregatable_metrics(_result.metrics)
@@ -328,12 +353,12 @@ class BaseFedAvg(ModelController):
             self.fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, aggr_stats, private=True, sticky=False)
 
     def _drop_zero_step_results(self, results: List[FLModel]) -> List[FLModel]:
-        for _result in results:
-            if _is_zero_step_result(_result):
-                self.warning(
-                    f"Skipping result from client {_get_client_name(_result)} at round {self.current_round}: 0 steps."
-                )
-        return _without_zero_step_results(results)
+        return _without_zero_step_results(
+            results,
+            on_skip=lambda result: self.warning(
+                f"Skipping result from client {_get_client_name(result)} at round {self.current_round}: 0 steps."
+            ),
+        )
 
     def _set_metrics_aggregation_info(self, aggr_result: FLModel):
         if not isinstance(aggr_result, FLModel):
@@ -361,6 +386,9 @@ class BaseFedAvg(ModelController):
         Returns: None.
 
         """
+        if _is_unchanged_model_result(aggr_result):
+            return model
+
         self.event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE)
 
         model = FLModelUtils.update_model(model, aggr_result)

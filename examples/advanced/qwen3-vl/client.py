@@ -49,13 +49,6 @@ def _abs_path(p: str) -> str:
     return os.path.abspath(os.path.expanduser(p))
 
 
-def _positive_int(value: str) -> int:
-    number = int(value)
-    if number <= 0:
-        raise argparse.ArgumentTypeError(f"must be a positive integer, got {value}")
-    return number
-
-
 def _params_size_mb(params) -> float:
     """Return size of params dict (state_dict) in MB. Handles torch tensors and numpy arrays."""
     if not params:
@@ -341,9 +334,9 @@ def main():
     )
     parser.add_argument(
         "--max_steps",
-        type=_positive_int,
+        type=int,
         default=None,
-        help="Max steps per FL round, a positive integer (omit to train one epoch per round)",
+        help="Max steps per FL round (omit to train one epoch per round)",
     )
     parser.add_argument(
         "--num_train_epochs",
@@ -570,7 +563,7 @@ def main():
             params = {"model." + k: v for k, v in raw.items()}
             meta = (
                 {"NUM_STEPS_CURRENT_ROUND": args.max_steps}
-                if args.max_steps is not None
+                if args.max_steps is not None and args.max_steps > 0
                 else {"NUM_TRAIN_EPOCHS_CURRENT_ROUND": args.num_train_epochs}
             )
             output_model = flare.FLModel(
