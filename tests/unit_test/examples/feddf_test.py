@@ -59,6 +59,12 @@ def test_split_preparation_leaves_no_files_when_minimum_cannot_be_met(feddf, tmp
     assert not output.exists()
 
 
+@pytest.mark.parametrize(("name", "value"), [("kd_lr", float("inf")), ("temperature", float("nan"))])
+def test_server_rejects_nonfinite_kd_settings(feddf, name, value):
+    with pytest.raises(ValueError, match="must be finite and positive"):
+        feddf("server").FedDFServer(**{name: value})
+
+
 def test_feddf_averages_then_distills_mean_logits_without_mutating_teachers(feddf, monkeypatch):
     from copy import deepcopy
 

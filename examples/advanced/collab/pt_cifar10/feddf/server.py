@@ -15,6 +15,7 @@
 """Synchronous rounds with replaceable weight averaging or KD aggregation."""
 
 import json
+import math
 import time
 from pathlib import Path
 
@@ -61,8 +62,10 @@ class FedDFServer:
     ):
         if aggregation not in ("fedavg", "feddf"):
             raise ValueError("aggregation must be fedavg or feddf")
-        if num_rounds < 1 or kd_epochs < 1 or kd_lr <= 0 or temperature <= 0:
-            raise ValueError("Round count, KD epochs, learning rate and temperature must be positive")
+        if num_rounds < 1 or kd_epochs < 1:
+            raise ValueError("Round count and KD epochs must be positive")
+        if not all(math.isfinite(value) and value > 0 for value in (kd_lr, temperature)):
+            raise ValueError("KD learning rate and temperature must be finite and positive")
         self.num_rounds = num_rounds
         self.aggregation = aggregation
         self.split_root = split_root
